@@ -1,9 +1,11 @@
 use crate::attribute::{AttributeModifierOperation, AttributeRef};
 use crate::damage_type::DamageTypeRef;
+use crate::items::ItemRef;
 use crate::mob_effect::MobEffectRef;
 use crate::sound_event::SoundEventRef;
 use glam::DVec3;
 use steel_utils::Identifier;
+use steel_utils::random::Random;
 use steel_utils::types::GameType;
 
 /// Vanilla enchantment effect component keys.
@@ -160,8 +162,8 @@ pub enum EnchantmentValueEffect {
 impl EnchantmentValueEffect {
     /// Applies effects that do not require a random source.
     ///
-    /// `remove_binomial` is intentionally excluded until callers provide a
-    /// vanilla-compatible random source and binomial implementation.
+    /// `remove_binomial` is excluded because it requires a random source; use
+    /// [`Self::process_with_random`] when the component permits random effects.
     #[must_use]
     pub fn process_without_random(&self, level: i32, input: f32) -> Option<f32> {
         match self {
@@ -171,6 +173,44 @@ impl EnchantmentValueEffect {
             Self::RemoveBinomial { .. } => None,
         }
     }
+
+    /// Applies this effect with the random source required by Vanilla's
+    /// `EnchantmentValueEffect.process`.
+    #[must_use]
+    pub fn process_with_random(&self, level: i32, random: &mut impl Random, input: f32) -> f32 {
+        match self {
+            Self::Add { value } => input + value.calculate(level),
+            Self::Set { value } => value.calculate(level),
+            Self::Multiply { factor } => input * factor.calculate(level),
+            Self::RemoveBinomial { chance } => {
+                remove_binomial(random, input, chance.calculate(level))
+            }
+        }
+    }
+}
+
+#[expect(
+    clippy::neg_cmp_op_on_partial_ord,
+    reason = "negated comparisons preserve Vanilla's NaN branch behavior"
+)]
+fn remove_binomial(random: &mut impl Random, input: f32, chance: f32) -> f32 {
+    let mut removed = 0;
+    if !(input <= 128.0) && !(input * chance < 20.0) && !(input * (1.0 - chance) < 20.0) {
+        let mean = f64::from((input * chance).floor());
+        let deviation = f64::from(input * chance * (1.0 - chance)).sqrt();
+        removed = (mean + random.next_gaussian() * deviation + 0.5).floor() as i32;
+        removed = removed.clamp(0, input as i32);
+    } else {
+        let mut trial = 0;
+        while (trial as f32) < input {
+            if random.next_f32() < chance {
+                removed += 1;
+            }
+            trial += 1;
+        }
+    }
+
+    input - removed as f32
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -253,6 +293,23 @@ pub struct DamageSourcePredicate {
     pub is_direct: Option<bool>,
 }
 
+/// Static holder set used by generated `match_tool` requirements.
+#[derive(Debug, PartialEq, Eq)]
+pub enum EnchantmentItemSet {
+    Tag(Identifier),
+    Direct(&'static [Identifier]),
+}
+
+impl EnchantmentItemSet {
+    #[must_use]
+    pub fn contains(&self, item: ItemRef) -> bool {
+        match self {
+            Self::Tag(tag) => item.has_tag(tag),
+            Self::Direct(items) => items.contains(&item.key),
+        }
+    }
+}
+
 /// Vanilla loot condition subset used by generated enchantment effects.
 #[derive(Debug, PartialEq)]
 pub enum EnchantmentEffectRequirements {
@@ -267,9 +324,52 @@ pub enum EnchantmentEffectRequirements {
     RandomChance {
         chance: &'static LevelBasedValue,
     },
+    MatchTool {
+        items: Option<EnchantmentItemSet>,
+    },
     Unsupported {
         condition: Identifier,
     },
+}
+
+impl EnchantmentEffectRequirements {
+    /// Evaluates the subset of loot conditions supported by Vanilla's item-only
+    /// enchantment context. `None` keeps unsupported contexts fail-closed.
+    #[must_use]
+    pub fn matches_item_context(&self, item: ItemRef) -> Option<bool> {
+        match self {
+            Self::AllOf(terms) => {
+                let mut has_unknown = false;
+                for term in *terms {
+                    match term.matches_item_context(item) {
+                        Some(true) => {}
+                        Some(false) => return Some(false),
+                        None => has_unknown = true,
+                    }
+                }
+                if has_unknown { None } else { Some(true) }
+            }
+            Self::AnyOf(terms) => {
+                let mut has_unknown = false;
+                for term in *terms {
+                    match term.matches_item_context(item) {
+                        Some(true) => return Some(true),
+                        Some(false) => {}
+                        None => has_unknown = true,
+                    }
+                }
+                if has_unknown { None } else { Some(false) }
+            }
+            Self::Inverted(term) => term.matches_item_context(item).map(|matched| !matched),
+            Self::MatchTool { items } => {
+                Some(items.as_ref().is_none_or(|items| items.contains(item)))
+            }
+            Self::EntityProperties { .. }
+            | Self::DamageSourceProperties(_)
+            | Self::RandomChance { .. }
+            | Self::Unsupported { .. } => None,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -390,7 +490,7 @@ pub struct EnchantmentEffects {
     pub tick: bool,
     pub ammo_use: &'static [ConditionalEnchantmentEffect<EnchantmentValueEffect>],
     pub projectile_piercing: &'static [ConditionalEnchantmentEffect<EnchantmentValueEffect>],
-    pub projectile_spawned: bool,
+    pub projectile_spawned: &'static [ConditionalEnchantmentEffect<EnchantmentEntityEffect>],
     pub projectile_spread: &'static [ConditionalEnchantmentEffect<EnchantmentValueEffect>],
     pub projectile_count: &'static [ConditionalEnchantmentEffect<EnchantmentValueEffect>],
     pub trident_return_acceleration:
@@ -426,7 +526,7 @@ impl EnchantmentEffects {
         tick: false,
         ammo_use: &[],
         projectile_piercing: &[],
-        projectile_spawned: false,
+        projectile_spawned: &[],
         projectile_spread: &[],
         projectile_count: &[],
         trident_return_acceleration: &[],
@@ -464,7 +564,7 @@ impl EnchantmentEffects {
             EnchantmentEffectComponent::Tick => self.tick,
             EnchantmentEffectComponent::AmmoUse => !self.ammo_use.is_empty(),
             EnchantmentEffectComponent::ProjectilePiercing => !self.projectile_piercing.is_empty(),
-            EnchantmentEffectComponent::ProjectileSpawned => self.projectile_spawned,
+            EnchantmentEffectComponent::ProjectileSpawned => !self.projectile_spawned.is_empty(),
             EnchantmentEffectComponent::ProjectileSpread => !self.projectile_spread.is_empty(),
             EnchantmentEffectComponent::ProjectileCount => !self.projectile_count.is_empty(),
             EnchantmentEffectComponent::TridentReturnAcceleration => {
@@ -544,5 +644,50 @@ impl EnchantmentEffects {
             }
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::random::{Random as _, xoroshiro::Xoroshiro};
+
+    use super::{EnchantmentValueEffect, LevelBasedValue};
+
+    static HALF: LevelBasedValue = LevelBasedValue::Constant(0.5);
+    static THREE_TENTHS: LevelBasedValue = LevelBasedValue::Constant(0.3);
+    static REMOVE_HALF: EnchantmentValueEffect =
+        EnchantmentValueEffect::RemoveBinomial { chance: &HALF };
+    static REMOVE_THREE_TENTHS: EnchantmentValueEffect = EnchantmentValueEffect::RemoveBinomial {
+        chance: &THREE_TENTHS,
+    };
+
+    #[test]
+    fn remove_binomial_matches_vanilla_small_input_loop() {
+        let mut expected_random = Xoroshiro::from_seed_unmixed(42);
+        let removed = (0..10).filter(|_| expected_random.next_f32() < 0.5).count() as f32;
+
+        let mut actual_random = Xoroshiro::from_seed_unmixed(42);
+        assert_eq!(
+            REMOVE_HALF.process_with_random(1, &mut actual_random, 10.0),
+            10.0 - removed
+        );
+    }
+
+    #[test]
+    fn remove_binomial_matches_vanilla_gaussian_approximation() {
+        let mut expected_random = Xoroshiro::from_seed_unmixed(42);
+        let input = 256.0_f32;
+        let chance = 0.3_f32;
+        let mean = f64::from((input * chance).floor());
+        let deviation = f64::from(input * chance * (1.0 - chance)).sqrt();
+        let expected_removed = (mean + expected_random.next_gaussian() * deviation + 0.5)
+            .floor()
+            .clamp(0.0, f64::from(input)) as f32;
+
+        let mut actual_random = Xoroshiro::from_seed_unmixed(42);
+        assert_eq!(
+            REMOVE_THREE_TENTHS.process_with_random(1, &mut actual_random, input),
+            input - expected_removed
+        );
     }
 }

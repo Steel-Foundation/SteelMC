@@ -13,7 +13,7 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::{CRemoveMobEffect, CUpdateMobEffect, MobEffectPacketFlags};
 use steel_registry::RegistryEntry;
 use steel_registry::attribute::AttributeRef;
-use steel_registry::entity_data::{ParticleData, ParticleList, ParticleOptions};
+use steel_registry::entity_data::ParticleList;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::mob_effect::MobEffectRef;
@@ -37,8 +37,6 @@ pub const DEFAULT_SWING_DURATION: i32 = 6;
 const INFINITE_EFFECT_DURATION: i32 = -1;
 const MIN_EFFECT_AMPLIFIER: i32 = 0;
 const MAX_EFFECT_AMPLIFIER: i32 = 255;
-const AMBIENT_EFFECT_ALPHA: i32 = 38;
-const VISIBLE_EFFECT_ALPHA: i32 = 255;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
 const POST_IMPULSE_GRACE_TICKS: i32 = 40;
 
@@ -287,16 +285,6 @@ impl MobEffectInstance {
         self.show_icon = show_icon;
         self.hidden_effect = hidden_effect;
         true
-    }
-
-    const fn particle_color(&self) -> i32 {
-        let alpha = if self.ambient {
-            AMBIENT_EFFECT_ALPHA
-        } else {
-            VISIBLE_EFFECT_ALPHA
-        };
-        let color = ((alpha << 24) | (self.effect.color & 0x00ff_ffff)) as u32;
-        color as i32
     }
 }
 
@@ -784,7 +772,11 @@ impl LivingEntityBase {
 
     /// Sets vanilla `LivingEntity.absorptionAmount` for non-player living entities.
     pub fn set_absorption_amount(&self, amount: f32) {
-        self.state.lock().absorption_amount = amount.max(0.0);
+        let max_absorption = self
+            .attributes
+            .lock()
+            .required_value(vanilla_attributes::MAX_ABSORPTION) as f32;
+        self.state.lock().absorption_amount = amount.clamp(0.0, max_absorption);
     }
 
     /// Runs vanilla `LivingEntity.skipDropExperience`.
@@ -1005,10 +997,7 @@ impl LivingEntityBase {
     }
 
     /// Builds the synchronized living effect particle/glow/invisibility state.
-    pub fn mob_effect_display_state(
-        &self,
-        entity_effect_particle_type: i32,
-    ) -> MobEffectDisplayState {
+    pub fn mob_effect_display_state(&self) -> MobEffectDisplayState {
         let mut effects = self
             .active_mob_effects
             .lock()
@@ -1020,14 +1009,7 @@ impl LivingEntityBase {
         let particles = effects
             .iter()
             .filter(|effect| effect.is_visible())
-            .map(|effect| {
-                ParticleData::new(
-                    entity_effect_particle_type,
-                    ParticleOptions::Color {
-                        color: effect.particle_color(),
-                    },
-                )
-            })
+            .map(|effect| effect.effect.create_particle_options(effect.ambient))
             .collect();
 
         MobEffectDisplayState {
@@ -1600,6 +1582,21 @@ mod tests {
     }
 
     #[test]
+    fn absorption_amount_clamps_to_attribute_range() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+        base.attributes()
+            .lock()
+            .set_base_value(vanilla_attributes::MAX_ABSORPTION, 4.0);
+
+        base.set_absorption_amount(10.0);
+        assert_eq!(base.absorption_amount().to_bits(), 4.0_f32.to_bits());
+
+        base.set_absorption_amount(-1.0);
+        assert_eq!(base.absorption_amount().to_bits(), 0.0_f32.to_bits());
+    }
+
+    #[test]
     fn fall_damage_starts_above_safe_fall_distance() {
         assert_eq!(
             LivingEntityBase::calculate_fall_damage(3.0, 1.0, 3.0, 1.0),
@@ -1975,6 +1972,9 @@ mod tests {
         base.set_sleeping_pos(BlockPos::new(1, 64, 1));
         base.set_fall_flying(true);
         base.tick_fall_flying_state(true);
+        base.attributes()
+            .lock()
+            .set_base_value(vanilla_attributes::MAX_ABSORPTION, 4.0);
         base.set_absorption_amount(4.0);
         base.skip_drop_experience();
         base.set_no_action_time(80);

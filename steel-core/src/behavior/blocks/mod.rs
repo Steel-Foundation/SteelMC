@@ -14,14 +14,14 @@ mod utils;
 pub mod vegetation;
 
 pub use building::{
-    AmethystClusterBlock, BarrierBlock, BedBlock, BuddingAmethystBlock, CampfireBlock, DoorBlock,
-    FenceBlock, FenceGateBlock, HayBlock, HoneyBlock, IronBarsBlock, LadderBlock,
-    LavaCauldronBlock, MagmaBlock, PotentSulfurBlock, PowderSnowBlock, RotatedPillarBlock,
-    ScaffoldingBlock, SlabBlock, SlimeBlock, SpongeBlock, StairBlock, TrapDoorBlock, WallBlock,
-    WaterloggedTransparentBlock, WeatherState, WeatheringCopper, WeatheringCopperBarsBlock,
-    WeatheringCopperDoorBlock, WeatheringCopperFullBlock, WeatheringCopperGrateBlock,
-    WeatheringCopperSlabBlock, WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock,
-    WetSpongeBlock,
+    AmethystBlock, AmethystClusterBlock, BarrierBlock, BedBlock, BuddingAmethystBlock,
+    CampfireBlock, DoorBlock, FenceBlock, FenceGateBlock, HayBlock, HoneyBlock, IronBarsBlock,
+    LadderBlock, LavaCauldronBlock, MagmaBlock, PotentSulfurBlock, PowderSnowBlock,
+    RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SpongeBlock, StairBlock,
+    TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState, WeatheringCopper,
+    WeatheringCopperBarsBlock, WeatheringCopperDoorBlock, WeatheringCopperFullBlock,
+    WeatheringCopperGrateBlock, WeatheringCopperSlabBlock, WeatheringCopperStairBlock,
+    WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
 };
 pub use colored::StainedGlassPaneBlock;
 pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};

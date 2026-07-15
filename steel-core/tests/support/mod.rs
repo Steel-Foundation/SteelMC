@@ -39,6 +39,19 @@ pub(crate) fn hard_damage_test_world() -> &'static Arc<World> {
     WORLD.get_or_init(|| create_test_world_with_difficulty("test_hard_damage", Difficulty::Hard))
 }
 
+pub(crate) fn world_border_projectile_test_world() -> &'static Arc<World> {
+    static WORLD: OnceLock<Arc<World>> = OnceLock::new();
+    WORLD.get_or_init(|| {
+        let world = create_test_world("test_world_border_projectile");
+        let result = world.set_world_border_size(10.0);
+        assert!(
+            result.is_ok(),
+            "test world border should resize: {result:?}"
+        );
+        world
+    })
+}
+
 struct TestWorldResources {
     runtime: Arc<Runtime>,
     generation_pool: Arc<rayon::ThreadPool>,

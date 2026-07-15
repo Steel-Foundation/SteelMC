@@ -21,7 +21,7 @@ use steel_utils::{
 
 use steel_utils::Identifier;
 
-use super::{EntityData, EntityDataSerializerRegistry, ParticleData, ParticleOptions};
+use super::{EntityData, EntityDataSerializerRegistry, ParticleData};
 
 /// Simple serializer: extract value and call `.write(buf)`.
 macro_rules! ser_write {
@@ -176,11 +176,7 @@ fn ser_optional_block_state(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<
 }
 
 fn write_particle(particle: &ParticleData, buf: &mut Vec<u8>) -> io::Result<()> {
-    VarInt(particle.particle_type).write(buf)?;
-    match &particle.options {
-        ParticleOptions::None => Ok(()),
-        ParticleOptions::Color { color } => color.write(buf),
-    }
+    particle.write(buf)
 }
 
 fn ser_particle(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {

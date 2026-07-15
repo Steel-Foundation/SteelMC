@@ -69,6 +69,7 @@ mod particle_types;
 mod pig_sound_variants;
 mod pig_variants;
 mod poi_types;
+mod position_source_types;
 mod potions;
 mod recipes;
 mod sound_events;
@@ -129,6 +130,7 @@ const COW_VARIANTS: &str = "cow_variants";
 const CHICKEN_VARIANTS: &str = "chicken_variants";
 const PAINTING_VARIANTS: &str = "painting_variants";
 const PARTICLE_TYPES: &str = "particle_types";
+const POSITION_SOURCE_TYPES: &str = "position_source_types";
 const VILLAGER_TYPES: &str = "villager_types";
 const VILLAGER_PROFESSIONS: &str = "villager_professions";
 const DIMENSIONS: &str = "dimension_types";
@@ -217,6 +219,7 @@ pub fn main() {
         (chicken_variants::build(), CHICKEN_VARIANTS),
         (painting_variants::build(), PAINTING_VARIANTS),
         (particle_types::build(), PARTICLE_TYPES),
+        (position_source_types::build(), POSITION_SOURCE_TYPES),
         (villager_types::build(), VILLAGER_TYPES),
         (villager_professions::build(), VILLAGER_PROFESSIONS),
         (dimension_types::build(), DIMENSIONS),

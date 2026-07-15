@@ -70,7 +70,6 @@ use steel_protocol::packets::game::{
     CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
     EquipmentSlotItem, LookAtAnchor, RelativeMovement, SoundSource,
 };
-use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::{EntityPose, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
@@ -84,7 +83,7 @@ use steel_registry::vanilla_game_rules::{
 };
 use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
-    vanilla_game_events, vanilla_particle_types,
+    vanilla_game_events,
 };
 use steel_utils::entity_events::EntityStatus;
 use uuid::Uuid;
@@ -132,6 +131,7 @@ use steel_protocol::packets::{
     common::SCustomPayload,
     game::{CContainerClose, CGameEvent, CSystemChat, GameEventType, PreviousMessage},
 };
+use steel_registry::RegistryEntry;
 use steel_registry::item_stack::ItemStack;
 
 use steel_utils::{
@@ -777,15 +777,7 @@ impl Player {
             return;
         }
 
-        let Some(particle_type_id) = vanilla_particle_types::ENTITY_EFFECT.try_id() else {
-            log::error!("vanilla entity_effect particle type is not registered");
-            return;
-        };
-        let Ok(particle_type_id) = i32::try_from(particle_type_id) else {
-            log::error!("vanilla entity_effect particle type id does not fit protocol i32");
-            return;
-        };
-        let mut display = self.living_base.mob_effect_display_state(particle_type_id);
+        let mut display = self.living_base.mob_effect_display_state();
         if self.game_mode() == GameType::Spectator {
             display.particles = ParticleList::default();
             display.invisible = true;
@@ -835,7 +827,10 @@ impl Player {
 
         // Difficulty scaling (vanilla: Player.hurtServer)
         let mut amount = amount;
-        if source.scales_with_difficulty() {
+        let causing_entity = source
+            .causing_entity_id
+            .and_then(|entity_id| world.get_entity_by_id(entity_id));
+        if source.scales_with_difficulty(causing_entity.as_deref()) {
             let difficulty = world.level_data.read().data().difficulty;
             match difficulty {
                 Difficulty::Peaceful => {
@@ -872,20 +867,24 @@ impl Player {
         }
     }
 
-    /// Applies damage after reductions.
-    /// TODO: armor, enchantment, absorption
-    fn actually_hurt(&self, source: &DamageSource, amount: f32) {
-        // TODO: apply armor/enchant/absorption reductions here (vanilla: getDamageAfterArmorAbsorb, getDamageAfterMagicAbsorb)
-        // TODO: absorption amount handling
-        // TODO: combat tracker (getCombatTracker().recordDamage)
-        if amount <= 0.0 {
+    /// Applies vanilla player damage reductions and health loss.
+    fn actually_hurt(&self, world: &World, source: &DamageSource, amount: f32) {
+        if LivingEntity::is_invulnerable_to(self, world, source) {
             return;
         }
 
-        // TODO: absorption handling
-        self.cause_food_exhaustion(source.damage_type.exhaustion);
+        let damage = LivingEntity::get_damage_after_armor_absorb(self, source, amount);
+        let damage = LivingEntity::get_damage_after_magic_absorb(self, source, damage);
+        let original_damage = damage;
+        let damage = (damage - self.get_absorption_amount()).max(0.0);
+        self.set_absorption_amount(self.get_absorption_amount() - (original_damage - damage));
 
-        self.set_health(self.get_health() - amount);
+        // TODO: combat tracker (getCombatTracker().recordDamage)
+        if damage != 0.0 {
+            self.cause_food_exhaustion(source.damage_type.exhaustion);
+            self.set_health(self.get_health() - damage);
+            self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
+        }
     }
 
     /// Vanilla: `ServerPlayer.die()` (does NOT call `super.die()`).
@@ -2655,8 +2654,21 @@ impl LivingEntity for Player {
         !self.has_client_loaded()
     }
 
-    fn actually_hurt(&self, _world: &World, source: &DamageSource, amount: f32) {
-        Player::actually_hurt(self, source, amount);
+    fn hurt_armor(&self, source: &DamageSource, damage: f32) {
+        self.do_hurt_equipment(
+            source,
+            damage,
+            &[
+                EquipmentSlot::Feet,
+                EquipmentSlot::Legs,
+                EquipmentSlot::Chest,
+                EquipmentSlot::Head,
+            ],
+        );
+    }
+
+    fn actually_hurt(&self, world: &World, source: &DamageSource, amount: f32) {
+        Player::actually_hurt(self, world, source, amount);
     }
 
     fn hurt_broadcast_chunk(&self) -> ChunkPos {
@@ -2698,10 +2710,15 @@ impl LivingEntity for Player {
     }
 
     fn set_absorption_amount(&self, amount: f32) {
+        let max_absorption = self
+            .living_base
+            .attributes()
+            .lock()
+            .required_value(vanilla_attributes::MAX_ABSORPTION) as f32;
         self.entity_data
             .lock()
             .player_absorption
-            .set(amount.max(0.0));
+            .set(amount.clamp(0.0, max_absorption));
     }
 
     fn is_affected_by_fluids(&self) -> bool {
@@ -2806,8 +2823,8 @@ mod tests {
 
     use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
     use steel_registry::{
-        item_stack::ItemStack, test_support::init_test_registry, vanilla_damage_types,
-        vanilla_game_rules, vanilla_items,
+        item_stack::ItemStack, test_support::init_test_registry, vanilla_attributes,
+        vanilla_damage_types, vanilla_game_rules, vanilla_items,
     };
     use steel_utils::types::{Difficulty, GameType};
     use text_components::TextComponent;
@@ -2815,7 +2832,7 @@ mod tests {
 
     use crate::config::RuntimeConfig;
     use crate::entity::{EntitySyncedData, LivingEntity, damage::DamageSource};
-    use crate::inventory::{container::Container as _, menu::Menu as _};
+    use crate::inventory::{container::Container as _, equipment::EquipmentSlot, menu::Menu as _};
     use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
     use crate::player::connection::NetworkConnection;
     use crate::server::Server;
@@ -3022,6 +3039,78 @@ mod tests {
 
         assert!(player.hurt(damage_world, &source, 4.0));
         assert_eq!(player.get_health().to_bits(), 14.0_f32.to_bits());
+    }
+
+    #[test]
+    fn conditional_damage_does_not_scale_for_player_or_unresolved_causes() {
+        let world = hard_damage_test_world();
+        let causing_player = test_player(Arc::clone(world));
+        let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
+
+        assert!(!source.scales_with_difficulty(Some(causing_player.as_ref())));
+
+        let target = test_player(Arc::clone(world));
+        let unresolved_source = source.with_causing_entity(2);
+        assert!(target.hurt(world, &unresolved_source, 4.0));
+        assert_eq!(target.get_health().to_bits(), 16.0_f32.to_bits());
+    }
+
+    #[test]
+    fn player_damage_applies_armor_and_absorption() {
+        init_test_registry();
+        let world = Arc::clone(test_world());
+        let player = test_player(Arc::clone(&world));
+        {
+            let mut attributes = player.attributes().lock();
+            attributes.set_base_value(vanilla_attributes::ARMOR, 20.0);
+            attributes.set_base_value(vanilla_attributes::MAX_ABSORPTION, 3.0);
+        }
+        player.set_absorption_amount(3.0);
+        let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
+
+        assert!(player.hurt(&world, &source, 10.0));
+
+        assert_eq!(player.get_health().to_bits(), 19.0_f32.to_bits());
+        assert_eq!(player.get_absorption_amount().to_bits(), 0.0_f32.to_bits());
+    }
+
+    #[test]
+    fn player_absorption_amount_clamps_to_attribute_range() {
+        let world = Arc::clone(test_world());
+        let player = test_player(world);
+        player
+            .attributes()
+            .lock()
+            .set_base_value(vanilla_attributes::MAX_ABSORPTION, 4.0);
+
+        player.set_absorption_amount(10.0);
+        assert_eq!(player.get_absorption_amount().to_bits(), 4.0_f32.to_bits());
+
+        player.set_absorption_amount(-1.0);
+        assert_eq!(player.get_absorption_amount().to_bits(), 0.0_f32.to_bits());
+    }
+
+    #[test]
+    fn player_damage_hurts_armor_equipment() {
+        init_test_registry();
+        let world = Arc::clone(test_world());
+        let player = test_player(Arc::clone(&world));
+        player.inventory.lock().equipment_mut().set(
+            EquipmentSlot::Chest,
+            ItemStack::new(&vanilla_items::DIAMOND_CHESTPLATE),
+        );
+        let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
+
+        assert!(player.hurt(&world, &source, 8.0));
+
+        let inventory = player.inventory.lock();
+        assert_eq!(
+            inventory
+                .equipment()
+                .get_ref(EquipmentSlot::Chest)
+                .get_damage_value(),
+            2,
+        );
     }
 
     #[test]

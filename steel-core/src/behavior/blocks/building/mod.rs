@@ -1,3 +1,4 @@
+mod amethyst_block;
 mod amethyst_cluster;
 mod bar_block;
 mod barrier_block;
@@ -27,6 +28,7 @@ mod weathering_block;
 mod web_block;
 mod wet_sponge_block;
 
+pub use amethyst_block::AmethystBlock;
 pub use amethyst_cluster::AmethystClusterBlock;
 pub use bar_block::{IronBarsBlock, WeatheringCopperBarsBlock, get_connection_state, update_shape};
 pub use barrier_block::BarrierBlock;

@@ -7,6 +7,7 @@ use rand::RngExt;
 use steel_utils::{
     DowncastType, Identifier,
     codec::VarInt,
+    random::{Random, xoroshiro::Xoroshiro},
     serial::{ReadFrom, WriteTo},
 };
 
@@ -213,7 +214,21 @@ impl ItemStack {
     ///
     /// Returns `true` if the item broke and should be removed/replaced.
     pub fn hurt_and_break(&mut self, amount: i32, has_infinite_materials: bool) -> bool {
-        if !self.is_damageable_item() || amount <= 0 {
+        let mut random = Xoroshiro::from_seed_unmixed(rand::rng().random());
+        self.hurt_and_break_with_random(amount, has_infinite_materials, &mut random)
+    }
+
+    /// Damages the item using the supplied random source for data-driven
+    /// `minecraft:item_damage` enchantment effects.
+    ///
+    /// Returns `true` if the item broke and should be removed/replaced.
+    pub fn hurt_and_break_with_random(
+        &mut self,
+        amount: i32,
+        has_infinite_materials: bool,
+        random: &mut impl Random,
+    ) -> bool {
+        if !self.is_damageable_item() {
             return false;
         }
 
@@ -221,14 +236,7 @@ impl ItemStack {
             return false;
         }
 
-        let unbreaking_level =
-            self.get_enchantment_level(&crate::vanilla_enchantments::UNBREAKING.key);
-        let mut effective_amount = 0;
-        for _ in 0..amount {
-            if should_consume_durability(unbreaking_level) {
-                effective_amount += 1;
-            }
-        }
+        let effective_amount = self.process_durability_change(amount, random);
 
         if effective_amount == 0 {
             return false;
@@ -249,6 +257,39 @@ impl ItemStack {
         }
 
         false
+    }
+
+    fn process_durability_change(&self, amount: i32, random: &mut impl Random) -> i32 {
+        if amount <= 0 {
+            return amount;
+        }
+
+        let Some(enchantments) = self.get_enchantments() else {
+            return amount;
+        };
+
+        let mut value = amount as f32;
+        for (key, level) in enchantments.iter() {
+            if *level == 0 {
+                continue;
+            }
+            let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+                continue;
+            };
+
+            for effect in enchantment.effects.item_damage {
+                if effect.requirements.is_some_and(|requirements| {
+                    requirements.matches_item_context(self.item()) != Some(true)
+                }) {
+                    continue;
+                }
+                value = effect
+                    .effect
+                    .process_with_random(*level as i32, random, value);
+            }
+        }
+
+        value as i32
     }
 
     /// Returns true if this item has the specified component (by type).
@@ -948,15 +989,6 @@ impl ItemStack {
     }
 }
 
-/// Vanilla unbreaking formula: `1 / (unbreaking_level + 1)` chance to consume durability.
-fn should_consume_durability(unbreaking_level: i32) -> bool {
-    if unbreaking_level <= 0 {
-        return true;
-    }
-    // TODO: Armor uses a different formula: `3 / (unbreaking_level + 3)`
-    rand::rng().random_range(0..unbreaking_level + 1) == 0
-}
-
 fn validate_contained_item_sizes<'a>(
     items: impl IntoIterator<Item = &'a ItemStackTemplate>,
 ) -> Result<()> {
@@ -1175,6 +1207,81 @@ fn decode_persistent_count(tag: Option<BorrowedNbtTag<'_, '_>>) -> Option<i32> {
         None => 1,
     };
     (1..=99).contains(&count).then_some(count)
+}
+
+#[cfg(test)]
+mod durability_tests {
+    use steel_utils::random::xoroshiro::Xoroshiro;
+
+    use super::ItemStack;
+    use crate::data_components::vanilla_components::{ENCHANTMENTS, ItemEnchantments};
+    use crate::test_support::init_test_registry;
+    use crate::{vanilla_enchantments, vanilla_items};
+
+    fn with_unbreaking(item: crate::items::ItemRef, level: u32) -> ItemStack {
+        let mut stack = ItemStack::new(item);
+        let mut enchantments = ItemEnchantments::empty();
+        enchantments.set(vanilla_enchantments::UNBREAKING.key.clone(), level);
+        stack.set(ENCHANTMENTS, enchantments);
+        stack
+    }
+
+    #[test]
+    fn item_damage_uses_generated_unbreaking_tool_requirements() {
+        init_test_registry();
+        let mut armor = with_unbreaking(&vanilla_items::DIAMOND_CHESTPLATE, 3);
+        let mut tool = with_unbreaking(&vanilla_items::DIAMOND_PICKAXE, 3);
+        let mut armor_random = Xoroshiro::from_seed_unmixed(42);
+        let mut tool_random = Xoroshiro::from_seed_unmixed(42);
+
+        assert!(!armor.hurt_and_break_with_random(100, false, &mut armor_random));
+        assert!(!tool.hurt_and_break_with_random(100, false, &mut tool_random));
+        assert_eq!(armor.get_damage_value(), 68);
+        assert_eq!(tool.get_damage_value(), 18);
+
+        let effects = vanilla_enchantments::UNBREAKING.effects.item_damage;
+        assert_eq!(
+            effects[0].requirements.and_then(|requirements| {
+                requirements.matches_item_context(&vanilla_items::DIAMOND_CHESTPLATE)
+            }),
+            Some(true)
+        );
+        assert_eq!(
+            effects[1].requirements.and_then(|requirements| {
+                requirements.matches_item_context(&vanilla_items::DIAMOND_CHESTPLATE)
+            }),
+            Some(false)
+        );
+        assert_eq!(
+            effects[0].requirements.and_then(|requirements| {
+                requirements.matches_item_context(&vanilla_items::DIAMOND_PICKAXE)
+            }),
+            Some(false)
+        );
+        assert_eq!(
+            effects[1].requirements.and_then(|requirements| {
+                requirements.matches_item_context(&vanilla_items::DIAMOND_PICKAXE)
+            }),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn match_tool_supports_generated_direct_item_sets() {
+        init_test_registry();
+        let requirements = vanilla_enchantments::INFINITY.effects.ammo_use[0]
+            .requirements
+            .expect("Infinity ammo use should have a match_tool requirement");
+
+        assert_eq!(
+            requirements.matches_item_context(&vanilla_items::ARROW),
+            Some(true)
+        );
+        assert_eq!(
+            requirements.matches_item_context(&vanilla_items::SPECTRAL_ARROW),
+            Some(false)
+        );
+    }
 }
 
 #[cfg(test)]
