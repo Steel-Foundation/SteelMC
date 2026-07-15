@@ -24,7 +24,8 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{UuidExt, WorldAabb};
 use uuid::Uuid;
 
-use crate::entity::{Entity, SharedEntity};
+use crate::entity::damage::DamageSource;
+use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::world::game_event_context::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
 
@@ -113,6 +114,16 @@ impl Default for ProjectileBase {
 pub trait Projectile: Entity {
     /// Returns shared projectile runtime state.
     fn projectile_base(&self) -> &ProjectileBase;
+
+    /// Returns the horizontal hurt-knockback vector used for this projectile.
+    fn calculate_horizontal_hurt_knockback_direction(
+        &self,
+        _hurt_entity: &dyn LivingEntity,
+        _damage_source: &DamageSource,
+    ) -> (f64, f64) {
+        let movement = self.velocity();
+        (movement.x, movement.z)
+    }
 
     /// Sets the owner UUID. Vanilla stores an `EntityReference`; Steel stores the
     /// UUID and resolves lazily.

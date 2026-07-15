@@ -6,7 +6,8 @@ use rustc_hash::FxHashMap;
 use steel_utils::codec::VarInt;
 use steel_utils::serial::{ReadFrom, WriteTo};
 use steel_utils::{
-    BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
+    ArgbColor, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
+    RgbColor,
 };
 
 use crate::item_stack_template::ItemStackTemplate;
@@ -253,17 +254,17 @@ impl ParticleOptions for BlockParticleOption {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColorParticleOption {
-    color: i32,
+    color: ArgbColor,
 }
 
 impl ColorParticleOption {
     #[must_use]
-    pub const fn new(color: i32) -> Self {
+    pub const fn new(color: ArgbColor) -> Self {
         Self { color }
     }
 
     #[must_use]
-    pub const fn color(&self) -> i32 {
+    pub const fn color(&self) -> ArgbColor {
         self.color
     }
 }
@@ -275,7 +276,7 @@ unsafe impl DowncastType for ColorParticleOption {
 
 impl ParticleOptions for ColorParticleOption {
     fn read_network(data: &mut Cursor<&[u8]>) -> Result<Self> {
-        Ok(Self::new(i32::read(data)?))
+        Ok(Self::new(ArgbColor::read(data)?))
     }
 
     fn write_network(&self, writer: &mut Vec<u8>) -> Result<()> {
@@ -285,13 +286,13 @@ impl ParticleOptions for ColorParticleOption {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DustParticleOptions {
-    color: i32,
+    color: RgbColor,
     scale: f32,
 }
 
 impl DustParticleOptions {
     #[must_use]
-    pub const fn new(color: i32, scale: f32) -> Self {
+    pub const fn new(color: RgbColor, scale: f32) -> Self {
         Self {
             color,
             scale: scale.clamp(0.01, 4.0),
@@ -299,7 +300,7 @@ impl DustParticleOptions {
     }
 
     #[must_use]
-    pub const fn color(&self) -> i32 {
+    pub const fn color(&self) -> RgbColor {
         self.color
     }
 
@@ -316,7 +317,7 @@ unsafe impl DowncastType for DustParticleOptions {
 
 impl ParticleOptions for DustParticleOptions {
     fn read_network(data: &mut Cursor<&[u8]>) -> Result<Self> {
-        Ok(Self::new(i32::read(data)?, f32::read(data)?))
+        Ok(Self::new(RgbColor::read(data)?, f32::read(data)?))
     }
 
     fn write_network(&self, writer: &mut Vec<u8>) -> Result<()> {
@@ -327,14 +328,14 @@ impl ParticleOptions for DustParticleOptions {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DustColorTransitionOptions {
-    from_color: i32,
-    to_color: i32,
+    from_color: RgbColor,
+    to_color: RgbColor,
     scale: f32,
 }
 
 impl DustColorTransitionOptions {
     #[must_use]
-    pub const fn new(from_color: i32, to_color: i32, scale: f32) -> Self {
+    pub const fn new(from_color: RgbColor, to_color: RgbColor, scale: f32) -> Self {
         Self {
             from_color,
             to_color,
@@ -343,12 +344,12 @@ impl DustColorTransitionOptions {
     }
 
     #[must_use]
-    pub const fn source_color(&self) -> i32 {
+    pub const fn source_color(&self) -> RgbColor {
         self.from_color
     }
 
     #[must_use]
-    pub const fn target_color(&self) -> i32 {
+    pub const fn target_color(&self) -> RgbColor {
         self.to_color
     }
 
@@ -367,8 +368,8 @@ unsafe impl DowncastType for DustColorTransitionOptions {
 impl ParticleOptions for DustColorTransitionOptions {
     fn read_network(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self::new(
-            i32::read(data)?,
-            i32::read(data)?,
+            RgbColor::read(data)?,
+            RgbColor::read(data)?,
             f32::read(data)?,
         ))
     }
@@ -488,18 +489,18 @@ impl ParticleOptions for PowerParticleOption {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpellParticleOption {
-    color: i32,
+    color: RgbColor,
     power: f32,
 }
 
 impl SpellParticleOption {
     #[must_use]
-    pub const fn new(color: i32, power: f32) -> Self {
+    pub const fn new(color: RgbColor, power: f32) -> Self {
         Self { color, power }
     }
 
     #[must_use]
-    pub const fn color(&self) -> i32 {
+    pub const fn color(&self) -> RgbColor {
         self.color
     }
 
@@ -516,7 +517,7 @@ unsafe impl DowncastType for SpellParticleOption {
 
 impl ParticleOptions for SpellParticleOption {
     fn read_network(data: &mut Cursor<&[u8]>) -> Result<Self> {
-        Ok(Self::new(i32::read(data)?, f32::read(data)?))
+        Ok(Self::new(RgbColor::read(data)?, f32::read(data)?))
     }
 
     fn write_network(&self, writer: &mut Vec<u8>) -> Result<()> {
@@ -624,13 +625,13 @@ impl ParticleOptions for ShriekParticleOption {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TrailParticleOption {
     target: DVec3,
-    color: i32,
+    color: RgbColor,
     duration: i32,
 }
 
 impl TrailParticleOption {
     #[must_use]
-    pub const fn new(target: DVec3, color: i32, duration: i32) -> Self {
+    pub const fn new(target: DVec3, color: RgbColor, duration: i32) -> Self {
         Self {
             target,
             color,
@@ -644,7 +645,7 @@ impl TrailParticleOption {
     }
 
     #[must_use]
-    pub const fn color(&self) -> i32 {
+    pub const fn color(&self) -> RgbColor {
         self.color
     }
 
@@ -663,7 +664,7 @@ impl ParticleOptions for TrailParticleOption {
     fn read_network(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self::new(
             DVec3::read(data)?,
-            i32::read(data)?,
+            RgbColor::read(data)?,
             VarInt::read(data)?.0,
         ))
     }
@@ -745,7 +746,7 @@ mod tests {
 
     use glam::DVec3;
     use steel_utils::serial::{ReadFrom, WriteTo};
-    use steel_utils::{BlockPos, BlockStateId};
+    use steel_utils::{ArgbColor, BlockPos, BlockStateId, RgbColor};
 
     use crate::item_stack_template::ItemStackTemplate;
     use crate::position_source::{BlockPositionSource, EntityPositionSource, PositionSource};
@@ -787,15 +788,15 @@ mod tests {
         ));
         assert_round_trip(ParticleData::new(
             &vanilla_particle_types::ENTITY_EFFECT,
-            ColorParticleOption::new(i32::from_be_bytes([0xAA, 0xBB, 0xCC, 0xDD])),
+            ColorParticleOption::new(ArgbColor::new(i32::from_be_bytes([0xAA, 0xBB, 0xCC, 0xDD]))),
         ));
         assert_round_trip(ParticleData::new(
             &vanilla_particle_types::DUST,
-            DustParticleOptions::new(0x123456, 1.25),
+            DustParticleOptions::new(RgbColor::new(0x123456), 1.25),
         ));
         assert_round_trip(ParticleData::new(
             &vanilla_particle_types::DUST_COLOR_TRANSITION,
-            DustColorTransitionOptions::new(0x123456, 0x654321, 2.5),
+            DustColorTransitionOptions::new(RgbColor::new(0x123456), RgbColor::new(0x654321), 2.5),
         ));
         assert_round_trip(ParticleData::new(
             &vanilla_particle_types::GEYSER,
@@ -811,7 +812,7 @@ mod tests {
         ));
         assert_round_trip(ParticleData::new(
             &vanilla_particle_types::EFFECT,
-            SpellParticleOption::new(0xABCDEF, 0.8),
+            SpellParticleOption::new(RgbColor::new(0xABCDEF), 0.8),
         ));
         assert_round_trip(ParticleData::new(
             &vanilla_particle_types::ITEM,
@@ -827,7 +828,7 @@ mod tests {
         ));
         assert_round_trip(ParticleData::new(
             &vanilla_particle_types::TRAIL,
-            TrailParticleOption::new(DVec3::new(1.25, -2.5, 3.75), 0x345678, 40),
+            TrailParticleOption::new(DVec3::new(1.25, -2.5, 3.75), RgbColor::new(0x345678), 40),
         ));
         assert_round_trip(ParticleData::new(
             &vanilla_particle_types::VIBRATION,
@@ -853,8 +854,14 @@ mod tests {
 
     #[test]
     fn dust_scale_matches_vanilla_constructor_clamping() {
-        assert_eq!(DustParticleOptions::new(0, 0.0).scale(), 0.01);
-        assert_eq!(DustParticleOptions::new(0, 5.0).scale(), 4.0);
-        assert_eq!(DustColorTransitionOptions::new(0, 0, -1.0).scale(), 0.01);
+        assert_eq!(
+            DustParticleOptions::new(RgbColor::new(0), 0.0).scale(),
+            0.01
+        );
+        assert_eq!(DustParticleOptions::new(RgbColor::new(0), 5.0).scale(), 4.0);
+        assert_eq!(
+            DustColorTransitionOptions::new(RgbColor::new(0), RgbColor::new(0), -1.0).scale(),
+            0.01
+        );
     }
 }

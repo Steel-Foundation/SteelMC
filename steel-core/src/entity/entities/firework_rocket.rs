@@ -9,7 +9,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_macros::entity_behavior;
+use steel_macros::{entity_behavior, entity_impl};
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::data_components::vanilla_components::FIREWORKS;
@@ -340,6 +340,7 @@ impl FireworkRocketEntity {
     }
 }
 
+#[entity_impl(class(projectile))]
 impl Entity for FireworkRocketEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -446,20 +447,20 @@ impl Entity for FireworkRocketEntity {
         self.set_item(item);
         self.set_shot_at_angle(nbt.byte("ShotAtAngle").is_some_and(|value| value != 0));
     }
-
-    fn calculate_horizontal_hurt_knockback_direction(
-        &self,
-        hurt_entity: &dyn LivingEntity,
-        _damage_source: &DamageSource,
-    ) -> Option<(f64, f64)> {
-        let delta = hurt_entity.position() - self.position();
-        Some((delta.x, delta.z))
-    }
 }
 
 impl Projectile for FireworkRocketEntity {
     fn projectile_base(&self) -> &ProjectileBase {
         &self.projectile_base
+    }
+
+    fn calculate_horizontal_hurt_knockback_direction(
+        &self,
+        hurt_entity: &dyn LivingEntity,
+        _damage_source: &DamageSource,
+    ) -> (f64, f64) {
+        let delta = hurt_entity.position() - self.position();
+        (delta.x, delta.z)
     }
 
     fn on_hit_entity(&self, _entity: &SharedEntity, _location: DVec3) {
@@ -636,8 +637,9 @@ mod tests {
 
         assert_eq!(
             rocket.calculate_horizontal_hurt_knockback_direction(&target, &source),
-            Some((3.0, -2.0))
+            (3.0, -2.0)
         );
+        assert!(rocket.as_projectile().is_some());
     }
 
     #[test]

@@ -13,11 +13,10 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::{CRemoveMobEffect, CUpdateMobEffect, MobEffectPacketFlags};
 use steel_registry::RegistryEntry;
 use steel_registry::attribute::AttributeRef;
-use steel_registry::entity_data::{ParticleData, ParticleList};
+use steel_registry::entity_data::ParticleList;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::mob_effect::MobEffectRef;
-use steel_registry::particle_type::{ColorParticleOption, ParticleTypeRef};
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
 use steel_registry::vanilla_mob_effects;
@@ -38,8 +37,6 @@ pub const DEFAULT_SWING_DURATION: i32 = 6;
 const INFINITE_EFFECT_DURATION: i32 = -1;
 const MIN_EFFECT_AMPLIFIER: i32 = 0;
 const MAX_EFFECT_AMPLIFIER: i32 = 255;
-const AMBIENT_EFFECT_ALPHA: i32 = 38;
-const VISIBLE_EFFECT_ALPHA: i32 = 255;
 const SPRINT_SPEED_MODIFIER_AMOUNT: f64 = 0.3;
 const POST_IMPULSE_GRACE_TICKS: i32 = 40;
 
@@ -288,16 +285,6 @@ impl MobEffectInstance {
         self.show_icon = show_icon;
         self.hidden_effect = hidden_effect;
         true
-    }
-
-    const fn particle_color(&self) -> i32 {
-        let alpha = if self.ambient {
-            AMBIENT_EFFECT_ALPHA
-        } else {
-            VISIBLE_EFFECT_ALPHA
-        };
-        let color = ((alpha << 24) | (self.effect.color & 0x00ff_ffff)) as u32;
-        color as i32
     }
 }
 
@@ -1006,10 +993,7 @@ impl LivingEntityBase {
     }
 
     /// Builds the synchronized living effect particle/glow/invisibility state.
-    pub fn mob_effect_display_state(
-        &self,
-        entity_effect_particle_type: ParticleTypeRef,
-    ) -> MobEffectDisplayState {
+    pub fn mob_effect_display_state(&self) -> MobEffectDisplayState {
         let mut effects = self
             .active_mob_effects
             .lock()
@@ -1021,12 +1005,7 @@ impl LivingEntityBase {
         let particles = effects
             .iter()
             .filter(|effect| effect.is_visible())
-            .map(|effect| {
-                ParticleData::new(
-                    entity_effect_particle_type,
-                    ColorParticleOption::new(effect.particle_color()),
-                )
-            })
+            .map(|effect| effect.effect.create_particle_options(effect.ambient))
             .collect();
 
         MobEffectDisplayState {

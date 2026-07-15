@@ -1399,6 +1399,7 @@ pub trait LeashFenceKnot: Entity {
 /// expose these through the `#[entity_impl(class(...), interfaces(...))]`
 /// macro so missing trait impls fail at compile time.
 pub struct EntityCapabilities<'a> {
+    projectile: Option<&'a dyn Projectile>,
     player: Option<&'a Player>,
     living: Option<&'a dyn LivingEntity>,
     mob: Option<&'a dyn Mob>,
@@ -1415,6 +1416,7 @@ impl<'a> EntityCapabilities<'a> {
     #[must_use]
     pub const fn none() -> Self {
         Self {
+            projectile: None,
             player: None,
             living: None,
             mob: None,
@@ -1425,6 +1427,13 @@ impl<'a> EntityCapabilities<'a> {
             experience_orb_merge_entity: None,
             leash_fence_knot: None,
         }
+    }
+
+    /// Exposes projectile behavior for this entity.
+    #[must_use]
+    pub const fn with_projectile(mut self, projectile: &'a dyn Projectile) -> Self {
+        self.projectile = Some(projectile);
+        self
     }
 
     /// Exposes player-specific behavior for this entity.
@@ -2378,7 +2387,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
         if let Some(mob) = self.as_mob() {
             mob.tick_leash();
         }
-        // Sprint and portal particles are created by each client during its local entity tick.
+        // VANILLA CLIENT-LOCAL: `Entity.spawnSprintParticle` creates sprint particles.
     }
 
     /// Applies vanilla below-world handling.
@@ -2877,6 +2886,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
     /// Returns true for entities that implement vanilla living-entity behavior.
     fn is_living_entity(&self) -> bool {
         self.as_living_entity().is_some()
+    }
+
+    /// Returns this entity as a projectile when it has projectile behavior.
+    fn as_projectile(&self) -> Option<&dyn Projectile> {
+        self.capabilities().projectile
     }
 
     /// Returns this entity as a living entity when it has living behavior.
@@ -4890,16 +4904,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         false
     }
-
-    /// Returns the vanilla horizontal hurt-knockback vector for a direct
-    /// projectile damage source. Non-projectile entities return `None`.
-    fn calculate_horizontal_hurt_knockback_direction(
-        &self,
-        _hurt_entity: &dyn LivingEntity,
-        _damage_source: &DamageSource,
-    ) -> Option<(f64, f64)> {
-        None
-    }
 }
 
 pub(crate) fn apply_entity_look_at(entity: &dyn Entity, from_anchor: EntityAnchor, target: DVec3) {
@@ -5599,10 +5603,11 @@ pub trait LivingEntity: Entity {
         if let Some(direct_entity_id) = source.direct_entity_id
             && let Some(world) = self.level()
             && let Some(direct_entity) = world.get_entity_by_id(direct_entity_id)
+            && let Some(projectile) = direct_entity.as_projectile()
             && let Some(hurt_entity) = self.as_living_entity()
-            && let Some((xd, zd)) =
-                direct_entity.calculate_horizontal_hurt_knockback_direction(hurt_entity, source)
         {
+            let (xd, zd) =
+                projectile.calculate_horizontal_hurt_knockback_direction(hurt_entity, source);
             return (-xd, -zd);
         }
 

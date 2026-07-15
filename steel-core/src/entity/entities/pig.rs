@@ -21,7 +21,7 @@ use steel_registry::vanilla_entity_data::PigEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     REGISTRY, RegistryExt, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_items,
-    vanilla_particle_types, vanilla_pig_sound_variants, vanilla_pig_variants,
+    vanilla_pig_sound_variants, vanilla_pig_variants,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -340,9 +340,7 @@ impl PigEntity {
             return;
         }
 
-        let display = self
-            .living_base
-            .mob_effect_display_state(&vanilla_particle_types::ENTITY_EFFECT);
+        let display = self.living_base.mob_effect_display_state();
 
         {
             let mut entity_data = self.entity_data.lock();

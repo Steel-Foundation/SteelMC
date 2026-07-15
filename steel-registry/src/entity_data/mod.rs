@@ -441,7 +441,7 @@ pub fn write_data_values(values: &[DataValue], buf: &mut Vec<u8>) -> io::Result<
 
 #[cfg(test)]
 mod tests {
-    use steel_utils::{Identifier, codec::VarInt, serial::WriteTo};
+    use steel_utils::{ArgbColor, Identifier, codec::VarInt, serial::WriteTo};
 
     use crate::RegistryExt;
     use crate::vanilla_entity_data::{EggEntityData, ItemEntityData};
@@ -492,7 +492,7 @@ mod tests {
 
         let particle = ParticleData::new(
             &crate::vanilla_particle_types::ENTITY_EFFECT,
-            ColorParticleOption::new(-1),
+            ColorParticleOption::new(ArgbColor::new(-1)),
         );
         let value = EntityData::Particle(particle);
         let mut encoded = Vec::new();

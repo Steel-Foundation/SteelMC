@@ -10,7 +10,6 @@ use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::level_events;
-use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::LAVA_SOURCE_CONVERSION;
 use steel_utils::BlockPos;
@@ -151,27 +150,6 @@ impl FluidBehavior for LavaFluid {
             InsideBlockEffectType::LavaIgnite,
             Box::new(|entity| entity.lava_hurt()),
         );
-    }
-
-    /// Vanilla parity: `LavaFluid.animateTick()`.
-    /// Plays pop (1/100) and ambient (1/200) sounds when air is above.
-    fn animate_tick(&self, world: &Arc<World>, pos: BlockPos, _state: FluidState) {
-        let above_pos = pos.above();
-        let above_block = world.get_block_state(above_pos).get_block();
-
-        if above_block.config.is_air {
-            if rand::random_range(0u32..100) == 0 {
-                let volume: f32 = rand::random::<f32>() * 0.2 + 0.2;
-                let pitch: f32 = rand::random::<f32>() * 0.15 + 0.9;
-                world.play_block_sound(&sound_events::BLOCK_LAVA_POP, pos, volume, pitch, None);
-            }
-
-            if rand::random_range(0u32..200) == 0 {
-                let volume: f32 = rand::random::<f32>() * 0.2 + 0.2;
-                let pitch: f32 = rand::random::<f32>() * 0.15 + 0.9;
-                world.play_block_sound(&sound_events::BLOCK_LAVA_AMBIENT, pos, volume, pitch, None);
-            }
-        }
     }
 
     fn tick(&self, world: &Arc<World>, pos: BlockPos) {

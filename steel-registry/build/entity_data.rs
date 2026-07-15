@@ -542,7 +542,7 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
                     quote! {
                         ParticleData::new(
                             &crate::vanilla_particle_types::#particle_type,
-                            ColorParticleOption::new(#color),
+                            ColorParticleOption::new(ArgbColor::new(#color)),
                         )
                     }
                 }
@@ -914,7 +914,7 @@ pub(crate) fn build() -> TokenStream {
             VillagerData,
         };
         use crate::item_stack::ItemStack;
-        use steel_utils::BlockStateId;
+        use steel_utils::{ArgbColor, BlockStateId};
         use text_components::TextComponent;
         use uuid::Uuid;
         use crate::RegistryEntry;

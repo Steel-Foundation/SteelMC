@@ -363,7 +363,7 @@ pub trait Animal: AgeableMob {
         }
 
         self.animal_base().tick_in_love_time();
-        // Periodic in-love hearts are created by each client during its local animal tick.
+        // VANILLA CLIENT-LOCAL: `Animal.aiStep` creates the periodic heart particles.
     }
 
     /// Runs vanilla `Animal.customServerAiStep`.

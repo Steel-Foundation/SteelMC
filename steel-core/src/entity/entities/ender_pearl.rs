@@ -15,7 +15,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_macros::entity_behavior;
+use steel_macros::{entity_behavior, entity_impl};
 use steel_protocol::packets::game::{RelativeMovement, SoundSource};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
@@ -210,6 +210,7 @@ impl EnderPearlEntity {
     }
 }
 
+#[entity_impl(class(projectile))]
 impl Entity for EnderPearlEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -278,15 +279,6 @@ impl Entity for EnderPearlEntity {
         false
     }
 
-    fn calculate_horizontal_hurt_knockback_direction(
-        &self,
-        _hurt_entity: &dyn LivingEntity,
-        _damage_source: &DamageSource,
-    ) -> Option<(f64, f64)> {
-        let movement = self.velocity();
-        Some((movement.x, movement.z))
-    }
-
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.save_projectile(nbt);
         self.save_throwable_item(nbt);
@@ -320,7 +312,7 @@ impl Projectile for EnderPearlEntity {
         // Vanilla `ThrownEnderpearl.onHit`: super.onHit() then teleport the owner.
         self.projectile_on_hit(hit);
 
-        // The client creates the 32 impact portal particles during its local collision tick.
+        // VANILLA CLIENT-LOCAL: `ThrownEnderpearl.onHit` creates the 32 portal particles.
         let Some(world) = self.level() else {
             return;
         };

@@ -9,6 +9,7 @@ use syn::{
 
 const KNOWN_ENTITY_CLASSES: &[&str] = &[
     "entity",
+    "projectile",
     "player",
     "living",
     "mob",
@@ -122,6 +123,7 @@ fn assert_entity_impl(input: &ItemImpl) {
 #[derive(Clone, Copy)]
 enum EntityClass {
     Entity,
+    Projectile,
     Player,
     Living,
     Mob,
@@ -134,6 +136,7 @@ impl EntityClass {
     fn parse(name: &str) -> Option<Self> {
         Some(match name {
             "entity" => Self::Entity,
+            "projectile" => Self::Projectile,
             "player" => Self::Player,
             "living" => Self::Living,
             "mob" => Self::Mob,
@@ -147,6 +150,7 @@ impl EntityClass {
     const fn capabilities(self) -> &'static [&'static str] {
         match self {
             Self::Entity => &[],
+            Self::Projectile => &["projectile"],
             Self::Player => &["player", "living"],
             Self::Living => &["living"],
             Self::Mob => &["living", "mob"],
@@ -164,7 +168,7 @@ impl EntityClass {
 
     fn base_tick_method(self) -> Option<TokenStream> {
         match self {
-            Self::Entity => None,
+            Self::Entity | Self::Projectile => None,
             Self::Player | Self::Living => Some(quote! {
                 fn base_tick(&self) {
                     crate::entity::LivingEntity::base_tick_living_entity(self);

@@ -83,7 +83,7 @@ use steel_registry::vanilla_game_rules::{
 };
 use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
-    vanilla_game_events, vanilla_particle_types,
+    vanilla_game_events,
 };
 use steel_utils::entity_events::EntityStatus;
 use uuid::Uuid;
@@ -777,9 +777,7 @@ impl Player {
             return;
         }
 
-        let mut display = self
-            .living_base
-            .mob_effect_display_state(&vanilla_particle_types::ENTITY_EFFECT);
+        let mut display = self.living_base.mob_effect_display_state();
         if self.game_mode() == GameType::Spectator {
             display.particles = ParticleList::default();
             display.invisible = true;

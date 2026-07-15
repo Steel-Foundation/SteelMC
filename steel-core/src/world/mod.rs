@@ -3958,25 +3958,15 @@ impl World {
 
     /// Sends a particle distribution to every player within Vanilla's normal
     /// 32-block particle radius.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "mirrors Vanilla ServerLevel.sendParticles"
-    )]
     pub fn send_particles(
         &self,
         particle: ParticleData,
-        x: f64,
-        y: f64,
-        z: f64,
+        position: DVec3,
         count: i32,
-        x_dist: f64,
-        y_dist: f64,
-        z_dist: f64,
+        spread: DVec3,
         speed: f64,
     ) -> i32 {
-        self.send_particles_with_options(
-            particle, false, false, x, y, z, count, x_dist, y_dist, z_dist, speed,
-        )
+        self.send_particles_with_options(particle, false, false, position, count, spread, speed)
     }
 
     /// Sends a particle distribution with the packet visibility flags selected
@@ -3984,31 +3974,27 @@ impl World {
     /// from 32 to 512 blocks, matching `ServerLevel.sendParticles`.
     #[expect(
         clippy::too_many_arguments,
-        reason = "mirrors Vanilla ServerLevel.sendParticles"
+        reason = "keeps Vanilla's two particle visibility flags explicit"
     )]
     pub fn send_particles_with_options(
         &self,
         particle: ParticleData,
         override_limiter: bool,
         always_show: bool,
-        x: f64,
-        y: f64,
-        z: f64,
+        position: DVec3,
         count: i32,
-        x_dist: f64,
-        y_dist: f64,
-        z_dist: f64,
+        spread: DVec3,
         speed: f64,
     ) -> i32 {
         let packet = CLevelParticles {
             override_limiter,
             always_show,
-            x,
-            y,
-            z,
-            x_dist: x_dist as f32,
-            y_dist: y_dist as f32,
-            z_dist: z_dist as f32,
+            x: position.x,
+            y: position.y,
+            z: position.z,
+            x_dist: spread.x as f32,
+            y_dist: spread.y as f32,
+            z_dist: spread.z as f32,
             max_speed: speed as f32,
             count,
             particle,
@@ -4019,8 +4005,6 @@ impl World {
             log::warn!("Failed to encode level particles packet");
             return 0;
         };
-
-        let position = DVec3::new(x, y, z);
         let mut sent = 0;
         self.players.iter_players(|_, player| {
             if Self::particle_recipient_in_range(
@@ -4048,19 +4032,15 @@ impl World {
         particle: ParticleData,
         override_limiter: bool,
         always_show: bool,
-        x: f64,
-        y: f64,
-        z: f64,
+        position: DVec3,
         count: i32,
-        x_dist: f64,
-        y_dist: f64,
-        z_dist: f64,
+        spread: DVec3,
         speed: f64,
     ) -> bool {
         if !Arc::ptr_eq(self, &player.get_world())
             || !Self::particle_recipient_in_range(
                 player.block_position(),
-                DVec3::new(x, y, z),
+                position,
                 override_limiter,
             )
         {
@@ -4070,12 +4050,12 @@ impl World {
         let packet = CLevelParticles {
             override_limiter,
             always_show,
-            x,
-            y,
-            z,
-            x_dist: x_dist as f32,
-            y_dist: y_dist as f32,
-            z_dist: z_dist as f32,
+            x: position.x,
+            y: position.y,
+            z: position.z,
+            x_dist: spread.x as f32,
+            y_dist: spread.y as f32,
+            z_dist: spread.z as f32,
             max_speed: speed as f32,
             count,
             particle,
