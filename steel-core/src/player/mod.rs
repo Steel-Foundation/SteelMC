@@ -505,9 +505,9 @@ impl PlayerRespawnJob {
             fallback_rotation,
             target_world,
             rotation,
-            consume_spawn_block,
             kind,
             phase,
+            consume_spawn_block,
         })
     }
 
@@ -1569,7 +1569,7 @@ impl Player {
         {
             let mut experience = self.experience.lock();
             self.send_packet(CSetExperience {
-                progress: experience.progress() as f32,
+                progress: experience.progress(),
                 level: experience.level(),
                 total_experience: experience.total_points(),
             });
