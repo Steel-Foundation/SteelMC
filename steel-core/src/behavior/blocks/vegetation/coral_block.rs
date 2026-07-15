@@ -58,7 +58,7 @@ impl BlockBehavior for CoralBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.block.default_state();
-        schedule_coral_die_tick(state, context.world, context.place_pos, self.block);
+        schedule_coral_die_tick(state, context.world, context.place_pos(), self.block);
         Some(state)
     }
 
