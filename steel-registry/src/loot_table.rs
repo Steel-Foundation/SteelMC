@@ -596,7 +596,7 @@ pub enum ToolPredicate {
     },
     /// Match items in a tag.
     Tag(Identifier),
-    /// Match items whose custom_data component contains the expected NBT subset.
+    /// Match items whose `custom_data` component contains the expected NBT subset.
     CustomData { tag: &'static str },
     /// Always matches (no predicate specified).
     Any,
