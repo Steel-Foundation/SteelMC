@@ -38,6 +38,7 @@ mod hanging_roots_block;
 mod kelp_block;
 mod kelp_plant_block;
 mod leaf_litter_block;
+mod leaves_block;
 mod lily_pad_block;
 mod mangrove_propagule_block;
 mod mossy_carpet_block;
@@ -111,6 +112,9 @@ pub use hanging_roots_block::HangingRootsBlock;
 pub use kelp_block::KelpBlock;
 pub use kelp_plant_block::KelpPlantBlock;
 pub use leaf_litter_block::LeafLitterBlock;
+pub use leaves_block::{
+    MangroveLeavesBlock, TintedParticleLeavesBlock, UntintedParticleLeavesBlock,
+};
 pub use lily_pad_block::LilyPadBlock;
 pub use mangrove_propagule_block::MangrovePropaguleBlock;
 pub use mossy_carpet_block::MossyCarpetBlock;
