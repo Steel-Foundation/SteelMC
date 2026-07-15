@@ -772,7 +772,11 @@ impl LivingEntityBase {
 
     /// Sets vanilla `LivingEntity.absorptionAmount` for non-player living entities.
     pub fn set_absorption_amount(&self, amount: f32) {
-        self.state.lock().absorption_amount = amount.max(0.0);
+        let max_absorption = self
+            .attributes
+            .lock()
+            .required_value(vanilla_attributes::MAX_ABSORPTION) as f32;
+        self.state.lock().absorption_amount = amount.clamp(0.0, max_absorption);
     }
 
     /// Runs vanilla `LivingEntity.skipDropExperience`.
@@ -1578,6 +1582,21 @@ mod tests {
     }
 
     #[test]
+    fn absorption_amount_clamps_to_attribute_range() {
+        init_test_registry();
+        let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+        base.attributes()
+            .lock()
+            .set_base_value(vanilla_attributes::MAX_ABSORPTION, 4.0);
+
+        base.set_absorption_amount(10.0);
+        assert_eq!(base.absorption_amount().to_bits(), 4.0_f32.to_bits());
+
+        base.set_absorption_amount(-1.0);
+        assert_eq!(base.absorption_amount().to_bits(), 0.0_f32.to_bits());
+    }
+
+    #[test]
     fn fall_damage_starts_above_safe_fall_distance() {
         assert_eq!(
             LivingEntityBase::calculate_fall_damage(3.0, 1.0, 3.0, 1.0),
@@ -1953,6 +1972,9 @@ mod tests {
         base.set_sleeping_pos(BlockPos::new(1, 64, 1));
         base.set_fall_flying(true);
         base.tick_fall_flying_state(true);
+        base.attributes()
+            .lock()
+            .set_base_value(vanilla_attributes::MAX_ABSORPTION, 4.0);
         base.set_absorption_amount(4.0);
         base.skip_drop_experience();
         base.set_no_action_time(80);

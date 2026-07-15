@@ -242,8 +242,7 @@ impl FireworkRocketEntity {
 
     fn fireworks_damage_source(&self) -> DamageSource {
         let mut source = DamageSource::environment(&vanilla_damage_types::FIREWORKS)
-            .with_direct_entity(self.id())
-            .with_source_position(self.position());
+            .with_direct_entity(self.id());
         if let Some(owner) = self.get_owner() {
             source = source.with_causing_entity(owner.id());
         }
@@ -640,6 +639,22 @@ mod tests {
             (3.0, -2.0)
         );
         assert!(rocket.as_projectile().is_some());
+    }
+
+    #[test]
+    fn firework_damage_source_has_no_raw_position() {
+        init_test_registry();
+        let rocket = FireworkRocketEntity::new(
+            &vanilla_entities::FIREWORK_ROCKET,
+            23,
+            DVec3::new(1.0, 2.0, 3.0),
+            Weak::new(),
+        );
+
+        let source = rocket.fireworks_damage_source();
+
+        assert_eq!(source.direct_entity_id, Some(23));
+        assert!(source.source_position.is_none());
     }
 
     #[test]

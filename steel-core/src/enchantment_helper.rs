@@ -36,6 +36,28 @@ impl<'a> EnchantmentDamageContext<'a> {
         }
     }
 
+    #[must_use]
+    pub(crate) fn from_damage_source(
+        world: &World,
+        this_entity_type: EntityTypeRef,
+        damage_source: &'a DamageSource,
+    ) -> Self {
+        let attacker_entity_type = damage_source
+            .causing_entity_id
+            .and_then(|entity_id| world.get_entity_by_id(entity_id))
+            .map(|entity| entity.entity_type());
+        let direct_attacker_entity_type = damage_source
+            .direct_entity_id
+            .and_then(|entity_id| world.get_entity_by_id(entity_id))
+            .map(|entity| entity.entity_type());
+        Self::new(
+            this_entity_type,
+            attacker_entity_type,
+            direct_attacker_entity_type,
+            damage_source,
+        )
+    }
+
     const fn entity_type(self, target: EnchantmentEntityTarget) -> Option<EntityTypeRef> {
         match target {
             EnchantmentEntityTarget::This => Some(self.this_entity_type),
@@ -107,6 +129,19 @@ pub(crate) fn modify_knockback(
     )
 }
 
+pub(crate) fn modify_armor_effectiveness(
+    item: &ItemStack,
+    context: &EnchantmentDamageContext<'_>,
+    armor_fraction: f32,
+) -> f32 {
+    apply_value_effects(
+        item,
+        EnchantmentEffectComponent::ArmorEffectiveness,
+        context,
+        armor_fraction,
+    )
+}
+
 pub(crate) fn modify_smash_damage_per_fallen_block(
     item: &ItemStack,
     context: &EnchantmentDamageContext<'_>,
@@ -125,20 +160,8 @@ pub(crate) fn is_immune_to_damage<V: LivingEntity + ?Sized>(
     victim: &V,
     damage_source: &DamageSource,
 ) -> bool {
-    let attacker_entity_type = damage_source
-        .causing_entity_id
-        .and_then(|entity_id| world.get_entity_by_id(entity_id))
-        .map(|entity| entity.entity_type());
-    let direct_attacker_entity_type = damage_source
-        .direct_entity_id
-        .and_then(|entity_id| world.get_entity_by_id(entity_id))
-        .map(|entity| entity.entity_type());
-    let context = EnchantmentDamageContext::new(
-        victim.entity_type(),
-        attacker_entity_type,
-        direct_attacker_entity_type,
-        damage_source,
-    );
+    let context =
+        EnchantmentDamageContext::from_damage_source(world, victim.entity_type(), damage_source);
 
     for slot in EquipmentSlot::ALL {
         let mut slot_matches = false;
@@ -151,6 +174,30 @@ pub(crate) fn is_immune_to_damage<V: LivingEntity + ?Sized>(
     }
 
     false
+}
+
+pub(crate) fn get_damage_protection<V: LivingEntity + ?Sized>(
+    world: &World,
+    victim: &V,
+    damage_source: &DamageSource,
+) -> f32 {
+    let context =
+        EnchantmentDamageContext::from_damage_source(world, victim.entity_type(), damage_source);
+    let mut protection = 0.0;
+
+    for slot in EquipmentSlot::ALL {
+        victim.with_equipment_slot(slot, &mut |item| {
+            protection = apply_value_effects_for_slot(
+                item,
+                Some(slot),
+                EnchantmentEffectComponent::DamageProtection,
+                &context,
+                protection,
+            );
+        });
+    }
+
+    protection
 }
 
 pub(crate) fn do_post_attack_effects_from_item(
@@ -208,6 +255,16 @@ fn apply_value_effects(
     context: &EnchantmentDamageContext<'_>,
     input: f32,
 ) -> f32 {
+    apply_value_effects_for_slot(item, None, component, context, input)
+}
+
+fn apply_value_effects_for_slot(
+    item: &ItemStack,
+    slot: Option<EquipmentSlot>,
+    component: EnchantmentEffectComponent,
+    context: &EnchantmentDamageContext<'_>,
+    input: f32,
+) -> f32 {
     let Some(enchantments) = item.get_enchantments() else {
         return input;
     };
@@ -220,6 +277,9 @@ fn apply_value_effects(
         let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
             continue;
         };
+        if slot.is_some_and(|slot| !enchantment.matching_slot(slot)) {
+            continue;
+        }
         let level = *level as i32;
 
         for effect in enchantment.effects.value_effects(component) {
@@ -647,6 +707,7 @@ fn requirements_state(
             damage_source_predicate_matches(predicate, context.damage_source),
         ),
         EnchantmentEffectRequirements::RandomChance { .. }
+        | EnchantmentEffectRequirements::MatchTool { .. }
         | EnchantmentEffectRequirements::Unsupported { .. } => None,
     }
 }
@@ -691,7 +752,8 @@ fn requirements_state_with_random(
         EnchantmentEffectRequirements::RandomChance { chance } => {
             Some(rand::random::<f32>() < chance.calculate(level))
         }
-        EnchantmentEffectRequirements::Unsupported { .. } => None,
+        EnchantmentEffectRequirements::MatchTool { .. }
+        | EnchantmentEffectRequirements::Unsupported { .. } => None,
     }
 }
 
@@ -743,6 +805,7 @@ fn entity_requirements_state(
         EnchantmentEffectRequirements::EntityProperties { .. }
         | EnchantmentEffectRequirements::DamageSourceProperties(_)
         | EnchantmentEffectRequirements::RandomChance { .. }
+        | EnchantmentEffectRequirements::MatchTool { .. }
         | EnchantmentEffectRequirements::Unsupported { .. } => None,
     }
 }
@@ -1030,6 +1093,29 @@ mod tests {
     }
 
     #[test]
+    fn breach_modifies_armor_effectiveness() {
+        init_test_registry();
+
+        let stack = enchanted_item(
+            &vanilla_items::MACE,
+            Identifier::vanilla_static("breach"),
+            2,
+        );
+        let damage_source = DamageSource::environment(&vanilla_damage_types::PLAYER_ATTACK);
+        let context = EnchantmentDamageContext::new(
+            &vanilla_entities::PLAYER,
+            Some(&vanilla_entities::PLAYER),
+            Some(&vanilla_entities::PLAYER),
+            &damage_source,
+        );
+
+        assert_f32_eq(
+            modify_armor_effectiveness(&stack, &context, 0.4),
+            0.4_f32 - 0.15_f32 * 2.0,
+        );
+    }
+
+    #[test]
     fn projectile_knockback_checks_direct_attacker_entity_tag() {
         init_test_registry();
 
@@ -1086,6 +1172,50 @@ mod tests {
             ),
             0.0,
         );
+    }
+
+    #[test]
+    fn damage_protection_accumulates_across_equipment() {
+        init_test_registry();
+
+        let victim = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
+        victim.equip(
+            EquipmentSlot::Feet,
+            enchanted_item(
+                &vanilla_items::DIAMOND_BOOTS,
+                Identifier::vanilla_static("protection"),
+                2,
+            ),
+        );
+        victim.equip(
+            EquipmentSlot::Chest,
+            enchanted_item(
+                &vanilla_items::DIAMOND_CHESTPLATE,
+                Identifier::vanilla_static("blast_protection"),
+                3,
+            ),
+        );
+        let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
+
+        assert_f32_eq(get_damage_protection(test_world(), &victim, &source), 8.0);
+    }
+
+    #[test]
+    fn damage_protection_ignores_enchantment_in_non_matching_slot() {
+        init_test_registry();
+
+        let victim = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
+        victim.equip(
+            EquipmentSlot::MainHand,
+            enchanted_item(
+                &vanilla_items::DIAMOND_BOOTS,
+                Identifier::vanilla_static("protection"),
+                4,
+            ),
+        );
+        let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
+
+        assert_f32_eq(get_damage_protection(test_world(), &victim, &source), 0.0);
     }
 
     #[test]

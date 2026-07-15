@@ -170,6 +170,8 @@ pub struct ClipHitResult {
     pub miss: bool,
     /// Whether the ray started inside the hit shape.
     pub inside: bool,
+    /// Whether this hit was synthesized by the world border.
+    pub world_border_hit: bool,
 }
 
 impl ClipHitResult {
@@ -3404,6 +3406,34 @@ impl World {
         Self::clip_miss(start_pos, end_pos)
     }
 
+    /// Performs vanilla `CollisionGetter.clipIncludingBorder`.
+    #[must_use]
+    pub fn clip_including_border(
+        &self,
+        start_pos: DVec3,
+        end_pos: DVec3,
+        block_shape: ClipBlockShape,
+        fluid: ClipFluid,
+    ) -> ClipHitResult {
+        let hit = self.clip(start_pos, end_pos, block_shape, fluid);
+        let border = self.world_border_snapshot();
+        if border.is_within_bounds_with_margin(start_pos.x, start_pos.z, 0.0)
+            && !border.is_within_bounds_with_margin(hit.location.x, hit.location.z, 0.0)
+        {
+            let delta = hit.location - start_pos;
+            let location = border.clamp_vec3_to_bound(hit.location);
+            return ClipHitResult {
+                location,
+                direction: Self::approximate_nearest_direction(delta),
+                block_pos: BlockPos::from(location),
+                miss: false,
+                inside: false,
+                world_border_hit: true,
+            };
+        }
+        hit
+    }
+
     fn clip_block_and_fluid(
         &self,
         pos: BlockPos,
@@ -3577,6 +3607,7 @@ impl World {
                 block_pos,
                 miss: false,
                 inside: true,
+                world_border_hit: false,
             });
         }
 
@@ -3601,6 +3632,7 @@ impl World {
             block_pos,
             miss: false,
             inside: false,
+            world_border_hit: false,
         })
     }
 
@@ -3631,6 +3663,7 @@ impl World {
                 block_pos,
                 miss: false,
                 inside: true,
+                world_border_hit: false,
             });
         }
 
@@ -3644,6 +3677,7 @@ impl World {
                     block_pos,
                     miss: false,
                     inside: false,
+                    world_border_hit: false,
                 })
             } else {
                 None
@@ -3679,6 +3713,7 @@ impl World {
             block_pos: BlockPos::from(to),
             miss: true,
             inside: false,
+            world_border_hit: false,
         }
     }
 
@@ -3916,12 +3951,6 @@ impl World {
     /// * `data` - Event-specific data (e.g., block state ID for block destruction)
     /// * `exclude` - Optional entity ID to exclude from receiving the event
     pub fn level_event(&self, event_type: i32, pos: BlockPos, data: i32, exclude: Option<i32>) {
-        const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
-
-        let chunk = ChunkPos::new(
-            SectionPos::block_to_section_coord(pos.x()),
-            SectionPos::block_to_section_coord(pos.z()),
-        );
         let packet = CLevelEvent::new(event_type, pos, data, false);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -3930,30 +3959,23 @@ impl World {
             return;
         };
 
-        // Get players tracking this chunk, then filter by 64-block distance
-        let event_pos = (
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
-        );
-
-        for entity_id in self.player_area_map.get_tracking_players(chunk) {
-            // Skip excluded player (they hear the effect client-side)
-            if exclude == Some(entity_id) {
-                continue;
+        self.players.iter_players(|_, player| {
+            if exclude != Some(player.id())
+                && Self::level_event_recipient_in_range(player.position(), pos)
+            {
+                player.connection.send_encoded(encoded.clone());
             }
-            if let Some(player) = self.players.get_by_entity_id(entity_id) {
-                let player_pos = player.position();
-                let dx = player_pos.x - event_pos.0;
-                let dy = player_pos.y - event_pos.1;
-                let dz = player_pos.z - event_pos.2;
-                let dist_sq = dx * dx + dy * dy + dz * dz;
+            true
+        });
+    }
 
-                if dist_sq <= MAX_DISTANCE_SQ {
-                    player.connection.send_encoded(encoded.clone());
-                }
-            }
-        }
+    fn level_event_recipient_in_range(player_pos: DVec3, event_pos: BlockPos) -> bool {
+        const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
+
+        let dx = f64::from(event_pos.x()) - player_pos.x;
+        let dy = f64::from(event_pos.y()) - player_pos.y;
+        let dz = f64::from(event_pos.z()) - player_pos.z;
+        dx * dx + dy * dy + dz * dz < MAX_DISTANCE_SQ
     }
 
     /// Sends a particle distribution to every player within Vanilla's normal
@@ -5220,6 +5242,34 @@ mod tests {
     #[test]
     fn nearest_player_negative_range_is_unbounded() {
         assert!(nearest_player_distance_in_range(1_000_000.0, -1.0, 1.0));
+    }
+
+    #[test]
+    fn level_event_recipient_range_uses_block_corner_and_strict_boundary() {
+        let event_pos = BlockPos::ZERO;
+
+        assert!(World::level_event_recipient_in_range(
+            DVec3::new(-63.999, 0.0, 0.0),
+            event_pos,
+        ));
+        assert!(!World::level_event_recipient_in_range(
+            DVec3::new(-64.0, 0.0, 0.0),
+            event_pos,
+        ));
+        assert!(!World::level_event_recipient_in_range(
+            DVec3::new(64.25, 0.0, 0.0),
+            event_pos,
+        ));
+    }
+
+    #[test]
+    fn level_event_range_is_independent_of_chunk_tracking_view() {
+        let player_pos = DVec3::new(15.9, 64.0, 0.0);
+        let event_pos = BlockPos::new(64, 64, 0);
+        let view = PlayerChunkView::new(ChunkPos::new(0, 0), 2);
+
+        assert!(!view.contains(ChunkPos::from_block_pos(event_pos)));
+        assert!(World::level_event_recipient_in_range(player_pos, event_pos,));
     }
 
     #[test]

@@ -18,12 +18,16 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_registry::vanilla_game_events;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
+use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLOCKS};
+use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{UuidExt, WorldAabb};
 use uuid::Uuid;
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::world::game_event_context::GameEventContext;
@@ -173,6 +177,25 @@ pub trait Projectile: Entity {
         let owner = self.level()?.get_entity_by_uuid(&uuid)?;
         self.cache_owner_entity(&owner);
         Some(owner)
+    }
+
+    /// Returns vanilla `Projectile.mayInteract` for a block position.
+    fn projectile_may_interact(&self, world: &World, pos: steel_utils::BlockPos) -> bool {
+        let Some(owner) = self.get_owner() else {
+            return true;
+        };
+        if owner.as_player().is_some() {
+            return owner.may_interact(world, pos);
+        }
+        world.get_game_rule(&MOB_GRIEFING)
+    }
+
+    /// Returns vanilla `Projectile.mayBreak`.
+    fn may_break(&self, world: &World) -> bool {
+        REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::IMPACT_PROJECTILES)
+            && world.get_game_rule(&PROJECTILES_CAN_BREAK_BLOCKS)
     }
 
     /// Returns vanilla `Projectile.ownedBy`.
@@ -326,7 +349,8 @@ pub trait Projectile: Entity {
         let delta = self.velocity();
         let to = from + delta;
 
-        let block_hit = world.clip(from, to, ClipBlockShape::Collider, ClipFluid::None);
+        let block_hit =
+            world.clip_including_border(from, to, ClipBlockShape::Collider, ClipFluid::None);
         let entity_end = if block_hit.is_miss() {
             to
         } else {
@@ -404,8 +428,17 @@ pub trait Projectile: Entity {
 
     /// The base `Projectile.onHitBlock` implementation. Concrete projectiles
     /// that override the hook call this to preserve the Java `super` dispatch.
-    fn projectile_on_hit_block(&self, _hit: &ClipHitResult) {
-        // TODO: call BlockState.onProjectileHit once block behaviors expose it.
+    fn projectile_on_hit_block(&self, hit: &ClipHitResult) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        let Some(projectile) = self.as_projectile() else {
+            return;
+        };
+        let state = world.get_block_state(hit.block_pos);
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .on_projectile_hit(state, &world, hit, projectile);
     }
 
     /// Vanilla `Projectile.tick` (the `super.tick()` reached from subclasses).
@@ -553,10 +586,18 @@ fn lerp_rotation(mut rot_old: f32, rot: f32) -> f32 {
 mod tests {
     use super::*;
     use steel_registry::{
-        entity_type::EntityTypeRef, test_support::init_test_registry, vanilla_entities,
+        blocks::properties::{BlockStateProperties, Tilt},
+        entity_type::EntityTypeRef,
+        test_support::init_test_registry,
+        vanilla_blocks, vanilla_entities,
     };
+    use steel_utils::{BlockPos, ChunkPos, Direction};
 
-    use crate::entity::EntityBase;
+    use crate::{
+        behavior::init_behaviors,
+        entity::{EntityBase, entities::FireworkRocketEntity},
+        test_support::{test_world, world_border_projectile_test_world},
+    };
 
     struct OwnerCollisionProjectile {
         base: EntityBase,
@@ -646,6 +687,152 @@ mod tests {
         let hit = clip_segment(aabb, DVec3::ZERO, DVec3::new(0.0, 5.0, 0.0))
             .expect("a ray starting inside the box hits at its origin");
         assert_eq!(hit, DVec3::ZERO);
+    }
+
+    #[test]
+    fn may_break_requires_impact_projectile_tag() {
+        init_test_registry();
+
+        let firework = FireworkRocketEntity::new(
+            &vanilla_entities::FIREWORK_ROCKET,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        );
+        let ender_pearl = OwnerCollisionProjectile::new(2, DVec3::ZERO);
+
+        assert!(firework.may_break(test_world()));
+        assert!(!ender_pearl.may_break(test_world()));
+    }
+
+    #[test]
+    fn move_vector_synthesizes_world_border_block_hit() {
+        init_test_registry();
+        init_behaviors();
+
+        let world = Arc::clone(world_border_projectile_test_world());
+        let firework = FireworkRocketEntity::new(
+            &vanilla_entities::FIREWORK_ROCKET,
+            3,
+            DVec3::new(4.5, 64.0, 0.0),
+            Arc::downgrade(&world),
+        );
+        firework.set_velocity(DVec3::X);
+
+        let Some(ProjectileHit::Block { location, hit }) = firework.get_hit_result_on_move_vector()
+        else {
+            panic!("firework should hit the world border");
+        };
+
+        assert!(hit.world_border_hit);
+        assert!(!hit.inside);
+        assert_eq!(hit.direction, Direction::East);
+        assert_eq!(hit.block_pos, BlockPos::new(4, 64, 0));
+        assert_eq!(location, hit.location);
+        assert!(location.x < 5.0 && location.x > 4.999);
+    }
+
+    #[tokio::test]
+    async fn base_block_hit_dispatches_vanilla_block_callbacks() {
+        init_test_registry();
+        init_behaviors();
+
+        let world = Arc::clone(test_world());
+        let chunk_map = Arc::clone(&world.chunk_map);
+        let pos = BlockPos::new(1_136, 64, 1_136);
+        let result = chunk_map
+            .with_full_chunks_in_radius(ChunkPos::from_block_pos(pos), 0, || {
+                let unlit = vanilla_blocks::CANDLE
+                    .default_state()
+                    .set_value(&BlockStateProperties::LIT, false);
+                assert!(world.set_block(pos, unlit, steel_utils::types::UpdateFlags::UPDATE_ALL));
+
+                let firework = FireworkRocketEntity::new(
+                    &vanilla_entities::FIREWORK_ROCKET,
+                    3,
+                    DVec3::new(1_136.5, 64.5, 1_136.5),
+                    Arc::downgrade(&world),
+                );
+                firework.set_remaining_fire_ticks(1);
+                firework.projectile_on_hit_block(&ClipHitResult {
+                    location: firework.position(),
+                    direction: Direction::Up,
+                    block_pos: pos,
+                    miss: false,
+                    inside: false,
+                    world_border_hit: false,
+                });
+
+                assert!(
+                    world
+                        .get_block_state(pos)
+                        .get_value(&BlockStateProperties::LIT)
+                );
+
+                let campfire_pos = pos.offset(1, 0, 0);
+                let unlit_campfire = vanilla_blocks::CAMPFIRE
+                    .default_state()
+                    .set_value(&BlockStateProperties::LIT, false)
+                    .set_value(&BlockStateProperties::WATERLOGGED, false);
+                assert!(world.set_block(
+                    campfire_pos,
+                    unlit_campfire,
+                    steel_utils::types::UpdateFlags::UPDATE_CLIENTS,
+                ));
+                firework.projectile_on_hit_block(&ClipHitResult {
+                    location: firework.position(),
+                    direction: Direction::Up,
+                    block_pos: campfire_pos,
+                    miss: false,
+                    inside: false,
+                    world_border_hit: false,
+                });
+                assert!(
+                    world
+                        .get_block_state(campfire_pos)
+                        .get_value(&BlockStateProperties::LIT)
+                );
+
+                let dripleaf_pos = pos.offset(2, 0, 0);
+                assert!(world.set_block(
+                    dripleaf_pos,
+                    vanilla_blocks::BIG_DRIPLEAF.default_state(),
+                    steel_utils::types::UpdateFlags::UPDATE_CLIENTS,
+                ));
+                firework.projectile_on_hit_block(&ClipHitResult {
+                    location: firework.position(),
+                    direction: Direction::Up,
+                    block_pos: dripleaf_pos,
+                    miss: false,
+                    inside: false,
+                    world_border_hit: false,
+                });
+                assert_eq!(
+                    world
+                        .get_block_state(dripleaf_pos)
+                        .get_value(&BlockStateProperties::TILT),
+                    Tilt::Full
+                );
+
+                let chorus_pos = pos.offset(3, 0, 0);
+                assert!(world.set_block(
+                    chorus_pos,
+                    vanilla_blocks::CHORUS_FLOWER.default_state(),
+                    steel_utils::types::UpdateFlags::UPDATE_CLIENTS,
+                ));
+                firework.projectile_on_hit_block(&ClipHitResult {
+                    location: firework.position(),
+                    direction: Direction::Up,
+                    block_pos: chorus_pos,
+                    miss: false,
+                    inside: false,
+                    world_border_hit: false,
+                });
+                assert!(world.get_block_state(chorus_pos).is_air());
+            })
+            .await;
+
+        assert_eq!(result, Some(()));
     }
 
     #[test]

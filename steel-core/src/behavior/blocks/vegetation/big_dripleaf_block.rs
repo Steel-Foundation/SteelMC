@@ -18,10 +18,10 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::BigDripleafStemBlock;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
 use crate::behavior::context::BlockPlaceContext;
-use crate::entity::{Entity, InsideBlockEffectCollector};
+use crate::entity::{Entity, InsideBlockEffectCollector, projectile::Projectile};
 use crate::world::game_event_context::GameEventContext;
 use crate::world::tick_scheduler::TickPriority;
-use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::world::{ClipHitResult, LevelReader, ScheduledTickAccess, World};
 
 const TILT: EnumProperty<Tilt> = BlockStateProperties::TILT;
 const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
@@ -31,7 +31,6 @@ const FACING: EnumProperty<Direction> = BlockStateProperties::FACING;
 ///
 /// Survives if the block below is big dripleaf (self), big dripleaf stem, or
 /// in the `SUPPORTS_BIG_DRIPLEAF` tag.
-// TODO: Implement projectile tilt.
 #[block_behavior]
 pub struct BigDripleafBlock {
     block: BlockRef,
@@ -193,6 +192,21 @@ impl BlockBehavior for BigDripleafBlock {
         if tilt == Tilt::None && BigDripleafBlock::can_entity_tilt(&pos, entity) {
             Self::set_tilt_and_schedule_tick(self, state, world, &pos, Tilt::Unstable, None);
         }
+    }
+    fn on_projectile_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        hit: &ClipHitResult,
+        _projectile: &dyn Projectile,
+    ) {
+        self.set_tilt_and_schedule_tick(
+            state,
+            world,
+            &hit.block_pos,
+            Tilt::Full,
+            Some(&BLOCK_BIG_DRIPLEAF_TILT_DOWN),
+        );
     }
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         //if block_receives_redstone_power(world, pos) {

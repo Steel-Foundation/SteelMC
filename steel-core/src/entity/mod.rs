@@ -730,6 +730,7 @@ pub mod attribute;
 mod base;
 mod block_effects;
 mod callback;
+mod combat_rules;
 pub mod damage;
 pub mod entities;
 mod fluid_contact;
@@ -2907,6 +2908,15 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
     /// downcast through `Any`.
     fn as_player(&self) -> Option<&Player> {
         self.capabilities().player
+    }
+
+    /// Visits vanilla `Entity.getWeaponItem` without copying inventory state.
+    fn with_weapon_item(&self, visitor: &mut dyn FnMut(Option<&ItemStack>)) {
+        let Some(living) = self.as_living_entity() else {
+            visitor(None);
+            return;
+        };
+        living.with_equipment_slot(EquipmentSlot::MainHand, &mut |item| visitor(Some(item)));
     }
 
     /// Returns true for mobs with pathfinding navigation.
@@ -5578,13 +5588,102 @@ pub trait LivingEntity: Entity {
     /// Hook before applying damage after vanilla reductions.
     fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {}
 
-    /// Applies damage after vanilla reductions.
-    fn actually_hurt(&self, _world: &World, _source: &DamageSource, amount: f32) {
-        if amount <= 0.0 {
+    /// Damages equipment that participates in vanilla armor absorption.
+    fn hurt_armor(&self, _source: &DamageSource, _damage: f32) {}
+
+    /// Mirrors vanilla `LivingEntity.doHurtEquipment`.
+    fn do_hurt_equipment(&self, source: &DamageSource, damage: f32, slots: &[EquipmentSlot]) {
+        if damage <= 0.0 {
             return;
         }
 
-        self.set_health(self.get_health() - amount);
+        let durability_damage = (damage / 4.0).max(1.0) as i32;
+        for &slot in slots {
+            let mut item_broke = false;
+            self.with_equipment_slot_mut(slot, &mut |item| {
+                let damage_on_hurt = item
+                    .get_equippable()
+                    .is_some_and(|equippable| equippable.damage_on_hurt);
+                if damage_on_hurt
+                    && item.is_damageable_item()
+                    && item.can_be_hurt_by(source.damage_type)
+                {
+                    item_broke =
+                        item.hurt_and_break(durability_damage, self.has_infinite_materials());
+                }
+            });
+            if item_broke {
+                self.on_equipped_item_broken(slot);
+            }
+        }
+    }
+
+    /// Mirrors vanilla `LivingEntity.getDamageAfterArmorAbsorb`.
+    fn get_damage_after_armor_absorb(&self, source: &DamageSource, mut damage: f32) -> f32 {
+        if !source.is(&vanilla_damage_type_tags::DamageTypeTag::BYPASSES_ARMOR) {
+            self.hurt_armor(source, damage);
+            let armor_toughness =
+                self.attributes()
+                    .lock()
+                    .required_value(vanilla_attributes::ARMOR_TOUGHNESS) as f32;
+            damage = combat_rules::get_damage_after_absorb(
+                self,
+                damage,
+                source,
+                self.get_armor_value() as f32,
+                armor_toughness,
+            );
+        }
+        damage
+    }
+
+    /// Mirrors vanilla `LivingEntity.getDamageAfterMagicAbsorb`.
+    fn get_damage_after_magic_absorb(&self, source: &DamageSource, mut damage: f32) -> f32 {
+        if source.is(&vanilla_damage_type_tags::DamageTypeTag::BYPASSES_EFFECTS) {
+            return damage;
+        }
+
+        if !source.is(&vanilla_damage_type_tags::DamageTypeTag::BYPASSES_RESISTANCE)
+            && let Some(resistance) = self.mob_effect(vanilla_mob_effects::RESISTANCE)
+        {
+            let absorb_value = (resistance.amplifier() + 1) * 5;
+            let absorb = 25 - absorb_value;
+            damage = (damage * absorb as f32 / 25.0).max(0.0);
+        }
+
+        if damage <= 0.0 {
+            return 0.0;
+        }
+        if source.is(&vanilla_damage_type_tags::DamageTypeTag::BYPASSES_ENCHANTMENTS) {
+            return damage;
+        }
+
+        let enchantment_armor = self.level().map_or(0.0, |world| {
+            enchantment_helper::get_damage_protection(&world, self, source)
+        });
+        if enchantment_armor > 0.0 {
+            damage = combat_rules::get_damage_after_magic_absorb(damage, enchantment_armor);
+        }
+        damage
+    }
+
+    /// Applies damage after vanilla reductions.
+    fn actually_hurt(&self, world: &World, source: &DamageSource, amount: f32) {
+        if self.is_invulnerable_to(world, source) {
+            return;
+        }
+
+        let damage = self.get_damage_after_armor_absorb(source, amount);
+        let damage = self.get_damage_after_magic_absorb(source, damage);
+        let original_damage = damage;
+        let damage = (damage - self.get_absorption_amount()).max(0.0);
+        self.set_absorption_amount(self.get_absorption_amount() - (original_damage - damage));
+
+        if damage != 0.0 {
+            self.set_health(self.get_health() - damage);
+            self.set_absorption_amount(self.get_absorption_amount() - damage);
+            self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
+        }
     }
 
     /// Applies vanilla hurt knockback for a damage source.
@@ -6400,8 +6499,19 @@ pub trait LivingEntity: Entity {
     }
 
     /// Called after an equipped item breaks.
-    fn on_equipped_item_broken(&self, _slot: EquipmentSlot) {
-        // TODO: Broadcast vanilla equipped-item break events once item break callbacks exist.
+    fn on_equipped_item_broken(&self, slot: EquipmentSlot) {
+        let event = match slot {
+            EquipmentSlot::MainHand => EntityStatus::MainhandBreak,
+            EquipmentSlot::OffHand => EntityStatus::OffhandBreak,
+            EquipmentSlot::Head => EntityStatus::HeadBreak,
+            EquipmentSlot::Chest => EntityStatus::ChestBreak,
+            EquipmentSlot::Legs => EntityStatus::LegsBreak,
+            EquipmentSlot::Feet => EntityStatus::FeetBreak,
+            EquipmentSlot::Body => EntityStatus::BodyBreak,
+            EquipmentSlot::Saddle => EntityStatus::SaddleBreak,
+        };
+        self.broadcast_entity_event(event);
+        self.refresh_equipment_attribute_modifiers(slot);
     }
 
     /// Returns vanilla `LivingEntity.canFreeze()` after concrete entity exemptions.
@@ -7644,10 +7754,10 @@ mod tests {
     use super::{
         ActiveMobEffect, AttributeModifier, AttributeModifierOperation, DAMAGE_KNOCKBACK_POWER,
         DEFAULT_SWING_DURATION, DEFAULT_TICKS_REQUIRED_TO_FREEZE, Entity, EntityBase,
-        EntityFluidContact, EntityLevelCallback, EntityMoveError, EntitySyncedData,
-        EntityVerticalMovementStateUpdate, InsideBlockEffectType, LivingEntity, LivingEntityBase,
-        LivingTravelInput, RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID, SharedEntity,
-        block_state_suffocates_eye_box, closest_open_space_direction,
+        EntityFluidContact, EntityLevelCallback, EntityMoveError, EntityOwnership,
+        EntitySyncedData, EntityVerticalMovementStateUpdate, InsideBlockEffectType, LivingEntity,
+        LivingEntityBase, LivingTravelInput, RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID,
+        SharedEntity, block_state_suffocates_eye_box, closest_open_space_direction,
         fall_damage_reset_clip_target, fall_flying_collision_damage,
         fall_flying_free_fall_interval, get_input_vector, indirect_passengers,
         passenger_transition_position, passenger_transition_rotation,
@@ -7818,6 +7928,10 @@ mod tests {
     fn command_data_compare_nbt_contains_implemented_living_data() {
         init_test_registry();
         let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_health(12.5);
+        entity
+            .attributes()
+            .lock()
+            .set_base_value(vanilla_attributes::MAX_ABSORPTION, 3.0);
         entity.set_absorption_amount(3.0);
         entity.living_base.increment_death_time();
         entity.living_base.apply_post_impulse_grace_time(7);
@@ -7945,7 +8059,7 @@ mod tests {
         );
 
         let events = target_listener.events.lock();
-        assert_eq!(events.len(), 2);
+        assert_eq!(events.len(), 3);
         assert_eq!(
             matching_game_event_count(
                 &events,
@@ -7956,6 +8070,14 @@ mod tests {
         );
         assert_eq!(
             matching_game_event_count(&events, &vanilla_game_events::ENTITY_DIE, living_position),
+            1
+        );
+        assert_eq!(
+            matching_game_event_count(
+                &events,
+                &vanilla_game_events::ENTITY_DAMAGE,
+                living_position,
+            ),
             1
         );
         assert!(source_listener.events.lock().is_empty());
@@ -9776,6 +9898,115 @@ mod tests {
         assert_f32_close(entity.get_health(), 0.0);
         assert_eq!(entity.pose(), EntityPose::Dying);
         assert!(!entity.hurt(test_world(), &source, 1.0));
+    }
+
+    #[test]
+    fn generic_living_hurt_applies_armor_and_absorption() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        {
+            let mut attributes = entity.attributes().lock();
+            attributes.set_base_value(vanilla_attributes::ARMOR, 20.0);
+            attributes.set_base_value(vanilla_attributes::MAX_ABSORPTION, 3.0);
+        }
+        entity.set_absorption_amount(3.0);
+        let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
+
+        assert!(entity.hurt(test_world(), &source, 10.0));
+
+        assert_f32_close(entity.get_health(), 19.0);
+        assert_f32_close(entity.get_absorption_amount(), 0.0);
+    }
+
+    #[test]
+    fn generic_living_hurt_applies_resistance() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.set_mob_effect(vanilla_mob_effects::RESISTANCE, 0);
+        let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
+
+        assert!(entity.hurt(test_world(), &source, 10.0));
+
+        assert_f32_close(entity.get_health(), 12.0);
+    }
+
+    #[test]
+    fn damage_reductions_use_victim_attached_world() {
+        init_test_registry();
+        let attached_world = cross_world_damage_test_world();
+        let explicit_world = test_world();
+        assert!(!Arc::ptr_eq(attached_world, explicit_world));
+
+        let attacker_id = 1_750_001;
+        let attacker = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            attacker_id,
+            DVec3::ZERO,
+            Arc::downgrade(attached_world),
+        ));
+        let mut mace = ItemStack::new(&vanilla_items::MACE);
+        mace.set_enchantments(&[(Identifier::vanilla_static("breach"), 4)], false);
+        attacker
+            .living_base()
+            .equipment()
+            .lock()
+            .set(EquipmentSlot::MainHand, mace);
+        let attacker: SharedEntity = attacker;
+        let registration = attached_world
+            .entity_manager()
+            .add_live_entity(attacker, EntityOwnership::External);
+        assert!(registration.is_ok());
+
+        let victim = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, attached_world);
+        victim
+            .attributes()
+            .lock()
+            .set_base_value(vanilla_attributes::ARMOR, 20.0);
+        let source = DamageSource::environment(&vanilla_damage_types::MOB_ATTACK)
+            .with_causing_entity(attacker_id)
+            .with_direct_entity(attacker_id);
+
+        let damage_applied = victim.hurt(explicit_world, &source, 10.0);
+        let health = victim.get_health();
+        let removed = attached_world
+            .entity_manager()
+            .remove_live_entity(attacker_id, RemovalReason::Discarded);
+
+        assert!(removed.is_some());
+        assert!(damage_applied);
+        assert_f32_close(health, 10.0);
+    }
+
+    #[test]
+    fn generic_living_hurt_applies_damage_protection_enchantments() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
+        let mut boots = ItemStack::new(&vanilla_items::DIAMOND_BOOTS);
+        boots.set_enchantments(&[(Identifier::vanilla_static("protection"), 4)], false);
+        entity.equip(EquipmentSlot::Feet, boots);
+        let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
+
+        assert!(entity.hurt(test_world(), &source, 10.0));
+
+        let expected_health = 20.0_f32 - 10.0_f32 * (1.0 - 4.0_f32 / 25.0);
+        assert_eq!(entity.get_health().to_bits(), expected_health.to_bits());
+    }
+
+    #[test]
+    fn generic_living_default_does_not_damage_armor_equipment() {
+        init_test_registry();
+        let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+        entity.equip(
+            EquipmentSlot::Chest,
+            ItemStack::new(&vanilla_items::DIAMOND_CHESTPLATE),
+        );
+        let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
+
+        assert!(entity.hurt(test_world(), &source, 10.0));
+
+        entity.with_equipment_slot(EquipmentSlot::Chest, &mut |item| {
+            assert_eq!(item.get_damage_value(), 0);
+        });
     }
 
     #[test]

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -5,7 +7,8 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::LevelReader;
+use crate::entity::projectile::Projectile;
+use crate::world::{ClipHitResult, LevelReader, World};
 
 use super::{BlockRef, default_surviving_state};
 
@@ -17,7 +20,7 @@ const HORIZONTAL_DIRECTIONS: [Direction; 4] = [
 ];
 
 /// Vanilla `ChorusFlowerBlock` survival behavior.
-// TODO: Implement ticking, projectile break behavior, and growth outside worldgen.
+// TODO: Implement ticking and growth outside worldgen.
 #[block_behavior]
 pub struct ChorusFlowerBlock {
     block: BlockRef,
@@ -30,6 +33,10 @@ impl ChorusFlowerBlock {
     #[must_use]
     pub const fn new(block: BlockRef, plant: BlockRef) -> Self {
         Self { block, plant }
+    }
+
+    fn projectile_can_break(projectile: &dyn Projectile, world: &World, pos: BlockPos) -> bool {
+        projectile.projectile_may_interact(world, pos) && projectile.may_break(world)
     }
 }
 
@@ -66,5 +73,17 @@ impl BlockBehavior for ChorusFlowerBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         default_surviving_state(self.block, self, context)
+    }
+
+    fn on_projectile_hit(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        hit: &ClipHitResult,
+        projectile: &dyn Projectile,
+    ) {
+        if Self::projectile_can_break(projectile, world, hit.block_pos) {
+            world.destroy_block_by_entity(hit.block_pos, true, projectile.as_entity_event_source());
+        }
     }
 }

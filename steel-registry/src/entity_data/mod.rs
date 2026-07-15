@@ -223,6 +223,22 @@ impl VillagerData {
     }
 }
 
+/// Selects a villager profession by numeric registry order, preserving the fallback when empty.
+pub(crate) fn random_villager_profession_id(
+    random: &mut impl steel_utils::random::Random,
+    profession_count: usize,
+    fallback: i32,
+) -> i32 {
+    if profession_count == 0 {
+        return fallback;
+    }
+
+    let Ok(profession_count) = i32::try_from(profession_count) else {
+        panic!("villager profession registry exceeds Vanilla's signed integer range");
+    };
+    random.next_i32_bounded(profession_count)
+}
+
 /// A global position (dimension + block position).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GlobalPos {
@@ -441,15 +457,64 @@ pub fn write_data_values(values: &[DataValue], buf: &mut Vec<u8>) -> io::Result<
 
 #[cfg(test)]
 mod tests {
-    use steel_utils::{ArgbColor, Identifier, codec::VarInt, serial::WriteTo};
+    use steel_utils::{
+        ArgbColor, Identifier,
+        codec::VarInt,
+        random::{Random as _, legacy_random::LegacyRandom},
+        serial::WriteTo,
+    };
 
-    use crate::RegistryExt;
-    use crate::vanilla_entity_data::{EggEntityData, ItemEntityData};
+    use crate::vanilla_entity_data::{EggEntityData, ItemEntityData, ZombieVillagerEntityData};
+    use crate::{REGISTRY, RegistryExt, test_support::init_test_registry};
 
     use super::{
         ColorParticleOption, EntityData, EntityDataSerializerRegistry, ParticleData,
-        register_vanilla_entity_data_serializers,
+        random_villager_profession_id, register_vanilla_entity_data_serializers,
     };
+
+    #[test]
+    fn zombie_villager_default_selects_profession_from_registry() {
+        init_test_registry();
+
+        let profession_count = REGISTRY.villager_professions.len();
+        let Ok(profession_bound) = i32::try_from(profession_count) else {
+            panic!("test villager profession registry must fit in i32");
+        };
+        let Some(nitwit_id) = REGISTRY
+            .villager_professions
+            .id_from_key(&Identifier::vanilla_static("nitwit"))
+        else {
+            panic!("nitwit villager profession must be registered");
+        };
+        let Some(plains_id) = REGISTRY
+            .villager_types
+            .id_from_key(&Identifier::vanilla_static("plains"))
+        else {
+            panic!("plains villager type must be registered");
+        };
+
+        let mut expected_random = LegacyRandom::from_seed(25);
+        let expected_profession = expected_random.next_i32_bounded(profession_bound);
+        assert_eq!(usize::try_from(expected_profession), Ok(nitwit_id));
+
+        let mut random = LegacyRandom::from_seed(25);
+        let data = ZombieVillagerEntityData::new(&mut random);
+        let villager_data = data.villager_data.get();
+
+        assert_eq!(usize::try_from(villager_data.villager_type), Ok(plains_id));
+        assert_eq!(villager_data.profession, expected_profession);
+        assert_eq!(villager_data.level, 1);
+        assert!(data.pack_all().is_empty());
+    }
+
+    #[test]
+    fn empty_villager_profession_registry_preserves_fallback_without_rng_draw() {
+        let mut random = LegacyRandom::from_seed(25);
+        let seed_before = random.get_seed();
+
+        assert_eq!(random_villager_profession_id(&mut random, 0, 7), 7);
+        assert_eq!(random.get_seed(), seed_before);
+    }
 
     #[test]
     fn projectile_item_stack_defaults_use_extracted_item() {

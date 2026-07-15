@@ -1,7 +1,9 @@
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext},
-    world::{LevelReader, ScheduledTickAccess},
+    behavior::{BlockBehavior, BlockPlaceContext, blocks::AmethystBlock},
+    entity::projectile::Projectile,
+    world::{ClipHitResult, LevelReader, ScheduledTickAccess, World},
 };
+use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
@@ -69,6 +71,16 @@ impl BlockBehavior for AmethystClusterBlock {
             .get_block_state(adjacent)
             .is_face_sturdy_at(adjacent, direction)
     }
-    // TODO: OnProjectile hit from AmethystBlock inheritance
+
+    fn on_projectile_hit(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        hit: &ClipHitResult,
+        _projectile: &dyn Projectile,
+    ) {
+        AmethystBlock::play_projectile_hit_sound(world, hit.block_pos);
+    }
+
     // TODO: Mirror and Rotate functions
 }

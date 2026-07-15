@@ -6,7 +6,8 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, SpeleothemThickness};
 use steel_registry::blocks::shapes::{BooleanOp, VoxelShape, join_is_not_empty};
 use steel_registry::{
-    vanilla_block_tags::BlockTag, vanilla_blocks, vanilla_damage_types, vanilla_fluids,
+    vanilla_block_tags::BlockTag, vanilla_blocks, vanilla_damage_types, vanilla_entities,
+    vanilla_fluids,
 };
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
@@ -16,8 +17,9 @@ use crate::behavior::block::{
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt as _};
 use crate::entity::damage::DamageSource;
+use crate::entity::projectile::Projectile;
 use crate::fluid::FluidStateExt as _;
-use crate::world::World;
+use crate::world::{ClipHitResult, World};
 use crate::world::{LevelReader, ScheduledTickAccess};
 
 use super::BlockRef;
@@ -28,8 +30,7 @@ use super::BlockRef;
 /// opposite the tip direction must be face-sturdy on the face pointing toward
 /// us, or be another pointed dripstone with the same `vertical_direction`.
 // TODO: Implement falling stalactites after falling block entities exist.
-// TODO: Implement trident projectile breakage and fluid transfer after
-// projectile and cauldron drip-fill foundations exist.
+// TODO: Implement fluid transfer after cauldron drip-fill foundations exist.
 #[block_behavior]
 pub struct PointedDripstoneBlock {
     block: BlockRef,
@@ -110,6 +111,16 @@ impl BlockBehavior for PointedDripstoneBlock {
         Self::fall_damage_for_state(state, context.fall_distance)
             .or_else(|| self.default_fall_on(state, world, pos, context))
     }
+
+    fn on_projectile_hit(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        hit: &ClipHitResult,
+        projectile: &dyn Projectile,
+    ) {
+        SpeleothemBlockBehavior::on_projectile_hit(world, hit.block_pos, projectile);
+    }
 }
 
 #[block_behavior]
@@ -166,6 +177,16 @@ impl BlockBehavior for SulfurSpikeBlock {
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.speleothem().random_tick(state, world, pos);
     }
+
+    fn on_projectile_hit(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        hit: &ClipHitResult,
+        projectile: &dyn Projectile,
+    ) {
+        SpeleothemBlockBehavior::on_projectile_hit(world, hit.block_pos, projectile);
+    }
 }
 
 struct SpeleothemBlockBehavior {
@@ -188,6 +209,19 @@ const REQUIRED_SPACE_TO_DRIP_THROUGH_NON_SOLID_BLOCK: VoxelShape =
     VoxelShape::from_boxes(DRIP_THROUGH_COLUMN_BOXES);
 
 impl SpeleothemBlockBehavior {
+    fn projectile_can_break(projectile: &dyn Projectile, world: &World, pos: BlockPos) -> bool {
+        projectile.projectile_may_interact(world, pos)
+            && projectile.may_break(world)
+            && projectile.entity_type() == &vanilla_entities::TRIDENT
+            && projectile.velocity().length() > 0.6
+    }
+
+    fn on_projectile_hit(world: &Arc<World>, pos: BlockPos, projectile: &dyn Projectile) {
+        if Self::projectile_can_break(projectile, world, pos) {
+            world.destroy_block(pos, true);
+        }
+    }
+
     fn state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let default_tip_direction = context.get_nearest_looking_vertical_direction().opposite();
         let tip_direction = self.calculate_tip_direction(
@@ -632,9 +666,56 @@ impl SpeleothemBlockBehavior {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::sync::Weak;
 
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_damage_types};
+    use super::*;
+    use glam::DVec3;
+
+    use steel_registry::{
+        entity_type::EntityTypeRef, test_support::init_test_registry, vanilla_blocks,
+        vanilla_damage_types,
+    };
+
+    use crate::{
+        entity::{Entity, EntityBase, projectile::ProjectileBase},
+        test_support::test_world,
+    };
+
+    struct TestProjectile {
+        base: EntityBase,
+        projectile_base: ProjectileBase,
+        entity_type: EntityTypeRef,
+    }
+
+    impl TestProjectile {
+        fn new(entity_type: EntityTypeRef, velocity: DVec3) -> Self {
+            let projectile = Self {
+                base: EntityBase::new(1, DVec3::ZERO, entity_type.dimensions, Weak::new()),
+                projectile_base: ProjectileBase::new(),
+                entity_type,
+            };
+            projectile.set_velocity(velocity);
+            projectile
+        }
+    }
+
+    crate::entity::impl_test_downcast_type!(TestProjectile);
+
+    impl Entity for TestProjectile {
+        fn base(&self) -> &EntityBase {
+            &self.base
+        }
+
+        fn entity_type(&self) -> EntityTypeRef {
+            self.entity_type
+        }
+    }
+
+    impl Projectile for TestProjectile {
+        fn projectile_base(&self) -> &ProjectileBase {
+            &self.projectile_base
+        }
+    }
 
     fn pointed_dripstone_state(
         direction: Direction,
@@ -673,5 +754,30 @@ mod tests {
         let state = pointed_dripstone_state(Direction::Down, SpeleothemThickness::Tip);
 
         assert!(PointedDripstoneBlock::fall_damage_for_state(state, 4.0).is_none());
+    }
+
+    #[test]
+    fn only_fast_tridents_break_speleothems() {
+        init_test_registry();
+        let pos = BlockPos::ZERO;
+        let fast_trident = TestProjectile::new(&vanilla_entities::TRIDENT, DVec3::X * 0.61);
+        let threshold_trident = TestProjectile::new(&vanilla_entities::TRIDENT, DVec3::X * 0.6);
+        let firework = TestProjectile::new(&vanilla_entities::FIREWORK_ROCKET, DVec3::X);
+
+        assert!(SpeleothemBlockBehavior::projectile_can_break(
+            &fast_trident,
+            test_world(),
+            pos,
+        ));
+        assert!(!SpeleothemBlockBehavior::projectile_can_break(
+            &threshold_trident,
+            test_world(),
+            pos,
+        ));
+        assert!(!SpeleothemBlockBehavior::projectile_can_break(
+            &firework,
+            test_world(),
+            pos,
+        ));
     }
 }
