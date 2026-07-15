@@ -22,7 +22,7 @@ pub mod names {
     pub const CHUNK_TICKETS: SavedDataName = SavedDataName::trusted("chunk_tickets");
     /// Cached concentric-ring positions, persisted as `data/structure_rings.bin`.
     pub const STRUCTURE_RINGS: WincodeSavedDataName =
-        WincodeSavedDataName::trusted("structure_rings", *b"STLR", 1);
+        WincodeSavedDataName::trusted("structure_rings", *b"STLR", 2);
     /// Domain command scoreboard, persisted through the domain default world.
     pub const SCOREBOARD: SavedDataName = SavedDataName::trusted("scoreboard");
     /// Domain command storage, persisted through the domain default world.

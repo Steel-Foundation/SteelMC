@@ -38,24 +38,17 @@ use crate::structure::swamp_hut::SwampHutStructure;
 use crate::structure::{GenerationStub, Structure, StructureGenerationContext, StructureStart};
 
 const VANILLA_FLAT_RING_POSITION_SEED: i64 = 0;
-const RING_POSITION_GENERATOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(SchemaWrite, SchemaRead)]
 struct RingPositionCache {
-    generator_version: String,
     entries: Vec<RingPositionCacheEntry>,
 }
 
 impl RingPositionCache {
-    fn current() -> Self {
+    const fn empty() -> Self {
         Self {
-            generator_version: RING_POSITION_GENERATOR_VERSION.to_owned(),
             entries: Vec::new(),
         }
-    }
-
-    fn is_current(&self) -> bool {
-        self.generator_version == RING_POSITION_GENERATOR_VERSION
     }
 }
 
@@ -527,11 +520,11 @@ fn validate_structure_assets(
 
 fn load_ring_position_cache(data_manager: &SavedDataManager) -> RingPositionCache {
     match data_manager.sync_load_wincode::<RingPositionCache>(saved_data_names::STRUCTURE_RINGS) {
-        Ok(Some(cache)) if cache.is_current() => cache,
-        Ok(Some(_) | None) => RingPositionCache::current(),
+        Ok(Some(cache)) => cache,
+        Ok(None) => RingPositionCache::empty(),
         Err(error) => {
             tracing::warn!("Couldn't load the structure ring cache: {error}");
-            RingPositionCache::current()
+            RingPositionCache::empty()
         }
     }
 }
@@ -1214,7 +1207,6 @@ mod tests {
             .sync_load_wincode(saved_data_names::STRUCTURE_RINGS)
             .expect("ring cache should load")
             .expect("ring cache should exist");
-        assert!(cache.is_current());
         assert_eq!(cache.entries.len(), 2);
         assert!(cache.entries.iter().all(|entry| entry.key.ring_seed == 2));
         assert!(
