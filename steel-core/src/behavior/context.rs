@@ -317,12 +317,6 @@ impl<'a> BlockPlaceContext<'a> {
     pub const fn get_nearest_looking_vertical_direction(&self) -> Direction {
         self.source.orientation.nearest_vertical_direction()
     }
-    /// Vanilla equivalent: `BlockPlaceContext.getClickedPos()`
-    #[must_use]
-    pub const fn get_clicked_pos(&self) -> BlockPos {
-        self.place_pos
-    }
-
     /// Returns all 6 directions ordered by how closely the player is looking at them.
     ///
     /// Based on Java's `BlockPlaceContext.getNearestLookingDirections()`.

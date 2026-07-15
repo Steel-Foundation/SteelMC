@@ -2,13 +2,12 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
-use steel_registry::game_rules::GameRuleValue;
 use steel_registry::{vanilla_blocks, vanilla_game_rules};
 use steel_utils::axis::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, default_can_be_replaced};
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
@@ -28,9 +27,14 @@ impl VineBlock {
     }
 
     fn has_faces(state: BlockStateId) -> bool {
+        Self::count_faces(state) > 0
+    }
+
+    fn count_faces(state: BlockStateId) -> usize {
         VINE_FACE_DIRECTIONS
             .into_iter()
-            .any(|direction| state.get_value(get_property_for_face(direction)))
+            .filter(|direction| state.get_value(get_property_for_face(*direction)))
+            .count()
     }
 
     fn can_support_at_face(
@@ -322,17 +326,14 @@ impl BlockBehavior for VineBlock {
         if Self::has_faces(updated) {
             updated
         } else {
-            if Self::has_faces(state) {
-                return vanilla_blocks::AIR.default_state();
-            }
-            state
+            vanilla_blocks::AIR.default_state()
         }
     }
     fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
         true
     }
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if world.get_game_rule(&vanilla_game_rules::SPREAD_VINES) != GameRuleValue::Bool(true) {
+        if !world.get_game_rule(&vanilla_game_rules::SPREAD_VINES) {
             return;
         }
         if rand::random_range(0..4) != 0 {
@@ -350,8 +351,18 @@ impl BlockBehavior for VineBlock {
         }
     }
 
+    fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
+        let clicked_state = context.world.get_block_state(context.place_pos());
+        if clicked_state.get_block() == self.block {
+            Self::count_faces(clicked_state) < VINE_FACE_DIRECTIONS.len()
+        } else {
+            default_can_be_replaced(state, context)
+        }
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let clicked_state = context.world.get_block_state(context.get_clicked_pos());
+        let clicked_pos = context.place_pos();
+        let clicked_state = context.world.get_block_state(clicked_pos);
         let clicked_vine = clicked_state.get_block() == self.block;
         let result = if clicked_vine {
             clicked_state
@@ -363,8 +374,7 @@ impl BlockBehavior for VineBlock {
             if direction != Direction::Down {
                 let face = get_property_for_face(direction);
                 let face_occupied = clicked_vine && clicked_state.get_value(face);
-                if !face_occupied
-                    && self.can_support_at_face(context.world, context.get_clicked_pos(), direction)
+                if !face_occupied && self.can_support_at_face(context.world, clicked_pos, direction)
                 {
                     return Some(result.set_value(face, true));
                 }
@@ -374,5 +384,46 @@ impl BlockBehavior for VineBlock {
             return Some(result);
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::TestLevel;
+    use steel_registry::test_support::init_test_registry;
+
+    #[test]
+    fn face_count_matches_vanilla_replacement_limit() {
+        init_test_registry();
+
+        let mut state = vanilla_blocks::VINE.default_state();
+        assert_eq!(VineBlock::count_faces(state), 0);
+
+        for (expected, direction) in VINE_FACE_DIRECTIONS.into_iter().enumerate() {
+            state = state.set_value(get_property_for_face(direction), true);
+            assert_eq!(VineBlock::count_faces(state), expected + 1);
+        }
+    }
+
+    #[test]
+    fn shape_update_removes_faceless_vine() {
+        init_test_registry();
+
+        let vine = VineBlock::new(&vanilla_blocks::VINE);
+        let state = vanilla_blocks::VINE.default_state();
+        let level = TestLevel::default();
+
+        assert_eq!(
+            vine.update_shape(
+                state,
+                &level,
+                BlockPos::ZERO,
+                Direction::North,
+                BlockPos::ZERO.north(),
+                vanilla_blocks::AIR.default_state(),
+            ),
+            vanilla_blocks::AIR.default_state()
+        );
     }
 }
