@@ -1,11 +1,5 @@
-#![expect(
-    clippy::unwrap_used,
-    reason = "build script must fail immediately on invalid extracted trim pattern data"
-)]
-
-use std::fs;
-
-use crate::generator_functions::generate_identifier;
+use crate::generator_functions::{generate_identifier, generate_text_component, read_json_asset};
+use crate::shared_structs::TextComponentJson;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -13,80 +7,74 @@ use serde::Deserialize;
 use steel_utils::Identifier;
 
 #[derive(Deserialize, Debug)]
-pub struct TrimPatternJson {
+#[serde(deny_unknown_fields)]
+struct TrimPatternJson {
     asset_id: Identifier,
-    description: TextComponent,
+    description: TextComponentJson,
     #[serde(default)]
     decal: bool,
 }
 
-#[derive(Deserialize, Debug)]
-pub struct TextComponent {
-    translate: String,
-}
-
 pub(crate) fn build() -> TokenStream {
-    let trim_pattern_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/trim_pattern";
-    println!("cargo:rerun-if-changed={trim_pattern_dir}");
-    let mut trim_patterns = Vec::new();
+    // TrimPatterns.bootstrap defines registry insertion order in Vanilla.
+    const VANILLA_ORDER: &[&str] = &[
+        "sentry",
+        "dune",
+        "coast",
+        "wild",
+        "ward",
+        "eye",
+        "vex",
+        "tide",
+        "snout",
+        "rib",
+        "spire",
+        "wayfinder",
+        "shaper",
+        "silence",
+        "raiser",
+        "host",
+        "flow",
+        "bolt",
+    ];
 
-    // Read all trim pattern JSON files
-    for entry in fs::read_dir(trim_pattern_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
+    let trim_patterns = VANILLA_ORDER.iter().map(|name| {
+        let path = format!(
+            "../steel-utils/build_assets/builtin_datapacks/minecraft/trim_pattern/{name}.json"
+        );
+        (*name, read_json_asset::<TrimPatternJson>(&path))
+    });
 
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let trim_pattern_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let trim_pattern: TrimPatternJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {trim_pattern_name}: {e}"));
+    let mut definitions = TokenStream::new();
+    let mut registrations = TokenStream::new();
+    for (name, pattern) in trim_patterns {
+        let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
+        let key = quote! { Identifier::vanilla_static(#name) };
+        let asset_id = generate_identifier(&pattern.asset_id);
+        let description = generate_text_component(&pattern.description);
+        let decal = pattern.decal;
 
-            trim_patterns.push((trim_pattern_name, trim_pattern));
-        }
+        definitions.extend(quote! {
+            pub static #ident: TrimPattern = TrimPattern::new(
+                #key,
+                TrimPatternValue::new(#asset_id, #description, #decal),
+            );
+        });
+        registrations.extend(quote! {
+            registry.register(&#ident);
+        });
     }
 
-    let mut stream = TokenStream::new();
-
-    stream.extend(quote! {
-        use crate::trim_pattern::{
-            TrimPattern, TrimPatternRegistry,
-        };
+    quote! {
+        use crate::trim_pattern::{TrimPattern, TrimPatternRegistry, TrimPatternValue};
         use steel_utils::Identifier;
-        use text_components::{TextComponent, translation::TranslatedMessage};
         use std::borrow::Cow;
-    });
+        use text_components::{TextComponent, translation::TranslatedMessage};
 
-    // Generate static trim pattern definitions
-    let mut register_stream = TokenStream::new();
-    for (trim_pattern_name, trim_pattern) in &trim_patterns {
-        let trim_pattern_ident =
-            Ident::new(&trim_pattern_name.to_shouty_snake_case(), Span::call_site());
-        let trim_pattern_name_str = trim_pattern_name.clone();
+        #definitions
 
-        let key = quote! { Identifier::vanilla_static(#trim_pattern_name_str) };
-        let asset_id = generate_identifier(&trim_pattern.asset_id);
-        let translate = &trim_pattern.description.translate;
-        let decal = trim_pattern.decal;
-
-        stream.extend(quote! {
-            pub static #trim_pattern_ident: TrimPattern = TrimPattern {
-                key: #key,
-                asset_id: #asset_id,
-                description: TextComponent::translated(TranslatedMessage::new(#translate, None)),
-                decal: #decal,
-            };
-        });
-
-        register_stream.extend(quote! {
-            registry.register(&#trim_pattern_ident);
-        });
-    }
-
-    stream.extend(quote! {
         pub fn register_trim_patterns(registry: &mut TrimPatternRegistry) {
-            #register_stream
+            #registrations
         }
-    });
-
-    stream
+    }
 }

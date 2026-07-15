@@ -25,12 +25,14 @@ pub enum CommandNode {
         redirects_to: Option<i32>,
         name: Cow<'static, str>,
         is_executable: bool,
+        is_restricted: bool,
     },
     Argument {
         children: Vec<i32>,
         redirects_to: Option<i32>,
         name: Cow<'static, str>,
         is_executable: bool,
+        is_restricted: bool,
         parser: ArgumentType,
         suggestions_type: Option<SuggestionType>,
     },
@@ -40,6 +42,7 @@ impl CommandNode {
     const FLAG_IS_EXECUTABLE: u8 = 4;
     const FLAG_HAS_REDIRECT: u8 = 8;
     const FLAG_HAS_SUGGESTION_TYPE: u8 = 16;
+    const FLAG_IS_RESTRICTED: u8 = 32;
 
     #[must_use]
     pub const fn new_root() -> Self {
@@ -53,6 +56,7 @@ impl CommandNode {
             children: info.children,
             name: name.into(),
             is_executable: info.is_executable,
+            is_restricted: info.is_restricted,
             redirects_to: info.redirects_to,
         }
     }
@@ -66,6 +70,7 @@ impl CommandNode {
             children: info.children,
             name: name.into(),
             is_executable: info.is_executable,
+            is_restricted: info.is_restricted,
             redirects_to: info.redirects_to,
             parser: argument.0,
             suggestions_type: argument.1,
@@ -73,20 +78,35 @@ impl CommandNode {
     }
 
     const fn flags(&self) -> u8 {
-        let (mut flags, is_executable, has_redirect, has_suggestions_type) = match self {
-            CommandNode::Root { .. } => (0, false, false, false),
-            CommandNode::Literal {
-                is_executable,
-                redirects_to,
-                ..
-            } => (1, *is_executable, redirects_to.is_some(), false),
-            CommandNode::Argument {
-                is_executable,
-                redirects_to: r,
-                suggestions_type,
-                ..
-            } => (2, *is_executable, r.is_some(), suggestions_type.is_some()),
-        };
+        let (mut flags, is_executable, has_redirect, has_suggestions_type, is_restricted) =
+            match self {
+                CommandNode::Root { .. } => (0, false, false, false, false),
+                CommandNode::Literal {
+                    is_executable,
+                    redirects_to,
+                    is_restricted,
+                    ..
+                } => (
+                    1,
+                    *is_executable,
+                    redirects_to.is_some(),
+                    false,
+                    *is_restricted,
+                ),
+                CommandNode::Argument {
+                    is_executable,
+                    redirects_to: r,
+                    suggestions_type,
+                    is_restricted,
+                    ..
+                } => (
+                    2,
+                    *is_executable,
+                    r.is_some(),
+                    suggestions_type.is_some(),
+                    *is_restricted,
+                ),
+            };
 
         if is_executable {
             flags |= Self::FLAG_IS_EXECUTABLE;
@@ -96,6 +116,9 @@ impl CommandNode {
         }
         if has_suggestions_type {
             flags |= Self::FLAG_HAS_SUGGESTION_TYPE;
+        }
+        if is_restricted {
+            flags |= Self::FLAG_IS_RESTRICTED;
         }
         flags
     }
@@ -170,6 +193,7 @@ impl WriteTo for CommandNode {
 pub struct CommandNodeInfo {
     children: Vec<i32>,
     is_executable: bool,
+    is_restricted: bool,
     redirects_to: Option<i32>,
 }
 
@@ -179,6 +203,7 @@ impl CommandNodeInfo {
         Self {
             children,
             is_executable: false,
+            is_restricted: false,
             redirects_to: None,
         }
     }
@@ -188,6 +213,7 @@ impl CommandNodeInfo {
         Self {
             children: Vec::new(),
             is_executable: true,
+            is_restricted: false,
             redirects_to: None,
         }
     }
@@ -197,14 +223,37 @@ impl CommandNodeInfo {
         Self {
             children: Vec::new(),
             is_executable: false,
+            is_restricted: false,
             redirects_to: Some(redirects_to),
         }
+    }
+
+    /// Marks this node as executable.
+    #[must_use]
+    pub const fn executable(mut self) -> Self {
+        self.is_executable = true;
+        self
+    }
+
+    /// Marks this node as requiring authorization on the server.
+    #[must_use]
+    pub const fn restricted(mut self) -> Self {
+        self.is_restricted = true;
+        self
+    }
+
+    /// Adds a redirect to another serialized command node.
+    #[must_use]
+    pub const fn redirect(mut self, redirects_to: i32) -> Self {
+        self.redirects_to = Some(redirects_to);
+        self
     }
 
     #[must_use]
     pub fn chain(mut self, mut other: Self) -> Self {
         self.children.append(&mut other.children);
         self.is_executable |= other.is_executable;
+        self.is_restricted |= other.is_restricted;
         self
     }
 }
@@ -286,6 +335,9 @@ pub enum ArgumentType {
     ResourceKey {
         identifier: &'static str,
     },
+    ResourceSelector {
+        identifier: &'static str,
+    },
     TemplateMirror,
     TemplateRotation,
     Heightmap,
@@ -354,14 +406,15 @@ impl ArgumentType {
             Self::ResourceOrTagKey { .. } => 45,
             Self::Resource { .. } => 46,
             Self::ResourceKey { .. } => 47,
-            Self::TemplateMirror => 48,
-            Self::TemplateRotation => 49,
-            Self::Heightmap => 50,
-            Self::LootTable => 51,
-            Self::LootPredicate => 52,
-            Self::LootModifier => 53,
-            Self::Dialog => 54,
-            Self::Uuid => 55,
+            Self::ResourceSelector { .. } => 48,
+            Self::TemplateMirror => 49,
+            Self::TemplateRotation => 50,
+            Self::Heightmap => 51,
+            Self::LootTable => 52,
+            Self::LootPredicate => 53,
+            Self::LootModifier => 54,
+            Self::Dialog => 55,
+            Self::Uuid => 56,
         }
     }
 }
@@ -390,6 +443,7 @@ impl WriteTo for ArgumentType {
             Self::ResourceOrTagKey { identifier } => identifier.write_prefixed::<VarInt>(writer),
             Self::Resource { identifier } => identifier.write_prefixed::<VarInt>(writer),
             Self::ResourceKey { identifier } => identifier.write_prefixed::<VarInt>(writer),
+            Self::ResourceSelector { identifier } => identifier.write_prefixed::<VarInt>(writer),
             _ => Ok(()),
         }
     }
@@ -434,5 +488,64 @@ impl SuggestionType {
             SuggestionType::AvailableSounds => "minecraft:available_sounds",
             SuggestionType::SummonableEntities => "minecraft:summonable_entities",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::serial::WriteTo;
+
+    use super::{ArgumentType, CommandNode, CommandNodeInfo};
+
+    #[test]
+    fn restricted_nodes_set_the_26_2_protocol_flag() {
+        let node = CommandNode::new_literal(CommandNodeInfo::new(Vec::new()).restricted(), "op");
+        let mut encoded = Vec::new();
+
+        assert!(node.write(&mut encoded).is_ok());
+        assert_eq!(encoded.first().copied(), Some(1 | 32));
+    }
+
+    #[test]
+    fn command_node_flags_can_be_combined() {
+        let info = CommandNodeInfo::new(Vec::new())
+            .executable()
+            .restricted()
+            .redirect(0);
+        let node = CommandNode::new_literal(info, "alias");
+        let mut encoded = Vec::new();
+
+        assert!(node.write(&mut encoded).is_ok());
+        assert_eq!(encoded.first().copied(), Some(1 | 4 | 8 | 32));
+    }
+
+    #[test]
+    fn command_argument_tail_uses_the_26_2_registry_ids() {
+        for (argument, expected) in [
+            (ArgumentType::TemplateMirror, 49),
+            (ArgumentType::TemplateRotation, 50),
+            (ArgumentType::Heightmap, 51),
+            (ArgumentType::LootTable, 52),
+            (ArgumentType::LootPredicate, 53),
+            (ArgumentType::LootModifier, 54),
+            (ArgumentType::Dialog, 55),
+            (ArgumentType::Uuid, 56),
+        ] {
+            let mut encoded = Vec::new();
+            assert!(argument.write(&mut encoded).is_ok());
+            assert_eq!(encoded, [expected]);
+        }
+    }
+
+    #[test]
+    fn resource_selector_writes_its_registry_key() {
+        let mut encoded = Vec::new();
+        let argument = ArgumentType::ResourceSelector {
+            identifier: "minecraft:test_instance",
+        };
+
+        assert!(argument.write(&mut encoded).is_ok());
+        assert_eq!(&encoded[..2], [48, 23]);
+        assert_eq!(&encoded[2..], b"minecraft:test_instance");
     }
 }

@@ -20,7 +20,7 @@ pub use building::{
     ScaffoldingBlock, SlabBlock, SlimeBlock, SpongeBlock, StairBlock, TrapDoorBlock, WallBlock,
     WaterloggedTransparentBlock, WeatherState, WeatheringCopper, WeatheringCopperBarsBlock,
     WeatheringCopperDoorBlock, WeatheringCopperFullBlock, WeatheringCopperGrateBlock,
-    WeatheringCopperSlabBlock, WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock,
+    WeatheringCopperSlabBlock, WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock,
     WetSpongeBlock,
 };
 pub use colored::StainedGlassPaneBlock;
@@ -38,10 +38,11 @@ pub use portal::{
 pub use redstone::{ButtonBlock, RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use vegetation::{
     AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock,
-    CactusFlowerBlock, CarrotBlock, CocoaBlock, CropBlock, DoublePlantBlock, FlowerBlock,
-    NetherSproutsBlock, NetherWartBlock, PitcherCropBlock, PotatoBlock, RootedDirtBlock,
-    SeagrassBlock, SugarCaneBlock, SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock,
-    TallSeagrassBlock, TorchflowerCropBlock,
+    CactusFlowerBlock, CarrotBlock, CocoaBlock, CoralBlock, CropBlock, DoublePlantBlock,
+    FlowerBlock, MangroveLeavesBlock, NetherSproutsBlock, NetherWartBlock, PitcherCropBlock,
+    PotatoBlock, RootedDirtBlock, SeagrassBlock, SugarCaneBlock, SweetBerryBushBlock,
+    TallFlowerBlock, TallGrassBlock, TallSeagrassBlock, TintedParticleLeavesBlock,
+    TorchflowerCropBlock, UntintedParticleLeavesBlock,
 };
 pub use vegetation::{
     BaseCoralFanBlock, BaseCoralPlantBlock, BaseCoralWallFanBlock, BigDripleafBlock,

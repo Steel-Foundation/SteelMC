@@ -27,7 +27,7 @@ use super::weathering_block::{WeatherState, WeatheringCopper};
 use crate::{
     behavior::{
         BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt, InteractionResult,
-        InventoryAccess,
+        InventoryAccess, PlacementSource,
     },
     entity::Entity,
     entity::ai::path::PathComputationType,
@@ -83,9 +83,9 @@ impl DoorBlock {
     }
 
     fn hinge_for_placement(context: &BlockPlaceContext<'_>) -> DoorHingeSide {
-        let pos = context.place_pos;
+        let pos = context.place_pos();
         let above_pos = pos.above();
-        let place_direction = context.horizontal_direction;
+        let place_direction = context.horizontal_direction();
 
         let left_direction = place_direction.rotate_y_counter_clockwise();
         let left_pos = left_direction.relative(pos);
@@ -115,8 +115,8 @@ impl DoorBlock {
         if (!door_left || door_right) && solid_block_balance <= 0 {
             if (!door_right || door_left) && solid_block_balance >= 0 {
                 let (step_x, step_z) = place_direction.offset_xz();
-                let click_x = context.click_location.x - f64::from(pos.x());
-                let click_z = context.click_location.z - f64::from(pos.z());
+                let click_x = context.click_location().x - f64::from(pos.x());
+                let click_z = context.click_location().z - f64::from(pos.z());
 
                 if (step_x >= 0 || click_z >= 0.5)
                     && (step_x <= 0 || click_z <= 0.5)
@@ -187,7 +187,7 @@ impl DoorBlock {
 
 impl BlockBehavior for DoorBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let pos = context.place_pos;
+        let pos = context.place_pos();
         if pos.y() >= context.world.max_y_exclusive() - 1 {
             return None;
         }
@@ -202,7 +202,7 @@ impl BlockBehavior for DoorBlock {
                 .default_state()
                 .set_value(
                     &BlockStateProperties::HORIZONTAL_FACING,
-                    context.horizontal_direction,
+                    context.horizontal_direction(),
                 )
                 .set_value(
                     &BlockStateProperties::DOOR_HINGE,
@@ -303,8 +303,7 @@ impl BlockBehavior for DoorBlock {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        _player: Option<&Player>,
-        _inv: &InventoryAccess,
+        _source: &PlacementSource<'_>,
     ) {
         world.set_block(
             pos.above(),
@@ -486,10 +485,9 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        player: Option<&Player>,
-        inv: &InventoryAccess,
+        source: &PlacementSource<'_>,
     ) {
-        self.door().set_placed_by(state, world, pos, player, inv);
+        self.door().set_placed_by(state, world, pos, source);
     }
 
     fn player_will_destroy(

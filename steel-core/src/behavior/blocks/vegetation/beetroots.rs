@@ -48,7 +48,7 @@ impl CropLike for BeetrootBlock {
     }
 
     fn clone_item_stack(&self) -> ItemStack {
-        ItemStack::new(&vanilla_items::ITEMS.beetroot_seeds)
+        ItemStack::new(&vanilla_items::BEETROOT_SEEDS)
     }
 
     fn should_random_tick(&self) -> bool {

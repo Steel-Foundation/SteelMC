@@ -12,7 +12,7 @@
 
 use std::fmt::Write as _;
 use std::mem::take;
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 
 use glam::IVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -259,18 +259,31 @@ fn structure_starts_inner() {
         let height = dim_type.height;
         let section_count = (height / 16) as usize;
 
+        let thread_pool = Arc::new(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .thread_name(|index| format!("chunk-stage-hashes-{index}"))
+                .build()
+                .expect("failed to create chunk-stage hash test rayon pool"),
+        );
+
         let generator: ChunkGeneratorType = match dim_short {
             "overworld" => {
                 let source = BiomeSourceKind::overworld(seed);
-                ChunkGeneratorType::Overworld(OverworldGenerator::new(source, seed))
+                ChunkGeneratorType::Overworld(OverworldGenerator::new(
+                    None,
+                    source,
+                    seed,
+                    &thread_pool,
+                ))
             }
             "the_nether" => {
                 let source = BiomeSourceKind::nether(seed);
-                ChunkGeneratorType::Nether(NetherGenerator::new(source, seed))
+                ChunkGeneratorType::Nether(NetherGenerator::new(None, source, seed, &thread_pool))
             }
             "the_end" => {
                 let source = BiomeSourceKind::end(seed);
-                ChunkGeneratorType::End(EndGenerator::new(source, seed))
+                ChunkGeneratorType::End(EndGenerator::new(None, source, seed, &thread_pool))
             }
             _ => unreachable!(),
         };

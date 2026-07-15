@@ -1,6 +1,5 @@
 use std::io::{Result, Write};
 use steel_macros::ClientPacket;
-use steel_registry::RegistryExt;
 use steel_registry::packets::play::C_SET_TIME;
 use steel_utils::codec::{VarInt, VarLong};
 use steel_utils::serial::WriteTo;
@@ -29,19 +28,10 @@ impl WriteTo for CSetTime {
 
 impl CSetTime {
     #[must_use]
-    #[expect(
-        clippy::unwrap_used,
-        reason = "vanilla overworld clock is generated into the registry"
-    )]
-    pub fn new(game_time: i64, day_time: i64, partial_tick: f32, rate: f32) -> Self {
-        use steel_registry::{REGISTRY, vanilla_world_clocks};
-        let clock_id = REGISTRY
-            .world_clocks
-            .id_from_key(&vanilla_world_clocks::OVERWORLD.key)
-            .unwrap() as i32;
+    pub const fn new(game_time: i64, clock_updates: Vec<(i32, i64, f32, f32)>) -> Self {
         Self {
             game_time,
-            clock_updates: vec![(clock_id, day_time, partial_tick, rate)],
+            clock_updates,
         }
     }
 }

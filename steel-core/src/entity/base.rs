@@ -1522,7 +1522,7 @@ impl EntityBase {
     }
 
     /// Updates the world reference used by this entity.
-    pub fn set_world(&self, world: Weak<World>) {
+    pub(crate) fn set_world(&self, world: Weak<World>) {
         *self.world.lock() = world;
     }
 

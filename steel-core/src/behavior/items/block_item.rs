@@ -32,20 +32,20 @@ impl BlockItem {
 
     fn place_with(
         &self,
-        context: &mut UseOnContext<'_>,
+        mut context: BlockPlaceContext<'_>,
         place_block: impl FnOnce(&BlockPlaceContext<'_>, BlockStateId) -> bool,
     ) -> InteractionResult {
-        let Some(place_context) = context.build_place_context() else {
+        if !context.can_place() {
             return InteractionResult::Fail;
-        };
-        let place_pos = place_context.place_pos;
+        }
+        let place_pos = context.place_pos();
 
         let behavior = BLOCK_BEHAVIORS.get_behavior(self.block);
-        let Some(new_state) = behavior.get_state_for_placement(&place_context) else {
+        let Some(new_state) = behavior.get_state_for_placement(&context) else {
             return InteractionResult::Fail;
         };
 
-        if !behavior.can_survive(new_state, place_context.world, place_pos) {
+        if !behavior.can_survive(new_state, context.world, place_pos) {
             return InteractionResult::Fail;
         }
 
@@ -54,20 +54,14 @@ impl BlockItem {
             return InteractionResult::Fail;
         }
 
-        if !place_block(&place_context, new_state) {
+        if !place_block(&context, new_state) {
             return InteractionResult::Fail;
         }
 
         let placed_state = context.world.get_block_state(place_pos);
         if placed_state.get_block() == self.block {
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
-            placed_behavior.set_placed_by(
-                placed_state,
-                context.world,
-                place_pos,
-                Some(context.player),
-                &context.inv,
-            );
+            placed_behavior.set_placed_by(placed_state, context.world, place_pos, context.source());
         }
 
         // Play place sound (exclude the placing player, they hear it client-side)
@@ -77,31 +71,37 @@ impl BlockItem {
             place_pos,
             sound_type.volume,
             sound_type.pitch,
-            Some(context.player.id()),
+            context.player().map(Entity::id),
         );
         context.world.game_event(
             &vanilla_game_events::BLOCK_PLACE,
             place_pos,
-            &GameEventContext::new(Some(context.player), Some(placed_state)),
+            &GameEventContext::new(
+                context.player().map(|player| player as &dyn Entity),
+                Some(placed_state),
+            ),
         );
 
-        context.inv.with_item(|item| item.shrink(1));
+        context.with_item_mut(|item| item.shrink(1));
 
         InteractionResult::Success
+    }
+
+    /// Places this block using an already constructed placement context.
+    pub fn place(&self, context: BlockPlaceContext<'_>) -> InteractionResult {
+        self.place_with(context, Self::place_block)
     }
 
     fn place_block(context: &BlockPlaceContext<'_>, state: BlockStateId) -> bool {
         context
             .world
-            .set_block(context.place_pos, state, Self::PLACE_BLOCK_FLAGS)
+            .set_block(context.place_pos(), state, Self::PLACE_BLOCK_FLAGS)
     }
 }
 
 impl ItemBehavior for BlockItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        self.place_with(context, |place_context, state| {
-            Self::place_block(place_context, state)
-        })
+        self.place(context.build_place_context())
     }
 }
 
@@ -133,7 +133,7 @@ impl DoubleHighBlockItem {
     }
 
     fn place_block(context: &BlockPlaceContext<'_>, state: BlockStateId) -> bool {
-        let above = context.place_pos.above();
+        let above = context.place_pos().above();
         let above_state = if get_fluid_state(context.world, above).is_water() {
             vanilla_blocks::WATER.default_state()
         } else {
@@ -149,8 +149,7 @@ impl DoubleHighBlockItem {
 
 impl ItemBehavior for DoubleHighBlockItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        self.base.place_with(context, |place_context, state| {
-            Self::place_block(place_context, state)
-        })
+        self.base
+            .place_with(context.build_place_context(), Self::place_block)
     }
 }

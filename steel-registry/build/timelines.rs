@@ -13,8 +13,8 @@ use serde_json::Value;
 
 #[derive(Deserialize, Debug)]
 pub struct TimelineJson {
-    clock: Option<String>,
-    period_ticks: Option<i64>,
+    clock: String,
+    period_ticks: Option<i32>,
     #[serde(default)]
     tracks: serde_json::Map<String, Value>,
     #[serde(default)]
@@ -34,13 +34,19 @@ struct KeyframeJson {
     value: Value,
 }
 
-fn quote_opt_identifier(s: &str) -> TokenStream {
+fn quote_world_clock_ref(s: &str) -> TokenStream {
     let (namespace, path) = s.split_once(':').expect("Identifier missing ':'");
     assert_eq!(
         namespace, "minecraft",
         "Expected minecraft namespace in: {s}"
     );
-    quote! { Some(Identifier::vanilla_static(#path)) }
+    let ident = Ident::new(&path.to_shouty_snake_case(), Span::call_site());
+    quote! { &crate::vanilla_world_clocks::#ident }
+}
+
+fn quote_identifier(s: &str) -> TokenStream {
+    let (namespace, path) = s.split_once(':').expect("Identifier missing ':'");
+    quote! { Identifier::new_static(#namespace, #path) }
 }
 
 fn quote_ease(v: &Value) -> TokenStream {
@@ -98,21 +104,26 @@ fn quote_keyframe_value(v: &Value) -> TokenStream {
 }
 
 fn quote_time_marker(name: &str, v: &Value) -> TokenStream {
+    let key = quote_identifier(name);
     match v {
         Value::Number(n) => {
-            let ticks = n.as_i64().unwrap_or_else(|| n.as_u64().unwrap() as i64);
+            let ticks = i32::try_from(n.as_i64().unwrap_or_else(|| n.as_u64().unwrap() as i64))
+                .expect("time marker ticks must fit in i32");
             quote! {
                 TimeMarker {
-                    name: #name,
+                    key: #key,
                     ticks: #ticks,
                     show_in_commands: None,
                 }
             }
         }
         Value::Object(obj) => {
-            let ticks = obj["ticks"]
-                .as_i64()
-                .unwrap_or_else(|| obj["ticks"].as_u64().unwrap() as i64);
+            let ticks = i32::try_from(
+                obj["ticks"]
+                    .as_i64()
+                    .unwrap_or_else(|| obj["ticks"].as_u64().unwrap() as i64),
+            )
+            .expect("time marker ticks must fit in i32");
             let show = obj["show_in_commands"].as_bool().unwrap();
             let show_ts = if show {
                 quote! { Some(true) }
@@ -121,7 +132,7 @@ fn quote_time_marker(name: &str, v: &Value) -> TokenStream {
             };
             quote! {
                 TimeMarker {
-                    name: #name,
+                    key: #key,
                     ticks: #ticks,
                     show_in_commands: #show_ts,
                 }
@@ -166,11 +177,7 @@ pub(crate) fn build() -> TokenStream {
 
         let key = quote! { Identifier::vanilla_static(#timeline_name_str) };
 
-        let clock_ts = if let Some(s) = &timeline_data.clock {
-            quote_opt_identifier(s)
-        } else {
-            quote! { None }
-        };
+        let clock_ts = quote_world_clock_ref(&timeline_data.clock);
 
         let period_ticks_ts = if let Some(pt) = timeline_data.period_ticks {
             quote! { Some(#pt) }

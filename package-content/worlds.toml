@@ -1,4 +1,5 @@
-#:schema https://raw.githubusercontent.com/4lve/SteelMC/refs/heads/master/package-content/worlds.schema.json
+#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/package-content/worlds.schema.json
+# Documentation: https://steelmc.dev/configuration/world-configuration/
 
 # Root defaults inherited by domains and worlds unless overridden.
 save_path = "saves"

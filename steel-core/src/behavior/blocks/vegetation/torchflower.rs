@@ -58,7 +58,7 @@ impl CropLike for TorchflowerCropBlock {
     }
 
     fn clone_item_stack(&self) -> ItemStack {
-        ItemStack::new(&vanilla_items::ITEMS.torchflower_seeds)
+        ItemStack::new(&vanilla_items::TORCHFLOWER_SEEDS)
     }
 
     fn should_random_tick(&self) -> bool {

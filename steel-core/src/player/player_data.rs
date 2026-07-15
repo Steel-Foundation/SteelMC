@@ -12,7 +12,7 @@ use crate::{
     inventory::container::Container,
 };
 
-use super::{Player, abilities::Abilities};
+use super::{Player, abilities::Abilities, experience::Experience};
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
@@ -93,15 +93,13 @@ pub struct PersistentPlayerData {
     /// Current experience level
     pub experience_level: i32,
 
-    /// To progress to the next experience level
+    /// Vanilla progress toward the next experience level.
     pub experience_progress: f32,
 
-    /// The checked value of the Score, cannot decrease below 0 (???)
-    /// TODO: what exactly is experienceTotal
+    /// Vanilla `Player.totalExperience`, updated by point grants but independent of level/progress.
     pub experience_total: i32,
 
-    /// A non decreasing value of the experience orbs added (/xp add, picking up orbs and advancements)
-    /// this value can be negative by using (/xp add ... -x)
+    /// Vanilla death-screen score. Point grants change it with Java `int` wrapping.
     pub score: i32,
 
     /// Vanilla `ServerPlayer.seenCredits`.
@@ -190,15 +188,11 @@ impl PersistentPlayerData {
             }
         }
 
-        let (experience_level, experience_progress, experience_total, score) = {
+        let (experience_level, experience_progress, experience_total) = {
             let lock = player.experience.lock();
-            (
-                lock.level(),
-                lock.progress() as f32,
-                lock.total_points(),
-                lock.score,
-            )
+            (lock.level(), lock.progress(), lock.total_points())
         };
+        let score = player.score();
         let root_vehicle = Self::root_vehicle_from_player(player)
             .or_else(|| player.pending_root_vehicle_for_current_world());
         let ender_pearls = Self::ender_pearls_from_player(player);
@@ -414,10 +408,13 @@ impl PersistentPlayerData {
 
         {
             let mut experience = player.experience.lock();
-            experience.set_levels(self.experience_level);
-            experience.set_progress(f64::from(self.experience_progress));
-            experience.score = self.score;
+            *experience = Experience::from_parts(
+                self.experience_level,
+                self.experience_progress,
+                self.experience_total,
+            );
         }
+        player.set_score(self.score);
         player.set_seen_credits(self.seen_credits);
     }
 }

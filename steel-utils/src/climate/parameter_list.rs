@@ -16,6 +16,7 @@ use std::cmp::Ordering;
 
 use super::PARAMETER_COUNT;
 use super::types::{Parameter, ParameterPoint, TargetPoint};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 /// Maximum children per tree node. Matches vanilla's `CHILDREN_PER_NODE` = 6.
 const CHILDREN_PER_NODE: usize = 6;
@@ -153,12 +154,11 @@ fn build_tree(entries: &mut [BuildEntry]) -> RTreeNode {
 
     // Sort the bucket subtrees by the best dimension (absolute=true)
     sort_bucket_subtrees(&mut bucket_subtrees, best_dim);
-
     // For each bucket, recursively build
-    let mut final_children: Vec<RTreeNode> = Vec::new();
-    for (_, mut child_entries) in bucket_subtrees {
-        final_children.push(build_tree(&mut child_entries));
-    }
+    let final_children: Vec<RTreeNode> = bucket_subtrees
+        .into_par_iter()
+        .map(|(_, mut child_entries)| build_tree(&mut child_entries))
+        .collect();
 
     let ps = build_parameter_space(&final_children);
     RTreeNode::SubTree {

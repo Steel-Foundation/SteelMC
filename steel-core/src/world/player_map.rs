@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use scc::HashMap;
+use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
 use crate::{entity::Entity, player::Player};
@@ -16,6 +17,8 @@ pub struct PlayerMap {
     by_uuid: HashMap<Uuid, Arc<Player>>,
     /// Secondary index by entity ID (session-local identifier)
     by_entity_id: HashMap<i32, Arc<Player>>,
+    /// Player UUIDs in insertion order for vanilla-visible iteration.
+    order: SyncMutex<Vec<Uuid>>,
 }
 
 impl Default for PlayerMap {
@@ -31,6 +34,7 @@ impl PlayerMap {
         Self {
             by_uuid: HashMap::new(),
             by_entity_id: HashMap::new(),
+            order: SyncMutex::new(Vec::new()),
         }
     }
 
@@ -55,6 +59,7 @@ impl PlayerMap {
             let _ = self.by_uuid.remove_sync(&uuid);
             panic!("player entity id {entity_id} is already registered");
         }
+        self.order.lock().push(uuid);
         true
     }
 
@@ -64,6 +69,7 @@ impl PlayerMap {
     pub async fn remove(&self, uuid: &Uuid) -> Option<Arc<Player>> {
         if let Some((_, player)) = self.by_uuid.remove_async(uuid).await {
             let _ = self.by_entity_id.remove_async(&player.id()).await;
+            self.order.lock().retain(|player_uuid| player_uuid != uuid);
             Some(player)
         } else {
             None
@@ -85,6 +91,9 @@ impl PlayerMap {
             .by_entity_id
             .remove_if_async(&removed.id(), |current| Arc::ptr_eq(current, &removed))
             .await;
+        self.order
+            .lock()
+            .retain(|uuid| *uuid != removed.gameprofile.id);
         Some(removed)
     }
 
@@ -95,6 +104,7 @@ impl PlayerMap {
     pub fn remove_sync(&self, uuid: &Uuid) -> Option<Arc<Player>> {
         if let Some((_, player)) = self.by_uuid.remove_sync(uuid) {
             let _ = self.by_entity_id.remove_sync(&player.id());
+            self.order.lock().retain(|player_uuid| player_uuid != uuid);
             Some(player)
         } else {
             None
@@ -110,6 +120,9 @@ impl PlayerMap {
         let _ = self
             .by_entity_id
             .remove_if_sync(&removed.id(), |current| Arc::ptr_eq(current, &removed));
+        self.order
+            .lock()
+            .retain(|uuid| *uuid != removed.gameprofile.id);
         Some(removed)
     }
 
@@ -132,7 +145,15 @@ impl PlayerMap {
     where
         F: FnMut(&Uuid, &Arc<Player>) -> bool,
     {
-        self.by_uuid.iter_sync(|uuid, player| f(uuid, player));
+        let order = self.order.lock().iter().copied().collect::<Vec<_>>();
+        for uuid in order {
+            let Some(player) = self.get_by_uuid(&uuid) else {
+                continue;
+            };
+            if !f(&uuid, &player) {
+                return;
+            }
+        }
     }
 
     /// Returns the number of players.

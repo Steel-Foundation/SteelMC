@@ -83,8 +83,8 @@ impl FenceGateBlock {
 impl BlockBehavior for FenceGateBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let world = context.world;
-        let pos = context.place_pos;
-        let direction = context.horizontal_direction;
+        let pos = context.place_pos();
+        let direction = context.horizontal_direction();
         let axis = direction.axis();
 
         let in_wall = match axis {

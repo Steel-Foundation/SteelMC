@@ -157,7 +157,7 @@ impl World {
     ///
     /// Unlike `remove_player`, this is synchronous and skips player data saving and tab list
     /// removal — the player stays in the global tab list since they are only switching worlds.
-    pub fn remove_player_for_world_change(self: &Arc<Self>, player: &Arc<Player>) {
+    pub(crate) fn remove_player_for_world_change(self: &Arc<Self>, player: &Arc<Player>) {
         let Some(player) = self.players.remove_player_sync(player) else {
             return;
         };
@@ -173,7 +173,7 @@ impl World {
 
     /// Removes a player during a domain switch after the caller has saved
     /// the player's current-domain data.
-    pub fn remove_player_for_domain_switch(self: &Arc<Self>, player: &Arc<Player>) {
+    pub(crate) fn remove_player_for_domain_switch(self: &Arc<Self>, player: &Arc<Player>) {
         let Some(player) = self.players.remove_player_sync(player) else {
             return;
         };
@@ -193,7 +193,7 @@ impl World {
     /// players. On `WorldChange`, this is skipped — the player already exists in all
     /// clients' tab lists and the entity tracker handles spawning as chunks load.
     #[must_use]
-    pub fn add_player(self: &Arc<Self>, player: Arc<Player>, _reason: ResetReason) -> bool {
+    pub(crate) fn add_player(self: &Arc<Self>, player: Arc<Player>, _reason: ResetReason) -> bool {
         if !self.players.insert(player.clone()) {
             player.connection.close();
             return false;

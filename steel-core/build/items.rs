@@ -4,6 +4,7 @@
 //! cross-references with `classes.json`, and generates `register_item_behaviors()`.
 
 use crate::common::{self, JsonArgKind, scan_object_behaviors};
+use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span};
 use quote::quote;
 use serde::Deserialize;
@@ -34,7 +35,7 @@ pub fn build(items: &[ItemClass]) -> String {
         matched_classes.insert(&item.class);
 
         let struct_ident = Ident::new(&info.struct_name, Span::call_site());
-        let item_field = Ident::new(&item.name, Span::call_site());
+        let item_field = Ident::new(&item.name.to_shouty_snake_case(), Span::call_site());
 
         type_imports.insert(info.struct_name.clone());
 
@@ -62,7 +63,7 @@ pub fn build(items: &[ItemClass]) -> String {
             // Unit struct or struct with no json_args — instantiate directly
             quote! {
                 registry.set_behavior(
-                    &vanilla_items::ITEMS.#item_field,
+                    &*vanilla_items::#item_field,
                     Box::new(#struct_ident),
                 );
             }
@@ -74,7 +75,7 @@ pub fn build(items: &[ItemClass]) -> String {
 
             quote! {
                 registry.set_behavior(
-                    &vanilla_items::ITEMS.#item_field,
+                    &*vanilla_items::#item_field,
                     Box::new(#struct_ident::new(#(#args),*)),
                 );
             }
