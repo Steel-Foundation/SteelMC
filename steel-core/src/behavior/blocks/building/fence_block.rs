@@ -131,10 +131,10 @@ impl BlockBehavior for FenceBlock {
         log::debug!(
             "FenceBlock::get_state_for_placement called for {:?} at {:?}",
             self.block.key,
-            context.place_pos
+            context.place_pos()
         );
         Some(
-            self.get_connection_state(context.world, context.place_pos)
+            self.get_connection_state(context.world, context.place_pos())
                 .set_value(&Self::WATERLOGGED, context.is_water_source()),
         )
     }

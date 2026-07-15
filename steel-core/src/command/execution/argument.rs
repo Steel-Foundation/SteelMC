@@ -737,7 +737,7 @@ impl SteelArgumentParser for EntityParser {
             ProtocolArgumentType::Entity {
                 flags: u8::from(self.single) | (u8::from(self.players_only) << 1),
             },
-            Some(ProtocolSuggestionType::AskServer),
+            None,
         )
     }
 }

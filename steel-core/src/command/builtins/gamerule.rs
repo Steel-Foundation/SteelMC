@@ -1,6 +1,6 @@
 use steel_registry::{
     REGISTRY,
-    game_rules::{GameRuleRef, GameRuleType, GameRuleValue},
+    game_rules::{ErasedGameRuleRef, GameRuleType, GameRuleValue},
 };
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
@@ -19,19 +19,19 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     let mut command = literal("gamerule");
     for (_, rule) in REGISTRY.game_rules.iter() {
         // Vanilla's short identifier only omits the `minecraft` namespace.
-        if rule.key.namespace == Identifier::VANILLA_NAMESPACE {
-            command = command.then(rule_literal(rule.key.path.to_string(), rule));
+        if rule.key().namespace == Identifier::VANILLA_NAMESPACE {
+            command = command.then(rule_literal(rule.key().path.to_string(), rule));
         }
-        command = command.then(rule_literal(rule.key.to_string(), rule));
+        command = command.then(rule_literal(rule.key().to_string(), rule));
     }
     command
 }
 
 fn rule_literal(
     name: String,
-    rule: GameRuleRef,
+    rule: ErasedGameRuleRef,
 ) -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    match rule.value_type {
+    match rule.value_type() {
         GameRuleType::Bool => literal(name)
             .executes(move |context| query_rule(context, rule))
             .then(
@@ -39,8 +39,8 @@ fn rule_literal(
                     .executes(move |context| set_bool_rule(context, rule)),
             ),
         GameRuleType::Int => {
-            let minimum = rule.min_value.unwrap_or(i32::MIN);
-            let maximum = rule.max_value.unwrap_or(i32::MAX);
+            let minimum = rule.min_value().unwrap_or(i32::MIN);
+            let maximum = rule.max_value().unwrap_or(i32::MAX);
             literal(name)
                 .executes(move |context| query_rule(context, rule))
                 .then(
@@ -57,9 +57,9 @@ fn rule_literal(
 )]
 fn query_rule(
     context: &SteelCommandContext<CommandSource>,
-    rule: GameRuleRef,
+    rule: ErasedGameRuleRef,
 ) -> Result<i32, CommandSyntaxError> {
-    let value = context.source().world().get_game_rule(rule);
+    let value = context.source().world().get_erased_game_rule(rule);
     let message = translations::COMMANDS_GAMERULE_QUERY
         .message([
             TextComponent::from(rule_display_name(rule)),
@@ -67,70 +67,65 @@ fn query_rule(
         ])
         .component();
     context.source().send_success(&message, false);
-    Ok(game_rule_result(value))
+    Ok(rule.erased_command_result(&value))
 }
 
 fn set_bool_rule(
     context: &SteelCommandContext<CommandSource>,
-    rule: GameRuleRef,
+    rule: ErasedGameRuleRef,
 ) -> Result<i32, CommandSyntaxError> {
     let Some(value) = context.boolean("value") else {
         return Err(missing_rule_value(rule));
     };
-    set_rule(context, rule, GameRuleValue::Bool(value))
+    set_rule(context, rule, GameRuleValue::new(value))
 }
 
 fn set_int_rule(
     context: &SteelCommandContext<CommandSource>,
-    rule: GameRuleRef,
+    rule: ErasedGameRuleRef,
 ) -> Result<i32, CommandSyntaxError> {
     let Some(value) = context.integer("value") else {
         return Err(missing_rule_value(rule));
     };
-    set_rule(context, rule, GameRuleValue::Int(value))
+    set_rule(context, rule, GameRuleValue::new(value))
 }
 
 fn set_rule(
     context: &SteelCommandContext<CommandSource>,
-    rule: GameRuleRef,
+    rule: ErasedGameRuleRef,
     value: GameRuleValue,
 ) -> Result<i32, CommandSyntaxError> {
-    if !context.source().world().set_game_rule(rule, value) {
+    let result = rule.erased_command_result(&value);
+    let serialized_value = value.to_string();
+    if !context.source().world().set_erased_game_rule(rule, value) {
         return Err(CommandSyntaxError::dynamic(format!(
             "Parsed value does not match game rule {}",
-            rule.key
+            rule.key()
         )));
     }
 
     let message = translations::COMMANDS_GAMERULE_SET
         .message([
             TextComponent::from(rule_display_name(rule)),
-            TextComponent::from(value.to_string()),
+            TextComponent::from(serialized_value),
         ])
         .component();
     context.source().send_success(&message, true);
-    Ok(game_rule_result(value))
+    Ok(result)
 }
 
-fn missing_rule_value(rule: GameRuleRef) -> CommandSyntaxError {
+fn missing_rule_value(rule: ErasedGameRuleRef) -> CommandSyntaxError {
     CommandSyntaxError::dynamic(format!(
         "Parsed value for game rule {} is missing from the command context",
-        rule.key
+        rule.key()
     ))
 }
 
-fn rule_display_name(rule: GameRuleRef) -> String {
-    if rule.key.namespace == Identifier::VANILLA_NAMESPACE {
-        rule.key.path.to_string()
+fn rule_display_name(rule: ErasedGameRuleRef) -> String {
+    if rule.key().namespace == Identifier::VANILLA_NAMESPACE {
+        rule.key().path.to_string()
     } else {
-        rule.key.to_string()
-    }
-}
-
-fn game_rule_result(value: GameRuleValue) -> i32 {
-    match value {
-        GameRuleValue::Bool(value) => i32::from(value),
-        GameRuleValue::Int(value) => value,
+        rule.key().to_string()
     }
 }
 

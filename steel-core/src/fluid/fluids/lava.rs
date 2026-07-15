@@ -9,7 +9,6 @@ use glam::DVec3;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
-use steel_registry::game_rules::GameRuleValue;
 use steel_registry::level_events;
 use steel_registry::sound_events;
 use steel_registry::vanilla_blocks;
@@ -82,10 +81,7 @@ impl FluidBehavior for LavaFluid {
     }
 
     fn can_convert_to_source(&self, world: &Arc<World>) -> bool {
-        match world.get_game_rule(&LAVA_SOURCE_CONVERSION) {
-            GameRuleValue::Bool(val) => val,
-            GameRuleValue::Int(_) => false,
-        }
+        world.get_game_rule(&LAVA_SOURCE_CONVERSION)
     }
 
     fn get_flow(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> DVec3 {

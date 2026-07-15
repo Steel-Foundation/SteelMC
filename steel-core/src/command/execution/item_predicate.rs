@@ -6,14 +6,19 @@ use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::{
     REGISTRY, RegistryExt as _, TaggedRegistryExt as _,
     attribute::{AttributeModifierOperation, AttributeRef},
+    data_component_predicate as registered,
+    data_component_predicate::DataComponentPredicateCodec as _,
     data_components::{
-        ComponentData, ComponentDataDiscriminant, ComponentEntry, vanilla_components,
+        Component, ComponentData, ComponentEntry, DataComponentType, PotionContents,
+        vanilla_components,
     },
     enchantment::EnchantmentRef,
     equipment::EquipmentSlotGroup,
+    item_predicate::{DoubleBounds, IntBounds, ItemPredicate as RegisteredItemPredicate},
     item_stack::ItemStack,
     items::ItemRef,
 };
+use steel_utils::DowncastType;
 use steel_utils::{Identifier, nbt::parse_snbt_argument};
 use text_components::TextComponent;
 
@@ -78,12 +83,65 @@ enum ItemPredicateTerm {
 
 #[derive(Clone, Debug, PartialEq)]
 enum DataComponentPredicate {
+    CustomData(vanilla_components::CustomData),
     Damage(DamagePredicate),
     Enchantments {
         stored: bool,
         predicates: Vec<EnchantmentPredicate>,
     },
     AttributeModifiers(AttributeModifiersPredicate),
+    Potions(registered::PotionsPredicate),
+    Container(registered::ContainerPredicate),
+    Bundle(registered::BundlePredicate),
+    FireworkExplosion(registered::FireworkExplosionPredicate),
+    Fireworks(registered::FireworksPredicate),
+    WritableBook(registered::WritableBookPredicate),
+    WrittenBook(registered::WrittenBookPredicate),
+    Trim(registered::TrimPredicate),
+    JukeboxPlayable(registered::JukeboxPlayablePredicate),
+    VillagerType(registered::VillagerTypePredicate),
+}
+
+trait ItemInstanceView {
+    fn item_ref(&self) -> ItemRef;
+    fn item_count(&self) -> i32;
+    fn effective_value_raw(&self, key: &Identifier) -> Option<&ComponentData>;
+
+    fn component<T: Component + DowncastType>(
+        &self,
+        component: DataComponentType<T>,
+    ) -> Option<&T> {
+        self.effective_value_raw(component.key())
+            .and_then(ComponentData::downcast_ref::<T>)
+    }
+}
+
+impl ItemInstanceView for ItemStack {
+    fn item_ref(&self) -> ItemRef {
+        self.item()
+    }
+
+    fn item_count(&self) -> i32 {
+        self.count()
+    }
+
+    fn effective_value_raw(&self, key: &Identifier) -> Option<&ComponentData> {
+        self.get_effective_value_raw(key)
+    }
+}
+
+impl ItemInstanceView for steel_registry::ItemStackTemplate {
+    fn item_ref(&self) -> ItemRef {
+        self.item()
+    }
+
+    fn item_count(&self) -> i32 {
+        self.count()
+    }
+
+    fn effective_value_raw(&self, key: &Identifier) -> Option<&ComponentData> {
+        self.get_effective_value_raw(key)
+    }
 }
 
 impl ItemPredicate {
@@ -131,14 +189,23 @@ impl ItemPredicateTerm {
 }
 
 impl DataComponentPredicate {
-    fn matches(&self, stack: &ItemStack) -> bool {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "keeping every registered predicate variant in one match makes coverage auditable"
+    )]
+    fn matches<S: ItemInstanceView + ?Sized>(&self, stack: &S) -> bool {
         match self {
+            Self::CustomData(expected) => stack
+                .component(vanilla_components::CUSTOM_DATA)
+                .cloned()
+                .unwrap_or_default()
+                .matched_by(expected.as_compound()),
             Self::Damage(predicate) => predicate.matches(stack),
             Self::Enchantments { stored, predicates } => {
                 let enchantments = if *stored {
-                    stack.get(vanilla_components::STORED_ENCHANTMENTS)
+                    stack.component(vanilla_components::STORED_ENCHANTMENTS)
                 } else {
-                    stack.get(vanilla_components::ENCHANTMENTS)
+                    stack.component(vanilla_components::ENCHANTMENTS)
                 };
                 enchantments.is_some_and(|enchantments| {
                     predicates
@@ -147,10 +214,293 @@ impl DataComponentPredicate {
                 })
             }
             Self::AttributeModifiers(predicate) => stack
-                .get(vanilla_components::ATTRIBUTE_MODIFIERS)
+                .component(vanilla_components::ATTRIBUTE_MODIFIERS)
                 .is_some_and(|modifiers| predicate.matches(modifiers)),
+            Self::Potions(predicate) => stack
+                .component(vanilla_components::POTION_CONTENTS)
+                .and_then(PotionContents::potion)
+                .is_some_and(|potion| predicate.potions().contains(potion.value())),
+            Self::Container(predicate) => stack
+                .component(vanilla_components::CONTAINER)
+                .is_some_and(|contents| {
+                    predicate.items().is_none_or(|items| {
+                        collection_matches(
+                            items,
+                            contents.items().iter().filter_map(Option::as_ref),
+                            registered_item_predicate_matches,
+                        )
+                    })
+                }),
+            Self::Bundle(predicate) => stack
+                .component(vanilla_components::BUNDLE_CONTENTS)
+                .is_some_and(|contents| {
+                    predicate.items().is_none_or(|items| {
+                        collection_matches(
+                            items,
+                            contents.items().iter(),
+                            registered_item_predicate_matches,
+                        )
+                    })
+                }),
+            Self::FireworkExplosion(predicate) => stack
+                .component(vanilla_components::FIREWORK_EXPLOSION)
+                .is_some_and(|explosion| firework_matches(predicate.predicate(), explosion)),
+            Self::Fireworks(predicate) => stack
+                .component(vanilla_components::FIREWORKS)
+                .is_some_and(|fireworks| {
+                    int_bounds_matches(predicate.flight_duration(), fireworks.flight_duration())
+                        && predicate.explosions().is_none_or(|explosions| {
+                            collection_matches(
+                                explosions,
+                                fireworks.explosions().iter(),
+                                firework_matches,
+                            )
+                        })
+                }),
+            Self::WritableBook(predicate) => stack
+                .component(vanilla_components::WRITABLE_BOOK_CONTENT)
+                .is_some_and(|book| {
+                    predicate.pages().is_none_or(|pages| {
+                        collection_matches(pages, book.pages().iter(), |predicate, page| {
+                            predicate.contents() == page.raw()
+                        })
+                    })
+                }),
+            Self::WrittenBook(predicate) => stack
+                .component(vanilla_components::WRITTEN_BOOK_CONTENT)
+                .is_some_and(|book| {
+                    predicate
+                        .author()
+                        .is_none_or(|author| author == book.author())
+                        && predicate
+                            .title()
+                            .is_none_or(|title| title == book.title().raw())
+                        && int_bounds_matches(predicate.generation(), book.generation())
+                        && predicate
+                            .resolved()
+                            .is_none_or(|resolved| resolved == book.resolved())
+                        && predicate.pages().is_none_or(|pages| {
+                            collection_matches(pages, book.pages().iter(), |predicate, page| {
+                                predicate.contents() == page.raw()
+                            })
+                        })
+                }),
+            Self::Trim(predicate) => {
+                stack
+                    .component(vanilla_components::TRIM)
+                    .is_some_and(|trim| {
+                        predicate.material().is_none_or(|materials| {
+                            trim.material()
+                                .as_reference()
+                                .is_some_and(|material| materials.contains(material))
+                        }) && predicate.pattern().is_none_or(|patterns| {
+                            trim.pattern()
+                                .as_reference()
+                                .is_some_and(|pattern| patterns.contains(pattern))
+                        })
+                    })
+            }
+            Self::JukeboxPlayable(predicate) => stack
+                .component(vanilla_components::JUKEBOX_PLAYABLE)
+                .is_some_and(|playable| {
+                    predicate.song().is_none_or(|songs| {
+                        playable
+                            .song()
+                            .as_reference()
+                            .is_some_and(|song| songs.contains(song))
+                    })
+                }),
+            Self::VillagerType(predicate) => stack
+                .component(vanilla_components::VILLAGER_VARIANT)
+                .is_some_and(|villager_type| {
+                    predicate.villager_types().contains(villager_type.value())
+                }),
         }
     }
+}
+
+fn int_bounds_matches(bounds: IntBounds, value: i32) -> bool {
+    bounds.min().is_none_or(|minimum| value >= minimum)
+        && bounds.max().is_none_or(|maximum| value <= maximum)
+}
+
+fn double_bounds_matches(bounds: DoubleBounds, value: f64) -> bool {
+    bounds.min().is_none_or(|minimum| value >= minimum)
+        && bounds.max().is_none_or(|maximum| value <= maximum)
+}
+
+fn collection_matches<'a, P, T: 'a>(
+    predicate: &registered::CollectionPredicate<P>,
+    values: impl IntoIterator<Item = &'a T>,
+    matches: impl Fn(&P, &T) -> bool + Copy,
+) -> bool {
+    let values = values.into_iter().collect::<Vec<_>>();
+    predicate.contains().is_none_or(|predicates| {
+        predicates
+            .iter()
+            .all(|predicate| values.iter().any(|value| matches(predicate, value)))
+    }) && predicate.counts().is_none_or(|predicates| {
+        predicates.iter().all(|predicate| {
+            let count = values
+                .iter()
+                .filter(|value| matches(predicate.test(), value))
+                .count();
+            i32::try_from(count).is_ok_and(|count| int_bounds_matches(predicate.count(), count))
+        })
+    }) && predicate.size().is_none_or(|size| {
+        i32::try_from(values.len()).is_ok_and(|length| int_bounds_matches(*size, length))
+    })
+}
+
+fn registered_item_predicate_matches(
+    predicate: &RegisteredItemPredicate,
+    template: &steel_registry::ItemStackTemplate,
+) -> bool {
+    predicate
+        .items()
+        .is_none_or(|items| items.contains(template.item_ref()))
+        && int_bounds_matches(predicate.count(), template.item_count())
+        && predicate
+            .components()
+            .exact()
+            .values()
+            .iter()
+            .all(|(entry, expected)| template.effective_value_raw(&entry.key) == Some(expected))
+        && predicate
+            .components()
+            .partial()
+            .iter()
+            .all(|predicate| registered_partial_matches(predicate, template))
+}
+
+fn registered_partial_matches<S: ItemInstanceView + ?Sized>(
+    predicate: &registered::DataComponentPredicateData,
+    stack: &S,
+) -> bool {
+    if let Some(component) = predicate.any_component() {
+        return stack.effective_value_raw(&component.key).is_some();
+    }
+    macro_rules! match_registered {
+        ($type:ty, $variant:ident) => {
+            if let Some(value) = predicate.downcast_ref::<$type>() {
+                return DataComponentPredicate::$variant(value.clone()).matches(stack);
+            }
+        };
+    }
+    match_registered!(registered::PotionsPredicate, Potions);
+    match_registered!(registered::ContainerPredicate, Container);
+    match_registered!(registered::BundlePredicate, Bundle);
+    match_registered!(registered::FireworkExplosionPredicate, FireworkExplosion);
+    match_registered!(registered::FireworksPredicate, Fireworks);
+    match_registered!(registered::WritableBookPredicate, WritableBook);
+    match_registered!(registered::WrittenBookPredicate, WrittenBook);
+    match_registered!(registered::TrimPredicate, Trim);
+    match_registered!(registered::JukeboxPlayablePredicate, JukeboxPlayable);
+    match_registered!(registered::VillagerTypePredicate, VillagerType);
+
+    if let Some(value) = predicate.downcast_ref::<registered::CustomDataPredicate>() {
+        return stack
+            .component(vanilla_components::CUSTOM_DATA)
+            .cloned()
+            .unwrap_or_default()
+            .matched_by(value.value().tag());
+    }
+    if let Some(value) = predicate.downcast_ref::<registered::DamagePredicate>() {
+        let Some(damage) = stack.component(vanilla_components::DAMAGE).copied() else {
+            return false;
+        };
+        let maximum = stack
+            .component(vanilla_components::MAX_DAMAGE)
+            .copied()
+            .unwrap_or(0);
+        return int_bounds_matches(value.durability(), maximum - damage)
+            && int_bounds_matches(value.damage(), damage);
+    }
+    if let Some(value) = predicate.downcast_ref::<registered::EnchantmentsPredicate>() {
+        return stack
+            .component(vanilla_components::ENCHANTMENTS)
+            .is_some_and(|enchantments| {
+                value
+                    .enchantments()
+                    .iter()
+                    .all(|predicate| registered_enchantment_matches(predicate, enchantments))
+            });
+    }
+    if let Some(value) = predicate.downcast_ref::<registered::StoredEnchantmentsPredicate>() {
+        return stack
+            .component(vanilla_components::STORED_ENCHANTMENTS)
+            .is_some_and(|enchantments| {
+                value
+                    .enchantments()
+                    .iter()
+                    .all(|predicate| registered_enchantment_matches(predicate, enchantments))
+            });
+    }
+    if let Some(value) = predicate.downcast_ref::<registered::AttributeModifiersPredicate>() {
+        return stack
+            .component(vanilla_components::ATTRIBUTE_MODIFIERS)
+            .is_some_and(|modifiers| {
+                value.modifiers().is_none_or(|predicate| {
+                    collection_matches(
+                        predicate,
+                        modifiers.modifiers.iter(),
+                        registered_attribute_modifier_matches,
+                    )
+                })
+            });
+    }
+    false
+}
+
+fn registered_enchantment_matches(
+    predicate: &registered::EnchantmentPredicate,
+    enchantments: &vanilla_components::ItemEnchantments,
+) -> bool {
+    enchantments.iter().any(|(key, level)| {
+        predicate.enchantments().is_none_or(|expected| {
+            REGISTRY
+                .enchantments
+                .by_key(key)
+                .is_some_and(|enchantment| expected.contains(enchantment))
+        }) && predicate
+            .levels()
+            .min()
+            .is_none_or(|minimum| i64::from(*level) >= i64::from(minimum))
+            && predicate
+                .levels()
+                .max()
+                .is_none_or(|maximum| i64::from(*level) <= i64::from(maximum))
+    })
+}
+
+fn registered_attribute_modifier_matches(
+    predicate: &registered::AttributeModifierEntryPredicate,
+    modifier: &vanilla_components::ItemAttributeModifierEntry,
+) -> bool {
+    predicate
+        .attribute()
+        .is_none_or(|attributes| attributes.contains(modifier.attribute))
+        && predicate.id().is_none_or(|id| id == &modifier.id)
+        && double_bounds_matches(predicate.amount(), modifier.amount)
+        && predicate
+            .operation()
+            .is_none_or(|operation| operation == modifier.operation)
+        && predicate.slot().is_none_or(|slot| slot == modifier.slot)
+}
+
+fn firework_matches(
+    predicate: &registered::FireworkPredicate,
+    explosion: &vanilla_components::FireworkExplosion,
+) -> bool {
+    predicate
+        .shape()
+        .is_none_or(|shape| shape == explosion.shape())
+        && predicate
+            .has_twinkle()
+            .is_none_or(|twinkle| twinkle == explosion.has_twinkle())
+        && predicate
+            .has_trail()
+            .is_none_or(|trail| trail == explosion.has_trail())
 }
 
 pub(super) fn parse_item_predicate(
@@ -309,12 +659,6 @@ fn parse_component_value_test(
             format!("Unknown item component '{key}'"),
         ));
     };
-    if entry.expected_discriminant == ComponentDataDiscriminant::Todo {
-        return Err(dynamic_error(
-            reader,
-            format!("Component value '{key}' is not implemented by Steel yet"),
-        ));
-    }
     let Some(value) = read_component_value(entry, &tag) else {
         return Err(malformed_component(reader, &key));
     };
@@ -341,7 +685,7 @@ fn parse_predicate_value_test(
 
     if is_vanilla_predicate_key(&key) {
         let predicate = parse_supported_data_predicate(&key, &tag)
-            .ok_or_else(|| malformed_or_unsupported_predicate(reader, &key))?;
+            .ok_or_else(|| malformed_predicate(reader, &key))?;
         return Ok(ItemPredicateTerm::DataPredicate(predicate));
     }
 
@@ -391,20 +735,6 @@ fn malformed_predicate(reader: &StringReader<'_>, key: &Identifier) -> CommandSy
     dynamic_error(reader, format!("Malformed item predicate '{key}'"))
 }
 
-fn malformed_or_unsupported_predicate(
-    reader: &StringReader<'_>,
-    key: &Identifier,
-) -> CommandSyntaxError {
-    if is_supported_predicate_key(key) {
-        return malformed_predicate(reader, key);
-    }
-    // TODO: Decode this predicate once Steel implements its backing data component.
-    dynamic_error(
-        reader,
-        format!("Item predicate '{key}' is not implemented by Steel yet"),
-    )
-}
-
 fn dynamic_error(
     reader: &StringReader<'_>,
     message: impl Into<TextComponent>,
@@ -423,19 +753,13 @@ fn is_vanilla_predicate_key(key: &Identifier) -> bool {
             .any(|path| key.path == *path)
 }
 
-fn is_supported_predicate_key(key: &Identifier) -> bool {
-    key.namespace == Identifier::VANILLA_NAMESPACE
-        && matches!(
-            key.path.as_ref(),
-            "damage" | "enchantments" | "stored_enchantments" | "attribute_modifiers"
-        )
-}
-
 fn parse_supported_data_predicate(
     key: &Identifier,
     tag: &NbtTag,
 ) -> Option<DataComponentPredicate> {
     match key.path.as_ref() {
+        "custom_data" => vanilla_components::CustomData::from_nbt_value(tag)
+            .map(DataComponentPredicate::CustomData),
         "damage" => parse_damage_predicate(tag).map(DataComponentPredicate::Damage),
         "enchantments" => parse_enchantment_predicates(tag).map(|predicates| {
             DataComponentPredicate::Enchantments {
@@ -452,6 +776,27 @@ fn parse_supported_data_predicate(
         "attribute_modifiers" => {
             parse_attribute_modifiers_predicate(tag).map(DataComponentPredicate::AttributeModifiers)
         }
+        "potion_contents" => {
+            registered::PotionsPredicate::from_nbt_value(tag).map(DataComponentPredicate::Potions)
+        }
+        "container" => registered::ContainerPredicate::from_nbt_value(tag)
+            .map(DataComponentPredicate::Container),
+        "bundle_contents" => {
+            registered::BundlePredicate::from_nbt_value(tag).map(DataComponentPredicate::Bundle)
+        }
+        "firework_explosion" => registered::FireworkExplosionPredicate::from_nbt_value(tag)
+            .map(DataComponentPredicate::FireworkExplosion),
+        "fireworks" => registered::FireworksPredicate::from_nbt_value(tag)
+            .map(DataComponentPredicate::Fireworks),
+        "writable_book_content" => registered::WritableBookPredicate::from_nbt_value(tag)
+            .map(DataComponentPredicate::WritableBook),
+        "written_book_content" => registered::WrittenBookPredicate::from_nbt_value(tag)
+            .map(DataComponentPredicate::WrittenBook),
+        "trim" => registered::TrimPredicate::from_nbt_value(tag).map(DataComponentPredicate::Trim),
+        "jukebox_playable" => registered::JukeboxPlayablePredicate::from_nbt_value(tag)
+            .map(DataComponentPredicate::JukeboxPlayable),
+        "villager/variant" => registered::VillagerTypePredicate::from_nbt_value(tag)
+            .map(DataComponentPredicate::VillagerType),
         _ => None,
     }
 }
@@ -519,12 +864,12 @@ struct DamagePredicate {
 }
 
 impl DamagePredicate {
-    fn matches(self, stack: &ItemStack) -> bool {
-        let Some(damage) = stack.get(vanilla_components::DAMAGE).copied() else {
+    fn matches<S: ItemInstanceView + ?Sized>(self, stack: &S) -> bool {
+        let Some(damage) = stack.component(vanilla_components::DAMAGE).copied() else {
             return false;
         };
         let maximum = stack
-            .get(vanilla_components::MAX_DAMAGE)
+            .component(vanilla_components::MAX_DAMAGE)
             .copied()
             .unwrap_or(0);
         self.durability.matches(maximum - damage) && self.damage.matches(damage)

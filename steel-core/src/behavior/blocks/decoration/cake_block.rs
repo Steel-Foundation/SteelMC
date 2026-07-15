@@ -71,7 +71,7 @@ impl BlockBehavior for CakeBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if context
             .world
-            .get_block_state(context.place_pos.below())
+            .get_block_state(context.place_pos().below())
             .is_solid()
         {
             Some(self.block.default_state())

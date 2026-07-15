@@ -845,7 +845,7 @@ pub fn add_standard_inventory_slots(slots: &mut Vec<SlotType>, inventory: &SyncP
 mod tests {
     use super::*;
     use steel_registry::test_support::init_test_registry;
-    use steel_registry::vanilla_items::ITEMS;
+    use steel_registry::vanilla_items;
 
     fn lock_crafting_pair(
         crafting: &SyncCraftingContainer,
@@ -866,17 +866,17 @@ mod tests {
         let result_id = ContainerId::from_arc(&result);
 
         let mut guard = lock_crafting_pair(&crafting, &result);
-        slot.set_item(&mut guard, ItemStack::new(&ITEMS.oak_log));
+        slot.set_item(&mut guard, ItemStack::new(&vanilla_items::OAK_LOG));
 
         let result_item = guard
             .get(result_id)
             .expect("result container not locked")
             .get_item(0);
-        assert!(result_item.is(&ITEMS.oak_planks));
+        assert!(result_item.is(&vanilla_items::OAK_PLANKS));
         assert_eq!(result_item.count(), 4);
 
         let removed = slot.remove(&mut guard, 1);
-        assert!(removed.is(&ITEMS.oak_log));
+        assert!(removed.is(&vanilla_items::OAK_LOG));
         assert_eq!(removed.count(), 1);
 
         let result_item = guard
@@ -900,16 +900,16 @@ mod tests {
         guard
             .get_typed_mut::<ResultContainer>(result_id)
             .expect("result container not locked")
-            .set_item(0, ItemStack::with_count(&ITEMS.oak_planks, 4));
+            .set_item(0, ItemStack::with_count(&vanilla_items::OAK_PLANKS, 4));
         assert!(!result_slot.has_valid_recipe_result(&guard));
 
-        input_slot.set_item(&mut guard, ItemStack::new(&ITEMS.oak_log));
+        input_slot.set_item(&mut guard, ItemStack::new(&vanilla_items::OAK_LOG));
         assert!(result_slot.has_valid_recipe_result(&guard));
 
         guard
             .get_typed_mut::<ResultContainer>(result_id)
             .expect("result container not locked")
-            .set_item(0, ItemStack::new(&ITEMS.stick));
+            .set_item(0, ItemStack::new(&vanilla_items::STICK));
         assert!(!result_slot.has_valid_recipe_result(&guard));
     }
 }

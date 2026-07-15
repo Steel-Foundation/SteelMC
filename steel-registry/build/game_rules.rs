@@ -37,45 +37,57 @@ pub fn build() -> TokenStream {
         let rule_name = Literal::string(&rule.name);
         let category = Ident::new(&rule.category.to_pascal_case(), Span::call_site());
 
-        let (value_type, default_value) = match rule.value_type.as_str() {
+        let (value_type, definition) = match rule.value_type.as_str() {
             "bool" => {
-                let value = rule.default.as_bool().unwrap_or(false);
+                let Some(value) = rule.default.as_bool() else {
+                    panic!("Boolean game rule {} has a non-boolean default", rule.name);
+                };
                 (
-                    quote! { GameRuleType::Bool },
-                    quote! { GameRuleValue::Bool(#value) },
+                    quote! { bool },
+                    quote! {
+                        GameRule::boolean(
+                            Identifier::vanilla_static(#rule_name),
+                            GameRuleCategory::#category,
+                            #value,
+                        )
+                    },
                 )
             }
             "int" => {
-                let value = rule.default.as_i64().unwrap_or(0) as i32;
+                let Some(value) = rule.default.as_i64() else {
+                    panic!("Integer game rule {} has a non-integer default", rule.name);
+                };
+                let Ok(value) = i32::try_from(value) else {
+                    panic!("Integer game rule {} default is outside i32", rule.name);
+                };
+                let min_value = if let Some(v) = rule.min {
+                    quote! { Some(#v) }
+                } else {
+                    quote! { None }
+                };
+                let max_value = if let Some(v) = rule.max {
+                    quote! { Some(#v) }
+                } else {
+                    quote! { None }
+                };
                 (
-                    quote! { GameRuleType::Int },
-                    quote! { GameRuleValue::Int(#value) },
+                    quote! { i32 },
+                    quote! {
+                        GameRule::integer(
+                            Identifier::vanilla_static(#rule_name),
+                            GameRuleCategory::#category,
+                            #value,
+                            #min_value,
+                            #max_value,
+                        )
+                    },
                 )
             }
             _ => panic!("Unknown game rule type: {}", rule.value_type),
         };
 
-        let min_value = if let Some(v) = rule.min {
-            quote! { Some(#v) }
-        } else {
-            quote! { None }
-        };
-
-        let max_value = if let Some(v) = rule.max {
-            quote! { Some(#v) }
-        } else {
-            quote! { None }
-        };
-
         constants.extend(quote! {
-            pub static #const_name: GameRule = GameRule {
-                key: Identifier::vanilla_static(#rule_name),
-                category: GameRuleCategory::#category,
-                value_type: #value_type,
-                default_value: #default_value,
-                min_value: #min_value,
-                max_value: #max_value,
-            };
+            pub static #const_name: GameRule<#value_type> = #definition;
         });
 
         registrations.extend(quote! {
@@ -84,7 +96,7 @@ pub fn build() -> TokenStream {
     }
 
     quote! {
-        use crate::game_rules::{GameRule, GameRuleRegistry, GameRuleCategory, GameRuleType, GameRuleValue};
+        use crate::game_rules::{GameRule, GameRuleRegistry, GameRuleCategory};
         use steel_utils::Identifier;
 
         #constants

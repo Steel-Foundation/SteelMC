@@ -41,9 +41,11 @@ use crate::{
     chat_type::ChatTypeRegistry,
     chicken_sound_variant::ChickenSoundVariantRegistry,
     chicken_variant::ChickenVariantRegistry,
+    consume_effect::ConsumeEffectTypeRegistry,
     cow_sound_variant::CowSoundVariantRegistry,
     cow_variant::CowVariantRegistry,
     damage_type::DamageTypeRegistry,
+    data_component_predicate::DataComponentPredicateTypeRegistry,
     data_components::{DataComponentRegistry, vanilla_components},
     dialog::DialogRegistry,
     dimension_type::DimensionTypeRegistry,
@@ -61,6 +63,7 @@ use crate::{
     items::ItemRegistry,
     jukebox_song::JukeboxSongRegistry,
     loot_table::LootTableRegistry,
+    map_decoration_type::MapDecorationTypeRegistry,
     menu_type::MenuTypeRegistry,
     mob_effect::MobEffectRegistry,
     painting_variant::PaintingVariantRegistry,
@@ -68,6 +71,7 @@ use crate::{
     pig_sound_variant::PigSoundVariantRegistry,
     pig_variant::PigVariantRegistry,
     poi::PoiTypeRegistry,
+    potion::PotionRegistry,
     recipe::RecipeRegistry,
     sound_event::SoundEventRegistry,
     structure::StructureRegistry,
@@ -94,36 +98,49 @@ pub mod cat_variant;
 pub mod chat_type;
 pub mod chicken_sound_variant;
 pub mod chicken_variant;
+pub mod consume_effect;
 pub mod cow_sound_variant;
 pub mod cow_variant;
 pub mod damage_type;
+pub mod data_component_predicate;
 pub mod data_components;
 pub mod dialog;
 pub mod dimension_type;
+pub mod dye_color;
 pub mod enchantment;
 pub mod enchantment_effect;
 pub mod entity_data;
 pub mod entity_type;
+pub mod entity_variant;
 pub mod equipment;
 pub mod feature;
 pub mod fluid;
 pub mod frog_variant;
 pub mod game_events;
 pub mod game_rules;
+pub mod holder;
+pub mod holder_set;
 pub mod instrument;
+pub mod item_predicate;
 pub mod item_stack;
+pub mod item_stack_template;
 pub mod items;
 pub mod jukebox_song;
 pub mod loot_table;
 mod macros;
+pub mod map_decoration_type;
 pub mod menu_type;
 pub mod mob_effect;
+pub mod mob_effect_instance;
 pub mod painting_variant;
 pub mod particle_type;
 pub mod pig_sound_variant;
 pub mod pig_variant;
 pub mod poi;
+pub mod potion;
 pub mod recipe;
+pub mod registry_reference;
+pub mod resolvable_profile;
 pub mod sound_event;
 pub mod structure;
 pub mod structure_processor;
@@ -138,6 +155,23 @@ pub mod wolf_sound_variant;
 pub mod wolf_variant;
 pub mod world_clock;
 pub mod zombie_nautilus_variant;
+
+pub use consume_effect::{ConsumeEffectData, ConsumeEffectType, ConsumeEffectTypeRef};
+pub use dye_color::DyeColor;
+pub use entity_variant::{
+    AxolotlVariant, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant, ParrotVariant,
+    RabbitVariant, SalmonVariant, TropicalFishBase, TropicalFishPattern,
+};
+pub use holder::{RegistryHolder, RegistryHolderEntry};
+pub use holder_set::{RegistryHolderSet, RegistryHolderSetEntry};
+pub use item_stack_template::ItemStackTemplate;
+pub use mob_effect_instance::{MobEffectInstance, MobEffectInstanceDetails};
+pub use potion::{Potion, PotionEffect, PotionRef};
+pub use registry_reference::{RegistryReference, RegistryReferenceEntry};
+pub use resolvable_profile::{
+    PartialProfile, PlayerModelType, PlayerSkinPatch, ProfileProperty, ResolvableProfile,
+    ResolvableProfileContents, StoredGameProfile,
+};
 
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -316,6 +350,16 @@ pub mod vanilla_mob_effects;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_map_decoration_types.rs"]
+pub mod vanilla_map_decoration_types;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_potions.rs"]
+pub mod vanilla_potions;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_zombie_nautilus_variants.rs"]
 pub mod vanilla_zombie_nautilus_variants;
 
@@ -368,6 +412,11 @@ pub mod vanilla_entity_type_tags;
 #[rustfmt::skip]
 #[path = "generated/vanilla_enchantment_tags.rs"]
 pub mod vanilla_enchantment_tags;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_potion_tags.rs"]
+pub mod vanilla_potion_tags;
 #[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/vanilla_enchantments.rs"]
@@ -590,6 +639,8 @@ pub const INSTRUMENT_REGISTRY: Identifier = Identifier::vanilla_static("instrume
 pub const DIALOG_REGISTRY: Identifier = Identifier::vanilla_static("dialog");
 pub const MENU_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("menu");
 pub const MOB_EFFECT_REGISTRY: Identifier = Identifier::vanilla_static("mob_effect");
+pub const MAP_DECORATION_TYPE_REGISTRY: Identifier =
+    Identifier::vanilla_static("map_decoration_type");
 pub const ZOMBIE_NAUTILUS_VARIANT_REGISTRY: Identifier =
     Identifier::vanilla_static("zombie_nautilus_variant");
 pub const TIMELINE_REGISTRY: Identifier = Identifier::vanilla_static("timeline");
@@ -615,6 +666,8 @@ pub struct Registry {
     pub blocks: BlockRegistry,
     pub items: ItemRegistry,
     pub data_components: DataComponentRegistry,
+    pub data_component_predicate_types: DataComponentPredicateTypeRegistry,
+    pub consume_effect_types: ConsumeEffectTypeRegistry,
     pub entity_data_serializers: EntityDataSerializerRegistry,
     pub biomes: BiomeRegistry,
     pub chat_types: ChatTypeRegistry,
@@ -643,6 +696,8 @@ pub struct Registry {
     pub dialogs: DialogRegistry,
     pub menu_types: MenuTypeRegistry,
     pub mob_effects: MobEffectRegistry,
+    pub map_decoration_types: MapDecorationTypeRegistry,
+    pub potions: PotionRegistry,
     pub zombie_nautilus_variants: ZombieNautilusVariantRegistry,
     pub timelines: TimelineRegistry,
     pub recipes: RecipeRegistry,
@@ -682,6 +737,14 @@ impl Registry {
         vanilla_block_tags::BlockTag::register_block_tags(&mut registry.blocks);
 
         vanilla_components::register_vanilla_data_components(&mut registry.data_components);
+
+        data_component_predicate::vanilla_data_component_predicate_types::register_data_component_predicate_types(
+            &mut registry.data_component_predicate_types,
+        );
+
+        consume_effect::vanilla_consume_effect_types::register_consume_effect_types(
+            &mut registry.consume_effect_types,
+        );
 
         register_vanilla_entity_data_serializers(&mut registry.entity_data_serializers);
 
@@ -733,6 +796,11 @@ impl Registry {
         vanilla_dialog_tags::DialogTag::register_dialog_tags(&mut registry.dialogs);
         vanilla_menu_types::register_menu_types(&mut registry.menu_types);
         vanilla_mob_effects::register_mob_effects(&mut registry.mob_effects);
+        vanilla_map_decoration_types::register_map_decoration_types(
+            &mut registry.map_decoration_types,
+        );
+        vanilla_potions::register_potions(&mut registry.potions);
+        vanilla_potion_tags::PotionTag::register_potion_tags(&mut registry.potions);
         vanilla_zombie_nautilus_variants::register_zombie_nautilus_variants(
             &mut registry.zombie_nautilus_variants,
         );
@@ -783,6 +851,8 @@ impl Registry {
         self.attributes.freeze();
         self.blocks.freeze();
         self.data_components.freeze();
+        self.data_component_predicate_types.freeze();
+        self.consume_effect_types.freeze();
         self.entity_data_serializers.freeze();
         self.items.freeze();
         self.biomes.freeze();
@@ -812,6 +882,8 @@ impl Registry {
         self.dialogs.freeze();
         self.menu_types.freeze();
         self.mob_effects.freeze();
+        self.map_decoration_types.freeze();
+        self.potions.freeze();
         self.zombie_nautilus_variants.freeze();
         self.timelines.freeze();
         self.recipes.freeze();
@@ -1034,6 +1106,8 @@ impl Registry {
             attributes: AttributeRegistry::new(),
             blocks: BlockRegistry::new(),
             data_components: DataComponentRegistry::new(),
+            data_component_predicate_types: DataComponentPredicateTypeRegistry::new(),
+            consume_effect_types: ConsumeEffectTypeRegistry::new(),
             entity_data_serializers: EntityDataSerializerRegistry::new(),
             items: ItemRegistry::new(),
             biomes: BiomeRegistry::new(),
@@ -1063,6 +1137,8 @@ impl Registry {
             dialogs: DialogRegistry::new(),
             menu_types: MenuTypeRegistry::new(),
             mob_effects: MobEffectRegistry::new(),
+            map_decoration_types: MapDecorationTypeRegistry::new(),
+            potions: PotionRegistry::new(),
             zombie_nautilus_variants: ZombieNautilusVariantRegistry::new(),
             timelines: TimelineRegistry::new(),
             recipes: RecipeRegistry::new(),

@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 use steel_utils::locks::{AsyncMutex, SyncRwLock};
 use thiserror::Error;
 
-use crate::{saved_data::names as saved_data_names, server::worlds::WorldMap, world::World};
+use crate::{server::worlds::WorldMap, world::World};
+use steel_utils::saved_data::names as saved_data_names;
 
 /// Score holder name stored by the vanilla scoreboard.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -597,7 +598,7 @@ mod tests {
     };
     use tokio::fs;
 
-    use crate::saved_data::{SavedDataManager, names as saved_data_names};
+    use steel_utils::saved_data::{SavedDataManager, names as saved_data_names};
 
     use super::{
         AsyncMutex, DomainScoreboards, PersistentScoreboard, ScoreHolder, Scoreboard,
