@@ -71,6 +71,7 @@ use crate::{
     pig_sound_variant::PigSoundVariantRegistry,
     pig_variant::PigVariantRegistry,
     poi::PoiTypeRegistry,
+    position_source::PositionSourceTypeRegistry,
     potion::PotionRegistry,
     recipe::RecipeRegistry,
     sound_event::SoundEventRegistry,
@@ -137,6 +138,7 @@ pub mod particle_type;
 pub mod pig_sound_variant;
 pub mod pig_variant;
 pub mod poi;
+pub mod position_source;
 pub mod potion;
 pub mod recipe;
 pub mod registry_reference;
@@ -292,6 +294,11 @@ pub mod vanilla_painting_variants;
 #[rustfmt::skip]
 #[path = "generated/vanilla_particle_types.rs"]
 pub mod vanilla_particle_types;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_position_source_types.rs"]
+pub mod vanilla_position_source_types;
 
 #[expect(warnings)]
 #[rustfmt::skip]
@@ -627,6 +634,8 @@ pub const COW_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("cow_var
 pub const CHICKEN_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("chicken_variant");
 pub const PAINTING_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("painting_variant");
 pub const PARTICLE_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("particle_type");
+pub const POSITION_SOURCE_TYPE_REGISTRY: Identifier =
+    Identifier::vanilla_static("position_source_type");
 pub const VILLAGER_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("villager_type");
 pub const VILLAGER_PROFESSION_REGISTRY: Identifier =
     Identifier::vanilla_static("villager_profession");
@@ -686,6 +695,7 @@ pub struct Registry {
     pub chicken_variants: ChickenVariantRegistry,
     pub painting_variants: PaintingVariantRegistry,
     pub particle_types: ParticleTypeRegistry,
+    pub position_source_types: PositionSourceTypeRegistry,
     pub villager_types: VillagerTypeRegistry,
     pub villager_professions: VillagerProfessionRegistry,
     pub dimension_types: DimensionTypeRegistry,
@@ -773,6 +783,9 @@ impl Registry {
         vanilla_chicken_variants::register_chicken_variants(&mut registry.chicken_variants);
         vanilla_painting_variants::register_painting_variants(&mut registry.painting_variants);
         vanilla_particle_types::register_particle_types(&mut registry.particle_types);
+        vanilla_position_source_types::register_position_source_types(
+            &mut registry.position_source_types,
+        );
         vanilla_villager_types::register_villager_types(&mut registry.villager_types);
         vanilla_villager_professions::register_villager_professions(
             &mut registry.villager_professions,
@@ -872,6 +885,7 @@ impl Registry {
         self.chicken_variants.freeze();
         self.painting_variants.freeze();
         self.particle_types.freeze();
+        self.position_source_types.freeze();
         self.villager_types.freeze();
         self.villager_professions.freeze();
         self.dimension_types.freeze();
@@ -1127,6 +1141,7 @@ impl Registry {
             chicken_variants: ChickenVariantRegistry::new(),
             painting_variants: PaintingVariantRegistry::new(),
             particle_types: ParticleTypeRegistry::new(),
+            position_source_types: PositionSourceTypeRegistry::new(),
             villager_types: VillagerTypeRegistry::new(),
             villager_professions: VillagerProfessionRegistry::new(),
             dimension_types: DimensionTypeRegistry::new(),

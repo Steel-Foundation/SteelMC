@@ -519,12 +519,7 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
                 "Expected particle default with type/options, got {default}"
             );
 
-            let particle_type = extracted_registry_field_default_expr(
-                "build_assets/particle_types.json",
-                obj,
-                serializer,
-                "type",
-            );
+            let particle_type = key_ident(required_field(obj, serializer, "type"), serializer);
             let options = required_object(required_field(obj, serializer, "options"), serializer);
             let kind = required_string(required_field(options, serializer, "kind"), serializer);
 
@@ -535,7 +530,7 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
                         1,
                         "Expected particle none options to contain only kind, got {default}"
                     );
-                    quote! { ParticleData::new(#particle_type, ParticleOptions::None) }
+                    quote! { ParticleData::simple(&crate::vanilla_particle_types::#particle_type) }
                 }
                 "color" => {
                     assert_eq!(
@@ -545,7 +540,10 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
                     );
                     let color = required_object_i32(options, serializer, "color");
                     quote! {
-                        ParticleData::new(#particle_type, ParticleOptions::Color { color: #color })
+                        ParticleData::new(
+                            &crate::vanilla_particle_types::#particle_type,
+                            ColorParticleOption::new(#color),
+                        )
                     }
                 }
                 _ => panic!("Unsupported particle options kind '{kind}' in {default}"),
@@ -911,7 +909,7 @@ pub(crate) fn build() -> TokenStream {
     stream.extend(quote! {
         use crate::entity_data::{
             ArmadilloState, BlockPos, DataValue, Direction, EntityData, EntityPose,
-            GlobalPos, HumanoidArm, ParticleData, ParticleList, ParticleOptions, Quaternionf,
+            ColorParticleOption, GlobalPos, HumanoidArm, ParticleData, ParticleList, Quaternionf,
             ResolvableProfile, Rotations, SnifferState, SyncedValue, Vector3f,
             VillagerData,
         };

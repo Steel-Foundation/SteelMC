@@ -44,6 +44,7 @@ use text_components::TextComponent;
 use uuid::Uuid;
 
 use crate::item_stack::ItemStack;
+pub use crate::particle_type::{ColorParticleOption, ParticleData};
 
 // Re-export types used in generated code
 pub use crate::blocks::properties::Direction;
@@ -280,31 +281,6 @@ impl Quaternionf {
     }
 }
 
-/// Particle-specific payload written after the particle type id.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParticleOptions {
-    None,
-    Color { color: i32 },
-}
-
-/// Particle effect data.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParticleData {
-    /// Particle type registry ID.
-    pub particle_type: i32,
-    pub options: ParticleOptions,
-}
-
-impl ParticleData {
-    #[must_use]
-    pub const fn new(particle_type: i32, options: ParticleOptions) -> Self {
-        Self {
-            particle_type,
-            options,
-        }
-    }
-}
-
 /// A list of particle effects.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ParticleList {
@@ -467,11 +443,11 @@ pub fn write_data_values(values: &[DataValue], buf: &mut Vec<u8>) -> io::Result<
 mod tests {
     use steel_utils::{Identifier, codec::VarInt, serial::WriteTo};
 
+    use crate::RegistryExt;
     use crate::vanilla_entity_data::{EggEntityData, ItemEntityData};
-    use crate::{Registry, RegistryExt};
 
     use super::{
-        EntityData, EntityDataSerializerRegistry, ParticleData, ParticleOptions,
+        ColorParticleOption, EntityData, EntityDataSerializerRegistry, ParticleData,
         register_vanilla_entity_data_serializers,
     };
 
@@ -495,7 +471,8 @@ mod tests {
 
     #[test]
     fn entity_effect_particle_color_options_encode_payload() {
-        let registry = Registry::new_vanilla();
+        crate::test_support::init_test_registry();
+        let registry = &*crate::REGISTRY;
         let entity_effect = Identifier::vanilla_static("entity_effect");
         let Some(particle_type_id) = registry.particle_types.id_from_key(&entity_effect) else {
             panic!("entity_effect particle type must be registered");
@@ -514,8 +491,8 @@ mod tests {
         };
 
         let particle = ParticleData::new(
-            particle_type_id as i32,
-            ParticleOptions::Color { color: -1 },
+            &crate::vanilla_particle_types::ENTITY_EFFECT,
+            ColorParticleOption::new(-1),
         );
         let value = EntityData::Particle(particle);
         let mut encoded = Vec::new();

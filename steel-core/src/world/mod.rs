@@ -26,9 +26,9 @@ use glam::DVec3;
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
     CBlockDestruction, CBlockEvent, CChangeDifficulty, CGameEvent, CInitializeBorder, CLevelEvent,
-    CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize, CSetBorderWarningDelay,
-    CSetBorderWarningDistance, CSetEntityData, CSetEntityLink, CSetEquipment, CSound, CSystemChat,
-    CUpdateAttributes, GameEventType, SoundSource,
+    CLevelParticles, CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize,
+    CSetBorderWarningDelay, CSetBorderWarningDistance, CSetEntityData, CSetEntityLink,
+    CSetEquipment, CSound, CSystemChat, CUpdateAttributes, GameEventType, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
@@ -51,6 +51,7 @@ use steel_registry::game_rules::{ErasedGameRuleRef, GameRule, GameRuleValue, Gam
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
 use steel_registry::loot_table::LootContext;
+use steel_registry::particle_type::ParticleData;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::{
@@ -3955,6 +3956,150 @@ impl World {
         }
     }
 
+    /// Sends a particle distribution to every player within Vanilla's normal
+    /// 32-block particle radius.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors Vanilla ServerLevel.sendParticles"
+    )]
+    pub fn send_particles(
+        &self,
+        particle: ParticleData,
+        x: f64,
+        y: f64,
+        z: f64,
+        count: i32,
+        x_dist: f64,
+        y_dist: f64,
+        z_dist: f64,
+        speed: f64,
+    ) -> i32 {
+        self.send_particles_with_options(
+            particle, false, false, x, y, z, count, x_dist, y_dist, z_dist, speed,
+        )
+    }
+
+    /// Sends a particle distribution with the packet visibility flags selected
+    /// explicitly. `override_limiter` also expands the server recipient radius
+    /// from 32 to 512 blocks, matching `ServerLevel.sendParticles`.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors Vanilla ServerLevel.sendParticles"
+    )]
+    pub fn send_particles_with_options(
+        &self,
+        particle: ParticleData,
+        override_limiter: bool,
+        always_show: bool,
+        x: f64,
+        y: f64,
+        z: f64,
+        count: i32,
+        x_dist: f64,
+        y_dist: f64,
+        z_dist: f64,
+        speed: f64,
+    ) -> i32 {
+        let packet = CLevelParticles {
+            override_limiter,
+            always_show,
+            x,
+            y,
+            z,
+            x_dist: x_dist as f32,
+            y_dist: y_dist as f32,
+            z_dist: z_dist as f32,
+            max_speed: speed as f32,
+            count,
+            particle,
+        };
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+        else {
+            log::warn!("Failed to encode level particles packet");
+            return 0;
+        };
+
+        let position = DVec3::new(x, y, z);
+        let mut sent = 0;
+        self.players.iter_players(|_, player| {
+            if Self::particle_recipient_in_range(
+                player.block_position(),
+                position,
+                override_limiter,
+            ) {
+                player.connection.send_encoded(encoded.clone());
+                sent += 1;
+            }
+            true
+        });
+        sent
+    }
+
+    /// Sends a particle distribution to one player if they are in this world
+    /// and within Vanilla's particle recipient radius.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors Vanilla ServerLevel.sendParticles"
+    )]
+    pub fn send_particles_to(
+        self: &Arc<Self>,
+        player: &Player,
+        particle: ParticleData,
+        override_limiter: bool,
+        always_show: bool,
+        x: f64,
+        y: f64,
+        z: f64,
+        count: i32,
+        x_dist: f64,
+        y_dist: f64,
+        z_dist: f64,
+        speed: f64,
+    ) -> bool {
+        if !Arc::ptr_eq(self, &player.get_world())
+            || !Self::particle_recipient_in_range(
+                player.block_position(),
+                DVec3::new(x, y, z),
+                override_limiter,
+            )
+        {
+            return false;
+        }
+
+        let packet = CLevelParticles {
+            override_limiter,
+            always_show,
+            x,
+            y,
+            z,
+            x_dist: x_dist as f32,
+            y_dist: y_dist as f32,
+            z_dist: z_dist as f32,
+            max_speed: speed as f32,
+            count,
+            particle,
+        };
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+        else {
+            log::warn!("Failed to encode level particles packet");
+            return false;
+        };
+        player.connection.send_encoded(encoded);
+        true
+    }
+
+    fn particle_recipient_in_range(
+        player_block_pos: BlockPos,
+        particle_pos: DVec3,
+        override_limiter: bool,
+    ) -> bool {
+        let (x, y, z) = player_block_pos.get_center();
+        let radius = if override_limiter { 512.0 } else { 32.0 };
+        DVec3::new(x, y, z).distance_squared(particle_pos) < radius * radius
+    }
+
     /// Broadcasts a global level event to all players in the world.
     ///
     /// When `global_sound_events` is disabled, vanilla falls back to a normal
@@ -5095,6 +5240,32 @@ mod tests {
     #[test]
     fn nearest_player_negative_range_is_unbounded() {
         assert!(nearest_player_distance_in_range(1_000_000.0, -1.0, 1.0));
+    }
+
+    #[test]
+    fn particle_recipient_range_uses_block_center_and_strict_boundary() {
+        let player_pos = BlockPos::ZERO;
+
+        assert!(World::particle_recipient_in_range(
+            player_pos,
+            DVec3::new(32.499, 0.5, 0.5),
+            false,
+        ));
+        assert!(!World::particle_recipient_in_range(
+            player_pos,
+            DVec3::new(32.5, 0.5, 0.5),
+            false,
+        ));
+        assert!(World::particle_recipient_in_range(
+            player_pos,
+            DVec3::new(512.499, 0.5, 0.5),
+            true,
+        ));
+        assert!(!World::particle_recipient_in_range(
+            player_pos,
+            DVec3::new(512.5, 0.5, 0.5),
+            true,
+        ));
     }
 
     #[test]

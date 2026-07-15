@@ -24,7 +24,7 @@ pub trait ThrowableProjectile: Projectile {
     /// Vanilla `ThrowableProjectile.applyInertia` (water vs air drag).
     fn apply_inertia(&self) {
         let inertia = if self.is_in_water() {
-            // TODO: spawn the trailing bubble particles (needs CLevelParticles packet).
+            // The client creates Vanilla's trailing bubbles during its own projectile tick.
             WATER_INERTIA
         } else {
             f64::from(self.get_air_drag())

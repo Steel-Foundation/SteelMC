@@ -13,10 +13,11 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::{CRemoveMobEffect, CUpdateMobEffect, MobEffectPacketFlags};
 use steel_registry::RegistryEntry;
 use steel_registry::attribute::AttributeRef;
-use steel_registry::entity_data::{ParticleData, ParticleList, ParticleOptions};
+use steel_registry::entity_data::{ParticleData, ParticleList};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::mob_effect::MobEffectRef;
+use steel_registry::particle_type::{ColorParticleOption, ParticleTypeRef};
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
 use steel_registry::vanilla_mob_effects;
@@ -1007,7 +1008,7 @@ impl LivingEntityBase {
     /// Builds the synchronized living effect particle/glow/invisibility state.
     pub fn mob_effect_display_state(
         &self,
-        entity_effect_particle_type: i32,
+        entity_effect_particle_type: ParticleTypeRef,
     ) -> MobEffectDisplayState {
         let mut effects = self
             .active_mob_effects
@@ -1023,9 +1024,7 @@ impl LivingEntityBase {
             .map(|effect| {
                 ParticleData::new(
                     entity_effect_particle_type,
-                    ParticleOptions::Color {
-                        color: effect.particle_color(),
-                    },
+                    ColorParticleOption::new(effect.particle_color()),
                 )
             })
             .collect();

@@ -85,7 +85,7 @@ impl FluidBehavior for WaterFluid {
     }
 
     /// Flowing water: 1/64 chance for ambient sound.
-    /// Source water: 1/10 chance for underwater particles.
+    /// Source-water particles are client-local animate-tick visuals.
     fn animate_tick(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
         if !fluid_state.is_source() && !fluid_state.falling {
             // 1/64 chance for flowing water ambient sound
@@ -99,11 +99,6 @@ impl FluidBehavior for WaterFluid {
                     pitch,
                     None,
                 );
-            }
-        } else {
-            // 1/10 chance for underwater particles
-            if rand::random_range(0u32..10) == 0 {
-                // TODO: Spawn UNDERWATER particles (needs CLevelParticles packet)
             }
         }
     }

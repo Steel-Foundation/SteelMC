@@ -18,12 +18,14 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_registry::vanilla_game_events;
 use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{UuidExt, WorldAabb};
 use uuid::Uuid;
 
 use crate::entity::{Entity, SharedEntity};
+use crate::world::game_event_context::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
 
 pub use throwable::ThrowableProjectile;
@@ -355,13 +357,29 @@ pub trait Projectile: Entity {
     /// The base `Projectile.onHit` dispatch to block/entity handlers. Not meant to
     /// be overridden — override [`Projectile::on_hit`] and delegate here instead.
     fn projectile_on_hit(&self, hit: &ProjectileHit) {
-        // TODO: fire the PROJECTILE_LAND game event (sculk sensors) once an
-        // `&dyn Entity` source cast is available here.
+        let world = self.level();
         match hit {
             ProjectileHit::Entity(entity_hit) => {
                 self.on_hit_entity(&entity_hit.entity, entity_hit.location);
+                if let Some(world) = world {
+                    world.game_event_at(
+                        &vanilla_game_events::PROJECTILE_LAND,
+                        entity_hit.location,
+                        &GameEventContext::new(Some(self.as_entity_event_source()), None),
+                    );
+                }
             }
-            ProjectileHit::Block { hit, .. } => self.on_hit_block(hit),
+            ProjectileHit::Block { hit, .. } => {
+                self.on_hit_block(hit);
+                if let Some(world) = world {
+                    let state = world.get_block_state(hit.block_pos);
+                    world.game_event(
+                        &vanilla_game_events::PROJECTILE_LAND,
+                        hit.block_pos,
+                        &GameEventContext::new(Some(self.as_entity_event_source()), Some(state)),
+                    );
+                }
+            }
         }
     }
 
@@ -369,14 +387,27 @@ pub trait Projectile: Entity {
     fn on_hit_entity(&self, _entity: &SharedEntity, _location: DVec3) {}
 
     /// Vanilla `Projectile.onHitBlock`.
-    fn on_hit_block(&self, _hit: &ClipHitResult) {
+    fn on_hit_block(&self, hit: &ClipHitResult) {
+        self.projectile_on_hit_block(hit);
+    }
+
+    /// The base `Projectile.onHitBlock` implementation. Concrete projectiles
+    /// that override the hook call this to preserve the Java `super` dispatch.
+    fn projectile_on_hit_block(&self, _hit: &ClipHitResult) {
         // TODO: call BlockState.onProjectileHit once block behaviors expose it.
     }
 
     /// Vanilla `Projectile.tick` (the `super.tick()` reached from subclasses).
     fn projectile_base_tick(&self) {
         if !self.has_been_shot() {
-            // TODO: fire the PROJECTILE_SHOOT game event for the owner.
+            if let Some(world) = self.level() {
+                let owner = self.get_owner();
+                world.game_event_at(
+                    &vanilla_game_events::PROJECTILE_SHOOT,
+                    self.position(),
+                    &GameEventContext::new(owner.as_deref(), None),
+                );
+            }
             self.set_has_been_shot(true);
         }
         self.check_left_owner();

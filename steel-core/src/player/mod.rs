@@ -70,7 +70,6 @@ use steel_protocol::packets::game::{
     CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
     EquipmentSlotItem, LookAtAnchor, RelativeMovement, SoundSource,
 };
-use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::{EntityPose, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
@@ -132,6 +131,7 @@ use steel_protocol::packets::{
     common::SCustomPayload,
     game::{CContainerClose, CGameEvent, CSystemChat, GameEventType, PreviousMessage},
 };
+use steel_registry::RegistryEntry;
 use steel_registry::item_stack::ItemStack;
 
 use steel_utils::{
@@ -777,15 +777,9 @@ impl Player {
             return;
         }
 
-        let Some(particle_type_id) = vanilla_particle_types::ENTITY_EFFECT.try_id() else {
-            log::error!("vanilla entity_effect particle type is not registered");
-            return;
-        };
-        let Ok(particle_type_id) = i32::try_from(particle_type_id) else {
-            log::error!("vanilla entity_effect particle type id does not fit protocol i32");
-            return;
-        };
-        let mut display = self.living_base.mob_effect_display_state(particle_type_id);
+        let mut display = self
+            .living_base
+            .mob_effect_display_state(&vanilla_particle_types::ENTITY_EFFECT);
         if self.game_mode() == GameType::Spectator {
             display.particles = ParticleList::default();
             display.invisible = true;

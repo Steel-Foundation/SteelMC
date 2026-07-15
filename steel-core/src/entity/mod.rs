@@ -22,11 +22,12 @@ use steel_registry::data_components::vanilla_components::{
     GLIDER, SWING_ANIMATION, SwingAnimation,
 };
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
-use steel_registry::entity_data::{DataValue, EntityPose};
+use steel_registry::entity_data::{DataValue, EntityPose, HumanoidArm};
 use steel_registry::entity_type::{EntityAttachment, EntityDimensions, EntityTypeRef};
 use steel_registry::fluid::{FluidState, FluidStateExt as _};
 use steel_registry::game_events::GameEventRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::ItemRef;
 use steel_registry::loot_table::{
     DamageSourceInfo, EntityRef, EntityRefFlags, LootContext, LootTableRef,
 };
@@ -2377,7 +2378,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
         if let Some(mob) = self.as_mob() {
             mob.tick_leash();
         }
-        // TODO: Add remaining vanilla baseTick pieces: portal and sprint particles.
+        // Sprint and portal particles are created by each client during its local entity tick.
     }
 
     /// Applies vanilla below-world handling.
@@ -3237,6 +3238,40 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
     fn look_angle(&self) -> DVec3 {
         let (yaw, pitch) = self.rotation();
         self.calculate_view_vector(pitch, yaw)
+    }
+
+    /// Returns the vanilla offset for the hand holding `item`.
+    ///
+    /// Only players have a hand offset. If both hands contain the item, vanilla
+    /// chooses the main hand; otherwise an offhand-only item uses the opposite
+    /// arm from the player's configured main arm.
+    fn hand_holding_item_angle(&self, item: ItemRef) -> DVec3 {
+        let Some(player) = self.as_player() else {
+            return DVec3::ZERO;
+        };
+        let item_only_in_offhand = {
+            let inventory = player.inventory.lock();
+            inventory
+                .get_item_in_hand(InteractionHand::OffHand)
+                .is(item)
+                && !inventory
+                    .get_item_in_hand(InteractionHand::MainHand)
+                    .is(item)
+        };
+        let main_arm = player.client_information().main_hand;
+        let item_arm = if item_only_in_offhand {
+            match main_arm {
+                HumanoidArm::Left => HumanoidArm::Right,
+                HumanoidArm::Right => HumanoidArm::Left,
+            }
+        } else {
+            main_arm
+        };
+        let yaw_offset = match item_arm {
+            HumanoidArm::Left => -80.0,
+            HumanoidArm::Right => 80.0,
+        };
+        self.calculate_view_vector(0.0, self.rotation().0 + yaw_offset) * 0.5
     }
 
     /// Gets the entity's velocity in blocks per tick.
@@ -4855,6 +4890,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync {
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
         false
     }
+
+    /// Returns the vanilla horizontal hurt-knockback vector for a direct
+    /// projectile damage source. Non-projectile entities return `None`.
+    fn calculate_horizontal_hurt_knockback_direction(
+        &self,
+        _hurt_entity: &dyn LivingEntity,
+        _damage_source: &DamageSource,
+    ) -> Option<(f64, f64)> {
+        None
+    }
 }
 
 pub(crate) fn apply_entity_look_at(entity: &dyn Entity, from_anchor: EntityAnchor, target: DVec3) {
@@ -5551,8 +5596,16 @@ pub trait LivingEntity: Entity {
 
     /// Returns the horizontal direction used by vanilla damage knockback.
     fn damage_knockback_direction(&self, source: &DamageSource) -> (f64, f64) {
-        // TODO: when projectile entities expose calculateHorizontalHurtKnockbackDirection,
-        // use the direct entity hook before falling back to source_position.
+        if let Some(direct_entity_id) = source.direct_entity_id
+            && let Some(world) = self.level()
+            && let Some(direct_entity) = world.get_entity_by_id(direct_entity_id)
+            && let Some(hurt_entity) = self.as_living_entity()
+            && let Some((xd, zd)) =
+                direct_entity.calculate_horizontal_hurt_knockback_direction(hurt_entity, source)
+        {
+            return (-xd, -zd);
+        }
+
         let Some(source_position) = source.source_position else {
             return (0.0, 0.0);
         };

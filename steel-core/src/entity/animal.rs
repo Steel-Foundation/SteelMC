@@ -363,7 +363,7 @@ pub trait Animal: AgeableMob {
         }
 
         self.animal_base().tick_in_love_time();
-        // TODO: Spawn in-love heart particles every 10 ticks once particle spawning exists.
+        // Periodic in-love hearts are created by each client during its local animal tick.
     }
 
     /// Runs vanilla `Animal.customServerAiStep`.
