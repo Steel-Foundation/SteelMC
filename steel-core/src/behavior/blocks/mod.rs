@@ -40,7 +40,8 @@ pub use vegetation::{
     CactusFlowerBlock, CarrotBlock, CocoaBlock, CropBlock, DoublePlantBlock, FlowerBlock,
     NetherSproutsBlock, NetherWartBlock, PitcherCropBlock, PotatoBlock, RootedDirtBlock,
     SeagrassBlock, SugarCaneBlock, SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock,
-    TallSeagrassBlock, TorchflowerCropBlock,
+    TallSeagrassBlock, TintedParticleLeavesBlock, TorchflowerCropBlock,
+    UntintedParticleLeavesBlock,
 };
 pub use vegetation::{
     BaseCoralFanBlock, BaseCoralPlantBlock, BaseCoralWallFanBlock, BigDripleafBlock,
