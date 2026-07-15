@@ -114,18 +114,22 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 // Windows defaults to a 1 MB main thread stack, which overflows in debug
 // builds due to deeply nested generated density functions.
-#[expect(
-    clippy::unwrap_used,
-    reason = "bootstrap thread spawn failure is fatal and unrecoverable at startup"
-)]
 fn main() {
-    thread::Builder::new()
-        .name("steel-main".to_owned())
-        .stack_size(8 * 1024 * 1024)
-        .spawn(steel_main)
-        .expect("failed to spawn steel-main bootstrap thread")
-        .join()
-        .expect("steel-main thread panicked");
+    #[cfg(all(windows, debug_assertions))]
+    {
+        thread::Builder::new()
+            .name("steel-main".to_owned())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(steel_main)
+            .expect("failed to spawn steel-main bootstrap thread")
+            .join()
+            .expect("steel-main thread panicked");
+    }
+
+    #[cfg(not(all(windows, debug_assertions)))]
+    {
+        steel_main();
+    }
 }
 
 /// Why 2 runtimes?
