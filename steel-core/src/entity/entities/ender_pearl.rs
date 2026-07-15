@@ -138,7 +138,7 @@ impl EnderPearlEntity {
         Self::should_vanish_for_owner_state(
             LivingEntity::is_alive(player),
             player.has_won_game(),
-            world.get_game_rule(&ENDER_PEARLS_VANISH_ON_DEATH).as_bool() == Some(true),
+            world.get_game_rule(&ENDER_PEARLS_VANISH_ON_DEATH),
         )
     }
 
@@ -335,7 +335,7 @@ impl ThrowableProjectile for EnderPearlEntity {}
 
 impl ThrowableItemProjectile for EnderPearlEntity {
     fn get_default_item(&self) -> ItemRef {
-        &vanilla_items::ITEMS.ender_pearl
+        &vanilla_items::ENDER_PEARL
     }
 
     fn set_item(&self, item: ItemStack) {
@@ -414,10 +414,7 @@ mod tests {
             DVec3::ZERO,
             Weak::<World>::new(),
         );
-        assert_eq!(
-            pearl.get_default_item().key,
-            vanilla_items::ITEMS.ender_pearl.key
-        );
+        assert_eq!(pearl.get_default_item().key, vanilla_items::ENDER_PEARL.key);
     }
 
     #[test]

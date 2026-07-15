@@ -55,7 +55,7 @@ impl BlockBehavior for BaseCoralPlantBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.block.default_state();
-        if !self.can_survive(state, context.world, context.place_pos) {
+        if !self.can_survive(state, context.world, context.place_pos()) {
             return None;
         }
         Some(state.set_value(&BlockStateProperties::WATERLOGGED, context.is_full_water()))

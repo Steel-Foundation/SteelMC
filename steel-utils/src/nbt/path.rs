@@ -3,7 +3,9 @@ use std::{error::Error, fmt};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use text_components::TextComponent;
 
-use super::{SnbtErrorKind, compare_nbt, list_as_tags, parse_snbt_compound_argument};
+use super::{
+    SnbtErrorKind, compare_nbt, nbt_list_values as list_as_tags, parse_snbt_compound_argument,
+};
 use crate::translations;
 
 /// Error returned when parsing an NBT path.

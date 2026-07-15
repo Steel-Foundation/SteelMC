@@ -312,13 +312,13 @@ impl BlockBehavior for StandingSignBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Check if we can place on the block below
-        if !can_support_standing_sign(context.world, context.place_pos) {
+        if !can_support_standing_sign(context.world, context.place_pos()) {
             return None;
         }
 
         // Calculate rotation from player's yaw
         // Vanilla: RotationSegment.convertToSegment(context.getRotation() + 180.0F)
-        let rotation = convert_to_rotation_segment(context.rotation + 180.0);
+        let rotation = convert_to_rotation_segment(context.rotation() + 180.0);
 
         Some(
             self.block
@@ -397,14 +397,14 @@ impl BlockBehavior for WallSignBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Try each horizontal direction based on player's look direction
-        let directions = get_nearest_looking_directions(context.rotation, context.clicked_face);
+        let directions = get_nearest_looking_directions(context.rotation(), context.clicked_face());
 
         for direction in directions {
             // The sign faces the opposite direction of where it's attached
             let facing = direction.opposite();
 
             // Check if sign can survive with this facing
-            if can_wall_sign_survive(context.world, context.place_pos, facing) {
+            if can_wall_sign_survive(context.world, context.place_pos(), facing) {
                 return Some(
                     self.block
                         .default_state()
@@ -482,19 +482,19 @@ impl BlockBehavior for CeilingHangingSignBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Check if we can hang from the block above
-        if !can_ceiling_hanging_sign_survive(context.world, context.place_pos) {
+        if !can_ceiling_hanging_sign_survive(context.world, context.place_pos()) {
             return None;
         }
 
         let above_pos = BlockPos::new(
-            context.place_pos.x(),
-            context.place_pos.y() + 1,
-            context.place_pos.z(),
+            context.place_pos().x(),
+            context.place_pos().y() + 1,
+            context.place_pos().z(),
         );
         let above_state = context.world.get_block_state(above_pos);
 
         // Determine if we should attach to the middle or not based on block above
-        let direction = Direction::from_yaw(context.rotation);
+        let direction = Direction::from_yaw(context.rotation());
         let is_above_full =
             above_state.is_face_sturdy_for_at(above_pos, Direction::Down, SupportType::Full);
 
@@ -527,7 +527,7 @@ impl BlockBehavior for CeilingHangingSignBlock {
         // Calculate rotation
         let rotation = if attached_to_middle {
             // Attached to middle - use player rotation
-            convert_to_rotation_segment(context.rotation + 180.0)
+            convert_to_rotation_segment(context.rotation() + 180.0)
         } else {
             // Attached to chains - align with direction
             convert_to_rotation_segment(direction.opposite().to_yaw())
@@ -623,19 +623,19 @@ impl BlockBehavior for WallHangingSignBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Try each horizontal direction based on player's look direction
-        let directions = get_nearest_looking_directions(context.rotation, context.clicked_face);
+        let directions = get_nearest_looking_directions(context.rotation(), context.clicked_face());
 
         for direction in directions {
             // Wall hanging signs face perpendicular to the wall they're attached to
             // Skip if the clicked face is on the same axis
-            if direction.axis() == context.clicked_face.axis() {
+            if direction.axis() == context.clicked_face().axis() {
                 continue;
             }
 
             let facing = direction.opposite();
 
             // Check if sign can survive with this facing
-            if can_wall_hanging_sign_survive(context.world, context.place_pos, facing) {
+            if can_wall_hanging_sign_survive(context.world, context.place_pos(), facing) {
                 return Some(
                     self.block
                         .default_state()

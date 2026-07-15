@@ -263,18 +263,7 @@ fn ser_quaternion(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
 
 fn ser_resolvable_profile(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
     match data {
-        EntityData::ResolvableProfile(_v) => {
-            // Vanilla default is ResolvableProfile.Static.EMPTY:
-            // Either::right(Partial.EMPTY), then PlayerSkin.Patch.EMPTY.
-            false.write(buf)?;
-            false.write(buf)?;
-            false.write(buf)?;
-            VarInt(0).write(buf)?;
-            false.write(buf)?;
-            false.write(buf)?;
-            false.write(buf)?;
-            false.write(buf)
-        }
+        EntityData::ResolvableProfile(value) => value.write(buf),
         _ => Err(io::Error::other("Expected ResolvableProfile")),
     }
 }

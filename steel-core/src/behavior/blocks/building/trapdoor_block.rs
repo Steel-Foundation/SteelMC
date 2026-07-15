@@ -120,11 +120,11 @@ impl TrapDoorBlock {
 impl BlockBehavior for TrapDoorBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let mut state = self.block.default_state();
-        let face = context.clicked_face;
-        if !context.replaces_clicked_block && face.is_horizontal() {
+        let face = context.clicked_face();
+        if !context.replaces_clicked_block() && face.is_horizontal() {
             state = state.set_value(FACING, face).set_value(
                 HALF,
-                if context.click_location.y - f64::from(context.place_pos.y()) > 0.5 {
+                if context.click_location().y - f64::from(context.place_pos().y()) > 0.5 {
                     Half::Top
                 } else {
                     Half::Bottom
@@ -132,7 +132,7 @@ impl BlockBehavior for TrapDoorBlock {
             );
         } else {
             state = state
-                .set_value(FACING, context.horizontal_direction.opposite())
+                .set_value(FACING, context.horizontal_direction().opposite())
                 .set_value(
                     HALF,
                     if face == Direction::Up {
@@ -143,7 +143,7 @@ impl BlockBehavior for TrapDoorBlock {
                 );
         }
 
-        if Self::has_neighbor_signal(context.world, context.place_pos) {
+        if Self::has_neighbor_signal(context.world, context.place_pos()) {
             state = state.set_value(OPEN, true).set_value(POWERED, true);
         }
 

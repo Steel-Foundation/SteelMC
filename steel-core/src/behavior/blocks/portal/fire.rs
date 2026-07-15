@@ -134,7 +134,7 @@ impl FireBlock {
 
 impl BlockBehavior for FireBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        if SoulFireBlock::can_survive_at(context.world.as_ref(), context.place_pos) {
+        if SoulFireBlock::can_survive_at(context.world.as_ref(), context.place_pos()) {
             Some(vanilla_blocks::SOUL_FIRE.default_state())
         } else {
             Some(self.block.default_state())
@@ -214,7 +214,7 @@ impl SoulFireBlock {
 impl BlockBehavior for SoulFireBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.block.default_state();
-        self.can_survive(state, context.world, context.place_pos)
+        self.can_survive(state, context.world, context.place_pos())
             .then_some(state)
     }
 

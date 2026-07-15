@@ -12,7 +12,7 @@ use std::{
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use steel_registry::REGISTRY;
-use steel_registry::game_rules::{GameRuleValue, GameRuleValues};
+use steel_registry::game_rules::GameRuleValues;
 use steel_utils::types::Difficulty;
 use steel_utils::{BlockPos, GlobalPos, Identifier};
 use tokio::fs;
@@ -86,7 +86,7 @@ pub struct LevelData {
     #[serde(default)]
     pub difficulty_locked: bool,
     /// Game rules (stored as name -> value pairs for serialization).
-    pub game_rules: FxHashMap<String, GameRuleValue>,
+    pub game_rules: FxHashMap<String, serde_json::Value>,
     /// Runtime game rule values (not serialized, loaded from `game_rules`).
     #[serde(skip)]
     pub game_rules_values: GameRuleValues,
@@ -350,7 +350,7 @@ impl LevelData {
         self.game_rules_values = GameRuleValues::new(&REGISTRY.game_rules);
         for (name, value) in &self.game_rules {
             self.game_rules_values
-                .set_by_name(name, *value, &REGISTRY.game_rules);
+                .set_serialized_by_name(name, value, &REGISTRY.game_rules);
         }
     }
 
@@ -358,8 +358,15 @@ impl LevelData {
     pub fn save_game_rules(&mut self) {
         self.game_rules.clear();
         for (_, rule) in REGISTRY.game_rules.iter() {
-            let name = rule.key.path.to_string();
-            let value = self.game_rules_values.get(rule, &REGISTRY.game_rules);
+            let name = if rule.key().namespace == Identifier::VANILLA_NAMESPACE {
+                rule.key().path.to_string()
+            } else {
+                rule.key().to_string()
+            };
+            let value = rule.serialize_erased_value(
+                self.game_rules_values
+                    .get_erased(rule, &REGISTRY.game_rules),
+            );
             self.game_rules.insert(name, value);
         }
     }
@@ -621,7 +628,11 @@ mod tests {
         process,
         time::{SystemTime, UNIX_EPOCH},
     };
-    use steel_registry::{test_support::init_test_registry, vanilla_world_clocks};
+    use steel_registry::{
+        test_support::init_test_registry,
+        vanilla_game_rules::{KEEP_INVENTORY, RANDOM_TICK_SPEED},
+        vanilla_world_clocks,
+    };
     use toml::map::Map;
 
     fn settings(dimension_type: &str, height: i32) -> WorldGenerationSettings {
@@ -800,5 +811,40 @@ mod tests {
             panic!("overworld clock update should exist");
         };
         assert_eq!(update.3, 3.5);
+    }
+
+    #[test]
+    fn level_data_round_trips_typed_game_rules_with_untagged_toml_values() {
+        init_test_registry();
+        let mut data = LevelData::new_with_seed(1);
+        assert!(
+            data.game_rules_values
+                .set(&KEEP_INVENTORY, true, &REGISTRY.game_rules,)
+        );
+        assert!(
+            data.game_rules_values
+                .set(&RANDOM_TICK_SPEED, 9, &REGISTRY.game_rules,)
+        );
+        data.save_game_rules();
+
+        let serialized = toml::to_string(&data).expect("level data should serialize");
+        assert!(serialized.contains("keep_inventory = true"));
+        assert!(serialized.contains("random_tick_speed = 9"));
+
+        let mut restored: LevelData =
+            toml::from_str(&serialized).expect("level data should deserialize");
+        restored.load_game_rules();
+
+        assert!(
+            restored
+                .game_rules_values
+                .get(&KEEP_INVENTORY, &REGISTRY.game_rules)
+        );
+        assert_eq!(
+            restored
+                .game_rules_values
+                .get(&RANDOM_TICK_SPEED, &REGISTRY.game_rules),
+            9
+        );
     }
 }

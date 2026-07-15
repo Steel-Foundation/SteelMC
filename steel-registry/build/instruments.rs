@@ -45,8 +45,9 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::instrument::{
-            Instrument, InstrumentRegistry,
+            Instrument, InstrumentRegistry, InstrumentValue,
         };
+        use crate::sound_event::SoundEventHolder;
         use steel_utils::Identifier;
         use text_components::{TextComponent, translation::TranslatedMessage};
     });
@@ -62,16 +63,26 @@ pub(crate) fn build() -> TokenStream {
         let sound_event = generate_sound_event_ref(&instrument.sound_event);
         let use_duration = instrument.use_duration;
         let range = instrument.range;
+        assert!(
+            use_duration > 0.0 && use_duration <= f32::MAX,
+            "instrument {instrument_name} use_duration must be positive"
+        );
+        assert!(
+            range > 0.0 && range <= f32::MAX,
+            "instrument {instrument_name} range must be positive"
+        );
         let description = generate_text_component(&instrument.description);
 
         stream.extend(quote! {
-            pub static #instrument_ident: Instrument = Instrument {
-                key: #key,
-                sound_event: #sound_event,
-                use_duration: #use_duration,
-                range: #range,
-                description: #description,
-            };
+            pub static #instrument_ident: Instrument = Instrument::new(
+                #key,
+                InstrumentValue::from_validated_parts(
+                    SoundEventHolder::registry(#sound_event),
+                    #use_duration,
+                    #range,
+                    #description,
+                ),
+            );
         });
         let instrument_ident =
             Ident::new(&instrument_name.to_shouty_snake_case(), Span::call_site());

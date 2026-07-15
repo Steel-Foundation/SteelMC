@@ -97,7 +97,7 @@ impl BlockBehavior for CoralWallFanBlock {
                     direction.opposite(),
                 )
             })
-            .find(|state| self.can_survive(*state, context.world, context.place_pos))
+            .find(|state| self.can_survive(*state, context.world, context.place_pos()))
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

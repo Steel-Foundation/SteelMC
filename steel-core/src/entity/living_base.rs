@@ -1847,16 +1847,15 @@ mod tests {
 
         assert!(base.equipment().lock().is_empty());
 
-        base.equipment().lock().set(
-            EquipmentSlot::Chest,
-            ItemStack::new(&vanilla_items::ITEMS.elytra),
-        );
+        base.equipment()
+            .lock()
+            .set(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
 
         assert!(
             base.equipment()
                 .lock()
                 .get_ref(EquipmentSlot::Chest)
-                .is(&vanilla_items::ITEMS.elytra)
+                .is(&vanilla_items::ELYTRA)
         );
     }
 

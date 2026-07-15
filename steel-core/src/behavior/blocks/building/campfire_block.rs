@@ -71,8 +71,8 @@ impl CampfireBlock {
 impl BlockBehavior for CampfireBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let waterlogged = context.is_water_source();
-        let below_state = context.world.get_block_state(context.place_pos.below());
-        Some(self.placement_state(waterlogged, below_state, context.horizontal_direction))
+        let below_state = context.world.get_block_state(context.place_pos().below());
+        Some(self.placement_state(waterlogged, below_state, context.horizontal_direction()))
     }
 
     fn update_shape(

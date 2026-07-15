@@ -20,6 +20,7 @@ mod cave_vines_plant_block;
 mod chorus_flower_block;
 mod chorus_plant_block;
 mod cocoa_block;
+mod coral_block;
 mod coral_fan_block;
 mod coral_plant_block;
 mod coral_wall_fan_block;
@@ -54,6 +55,7 @@ mod sapling_block;
 mod sculk_vein_block;
 mod sea_pickle_block;
 mod seagrass_block;
+mod segmentable_block;
 mod short_dry_grass_block;
 mod small_dripleaf_block;
 mod snow_layer_block;
@@ -92,6 +94,7 @@ pub use cave_vines_plant_block::CaveVinesPlantBlock;
 pub use chorus_flower_block::ChorusFlowerBlock;
 pub use chorus_plant_block::ChorusPlantBlock;
 pub use cocoa_block::CocoaBlock;
+pub use coral_block::CoralBlock;
 pub use coral_fan_block::CoralFanBlock;
 pub use coral_plant_block::CoralPlantBlock;
 pub use coral_wall_fan_block::CoralWallFanBlock;
@@ -177,7 +180,7 @@ pub(super) fn default_surviving_state(
 ) -> Option<BlockStateId> {
     let state = block.default_state();
     behavior
-        .can_survive(state, context.world, context.place_pos)
+        .can_survive(state, context.world, context.place_pos())
         .then_some(state)
 }
 

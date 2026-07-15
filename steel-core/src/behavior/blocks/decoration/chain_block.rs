@@ -45,7 +45,7 @@ impl BlockBehavior for ChainBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&AXIS, context.clicked_face.get_axis())
+                .set_value(&AXIS, context.clicked_face().get_axis())
                 .set_value(&WATERLOGGED, context.is_water_source()),
         )
     }
@@ -98,7 +98,7 @@ impl BlockBehavior for WeatheringCopperChainBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&AXIS, context.clicked_face.get_axis())
+                .set_value(&AXIS, context.clicked_face().get_axis())
                 .set_value(&WATERLOGGED, context.is_water_source()),
         )
     }

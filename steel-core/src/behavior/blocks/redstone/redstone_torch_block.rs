@@ -59,7 +59,7 @@ impl BlockBehavior for RedstoneTorchBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let default_state = self.block.default_state();
-        if !self.can_survive(default_state, context.world, context.place_pos) {
+        if !self.can_survive(default_state, context.world, context.place_pos()) {
             return None;
         }
         Some(default_state.set_value(&BlockStateProperties::LIT, true))
@@ -115,7 +115,7 @@ impl BlockBehavior for RedstoneWallTorchBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let clicked_face = context.clicked_face;
+        let clicked_face = context.clicked_face();
         if clicked_face.is_horizontal() {
             let facing = clicked_face;
             let state = self
@@ -123,7 +123,7 @@ impl BlockBehavior for RedstoneWallTorchBlock {
                 .default_state()
                 .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
                 .set_value(&BlockStateProperties::LIT, true);
-            if self.can_survive(state, context.world, context.place_pos) {
+            if self.can_survive(state, context.world, context.place_pos()) {
                 return Some(state);
             }
         }
@@ -139,7 +139,7 @@ impl BlockBehavior for RedstoneWallTorchBlock {
                 .default_state()
                 .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
                 .set_value(&BlockStateProperties::LIT, true);
-            if self.can_survive(state, context.world, context.place_pos) {
+            if self.can_survive(state, context.world, context.place_pos()) {
                 return Some(state);
             }
         }

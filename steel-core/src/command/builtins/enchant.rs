@@ -289,7 +289,7 @@ mod tests {
     fn enchant_main_hand_applies_once_and_then_rejects_the_same_enchantment() {
         init_test_registry();
         let target = TestLivingEntity::new(&vanilla_entities::ZOMBIE);
-        target.equip(ItemStack::new(&vanilla_items::ITEMS.diamond_sword));
+        target.equip(ItemStack::new(&vanilla_items::DIAMOND_SWORD));
 
         assert_eq!(
             enchant_main_hand(&target, &vanilla_enchantments::SHARPNESS, 1),

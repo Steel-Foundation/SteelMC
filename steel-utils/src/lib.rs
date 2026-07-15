@@ -32,6 +32,8 @@ pub mod random;
 /// helpful tools for registry
 pub mod registry;
 pub mod rotation;
+/// Data saving helpers
+pub mod saved_data;
 pub mod serial;
 pub mod text;
 /// A module for common types.
