@@ -6,14 +6,12 @@
 use std::array;
 use std::sync::{Arc, Weak};
 
-use simdnbt::ToNbtTag;
 use simdnbt::borrow::{
     BaseNbtCompound as BorrowedNbtCompound, NbtCompound as BorrowedNbtCompoundView,
 };
-use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use simdnbt::owned::{NbtCompound, NbtList};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
-use steel_registry::loot_table::DyeColor;
-use steel_registry::vanilla_block_entity_types;
+use steel_registry::{DyeColor, vanilla_block_entity_types};
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 use text_components::{TextComponent, content::Content};
 use uuid::Uuid;
@@ -84,21 +82,23 @@ impl SignText {
 
     /// Loads sign text from borrowed NBT.
     pub fn load(&mut self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        // Load messages - they are stored as a list of compounds (text components)
-        if let Some(messages) = nbt.list("messages")
-            && let Some(compounds) = messages.compounds()
-        {
-            for (i, compound) in compounds.into_iter().enumerate().take(SIGN_LINES) {
-                if let Some(text) = TextComponent::from_nbt(&NbtTag::Compound(compound.to_owned()))
-                {
-                    self.messages[i] = text;
-                }
+        if let Some(messages) = nbt.list("messages") {
+            let tags = messages.to_owned().as_nbt_tags();
+            let messages = tags
+                .iter()
+                .map(TextComponent::from_nbt)
+                .collect::<Option<Vec<_>>>();
+            if let Some(messages) = messages
+                && let Ok(messages) = <[TextComponent; SIGN_LINES]>::try_from(messages)
+            {
+                self.messages = messages;
             }
         }
 
         // Load color
         if let Some(color_str) = nbt.string("color") {
-            self.color = dye_color_from_str(&color_str.to_str());
+            self.color =
+                DyeColor::from_serialized_name(&color_str.to_str()).unwrap_or(DyeColor::Black);
         }
 
         // Load glow
@@ -109,16 +109,18 @@ impl SignText {
 
     /// Saves sign text to NBT.
     pub fn save(&self, nbt: &mut NbtCompound) {
-        // Save messages as a list of compounds (text components)
-        let compounds: Vec<NbtCompound> = self
-            .messages
-            .iter()
-            .map(|msg| msg.to_nbt_tag().into_compound().unwrap_or_default())
-            .collect();
-        nbt.insert("messages", NbtList::Compound(compounds));
+        nbt.insert(
+            "messages",
+            NbtList::from(
+                self.messages
+                    .iter()
+                    .map(TextComponent::to_codec_nbt)
+                    .collect::<Vec<_>>(),
+            ),
+        );
 
         // Save color
-        nbt.insert("color", dye_color_to_str(self.color));
+        nbt.insert("color", self.color.serialized_name());
 
         // Save glow
         nbt.insert("has_glowing_text", i8::from(self.has_glowing_text));
@@ -341,46 +343,62 @@ impl BlockEntity for SignBlockEntity {
     }
 }
 
-/// Converts a dye color to its string representation.
-const fn dye_color_to_str(color: DyeColor) -> &'static str {
-    match color {
-        DyeColor::White => "white",
-        DyeColor::Orange => "orange",
-        DyeColor::Magenta => "magenta",
-        DyeColor::LightBlue => "light_blue",
-        DyeColor::Yellow => "yellow",
-        DyeColor::Lime => "lime",
-        DyeColor::Pink => "pink",
-        DyeColor::Gray => "gray",
-        DyeColor::LightGray => "light_gray",
-        DyeColor::Cyan => "cyan",
-        DyeColor::Purple => "purple",
-        DyeColor::Blue => "blue",
-        DyeColor::Brown => "brown",
-        DyeColor::Green => "green",
-        DyeColor::Red => "red",
-        DyeColor::Black => "black",
-    }
-}
+#[cfg(test)]
+mod tests {
+    use std::{array, io::Cursor};
 
-/// Parses a dye color from its string representation.
-fn dye_color_from_str(s: &str) -> DyeColor {
-    match s {
-        "white" => DyeColor::White,
-        "orange" => DyeColor::Orange,
-        "magenta" => DyeColor::Magenta,
-        "light_blue" => DyeColor::LightBlue,
-        "yellow" => DyeColor::Yellow,
-        "lime" => DyeColor::Lime,
-        "pink" => DyeColor::Pink,
-        "gray" => DyeColor::Gray,
-        "light_gray" => DyeColor::LightGray,
-        "cyan" => DyeColor::Cyan,
-        "purple" => DyeColor::Purple,
-        "blue" => DyeColor::Blue,
-        "brown" => DyeColor::Brown,
-        "green" => DyeColor::Green,
-        "red" => DyeColor::Red,
-        _ => DyeColor::Black,
+    use simdnbt::borrow::read_tag;
+    use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+    use text_components::{Modifier as _, TextComponent};
+
+    use super::SignText;
+
+    #[test]
+    fn plain_sign_lines_save_as_a_string_list() {
+        let mut text = SignText::new();
+        text.messages = array::from_fn(|index| TextComponent::plain(index.to_string()));
+
+        let mut nbt = NbtCompound::new();
+        text.save(&mut nbt);
+
+        assert_eq!(
+            nbt.get("messages"),
+            Some(&NbtTag::List(NbtList::String(vec![
+                "0".into(),
+                "1".into(),
+                "2".into(),
+                "3".into(),
+            ])))
+        );
+    }
+
+    #[test]
+    fn mixed_sign_lines_round_trip_through_the_component_codec() {
+        let mut expected = SignText::new();
+        expected.messages[0] = TextComponent::plain("plain");
+        expected.messages[1] = TextComponent::plain("styled").bold(true);
+
+        let mut nbt = NbtCompound::new();
+        expected.save(&mut nbt);
+        assert!(matches!(
+            nbt.get("messages"),
+            Some(NbtTag::List(NbtList::Compound(_)))
+        ));
+
+        let mut bytes = Vec::new();
+        NbtTag::Compound(nbt).write(&mut bytes);
+        let borrowed = read_tag(&mut Cursor::new(bytes.as_slice()))
+            .expect("saved sign text should be valid NBT");
+        let borrowed_tag = borrowed.as_tag();
+        let compound = borrowed_tag
+            .compound()
+            .expect("saved sign text should be a compound");
+
+        let mut decoded = SignText::new();
+        decoded.load(compound);
+
+        assert_eq!(decoded.messages, expected.messages);
+        assert_eq!(decoded.color, expected.color);
+        assert_eq!(decoded.has_glowing_text, expected.has_glowing_text);
     }
 }

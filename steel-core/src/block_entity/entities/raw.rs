@@ -103,3 +103,45 @@ impl BlockEntity for RawBlockEntity {
         *nbt = self.data.clone();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+
+    use steel_registry::{
+        test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
+    };
+
+    use super::*;
+
+    #[test]
+    fn full_metadata_replaces_stale_raw_metadata() {
+        init_test_registry();
+        let mut data = NbtCompound::new();
+        data.insert("id", "minecraft:chest");
+        data.insert("x", 100_i32);
+        data.insert("custom", 7_i32);
+        let entity = RawBlockEntity::with_data(
+            &vanilla_block_entity_types::BARREL,
+            Weak::new(),
+            BlockPos::new(2, 70, -4),
+            vanilla_blocks::BARREL.default_state(),
+            data,
+        );
+
+        let saved = entity.save_with_full_metadata();
+        let custom = entity.save_custom_only();
+
+        assert_eq!(
+            saved.string("id").map(ToString::to_string),
+            Some("minecraft:barrel".to_owned())
+        );
+        assert_eq!(saved.int("x"), Some(2));
+        assert_eq!(saved.int("y"), Some(70));
+        assert_eq!(saved.int("z"), Some(-4));
+        assert_eq!(saved.int("custom"), Some(7));
+        assert!(!custom.contains("id"));
+        assert!(!custom.contains("x"));
+        assert_eq!(custom.int("custom"), Some(7));
+    }
+}

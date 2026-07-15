@@ -2,15 +2,49 @@ name: Build Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - master
   workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+      current: ${{ steps.version.outputs.current }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version change
+        id: version
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          current=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+
+          echo "current=${current}" >> "$GITHUB_OUTPUT"
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          previous=$(git show "${BEFORE_SHA}:Cargo.toml" | grep -m1 '^version' | sed 's/.*"\(.*\)".*/\1/')
+          if [[ "${previous}" == "${current}" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: version
+    if: needs.version.outputs.changed == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -34,18 +68,14 @@ jobs:
           path: target/release/${{ matrix.artifact }}
 
   release:
-    needs: build
+    needs:
+      - version
+      - build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Get version
-        id: version
-        run: |
-          VERSION=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
-          echo "version=v${VERSION}" >> $GITHUB_OUTPUT
 
       - uses: actions/download-artifact@v4
         with:
@@ -61,9 +91,31 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: ${{ steps.version.outputs.version }}
+          tag_name: v${{ needs.version.outputs.current }}
+          name: v${{ needs.version.outputs.current }}
+          target_commitish: ${{ github.sha }}
           draft: false
           prerelease: false
           files: release/*
           generate_release_notes: true
+
+      - name: Trigger release workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v${{ needs.version.outputs.current }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/dispatches" \
+            -f event_type=steel-released \
+            -f "client_payload[tag]=${RELEASE_TAG}" \
+            -f "client_payload[sha]=${GITHUB_SHA}"
+
+  notify:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to SteelDocs
+        uses: peter-evans/repository-dispatch@v4
+        with:
+          token: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+          repository: Steel-Foundation/SteelDocs
+          event-type: steel-released

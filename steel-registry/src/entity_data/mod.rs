@@ -311,12 +311,7 @@ pub struct ParticleList {
     pub particles: Vec<ParticleData>,
 }
 
-/// Game profile for player heads and similar.
-// TODO: Implement proper profile with UUID, name, and properties
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct ResolvableProfile {
-    // TODO: Add fields when needed
-}
+pub use crate::resolvable_profile::ResolvableProfile;
 
 /// Sniffer entity state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]

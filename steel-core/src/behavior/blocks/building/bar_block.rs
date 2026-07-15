@@ -66,7 +66,7 @@ impl BlockBehavior for IronBarsBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(
-            get_connection_state(self.block, context.world, &context.place_pos)
+            get_connection_state(self.block, context.world, &context.place_pos())
                 .set_value(&WATERLOGGED, context.is_water_source()),
         )
     }
@@ -121,7 +121,7 @@ impl BlockBehavior for WeatheringCopperBarsBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(
-            get_connection_state(self.block, context.world, &context.place_pos)
+            get_connection_state(self.block, context.world, &context.place_pos())
                 .set_value(&WATERLOGGED, context.is_water_source()),
         )
     }

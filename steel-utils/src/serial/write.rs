@@ -8,10 +8,7 @@ use std::{
     io::{Result, Write},
 };
 
-use simdnbt::{
-    ToNbtTag,
-    owned::{NbtCompound, NbtTag},
-};
+use simdnbt::owned::{NbtCompound, NbtTag};
 use text_components::TextComponent;
 use uuid::Uuid;
 
@@ -140,8 +137,7 @@ impl WriteTo for BlockPos {
 
 impl WriteTo for TextComponent {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        WriteTo::write(&self.to_nbt_tag(), writer)?;
-        Ok(())
+        WriteTo::write(&self.to_codec_nbt(), writer)
     }
 }
 

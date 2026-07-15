@@ -1,120 +1,113 @@
-#![expect(
-    clippy::unwrap_used,
-    reason = "build script must fail immediately on invalid extracted trim material data"
-)]
-
-use rustc_hash::FxHashMap;
-use std::fs;
-
-use crate::generator_functions::{generate_identifier, generate_option};
+use crate::generator_functions::{generate_identifier, generate_text_component, read_json_asset};
+use crate::shared_structs::TextComponentJson;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
+use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use steel_utils::Identifier;
 
 #[derive(Deserialize, Debug)]
-pub struct TrimMaterialJson {
+#[serde(deny_unknown_fields)]
+struct TrimMaterialJson {
     asset_name: String,
-    description: StyledTextComponent,
+    description: TextComponentJson,
     #[serde(default)]
     override_armor_assets: FxHashMap<Identifier, String>,
 }
 
-#[derive(Deserialize, Debug)]
-pub struct StyledTextComponent {
-    translate: String,
-    #[serde(default)]
-    color: Option<String>,
-}
-
-fn generate_hashmap_resource_string(map: &FxHashMap<Identifier, String>) -> TokenStream {
+fn generate_overrides(map: &FxHashMap<Identifier, String>) -> TokenStream {
     if map.is_empty() {
         return quote! { FxHashMap::default() };
     }
-    let entries: Vec<_> = map
-        .iter()
-        .map(|(k, v)| {
-            let key = generate_identifier(k);
-            quote! { (#key, #v.to_string()) }
-        })
-        .collect();
+    let mut entries = map.iter().collect::<Vec<_>>();
+    entries.sort_by_key(|(equipment_asset, _)| equipment_asset.to_string());
+    let entries = entries.into_iter().map(|(equipment_asset, suffix)| {
+        validate_asset_suffix(suffix);
+        let equipment_asset = generate_identifier(equipment_asset);
+        quote! {
+            (
+                #equipment_asset,
+                MaterialAssetInfo::from_validated_suffix(#suffix.to_owned()),
+            )
+        }
+    });
     quote! { FxHashMap::from_iter([#(#entries),*]) }
 }
 
+fn validate_asset_suffix(suffix: &str) {
+    assert!(
+        Identifier::validate_path(suffix),
+        "invalid trim material asset suffix in extracted data: {suffix:?}"
+    );
+}
+
 pub(crate) fn build() -> TokenStream {
-    let trim_material_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/trim_material";
-    println!("cargo:rerun-if-changed={trim_material_dir}");
-    let mut trim_materials = Vec::new();
+    // TrimMaterials.bootstrap defines registry insertion order in Vanilla.
+    const VANILLA_ORDER: &[&str] = &[
+        "quartz",
+        "iron",
+        "netherite",
+        "redstone",
+        "copper",
+        "gold",
+        "emerald",
+        "diamond",
+        "lapis",
+        "amethyst",
+        "resin",
+    ];
 
-    // Read all trim material JSON files
-    for entry in fs::read_dir(trim_material_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let trim_material_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let trim_material: TrimMaterialJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {trim_material_name}: {e}"));
-
-            trim_materials.push((trim_material_name, trim_material));
-        }
-    }
-
-    let mut stream = TokenStream::new();
-
-    stream.extend(quote! {
-        use crate::trim_material::{
-            TrimMaterial, TrimMaterialRegistry, StyledTextComponent,
-        };
-        use steel_utils::Identifier;
-        use std::borrow::Cow;
-        use std::sync::LazyLock;
-        use rustc_hash::FxHashMap;
+    let trim_materials = VANILLA_ORDER.iter().map(|name| {
+        let path = format!(
+            "../steel-utils/build_assets/builtin_datapacks/minecraft/trim_material/{name}.json"
+        );
+        (*name, read_json_asset::<TrimMaterialJson>(&path))
     });
 
-    // Generate static trim material definitions
-    let mut register_stream = TokenStream::new();
-    for (trim_material_name, trim_material) in &trim_materials {
-        let trim_material_ident = Ident::new(
-            &trim_material_name.to_shouty_snake_case(),
-            Span::call_site(),
-        );
-        let trim_material_name_str = trim_material_name.clone();
+    let mut definitions = TokenStream::new();
+    let mut registrations = TokenStream::new();
+    for (name, material) in trim_materials {
+        validate_asset_suffix(&material.asset_name);
+        let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
+        let key = quote! { Identifier::vanilla_static(#name) };
+        let asset_name = material.asset_name;
+        let overrides = generate_overrides(&material.override_armor_assets);
+        let description = generate_text_component(&material.description);
 
-        let key = quote! { Identifier::vanilla_static(#trim_material_name_str) };
-        let asset_name = &trim_material.asset_name;
-        let translate = &trim_material.description.translate;
-        let color = generate_option(&trim_material.description.color, |s| {
-            let val = s.as_str();
-            quote! { #val.to_string() }
-        });
-        let override_armor_assets =
-            generate_hashmap_resource_string(&trim_material.override_armor_assets);
-
-        stream.extend(quote! {
-            pub static #trim_material_ident: LazyLock<TrimMaterial> = LazyLock::new(|| TrimMaterial {
-                key: #key,
-                asset_name: #asset_name.to_string(),
-                description: StyledTextComponent {
-                    translate: #translate.to_string(),
-                    color: #color,
-                },
-                override_armor_assets: #override_armor_assets,
+        definitions.extend(quote! {
+            pub static #ident: LazyLock<TrimMaterial> = LazyLock::new(|| {
+                TrimMaterial::new(
+                    #key,
+                    TrimMaterialValue::new(
+                        MaterialAssetGroup::new(
+                            MaterialAssetInfo::from_validated_suffix(#asset_name.to_owned()),
+                            #overrides,
+                        ),
+                        #description,
+                    ),
+                )
             });
         });
-
-        register_stream.extend(quote! {
-            registry.register(&#trim_material_ident);
+        registrations.extend(quote! {
+            registry.register(&*#ident);
         });
     }
 
-    stream.extend(quote! {
-        pub fn register_trim_materials(registry: &mut TrimMaterialRegistry) {
-            #register_stream
-        }
-    });
+    quote! {
+        use crate::trim_material::{
+            MaterialAssetGroup, MaterialAssetInfo, TrimMaterial, TrimMaterialRegistry,
+            TrimMaterialValue,
+        };
+        use rustc_hash::FxHashMap;
+        use steel_utils::Identifier;
+        use std::{borrow::Cow, sync::LazyLock};
+        use text_components::{TextComponent, translation::TranslatedMessage};
 
-    stream
+        #definitions
+
+        pub fn register_trim_materials(registry: &mut TrimMaterialRegistry) {
+            #registrations
+        }
+    }
 }

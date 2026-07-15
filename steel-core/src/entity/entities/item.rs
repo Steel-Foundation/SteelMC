@@ -10,6 +10,7 @@ use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_entity_data::ItemEntityData;
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
@@ -230,6 +231,13 @@ impl ItemEntity {
     /// Sets the entity to never despawn.
     pub fn set_unlimited_lifetime(&self) {
         self.item_state.lock().age = INFINITE_LIFETIME;
+    }
+
+    /// Makes this a one-tick visual pickup item that cannot be collected.
+    pub fn make_fake_item(&self) {
+        let mut state = self.item_state.lock();
+        state.pickup_delay = INFINITE_PICKUP_DELAY;
+        state.age = LIFETIME - 1;
     }
 
     /// Gets the pickup delay in ticks.
@@ -668,12 +676,22 @@ impl Entity for ItemEntity {
         self.get_health() <= 0 || self.tick_count() % 10 == 0
     }
 
+    fn fire_immune(&self) -> bool {
+        !self
+            .get_item()
+            .can_be_hurt_by(&vanilla_damage_types::IN_FIRE)
+            || self.entity_type().fire_immune
+    }
+
     fn player_touch(self: Arc<Self>, player: &Arc<Player>) {
         self.try_pickup(player);
     }
 
-    fn hurt(&self, _source: &DamageSource, amount: f32) -> bool {
-        // TODO: Check isInvulnerableToBase and canBeHurtBy (damage resistance component)
+    fn hurt(&self, _world: &World, source: &DamageSource, amount: f32) -> bool {
+        // TODO: Check isInvulnerableToBase once the shared non-living entity hook is ported.
+        if !self.get_item().can_be_hurt_by(source.damage_type) {
+            return false;
+        }
         let new_health = {
             let mut state = self.item_state.lock();
             state.health = (state.health as f32 - amount) as i32;
@@ -798,6 +816,7 @@ mod tests {
     };
 
     use crate::entity::{Entity, ItemMergeEntity, damage::DamageSource};
+    use crate::test_support::test_world;
     use crate::world::World;
 
     use super::ItemEntity;
@@ -843,7 +862,7 @@ mod tests {
             &vanilla_entities::ITEM,
             1,
             DVec3::ZERO,
-            ItemStack::new(&vanilla_items::ITEMS.stone),
+            ItemStack::new(&vanilla_items::STONE),
             Weak::<World>::new(),
         );
         let velocity = item.velocity();
@@ -856,6 +875,22 @@ mod tests {
     }
 
     #[test]
+    fn fake_item_is_never_pickable_and_expires_on_its_next_tick() {
+        let item = ItemEntity::with_item(
+            &vanilla_entities::ITEM,
+            1,
+            DVec3::ZERO,
+            ItemStack::new(&vanilla_items::STONE),
+            Weak::<World>::new(),
+        );
+
+        item.make_fake_item();
+
+        assert_eq!(item.get_pickup_delay(), 32_767);
+        assert_eq!(item.get_age(), 5_999);
+    }
+
+    #[test]
     fn item_merge_capability_preserves_vanilla_stack_and_timing() {
         init_test_registry();
 
@@ -863,7 +898,7 @@ mod tests {
             &vanilla_entities::ITEM,
             1,
             DVec3::ZERO,
-            ItemStack::with_count(&vanilla_items::ITEMS.stone, 10),
+            ItemStack::with_count(&vanilla_items::STONE, 10),
             Weak::<World>::new(),
         );
         source.set_pickup_delay(5);
@@ -873,7 +908,7 @@ mod tests {
             &vanilla_entities::ITEM,
             2,
             DVec3::ZERO,
-            ItemStack::with_count(&vanilla_items::ITEMS.stone, 20),
+            ItemStack::with_count(&vanilla_items::STONE, 20),
             Weak::<World>::new(),
         );
         target.set_pickup_delay(1);
@@ -898,10 +933,39 @@ mod tests {
         );
 
         assert!(item.hurt(
+            test_world(),
             &DamageSource::environment(&vanilla_damage_types::GENERIC),
             0.75
         ));
 
+        assert_eq!(item.get_health(), 4);
+    }
+
+    #[test]
+    fn damage_resistant_item_ignores_matching_damage() {
+        init_test_registry();
+
+        let item = ItemEntity::with_item(
+            &vanilla_entities::ITEM,
+            1,
+            DVec3::ZERO,
+            ItemStack::new(&vanilla_items::NETHERITE_INGOT),
+            Weak::<World>::new(),
+        );
+
+        assert!(item.fire_immune());
+        assert!(!item.hurt(
+            test_world(),
+            &DamageSource::environment(&vanilla_damage_types::IN_FIRE),
+            1.0
+        ));
+        assert_eq!(item.get_health(), 5);
+
+        assert!(item.hurt(
+            test_world(),
+            &DamageSource::environment(&vanilla_damage_types::GENERIC),
+            1.0
+        ));
         assert_eq!(item.get_health(), 4);
     }
 }

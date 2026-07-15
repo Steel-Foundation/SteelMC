@@ -10,9 +10,8 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::Vegetation;
 use crate::behavior::blocks::vegetation::default_surviving_state;
 use crate::behavior::blocks::vegetation::vegetation_block::double_plant_can_survive;
-use crate::behavior::context::{BlockPlaceContext, InventoryAccess};
+use crate::behavior::context::{BlockPlaceContext, PlacementSource};
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
-use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::BlockRef;
@@ -91,8 +90,7 @@ impl BlockBehavior for DoublePlantBlock {
         _state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        _player: Option<&Player>,
-        _inv: &InventoryAccess,
+        _source: &PlacementSource<'_>,
     ) {
         let upper_pos = pos.above();
         let upper_state = Self::copy_waterlogged_from(
@@ -107,12 +105,12 @@ impl BlockBehavior for DoublePlantBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        if context.place_pos.y() >= context.world.max_y_exclusive() - 1 {
+        if context.place_pos().y() >= context.world.max_y_exclusive() - 1 {
             return None;
         }
         if !context
             .world
-            .get_block_state(context.place_pos.above())
+            .get_block_state(context.place_pos().above())
             .is_replaceable()
         {
             return None;

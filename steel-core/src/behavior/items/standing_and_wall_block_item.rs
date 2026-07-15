@@ -111,10 +111,10 @@ impl StandingAndWallBlockItem {
 
             // Vanilla's canPlace checks canSurvive (already done in get_state_for_placement)
             // Then checks isUnobstructed
-            let collision_shape = state.get_collision_shape_at(place_context.place_pos);
+            let collision_shape = state.get_collision_shape_at(place_context.place_pos());
             if place_context
                 .world
-                .is_unobstructed(collision_shape, place_context.place_pos)
+                .is_unobstructed(collision_shape, place_context.place_pos())
             {
                 return Some(state);
             }
@@ -141,10 +141,11 @@ impl StandingAndWallBlockItem {
 
 impl ItemBehavior for StandingAndWallBlockItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let Some(place_context) = context.build_place_context() else {
+        let mut place_context = context.build_place_context();
+        if !place_context.can_place() {
             return InteractionResult::Fail;
-        };
-        let place_pos = place_context.place_pos;
+        }
+        let place_pos = place_context.place_pos();
 
         let Some(new_state) = self.get_placement_state(&place_context) else {
             return InteractionResult::Fail;
@@ -173,7 +174,7 @@ impl ItemBehavior for StandingAndWallBlockItem {
             &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
-        context.inv.with_item(|item| item.shrink(1));
+        place_context.with_item_mut(|item| item.shrink(1));
 
         InteractionResult::Success
     }

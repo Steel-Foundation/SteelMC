@@ -797,16 +797,16 @@ impl LevelChunk {
         let y = pos.0.y;
         let section_index = self.get_section_index(y);
 
-        // Bounds check - return air if out of range
+        // `LevelChunk` returns air outside its section array; `World` handles void air.
         if section_index >= self.sections.sections.len() {
-            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR);
+            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR);
         }
 
         let section = &self.sections.sections[section_index];
         let section_guard = section.read();
 
         if section_guard.is_empty() {
-            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR);
+            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR);
         }
 
         let local_x = (pos.0.x & 15) as usize;
@@ -955,5 +955,28 @@ mod tests {
         assert!(without_sky.sky_updates.is_empty());
         assert_eq!(without_sky.block_y_mask.0[0] & 0b10, 0b10);
         assert_eq!(without_sky.block_updates.len(), 1);
+    }
+
+    #[test]
+    fn empty_and_out_of_range_sections_return_air() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let chunk = LevelChunk::from_proto(proto, 0, 16, Weak::new()).chunk;
+
+        assert_eq!(
+            chunk.get_block_state(BlockPos::new(0, 0, 0)),
+            vanilla_blocks::AIR.default_state()
+        );
+        assert_eq!(
+            chunk.get_block_state(BlockPos::new(0, 16, 0)),
+            vanilla_blocks::AIR.default_state()
+        );
     }
 }

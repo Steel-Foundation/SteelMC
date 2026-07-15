@@ -192,13 +192,13 @@ impl SpeleothemBlockBehavior {
         let default_tip_direction = context.get_nearest_looking_vertical_direction().opposite();
         let tip_direction = self.calculate_tip_direction(
             context.world.as_ref(),
-            context.place_pos,
+            context.place_pos(),
             default_tip_direction,
         )?;
-        let merge_opposing_tips = !context.is_secondary_use_active;
+        let merge_opposing_tips = !context.is_secondary_use_active();
         let thickness = self.calculate_thickness(
             context.world.as_ref(),
-            context.place_pos,
+            context.place_pos(),
             tip_direction,
             merge_opposing_tips,
         );

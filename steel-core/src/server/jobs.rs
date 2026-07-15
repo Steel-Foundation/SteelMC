@@ -69,6 +69,32 @@ pub struct ServerJobQueue {
     jobs: SyncMutex<Vec<Box<dyn ServerJob>>>,
 }
 
+/// One tick-stage callback represented as a server job.
+pub(crate) struct FnServerJob<F> {
+    action: Option<F>,
+}
+
+impl<F> FnServerJob<F> {
+    /// Creates a one-shot tick-stage callback.
+    pub(crate) const fn new(action: F) -> Self {
+        Self {
+            action: Some(action),
+        }
+    }
+}
+
+impl<F> ServerJob for FnServerJob<F>
+where
+    F: FnOnce(&mut ServerJobContext) + Send,
+{
+    fn poll(&mut self, context: &mut ServerJobContext) -> JobPoll {
+        if let Some(action) = self.action.take() {
+            action(context);
+        }
+        JobPoll::Finished
+    }
+}
+
 impl ServerJobQueue {
     /// Creates an empty job queue.
     #[must_use]

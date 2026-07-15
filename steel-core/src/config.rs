@@ -22,6 +22,27 @@ use toml::map::Map;
 use crate::chunk_saver::registry::WorldStorageRegistry;
 use crate::worldgen::registry::{ValidatedWorldGeneratorConfig, WorldGeneratorRegistry};
 
+/// Error returned when online mode is configured without its authentication handshake.
+pub const ONLINE_MODE_REQUIRES_ENCRYPTION: &str =
+    "encryption must be true when online_mode is enabled";
+
+/// Validates the login settings that establish a player's authenticated identity.
+///
+/// # Errors
+///
+/// Returns an error when online mode could accept a client-supplied UUID without
+/// completing the encryption-backed `hasJoined` flow.
+pub const fn validate_login_security(
+    online_mode: bool,
+    encryption: bool,
+) -> Result<(), &'static str> {
+    if online_mode && !encryption {
+        Err(ONLINE_MODE_REQUIRES_ENCRYPTION)
+    } else {
+        Ok(())
+    }
+}
+
 /// Runtime server configuration — the subset of settings needed after startup.
 ///
 /// Stored on `Server` and accessed by game logic at runtime.
@@ -37,7 +58,9 @@ pub struct RuntimeConfig {
     pub online_mode: bool,
     /// Optional authentication endpoint for online-mode `hasJoined` checks.
     pub auth_server: Option<String>,
-    /// Whether the server should use encryption.
+    /// Optional endpoint for online-mode player name-to-profile lookups.
+    pub profile_server: Option<String>,
+    /// Whether the server should use encryption. Required in online mode.
     pub encryption: bool,
     /// Whether vanilla floating/flying movement checks permit unauthorized flight.
     pub allow_flight: bool,
@@ -235,7 +258,7 @@ impl StorageSelection {
     #[must_use]
     pub fn default_world_disk() -> Self {
         Self {
-            kind: Identifier::new("steel", "disk"),
+            kind: Identifier::from_steel("disk"),
             config: None,
         }
     }
@@ -244,7 +267,7 @@ impl StorageSelection {
     #[must_use]
     pub fn default_player_file() -> Self {
         Self {
-            kind: Identifier::new("steel", "file"),
+            kind: Identifier::from_steel("file"),
             config: None,
         }
     }
@@ -700,7 +723,7 @@ pub fn validate_relative_path(path: &str, field: &str) -> Result<(), String> {
 }
 
 fn validate_player_storage_selection(selection: &StorageSelection) -> Result<(), String> {
-    if selection.kind != Identifier::new("steel", "file") {
+    if selection.kind != Identifier::from_steel("file") {
         return Err(format!("unknown player storage {}", selection.kind));
     }
     if selection.config.is_some() {
@@ -767,6 +790,17 @@ fn parse_difficulty(value: &str) -> Result<Difficulty, String> {
 mod tests {
     use super::*;
     use steel_registry::test_support::init_test_registry;
+
+    #[test]
+    fn online_mode_requires_the_authenticated_encryption_flow() {
+        assert_eq!(validate_login_security(true, true), Ok(()));
+        assert_eq!(
+            validate_login_security(true, false),
+            Err(ONLINE_MODE_REQUIRES_ENCRYPTION)
+        );
+        assert_eq!(validate_login_security(false, true), Ok(()));
+        assert_eq!(validate_login_security(false, false), Ok(()));
+    }
 
     fn registries() -> (WorldGeneratorRegistry, WorldStorageRegistry) {
         init_test_registry();
