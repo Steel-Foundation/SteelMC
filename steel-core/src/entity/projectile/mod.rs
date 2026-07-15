@@ -923,16 +923,16 @@ mod tests {
         assert!(!firework.is_removed());
     }
 
-    #[tokio::test]
-    async fn base_block_hit_dispatches_vanilla_block_callbacks() {
+    #[test]
+    fn base_block_hit_dispatches_vanilla_block_callbacks() {
         init_test_registry();
         init_behaviors();
 
         let world = Arc::clone(test_world());
         let chunk_map = Arc::clone(&world.chunk_map);
         let pos = BlockPos::new(1_136, 64, 1_136);
-        let result = chunk_map
-            .with_full_chunks_in_radius(ChunkPos::from_block_pos(pos), 0, || {
+        let block_callback_test =
+            chunk_map.with_full_chunks_in_radius(ChunkPos::from_block_pos(pos), 0, || {
                 let unlit = vanilla_blocks::CANDLE
                     .default_state()
                     .set_value(&BlockStateProperties::LIT, false);
@@ -1018,8 +1018,8 @@ mod tests {
                     world_border_hit: false,
                 });
                 assert!(world.get_block_state(chorus_pos).is_air());
-            })
-            .await;
+            });
+        let result = chunk_map.chunk_runtime.block_on(block_callback_test);
 
         assert_eq!(result, Some(()));
     }

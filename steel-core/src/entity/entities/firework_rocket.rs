@@ -401,10 +401,6 @@ impl Entity for FireworkRocketEntity {
         }
     }
 
-    fn sound_source(&self) -> SoundSource {
-        SoundSource::Ambient
-    }
-
     fn spawn_data(&self) -> i32 {
         self.get_owner().map_or(0, |owner| owner.id())
     }
@@ -558,6 +554,19 @@ mod tests {
             rocket.velocity().y.to_bits(),
             INITIAL_VERTICAL_VELOCITY.to_bits()
         );
+    }
+
+    #[test]
+    fn firework_uses_vanilla_neutral_sound_source() {
+        init_test_registry();
+        let rocket = FireworkRocketEntity::new(
+            &vanilla_entities::FIREWORK_ROCKET,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        );
+
+        assert_eq!(rocket.sound_source(), SoundSource::Neutral);
     }
 
     #[test]
