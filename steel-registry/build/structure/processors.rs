@@ -11,10 +11,6 @@ use quote::quote;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::{Identifier, value_providers::IntProvider};
 
-#[expect(
-    dead_code,
-    reason = "imported processor data contains variants not emitted by current vanilla assets"
-)]
 #[path = "../../src/structure/processor/data.rs"]
 mod structure_processor_data;
 

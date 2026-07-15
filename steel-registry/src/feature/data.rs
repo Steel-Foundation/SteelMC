@@ -149,6 +149,7 @@ pub enum FluidHolderSet {
 
 impl FluidHolderSet {
     /// Check if this holder set contains a fluid.
+    #[must_use]
     pub fn contains(&self, fluid: FluidRef) -> bool {
         match self {
             FluidHolderSet::Tag(tag) => fluid.has_tag(tag),
