@@ -234,7 +234,7 @@ impl VineBlock {
     ) {
         let above_pos = pos.above();
 
-        if test_direction == Direction::Up && pos.y() < world.max_build_height() {
+        if test_direction == Direction::Up && pos.y() < world.get_max_y() {
             if self.can_support_at_face(world, pos, test_direction) {
                 world.set_block(
                     pos,
