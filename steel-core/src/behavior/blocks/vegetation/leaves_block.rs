@@ -113,7 +113,7 @@ impl BlockBehavior for LeavesBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let replaced_fluid_state = context
             .world
-            .get_block_state(context.place_pos)
+            .get_block_state(context.get_clicked_pos())
             .get_fluid_state();
         let state = self
             .block
@@ -123,7 +123,7 @@ impl BlockBehavior for LeavesBlock {
         Some(Self::update_distance(
             state,
             context.world,
-            context.place_pos,
+            context.get_clicked_pos(),
         ))
     }
     fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
