@@ -214,6 +214,10 @@ mod tests {
             &*vanilla_items::TORCH
         );
         assert_eq!(
+            REGISTRY.items.by_block(&vanilla_blocks::BIG_DRIPLEAF_STEM),
+            &*vanilla_items::BIG_DRIPLEAF
+        );
+        assert_eq!(
             REGISTRY.items.by_block(&vanilla_blocks::FIRE),
             &*vanilla_items::AIR
         );

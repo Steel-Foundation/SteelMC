@@ -37,8 +37,10 @@ pub struct Item {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct Items {
     pub items: Vec<Item>,
+    pub block_item_mappings: BTreeMap<String, String>,
 }
 
 fn get_component_ident(name: &str) -> Ident {
@@ -2077,19 +2079,14 @@ pub(crate) fn build() -> TokenStream {
         register_stream.extend(quote! {
             registry.register(&#item_ident);
         });
-        if let Some(block_name) = &item.block_item {
-            let block_ident = Ident::new(&block_name.to_shouty_snake_case(), Span::call_site());
-            register_stream.extend(quote! {
-                registry.register_block_item(&vanilla_blocks::#block_ident, &#item_ident);
-            });
-        }
-        if let Some(wall_block_name) = &item.wall_block {
-            let wall_block_ident =
-                Ident::new(&wall_block_name.to_shouty_snake_case(), Span::call_site());
-            register_stream.extend(quote! {
-                registry.register_block_item(&vanilla_blocks::#wall_block_ident, &#item_ident);
-            });
-        }
+    }
+
+    for (block_name, item_name) in &item_assets.block_item_mappings {
+        let block_ident = Ident::new(&block_name.to_shouty_snake_case(), Span::call_site());
+        let item_ident = Ident::new(&item_name.to_shouty_snake_case(), Span::call_site());
+        register_stream.extend(quote! {
+            registry.register_block_item(&vanilla_blocks::#block_ident, &#item_ident);
+        });
     }
 
     quote! {
