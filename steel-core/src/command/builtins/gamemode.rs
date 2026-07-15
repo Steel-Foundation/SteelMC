@@ -2,7 +2,6 @@
 
 use std::{slice, sync::Arc};
 
-use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::SEND_COMMAND_FEEDBACK;
 use steel_utils::{Identifier, translations, types::GameType};
 use text_components::{TextComponent, translation::Translation};
@@ -102,8 +101,7 @@ fn set_game_mode(
     game_mode: GameType,
 ) -> Result<i32, CommandSyntaxError> {
     let mut changed = 0usize;
-    let send_target_feedback =
-        source.world().get_game_rule(&SEND_COMMAND_FEEDBACK) == GameRuleValue::Bool(true);
+    let send_target_feedback = source.world().get_game_rule(&SEND_COMMAND_FEEDBACK);
 
     for target in targets {
         if !target.set_game_mode(game_mode) {

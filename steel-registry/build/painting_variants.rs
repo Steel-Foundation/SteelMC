@@ -84,7 +84,7 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::painting_variant::{
-            PaintingVariant, PaintingVariantRegistry,
+            PaintingVariant, PaintingVariantRegistry, PaintingVariantValue,
         };
         use steel_utils::Identifier;
         use text_components::{
@@ -110,14 +110,16 @@ pub(crate) fn build() -> TokenStream {
         let author = generate_option(&painting_variant.author, generate_text_component);
 
         stream.extend(quote! {
-            pub static #painting_variant_ident: PaintingVariant = PaintingVariant {
-                key: #key,
-                width: #width,
-                height: #height,
-                asset_id: #asset_id,
-                title: #title,
-                author: #author,
-            };
+            pub static #painting_variant_ident: PaintingVariant = PaintingVariant::new(
+                #key,
+                PaintingVariantValue {
+                    width: #width,
+                    height: #height,
+                    asset_id: #asset_id,
+                    title: #title,
+                    author: #author,
+                },
+            );
         });
 
         register_stream.extend(quote! {

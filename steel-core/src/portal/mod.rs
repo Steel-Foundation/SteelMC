@@ -10,7 +10,7 @@ use glam::DVec3;
 use smallvec::SmallVec;
 use std::sync::Arc;
 use steel_protocol::packets::game::RelativeMovement;
-use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
+use steel_registry::game_rules::GameRuleRef;
 use steel_registry::vanilla_game_rules::{
     PLAYERS_NETHER_PORTAL_CREATIVE_DELAY, PLAYERS_NETHER_PORTAL_DEFAULT_DELAY,
 };
@@ -70,7 +70,7 @@ fn nether_portal_transition_time(world: &World, player_invulnerable: Option<bool
     clamped_portal_transition_time(delay)
 }
 
-fn nether_portal_transition_rule(player_invulnerable: bool) -> GameRuleRef {
+fn nether_portal_transition_rule(player_invulnerable: bool) -> GameRuleRef<i32> {
     if player_invulnerable {
         &PLAYERS_NETHER_PORTAL_CREATIVE_DELAY
     } else {
@@ -82,13 +82,8 @@ fn clamped_portal_transition_time(delay: i32) -> i32 {
     delay.max(0)
 }
 
-fn portal_transition_game_rule(world: &World, rule: GameRuleRef) -> i32 {
-    match world.get_game_rule(rule) {
-        GameRuleValue::Int(value) => value,
-        value @ GameRuleValue::Bool(_) => {
-            panic!("gamerule {} should be an integer, got {value:?}", rule.key)
-        }
-    }
+fn portal_transition_game_rule(world: &World, rule: GameRuleRef<i32>) -> i32 {
+    world.get_game_rule(rule)
 }
 
 /// Result of advancing an entity's active portal process for one server tick.
@@ -557,12 +552,12 @@ mod tests {
     #[test]
     fn nether_portal_transition_rule_matches_player_invulnerability() {
         assert_eq!(
-            nether_portal_transition_rule(false).key,
-            PLAYERS_NETHER_PORTAL_DEFAULT_DELAY.key
+            nether_portal_transition_rule(false).key(),
+            PLAYERS_NETHER_PORTAL_DEFAULT_DELAY.key()
         );
         assert_eq!(
-            nether_portal_transition_rule(true).key,
-            PLAYERS_NETHER_PORTAL_CREATIVE_DELAY.key
+            nether_portal_transition_rule(true).key(),
+            PLAYERS_NETHER_PORTAL_CREATIVE_DELAY.key()
         );
     }
 

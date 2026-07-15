@@ -1453,7 +1453,7 @@ impl Player {
             return;
         }
 
-        log::info!(
+        log::debug!(
             "Player {} used {:?} (sequence: {}, yaw: {}, pitch: {})",
             self.gameprofile.name,
             packet.hand,

@@ -74,7 +74,7 @@ use steel_registry::RegistryEntry;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::{EntityPose, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
-use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
+use steel_registry::game_rules::GameRuleRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::PlayerEntityData;
@@ -805,9 +805,7 @@ impl Player {
 
     /// Handles a custom payload packet.
     #[expect(clippy::unused_self, reason = "this is an api function")]
-    pub fn handle_custom_payload(&self, packet: SCustomPayload) {
-        log::info!("Hello from the other side! {packet:?}");
-    }
+    pub fn handle_custom_payload(&self, _packet: SCustomPayload) {}
 
     /// Handles the end of a client tick.
     pub fn handle_client_tick_end(&self) {
@@ -860,7 +858,7 @@ impl Player {
         LivingEntity::hurt_server(self, world, source, amount)
     }
 
-    fn disabled_damage_game_rule(source: &DamageSource) -> Option<GameRuleRef> {
+    fn disabled_damage_game_rule(source: &DamageSource) -> Option<GameRuleRef<bool>> {
         if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_DROWNING) {
             Some(&DROWNING_DAMAGE)
         } else if source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FALL) {
@@ -920,8 +918,7 @@ impl Player {
             None,
         );
 
-        let show_death_messages =
-            world.get_game_rule(&SHOW_DEATH_MESSAGES) == GameRuleValue::Bool(true);
+        let show_death_messages = world.get_game_rule(&SHOW_DEATH_MESSAGES);
 
         // TODO: use CombatTracker for multi-arg messages (killer name, item, etc.)
         let death_key = format!("death.attack.{}", source.damage_type.message_id);
@@ -951,7 +948,7 @@ impl Player {
             });
         }
 
-        if world.get_game_rule(&KEEP_INVENTORY) != GameRuleValue::Bool(true) {
+        if !world.get_game_rule(&KEEP_INVENTORY) {
             let items: Vec<ItemStack> = {
                 let mut inventory = self.inventory.lock();
                 (0..inventory.get_container_size())
@@ -974,7 +971,7 @@ impl Player {
         self.clear_fire();
         self.set_ticks_frozen(0);
 
-        if world.get_game_rule(&IMMEDIATE_RESPAWN) == GameRuleValue::Bool(true) {
+        if world.get_game_rule(&IMMEDIATE_RESPAWN) {
             self.respawn();
         }
     }
@@ -1063,9 +1060,8 @@ impl Player {
         self.send_difficulty();
 
         // Handle XP and score loss on death.
-        let loses_inventory = target_world.get_game_rule(&KEEP_INVENTORY)
-            != GameRuleValue::Bool(true)
-            && self.game_mode() != GameType::Spectator;
+        let loses_inventory =
+            !target_world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator;
         {
             let mut experience = self.experience.lock();
             if loses_inventory {
@@ -2653,7 +2649,7 @@ impl LivingEntity for Player {
         }
 
         if let Some(rule) = Self::disabled_damage_game_rule(source) {
-            return world.get_game_rule(rule) != GameRuleValue::Bool(true);
+            return !world.get_game_rule(rule);
         }
 
         !self.has_client_loaded()
@@ -3001,7 +2997,7 @@ mod tests {
         for (damage_type, rule) in cases {
             let source = DamageSource::environment(damage_type);
             let mapped = Player::disabled_damage_game_rule(&source);
-            assert!(mapped.is_some_and(|mapped| mapped.key == rule.key));
+            assert!(mapped.is_some_and(|mapped| mapped.key() == rule.key()));
         }
     }
 
@@ -3041,21 +3037,21 @@ mod tests {
         player
             .inventory
             .lock()
-            .set_item(0, ItemStack::with_count(&vanilla_items::ITEMS.stone, 3));
+            .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
         {
             let inventory_menu = player.inventory_menu.lock();
             inventory_menu
                 .crafting_container()
                 .lock()
-                .set_item(0, ItemStack::with_count(&vanilla_items::ITEMS.stone, 2));
+                .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 2));
         }
         player
             .inventory_menu
             .lock()
             .behavior_mut()
-            .set_carried(ItemStack::with_count(&vanilla_items::ITEMS.stone, 4));
+            .set_carried(ItemStack::with_count(&vanilla_items::STONE, 4));
 
-        let stone = |stack: &ItemStack| stack.is(&vanilla_items::ITEMS.stone);
+        let stone = |stack: &ItemStack| stack.is(&vanilla_items::STONE);
         assert_eq!(player.clear_or_count_matching_items(&stone, 5), 5);
         assert!(player.inventory.lock().get_item(0).is_empty());
         assert!(

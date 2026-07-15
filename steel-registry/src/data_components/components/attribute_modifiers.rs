@@ -125,7 +125,7 @@ impl ItemAttributeModifierDisplay {
         let mut compound = NbtCompound::new();
         compound.insert("type", self.name());
         if let Self::OverrideText(text) = self {
-            compound.insert("value", text.as_ref().to_nbt_tag());
+            compound.insert("value", text.to_codec_nbt());
         }
         NbtTag::Compound(compound)
     }
@@ -373,7 +373,7 @@ mod tests {
     use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
     use crate::item_stack::ItemStack;
     use crate::{
-        RegistryEntry, test_support::init_test_registry, vanilla_attributes, vanilla_items::ITEMS,
+        RegistryEntry, test_support::init_test_registry, vanilla_attributes, vanilla_items,
     };
 
     use super::{ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers};
@@ -399,7 +399,7 @@ mod tests {
     fn generated_diamond_sword_has_main_hand_attack_modifiers() {
         init_test_registry();
 
-        let stack = ItemStack::new(&ITEMS.diamond_sword);
+        let stack = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
         let modifiers = stack
             .get_attribute_modifiers()
             .expect("diamond sword should have attribute modifiers");
@@ -427,7 +427,7 @@ mod tests {
     fn generated_carved_pumpkin_has_hidden_head_modifier() {
         init_test_registry();
 
-        let stack = ItemStack::new(&ITEMS.carved_pumpkin);
+        let stack = ItemStack::new(&vanilla_items::CARVED_PUMPKIN);
         let modifiers = stack
             .get_attribute_modifiers()
             .expect("carved pumpkin should have attribute modifiers");

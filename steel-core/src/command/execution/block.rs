@@ -163,7 +163,9 @@ fn parse_properties(
         reader.skip_whitespace();
         let value = reader.read_string()?;
         if let Some(property) = property
-            && !property.get_possible_values().contains(&value.as_str())
+            && !property
+                .get_possible_value_names()
+                .contains(&value.as_str())
         {
             return Err(dynamic_error(
                 reader,

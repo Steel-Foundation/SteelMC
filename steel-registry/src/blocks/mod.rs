@@ -17,7 +17,7 @@ use glam::DVec3;
 use rustc_hash::FxHashMap;
 
 use crate::blocks::behavior::BlockConfig;
-use crate::blocks::properties::{DynProperty, Property};
+use crate::blocks::properties::Property;
 use crate::blocks::shapes::ShapeChannel;
 use crate::{RegistryExt, TaggedRegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
@@ -85,7 +85,7 @@ impl StateBooleanData {
 pub struct Block {
     pub key: Identifier,
     pub config: BlockConfig,
-    pub properties: &'static [&'static dyn DynProperty],
+    pub properties: &'static [&'static dyn Property],
     pub default_state_offset: u16,
     /// Vanilla `BlockState.isSuffocating` values indexed by block-local state offset.
     pub suffocating: StateBooleanData,
@@ -138,7 +138,7 @@ impl Block {
     pub const fn new(
         key: Identifier,
         config: BlockConfig,
-        properties: &'static [&'static dyn DynProperty],
+        properties: &'static [&'static dyn Property],
     ) -> Self {
         Self {
             key,
@@ -289,7 +289,7 @@ impl Block {
     pub fn state_count(&self) -> u16 {
         self.properties
             .iter()
-            .map(|p| p.get_possible_values().len() as u16)
+            .map(|p| p.get_possible_value_names().len() as u16)
             .product()
     }
 
@@ -422,7 +422,12 @@ impl BlockRegistry {
         Self::decode_property_indices(block, relative_index)
             .into_iter()
             .zip(block.properties)
-            .map(|(value_index, prop)| (prop.get_name(), prop.get_possible_values()[value_index]))
+            .map(|(value_index, prop)| {
+                (
+                    prop.get_name(),
+                    prop.get_possible_value_names()[value_index],
+                )
+            })
             .collect()
     }
 
@@ -509,7 +514,7 @@ impl BlockRegistry {
         let mut property_indices = vec![0; block.properties.len()];
 
         for (i, prop) in block.properties.iter().enumerate().rev() {
-            let count = prop.get_possible_values().len() as u16;
+            let count = prop.get_possible_value_names().len() as u16;
             property_indices[i] = (offset % count) as usize;
             offset /= count;
         }
@@ -530,7 +535,7 @@ impl BlockRegistry {
 
             let prop = block.properties[prop_idx];
             let value_idx = prop
-                .get_possible_values()
+                .get_possible_value_names()
                 .iter()
                 .position(|v| *v == prop_value)?;
 
@@ -545,28 +550,32 @@ impl BlockRegistry {
         let mut multiplier = 1u16;
         for (idx, prop) in property_indices.iter().zip(block.properties.iter()).rev() {
             offset += *idx as u16 * multiplier;
-            multiplier *= prop.get_possible_values().len() as u16;
+            multiplier *= prop.get_possible_value_names().len() as u16;
         }
 
         offset
     }
 
     // Panics if that property isn't supposed to be on this block.
-    pub fn get_property<T, P: Property<T>>(&self, id: BlockStateId, property: &P) -> T {
+    pub fn get_property<P: Property>(&self, id: BlockStateId, property: &P) -> P::Value {
         self.try_get_property(id, property)
             .expect("Property not found on this block")
     }
 
     /// Gets the value of a property, returning `None` if the block doesn't have this property.
     #[must_use]
-    pub fn try_get_property<T, P: Property<T>>(&self, id: BlockStateId, property: &P) -> Option<T> {
+    pub fn try_get_property<P: Property>(
+        &self,
+        id: BlockStateId,
+        property: &P,
+    ) -> Option<P::Value> {
         let block = self.by_state_id(id).expect("Invalid state ID");
 
         // Find the property index in the block's property list
         let property_index = block
             .properties
             .iter()
-            .position(|prop| prop.get_name() == property.as_dyn().get_name())?;
+            .position(|prop| prop.get_name() == property.get_name())?;
 
         // Get the base state ID for this block (O(1) lookup)
         let block_id = self.state_to_block_id[id.0 as usize];
@@ -577,18 +586,18 @@ impl BlockRegistry {
 
         let property_indices = Self::decode_property_indices(block, relative_index);
         let block_property = block.properties[property_index];
-        let block_values = block_property.get_possible_values();
+        let block_values = block_property.get_possible_value_names();
         let block_value = block_values[property_indices[property_index]];
 
         property.get_value(block_value)
     }
 
     // Panics if that property isn't supposed to be on this block.
-    pub fn set_property<T, P: Property<T>>(
+    pub fn set_property<P: Property>(
         &self,
         id: BlockStateId,
         property: &P,
-        value: T,
+        value: P::Value,
     ) -> BlockStateId {
         let block = self.by_state_id(id).expect("Invalid state ID");
 
@@ -596,11 +605,11 @@ impl BlockRegistry {
         let property_index = block
             .properties
             .iter()
-            .position(|prop| prop.get_name() == property.as_dyn().get_name())
+            .position(|prop| prop.get_name() == property.get_name())
             .unwrap_or_else(|| {
                 panic!(
                     "Property {} not found on block {}",
-                    property.as_dyn().get_name(),
+                    property.get_name(),
                     block.key
                 )
             });
@@ -618,20 +627,20 @@ impl BlockRegistry {
         let mut property_indices = vec![0usize; block.properties.len()];
 
         for (i, prop) in block.properties.iter().enumerate().rev() {
-            let count = prop.get_possible_values().len() as u16;
+            let count = prop.get_possible_value_names().len() as u16;
             property_indices[i] = (index % count) as usize;
             index /= count;
         }
 
         let caller_value_index = property.get_internal_index(&value);
-        let caller_values = property.as_dyn().get_possible_values();
+        let caller_values = property.get_possible_value_names();
         let value_name = caller_values[caller_value_index];
-        let block_values = block.properties[property_index].get_possible_values();
+        let block_values = block.properties[property_index].get_possible_value_names();
         let Some(new_value_index) = block_values.iter().position(|v| *v == value_name) else {
             panic!(
                 "Value {} for property {} not found on block {}",
                 value_name,
-                property.as_dyn().get_name(),
+                property.get_name(),
                 block.key
             );
         };
@@ -642,7 +651,7 @@ impl BlockRegistry {
         let mut new_relative_index = 0u16;
         let mut multiplier = 1u16;
         for (i, prop) in block.properties.iter().enumerate().rev() {
-            let count = prop.get_possible_values().len() as u16;
+            let count = prop.get_possible_value_names().len() as u16;
             new_relative_index += property_indices[i] as u16 * multiplier;
             multiplier *= count;
         }
@@ -877,7 +886,7 @@ impl BlockRegistry {
             .filter(|(name, _)| target.properties.iter().any(|p| p.get_name() == *name))
             .copied()
             .collect();
-        self.state_id_from_block_properties(target, &matching)
+        self.state_id_from_block_defaulted_properties(target, matching)
             .unwrap_or_else(|| self.get_default_state_id(target))
     }
 }
@@ -964,7 +973,7 @@ mod tests {
 
         let mut state_count = 1;
         for prop in redstone_wire.properties {
-            state_count *= prop.get_possible_values().len();
+            state_count *= prop.get_possible_value_names().len();
         }
         assert_eq!(state_count, 3 * 3 * 3 * 3 * 16); // 1296
     }

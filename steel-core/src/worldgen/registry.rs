@@ -3,6 +3,8 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Deserialize;
 use std::iter::repeat_n;
+use std::path::Path;
+use std::sync::Arc;
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::vanilla_biomes;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
@@ -33,7 +35,12 @@ pub struct GeneratorOutput {
 
 struct WorldGeneratorFactory {
     validate: fn(&toml::Value) -> Result<WorldGeneratorConfigData, String>,
-    create: fn(&WorldGeneratorConfigData, i64) -> Result<GeneratorOutput, String>,
+    create: fn(
+        Option<&Path>,
+        &WorldGeneratorConfigData,
+        i64,
+        &rayon::ThreadPool,
+    ) -> Result<GeneratorOutput, String>,
 }
 
 /// Generator config after parsing, validation, and default application.
@@ -150,14 +157,16 @@ impl WorldGeneratorRegistry {
     /// Creates a generator from a validated generator ID and config.
     pub fn create(
         &self,
+        world_path: Option<&Path>,
         config: &ValidatedWorldGeneratorConfig,
         seed: i64,
+        thread_pool: Arc<rayon::ThreadPool>,
     ) -> Result<GeneratorOutput, String> {
         let factory = self
             .factories
             .get(&config.generator)
             .ok_or_else(|| format!("unknown world generator {}", config.generator))?;
-        (factory.create)(&config.data, seed)
+        (factory.create)(world_path, &config.data, seed, &thread_pool)
     }
 }
 
@@ -282,8 +291,10 @@ fn parse_flat_config(config: &toml::Value) -> Result<FlatGeneratorConfig, String
 }
 
 fn create_overworld(
+    world_path: Option<&Path>,
     config: &WorldGeneratorConfigData,
     seed: i64,
+    thread_pool: &rayon::ThreadPool,
 ) -> Result<GeneratorOutput, String> {
     let WorldGeneratorConfigData::Empty = config else {
         return Err("validated config does not match minecraft:overworld".to_owned());
@@ -293,15 +304,22 @@ fn create_overworld(
         dimension_type: &OVERWORLD,
         config: empty_config(),
         generator: ChunkGeneratorType::Overworld(VanillaGenerator::new(
+            world_path,
             BiomeSourceKind::overworld(seed),
             seed,
+            thread_pool,
         )),
         is_flat: false,
         sea_level: sea_level_for_dimension_type(&OVERWORLD),
     })
 }
 
-fn create_nether(config: &WorldGeneratorConfigData, seed: i64) -> Result<GeneratorOutput, String> {
+fn create_nether(
+    world_path: Option<&Path>,
+    config: &WorldGeneratorConfigData,
+    seed: i64,
+    thread_pool: &rayon::ThreadPool,
+) -> Result<GeneratorOutput, String> {
     let WorldGeneratorConfigData::Empty = config else {
         return Err("validated config does not match minecraft:the_nether".to_owned());
     };
@@ -310,15 +328,22 @@ fn create_nether(config: &WorldGeneratorConfigData, seed: i64) -> Result<Generat
         dimension_type: &THE_NETHER,
         config: empty_config(),
         generator: ChunkGeneratorType::Nether(VanillaGenerator::new(
+            world_path,
             BiomeSourceKind::nether(seed),
             seed,
+            thread_pool,
         )),
         is_flat: false,
         sea_level: sea_level_for_dimension_type(&THE_NETHER),
     })
 }
 
-fn create_end(config: &WorldGeneratorConfigData, seed: i64) -> Result<GeneratorOutput, String> {
+fn create_end(
+    world_path: Option<&Path>,
+    config: &WorldGeneratorConfigData,
+    seed: i64,
+    thread_pool: &rayon::ThreadPool,
+) -> Result<GeneratorOutput, String> {
     let WorldGeneratorConfigData::Empty = config else {
         return Err("validated config does not match minecraft:the_end".to_owned());
     };
@@ -326,13 +351,23 @@ fn create_end(config: &WorldGeneratorConfigData, seed: i64) -> Result<GeneratorO
     Ok(GeneratorOutput {
         dimension_type: &THE_END,
         config: empty_config(),
-        generator: ChunkGeneratorType::End(VanillaGenerator::new(BiomeSourceKind::end(seed), seed)),
+        generator: ChunkGeneratorType::End(VanillaGenerator::new(
+            world_path,
+            BiomeSourceKind::end(seed),
+            seed,
+            thread_pool,
+        )),
         is_flat: false,
         sea_level: sea_level_for_dimension_type(&THE_END),
     })
 }
 
-fn create_flat(config: &WorldGeneratorConfigData, seed: i64) -> Result<GeneratorOutput, String> {
+fn create_flat(
+    world_path: Option<&Path>,
+    config: &WorldGeneratorConfigData,
+    seed: i64,
+    thread_pool: &rayon::ThreadPool,
+) -> Result<GeneratorOutput, String> {
     let WorldGeneratorConfigData::Flat(parsed) = config else {
         return Err("validated config does not match minecraft:flat".to_owned());
     };
@@ -358,8 +393,10 @@ fn create_flat(config: &WorldGeneratorConfigData, seed: i64) -> Result<Generator
         let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
         Some(StructureGenerator::vanilla_flat_with_structure_sets(
             seed,
+            world_path,
             &biome_provider,
             structure_sets,
+            thread_pool,
         ))
     };
 
@@ -377,7 +414,12 @@ fn create_flat(config: &WorldGeneratorConfigData, seed: i64) -> Result<Generator
     })
 }
 
-fn create_empty(config: &WorldGeneratorConfigData, _seed: i64) -> Result<GeneratorOutput, String> {
+fn create_empty(
+    _world_path: Option<&Path>,
+    config: &WorldGeneratorConfigData,
+    _seed: i64,
+    _thread_pool: &rayon::ThreadPool,
+) -> Result<GeneratorOutput, String> {
     let WorldGeneratorConfigData::EmptyWorld(parsed) = config else {
         return Err("validated config does not match steel:empty".to_owned());
     };
@@ -495,8 +537,13 @@ mod tests {
                 &toml::Value::Table(Map::new()),
             )
             .expect("default flat config should validate");
+        let thread_pool = Arc::new(
+            rayon::ThreadPoolBuilder::default()
+                .build()
+                .expect("Cannot create a thread pool."),
+        );
         let output = registry
-            .create(&config, 0)
+            .create(None, &config, 0, thread_pool)
             .expect("default flat config should create a generator");
         let config = output
             .config

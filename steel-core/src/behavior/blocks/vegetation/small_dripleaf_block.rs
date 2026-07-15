@@ -7,9 +7,8 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehavior;
-use crate::behavior::context::{BlockPlaceContext, InventoryAccess};
+use crate::behavior::context::{BlockPlaceContext, PlacementSource};
 use crate::fluid::{FluidStateExt, get_fluid_state_from_block};
-use crate::player::Player;
 use crate::world::{LevelReader, World};
 
 use super::{BlockRef, DoublePlantBlock};
@@ -51,21 +50,21 @@ impl BlockBehavior for SmallDripleafBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        if context.place_pos.y() >= context.world.max_y_exclusive() - 1 {
+        if context.place_pos().y() >= context.world.max_y_exclusive() - 1 {
             return None;
         }
         if !context
             .world
-            .get_block_state(context.place_pos.above())
+            .get_block_state(context.place_pos().above())
             .is_replaceable()
         {
             return None;
         }
         let state = self.block.default_state().set_value(
             &BlockStateProperties::HORIZONTAL_FACING,
-            context.horizontal_direction.opposite(),
+            context.horizontal_direction().opposite(),
         );
-        self.can_survive(state, context.world, context.place_pos)
+        self.can_survive(state, context.world, context.place_pos())
             .then_some(state.set_value(
                 &BlockStateProperties::WATERLOGGED,
                 context.is_water_source(),
@@ -77,8 +76,7 @@ impl BlockBehavior for SmallDripleafBlock {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        _player: Option<&Player>,
-        _inv: &InventoryAccess,
+        _source: &PlacementSource<'_>,
     ) {
         let upper_pos = pos.above();
         let upper_state = DoublePlantBlock::copy_waterlogged_from(

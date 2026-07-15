@@ -1,7 +1,7 @@
 //! Build script for generating vanilla recipe definitions.
 //!
 //! This module generates recipe definitions using a hybrid approach:
-//! - `LazyLock` for the RECIPES struct (required because ITEMS uses `LazyLock`)
+//! - `LazyLock` for the aggregate recipe structures
 //! - `Box::leak` to create `&'static [Ingredient]` slices at runtime
 //! - `#[inline(never)]` creator functions to prevent stack overflow
 //!
@@ -15,7 +15,7 @@
 
 use std::{fs, path::Path};
 
-use heck::ToSnakeCase;
+use heck::{ToShoutySnakeCase, ToSnakeCase};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use rustc_hash::FxHashMap;
@@ -185,7 +185,7 @@ fn parse_shaped_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<ShapedR
 
     // Result item
     let result_item_id = result.id.strip_prefix("minecraft:").unwrap_or(&result.id);
-    let result_item_ident = Ident::new(result_item_id, Span::call_site());
+    let result_item_ident = Ident::new(&result_item_id.to_shouty_snake_case(), Span::call_site());
 
     // Category
     let category_str = recipe.category.as_deref().unwrap_or("misc");
@@ -239,7 +239,7 @@ fn parse_shapeless_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<Shap
 
     // Result item
     let result_item_id = result.id.strip_prefix("minecraft:").unwrap_or(&result.id);
-    let result_item_ident = Ident::new(result_item_id, Span::call_site());
+    let result_item_ident = Ident::new(&result_item_id.to_shouty_snake_case(), Span::call_site());
 
     // Category
     let category_str = recipe.category.as_deref().unwrap_or("misc");
@@ -268,7 +268,7 @@ fn parse_smelting_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<Smelt
     let result = recipe.result.as_ref()?;
 
     let result_item_id = result.id.strip_prefix("minecraft:").unwrap_or(&result.id);
-    let result_item_ident = Ident::new(result_item_id, Span::call_site());
+    let result_item_ident = Ident::new(&result_item_id.to_shouty_snake_case(), Span::call_site());
     let snake_name = recipe_name.to_snake_case();
 
     Some(SmeltingRecipeData {
@@ -288,8 +288,8 @@ fn generate_ingredient_tokens(ingredient: &ParsedIngredient) -> TokenStream {
     match ingredient {
         ParsedIngredient::Empty => quote! { Ingredient::Empty },
         ParsedIngredient::Item(item_id) => {
-            let item_ident = Ident::new(item_id, Span::call_site());
-            quote! { Ingredient::Item(&ITEMS.#item_ident) }
+            let item_ident = Ident::new(&item_id.to_shouty_snake_case(), Span::call_site());
+            quote! { Ingredient::Item(&*vanilla_items::#item_ident) }
         }
         ParsedIngredient::Tag(tag_id) => {
             quote! { Ingredient::Tag(Identifier::vanilla_static(#tag_id)) }
@@ -298,8 +298,8 @@ fn generate_ingredient_tokens(ingredient: &ParsedIngredient) -> TokenStream {
             let item_refs: Vec<TokenStream> = items
                 .iter()
                 .map(|item_id| {
-                    let item_ident = Ident::new(item_id, Span::call_site());
-                    quote! { &ITEMS.#item_ident }
+                    let item_ident = Ident::new(&item_id.to_shouty_snake_case(), Span::call_site());
+                    quote! { &*vanilla_items::#item_ident }
                 })
                 .collect();
             // Use Box::leak to create a static slice for Choice items
@@ -415,7 +415,7 @@ pub(crate) fn build() -> TokenStream {
                         height: #height,
                         pattern,
                         result: RecipeResult {
-                            item: &ITEMS.#result_item_ident,
+                            item: &*vanilla_items::#result_item_ident,
                             count: #result_count,
                         },
                         show_notification: #show_notification,
@@ -455,7 +455,7 @@ pub(crate) fn build() -> TokenStream {
                         category: #category,
                         ingredients,
                         result: RecipeResult {
-                            item: &ITEMS.#result_item_ident,
+                            item: &*vanilla_items::#result_item_ident,
                             count: #result_count,
                         },
                     }
@@ -482,7 +482,7 @@ pub(crate) fn build() -> TokenStream {
                         id: Identifier::vanilla_static(#name),
                         ingredient: #ingredient,
                         result: RecipeResult {
-                            item: &ITEMS.#result_item_ident,
+                            item: &*vanilla_items::#result_item_ident,
                             count: #result_count,
                         },
                         experience: #experience,
@@ -577,7 +577,7 @@ pub(crate) fn build() -> TokenStream {
                 CraftingCategory, Ingredient, RecipeRegistry, RecipeResult,
                 ShapedRecipe, ShapelessRecipe, SmeltingRecipe,
             },
-            vanilla_items::ITEMS,
+            vanilla_items,
         };
         use steel_utils::Identifier;
         use std::sync::LazyLock;

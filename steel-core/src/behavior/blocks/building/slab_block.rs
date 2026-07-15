@@ -37,9 +37,9 @@ impl SlabBlock {
     }
 
     fn single_slab_type_for_placement(context: &BlockPlaceContext<'_>) -> SlabType {
-        if context.clicked_face != Direction::Down
-            && (context.clicked_face == Direction::Up
-                || context.click_location.y - f64::from(context.place_pos.y()) <= 0.5)
+        if context.clicked_face() != Direction::Down
+            && (context.clicked_face() == Direction::Up
+                || context.click_location().y - f64::from(context.place_pos().y()) <= 0.5)
         {
             SlabType::Bottom
         } else {
@@ -50,7 +50,7 @@ impl SlabBlock {
 
 impl BlockBehavior for SlabBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let existing_state = context.world.get_block_state(context.place_pos);
+        let existing_state = context.world.get_block_state(context.place_pos());
         if existing_state.get_block() == self.block {
             return Some(
                 existing_state

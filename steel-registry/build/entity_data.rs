@@ -145,11 +145,6 @@ fn key_ident(default: &Value, serializer: &str) -> Ident {
     Ident::new(&path.to_shouty_snake_case(), Span::call_site())
 }
 
-fn key_field_ident(default: &Value, serializer: &str) -> Ident {
-    let path = minecraft_path(required_string(default, serializer), serializer);
-    Ident::new(&path.to_snake_case(), Span::call_site())
-}
-
 fn required_i64(default: &Value, serializer: &str) -> i64 {
     default
         .as_i64()
@@ -299,7 +294,7 @@ fn item_stack_default_expr(default: &Value) -> TokenStream {
         "Expected item_stack default with only item/count, got {default}"
     );
 
-    let item_ident = key_field_ident(required_field(object, "item_stack", "item"), "item_stack");
+    let item_ident = key_ident(required_field(object, "item_stack", "item"), "item_stack");
     let count = required_object_i32(object, "item_stack", "count");
     assert!(
         count > 0,
@@ -307,7 +302,7 @@ fn item_stack_default_expr(default: &Value) -> TokenStream {
     );
 
     quote! {
-        ItemStack::with_count(&crate::vanilla_items::ITEMS.#item_ident, #count)
+        ItemStack::with_count(&*crate::vanilla_items::#item_ident, #count)
     }
 }
 
