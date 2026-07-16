@@ -10,16 +10,16 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::blocks::CaveVinesBlock;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
+use crate::behavior::blocks::vegetation::growing_plant_body_block::GrowingPlantBodyBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{InteractionResult, InventoryAccess};
 use crate::player::Player;
-use crate::world::LevelReader;
+use crate::world::{LevelReader, ScheduledTickAccess};
 use crate::{behavior::block::BlockBehavior, world::World};
 
-use super::{BlockRef, default_surviving_state, growing_plant_can_survive};
+use super::BlockRef;
 
 /// Vanilla `CaveVinesPlantBlock` (body) survival.
-// TODO: Implement shape updates.
 #[block_behavior]
 pub struct CaveVinesPlantBlock {
     block: BlockRef,
@@ -32,6 +32,15 @@ impl CaveVinesPlantBlock {
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
+    }
+
+    const fn growing_plant_body_block(&self) -> GrowingPlantBodyBlock {
+        GrowingPlantBodyBlock::new(
+            self.block,
+            Direction::Down,
+            false,
+            &vanilla_blocks::CAVE_VINES,
+        )
     }
 }
 
@@ -48,21 +57,38 @@ impl BlockBehavior for CaveVinesPlantBlock {
         CaveVinesBlock::use_block(player, state, world, pos)
     }
 
-    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        growing_plant_can_survive(
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        Some(self)
+    }
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        self.growing_plant_body_block()
+            .can_survive(state, world, pos)
+    }
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        direction: Direction,
+        neighbor_pos: BlockPos,
+        neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        self.growing_plant_body_block().update_shape(
+            state,
             world,
             pos,
-            Direction::Down,
-            &vanilla_blocks::CAVE_VINES,
-            &vanilla_blocks::CAVE_VINES_PLANT,
+            direction,
+            neighbor_pos,
+            neighbor_state,
         )
+    }
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        self.growing_plant_body_block().tick(state, world, pos);
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        default_surviving_state(self.block, self, context)
-    }
-    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
-        Some(self)
+        self.growing_plant_body_block()
+            .get_state_for_placement(context)
     }
 }
 impl Bonemealable for CaveVinesPlantBlock {

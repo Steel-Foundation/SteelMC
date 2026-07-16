@@ -11,18 +11,18 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::blocks::vegetation::bonemealable::BonemealAction;
+use crate::behavior::blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{InteractionResult, InventoryAccess};
 use crate::behavior::{block::BlockBehavior, blocks::vegetation::bonemealable::Bonemealable};
 use crate::entity::Entity;
 use crate::player::Player;
 use crate::world::game_event_context::GameEventContext;
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
-use super::{BlockRef, default_surviving_state, growing_plant_can_survive};
+use super::BlockRef;
 
 /// Vanilla `CaveVinesBlock` (head) survival.
-// TODO: Implement growth,  and shape updates.
 #[block_behavior]
 pub struct CaveVinesBlock {
     block: BlockRef,
@@ -36,6 +36,16 @@ impl CaveVinesBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+    const fn growing_plant_head_block(&self) -> GrowingPlantHeadBlock {
+        GrowingPlantHeadBlock::new(
+            self.block,
+            Direction::Down,
+            false,
+            0.1,
+            &vanilla_blocks::CAVE_VINES_PLANT,
+        )
+    }
+
     /// Shared behavior use block between cave vine block and plant
     pub fn use_block(
         source_entity: &dyn Entity,
@@ -74,16 +84,6 @@ impl CaveVinesBlock {
 }
 
 impl BlockBehavior for CaveVinesBlock {
-    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        growing_plant_can_survive(
-            world,
-            pos,
-            Direction::Down,
-            &vanilla_blocks::CAVE_VINES,
-            &vanilla_blocks::CAVE_VINES_PLANT,
-        )
-    }
-
     fn use_without_item(
         &self,
         state: BlockStateId,
@@ -95,9 +95,43 @@ impl BlockBehavior for CaveVinesBlock {
     ) -> InteractionResult {
         CaveVinesBlock::use_block(player, state, world, pos)
     }
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        self.growing_plant_head_block()
+            .can_survive(state, world, pos)
+    }
+    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
+        self.growing_plant_head_block().is_randomly_ticking(state)
+    }
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        self.growing_plant_head_block()
+            .random_tick(state, world, pos);
+    }
+
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        direction: Direction,
+        neighbor_pos: BlockPos,
+        neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        self.growing_plant_head_block().update_shape(
+            state,
+            world,
+            pos,
+            direction,
+            neighbor_pos,
+            neighbor_state,
+        )
+    }
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        self.growing_plant_head_block().tick(state, world, pos);
+    }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        default_surviving_state(self.block, self, context)
+        self.growing_plant_head_block()
+            .get_state_for_placement(context)
     }
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
