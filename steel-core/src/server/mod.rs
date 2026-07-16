@@ -4237,12 +4237,7 @@ impl Server {
             ])
             .into();
 
-        self.broadcast_system_chat(&message);
-    }
-
-    /// Broadcasts a system chat message to every online player.
-    fn broadcast_system_chat(&self, message: &TextComponent) {
-        self.broadcast_to_online_with(|player| CSystemChat::new(message, false, player));
+        self.broadcast_to_online_with(|player| CSystemChat::new(&message, false, player));
     }
 
     fn broadcast_player_join_message(&self, player: &Player, previous_name: Option<&str>) {
@@ -4259,7 +4254,7 @@ impl Server {
                 .into()
         };
         let message = message.color(Color::Yellow);
-        self.broadcast_system_chat(&message);
+        self.broadcast_to_online_with(|player| CSystemChat::new(&message, false, player));
     }
 
     fn broadcast_player_leave_message(&self, player: &Player) {
@@ -4267,7 +4262,7 @@ impl Server {
             .message([player.display_name()])
             .into();
         let message = message.color(Color::Yellow);
-        self.broadcast_system_chat(&message);
+        self.broadcast_to_online_with(|player| CSystemChat::new(&message, false, player));
     }
 
     /// Broadcasts the current tick rate and frozen state to all clients.
