@@ -91,6 +91,7 @@ use steel_registry::{
     vanilla_entities,
 };
 use steel_utils::locks::{AsyncMutex, SyncMutex};
+use steel_utils::translations;
 use steel_utils::{BlockPos, ChunkPos, Identifier, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
@@ -4245,8 +4246,6 @@ impl Server {
     }
 
     fn broadcast_player_join_message(&self, player: &Player, previous_name: Option<&str>) {
-        use steel_utils::translations;
-
         let display_name = player.display_name();
         // Fallback to the current name when the cache has no prior entry.
         let old_name = previous_name.unwrap_or(player.gameprofile.name.as_str());
@@ -4264,8 +4263,6 @@ impl Server {
     }
 
     fn broadcast_player_leave_message(&self, player: &Player) {
-        use steel_utils::translations;
-
         let message: TextComponent = translations::MULTIPLAYER_PLAYER_LEFT
             .message([player.display_name()])
             .into();
