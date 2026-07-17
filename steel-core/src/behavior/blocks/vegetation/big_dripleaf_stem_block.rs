@@ -11,6 +11,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::blocks::BigDripleafBlock;
 use crate::behavior::blocks::vegetation::bonemealable::BonemealAction;
+use crate::behavior::blocks::vegetation::get_top_connected_block;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{block::BlockBehavior, blocks::vegetation::bonemealable::Bonemealable};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
@@ -51,31 +52,6 @@ impl BigDripleafStemBlock {
             )
             .set_value(&FACING, facing);
         world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL)
-    }
-    fn get_top_connected_block(
-        world: &dyn LevelReader,
-        pos: BlockPos,
-        body_block: BlockRef,
-        growth_direction: Direction,
-        head_block: BlockRef,
-    ) -> Option<BlockPos> {
-        let mut forward_pos = pos;
-        let mut forward_state;
-
-        loop {
-            forward_pos = forward_pos.relative(growth_direction);
-            forward_state = world.get_block_state(forward_pos);
-
-            if forward_state.get_block() != body_block {
-                break;
-            }
-        }
-
-        if forward_state.get_block() == head_block {
-            Some(forward_pos)
-        } else {
-            None
-        }
     }
 }
 
@@ -137,7 +113,7 @@ impl Bonemealable for BigDripleafStemBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        let head_pos = Self::get_top_connected_block(
+        let head_pos = get_top_connected_block(
             world,
             pos,
             self.block,
@@ -167,7 +143,7 @@ impl Bonemealable for BigDripleafStemBlock {
         _rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        let forward_pos = Self::get_top_connected_block(
+        let forward_pos = get_top_connected_block(
             world,
             pos,
             self.block,

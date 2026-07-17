@@ -128,6 +128,7 @@ pub use nether_wart::NetherWartBlock;
 pub use pitcher_crop::PitcherCropBlock;
 pub use pointed_dripstone_block::{PointedDripstoneBlock, SulfurSpikeBlock};
 pub use potato::PotatoBlock;
+use rand::{Rng, RngExt};
 pub use rooted_dirt_block::RootedDirtBlock;
 pub use sapling_block::SaplingBlock;
 pub use sculk_vein_block::SculkVeinBlock;
@@ -223,7 +224,44 @@ pub(super) const fn multiface_face_property(direction: Direction) -> &'static Bo
         Direction::West => &BlockStateProperties::WEST,
     }
 }
+/// Vanilla `getBlocksToGrowWhenBonemealed()`
+pub fn nether_vines_get_blocks_to_grow_when_bonemealed(rng: &mut dyn Rng) -> i32 {
+    let mut grow_probability = 1.0;
 
+    let mut count = 0;
+
+    while rng.random::<f64>() < grow_probability {
+        grow_probability *= 0.826;
+        count += 1;
+    }
+    count
+}
+/// Vanilla equal `getTopConnectedBlock()`
+pub fn get_top_connected_block(
+    world: &dyn LevelReader,
+    pos: BlockPos,
+    body_block: BlockRef,
+    growth_direction: Direction,
+    head_block: BlockRef,
+) -> Option<BlockPos> {
+    let mut forward_pos = pos;
+    let mut forward_state;
+
+    loop {
+        forward_pos = forward_pos.relative(growth_direction);
+        forward_state = world.get_block_state(forward_pos);
+
+        if forward_state.get_block() != body_block {
+            break;
+        }
+    }
+
+    if forward_state.get_block() == head_block {
+        Some(forward_pos)
+    } else {
+        None
+    }
+}
 /// Vanilla `MultifaceBlock.canSurvive`.
 ///
 /// Every direction whose face property is `true` must have a neighbor that

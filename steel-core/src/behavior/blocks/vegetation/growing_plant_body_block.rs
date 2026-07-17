@@ -9,10 +9,11 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::{
     behavior::{
-        BlockBehavior, BlockPlaceContext,
+        BLOCK_BEHAVIORS, BlockBehavior, BlockPlaceContext,
         block::default_can_be_replaced,
         blocks::vegetation::{
-            bonemealable::Bonemealable, growing_plant_can_survive,
+            bonemealable::{BonemealAction, Bonemealable},
+            get_top_connected_block, growing_plant_can_survive,
             growing_plant_head_block::GrowingPlantHeadBlock,
         },
     },
@@ -61,6 +62,23 @@ impl GrowingPlantBodyBlock {
         head_state: BlockStateId,
     ) -> BlockStateId {
         head_state
+    }
+    fn can_grow_into(state: BlockStateId) -> bool {
+        state.is_air()
+    }
+    fn get_head_pos(
+        &self,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        body_block: BlockRef,
+    ) -> Option<BlockPos> {
+        get_top_connected_block(
+            world,
+            pos,
+            body_block,
+            self.growth_direction,
+            self.head_block,
+        )
     }
 }
 
@@ -123,6 +141,9 @@ impl BlockBehavior for GrowingPlantBodyBlock {
     }
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
+    }
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        Some(self)
     }
 }
 impl Bonemealable for GrowingPlantBodyBlock {

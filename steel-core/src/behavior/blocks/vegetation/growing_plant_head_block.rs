@@ -197,6 +197,9 @@ impl BlockBehavior for GrowingPlantHeadBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.state_for_placement(context.world, context.place_pos(), &mut rng()))
     }
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        Some(self)
+    }
 }
 impl Bonemealable for GrowingPlantHeadBlock {
     fn is_valid_bonemeal_target(
@@ -274,6 +277,7 @@ mod tests {
             false,
             0.1,
             &vanilla_blocks::CAVE_VINES_PLANT,
+            None,
         );
         let level = TestLevel::default().with_block(
             BlockPos::ZERO.below(),
