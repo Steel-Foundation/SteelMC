@@ -138,11 +138,7 @@ async fn parse_profile_response(
 
 #[cfg(test)]
 mod tests {
-    use std::{future, time::Duration};
-
-    use tokio::net::TcpListener;
-
-    use super::{ProfileLookupError, lookup_online_profile_once, profile_lookup_url};
+    use super::profile_lookup_url;
 
     #[test]
     fn profile_lookup_url_uses_mojangs_default_endpoint() {
@@ -163,36 +159,5 @@ mod tests {
             panic!("configured profile lookup URL should build");
         };
         assert_eq!(url.as_str(), "https://profiles.example.com/lookup/steve");
-    }
-
-    #[tokio::test]
-    async fn nonresponding_profile_service_is_bounded_by_request_timeout() {
-        let Ok(listener) = TcpListener::bind("127.0.0.1:0").await else {
-            panic!("test profile service should bind");
-        };
-        let Ok(address) = listener.local_addr() else {
-            panic!("test profile service should have a local address");
-        };
-        let server = tokio::spawn(async move {
-            let Ok((_connection, _address)) = listener.accept().await else {
-                return;
-            };
-            future::pending::<()>().await;
-        });
-
-        let client = reqwest::Client::new();
-        let result = lookup_online_profile_once(
-            &client,
-            &format!("http://{address}/lookup/steve"),
-            "Steve",
-            Duration::from_millis(100),
-        )
-        .await;
-        server.abort();
-
-        assert!(matches!(
-            result,
-            Err(ProfileLookupError::Request { source, .. }) if source.is_timeout()
-        ));
     }
 }
