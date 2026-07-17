@@ -225,6 +225,10 @@ fn configured_chunk_generation_threads(configured_threads: Option<usize>) -> Opt
     cap_positive_thread_count(configured_threads, available_worker_threads())
 }
 
+fn configured_packet_processing_threads(configured_threads: Option<usize>) -> usize {
+    packet_worker_threads_for_available(configured_threads, available_worker_threads())
+}
+
 fn available_worker_threads() -> usize {
     thread::available_parallelism().map_or(4, NonZero::get)
 }
@@ -235,6 +239,18 @@ fn cap_positive_thread_count(
 ) -> Option<usize> {
     let configured_threads = configured_threads.filter(|&threads| threads > 0)?;
     Some(configured_threads.min(available_threads.max(1)))
+}
+
+fn packet_worker_threads_for_available(
+    configured_threads: Option<usize>,
+    available_threads: usize,
+) -> usize {
+    let available_threads = available_threads.max(1);
+    if let Some(configured_threads) = configured_threads.filter(|&threads| threads > 0) {
+        return configured_threads.min(available_threads);
+    }
+
+    ((available_threads / 2).max(2)).min(available_threads)
 }
 
 #[cfg(test)]
@@ -279,7 +295,7 @@ mod tests {
         TickRateManager, UncachedPlayerTarget, WorldMap, can_entity_return_from_end_to_overworld,
         cap_positive_thread_count, classify_uncached_player_target, create_registered_dispatcher,
         direct_uuid_profile, is_allowed_to_enter_portal_target, is_end_return_transition,
-        offline_uuid, validate_player_permission_group_update,
+        offline_uuid, packet_worker_threads_for_available, validate_player_permission_group_update,
     };
 
     struct TestConnection;
@@ -359,6 +375,7 @@ mod tests {
             command_spam_threshold_seconds: 10,
             compression: None,
             server_links: None,
+            packet_processing_threads: Some(1),
             chunk_generation_threads: Some(1),
         })
     }
@@ -703,6 +720,19 @@ mod tests {
     fn zero_thread_count_keeps_pool_default() {
         assert_eq!(cap_positive_thread_count(Some(0), 8), None);
         assert_eq!(cap_positive_thread_count(None, 8), None);
+    }
+
+    #[test]
+    fn packet_worker_count_uses_the_configured_cap() {
+        assert_eq!(packet_worker_threads_for_available(Some(16), 8), 8);
+        assert_eq!(packet_worker_threads_for_available(Some(4), 8), 4);
+    }
+
+    #[test]
+    fn packet_worker_count_uses_the_automatic_default() {
+        assert_eq!(packet_worker_threads_for_available(Some(0), 8), 4);
+        assert_eq!(packet_worker_threads_for_available(None, 8), 4);
+        assert_eq!(packet_worker_threads_for_available(None, 1), 1);
     }
 
     #[test]
@@ -2075,7 +2105,7 @@ pub struct Server {
     command_permission_keys: Vec<String>,
     /// Command work submitted from connection and console tasks.
     command_requests: CommandRequestQueue,
-    /// Decoded serverbound play packets handled before the next game tick.
+    /// Decoded serverbound play packets handled during the inter-tick phase.
     packet_processor: PacketProcessor,
     /// Jobs resumed from a known point in the server game tick.
     pub jobs: ServerJobQueue,
@@ -2376,7 +2406,7 @@ impl Server {
         })
     }
 
-    /// Schedules a decoded play packet for Vanilla's pre-tick packet phase.
+    /// Schedules a decoded play packet for the inter-tick packet phase.
     pub(crate) fn schedule_play_packet(&self, player: Arc<Player>, packet: ScheduledPlayPacket) {
         self.packet_processor.schedule(player, packet);
     }
@@ -3545,15 +3575,27 @@ impl Server {
     /// Runs gameplay packets and the three independent tick loops concurrently.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
         self.packet_processor.open_after_tick();
-        let packet_handle = {
+        let packet_worker_count =
+            configured_packet_processing_threads(self.config.packet_processing_threads);
+        let mut packet_handles = Vec::with_capacity(packet_worker_count);
+        for worker_id in 0..packet_worker_count {
             let s = self.clone();
             let t = cancel_token.clone();
-            tokio::spawn(async move {
+            packet_handles.push(tokio::spawn(async move {
                 if let Err(error) = spawn_blocking(move || s.packet_processor.run(&s)).await {
-                    log::error!("Gameplay packet worker failed: {error}");
+                    log::error!("Gameplay packet worker {worker_id} failed: {error}");
                     t.cancel();
                 }
-            })
+            }));
+        }
+        let packet_supervisor_cancel = cancel_token.clone();
+        let packet_workers = async move {
+            for handle in packet_handles {
+                if let Err(error) = handle.await {
+                    log::error!("Gameplay packet supervisor failed: {error}");
+                    packet_supervisor_cancel.cancel();
+                }
+            }
         };
         let game_handle = {
             let s = self.clone();
@@ -3571,7 +3613,7 @@ impl Server {
             tokio::spawn(async move { s.run_chunk_scheduling_tick(t).await })
         };
         let _ = tokio::join!(
-            packet_handle,
+            packet_workers,
             game_handle,
             chunk_send_handle,
             chunk_sched_handle

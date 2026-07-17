@@ -324,6 +324,7 @@ impl ServerConfig {
             command_spam_threshold_seconds: self.command_spam_threshold_seconds,
             compression: self.compression,
             server_links: self.server_links,
+            packet_processing_threads: self.threads.packet_processing,
             chunk_generation_threads: self.threads.chunk_generation,
         }
     }
@@ -339,6 +340,8 @@ pub struct ThreadConfig {
     pub main_runtime: Option<usize>,
     /// Worker threads for the chunk Tokio runtime.
     pub chunk_runtime: Option<usize>,
+    /// Worker threads for inter-tick gameplay packet processing.
+    pub packet_processing: Option<usize>,
     /// Worker threads for the Rayon chunk generation pool.
     pub chunk_generation: Option<usize>,
 }
@@ -734,19 +737,29 @@ mod tests {
     }
 
     #[test]
-    fn configured_thread_counts_parse_and_generation_flows_to_runtime_config() {
+    fn configured_thread_counts_parse_and_flow_to_runtime_config() {
         let config_toml = DEFAULT_CONFIG
             .replace("main_runtime = 0", "main_runtime = 3")
             .replace("chunk_runtime = 0", "chunk_runtime = 4")
-            .replace("chunk_generation = 0", "chunk_generation = 5");
+            .replace("packet_processing = 0", "packet_processing = 5")
+            .replace("chunk_generation = 0", "chunk_generation = 6");
         let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
         assert_eq!(config.server.threads.main_runtime, Some(3));
         assert_eq!(config.server.threads.chunk_runtime, Some(4));
-        assert_eq!(config.server.threads.chunk_generation, Some(5));
+        assert_eq!(config.server.threads.packet_processing, Some(5));
+        assert_eq!(config.server.threads.chunk_generation, Some(6));
+        assert_eq!(
+            config
+                .server
+                .clone()
+                .into_runtime_config()
+                .packet_processing_threads,
+            Some(5)
+        );
         assert_eq!(
             config.server.into_runtime_config().chunk_generation_threads,
-            Some(5)
+            Some(6)
         );
     }
 

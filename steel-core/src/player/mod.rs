@@ -2889,6 +2889,7 @@ mod tests {
             command_spam_threshold_seconds: 10,
             compression: None,
             server_links: None,
+            packet_processing_threads: Some(1),
             chunk_generation_threads: Some(1),
         })
     }
