@@ -101,8 +101,6 @@ impl JavaTcpClient {
             .clone()
             .expect("Game profile is empty");
 
-        let previous_name = self.server.record_known_player(&gameprofile);
-
         let client_info = self.client_information.lock().await.clone();
 
         let world = self.server.overworld().clone();
@@ -145,7 +143,7 @@ impl JavaTcpClient {
             () = self.connection_updated.notified() => {}
             () = self.cancel_token.cancelled() => return ConnectionAction::none(),
         }
-        self.server.queue_player_join(player, previous_name);
+        self.server.queue_player_join(player);
 
         ConnectionAction::upgrade(connection)
     }

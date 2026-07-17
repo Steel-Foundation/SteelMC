@@ -1057,7 +1057,6 @@ fn validate_player_permission_group_update<E>(
 struct PendingPlayerJoin {
     player: Arc<Player>,
     state: Result<DomainPlayerState, String>,
-    previous_name: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2226,10 +2225,7 @@ impl Server {
     ///
     /// Persistent data is loaded asynchronously, then world insertion is finalized at the
     /// game tick safe point so the socket reader can enter play immediately.
-    ///
-    /// `previous_name` is the profile-cache name for this UUID before this connection
-    /// recorded the current name.
-    pub fn queue_player_join(self: &Arc<Self>, player: Arc<Player>, previous_name: Option<String>) {
+    pub fn queue_player_join(self: &Arc<Self>, player: Arc<Player>) {
         if player.connection.closed() {
             return;
         }
@@ -2241,11 +2237,9 @@ impl Server {
         let server = Arc::clone(self);
         tokio::spawn(async move {
             let state = server.prepare_player_join(&player).await;
-            server.pending_player_joins.send(PendingPlayerJoin {
-                player,
-                state,
-                previous_name,
-            });
+            server
+                .pending_player_joins
+                .send(PendingPlayerJoin { player, state });
         });
     }
 
@@ -2255,18 +2249,14 @@ impl Server {
             .await
     }
 
-    fn process_player_joins(&self) {
+    fn process_player_joins(self: &Arc<Self>) {
         for join in self.pending_player_joins.drain() {
             self.finish_prepared_player_join(join);
         }
     }
 
-    fn finish_prepared_player_join(&self, join: PendingPlayerJoin) {
-        let PendingPlayerJoin {
-            player,
-            state,
-            previous_name,
-        } = join;
+    fn finish_prepared_player_join(self: &Arc<Self>, join: PendingPlayerJoin) {
+        let PendingPlayerJoin { player, state } = join;
         let uuid = player.gameprofile.id;
         if player.connection.closed() {
             self.release_player_admission(uuid, PlayerAdmissionState::Joining);
@@ -2304,6 +2294,7 @@ impl Server {
             self.remove_online_player_sync(&player);
             return;
         }
+        let previous_name = self.record_known_player(&player.gameprofile);
         self.broadcast_player_join_message(&player, previous_name.as_deref());
         self.sync_tab_list(&player);
         if player.mark_joined_world() {
