@@ -14,9 +14,9 @@ use steel_protocol::packets::game::{
     CBundleDelimiter, CCommandSuggestions, SAcceptTeleportation, SAttack, SChangeDifficulty,
     SChangeGameMode, SChat, SChatAck, SChatCommand, SChatSessionUpdate, SChunkBatchReceived,
     SClientCommand, SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick,
-    SContainerClose, SContainerSlotStateChanged, SInteract, SMovePlayerPos, SMovePlayerPosRot,
-    SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
-    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SSetCarriedItem,
+    SContainerClose, SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos,
+    SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock,
+    SPlayerAbilities, SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SSetCarriedItem,
     SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem, SUseItemOn,
 };
 
@@ -48,6 +48,176 @@ pub enum OutboundPacket {
     Packet(EncodedPacket),
     /// Final disconnect packet that must be flushed before closing the socket.
     Disconnect(EncodedPacket),
+}
+
+/// A decoded play packet whose handler runs in the server's pre-tick packet phase.
+pub(crate) struct ScheduledPlayPacket(ScheduledPlayPacketKind);
+
+enum ScheduledPlayPacketKind {
+    AcceptTeleportation(SAcceptTeleportation),
+    Attack(SAttack),
+    Interact(SInteract),
+    Chat(Box<SChat>),
+    ChatAck(SChatAck),
+    ChatSessionUpdate(SChatSessionUpdate),
+    ClientInformation(SClientInformation),
+    ClientTickEnd,
+    ChunkBatchReceived(SChunkBatchReceived),
+    MovePlayer(SMovePlayer),
+    MoveVehicle(SMoveVehicle),
+    PlayerLoaded,
+    ChatCommand(SChatCommand),
+    CommandSuggestion(SCommandSuggestion),
+    ContainerButtonClick(SContainerButtonClick),
+    ContainerClick(SContainerClick),
+    ContainerClose(SContainerClose),
+    ContainerSlotStateChanged(SContainerSlotStateChanged),
+    SetCreativeModeSlot(SSetCreativeModeSlot),
+    PlayerInput(SPlayerInput),
+    PlayerCommand(SPlayerCommand),
+    PlayerAbilities(SPlayerAbilities),
+    UseItemOn(SUseItemOn),
+    UseItem(SUseItem),
+    SetCarriedItem(SSetCarriedItem),
+    Swing(SSwing),
+    PlayerAction(SPlayerAction),
+    PickItemFromBlock(SPickItemFromBlock),
+    SignUpdate(SSignUpdate),
+    SpectatorAction(SSpectatorAction),
+    ClientCommand(SClientCommand),
+    ChangeGameMode(SChangeGameMode),
+    ChangeDifficulty(SChangeDifficulty),
+}
+
+enum ImmediatePlayPacket {
+    KeepAlive(SKeepAlive),
+    PingRequest(SPingRequest),
+    CustomPayload(SCustomPayload),
+    Unknown(i32),
+}
+
+enum DecodedPlayPacket {
+    Scheduled(ScheduledPlayPacket),
+    Immediate(ImmediatePlayPacket),
+}
+
+impl ScheduledPlayPacket {
+    pub(crate) const fn can_process_before_join(&self) -> bool {
+        matches!(
+            &self.0,
+            ScheduledPlayPacketKind::AcceptTeleportation(_)
+                | ScheduledPlayPacketKind::ClientInformation(_)
+                | ScheduledPlayPacketKind::ClientTickEnd
+                | ScheduledPlayPacketKind::ChunkBatchReceived(_)
+                | ScheduledPlayPacketKind::ChatAck(_)
+                | ScheduledPlayPacketKind::ChatSessionUpdate(_)
+                | ScheduledPlayPacketKind::PlayerLoaded
+        )
+    }
+
+    pub(crate) fn handle(self, player: Arc<Player>, server: &Arc<Server>) {
+        if !player.has_joined_world() && !self.can_process_before_join() {
+            return;
+        }
+
+        match self.0 {
+            ScheduledPlayPacketKind::AcceptTeleportation(packet) => {
+                player.handle_accept_teleportation(packet);
+            }
+            ScheduledPlayPacketKind::Attack(packet) => player.handle_attack(packet),
+            ScheduledPlayPacketKind::Interact(packet) => player.handle_interact(packet),
+            ScheduledPlayPacketKind::Chat(packet) => {
+                player.handle_chat(*packet, Arc::clone(&player));
+            }
+            ScheduledPlayPacketKind::ChatAck(packet) => player.handle_chat_ack(packet),
+            ScheduledPlayPacketKind::ChatSessionUpdate(packet) => {
+                player.handle_chat_session_update(packet);
+            }
+            ScheduledPlayPacketKind::ClientInformation(packet) => {
+                player.handle_client_information(packet);
+            }
+            ScheduledPlayPacketKind::ClientTickEnd => player.handle_client_tick_end(),
+            ScheduledPlayPacketKind::ChunkBatchReceived(packet) => {
+                player
+                    .chunk_sender
+                    .lock()
+                    .on_chunk_batch_received_by_client(packet.desired_chunks_per_tick);
+            }
+            ScheduledPlayPacketKind::MovePlayer(packet) => player.handle_move_player(packet),
+            ScheduledPlayPacketKind::MoveVehicle(packet) => player.handle_move_vehicle(packet),
+            ScheduledPlayPacketKind::PlayerLoaded => {
+                if player.mark_client_loaded_from_network() {
+                    player.send_inventory_to_remote();
+                }
+            }
+            ScheduledPlayPacketKind::ChatCommand(packet) => {
+                if server
+                    .submit_command(CommandSender::Player(Arc::clone(&player)), packet.command)
+                    .is_err()
+                {
+                    player.send_message(
+                        &TextComponent::const_plain("Command queue is full").color(Color::Red),
+                    );
+                }
+                player.detect_command_rate_spam();
+            }
+            ScheduledPlayPacketKind::CommandSuggestion(packet) => {
+                if server
+                    .submit_command_suggestions(Arc::clone(&player), packet.id, packet.command)
+                    .is_err()
+                {
+                    player.send_packet(CCommandSuggestions::new(packet.id, 0, 0, Vec::new()));
+                }
+            }
+            ScheduledPlayPacketKind::ContainerButtonClick(packet) => {
+                player.handle_container_button_click(packet);
+            }
+            ScheduledPlayPacketKind::ContainerClick(packet) => {
+                player.handle_container_click(packet);
+            }
+            ScheduledPlayPacketKind::ContainerClose(packet) => {
+                player.handle_container_close(packet);
+            }
+            ScheduledPlayPacketKind::ContainerSlotStateChanged(packet) => {
+                player.handle_container_slot_state_changed(packet);
+            }
+            ScheduledPlayPacketKind::SetCreativeModeSlot(packet) => {
+                player.handle_set_creative_mode_slot(packet);
+            }
+            ScheduledPlayPacketKind::PlayerInput(packet) => player.handle_player_input(packet),
+            ScheduledPlayPacketKind::PlayerCommand(packet) => {
+                player.handle_player_command(packet);
+            }
+            ScheduledPlayPacketKind::PlayerAbilities(packet) => {
+                player.handle_player_abilities(packet);
+            }
+            ScheduledPlayPacketKind::UseItemOn(packet) => player.handle_use_item_on(packet),
+            ScheduledPlayPacketKind::UseItem(packet) => player.handle_use_item(packet),
+            ScheduledPlayPacketKind::SetCarriedItem(packet) => {
+                player.handle_set_carried_item(packet);
+            }
+            ScheduledPlayPacketKind::Swing(packet) => player.swing(packet.hand, false),
+            ScheduledPlayPacketKind::PlayerAction(packet) => {
+                player.handle_player_action(packet);
+            }
+            ScheduledPlayPacketKind::PickItemFromBlock(packet) => {
+                player.handle_pick_item_from_block(packet);
+            }
+            ScheduledPlayPacketKind::SignUpdate(packet) => player.handle_sign_update(packet),
+            ScheduledPlayPacketKind::SpectatorAction(packet) => {
+                player.handle_spectator_action(packet);
+            }
+            ScheduledPlayPacketKind::ClientCommand(packet) => {
+                player.handle_client_command(packet.action);
+            }
+            ScheduledPlayPacketKind::ChangeGameMode(packet) => {
+                handle_client_request(&player, server, packet.gamemode);
+            }
+            ScheduledPlayPacketKind::ChangeDifficulty(packet) => {
+                player.handle_change_difficulty(packet.difficulty);
+            }
+        }
+    }
 }
 
 /// Builder for creating packet bundles.
@@ -291,19 +461,13 @@ impl JavaConnection {
         )
     }
 
-    /// Processes a packet from the client.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "single match dispatch over all play packets; splitting would hurt readability"
-    )]
-    pub fn process_packet(
+    /// Decodes and dispatches one packet received from the client.
+    fn process_packet(
         &self,
         packet: RawPacket,
         player: Arc<Player>,
-        server: Arc<Server>,
+        server: &Server,
     ) -> Result<(), PacketError> {
-        let data = &mut Cursor::new(packet.payload.as_slice());
-
         if !player.has_joined_world() && !Self::can_process_before_join(packet.id) {
             return Ok(());
         }
@@ -314,162 +478,166 @@ impl JavaConnection {
             return Ok(());
         }
 
-        match packet.id {
-            play::S_ACCEPT_TELEPORTATION => {
-                player.handle_accept_teleportation(SAcceptTeleportation::read_packet(data)?);
+        match Self::decode_play_packet(packet)? {
+            DecodedPlayPacket::Scheduled(packet) => {
+                server.schedule_play_packet(player, packet);
             }
-            play::S_ATTACK => {
-                player.handle_attack(SAttack::read_packet(data)?);
+            DecodedPlayPacket::Immediate(packet) => {
+                self.handle_immediate_packet(packet, &player);
             }
-            play::S_INTERACT => {
-                player.handle_interact(SInteract::read_packet(data)?);
-            }
-            play::S_CUSTOM_PAYLOAD => {
-                player.handle_custom_payload(SCustomPayload::read_packet(data)?);
-            }
-            play::S_CHAT => {
-                player.handle_chat(SChat::read_packet(data)?, Arc::clone(&player));
-            }
-            play::S_CHAT_SESSION_UPDATE => {
-                player.handle_chat_session_update(SChatSessionUpdate::read_packet(data)?);
-            }
-            play::S_CHAT_ACK => {
-                player.handle_chat_ack(SChatAck::read_packet(data)?);
-            }
-            play::S_CLIENT_INFORMATION => {
-                player.handle_client_information(SClientInformation::read_packet(data)?);
-            }
-            play::S_CLIENT_TICK_END => {
-                let _ = SClientTickEnd::read_packet(data)?;
-                player.handle_client_tick_end();
-            }
-            play::S_CHUNK_BATCH_RECEIVED => {
-                let packet = SChunkBatchReceived::read_packet(data)?;
-                player
-                    .chunk_sender
-                    .lock()
-                    .on_chunk_batch_received_by_client(packet.desired_chunks_per_tick);
-            }
-            play::S_KEEP_ALIVE => {
-                self.handle_keep_alive(SKeepAlive::read_packet(data)?);
-            }
-            play::S_MOVE_PLAYER_POS => {
-                player.handle_move_player(SMovePlayerPos::read_packet(data)?.into());
-            }
-            play::S_MOVE_PLAYER_POS_ROT => {
-                player.handle_move_player(SMovePlayerPosRot::read_packet(data)?.into());
-            }
-            play::S_MOVE_PLAYER_ROT => {
-                player.handle_move_player(SMovePlayerRot::read_packet(data)?.into());
-            }
-            play::S_MOVE_PLAYER_STATUS_ONLY => {
-                player.handle_move_player(SMovePlayerStatusOnly::read_packet(data)?.into());
-            }
-            play::S_MOVE_VEHICLE => {
-                player.handle_move_vehicle(SMoveVehicle::read_packet(data)?);
-            }
-            play::S_PLAYER_LOADED => {
-                let _ = SPlayerLoad::read_packet(data)?;
-                if player.mark_client_loaded_from_network() {
-                    // Send initial inventory to client
-                    player.send_inventory_to_remote();
-                }
-            }
-            play::S_CHAT_COMMAND => {
-                let command = SChatCommand::read_packet(data)?.command;
-                if server
-                    .submit_command(CommandSender::Player(Arc::clone(&player)), command)
-                    .is_err()
-                {
-                    player.send_message(
-                        &TextComponent::const_plain("Command queue is full").color(Color::Red),
-                    );
-                }
-                player.detect_command_rate_spam();
-            }
-            play::S_COMMAND_SUGGESTION => {
-                let packet = SCommandSuggestion::read_packet(data)?;
-                if server
-                    .submit_command_suggestions(Arc::clone(&player), packet.id, packet.command)
-                    .is_err()
-                {
-                    player.send_packet(CCommandSuggestions::new(packet.id, 0, 0, Vec::new()));
-                }
-            }
-            play::S_CONTAINER_BUTTON_CLICK => {
-                player.handle_container_button_click(SContainerButtonClick::read_packet(data)?);
-            }
-            play::S_CONTAINER_CLICK => {
-                player.handle_container_click(SContainerClick::read_packet(data)?);
-            }
-            play::S_CONTAINER_CLOSE => {
-                player.handle_container_close(SContainerClose::read_packet(data)?);
-            }
-            play::S_CONTAINER_SLOT_STATE_CHANGED => {
-                player.handle_container_slot_state_changed(
-                    SContainerSlotStateChanged::read_packet(data)?,
-                );
-            }
-            play::S_SET_CREATIVE_MODE_SLOT => {
-                player.handle_set_creative_mode_slot(SSetCreativeModeSlot::read_packet(data)?);
-            }
-            play::S_PLAYER_INPUT => {
-                player.handle_player_input(SPlayerInput::read_packet(data)?);
-            }
-            play::S_PLAYER_COMMAND => {
-                player.handle_player_command(SPlayerCommand::read_packet(data)?);
-            }
-            play::S_PLAYER_ABILITIES => {
-                player.handle_player_abilities(SPlayerAbilities::read_packet(data)?);
-            }
-            play::S_USE_ITEM_ON => {
-                player.handle_use_item_on(SUseItemOn::read_packet(data)?);
-            }
-            play::S_USE_ITEM => {
-                player.handle_use_item(SUseItem::read_packet(data)?);
-            }
-            play::S_SET_CARRIED_ITEM => {
-                player.handle_set_carried_item(SSetCarriedItem::read_packet(data)?);
-            }
-            play::S_SWING => {
-                let packet = SSwing::read_packet(data)?;
-                player.swing(packet.hand, false);
-            }
-            play::S_PLAYER_ACTION => {
-                let packet = SPlayerAction::read_packet(data)?;
-                player.handle_player_action(packet);
-            }
-            play::S_PICK_ITEM_FROM_BLOCK => {
-                let packet = SPickItemFromBlock::read_packet(data)?;
-                player.handle_pick_item_from_block(packet);
-            }
-            play::S_SIGN_UPDATE => {
-                let packet = SSignUpdate::read_packet(data)?;
-                player.handle_sign_update(packet);
-            }
-            play::S_SPECTATOR_ACTION => {
-                let packet = SSpectatorAction::read_packet(data)?;
-                player.handle_spectator_action(packet);
-            }
-            play::S_CLIENT_COMMAND => {
-                let packet = SClientCommand::read_packet(data)?;
-                player.handle_client_command(packet.action);
-            }
-            play::S_PING_REQUEST => {
-                let packet = SPingRequest::read_packet(data)?;
-                player.send_packet(CPongResponse::new(packet.time));
-            }
-            play::S_CHANGE_GAME_MODE => {
-                let packet = SChangeGameMode::read_packet(data)?;
-                handle_client_request(&player, &server, packet.gamemode);
-            }
-            play::S_CHANGE_DIFFICULTY => {
-                let packet = SChangeDifficulty::read_packet(data)?;
-                player.handle_change_difficulty(packet.difficulty);
-            }
-            id => log::info!("play packet id {id} is not known"),
         }
         Ok(())
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "single match decode over all implemented play packets keeps protocol routing auditable"
+    )]
+    fn decode_play_packet(packet: RawPacket) -> Result<DecodedPlayPacket, PacketError> {
+        let data = &mut Cursor::new(packet.payload.as_slice());
+        let scheduled = |packet| DecodedPlayPacket::Scheduled(ScheduledPlayPacket(packet));
+
+        Ok(match packet.id {
+            play::S_ACCEPT_TELEPORTATION => {
+                scheduled(ScheduledPlayPacketKind::AcceptTeleportation(
+                    SAcceptTeleportation::read_packet(data)?,
+                ))
+            }
+            play::S_ATTACK => {
+                scheduled(ScheduledPlayPacketKind::Attack(SAttack::read_packet(data)?))
+            }
+            play::S_INTERACT => scheduled(ScheduledPlayPacketKind::Interact(
+                SInteract::read_packet(data)?,
+            )),
+            play::S_CUSTOM_PAYLOAD => DecodedPlayPacket::Immediate(
+                ImmediatePlayPacket::CustomPayload(SCustomPayload::read_packet(data)?),
+            ),
+            play::S_CHAT => scheduled(ScheduledPlayPacketKind::Chat(Box::new(SChat::read_packet(
+                data,
+            )?))),
+            play::S_CHAT_SESSION_UPDATE => scheduled(ScheduledPlayPacketKind::ChatSessionUpdate(
+                SChatSessionUpdate::read_packet(data)?,
+            )),
+            play::S_CHAT_ACK => scheduled(ScheduledPlayPacketKind::ChatAck(SChatAck::read_packet(
+                data,
+            )?)),
+            play::S_CLIENT_INFORMATION => scheduled(ScheduledPlayPacketKind::ClientInformation(
+                SClientInformation::read_packet(data)?,
+            )),
+            play::S_CLIENT_TICK_END => {
+                let _ = SClientTickEnd::read_packet(data)?;
+                scheduled(ScheduledPlayPacketKind::ClientTickEnd)
+            }
+            play::S_CHUNK_BATCH_RECEIVED => scheduled(ScheduledPlayPacketKind::ChunkBatchReceived(
+                SChunkBatchReceived::read_packet(data)?,
+            )),
+            play::S_KEEP_ALIVE => DecodedPlayPacket::Immediate(ImmediatePlayPacket::KeepAlive(
+                SKeepAlive::read_packet(data)?,
+            )),
+            play::S_MOVE_PLAYER_POS => scheduled(ScheduledPlayPacketKind::MovePlayer(
+                SMovePlayerPos::read_packet(data)?.into(),
+            )),
+            play::S_MOVE_PLAYER_POS_ROT => scheduled(ScheduledPlayPacketKind::MovePlayer(
+                SMovePlayerPosRot::read_packet(data)?.into(),
+            )),
+            play::S_MOVE_PLAYER_ROT => scheduled(ScheduledPlayPacketKind::MovePlayer(
+                SMovePlayerRot::read_packet(data)?.into(),
+            )),
+            play::S_MOVE_PLAYER_STATUS_ONLY => scheduled(ScheduledPlayPacketKind::MovePlayer(
+                SMovePlayerStatusOnly::read_packet(data)?.into(),
+            )),
+            play::S_MOVE_VEHICLE => scheduled(ScheduledPlayPacketKind::MoveVehicle(
+                SMoveVehicle::read_packet(data)?,
+            )),
+            play::S_PLAYER_LOADED => {
+                let _ = SPlayerLoad::read_packet(data)?;
+                scheduled(ScheduledPlayPacketKind::PlayerLoaded)
+            }
+            play::S_CHAT_COMMAND => scheduled(ScheduledPlayPacketKind::ChatCommand(
+                SChatCommand::read_packet(data)?,
+            )),
+            play::S_COMMAND_SUGGESTION => scheduled(ScheduledPlayPacketKind::CommandSuggestion(
+                SCommandSuggestion::read_packet(data)?,
+            )),
+            play::S_CONTAINER_BUTTON_CLICK => {
+                scheduled(ScheduledPlayPacketKind::ContainerButtonClick(
+                    SContainerButtonClick::read_packet(data)?,
+                ))
+            }
+            play::S_CONTAINER_CLICK => scheduled(ScheduledPlayPacketKind::ContainerClick(
+                SContainerClick::read_packet(data)?,
+            )),
+            play::S_CONTAINER_CLOSE => scheduled(ScheduledPlayPacketKind::ContainerClose(
+                SContainerClose::read_packet(data)?,
+            )),
+            play::S_CONTAINER_SLOT_STATE_CHANGED => {
+                scheduled(ScheduledPlayPacketKind::ContainerSlotStateChanged(
+                    SContainerSlotStateChanged::read_packet(data)?,
+                ))
+            }
+            play::S_SET_CREATIVE_MODE_SLOT => {
+                scheduled(ScheduledPlayPacketKind::SetCreativeModeSlot(
+                    SSetCreativeModeSlot::read_packet(data)?,
+                ))
+            }
+            play::S_PLAYER_INPUT => scheduled(ScheduledPlayPacketKind::PlayerInput(
+                SPlayerInput::read_packet(data)?,
+            )),
+            play::S_PLAYER_COMMAND => scheduled(ScheduledPlayPacketKind::PlayerCommand(
+                SPlayerCommand::read_packet(data)?,
+            )),
+            play::S_PLAYER_ABILITIES => scheduled(ScheduledPlayPacketKind::PlayerAbilities(
+                SPlayerAbilities::read_packet(data)?,
+            )),
+            play::S_USE_ITEM_ON => scheduled(ScheduledPlayPacketKind::UseItemOn(
+                SUseItemOn::read_packet(data)?,
+            )),
+            play::S_USE_ITEM => scheduled(ScheduledPlayPacketKind::UseItem(SUseItem::read_packet(
+                data,
+            )?)),
+            play::S_SET_CARRIED_ITEM => scheduled(ScheduledPlayPacketKind::SetCarriedItem(
+                SSetCarriedItem::read_packet(data)?,
+            )),
+            play::S_SWING => scheduled(ScheduledPlayPacketKind::Swing(SSwing::read_packet(data)?)),
+            play::S_PLAYER_ACTION => scheduled(ScheduledPlayPacketKind::PlayerAction(
+                SPlayerAction::read_packet(data)?,
+            )),
+            play::S_PICK_ITEM_FROM_BLOCK => scheduled(ScheduledPlayPacketKind::PickItemFromBlock(
+                SPickItemFromBlock::read_packet(data)?,
+            )),
+            play::S_SIGN_UPDATE => scheduled(ScheduledPlayPacketKind::SignUpdate(
+                SSignUpdate::read_packet(data)?,
+            )),
+            play::S_SPECTATOR_ACTION => scheduled(ScheduledPlayPacketKind::SpectatorAction(
+                SSpectatorAction::read_packet(data)?,
+            )),
+            play::S_CLIENT_COMMAND => scheduled(ScheduledPlayPacketKind::ClientCommand(
+                SClientCommand::read_packet(data)?,
+            )),
+            play::S_PING_REQUEST => DecodedPlayPacket::Immediate(ImmediatePlayPacket::PingRequest(
+                SPingRequest::read_packet(data)?,
+            )),
+            play::S_CHANGE_GAME_MODE => scheduled(ScheduledPlayPacketKind::ChangeGameMode(
+                SChangeGameMode::read_packet(data)?,
+            )),
+            play::S_CHANGE_DIFFICULTY => scheduled(ScheduledPlayPacketKind::ChangeDifficulty(
+                SChangeDifficulty::read_packet(data)?,
+            )),
+            id => DecodedPlayPacket::Immediate(ImmediatePlayPacket::Unknown(id)),
+        })
+    }
+
+    fn handle_immediate_packet(&self, packet: ImmediatePlayPacket, player: &Player) {
+        match packet {
+            ImmediatePlayPacket::KeepAlive(packet) => self.handle_keep_alive(packet),
+            ImmediatePlayPacket::PingRequest(packet) => {
+                player.send_packet(CPongResponse::new(packet.time));
+            }
+            ImmediatePlayPacket::CustomPayload(packet) => {
+                player.handle_custom_payload(packet);
+            }
+            ImmediatePlayPacket::Unknown(id) => log::info!("play packet id {id} is not known"),
+        }
     }
 
     /// Listens for packets from the client.
@@ -487,7 +655,7 @@ impl JavaConnection {
                     match packet {
                         Ok(packet) => {
                             if let Some(player) = self.player.upgrade()
-                                && let Err(err) = self.process_packet(packet, player, server.clone()) {
+                                && let Err(err) = self.process_packet(packet, player, &server) {
                                 log::warn!(
                                     "Failed to get packet from client {}: {err}",
                                     self.id
@@ -563,8 +731,7 @@ impl JavaConnection {
         if !player.has_joined_world() || player.server().cancel_token.is_cancelled() {
             return;
         }
-        let world = player.get_world();
-        world.remove_player(player).await;
+        player.server().queue_player_disconnect(player);
     }
 
     async fn write_queued_disconnect(&self, sender_recv: &mut UnboundedReceiver<OutboundPacket>) {
@@ -645,6 +812,13 @@ impl NetworkConnection for JavaConnection {
 mod tests {
     use super::*;
 
+    fn decode(packet: RawPacket) -> DecodedPlayPacket {
+        let Ok(decoded) = JavaConnection::decode_play_packet(packet) else {
+            panic!("test play packet should decode");
+        };
+        decoded
+    }
+
     #[test]
     fn pre_join_custom_payload_uses_serverbound_play_packet_id() {
         assert!(JavaConnection::can_process_before_join(
@@ -665,6 +839,34 @@ mod tests {
         ));
         assert!(JavaConnection::can_process_before_join(
             play::S_PLAYER_LOADED
+        ));
+    }
+
+    #[test]
+    fn client_tick_end_is_scheduled_for_the_pre_tick_phase() {
+        let decoded = decode(RawPacket {
+            id: play::S_CLIENT_TICK_END,
+            payload: Vec::new(),
+        });
+
+        assert!(matches!(
+            decoded,
+            DecodedPlayPacket::Scheduled(ScheduledPlayPacket(
+                ScheduledPlayPacketKind::ClientTickEnd
+            ))
+        ));
+    }
+
+    #[test]
+    fn keep_alive_remains_on_the_immediate_connection_path() {
+        let decoded = decode(RawPacket {
+            id: play::S_KEEP_ALIVE,
+            payload: 42_i64.to_be_bytes().to_vec(),
+        });
+
+        assert!(matches!(
+            decoded,
+            DecodedPlayPacket::Immediate(ImmediatePlayPacket::KeepAlive(SKeepAlive { id: 42 }))
         ));
     }
 }

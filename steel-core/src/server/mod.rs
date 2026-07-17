@@ -1,6 +1,7 @@
 //! This module contains the `Server` struct, which is the main entry point for the server.
 /// Tick-polled server jobs.
 pub mod jobs;
+mod packet_processor;
 mod pregen;
 /// The registry cache for the server.
 pub mod registry_cache;
@@ -43,6 +44,7 @@ use crate::permission::{
 };
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
 use crate::player::connection::NetworkConnection;
+use crate::player::networking::ScheduledPlayPacket;
 use crate::player::player_data::{
     PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle,
 };
@@ -57,12 +59,14 @@ use crate::portal::{
 };
 use crate::scoreboard::DomainScoreboards;
 use crate::server::jobs::{FnServerJob, JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
+use crate::server::packet_processor::PacketProcessor;
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
 use crate::world::{PlayerMap, World, WorldConfig, WorldGameTickTimings};
 use crate::worldgen::WorldGeneratorRegistry;
 use crate::worldgen::registry::GeneratorOutput;
+use crossbeam::queue::SegQueue;
 use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use rustc_hash::FxHashMap;
@@ -94,7 +98,12 @@ use steel_utils::locks::{AsyncMutex, SyncMutex};
 use steel_utils::{BlockPos, ChunkPos, Identifier, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
-use tokio::{runtime::Runtime, sync::Notify, task::spawn_blocking, time::sleep};
+use tokio::{
+    runtime::Runtime,
+    sync::Notify,
+    task::{JoinSet, spawn_blocking},
+    time::sleep,
+};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -256,19 +265,19 @@ mod tests {
         PermissionSubjectIndex, PermissionSubjectState,
     };
     use crate::player::connection::NetworkConnection;
-    use crate::player::{ClientInformation, GameProfile, Player, PlayerConnection};
-    use crate::test_support::test_world;
+    use crate::player::{ClientInformation, GameProfile, Player, PlayerConnection, ResetReason};
+    use crate::test_support::{fresh_test_world, test_world};
     use crate::world::World;
 
     use super::{
         AsyncMutex, CancellationToken, CommandRegistry, CommandRequestQueue, DomainCommandStorage,
         DomainScoreboards, FxHashMap, KeyStore, KnownPlayerCacheState, KnownPlayerSaveStep,
-        KnownPlayers, Notify, PlayerDataStorage, PlayerJoinQueue, PlayerMap, RegistryCache, Server,
-        ServerJobQueue, SyncMutex, SyncRwLock, TickRateManager, UncachedPlayerTarget, WorldMap,
-        can_entity_return_from_end_to_overworld, cap_positive_thread_count,
-        classify_uncached_player_target, create_registered_dispatcher, direct_uuid_profile,
-        is_allowed_to_enter_portal_target, is_end_return_transition, offline_uuid,
-        validate_player_permission_group_update,
+        KnownPlayers, Notify, PacketProcessor, PlayerDataStorage, PlayerDisconnectQueue,
+        PlayerJoinQueue, PlayerMap, RegistryCache, Server, ServerJobQueue, SyncMutex, SyncRwLock,
+        TickRateManager, UncachedPlayerTarget, WorldMap, can_entity_return_from_end_to_overworld,
+        cap_positive_thread_count, classify_uncached_player_target, create_registered_dispatcher,
+        direct_uuid_profile, is_allowed_to_enter_portal_target, is_end_return_transition,
+        offline_uuid, validate_player_permission_group_update,
     };
 
     struct TestConnection;
@@ -379,6 +388,7 @@ mod tests {
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
             command_permission_keys,
             command_requests: CommandRequestQueue::new(),
+            packet_processor: PacketProcessor::new(),
             jobs: ServerJobQueue::new(),
             player_data_storage,
             player_permission_states: SyncRwLock::new(player_permission_states),
@@ -387,6 +397,7 @@ mod tests {
             known_player_save_idle: Notify::new(),
             profile_lookup_client: reqwest::Client::new(),
             pending_player_joins: PlayerJoinQueue::new(),
+            pending_player_disconnects: PlayerDisconnectQueue::new(),
             pending_world_changes: SyncMutex::new(Vec::new()),
             pending_domain_switches: SyncMutex::new(Vec::new()),
         }))
@@ -411,6 +422,52 @@ mod tests {
                 ClientInformation::default(),
             )
         })
+    }
+
+    #[test]
+    fn player_disconnect_detaches_before_async_persistence() {
+        let world = fresh_test_world("disconnect_safe_point");
+        let runtime = Builder::new_current_thread().enable_all().build();
+        let Ok(runtime) = runtime else {
+            panic!("test runtime should initialize");
+        };
+
+        runtime.block_on(async {
+            let storage_root = test_storage_root("disconnect-safe-point");
+            let server = test_server(
+                Arc::clone(&world),
+                PermissionSubjectIndex::new(),
+                &storage_root,
+            )
+            .await;
+            let Ok(server) = server else {
+                panic!("test server should initialize");
+            };
+            let player = test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+
+            assert!(server.online_players.insert(Arc::clone(&player)));
+            assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+            let _ = player.mark_joined_world();
+
+            let pending = server.process_player_disconnect(Arc::clone(&player));
+
+            assert!(pending.is_some());
+            assert!(
+                server
+                    .online_players
+                    .get_by_uuid(&player.gameprofile.id)
+                    .is_none()
+            );
+            assert!(world.players.get_by_uuid(&player.gameprofile.id).is_none());
+            assert!(world.get_entity_by_id(player.id()).is_none());
+
+            drop(pending);
+            drop(player);
+            drop(server);
+            if let Err(error) = fs::remove_dir_all(&storage_root).await {
+                panic!("test storage should be removed: {error}");
+            }
+        });
     }
 
     struct TestEntity {
@@ -965,6 +1022,12 @@ struct PendingPlayerJoin {
     state: Result<DomainPlayerState, String>,
 }
 
+struct PendingPlayerDisconnect {
+    player: Arc<Player>,
+    domain: String,
+    player_data: PersistentPlayerData,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PlayerAdmissionState {
     Joining,
@@ -996,6 +1059,30 @@ impl PlayerJoinQueue {
             joins.push(join);
         }
         joins
+    }
+}
+
+struct PlayerDisconnectQueue {
+    queued: SegQueue<Arc<Player>>,
+}
+
+impl PlayerDisconnectQueue {
+    const fn new() -> Self {
+        Self {
+            queued: SegQueue::new(),
+        }
+    }
+
+    fn send(&self, player: Arc<Player>) {
+        self.queued.push(player);
+    }
+
+    fn pop(&self) -> Option<Arc<Player>> {
+        self.queued.pop()
+    }
+
+    fn clear(&self) {
+        while self.queued.pop().is_some() {}
     }
 }
 
@@ -1804,6 +1891,8 @@ pub struct Server {
     command_permission_keys: Vec<String>,
     /// Command work submitted from connection and console tasks.
     command_requests: CommandRequestQueue,
+    /// Decoded serverbound play packets handled before the next game tick.
+    packet_processor: PacketProcessor,
     /// Jobs resumed from a known point in the server game tick.
     pub jobs: ServerJobQueue,
     /// Player data storage for saving/loading player state.
@@ -1820,6 +1909,8 @@ pub struct Server {
     profile_lookup_client: reqwest::Client,
     /// Player joins prepared by async I/O and finalized at the game tick safe point.
     pending_player_joins: PlayerJoinQueue,
+    /// Disconnected players waiting to be detached at the next game tick safe point.
+    pending_player_disconnects: PlayerDisconnectQueue,
     /// Queued world changes to process after the tick.
     pub pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
     /// Queued domain switches to process after world ticks.
@@ -2050,6 +2141,7 @@ impl Server {
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
             command_permission_keys,
             command_requests: CommandRequestQueue::new(),
+            packet_processor: PacketProcessor::new(),
             jobs: ServerJobQueue::new(),
             player_data_storage,
             player_permission_states: SyncRwLock::new(player_permission_states),
@@ -2058,6 +2150,7 @@ impl Server {
             known_player_save_idle: Notify::new(),
             profile_lookup_client: reqwest::Client::new(),
             pending_player_joins: PlayerJoinQueue::new(),
+            pending_player_disconnects: PlayerDisconnectQueue::new(),
             pending_world_changes: SyncMutex::new(vec![]),
             pending_domain_switches: SyncMutex::new(vec![]),
         })
@@ -2097,6 +2190,11 @@ impl Server {
             transaction_id,
             input,
         })
+    }
+
+    /// Schedules a decoded play packet for Vanilla's pre-tick packet phase.
+    pub(crate) fn schedule_play_packet(&self, player: Arc<Player>, packet: ScheduledPlayPacket) {
+        self.packet_processor.schedule(player, packet);
     }
 
     /// Returns Brigadier completions visible to a command sender.
@@ -2207,9 +2305,7 @@ impl Server {
         self.schedule_root_vehicle_restore(&player, &state);
         self.schedule_ender_pearl_restores(&player, &state);
         if player.connection.closed() {
-            tokio::spawn(async move {
-                state.world.remove_player(player).await;
-            });
+            self.queue_player_disconnect(player);
         }
     }
 
@@ -2268,24 +2364,57 @@ impl Server {
         let _ = self.online_players.remove_player_sync(player);
     }
 
-    pub(crate) async fn remove_online_player_after_disconnect(
-        &self,
-        player: Arc<Player>,
-        domain: String,
-        player_data: PersistentPlayerData,
-    ) {
+    pub(crate) fn queue_player_disconnect(&self, player: Arc<Player>) {
+        self.pending_player_disconnects.send(player);
+    }
+
+    fn process_player_disconnects(&self) -> Vec<PendingPlayerDisconnect> {
+        let mut pending = Vec::new();
+        while let Some(player) = self.pending_player_disconnects.pop() {
+            if let Some(disconnect) = self.process_player_disconnect(player) {
+                pending.push(disconnect);
+            }
+        }
+        pending
+    }
+
+    fn process_player_disconnect(&self, player: Arc<Player>) -> Option<PendingPlayerDisconnect> {
         let uuid = player.gameprofile.id;
         if !self.reserve_player_disconnect(&player) {
-            return;
+            return None;
         }
+
+        let world = player.get_world();
+        let Some((player, domain, player_data)) =
+            world.detach_player_for_disconnect(Arc::clone(&player))
+        else {
+            self.release_player_admission(uuid, PlayerAdmissionState::Disconnecting);
+            return None;
+        };
 
         self.broadcast_to_online(CRemovePlayerInfo::single(uuid));
         let player = self.online_players.remove_player_sync(&player);
 
         let Some(player) = player else {
             self.release_player_admission(uuid, PlayerAdmissionState::Disconnecting);
-            return;
+            return None;
         };
+
+        Some(PendingPlayerDisconnect {
+            player,
+            domain,
+            player_data,
+        })
+    }
+
+    async fn save_disconnected_player(&self, pending: PendingPlayerDisconnect) {
+        let PendingPlayerDisconnect {
+            player,
+            domain,
+            player_data,
+        } = pending;
+        let uuid = player.gameprofile.id;
+        let start = Instant::now();
 
         if let Err(e) = self
             .player_data_storage
@@ -2309,6 +2438,22 @@ impl Server {
 
         player.cleanup();
         self.release_player_admission(uuid, PlayerAdmissionState::Disconnecting);
+        log::info!("Player {uuid} removed in {:?}", start.elapsed());
+    }
+
+    fn start_player_disconnect_saves(self: &Arc<Self>, saves: &mut JoinSet<()>) {
+        for pending in self.process_player_disconnects() {
+            let server = Arc::clone(self);
+            saves.spawn(async move {
+                server.save_disconnected_player(pending).await;
+            });
+        }
+
+        while let Some(result) = saves.try_join_next() {
+            if let Err(error) = result {
+                log::error!("Player disconnect save task failed: {error}");
+            }
+        }
     }
 
     /// Broadcasts a packet to every online player, regardless of world membership.
@@ -3226,6 +3371,7 @@ impl Server {
         let mut next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
         let mut player_info_ticks = 0_u64;
         let mut pending_command_executions = PendingCommandExecutionQueue::<CommandSource>::new();
+        let mut player_disconnect_saves = JoinSet::new();
 
         loop {
             if cancel_token.is_cancelled() {
@@ -3261,6 +3407,14 @@ impl Server {
 
             if cancel_token.is_cancelled() {
                 break;
+            }
+
+            {
+                let _span = tracing::trace_span!("scheduled_packet_processing").entered();
+                // TODO: Consider draining world-local packet queues in parallel while preserving
+                // per-connection ordering and handling global or world-transitioning packets separately.
+                self.packet_processor.process_queued(&self);
+                self.start_player_disconnect_saves(&mut player_disconnect_saves);
             }
 
             let tick_start = Instant::now();
@@ -3321,6 +3475,13 @@ impl Server {
         self.jobs.cancel_all();
         pending_command_executions.cancel_all();
         self.command_requests.clear();
+        self.packet_processor.clear();
+        self.pending_player_disconnects.clear();
+        while let Some(result) = player_disconnect_saves.join_next().await {
+            if let Err(error) = result {
+                log::error!("Player disconnect save task failed during shutdown: {error}");
+            }
+        }
     }
 
     async fn autosave_command_data(&self) {
