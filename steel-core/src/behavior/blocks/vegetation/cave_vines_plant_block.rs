@@ -54,6 +54,11 @@ impl CaveVinesPlantBlock {
 }
 
 impl BlockBehavior for CaveVinesPlantBlock {
+    fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
+        self.growing_plant_body_block()
+            .can_be_replaced(state, context)
+    }
+
     fn use_without_item(
         &self,
         state: BlockStateId,
