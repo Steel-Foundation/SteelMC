@@ -3542,8 +3542,19 @@ impl Server {
         self.worlds.get(&key)
     }
 
-    /// Runs the three independent tick loops concurrently.
+    /// Runs gameplay packets and the three independent tick loops concurrently.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
+        self.packet_processor.open_after_tick();
+        let packet_handle = {
+            let s = self.clone();
+            let t = cancel_token.clone();
+            tokio::spawn(async move {
+                if let Err(error) = spawn_blocking(move || s.packet_processor.run(&s)).await {
+                    log::error!("Gameplay packet worker failed: {error}");
+                    t.cancel();
+                }
+            })
+        };
         let game_handle = {
             let s = self.clone();
             let t = cancel_token.clone();
@@ -3559,7 +3570,12 @@ impl Server {
             let t = cancel_token.clone();
             tokio::spawn(async move { s.run_chunk_scheduling_tick(t).await })
         };
-        let _ = tokio::join!(game_handle, chunk_send_handle, chunk_sched_handle);
+        let _ = tokio::join!(
+            packet_handle,
+            game_handle,
+            chunk_send_handle,
+            chunk_sched_handle
+        );
     }
 
     /// The main game tick loop (20 TPS, governed by tick rate manager).
@@ -3606,16 +3622,9 @@ impl Server {
                 break;
             }
 
-            // Steel includes pre-tick work so operational MSPT reflects actual tick cadence.
             let tick_start = Instant::now();
-
-            {
-                let _span = tracing::trace_span!("scheduled_packet_processing").entered();
-                // TODO: Consider draining world-local packet queues in parallel while preserving
-                // per-connection ordering and handling global or world-transitioning packets separately.
-                self.packet_processor.process_queued(&self);
-                self.start_player_disconnect_saves(&mut player_disconnect_saves);
-            }
+            self.packet_processor.close_for_tick().await;
+            self.start_player_disconnect_saves(&mut player_disconnect_saves);
 
             let (tick_count, runs_normally) = {
                 let mut tick_manager = self.tick_rate_manager.write();
@@ -3668,12 +3677,17 @@ impl Server {
                 let mut tick_manager = self.tick_rate_manager.write();
                 tick_manager.end_tick_work();
             }
+
+            self.packet_processor.open_after_tick();
+            if should_sprint_this_tick || Instant::now() >= next_tick_time {
+                self.packet_processor.wait_for_overload_progress().await;
+            }
         }
 
         self.jobs.cancel_all();
         pending_command_executions.cancel_all();
         self.command_requests.clear();
-        self.packet_processor.clear();
+        self.packet_processor.stop();
         self.pending_player_disconnects.clear();
         while let Some(result) = player_disconnect_saves.join_next().await {
             if let Err(error) = result {
