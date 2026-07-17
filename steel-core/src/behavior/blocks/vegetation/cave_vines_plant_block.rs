@@ -3,8 +3,9 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
-use steel_registry::vanilla_blocks;
+use steel_registry::{vanilla_blocks, vanilla_items};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -98,6 +99,15 @@ impl BlockBehavior for CaveVinesPlantBlock {
         self.growing_plant_body_block()
             .get_state_for_placement(context)
     }
+
+    fn get_clone_item_stack(
+        &self,
+        _block: BlockRef,
+        _state: BlockStateId,
+        _include_data: bool,
+    ) -> Option<ItemStack> {
+        Some(ItemStack::new(&vanilla_items::GLOW_BERRIES))
+    }
 }
 impl Bonemealable for CaveVinesPlantBlock {
     fn is_valid_bonemeal_target(
@@ -166,5 +176,21 @@ mod tests {
 
         assert_eq!(converted.get_block(), &vanilla_blocks::CAVE_VINES);
         assert!(converted.get_value(&BERRIES));
+    }
+
+    #[test]
+    fn clone_item_is_glow_berries() {
+        init_test_registry();
+
+        let behavior = CaveVinesPlantBlock::new(&vanilla_blocks::CAVE_VINES_PLANT);
+        let item = behavior
+            .get_clone_item_stack(
+                &vanilla_blocks::CAVE_VINES_PLANT,
+                vanilla_blocks::CAVE_VINES_PLANT.default_state(),
+                false,
+            )
+            .expect("cave vines plants have a vanilla clone item");
+
+        assert!(item.is(&vanilla_items::GLOW_BERRIES));
     }
 }

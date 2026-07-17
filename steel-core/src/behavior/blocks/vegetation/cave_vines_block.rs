@@ -4,9 +4,12 @@ use steel_macros::block_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::items::item::BlockHitResult;
 use steel_registry::loot_table::LootContext;
-use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_loot_tables};
+use steel_registry::{
+    sound_events, vanilla_blocks, vanilla_game_events, vanilla_items, vanilla_loot_tables,
+};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -74,7 +77,7 @@ impl CaveVinesBlock {
 
         let items = vanilla_loot_tables::HARVEST_CAVE_VINE.get_random_items(&mut ctx);
         for item in items {
-            world.drop_item_stack(pos, item);
+            world.pop_resource(pos, item);
         }
         let pitch = rng.random_range(0.8..1.2);
         world.play_sound(
@@ -146,6 +149,16 @@ impl BlockBehavior for CaveVinesBlock {
         self.growing_plant_head_block()
             .get_state_for_placement(context)
     }
+
+    fn get_clone_item_stack(
+        &self,
+        _block: BlockRef,
+        _state: BlockStateId,
+        _include_data: bool,
+    ) -> Option<ItemStack> {
+        Some(ItemStack::new(&vanilla_items::GLOW_BERRIES))
+    }
+
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }
@@ -232,5 +245,21 @@ mod tests {
 
         assert!(berry_states > 0);
         assert!(berry_states < 256);
+    }
+
+    #[test]
+    fn clone_item_is_glow_berries() {
+        init_test_registry();
+
+        let behavior = CaveVinesBlock::new(&vanilla_blocks::CAVE_VINES);
+        let item = behavior
+            .get_clone_item_stack(
+                &vanilla_blocks::CAVE_VINES,
+                vanilla_blocks::CAVE_VINES.default_state(),
+                false,
+            )
+            .expect("cave vines have a vanilla clone item");
+
+        assert!(item.is(&vanilla_items::GLOW_BERRIES));
     }
 }
