@@ -5,6 +5,7 @@ use steel_registry::{
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, BoolProperty},
     },
+    level_events,
     vanilla_block_tags::BlockTag,
     vanilla_blocks, vanilla_game_events,
 };
@@ -73,7 +74,12 @@ impl ItemBehavior for ShovelItem {
             if !block_state.get_value(&LIT_PROPERTY) {
                 return InteractionResult::Pass;
             }
-            // TODO: level_event(1009, pos, 0) — extinguish particle/sound
+            context.world.level_event(
+                level_events::SOUND_EXTINGUISH_FIRE,
+                context.hit_result.block_pos,
+                0,
+                None,
+            );
             // TODO: CampfireBlock::dowse() — eject cooking items
             let updated_state = block_state.set_value(&LIT_PROPERTY, false);
             context.world.set_block(

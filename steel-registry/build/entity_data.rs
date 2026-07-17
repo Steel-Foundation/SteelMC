@@ -69,6 +69,14 @@ struct SynchedDataEntry {
     serializer: String,
     #[serde(default)]
     default_value: Value,
+    #[serde(default)]
+    runtime_initializer: Option<RuntimeInitializer>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum RuntimeInitializer {
+    RandomVillagerProfession,
 }
 
 #[derive(Clone, Debug)]
@@ -519,12 +527,7 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
                 "Expected particle default with type/options, got {default}"
             );
 
-            let particle_type = extracted_registry_field_default_expr(
-                "build_assets/particle_types.json",
-                obj,
-                serializer,
-                "type",
-            );
+            let particle_type = key_ident(required_field(obj, serializer, "type"), serializer);
             let options = required_object(required_field(obj, serializer, "options"), serializer);
             let kind = required_string(required_field(options, serializer, "kind"), serializer);
 
@@ -535,7 +538,7 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
                         1,
                         "Expected particle none options to contain only kind, got {default}"
                     );
-                    quote! { ParticleData::new(#particle_type, ParticleOptions::None) }
+                    quote! { ParticleData::simple(&crate::vanilla_particle_types::#particle_type) }
                 }
                 "color" => {
                     assert_eq!(
@@ -545,7 +548,10 @@ fn default_value_expr(serializer: &str, default: &Value) -> TokenStream {
                     );
                     let color = required_object_i32(options, serializer, "color");
                     quote! {
-                        ParticleData::new(#particle_type, ParticleOptions::Color { color: #color })
+                        ParticleData::new(
+                            &crate::vanilla_particle_types::#particle_type,
+                            ColorParticleOption::new(ArgbColor::new(#color)),
+                        )
                     }
                 }
                 _ => panic!("Unsupported particle options kind '{kind}' in {default}"),
@@ -660,6 +666,41 @@ fn field_shape_matches(left: &SynchedDataEntry, right: &SynchedDataEntry) -> boo
         && left.accessor_field == right.accessor_field
         && left.serializer_id == right.serializer_id
         && left.serializer == right.serializer
+        && left.runtime_initializer == right.runtime_initializer
+}
+
+fn field_initial_value_expr(data: &SynchedDataEntry) -> TokenStream {
+    let default_expr = default_value_expr(&data.serializer, &data.default_value);
+    let Some(runtime_initializer) = data.runtime_initializer else {
+        return default_expr;
+    };
+
+    match runtime_initializer {
+        RuntimeInitializer::RandomVillagerProfession => {}
+    }
+    assert_eq!(
+        data.serializer, "villager_data",
+        "random_villager_profession requires villager_data, got {}",
+        data.serializer
+    );
+    assert_eq!(
+        data.name, "villager_data",
+        "random_villager_profession requires the villager_data field"
+    );
+    assert_eq!(
+        data.accessor_field, "DATA_VILLAGER_DATA",
+        "random_villager_profession requires DATA_VILLAGER_DATA"
+    );
+
+    quote! {{
+        let mut data = #default_expr;
+        data.profession = crate::entity_data::random_villager_profession_id(
+            random,
+            crate::REGISTRY.villager_professions.len(),
+            data.profession,
+        );
+        data
+    }}
 }
 
 fn parent_field_ident(simple_name: &str) -> Ident {
@@ -911,15 +952,15 @@ pub(crate) fn build() -> TokenStream {
     stream.extend(quote! {
         use crate::entity_data::{
             ArmadilloState, BlockPos, DataValue, Direction, EntityData, EntityPose,
-            GlobalPos, HumanoidArm, ParticleData, ParticleList, ParticleOptions, Quaternionf,
+            ColorParticleOption, GlobalPos, HumanoidArm, ParticleData, ParticleList, Quaternionf,
             ResolvableProfile, Rotations, SnifferState, SyncedValue, Vector3f,
             VillagerData,
         };
         use crate::item_stack::ItemStack;
-        use steel_utils::BlockStateId;
+        use steel_utils::{ArgbColor, BlockStateId, random::Random};
         use text_components::TextComponent;
         use uuid::Uuid;
-        use crate::RegistryEntry;
+        use crate::{RegistryEntry, RegistryExt};
 
         /// Common access to the vanilla synchronized entity data root layer.
         pub trait VanillaEntityData {
@@ -951,6 +992,16 @@ pub(crate) fn build() -> TokenStream {
 
     for layer in &layers {
         let struct_ident = data_struct_ident(&layer.simple_name);
+        let has_runtime_initializer = layer
+            .fields
+            .iter()
+            .any(|field| field.runtime_initializer.is_some());
+        if has_runtime_initializer {
+            assert_eq!(
+                layer.simple_name, "ZombieVillager",
+                "runtime-initialized entity data is only supported for the ZombieVillager leaf"
+            );
+        }
         let new_overrides = layer_new_overrides
             .get(layer.java_class.as_str())
             .cloned()
@@ -1015,7 +1066,7 @@ pub(crate) fn build() -> TokenStream {
             let rust_type_tokens: TokenStream = rust_type.parse().unwrap_or_else(|error| {
                 panic!("Failed to parse Rust type '{rust_type}' for entity data: {error}")
             });
-            let default_expr = default_value_expr(&data.serializer, &data.default_value);
+            let default_expr = field_initial_value_expr(data);
             let index = data.index;
             let serializer_id_lit = data.serializer_id;
             let entity_data_expr = entity_data_expr(&data.serializer, &field_ident);
@@ -1093,6 +1144,33 @@ pub(crate) fn build() -> TokenStream {
                 quote! {}
             };
 
+        let constructor = if has_runtime_initializer {
+            quote! {
+                /// Create new entity data with Vanilla's runtime-random defaults.
+                pub fn new(random: &mut impl Random) -> Self {
+                    #new_body
+                }
+            }
+        } else {
+            quote! {
+                /// Create new entity data with default values.
+                pub fn new() -> Self {
+                    #new_body
+                }
+            }
+        };
+        let default_impl = if has_runtime_initializer {
+            quote! {}
+        } else {
+            quote! {
+                impl Default for #struct_ident {
+                    fn default() -> Self {
+                        Self::new()
+                    }
+                }
+            }
+        };
+
         // Generate the struct
         stream.extend(quote! {
             /// Synchronized entity data declared by the vanilla `#struct_name` layer.
@@ -1102,10 +1180,7 @@ pub(crate) fn build() -> TokenStream {
             }
 
             impl #struct_ident {
-                /// Create new entity data with default values.
-                pub fn new() -> Self {
-                    #new_body
-                }
+                #constructor
 
                 #(#layer_accessors)*
 
@@ -1138,11 +1213,7 @@ pub(crate) fn build() -> TokenStream {
                 }
             }
 
-            impl Default for #struct_ident {
-                fn default() -> Self {
-                    Self::new()
-                }
-            }
+            #default_impl
 
             impl VanillaEntityData for #struct_ident {
                 fn base(&self) -> &BaseEntityData {
@@ -1189,6 +1260,13 @@ pub(crate) fn build() -> TokenStream {
 
         let concrete_ident = Ident::new(&concrete_struct_name, Span::call_site());
         let layer_ident = data_struct_ident(&last_layer.simple_name);
+        assert!(
+            !last_layer
+                .fields
+                .iter()
+                .any(|field| field.runtime_initializer.is_some()),
+            "runtime-initialized entity data must be generated as its concrete leaf"
+        );
         let root_field_ident = parent_field_ident(&last_layer.simple_name);
         let overrides = concrete_default_overrides(entity, &layer_indices, &layers);
         let layer_accessors = {

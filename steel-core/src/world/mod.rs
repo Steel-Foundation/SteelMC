@@ -26,9 +26,9 @@ use glam::DVec3;
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
     CBlockDestruction, CBlockEvent, CChangeDifficulty, CGameEvent, CInitializeBorder, CLevelEvent,
-    CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize, CSetBorderWarningDelay,
-    CSetBorderWarningDistance, CSetEntityData, CSetEntityLink, CSetEquipment, CSound, CSystemChat,
-    CUpdateAttributes, GameEventType, SoundSource,
+    CLevelParticles, CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize,
+    CSetBorderWarningDelay, CSetBorderWarningDistance, CSetEntityData, CSetEntityLink,
+    CSetEquipment, CSound, CSystemChat, CUpdateAttributes, GameEventType, SoundSource,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_protocol::{
@@ -51,6 +51,7 @@ use steel_registry::game_rules::{ErasedGameRuleRef, GameRule, GameRuleValue, Gam
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
 use steel_registry::loot_table::LootContext;
+use steel_registry::particle_type::ParticleData;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::{
@@ -104,7 +105,7 @@ use crate::{
         AddEntityError, Entity, EntityChangeSenders, EntityChunkCallback, EntityLifecycleChanges,
         EntityMovementSyncPacket, EntityOwnership, EntityTracker, EntityVisibility,
         InactiveEntityCallback, MobEffectSyncPacket, RemovalReason, SharedEntity,
-        WorldEntityManager, entities::ItemEntity,
+        WorldEntityManager, entities::ItemEntity, entity_loot_ref,
     },
     fluid::{FluidStateExt as _, fluid_state_to_block},
     level_data::{LevelDataManager, RespawnData, WorldBorderData, WorldGenerationSettings},
@@ -169,6 +170,8 @@ pub struct ClipHitResult {
     pub miss: bool,
     /// Whether the ray started inside the hit shape.
     pub inside: bool,
+    /// Whether this hit was synthesized by the world border.
+    pub world_border_hit: bool,
 }
 
 impl ClipHitResult {
@@ -3403,6 +3406,34 @@ impl World {
         Self::clip_miss(start_pos, end_pos)
     }
 
+    /// Performs vanilla `CollisionGetter.clipIncludingBorder`.
+    #[must_use]
+    pub fn clip_including_border(
+        &self,
+        start_pos: DVec3,
+        end_pos: DVec3,
+        block_shape: ClipBlockShape,
+        fluid: ClipFluid,
+    ) -> ClipHitResult {
+        let hit = self.clip(start_pos, end_pos, block_shape, fluid);
+        let border = self.world_border_snapshot();
+        if border.is_within_bounds_with_margin(start_pos.x, start_pos.z, 0.0)
+            && !border.is_within_bounds_with_margin(hit.location.x, hit.location.z, 0.0)
+        {
+            let delta = hit.location - start_pos;
+            let location = border.clamp_vec3_to_bound(hit.location);
+            return ClipHitResult {
+                location,
+                direction: Self::approximate_nearest_direction(delta),
+                block_pos: BlockPos::from(location),
+                miss: false,
+                inside: false,
+                world_border_hit: true,
+            };
+        }
+        hit
+    }
+
     fn clip_block_and_fluid(
         &self,
         pos: BlockPos,
@@ -3576,6 +3607,7 @@ impl World {
                 block_pos,
                 miss: false,
                 inside: true,
+                world_border_hit: false,
             });
         }
 
@@ -3600,6 +3632,7 @@ impl World {
             block_pos,
             miss: false,
             inside: false,
+            world_border_hit: false,
         })
     }
 
@@ -3630,6 +3663,7 @@ impl World {
                 block_pos,
                 miss: false,
                 inside: true,
+                world_border_hit: false,
             });
         }
 
@@ -3643,6 +3677,7 @@ impl World {
                     block_pos,
                     miss: false,
                     inside: false,
+                    world_border_hit: false,
                 })
             } else {
                 None
@@ -3678,6 +3713,7 @@ impl World {
             block_pos: BlockPos::from(to),
             miss: true,
             inside: false,
+            world_border_hit: false,
         }
     }
 
@@ -3915,12 +3951,6 @@ impl World {
     /// * `data` - Event-specific data (e.g., block state ID for block destruction)
     /// * `exclude` - Optional entity ID to exclude from receiving the event
     pub fn level_event(&self, event_type: i32, pos: BlockPos, data: i32, exclude: Option<i32>) {
-        const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
-
-        let chunk = ChunkPos::new(
-            SectionPos::block_to_section_coord(pos.x()),
-            SectionPos::block_to_section_coord(pos.z()),
-        );
         let packet = CLevelEvent::new(event_type, pos, data, false);
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -3929,30 +3959,147 @@ impl World {
             return;
         };
 
-        // Get players tracking this chunk, then filter by 64-block distance
-        let event_pos = (
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
-        );
-
-        for entity_id in self.player_area_map.get_tracking_players(chunk) {
-            // Skip excluded player (they hear the effect client-side)
-            if exclude == Some(entity_id) {
-                continue;
+        self.players.iter_players(|_, player| {
+            if exclude != Some(player.id())
+                && Self::level_event_recipient_in_range(player.position(), pos)
+            {
+                player.connection.send_encoded(encoded.clone());
             }
-            if let Some(player) = self.players.get_by_entity_id(entity_id) {
-                let player_pos = player.position();
-                let dx = player_pos.x - event_pos.0;
-                let dy = player_pos.y - event_pos.1;
-                let dz = player_pos.z - event_pos.2;
-                let dist_sq = dx * dx + dy * dy + dz * dz;
+            true
+        });
+    }
 
-                if dist_sq <= MAX_DISTANCE_SQ {
-                    player.connection.send_encoded(encoded.clone());
-                }
+    fn level_event_recipient_in_range(player_pos: DVec3, event_pos: BlockPos) -> bool {
+        const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
+
+        let dx = f64::from(event_pos.x()) - player_pos.x;
+        let dy = f64::from(event_pos.y()) - player_pos.y;
+        let dz = f64::from(event_pos.z()) - player_pos.z;
+        dx * dx + dy * dy + dz * dz < MAX_DISTANCE_SQ
+    }
+
+    /// Sends a particle distribution to every player within Vanilla's normal
+    /// 32-block particle radius.
+    pub fn send_particles(
+        &self,
+        particle: ParticleData,
+        position: DVec3,
+        count: i32,
+        spread: DVec3,
+        speed: f64,
+    ) -> i32 {
+        self.send_particles_with_options(particle, false, false, position, count, spread, speed)
+    }
+
+    /// Sends a particle distribution with the packet visibility flags selected
+    /// explicitly. `override_limiter` also expands the server recipient radius
+    /// from 32 to 512 blocks, matching `ServerLevel.sendParticles`.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "keeps Vanilla's two particle visibility flags explicit"
+    )]
+    pub fn send_particles_with_options(
+        &self,
+        particle: ParticleData,
+        override_limiter: bool,
+        always_show: bool,
+        position: DVec3,
+        count: i32,
+        spread: DVec3,
+        speed: f64,
+    ) -> i32 {
+        let packet = CLevelParticles {
+            override_limiter,
+            always_show,
+            x: position.x,
+            y: position.y,
+            z: position.z,
+            x_dist: spread.x as f32,
+            y_dist: spread.y as f32,
+            z_dist: spread.z as f32,
+            max_speed: speed as f32,
+            count,
+            particle,
+        };
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+        else {
+            log::warn!("Failed to encode level particles packet");
+            return 0;
+        };
+        let mut sent = 0;
+        self.players.iter_players(|_, player| {
+            if Self::particle_recipient_in_range(
+                player.block_position(),
+                position,
+                override_limiter,
+            ) {
+                player.connection.send_encoded(encoded.clone());
+                sent += 1;
             }
+            true
+        });
+        sent
+    }
+
+    /// Sends a particle distribution to one player if they are in this world
+    /// and within Vanilla's particle recipient radius.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors Vanilla ServerLevel.sendParticles"
+    )]
+    pub fn send_particles_to(
+        self: &Arc<Self>,
+        player: &Player,
+        particle: ParticleData,
+        override_limiter: bool,
+        always_show: bool,
+        position: DVec3,
+        count: i32,
+        spread: DVec3,
+        speed: f64,
+    ) -> bool {
+        if !Arc::ptr_eq(self, &player.get_world())
+            || !Self::particle_recipient_in_range(
+                player.block_position(),
+                position,
+                override_limiter,
+            )
+        {
+            return false;
         }
+
+        let packet = CLevelParticles {
+            override_limiter,
+            always_show,
+            x: position.x,
+            y: position.y,
+            z: position.z,
+            x_dist: spread.x as f32,
+            y_dist: spread.y as f32,
+            z_dist: spread.z as f32,
+            max_speed: speed as f32,
+            count,
+            particle,
+        };
+        let Ok(encoded) =
+            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+        else {
+            log::warn!("Failed to encode level particles packet");
+            return false;
+        };
+        player.connection.send_encoded(encoded);
+        true
+    }
+
+    fn particle_recipient_in_range(
+        player_block_pos: BlockPos,
+        particle_pos: DVec3,
+        override_limiter: bool,
+    ) -> bool {
+        let (x, y, z) = player_block_pos.get_center();
+        let radius = if override_limiter { 512.0 } else { 32.0 };
+        DVec3::new(x, y, z).distance_squared(particle_pos) < radius * radius
     }
 
     /// Broadcasts a global level event to all players in the world.
@@ -4046,8 +4193,8 @@ impl World {
         }
 
         if drop_items {
-            self.drop_resources(state, pos);
-            // TODO: block entity and entity drops
+            self.drop_resources_with_entity(state, pos, entity);
+            // TODO: block entity drops
         }
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
@@ -4073,24 +4220,43 @@ impl World {
     // TODO: `spawnAfterBreak` (XP orbs for ores) not called yet.
     // TODO: block entity and entity drops
     pub fn drop_resources(self: &Arc<Self>, state: BlockStateId, pos: BlockPos) {
+        self.drop_resources_with_entity(state, pos, None);
+    }
+
+    fn drop_resources_with_entity(
+        self: &Arc<Self>,
+        state: BlockStateId,
+        pos: BlockPos,
+        entity: Option<&dyn Entity>,
+    ) {
+        for item in Self::block_drops(state, pos, entity) {
+            if !item.is_empty() {
+                self.pop_resource(pos, item);
+            }
+        }
+    }
+
+    fn block_drops(
+        state: BlockStateId,
+        pos: BlockPos,
+        entity: Option<&dyn Entity>,
+    ) -> Vec<ItemStack> {
         let block = state.get_block();
         let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
 
         let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_key) else {
-            return;
+            return Vec::new();
         };
 
         let mut rng = rand::rng();
         let mut ctx = LootContext::new(&mut rng)
             .with_block_state(state)
             .with_origin(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
-
-        let drops = loot_table.get_random_items(&mut ctx);
-        for item in drops {
-            if !item.is_empty() {
-                self.pop_resource(pos, item);
-            }
+        if let Some(entity) = entity {
+            ctx = ctx.with_this_entity(entity_loot_ref(entity));
         }
+
+        loot_table.get_random_items(&mut ctx)
     }
 
     /// Broadcasts a block event to nearby players within 64 blocks.
@@ -4981,6 +5147,7 @@ mod tests {
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::{
         sound_events, test_support::init_test_registry, vanilla_entities, vanilla_fluids,
+        vanilla_items,
     };
     use uuid::Uuid;
 
@@ -5078,6 +5245,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn entity_breaker_is_available_to_chorus_flower_loot() {
+        init_test_registry();
+
+        let state = vanilla_blocks::CHORUS_FLOWER.default_state();
+        let pos = BlockPos::new(1_312, 64, 1_312);
+        let breaker = TrackerTestEntity::shared(987_654);
+        let drops = World::block_drops(state, pos, Some(breaker.as_ref()));
+
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].item(), &*vanilla_items::CHORUS_FLOWER);
+        assert_eq!(drops[0].count(), 1);
+        assert!(World::block_drops(state, pos, None).is_empty());
+    }
+
     fn assert_vec3_close(left: DVec3, right: DVec3) {
         let diff = left - right;
         assert!(
@@ -5095,6 +5277,60 @@ mod tests {
     #[test]
     fn nearest_player_negative_range_is_unbounded() {
         assert!(nearest_player_distance_in_range(1_000_000.0, -1.0, 1.0));
+    }
+
+    #[test]
+    fn level_event_recipient_range_uses_block_corner_and_strict_boundary() {
+        let event_pos = BlockPos::ZERO;
+
+        assert!(World::level_event_recipient_in_range(
+            DVec3::new(-63.999, 0.0, 0.0),
+            event_pos,
+        ));
+        assert!(!World::level_event_recipient_in_range(
+            DVec3::new(-64.0, 0.0, 0.0),
+            event_pos,
+        ));
+        assert!(!World::level_event_recipient_in_range(
+            DVec3::new(64.25, 0.0, 0.0),
+            event_pos,
+        ));
+    }
+
+    #[test]
+    fn level_event_range_is_independent_of_chunk_tracking_view() {
+        let player_pos = DVec3::new(15.9, 64.0, 0.0);
+        let event_pos = BlockPos::new(64, 64, 0);
+        let view = PlayerChunkView::new(ChunkPos::new(0, 0), 2);
+
+        assert!(!view.contains(ChunkPos::from_block_pos(event_pos)));
+        assert!(World::level_event_recipient_in_range(player_pos, event_pos,));
+    }
+
+    #[test]
+    fn particle_recipient_range_uses_block_center_and_strict_boundary() {
+        let player_pos = BlockPos::ZERO;
+
+        assert!(World::particle_recipient_in_range(
+            player_pos,
+            DVec3::new(32.499, 0.5, 0.5),
+            false,
+        ));
+        assert!(!World::particle_recipient_in_range(
+            player_pos,
+            DVec3::new(32.5, 0.5, 0.5),
+            false,
+        ));
+        assert!(World::particle_recipient_in_range(
+            player_pos,
+            DVec3::new(512.499, 0.5, 0.5),
+            true,
+        ));
+        assert!(!World::particle_recipient_in_range(
+            player_pos,
+            DVec3::new(512.5, 0.5, 0.5),
+            true,
+        ));
     }
 
     #[test]

@@ -54,6 +54,10 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
  - After fixing something, don't leave a comment that only explains the old bug.
  - Currently this project is in early development, we don't need to provide migrations.
 
+**Particle routing**
+- In Vanilla, `Level.addParticle` and `playLocalSound` calls from shared ticks are client-local, so Steel generally has no server-side work to perform for them. An explanatory comment can still be useful when an omission would otherwise look accidental.
+- Vanilla `ServerLevel.sendParticles` corresponds to `World::send_particles`; level and entity events continue to use their existing packets.
+
 **Testing**
  - Add tests for advanced systems, code using unsafe (always use `// SAFETY:` comments), or code that needs to match vanilla determinism (ItemComponent hashing or worldgen).
  - After code changes, run the narrowest check/test that exercises the touched code. If you cannot run it, state exactly why.

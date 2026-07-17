@@ -14,17 +14,17 @@ use steel_utils::{
 
 use crate::{
     behavior::{
-        BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess, blocks::CakeBlock,
+        BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
+        blocks::{CakeBlock, CandleBlock},
     },
-    entity::Entity,
+    entity::{Entity, projectile::Projectile},
     player::Player,
-    world::{LevelReader, ScheduledTickAccess, World},
+    world::{ClipHitResult, LevelReader, ScheduledTickAccess, World},
 };
 
 /// Behavior for Candle Cakes
 /// TODO:
 /// - [ ] animation ticks
-/// - [ ] onProjectile
 /// - [ ] onExplosion
 #[block_behavior]
 pub struct CandleCakeBlock {
@@ -127,6 +127,20 @@ impl BlockBehavior for CandleCakeBlock {
         } else {
             state
         }
+    }
+
+    fn on_projectile_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        hit: &ClipHitResult,
+        projectile: &dyn Projectile,
+    ) {
+        let Some(lit_state) = CandleBlock::projectile_lit_state(state, projectile.is_on_fire())
+        else {
+            return;
+        };
+        world.set_block(hit.block_pos, lit_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
     }
 
     fn get_clone_item_stack(
