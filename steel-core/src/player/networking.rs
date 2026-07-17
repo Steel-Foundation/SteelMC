@@ -62,7 +62,6 @@ enum ScheduledPlayPacketKind {
     ChatSessionUpdate(SChatSessionUpdate),
     ClientInformation(SClientInformation),
     ClientTickEnd,
-    ChunkBatchReceived(SChunkBatchReceived),
     MovePlayer(SMovePlayer),
     MoveVehicle(SMoveVehicle),
     PlayerLoaded,
@@ -92,6 +91,7 @@ enum ScheduledPlayPacketKind {
 enum ImmediatePlayPacket {
     KeepAlive(SKeepAlive),
     PingRequest(SPingRequest),
+    ChunkBatchReceived(SChunkBatchReceived),
     CustomPayload(SCustomPayload),
     Unknown(i32),
 }
@@ -108,7 +108,6 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::AcceptTeleportation(_)
                 | ScheduledPlayPacketKind::ClientInformation(_)
                 | ScheduledPlayPacketKind::ClientTickEnd
-                | ScheduledPlayPacketKind::ChunkBatchReceived(_)
                 | ScheduledPlayPacketKind::ChatAck(_)
                 | ScheduledPlayPacketKind::ChatSessionUpdate(_)
                 | ScheduledPlayPacketKind::PlayerLoaded
@@ -137,12 +136,6 @@ impl ScheduledPlayPacket {
                 player.handle_client_information(packet);
             }
             ScheduledPlayPacketKind::ClientTickEnd => player.handle_client_tick_end(),
-            ScheduledPlayPacketKind::ChunkBatchReceived(packet) => {
-                player
-                    .chunk_sender
-                    .lock()
-                    .on_chunk_batch_received_by_client(packet.desired_chunks_per_tick);
-            }
             ScheduledPlayPacketKind::MovePlayer(packet) => player.handle_move_player(packet),
             ScheduledPlayPacketKind::MoveVehicle(packet) => player.handle_move_vehicle(packet),
             ScheduledPlayPacketKind::PlayerLoaded => {
@@ -528,9 +521,9 @@ impl JavaConnection {
                 let _ = SClientTickEnd::read_packet(data)?;
                 scheduled(ScheduledPlayPacketKind::ClientTickEnd)
             }
-            play::S_CHUNK_BATCH_RECEIVED => scheduled(ScheduledPlayPacketKind::ChunkBatchReceived(
-                SChunkBatchReceived::read_packet(data)?,
-            )),
+            play::S_CHUNK_BATCH_RECEIVED => DecodedPlayPacket::Immediate(
+                ImmediatePlayPacket::ChunkBatchReceived(SChunkBatchReceived::read_packet(data)?),
+            ),
             play::S_KEEP_ALIVE => DecodedPlayPacket::Immediate(ImmediatePlayPacket::KeepAlive(
                 SKeepAlive::read_packet(data)?,
             )),
@@ -632,6 +625,12 @@ impl JavaConnection {
             ImmediatePlayPacket::KeepAlive(packet) => self.handle_keep_alive(packet),
             ImmediatePlayPacket::PingRequest(packet) => {
                 player.send_packet(CPongResponse::new(packet.time));
+            }
+            ImmediatePlayPacket::ChunkBatchReceived(packet) => {
+                player
+                    .chunk_sender
+                    .lock()
+                    .on_chunk_batch_received_by_client(packet.desired_chunks_per_tick);
             }
             ImmediatePlayPacket::CustomPayload(packet) => {
                 player.handle_custom_payload(packet);
@@ -867,6 +866,23 @@ mod tests {
         assert!(matches!(
             decoded,
             DecodedPlayPacket::Immediate(ImmediatePlayPacket::KeepAlive(SKeepAlive { id: 42 }))
+        ));
+    }
+
+    #[test]
+    fn chunk_batch_ack_uses_the_immediate_connection_path() {
+        let decoded = decode(RawPacket {
+            id: play::S_CHUNK_BATCH_RECEIVED,
+            payload: 12.5_f32.to_be_bytes().to_vec(),
+        });
+
+        assert!(matches!(
+            decoded,
+            DecodedPlayPacket::Immediate(ImmediatePlayPacket::ChunkBatchReceived(
+                SChunkBatchReceived {
+                    desired_chunks_per_tick: 12.5
+                }
+            ))
         ));
     }
 }
