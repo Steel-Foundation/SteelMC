@@ -324,7 +324,7 @@ impl ServerConfig {
             command_spam_threshold_seconds: self.command_spam_threshold_seconds,
             compression: self.compression,
             server_links: self.server_links,
-            packet_processing_threads: self.threads.packet_processing,
+            packet_workers: self.threads.packet_workers,
             chunk_generation_threads: self.threads.chunk_generation,
         }
     }
@@ -340,8 +340,8 @@ pub struct ThreadConfig {
     pub main_runtime: Option<usize>,
     /// Worker threads for the chunk Tokio runtime.
     pub chunk_runtime: Option<usize>,
-    /// Worker threads for inter-tick gameplay packet processing.
-    pub packet_processing: Option<usize>,
+    /// Persistent workers for inter-tick gameplay packet processing.
+    pub packet_workers: Option<usize>,
     /// Worker threads for the Rayon chunk generation pool.
     pub chunk_generation: Option<usize>,
 }
@@ -618,7 +618,7 @@ mod tests {
     }
 
     #[test]
-    fn packaged_schema_declares_packet_processing_thread_setting() {
+    fn packaged_schema_declares_packet_worker_setting() {
         let Ok(schema) = serde_json::from_str::<serde_json::Value>(include_str!(
             "../../package-content/config.schema.json"
         )) else {
@@ -631,7 +631,7 @@ mod tests {
             panic!("packaged config schema should define server thread properties");
         };
 
-        assert!(thread_properties.contains_key("packet_processing"));
+        assert!(thread_properties.contains_key("packet_workers"));
     }
 
     #[tokio::test]
@@ -758,20 +758,16 @@ mod tests {
         let config_toml = DEFAULT_CONFIG
             .replace("main_runtime = 0", "main_runtime = 3")
             .replace("chunk_runtime = 0", "chunk_runtime = 4")
-            .replace("packet_processing = 0", "packet_processing = 5")
+            .replace("packet_workers = 0", "packet_workers = 5")
             .replace("chunk_generation = 0", "chunk_generation = 6");
         let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
         assert_eq!(config.server.threads.main_runtime, Some(3));
         assert_eq!(config.server.threads.chunk_runtime, Some(4));
-        assert_eq!(config.server.threads.packet_processing, Some(5));
+        assert_eq!(config.server.threads.packet_workers, Some(5));
         assert_eq!(config.server.threads.chunk_generation, Some(6));
         assert_eq!(
-            config
-                .server
-                .clone()
-                .into_runtime_config()
-                .packet_processing_threads,
+            config.server.clone().into_runtime_config().packet_workers,
             Some(5)
         );
         assert_eq!(

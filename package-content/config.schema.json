@@ -225,9 +225,9 @@
               "minimum": 0,
               "default": 0
             },
-            "packet_processing": {
+            "packet_workers": {
               "type": "integer",
-              "description": "Worker threads for inter-tick gameplay packet processing",
+              "description": "Persistent workers for inter-tick gameplay packet processing",
               "minimum": 0,
               "default": 0
             },

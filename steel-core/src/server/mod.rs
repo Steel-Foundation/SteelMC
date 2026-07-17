@@ -225,8 +225,8 @@ fn configured_chunk_generation_threads(configured_threads: Option<usize>) -> Opt
     cap_positive_thread_count(configured_threads, available_worker_threads())
 }
 
-fn configured_packet_processing_threads(configured_threads: Option<usize>) -> usize {
-    packet_worker_threads_for_available(configured_threads, available_worker_threads())
+fn configured_packet_workers(configured_workers: Option<usize>) -> usize {
+    packet_workers_for_available(configured_workers, available_worker_threads())
 }
 
 fn available_worker_threads() -> usize {
@@ -241,13 +241,13 @@ fn cap_positive_thread_count(
     Some(configured_threads.min(available_threads.max(1)))
 }
 
-fn packet_worker_threads_for_available(
-    configured_threads: Option<usize>,
+fn packet_workers_for_available(
+    configured_workers: Option<usize>,
     available_threads: usize,
 ) -> usize {
     let available_threads = available_threads.max(1);
-    if let Some(configured_threads) = configured_threads.filter(|&threads| threads > 0) {
-        return configured_threads.min(available_threads);
+    if let Some(configured_workers) = configured_workers.filter(|&workers| workers > 0) {
+        return configured_workers.min(available_threads);
     }
 
     ((available_threads / 2).max(2)).min(available_threads)
@@ -295,7 +295,7 @@ mod tests {
         TickRateManager, UncachedPlayerTarget, WorldMap, can_entity_return_from_end_to_overworld,
         cap_positive_thread_count, classify_uncached_player_target, create_registered_dispatcher,
         direct_uuid_profile, is_allowed_to_enter_portal_target, is_end_return_transition,
-        offline_uuid, packet_worker_threads_for_available, validate_player_permission_group_update,
+        offline_uuid, packet_workers_for_available, validate_player_permission_group_update,
     };
 
     struct TestConnection;
@@ -375,7 +375,7 @@ mod tests {
             command_spam_threshold_seconds: 10,
             compression: None,
             server_links: None,
-            packet_processing_threads: Some(1),
+            packet_workers: Some(1),
             chunk_generation_threads: Some(1),
         })
     }
@@ -724,15 +724,15 @@ mod tests {
 
     #[test]
     fn packet_worker_count_uses_the_configured_cap() {
-        assert_eq!(packet_worker_threads_for_available(Some(16), 8), 8);
-        assert_eq!(packet_worker_threads_for_available(Some(4), 8), 4);
+        assert_eq!(packet_workers_for_available(Some(16), 8), 8);
+        assert_eq!(packet_workers_for_available(Some(4), 8), 4);
     }
 
     #[test]
     fn packet_worker_count_uses_the_automatic_default() {
-        assert_eq!(packet_worker_threads_for_available(Some(0), 8), 4);
-        assert_eq!(packet_worker_threads_for_available(None, 8), 4);
-        assert_eq!(packet_worker_threads_for_available(None, 1), 1);
+        assert_eq!(packet_workers_for_available(Some(0), 8), 4);
+        assert_eq!(packet_workers_for_available(None, 8), 4);
+        assert_eq!(packet_workers_for_available(None, 1), 1);
     }
 
     #[test]
@@ -3596,8 +3596,7 @@ impl Server {
     /// Runs gameplay packets and the three independent tick loops concurrently.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
         self.packet_processor.open_after_tick();
-        let packet_worker_count =
-            configured_packet_processing_threads(self.config.packet_processing_threads);
+        let packet_worker_count = configured_packet_workers(self.config.packet_workers);
         let mut packet_handles = Vec::with_capacity(packet_worker_count);
         for worker_id in 0..packet_worker_count {
             let s = self.clone();

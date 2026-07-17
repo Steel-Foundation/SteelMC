@@ -42,8 +42,8 @@ command_spam_threshold_seconds = 10
 main_runtime = 0
 # Worker threads for the chunk Tokio runtime.
 chunk_runtime = 0
-# Worker threads for inter-tick gameplay packet processing.
-packet_processing = 0
+# Persistent workers for inter-tick gameplay packet processing.
+packet_workers = 0
 # Worker threads for the Rayon chunk generation pool.
 chunk_generation = 0
 
