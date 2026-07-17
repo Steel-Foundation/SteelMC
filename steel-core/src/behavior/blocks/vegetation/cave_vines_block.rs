@@ -44,6 +44,19 @@ impl CaveVinesBlock {
             0.1,
             &vanilla_blocks::CAVE_VINES_PLANT,
         )
+        .with_update_body_after_converted_from_head(Self::update_body_after_converted_from_head)
+        .with_update_grow_into_state(Self::update_grow_into_state)
+    }
+
+    fn update_body_after_converted_from_head(
+        head_state: BlockStateId,
+        body_state: BlockStateId,
+    ) -> BlockStateId {
+        body_state.set_value(&BERRIES, head_state.get_value(&BERRIES))
+    }
+
+    fn update_grow_into_state(state: BlockStateId, rng: &mut dyn Rng) -> BlockStateId {
+        state.set_value(&BERRIES, rng.random::<f32>() < 0.11)
     }
 
     /// Shared behavior use block between cave vine block and plant
@@ -173,5 +186,51 @@ impl Bonemealable for CaveVinesBlock {
 
     fn bonemeal_action_type(&self) -> BonemealAction {
         BonemealAction::Grower
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::{SeedableRng as _, rngs::StdRng};
+    use steel_registry::test_support::init_test_registry;
+
+    use super::*;
+    use crate::test_support::TestLevel;
+
+    #[test]
+    fn head_conversion_preserves_berries() {
+        init_test_registry();
+
+        let behavior = CaveVinesBlock::new(&vanilla_blocks::CAVE_VINES);
+        let state = vanilla_blocks::CAVE_VINES
+            .default_state()
+            .set_value(&BERRIES, true);
+        let level = TestLevel::default();
+
+        let converted = behavior.update_shape(
+            state,
+            &level,
+            BlockPos::ZERO,
+            Direction::Down,
+            BlockPos::ZERO.below(),
+            vanilla_blocks::CAVE_VINES_PLANT.default_state(),
+        );
+
+        assert_eq!(converted.get_block(), &vanilla_blocks::CAVE_VINES_PLANT);
+        assert!(converted.get_value(&BERRIES));
+    }
+
+    #[test]
+    fn grown_head_rolls_berries_independently() {
+        init_test_registry();
+
+        let state = vanilla_blocks::CAVE_VINES.default_state();
+        let mut rng = StdRng::seed_from_u64(1);
+        let berry_states = (0..256)
+            .filter(|_| CaveVinesBlock::update_grow_into_state(state, &mut rng).get_value(&BERRIES))
+            .count();
+
+        assert!(berry_states > 0);
+        assert!(berry_states < 256);
     }
 }

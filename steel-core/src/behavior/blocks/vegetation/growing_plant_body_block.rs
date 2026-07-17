@@ -1,11 +1,7 @@
-use rand::{RngExt, rng};
+use rand::rng;
 use std::sync::Arc;
 use steel_registry::{
-    blocks::{
-        BlockRef,
-        block_state_ext::BlockStateExt,
-        properties::{BlockStateProperties, IntProperty},
-    },
+    blocks::{BlockRef, block_state_ext::BlockStateExt},
     vanilla_fluids,
 };
 use steel_utils::{BlockPos, BlockStateId, Direction};
@@ -26,11 +22,11 @@ pub struct GrowingPlantBodyBlock {
     growth_direction: Direction,
     schedule_fluid_ticks: bool,
     head_block: BlockRef,
+    update_head_after_converted_from_body: fn(BlockStateId, BlockStateId) -> BlockStateId,
 }
-const AGE: IntProperty = BlockStateProperties::AGE_25;
 
 impl GrowingPlantBodyBlock {
-    /// Creates a new leaves block behavior.
+    /// Creates a new growing plant body behavior.
     #[must_use]
     pub const fn new(
         block: BlockRef,
@@ -43,9 +39,21 @@ impl GrowingPlantBodyBlock {
             growth_direction,
             schedule_fluid_ticks,
             head_block,
+            update_head_after_converted_from_body: Self::unchanged_converted_state,
         }
     }
-    const fn update_head_after_converted_from_body(
+
+    /// Configures the vanilla `updateHeadAfterConvertedFromBody` specialization.
+    #[must_use]
+    pub const fn with_update_head_after_converted_from_body(
+        mut self,
+        update: fn(BlockStateId, BlockStateId) -> BlockStateId,
+    ) -> Self {
+        self.update_head_after_converted_from_body = update;
+        self
+    }
+
+    const fn unchanged_converted_state(
         _body_state: BlockStateId,
         head_state: BlockStateId,
     ) -> BlockStateId {
@@ -81,9 +89,10 @@ impl BlockBehavior for GrowingPlantBodyBlock {
             && neighbor_state.get_block() != self.block
             && neighbor_state.get_block() != head_block
         {
-            return Self::update_head_after_converted_from_body(
+            let mut rng = rng();
+            return (self.update_head_after_converted_from_body)(
                 state,
-                GrowingPlantHeadBlock::get_head_state(self.head_block),
+                GrowingPlantHeadBlock::get_head_state(self.head_block, &mut rng),
             );
         }
         if self.schedule_fluid_ticks {
@@ -101,10 +110,6 @@ impl BlockBehavior for GrowingPlantBodyBlock {
         }
     }
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(
-            self.block
-                .default_state()
-                .set_value(&AGE, rng().random_range(0..25)),
-        )
+        Some(self.block.default_state())
     }
 }

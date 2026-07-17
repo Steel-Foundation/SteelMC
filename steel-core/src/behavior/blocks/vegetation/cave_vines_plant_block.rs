@@ -41,6 +41,14 @@ impl CaveVinesPlantBlock {
             false,
             &vanilla_blocks::CAVE_VINES,
         )
+        .with_update_head_after_converted_from_body(Self::update_head_after_converted_from_body)
+    }
+
+    fn update_head_after_converted_from_body(
+        body_state: BlockStateId,
+        head_state: BlockStateId,
+    ) -> BlockStateId {
+        head_state.set_value(&BERRIES, body_state.get_value(&BERRIES))
     }
 }
 
@@ -127,5 +135,36 @@ impl Bonemealable for CaveVinesPlantBlock {
 
     fn bonemeal_action_type(&self) -> BonemealAction {
         BonemealAction::Grower
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::test_support::init_test_registry;
+
+    use super::*;
+    use crate::test_support::TestLevel;
+
+    #[test]
+    fn body_conversion_preserves_berries() {
+        init_test_registry();
+
+        let behavior = CaveVinesPlantBlock::new(&vanilla_blocks::CAVE_VINES_PLANT);
+        let state = vanilla_blocks::CAVE_VINES_PLANT
+            .default_state()
+            .set_value(&BERRIES, true);
+        let level = TestLevel::default();
+
+        let converted = behavior.update_shape(
+            state,
+            &level,
+            BlockPos::ZERO,
+            Direction::Down,
+            BlockPos::ZERO.below(),
+            vanilla_blocks::AIR.default_state(),
+        );
+
+        assert_eq!(converted.get_block(), &vanilla_blocks::CAVE_VINES);
+        assert!(converted.get_value(&BERRIES));
     }
 }
