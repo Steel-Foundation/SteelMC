@@ -11,13 +11,14 @@ use steel_protocol::packets::common::{
     SPingRequest,
 };
 use steel_protocol::packets::game::{
-    CBundleDelimiter, CCommandSuggestions, SAcceptTeleportation, SAttack, SChangeDifficulty,
-    SChangeGameMode, SChat, SChatAck, SChatCommand, SChatSessionUpdate, SChunkBatchReceived,
-    SClientCommand, SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick,
-    SContainerClose, SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos,
-    SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock,
-    SPlayerAbilities, SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SSetCarriedItem,
-    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem, SUseItemOn,
+    CBundleDelimiter, CCommandSuggestions, PlayerAction, PlayerCommandAction, SAcceptTeleportation,
+    SAttack, SChangeDifficulty, SChangeGameMode, SChat, SChatAck, SChatCommand, SChatSessionUpdate,
+    SChunkBatchReceived, SClientCommand, SClientTickEnd, SCommandSuggestion, SContainerButtonClick,
+    SContainerClick, SContainerClose, SContainerSlotStateChanged, SInteract, SMovePlayer,
+    SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle,
+    SPickItemFromBlock, SPlayerAbilities, SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad,
+    SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem,
+    SUseItemOn,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
@@ -57,6 +58,9 @@ pub(crate) struct ScheduledPlayPacket(ScheduledPlayPacketKind);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ScheduledPacketExecution {
     /// The handler may overlap handlers for other players, but never its own player lane.
+    ///
+    /// Shared mutations must be fully linearized by their resource locks, and the handler must
+    /// tolerate cross-player execution order differing from packet submission order.
     PlayerLocal,
     /// The handler must not overlap any other scheduled gameplay handler.
     Exclusive,
@@ -117,39 +121,57 @@ impl ScheduledPlayPacket {
     /// explicit concurrency decision.
     pub(crate) const fn execution(&self) -> ScheduledPacketExecution {
         match &self.0 {
-            // These handlers touch only player-owned locks or the concurrency-safe suggestion
-            // request queue. They do not read or mutate shared gameplay state.
-            ScheduledPlayPacketKind::ChatAck(_)
+            // These handlers either touch player-owned state or perform a complete shared-resource
+            // transaction under that resource's lock. The player lane preserves same-player order.
+            ScheduledPlayPacketKind::AcceptTeleportation(_)
+            | ScheduledPlayPacketKind::ChatAck(_)
+            | ScheduledPlayPacketKind::ChatSessionUpdate(_)
+            | ScheduledPlayPacketKind::ClientInformation(_)
             | ScheduledPlayPacketKind::ClientTickEnd
             | ScheduledPlayPacketKind::PlayerLoaded
+            | ScheduledPlayPacketKind::ChatCommand(_)
             | ScheduledPlayPacketKind::CommandSuggestion(_)
+            | ScheduledPlayPacketKind::ContainerClick(_)
+            | ScheduledPlayPacketKind::ContainerClose(_)
+            | ScheduledPlayPacketKind::SetCreativeModeSlot(_)
+            | ScheduledPlayPacketKind::PlayerInput(_)
             | ScheduledPlayPacketKind::PlayerAbilities(_)
-            | ScheduledPlayPacketKind::SetCarriedItem(_) => ScheduledPacketExecution::PlayerLocal,
-            ScheduledPlayPacketKind::AcceptTeleportation(_)
-            | ScheduledPlayPacketKind::Attack(_)
+            | ScheduledPlayPacketKind::SetCarriedItem(_)
+            | ScheduledPlayPacketKind::Swing(_)
+            | ScheduledPlayPacketKind::PickItemFromBlock(_)
+            | ScheduledPlayPacketKind::SignUpdate(_)
+            | ScheduledPlayPacketKind::ClientCommand(_) => ScheduledPacketExecution::PlayerLocal,
+            ScheduledPlayPacketKind::PlayerCommand(packet) => match packet.action {
+                PlayerCommandAction::StartSprinting
+                | PlayerCommandAction::StopSprinting
+                | PlayerCommandAction::StartFallFlying => ScheduledPacketExecution::PlayerLocal,
+                PlayerCommandAction::LeaveBed
+                | PlayerCommandAction::StartRidingJump
+                | PlayerCommandAction::StopRidingJump
+                | PlayerCommandAction::OpenVehicleInventory => ScheduledPacketExecution::Exclusive,
+            },
+            ScheduledPlayPacketKind::PlayerAction(packet) => match packet.action {
+                PlayerAction::AbortDestroyBlock | PlayerAction::SwapItemWithOffhand => {
+                    ScheduledPacketExecution::PlayerLocal
+                }
+                PlayerAction::StartDestroyBlock
+                | PlayerAction::StopDestroyBlock
+                | PlayerAction::DropAllItems
+                | PlayerAction::DropItem
+                | PlayerAction::ReleaseUseItem
+                | PlayerAction::Stab => ScheduledPacketExecution::Exclusive,
+            },
+            ScheduledPlayPacketKind::Attack(_)
             | ScheduledPlayPacketKind::Interact(_)
             | ScheduledPlayPacketKind::CustomPayload(_)
             | ScheduledPlayPacketKind::Chat(_)
-            | ScheduledPlayPacketKind::ChatSessionUpdate(_)
-            | ScheduledPlayPacketKind::ClientInformation(_)
             | ScheduledPlayPacketKind::MovePlayer(_)
             | ScheduledPlayPacketKind::MoveVehicle(_)
-            | ScheduledPlayPacketKind::ChatCommand(_)
             | ScheduledPlayPacketKind::ContainerButtonClick(_)
-            | ScheduledPlayPacketKind::ContainerClick(_)
-            | ScheduledPlayPacketKind::ContainerClose(_)
             | ScheduledPlayPacketKind::ContainerSlotStateChanged(_)
-            | ScheduledPlayPacketKind::SetCreativeModeSlot(_)
-            | ScheduledPlayPacketKind::PlayerInput(_)
-            | ScheduledPlayPacketKind::PlayerCommand(_)
             | ScheduledPlayPacketKind::UseItemOn(_)
             | ScheduledPlayPacketKind::UseItem(_)
-            | ScheduledPlayPacketKind::Swing(_)
-            | ScheduledPlayPacketKind::PlayerAction(_)
-            | ScheduledPlayPacketKind::PickItemFromBlock(_)
-            | ScheduledPlayPacketKind::SignUpdate(_)
             | ScheduledPlayPacketKind::SpectatorAction(_)
-            | ScheduledPlayPacketKind::ClientCommand(_)
             | ScheduledPlayPacketKind::ChangeGameMode(_)
             | ScheduledPlayPacketKind::ChangeDifficulty(_) => ScheduledPacketExecution::Exclusive,
         }
@@ -863,6 +885,15 @@ impl NetworkConnection for JavaConnection {
 
 #[cfg(test)]
 mod tests {
+    use std::array;
+
+    use rustc_hash::FxHashMap;
+    use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
+    use steel_protocol::packets::game::{ClickType, ClientCommandAction, HashedStack};
+    use steel_registry::{blocks::properties::Direction, item_stack::ItemStack};
+    use steel_utils::{BlockPos, types::InteractionHand};
+    use uuid::Uuid;
+
     use super::*;
 
     fn decode(packet: RawPacket) -> DecodedPlayPacket {
@@ -870,6 +901,10 @@ mod tests {
             panic!("test play packet should decode");
         };
         decoded
+    }
+
+    fn execution(kind: ScheduledPlayPacketKind) -> ScheduledPacketExecution {
+        ScheduledPlayPacket(kind).execution()
     }
 
     #[test]
@@ -931,20 +966,187 @@ mod tests {
     }
 
     #[test]
-    fn packet_execution_classification_is_conservative() {
-        let player_local =
-            ScheduledPlayPacket(ScheduledPlayPacketKind::PlayerAbilities(SPlayerAbilities {
-                flags: 0,
-            }));
-        let exclusive = ScheduledPlayPacket(ScheduledPlayPacketKind::MovePlayer(
-            SMovePlayerStatusOnly { packed_byte: 0 }.into(),
-        ));
-
+    fn packet_execution_classification_preserves_world_mutation_barriers() {
         assert_eq!(
-            player_local.execution(),
+            execution(ScheduledPlayPacketKind::PlayerAbilities(SPlayerAbilities {
+                flags: 0
+            },)),
             ScheduledPacketExecution::PlayerLocal
         );
-        assert_eq!(exclusive.execution(), ScheduledPacketExecution::Exclusive);
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::MovePlayer(
+                SMovePlayerStatusOnly { packed_byte: 0 }.into(),
+            )),
+            ScheduledPacketExecution::Exclusive
+        );
+    }
+
+    #[test]
+    fn locked_inventory_transactions_are_player_local() {
+        let click = SContainerClick {
+            container_id: 0,
+            state_id: 0,
+            slot_num: 0,
+            button_num: 0,
+            click_type: ClickType::Pickup,
+            changed_slots: FxHashMap::default(),
+            carried_item: HashedStack::Empty,
+        };
+
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::ContainerClick(click)),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::ContainerClose(SContainerClose {
+                container_id: 0,
+            })),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::SetCreativeModeSlot(
+                SSetCreativeModeSlot {
+                    slot_num: 1,
+                    item_stack: ItemStack::empty(),
+                },
+            )),
+            ScheduledPacketExecution::PlayerLocal
+        );
+    }
+
+    #[test]
+    fn player_command_execution_is_action_sensitive() {
+        let command = |action| {
+            execution(ScheduledPlayPacketKind::PlayerCommand(SPlayerCommand {
+                entity_id: 1,
+                action,
+                data: 0,
+            }))
+        };
+
+        assert_eq!(
+            command(PlayerCommandAction::StartSprinting),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            command(PlayerCommandAction::StartFallFlying),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            command(PlayerCommandAction::LeaveBed),
+            ScheduledPacketExecution::Exclusive
+        );
+        assert_eq!(
+            command(PlayerCommandAction::OpenVehicleInventory),
+            ScheduledPacketExecution::Exclusive
+        );
+    }
+
+    #[test]
+    fn player_action_execution_is_action_sensitive() {
+        let action = |action| {
+            execution(ScheduledPlayPacketKind::PlayerAction(SPlayerAction {
+                action,
+                pos: BlockPos::new(0, 64, 0),
+                direction: Direction::Down,
+                sequence: 0,
+            }))
+        };
+
+        assert_eq!(
+            action(PlayerAction::AbortDestroyBlock),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            action(PlayerAction::SwapItemWithOffhand),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            action(PlayerAction::StartDestroyBlock),
+            ScheduledPacketExecution::Exclusive
+        );
+        assert_eq!(
+            action(PlayerAction::Stab),
+            ScheduledPacketExecution::Exclusive
+        );
+    }
+
+    #[test]
+    fn audited_player_state_and_locked_resource_handlers_are_player_local() {
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::AcceptTeleportation(
+                SAcceptTeleportation { teleport_id: 1 },
+            )),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::PlayerInput(SPlayerInput {
+                flags: 0,
+            })),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::ChatSessionUpdate(
+                SChatSessionUpdate {
+                    session_id: Uuid::nil(),
+                    expires_at: 0,
+                    public_key: Vec::new(),
+                    key_signature: Vec::new(),
+                },
+            )),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::ClientInformation(
+                SClientInformation {
+                    language: "en_us".to_owned(),
+                    view_distance: 8,
+                    chat_visibility: ChatVisibility::Full,
+                    chat_colors: true,
+                    model_customization: 0,
+                    main_hand: HumanoidArm::Right,
+                    text_filtering_enabled: false,
+                    allows_listing: true,
+                    particle_status: ParticleStatus::All,
+                },
+            )),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::ChatCommand(SChatCommand {
+                command: "help".to_owned(),
+            })),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::PickItemFromBlock(
+                SPickItemFromBlock {
+                    pos: BlockPos::new(0, 64, 0),
+                    include_data: false,
+                },
+            )),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::SignUpdate(SSignUpdate {
+                pos: BlockPos::new(0, 64, 0),
+                is_front_text: true,
+                lines: array::from_fn(|_| String::new()),
+            })),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::Swing(SSwing {
+                hand: InteractionHand::MainHand,
+            })),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::ClientCommand(SClientCommand {
+                action: ClientCommandAction::PerformRespawn,
+            })),
+            ScheduledPacketExecution::PlayerLocal
+        );
     }
 
     #[test]
