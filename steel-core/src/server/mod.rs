@@ -221,7 +221,14 @@ const CHUNK_SENDING_TPS: u64 = 20;
 /// Tick rate for the chunk scheduling loop.
 const CHUNK_SCHEDULING_TPS: u64 = 20;
 
+/// Work duration at which an independent chunk tick is considered slow.
+const SLOW_CHUNK_TICK_THRESHOLD: Duration = Duration::from_millis(50);
+
 fn configured_chunk_generation_threads(configured_threads: Option<usize>) -> Option<usize> {
+    cap_positive_thread_count(configured_threads, available_worker_threads())
+}
+
+fn configured_chunk_encoding_threads(configured_threads: Option<usize>) -> Option<usize> {
     cap_positive_thread_count(configured_threads, available_worker_threads())
 }
 
@@ -377,6 +384,7 @@ mod tests {
             server_links: None,
             packet_workers: Some(1),
             chunk_generation_threads: Some(1),
+            chunk_encoding_threads: Some(1),
         })
     }
 
@@ -441,6 +449,10 @@ mod tests {
             command_permission_keys,
             command_requests: CommandRequestQueue::new(),
             packet_processor: PacketProcessor::new(),
+            chunk_encoding_pool: rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .build()
+                .expect("test chunk encoding pool should initialize"),
             jobs: ServerJobQueue::new(),
             player_data_storage,
             player_permission_states: SyncRwLock::new(player_permission_states),
@@ -2107,6 +2119,8 @@ pub struct Server {
     command_requests: CommandRequestQueue,
     /// Decoded serverbound play packets handled during the inter-tick phase.
     packet_processor: PacketProcessor,
+    /// Dedicated worker pool for CPU-heavy chunk packet extraction and encoding.
+    chunk_encoding_pool: ThreadPool,
     /// Jobs resumed from a known point in the server game tick.
     pub jobs: ServerJobQueue,
     /// Player data storage for saving/loading player state.
@@ -2262,6 +2276,18 @@ impl Server {
                 .build()
                 .map_err(|e| format!("failed to create generation thread pool: {e}"))?
         });
+        let chunk_encoding_pool = {
+            let mut builder =
+                ThreadPoolBuilder::new().thread_name(|i| format!("rayon-chunk-encode-{i}"));
+            if let Some(chunk_encoding_threads) =
+                configured_chunk_encoding_threads(config.chunk_encoding_threads)
+            {
+                builder = builder.num_threads(chunk_encoding_threads);
+            }
+            builder
+                .build()
+                .map_err(|e| format!("failed to create chunk encoding thread pool: {e}"))?
+        };
 
         let player_data_storage = PlayerDataStorage::new(
             resolved_worlds.save_path.clone(),
@@ -2377,6 +2403,7 @@ impl Server {
             command_permission_keys,
             command_requests: CommandRequestQueue::new(),
             packet_processor: PacketProcessor::new(),
+            chunk_encoding_pool,
             jobs: ServerJobQueue::new(),
             player_data_storage,
             player_permission_states: SyncRwLock::new(player_permission_states),
@@ -3970,12 +3997,23 @@ impl Server {
     /// A per-world per-tick encode cache is used so overlapping view areas
     /// don't re-encode the same chunk within a single tick.
     fn tick_chunk_sending(&self) {
+        let tick_start = Instant::now();
         for world in self.worlds.values() {
             let mut encode_cache = rustc_hash::FxHashMap::default();
             world.players.iter_players(|_uuid, player| {
-                Self::send_chunks_for_player(player, world, &mut encode_cache);
+                Self::send_chunks_for_player(
+                    player,
+                    world,
+                    &mut encode_cache,
+                    &self.chunk_encoding_pool,
+                );
                 true
             });
+        }
+
+        let elapsed = tick_start.elapsed();
+        if elapsed >= SLOW_CHUNK_TICK_THRESHOLD {
+            tracing::warn!(?elapsed, "Chunk sending tick slow");
         }
     }
 
@@ -3985,6 +4023,7 @@ impl Server {
         player: &Arc<Player>,
         world: &Arc<World>,
         encode_cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedChunk>,
+        encoding_pool: &ThreadPool,
     ) {
         let chunk_pos = *player.last_chunk_pos.lock();
         let connection = &player.connection;
@@ -4001,7 +4040,7 @@ impl Server {
 
         // Phase 2: encode (no lock held — uses per-tick local cache)
         let compression = connection.compression();
-        let encoded = ChunkSender::encode_batch(&batch, encode_cache, compression);
+        let encoded = ChunkSender::encode_batch(&batch, encode_cache, compression, encoding_pool);
 
         // Phase 3: commit (brief lock + generation check)
         let sent_chunks = {
@@ -4033,7 +4072,7 @@ impl Server {
                 + timings.run_generation
                 + timings.process_unloads;
 
-            if total.as_millis() >= 50 {
+            if total >= SLOW_CHUNK_TICK_THRESHOLD {
                 tracing::warn!(
                     world = i,
                     elapsed = ?total,

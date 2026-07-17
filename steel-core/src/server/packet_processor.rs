@@ -544,13 +544,13 @@ where
         drop(state);
         self.progress.notify_one();
         if should_wake {
-            if matches!(
-                execution,
-                ScheduledPacketExecution::Serialized | ScheduledPacketExecution::Exclusive
-            ) {
-                self.work_available.notify_all();
-            } else {
-                self.work_available.notify_one();
+            match execution {
+                ScheduledPacketExecution::Exclusive => {
+                    self.work_available.notify_all();
+                }
+                ScheduledPacketExecution::PlayerLocal | ScheduledPacketExecution::Serialized => {
+                    self.work_available.notify_one();
+                }
             }
         }
         if is_idle {

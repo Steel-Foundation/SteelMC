@@ -2891,6 +2891,7 @@ mod tests {
             server_links: None,
             packet_workers: Some(1),
             chunk_generation_threads: Some(1),
+            chunk_encoding_threads: Some(1),
         })
     }
 

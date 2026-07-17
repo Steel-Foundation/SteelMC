@@ -84,6 +84,8 @@ pub struct RuntimeConfig {
     pub packet_workers: Option<usize>,
     /// Optional worker count for the Rayon chunk generation pool.
     pub chunk_generation_threads: Option<usize>,
+    /// Optional worker count for the Rayon chunk encoding pool.
+    pub chunk_encoding_threads: Option<usize>,
 }
 
 impl RuntimeConfig {

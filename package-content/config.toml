@@ -46,6 +46,8 @@ chunk_runtime = 0
 packet_workers = 0
 # Worker threads for the Rayon chunk generation pool.
 chunk_generation = 0
+# Worker threads for the Rayon chunk encoding pool.
+chunk_encoding = 0
 
 # Compression settings
 [server.compression]

@@ -236,6 +236,12 @@
               "description": "Worker threads for the Rayon chunk generation pool",
               "minimum": 0,
               "default": 0
+            },
+            "chunk_encoding": {
+              "type": "integer",
+              "description": "Worker threads for the Rayon chunk encoding pool",
+              "minimum": 0,
+              "default": 0
             }
           },
           "additionalProperties": false
