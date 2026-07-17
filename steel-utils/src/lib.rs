@@ -11,6 +11,8 @@ pub mod block_util;
 /// Climate system for biome selection.
 pub mod climate;
 pub mod codec;
+/// Packed RGB and ARGB colors.
+pub mod color;
 /// Direction enum for the six cardinal directions.
 pub mod direction;
 /// Deterministic concrete-type downcasting for erased Steel objects.
@@ -64,6 +66,7 @@ pub mod version;
 /// The Minecraft version this server supports.
 pub const MC_VERSION: &str = version::MINECRAFT_VERSION;
 
+pub use color::{ArgbColor, RgbColor};
 pub use direction::Direction;
 pub use downcast::{Downcast, DowncastType, DowncastTypeKey, ErasedType};
 pub use front_vec::FrontVec;

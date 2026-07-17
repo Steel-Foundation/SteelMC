@@ -1,7 +1,8 @@
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt},
+    behavior::{BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt, blocks::AmethystBlock},
+    entity::projectile::Projectile,
     fluid::FluidStateExt as _,
-    world::World,
+    world::{ClipHitResult, World},
 };
 use std::sync::Arc;
 use steel_macros::block_behavior;
@@ -111,7 +112,15 @@ impl BlockBehavior for BuddingAmethystBlock {
             }
         }
     }
-    // TODO: OnProjectile hit from AmethystBlock inheritance
+    fn on_projectile_hit(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        hit: &ClipHitResult,
+        _projectile: &dyn Projectile,
+    ) {
+        AmethystBlock::play_projectile_hit_sound(world, hit.block_pos);
+    }
 }
 
 #[cfg(test)]

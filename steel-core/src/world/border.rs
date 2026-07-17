@@ -2,6 +2,7 @@
 
 use std::{error::Error, fmt};
 
+use glam::DVec3;
 use steel_utils::{BlockPos, WorldAabb};
 
 use crate::level_data::WorldBorderData;
@@ -51,11 +52,16 @@ impl WorldBorderSnapshot {
 
     #[must_use]
     pub(crate) fn clamp_to_bounds(self, x: f64, y: f64, z: f64) -> BlockPos {
+        BlockPos::from(self.clamp_vec3_to_bound(DVec3::new(x, y, z)))
+    }
+
+    #[must_use]
+    pub(crate) fn clamp_vec3_to_bound(self, position: DVec3) -> DVec3 {
         let epsilon = f64::from(1.0E-5_f32);
-        BlockPos::containing(
-            clamp_f64(x, self.min_x, self.max_x - epsilon),
-            y,
-            clamp_f64(z, self.min_z, self.max_z - epsilon),
+        DVec3::new(
+            clamp_f64(position.x, self.min_x, self.max_x - epsilon),
+            position.y,
+            clamp_f64(position.z, self.min_z, self.max_z - epsilon),
         )
     }
 

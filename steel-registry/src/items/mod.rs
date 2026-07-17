@@ -15,6 +15,7 @@ use crate::{
         vanilla_components::{ITEM_MODEL, ITEM_NAME},
     },
     item_stack::ItemStack,
+    vanilla_items,
 };
 
 /// A Minecraft item type.
@@ -105,6 +106,7 @@ pub type ItemRef = &'static Item;
 pub struct ItemRegistry {
     items_by_id: Vec<ItemRef>,
     items_by_key: FxHashMap<Identifier, usize>,
+    items_by_block: FxHashMap<Identifier, usize>,
     tags: FxHashMap<Identifier, Vec<Identifier>>,
     allows_registering: bool,
 }
@@ -121,6 +123,7 @@ impl ItemRegistry {
         Self {
             items_by_id: Vec::new(),
             items_by_key: FxHashMap::default(),
+            items_by_block: FxHashMap::default(),
             tags: FxHashMap::default(),
             allows_registering: true,
         }
@@ -141,6 +144,28 @@ impl ItemRegistry {
         id
     }
 
+    /// Registers the vanilla `BlockItem` association used by `Block.asItem()`.
+    pub fn register_block_item(&mut self, block: BlockRef, item: ItemRef) {
+        assert!(
+            self.allows_registering,
+            "Cannot register block items after the registry has been frozen"
+        );
+        let Some(&item_id) = self.items_by_key.get(&item.key) else {
+            panic!("Cannot associate an unregistered item with a block");
+        };
+        self.items_by_block.insert(block.key.clone(), item_id);
+    }
+
+    /// Returns the item associated with this block, or air when it has no block item.
+    ///
+    /// Vanilla equivalent: `Item.byBlock(Block)` / `Block.asItem()`.
+    #[must_use]
+    pub fn by_block(&self, block: BlockRef) -> ItemRef {
+        self.items_by_block
+            .get(&block.key)
+            .map_or(&vanilla_items::AIR, |&item_id| self.items_by_id[item_id])
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (usize, ItemRef)> + '_ {
         self.items_by_id
             .iter()
@@ -155,7 +180,12 @@ mod tests {
     use text_components::TextComponent;
 
     use super::Item;
-    use crate::data_components::vanilla_components::{ITEM_MODEL, ITEM_NAME};
+    use crate::{
+        REGISTRY,
+        data_components::vanilla_components::{ITEM_MODEL, ITEM_NAME},
+        test_support::init_test_registry,
+        vanilla_blocks, vanilla_items,
+    };
 
     #[test]
     fn new_item_uses_its_key_as_the_default_model() {
@@ -165,6 +195,32 @@ mod tests {
 
         assert_eq!(item.components.get_ref(ITEM_MODEL), Some(&key));
         assert_eq!(item.components.get_ref(ITEM_NAME), Some(&name));
+    }
+
+    #[test]
+    fn extracted_block_item_associations_match_vanilla() {
+        init_test_registry();
+
+        assert_eq!(
+            REGISTRY.items.by_block(&vanilla_blocks::LEAF_LITTER),
+            &*vanilla_items::LEAF_LITTER
+        );
+        assert_eq!(
+            REGISTRY.items.by_block(&vanilla_blocks::REDSTONE_WIRE),
+            &*vanilla_items::REDSTONE
+        );
+        assert_eq!(
+            REGISTRY.items.by_block(&vanilla_blocks::WALL_TORCH),
+            &*vanilla_items::TORCH
+        );
+        assert_eq!(
+            REGISTRY.items.by_block(&vanilla_blocks::BIG_DRIPLEAF_STEM),
+            &*vanilla_items::BIG_DRIPLEAF
+        );
+        assert_eq!(
+            REGISTRY.items.by_block(&vanilla_blocks::FIRE),
+            &*vanilla_items::AIR
+        );
     }
 }
 
