@@ -2131,6 +2131,27 @@ pub struct Server {
     pending_domain_switches: SyncMutex<Vec<DomainSwitchRequest>>,
 }
 
+struct GameTickTaskGuard {
+    server: Arc<Server>,
+    cancel_token: CancellationToken,
+}
+
+impl GameTickTaskGuard {
+    const fn new(server: Arc<Server>, cancel_token: CancellationToken) -> Self {
+        Self {
+            server,
+            cancel_token,
+        }
+    }
+}
+
+impl Drop for GameTickTaskGuard {
+    fn drop(&mut self) {
+        self.server.packet_processor.stop();
+        self.cancel_token.cancel();
+    }
+}
+
 impl Server {
     pub(crate) fn permission_rule_suggestions(&self) -> Vec<String> {
         let mut suggestions = self
@@ -3600,7 +3621,11 @@ impl Server {
         let game_handle = {
             let s = self.clone();
             let t = cancel_token.clone();
-            tokio::spawn(async move { s.run_game_tick(t).await })
+            let task_guard = GameTickTaskGuard::new(self.clone(), cancel_token.clone());
+            tokio::spawn(async move {
+                let _task_guard = task_guard;
+                s.run_game_tick(t).await;
+            })
         };
         let chunk_send_handle = {
             let s = self.clone();
@@ -3612,12 +3637,21 @@ impl Server {
             let t = cancel_token.clone();
             tokio::spawn(async move { s.run_chunk_scheduling_tick(t).await })
         };
-        let _ = tokio::join!(
+        let ((), game_result, chunk_send_result, chunk_sched_result) = tokio::join!(
             packet_workers,
             game_handle,
             chunk_send_handle,
             chunk_sched_handle
         );
+        for (task, result) in [
+            ("Game tick", game_result),
+            ("Chunk sending tick", chunk_send_result),
+            ("Chunk scheduling tick", chunk_sched_result),
+        ] {
+            if let Err(error) = result {
+                log::error!("{task} task failed: {error}");
+            }
+        }
     }
 
     /// The main game tick loop (20 TPS, governed by tick rate manager).

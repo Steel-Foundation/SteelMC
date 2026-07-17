@@ -225,6 +225,12 @@
               "minimum": 0,
               "default": 0
             },
+            "packet_processing": {
+              "type": "integer",
+              "description": "Worker threads for inter-tick gameplay packet processing",
+              "minimum": 0,
+              "default": 0
+            },
             "chunk_generation": {
               "type": "integer",
               "description": "Worker threads for the Rayon chunk generation pool",

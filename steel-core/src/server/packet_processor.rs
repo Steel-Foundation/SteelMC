@@ -11,6 +11,7 @@ use parking_lot::Condvar;
 use rustc_hash::FxHashMap;
 use steel_utils::locks::SyncMutex;
 use tokio::sync::Notify;
+use tokio::task::yield_now;
 use uuid::Uuid;
 
 use crate::player::{
@@ -28,8 +29,8 @@ struct PendingPlayPacket {
 
 /// Gameplay packets submitted by network tasks.
 ///
-/// The processor runs while the game tick is idle. Closing the packet phase stops new handlers
-/// from starting and waits for handlers already in progress before the game tick begins.
+/// The processor runs while the game tick is idle. At each tick boundary it drains every packet
+/// submitted before that boundary, while retaining later submissions for the next packet phase.
 pub(super) struct PacketProcessor {
     queued: PacketQueue<Uuid, PendingPlayPacket>,
 }
@@ -74,13 +75,13 @@ impl PacketProcessor {
 
     /// Guarantees packet progress when a late tick leaves no normal inter-tick window.
     pub(super) async fn wait_for_overload_progress(&self) {
+        yield_now().await;
         self.queued.wait_for_progress().await;
     }
 
-    /// Closes packet admission and waits for any handler already in progress.
+    /// Drains packets submitted before this tick boundary, then closes packet admission.
     pub(super) async fn close_for_tick(&self) {
-        self.queued.close();
-        self.queued.wait_until_idle().await;
+        self.queued.drain_for_tick().await;
     }
 
     /// Stops the packet worker and discards queued work during server shutdown.
@@ -99,6 +100,7 @@ impl Default for PacketProcessor {
 enum PacketPhase {
     Closed,
     Open,
+    Draining(u64),
     Stopped,
 }
 
@@ -133,7 +135,7 @@ struct PacketQueueState<K, T> {
     completed: u64,
 }
 
-/// Unbounded multi-producer lanes with an explicit packet/tick phase boundary.
+/// Ordered multi-producer lanes with a finite snapshot drain at each packet/tick boundary.
 struct PacketQueue<K, T> {
     state: SyncMutex<PacketQueueState<K, T>>,
     work_available: Condvar,
@@ -202,6 +204,7 @@ where
         self.work_available.notify_all();
     }
 
+    #[cfg(test)]
     fn close(&self) {
         let mut state = self.state.lock();
         if state.phase != PacketPhase::Stopped {
@@ -209,14 +212,55 @@ where
         }
     }
 
-    async fn wait_until_idle(&self) {
+    async fn drain_for_tick(&self) {
+        let Some(before_sequence) = self.begin_tick_drain() else {
+            return;
+        };
+        self.work_available.notify_all();
+
         loop {
             let idle = self.idle.notified();
-            if self.state.lock().active == 0 {
-                return;
+            if self.tick_drain_complete(before_sequence) {
+                break;
             }
             idle.await;
         }
+
+        self.finish_tick_drain(before_sequence);
+    }
+
+    fn finish_tick_drain(&self, before_sequence: u64) {
+        let mut state = self.state.lock();
+        if state.phase == PacketPhase::Draining(before_sequence) {
+            state.phase = PacketPhase::Closed;
+        }
+    }
+
+    fn begin_tick_drain(&self) -> Option<u64> {
+        let mut state = self.state.lock();
+        match state.phase {
+            PacketPhase::Stopped => None,
+            PacketPhase::Draining(before_sequence) => Some(before_sequence),
+            PacketPhase::Closed | PacketPhase::Open => {
+                let before_sequence = state.next_sequence;
+                state.phase = PacketPhase::Draining(before_sequence);
+                Some(before_sequence)
+            }
+        }
+    }
+
+    fn tick_drain_complete(&self, before_sequence: u64) -> bool {
+        let state = self.state.lock();
+        if state.phase == PacketPhase::Stopped {
+            return true;
+        }
+        if state.active != 0 {
+            return false;
+        }
+        state
+            .ready
+            .peek()
+            .is_none_or(|entry| entry.0.0 >= before_sequence)
     }
 
     async fn wait_for_progress(&self) {
@@ -273,7 +317,21 @@ where
             match state.phase {
                 PacketPhase::Stopped => return None,
                 PacketPhase::Open => {
-                    if let Some((key, execution, value)) = Self::start_next(&mut state) {
+                    if let Some((key, execution, value)) = Self::start_next(&mut state, None) {
+                        state.active += 1;
+                        drop(state);
+                        return Some(PacketWork {
+                            value: Some(value),
+                            key,
+                            execution,
+                            queue: self,
+                        });
+                    }
+                }
+                PacketPhase::Draining(before_sequence) => {
+                    if let Some((key, execution, value)) =
+                        Self::start_next(&mut state, Some(before_sequence))
+                    {
                         state.active += 1;
                         drop(state);
                         return Some(PacketWork {
@@ -293,10 +351,12 @@ where
     #[cfg(test)]
     fn try_next(&self) -> Option<PacketWork<'_, K, T>> {
         let mut state = self.state.lock();
-        if state.phase != PacketPhase::Open {
-            return None;
-        }
-        let (key, execution, value) = Self::start_next(&mut state)?;
+        let before_sequence = match state.phase {
+            PacketPhase::Open => None,
+            PacketPhase::Draining(before_sequence) => Some(before_sequence),
+            PacketPhase::Closed | PacketPhase::Stopped => return None,
+        };
+        let (key, execution, value) = Self::start_next(&mut state, before_sequence)?;
         state.active += 1;
         drop(state);
         Some(PacketWork {
@@ -307,12 +367,18 @@ where
         })
     }
 
-    fn start_next(state: &mut PacketQueueState<K, T>) -> Option<(K, ScheduledPacketExecution, T)> {
+    fn start_next(
+        state: &mut PacketQueueState<K, T>,
+        before_sequence: Option<u64>,
+    ) -> Option<(K, ScheduledPacketExecution, T)> {
         if state.exclusive_active {
             return None;
         }
 
         let Reverse((ready_sequence, key)) = *state.ready.peek()?;
+        if before_sequence.is_some_and(|cutoff| ready_sequence >= cutoff) {
+            return None;
+        }
         let Some(lane) = state.lanes.get(&key) else {
             panic!("ready packet lane disappeared before starting");
         };
@@ -399,7 +465,8 @@ where
         }
 
         let is_idle = state.active == 0;
-        let should_wake = state.phase == PacketPhase::Open && !state.ready.is_empty();
+        let should_wake = matches!(state.phase, PacketPhase::Open | PacketPhase::Draining(_))
+            && !state.ready.is_empty();
         drop(state);
         self.progress.notify_one();
         if should_wake {
@@ -575,24 +642,51 @@ mod tests {
         assert_eq!(work.take(), Some(1));
     }
 
+    #[test]
+    fn tick_drain_only_processes_packets_submitted_before_its_cutoff() {
+        let queue = PacketQueue::new();
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, "before cutoff");
+        queue.open();
+        let Some(before_sequence) = queue.begin_tick_drain() else {
+            panic!("running queue should begin a tick drain");
+        };
+        queue.submit(2, ScheduledPacketExecution::PlayerLocal, "after cutoff");
+
+        let Some(mut before) = queue.try_next() else {
+            panic!("packet before the cutoff should drain");
+        };
+        assert_eq!(before.take(), Some("before cutoff"));
+        drop(before);
+
+        assert!(queue.try_next().is_none());
+        assert!(queue.tick_drain_complete(before_sequence));
+        queue.finish_tick_drain(before_sequence);
+        queue.open();
+        let Some(mut after) = queue.try_next() else {
+            panic!("packet after the cutoff should wait for the next open phase");
+        };
+        assert_eq!(after.take(), Some("after cutoff"));
+    }
+
     #[tokio::test]
-    async fn tick_close_waits_for_active_packet_work() {
+    async fn tick_drain_waits_for_active_packet_work() {
         let queue = Arc::new(PacketQueue::new());
         queue.open();
         queue.submit(1, ScheduledPacketExecution::PlayerLocal, 1);
         let Some(work) = queue.try_next() else {
             panic!("open packet phase should start queued work");
         };
-        queue.close();
+        let drain = queue.drain_for_tick();
+        tokio::pin!(drain);
 
         assert!(
-            timeout(Duration::from_millis(10), queue.wait_until_idle())
+            timeout(Duration::from_millis(10), drain.as_mut())
                 .await
                 .is_err()
         );
         drop(work);
         assert!(
-            timeout(Duration::from_secs(1), queue.wait_until_idle())
+            timeout(Duration::from_secs(1), drain.as_mut())
                 .await
                 .is_ok()
         );

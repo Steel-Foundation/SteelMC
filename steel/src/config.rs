@@ -617,6 +617,23 @@ mod tests {
         assert!(DEFAULT_GROUPS.starts_with(GROUPS_CONFIG_HEADER));
     }
 
+    #[test]
+    fn packaged_schema_declares_packet_processing_thread_setting() {
+        let Ok(schema) = serde_json::from_str::<serde_json::Value>(include_str!(
+            "../../package-content/config.schema.json"
+        )) else {
+            panic!("packaged config schema should be valid JSON");
+        };
+        let Some(thread_properties) = schema
+            .pointer("/properties/server/properties/threads/properties")
+            .and_then(serde_json::Value::as_object)
+        else {
+            panic!("packaged config schema should define server thread properties");
+        };
+
+        assert!(thread_properties.contains_key("packet_processing"));
+    }
+
     #[tokio::test]
     async fn file_permission_group_store_round_trips_typed_config() {
         let root = temp_config_root("groups-store");

@@ -2813,6 +2813,7 @@ dependencies = [
  "parking_lot",
  "reqwest 0.13.2",
  "serde",
+ "serde_json",
  "steel-core",
  "steel-login",
  "steel-utils",
