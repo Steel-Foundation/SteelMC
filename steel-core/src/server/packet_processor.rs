@@ -127,10 +127,14 @@ impl<T> PacketLane<T> {
 struct PacketQueueState<K, T> {
     phase: PacketPhase,
     lanes: FxHashMap<K, PacketLane<T>>,
-    ready: BinaryHeap<Reverse<(u64, K)>>,
+    player_local_ready: BinaryHeap<Reverse<(u64, K)>>,
+    serialized_ready: BinaryHeap<Reverse<(u64, K)>>,
+    exclusive_ready: BinaryHeap<Reverse<(u64, K)>>,
+    serialized: BinaryHeap<Reverse<u64>>,
     exclusive: BinaryHeap<Reverse<u64>>,
     next_sequence: u64,
     active: usize,
+    serialized_active: bool,
     exclusive_active: bool,
     completed: u64,
 }
@@ -152,10 +156,14 @@ where
             state: SyncMutex::new(PacketQueueState {
                 phase: PacketPhase::Closed,
                 lanes: FxHashMap::default(),
-                ready: BinaryHeap::new(),
+                player_local_ready: BinaryHeap::new(),
+                serialized_ready: BinaryHeap::new(),
+                exclusive_ready: BinaryHeap::new(),
+                serialized: BinaryHeap::new(),
                 exclusive: BinaryHeap::new(),
                 next_sequence: 0,
                 active: 0,
+                serialized_active: false,
                 exclusive_active: false,
                 completed: 0,
             }),
@@ -182,10 +190,12 @@ where
             value,
         });
         if became_ready {
-            state.ready.push(Reverse((sequence, key)));
+            Self::mark_ready(&mut state, sequence, key, execution);
         }
-        if execution == ScheduledPacketExecution::Exclusive {
-            state.exclusive.push(Reverse(sequence));
+        match execution {
+            ScheduledPacketExecution::PlayerLocal => {}
+            ScheduledPacketExecution::Serialized => state.serialized.push(Reverse(sequence)),
+            ScheduledPacketExecution::Exclusive => state.exclusive.push(Reverse(sequence)),
         }
         let should_wake = became_ready && state.phase == PacketPhase::Open;
         drop(state);
@@ -257,10 +267,7 @@ where
         if state.active != 0 {
             return false;
         }
-        state
-            .ready
-            .peek()
-            .is_none_or(|entry| entry.0.0 >= before_sequence)
+        Self::next_ready_sequence(&state).is_none_or(|sequence| sequence >= before_sequence)
     }
 
     async fn wait_for_progress(&self) {
@@ -296,7 +303,10 @@ where
     fn stop(&self) {
         let mut state = self.state.lock();
         state.phase = PacketPhase::Stopped;
-        state.ready.clear();
+        state.player_local_ready.clear();
+        state.serialized_ready.clear();
+        state.exclusive_ready.clear();
+        state.serialized.clear();
         state.exclusive.clear();
         state.lanes.retain(|_, lane| {
             lane.queued.clear();
@@ -371,14 +381,7 @@ where
         state: &mut PacketQueueState<K, T>,
         before_sequence: Option<u64>,
     ) -> Option<(K, ScheduledPacketExecution, T)> {
-        if state.exclusive_active {
-            return None;
-        }
-
-        let Reverse((ready_sequence, key)) = *state.ready.peek()?;
-        if before_sequence.is_some_and(|cutoff| ready_sequence >= cutoff) {
-            return None;
-        }
+        let (ready_sequence, key, execution) = Self::select_next(state, before_sequence)?;
         let Some(lane) = state.lanes.get(&key) else {
             panic!("ready packet lane disappeared before starting");
         };
@@ -390,44 +393,46 @@ where
             ready_sequence, packet.sequence,
             "ready packet sequence does not match lane front"
         );
+        assert_eq!(
+            execution, packet.execution,
+            "packet is registered in the wrong ready queue"
+        );
 
-        let execution = packet.execution;
-        let next_exclusive = state.exclusive.peek().map(|entry| entry.0);
         match execution {
             ScheduledPacketExecution::PlayerLocal => {
-                assert_ne!(
-                    next_exclusive,
-                    Some(ready_sequence),
-                    "player-local packet is registered as exclusive"
+                assert!(
+                    state.player_local_ready.pop() == Some(Reverse((ready_sequence, key))),
+                    "player-local ready queue changed while the queue lock was held"
                 );
-                if next_exclusive.is_some_and(|sequence| sequence < ready_sequence) {
-                    return None;
-                }
+            }
+            ScheduledPacketExecution::Serialized => {
+                assert!(
+                    state.serialized_ready.pop() == Some(Reverse((ready_sequence, key))),
+                    "serialized ready queue changed while the queue lock was held"
+                );
+                assert_eq!(
+                    state.serialized.pop(),
+                    Some(Reverse(ready_sequence)),
+                    "serialized packet order changed while the queue lock was held"
+                );
+                assert!(
+                    !state.serialized_active,
+                    "serialized packet started while another was active"
+                );
+                state.serialized_active = true;
             }
             ScheduledPacketExecution::Exclusive => {
-                assert_eq!(
-                    next_exclusive,
-                    Some(ready_sequence),
-                    "exclusive packet sequence is missing from the barrier queue"
+                assert!(
+                    state.exclusive_ready.pop() == Some(Reverse((ready_sequence, key))),
+                    "exclusive ready queue changed while the queue lock was held"
                 );
-                if state.active != 0 {
-                    return None;
-                }
+                assert_eq!(
+                    state.exclusive.pop(),
+                    Some(Reverse(ready_sequence)),
+                    "exclusive packet barrier changed while the queue lock was held"
+                );
+                state.exclusive_active = true;
             }
-        }
-
-        let popped_ready = state.ready.pop();
-        assert!(
-            popped_ready == Some(Reverse((ready_sequence, key))),
-            "ready packet changed while the queue lock was held"
-        );
-        if execution == ScheduledPacketExecution::Exclusive {
-            assert_eq!(
-                state.exclusive.pop(),
-                Some(Reverse(ready_sequence)),
-                "exclusive packet barrier changed while the queue lock was held"
-            );
-            state.exclusive_active = true;
         }
 
         let Some(lane) = state.lanes.get_mut(&key) else {
@@ -440,14 +445,76 @@ where
         Some((key, execution, packet.value))
     }
 
+    fn select_next(
+        state: &PacketQueueState<K, T>,
+        before_sequence: Option<u64>,
+    ) -> Option<(u64, K, ScheduledPacketExecution)> {
+        if state.exclusive_active {
+            return None;
+        }
+
+        let next_exclusive = state.exclusive.peek().map(|entry| entry.0);
+        let next_serialized = state.serialized.peek().map(|entry| entry.0);
+        let mut selected = None;
+        let mut consider = |entry: Option<&Reverse<(u64, K)>>,
+                            execution: ScheduledPacketExecution| {
+            let Some(Reverse((sequence, key))) = entry.copied() else {
+                return;
+            };
+            if before_sequence.is_some_and(|cutoff| sequence >= cutoff)
+                || next_exclusive.is_some_and(|exclusive| exclusive < sequence)
+            {
+                return;
+            }
+            if selected.is_none_or(|(selected_sequence, _, _)| sequence < selected_sequence) {
+                selected = Some((sequence, key, execution));
+            }
+        };
+
+        consider(
+            state.player_local_ready.peek(),
+            ScheduledPacketExecution::PlayerLocal,
+        );
+        if !state.serialized_active
+            && state
+                .serialized_ready
+                .peek()
+                .is_some_and(|entry| Some(entry.0.0) == next_serialized)
+        {
+            consider(
+                state.serialized_ready.peek(),
+                ScheduledPacketExecution::Serialized,
+            );
+        }
+        if state.active == 0
+            && state
+                .exclusive_ready
+                .peek()
+                .is_some_and(|entry| Some(entry.0.0) == next_exclusive)
+        {
+            consider(
+                state.exclusive_ready.peek(),
+                ScheduledPacketExecution::Exclusive,
+            );
+        }
+        selected
+    }
+
     fn finish_one(&self, key: K, execution: ScheduledPacketExecution) {
         let mut state = self.state.lock();
         assert!(state.active > 0, "packet work accounting underflow");
         state.active -= 1;
         state.completed = state.completed.wrapping_add(1);
-        if execution == ScheduledPacketExecution::Exclusive {
-            assert!(state.exclusive_active, "exclusive packet is not active");
-            state.exclusive_active = false;
+        match execution {
+            ScheduledPacketExecution::PlayerLocal => {}
+            ScheduledPacketExecution::Serialized => {
+                assert!(state.serialized_active, "serialized packet is not active");
+                state.serialized_active = false;
+            }
+            ScheduledPacketExecution::Exclusive => {
+                assert!(state.exclusive_active, "exclusive packet is not active");
+                state.exclusive_active = false;
+            }
         }
 
         let next_sequence = {
@@ -459,18 +526,28 @@ where
             lane.queued.front().map(|packet| packet.sequence)
         };
         if let Some(sequence) = next_sequence {
-            state.ready.push(Reverse((sequence, key)));
+            let Some(lane) = state.lanes.get(&key) else {
+                panic!("packet lane disappeared before its next packet became ready");
+            };
+            let Some(packet) = lane.queued.front() else {
+                panic!("packet lane has no next packet after reporting its sequence");
+            };
+            let next_execution = packet.execution;
+            Self::mark_ready(&mut state, sequence, key, next_execution);
         } else {
             state.lanes.remove(&key);
         }
 
         let is_idle = state.active == 0;
         let should_wake = matches!(state.phase, PacketPhase::Open | PacketPhase::Draining(_))
-            && !state.ready.is_empty();
+            && Self::next_ready_sequence(&state).is_some();
         drop(state);
         self.progress.notify_one();
         if should_wake {
-            if execution == ScheduledPacketExecution::Exclusive {
+            if matches!(
+                execution,
+                ScheduledPacketExecution::Serialized | ScheduledPacketExecution::Exclusive
+            ) {
                 self.work_available.notify_all();
             } else {
                 self.work_available.notify_one();
@@ -479,6 +556,31 @@ where
         if is_idle {
             self.idle.notify_one();
         }
+    }
+
+    fn mark_ready(
+        state: &mut PacketQueueState<K, T>,
+        sequence: u64,
+        key: K,
+        execution: ScheduledPacketExecution,
+    ) {
+        let entry = Reverse((sequence, key));
+        match execution {
+            ScheduledPacketExecution::PlayerLocal => state.player_local_ready.push(entry),
+            ScheduledPacketExecution::Serialized => state.serialized_ready.push(entry),
+            ScheduledPacketExecution::Exclusive => state.exclusive_ready.push(entry),
+        }
+    }
+
+    fn next_ready_sequence(state: &PacketQueueState<K, T>) -> Option<u64> {
+        [
+            state.player_local_ready.peek().map(|entry| entry.0.0),
+            state.serialized_ready.peek().map(|entry| entry.0.0),
+            state.exclusive_ready.peek().map(|entry| entry.0.0),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 }
 
@@ -580,6 +682,112 @@ mod tests {
     }
 
     #[test]
+    fn serialized_packet_overlaps_player_local_work_but_not_another_serialized_packet() {
+        let queue = PacketQueue::new();
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, "first local");
+        queue.submit(2, ScheduledPacketExecution::Serialized, "first serialized");
+        queue.submit(3, ScheduledPacketExecution::Serialized, "second serialized");
+        queue.submit(4, ScheduledPacketExecution::PlayerLocal, "later local");
+        queue.open();
+
+        let Some(mut first_local) = queue.try_next() else {
+            panic!("first player-local packet should start");
+        };
+        assert_eq!(first_local.take(), Some("first local"));
+
+        let Some(mut first_serialized) = queue.try_next() else {
+            panic!("serialized packet should overlap player-local work");
+        };
+        assert_eq!(first_serialized.take(), Some("first serialized"));
+
+        let Some(mut later_local) = queue.try_next() else {
+            panic!("player-local work should bypass a blocked serialized packet");
+        };
+        assert_eq!(later_local.take(), Some("later local"));
+        assert!(queue.try_next().is_none());
+
+        drop(first_serialized);
+        let Some(mut second_serialized) = queue.try_next() else {
+            panic!("next serialized packet should start after its predecessor finishes");
+        };
+        assert_eq!(second_serialized.take(), Some("second serialized"));
+    }
+
+    #[test]
+    fn serialized_packet_hidden_in_an_active_lane_preserves_serialized_order() {
+        let queue = PacketQueue::new();
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, "active lane");
+        queue.submit(1, ScheduledPacketExecution::Serialized, "hidden serialized");
+        queue.submit(2, ScheduledPacketExecution::Serialized, "later serialized");
+        queue.submit(
+            3,
+            ScheduledPacketExecution::PlayerLocal,
+            "independent local",
+        );
+        queue.open();
+
+        let Some(active_lane) = queue.try_next() else {
+            panic!("first lane packet should start");
+        };
+        let Some(mut independent_local) = queue.try_next() else {
+            panic!("player-local work should bypass serialized ordering contention");
+        };
+        assert_eq!(independent_local.take(), Some("independent local"));
+        assert!(queue.try_next().is_none());
+
+        drop(active_lane);
+        let Some(mut hidden_serialized) = queue.try_next() else {
+            panic!("earliest serialized packet should start when its lane becomes idle");
+        };
+        assert_eq!(hidden_serialized.take(), Some("hidden serialized"));
+        assert!(queue.try_next().is_none());
+
+        drop(hidden_serialized);
+        let Some(mut later_serialized) = queue.try_next() else {
+            panic!("later serialized packet should preserve global submission order");
+        };
+        assert_eq!(later_serialized.take(), Some("later serialized"));
+    }
+
+    #[test]
+    fn blocking_worker_bypasses_active_serialized_work_for_player_local_work() {
+        let queue = Arc::new(PacketQueue::new());
+        queue.submit(1, ScheduledPacketExecution::Serialized, "active serialized");
+        queue.submit(2, ScheduledPacketExecution::Serialized, "queued serialized");
+        queue.submit(3, ScheduledPacketExecution::PlayerLocal, "player local");
+        queue.open();
+
+        let Some(active_serialized) = queue.try_next() else {
+            panic!("first serialized packet should start");
+        };
+        let worker_queue = Arc::clone(&queue);
+        let (sender, receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            for _ in 0..2 {
+                let Some(mut work) = worker_queue.next() else {
+                    return;
+                };
+                if let Some(value) = work.take() {
+                    let _ = sender.send(value);
+                }
+            }
+        });
+
+        assert_eq!(
+            receiver.recv_timeout(Duration::from_secs(1)),
+            Ok("player local")
+        );
+        assert!(receiver.recv_timeout(Duration::from_millis(10)).is_err());
+
+        drop(active_serialized);
+        assert_eq!(
+            receiver.recv_timeout(Duration::from_secs(1)),
+            Ok("queued serialized")
+        );
+        assert!(worker.join().is_ok());
+    }
+
+    #[test]
     fn exclusive_packet_waits_for_active_work_and_blocks_later_packets() {
         let queue = PacketQueue::new();
         queue.submit(1, ScheduledPacketExecution::PlayerLocal, "before barrier");
@@ -603,6 +811,34 @@ mod tests {
         drop(barrier);
         let Some(mut after) = queue.try_next() else {
             panic!("packet after the barrier should start after it finishes");
+        };
+        assert_eq!(after.take(), Some("after barrier"));
+    }
+
+    #[test]
+    fn exclusive_packet_waits_for_serialized_work_and_blocks_player_local_work() {
+        let queue = PacketQueue::new();
+        queue.submit(1, ScheduledPacketExecution::Serialized, "before barrier");
+        queue.submit(2, ScheduledPacketExecution::Exclusive, "barrier");
+        queue.submit(3, ScheduledPacketExecution::PlayerLocal, "after barrier");
+        queue.open();
+
+        let Some(mut before) = queue.try_next() else {
+            panic!("serialized packet before the barrier should start");
+        };
+        assert_eq!(before.take(), Some("before barrier"));
+        assert!(queue.try_next().is_none());
+
+        drop(before);
+        let Some(mut barrier) = queue.try_next() else {
+            panic!("exclusive packet should wait for serialized work");
+        };
+        assert_eq!(barrier.take(), Some("barrier"));
+        assert!(queue.try_next().is_none());
+
+        drop(barrier);
+        let Some(mut after) = queue.try_next() else {
+            panic!("player-local packet should wait for the exclusive barrier");
         };
         assert_eq!(after.take(), Some("after barrier"));
     }
@@ -666,6 +902,67 @@ mod tests {
             panic!("packet after the cutoff should wait for the next open phase");
         };
         assert_eq!(after.take(), Some("after cutoff"));
+    }
+
+    #[test]
+    fn tick_drain_orders_hidden_serialized_and_exclusive_work_before_its_cutoff() {
+        let queue = PacketQueue::new();
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, "active local");
+        queue.submit(1, ScheduledPacketExecution::Serialized, "hidden serialized");
+        queue.submit(2, ScheduledPacketExecution::Exclusive, "exclusive");
+        queue.open();
+
+        let Some(active_local) = queue.try_next() else {
+            panic!("player-local packet should start before draining");
+        };
+        let Some(before_sequence) = queue.begin_tick_drain() else {
+            panic!("running queue should begin a tick drain");
+        };
+        queue.submit(
+            3,
+            ScheduledPacketExecution::Serialized,
+            "post-cutoff serialized",
+        );
+        queue.submit(
+            4,
+            ScheduledPacketExecution::PlayerLocal,
+            "post-cutoff local",
+        );
+
+        assert!(!queue.tick_drain_complete(before_sequence));
+        assert!(queue.try_next().is_none());
+        drop(active_local);
+
+        let Some(mut hidden_serialized) = queue.try_next() else {
+            panic!("hidden pre-cutoff serialized packet should drain");
+        };
+        assert_eq!(hidden_serialized.take(), Some("hidden serialized"));
+        assert!(!queue.tick_drain_complete(before_sequence));
+        drop(hidden_serialized);
+
+        let Some(mut exclusive) = queue.try_next() else {
+            panic!("pre-cutoff exclusive packet should drain after earlier work");
+        };
+        assert_eq!(exclusive.take(), Some("exclusive"));
+        assert!(!queue.tick_drain_complete(before_sequence));
+        drop(exclusive);
+
+        assert!(queue.try_next().is_none());
+        assert!(queue.tick_drain_complete(before_sequence));
+        queue.finish_tick_drain(before_sequence);
+        queue.open();
+
+        let Some(mut post_cutoff_serialized) = queue.try_next() else {
+            panic!("post-cutoff serialized packet should remain for the next phase");
+        };
+        assert_eq!(
+            post_cutoff_serialized.take(),
+            Some("post-cutoff serialized")
+        );
+        let Some(mut post_cutoff_local) = queue.try_next() else {
+            panic!("post-cutoff player-local packet should remain for the next phase");
+        };
+        assert_eq!(post_cutoff_local.take(), Some("post-cutoff local"));
     }
 
     #[tokio::test]
@@ -740,6 +1037,44 @@ mod tests {
 
         assert!(queue.try_next().is_none());
         assert_eq!(queue.state.lock().active, 0);
+    }
+
+    #[tokio::test]
+    async fn stopping_with_active_serialized_and_local_work_clears_all_queue_state() {
+        let queue = PacketQueue::new();
+        queue.submit(1, ScheduledPacketExecution::Serialized, "active serialized");
+        queue.submit(2, ScheduledPacketExecution::PlayerLocal, "active local");
+        queue.submit(3, ScheduledPacketExecution::Serialized, "queued serialized");
+        queue.submit(4, ScheduledPacketExecution::Exclusive, "queued exclusive");
+        queue.open();
+
+        let Some(active_serialized) = queue.try_next() else {
+            panic!("serialized packet should start");
+        };
+        let Some(active_local) = queue.try_next() else {
+            panic!("player-local packet should overlap serialized work");
+        };
+        queue.stop();
+        queue.drain_for_tick().await;
+
+        {
+            let state = queue.state.lock();
+            assert_eq!(state.active, 2);
+            assert!(state.serialized_active);
+            assert!(state.player_local_ready.is_empty());
+            assert!(state.serialized_ready.is_empty());
+            assert!(state.exclusive_ready.is_empty());
+            assert!(state.serialized.is_empty());
+            assert!(state.exclusive.is_empty());
+        }
+
+        drop(active_serialized);
+        drop(active_local);
+
+        let state = queue.state.lock();
+        assert_eq!(state.active, 0);
+        assert!(!state.serialized_active);
+        assert!(state.lanes.is_empty());
     }
 
     #[test]

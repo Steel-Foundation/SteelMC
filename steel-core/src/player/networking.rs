@@ -62,7 +62,10 @@ pub(crate) enum ScheduledPacketExecution {
     /// Shared mutations must be fully linearized by their resource locks, and the handler must
     /// tolerate cross-player execution order differing from packet submission order.
     PlayerLocal,
-    /// The handler must not overlap any other scheduled gameplay handler.
+    /// The handler may overlap player-local work, but not another serialized handler. Serialized
+    /// handlers start in global packet submission order.
+    Serialized,
+    /// The handler is a global submission-order barrier and must not overlap scheduled work.
     Exclusive,
 }
 
@@ -121,17 +124,14 @@ impl ScheduledPlayPacket {
     /// explicit concurrency decision.
     pub(crate) const fn execution(&self) -> ScheduledPacketExecution {
         match &self.0 {
-            // These handlers either touch player-owned state or perform a complete shared-resource
-            // transaction under that resource's lock. The player lane preserves same-player order.
-            ScheduledPlayPacketKind::AcceptTeleportation(_)
-            | ScheduledPlayPacketKind::ChatAck(_)
-            | ScheduledPlayPacketKind::ChatSessionUpdate(_)
+            // These handlers touch player-owned state or use an individually linearizable shared
+            // operation. The player lane preserves same-player order.
+            ScheduledPlayPacketKind::ChatSessionUpdate(_)
             | ScheduledPlayPacketKind::ClientInformation(_)
             | ScheduledPlayPacketKind::ClientTickEnd
             | ScheduledPlayPacketKind::PlayerLoaded
             | ScheduledPlayPacketKind::ChatCommand(_)
             | ScheduledPlayPacketKind::CommandSuggestion(_)
-            | ScheduledPlayPacketKind::ContainerClick(_)
             | ScheduledPlayPacketKind::ContainerClose(_)
             | ScheduledPlayPacketKind::SetCreativeModeSlot(_)
             | ScheduledPlayPacketKind::PlayerInput(_)
@@ -139,14 +139,15 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::SetCarriedItem(_)
             | ScheduledPlayPacketKind::Swing(_)
             | ScheduledPlayPacketKind::PickItemFromBlock(_)
-            | ScheduledPlayPacketKind::SignUpdate(_)
             | ScheduledPlayPacketKind::ClientCommand(_) => ScheduledPacketExecution::PlayerLocal,
             ScheduledPlayPacketKind::PlayerCommand(packet) => match packet.action {
                 PlayerCommandAction::StartSprinting
                 | PlayerCommandAction::StopSprinting
                 | PlayerCommandAction::StartFallFlying => ScheduledPacketExecution::PlayerLocal,
-                PlayerCommandAction::LeaveBed
-                | PlayerCommandAction::StartRidingJump
+                PlayerCommandAction::LeaveBed => ScheduledPacketExecution::Serialized,
+                // These handlers are not implemented, so their eventual vehicle transaction
+                // cannot yet be audited against concurrently player-local work.
+                PlayerCommandAction::StartRidingJump
                 | PlayerCommandAction::StopRidingJump
                 | PlayerCommandAction::OpenVehicleInventory => ScheduledPacketExecution::Exclusive,
             },
@@ -157,23 +158,36 @@ impl ScheduledPlayPacket {
                 PlayerAction::StartDestroyBlock
                 | PlayerAction::StopDestroyBlock
                 | PlayerAction::DropAllItems
-                | PlayerAction::DropItem
-                | PlayerAction::ReleaseUseItem
-                | PlayerAction::Stab => ScheduledPacketExecution::Exclusive,
+                | PlayerAction::DropItem => ScheduledPacketExecution::Serialized,
+                // Release-use is not implemented, while stab spans independently locked targets;
+                // neither can yet overlap player-local work safely.
+                PlayerAction::ReleaseUseItem | PlayerAction::Stab => {
+                    ScheduledPacketExecution::Exclusive
+                }
             },
+            // Position, world, menu, chat, and domain mutations may overlap player-local work but
+            // retain one global mutation order matching the packet submission order.
+            ScheduledPlayPacketKind::AcceptTeleportation(_)
+            | ScheduledPlayPacketKind::Chat(_)
+            | ScheduledPlayPacketKind::ChatAck(_)
+            | ScheduledPlayPacketKind::MovePlayer(_)
+            | ScheduledPlayPacketKind::MoveVehicle(_)
+            | ScheduledPlayPacketKind::ContainerClick(_)
+            | ScheduledPlayPacketKind::UseItemOn(_)
+            | ScheduledPlayPacketKind::UseItem(_)
+            | ScheduledPlayPacketKind::SignUpdate(_)
+            | ScheduledPlayPacketKind::SpectatorAction(_)
+            | ScheduledPlayPacketKind::ChangeGameMode(_)
+            | ScheduledPlayPacketKind::ChangeDifficulty(_) => ScheduledPacketExecution::Serialized,
+            // Combat spans source and target state, custom payloads have no constrained resource
+            // contract, and the unimplemented menu handlers have no auditable transaction yet.
             ScheduledPlayPacketKind::Attack(_)
             | ScheduledPlayPacketKind::Interact(_)
             | ScheduledPlayPacketKind::CustomPayload(_)
-            | ScheduledPlayPacketKind::Chat(_)
-            | ScheduledPlayPacketKind::MovePlayer(_)
-            | ScheduledPlayPacketKind::MoveVehicle(_)
             | ScheduledPlayPacketKind::ContainerButtonClick(_)
-            | ScheduledPlayPacketKind::ContainerSlotStateChanged(_)
-            | ScheduledPlayPacketKind::UseItemOn(_)
-            | ScheduledPlayPacketKind::UseItem(_)
-            | ScheduledPlayPacketKind::SpectatorAction(_)
-            | ScheduledPlayPacketKind::ChangeGameMode(_)
-            | ScheduledPlayPacketKind::ChangeDifficulty(_) => ScheduledPacketExecution::Exclusive,
+            | ScheduledPlayPacketKind::ContainerSlotStateChanged(_) => {
+                ScheduledPacketExecution::Exclusive
+            }
         }
     }
 
@@ -891,7 +905,7 @@ mod tests {
     use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
     use steel_protocol::packets::game::{ClickType, ClientCommandAction, HashedStack};
     use steel_registry::{blocks::properties::Direction, item_stack::ItemStack};
-    use steel_utils::{BlockPos, types::InteractionHand};
+    use steel_utils::{BlockPos, codec::VarInt, types::InteractionHand};
     use uuid::Uuid;
 
     use super::*;
@@ -966,7 +980,7 @@ mod tests {
     }
 
     #[test]
-    fn packet_execution_classification_preserves_world_mutation_barriers() {
+    fn packet_execution_classification_separates_local_and_serialized_work() {
         assert_eq!(
             execution(ScheduledPlayPacketKind::PlayerAbilities(SPlayerAbilities {
                 flags: 0
@@ -977,12 +991,12 @@ mod tests {
             execution(ScheduledPlayPacketKind::MovePlayer(
                 SMovePlayerStatusOnly { packed_byte: 0 }.into(),
             )),
-            ScheduledPacketExecution::Exclusive
+            ScheduledPacketExecution::Serialized
         );
     }
 
     #[test]
-    fn locked_inventory_transactions_are_player_local() {
+    fn inventory_execution_reflects_complete_transaction_boundaries() {
         let click = SContainerClick {
             container_id: 0,
             state_id: 0,
@@ -995,7 +1009,7 @@ mod tests {
 
         assert_eq!(
             execution(ScheduledPlayPacketKind::ContainerClick(click)),
-            ScheduledPacketExecution::PlayerLocal
+            ScheduledPacketExecution::Serialized
         );
         assert_eq!(
             execution(ScheduledPlayPacketKind::ContainerClose(SContainerClose {
@@ -1034,7 +1048,7 @@ mod tests {
         );
         assert_eq!(
             command(PlayerCommandAction::LeaveBed),
-            ScheduledPacketExecution::Exclusive
+            ScheduledPacketExecution::Serialized
         );
         assert_eq!(
             command(PlayerCommandAction::OpenVehicleInventory),
@@ -1063,7 +1077,7 @@ mod tests {
         );
         assert_eq!(
             action(PlayerAction::StartDestroyBlock),
-            ScheduledPacketExecution::Exclusive
+            ScheduledPacketExecution::Serialized
         );
         assert_eq!(
             action(PlayerAction::Stab),
@@ -1072,12 +1086,60 @@ mod tests {
     }
 
     #[test]
-    fn audited_player_state_and_locked_resource_handlers_are_player_local() {
+    fn chat_message_and_ack_share_the_serialized_commit_lane() {
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::Chat(Box::new(SChat {
+                message: "hello".to_owned(),
+                timestamp: 0,
+                salt: 0,
+                signature: None,
+                offset: 0,
+                acknowledged: [0; 3],
+                checksum: 0,
+            }))),
+            ScheduledPacketExecution::Serialized
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::ChatAck(SChatAck {
+                offset: VarInt(0),
+            })),
+            ScheduledPacketExecution::Serialized
+        );
+    }
+
+    #[test]
+    fn cross_player_and_unimplemented_handlers_remain_global_barriers() {
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::Attack(SAttack { entity_id: 1 })),
+            ScheduledPacketExecution::Exclusive
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::ContainerButtonClick(
+                SContainerButtonClick {
+                    container_id: 1,
+                    button_id: 0,
+                },
+            )),
+            ScheduledPacketExecution::Exclusive
+        );
+        assert_eq!(
+            execution(ScheduledPlayPacketKind::PlayerAction(SPlayerAction {
+                action: PlayerAction::ReleaseUseItem,
+                pos: BlockPos::new(0, 64, 0),
+                direction: Direction::Down,
+                sequence: 0,
+            })),
+            ScheduledPacketExecution::Exclusive
+        );
+    }
+
+    #[test]
+    fn audited_handlers_use_the_narrowest_safe_execution_class() {
         assert_eq!(
             execution(ScheduledPlayPacketKind::AcceptTeleportation(
                 SAcceptTeleportation { teleport_id: 1 },
             )),
-            ScheduledPacketExecution::PlayerLocal
+            ScheduledPacketExecution::Serialized
         );
         assert_eq!(
             execution(ScheduledPlayPacketKind::PlayerInput(SPlayerInput {
@@ -1133,7 +1195,7 @@ mod tests {
                 is_front_text: true,
                 lines: array::from_fn(|_| String::new()),
             })),
-            ScheduledPacketExecution::PlayerLocal
+            ScheduledPacketExecution::Serialized
         );
         assert_eq!(
             execution(ScheduledPlayPacketKind::Swing(SSwing {
