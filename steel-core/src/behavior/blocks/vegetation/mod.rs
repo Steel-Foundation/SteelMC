@@ -33,6 +33,8 @@ mod firefly_bush_block;
 mod flower_bed_block;
 mod flower_block;
 mod glow_lichen_block;
+mod growing_plant_body_block;
+mod growing_plant_head_block;
 mod hanging_moss_block;
 mod hanging_roots_block;
 mod kelp_block;
