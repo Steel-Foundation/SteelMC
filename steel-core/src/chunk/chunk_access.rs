@@ -9,8 +9,12 @@ use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 
 use crate::block_entity::SharedBlockEntity;
 use crate::chunk::{
-    heightmap::HeightmapType, level_chunk::LevelChunk, light::ChunkLightData,
-    light::ChunkSkyLightSources, proto_chunk::ProtoChunk, section::Sections,
+    heightmap::HeightmapType,
+    level_chunk::{LevelChunk, LevelChunkBlockSetResult},
+    light::ChunkLightData,
+    light::ChunkSkyLightSources,
+    proto_chunk::ProtoChunk,
+    section::Sections,
 };
 use crate::entity::SharedEntity;
 use crate::world::World;
@@ -639,6 +643,21 @@ impl ChunkAccess {
             Self::Full(chunk) => chunk.set_block_state(pos, state, flags),
             Self::Proto(proto_chunk) => proto_chunk.set_block_state(pos, state, flags),
             Self::Unloaded => unreachable!(),
+        }
+    }
+
+    pub(crate) fn set_block_state_if_unchanged(
+        &self,
+        pos: BlockPos,
+        expected_state: BlockStateId,
+        new_state: BlockStateId,
+        flags: UpdateFlags,
+    ) -> Option<LevelChunkBlockSetResult> {
+        match self {
+            Self::Full(chunk) => {
+                chunk.set_block_state_if_unchanged(pos, expected_state, new_state, flags)
+            }
+            Self::Proto(_) | Self::Unloaded => None,
         }
     }
 

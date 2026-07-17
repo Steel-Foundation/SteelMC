@@ -30,7 +30,10 @@ use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource};
 use crate::fluid::is_water_fluid;
 use crate::physics::collide;
 use crate::player::Player;
-use crate::world::{ClipHitResult, LevelAccessor, LevelReader, ScheduledTickAccess, World};
+use crate::world::{
+    ClipHitResult, ConditionalBlockSetResult, LevelAccessor, LevelReader, ScheduledTickAccess,
+    World,
+};
 use steel_registry::vanilla_fluids;
 
 /// Vanilla `BlockBehaviour.canBeReplaced(BlockState, BlockPlaceContext)`.
@@ -67,7 +70,11 @@ pub(crate) fn pickup_waterlogged_block(
         return None;
     }
 
-    world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+    if world.set_block_if_unchanged(pos, state, new_state, UpdateFlags::UPDATE_ALL)
+        != ConditionalBlockSetResult::Changed
+    {
+        return None;
+    }
 
     if !behavior.can_survive(new_state, world, pos) {
         world.destroy_block(pos, true);

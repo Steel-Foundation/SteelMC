@@ -93,6 +93,13 @@ pub struct LevelChunkPromotion {
     pub pending_entities: Vec<SharedEntity>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LevelChunkBlockSetResult {
+    Changed(BlockStateId),
+    Unchanged,
+    Stale(BlockStateId),
+}
+
 impl LevelChunk {
     /// Ticks this chunk, processing scheduled and random block ticks.
     ///
@@ -607,16 +614,39 @@ impl LevelChunk {
     ///
     /// Panics if the behavior registry has not been initialized.
     #[must_use]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "block mutation keeps vanilla side effects in one ordered transaction"
-    )]
     pub fn set_block_state(
         &self,
         pos: BlockPos,
         state: BlockStateId,
         flags: UpdateFlags,
     ) -> Option<BlockStateId> {
+        match self.set_block_state_inner(pos, None, state, flags)? {
+            LevelChunkBlockSetResult::Changed(old_state) => Some(old_state),
+            LevelChunkBlockSetResult::Unchanged | LevelChunkBlockSetResult::Stale(_) => None,
+        }
+    }
+
+    pub(crate) fn set_block_state_if_unchanged(
+        &self,
+        pos: BlockPos,
+        expected_state: BlockStateId,
+        new_state: BlockStateId,
+        flags: UpdateFlags,
+    ) -> Option<LevelChunkBlockSetResult> {
+        self.set_block_state_inner(pos, Some(expected_state), new_state, flags)
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "block mutation keeps vanilla side effects in one ordered transaction"
+    )]
+    fn set_block_state_inner(
+        &self,
+        pos: BlockPos,
+        expected_state: Option<BlockStateId>,
+        state: BlockStateId,
+        flags: UpdateFlags,
+    ) -> Option<LevelChunkBlockSetResult> {
         let y = pos.0.y;
 
         if y < self.min_y || y >= self.min_y + self.height {
@@ -637,6 +667,10 @@ impl LevelChunk {
 
         let (old_state, was_empty, is_empty) = {
             let mut section_guard = section.write();
+            let current_state = section_guard.states.get(local_x, local_y, local_z);
+            if expected_state.is_some_and(|expected| current_state != expected) {
+                return Some(LevelChunkBlockSetResult::Stale(current_state));
+            }
             let was_empty = section_guard.is_empty();
             let old_state = section_guard.set_block_state(local_x, local_y, local_z, state);
             let is_empty = section_guard.is_empty();
@@ -644,7 +678,7 @@ impl LevelChunk {
         };
 
         if old_state == state {
-            return None;
+            return Some(LevelChunkBlockSetResult::Unchanged);
         }
 
         let min_y = self.min_y;
@@ -683,13 +717,9 @@ impl LevelChunk {
         }
 
         // Re-read the block to verify it wasn't changed concurrently
-        let current_block = section
-            .read()
-            .states
-            .get(local_x, local_y, local_z)
-            .get_block();
-        if current_block != new_block {
-            return None;
+        let current_state = section.read().states.get(local_x, local_y, local_z);
+        if current_state.get_block() != new_block {
+            return Some(LevelChunkBlockSetResult::Stale(current_state));
         }
 
         if let Some(level) = self.get_level() {
@@ -759,7 +789,7 @@ impl LevelChunk {
         }
 
         self.mark_unsaved();
-        Some(old_state)
+        Some(LevelChunkBlockSetResult::Changed(old_state))
     }
 
     fn update_light_section_emptiness(&self, y: i32, is_empty: bool) {
@@ -902,7 +932,7 @@ impl LevelChunk {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Barrier, Weak};
 
     use steel_registry::test_support::init_test_registry;
     use steel_utils::ChunkPos;
@@ -914,6 +944,17 @@ mod tests {
         proto_chunk::ProtoChunk,
         section::{ChunkSection, Sections},
     };
+
+    fn test_chunk() -> Arc<LevelChunk> {
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        Arc::new(LevelChunk::from_proto(proto, 0, 16, Weak::new()).chunk)
+    }
 
     #[test]
     fn extract_light_data_uses_chunk_owned_light_and_skylight_flag() {
@@ -978,5 +1019,91 @@ mod tests {
             chunk.get_block_state(BlockPos::new(0, 16, 0)),
             vanilla_blocks::AIR.default_state()
         );
+    }
+
+    #[test]
+    fn conditional_block_set_rejects_a_stale_state() {
+        init_test_registry();
+        init_behaviors();
+        let chunk = test_chunk();
+        let pos = BlockPos::new(0, 0, 0);
+        let stone = vanilla_blocks::STONE.default_state();
+        let dirt = vanilla_blocks::DIRT.default_state();
+        assert_eq!(
+            chunk.set_block_state(pos, stone, UpdateFlags::UPDATE_NONE),
+            Some(vanilla_blocks::AIR.default_state())
+        );
+
+        assert_eq!(
+            chunk.set_block_state_if_unchanged(
+                pos,
+                vanilla_blocks::AIR.default_state(),
+                dirt,
+                UpdateFlags::UPDATE_NONE,
+            ),
+            Some(LevelChunkBlockSetResult::Stale(stone))
+        );
+        assert_eq!(chunk.get_block_state(pos), stone);
+        assert_eq!(
+            chunk.set_block_state_if_unchanged(pos, stone, stone, UpdateFlags::UPDATE_NONE),
+            Some(LevelChunkBlockSetResult::Unchanged)
+        );
+    }
+
+    #[test]
+    fn concurrent_consumers_cannot_both_claim_the_same_block_state() {
+        init_test_registry();
+        init_behaviors();
+        let chunk = test_chunk();
+        let pos = BlockPos::new(0, 0, 0);
+        let stone = vanilla_blocks::STONE.default_state();
+        assert!(
+            chunk
+                .set_block_state(pos, stone, UpdateFlags::UPDATE_NONE)
+                .is_some()
+        );
+
+        let barrier = Arc::new(Barrier::new(3));
+        let first = {
+            let chunk = Arc::clone(&chunk);
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                chunk.set_block_state_if_unchanged(
+                    pos,
+                    stone,
+                    vanilla_blocks::DIRT.default_state(),
+                    UpdateFlags::UPDATE_NONE,
+                )
+            })
+        };
+        let second = {
+            let chunk = Arc::clone(&chunk);
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                chunk.set_block_state_if_unchanged(
+                    pos,
+                    stone,
+                    vanilla_blocks::COBBLESTONE.default_state(),
+                    UpdateFlags::UPDATE_NONE,
+                )
+            })
+        };
+        barrier.wait();
+
+        let Ok(first) = first.join() else {
+            panic!("first conditional block-set worker should finish");
+        };
+        let Ok(second) = second.join() else {
+            panic!("second conditional block-set worker should finish");
+        };
+        let changed = [first, second]
+            .into_iter()
+            .filter(|result| matches!(result, Some(LevelChunkBlockSetResult::Changed(_))))
+            .count();
+
+        assert_eq!(changed, 1);
+        assert_ne!(chunk.get_block_state(pos), stone);
     }
 }

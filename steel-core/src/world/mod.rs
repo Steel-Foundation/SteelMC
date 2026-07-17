@@ -12,6 +12,7 @@ use std::{
 
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use crate::chunk::chunk_ticket_manager::{PersistentChunkTickets, TimedChunkTickets};
+use crate::chunk::level_chunk::LevelChunkBlockSetResult;
 use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
@@ -313,6 +314,20 @@ pub struct WorldGameTickTimings {
     pub chunk_map: ChunkMapGameTickTimings,
     /// Time spent ticking entities.
     pub entity_tick: Duration,
+}
+
+/// Result of replacing a block only when its current state still matches a prior read.
+#[must_use]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConditionalBlockSetResult {
+    /// The expected state was claimed and replaced.
+    Changed,
+    /// The expected state already equals the requested state, so no callbacks ran.
+    Unchanged,
+    /// The current state did not match the caller's expected state.
+    Stale(BlockStateId),
+    /// The position is invalid, the chunk is unavailable, or the update limit was exhausted.
+    Unavailable,
 }
 
 /// Configuration for creating a new world.
@@ -1921,6 +1936,70 @@ impl World {
             return false;
         };
 
+        self.finish_block_set(pos, old_state, block_state, flags, update_limit);
+        true
+    }
+
+    /// Replaces a block only if it still has `expected_state`.
+    ///
+    /// The comparison and palette write are performed under one chunk-section write lock. This
+    /// prevents two consumers of the same observed block state from both succeeding. Block
+    /// callbacks still run after that state claim, so callers must remain in a serialized
+    /// world-mutation phase such as an exclusive packet handler or ordered tick commit.
+    pub fn set_block_if_unchanged(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        expected_state: BlockStateId,
+        new_state: BlockStateId,
+        flags: UpdateFlags,
+    ) -> ConditionalBlockSetResult {
+        self.set_block_if_unchanged_with_limit(pos, expected_state, new_state, flags, 512)
+    }
+
+    /// Conditional variant of [`Self::set_block_with_limit`].
+    pub fn set_block_if_unchanged_with_limit(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        expected_state: BlockStateId,
+        new_state: BlockStateId,
+        flags: UpdateFlags,
+        update_limit: i32,
+    ) -> ConditionalBlockSetResult {
+        if update_limit <= 0 || !self.is_in_valid_bounds(pos) {
+            return ConditionalBlockSetResult::Unavailable;
+        }
+
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        let Some(result) = self
+            .chunk_map
+            .with_full_chunk(chunk_pos, |chunk| {
+                chunk.set_block_state_if_unchanged(pos, expected_state, new_state, flags)
+            })
+            .flatten()
+        else {
+            return ConditionalBlockSetResult::Unavailable;
+        };
+
+        match result {
+            LevelChunkBlockSetResult::Changed(old_state) => {
+                self.finish_block_set(pos, old_state, new_state, flags, update_limit);
+                ConditionalBlockSetResult::Changed
+            }
+            LevelChunkBlockSetResult::Unchanged => ConditionalBlockSetResult::Unchanged,
+            LevelChunkBlockSetResult::Stale(current_state) => {
+                ConditionalBlockSetResult::Stale(current_state)
+            }
+        }
+    }
+
+    fn finish_block_set(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        old_state: BlockStateId,
+        block_state: BlockStateId,
+        flags: UpdateFlags,
+        update_limit: i32,
+    ) {
         // Record the block change for broadcasting to clients
         self.chunk_map.block_changed(pos);
         self.update_navigating_mobs_after_block_collision_change(pos, old_state, block_state);
@@ -1955,7 +2034,6 @@ impl World {
                 );
             }
         }
-        true
     }
 
     fn update_navigating_mobs_after_block_collision_change(
