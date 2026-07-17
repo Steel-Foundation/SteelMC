@@ -13,7 +13,11 @@ use steel_utils::locks::SyncMutex;
 use tokio::sync::Notify;
 use uuid::Uuid;
 
-use crate::player::{Player, connection::NetworkConnection, networking::ScheduledPlayPacket};
+use crate::player::{
+    Player,
+    connection::NetworkConnection,
+    networking::{ScheduledPacketExecution, ScheduledPlayPacket},
+};
 
 use super::Server;
 
@@ -38,8 +42,12 @@ impl PacketProcessor {
     }
 
     pub(super) fn schedule(&self, player: Arc<Player>, packet: ScheduledPlayPacket) {
-        self.queued
-            .submit(player.gameprofile.id, PendingPlayPacket { player, packet });
+        let execution = packet.execution();
+        self.queued.submit(
+            player.gameprofile.id,
+            execution,
+            PendingPlayPacket { player, packet },
+        );
     }
 
     /// Runs the blocking packet worker until the processor is stopped.
@@ -96,6 +104,7 @@ enum PacketPhase {
 
 struct SequencedPacket<T> {
     sequence: u64,
+    execution: ScheduledPacketExecution,
     value: T,
 }
 
@@ -117,8 +126,10 @@ struct PacketQueueState<K, T> {
     phase: PacketPhase,
     lanes: FxHashMap<K, PacketLane<T>>,
     ready: BinaryHeap<Reverse<(u64, K)>>,
+    exclusive: BinaryHeap<Reverse<u64>>,
     next_sequence: u64,
     active: usize,
+    exclusive_active: bool,
     completed: u64,
 }
 
@@ -140,8 +151,10 @@ where
                 phase: PacketPhase::Closed,
                 lanes: FxHashMap::default(),
                 ready: BinaryHeap::new(),
+                exclusive: BinaryHeap::new(),
                 next_sequence: 0,
                 active: 0,
+                exclusive_active: false,
                 completed: 0,
             }),
             work_available: Condvar::new(),
@@ -150,7 +163,7 @@ where
         }
     }
 
-    fn submit(&self, key: K, value: T) {
+    fn submit(&self, key: K, execution: ScheduledPacketExecution, value: T) {
         let mut state = self.state.lock();
         if state.phase == PacketPhase::Stopped {
             return;
@@ -161,9 +174,16 @@ where
 
         let lane = state.lanes.entry(key).or_insert_with(PacketLane::new);
         let became_ready = !lane.active && lane.queued.is_empty();
-        lane.queued.push_back(SequencedPacket { sequence, value });
+        lane.queued.push_back(SequencedPacket {
+            sequence,
+            execution,
+            value,
+        });
         if became_ready {
             state.ready.push(Reverse((sequence, key)));
+        }
+        if execution == ScheduledPacketExecution::Exclusive {
+            state.exclusive.push(Reverse(sequence));
         }
         let should_wake = became_ready && state.phase == PacketPhase::Open;
         drop(state);
@@ -233,6 +253,7 @@ where
         let mut state = self.state.lock();
         state.phase = PacketPhase::Stopped;
         state.ready.clear();
+        state.exclusive.clear();
         state.lanes.retain(|_, lane| {
             lane.queued.clear();
             lane.active
@@ -252,12 +273,13 @@ where
             match state.phase {
                 PacketPhase::Stopped => return None,
                 PacketPhase::Open => {
-                    if let Some((key, value)) = Self::start_next(&mut state) {
+                    if let Some((key, execution, value)) = Self::start_next(&mut state) {
                         state.active += 1;
                         drop(state);
                         return Some(PacketWork {
                             value: Some(value),
                             key,
+                            execution,
                             queue: self,
                         });
                     }
@@ -274,38 +296,93 @@ where
         if state.phase != PacketPhase::Open {
             return None;
         }
-        let (key, value) = Self::start_next(&mut state)?;
+        let (key, execution, value) = Self::start_next(&mut state)?;
         state.active += 1;
         drop(state);
         Some(PacketWork {
             value: Some(value),
             key,
+            execution,
             queue: self,
         })
     }
 
-    fn start_next(state: &mut PacketQueueState<K, T>) -> Option<(K, T)> {
-        let Reverse((ready_sequence, key)) = state.ready.pop()?;
-        let Some(lane) = state.lanes.get_mut(&key) else {
+    fn start_next(state: &mut PacketQueueState<K, T>) -> Option<(K, ScheduledPacketExecution, T)> {
+        if state.exclusive_active {
+            return None;
+        }
+
+        let Reverse((ready_sequence, key)) = *state.ready.peek()?;
+        let Some(lane) = state.lanes.get(&key) else {
             panic!("ready packet lane disappeared before starting");
         };
         assert!(!lane.active, "ready packet lane is already active");
-        let Some(packet) = lane.queued.pop_front() else {
+        let Some(packet) = lane.queued.front() else {
             panic!("ready packet lane has no queued packet");
         };
         assert_eq!(
             ready_sequence, packet.sequence,
             "ready packet sequence does not match lane front"
         );
+
+        let execution = packet.execution;
+        let next_exclusive = state.exclusive.peek().map(|entry| entry.0);
+        match execution {
+            ScheduledPacketExecution::PlayerLocal => {
+                assert_ne!(
+                    next_exclusive,
+                    Some(ready_sequence),
+                    "player-local packet is registered as exclusive"
+                );
+                if next_exclusive.is_some_and(|sequence| sequence < ready_sequence) {
+                    return None;
+                }
+            }
+            ScheduledPacketExecution::Exclusive => {
+                assert_eq!(
+                    next_exclusive,
+                    Some(ready_sequence),
+                    "exclusive packet sequence is missing from the barrier queue"
+                );
+                if state.active != 0 {
+                    return None;
+                }
+            }
+        }
+
+        let popped_ready = state.ready.pop();
+        assert!(
+            popped_ready == Some(Reverse((ready_sequence, key))),
+            "ready packet changed while the queue lock was held"
+        );
+        if execution == ScheduledPacketExecution::Exclusive {
+            assert_eq!(
+                state.exclusive.pop(),
+                Some(Reverse(ready_sequence)),
+                "exclusive packet barrier changed while the queue lock was held"
+            );
+            state.exclusive_active = true;
+        }
+
+        let Some(lane) = state.lanes.get_mut(&key) else {
+            panic!("ready packet lane disappeared before removal");
+        };
+        let Some(packet) = lane.queued.pop_front() else {
+            panic!("ready packet lane has no queued packet during removal");
+        };
         lane.active = true;
-        Some((key, packet.value))
+        Some((key, execution, packet.value))
     }
 
-    fn finish_one(&self, key: K) {
+    fn finish_one(&self, key: K, execution: ScheduledPacketExecution) {
         let mut state = self.state.lock();
         assert!(state.active > 0, "packet work accounting underflow");
         state.active -= 1;
         state.completed = state.completed.wrapping_add(1);
+        if execution == ScheduledPacketExecution::Exclusive {
+            assert!(state.exclusive_active, "exclusive packet is not active");
+            state.exclusive_active = false;
+        }
 
         let next_sequence = {
             let Some(lane) = state.lanes.get_mut(&key) else {
@@ -326,7 +403,11 @@ where
         drop(state);
         self.progress.notify_one();
         if should_wake {
-            self.work_available.notify_one();
+            if execution == ScheduledPacketExecution::Exclusive {
+                self.work_available.notify_all();
+            } else {
+                self.work_available.notify_one();
+            }
         }
         if is_idle {
             self.idle.notify_one();
@@ -340,6 +421,7 @@ where
 {
     value: Option<T>,
     key: K,
+    execution: ScheduledPacketExecution,
     queue: &'a PacketQueue<K, T>,
 }
 
@@ -357,7 +439,7 @@ where
     K: Copy + Eq + Hash + Ord,
 {
     fn drop(&mut self) {
-        self.queue.finish_one(self.key);
+        self.queue.finish_one(self.key, self.execution);
     }
 }
 
@@ -371,14 +453,14 @@ mod tests {
 
     use tokio::time::timeout;
 
-    use super::PacketQueue;
+    use super::{PacketQueue, ScheduledPacketExecution};
 
     #[test]
     fn queued_packets_start_in_submission_order_when_opened() {
         let queue = PacketQueue::new();
-        queue.submit(1, 1);
-        queue.submit(2, 2);
-        queue.submit(1, 3);
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, 1);
+        queue.submit(2, ScheduledPacketExecution::PlayerLocal, 2);
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, 3);
         assert!(queue.try_next().is_none());
 
         queue.open();
@@ -395,9 +477,21 @@ mod tests {
     #[test]
     fn packet_lane_only_allows_one_active_handler() {
         let queue = PacketQueue::new();
-        queue.submit(1, "first player packet");
-        queue.submit(1, "second player packet");
-        queue.submit(2, "other player packet");
+        queue.submit(
+            1,
+            ScheduledPacketExecution::PlayerLocal,
+            "first player packet",
+        );
+        queue.submit(
+            1,
+            ScheduledPacketExecution::PlayerLocal,
+            "second player packet",
+        );
+        queue.submit(
+            2,
+            ScheduledPacketExecution::PlayerLocal,
+            "other player packet",
+        );
         queue.open();
 
         let Some(mut first) = queue.try_next() else {
@@ -419,11 +513,59 @@ mod tests {
     }
 
     #[test]
+    fn exclusive_packet_waits_for_active_work_and_blocks_later_packets() {
+        let queue = PacketQueue::new();
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, "before barrier");
+        queue.submit(2, ScheduledPacketExecution::Exclusive, "barrier");
+        queue.submit(3, ScheduledPacketExecution::PlayerLocal, "after barrier");
+        queue.open();
+
+        let Some(mut before) = queue.try_next() else {
+            panic!("packet before the barrier should start");
+        };
+        assert_eq!(before.take(), Some("before barrier"));
+        assert!(queue.try_next().is_none());
+
+        drop(before);
+        let Some(mut barrier) = queue.try_next() else {
+            panic!("exclusive packet should start after active work finishes");
+        };
+        assert_eq!(barrier.take(), Some("barrier"));
+        assert!(queue.try_next().is_none());
+
+        drop(barrier);
+        let Some(mut after) = queue.try_next() else {
+            panic!("packet after the barrier should start after it finishes");
+        };
+        assert_eq!(after.take(), Some("after barrier"));
+    }
+
+    #[test]
+    fn exclusive_packet_hidden_in_an_active_lane_still_blocks_later_lanes() {
+        let queue = PacketQueue::new();
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, "active");
+        queue.submit(1, ScheduledPacketExecution::Exclusive, "barrier");
+        queue.submit(2, ScheduledPacketExecution::PlayerLocal, "later lane");
+        queue.open();
+
+        let Some(active) = queue.try_next() else {
+            panic!("first packet should start");
+        };
+        assert!(queue.try_next().is_none());
+
+        drop(active);
+        let Some(mut barrier) = queue.try_next() else {
+            panic!("hidden exclusive packet should become runnable");
+        };
+        assert_eq!(barrier.take(), Some("barrier"));
+    }
+
+    #[test]
     fn closed_phase_retains_new_packets_for_the_next_open_phase() {
         let queue = PacketQueue::new();
         queue.open();
         queue.close();
-        queue.submit(1, 1);
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, 1);
 
         assert!(queue.try_next().is_none());
         queue.open();
@@ -437,7 +579,7 @@ mod tests {
     async fn tick_close_waits_for_active_packet_work() {
         let queue = Arc::new(PacketQueue::new());
         queue.open();
-        queue.submit(1, 1);
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, 1);
         let Some(work) = queue.try_next() else {
             panic!("open packet phase should start queued work");
         };
@@ -460,7 +602,7 @@ mod tests {
     async fn overload_progress_waits_for_one_active_packet_to_finish() {
         let queue = Arc::new(PacketQueue::new());
         queue.open();
-        queue.submit(1, 1);
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, 1);
         let Some(work) = queue.try_next() else {
             panic!("open packet phase should start queued work");
         };
@@ -482,9 +624,9 @@ mod tests {
     fn stopped_queue_discards_pending_and_future_work() {
         let queue = PacketQueue::new();
         queue.open();
-        queue.submit(1, 1);
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, 1);
         queue.stop();
-        queue.submit(1, 2);
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, 2);
 
         assert!(queue.try_next().is_none());
     }
@@ -492,8 +634,8 @@ mod tests {
     #[test]
     fn stopping_with_active_work_keeps_completion_accounting_valid() {
         let queue = PacketQueue::new();
-        queue.submit(1, 1);
-        queue.submit(1, 2);
+        queue.submit(1, ScheduledPacketExecution::Exclusive, 1);
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, 2);
         queue.open();
         let Some(work) = queue.try_next() else {
             panic!("open packet phase should start queued work");
@@ -519,12 +661,12 @@ mod tests {
             }
         });
 
-        queue.submit(1, 1);
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, 1);
         assert!(receiver.recv_timeout(Duration::from_millis(10)).is_err());
         queue.open();
         assert_eq!(receiver.recv_timeout(Duration::from_secs(1)), Ok(1));
         queue.close();
-        queue.submit(1, 2);
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, 2);
         assert!(receiver.recv_timeout(Duration::from_millis(10)).is_err());
         queue.stop();
 

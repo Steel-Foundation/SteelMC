@@ -50,8 +50,17 @@ pub enum OutboundPacket {
     Disconnect(EncodedPacket),
 }
 
-/// A decoded play packet whose handler runs in the server's pre-tick packet phase.
+/// A decoded play packet whose handler runs in the server's inter-tick packet phase.
 pub(crate) struct ScheduledPlayPacket(ScheduledPlayPacketKind);
+
+/// Cross-player concurrency permitted for a scheduled packet handler.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ScheduledPacketExecution {
+    /// The handler may overlap handlers for other players, but never its own player lane.
+    PlayerLocal,
+    /// The handler must not overlap any other scheduled gameplay handler.
+    Exclusive,
+}
 
 enum ScheduledPlayPacketKind {
     AcceptTeleportation(SAcceptTeleportation),
@@ -102,6 +111,49 @@ enum DecodedPlayPacket {
 }
 
 impl ScheduledPlayPacket {
+    /// Returns the handler's audited cross-player concurrency class.
+    ///
+    /// This match is intentionally exhaustive so every newly implemented packet requires an
+    /// explicit concurrency decision.
+    pub(crate) const fn execution(&self) -> ScheduledPacketExecution {
+        match &self.0 {
+            // These handlers touch only player-owned locks or the concurrency-safe suggestion
+            // request queue. They do not read or mutate shared gameplay state.
+            ScheduledPlayPacketKind::ChatAck(_)
+            | ScheduledPlayPacketKind::ClientTickEnd
+            | ScheduledPlayPacketKind::PlayerLoaded
+            | ScheduledPlayPacketKind::CommandSuggestion(_)
+            | ScheduledPlayPacketKind::PlayerAbilities(_)
+            | ScheduledPlayPacketKind::SetCarriedItem(_) => ScheduledPacketExecution::PlayerLocal,
+            ScheduledPlayPacketKind::AcceptTeleportation(_)
+            | ScheduledPlayPacketKind::Attack(_)
+            | ScheduledPlayPacketKind::Interact(_)
+            | ScheduledPlayPacketKind::Chat(_)
+            | ScheduledPlayPacketKind::ChatSessionUpdate(_)
+            | ScheduledPlayPacketKind::ClientInformation(_)
+            | ScheduledPlayPacketKind::MovePlayer(_)
+            | ScheduledPlayPacketKind::MoveVehicle(_)
+            | ScheduledPlayPacketKind::ChatCommand(_)
+            | ScheduledPlayPacketKind::ContainerButtonClick(_)
+            | ScheduledPlayPacketKind::ContainerClick(_)
+            | ScheduledPlayPacketKind::ContainerClose(_)
+            | ScheduledPlayPacketKind::ContainerSlotStateChanged(_)
+            | ScheduledPlayPacketKind::SetCreativeModeSlot(_)
+            | ScheduledPlayPacketKind::PlayerInput(_)
+            | ScheduledPlayPacketKind::PlayerCommand(_)
+            | ScheduledPlayPacketKind::UseItemOn(_)
+            | ScheduledPlayPacketKind::UseItem(_)
+            | ScheduledPlayPacketKind::Swing(_)
+            | ScheduledPlayPacketKind::PlayerAction(_)
+            | ScheduledPlayPacketKind::PickItemFromBlock(_)
+            | ScheduledPlayPacketKind::SignUpdate(_)
+            | ScheduledPlayPacketKind::SpectatorAction(_)
+            | ScheduledPlayPacketKind::ClientCommand(_)
+            | ScheduledPlayPacketKind::ChangeGameMode(_)
+            | ScheduledPlayPacketKind::ChangeDifficulty(_) => ScheduledPacketExecution::Exclusive,
+        }
+    }
+
     pub(crate) const fn can_process_before_join(&self) -> bool {
         matches!(
             &self.0,
@@ -842,7 +894,7 @@ mod tests {
     }
 
     #[test]
-    fn client_tick_end_is_scheduled_for_the_pre_tick_phase() {
+    fn client_tick_end_is_scheduled_for_the_inter_tick_phase() {
         let decoded = decode(RawPacket {
             id: play::S_CLIENT_TICK_END,
             payload: Vec::new(),
@@ -854,6 +906,23 @@ mod tests {
                 ScheduledPlayPacketKind::ClientTickEnd
             ))
         ));
+    }
+
+    #[test]
+    fn packet_execution_classification_is_conservative() {
+        let player_local =
+            ScheduledPlayPacket(ScheduledPlayPacketKind::PlayerAbilities(SPlayerAbilities {
+                flags: 0,
+            }));
+        let exclusive = ScheduledPlayPacket(ScheduledPlayPacketKind::MovePlayer(
+            SMovePlayerStatusOnly { packed_byte: 0 }.into(),
+        ));
+
+        assert_eq!(
+            player_local.execution(),
+            ScheduledPacketExecution::PlayerLocal
+        );
+        assert_eq!(exclusive.execution(), ScheduledPacketExecution::Exclusive);
     }
 
     #[test]
