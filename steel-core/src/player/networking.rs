@@ -66,6 +66,7 @@ enum ScheduledPlayPacketKind {
     AcceptTeleportation(SAcceptTeleportation),
     Attack(SAttack),
     Interact(SInteract),
+    CustomPayload(SCustomPayload),
     Chat(Box<SChat>),
     ChatAck(SChatAck),
     ChatSessionUpdate(SChatSessionUpdate),
@@ -101,7 +102,6 @@ enum ImmediatePlayPacket {
     KeepAlive(SKeepAlive),
     PingRequest(SPingRequest),
     ChunkBatchReceived(SChunkBatchReceived),
-    CustomPayload(SCustomPayload),
     Unknown(i32),
 }
 
@@ -128,6 +128,7 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::AcceptTeleportation(_)
             | ScheduledPlayPacketKind::Attack(_)
             | ScheduledPlayPacketKind::Interact(_)
+            | ScheduledPlayPacketKind::CustomPayload(_)
             | ScheduledPlayPacketKind::Chat(_)
             | ScheduledPlayPacketKind::ChatSessionUpdate(_)
             | ScheduledPlayPacketKind::ClientInformation(_)
@@ -160,6 +161,7 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::AcceptTeleportation(_)
                 | ScheduledPlayPacketKind::ClientInformation(_)
                 | ScheduledPlayPacketKind::ClientTickEnd
+                | ScheduledPlayPacketKind::CustomPayload(_)
                 | ScheduledPlayPacketKind::ChatAck(_)
                 | ScheduledPlayPacketKind::ChatSessionUpdate(_)
                 | ScheduledPlayPacketKind::PlayerLoaded
@@ -177,6 +179,9 @@ impl ScheduledPlayPacket {
             }
             ScheduledPlayPacketKind::Attack(packet) => player.handle_attack(packet),
             ScheduledPlayPacketKind::Interact(packet) => player.handle_interact(packet),
+            ScheduledPlayPacketKind::CustomPayload(packet) => {
+                player.handle_custom_payload(packet);
+            }
             ScheduledPlayPacketKind::Chat(packet) => {
                 player.handle_chat(*packet, Arc::clone(&player));
             }
@@ -554,9 +559,9 @@ impl JavaConnection {
             play::S_INTERACT => scheduled(ScheduledPlayPacketKind::Interact(
                 SInteract::read_packet(data)?,
             )),
-            play::S_CUSTOM_PAYLOAD => DecodedPlayPacket::Immediate(
-                ImmediatePlayPacket::CustomPayload(SCustomPayload::read_packet(data)?),
-            ),
+            play::S_CUSTOM_PAYLOAD => scheduled(ScheduledPlayPacketKind::CustomPayload(
+                SCustomPayload::read_packet(data)?,
+            )),
             play::S_CHAT => scheduled(ScheduledPlayPacketKind::Chat(Box::new(SChat::read_packet(
                 data,
             )?))),
@@ -683,9 +688,6 @@ impl JavaConnection {
                     .chunk_sender
                     .lock()
                     .on_chunk_batch_received_by_client(packet.desired_chunks_per_tick);
-            }
-            ImmediatePlayPacket::CustomPayload(packet) => {
-                player.handle_custom_payload(packet);
             }
             ImmediatePlayPacket::Unknown(id) => log::info!("play packet id {id} is not known"),
         }
@@ -878,6 +880,26 @@ mod tests {
         assert!(!JavaConnection::can_process_before_join(
             play::C_CUSTOM_PAYLOAD
         ));
+    }
+
+    #[test]
+    fn custom_payload_defaults_to_global_exclusive_scheduling() {
+        let channel = b"minecraft:brand";
+        let mut payload = vec![channel.len() as u8];
+        payload.extend_from_slice(channel);
+        payload.extend_from_slice(b"steel");
+        let decoded = decode(RawPacket {
+            id: play::S_CUSTOM_PAYLOAD,
+            payload,
+        });
+        let DecodedPlayPacket::Scheduled(
+            packet @ ScheduledPlayPacket(ScheduledPlayPacketKind::CustomPayload(_)),
+        ) = decoded
+        else {
+            panic!("custom payload should use the scheduled packet path");
+        };
+
+        assert_eq!(packet.execution(), ScheduledPacketExecution::Exclusive);
     }
 
     #[test]
