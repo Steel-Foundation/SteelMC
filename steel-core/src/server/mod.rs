@@ -249,6 +249,8 @@ mod tests {
 
     use glam::DVec3;
     use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
+    use steel_protocol::packets::game::CRemovePlayerInfo;
+    use steel_protocol::utils::ConnectionProtocol;
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::{vanilla_dimension_types, vanilla_entities};
     use text_components::TextComponent;
@@ -303,6 +305,39 @@ mod tests {
 
         fn closed(&self) -> bool {
             false
+        }
+    }
+
+    struct RecordingConnection {
+        packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
+        closed: bool,
+    }
+
+    impl NetworkConnection for RecordingConnection {
+        fn compression(&self) -> Option<CompressionInfo> {
+            None
+        }
+
+        fn send_encoded(&self, packet: EncodedPacket) {
+            self.packets.lock().push(packet);
+        }
+
+        fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
+            self.packets.lock().extend(packets);
+        }
+
+        fn disconnect_with_reason(&self, _reason: TextComponent) {}
+
+        fn tick(&self) {}
+
+        fn latency(&self) -> i32 {
+            0
+        }
+
+        fn close(&self) {}
+
+        fn closed(&self) -> bool {
+            self.closed
         }
     }
 
@@ -405,6 +440,16 @@ mod tests {
 
     fn test_player(server: &Arc<Server>, world: Arc<World>, uuid: Uuid) -> Arc<Player> {
         let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection)));
+        test_player_with_connection(server, world, uuid, 1, connection)
+    }
+
+    fn test_player_with_connection(
+        server: &Arc<Server>,
+        world: Arc<World>,
+        uuid: Uuid,
+        entity_id: i32,
+        connection: Arc<PlayerConnection>,
+    ) -> Arc<Player> {
         Arc::new_cyclic(|weak_player| {
             Player::new(
                 GameProfile {
@@ -417,7 +462,7 @@ mod tests {
                 world,
                 Arc::downgrade(server),
                 Arc::clone(&server.config),
-                1,
+                entity_id,
                 weak_player,
                 ClientInformation::default(),
             )
@@ -462,6 +507,145 @@ mod tests {
             assert!(world.get_entity_by_id(player.id()).is_none());
 
             drop(pending);
+            drop(player);
+            drop(server);
+            if let Err(error) = fs::remove_dir_all(&storage_root).await {
+                panic!("test storage should be removed: {error}");
+            }
+        });
+    }
+
+    #[test]
+    fn simultaneous_disconnects_batch_tab_list_removal() {
+        let world = fresh_test_world("batched_disconnects");
+        let runtime = Builder::new_current_thread().enable_all().build();
+        let Ok(runtime) = runtime else {
+            panic!("test runtime should initialize");
+        };
+
+        runtime.block_on(async {
+            let storage_root = test_storage_root("batched-disconnects");
+            let server = test_server(
+                Arc::clone(&world),
+                PermissionSubjectIndex::new(),
+                &storage_root,
+            )
+            .await;
+            let Ok(server) = server else {
+                panic!("test server should initialize");
+            };
+
+            let survivor_packets = Arc::new(SyncMutex::new(Vec::new()));
+            let survivor = test_player_with_connection(
+                &server,
+                Arc::clone(&world),
+                Uuid::from_u128(1),
+                1,
+                Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+                    packets: Arc::clone(&survivor_packets),
+                    closed: false,
+                }))),
+            );
+            let first_uuid = Uuid::from_u128(2);
+            let first = test_player_with_connection(
+                &server,
+                Arc::clone(&world),
+                first_uuid,
+                2,
+                Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+                    packets: Arc::new(SyncMutex::new(Vec::new())),
+                    closed: true,
+                }))),
+            );
+            let second_uuid = Uuid::from_u128(3);
+            let second = test_player_with_connection(
+                &server,
+                Arc::clone(&world),
+                second_uuid,
+                3,
+                Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+                    packets: Arc::new(SyncMutex::new(Vec::new())),
+                    closed: true,
+                }))),
+            );
+
+            for player in [&survivor, &first, &second] {
+                assert!(server.online_players.insert(Arc::clone(player)));
+                assert!(world.add_player(Arc::clone(player), ResetReason::InitialJoin));
+                let _ = player.mark_joined_world();
+            }
+            survivor_packets.lock().clear();
+
+            server.queue_player_disconnect(Arc::clone(&first));
+            server.queue_player_disconnect(Arc::clone(&second));
+            let pending = server.process_player_disconnects();
+
+            assert_eq!(pending.len(), 2);
+            {
+                let packets = survivor_packets.lock();
+                assert_eq!(packets.len(), 1);
+                let expected = EncodedPacket::from_bare(
+                    CRemovePlayerInfo {
+                        uuids: vec![first_uuid, second_uuid],
+                    },
+                    None,
+                    ConnectionProtocol::Play,
+                );
+                let Ok(expected) = expected else {
+                    panic!("expected player removal packet should encode");
+                };
+                assert_eq!(
+                    packets[0].encoded_data.as_slice(),
+                    expected.encoded_data.as_slice()
+                );
+            }
+
+            drop(pending);
+            drop(first);
+            drop(second);
+            drop(survivor);
+            drop(server);
+            if let Err(error) = fs::remove_dir_all(&storage_root).await {
+                panic!("test storage should be removed: {error}");
+            }
+        });
+    }
+
+    #[test]
+    fn online_player_snapshot_includes_player_detached_for_end_credits() {
+        let world = fresh_test_world("end_credits_shutdown_snapshot");
+        let runtime = Builder::new_current_thread().enable_all().build();
+        let Ok(runtime) = runtime else {
+            panic!("test runtime should initialize");
+        };
+
+        runtime.block_on(async {
+            let storage_root = test_storage_root("end-credits-shutdown-snapshot");
+            let server = test_server(
+                Arc::clone(&world),
+                PermissionSubjectIndex::new(),
+                &storage_root,
+            )
+            .await;
+            let Ok(server) = server else {
+                panic!("test server should initialize");
+            };
+            let player = test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+
+            assert!(server.online_players.insert(Arc::clone(&player)));
+            assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+            let _ = player.mark_joined_world();
+
+            player.show_end_credits();
+
+            assert!(world.players.get_by_uuid(&player.gameprofile.id).is_none());
+            assert!(
+                server
+                    .get_players()
+                    .iter()
+                    .any(|online| Arc::ptr_eq(online, &player))
+            );
+
             drop(player);
             drop(server);
             if let Err(error) = fs::remove_dir_all(&storage_root).await {
@@ -2365,6 +2549,10 @@ impl Server {
     }
 
     pub(crate) fn queue_player_disconnect(&self, player: Arc<Player>) {
+        debug_assert!(
+            player.connection.closed(),
+            "only closed players may enter the disconnect queue"
+        );
         self.pending_player_disconnects.send(player);
     }
 
@@ -2374,6 +2562,16 @@ impl Server {
             if let Some(disconnect) = self.process_player_disconnect(player) {
                 pending.push(disconnect);
             }
+        }
+
+        if !pending.is_empty() {
+            // Steel batches the protocol-supported UUID list to avoid quadratic broadcast work
+            // during mass disconnects; Vanilla normally emits one packet per player.
+            let uuids = pending
+                .iter()
+                .map(|disconnect| disconnect.player.gameprofile.id)
+                .collect();
+            self.broadcast_to_online(CRemovePlayerInfo { uuids });
         }
         pending
     }
@@ -2392,7 +2590,6 @@ impl Server {
             return None;
         };
 
-        self.broadcast_to_online(CRemovePlayerInfo::single(uuid));
         let player = self.online_players.remove_player_sync(&player);
 
         let Some(player) = player else {
@@ -3409,6 +3606,9 @@ impl Server {
                 break;
             }
 
+            // Steel includes pre-tick work so operational MSPT reflects actual tick cadence.
+            let tick_start = Instant::now();
+
             {
                 let _span = tracing::trace_span!("scheduled_packet_processing").entered();
                 // TODO: Consider draining world-local packet queues in parallel while preserving
@@ -3416,8 +3616,6 @@ impl Server {
                 self.packet_processor.process_queued(&self);
                 self.start_player_disconnect_saves(&mut player_disconnect_saves);
             }
-
-            let tick_start = Instant::now();
 
             let (tick_count, runs_normally) = {
                 let mut tick_manager = self.tick_rate_manager.write();
