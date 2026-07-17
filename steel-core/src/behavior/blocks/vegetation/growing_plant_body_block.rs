@@ -1,4 +1,4 @@
-use rand::rng;
+use rand::{Rng, rng};
 use std::sync::Arc;
 use steel_registry::{
     REGISTRY,
@@ -12,7 +12,8 @@ use crate::{
         BlockBehavior, BlockPlaceContext,
         block::default_can_be_replaced,
         blocks::vegetation::{
-            growing_plant_can_survive, growing_plant_head_block::GrowingPlantHeadBlock,
+            bonemealable::Bonemealable, growing_plant_can_survive,
+            growing_plant_head_block::GrowingPlantHeadBlock,
         },
     },
     world::{LevelReader, ScheduledTickAccess, World},
@@ -122,6 +123,55 @@ impl BlockBehavior for GrowingPlantBodyBlock {
     }
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
+    }
+}
+impl Bonemealable for GrowingPlantBodyBlock {
+    fn is_valid_bonemeal_target(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> bool {
+        let Some(head_pos) = self.get_head_pos(world, pos, state.get_block()) else {
+            return false;
+        };
+        let growth_pos = head_pos.relative(self.growth_direction);
+        Self::can_grow_into(world.get_block_state(growth_pos))
+            && !world.is_outside_build_height(growth_pos.y())
+    }
+
+    fn is_bonemeal_success(
+        &self,
+        _state: BlockStateId,
+        _world: &Arc<World>,
+        _rng: &mut dyn Rng,
+        _pos: BlockPos,
+    ) -> bool {
+        true
+    }
+
+    fn perform_bonemeal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        rng: &mut dyn Rng,
+        pos: BlockPos,
+    ) {
+        let Some(head_pos) = self.get_head_pos(world, pos, state.get_block()) else {
+            return;
+        };
+        let forward_state = world.get_block_state(head_pos);
+        let Some(behavior) = BLOCK_BEHAVIORS
+            .get_behavior(forward_state.get_block())
+            .as_bonemealable()
+        else {
+            return;
+        };
+        behavior.perform_bonemeal(forward_state, world, rng, head_pos);
+    }
+
+    fn bonemeal_action_type(&self) -> BonemealAction {
+        BonemealAction::Grower
     }
 }
 
