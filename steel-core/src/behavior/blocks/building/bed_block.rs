@@ -290,6 +290,18 @@ impl BlockBehavior for BedBlock {
         Self::velocity_after_fall(context)
     }
 
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
+    fn is_bed(&self) -> bool {
+        true
+    }
+
     fn player_will_destroy(
         &self,
         state: BlockStateId,

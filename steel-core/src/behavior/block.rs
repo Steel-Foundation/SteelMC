@@ -558,7 +558,7 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns whether this block can be occupied by a forced respawn position
     fn is_possible_to_respawn_in_this(&self, state: BlockStateId) -> bool {
-        !state.is_solid() && !state.has_fluid()
+        !state.is_solid() && !state.get_block().config.liquid
     }
 
     /// Returns whether this block can be replaced by the held item during placement.
@@ -778,6 +778,11 @@ pub trait BlockBehavior: Send + Sync {
             }
             PathComputationType::Water => is_water_fluid(state.get_fluid_state().fluid_id),
         }
+    }
+
+    /// Returns whether this behavior implements `BedBlock`
+    fn is_bed(&self) -> bool {
+        false
     }
 
     /// Mirrors vanilla `DoorBlock.isWoodenDoor`.
