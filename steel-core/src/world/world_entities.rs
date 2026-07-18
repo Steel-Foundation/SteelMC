@@ -8,8 +8,8 @@ use tokio::time::Instant;
 
 use crate::{
     entity::{
-        Entity, EntityOwnership, NullEntityCallback, PlayerEntityCallback, RemovalReason,
-        SharedEntity,
+        Entity, EntityOwnership, LivingEntity, NullEntityCallback, PlayerEntityCallback,
+        RemovalReason, SharedEntity,
     },
     player::connection::NetworkConnection,
     player::player_data::PersistentPlayerData,
@@ -109,6 +109,9 @@ impl World {
         };
         let entity_id = player.id();
         let domain = self.domain().to_owned();
+        if player.is_sleeping() {
+            player.stop_sleep_in_bed(true, false);
+        }
         let player_data = PersistentPlayerData::from_player(&player);
 
         self.unride_player_for_removal(&player, true);

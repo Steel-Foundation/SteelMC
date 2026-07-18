@@ -1010,7 +1010,7 @@ impl Player {
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
         self.server().broadcast_to_online(update_packet);
 
-        // TODO: Refresh sleeping-player aggregation once world sleep tracking is implemented.
+        self.get_world().update_sleeping_player_list();
 
         if gamemode == GameType::Creative {
             self.reset_current_impulse_context();

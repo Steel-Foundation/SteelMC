@@ -1748,9 +1748,12 @@ impl World {
     /// Updates vanilla sleeping player counts and broadcasts the sleep status overlay.
     pub fn update_sleeping_player_list(&self) {
         let players = self.sleeping_players();
+        if players.is_empty() {
+            return;
+        }
         let mut sleep_status = self.sleep_status.lock();
         let changed = sleep_status.update(players.iter().map(Arc::as_ref));
-        if changed && !players.is_empty() {
+        if changed {
             self.announce_sleep_status(*sleep_status);
         }
     }
@@ -1803,7 +1806,7 @@ impl World {
         let mut deep_sleepers = 0;
 
         self.players.iter_players(|_, player| {
-            if !player.is_spectator() && player.is_sleeping_long_enough() {
+            if player.is_sleeping_long_enough() {
                 deep_sleepers += 1;
             }
 

@@ -908,7 +908,7 @@ impl Player {
             }
             PlayerCommandAction::LeaveBed => {
                 if self.is_sleeping() {
-                    self.stop_sleeping();
+                    self.stop_sleep_in_bed(false, true);
                 }
             }
             PlayerCommandAction::StartRidingJump
