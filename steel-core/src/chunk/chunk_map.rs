@@ -1623,7 +1623,14 @@ impl ChunkMap {
         {
             let _span = tracing::trace_span!("process_unloads").entered();
             let start = Instant::now();
-            self.process_unloads();
+            let staged_revivals = changes
+                .iter()
+                .filter(|change| {
+                    change.new_level.is_some() && self.unloading_chunks.contains_sync(&change.pos)
+                })
+                .map(|change| change.pos)
+                .collect::<FxHashSet<_>>();
+            self.process_unloads(&staged_revivals);
             timings.process_unloads = start.elapsed();
         }
 
@@ -1765,14 +1772,20 @@ impl ChunkMap {
     /// Processes chunks that are pending unload.
     ///
     /// Iterates over `unloading_chunks`. For each chunk with `strong_count == 1`:
+    /// - If staged to revive at the next lifecycle boundary: keep
     /// - If dirty: spawn save task (keep until saved and clean)
     /// - If not dirty: release region handle and remove
-    #[instrument(level = "trace", skip(self))]
-    pub fn process_unloads(self: &Arc<Self>) {
+    #[instrument(level = "trace", skip(self, staged_revivals))]
+    fn process_unloads(self: &Arc<Self>, staged_revivals: &FxHashSet<ChunkPos>) {
         self.propagate_queued_light_changes();
 
         let light_updates = self.light_updates.lock();
         self.unloading_chunks.retain_sync(|pos, holder| {
+            // Prepared ticket changes publish only at the next lifecycle boundary.
+            if staged_revivals.contains(pos) {
+                return true;
+            }
+
             if light_updates.touches_chunk(*pos) {
                 return true;
             }
@@ -2141,6 +2154,60 @@ mod tests {
         assert!(!world.chunk_map.unloading_chunks.contains_sync(&pos));
 
         world.chunk_map.remove_chunk_ticket(pos, ticket);
+    }
+
+    #[test]
+    fn staged_revival_keeps_map_only_unloading_holder_until_commit() {
+        let world = fresh_test_world("staged_chunk_revival");
+        let pos = ChunkPos::new(-4, 7);
+        let level = ChunkTicketLevel::MAX;
+        let ticket = ChunkTicket::loading(level);
+        let holder = world
+            .chunk_map
+            .update_chunk_level(pos, Some(level), None)
+            .expect("loaded level should create a holder");
+
+        world.chunk_map.update_chunk_level(pos, None, None);
+        let weak_holder = Arc::downgrade(&holder);
+        drop(holder);
+
+        assert_eq!(
+            world
+                .chunk_map
+                .unloading_chunks
+                .read_sync(&pos, |_, unloading| Arc::strong_count(unloading)),
+            Some(1),
+            "the unloading map should own the holder's only strong reference"
+        );
+
+        world.chunk_map.add_chunk_ticket(pos, ticket);
+        let epoch = world.chunk_map.prepare_scheduling_epoch(
+            ChunkTicketManager::new(),
+            ChunkTicketRevision::default(),
+            Vec::new(),
+        );
+
+        assert!(
+            weak_holder.upgrade().is_some(),
+            "a staged revival must reserve the unloading holder until commit"
+        );
+        assert!(world.chunk_map.unloading_chunks.contains_sync(&pos));
+
+        let change = epoch
+            .changes
+            .into_iter()
+            .find(|change| change.pos == pos)
+            .expect("ticket propagation should stage the holder revival");
+        let active = world
+            .chunk_map
+            .update_chunk_level(change.pos, change.new_level, change.new_simulation_level)
+            .expect("revival commit should reactivate the holder");
+        let original = weak_holder
+            .upgrade()
+            .expect("revival commit should preserve the original holder");
+
+        assert!(Arc::ptr_eq(&active, &original));
+        assert!(!world.chunk_map.unloading_chunks.contains_sync(&pos));
     }
 
     #[test]
