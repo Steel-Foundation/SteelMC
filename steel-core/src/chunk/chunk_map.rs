@@ -512,6 +512,17 @@ impl ChunkMap {
         self.with_chunk_at_status(pos, ChunkStatus::Full, f)
     }
 
+    /// Returns whether an active full chunk is currently block ticking.
+    #[must_use]
+    pub(crate) fn is_block_ticking_full_chunk_loaded(&self, pos: ChunkPos) -> bool {
+        self.chunks
+            .read_sync(&pos, |_, holder| {
+                is_block_ticking(holder.simulation_level())
+                    && holder.try_chunk(ChunkStatus::Full).is_some()
+            })
+            .unwrap_or(false)
+    }
+
     /// Executes a function with access to a chunk at the requested generation status or later.
     /// Returns `None` if the chunk is not loaded or has not reached the requested status.
     pub(crate) fn with_chunk_at_status<F, R>(

@@ -732,11 +732,6 @@ impl LevelChunk {
                 );
             }
 
-            // Update POI storage when block states change
-            level
-                .poi_storage
-                .lock()
-                .on_block_state_change(pos, old_state, state);
             let block_changed = old_block != new_block;
             let moved_by_piston = flags.contains(UpdateFlags::UPDATE_MOVE_BY_PISTON);
             let side_effects = !flags.contains(UpdateFlags::UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS);
@@ -772,7 +767,13 @@ impl LevelChunk {
             }
 
             // Block entity creation after on_place
-            if new_behavior.has_block_entity() {
+            let requested_block_remains = section
+                .read()
+                .states
+                .get(local_x, local_y, local_z)
+                .get_block()
+                == new_block;
+            if new_behavior.has_block_entity() && requested_block_remains {
                 if let Some(existing) = self.get_block_entity(pos) {
                     // Update existing block entity's state
                     existing.lock().set_block_state(state);

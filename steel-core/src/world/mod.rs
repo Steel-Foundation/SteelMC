@@ -1906,8 +1906,8 @@ impl World {
 
     /// Sets a block at the given position with a custom update limit.
     ///
-    /// The update limit prevents infinite recursion when shape updates trigger
-    /// further block changes. Each recursive call decrements the limit.
+    /// The update limit bounds recursive shape propagation. The block mutation
+    /// itself still occurs when the limit is zero or negative, matching vanilla.
     ///
     /// Returns `true` if the block was successfully set, `false` otherwise.
     pub fn set_block_with_limit(
@@ -1917,10 +1917,6 @@ impl World {
         flags: UpdateFlags,
         update_limit: i32,
     ) -> bool {
-        if update_limit <= 0 {
-            return false;
-        }
-
         if !self.is_in_valid_bounds(pos) {
             return false;
         }
@@ -1965,7 +1961,7 @@ impl World {
         flags: UpdateFlags,
         update_limit: i32,
     ) -> ConditionalBlockSetResult {
-        if update_limit <= 0 || !self.is_in_valid_bounds(pos) {
+        if !self.is_in_valid_bounds(pos) {
             return ConditionalBlockSetResult::Unavailable;
         }
 
@@ -2000,11 +1996,19 @@ impl World {
         flags: UpdateFlags,
         update_limit: i32,
     ) {
-        // Record the block change for broadcasting to clients
-        self.chunk_map.block_changed(pos);
-        self.update_navigating_mobs_after_block_collision_change(pos, old_state, block_state);
+        let new_state = self.get_block_state(pos);
+        if new_state != block_state {
+            return;
+        }
 
-        // Neighbor updates (when UPDATE_NEIGHBORS is set)
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        if flags.contains(UpdateFlags::UPDATE_CLIENTS)
+            && self.chunk_map.is_block_ticking_full_chunk_loaded(chunk_pos)
+        {
+            self.chunk_map.block_changed(pos);
+            self.update_navigating_mobs_after_block_collision_change(pos, old_state, block_state);
+        }
+
         if flags.contains(UpdateFlags::UPDATE_NEIGHBORS) {
             self.update_neighbors_at(pos, old_state.get_block());
             let behavior = BLOCK_BEHAVIORS.get_behavior(block_state.get_block());
@@ -2013,27 +2017,27 @@ impl World {
             }
         }
 
-        // Shape updates (unless UPDATE_KNOWN_SHAPE is set)
         if !flags.contains(UpdateFlags::UPDATE_KNOWN_SHAPE) && update_limit > 0 {
-            // Clear UPDATE_NEIGHBORS and UPDATE_SUPPRESS_DROPS for propagation
             let neighbor_flags =
                 flags & !(UpdateFlags::UPDATE_NEIGHBORS | UpdateFlags::UPDATE_SUPPRESS_DROPS);
 
-            // Notify all 6 neighbors about our shape change
             for direction in Direction::UPDATE_SHAPE_ORDER {
                 let neighbor_pos = pos.relative(direction);
 
-                // Tell the neighbor that we (at pos) changed
                 self.neighbor_shape_changed(
-                    direction.opposite(), // Direction from us to neighbor
-                    neighbor_pos,         // Neighbor's position
-                    pos,                  // Our position (the one that changed)
-                    block_state,          // Our new state
+                    direction.opposite(),
+                    neighbor_pos,
+                    pos,
+                    block_state,
                     neighbor_flags,
                     update_limit - 1,
                 );
             }
         }
+
+        self.poi_storage
+            .lock()
+            .on_block_state_change(pos, old_state, new_state);
     }
 
     fn update_navigating_mobs_after_block_collision_change(
@@ -2225,9 +2229,18 @@ impl World {
         }
 
         if new_state.is_air() {
-            self.destroy_block(pos, !flags.contains(UpdateFlags::UPDATE_SUPPRESS_DROPS));
+            self.destroy_block_with_limit(
+                pos,
+                !flags.contains(UpdateFlags::UPDATE_SUPPRESS_DROPS),
+                recursion_left,
+            );
         } else {
-            self.set_block_with_limit(pos, new_state, flags, recursion_left);
+            self.set_block_with_limit(
+                pos,
+                new_state,
+                flags & !UpdateFlags::UPDATE_SUPPRESS_DROPS,
+                recursion_left,
+            );
         }
     }
 
@@ -5227,9 +5240,11 @@ mod tests {
         sound_events, test_support::init_test_registry, vanilla_entities, vanilla_fluids,
         vanilla_items,
     };
+    use tokio::runtime::Builder;
     use uuid::Uuid;
 
     use crate::behavior::init_behaviors;
+    use crate::chunk::chunk_ticket_manager::ChunkTicket;
     use crate::entity::{EntityBase, entities::PigEntity};
     use crate::test_support::test_world;
 
@@ -5445,6 +5460,108 @@ mod tests {
             world.get_block_state(BlockPos::new(BlockPos::MAX_HORIZONTAL_COORDINATE, 0, 0)),
             vanilla_blocks::VOID_AIR.default_state()
         );
+    }
+
+    #[test]
+    fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
+        init_test_registry();
+        init_behaviors();
+
+        let world = Arc::clone(test_world());
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("set-block test runtime should start");
+        let pos = BlockPos::new(1_504, 64, 1_504);
+        let chunk_pos = ChunkPos::from_block_pos(pos);
+        let simulation_ticket = ChunkTicket::simulated_full_chunks(1);
+        world
+            .chunk_map
+            .chunk_tickets
+            .lock()
+            .add_ticket(chunk_pos, simulation_ticket);
+
+        let completed = runtime.block_on(world.chunk_map.with_full_chunks_in_radius(
+            chunk_pos,
+            0,
+            || {
+                let holder = world
+                    .chunk_map
+                    .chunks
+                    .read_sync(&chunk_pos, |_, holder| Arc::clone(holder))
+                    .expect("loaded test chunk should have a holder");
+                assert!(
+                    world
+                        .chunk_map
+                        .is_block_ticking_full_chunk_loaded(chunk_pos)
+                );
+
+                let revision = holder.packet_content_revision();
+                assert!(world.set_block_with_limit(
+                    pos,
+                    vanilla_blocks::DIRT.default_state(),
+                    UpdateFlags::UPDATE_NONE,
+                    0,
+                ));
+                assert_eq!(
+                    world.get_block_state(pos),
+                    vanilla_blocks::DIRT.default_state()
+                );
+                assert_eq!(holder.packet_content_revision(), revision);
+
+                assert!(world.set_block(
+                    pos,
+                    vanilla_blocks::STONE.default_state(),
+                    UpdateFlags::UPDATE_NONE,
+                ));
+                assert_eq!(holder.packet_content_revision(), revision);
+
+                assert!(world.set_block(
+                    pos,
+                    vanilla_blocks::DIRT.default_state(),
+                    UpdateFlags::UPDATE_CLIENTS,
+                ));
+                assert_eq!(holder.packet_content_revision(), revision + 1);
+
+                assert!(world.set_block(
+                    pos,
+                    vanilla_blocks::STONE.default_state(),
+                    UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_INVISIBLE,
+                ));
+                assert_eq!(holder.packet_content_revision(), revision + 2);
+
+                let unsupported_fire_pos = pos.offset(2, 0, 0);
+                assert!(world.get_block_state(unsupported_fire_pos).is_air());
+                assert!(world.set_block(
+                    unsupported_fire_pos,
+                    vanilla_blocks::FIRE.default_state(),
+                    UpdateFlags::UPDATE_CLIENTS,
+                ));
+                assert!(world.get_block_state(unsupported_fire_pos).is_air());
+                assert_eq!(holder.packet_content_revision(), revision + 3);
+
+                world
+                    .chunk_map
+                    .chunk_tickets
+                    .lock()
+                    .remove_ticket(chunk_pos, simulation_ticket);
+                world.chunk_map.tick_scheduling();
+                assert!(
+                    !world
+                        .chunk_map
+                        .is_block_ticking_full_chunk_loaded(chunk_pos)
+                );
+                let non_ticking_revision = holder.packet_content_revision();
+
+                assert!(world.set_block(
+                    pos,
+                    vanilla_blocks::DIRT.default_state(),
+                    UpdateFlags::UPDATE_CLIENTS,
+                ));
+                assert_eq!(holder.packet_content_revision(), non_ticking_revision);
+            },
+        ));
+        assert!(completed.is_some(), "set-block test chunk should load");
     }
 
     #[test]
