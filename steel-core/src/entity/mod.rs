@@ -7560,7 +7560,7 @@ pub trait LivingEntity: Entity {
             });
         };
         let block_state = world.get_block_state(bed_position);
-        if block_state.get_block().has_tag(&BlockTag::BEDS) {
+        if block_state.is_bed() {
             world.set_block(
                 bed_position,
                 block_state.set_value(&BlockStateProperties::OCCUPIED, true),
@@ -7585,7 +7585,7 @@ pub trait LivingEntity: Entity {
             && let Some(world) = self.level()
         {
             let state = world.get_block_state(bed_position);
-            if state.get_block().has_tag(&BlockTag::BEDS) {
+            if state.is_bed() {
                 let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
                 world.set_block(
                     bed_position,

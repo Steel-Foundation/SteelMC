@@ -5,7 +5,6 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt, properties::BedPart, properties::BlockStateProperties,
 };
-use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 use text_components::TextComponent;
@@ -17,7 +16,7 @@ use crate::{
         EntityFallDamage, EntityFallOnContext, EntityLandingContext, InteractionResult,
         InventoryAccess, PlacementSource,
     },
-    entity::{Entity, dismount_helper},
+    entity::{Entity, ai::path::PathComputationType, dismount_helper},
     player::Player,
     world::{ScheduledTickAccess, World},
 };
@@ -118,11 +117,7 @@ impl BedBlock {
             right
         };
 
-        if world
-            .get_block_state(block_pos.below())
-            .get_block()
-            .has_tag(&BlockTag::BEDS)
-        {
+        if world.get_block_state(block_pos.below()).is_bed() {
             Self::find_bunk_bed_standup_position(world, entity, forward_dir, side, block_pos)
         } else {
             let offsets = Self::bed_standup_offsets(forward_dir, side);
@@ -255,7 +250,9 @@ impl BlockBehavior for BedBlock {
         let facing = context.horizontal_direction();
         let head_pos = facing.relative(context.place_pos());
         let head_state = context.world.get_block_state(head_pos);
-        if !head_state.can_be_replaced(context) || !context.world.is_in_valid_bounds(head_pos) {
+        if !head_state.can_be_replaced(context)
+            || !context.world.is_block_within_world_border(head_pos)
+        {
             return None;
         }
 
@@ -395,10 +392,7 @@ impl BlockBehavior for BedBlock {
         };
 
         if world.dimension_type.bed_rule.explodes {
-            // TODO: Mirror vanilla BedBlock explosion exactly once
-            // `World::explode` exists: display the bed-rule error message,
-            // remove the head and foot halves, then create a bad-respawn-point
-            // block explosion at the bed center.
+            // TODO: When WOrld::explode foundation exists display the bedrule error remove both halves and create the bad respawn point explosion
             return InteractionResult::SuccessServer;
         }
 
