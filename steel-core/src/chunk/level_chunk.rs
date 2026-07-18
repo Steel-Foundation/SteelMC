@@ -964,7 +964,10 @@ impl LevelChunk {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Barrier, Weak};
+    use std::{
+        sync::{Arc, Barrier, Weak},
+        thread,
+    };
 
     use steel_registry::test_support::init_test_registry;
     use steel_utils::ChunkPos;
@@ -1099,7 +1102,7 @@ mod tests {
         let first = {
             let chunk = Arc::clone(&chunk);
             let barrier = Arc::clone(&barrier);
-            std::thread::spawn(move || {
+            thread::spawn(move || {
                 barrier.wait();
                 chunk.set_block_state_if_unchanged(
                     pos,
@@ -1112,7 +1115,7 @@ mod tests {
         let second = {
             let chunk = Arc::clone(&chunk);
             let barrier = Arc::clone(&barrier);
-            std::thread::spawn(move || {
+            thread::spawn(move || {
                 barrier.wait();
                 chunk.set_block_state_if_unchanged(
                     pos,

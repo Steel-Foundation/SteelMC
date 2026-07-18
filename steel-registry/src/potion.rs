@@ -119,7 +119,7 @@ mod tests {
             registry
                 .iter_tag(&tag)
                 .next()
-                .is_some_and(|entry| std::ptr::eq(entry, &SECOND_DUPLICATE))
+                .is_some_and(|entry| std::ptr::eq(entry, &raw const SECOND_DUPLICATE))
         );
     }
 }
