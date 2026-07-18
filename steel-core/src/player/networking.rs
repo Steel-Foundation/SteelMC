@@ -564,9 +564,10 @@ impl JavaConnection {
             return Ok(());
         }
 
+        let payload_bytes = packet.payload.len();
         match Self::decode_play_packet(packet)? {
             DecodedPlayPacket::Scheduled(packet) => {
-                server.schedule_play_packet(player, packet);
+                server.schedule_play_packet(player, packet, payload_bytes);
             }
             DecodedPlayPacket::Immediate(packet) => {
                 self.handle_immediate_packet(packet, &player);

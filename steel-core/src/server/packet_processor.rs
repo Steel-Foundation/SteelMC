@@ -8,8 +8,8 @@ use std::{
 };
 
 use parking_lot::Condvar;
-use rustc_hash::FxHashMap;
-use steel_utils::locks::SyncMutex;
+use rustc_hash::{FxHashMap, FxHashSet};
+use steel_utils::{locks::SyncMutex, translations};
 use tokio::sync::Notify;
 use tokio::task::yield_now;
 use uuid::Uuid;
@@ -21,6 +21,14 @@ use crate::player::{
 };
 
 use super::Server;
+
+// Count limits bound tick-drain work; byte limits bound retained decoded payloads.
+const MAX_OUTSTANDING_PACKETS_PER_PLAYER: usize = 64;
+const MAX_OUTSTANDING_BYTES_PER_PLAYER: usize = 16 * 1024 * 1024;
+const MAX_OUTSTANDING_PACKETS_GLOBAL: usize = 2_048;
+const MAX_OUTSTANDING_BYTES_GLOBAL: usize = 128 * 1024 * 1024;
+// Approximate fixed queue, lane, and scheduling-index storage per admitted packet.
+const PACKET_ADMISSION_OVERHEAD: usize = 256;
 
 struct PendingPlayPacket {
     player: Arc<Player>,
@@ -42,13 +50,43 @@ impl PacketProcessor {
         }
     }
 
-    pub(super) fn schedule(&self, player: Arc<Player>, packet: ScheduledPlayPacket) {
+    pub(super) fn schedule(
+        &self,
+        player: Arc<Player>,
+        packet: ScheduledPlayPacket,
+        payload_bytes: usize,
+    ) {
+        let player_id = player.gameprofile.id;
+        if player.connection.closed() {
+            self.queued.discard_player(player_id);
+            return;
+        }
+
         let execution = packet.execution();
-        self.queued.submit(
-            player.gameprofile.id,
+        let admission_bytes = payload_bytes.saturating_add(PACKET_ADMISSION_OVERHEAD);
+        let result = self.queued.try_submit(
+            player_id,
             execution,
-            PendingPlayPacket { player, packet },
+            admission_bytes,
+            PendingPlayPacket {
+                player: Arc::clone(&player),
+                packet,
+            },
         );
+        let Err(error) = result else {
+            return;
+        };
+        if error == PacketAdmissionError::Stopped {
+            return;
+        }
+
+        tracing::warn!(
+            player_id = %player_id,
+            ?error,
+            "Disconnecting player after inbound packet admission limit"
+        );
+        player.disconnect(translations::DISCONNECT_EXCEEDED_PACKET_RATE.msg());
+        self.queued.discard_player(player_id);
     }
 
     /// Runs the blocking packet worker until the processor is stopped.
@@ -107,12 +145,15 @@ enum PacketPhase {
 struct SequencedPacket<T> {
     sequence: u64,
     execution: ScheduledPacketExecution,
+    admission_bytes: usize,
     value: T,
 }
 
 struct PacketLane<T> {
     queued: VecDeque<SequencedPacket<T>>,
     active: bool,
+    outstanding_packets: usize,
+    outstanding_bytes: usize,
 }
 
 impl<T> PacketLane<T> {
@@ -120,8 +161,36 @@ impl<T> PacketLane<T> {
         Self {
             queued: VecDeque::new(),
             active: false,
+            outstanding_packets: 0,
+            outstanding_bytes: 0,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct PacketAdmissionLimits {
+    per_player_packets: usize,
+    per_player_bytes: usize,
+    global_packets: usize,
+    global_bytes: usize,
+}
+
+impl PacketAdmissionLimits {
+    const PRODUCTION: Self = Self {
+        per_player_packets: MAX_OUTSTANDING_PACKETS_PER_PLAYER,
+        per_player_bytes: MAX_OUTSTANDING_BYTES_PER_PLAYER,
+        global_packets: MAX_OUTSTANDING_PACKETS_GLOBAL,
+        global_bytes: MAX_OUTSTANDING_BYTES_GLOBAL,
+    };
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PacketAdmissionError {
+    Stopped,
+    PlayerPacketLimit,
+    PlayerByteLimit,
+    GlobalPacketLimit,
+    GlobalByteLimit,
 }
 
 struct PacketQueueState<K, T> {
@@ -134,14 +203,17 @@ struct PacketQueueState<K, T> {
     exclusive: BinaryHeap<Reverse<u64>>,
     next_sequence: u64,
     active: usize,
+    outstanding_packets: usize,
+    outstanding_bytes: usize,
     serialized_active: bool,
     exclusive_active: bool,
     completed: u64,
 }
 
-/// Ordered multi-producer lanes with a finite snapshot drain at each packet/tick boundary.
+/// Bounded ordered multi-producer lanes with a finite snapshot drain at each tick boundary.
 struct PacketQueue<K, T> {
     state: SyncMutex<PacketQueueState<K, T>>,
+    limits: PacketAdmissionLimits,
     work_available: Condvar,
     idle: Notify,
     progress: Notify,
@@ -152,6 +224,10 @@ where
     K: Copy + Eq + Hash + Ord,
 {
     fn new() -> Self {
+        Self::with_limits(PacketAdmissionLimits::PRODUCTION)
+    }
+
+    fn with_limits(limits: PacketAdmissionLimits) -> Self {
         Self {
             state: SyncMutex::new(PacketQueueState {
                 phase: PacketPhase::Closed,
@@ -163,30 +239,68 @@ where
                 exclusive: BinaryHeap::new(),
                 next_sequence: 0,
                 active: 0,
+                outstanding_packets: 0,
+                outstanding_bytes: 0,
                 serialized_active: false,
                 exclusive_active: false,
                 completed: 0,
             }),
+            limits,
             work_available: Condvar::new(),
             idle: Notify::new(),
             progress: Notify::new(),
         }
     }
 
-    fn submit(&self, key: K, execution: ScheduledPacketExecution, value: T) {
+    fn try_submit(
+        &self,
+        key: K,
+        execution: ScheduledPacketExecution,
+        admission_bytes: usize,
+        value: T,
+    ) -> Result<(), PacketAdmissionError> {
         let mut state = self.state.lock();
         if state.phase == PacketPhase::Stopped {
-            return;
+            return Err(PacketAdmissionError::Stopped);
         }
+
+        let (player_packets, player_bytes) = state
+            .lanes
+            .get(&key)
+            .map(|lane| (lane.outstanding_packets, lane.outstanding_bytes))
+            .unwrap_or_default();
+        if player_packets >= self.limits.per_player_packets {
+            return Err(PacketAdmissionError::PlayerPacketLimit);
+        }
+        if admission_bytes > self.limits.per_player_bytes.saturating_sub(player_bytes) {
+            return Err(PacketAdmissionError::PlayerByteLimit);
+        }
+        if state.outstanding_packets >= self.limits.global_packets {
+            return Err(PacketAdmissionError::GlobalPacketLimit);
+        }
+        if admission_bytes
+            > self
+                .limits
+                .global_bytes
+                .saturating_sub(state.outstanding_bytes)
+        {
+            return Err(PacketAdmissionError::GlobalByteLimit);
+        }
+
         let sequence = state.next_sequence;
         assert!(sequence != u64::MAX, "packet submission sequence exhausted");
         state.next_sequence = sequence + 1;
+        state.outstanding_packets += 1;
+        state.outstanding_bytes += admission_bytes;
 
         let lane = state.lanes.entry(key).or_insert_with(PacketLane::new);
         let became_ready = !lane.active && lane.queued.is_empty();
+        lane.outstanding_packets += 1;
+        lane.outstanding_bytes += admission_bytes;
         lane.queued.push_back(SequencedPacket {
             sequence,
             execution,
+            admission_bytes,
             value,
         });
         if became_ready {
@@ -202,6 +316,16 @@ where
         if should_wake {
             self.work_available.notify_one();
         }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn submit(&self, key: K, execution: ScheduledPacketExecution, value: T) {
+        let result = self.try_submit(key, execution, 1, value);
+        assert!(
+            matches!(result, Ok(()) | Err(PacketAdmissionError::Stopped)),
+            "test packet exceeded admission limits: {result:?}"
+        );
     }
 
     fn open(&self) {
@@ -300,6 +424,74 @@ where
         state.active != 0 || state.lanes.values().any(|lane| !lane.queued.is_empty())
     }
 
+    fn discard_player(&self, key: K) {
+        let mut state = self.state.lock();
+        let Some(lane) = state.lanes.get_mut(&key) else {
+            return;
+        };
+        let discarded_packets = lane.queued.len();
+        if discarded_packets == 0 {
+            return;
+        }
+        let discarded_bytes = lane
+            .queued
+            .iter()
+            .map(|packet| packet.admission_bytes)
+            .sum::<usize>();
+        let discarded_sequences = lane
+            .queued
+            .iter()
+            .map(|packet| packet.sequence)
+            .collect::<FxHashSet<_>>();
+        lane.queued.clear();
+        assert!(
+            lane.outstanding_packets >= discarded_packets,
+            "player packet admission accounting underflow while discarding"
+        );
+        lane.outstanding_packets -= discarded_packets;
+        assert!(
+            lane.outstanding_bytes >= discarded_bytes,
+            "player byte admission accounting underflow while discarding"
+        );
+        lane.outstanding_bytes -= discarded_bytes;
+        let remove_lane = !lane.active;
+
+        assert!(
+            state.outstanding_packets >= discarded_packets,
+            "global packet admission accounting underflow while discarding"
+        );
+        state.outstanding_packets -= discarded_packets;
+        assert!(
+            state.outstanding_bytes >= discarded_bytes,
+            "global byte admission accounting underflow while discarding"
+        );
+        state.outstanding_bytes -= discarded_bytes;
+        state.player_local_ready.retain(|entry| entry.0.1 != key);
+        state.serialized_ready.retain(|entry| entry.0.1 != key);
+        state.exclusive_ready.retain(|entry| entry.0.1 != key);
+        state
+            .serialized
+            .retain(|entry| !discarded_sequences.contains(&entry.0));
+        state
+            .exclusive
+            .retain(|entry| !discarded_sequences.contains(&entry.0));
+        if remove_lane {
+            state.lanes.remove(&key);
+        }
+
+        let is_idle = state.active == 0;
+        let should_wake = matches!(state.phase, PacketPhase::Open | PacketPhase::Draining(_))
+            && Self::next_ready_sequence(&state).is_some();
+        drop(state);
+        self.progress.notify_one();
+        if should_wake {
+            self.work_available.notify_all();
+        }
+        if is_idle {
+            self.idle.notify_one();
+        }
+    }
+
     fn stop(&self) {
         let mut state = self.state.lock();
         state.phase = PacketPhase::Stopped;
@@ -308,10 +500,40 @@ where
         state.exclusive_ready.clear();
         state.serialized.clear();
         state.exclusive.clear();
+        let mut discarded_packets = 0;
+        let mut discarded_bytes = 0;
         state.lanes.retain(|_, lane| {
+            let lane_discarded_packets = lane.queued.len();
+            let lane_discarded_bytes = lane
+                .queued
+                .iter()
+                .map(|packet| packet.admission_bytes)
+                .sum::<usize>();
             lane.queued.clear();
+            assert!(
+                lane.outstanding_packets >= lane_discarded_packets,
+                "player packet admission accounting underflow while stopping"
+            );
+            lane.outstanding_packets -= lane_discarded_packets;
+            assert!(
+                lane.outstanding_bytes >= lane_discarded_bytes,
+                "player byte admission accounting underflow while stopping"
+            );
+            lane.outstanding_bytes -= lane_discarded_bytes;
+            discarded_packets += lane_discarded_packets;
+            discarded_bytes += lane_discarded_bytes;
             lane.active
         });
+        assert!(
+            state.outstanding_packets >= discarded_packets,
+            "global packet admission accounting underflow while stopping"
+        );
+        state.outstanding_packets -= discarded_packets;
+        assert!(
+            state.outstanding_bytes >= discarded_bytes,
+            "global byte admission accounting underflow while stopping"
+        );
+        state.outstanding_bytes -= discarded_bytes;
         let is_idle = state.active == 0;
         drop(state);
         self.work_available.notify_all();
@@ -327,19 +549,22 @@ where
             match state.phase {
                 PacketPhase::Stopped => return None,
                 PacketPhase::Open => {
-                    if let Some((key, execution, value)) = Self::start_next(&mut state, None) {
+                    if let Some((key, execution, admission_bytes, value)) =
+                        Self::start_next(&mut state, None)
+                    {
                         state.active += 1;
                         drop(state);
                         return Some(PacketWork {
                             value: Some(value),
                             key,
                             execution,
+                            admission_bytes,
                             queue: self,
                         });
                     }
                 }
                 PacketPhase::Draining(before_sequence) => {
-                    if let Some((key, execution, value)) =
+                    if let Some((key, execution, admission_bytes, value)) =
                         Self::start_next(&mut state, Some(before_sequence))
                     {
                         state.active += 1;
@@ -348,6 +573,7 @@ where
                             value: Some(value),
                             key,
                             execution,
+                            admission_bytes,
                             queue: self,
                         });
                     }
@@ -366,13 +592,15 @@ where
             PacketPhase::Draining(before_sequence) => Some(before_sequence),
             PacketPhase::Closed | PacketPhase::Stopped => return None,
         };
-        let (key, execution, value) = Self::start_next(&mut state, before_sequence)?;
+        let (key, execution, admission_bytes, value) =
+            Self::start_next(&mut state, before_sequence)?;
         state.active += 1;
         drop(state);
         Some(PacketWork {
             value: Some(value),
             key,
             execution,
+            admission_bytes,
             queue: self,
         })
     }
@@ -380,7 +608,7 @@ where
     fn start_next(
         state: &mut PacketQueueState<K, T>,
         before_sequence: Option<u64>,
-    ) -> Option<(K, ScheduledPacketExecution, T)> {
+    ) -> Option<(K, ScheduledPacketExecution, usize, T)> {
         let (ready_sequence, key, execution) = Self::select_next(state, before_sequence)?;
         let Some(lane) = state.lanes.get(&key) else {
             panic!("ready packet lane disappeared before starting");
@@ -442,7 +670,7 @@ where
             panic!("ready packet lane has no queued packet during removal");
         };
         lane.active = true;
-        Some((key, execution, packet.value))
+        Some((key, execution, packet.admission_bytes, packet.value))
     }
 
     fn select_next(
@@ -500,10 +728,20 @@ where
         selected
     }
 
-    fn finish_one(&self, key: K, execution: ScheduledPacketExecution) {
+    fn finish_one(&self, key: K, execution: ScheduledPacketExecution, admission_bytes: usize) {
         let mut state = self.state.lock();
         assert!(state.active > 0, "packet work accounting underflow");
         state.active -= 1;
+        assert!(
+            state.outstanding_packets > 0,
+            "global packet admission accounting underflow on completion"
+        );
+        state.outstanding_packets -= 1;
+        assert!(
+            state.outstanding_bytes >= admission_bytes,
+            "global byte admission accounting underflow on completion"
+        );
+        state.outstanding_bytes -= admission_bytes;
         state.completed = state.completed.wrapping_add(1);
         match execution {
             ScheduledPacketExecution::PlayerLocal => {}
@@ -523,6 +761,16 @@ where
             };
             assert!(lane.active, "completed packet lane is not active");
             lane.active = false;
+            assert!(
+                lane.outstanding_packets > 0,
+                "player packet admission accounting underflow on completion"
+            );
+            lane.outstanding_packets -= 1;
+            assert!(
+                lane.outstanding_bytes >= admission_bytes,
+                "player byte admission accounting underflow on completion"
+            );
+            lane.outstanding_bytes -= admission_bytes;
             lane.queued.front().map(|packet| packet.sequence)
         };
         if let Some(sequence) = next_sequence {
@@ -535,6 +783,11 @@ where
             let next_execution = packet.execution;
             Self::mark_ready(&mut state, sequence, key, next_execution);
         } else {
+            let Some(lane) = state.lanes.get(&key) else {
+                panic!("completed packet lane disappeared before removal");
+            };
+            assert_eq!(lane.outstanding_packets, 0);
+            assert_eq!(lane.outstanding_bytes, 0);
             state.lanes.remove(&key);
         }
 
@@ -591,6 +844,7 @@ where
     value: Option<T>,
     key: K,
     execution: ScheduledPacketExecution,
+    admission_bytes: usize,
     queue: &'a PacketQueue<K, T>,
 }
 
@@ -608,7 +862,8 @@ where
     K: Copy + Eq + Hash + Ord,
 {
     fn drop(&mut self) {
-        self.queue.finish_one(self.key, self.execution);
+        self.queue
+            .finish_one(self.key, self.execution, self.admission_bytes);
     }
 }
 
@@ -622,7 +877,202 @@ mod tests {
 
     use tokio::time::timeout;
 
-    use super::{PacketQueue, ScheduledPacketExecution};
+    use super::{
+        PacketAdmissionError, PacketAdmissionLimits, PacketQueue, ScheduledPacketExecution,
+    };
+
+    const fn limits(
+        per_player_packets: usize,
+        per_player_bytes: usize,
+        global_packets: usize,
+        global_bytes: usize,
+    ) -> PacketAdmissionLimits {
+        PacketAdmissionLimits {
+            per_player_packets,
+            per_player_bytes,
+            global_packets,
+            global_bytes,
+        }
+    }
+
+    #[test]
+    fn per_player_packet_limit_rejects_before_assigning_a_sequence() {
+        let queue = PacketQueue::with_limits(limits(2, 100, 10, 1_000));
+        assert_eq!(
+            queue.try_submit(1, ScheduledPacketExecution::PlayerLocal, 1, "first"),
+            Ok(())
+        );
+        assert_eq!(
+            queue.try_submit(1, ScheduledPacketExecution::Serialized, 1, "second"),
+            Ok(())
+        );
+
+        assert_eq!(
+            queue.try_submit(1, ScheduledPacketExecution::Exclusive, 1, "rejected"),
+            Err(PacketAdmissionError::PlayerPacketLimit)
+        );
+        assert_eq!(queue.state.lock().next_sequence, 2);
+        assert_eq!(
+            queue.try_submit(2, ScheduledPacketExecution::PlayerLocal, 1, "other player"),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn per_player_byte_limit_is_independent_of_packet_count() {
+        let queue = PacketQueue::with_limits(limits(10, 6, 20, 100));
+        assert_eq!(
+            queue.try_submit(1, ScheduledPacketExecution::PlayerLocal, 4, "first"),
+            Ok(())
+        );
+
+        assert_eq!(
+            queue.try_submit(1, ScheduledPacketExecution::PlayerLocal, 3, "rejected"),
+            Err(PacketAdmissionError::PlayerByteLimit)
+        );
+        assert_eq!(
+            queue.try_submit(2, ScheduledPacketExecution::PlayerLocal, 6, "other player"),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn global_packet_limit_applies_across_player_lanes() {
+        let queue = PacketQueue::with_limits(limits(10, 100, 2, 1_000));
+        assert_eq!(
+            queue.try_submit(1, ScheduledPacketExecution::PlayerLocal, 1, "first"),
+            Ok(())
+        );
+        assert_eq!(
+            queue.try_submit(2, ScheduledPacketExecution::PlayerLocal, 1, "second"),
+            Ok(())
+        );
+
+        assert_eq!(
+            queue.try_submit(3, ScheduledPacketExecution::PlayerLocal, 1, "rejected"),
+            Err(PacketAdmissionError::GlobalPacketLimit)
+        );
+    }
+
+    #[test]
+    fn global_byte_limit_applies_across_player_lanes() {
+        let queue = PacketQueue::with_limits(limits(10, 100, 20, 6));
+        assert_eq!(
+            queue.try_submit(1, ScheduledPacketExecution::PlayerLocal, 4, "first"),
+            Ok(())
+        );
+
+        assert_eq!(
+            queue.try_submit(2, ScheduledPacketExecution::PlayerLocal, 3, "rejected"),
+            Err(PacketAdmissionError::GlobalByteLimit)
+        );
+    }
+
+    #[test]
+    fn active_packet_remains_charged_until_completion() {
+        let queue = PacketQueue::with_limits(limits(1, 4, 10, 100));
+        assert_eq!(
+            queue.try_submit(1, ScheduledPacketExecution::PlayerLocal, 4, "active"),
+            Ok(())
+        );
+        queue.open();
+        let Some(work) = queue.try_next() else {
+            panic!("accepted packet should start");
+        };
+
+        assert_eq!(
+            queue.try_submit(1, ScheduledPacketExecution::PlayerLocal, 1, "rejected"),
+            Err(PacketAdmissionError::PlayerPacketLimit)
+        );
+        {
+            let state = queue.state.lock();
+            assert_eq!(state.outstanding_packets, 1);
+            assert_eq!(state.outstanding_bytes, 4);
+        }
+
+        drop(work);
+        {
+            let state = queue.state.lock();
+            assert_eq!(state.outstanding_packets, 0);
+            assert_eq!(state.outstanding_bytes, 0);
+            assert!(state.lanes.is_empty());
+        }
+        assert_eq!(
+            queue.try_submit(1, ScheduledPacketExecution::PlayerLocal, 4, "next"),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn discarding_player_removes_hidden_barriers_and_keeps_active_work_charged() {
+        let queue = PacketQueue::with_limits(limits(10, 100, 20, 200));
+        queue.submit(1, ScheduledPacketExecution::PlayerLocal, "active attacker");
+        queue.submit(1, ScheduledPacketExecution::Serialized, "hidden serialized");
+        queue.submit(1, ScheduledPacketExecution::Exclusive, "hidden exclusive");
+        queue.submit(2, ScheduledPacketExecution::PlayerLocal, "other player");
+        queue.open();
+        let Some(mut active) = queue.try_next() else {
+            panic!("attacker's first packet should start");
+        };
+        assert_eq!(active.take(), Some("active attacker"));
+
+        queue.discard_player(1);
+
+        {
+            let state = queue.state.lock();
+            assert_eq!(state.outstanding_packets, 2);
+            assert_eq!(state.outstanding_bytes, 2);
+            assert!(state.serialized.is_empty());
+            assert!(state.exclusive.is_empty());
+            assert!(state.serialized_ready.is_empty());
+            assert!(state.exclusive_ready.is_empty());
+            let Some(lane) = state.lanes.get(&1) else {
+                panic!("active attacker lane should remain");
+            };
+            assert!(lane.active);
+            assert!(lane.queued.is_empty());
+            assert_eq!(lane.outstanding_packets, 1);
+            assert_eq!(lane.outstanding_bytes, 1);
+        }
+
+        let Some(mut other) = queue.try_next() else {
+            panic!("purged barriers should no longer block another player");
+        };
+        assert_eq!(other.take(), Some("other player"));
+        drop(other);
+        drop(active);
+
+        let state = queue.state.lock();
+        assert_eq!(state.outstanding_packets, 0);
+        assert_eq!(state.outstanding_bytes, 0);
+        assert!(state.lanes.is_empty());
+    }
+
+    #[test]
+    fn discarding_idle_player_removes_ready_exclusive_barrier() {
+        let queue = PacketQueue::with_limits(limits(10, 100, 20, 200));
+        queue.submit(1, ScheduledPacketExecution::Exclusive, "attacker barrier");
+        queue.submit(1, ScheduledPacketExecution::Serialized, "hidden serialized");
+        queue.submit(2, ScheduledPacketExecution::PlayerLocal, "other player");
+
+        queue.discard_player(1);
+
+        {
+            let state = queue.state.lock();
+            assert_eq!(state.outstanding_packets, 1);
+            assert_eq!(state.outstanding_bytes, 1);
+            assert!(!state.lanes.contains_key(&1));
+            assert!(state.exclusive_ready.is_empty());
+            assert!(state.exclusive.is_empty());
+            assert!(state.serialized.is_empty());
+        }
+
+        queue.open();
+        let Some(mut other) = queue.try_next() else {
+            panic!("discarded exclusive barrier should not block another player");
+        };
+        assert_eq!(other.take(), Some("other player"));
+    }
 
     #[test]
     fn queued_packets_start_in_submission_order_when_opened() {
@@ -1020,6 +1470,10 @@ mod tests {
         queue.submit(1, ScheduledPacketExecution::PlayerLocal, 2);
 
         assert!(queue.try_next().is_none());
+        let state = queue.state.lock();
+        assert_eq!(state.outstanding_packets, 0);
+        assert_eq!(state.outstanding_bytes, 0);
+        assert!(state.lanes.is_empty());
     }
 
     #[test]
@@ -1033,10 +1487,19 @@ mod tests {
         };
 
         queue.stop();
+        {
+            let state = queue.state.lock();
+            assert_eq!(state.outstanding_packets, 1);
+            assert_eq!(state.outstanding_bytes, 1);
+        }
         drop(work);
 
         assert!(queue.try_next().is_none());
-        assert_eq!(queue.state.lock().active, 0);
+        let state = queue.state.lock();
+        assert_eq!(state.active, 0);
+        assert_eq!(state.outstanding_packets, 0);
+        assert_eq!(state.outstanding_bytes, 0);
+        assert!(state.lanes.is_empty());
     }
 
     #[tokio::test]
@@ -1066,6 +1529,8 @@ mod tests {
             assert!(state.exclusive_ready.is_empty());
             assert!(state.serialized.is_empty());
             assert!(state.exclusive.is_empty());
+            assert_eq!(state.outstanding_packets, 2);
+            assert_eq!(state.outstanding_bytes, 2);
         }
 
         drop(active_serialized);
@@ -1073,6 +1538,8 @@ mod tests {
 
         let state = queue.state.lock();
         assert_eq!(state.active, 0);
+        assert_eq!(state.outstanding_packets, 0);
+        assert_eq!(state.outstanding_bytes, 0);
         assert!(!state.serialized_active);
         assert!(state.lanes.is_empty());
     }

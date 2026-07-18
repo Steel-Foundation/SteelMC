@@ -2556,8 +2556,14 @@ impl Server {
     }
 
     /// Schedules a decoded play packet for the inter-tick packet phase.
-    pub(crate) fn schedule_play_packet(&self, player: Arc<Player>, packet: ScheduledPlayPacket) {
-        self.packet_processor.schedule(player, packet);
+    pub(crate) fn schedule_play_packet(
+        &self,
+        player: Arc<Player>,
+        packet: ScheduledPlayPacket,
+        payload_bytes: usize,
+    ) {
+        self.packet_processor
+            .schedule(player, packet, payload_bytes);
     }
 
     /// Returns Brigadier completions visible to a command sender.
