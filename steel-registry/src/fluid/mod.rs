@@ -196,7 +196,7 @@ impl FluidState {
 pub struct FluidRegistry {
     fluids_by_id: Vec<FluidRef>,
     fluids_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: crate::RegistryTags,
     allows_registering: bool,
 }
 
@@ -213,7 +213,7 @@ impl FluidRegistry {
         Self {
             fluids_by_id: Vec::new(),
             fluids_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: crate::RegistryTags::default(),
             allows_registering: true,
         }
     }

@@ -159,7 +159,7 @@ pub type BannerPatternRef = &'static BannerPattern;
 pub struct BannerPatternRegistry {
     banner_patterns_by_id: Vec<BannerPatternRef>,
     banner_patterns_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: crate::RegistryTags,
     allows_registering: bool,
 }
 
@@ -169,7 +169,7 @@ impl BannerPatternRegistry {
         Self {
             banner_patterns_by_id: Vec::new(),
             banner_patterns_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: crate::RegistryTags::default(),
             allows_registering: true,
         }
     }

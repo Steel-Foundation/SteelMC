@@ -42,7 +42,7 @@ pub type StructureRef = &'static StructureData;
 pub struct StructureRegistry {
     structures_by_id: Vec<StructureRef>,
     structures_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: crate::RegistryTags,
     allows_registering: bool,
 }
 
@@ -52,7 +52,7 @@ impl StructureRegistry {
         Self {
             structures_by_id: Vec::new(),
             structures_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: crate::RegistryTags::default(),
             allows_registering: true,
         }
     }

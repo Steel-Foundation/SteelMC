@@ -71,7 +71,7 @@ pub type DialogRef = &'static Dialog;
 pub struct DialogRegistry {
     dialogs_by_id: Vec<DialogRef>,
     dialogs_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: crate::RegistryTags,
     allows_registering: bool,
 }
 
@@ -81,7 +81,7 @@ impl DialogRegistry {
         Self {
             dialogs_by_id: Vec::new(),
             dialogs_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: crate::RegistryTags::default(),
             allows_registering: true,
         }
     }

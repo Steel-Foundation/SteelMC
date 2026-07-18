@@ -305,7 +305,7 @@ pub type BlockRef = &'static Block;
 pub struct BlockRegistry {
     blocks_by_id: Vec<BlockRef>,
     blocks_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: crate::RegistryTags,
     allows_registering: bool,
     pub state_to_block_lookup: Vec<BlockRef>,
     /// Maps state IDs to block IDs (parallel to `state_to_block_lookup` for O(1) lookup)
@@ -329,7 +329,7 @@ impl BlockRegistry {
         Self {
             blocks_by_id: Vec::new(),
             blocks_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: crate::RegistryTags::default(),
             allows_registering: true,
             state_to_block_lookup: Vec::new(),
             state_to_block_id: Vec::new(),
@@ -924,6 +924,45 @@ mod tests {
         vanilla_blocks::register_blocks(&mut registry);
         registry.freeze();
         registry
+    }
+
+    #[test]
+    fn tag_modification_keeps_order_and_membership_in_sync() {
+        let mut registry = BlockRegistry::new();
+        vanilla_blocks::register_blocks(&mut registry);
+        let tag = Identifier::new_static("test", "ordered_membership");
+        registry.register_tag(
+            Identifier::new_static("test", "ordered_membership"),
+            &["stone", "dirt"],
+        );
+
+        assert!(registry.is_in_tag(&vanilla_blocks::STONE, &tag));
+        assert_eq!(
+            registry
+                .iter_tag(&tag)
+                .map(|block| block.key.path.as_ref())
+                .collect::<Vec<_>>(),
+            ["stone", "dirt"]
+        );
+
+        registry.modify_tag(&tag, |_| {
+            vec![
+                Identifier::vanilla_static("oak_log"),
+                Identifier::vanilla_static("dirt"),
+            ]
+        });
+        registry.freeze();
+
+        assert!(!registry.is_in_tag(&vanilla_blocks::STONE, &tag));
+        assert!(registry.is_in_tag(&vanilla_blocks::OAK_LOG, &tag));
+        assert!(registry.is_in_tag(&vanilla_blocks::DIRT, &tag));
+        assert_eq!(
+            registry
+                .iter_tag(&tag)
+                .map(|block| block.key.path.as_ref())
+                .collect::<Vec<_>>(),
+            ["oak_log", "dirt"]
+        );
     }
 
     #[test]

@@ -115,7 +115,7 @@ pub type PaintingVariantRef = &'static PaintingVariant;
 pub struct PaintingVariantRegistry {
     painting_variants_by_id: Vec<PaintingVariantRef>,
     painting_variants_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: crate::RegistryTags,
     allows_registering: bool,
 }
 
@@ -125,7 +125,7 @@ impl PaintingVariantRegistry {
         Self {
             painting_variants_by_id: Vec::new(),
             painting_variants_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: crate::RegistryTags::default(),
             allows_registering: true,
         }
     }

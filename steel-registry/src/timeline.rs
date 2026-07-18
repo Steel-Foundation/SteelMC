@@ -164,7 +164,7 @@ pub type TimelineRef = &'static Timeline;
 pub struct TimelineRegistry {
     timelines_by_id: Vec<TimelineRef>,
     timelines_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: crate::RegistryTags,
     allows_registering: bool,
 }
 
@@ -174,7 +174,7 @@ impl TimelineRegistry {
         Self {
             timelines_by_id: Vec::new(),
             timelines_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: crate::RegistryTags::default(),
             allows_registering: true,
         }
     }

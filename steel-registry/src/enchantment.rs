@@ -163,7 +163,7 @@ pub type EnchantmentRef = &'static Enchantment;
 pub struct EnchantmentRegistry {
     enchantments_by_id: Vec<EnchantmentRef>,
     enchantments_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: crate::RegistryTags,
     allows_registering: bool,
 }
 
@@ -173,7 +173,7 @@ impl EnchantmentRegistry {
         Self {
             enchantments_by_id: Vec::new(),
             enchantments_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: crate::RegistryTags::default(),
             allows_registering: true,
         }
     }

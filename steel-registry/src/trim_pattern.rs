@@ -146,7 +146,7 @@ pub type TrimPatternRef = &'static TrimPattern;
 pub struct TrimPatternRegistry {
     trim_patterns_by_id: Vec<TrimPatternRef>,
     trim_patterns_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: crate::RegistryTags,
     allows_registering: bool,
 }
 
@@ -156,7 +156,7 @@ impl TrimPatternRegistry {
         Self {
             trim_patterns_by_id: Vec::new(),
             trim_patterns_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: crate::RegistryTags::default(),
             allows_registering: true,
         }
     }

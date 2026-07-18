@@ -48,7 +48,7 @@ pub struct PoiTypeRegistry {
     types_by_key: FxHashMap<Identifier, usize>,
     /// O(1) block state -> POI type ID lookup.
     state_to_type: FxHashMap<BlockStateId, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: crate::RegistryTags,
     allows_registering: bool,
 }
 
@@ -65,7 +65,7 @@ impl PoiTypeRegistry {
             types_by_id: Vec::new(),
             types_by_key: FxHashMap::default(),
             state_to_type: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: crate::RegistryTags::default(),
             allows_registering: true,
         }
     }

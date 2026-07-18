@@ -224,7 +224,7 @@ pub type InstrumentRef = &'static Instrument;
 pub struct InstrumentRegistry {
     instruments_by_id: Vec<InstrumentRef>,
     instruments_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: crate::RegistryTags,
     allows_registering: bool,
 }
 
@@ -234,7 +234,7 @@ impl InstrumentRegistry {
         Self {
             instruments_by_id: Vec::new(),
             instruments_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: crate::RegistryTags::default(),
             allows_registering: true,
         }
     }

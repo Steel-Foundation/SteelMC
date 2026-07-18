@@ -331,7 +331,7 @@ pub type TrimMaterialRef = &'static TrimMaterial;
 pub struct TrimMaterialRegistry {
     trim_materials_by_id: Vec<TrimMaterialRef>,
     trim_materials_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: crate::RegistryTags,
     allows_registering: bool,
 }
 
@@ -341,7 +341,7 @@ impl TrimMaterialRegistry {
         Self {
             trim_materials_by_id: Vec::new(),
             trim_materials_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: crate::RegistryTags::default(),
             allows_registering: true,
         }
     }

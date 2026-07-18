@@ -20,7 +20,7 @@ pub type WorldClockRef = &'static WorldClock;
 pub struct WorldClockRegistry {
     world_clocks_by_id: Vec<WorldClockRef>,
     world_clocks_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: crate::RegistryTags,
     allows_registering: bool,
 }
 
@@ -30,7 +30,7 @@ impl WorldClockRegistry {
         Self {
             world_clocks_by_id: Vec::new(),
             world_clocks_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: crate::RegistryTags::default(),
             allows_registering: true,
         }
     }
