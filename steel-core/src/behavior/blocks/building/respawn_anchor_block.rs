@@ -77,13 +77,24 @@ impl RespawnAnchorBlock {
         None
     }
 
-    pub(crate) fn consume_charge(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
+    fn state_after_charge_consumed(state: BlockStateId) -> Option<BlockStateId> {
+        if state.get_block() != &vanilla_blocks::RESPAWN_ANCHOR {
+            return None;
+        }
         let charges = state.get_value(&BlockStateProperties::RESPAWN_ANCHOR_CHARGES);
-        world.set_block(
-            pos,
-            state.set_value(&BlockStateProperties::RESPAWN_ANCHOR_CHARGES, charges - 1),
-            UpdateFlags::UPDATE_ALL,
-        );
+        (charges > 0)
+            .then(|| state.set_value(&BlockStateProperties::RESPAWN_ANCHOR_CHARGES, charges - 1))
+    }
+
+    #[must_use]
+    pub(crate) fn consume_charge(world: &Arc<World>, pos: BlockPos, state: BlockStateId) -> bool {
+        if world.get_block_state(pos) != state {
+            return false;
+        }
+        let Some(state) = Self::state_after_charge_consumed(state) else {
+            return false;
+        };
+        world.set_block(pos, state, UpdateFlags::UPDATE_ALL)
     }
 
     #[must_use]
@@ -133,6 +144,16 @@ impl RespawnAnchorBlock {
         item_stack.is(&vanilla_items::GLOWSTONE)
     }
 
+    const fn consume_respawn_fuel(item_stack: &mut ItemStack, has_infinite_materials: bool) {
+        if !has_infinite_materials {
+            item_stack.shrink(1);
+        }
+    }
+
+    fn analog_output_signal(charges: u8) -> i32 {
+        i32::from(charges) * 15 / 4
+    }
+
     fn player_offhand_has_respawn_fuel(player: &Player) -> bool {
         player
             .inventory
@@ -180,7 +201,10 @@ impl BlockBehavior for RespawnAnchorBlock {
         let is_respawn_fuel = inv.with_item(|item_stack| Self::is_respawn_fuel(item_stack));
         if is_respawn_fuel && Self::can_be_charged(state) {
             Self::charge(Some(player), world, pos, state);
-            inv.with_item(|item_stack| item_stack.shrink(1));
+            let has_infinite_materials = player.has_infinite_materials();
+            inv.with_item(|item_stack| {
+                Self::consume_respawn_fuel(item_stack, has_infinite_materials);
+            });
             return InteractionResult::Success;
         }
 
@@ -208,9 +232,8 @@ impl BlockBehavior for RespawnAnchorBlock {
         }
 
         if !Self::can_set_spawn(world, pos) {
-            // TODO: Mirror vanilla RespawnAnchorBlock.explode exactly once
-            // `World::explode` exists: remove the anchor, use water-sensitive
-            // explosion resistance, and use bad-respawn-point explosion damage.
+            // TODO: Once `World::explode` exist remove the anchor and use the
+            // watersensitive bad respawn point explosion behavior
             return InteractionResult::SuccessServer;
         }
 
@@ -237,6 +260,19 @@ impl BlockBehavior for RespawnAnchorBlock {
         );
         InteractionResult::SuccessServer
     }
+
+    fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
+    fn get_analog_output_signal(
+        &self,
+        state: BlockStateId,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+    ) -> i32 {
+        Self::analog_output_signal(state.get_value(&BlockStateProperties::RESPAWN_ANCHOR_CHARGES))
+    }
 }
 
 #[cfg(test)]
@@ -245,7 +281,8 @@ mod tests {
     use steel_registry::blocks::{
         block_state_ext::BlockStateExt, properties::BlockStateProperties,
     };
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::item_stack::ItemStack;
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_items};
     use steel_utils::BlockPos;
 
     #[test]
@@ -302,6 +339,19 @@ mod tests {
     }
 
     #[test]
+    fn consuming_respawn_fuel_respects_infinite_materials() {
+        init_test_registry();
+
+        let mut survival_fuel = ItemStack::with_count(&vanilla_items::GLOWSTONE, 2);
+        RespawnAnchorBlock::consume_respawn_fuel(&mut survival_fuel, false);
+        assert_eq!(survival_fuel.count(), 1);
+
+        let mut creative_fuel = ItemStack::with_count(&vanilla_items::GLOWSTONE, 2);
+        RespawnAnchorBlock::consume_respawn_fuel(&mut creative_fuel, true);
+        assert_eq!(creative_fuel.count(), 2);
+    }
+
+    #[test]
     fn charge_consume_after_respawn_matches_vanilla_condition() {
         assert!(RespawnAnchorBlock::should_consume_charge_after_respawn(
             false, true, true,
@@ -315,5 +365,32 @@ mod tests {
         assert!(!RespawnAnchorBlock::should_consume_charge_after_respawn(
             false, true, false,
         ));
+    }
+
+    #[test]
+    fn consumed_charge_state_decrements_exactly_once() {
+        init_test_registry();
+
+        let charged = vanilla_blocks::RESPAWN_ANCHOR
+            .default_state()
+            .set_value(&BlockStateProperties::RESPAWN_ANCHOR_CHARGES, 2);
+        let Some(depleted) = RespawnAnchorBlock::state_after_charge_consumed(charged) else {
+            panic!("charged respawn anchor should produce a depleted state");
+        };
+
+        assert_eq!(
+            depleted.get_value(&BlockStateProperties::RESPAWN_ANCHOR_CHARGES),
+            1
+        );
+        assert!(
+            RespawnAnchorBlock::state_after_charge_consumed(
+                vanilla_blocks::RESPAWN_ANCHOR.default_state()
+            )
+            .is_none()
+        );
+        assert!(
+            RespawnAnchorBlock::state_after_charge_consumed(vanilla_blocks::STONE.default_state())
+                .is_none()
+        );
     }
 }
