@@ -31,7 +31,7 @@ use crate::chunk::{
         ChunkLightData, ChunkSkyLightSources, LightSectionEmptinessChange,
         build_chunk_light_update_packet, has_different_light_properties,
     },
-    proto_chunk::ProtoChunk,
+    proto_chunk::{ProtoChunk, postprocessing_from_disk},
     section::Sections,
 };
 use crate::entity::SharedEntity;
@@ -50,10 +50,12 @@ fn empty_postprocessing(height: i32) -> Box<[Vec<u16>]> {
     (0..section_count).map(|_| Vec::new()).collect()
 }
 
-/// A chunk that is ready to be sent to the client.
+/// A full chunk used by live world access.
 ///
 /// Similar to Java's `LevelChunk`, this holds a weak reference to the world
-/// (called `level` in Java) for callbacks during block state changes.
+/// (called `level` in Java) for callbacks during block state changes. Ticking
+/// and initial sending additionally require the corresponding neighborhood
+/// readiness confirmation from `ChunkMap`.
 pub struct LevelChunk {
     /// The sections of the chunk.
     pub sections: Sections,
@@ -80,7 +82,7 @@ pub struct LevelChunk {
     pub structure_starts: SyncRwLock<StructureStartMap>,
     /// References to structures from nearby origin chunks (carried from proto).
     pub structure_references: SyncRwLock<StructureReferenceMap>,
-    /// Vanilla proto postprocessing offsets carried through promotion and drained once.
+    /// Vanilla postprocessing offsets carried through promotion and drained once.
     postprocessing: SyncMutex<Box<[Vec<u16>]>>,
     /// Vanilla skylight source edge cache for this chunk.
     pub sky_light_sources: SyncRwLock<ChunkSkyLightSources>,
@@ -313,6 +315,7 @@ impl LevelChunk {
     /// * `block_ticks` - Scheduled block ticks loaded from disk
     /// * `fluid_ticks` - Scheduled fluid ticks loaded from disk
     /// * `heightmaps` - Heightmaps loaded from disk
+    /// * `postprocessing` - Pending postprocessing offsets loaded from disk
     /// * `light` - Chunk-owned light data loaded from disk
     ///
     /// # Panics
@@ -331,6 +334,7 @@ impl LevelChunk {
         block_ticks: BlockTickList,
         fluid_ticks: FluidTickList,
         heightmaps: ChunkHeightmaps,
+        postprocessing: Vec<Vec<u16>>,
         structure_starts: StructureStartMap,
         structure_references: StructureReferenceMap,
         mut light: ChunkLightData,
@@ -363,7 +367,7 @@ impl LevelChunk {
             fluid_ticks: SyncMutex::new(fluid_ticks),
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
-            postprocessing: SyncMutex::new(empty_postprocessing(height)),
+            postprocessing: SyncMutex::new(postprocessing_from_disk(height, postprocessing)),
             sky_light_sources: SyncRwLock::new(sky_light_sources),
             light: SyncRwLock::new(light),
         }
@@ -394,20 +398,24 @@ impl LevelChunk {
             .fill_from_sections(&self.sections);
     }
 
-    /// Drains the vanilla proto postprocessing offsets carried through promotion.
+    /// Drains pending vanilla generation postprocessing offsets.
     pub(crate) fn take_postprocessing(&self) -> Option<Box<[Vec<u16>]>> {
         let mut postprocessing = self.postprocessing.lock();
         if postprocessing.iter().all(Vec::is_empty) {
             return None;
         }
 
-        Some(mem::replace(
-            &mut *postprocessing,
-            empty_postprocessing(self.height),
-        ))
+        let pending = mem::replace(&mut *postprocessing, empty_postprocessing(self.height));
+        self.dirty.store(true, Ordering::Release);
+        Some(pending)
     }
 
-    /// Runs vanilla proto postprocessing after this chunk has been promoted to full.
+    /// Snapshots pending postprocessing offsets for chunk persistence.
+    pub(crate) fn postprocessing_for_serialization(&self) -> Vec<Vec<u16>> {
+        self.postprocessing.lock().iter().map(Vec::clone).collect()
+    }
+
+    /// Runs pending vanilla generation postprocessing at the r1 readiness transition.
     pub(crate) fn post_process_generation(
         world: &Arc<World>,
         chunk_pos: ChunkPos,
@@ -422,7 +430,7 @@ impl LevelChunk {
             let section_y = Self::section_y_from_section_index(min_y, section_index);
             for packed in packed_offsets {
                 let pos = ProtoChunk::unpack_postprocessing_offset(packed, section_y, chunk_pos);
-                let state = world.get_postprocessing_block_state(pos);
+                let state = world.get_block_state(pos);
                 let fluid_state = state.get_fluid_state();
 
                 if !fluid_state.is_empty() {
@@ -456,7 +464,7 @@ impl LevelChunk {
         let mut updated = state;
         for direction in Direction::UPDATE_SHAPE_ORDER {
             let neighbor_pos = pos.relative(direction);
-            let neighbor_state = world.get_postprocessing_block_state(neighbor_pos);
+            let neighbor_state = world.get_block_state(neighbor_pos);
             let behavior = BLOCK_BEHAVIORS.get_behavior(updated.get_block());
             updated =
                 behavior.update_shape(updated, world, pos, direction, neighbor_pos, neighbor_state);
@@ -1054,6 +1062,26 @@ mod tests {
             chunk.get_block_state(BlockPos::new(0, 16, 0)),
             vanilla_blocks::AIR.default_state()
         );
+    }
+
+    #[test]
+    fn draining_postprocessing_marks_full_chunk_dirty() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        proto.mark_pos_for_postprocessing(BlockPos::new(1, 2, 3));
+        let chunk = LevelChunk::from_proto(proto, 0, 16, Weak::new()).chunk;
+        chunk.dirty.store(false, Ordering::Release);
+
+        assert!(chunk.take_postprocessing().is_some());
+        assert!(chunk.dirty.load(Ordering::Acquire));
+        assert!(chunk.postprocessing_for_serialization()[0].is_empty());
     }
 
     #[test]

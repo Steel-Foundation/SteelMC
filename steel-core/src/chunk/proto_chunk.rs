@@ -43,7 +43,10 @@ fn empty_postprocessing(height: i32) -> Box<[Vec<u16>]> {
     (0..section_count).map(|_| Vec::new()).collect()
 }
 
-fn postprocessing_from_disk(height: i32, mut postprocessing: Vec<Vec<u16>>) -> Box<[Vec<u16>]> {
+pub(crate) fn postprocessing_from_disk(
+    height: i32,
+    mut postprocessing: Vec<Vec<u16>>,
+) -> Box<[Vec<u16>]> {
     let section_count = (height / 16) as usize;
     postprocessing.resize_with(section_count, Vec::new);
     postprocessing.truncate(section_count);

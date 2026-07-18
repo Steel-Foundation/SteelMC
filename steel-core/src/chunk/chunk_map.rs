@@ -25,7 +25,9 @@ use tracing::instrument;
 
 use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
-use crate::chunk::chunk_holder::{ChunkHolder, ChunkSaveDependency};
+use crate::chunk::chunk_holder::{
+    ChunkHolder, ChunkSaveDependency, PostProcessGenerationError, TickingReadiness,
+};
 pub(crate) use crate::chunk::chunk_scheduler::ChunkMapSchedulingTimings;
 use crate::chunk::chunk_scheduler::{
     ChunkSchedulingBoundaryStep, ChunkSchedulingCoordinator, ChunkTicketOperation,
@@ -33,8 +35,12 @@ use crate::chunk::chunk_scheduler::{
 };
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicket, ChunkTicketLevel, ChunkTicketManager, ENDER_PEARL_TICKET_TIMEOUT_TICKS,
-    PersistentChunkTickets, TimedChunkTickets, generation_status, is_block_ticking,
-    is_entity_ticking,
+    LevelChange, PersistentChunkTickets, TimedChunkTickets, generation_status, is_block_ticking,
+    is_entity_ticking, is_full,
+};
+use crate::chunk::full_chunk_readiness::{
+    FullNeighborhoodCounts, FullNeighborhoodError, FullNeighborhoodIndex, FullPublication,
+    FullPublicationQueue,
 };
 use crate::chunk::light::{
     LIGHT_CACHE_RADIUS, LightCacheLayout, LightCacheSetupRadius, LightLayer,
@@ -84,6 +90,13 @@ pub struct ChunkMapGameTickTimings {
 struct TickableChunk {
     holder: Arc<ChunkHolder>,
     simulation_level: ChunkTicketLevel,
+}
+
+struct TickingReadinessCandidate {
+    pos: ChunkPos,
+    holder: Arc<ChunkHolder>,
+    desired: TickingReadiness,
+    target: TickingReadiness,
 }
 
 #[derive(Debug, Default)]
@@ -295,6 +308,10 @@ pub struct ChunkMap {
     pub task_tracker: TaskTracker,
     /// Ordered ticket ingress and background scheduling epoch handoff.
     scheduling: ChunkSchedulingCoordinator,
+    /// Full status completions awaiting lifecycle-boundary reconciliation.
+    full_publications: Arc<FullPublicationQueue>,
+    /// Incremental radius-1/radius-2 Full-neighborhood state.
+    full_neighborhood: SyncMutex<FullNeighborhoodIndex>,
     /// Timed gameplay ticket owners that expire through the game tick.
     timed_chunk_tickets: SyncMutex<TimedChunkTickets>,
     /// The world generation context.
@@ -415,6 +432,7 @@ impl ChunkMap {
     ) -> Self {
         let mut chunk_tickets = ChunkTicketManager::new();
         timed_chunk_tickets.activate_all(&mut chunk_tickets);
+        let full_publications = Arc::new(FullPublicationQueue::default());
 
         Self {
             chunks: scc::HashMap::default(),
@@ -422,6 +440,8 @@ impl ChunkMap {
             pending_generation_tasks: SyncMutex::new(Vec::new()),
             task_tracker: TaskTracker::new(),
             scheduling: ChunkSchedulingCoordinator::new(chunk_tickets),
+            full_publications,
+            full_neighborhood: SyncMutex::new(FullNeighborhoodIndex::default()),
             timed_chunk_tickets: SyncMutex::new(timed_chunk_tickets),
             world_gen_context: Arc::new(WorldGenContext::new(
                 generator,
@@ -507,8 +527,8 @@ impl ChunkMap {
     pub(crate) fn is_block_ticking_full_chunk_loaded(&self, pos: ChunkPos) -> bool {
         self.chunks
             .read_sync(&pos, |_, holder| {
-                is_block_ticking(holder.simulation_level())
-                    && holder.try_chunk(ChunkStatus::Full).is_some()
+                is_block_ticking(holder.load_level())
+                    && holder.ticking_readiness_snapshot().is_block_ticking()
             })
             .unwrap_or(false)
     }
@@ -1326,12 +1346,13 @@ impl ChunkMap {
                     let _ = self.chunks.insert_sync(pos, entry.1.clone());
                     entry.1
                 } else {
-                    let holder = Arc::new(ChunkHolder::new(
+                    let holder = Arc::new(ChunkHolder::new_with_full_publications(
                         pos,
                         level,
                         new_simulation_level,
                         self.world_gen_context.min_y(),
                         self.world_gen_context.height(),
+                        Arc::downgrade(&self.full_publications),
                     ));
                     let _ = self.chunks.insert_sync(pos, holder.clone());
                     holder
@@ -1370,6 +1391,301 @@ impl ChunkMap {
                 let _ = self.unloading_chunks.insert_sync(pos, holder);
             }
             None
+        }
+    }
+
+    fn prepare_ticking_readiness_demotions(
+        &self,
+        changes: &[LevelChange],
+    ) -> Result<(), FullNeighborhoodError> {
+        if changes.is_empty() {
+            return Ok(());
+        }
+
+        let new_levels = changes
+            .iter()
+            .map(|change| (change.pos, change.new_level))
+            .collect::<FxHashMap<_, _>>();
+        let active_changes = changes
+            .iter()
+            .filter_map(|change| {
+                self.chunks
+                    .read_sync(&change.pos, |_, holder| Arc::clone(holder))
+                    .map(|holder| (change.pos, holder, change.new_level))
+            })
+            .collect::<Vec<_>>();
+
+        let dirty = {
+            let mut neighborhood = self.full_neighborhood.lock();
+            for (pos, holder, new_level) in &active_changes {
+                if !new_level.is_some_and(is_full) {
+                    neighborhood.remove_contributor_if_matches(*pos, holder)?;
+                }
+            }
+            for change in changes {
+                neighborhood.mark_dirty(change.pos);
+            }
+            neighborhood.dirty_counts_snapshot()
+        };
+
+        let candidates = self.readiness_candidates(&dirty, Some(&new_levels));
+        self.apply_readiness_demotions(&candidates);
+        self.update_pending_readiness(&candidates);
+        Ok(())
+    }
+
+    fn reconcile_ticking_readiness(
+        &self,
+        changed_positions: &[ChunkPos],
+    ) -> Result<(), FullNeighborhoodError> {
+        let publications = self.full_publications.drain();
+        if publications.is_empty() && changed_positions.is_empty() {
+            return Ok(());
+        }
+        let mut contributor_updates = FxHashMap::default();
+
+        for &pos in changed_positions {
+            contributor_updates.insert(pos, self.current_full_contributor(pos));
+        }
+        for publication in publications {
+            if let Some(holder) = self.validate_full_publication(&publication) {
+                contributor_updates.insert(publication.pos, Some(holder));
+            }
+        }
+
+        let dirty = {
+            let mut neighborhood = self.full_neighborhood.lock();
+            for &pos in changed_positions {
+                neighborhood.mark_dirty(pos);
+            }
+            for (pos, holder) in &contributor_updates {
+                neighborhood.reconcile_contributor(*pos, holder.as_ref())?;
+            }
+            neighborhood.take_dirty_counts()
+        };
+
+        self.apply_final_readiness(dirty);
+        Ok(())
+    }
+
+    fn current_full_contributor(&self, pos: ChunkPos) -> Option<Arc<ChunkHolder>> {
+        let holder = self
+            .chunks
+            .read_sync(&pos, |_, holder| Arc::clone(holder))?;
+        if !holder.load_level().is_some_and(is_full)
+            || !holder.is_full_status_initialized()
+            || holder.persisted_status() != Some(ChunkStatus::Full)
+            || holder.try_chunk(ChunkStatus::Full).is_none()
+        {
+            return None;
+        }
+        Some(holder)
+    }
+
+    fn validate_full_publication(&self, publication: &FullPublication) -> Option<Arc<ChunkHolder>> {
+        let published_holder = publication.holder.upgrade()?;
+        let active_holder = self
+            .chunks
+            .read_sync(&publication.pos, |_, holder| Arc::clone(holder))?;
+        if !Arc::ptr_eq(&published_holder, &active_holder)
+            || !active_holder.load_level().is_some_and(is_full)
+            || !active_holder.is_full_status_initialized()
+            || active_holder.persisted_status() != Some(ChunkStatus::Full)
+            || active_holder.try_chunk(ChunkStatus::Full).is_none()
+        {
+            return None;
+        }
+        Some(active_holder)
+    }
+
+    fn readiness_candidates(
+        &self,
+        dirty: &[(ChunkPos, FullNeighborhoodCounts)],
+        new_levels: Option<&FxHashMap<ChunkPos, Option<ChunkTicketLevel>>>,
+    ) -> Vec<TickingReadinessCandidate> {
+        dirty
+            .iter()
+            .filter_map(|(pos, counts)| {
+                let holder = self.chunks.read_sync(pos, |_, holder| Arc::clone(holder))?;
+                let load_level = match new_levels.and_then(|levels| levels.get(pos)) {
+                    Some(level) => *level,
+                    None => holder.load_level(),
+                };
+                let desired = Self::desired_ticking_readiness(load_level);
+                let target = Self::target_ticking_readiness(&holder, load_level, *counts);
+                Some(TickingReadinessCandidate {
+                    pos: *pos,
+                    holder,
+                    desired,
+                    target,
+                })
+            })
+            .collect()
+    }
+
+    const fn desired_ticking_readiness(level: Option<ChunkTicketLevel>) -> TickingReadiness {
+        if is_entity_ticking(level) {
+            TickingReadiness::EntityTicking
+        } else if is_block_ticking(level) {
+            TickingReadiness::BlockTicking
+        } else {
+            TickingReadiness::Unready
+        }
+    }
+
+    fn target_ticking_readiness(
+        holder: &ChunkHolder,
+        level: Option<ChunkTicketLevel>,
+        counts: FullNeighborhoodCounts,
+    ) -> TickingReadiness {
+        if !holder.is_full_status_initialized()
+            || holder.persisted_status() != Some(ChunkStatus::Full)
+            || holder.try_chunk(ChunkStatus::Full).is_none()
+        {
+            return TickingReadiness::Unready;
+        }
+        if is_entity_ticking(level) && counts.entity_ticking_ready() {
+            TickingReadiness::EntityTicking
+        } else if is_block_ticking(level) && counts.block_ticking_ready() {
+            TickingReadiness::BlockTicking
+        } else {
+            TickingReadiness::Unready
+        }
+    }
+
+    fn apply_readiness_demotions(&self, candidates: &[TickingReadinessCandidate]) {
+        let world = self.world_gen_context.world();
+        for candidate in candidates {
+            let current = candidate.holder.ticking_readiness_snapshot().readiness();
+            if current <= candidate.target {
+                continue;
+            }
+            candidate
+                .holder
+                .transition_ticking_readiness(candidate.target);
+            world.update_entity_chunk_visibility(
+                candidate.pos,
+                candidate.holder.entity_visibility(),
+            );
+        }
+    }
+
+    fn apply_final_readiness(&self, dirty: Vec<(ChunkPos, FullNeighborhoodCounts)>) {
+        if dirty.is_empty() {
+            return;
+        }
+
+        let candidates = self.readiness_candidates(&dirty, None);
+        self.apply_readiness_demotions(&candidates);
+        self.update_pending_readiness(&candidates);
+
+        let world = self.world_gen_context.world();
+        for candidate in &candidates {
+            let current = candidate.holder.ticking_readiness_snapshot().readiness();
+            if current >= candidate.target {
+                continue;
+            }
+
+            if current == TickingReadiness::Unready
+                && let Err(error) = candidate.holder.post_process_generation()
+            {
+                Self::log_postprocessing_failure(candidate, error);
+                continue;
+            }
+
+            candidate
+                .holder
+                .transition_ticking_readiness(candidate.target);
+            world.update_entity_chunk_visibility(
+                candidate.pos,
+                candidate.holder.entity_visibility(),
+            );
+        }
+
+        self.update_pending_readiness(&candidates);
+    }
+
+    fn update_pending_readiness(&self, candidates: &[TickingReadinessCandidate]) {
+        let mut neighborhood = self.full_neighborhood.lock();
+        for candidate in candidates {
+            let confirmed = candidate.holder.ticking_readiness_snapshot().readiness();
+            if confirmed < candidate.desired {
+                neighborhood.ensure_pending_readiness(candidate.pos, &candidate.holder);
+            } else {
+                neighborhood.clear_pending_readiness(candidate.pos);
+            }
+        }
+    }
+
+    fn log_postprocessing_failure(
+        candidate: &TickingReadinessCandidate,
+        error: PostProcessGenerationError,
+    ) {
+        tracing::error!(
+            chunk = ?candidate.pos,
+            ?error,
+            desired = ?candidate.desired,
+            target = ?candidate.target,
+            load_level = ?candidate.holder.load_level(),
+            "Failed to prepare Full chunk for ticking readiness"
+        );
+    }
+
+    fn clear_all_ticking_readiness(&self) {
+        let world = self.world_gen_context.world();
+        self.chunks.iter_sync(|pos, holder| {
+            if holder
+                .transition_ticking_readiness(TickingReadiness::Unready)
+                .is_some()
+            {
+                world.update_entity_chunk_visibility(*pos, holder.entity_visibility());
+            }
+            true
+        });
+    }
+
+    fn rebuild_ticking_readiness(&self) -> Result<(), FullNeighborhoodError> {
+        self.full_publications.drain();
+        let mut active = Vec::new();
+        self.chunks.iter_sync(|pos, holder| {
+            active.push((*pos, Arc::clone(holder)));
+            true
+        });
+
+        let mut rebuilt = FullNeighborhoodIndex::default();
+        for (pos, holder) in &active {
+            rebuilt.mark_dirty(*pos);
+            let contributor = if holder.load_level().is_some_and(is_full)
+                && holder.is_full_status_initialized()
+                && holder.persisted_status() == Some(ChunkStatus::Full)
+                && holder.try_chunk(ChunkStatus::Full).is_some()
+            {
+                Some(holder)
+            } else {
+                None
+            };
+            rebuilt.reconcile_contributor(*pos, contributor)?;
+        }
+        let dirty = rebuilt.take_dirty_counts();
+        *self.full_neighborhood.lock() = rebuilt;
+        self.apply_final_readiness(dirty);
+        Ok(())
+    }
+
+    fn recover_ticking_readiness_index(&self, error: FullNeighborhoodError) {
+        tracing::error!(
+            ?error,
+            "Full-neighborhood index invariant failed; rebuilding from active chunks"
+        );
+        self.clear_all_ticking_readiness();
+        *self.full_neighborhood.lock() = FullNeighborhoodIndex::default();
+        if let Err(rebuild_error) = self.rebuild_ticking_readiness() {
+            tracing::error!(
+                ?rebuild_error,
+                "Failed to rebuild Full-neighborhood index; ticking readiness remains revoked"
+            );
+            self.clear_all_ticking_readiness();
+            *self.full_neighborhood.lock() = FullNeighborhoodIndex::default();
         }
     }
 
@@ -1415,7 +1731,8 @@ impl ChunkMap {
                 let Some(simulation_level) = holder.simulation_level() else {
                     return true;
                 };
-                if simulation_level.is_block_ticking() {
+                let readiness = holder.ticking_readiness_snapshot();
+                if simulation_level.is_block_ticking() && readiness.is_block_ticking() {
                     tickable_chunks.push(TickableChunk {
                         holder: holder.clone(),
                         simulation_level,
@@ -1459,7 +1776,8 @@ impl ChunkMap {
                 }
                 Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
                 for tickable_chunk in &tickable_chunks {
-                    // Vanilla random chunk ticks use the entity-ticking range.
+                    // Vanilla random chunk ticks use the entity-ticking range but only require
+                    // the same confirmed block-ticking chunk used by scheduled ticks.
                     if !tickable_chunk.simulation_level.is_entity_ticking() {
                         continue;
                     }
@@ -1491,6 +1809,7 @@ impl ChunkMap {
         let start = Instant::now();
         self.chunks.iter_sync(|_, holder| {
             if is_block_ticking(holder.simulation_level())
+                && holder.ticking_readiness_snapshot().is_block_ticking()
                 && let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full)
             {
                 chunk_guard.tick_block_entities();
@@ -1532,6 +1851,21 @@ impl ChunkMap {
             mut timings,
         } = epoch;
 
+        let changed_positions = changes.iter().map(|change| change.pos).collect::<Vec<_>>();
+        let rebuild_readiness = if let Err(error) =
+            self.prepare_ticking_readiness_demotions(&changes)
+        {
+            tracing::error!(
+                ?error,
+                "Full-neighborhood index invariant failed before lifecycle commit; rebuilding after the commit"
+            );
+            self.clear_all_ticking_readiness();
+            *self.full_neighborhood.lock() = FullNeighborhoodIndex::default();
+            true
+        } else {
+            false
+        };
+
         let holders_to_schedule = {
             let _span = tracing::trace_span!("lifecycle_commit").entered();
             let start = Instant::now();
@@ -1549,6 +1883,14 @@ impl ChunkMap {
             timings.lifecycle_commit = start.elapsed();
             holders
         };
+
+        if rebuild_readiness {
+            if let Err(error) = self.rebuild_ticking_readiness() {
+                self.recover_ticking_readiness_index(error);
+            }
+        } else if let Err(error) = self.reconcile_ticking_readiness(&changed_positions) {
+            self.recover_ticking_readiness_index(error);
+        }
 
         ticket_manager.recycle_changes(changes);
         self.scheduling.publish_committed_revision(applied_revision);
@@ -1647,6 +1989,7 @@ impl ChunkMap {
         let mut chunks = Vec::new();
         self.chunks.iter_sync(|_, holder| {
             if is_entity_ticking(holder.simulation_level())
+                && holder.ticking_readiness_snapshot().is_entity_ticking()
                 && holder.try_chunk(ChunkStatus::Full).is_some()
             {
                 chunks.push(holder.get_pos());
@@ -2252,6 +2595,183 @@ mod tests {
         assert!(stronger_load < weaker_load);
     }
 
+    fn insert_active_full_holder(
+        world: &Arc<World>,
+        pos: ChunkPos,
+        load_level: ChunkTicketLevel,
+        postprocessing: Vec<Vec<u16>>,
+    ) -> Arc<ChunkHolder> {
+        let min_y = world.chunk_map.world_gen_context.min_y();
+        let height = world.chunk_map.world_gen_context.height();
+        let sections = (0..height / 16)
+            .map(|_| ChunkSection::new_empty())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let chunk = LevelChunk::from_disk(
+            Sections::from_owned(sections),
+            pos,
+            min_y,
+            height,
+            Arc::downgrade(world),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            ChunkHeightmaps::new(min_y, height),
+            postprocessing,
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+            ChunkLightData::for_valid_world_height(min_y, height),
+        );
+        let simulation_level = load_level.is_entity_ticking().then_some(load_level);
+        let holder = Arc::new(ChunkHolder::new_with_full_publications(
+            pos,
+            load_level,
+            simulation_level,
+            min_y,
+            height,
+            Arc::downgrade(&world.chunk_map.full_publications),
+        ));
+        holder.insert_chunk(ChunkAccess::Full(chunk), ChunkStatus::Full);
+        let _ = world.chunk_map.chunks.insert_sync(pos, Arc::clone(&holder));
+        holder
+    }
+
+    fn assert_postprocessing_drained(holder: &ChunkHolder) {
+        let chunk = holder
+            .try_chunk(ChunkStatus::Full)
+            .expect("the center should remain Full");
+        let ChunkAccess::Full(chunk) = &*chunk else {
+            panic!("the center should remain a LevelChunk");
+        };
+        assert!(
+            chunk
+                .postprocessing_for_serialization()
+                .iter()
+                .all(Vec::is_empty),
+            "loaded Full postprocessing should run at the r1 transition"
+        );
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one lifecycle test documents both readiness radii and their transitions"
+    )]
+    fn full_publications_drive_block_and_entity_readiness_incrementally() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("full_chunk_readiness_lifecycle");
+        let center_pos = ChunkPos::new(0, 0);
+        let marked_pos = BlockPos::new(
+            center_pos.0.x * 16,
+            world.chunk_map.world_gen_context.min_y(),
+            center_pos.0.y * 16,
+        );
+        let packed = ProtoChunk::pack_postprocessing_offset(marked_pos);
+        let mut center = None;
+
+        for z in -1..=1 {
+            for x in -1..=1 {
+                let pos = ChunkPos::new(x, z);
+                let load_level = if pos == center_pos {
+                    ChunkTicketLevel::ENTITY_TICKING_CHUNK
+                } else {
+                    ChunkTicketLevel::FULL_CHUNK
+                };
+                let postprocessing = if pos == center_pos {
+                    vec![vec![packed]]
+                } else {
+                    Vec::new()
+                };
+                let holder = insert_active_full_holder(&world, pos, load_level, postprocessing);
+                if pos == center_pos {
+                    center = Some(holder);
+                }
+            }
+        }
+
+        world
+            .chunk_map
+            .reconcile_ticking_readiness(&[])
+            .expect("a unique 3x3 Full square should reconcile");
+        let center = center.expect("the center holder should be inserted");
+        assert_eq!(
+            center.ticking_readiness_snapshot().readiness(),
+            TickingReadiness::BlockTicking
+        );
+        assert!(
+            !center.is_ready_for_saving(),
+            "the pending entity transition should remain a save dependency"
+        );
+        assert_postprocessing_drained(&center);
+        center.set_simulation_level(None);
+        assert!(
+            world
+                .chunk_map
+                .is_block_ticking_full_chunk_loaded(center_pos),
+            "client publication follows load readiness, not simulation distance"
+        );
+
+        for z in -2_i32..=2 {
+            for x in -2_i32..=2 {
+                if x.abs() <= 1 && z.abs() <= 1 {
+                    continue;
+                }
+                insert_active_full_holder(
+                    &world,
+                    ChunkPos::new(x, z),
+                    ChunkTicketLevel::FULL_CHUNK,
+                    Vec::new(),
+                );
+            }
+        }
+
+        world
+            .chunk_map
+            .reconcile_ticking_readiness(&[])
+            .expect("a unique 5x5 Full square should reconcile");
+        assert_eq!(
+            center.ticking_readiness_snapshot().readiness(),
+            TickingReadiness::EntityTicking
+        );
+        assert!(center.is_ready_for_saving());
+        assert!(
+            !world
+                .chunk_map
+                .tickable_full_chunk_positions()
+                .contains(&center_pos),
+            "entity simulation remains separately gated"
+        );
+
+        world
+            .chunk_map
+            .prepare_ticking_readiness_demotions(&[LevelChange {
+                pos: ChunkPos::new(-2, -2),
+                new_level: None,
+                new_simulation_level: None,
+            }])
+            .expect("removing an indexed outer contributor should reconcile");
+        assert_eq!(
+            center.ticking_readiness_snapshot().readiness(),
+            TickingReadiness::BlockTicking,
+            "r2 must be revoked before the contributor's lifecycle mutation"
+        );
+        assert!(!center.is_ready_for_saving());
+
+        world
+            .chunk_map
+            .prepare_ticking_readiness_demotions(&[LevelChange {
+                pos: ChunkPos::new(-1, -1),
+                new_level: None,
+                new_simulation_level: None,
+            }])
+            .expect("removing an indexed inner contributor should reconcile");
+        assert_eq!(
+            center.ticking_readiness_snapshot().readiness(),
+            TickingReadiness::Unready,
+            "r1 must be revoked before the contributor's lifecycle mutation"
+        );
+    }
+
     fn test_chunk_map() -> Arc<ChunkMap> {
         init_test_registry();
         init_behaviors();
@@ -2308,6 +2828,7 @@ mod tests {
             BlockTickList::new(),
             FluidTickList::new(),
             ChunkHeightmaps::new(0, 16),
+            Vec::new(),
             StructureStartMap::default(),
             StructureReferenceMap::default(),
             ChunkLightData::for_valid_world_height(0, 16),
@@ -2470,6 +2991,10 @@ mod tests {
         let chunk_map = test_chunk_map();
         let center = ChunkPos::new(0, 0);
         let holder = unloaded_full_holder(center);
+        assert_eq!(
+            holder.transition_ticking_readiness(TickingReadiness::BlockTicking),
+            Some(TickingReadiness::Unready)
+        );
         assert!(holder.block_changed(BlockPos::new(1, 2, 3)));
         chunk_map
             .chunks_to_broadcast

@@ -663,7 +663,7 @@ impl ChunkStorage {
             ChunkAccess::Proto(proto) => {
                 proto.postprocessing.read().iter().map(Vec::clone).collect()
             }
-            ChunkAccess::Full(_) => Vec::new(),
+            ChunkAccess::Full(full) => full.postprocessing_for_serialization(),
             ChunkAccess::Unloaded => unreachable!(),
         };
 
@@ -1320,6 +1320,7 @@ impl ChunkStorage {
                 block_ticks,
                 fluid_ticks,
                 heightmaps,
+                persistent.postprocessing.iter().map(Vec::clone).collect(),
                 structure_starts,
                 structure_references,
                 light,
@@ -3257,6 +3258,55 @@ mod tests {
         };
 
         assert_eq!(loaded_proto.postprocessing.read()[0], vec![packed]);
+    }
+
+    #[test]
+    fn full_chunk_postprocessing_roundtrips_through_persistent_chunk() {
+        init_test_registry();
+        init_runtime_registries();
+
+        let pos = ChunkPos::new(-2, 1);
+        let marked = BlockPos::new(-17, -63, 31);
+        let packed = ProtoChunk::pack_postprocessing_offset(marked);
+        let persistent = ChunkStorage::to_persistent(
+            &single_empty_section(),
+            &[],
+            &[],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            PersistentLightData::default(),
+            None,
+            vec![vec![packed]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            pos,
+        );
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &persistent,
+            pos,
+            ChunkStatus::Full,
+            -64,
+            16,
+            Weak::new(),
+        );
+        let ChunkAccess::Full(loaded_full) = loaded.chunk else {
+            panic!("full status should load as a full chunk");
+        };
+        assert_eq!(
+            loaded_full.postprocessing_for_serialization(),
+            vec![vec![packed]]
+        );
+
+        let chunk = ChunkAccess::Full(loaded_full);
+        chunk.mark_dirty();
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, &[], false) else {
+            panic!("dirty full chunk should prepare for saving");
+        };
+
+        assert_eq!(prepared.persistent.postprocessing, vec![vec![packed]]);
     }
 
     #[test]

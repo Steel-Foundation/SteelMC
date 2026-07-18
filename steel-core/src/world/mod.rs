@@ -1868,29 +1868,6 @@ impl World {
         true
     }
 
-    /// Gets a block state for generation postprocessing.
-    ///
-    /// Vanilla delays `LevelChunk.postProcessGeneration` until neighboring
-    /// chunks are full because that hook runs during the ticking-chunk
-    /// transition. Steel runs it as the center chunk reaches full. At that
-    /// point the chunk pyramid guarantees the 3x3 neighbors have reached
-    /// `Light`, which means they have completed `Features`, the last
-    /// block-mutating generation stage. Postprocessing only needs block
-    /// states, so reading light-stage proto chunks here is intentional.
-    #[must_use]
-    pub(crate) fn get_postprocessing_block_state(&self, pos: BlockPos) -> BlockStateId {
-        if !self.is_in_valid_bounds(pos) {
-            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR);
-        }
-
-        let chunk_pos = Self::chunk_pos_for_block(pos);
-        self.chunk_map
-            .with_chunk_at_status(chunk_pos, ChunkStatus::Features, |chunk| {
-                chunk.get_block_state(pos)
-            })
-            .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
-    }
-
     /// Sets a block at the given position.
     ///
     /// Returns `true` if the block was successfully set, `false` otherwise.
@@ -5246,7 +5223,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::behavior::init_behaviors;
-    use crate::chunk::chunk_ticket_manager::ChunkTicket;
+    use crate::chunk::chunk_ticket_manager::{ChunkTicket, ChunkTicketLevel};
     use crate::entity::{EntityBase, entities::PigEntity};
     use crate::test_support::test_world;
 
@@ -5476,6 +5453,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one state sequence documents the Vanilla client-publication gates"
+    )]
     fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
         init_test_registry();
         init_behaviors();
@@ -5492,6 +5473,9 @@ mod tests {
                 .chunk_map
                 .is_ticket_revision_committed(simulation_revision)
                 && world.chunk_map.with_full_chunk(chunk_pos, |_| ()).is_some()
+                && world
+                    .chunk_map
+                    .is_block_ticking_full_chunk_loaded(chunk_pos)
         });
 
         let holder = world
@@ -5549,7 +5533,7 @@ mod tests {
         assert!(world.get_block_state(unsupported_fire_pos).is_air());
         assert_eq!(holder.packet_content_revision(), revision + 3);
 
-        let loading_ticket = ChunkTicket::full_chunks(0);
+        let loading_ticket = ChunkTicket::loading(ChunkTicketLevel::BLOCK_TICKING_CHUNK);
         let loading_revision = world.chunk_map.add_chunk_ticket(chunk_pos, loading_ticket);
         let removal_revision = world
             .chunk_map
@@ -5564,6 +5548,36 @@ mod tests {
         });
 
         assert!(
+            world
+                .chunk_map
+                .is_block_ticking_full_chunk_loaded(chunk_pos),
+            "client publication should remain enabled for load-only BlockTicking chunks"
+        );
+        let load_only_revision = holder.packet_content_revision();
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::DIRT.default_state(),
+            UpdateFlags::UPDATE_CLIENTS,
+        ));
+        assert_eq!(holder.packet_content_revision(), load_only_revision + 1);
+
+        let full_only_ticket = ChunkTicket::full_chunks(0);
+        let full_only_revision = world
+            .chunk_map
+            .add_chunk_ticket(chunk_pos, full_only_ticket);
+        let loading_removal_revision = world
+            .chunk_map
+            .remove_chunk_ticket(chunk_pos, loading_ticket);
+        advance_scheduling_until(&world, || {
+            world
+                .chunk_map
+                .is_ticket_revision_committed(full_only_revision)
+                && world
+                    .chunk_map
+                    .is_ticket_revision_committed(loading_removal_revision)
+        });
+
+        assert!(
             !world
                 .chunk_map
                 .is_block_ticking_full_chunk_loaded(chunk_pos)
@@ -5572,14 +5586,16 @@ mod tests {
 
         assert!(world.set_block(
             pos,
-            vanilla_blocks::DIRT.default_state(),
+            vanilla_blocks::STONE.default_state(),
             UpdateFlags::UPDATE_CLIENTS,
         ));
+        assert_eq!(holder.packet_content_revision(), non_ticking_revision);
+        world.send_block_updated(pos);
         assert_eq!(holder.packet_content_revision(), non_ticking_revision);
 
         world
             .chunk_map
-            .remove_chunk_ticket(chunk_pos, loading_ticket);
+            .remove_chunk_ticket(chunk_pos, full_only_ticket);
         world.chunk_map.advance_scheduling();
     }
 
