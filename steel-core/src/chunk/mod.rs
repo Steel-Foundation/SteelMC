@@ -7,6 +7,7 @@ pub mod chunk_holder;
 pub mod chunk_map;
 pub mod chunk_pyramid;
 pub mod chunk_request;
+mod chunk_scheduler;
 pub mod chunk_status_tasks;
 /// Tracks chunk levels based on ticket propagation.
 pub mod chunk_ticket_manager;

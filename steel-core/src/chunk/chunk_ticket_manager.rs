@@ -330,41 +330,31 @@ impl TimedChunkTickets {
     }
 
     /// Adds or refreshes vanilla's portal ticket.
-    pub(crate) fn add_portal_ticket(
-        &mut self,
-        ticket_manager: &mut ChunkTicketManager,
-        pos: ChunkPos,
-    ) {
+    pub(crate) fn add_portal_ticket(&mut self, pos: ChunkPos) -> Option<ChunkTicket> {
         self.add_or_reset(
-            ticket_manager,
             TimedChunkTicketKind::Portal,
             pos,
             portal_ticket(),
             PORTAL_TICKET_TIMEOUT_TICKS,
-        );
+        )
     }
 
     /// Adds or refreshes vanilla's in-flight ender pearl ticket.
-    pub(crate) fn add_ender_pearl_ticket(
-        &mut self,
-        ticket_manager: &mut ChunkTicketManager,
-        pos: ChunkPos,
-    ) {
+    pub(crate) fn add_ender_pearl_ticket(&mut self, pos: ChunkPos) -> Option<ChunkTicket> {
         self.add_or_reset(
-            ticket_manager,
             TimedChunkTicketKind::EnderPearl,
             pos,
             ender_pearl_ticket(),
             i64::from(ENDER_PEARL_TICKET_TIMEOUT_TICKS),
-        );
+        )
     }
 
-    /// Decrements timed tickets and removes expired sources from the ticket manager.
+    /// Decrements timed tickets and returns sources that expired this tick.
     pub(crate) fn tick(
         &mut self,
-        ticket_manager: &mut ChunkTicketManager,
         mut can_expire: impl FnMut(ChunkPos) -> bool,
-    ) {
+    ) -> Vec<(ChunkPos, ChunkTicket)> {
+        let mut expired_tickets = Vec::new();
         let mut index = 0;
         while index < self.tickets.len() {
             let ticket = &mut self.tickets[index];
@@ -380,25 +370,25 @@ impl TimedChunkTickets {
             }
 
             let expired = self.tickets.swap_remove(index);
-            ticket_manager.remove_ticket(expired.pos, expired.ticket);
+            expired_tickets.push((expired.pos, expired.ticket));
         }
+        expired_tickets
     }
 
     fn add_or_reset(
         &mut self,
-        ticket_manager: &mut ChunkTicketManager,
         kind: TimedChunkTicketKind,
         pos: ChunkPos,
         ticket: ChunkTicket,
         ticks_left: i64,
-    ) {
+    ) -> Option<ChunkTicket> {
         if let Some(existing) = self
             .tickets
             .iter_mut()
             .find(|entry| entry.kind == kind && entry.pos == pos && entry.ticket == ticket)
         {
             existing.ticks_left = ticks_left;
-            return;
+            return None;
         }
 
         self.tickets.push(TimedChunkTicket {
@@ -407,7 +397,7 @@ impl TimedChunkTickets {
             ticket,
             ticks_left,
         });
-        ticket_manager.add_ticket(pos, ticket);
+        Some(ticket)
     }
 
     fn add_loaded_persistent_ticket(&mut self, persistent: PersistentChunkTicket) {
@@ -696,6 +686,18 @@ impl ChunkTicketManager {
         &self.changes
     }
 
+    /// Takes the change list produced by the last propagation pass.
+    pub(crate) fn take_changes(&mut self) -> Vec<LevelChange> {
+        mem::take(&mut self.changes)
+    }
+
+    /// Returns a drained change buffer for reuse by the next propagation pass.
+    pub(crate) fn recycle_changes(&mut self, mut changes: Vec<LevelChange>) {
+        debug_assert!(self.changes.is_empty());
+        changes.clear();
+        self.changes = changes;
+    }
+
     fn record_simulation_only_changes(
         &mut self,
         old_levels: &FxHashMap<ChunkPos, ChunkTicketLevel>,
@@ -774,6 +776,36 @@ impl ChunkTicketManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn add_portal_ticket(
+        manager: &mut ChunkTicketManager,
+        timed_tickets: &mut TimedChunkTickets,
+        pos: ChunkPos,
+    ) {
+        if let Some(ticket) = timed_tickets.add_portal_ticket(pos) {
+            manager.add_ticket(pos, ticket);
+        }
+    }
+
+    fn add_ender_pearl_ticket(
+        manager: &mut ChunkTicketManager,
+        timed_tickets: &mut TimedChunkTickets,
+        pos: ChunkPos,
+    ) {
+        if let Some(ticket) = timed_tickets.add_ender_pearl_ticket(pos) {
+            manager.add_ticket(pos, ticket);
+        }
+    }
+
+    fn tick_timed_tickets(
+        manager: &mut ChunkTicketManager,
+        timed_tickets: &mut TimedChunkTickets,
+        can_expire: impl FnMut(ChunkPos) -> bool,
+    ) {
+        for (pos, ticket) in timed_tickets.tick(can_expire) {
+            manager.remove_ticket(pos, ticket);
+        }
+    }
 
     #[test]
     fn test_single_ticket_propagation() {
@@ -980,8 +1012,8 @@ mod tests {
         let mut timed_tickets = TimedChunkTickets::default();
         let center = ChunkPos::new(0, 0);
 
-        timed_tickets.add_portal_ticket(&mut manager, center);
-        timed_tickets.add_portal_ticket(&mut manager, center);
+        add_portal_ticket(&mut manager, &mut timed_tickets, center);
+        add_portal_ticket(&mut manager, &mut timed_tickets, center);
         manager.run_all_updates();
 
         assert_eq!(timed_tickets.len(), 1);
@@ -1008,12 +1040,12 @@ mod tests {
         assert!(!manager.get_level(ChunkPos::new(4, 0)).is_some_and(is_full));
 
         for _ in 0..PORTAL_TICKET_TIMEOUT_TICKS {
-            timed_tickets.tick(&mut manager, |_| true);
+            tick_timed_tickets(&mut manager, &mut timed_tickets, |_| true);
         }
         manager.run_all_updates();
         assert_eq!(manager.ticket_count(), 1);
 
-        timed_tickets.tick(&mut manager, |_| true);
+        tick_timed_tickets(&mut manager, &mut timed_tickets, |_| true);
         manager.run_all_updates();
         assert_eq!(manager.ticket_count(), 0);
         assert_eq!(manager.get_level(center), None);
@@ -1026,15 +1058,15 @@ mod tests {
         let mut timed_tickets = TimedChunkTickets::default();
         let center = ChunkPos::new(0, 0);
 
-        timed_tickets.add_portal_ticket(&mut manager, center);
+        add_portal_ticket(&mut manager, &mut timed_tickets, center);
         for _ in 0..=PORTAL_TICKET_TIMEOUT_TICKS {
-            timed_tickets.tick(&mut manager, |_| false);
+            tick_timed_tickets(&mut manager, &mut timed_tickets, |_| false);
         }
         manager.run_all_updates();
         assert_eq!(manager.ticket_count(), 1);
 
         for _ in 0..=PORTAL_TICKET_TIMEOUT_TICKS {
-            timed_tickets.tick(&mut manager, |_| true);
+            tick_timed_tickets(&mut manager, &mut timed_tickets, |_| true);
         }
         manager.run_all_updates();
         assert_eq!(manager.ticket_count(), 0);
@@ -1223,8 +1255,8 @@ mod tests {
         let mut timed_tickets = TimedChunkTickets::default();
         let center = ChunkPos::new(0, 0);
 
-        timed_tickets.add_ender_pearl_ticket(&mut manager, center);
-        timed_tickets.add_ender_pearl_ticket(&mut manager, center);
+        add_ender_pearl_ticket(&mut manager, &mut timed_tickets, center);
+        add_ender_pearl_ticket(&mut manager, &mut timed_tickets, center);
         manager.run_all_updates();
 
         assert_eq!(timed_tickets.len(), 1);
@@ -1244,12 +1276,12 @@ mod tests {
         );
 
         for _ in 0..ENDER_PEARL_TICKET_TIMEOUT_TICKS {
-            timed_tickets.tick(&mut manager, |_| true);
+            tick_timed_tickets(&mut manager, &mut timed_tickets, |_| true);
         }
         manager.run_all_updates();
         assert_eq!(manager.ticket_count(), 1);
 
-        timed_tickets.tick(&mut manager, |_| true);
+        tick_timed_tickets(&mut manager, &mut timed_tickets, |_| true);
         manager.run_all_updates();
         assert_eq!(manager.ticket_count(), 0);
         assert_eq!(manager.get_level(center), None);
@@ -1262,15 +1294,15 @@ mod tests {
         let mut timed_tickets = TimedChunkTickets::default();
         let center = ChunkPos::new(0, 0);
 
-        timed_tickets.add_ender_pearl_ticket(&mut manager, center);
+        add_ender_pearl_ticket(&mut manager, &mut timed_tickets, center);
         for _ in 0..=ENDER_PEARL_TICKET_TIMEOUT_TICKS {
-            timed_tickets.tick(&mut manager, |_| false);
+            tick_timed_tickets(&mut manager, &mut timed_tickets, |_| false);
         }
         manager.run_all_updates();
         assert_eq!(manager.ticket_count(), 1);
 
         for _ in 0..=ENDER_PEARL_TICKET_TIMEOUT_TICKS {
-            timed_tickets.tick(&mut manager, |_| true);
+            tick_timed_tickets(&mut manager, &mut timed_tickets, |_| true);
         }
         manager.run_all_updates();
         assert_eq!(manager.ticket_count(), 0);
@@ -1282,7 +1314,7 @@ mod tests {
         let mut timed_tickets = TimedChunkTickets::default();
         let mut manual = ChunkTicketManager::new();
         let pos = ChunkPos::new(0, 0);
-        timed_tickets.add_ender_pearl_ticket(&mut timed, pos);
+        add_ender_pearl_ticket(&mut timed, &mut timed_tickets, pos);
         manual.add_ticket(
             pos,
             ChunkTicket::simulated_full_chunks(ENDER_PEARL_TICKET_RADIUS),
@@ -1307,8 +1339,8 @@ mod tests {
         let mut manager = ChunkTicketManager::new();
         let mut timed_tickets = TimedChunkTickets::default();
 
-        timed_tickets.add_portal_ticket(&mut manager, ChunkPos::new(0, 0));
-        timed_tickets.add_ender_pearl_ticket(&mut manager, ChunkPos::new(1, 0));
+        add_portal_ticket(&mut manager, &mut timed_tickets, ChunkPos::new(0, 0));
+        add_ender_pearl_ticket(&mut manager, &mut timed_tickets, ChunkPos::new(1, 0));
 
         assert_eq!(
             timed_tickets.to_persistent(),

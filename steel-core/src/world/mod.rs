@@ -5233,14 +5233,16 @@ impl LevelAccessor for Arc<World> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Weak};
+    use std::{
+        sync::{Arc, Weak},
+        thread,
+    };
 
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::{
         sound_events, test_support::init_test_registry, vanilla_entities, vanilla_fluids,
         vanilla_items,
     };
-    use tokio::runtime::Builder;
     use uuid::Uuid;
 
     use crate::behavior::init_behaviors;
@@ -5251,6 +5253,17 @@ mod tests {
     const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
     const SECOND_HALF: BlockLocalAabb = BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0);
     static SPLIT_BLOCK: &[BlockLocalAabb] = &[FIRST_HALF, SECOND_HALF];
+
+    fn advance_scheduling_until(world: &Arc<World>, mut ready: impl FnMut() -> bool) {
+        for _ in 0..10_000 {
+            world.chunk_map.advance_scheduling();
+            if ready() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        panic!("chunk scheduling condition did not become ready");
+    }
 
     #[test]
     fn sound_range_uses_event_range_and_strict_vanilla_boundary() {
@@ -5468,100 +5481,106 @@ mod tests {
         init_behaviors();
 
         let world = Arc::clone(test_world());
-        let runtime = Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("set-block test runtime should start");
         let pos = BlockPos::new(1_504, 64, 1_504);
         let chunk_pos = ChunkPos::from_block_pos(pos);
         let simulation_ticket = ChunkTicket::simulated_full_chunks(1);
+        let simulation_revision = world
+            .chunk_map
+            .add_chunk_ticket(chunk_pos, simulation_ticket);
+        advance_scheduling_until(&world, || {
+            world
+                .chunk_map
+                .is_ticket_revision_committed(simulation_revision)
+                && world.chunk_map.with_full_chunk(chunk_pos, |_| ()).is_some()
+        });
+
+        let holder = world
+            .chunk_map
+            .chunks
+            .read_sync(&chunk_pos, |_, holder| Arc::clone(holder))
+            .expect("loaded test chunk should have a holder");
+        assert!(
+            world
+                .chunk_map
+                .is_block_ticking_full_chunk_loaded(chunk_pos)
+        );
+
+        let revision = holder.packet_content_revision();
+        assert!(world.set_block_with_limit(
+            pos,
+            vanilla_blocks::DIRT.default_state(),
+            UpdateFlags::UPDATE_NONE,
+            0,
+        ));
+        assert_eq!(
+            world.get_block_state(pos),
+            vanilla_blocks::DIRT.default_state()
+        );
+        assert_eq!(holder.packet_content_revision(), revision);
+
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        assert_eq!(holder.packet_content_revision(), revision);
+
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::DIRT.default_state(),
+            UpdateFlags::UPDATE_CLIENTS,
+        ));
+        assert_eq!(holder.packet_content_revision(), revision + 1);
+
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_INVISIBLE,
+        ));
+        assert_eq!(holder.packet_content_revision(), revision + 2);
+
+        let unsupported_fire_pos = pos.offset(2, 0, 0);
+        assert!(world.get_block_state(unsupported_fire_pos).is_air());
+        assert!(world.set_block(
+            unsupported_fire_pos,
+            vanilla_blocks::FIRE.default_state(),
+            UpdateFlags::UPDATE_CLIENTS,
+        ));
+        assert!(world.get_block_state(unsupported_fire_pos).is_air());
+        assert_eq!(holder.packet_content_revision(), revision + 3);
+
+        let loading_ticket = ChunkTicket::full_chunks(0);
+        let loading_revision = world.chunk_map.add_chunk_ticket(chunk_pos, loading_ticket);
+        let removal_revision = world
+            .chunk_map
+            .remove_chunk_ticket(chunk_pos, simulation_ticket);
+        advance_scheduling_until(&world, || {
+            world
+                .chunk_map
+                .is_ticket_revision_committed(loading_revision)
+                && world
+                    .chunk_map
+                    .is_ticket_revision_committed(removal_revision)
+        });
+
+        assert!(
+            !world
+                .chunk_map
+                .is_block_ticking_full_chunk_loaded(chunk_pos)
+        );
+        let non_ticking_revision = holder.packet_content_revision();
+
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::DIRT.default_state(),
+            UpdateFlags::UPDATE_CLIENTS,
+        ));
+        assert_eq!(holder.packet_content_revision(), non_ticking_revision);
+
         world
             .chunk_map
-            .chunk_tickets
-            .lock()
-            .add_ticket(chunk_pos, simulation_ticket);
-
-        let completed = runtime.block_on(world.chunk_map.with_full_chunks_in_radius(
-            chunk_pos,
-            0,
-            || {
-                let holder = world
-                    .chunk_map
-                    .chunks
-                    .read_sync(&chunk_pos, |_, holder| Arc::clone(holder))
-                    .expect("loaded test chunk should have a holder");
-                assert!(
-                    world
-                        .chunk_map
-                        .is_block_ticking_full_chunk_loaded(chunk_pos)
-                );
-
-                let revision = holder.packet_content_revision();
-                assert!(world.set_block_with_limit(
-                    pos,
-                    vanilla_blocks::DIRT.default_state(),
-                    UpdateFlags::UPDATE_NONE,
-                    0,
-                ));
-                assert_eq!(
-                    world.get_block_state(pos),
-                    vanilla_blocks::DIRT.default_state()
-                );
-                assert_eq!(holder.packet_content_revision(), revision);
-
-                assert!(world.set_block(
-                    pos,
-                    vanilla_blocks::STONE.default_state(),
-                    UpdateFlags::UPDATE_NONE,
-                ));
-                assert_eq!(holder.packet_content_revision(), revision);
-
-                assert!(world.set_block(
-                    pos,
-                    vanilla_blocks::DIRT.default_state(),
-                    UpdateFlags::UPDATE_CLIENTS,
-                ));
-                assert_eq!(holder.packet_content_revision(), revision + 1);
-
-                assert!(world.set_block(
-                    pos,
-                    vanilla_blocks::STONE.default_state(),
-                    UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_INVISIBLE,
-                ));
-                assert_eq!(holder.packet_content_revision(), revision + 2);
-
-                let unsupported_fire_pos = pos.offset(2, 0, 0);
-                assert!(world.get_block_state(unsupported_fire_pos).is_air());
-                assert!(world.set_block(
-                    unsupported_fire_pos,
-                    vanilla_blocks::FIRE.default_state(),
-                    UpdateFlags::UPDATE_CLIENTS,
-                ));
-                assert!(world.get_block_state(unsupported_fire_pos).is_air());
-                assert_eq!(holder.packet_content_revision(), revision + 3);
-
-                world
-                    .chunk_map
-                    .chunk_tickets
-                    .lock()
-                    .remove_ticket(chunk_pos, simulation_ticket);
-                world.chunk_map.tick_scheduling();
-                assert!(
-                    !world
-                        .chunk_map
-                        .is_block_ticking_full_chunk_loaded(chunk_pos)
-                );
-                let non_ticking_revision = holder.packet_content_revision();
-
-                assert!(world.set_block(
-                    pos,
-                    vanilla_blocks::DIRT.default_state(),
-                    UpdateFlags::UPDATE_CLIENTS,
-                ));
-                assert_eq!(holder.packet_content_revision(), non_ticking_revision);
-            },
-        ));
-        assert!(completed.is_some(), "set-block test chunk should load");
+            .remove_chunk_ticket(chunk_pos, loading_ticket);
+        world.chunk_map.advance_scheduling();
     }
 
     #[test]

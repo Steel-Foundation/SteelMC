@@ -222,10 +222,7 @@ enum KnownPlayerSaveStep {
 /// Tick rate for the chunk sending loop.
 const CHUNK_SENDING_TPS: u64 = 20;
 
-/// Tick rate for the chunk scheduling loop.
-const CHUNK_SCHEDULING_TPS: u64 = 20;
-
-/// Work duration at which an independent chunk tick is considered slow.
+/// Work duration at which background chunk work is considered slow.
 const SLOW_CHUNK_TICK_THRESHOLD: Duration = Duration::from_millis(50);
 
 fn configured_chunk_generation_threads(configured_threads: Option<usize>) -> Option<usize> {
@@ -3739,7 +3736,8 @@ impl Server {
         self.worlds.get(&key)
     }
 
-    /// Runs gameplay packets and the three independent tick loops concurrently.
+    /// Runs gameplay packets, game ticks, and chunk sending. Game-tick boundaries
+    /// fork background chunk-scheduling epochs through each world's task tracker.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
         self.packet_processor.open_after_tick();
         let packet_worker_count = configured_packet_workers(self.config.packet_workers);
@@ -3777,21 +3775,11 @@ impl Server {
             let t = cancel_token.clone();
             tokio::spawn(async move { s.run_chunk_sending_tick(t).await })
         };
-        let chunk_sched_handle = {
-            let s = self.clone();
-            let t = cancel_token.clone();
-            tokio::spawn(async move { s.run_chunk_scheduling_tick(t).await })
-        };
-        let ((), game_result, chunk_send_result, chunk_sched_result) = tokio::join!(
-            packet_workers,
-            game_handle,
-            chunk_send_handle,
-            chunk_sched_handle
-        );
+        let ((), game_result, chunk_send_result) =
+            tokio::join!(packet_workers, game_handle, chunk_send_handle);
         for (task, result) in [
             ("Game tick", game_result),
             ("Chunk sending tick", chunk_send_result),
-            ("Chunk scheduling tick", chunk_sched_result),
         ] {
             if let Err(error) = result {
                 log::error!("{task} task failed: {error}");
@@ -3845,6 +3833,7 @@ impl Server {
 
             let tick_start = Instant::now();
             self.packet_processor.close_for_tick().await;
+            self.advance_chunk_scheduling();
             self.start_player_disconnect_saves(&mut player_disconnect_saves);
 
             let (tick_count, runs_normally) = {
@@ -4080,37 +4069,6 @@ impl Server {
         }
     }
 
-    /// Chunk scheduling tick loop — ticket updates, holder creation, generation, unloads.
-    async fn run_chunk_scheduling_tick(self: Arc<Self>, cancel_token: CancellationToken) {
-        let nanos_per_tick = 1_000_000_000 / CHUNK_SCHEDULING_TPS;
-        let mut next_tick_time = Instant::now();
-
-        loop {
-            if cancel_token.is_cancelled() {
-                break;
-            }
-
-            let now = Instant::now();
-            if now < next_tick_time {
-                tokio::select! {
-                    () = cancel_token.cancelled() => break,
-                    () = sleep(next_tick_time - now) => {}
-                }
-            }
-            next_tick_time += Duration::from_nanos(nanos_per_tick);
-
-            if cancel_token.is_cancelled() {
-                break;
-            }
-
-            let server = self.clone();
-            let _ = spawn_blocking(move || {
-                server.tick_chunk_scheduling();
-            })
-            .await;
-        }
-    }
-
     /// Executes one chunk sending tick across all worlds and players.
     ///
     /// A per-world per-tick encode cache is used so overlapping view areas
@@ -4180,13 +4138,13 @@ impl Server {
             .update_player(player, &view, |chunk| sent_chunks.contains(&chunk));
     }
 
-    /// Executes one chunk scheduling tick across all worlds.
-    fn tick_chunk_scheduling(&self) {
+    /// Commits ready chunk lifecycle epochs and forks the next background work.
+    fn advance_chunk_scheduling(&self) {
         for (i, world) in self.worlds.values().enumerate() {
-            let timings = world.chunk_map.tick_scheduling();
+            let timings = world.chunk_map.advance_scheduling();
 
             let total = timings.ticket_updates
-                + timings.holder_creation
+                + timings.lifecycle_commit
                 + timings.schedule_generation
                 + timings.run_generation
                 + timings.process_unloads;
@@ -4196,12 +4154,12 @@ impl Server {
                     world = i,
                     elapsed = ?total,
                     ticket_updates = ?timings.ticket_updates,
-                    holder_creation = ?timings.holder_creation,
+                    lifecycle_commit = ?timings.lifecycle_commit,
                     schedule_generation = ?timings.schedule_generation,
                     scheduled_count = timings.scheduled_count,
                     run_generation = ?timings.run_generation,
                     process_unloads = ?timings.process_unloads,
-                    "Chunk scheduling tick slow"
+                    "Chunk scheduling epoch slow"
                 );
             }
         }
