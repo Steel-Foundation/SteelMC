@@ -6,6 +6,7 @@ use steel_utils::{BlockPos, BlockStateId, ChunkPos, types::UpdateFlags};
 use wincode::{SchemaRead, SchemaWrite};
 
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
+use rustc_hash::FxHashSet;
 
 use crate::block_entity::SharedBlockEntity;
 use crate::chunk::{
@@ -18,7 +19,7 @@ use crate::chunk::{
 };
 use crate::entity::SharedEntity;
 use crate::world::World;
-use crate::world::tick_scheduler::{BlockTick, FluidTick, TickPriority};
+use crate::world::tick_scheduler::{BlockTick, FluidTick, ScheduledTickKey, TickPriority};
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
 /// The status of a chunk.
@@ -879,6 +880,28 @@ impl ChunkAccess {
     ) {
         if let Self::Full(chunk) = self {
             chunk.drain_ready_scheduled_ticks(ready_block_ticks, ready_fluid_ticks);
+        }
+    }
+
+    /// Advances and collects ready scheduled tick candidates if this is a full chunk.
+    pub fn advance_and_collect_ready_scheduled_ticks(
+        &self,
+        ready_block_ticks: &mut Vec<BlockTick>,
+        ready_fluid_ticks: &mut Vec<FluidTick>,
+    ) {
+        if let Self::Full(chunk) = self {
+            chunk.advance_and_collect_ready_scheduled_ticks(ready_block_ticks, ready_fluid_ticks);
+        }
+    }
+
+    /// Removes globally selected scheduled ticks if this is a full chunk.
+    pub fn remove_selected_scheduled_ticks(
+        &self,
+        selected_block_ticks: &FxHashSet<ScheduledTickKey>,
+        selected_fluid_ticks: &FxHashSet<ScheduledTickKey>,
+    ) {
+        if let Self::Full(chunk) = self {
+            chunk.remove_selected_scheduled_ticks(selected_block_ticks, selected_fluid_ticks);
         }
     }
 

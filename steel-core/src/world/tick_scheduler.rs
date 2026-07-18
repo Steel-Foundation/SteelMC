@@ -104,10 +104,35 @@ pub struct ScheduledTick<T: TickKey> {
 pub type BlockTick = ScheduledTick<BlockRef>;
 /// A scheduled tick targeting a fluid.
 pub type FluidTick = ScheduledTick<FluidRef>;
+/// Deduplication key shared by scheduled tick containers and global selection.
+pub type ScheduledTickKey = (BlockPos, usize);
 /// Per-chunk storage for scheduled block ticks.
 pub type BlockTickList = TickList<BlockRef>;
 /// Per-chunk storage for scheduled fluid ticks.
 pub type FluidTickList = TickList<FluidRef>;
+
+impl<T: TickKey> ScheduledTick<T> {
+    /// Returns the position/type identity used to deduplicate this tick.
+    #[must_use]
+    pub fn key(&self) -> ScheduledTickKey {
+        (self.pos, self.tick_type.key())
+    }
+}
+
+/// Sorts ready ticks in global execution order, retains at most `max_ticks`, and returns their
+/// per-container keys. Ready ticks beyond the limit remain in their chunk tick lists.
+pub fn select_ticks_to_run<T: TickKey>(
+    ready_ticks: &mut Vec<ScheduledTick<T>>,
+    max_ticks: usize,
+) -> FxHashSet<ScheduledTickKey> {
+    ready_ticks.sort_by(|a, b| {
+        a.priority
+            .cmp(&b.priority)
+            .then_with(|| a.sub_tick_order.cmp(&b.sub_tick_order))
+    });
+    ready_ticks.truncate(max_ticks);
+    ready_ticks.iter().map(ScheduledTick::key).collect()
+}
 
 /// Per-chunk storage for scheduled ticks of one type (block or fluid).
 ///
@@ -163,14 +188,20 @@ impl<T: TickKey> TickList<T> {
     ///
     /// Ready ticks are removed from both the tick vec and the dedup set.
     pub fn drain_ready(&mut self) -> Vec<ScheduledTick<T>> {
-        // Decrement all delays
+        let mut ready = Vec::new();
+        self.advance_and_collect_ready(&mut ready);
+        let selected = ready.iter().map(ScheduledTick::key).collect();
+        self.remove_selected(&selected);
+        ready
+    }
+
+    /// Decrements every delay and copies ready ticks into `ready` without removing them.
+    ///
+    /// Keeping the candidates scheduled until global selection allows a world-level cap to leave
+    /// overflow ticks intact, matching vanilla's per-chunk container behavior.
+    pub fn advance_and_collect_ready(&mut self, ready: &mut Vec<ScheduledTick<T>>) {
         for tick in &mut self.ticks {
             tick.delay -= 1;
-        }
-
-        // Partition: ready ticks have delay <= 0
-        let mut ready = Vec::new();
-        self.ticks.retain(|tick| {
             if tick.delay <= 0 {
                 ready.push(ScheduledTick {
                     tick_type: tick.tick_type,
@@ -179,18 +210,22 @@ impl<T: TickKey> TickList<T> {
                     priority: tick.priority,
                     sub_tick_order: tick.sub_tick_order,
                 });
+            }
+        }
+    }
+
+    /// Removes globally selected ticks while retaining ready overflow and future ticks.
+    pub fn remove_selected(&mut self, selected: &FxHashSet<ScheduledTickKey>) {
+        let scheduled = &mut self.scheduled;
+        self.ticks.retain(|tick| {
+            let key = tick.key();
+            if selected.contains(&key) {
+                scheduled.remove(&key);
                 false
             } else {
                 true
             }
         });
-
-        // Remove ready ticks from dedup set
-        for tick in &ready {
-            self.scheduled.remove(&(tick.pos, tick.tick_type.key()));
-        }
-
-        ready
     }
 
     /// Returns the number of scheduled ticks.
@@ -384,6 +419,45 @@ mod tests {
         let ready = list.drain_ready();
         assert_eq!(ready.len(), 1);
         assert_eq!(list.len(), 0);
+    }
+
+    #[test]
+    fn global_limit_retains_ready_overflow_in_the_chunk_list() {
+        let mut list = BlockTickList::new();
+        let high_priority_pos = BlockPos::new(0, 0, 0);
+        let earlier_normal_pos = BlockPos::new(1, 0, 0);
+        let overflow_pos = BlockPos::new(2, 0, 0);
+
+        for (pos, priority, sub_tick_order) in [
+            (overflow_pos, TickPriority::Normal, 10),
+            (high_priority_pos, TickPriority::High, 20),
+            (earlier_normal_pos, TickPriority::Normal, 5),
+        ] {
+            assert!(list.schedule(BlockTick {
+                tick_type: test_block(),
+                pos,
+                delay: 1,
+                priority,
+                sub_tick_order,
+            }));
+        }
+
+        let mut ready = Vec::new();
+        list.advance_and_collect_ready(&mut ready);
+        let selected = select_ticks_to_run(&mut ready, 2);
+        list.remove_selected(&selected);
+
+        assert_eq!(
+            ready.iter().map(|tick| tick.pos).collect::<Vec<_>>(),
+            vec![high_priority_pos, earlier_normal_pos]
+        );
+        assert_eq!(list.len(), 1);
+        assert!(list.has_tick(overflow_pos, test_block()));
+
+        let mut next_tick_ready = Vec::new();
+        list.advance_and_collect_ready(&mut next_tick_ready);
+        assert_eq!(next_tick_ready.len(), 1);
+        assert_eq!(next_tick_ready[0].pos, overflow_pos);
     }
 
     #[test]

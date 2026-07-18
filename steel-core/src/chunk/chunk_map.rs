@@ -51,11 +51,13 @@ use crate::chunk::{
 use crate::chunk_saver::ChunkStorage;
 use crate::player::connection::NetworkConnection;
 use crate::world::World;
-use crate::world::tick_scheduler::{BlockTick, FluidTick};
+use crate::world::tick_scheduler::{BlockTick, FluidTick, select_ticks_to_run};
 use crate::worldgen::{ChunkGeneratorType, WorldGenContext};
 use crate::{entity::Entity, player::Player};
 
 const GENERATION_THREAD_MULTIPLE: usize = 2;
+// Vanilla applies this limit independently to block ticks and fluid ticks.
+const MAX_SCHEDULED_TICKS_PER_TICK: usize = 65_536;
 
 /// Lifetime, in ticks, of a thrown ender pearl's chunk ticket (vanilla
 /// `TicketType.ENDER_PEARL` timeout). The pearl refreshes it every
@@ -1437,9 +1439,21 @@ impl ChunkMap {
                 let start = Instant::now();
                 for tickable_chunk in &tickable_chunks {
                     if let Some(chunk_guard) = tickable_chunk.holder.try_chunk(ChunkStatus::Full) {
-                        chunk_guard.drain_ready_scheduled_ticks(
+                        chunk_guard.advance_and_collect_ready_scheduled_ticks(
                             &mut ready_block_ticks,
                             &mut ready_fluid_ticks,
+                        );
+                    }
+                }
+                let selected_block_ticks =
+                    select_ticks_to_run(&mut ready_block_ticks, MAX_SCHEDULED_TICKS_PER_TICK);
+                let selected_fluid_ticks =
+                    select_ticks_to_run(&mut ready_fluid_ticks, MAX_SCHEDULED_TICKS_PER_TICK);
+                for tickable_chunk in &tickable_chunks {
+                    if let Some(chunk_guard) = tickable_chunk.holder.try_chunk(ChunkStatus::Full) {
+                        chunk_guard.remove_selected_scheduled_ticks(
+                            &selected_block_ticks,
+                            &selected_fluid_ticks,
                         );
                     }
                 }
@@ -1645,20 +1659,12 @@ impl ChunkMap {
     /// Sorts and executes all ready scheduled ticks, calling block/fluid behavior callbacks.
     fn execute_scheduled_ticks(
         world: &Arc<World>,
-        mut ready_block_ticks: Vec<BlockTick>,
-        mut ready_fluid_ticks: Vec<FluidTick>,
+        ready_block_ticks: Vec<BlockTick>,
+        ready_fluid_ticks: Vec<FluidTick>,
     ) {
-        const MAX_TICKS: usize = usize::MAX; // Vanilla uses 65_536, the lion does not concern himself with vanilla hotpatching
-
         if !ready_block_ticks.is_empty() {
-            ready_block_ticks.sort_by(|a, b| {
-                a.priority
-                    .cmp(&b.priority)
-                    .then_with(|| a.sub_tick_order.cmp(&b.sub_tick_order))
-            });
-
             let block_behaviors = &*BLOCK_BEHAVIORS;
-            for tick in ready_block_ticks.iter().take(MAX_TICKS) {
+            for tick in &ready_block_ticks {
                 let state = world.get_block_state(tick.pos);
                 if state.get_block() != tick.tick_type {
                     continue;
@@ -1670,14 +1676,8 @@ impl ChunkMap {
         }
 
         if !ready_fluid_ticks.is_empty() {
-            ready_fluid_ticks.sort_by(|a, b| {
-                a.priority
-                    .cmp(&b.priority)
-                    .then_with(|| a.sub_tick_order.cmp(&b.sub_tick_order))
-            });
-
             let fluid_behaviors = &*FLUID_BEHAVIORS;
-            for tick in ready_fluid_ticks.iter().take(MAX_TICKS) {
+            for tick in &ready_fluid_ticks {
                 let state = world.get_block_state(tick.pos);
                 let fluid_state = state.get_fluid_state();
 

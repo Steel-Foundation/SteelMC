@@ -9,6 +9,7 @@ use std::{
 };
 
 use rand::RngExt;
+use rustc_hash::FxHashSet;
 use steel_protocol::packets::game::{
     BlockEntityInfo, ChunkPacketData, HeightmapType as ProtocolHeightmapType, Heightmaps,
     LightUpdatePacketData,
@@ -35,7 +36,9 @@ use crate::chunk::{
 };
 use crate::entity::SharedEntity;
 use crate::world::World;
-use crate::world::tick_scheduler::{BlockTick, BlockTickList, FluidTick, FluidTickList};
+use crate::world::tick_scheduler::{
+    BlockTick, BlockTickList, FluidTick, FluidTickList, ScheduledTickKey,
+};
 use crate::{
     behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS},
     world::game_event_context::GameEventContext,
@@ -131,6 +134,34 @@ impl LevelChunk {
     ) {
         ready_block_ticks.extend(self.block_ticks.lock().drain_ready());
         ready_fluid_ticks.extend(self.fluid_ticks.lock().drain_ready());
+    }
+
+    /// Advances scheduled ticks and collects ready candidates without removing them.
+    pub fn advance_and_collect_ready_scheduled_ticks(
+        &self,
+        ready_block_ticks: &mut Vec<BlockTick>,
+        ready_fluid_ticks: &mut Vec<FluidTick>,
+    ) {
+        self.block_ticks
+            .lock()
+            .advance_and_collect_ready(ready_block_ticks);
+        self.fluid_ticks
+            .lock()
+            .advance_and_collect_ready(ready_fluid_ticks);
+    }
+
+    /// Removes the ready ticks chosen by the world-level scheduler cap.
+    pub fn remove_selected_scheduled_ticks(
+        &self,
+        selected_block_ticks: &FxHashSet<ScheduledTickKey>,
+        selected_fluid_ticks: &FxHashSet<ScheduledTickKey>,
+    ) {
+        self.block_ticks
+            .lock()
+            .remove_selected(selected_block_ticks);
+        self.fluid_ticks
+            .lock()
+            .remove_selected(selected_fluid_ticks);
     }
 
     /// Runs vanilla random block ticks for this chunk.

@@ -77,10 +77,7 @@ impl LeavesBlock {
         {
             return Some(0);
         }
-        if state.try_get_value(&DISTANCE).is_some() {
-            return Some(state.get_value(&DISTANCE));
-        }
-        None
+        state.try_get_value(&DISTANCE)
     }
 }
 
