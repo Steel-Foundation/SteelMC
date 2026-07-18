@@ -26,6 +26,7 @@ mod c_hurt_animation;
 mod c_initialize_border;
 mod c_level_chunk_with_light;
 mod c_level_event;
+mod c_level_particles;
 mod c_light_update;
 mod c_login;
 mod c_move_entity;
@@ -144,6 +145,7 @@ pub use c_level_chunk_with_light::{
     LightUpdatePacketData,
 };
 pub use c_level_event::CLevelEvent;
+pub use c_level_particles::CLevelParticles;
 pub use c_light_update::CLightUpdate;
 pub use c_login::CLogin;
 pub use c_login::CommonPlayerSpawnInfo;

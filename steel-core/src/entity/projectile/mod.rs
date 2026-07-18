@@ -18,12 +18,19 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
+use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLOCKS};
+use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{UuidExt, WorldAabb};
 use uuid::Uuid;
 
-use crate::entity::{Entity, SharedEntity};
+use crate::behavior::BLOCK_BEHAVIORS;
+use crate::entity::damage::DamageSource;
+use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::world::game_event_context::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
 
 pub use throwable::ThrowableProjectile;
@@ -72,12 +79,66 @@ pub struct EntityHitResult {
     pub location: DVec3,
 }
 
+/// Vanilla projectile deflection behaviors (`ProjectileDeflection`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectileDeflection {
+    /// Continue with normal hit handling.
+    None,
+    /// Reverse the projectile with Vanilla's randomized yaw adjustment.
+    Reverse,
+    /// Redirect the projectile along the deflecting entity's look direction.
+    AimDeflect,
+    /// Redirect the projectile along the deflecting entity's movement direction.
+    MomentumDeflect,
+}
+
+impl ProjectileDeflection {
+    fn apply(self, projectile: &dyn Projectile, deflecting_entity: Option<&dyn Entity>) {
+        match self {
+            Self::None => {}
+            Self::Reverse => {
+                let rotation = rand::random_range(170.0..190.0);
+                projectile.set_velocity(projectile.velocity() * -0.5);
+                let (yaw, pitch) = projectile.rotation();
+                projectile.set_rotation((yaw + rotation, pitch));
+                let (old_yaw, old_pitch) = projectile.base().old_rotation();
+                projectile
+                    .base()
+                    .set_old_rotation((old_yaw + rotation, old_pitch));
+                projectile.mark_velocity_sync();
+            }
+            Self::AimDeflect => {
+                let Some(entity) = deflecting_entity else {
+                    return;
+                };
+                projectile.set_velocity(entity.look_angle());
+                projectile.mark_velocity_sync();
+            }
+            Self::MomentumDeflect => {
+                let Some(entity) = deflecting_entity else {
+                    return;
+                };
+                let movement = entity.velocity();
+                let length = movement.length();
+                let normalized = if length < 1.0e-5 {
+                    DVec3::ZERO
+                } else {
+                    movement / length
+                };
+                projectile.set_velocity(normalized);
+                projectile.mark_velocity_sync();
+            }
+        }
+    }
+}
+
 struct ProjectileState {
     owner: Option<Uuid>,
     owner_entity: Option<Weak<dyn Entity>>,
     left_owner: bool,
     left_owner_checked: bool,
     has_been_shot: bool,
+    last_deflected_by: Option<Weak<dyn Entity>>,
 }
 
 /// Runtime fields shared by vanilla projectiles (vanilla `Projectile` fields).
@@ -96,6 +157,7 @@ impl ProjectileBase {
                 left_owner: false,
                 left_owner_checked: false,
                 has_been_shot: false,
+                last_deflected_by: None,
             }),
         }
     }
@@ -107,10 +169,32 @@ impl Default for ProjectileBase {
     }
 }
 
+/// Object-safe access to a projectile trait object from default [`Projectile`] methods.
+pub trait ProjectileEventSource {
+    /// Returns this entity as a projectile.
+    fn as_projectile_event_source(&self) -> &dyn Projectile;
+}
+
+impl<T: Projectile> ProjectileEventSource for T {
+    fn as_projectile_event_source(&self) -> &dyn Projectile {
+        self
+    }
+}
+
 /// Vanilla-shaped behavior shared by entities that extend `Projectile`.
-pub trait Projectile: Entity {
+pub trait Projectile: Entity + ProjectileEventSource {
     /// Returns shared projectile runtime state.
     fn projectile_base(&self) -> &ProjectileBase;
+
+    /// Returns the horizontal hurt-knockback vector used for this projectile.
+    fn calculate_horizontal_hurt_knockback_direction(
+        &self,
+        _hurt_entity: &dyn LivingEntity,
+        _damage_source: &DamageSource,
+    ) -> (f64, f64) {
+        let movement = self.velocity();
+        (movement.x, movement.z)
+    }
 
     /// Sets the owner UUID. Vanilla stores an `EntityReference`; Steel stores the
     /// UUID and resolves lazily.
@@ -160,6 +244,25 @@ pub trait Projectile: Entity {
         let owner = self.level()?.get_entity_by_uuid(&uuid)?;
         self.cache_owner_entity(&owner);
         Some(owner)
+    }
+
+    /// Returns vanilla `Projectile.mayInteract` for a block position.
+    fn projectile_may_interact(&self, world: &World, pos: steel_utils::BlockPos) -> bool {
+        let Some(owner) = self.get_owner() else {
+            return true;
+        };
+        if owner.as_player().is_some() {
+            return owner.may_interact(world, pos);
+        }
+        world.get_game_rule(&MOB_GRIEFING)
+    }
+
+    /// Returns vanilla `Projectile.mayBreak`.
+    fn may_break(&self, world: &World) -> bool {
+        REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::IMPACT_PROJECTILES)
+            && world.get_game_rule(&PROJECTILES_CAN_BREAK_BLOCKS)
     }
 
     /// Returns vanilla `Projectile.ownedBy`.
@@ -305,6 +408,32 @@ pub trait Projectile: Entity {
         self.set_rotation((yaw, pitch));
     }
 
+    /// Applies a Vanilla projectile deflection.
+    fn deflect(
+        &self,
+        deflection: ProjectileDeflection,
+        deflecting_entity: Option<&dyn Entity>,
+        new_owner_uuid: Option<Uuid>,
+        new_owner_entity: Option<&SharedEntity>,
+        by_attack: bool,
+    ) -> bool {
+        deflection.apply(self.as_projectile_event_source(), deflecting_entity);
+        let mut state = self.projectile_base().state.lock();
+        state.owner = new_owner_uuid;
+        state.owner_entity = new_owner_entity.map(Arc::downgrade);
+        drop(state);
+        self.on_deflection(by_attack);
+        true
+    }
+
+    /// Called after a successful Vanilla projectile deflection.
+    fn on_deflection(&self, _by_attack: bool) {}
+
+    /// Returns whether this projectile bounces from the world border.
+    fn should_bounce_on_world_border(&self) -> bool {
+        false
+    }
+
     /// Casts the move vector and returns the nearest block/entity hit (vanilla
     /// `ProjectileUtil.getHitResultOnMoveVector` with `this::canHitEntity`).
     fn get_hit_result_on_move_vector(&self) -> Option<ProjectileHit> {
@@ -313,7 +442,8 @@ pub trait Projectile: Entity {
         let delta = self.velocity();
         let to = from + delta;
 
-        let block_hit = world.clip(from, to, ClipBlockShape::Collider, ClipFluid::None);
+        let block_hit =
+            world.clip_including_border(from, to, ClipBlockShape::Collider, ClipFluid::None);
         let entity_end = if block_hit.is_miss() {
             to
         } else {
@@ -340,10 +470,51 @@ pub trait Projectile: Entity {
     }
 
     /// Vanilla `Projectile.hitTargetOrDeflectSelf`.
-    fn hit_target_or_deflect_self(&self, hit: &ProjectileHit) {
-        // TODO: projectile deflection (REDIRECTABLE_PROJECTILE / world-border bounce).
-        // Ender pearls neither deflect nor are redirectable, so we always hit.
+    fn hit_target_or_deflect_self(&self, hit: &ProjectileHit) -> ProjectileDeflection {
+        if let ProjectileHit::Entity(entity_hit) = hit {
+            let deflection = entity_hit
+                .entity
+                .deflection(self.as_projectile_event_source());
+            if deflection != ProjectileDeflection::None {
+                let already_deflected = self
+                    .projectile_base()
+                    .state
+                    .lock()
+                    .last_deflected_by
+                    .as_ref()
+                    .and_then(Weak::upgrade)
+                    .is_some_and(|last| Arc::ptr_eq(&last, &entity_hit.entity));
+                let owner_uuid = self.owner_uuid();
+                let owner_entity = self.get_owner();
+                if !already_deflected
+                    && self.deflect(
+                        deflection,
+                        Some(entity_hit.entity.as_ref()),
+                        owner_uuid,
+                        owner_entity.as_ref(),
+                        false,
+                    )
+                {
+                    self.projectile_base().state.lock().last_deflected_by =
+                        Some(Arc::downgrade(&entity_hit.entity));
+                }
+                return deflection;
+            }
+        } else if let ProjectileHit::Block { hit, .. } = hit
+            && self.should_bounce_on_world_border()
+            && hit.world_border_hit
+        {
+            let deflection = ProjectileDeflection::Reverse;
+            let owner_uuid = self.owner_uuid();
+            let owner_entity = self.get_owner();
+            if self.deflect(deflection, None, owner_uuid, owner_entity.as_ref(), false) {
+                self.set_velocity(self.velocity() * 0.2);
+                return deflection;
+            }
+        }
+
         self.on_hit(hit);
+        ProjectileDeflection::None
     }
 
     /// Vanilla `Projectile.onHit`. Subclasses override this and call
@@ -355,13 +526,44 @@ pub trait Projectile: Entity {
     /// The base `Projectile.onHit` dispatch to block/entity handlers. Not meant to
     /// be overridden — override [`Projectile::on_hit`] and delegate here instead.
     fn projectile_on_hit(&self, hit: &ProjectileHit) {
-        // TODO: fire the PROJECTILE_LAND game event (sculk sensors) once an
-        // `&dyn Entity` source cast is available here.
+        let world = self.level();
         match hit {
             ProjectileHit::Entity(entity_hit) => {
+                if REGISTRY.entity_types.is_in_tag(
+                    entity_hit.entity.entity_type(),
+                    &EntityTypeTag::REDIRECTABLE_PROJECTILE,
+                ) && let Some(projectile) = entity_hit.entity.as_projectile()
+                {
+                    let owner_uuid = self.owner_uuid();
+                    let owner_entity = self.get_owner();
+                    projectile.deflect(
+                        ProjectileDeflection::AimDeflect,
+                        owner_entity.as_deref(),
+                        owner_uuid,
+                        owner_entity.as_ref(),
+                        true,
+                    );
+                }
                 self.on_hit_entity(&entity_hit.entity, entity_hit.location);
+                if let Some(world) = world {
+                    world.game_event_at(
+                        &vanilla_game_events::PROJECTILE_LAND,
+                        entity_hit.location,
+                        &GameEventContext::new(Some(self.as_entity_event_source()), None),
+                    );
+                }
             }
-            ProjectileHit::Block { hit, .. } => self.on_hit_block(hit),
+            ProjectileHit::Block { hit, .. } => {
+                self.on_hit_block(hit);
+                if let Some(world) = world {
+                    let state = world.get_block_state(hit.block_pos);
+                    world.game_event(
+                        &vanilla_game_events::PROJECTILE_LAND,
+                        hit.block_pos,
+                        &GameEventContext::new(Some(self.as_entity_event_source()), Some(state)),
+                    );
+                }
+            }
         }
     }
 
@@ -369,14 +571,36 @@ pub trait Projectile: Entity {
     fn on_hit_entity(&self, _entity: &SharedEntity, _location: DVec3) {}
 
     /// Vanilla `Projectile.onHitBlock`.
-    fn on_hit_block(&self, _hit: &ClipHitResult) {
-        // TODO: call BlockState.onProjectileHit once block behaviors expose it.
+    fn on_hit_block(&self, hit: &ClipHitResult) {
+        self.projectile_on_hit_block(hit);
+    }
+
+    /// The base `Projectile.onHitBlock` implementation. Concrete projectiles
+    /// that override the hook call this to preserve the Java `super` dispatch.
+    fn projectile_on_hit_block(&self, hit: &ClipHitResult) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        let Some(projectile) = self.as_projectile() else {
+            return;
+        };
+        let state = world.get_block_state(hit.block_pos);
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .on_projectile_hit(state, &world, hit, projectile);
     }
 
     /// Vanilla `Projectile.tick` (the `super.tick()` reached from subclasses).
     fn projectile_base_tick(&self) {
         if !self.has_been_shot() {
-            // TODO: fire the PROJECTILE_SHOOT game event for the owner.
+            if let Some(world) = self.level() {
+                let owner = self.get_owner();
+                world.game_event_at(
+                    &vanilla_game_events::PROJECTILE_SHOOT,
+                    self.position(),
+                    &GameEventContext::new(owner.as_deref(), None),
+                );
+            }
             self.set_has_been_shot(true);
         }
         self.check_left_owner();
@@ -511,10 +735,18 @@ fn lerp_rotation(mut rot_old: f32, rot: f32) -> f32 {
 mod tests {
     use super::*;
     use steel_registry::{
-        entity_type::EntityTypeRef, test_support::init_test_registry, vanilla_entities,
+        blocks::properties::{BlockStateProperties, Tilt},
+        entity_type::EntityTypeRef,
+        test_support::init_test_registry,
+        vanilla_blocks, vanilla_entities,
     };
+    use steel_utils::{BlockPos, ChunkPos, Direction, types::UpdateFlags};
 
-    use crate::entity::EntityBase;
+    use crate::{
+        behavior::init_behaviors,
+        entity::{EntityBase, entities::FireworkRocketEntity},
+        test_support::{test_world, world_border_projectile_test_world},
+    };
 
     struct OwnerCollisionProjectile {
         base: EntityBase,
@@ -556,13 +788,24 @@ mod tests {
     struct OwnerCollisionTestEntity {
         base: EntityBase,
         pickable: bool,
+        entity_type: EntityTypeRef,
     }
 
     impl OwnerCollisionTestEntity {
         fn shared(id: i32, position: DVec3, pickable: bool) -> SharedEntity {
+            Self::shared_with_type(id, position, pickable, &vanilla_entities::PIG)
+        }
+
+        fn shared_with_type(
+            id: i32,
+            position: DVec3,
+            pickable: bool,
+            entity_type: EntityTypeRef,
+        ) -> SharedEntity {
             Arc::new(Self {
-                base: EntityBase::new(id, position, vanilla_entities::PIG.dimensions, Weak::new()),
+                base: EntityBase::new(id, position, entity_type.dimensions, Weak::new()),
                 pickable,
+                entity_type,
             })
         }
     }
@@ -575,7 +818,7 @@ mod tests {
         }
 
         fn entity_type(&self) -> EntityTypeRef {
-            &vanilla_entities::PIG
+            self.entity_type
         }
 
         fn is_pickable(&self) -> bool {
@@ -604,6 +847,181 @@ mod tests {
         let hit = clip_segment(aabb, DVec3::ZERO, DVec3::new(0.0, 5.0, 0.0))
             .expect("a ray starting inside the box hits at its origin");
         assert_eq!(hit, DVec3::ZERO);
+    }
+
+    #[test]
+    fn may_break_requires_impact_projectile_tag() {
+        init_test_registry();
+
+        let firework = FireworkRocketEntity::new(
+            &vanilla_entities::FIREWORK_ROCKET,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        );
+        let ender_pearl = OwnerCollisionProjectile::new(2, DVec3::ZERO);
+
+        assert!(firework.may_break(test_world()));
+        assert!(!ender_pearl.may_break(test_world()));
+    }
+
+    #[test]
+    fn move_vector_synthesizes_world_border_block_hit() {
+        init_test_registry();
+        init_behaviors();
+
+        let world = Arc::clone(world_border_projectile_test_world());
+        let firework = FireworkRocketEntity::new(
+            &vanilla_entities::FIREWORK_ROCKET,
+            3,
+            DVec3::new(4.5, 64.0, 0.0),
+            Arc::downgrade(&world),
+        );
+        firework.set_velocity(DVec3::X);
+
+        let Some(ProjectileHit::Block { location, hit }) = firework.get_hit_result_on_move_vector()
+        else {
+            panic!("firework should hit the world border");
+        };
+
+        assert!(hit.world_border_hit);
+        assert!(!hit.inside);
+        assert_eq!(hit.direction, Direction::East);
+        assert_eq!(hit.block_pos, BlockPos::new(4, 64, 0));
+        assert_eq!(location, hit.location);
+        assert!(location.x < 5.0 && location.x > 4.999);
+    }
+
+    #[test]
+    fn firework_deflects_without_exploding_on_deflecting_entity() {
+        init_test_registry();
+
+        let world = Arc::clone(test_world());
+        let firework = FireworkRocketEntity::new(
+            &vanilla_entities::FIREWORK_ROCKET,
+            4,
+            DVec3::ZERO,
+            Arc::downgrade(&world),
+        );
+        firework.set_velocity(DVec3::X);
+        let deflector = OwnerCollisionTestEntity::shared_with_type(
+            5,
+            DVec3::X,
+            true,
+            &vanilla_entities::BREEZE,
+        );
+
+        let deflection =
+            firework.hit_target_or_deflect_self(&ProjectileHit::Entity(EntityHitResult {
+                entity: deflector,
+                location: DVec3::X,
+            }));
+
+        assert_eq!(deflection, ProjectileDeflection::Reverse);
+        assert_eq!(firework.velocity(), DVec3::new(-0.5, 0.0, 0.0));
+        assert!(firework.needs_velocity_sync());
+        assert!(!firework.is_removed());
+    }
+
+    #[test]
+    fn base_block_hit_dispatches_vanilla_block_callbacks() {
+        init_test_registry();
+        init_behaviors();
+
+        let world = Arc::clone(test_world());
+        let chunk_map = Arc::clone(&world.chunk_map);
+        let pos = BlockPos::new(1_136, 64, 1_136);
+        let block_callback_test =
+            chunk_map.with_full_chunks_in_radius(ChunkPos::from_block_pos(pos), 0, || {
+                let unlit = vanilla_blocks::CANDLE
+                    .default_state()
+                    .set_value(&BlockStateProperties::LIT, false);
+                assert!(world.set_block(pos, unlit, UpdateFlags::UPDATE_ALL));
+
+                let firework = FireworkRocketEntity::new(
+                    &vanilla_entities::FIREWORK_ROCKET,
+                    3,
+                    DVec3::new(1_136.5, 64.5, 1_136.5),
+                    Arc::downgrade(&world),
+                );
+                firework.set_remaining_fire_ticks(1);
+                firework.projectile_on_hit_block(&ClipHitResult {
+                    location: firework.position(),
+                    direction: Direction::Up,
+                    block_pos: pos,
+                    miss: false,
+                    inside: false,
+                    world_border_hit: false,
+                });
+
+                assert!(
+                    world
+                        .get_block_state(pos)
+                        .get_value(&BlockStateProperties::LIT)
+                );
+
+                let campfire_pos = pos.offset(1, 0, 0);
+                let unlit_campfire = vanilla_blocks::CAMPFIRE
+                    .default_state()
+                    .set_value(&BlockStateProperties::LIT, false)
+                    .set_value(&BlockStateProperties::WATERLOGGED, false);
+                assert!(
+                    world.set_block(campfire_pos, unlit_campfire, UpdateFlags::UPDATE_CLIENTS,)
+                );
+                firework.projectile_on_hit_block(&ClipHitResult {
+                    location: firework.position(),
+                    direction: Direction::Up,
+                    block_pos: campfire_pos,
+                    miss: false,
+                    inside: false,
+                    world_border_hit: false,
+                });
+                assert!(
+                    world
+                        .get_block_state(campfire_pos)
+                        .get_value(&BlockStateProperties::LIT)
+                );
+
+                let dripleaf_pos = pos.offset(2, 0, 0);
+                assert!(world.set_block(
+                    dripleaf_pos,
+                    vanilla_blocks::BIG_DRIPLEAF.default_state(),
+                    UpdateFlags::UPDATE_CLIENTS,
+                ));
+                firework.projectile_on_hit_block(&ClipHitResult {
+                    location: firework.position(),
+                    direction: Direction::Up,
+                    block_pos: dripleaf_pos,
+                    miss: false,
+                    inside: false,
+                    world_border_hit: false,
+                });
+                assert_eq!(
+                    world
+                        .get_block_state(dripleaf_pos)
+                        .get_value(&BlockStateProperties::TILT),
+                    Tilt::Full
+                );
+
+                let chorus_pos = pos.offset(3, 0, 0);
+                assert!(world.set_block(
+                    chorus_pos,
+                    vanilla_blocks::CHORUS_FLOWER.default_state(),
+                    UpdateFlags::UPDATE_CLIENTS,
+                ));
+                firework.projectile_on_hit_block(&ClipHitResult {
+                    location: firework.position(),
+                    direction: Direction::Up,
+                    block_pos: chorus_pos,
+                    miss: false,
+                    inside: false,
+                    world_border_hit: false,
+                });
+                assert!(world.get_block_state(chorus_pos).is_air());
+            });
+        let result = chunk_map.chunk_runtime.block_on(block_callback_test);
+
+        assert_eq!(result, Some(()));
     }
 
     #[test]

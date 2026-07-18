@@ -69,10 +69,20 @@ macro_rules! impl_registry_entry {
     };
 }
 
-/// Implements the default register, replace, and iter methods in the registries
+/// Implements the default register and iter methods in the registries.
+///
+/// An optional final error format enables duplicate-key rejection for registries
+/// whose entries carry behavior that must remain tied to their registered identity.
 #[macro_export]
 macro_rules! impl_standard_methods {
-    ($Registry:ty, $Entry:ty, $id_field:ident, $key_field:ident, $allow_registering:ident) => {
+    (
+        $Registry:ty,
+        $Entry:ty,
+        $id_field:ident,
+        $key_field:ident,
+        $allow_registering:ident
+        $(, $duplicate_key_error:literal)?
+    ) => {
         impl $Registry {
             pub fn register(&mut self, entry: $Entry) -> usize {
                 assert!(
@@ -83,6 +93,13 @@ macro_rules! impl_standard_methods {
                         " after registry has been frozen"
                     )
                 );
+                $(
+                    assert!(
+                        !self.$key_field.contains_key(&entry.key),
+                        $duplicate_key_error,
+                        entry.key
+                    );
+                )?
                 let id = self.$id_field.len();
                 self.$id_field.push(entry);
                 self.$key_field.insert(entry.key.clone(), id);

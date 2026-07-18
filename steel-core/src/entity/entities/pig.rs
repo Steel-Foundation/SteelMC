@@ -20,8 +20,8 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::PigEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
-    REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt, sound_events, vanilla_attributes,
-    vanilla_items, vanilla_particle_types, vanilla_pig_sound_variants, vanilla_pig_variants,
+    REGISTRY, RegistryExt, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_items,
+    vanilla_pig_sound_variants, vanilla_pig_variants,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -340,15 +340,7 @@ impl PigEntity {
             return;
         }
 
-        let Some(particle_type_id) = vanilla_particle_types::ENTITY_EFFECT.try_id() else {
-            log::error!("vanilla entity_effect particle type is not registered");
-            return;
-        };
-        let Ok(particle_type_id) = i32::try_from(particle_type_id) else {
-            log::error!("vanilla entity_effect particle type id does not fit protocol i32");
-            return;
-        };
-        let display = self.living_base.mob_effect_display_state(particle_type_id);
+        let display = self.living_base.mob_effect_display_state();
 
         {
             let mut entity_data = self.entity_data.lock();

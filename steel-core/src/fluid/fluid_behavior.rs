@@ -60,13 +60,6 @@ pub trait FluidBehavior: Send + Sync {
         // default: do nothing
     }
 
-    /// Called at tick time to play ambient animations (sounds, particles).
-    #[expect(
-        unused_variables,
-        reason = "default trait implementation ignores all params"
-    )]
-    fn animate_tick(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {}
-
     /// Checks if this fluid can convert to a source block at the given position.
     fn can_convert_to_source(&self, _world: &Arc<World>) -> bool {
         false

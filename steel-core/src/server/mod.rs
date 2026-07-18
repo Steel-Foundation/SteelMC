@@ -90,8 +90,12 @@ use steel_registry::{
     REGISTRY, Registry, RegistryEntry, dimension_type::DimensionTypeRef, vanilla_dimension_types,
     vanilla_entities,
 };
-use steel_utils::locks::{AsyncMutex, SyncMutex};
-use steel_utils::{BlockPos, ChunkPos, Identifier, locks::SyncRwLock};
+use steel_utils::{
+    BlockPos, ChunkPos, Identifier,
+    locks::{AsyncMutex, SyncMutex, SyncRwLock},
+    text::DisplayResolutor,
+    translations,
+};
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{runtime::Runtime, sync::Notify, task::spawn_blocking, time::sleep};
@@ -232,6 +236,7 @@ fn cap_positive_thread_count(
 mod tests {
     use std::{
         env::temp_dir,
+        io::Cursor,
         path::{Path, PathBuf},
         slice,
         sync::{Arc, Weak},
@@ -241,7 +246,9 @@ mod tests {
     use glam::DVec3;
     use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
     use steel_registry::entity_type::EntityTypeRef;
+    use steel_registry::packets::play::C_SYSTEM_CHAT;
     use steel_registry::{vanilla_dimension_types, vanilla_entities};
+    use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
     use text_components::TextComponent;
     use tokio::{fs, runtime::Builder};
     use uuid::Uuid;
@@ -271,16 +278,22 @@ mod tests {
         validate_player_permission_group_update,
     };
 
-    struct TestConnection;
+    struct TestConnection {
+        sent_packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
+    }
 
     impl NetworkConnection for TestConnection {
         fn compression(&self) -> Option<CompressionInfo> {
             None
         }
 
-        fn send_encoded(&self, _packet: EncodedPacket) {}
+        fn send_encoded(&self, packet: EncodedPacket) {
+            self.sent_packets.lock().push(packet);
+        }
 
-        fn send_encoded_bundle(&self, _packets: Vec<EncodedPacket>) {}
+        fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
+            self.sent_packets.lock().extend(packets);
+        }
 
         fn disconnect_with_reason(&self, _reason: TextComponent) {}
 
@@ -393,12 +406,25 @@ mod tests {
     }
 
     fn test_player(server: &Arc<Server>, world: Arc<World>, uuid: Uuid) -> Arc<Player> {
-        let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection)));
-        Arc::new_cyclic(|weak_player| {
+        test_player_with_packets(server, world, uuid, "TestPlayer", 1).0
+    }
+
+    fn test_player_with_packets(
+        server: &Arc<Server>,
+        world: Arc<World>,
+        uuid: Uuid,
+        name: &str,
+        entity_id: i32,
+    ) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
+        let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
+        let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection {
+            sent_packets: Arc::clone(&sent_packets),
+        })));
+        let player = Arc::new_cyclic(|weak_player| {
             Player::new(
                 GameProfile {
                     id: uuid,
-                    name: "TestPlayer".to_owned(),
+                    name: name.to_owned(),
                     properties: Vec::new(),
                     profile_actions: None,
                 },
@@ -406,11 +432,28 @@ mod tests {
                 world,
                 Arc::downgrade(server),
                 Arc::clone(&server.config),
-                1,
+                entity_id,
                 weak_player,
                 ClientInformation::default(),
             )
-        })
+        });
+        (player, sent_packets)
+    }
+
+    fn decode_system_chat(packet: &EncodedPacket) -> TextComponent {
+        let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+        let packet_length = VarInt::read(&mut cursor);
+        assert!(packet_length.is_ok(), "packet length should decode");
+        let packet_id = VarInt::read(&mut cursor);
+        let Ok(packet_id) = packet_id else {
+            panic!("packet id should decode");
+        };
+        assert_eq!(packet_id.0, C_SYSTEM_CHAT, "packet should be system chat");
+        let component = TextComponent::read(&mut cursor);
+        let Ok(component) = component else {
+            panic!("system chat component should decode");
+        };
+        component
     }
 
     struct TestEntity {
@@ -653,6 +696,57 @@ mod tests {
             drop(revoked_source);
             drop(granted_source);
             drop(player);
+            drop(server);
+            if let Err(error) = fs::remove_dir_all(&storage_root).await {
+                panic!("test storage should be removed: {error}");
+            }
+        });
+    }
+
+    #[test]
+    fn renamed_join_message_only_reaches_existing_players() {
+        let world = Arc::clone(test_world());
+        let runtime = Builder::new_current_thread().enable_all().build();
+        let Ok(runtime) = runtime else {
+            panic!("test runtime should initialize");
+        };
+        runtime.block_on(async {
+            let storage_root = test_storage_root("join-message-recipients");
+            let server = test_server(
+                Arc::clone(&world),
+                PermissionSubjectIndex::new(),
+                &storage_root,
+            )
+            .await;
+            let Ok(server) = server else {
+                panic!("test server should initialize");
+            };
+            let (existing_player, existing_packets) = test_player_with_packets(
+                &server,
+                Arc::clone(&world),
+                Uuid::from_u128(1),
+                "ExistingPlayer",
+                1,
+            );
+            let (joining_player, joining_packets) =
+                test_player_with_packets(&server, world, Uuid::from_u128(2), "NewName", 2);
+            assert!(server.online_players.insert(existing_player));
+            assert!(server.online_players.insert(Arc::clone(&joining_player)));
+
+            server.broadcast_player_join_message(&joining_player, Some("OldName"));
+
+            {
+                let existing_packets = existing_packets.lock();
+                assert_eq!(existing_packets.len(), 1);
+                let message = decode_system_chat(&existing_packets[0]);
+                assert_eq!(
+                    message.to_plain(&DisplayResolutor),
+                    "NewName (formerly known as OldName) joined the game"
+                );
+            }
+            assert!(joining_packets.lock().is_empty());
+
+            drop(joining_player);
             drop(server);
             if let Err(error) = fs::remove_dir_all(&storage_root).await {
                 panic!("test storage should be removed: {error}");
@@ -2155,13 +2249,13 @@ impl Server {
             .await
     }
 
-    fn process_player_joins(&self) {
+    fn process_player_joins(self: &Arc<Self>) {
         for join in self.pending_player_joins.drain() {
             self.finish_prepared_player_join(join);
         }
     }
 
-    fn finish_prepared_player_join(&self, join: PendingPlayerJoin) {
+    fn finish_prepared_player_join(self: &Arc<Self>, join: PendingPlayerJoin) {
         let PendingPlayerJoin { player, state } = join;
         let uuid = player.gameprofile.id;
         if player.connection.closed() {
@@ -2200,6 +2294,8 @@ impl Server {
             self.remove_online_player_sync(&player);
             return;
         }
+        let previous_name = self.record_known_player(&player.gameprofile);
+        self.broadcast_player_join_message(&player, previous_name.as_deref());
         self.sync_tab_list(&player);
         if player.mark_joined_world() {
             player.send_inventory_to_remote();
@@ -2279,6 +2375,8 @@ impl Server {
             return;
         }
 
+        // Vanilla broadcasts before removing the player from its global player list.
+        self.broadcast_player_leave_message(&player);
         self.broadcast_to_online(CRemovePlayerInfo::single(uuid));
         let player = self.online_players.remove_player_sync(&player);
 
@@ -2563,8 +2661,19 @@ impl Server {
     }
 
     /// Records a connected player identity in the persistent profile cache.
-    pub fn record_known_player(self: &Arc<Self>, profile: &GameProfile) {
-        self.record_known_profile(profile.id, profile.name.clone());
+    /// Returns the previous cached name for this UUID, if any.
+    pub fn record_known_player(self: &Arc<Self>, profile: &GameProfile) -> Option<String> {
+        let mut known = self.known_players.lock();
+        let previous = known
+            .players
+            .by_uuid(profile.id)
+            .map(|entry| entry.last_known_name().to_owned());
+        let start_worker = known.record(profile.id, profile.name.clone());
+        drop(known);
+        if start_worker {
+            self.start_known_player_save_worker();
+        }
+        previous
     }
 
     /// Records a UUID and last-known name in the persistent profile cache.
@@ -4167,6 +4276,17 @@ impl Server {
         }
     }
 
+    /// Logs and broadcasts a system chat message to online players.
+    fn broadcast_system_chat(&self, message: &TextComponent, excluded_player: Option<Uuid>) {
+        log::info!("{}", message.to_plain(&DisplayResolutor));
+        self.online_players.iter_players(|uuid, player| {
+            if Some(*uuid) != excluded_player {
+                player.send_packet(CSystemChat::new(message, false, player));
+            }
+            true
+        });
+    }
+
     /// Broadcasts the tab list header/footer with current TPS and MSPT values.
     fn broadcast_tab_list(&self, tps: f32, mspt: f32) {
         // Color TPS based on value
@@ -4203,8 +4323,6 @@ impl Server {
 
     /// Broadcasts a sprint completion report to all players.
     pub(crate) fn broadcast_sprint_report(&self, report: &SprintReport) {
-        use steel_utils::translations;
-
         let message: TextComponent = translations::COMMANDS_TICK_SPRINT_REPORT
             .message([
                 TextComponent::from(format!("{}", report.ticks_per_second)),
@@ -4212,7 +4330,32 @@ impl Server {
             ])
             .into();
 
-        self.broadcast_to_online_with(|player| CSystemChat::new(&message, false, player));
+        self.broadcast_system_chat(&message, None);
+    }
+
+    fn broadcast_player_join_message(&self, player: &Player, previous_name: Option<&str>) {
+        let display_name = player.display_name();
+        // Fallback to the current name when the cache has no prior entry.
+        let old_name = previous_name.unwrap_or(player.gameprofile.name.as_str());
+        let message: TextComponent = if player.gameprofile.name.eq_ignore_ascii_case(old_name) {
+            translations::MULTIPLAYER_PLAYER_JOINED
+                .message([display_name])
+                .into()
+        } else {
+            translations::MULTIPLAYER_PLAYER_JOINED_RENAMED
+                .message([display_name, TextComponent::plain(old_name.to_owned())])
+                .into()
+        };
+        let message = message.color(Color::Yellow);
+        self.broadcast_system_chat(&message, Some(player.gameprofile.id));
+    }
+
+    fn broadcast_player_leave_message(&self, player: &Player) {
+        let message: TextComponent = translations::MULTIPLAYER_PLAYER_LEFT
+            .message([player.display_name()])
+            .into();
+        let message = message.color(Color::Yellow);
+        self.broadcast_system_chat(&message, None);
     }
 
     /// Broadcasts the current tick rate and frozen state to all clients.
