@@ -400,6 +400,7 @@ struct DeathRespawnSpawn {
     position: DVec3,
     rotation: (f32, f32),
     anchor_deplete_sound_pos: Option<BlockPos>,
+    pending_anchor_charge: Option<(BlockPos, BlockStateId)>,
 }
 
 /// Vanilla per-player respawn configuration.
@@ -436,7 +437,6 @@ struct PlayerRespawnJob {
     rotation: (f32, f32),
     kind: RespawnRequestKind,
     phase: PlayerRespawnJobPhase,
-    consume_spawn_block: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -464,7 +464,6 @@ impl PlayerRespawnJob {
         fallback_world: Arc<World>,
         fallback_respawn_data: RespawnData,
         personal_respawn: Option<(Arc<World>, PlayerRespawnConfig)>,
-        consume_spawn_block: bool,
         kind: RespawnRequestKind,
     ) -> Result<Self, String> {
         let fallback_search = PlayerSpawnSearch::new(
@@ -490,7 +489,7 @@ impl PlayerRespawnJob {
                 )
             } else {
                 (
-                    fallback_world.clone(),
+                    Arc::clone(&fallback_world),
                     fallback_rotation,
                     PlayerRespawnJobPhase::Searching(fallback_search),
                     None,
@@ -507,7 +506,6 @@ impl PlayerRespawnJob {
             rotation,
             kind,
             phase,
-            consume_spawn_block,
         })
     }
 
@@ -548,7 +546,7 @@ impl ServerJob for PlayerRespawnJob {
                                 &self.target_world,
                                 &self.player,
                                 config,
-                                self.consume_spawn_block,
+                                matches!(self.kind, RespawnRequestKind::Death),
                             ) {
                                 let request = self
                                     .target_world
@@ -567,7 +565,7 @@ impl ServerJob for PlayerRespawnJob {
                                 self.player.finish_respawn_request();
                                 return JobPoll::Finished;
                             };
-                            self.target_world = self.fallback_world.clone();
+                            self.target_world = Arc::clone(&self.fallback_world);
                             self.rotation = self.fallback_rotation;
                             self.phase = PlayerRespawnJobPhase::Searching(fallback_search);
                         }
@@ -588,6 +586,7 @@ impl ServerJob for PlayerRespawnJob {
                                 position,
                                 rotation: self.rotation,
                                 anchor_deplete_sound_pos: None,
+                                pending_anchor_charge: None,
                             };
                             let request = self.target_world.request_player_spawn_chunks(position);
                             self.phase =
@@ -643,26 +642,23 @@ impl PlayerRespawnJob {
     ) -> Option<DeathRespawnSpawn> {
         let pos = config.respawn_data.pos();
         let state = world.get_block_state(pos);
-        let block = state.get_block();
 
         if RespawnAnchorBlock::can_use_for_respawn(world, pos, state, config.forced) {
             let position = RespawnAnchorBlock::find_standup_position(world, player, pos)?;
-            if RespawnAnchorBlock::should_consume_charge_after_respawn(
-                config.forced,
-                consume_spawn_block,
-                true,
-            ) {
-                RespawnAnchorBlock::consume_charge(world, pos, state);
-            }
-
             return Some(DeathRespawnSpawn {
                 position,
                 rotation: (calculate_respawn_look_at_yaw(position, pos), 0.0),
                 anchor_deplete_sound_pos: Some(pos),
+                pending_anchor_charge: RespawnAnchorBlock::should_consume_charge_after_respawn(
+                    config.forced,
+                    consume_spawn_block,
+                    true,
+                )
+                .then_some((pos, state)),
             });
         }
 
-        if block.has_tag(&BlockTag::BEDS)
+        if state.is_bed()
             && Player::bed_rule_value_allows_in_world(
                 world,
                 world.dimension_type.bed_rule.can_set_spawn,
@@ -680,6 +676,7 @@ impl PlayerRespawnJob {
                 position,
                 rotation: (calculate_respawn_look_at_yaw(position, pos), 0.0),
                 anchor_deplete_sound_pos: None,
+                pending_anchor_charge: None,
             });
         }
 
@@ -714,6 +711,7 @@ impl PlayerRespawnJob {
             ),
             rotation,
             anchor_deplete_sound_pos: None,
+            pending_anchor_charge: None,
         })
     }
 }
@@ -1081,10 +1079,17 @@ impl Player {
         }
 
         self.tick_sleep_counter();
-        if self.is_sleeping()
-            && !self.bed_rule_value_allows(self.get_world().dimension_type.bed_rule.can_sleep)
-        {
-            self.stop_sleep_in_bed(false, true);
+        if self.is_sleeping() {
+            let world = self.get_world();
+            if !self.bed_rule_value_allows(world.dimension_type.bed_rule.can_sleep) {
+                self.stop_sleep_in_bed(false, true);
+            } else if !self.can_interact_with_level()
+                || self
+                    .sleeping_pos()
+                    .is_none_or(|pos| !world.get_block_state(pos).is_bed())
+            {
+                self.stop_sleep_in_bed(true, true);
+            }
         }
 
         let tick_position = self.position();
@@ -1403,23 +1408,17 @@ impl Player {
             });
         }
 
-        if !world.get_game_rule(&KEEP_INVENTORY) {
-            let items: Vec<ItemStack> = {
-                let mut inventory = self.inventory.lock();
-                (0..inventory.get_container_size())
-                    .filter_map(|slot| {
-                        let item = inventory.get_item(slot).clone();
-                        if item.is_empty() {
-                            None
-                        } else {
-                            inventory.set_item(slot, ItemStack::empty());
-                            Some(item)
-                        }
-                    })
-                    .collect()
-            };
-            for item in items {
+        if !world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator {
+            let drops = self.inventory.lock().take_death_drops();
+            for item in drops {
                 let _ = self.drop_item(item, true, false);
+            }
+        }
+
+        if !world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator {
+            let reward = self.experience.lock().death_xp_reward();
+            if reward > 0 {
+                ExperienceOrbEntity::award(&world, self.position(), reward);
             }
         }
 
@@ -1474,15 +1473,12 @@ impl Player {
                 .cloned()
                 .map(|world| (world, config))
         });
-        let consume_spawn_block = !death_world.get_game_rule(&KEEP_INVENTORY);
-
         match PlayerRespawnJob::new(
             player_arc,
             death_world,
             fallback_world,
             fallback_respawn_data,
             personal_respawn,
-            consume_spawn_block,
             RespawnRequestKind::Death,
         ) {
             Ok(job) => server.jobs.spawn(job),
@@ -1510,6 +1506,11 @@ impl Player {
         {
             return;
         }
+        if let Some((pos, state)) = spawn.pending_anchor_charge
+            && !RespawnAnchorBlock::consume_charge(target_world, pos, state)
+        {
+            return;
+        }
 
         self.reset_state_for_death_respawn();
         let was_removed = self.base.clear_removed();
@@ -1518,21 +1519,15 @@ impl Player {
             death_world.unregister_player_entity(self);
         }
 
-        // Handle XP loss on death before sending respawn packet
-        {
-            let mut experience = self.experience.lock();
-            let is_spectator = self.game_mode() == GameType::Spectator;
-            if !death_world.get_game_rule(&KEEP_INVENTORY) && !is_spectator {
-                let reward = experience.death_xp_reward();
-                if reward > 0 {
-                    ExperienceOrbEntity::award(death_world, self.position(), reward);
-                }
-            }
-            if !target_world.get_game_rule(&KEEP_INVENTORY) && !is_spectator {
-                experience.clear();
-            }
-        }
-        if !target_world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator {
+        let keep_inventory =
+            target_world.get_game_rule(&KEEP_INVENTORY) || self.game_mode() == GameType::Spectator;
+        if keep_inventory {
+            self.inventory
+                .lock()
+                .refresh_all_player_equipment_attribute_modifiers();
+        } else {
+            self.inventory.lock().clear_content();
+            self.experience.lock().clear();
             self.set_score(0);
         }
 
@@ -1603,7 +1598,14 @@ impl Player {
         if let Some(pos) = spawn.anchor_deplete_sound_pos
             && target_world.get_block_state(pos).get_block() == &vanilla_blocks::RESPAWN_ANCHOR
         {
-            self.send_block_sound(&sound_events::BLOCK_RESPAWN_ANCHOR_DEPLETE, pos, 1.0, 1.0);
+            self.send_packet(CSound::new(
+                &sound_events::BLOCK_RESPAWN_ANCHOR_DEPLETE,
+                SoundSource::Blocks,
+                pos.0.as_dvec3(),
+                1.0,
+                1.0,
+                rand::random::<i64>(),
+            ));
         }
     }
 
@@ -1689,16 +1691,6 @@ impl Player {
             .record_sent(health, food, saturation == 0.0);
     }
 
-    fn send_block_sound(&self, sound: SoundEventRef, pos: BlockPos, volume: f32, pitch: f32) {
-        self.send_packet(CSound::block_sound(
-            sound,
-            pos,
-            volume,
-            pitch,
-            rand::random::<i64>(),
-        ));
-    }
-
     fn finish_end_credits_respawn(
         self: &Arc<Self>,
         source_world: &Arc<World>,
@@ -1724,8 +1716,9 @@ impl Player {
     fn reset_state_for_death_respawn(&self) {
         self.close_container();
         self.detach_relationships_for_respawn();
+        self.reset_abilities_for_death_respawn();
 
-        self.attributes().lock().remove_all_transient();
+        self.attributes().lock().remove_all_modifiers();
         self.living_base.reset_for_player_respawn();
         self.base
             .reset_for_player_respawn(Self::dimensions_for_pose(EntityPose::Standing));
@@ -1870,7 +1863,6 @@ impl Player {
             target_world.clone(),
             respawn_data,
             None,
-            false,
             RespawnRequestKind::EndCredits,
         ) {
             Ok(job) => server.jobs.spawn(job),
@@ -3493,6 +3485,7 @@ mod tests {
     use crate::test_support::{hard_damage_test_world, test_world};
     use crate::world::World;
 
+    use super::abilities::{DEFAULT_FLYING_SPEED, DEFAULT_WALKING_SPEED};
     use super::{
         ClientInformation, GameProfile, Player, PlayerConnection, PlayerPermissionState,
         PlayerRespawnJob, ResetReason, experience::Experience, first_point_level_up_sound,
@@ -3632,6 +3625,86 @@ mod tests {
 
         assert!(input.death_processed);
         assert!(!Player::should_process_respawn(input.health));
+    }
+
+    #[test]
+    fn death_respawn_rebuilds_abilities_from_game_mode_defaults() {
+        let player = test_player(Arc::clone(test_world()));
+        player.restore_game_modes(GameType::Creative, None);
+        {
+            let mut abilities = player.abilities.lock();
+            abilities.flying = true;
+            abilities.flying_speed = 0.3;
+            abilities.walking_speed = 0.4;
+        }
+
+        player.reset_abilities_for_death_respawn();
+
+        let abilities = player.abilities.lock();
+        assert!(!abilities.flying);
+        assert!(abilities.may_fly);
+        assert!(abilities.instabuild);
+        assert_eq!(
+            abilities.flying_speed.to_bits(),
+            DEFAULT_FLYING_SPEED.to_bits()
+        );
+        assert_eq!(
+            abilities.walking_speed.to_bits(),
+            DEFAULT_WALKING_SPEED.to_bits()
+        );
+    }
+
+    #[test]
+    fn retained_equipment_modifiers_reapply_after_death_attribute_reset() {
+        init_test_registry();
+        let player = test_player(Arc::clone(test_world()));
+        player
+            .inventory
+            .lock()
+            .set_item(39, ItemStack::new(&vanilla_items::DIAMOND_HELMET));
+        player.attributes().lock().remove_all_modifiers();
+        player
+            .inventory
+            .lock()
+            .refresh_all_player_equipment_attribute_modifiers();
+
+        assert_eq!(
+            player
+                .attributes()
+                .lock()
+                .get_base_value(vanilla_attributes::ARMOR)
+                .map(f64::to_bits),
+            Some(0.0_f64.to_bits())
+        );
+        assert_eq!(
+            player
+                .attributes()
+                .lock()
+                .get_value(vanilla_attributes::ARMOR)
+                .map(f64::to_bits),
+            Some(3.0_f64.to_bits())
+        );
+    }
+
+    #[test]
+    fn spectator_death_keeps_inventory() {
+        init_test_registry();
+        let player = test_player(Arc::clone(test_world()));
+        player.restore_game_modes(GameType::Spectator, None);
+        player
+            .inventory
+            .lock()
+            .set_item(0, ItemStack::new(&vanilla_items::STONE));
+
+        player.die(&DamageSource::environment(&vanilla_damage_types::GENERIC));
+
+        assert!(
+            player
+                .inventory
+                .lock()
+                .get_item(0)
+                .is(&vanilla_items::STONE)
+        );
     }
 
     #[test]
@@ -3906,7 +3979,7 @@ mod tests {
     }
 
     #[test]
-    fn forced_respawn_rejects_vanilla_solid_or_liquid_blocks() {
+    fn forced_respawn_uses_vanilla_solid_and_liquid_properties() {
         init_test_registry();
         init_behaviors();
 
@@ -3917,6 +3990,11 @@ mod tests {
         );
         assert!(
             !vanilla_blocks::WATER
+                .default_state()
+                .is_possible_to_respawn_in_this()
+        );
+        assert!(
+            vanilla_blocks::SEAGRASS
                 .default_state()
                 .is_possible_to_respawn_in_this()
         );

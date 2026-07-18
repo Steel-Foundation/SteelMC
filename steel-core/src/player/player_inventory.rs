@@ -686,6 +686,27 @@ impl PlayerInventory {
         );
     }
 
+    /// Reapplies all retained equipment modifiers after the player attribute map is reset
+    pub(super) fn refresh_all_player_equipment_attribute_modifiers(&self) {
+        for slot in EquipmentSlot::ALL {
+            self.refresh_player_equipment_attribute_modifiers(slot);
+        }
+    }
+
+    pub(super) fn take_death_drops(&mut self) -> Vec<ItemStack> {
+        (0..self.get_container_size())
+            .filter_map(|slot| {
+                let item = self.get_item(slot).clone();
+                if item.is_empty() {
+                    return None;
+                }
+                self.set_item(slot, ItemStack::empty());
+                (!item.has_enchantment_effect(EnchantmentEffectComponent::PreventEquipmentDrop))
+                    .then_some(item)
+            })
+            .collect()
+    }
+
     fn set_equipment_slot_item(&mut self, slot: EquipmentSlot, item: ItemStack) -> ItemStack {
         if slot == EquipmentSlot::MainHand {
             return self.set_selected_equipment_item(item);
@@ -1745,6 +1766,21 @@ mod tests {
 
         assert_eq!(inventory.clear_content(), 4);
         assert!(inventory.is_empty());
+    }
+
+    #[test]
+    fn death_drops_destroy_vanishing_items() {
+        init_test_registry();
+        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut vanishing = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
+        vanishing.set_enchantments(&[(Identifier::vanilla_static("vanishing_curse"), 1)], false);
+        inventory.set_item(0, ItemStack::new(&vanilla_items::STONE));
+        inventory.set_item(1, vanishing);
+
+        let drops = inventory.take_death_drops();
+
+        assert!(inventory.is_empty());
+        assert_eq!(drops, [ItemStack::new(&vanilla_items::STONE)]);
     }
 
     #[test]
