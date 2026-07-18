@@ -16,6 +16,7 @@ use tracing_subscriber::filter::Directive;
 
 use futures::future::BoxFuture;
 use reqwest::Url;
+use steel_core::chunk::chunk_ticket_manager::MAX_SUPPORTED_VIEW_DISTANCE;
 use steel_core::config::{
     CompressionInfo, RuntimeConfig, ServerLinks, WorldsConfig, validate_login_security,
 };
@@ -538,8 +539,10 @@ fn validate(config: &ServerConfig) -> Result<(), &'static str> {
     if !config.allow_extended_view_distance && !(1..=32).contains(&config.view_distance) {
         return Err("View distance must in range 1..32");
     }
-    if config.allow_extended_view_distance && !(1..=127).contains(&config.view_distance) {
-        return Err("View distance must in range 1..127");
+    if config.allow_extended_view_distance
+        && !(1..=MAX_SUPPORTED_VIEW_DISTANCE).contains(&config.view_distance)
+    {
+        return Err("View distance must in range 1..125");
     }
     if let Some(auth_server) = &config.auth_server {
         let Ok(url) = Url::parse(auth_server) else {
@@ -820,11 +823,27 @@ mod tests {
                 "allow_extended_view_distance = false",
                 "allow_extended_view_distance = true",
             )
-            .replace("view_distance = 10", "view_distance = 127")
-            .replace("simulation_distance = 10", "simulation_distance = 127");
+            .replace("view_distance = 10", "view_distance = 125")
+            .replace("simulation_distance = 10", "simulation_distance = 125");
         let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
         validate(&config.server).expect("extended view distance validates");
+    }
+
+    #[test]
+    fn validate_rejects_view_distance_above_supported_ticket_range() {
+        let config_toml = DEFAULT_CONFIG
+            .replace(
+                "allow_extended_view_distance = false",
+                "allow_extended_view_distance = true",
+            )
+            .replace("view_distance = 10", "view_distance = 126");
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(
+            validate(&config.server),
+            Err("View distance must in range 1..125")
+        );
     }
 
     #[test]

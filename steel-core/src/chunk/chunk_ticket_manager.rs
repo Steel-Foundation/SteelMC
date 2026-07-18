@@ -10,13 +10,14 @@ use steel_utils::ChunkPos;
 
 use crate::chunk::{chunk_access::ChunkStatus, chunk_pyramid::GENERATION_PYRAMID};
 
-/// The maximum view distance for players.
-pub const MAX_VIEW_DISTANCE: u8 = 127;
+/// The maximum supported view distance for players.
+pub const MAX_SUPPORTED_VIEW_DISTANCE: u8 = 125;
+const FULL_CHUNK_LEVEL_RAW: u8 = MAX_SUPPORTED_VIEW_DISTANCE + 2;
 const RADIUS_AROUND_FULL_CHUNK: u8 = GENERATION_PYRAMID
     .get_step_to(ChunkStatus::Full)
     .accumulated_dependencies
     .get_radius_of(ChunkStatus::Empty) as u8;
-const MAX_LEVEL_RAW: u8 = MAX_VIEW_DISTANCE + RADIUS_AROUND_FULL_CHUNK;
+const MAX_LEVEL_RAW: u8 = FULL_CHUNK_LEVEL_RAW + RADIUS_AROUND_FULL_CHUNK;
 pub(crate) const PORTAL_TICKET_RADIUS: u8 = 3;
 const PORTAL_TICKET_TIMEOUT_TICKS: i64 = 300;
 pub(crate) const ENDER_PEARL_TICKET_TIMEOUT_TICKS: u32 = 40;
@@ -24,19 +25,21 @@ const ENDER_PEARL_TICKET_RADIUS: u8 = 2;
 
 /// A chunk ticket level.
 ///
-/// Lower levels are stronger tickets. `MAX_VIEW_DISTANCE` is the boundary where
-/// a propagated ticket can still make a chunk full; larger levels only keep
-/// dependency chunks loaded far enough for generation.
+/// Lower levels are stronger tickets. `FULL_CHUNK_LEVEL_RAW` is the boundary
+/// where a propagated ticket can still make a chunk full; larger levels only
+/// keep dependency chunks loaded far enough for generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ChunkTicketLevel(u8);
 
 impl ChunkTicketLevel {
+    /// The strongest possible ticket level.
+    pub const STRONGEST: Self = Self(0);
     /// The weakest level whose full chunk may tick entities.
-    pub const ENTITY_TICKING_CHUNK: Self = Self(MAX_VIEW_DISTANCE - 2);
+    pub const ENTITY_TICKING_CHUNK: Self = Self(MAX_SUPPORTED_VIEW_DISTANCE);
     /// The weakest level whose full chunk may tick blocks.
-    pub const BLOCK_TICKING_CHUNK: Self = Self(MAX_VIEW_DISTANCE - 1);
+    pub const BLOCK_TICKING_CHUNK: Self = Self(MAX_SUPPORTED_VIEW_DISTANCE + 1);
     /// The weakest level that still permits a full chunk.
-    pub const FULL_CHUNK: Self = Self(MAX_VIEW_DISTANCE);
+    pub const FULL_CHUNK: Self = Self(FULL_CHUNK_LEVEL_RAW);
     /// The weakest level kept by ticket propagation.
     pub const MAX: Self = Self(MAX_LEVEL_RAW);
 
@@ -53,7 +56,7 @@ impl ChunkTicketLevel {
     /// Builds a full-chunk ticket level from a square radius.
     #[must_use]
     pub const fn for_full_chunk_radius(radius: u8) -> Self {
-        Self(MAX_VIEW_DISTANCE.saturating_sub(radius))
+        Self(FULL_CHUNK_LEVEL_RAW.saturating_sub(radius))
     }
 
     /// Builds an entity-ticking ticket level from a square radius.
@@ -185,10 +188,25 @@ impl ChunkTicket {
         }
     }
 
-    /// Creates a player ticket, capping simulation to the loaded radius.
+    /// Creates a player ticket with Vanilla's two-chunk loading moat.
+    ///
+    /// Loading is entity-ticking through `view_distance`, block-ticking one
+    /// chunk farther, and full one chunk beyond that. Simulation is capped to
+    /// the view distance.
     #[must_use]
-    pub const fn player(load_radius: u8, simulation_radius: u8) -> Self {
-        Self::full_chunks_with_entity_ticking(load_radius, simulation_radius)
+    pub const fn player(view_distance: u8, simulation_radius: u8) -> Self {
+        let simulation_radius = if simulation_radius > view_distance {
+            view_distance
+        } else {
+            simulation_radius
+        };
+
+        Self {
+            load_level: ChunkTicketLevel::for_entity_ticking_radius(view_distance),
+            simulation_level: Some(ChunkTicketLevel::for_entity_ticking_radius(
+                simulation_radius,
+            )),
+        }
     }
 
     #[must_use]
@@ -239,7 +257,7 @@ pub const fn generation_status(level: Option<ChunkTicketLevel>) -> Option<ChunkS
             if is_full(level) {
                 Some(ChunkStatus::Full)
             } else {
-                let distance = (level.raw() - MAX_VIEW_DISTANCE) as usize;
+                let distance = (level.raw() - FULL_CHUNK_LEVEL_RAW) as usize;
                 // Fallback to None if distance is out of bounds (simulating Vanilla logic)
                 GENERATION_PYRAMID
                     .get_step_to(ChunkStatus::Full)
@@ -260,7 +278,7 @@ pub const fn ticket_level_for_status(status: ChunkStatus) -> ChunkTicketLevel {
         ChunkTicketLevel::FULL_CHUNK
     } else {
         ChunkTicketLevel(
-            MAX_VIEW_DISTANCE
+            FULL_CHUNK_LEVEL_RAW
                 + GENERATION_PYRAMID
                     .get_step_to(ChunkStatus::Full)
                     .accumulated_dependencies
@@ -812,7 +830,7 @@ mod tests {
         let mut manager = ChunkTicketManager::new();
         manager.add_ticket(
             ChunkPos::new(0, 0),
-            ChunkTicket::full_chunks(MAX_VIEW_DISTANCE),
+            ChunkTicket::loading(ChunkTicketLevel::STRONGEST),
         );
         manager.run_all_updates();
 
@@ -843,7 +861,7 @@ mod tests {
         let mut manager = ChunkTicketManager::new();
         manager.add_ticket(
             ChunkPos::new(0, 0),
-            ChunkTicket::full_chunks(MAX_VIEW_DISTANCE),
+            ChunkTicket::loading(ChunkTicketLevel::STRONGEST),
         );
 
         assert!(manager.is_dirty());
@@ -866,7 +884,7 @@ mod tests {
         );
         manager.add_ticket(
             ChunkPos::new(0, 0),
-            ChunkTicket::full_chunks(MAX_VIEW_DISTANCE),
+            ChunkTicket::loading(ChunkTicketLevel::STRONGEST),
         );
         manager.add_ticket(
             ChunkPos::new(0, 0),
@@ -889,11 +907,11 @@ mod tests {
         let mut manager = ChunkTicketManager::new();
         manager.add_ticket(
             ChunkPos::new(0, 0),
-            ChunkTicket::full_chunks(MAX_VIEW_DISTANCE),
+            ChunkTicket::loading(ChunkTicketLevel::STRONGEST),
         );
         manager.add_ticket(
             ChunkPos::new(3, 0),
-            ChunkTicket::full_chunks(MAX_VIEW_DISTANCE),
+            ChunkTicket::loading(ChunkTicketLevel::STRONGEST),
         );
         manager.run_all_updates();
 
@@ -910,7 +928,7 @@ mod tests {
     #[test]
     fn test_remove_ticket() {
         let mut manager = ChunkTicketManager::new();
-        let ticket = ChunkTicket::full_chunks(MAX_VIEW_DISTANCE);
+        let ticket = ChunkTicket::loading(ChunkTicketLevel::STRONGEST);
         manager.add_ticket(ChunkPos::new(0, 0), ticket);
         manager.add_ticket(ChunkPos::new(5, 0), ticket);
         manager.run_all_updates();
@@ -940,7 +958,7 @@ mod tests {
     #[test]
     fn test_remove_all_tickets_at_position() {
         let mut manager = ChunkTicketManager::new();
-        let ticket = ChunkTicket::full_chunks(MAX_VIEW_DISTANCE);
+        let ticket = ChunkTicket::loading(ChunkTicketLevel::STRONGEST);
         manager.add_ticket(ChunkPos::new(0, 0), ticket);
         manager.run_all_updates();
 
@@ -953,7 +971,7 @@ mod tests {
     #[test]
     fn test_multiple_tickets_same_position_with_removal() {
         let mut manager = ChunkTicketManager::new();
-        let level_0 = ChunkTicket::full_chunks(MAX_VIEW_DISTANCE);
+        let level_0 = ChunkTicket::loading(ChunkTicketLevel::STRONGEST);
         let level_1 = ChunkTicket::loading(ChunkTicketLevel::new(1).expect("test level is valid"));
         let level_2 = ChunkTicket::loading(ChunkTicketLevel::new(2).expect("test level is valid"));
         manager.add_ticket(ChunkPos::new(0, 0), level_0);
@@ -985,7 +1003,7 @@ mod tests {
     #[test]
     fn test_duplicate_tickets_same_level() {
         let mut manager = ChunkTicketManager::new();
-        let ticket = ChunkTicket::full_chunks(MAX_VIEW_DISTANCE);
+        let ticket = ChunkTicket::loading(ChunkTicketLevel::STRONGEST);
         manager.add_ticket(ChunkPos::new(0, 0), ticket);
         manager.add_ticket(ChunkPos::new(0, 0), ticket);
         manager.run_all_updates();
@@ -1138,7 +1156,7 @@ mod tests {
         let mut manager = ChunkTicketManager::new();
         manager.add_ticket(
             ChunkPos::new(0, 0),
-            ChunkTicket::full_chunks(MAX_VIEW_DISTANCE),
+            ChunkTicket::loading(ChunkTicketLevel::STRONGEST),
         );
         manager.run_all_updates();
 
@@ -1172,11 +1190,25 @@ mod tests {
     }
 
     #[test]
-    fn player_ticket_caps_entity_ticking_radius_to_load_radius() {
+    fn player_ticket_keeps_full_loading_moat_and_caps_simulation_radius() {
         let mut manager = ChunkTicketManager::new();
         let center = ChunkPos::new(0, 0);
         manager.add_ticket(center, ChunkTicket::player(1, 3));
         manager.run_all_updates();
+
+        assert!(is_entity_ticking(manager.get_level(center)));
+        assert_eq!(
+            manager.get_level(ChunkPos::new(1, 0)),
+            Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK)
+        );
+        assert_eq!(
+            manager.get_level(ChunkPos::new(2, 0)),
+            Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK)
+        );
+        assert_eq!(
+            manager.get_level(ChunkPos::new(3, 0)),
+            Some(ChunkTicketLevel::FULL_CHUNK)
+        );
 
         assert!(is_entity_ticking(manager.get_simulation_level(center)));
         assert!(is_entity_ticking(
@@ -1189,6 +1221,17 @@ mod tests {
             manager.get_simulation_level(ChunkPos::new(2, 0))
         ));
         assert_eq!(manager.get_simulation_level(ChunkPos::new(3, 0)), None);
+    }
+
+    #[test]
+    fn maximum_player_view_distance_fits_ticket_level() {
+        let ticket = ChunkTicket::player(MAX_SUPPORTED_VIEW_DISTANCE, MAX_SUPPORTED_VIEW_DISTANCE);
+
+        assert_eq!(ticket.load_level().raw(), 0);
+        assert_eq!(
+            ticket.simulation_level().map(ChunkTicketLevel::raw),
+            Some(0)
+        );
     }
 
     #[test]
