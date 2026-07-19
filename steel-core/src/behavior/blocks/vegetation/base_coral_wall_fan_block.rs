@@ -69,6 +69,6 @@ impl BlockBehavior for BaseCoralWallFanBlock {
                     direction.opposite(),
                 )
             })
-            .find(|state| self.can_survive(*state, context.world, context.place_pos))
+            .find(|state| self.can_survive(*state, context.world, context.place_pos()))
     }
 }

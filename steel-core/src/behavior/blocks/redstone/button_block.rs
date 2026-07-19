@@ -118,7 +118,7 @@ impl BlockBehavior for ButtonBlock {
                     .set_value(&BlockStateProperties::ATTACH_FACE, face)
                     .set_value(
                         &BlockStateProperties::HORIZONTAL_FACING,
-                        context.horizontal_direction,
+                        context.horizontal_direction(),
                     )
             } else {
                 self.block
@@ -130,7 +130,7 @@ impl BlockBehavior for ButtonBlock {
                     )
             };
 
-            if self.can_survive(state, context.world, context.place_pos) {
+            if self.can_survive(state, context.world, context.place_pos()) {
                 return Some(state);
             }
         }

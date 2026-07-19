@@ -234,15 +234,9 @@ fn create_test_world(
     dim_type: DimensionTypeRef,
     seed: u64,
     generator: Arc<ChunkGeneratorType>,
+    generation_pool: Arc<rayon::ThreadPool>,
 ) -> Arc<World> {
     let runtime = Arc::new(Runtime::new().expect("failed to create chunk-stage hash test runtime"));
-    let generation_pool = Arc::new(
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(1)
-            .thread_name(|index| format!("chunk-stage-hashes-{index}"))
-            .build()
-            .expect("failed to create chunk-stage hash test rayon pool"),
-    );
     let dim_short = dim_key.strip_prefix("minecraft:").unwrap_or(dim_key);
     let empty_config = toml::Value::Table(Map::new());
     let generation_settings = WorldGenerationSettings::from_generator_config(
@@ -1193,23 +1187,36 @@ fn chunk_stage_hashes_inner() {
         let min_qy = min_y >> 2;
         let total_quarts_y = (section_count * 4) as i32;
 
+        let thread_pool = Arc::new(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .thread_name(|index| format!("chunk-stage-hashes-{index}"))
+                .build()
+                .expect("failed to create chunk-stage hash test rayon pool"),
+        );
+
         let generator: Arc<ChunkGeneratorType> = Arc::new(match dim_key {
             "minecraft:overworld" => {
                 let source = BiomeSourceKind::overworld(seed);
-                ChunkGeneratorType::Overworld(OverworldGenerator::new(source, seed))
+                ChunkGeneratorType::Overworld(OverworldGenerator::new(
+                    None,
+                    source,
+                    seed,
+                    &thread_pool,
+                ))
             }
             "minecraft:the_nether" => {
                 let source = BiomeSourceKind::nether(seed);
-                ChunkGeneratorType::Nether(NetherGenerator::new(source, seed))
+                ChunkGeneratorType::Nether(NetherGenerator::new(None, source, seed, &thread_pool))
             }
             "minecraft:the_end" => {
                 let source = BiomeSourceKind::end(seed);
-                ChunkGeneratorType::End(EndGenerator::new(source, seed))
+                ChunkGeneratorType::End(EndGenerator::new(None, source, seed, &thread_pool))
             }
             _ => unreachable!(),
         });
         let feature_world = includes_features
-            .then(|| create_test_world(dim_key, dim_type, seed, generator.clone()));
+            .then(|| create_test_world(dim_key, dim_type, seed, generator.clone(), thread_pool));
         let feature_context = feature_world
             .as_ref()
             .map(|world| world.chunk_map.world_gen_context.clone());

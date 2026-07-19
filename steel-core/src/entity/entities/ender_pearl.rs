@@ -15,7 +15,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_macros::entity_behavior;
+use steel_macros::{entity_behavior, entity_impl};
 use steel_protocol::packets::game::{RelativeMovement, SoundSource};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
@@ -138,7 +138,7 @@ impl EnderPearlEntity {
         Self::should_vanish_for_owner_state(
             LivingEntity::is_alive(player),
             player.has_won_game(),
-            world.get_game_rule(&ENDER_PEARLS_VANISH_ON_DEATH).as_bool() == Some(true),
+            world.get_game_rule(&ENDER_PEARLS_VANISH_ON_DEATH),
         )
     }
 
@@ -210,6 +210,7 @@ impl EnderPearlEntity {
     }
 }
 
+#[entity_impl(class(projectile))]
 impl Entity for EnderPearlEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -311,7 +312,7 @@ impl Projectile for EnderPearlEntity {
         // Vanilla `ThrownEnderpearl.onHit`: super.onHit() then teleport the owner.
         self.projectile_on_hit(hit);
 
-        // TODO: spawn 32 portal particles (needs CLevelParticles packet).
+        // VANILLA CLIENT-LOCAL: `ThrownEnderpearl.onHit` creates the 32 portal particles.
         let Some(world) = self.level() else {
             return;
         };
@@ -335,7 +336,7 @@ impl ThrowableProjectile for EnderPearlEntity {}
 
 impl ThrowableItemProjectile for EnderPearlEntity {
     fn get_default_item(&self) -> ItemRef {
-        &vanilla_items::ITEMS.ender_pearl
+        &vanilla_items::ENDER_PEARL
     }
 
     fn set_item(&self, item: ItemStack) {
@@ -414,10 +415,7 @@ mod tests {
             DVec3::ZERO,
             Weak::<World>::new(),
         );
-        assert_eq!(
-            pearl.get_default_item().key,
-            vanilla_items::ITEMS.ender_pearl.key
-        );
+        assert_eq!(pearl.get_default_item().key, vanilla_items::ENDER_PEARL.key);
     }
 
     #[test]

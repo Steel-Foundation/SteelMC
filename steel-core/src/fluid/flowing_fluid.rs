@@ -31,10 +31,6 @@ pub trait FlowingFluid: FluidBehavior {
             return;
         }
 
-        // TODO: animate_tick (ambient sounds, particles) belongs in a client-side
-        // ambient tick dispatcher (equivalent to Level.animateTick), not here.
-        // It should fire at render rate for nearby blocks, not per scheduled fluid tick.
-
         if !current_fluid.is_source() {
             let new_fluid = get_new_liquid(world, pos, self.fluid_type(), self.drop_off(world));
 

@@ -80,4 +80,6 @@ fn deserialize_biome_condition_target<'de, D: Deserializer<'de>>(
 #[derive(Deserialize, Debug)]
 pub struct TextComponentJson {
     pub(crate) translate: String,
+    #[serde(default)]
+    pub(crate) color: Option<String>,
 }

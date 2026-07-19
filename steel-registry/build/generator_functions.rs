@@ -104,9 +104,68 @@ pub fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStrea
 }
 pub fn generate_text_component(component: &TextComponentJson) -> TokenStream {
     let translate = component.translate.as_str();
+    let Some(color) = component.color.as_deref() else {
+        return quote! {
+            TextComponent::translated(TranslatedMessage::new(#translate, None))
+        };
+    };
+    let color = generate_text_color(color);
     quote! {
-        TextComponent::translated(TranslatedMessage::new(#translate, None))
+        TextComponent {
+            content: text_components::content::Content::Translate(
+                TranslatedMessage::new(#translate, None),
+            ),
+            format: text_components::format::Format {
+                color: Some(#color),
+                font: None,
+                bold: None,
+                italic: None,
+                underlined: None,
+                strikethrough: None,
+                obfuscated: None,
+                shadow_color: None,
+            },
+            children: vec![],
+            interactions: text_components::interactivity::Interactivity::new(),
+        }
     }
+}
+
+fn generate_text_color(color: &str) -> TokenStream {
+    match color {
+        "black" => quote! { text_components::format::Color::Black },
+        "dark_blue" => quote! { text_components::format::Color::DarkBlue },
+        "dark_green" => quote! { text_components::format::Color::DarkGreen },
+        "dark_aqua" => quote! { text_components::format::Color::DarkAqua },
+        "dark_red" => quote! { text_components::format::Color::DarkRed },
+        "dark_purple" => quote! { text_components::format::Color::DarkPurple },
+        "gold" => quote! { text_components::format::Color::Gold },
+        "gray" => quote! { text_components::format::Color::Gray },
+        "dark_gray" => quote! { text_components::format::Color::DarkGray },
+        "blue" => quote! { text_components::format::Color::Blue },
+        "green" => quote! { text_components::format::Color::Green },
+        "aqua" => quote! { text_components::format::Color::Aqua },
+        "red" => quote! { text_components::format::Color::Red },
+        "light_purple" => quote! { text_components::format::Color::LightPurple },
+        "yellow" => quote! { text_components::format::Color::Yellow },
+        "white" => quote! { text_components::format::Color::White },
+        _ => generate_rgb_text_color(color),
+    }
+}
+
+fn generate_rgb_text_color(color: &str) -> TokenStream {
+    let Some(hex) = color.strip_prefix('#').filter(|hex| {
+        hex.len() == 6 && hex.is_ascii() && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }) else {
+        panic!("Unknown text color: {color}");
+    };
+    let red = u8::from_str_radix(&hex[0..2], 16)
+        .unwrap_or_else(|_| panic!("Invalid red channel in text color: {color}"));
+    let green = u8::from_str_radix(&hex[2..4], 16)
+        .unwrap_or_else(|_| panic!("Invalid green channel in text color: {color}"));
+    let blue = u8::from_str_radix(&hex[4..6], 16)
+        .unwrap_or_else(|_| panic!("Invalid blue channel in text color: {color}"));
+    quote! { text_components::format::Color::Rgb(#red, #green, #blue) }
 }
 
 pub fn read_variants_from_dir<T: serde::de::DeserializeOwned>(subdir: &str) -> Vec<(String, T)> {

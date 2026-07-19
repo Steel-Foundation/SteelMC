@@ -7,8 +7,6 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::blocks::properties::Direction;
-use steel_registry::game_rules::GameRuleValue;
-use steel_registry::sound_events;
 use steel_registry::vanilla_game_rules::WATER_SOURCE_CONVERSION;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
@@ -21,7 +19,7 @@ use crate::world::World;
 /// Water fluid implementation.
 ///
 /// Implements [`FluidBehavior`] with water-specific parameters and
-/// behaviors (ambient sounds, lava→water chemistry, game-rule source conversion).
+/// behaviors (lava→water chemistry and game-rule source conversion).
 pub struct WaterFluid;
 
 impl FluidBehavior for WaterFluid {
@@ -50,10 +48,7 @@ impl FluidBehavior for WaterFluid {
     }
 
     fn can_convert_to_source(&self, world: &Arc<World>) -> bool {
-        match world.get_game_rule(&WATER_SOURCE_CONVERSION) {
-            GameRuleValue::Bool(val) => val,
-            GameRuleValue::Int(_) => true,
-        }
+        world.get_game_rule(&WATER_SOURCE_CONVERSION)
     }
 
     fn get_flow(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) -> DVec3 {
@@ -86,30 +81,6 @@ impl FluidBehavior for WaterFluid {
         effect_collector: &mut InsideBlockEffectCollector,
     ) {
         effect_collector.apply(InsideBlockEffectType::Extinguish);
-    }
-
-    /// Flowing water: 1/64 chance for ambient sound.
-    /// Source water: 1/10 chance for underwater particles.
-    fn animate_tick(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
-        if !fluid_state.is_source() && !fluid_state.falling {
-            // 1/64 chance for flowing water ambient sound
-            if rand::random_range(0u32..64) == 0 {
-                let volume: f32 = rand::random::<f32>() * 0.25 + 0.75;
-                let pitch: f32 = rand::random::<f32>() + 0.5;
-                world.play_block_sound(
-                    &sound_events::BLOCK_WATER_AMBIENT,
-                    pos,
-                    volume,
-                    pitch,
-                    None,
-                );
-            }
-        } else {
-            // 1/10 chance for underwater particles
-            if rand::random_range(0u32..10) == 0 {
-                // TODO: Spawn UNDERWATER particles (needs CLevelParticles packet)
-            }
-        }
     }
 
     fn tick(&self, world: &Arc<World>, pos: BlockPos) {

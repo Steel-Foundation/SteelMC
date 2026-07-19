@@ -34,7 +34,7 @@ impl BlockBehavior for EndPortalFrameBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state().set_value(
             &BlockStateProperties::HORIZONTAL_FACING,
-            context.horizontal_direction.opposite(),
+            context.horizontal_direction().opposite(),
         ))
     }
 

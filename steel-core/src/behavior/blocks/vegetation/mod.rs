@@ -20,6 +20,7 @@ mod cave_vines_plant_block;
 mod chorus_flower_block;
 mod chorus_plant_block;
 mod cocoa_block;
+mod coral_block;
 mod coral_fan_block;
 mod coral_plant_block;
 mod coral_wall_fan_block;
@@ -32,11 +33,14 @@ mod firefly_bush_block;
 mod flower_bed_block;
 mod flower_block;
 mod glow_lichen_block;
+mod growing_plant_body_block;
+mod growing_plant_head_block;
 mod hanging_moss_block;
 mod hanging_roots_block;
 mod kelp_block;
 mod kelp_plant_block;
 mod leaf_litter_block;
+mod leaves_block;
 mod lily_pad_block;
 mod mangrove_propagule_block;
 mod mossy_carpet_block;
@@ -53,6 +57,7 @@ mod sapling_block;
 mod sculk_vein_block;
 mod sea_pickle_block;
 mod seagrass_block;
+mod segmentable_block;
 mod short_dry_grass_block;
 mod small_dripleaf_block;
 mod snow_layer_block;
@@ -91,6 +96,7 @@ pub use cave_vines_plant_block::CaveVinesPlantBlock;
 pub use chorus_flower_block::ChorusFlowerBlock;
 pub use chorus_plant_block::ChorusPlantBlock;
 pub use cocoa_block::CocoaBlock;
+pub use coral_block::CoralBlock;
 pub use coral_fan_block::CoralFanBlock;
 pub use coral_plant_block::CoralPlantBlock;
 pub use coral_wall_fan_block::CoralWallFanBlock;
@@ -108,6 +114,9 @@ pub use hanging_roots_block::HangingRootsBlock;
 pub use kelp_block::KelpBlock;
 pub use kelp_plant_block::KelpPlantBlock;
 pub use leaf_litter_block::LeafLitterBlock;
+pub use leaves_block::{
+    MangroveLeavesBlock, TintedParticleLeavesBlock, UntintedParticleLeavesBlock,
+};
 pub use lily_pad_block::LilyPadBlock;
 pub use mangrove_propagule_block::MangrovePropaguleBlock;
 pub use mossy_carpet_block::MossyCarpetBlock;
@@ -174,7 +183,7 @@ pub(super) fn default_surviving_state(
 ) -> Option<BlockStateId> {
     let state = block.default_state();
     behavior
-        .can_survive(state, context.world, context.place_pos)
+        .can_survive(state, context.world, context.place_pos())
         .then_some(state)
 }
 

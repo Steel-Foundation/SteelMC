@@ -3,6 +3,7 @@ use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
+use steel_utils::Identifier;
 
 #[derive(Deserialize)]
 struct MobEffectEntry {
@@ -10,8 +11,27 @@ struct MobEffectEntry {
     name: String,
     category: MobEffectCategoryEntry,
     color: i32,
+    particle: MobEffectParticleEntry,
     #[serde(default)]
     attribute_modifiers: Vec<MobEffectAttributeModifierEntry>,
+}
+
+#[derive(Deserialize)]
+struct MobEffectParticleEntry {
+    #[serde(rename = "type")]
+    particle_type: Identifier,
+    options_type: MobEffectParticleOptionsType,
+    regular_alpha: Option<u8>,
+    ambient_alpha: Option<u8>,
+    color: Option<i32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum MobEffectParticleOptionsType {
+    MobEffectColor,
+    Simple,
+    FixedColor,
 }
 
 #[derive(Deserialize)]
@@ -81,6 +101,50 @@ pub(crate) fn build() -> TokenStream {
         let key = Literal::string(&effect.name);
         let category = effect.category.token();
         let color = effect.color;
+        let particle_ident = Ident::new(
+            &effect.particle.particle_type.path.to_shouty_snake_case(),
+            Span::call_site(),
+        );
+        let particle = match effect.particle.options_type {
+            MobEffectParticleOptionsType::MobEffectColor => {
+                let regular_alpha = effect.particle.regular_alpha.unwrap_or_else(|| {
+                    panic!(
+                        "mob effect '{}' color particle is missing regular_alpha",
+                        effect.name
+                    )
+                });
+                let ambient_alpha = effect.particle.ambient_alpha.unwrap_or_else(|| {
+                    panic!(
+                        "mob effect '{}' color particle is missing ambient_alpha",
+                        effect.name
+                    )
+                });
+                quote! {
+                    MobEffectParticle::EffectColor {
+                        particle_type: &vanilla_particle_types::#particle_ident,
+                        regular_alpha: #regular_alpha,
+                        ambient_alpha: #ambient_alpha,
+                    }
+                }
+            }
+            MobEffectParticleOptionsType::Simple => {
+                quote! { MobEffectParticle::Simple(&vanilla_particle_types::#particle_ident) }
+            }
+            MobEffectParticleOptionsType::FixedColor => {
+                let particle_color = effect.particle.color.unwrap_or_else(|| {
+                    panic!(
+                        "mob effect '{}' fixed color particle is missing color",
+                        effect.name
+                    )
+                });
+                quote! {
+                    MobEffectParticle::FixedColor {
+                        particle_type: &vanilla_particle_types::#particle_ident,
+                        color: ArgbColor::new(#particle_color),
+                    }
+                }
+            }
+        };
         let mut modifier_entries = TokenStream::new();
 
         for modifier in &effect.attribute_modifiers {
@@ -111,7 +175,8 @@ pub(crate) fn build() -> TokenStream {
             pub static #ident: &MobEffect = &MobEffect {
                 key: Identifier::vanilla_static(#key),
                 category: #category,
-                color: #color,
+                color: RgbColor::new(#color),
+                particle: #particle,
                 attribute_modifiers: #modifiers_ident,
             };
         });
@@ -124,10 +189,11 @@ pub(crate) fn build() -> TokenStream {
     quote! {
         use crate::attribute::AttributeModifierOperation;
         use crate::mob_effect::{
-            MobEffect, MobEffectAttributeModifier, MobEffectCategory, MobEffectRegistry,
+            MobEffect, MobEffectAttributeModifier, MobEffectCategory, MobEffectParticle,
+            MobEffectRegistry,
         };
-        use crate::vanilla_attributes;
-        use steel_utils::Identifier;
+        use crate::{vanilla_attributes, vanilla_particle_types};
+        use steel_utils::{ArgbColor, Identifier, RgbColor};
 
         #modifier_constants
         #constants

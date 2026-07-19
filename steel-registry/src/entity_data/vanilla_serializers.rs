@@ -21,7 +21,7 @@ use steel_utils::{
 
 use steel_utils::Identifier;
 
-use super::{EntityData, EntityDataSerializerRegistry};
+use super::{EntityData, EntityDataSerializerRegistry, ParticleData};
 
 /// Simple serializer: extract value and call `.write(buf)`.
 macro_rules! ser_write {
@@ -175,9 +175,13 @@ fn ser_optional_block_state(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<
     }
 }
 
+fn write_particle(particle: &ParticleData, buf: &mut Vec<u8>) -> io::Result<()> {
+    particle.write(buf)
+}
+
 fn ser_particle(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
     match data {
-        EntityData::Particle(v) => v.write(buf),
+        EntityData::Particle(v) => write_particle(v, buf),
         _ => Err(io::Error::other("Expected Particle")),
     }
 }
@@ -187,7 +191,7 @@ fn ser_particles(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
         EntityData::Particles(v) => {
             VarInt(v.particles.len() as i32).write(buf)?;
             for particle in &v.particles {
-                particle.write(buf)?;
+                write_particle(particle, buf)?;
             }
             Ok(())
         }
@@ -255,18 +259,7 @@ fn ser_quaternion(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
 
 fn ser_resolvable_profile(data: &EntityData, buf: &mut Vec<u8>) -> io::Result<()> {
     match data {
-        EntityData::ResolvableProfile(_v) => {
-            // Vanilla default is ResolvableProfile.Static.EMPTY:
-            // Either::right(Partial.EMPTY), then PlayerSkin.Patch.EMPTY.
-            false.write(buf)?;
-            false.write(buf)?;
-            false.write(buf)?;
-            VarInt(0).write(buf)?;
-            false.write(buf)?;
-            false.write(buf)?;
-            false.write(buf)?;
-            false.write(buf)
-        }
+        EntityData::ResolvableProfile(value) => value.write(buf),
         _ => Err(io::Error::other("Expected ResolvableProfile")),
     }
 }

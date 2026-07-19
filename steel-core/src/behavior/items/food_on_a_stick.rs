@@ -47,7 +47,7 @@ impl ItemBehavior for FoodOnAStickItem {
             inventory.hurt_and_convert_item_in_hand_on_break(
                 context.hand,
                 self.consume_item_damage,
-                &vanilla_items::ITEMS.fishing_rod,
+                &vanilla_items::FISHING_ROD,
                 has_infinite_materials,
             );
         });

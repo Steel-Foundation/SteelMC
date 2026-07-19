@@ -662,7 +662,7 @@ mod tests {
     }
 
     #[test]
-    fn steel_entity_arguments_project_vanilla_flags() {
+    fn steel_entity_arguments_use_vanilla_client_suggestions() {
         for (argument, expected_flags) in [
             (SteelArgumentType::entities(), 0),
             (SteelArgumentType::entity(), 1),
@@ -674,7 +674,7 @@ mod tests {
                 argument,
                 ProtocolArgumentType::Entity { flags } if flags == expected_flags
             ));
-            assert!(matches!(suggestions, Some(SuggestionType::AskServer)));
+            assert!(suggestions.is_none());
         }
     }
 

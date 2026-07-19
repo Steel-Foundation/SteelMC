@@ -49,9 +49,9 @@ impl SweetBerryBushBlock {
 impl BlockBehavior for SweetBerryBushBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if self.may_place_on(
-            context.world.get_block_state(context.place_pos.below()),
+            context.world.get_block_state(context.place_pos().below()),
             context.world,
-            context.place_pos.below(),
+            context.place_pos().below(),
         ) {
             Some(
                 self.block
@@ -122,8 +122,7 @@ impl BlockBehavior for SweetBerryBushBlock {
         _hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        let is_bone_meal =
-            inv.with_item(|item_stack| item_stack.is(&vanilla_items::ITEMS.bone_meal));
+        let is_bone_meal = inv.with_item(|item_stack| item_stack.is(&vanilla_items::BONE_MEAL));
         let age = state.get_value(&BlockStateProperties::AGE_3);
         if age != 3 && is_bone_meal {
             InteractionResult::Pass
@@ -173,7 +172,7 @@ impl BlockBehavior for SweetBerryBushBlock {
         _state: BlockStateId,
         _include_data: bool,
     ) -> Option<ItemStack> {
-        Some(ItemStack::new(&vanilla_items::ITEMS.sweet_berries))
+        Some(ItemStack::new(&vanilla_items::SWEET_BERRIES))
     }
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {

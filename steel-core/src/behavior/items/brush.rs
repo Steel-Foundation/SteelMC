@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use glam::{DVec3, Vec3};
+use glam::DVec3;
 use steel_macros::item_behavior;
-use steel_registry::RegistryEntry;
-use steel_registry::entity_data::{ParticleData, ParticleOptions};
 use steel_registry::item_stack::ItemStack;
+use steel_registry::particle_type::{BlockParticleOption, ParticleData};
 use steel_registry::sound_events;
 use steel_registry::vanilla_particle_types;
 use steel_utils::Downcast as _;
@@ -125,8 +124,8 @@ fn spawn_dust_particles(
     let (delta_x, delta_z) = dust_particles_delta(player.look_angle(), hit_direction);
     let particle_count = rand::random_range(7..12);
     let particle = ParticleData::new(
-        vanilla_particle_types::BLOCK.id() as i32,
-        ParticleOptions::Block { state },
+        &vanilla_particle_types::BLOCK,
+        BlockParticleOption::new(state),
     );
     let pos = DVec3::new(
         hit_location.x
@@ -144,21 +143,14 @@ fn spawn_dust_particles(
             },
     );
 
+    // Vanilla uses count 0 so the client treats offset as a single-particle velocity.
     for _ in 0..particle_count {
-        world.send_particles(
-            particle.clone(),
-            false,
-            false,
-            pos,
-            Vec3::new(
-                (delta_x * flip * 3.0 * rand::random::<f64>()) as f32,
-                0.0,
-                (delta_z * flip * 3.0 * rand::random::<f64>()) as f32,
-            ),
-            1.0,
-            0,
-            None,
+        let spread = DVec3::new(
+            delta_x * flip * 3.0 * rand::random::<f64>(),
+            0.0,
+            delta_z * flip * 3.0 * rand::random::<f64>(),
         );
+        world.send_particles_with_options(particle.clone(), false, false, pos, 0, spread, 1.0);
     }
 }
 

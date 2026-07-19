@@ -349,7 +349,7 @@ pub trait Animal: AgeableMob {
         partner.reset_love();
         self.broadcast_entity_event(EntityStatus::InLoveHearts);
 
-        if world.get_game_rule(&MOB_DROPS).as_bool() == Some(true) {
+        if world.get_game_rule(&MOB_DROPS) {
             let xp = rand::random_range(0..7) + 1;
             ExperienceOrbEntity::award(world, self.position(), xp);
         }
@@ -363,7 +363,7 @@ pub trait Animal: AgeableMob {
         }
 
         self.animal_base().tick_in_love_time();
-        // TODO: Spawn in-love heart particles every 10 ticks once particle spawning exists.
+        // VANILLA CLIENT-LOCAL: `Animal.aiStep` creates the periodic heart particles.
     }
 
     /// Runs vanilla `Animal.customServerAiStep`.

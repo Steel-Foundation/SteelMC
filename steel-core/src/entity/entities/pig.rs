@@ -20,8 +20,8 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::PigEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
-    REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt, sound_events, vanilla_attributes,
-    vanilla_items, vanilla_particle_types, vanilla_pig_sound_variants, vanilla_pig_variants,
+    REGISTRY, RegistryExt, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_items,
+    vanilla_pig_sound_variants, vanilla_pig_variants,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -109,7 +109,7 @@ impl PigEntity {
                 4,
                 TemptGoal::new(
                     1.2,
-                    |item_stack| item_stack.is(&vanilla_items::ITEMS.carrot_on_a_stick),
+                    |item_stack| item_stack.is(&vanilla_items::CARROT_ON_A_STICK),
                     false,
                 ),
             );
@@ -340,15 +340,7 @@ impl PigEntity {
             return;
         }
 
-        let Some(particle_type_id) = vanilla_particle_types::ENTITY_EFFECT.try_id() else {
-            log::error!("vanilla entity_effect particle type is not registered");
-            return;
-        };
-        let Ok(particle_type_id) = i32::try_from(particle_type_id) else {
-            log::error!("vanilla entity_effect particle type id does not fit protocol i32");
-            return;
-        };
-        let display = self.living_base.mob_effect_display_state(particle_type_id);
+        let display = self.living_base.mob_effect_display_state();
 
         {
             let mut entity_data = self.entity_data.lock();
@@ -431,7 +423,7 @@ impl Entity for PigEntity {
             && let Some(passenger) = self.first_passenger()
             && passenger.as_player().is_some_and(|player| {
                 let mut is_holding_carrot_on_a_stick =
-                    |item_stack: &ItemStack| item_stack.is(&vanilla_items::ITEMS.carrot_on_a_stick);
+                    |item_stack: &ItemStack| item_stack.is(&vanilla_items::CARROT_ON_A_STICK);
                 player.is_holding(&mut is_holding_carrot_on_a_stick)
             })
         {
@@ -795,9 +787,7 @@ mod tests {
     use simdnbt::owned::NbtTag;
     use steel_registry::entity_type::EntityAttachment;
     use steel_registry::test_support::init_test_registry;
-    use steel_registry::{
-        vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_items::ITEMS,
-    };
+    use steel_registry::{vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_items};
     use steel_utils::UuidExt;
     use uuid::Uuid;
 
@@ -1040,7 +1030,7 @@ mod tests {
         init_test_registry();
 
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        let saddle = ItemStack::new(&ITEMS.saddle);
+        let saddle = ItemStack::new(&vanilla_items::SADDLE);
 
         assert!(LivingEntity::is_equippable_in_slot(
             &pig,
@@ -1069,14 +1059,14 @@ mod tests {
         init_test_registry();
 
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        let saddle = ItemStack::new(&ITEMS.saddle);
+        let saddle = ItemStack::new(&vanilla_items::SADDLE);
 
         assert!(LivingEntity::can_equip_with_dispenser(&pig, &saddle));
 
-        pig.living_base
-            .equipment()
-            .lock()
-            .set(EquipmentSlot::Saddle, ItemStack::new(&ITEMS.saddle));
+        pig.living_base.equipment().lock().set(
+            EquipmentSlot::Saddle,
+            ItemStack::new(&vanilla_items::SADDLE),
+        );
         assert!(!LivingEntity::can_equip_with_dispenser(&pig, &saddle));
 
         let baby = PigEntity::new(&vanilla_entities::PIG, 2, DVec3::ZERO, Weak::new());
@@ -1089,7 +1079,7 @@ mod tests {
 
         let unequippable_target =
             PigEntity::new(&vanilla_entities::PIG, 4, DVec3::ZERO, Weak::new());
-        let stone = ItemStack::new(&ITEMS.stone);
+        let stone = ItemStack::new(&vanilla_items::STONE);
         assert!(!LivingEntity::can_equip_with_dispenser(
             &unequippable_target,
             &stone
@@ -1117,10 +1107,10 @@ mod tests {
 
         assert!(!pig.is_saddled());
 
-        pig.living_base
-            .equipment()
-            .lock()
-            .set(EquipmentSlot::Saddle, ItemStack::new(&ITEMS.saddle));
+        pig.living_base.equipment().lock().set(
+            EquipmentSlot::Saddle,
+            ItemStack::new(&vanilla_items::SADDLE),
+        );
 
         assert!(pig.is_saddled());
     }
@@ -1130,7 +1120,7 @@ mod tests {
         init_test_registry();
 
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        let saddle = ItemStack::new(&ITEMS.saddle);
+        let saddle = ItemStack::new(&vanilla_items::SADDLE);
 
         assert_eq!(
             LivingEntity::equip_sound(&pig, EquipmentSlot::Saddle, &saddle)
@@ -1250,10 +1240,10 @@ mod tests {
         init_test_registry();
 
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
-        pig.living_base
-            .equipment()
-            .lock()
-            .set(EquipmentSlot::Saddle, ItemStack::new(&ITEMS.saddle));
+        pig.living_base.equipment().lock().set(
+            EquipmentSlot::Saddle,
+            ItemStack::new(&vanilla_items::SADDLE),
+        );
         pig.set_guaranteed_drop(EquipmentSlot::Saddle);
 
         pig.drop_custom_death_loot_mob(
@@ -1781,8 +1771,8 @@ mod tests {
     fn pig_uses_vanilla_pig_food_tag() {
         init_test_registry();
 
-        assert!(PigEntity::is_food(&ItemStack::new(&ITEMS.carrot)));
-        assert!(!PigEntity::is_food(&ItemStack::new(&ITEMS.stone)));
+        assert!(PigEntity::is_food(&ItemStack::new(&vanilla_items::CARROT)));
+        assert!(!PigEntity::is_food(&ItemStack::new(&vanilla_items::STONE)));
     }
 
     #[test]

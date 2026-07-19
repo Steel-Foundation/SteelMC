@@ -2,7 +2,6 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use glam::DVec3;
 use steel_registry::{
-    game_rules::GameRuleValue,
     vanilla_game_rules::{
         LOG_ADMIN_COMMANDS, MAX_COMMAND_FORKS, MAX_COMMAND_SEQUENCE_LENGTH, SEND_COMMAND_FEEDBACK,
     },
@@ -399,13 +398,10 @@ impl CommandSource {
             return;
         }
 
-        let accepts_success = self.sender.get_player().is_none_or(|player| {
-            game_rule_boolean(
-                player.get_world().get_game_rule(&SEND_COMMAND_FEEDBACK),
-                SEND_COMMAND_FEEDBACK.default_value,
-                true,
-            )
-        });
+        let accepts_success = self
+            .sender
+            .get_player()
+            .is_none_or(|player| player.get_world().get_game_rule(&SEND_COMMAND_FEEDBACK));
         if accepts_success {
             self.sender.send_message(message);
         }
@@ -421,20 +417,12 @@ impl CommandSource {
     }
 
     fn sequence_limit(&self) -> usize {
-        let value = game_rule_integer(
-            self.world.get_game_rule(&MAX_COMMAND_SEQUENCE_LENGTH),
-            MAX_COMMAND_SEQUENCE_LENGTH.default_value,
-            1,
-        );
+        let value = self.world.get_game_rule(&MAX_COMMAND_SEQUENCE_LENGTH);
         value.max(1) as usize
     }
 
     fn fork_limit(&self) -> usize {
-        let value = game_rule_integer(
-            self.world.get_game_rule(&MAX_COMMAND_FORKS),
-            MAX_COMMAND_FORKS.default_value,
-            0,
-        );
+        let value = self.world.get_game_rule(&MAX_COMMAND_FORKS);
         value.max(0) as usize
     }
 
@@ -446,11 +434,7 @@ impl CommandSource {
             .color(Color::Gray)
             .italic(true);
 
-        if game_rule_boolean(
-            self.world.get_game_rule(&SEND_COMMAND_FEEDBACK),
-            SEND_COMMAND_FEEDBACK.default_value,
-            true,
-        ) {
+        if self.world.get_game_rule(&SEND_COMMAND_FEEDBACK) {
             let sender_uuid = self.sender.get_player().map(|player| player.gameprofile.id);
             for player in self.server.get_players() {
                 if Some(player.gameprofile.id) != sender_uuid
@@ -462,11 +446,7 @@ impl CommandSource {
         }
 
         if !matches!(self.sender, CommandSender::Console)
-            && game_rule_boolean(
-                self.world.get_game_rule(&LOG_ADMIN_COMMANDS),
-                LOG_ADMIN_COMMANDS.default_value,
-                true,
-            )
+            && self.world.get_game_rule(&LOG_ADMIN_COMMANDS)
         {
             CommandSender::Console.send_message(&broadcast);
         }
@@ -790,26 +770,6 @@ impl CommandExecutionContext<CommandSource> {
     }
 }
 
-const fn game_rule_integer(value: GameRuleValue, default: GameRuleValue, fallback: i32) -> i32 {
-    match value {
-        GameRuleValue::Int(value) => value,
-        GameRuleValue::Bool(_) => match default {
-            GameRuleValue::Int(value) => value,
-            GameRuleValue::Bool(_) => fallback,
-        },
-    }
-}
-
-const fn game_rule_boolean(value: GameRuleValue, default: GameRuleValue, fallback: bool) -> bool {
-    match value {
-        GameRuleValue::Bool(value) => value,
-        GameRuleValue::Int(_) => match default {
-            GameRuleValue::Bool(value) => value,
-            GameRuleValue::Int(_) => fallback,
-        },
-    }
-}
-
 fn admin_broadcast_source_name(
     entity: Option<&dyn Entity>,
     sender: &CommandSender,
@@ -837,7 +797,6 @@ mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
-    use steel_registry::game_rules::GameRuleValue;
     use steel_registry::{entity_type::EntityTypeRef, vanilla_entities};
     use steel_utils::Identifier;
     use text_components::TextComponent;
@@ -849,10 +808,7 @@ mod tests {
         PermissionState,
     };
 
-    use super::{
-        CommandAuthorizationContext, admin_broadcast_source_name, game_rule_boolean,
-        game_rule_integer, normalize_rotation,
-    };
+    use super::{CommandAuthorizationContext, admin_broadcast_source_name, normalize_rotation};
 
     struct NamedTestEntity {
         base: EntityBase,
@@ -885,32 +841,6 @@ mod tests {
     fn rotation_normalization_matches_command_source_stack() {
         assert_eq!(normalize_rotation((540.0, -540.0)), (-180.0, -180.0));
         assert_eq!(normalize_rotation((-181.0, 181.0)), (179.0, -179.0));
-    }
-
-    #[test]
-    fn integer_game_rule_falls_back_to_its_extracted_default() {
-        assert_eq!(
-            game_rule_integer(GameRuleValue::Int(12), GameRuleValue::Int(7), 1),
-            12
-        );
-        assert_eq!(
-            game_rule_integer(GameRuleValue::Bool(false), GameRuleValue::Int(7), 1),
-            7
-        );
-    }
-
-    #[test]
-    fn boolean_game_rule_falls_back_to_its_extracted_default() {
-        assert!(!game_rule_boolean(
-            GameRuleValue::Bool(false),
-            GameRuleValue::Bool(true),
-            true,
-        ));
-        assert!(!game_rule_boolean(
-            GameRuleValue::Int(1),
-            GameRuleValue::Bool(false),
-            true,
-        ));
     }
 
     #[test]

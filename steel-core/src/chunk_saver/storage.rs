@@ -18,7 +18,6 @@ use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, 
 use crate::worldgen::carving_mask::CarvingMask;
 use glam::{DVec3, IVec3};
 use rustc_hash::FxHashSet;
-use simdnbt::ToNbtTag;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtCompound;
 use std::cmp::Ordering as CmpOrdering;
@@ -977,7 +976,7 @@ impl ChunkStorage {
         };
 
         let mut root = NbtCompound::new();
-        root.insert("CustomName", custom_name.to_nbt_tag());
+        root.insert("CustomName", custom_name.to_codec_nbt());
         let mut bytes = Vec::new();
         root.write(&mut bytes);
         bytes
@@ -3386,6 +3385,17 @@ mod tests {
         );
         assert!(!prepared.persistent.entities[0].custom_name_nbt.is_empty());
         assert!(!prepared.persistent.entities[0].custom_data_nbt.is_empty());
+        let custom_name_nbt = read_borrowed_compound(&mut Cursor::new(
+            &prepared.persistent.entities[0].custom_name_nbt,
+        ))
+        .expect("saved custom name should be valid NBT");
+        let custom_name_nbt = simdnbt::borrow::NbtCompound::from(&custom_name_nbt);
+        assert_eq!(
+            custom_name_nbt
+                .string("CustomName")
+                .map(|value| value.to_str().into_owned()),
+            Some("End Test".to_owned())
+        );
 
         let loaded = ChunkStorage::persistent_to_chunk(
             &prepared.persistent,

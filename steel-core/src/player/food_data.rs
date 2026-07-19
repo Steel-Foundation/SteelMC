@@ -3,7 +3,6 @@
 //! Manages food level, saturation, and exhaustion — the three values that
 //! control natural health regeneration and starvation damage.
 
-use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_game_rules::NATURAL_HEALTH_REGENERATION;
 use steel_utils::types::Difficulty;
@@ -264,8 +263,7 @@ impl Player {
     pub(super) fn tick_regeneration(&self) {
         let world = self.get_world();
         let difficulty = world.level_data.read().data().difficulty;
-        let natural_regen =
-            world.get_game_rule(&NATURAL_HEALTH_REGENERATION) == GameRuleValue::Bool(true);
+        let natural_regen = world.get_game_rule(&NATURAL_HEALTH_REGENERATION);
         let tick = self.tick_count();
 
         if difficulty == Difficulty::Peaceful && natural_regen {

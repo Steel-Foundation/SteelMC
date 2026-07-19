@@ -6,6 +6,8 @@ use steel_registry::{
     vanilla_damage_type_tags,
 };
 
+use crate::entity::Entity;
+
 /// Describes how an entity was damaged.
 #[derive(Debug, Clone)]
 pub struct DamageSource {
@@ -80,14 +82,49 @@ impl DamageSource {
         false
     }
 
-    /// Whether this damage scales with world difficulty.
-    /// Reads the `scaling` field from the damage type registry entry.
+    /// Whether this damage scales with world difficulty for the resolved causing entity.
+    ///
+    /// `causing_entity` is `None` when the source has no cause or its stored entity ID no
+    /// longer resolves. Both cases fail Vanilla's living non-player type check.
     #[must_use]
-    pub const fn scales_with_difficulty(&self) -> bool {
+    pub fn scales_with_difficulty(&self, causing_entity: Option<&dyn Entity>) -> bool {
         match self.damage_type.scaling {
             DamageScaling::Never => false,
-            // TODO: WhenCausedByLivingNonPlayer needs entity type checking
-            DamageScaling::Always | DamageScaling::WhenCausedByLivingNonPlayer => true,
+            DamageScaling::WhenCausedByLivingNonPlayer => causing_entity.is_some_and(|entity| {
+                entity.as_living_entity().is_some() && entity.as_player().is_none()
+            }),
+            DamageScaling::Always => true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Weak;
+
+    use glam::DVec3;
+    use steel_registry::{
+        test_support::init_test_registry, vanilla_damage_types, vanilla_entities,
+    };
+
+    use crate::entity::entities::{FireworkRocketEntity, PigEntity};
+
+    use super::*;
+
+    #[test]
+    fn conditional_difficulty_scaling_requires_a_resolved_living_non_player() {
+        init_test_registry();
+        let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
+        let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+        let rocket = FireworkRocketEntity::new(
+            &vanilla_entities::FIREWORK_ROCKET,
+            2,
+            DVec3::ZERO,
+            Weak::new(),
+        );
+
+        assert!(source.scales_with_difficulty(Some(&pig)));
+        assert!(!source.scales_with_difficulty(Some(&rocket)));
+        assert!(!source.scales_with_difficulty(None));
     }
 }

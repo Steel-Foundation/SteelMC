@@ -7,16 +7,28 @@ use std::fmt::Debug;
 
 pub use steel_utils::{Direction, axis::Axis, codec::VarInt, serial::ReadFrom};
 
-pub trait Property<T>: Sync + Send {
-    fn get_value(&self, value: &str) -> Option<T>;
-    fn get_possible_values(&self) -> Box<[T]>;
-    fn get_internal_index(&self, value: &T) -> usize;
-    fn value_from_index(&self, index: usize) -> T;
-    fn as_dyn(&self) -> &dyn DynProperty;
-}
+pub trait Property: Debug + Sync + Send {
+    type Value
+    where
+        Self: Sized;
 
-pub trait DynProperty: Debug + Sync + Send {
-    fn get_possible_values(&self) -> Box<[&str]>;
+    fn get_value(&self, value: &str) -> Option<Self::Value>
+    where
+        Self: Sized;
+
+    fn get_possible_values(&self) -> Box<[Self::Value]>
+    where
+        Self: Sized;
+
+    fn get_internal_index(&self, value: &Self::Value) -> usize
+    where
+        Self: Sized;
+
+    fn value_from_index(&self, index: usize) -> Self::Value
+    where
+        Self: Sized;
+
+    fn get_possible_value_names(&self) -> Box<[&str]>;
     fn get_name(&self) -> &'static str;
 }
 
@@ -46,18 +58,18 @@ impl BoolProperty {
     }
 }
 
-impl DynProperty for BoolProperty {
-    fn get_possible_values(&self) -> Box<[&str]> {
+impl Property for BoolProperty {
+    type Value = bool;
+
+    fn get_possible_value_names(&self) -> Box<[&str]> {
         ["true", "false"].into()
     }
 
     fn get_name(&self) -> &'static str {
         self.name
     }
-}
 
-impl Property<bool> for BoolProperty {
-    fn get_value(&self, value: &str) -> Option<bool> {
+    fn get_value(&self, value: &str) -> Option<Self::Value> {
         if value == "true" {
             Some(true)
         } else if value == "false" {
@@ -67,20 +79,16 @@ impl Property<bool> for BoolProperty {
         }
     }
 
-    fn get_possible_values(&self) -> Box<[bool]> {
+    fn get_possible_values(&self) -> Box<[Self::Value]> {
         [true, false].into()
     }
 
-    fn get_internal_index(&self, value: &bool) -> usize {
+    fn get_internal_index(&self, value: &Self::Value) -> usize {
         usize::from(!*value)
     }
 
-    fn value_from_index(&self, index: usize) -> bool {
+    fn value_from_index(&self, index: usize) -> Self::Value {
         index == 0
-    }
-
-    fn as_dyn(&self) -> &dyn DynProperty {
-        self
     }
 }
 
@@ -116,29 +124,29 @@ impl IntProperty {
     }
 }
 
-impl DynProperty for IntProperty {
-    fn get_possible_values(&self) -> Box<[&str]> {
+impl Property for IntProperty {
+    type Value = u8;
+
+    fn get_possible_value_names(&self) -> Box<[&str]> {
         (self.min..=self.max).map(|v| NUM_STR[v as usize]).collect()
     }
 
     fn get_name(&self) -> &'static str {
         self.name
     }
-}
 
-impl Property<u8> for IntProperty {
-    fn get_value(&self, value: &str) -> Option<u8> {
+    fn get_value(&self, value: &str) -> Option<Self::Value> {
         value
             .parse()
             .ok()
             .filter(|v| v >= &self.min && v <= &self.max)
     }
 
-    fn get_possible_values(&self) -> Box<[u8]> {
+    fn get_possible_values(&self) -> Box<[Self::Value]> {
         (self.min..=self.max).collect()
     }
 
-    fn get_internal_index(&self, value: &u8) -> usize {
+    fn get_internal_index(&self, value: &Self::Value) -> usize {
         if *value <= self.max {
             (*value - self.min) as usize
         } else {
@@ -146,12 +154,8 @@ impl Property<u8> for IntProperty {
         }
     }
 
-    fn value_from_index(&self, index: usize) -> u8 {
+    fn value_from_index(&self, index: usize) -> Self::Value {
         self.min + index as u8
-    }
-
-    fn as_dyn(&self) -> &dyn DynProperty {
-        self
     }
 }
 
@@ -172,8 +176,10 @@ pub struct EnumProperty<T: PropertyEnum + 'static> {
     pub possible_values: &'static [T],
 }
 
-impl<T: PropertyEnum + 'static> DynProperty for EnumProperty<T> {
-    fn get_possible_values(&self) -> Box<[&str]> {
+impl<T: PropertyEnum + 'static> Property for EnumProperty<T> {
+    type Value = T;
+
+    fn get_possible_value_names(&self) -> Box<[&str]> {
         self.possible_values
             .iter()
             .map(PropertyEnum::as_str)
@@ -182,6 +188,28 @@ impl<T: PropertyEnum + 'static> DynProperty for EnumProperty<T> {
 
     fn get_name(&self) -> &'static str {
         self.name
+    }
+
+    fn get_value(&self, value: &str) -> Option<Self::Value> {
+        self.possible_values
+            .iter()
+            .find(|v| v.as_str() == value)
+            .cloned()
+    }
+
+    fn get_possible_values(&self) -> Box<[Self::Value]> {
+        self.possible_values.into()
+    }
+
+    fn get_internal_index(&self, value: &Self::Value) -> usize {
+        self.possible_values
+            .iter()
+            .position(|v| v == value)
+            .unwrap()
+    }
+
+    fn value_from_index(&self, index: usize) -> Self::Value {
+        self.possible_values[index].clone()
     }
 }
 
@@ -196,34 +224,6 @@ impl<T: PropertyEnum> EnumProperty<T> {
     #[must_use]
     pub const fn value_count(&self) -> usize {
         self.possible_values.len()
-    }
-}
-
-impl<T: PropertyEnum> Property<T> for EnumProperty<T> {
-    fn get_value(&self, value: &str) -> Option<T> {
-        self.possible_values
-            .iter()
-            .find(|v| v.as_str() == value)
-            .cloned()
-    }
-
-    fn get_possible_values(&self) -> Box<[T]> {
-        self.possible_values.into()
-    }
-
-    fn get_internal_index(&self, value: &T) -> usize {
-        self.possible_values
-            .iter()
-            .position(|v| v == value)
-            .unwrap()
-    }
-
-    fn value_from_index(&self, index: usize) -> T {
-        self.possible_values[index].clone()
-    }
-
-    fn as_dyn(&self) -> &dyn DynProperty {
-        self
     }
 }
 

@@ -19,18 +19,30 @@ use steel_registry::{vanilla_damage_types, vanilla_items};
 use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, WorldAabb, axis::Axis};
 
-use crate::behavior::InventoryAccess;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt};
+use crate::behavior::{InventoryAccess, PlacementSource};
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::ai::path::PathComputationType;
+use crate::entity::projectile::Projectile;
 use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource};
 use crate::fluid::is_water_fluid;
 use crate::physics::collide;
 use crate::player::Player;
-use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
+use crate::world::{ClipHitResult, LevelAccessor, LevelReader, ScheduledTickAccess, World};
 use steel_registry::vanilla_fluids;
+
+/// Vanilla `BlockBehaviour.canBeReplaced(BlockState, BlockPlaceContext)`.
+pub(crate) fn default_can_be_replaced(
+    state: BlockStateId,
+    context: &BlockPlaceContext<'_>,
+) -> bool {
+    state.is_replaceable()
+        && context.with_item(|item| {
+            item.is_empty() || item.item() != REGISTRY.items.by_block(state.get_block())
+        })
+}
 
 pub struct PickupResult {
     pub filled_bucket: ItemStack,
@@ -62,7 +74,7 @@ pub(crate) fn pickup_waterlogged_block(
     }
 
     Some(PickupResult {
-        filled_bucket: ItemStack::new(&vanilla_items::ITEMS.water_bucket),
+        filled_bucket: ItemStack::new(&vanilla_items::WATER_BUCKET),
         sound: Some(&sound_events::ITEM_BUCKET_FILL),
     })
 }
@@ -540,12 +552,17 @@ pub trait BlockBehavior: Send + Sync {
     /// blocks), and when removing water from waterlogged blocks. The default
     /// returns `true`; override for blocks that require physical support
     /// (torches, buttons, candles, cactus, etc.).
-    #[expect(
-        unused_variables,
-        reason = "default trait implementation ignores all params"
-    )]
-    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+    fn can_survive(&self, _state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         true
+    }
+
+    /// Returns whether this block can be replaced by the held item during placement.
+    ///
+    /// Vanilla parity: `BlockState.canBeReplaced(BlockPlaceContext)`.
+    ///
+    /// Default behavior mirrors `BlockBehaviour.canBeReplaced`.
+    fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
+        default_can_be_replaced(state, context)
     }
 
     /// Returns the block state to use when placing this block.
@@ -577,8 +594,9 @@ pub trait BlockBehavior: Send + Sync {
     /// Called by block items after this block has been placed by an entity.
     ///
     /// Vanilla parity: `Block.setPlacedBy(Level, BlockPos, BlockState, LivingEntity, ItemStack)`.
-    /// Steel passes lazy inventory access instead of a borrowed stack so the
-    /// caller does not hold the inventory lock while dispatching block behavior.
+    /// Steel passes the placement source instead of a borrowed stack so the
+    /// caller does not hold the inventory lock while dispatching block behavior
+    /// and synthetic placements can retain a directly supplied stack.
     /// This is intentionally separate from [`on_place`], which fires for any
     /// world block mutation.
     #[expect(
@@ -590,8 +608,7 @@ pub trait BlockBehavior: Send + Sync {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        player: Option<&Player>,
-        inv: &InventoryAccess,
+        source: &PlacementSource<'_>,
     ) {
         // Default: no-op
     }
@@ -905,6 +922,19 @@ pub trait BlockBehavior: Send + Sync {
     )]
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         // Default: no-op
+    }
+
+    /// Called when a projectile hits this block.
+    ///
+    /// Vanilla parity: `BlockState.onProjectileHit(Level, BlockState,
+    /// BlockHitResult, Projectile)`.
+    fn on_projectile_hit(
+        &self,
+        _state: BlockStateId,
+        _world: &Arc<World>,
+        _hit: &ClipHitResult,
+        _projectile: &dyn Projectile,
+    ) {
     }
 
     /// Default entity-inside hook.

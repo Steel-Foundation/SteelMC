@@ -1493,7 +1493,7 @@ mod tests {
     use std::sync::Weak;
 
     use steel_registry::test_support::init_test_registry;
-    use steel_registry::vanilla_items::ITEMS;
+    use steel_registry::vanilla_items;
     use steel_utils::Identifier;
 
     use super::*;
@@ -1502,10 +1502,11 @@ mod tests {
     fn vanilla_inventory_nbt_contains_main_slots_only() {
         init_test_registry();
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.items[2] = ItemStack::new(&ITEMS.stone);
-        inventory
-            .equipment_mut()
-            .set(EquipmentSlot::Head, ItemStack::new(&ITEMS.diamond_helmet));
+        inventory.items[2] = ItemStack::new(&vanilla_items::STONE);
+        inventory.equipment_mut().set(
+            EquipmentSlot::Head,
+            ItemStack::new(&vanilla_items::DIAMOND_HELMET),
+        );
 
         let NbtList::Compound(items) = inventory.to_vanilla_inventory_nbt() else {
             panic!("player inventory should serialize as a compound list");
@@ -1524,10 +1525,10 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.items[0] = ItemStack::with_count(&ITEMS.oak_log, 63);
+        inventory.items[0] = ItemStack::with_count(&vanilla_items::OAK_LOG, 63);
         let before = inventory.get_times_changed();
 
-        let mut stack = ItemStack::new(&ITEMS.oak_log);
+        let mut stack = ItemStack::new(&vanilla_items::OAK_LOG);
         assert!(inventory.add(&mut stack));
 
         assert!(stack.is_empty());
@@ -1540,17 +1541,17 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.items[0] = ItemStack::with_count(&ITEMS.oak_log, 63);
+        inventory.items[0] = ItemStack::with_count(&vanilla_items::OAK_LOG, 63);
         inventory.drain_dirty_equipment_items();
 
-        let mut stack = ItemStack::new(&ITEMS.oak_log);
+        let mut stack = ItemStack::new(&vanilla_items::OAK_LOG);
         assert!(inventory.add(&mut stack));
 
         assert_eq!(
             inventory.drain_dirty_equipment_items(),
             vec![(
                 EquipmentSlot::MainHand,
-                ItemStack::with_count(&ITEMS.oak_log, 64)
+                ItemStack::with_count(&vanilla_items::OAK_LOG, 64)
             )]
         );
     }
@@ -1562,14 +1563,14 @@ mod tests {
         let mut inventory = PlayerInventory::new(Weak::new());
         inventory.drain_dirty_equipment_items();
 
-        let mut stack = ItemStack::with_count(&ITEMS.oak_log, 3);
+        let mut stack = ItemStack::with_count(&vanilla_items::OAK_LOG, 3);
         assert!(inventory.add(&mut stack));
 
         assert_eq!(
             inventory.drain_dirty_equipment_items(),
             vec![(
                 EquipmentSlot::MainHand,
-                ItemStack::with_count(&ITEMS.oak_log, 3)
+                ItemStack::with_count(&vanilla_items::OAK_LOG, 3)
             )]
         );
     }
@@ -1579,13 +1580,13 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        let mut damaged_in_inventory = ItemStack::new(&ITEMS.diamond_pickaxe);
+        let mut damaged_in_inventory = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
         damaged_in_inventory.set_damage_value(3);
         inventory.items[0] = damaged_in_inventory;
 
-        let mut damaged_search = ItemStack::new(&ITEMS.diamond_pickaxe);
+        let mut damaged_search = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
         damaged_search.set_damage_value(3);
-        let undamaged_search = ItemStack::new(&ITEMS.diamond_pickaxe);
+        let undamaged_search = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
 
         assert!(inventory.contains_stack(&damaged_search));
         assert!(!inventory.contains_stack(&undamaged_search));
@@ -1596,11 +1597,11 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.set_selected_item(ItemStack::new(&ITEMS.water_bucket));
+        inventory.set_selected_item(ItemStack::new(&vanilla_items::WATER_BUCKET));
 
         let overflow = inventory.apply_filled_result(
             InteractionHand::MainHand,
-            ItemStack::new(&ITEMS.bucket),
+            ItemStack::new(&vanilla_items::BUCKET),
             false,
             true,
         );
@@ -1608,7 +1609,7 @@ mod tests {
         assert!(overflow.is_empty());
         assert_eq!(
             inventory.get_selected_item(),
-            &ItemStack::new(&ITEMS.bucket)
+            &ItemStack::new(&vanilla_items::BUCKET)
         );
     }
 
@@ -1617,11 +1618,11 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.set_selected_item(ItemStack::with_count(&ITEMS.bucket, 2));
+        inventory.set_selected_item(ItemStack::with_count(&vanilla_items::BUCKET, 2));
 
         let overflow = inventory.apply_filled_result(
             InteractionHand::MainHand,
-            ItemStack::new(&ITEMS.water_bucket),
+            ItemStack::new(&vanilla_items::WATER_BUCKET),
             false,
             true,
         );
@@ -1629,9 +1630,12 @@ mod tests {
         assert!(overflow.is_empty());
         assert_eq!(
             inventory.get_selected_item(),
-            &ItemStack::new(&ITEMS.bucket)
+            &ItemStack::new(&vanilla_items::BUCKET)
         );
-        assert_eq!(inventory.get_item(1), &ItemStack::new(&ITEMS.water_bucket));
+        assert_eq!(
+            inventory.get_item(1),
+            &ItemStack::new(&vanilla_items::WATER_BUCKET)
+        );
     }
 
     #[test]
@@ -1639,11 +1643,11 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.set_selected_item(ItemStack::new(&ITEMS.water_bucket));
+        inventory.set_selected_item(ItemStack::new(&vanilla_items::WATER_BUCKET));
 
         let overflow = inventory.apply_filled_result(
             InteractionHand::MainHand,
-            ItemStack::new(&ITEMS.water_bucket),
+            ItemStack::new(&vanilla_items::WATER_BUCKET),
             true,
             true,
         );
@@ -1651,7 +1655,7 @@ mod tests {
         assert!(overflow.is_empty());
         assert_eq!(
             inventory.get_selected_item(),
-            &ItemStack::new(&ITEMS.water_bucket)
+            &ItemStack::new(&vanilla_items::WATER_BUCKET)
         );
         assert_eq!(
             (0..PlayerInventory::INVENTORY_SIZE)
@@ -1666,11 +1670,11 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.set_selected_item(ItemStack::with_count(&ITEMS.bucket, 16));
+        inventory.set_selected_item(ItemStack::with_count(&vanilla_items::BUCKET, 16));
 
         let overflow = inventory.apply_filled_result(
             InteractionHand::MainHand,
-            ItemStack::new(&ITEMS.water_bucket),
+            ItemStack::new(&vanilla_items::WATER_BUCKET),
             true,
             true,
         );
@@ -1678,9 +1682,12 @@ mod tests {
         assert!(overflow.is_empty());
         assert_eq!(
             inventory.get_selected_item(),
-            &ItemStack::with_count(&ITEMS.bucket, 16)
+            &ItemStack::with_count(&vanilla_items::BUCKET, 16)
         );
-        assert_eq!(inventory.get_item(1), &ItemStack::new(&ITEMS.water_bucket));
+        assert_eq!(
+            inventory.get_item(1),
+            &ItemStack::new(&vanilla_items::WATER_BUCKET)
+        );
     }
 
     #[test]
@@ -1688,7 +1695,7 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.set_selected_item(ItemStack::new(&ITEMS.bucket));
+        inventory.set_selected_item(ItemStack::new(&vanilla_items::BUCKET));
 
         let overflow = inventory.apply_filled_result(
             InteractionHand::MainHand,
@@ -1706,14 +1713,14 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.set_selected_item(ItemStack::new(&ITEMS.lava_bucket));
+        inventory.set_selected_item(ItemStack::new(&vanilla_items::LAVA_BUCKET));
         for slot in 1..PlayerInventory::INVENTORY_SIZE {
-            inventory.items[slot] = ItemStack::with_count(&ITEMS.oak_log, 64);
+            inventory.items[slot] = ItemStack::with_count(&vanilla_items::OAK_LOG, 64);
         }
 
         let overflow = inventory.apply_filled_result(
             InteractionHand::MainHand,
-            ItemStack::new(&ITEMS.water_bucket),
+            ItemStack::new(&vanilla_items::WATER_BUCKET),
             true,
             false,
         );
@@ -1721,7 +1728,7 @@ mod tests {
         assert!(overflow.is_empty());
         assert_eq!(
             inventory.get_selected_item(),
-            &ItemStack::new(&ITEMS.lava_bucket)
+            &ItemStack::new(&vanilla_items::LAVA_BUCKET)
         );
     }
 
@@ -1730,10 +1737,11 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.items[0] = ItemStack::with_count(&ITEMS.oak_log, 3);
-        inventory
-            .equipment
-            .set(EquipmentSlot::Head, ItemStack::new(&ITEMS.diamond_helmet));
+        inventory.items[0] = ItemStack::with_count(&vanilla_items::OAK_LOG, 3);
+        inventory.equipment.set(
+            EquipmentSlot::Head,
+            ItemStack::new(&vanilla_items::DIAMOND_HELMET),
+        );
 
         assert_eq!(inventory.clear_content(), 4);
         assert!(inventory.is_empty());
@@ -1744,12 +1752,13 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        let main_hand = ItemStack::with_count(&ITEMS.oak_log, 2);
-        let head = ItemStack::new(&ITEMS.diamond_helmet);
+        let main_hand = ItemStack::with_count(&vanilla_items::OAK_LOG, 2);
+        let head = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
         inventory.items[0] = main_hand.clone();
-        inventory
-            .equipment
-            .set(EquipmentSlot::MainHand, ItemStack::new(&ITEMS.stick));
+        inventory.equipment.set(
+            EquipmentSlot::MainHand,
+            ItemStack::new(&vanilla_items::STICK),
+        );
         inventory.equipment.set(EquipmentSlot::Head, head.clone());
 
         let items = inventory.non_empty_equipment_items();
@@ -1764,7 +1773,7 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        let selected = ItemStack::new(&ITEMS.oak_log);
+        let selected = ItemStack::new(&vanilla_items::OAK_LOG);
         inventory.items[1] = selected.clone();
 
         inventory.set_selected_slot(1);
@@ -1805,8 +1814,8 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.set_selected_item(ItemStack::with_count(&ITEMS.oak_log, 3));
-        inventory.set_offhand_item(ItemStack::with_count(&ITEMS.shield, 2));
+        inventory.set_selected_item(ItemStack::with_count(&vanilla_items::OAK_LOG, 3));
+        inventory.set_offhand_item(ItemStack::with_count(&vanilla_items::SHIELD, 2));
         inventory.drain_dirty_equipment_items();
 
         let before = inventory.get_times_changed();
@@ -1818,7 +1827,7 @@ mod tests {
             inventory.drain_dirty_equipment_items(),
             vec![(
                 EquipmentSlot::MainHand,
-                ItemStack::with_count(&ITEMS.oak_log, 2)
+                ItemStack::with_count(&vanilla_items::OAK_LOG, 2)
             )]
         );
 
@@ -1831,7 +1840,7 @@ mod tests {
             inventory.drain_dirty_equipment_items(),
             vec![(
                 EquipmentSlot::OffHand,
-                ItemStack::with_count(&ITEMS.shield, 1)
+                ItemStack::with_count(&vanilla_items::SHIELD, 1)
             )]
         );
     }
@@ -1841,20 +1850,20 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.set_selected_item(ItemStack::with_count(&ITEMS.oak_log, 3));
+        inventory.set_selected_item(ItemStack::with_count(&vanilla_items::OAK_LOG, 3));
         inventory.drain_dirty_equipment_items();
 
         let before = inventory.get_times_changed();
         let split = inventory.split_item_in_hand(InteractionHand::MainHand, 1);
 
-        assert_eq!(split, ItemStack::with_count(&ITEMS.oak_log, 1));
+        assert_eq!(split, ItemStack::with_count(&vanilla_items::OAK_LOG, 1));
         assert_eq!(inventory.get_selected_item().count(), 2);
         assert_ne!(inventory.get_times_changed(), before);
         assert_eq!(
             inventory.drain_dirty_equipment_items(),
             vec![(
                 EquipmentSlot::MainHand,
-                ItemStack::with_count(&ITEMS.oak_log, 2)
+                ItemStack::with_count(&vanilla_items::OAK_LOG, 2)
             )]
         );
     }
@@ -1864,14 +1873,14 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.set_selected_item(ItemStack::new(&ITEMS.shears));
+        inventory.set_selected_item(ItemStack::new(&vanilla_items::SHEARS));
         inventory.drain_dirty_equipment_items();
 
         let before = inventory.get_times_changed();
         inventory.hurt_item_in_hand(InteractionHand::MainHand, 1, false);
 
         let main_hand = inventory.get_selected_item();
-        assert!(main_hand.is(&ITEMS.shears));
+        assert!(main_hand.is(&vanilla_items::SHEARS));
         assert_eq!(main_hand.get_damage_value(), 1);
         let expected = main_hand.copy_with_count(1);
         assert_ne!(inventory.get_times_changed(), before);
@@ -1886,19 +1895,19 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.set_offhand_item(ItemStack::new(&ITEMS.carrot_on_a_stick));
+        inventory.set_offhand_item(ItemStack::new(&vanilla_items::CARROT_ON_A_STICK));
         inventory.drain_dirty_equipment_items();
 
         let before = inventory.get_times_changed();
         inventory.hurt_and_convert_item_in_hand_on_break(
             InteractionHand::OffHand,
             1,
-            &ITEMS.fishing_rod,
+            &vanilla_items::FISHING_ROD,
             false,
         );
 
         let offhand = inventory.get_offhand_item();
-        assert!(offhand.is(&ITEMS.carrot_on_a_stick));
+        assert!(offhand.is(&vanilla_items::CARROT_ON_A_STICK));
         assert_eq!(offhand.get_damage_value(), 1);
         let expected = offhand.copy_with_count(1);
         assert_ne!(inventory.get_times_changed(), before);
@@ -1913,7 +1922,7 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.set_selected_item(ItemStack::new(&ITEMS.carrot_on_a_stick));
+        inventory.set_selected_item(ItemStack::new(&vanilla_items::CARROT_ON_A_STICK));
         let max_damage = inventory.get_selected_item().get_max_damage();
         inventory
             .get_selected_item_mut()
@@ -1924,12 +1933,12 @@ mod tests {
         inventory.hurt_and_convert_item_in_hand_on_break(
             InteractionHand::MainHand,
             7,
-            &ITEMS.fishing_rod,
+            &vanilla_items::FISHING_ROD,
             false,
         );
 
         let main_hand = inventory.get_selected_item();
-        assert!(main_hand.is(&ITEMS.fishing_rod));
+        assert!(main_hand.is(&vanilla_items::FISHING_ROD));
         assert_eq!(main_hand.count(), 1);
         assert_eq!(main_hand.get_damage_value(), 0);
         let expected = main_hand.copy_with_count(1);
@@ -1945,8 +1954,8 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        let main_hand = ItemStack::with_count(&ITEMS.oak_log, 3);
-        let offhand = ItemStack::new(&ITEMS.shield);
+        let main_hand = ItemStack::with_count(&vanilla_items::OAK_LOG, 3);
+        let offhand = ItemStack::new(&vanilla_items::SHIELD);
         inventory.set_selected_item(main_hand.clone());
         inventory.set_offhand_item(offhand.clone());
         inventory.drain_dirty_equipment_items();
@@ -1965,7 +1974,7 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.set_selected_item(ItemStack::new(&ITEMS.diamond_helmet));
+        inventory.set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_HELMET));
 
         let result = inventory.try_swap_with_equipment_slot(
             InteractionHand::MainHand,
@@ -1977,7 +1986,7 @@ mod tests {
         assert!(inventory.get_selected_item().is_empty());
         assert_eq!(
             inventory.equipment().get_ref(EquipmentSlot::Head),
-            &ItemStack::new(&ITEMS.diamond_helmet)
+            &ItemStack::new(&vanilla_items::DIAMOND_HELMET)
         );
     }
 
@@ -1986,9 +1995,9 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        let mut bound_helmet = ItemStack::new(&ITEMS.diamond_helmet);
+        let mut bound_helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
         bound_helmet.set_enchantments(&[(Identifier::vanilla_static("binding_curse"), 1)], false);
-        inventory.set_selected_item(ItemStack::new(&ITEMS.carved_pumpkin));
+        inventory.set_selected_item(ItemStack::new(&vanilla_items::CARVED_PUMPKIN));
         inventory
             .equipment_mut()
             .set(EquipmentSlot::Head, bound_helmet.copy_with_count(1));
@@ -2002,7 +2011,7 @@ mod tests {
         assert_eq!(result, EquipmentSwapResult::Fail);
         assert_eq!(
             inventory.get_selected_item(),
-            &ItemStack::new(&ITEMS.carved_pumpkin)
+            &ItemStack::new(&vanilla_items::CARVED_PUMPKIN)
         );
         assert_eq!(
             inventory.equipment().get_ref(EquipmentSlot::Head),
@@ -2015,7 +2024,7 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        let mut pickaxe = ItemStack::new(&ITEMS.diamond_pickaxe);
+        let mut pickaxe = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
         pickaxe.set_damage_value(10);
         pickaxe.set_enchantments(&[(Identifier::vanilla_static("mending"), 1)], false);
         inventory.set_selected_item(pickaxe);
@@ -2041,7 +2050,7 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        let mut pickaxe = ItemStack::new(&ITEMS.diamond_pickaxe);
+        let mut pickaxe = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
         pickaxe.set_damage_value(3);
         pickaxe.set_enchantments(&[(Identifier::vanilla_static("mending"), 1)], false);
         inventory.set_selected_item(pickaxe);
@@ -2057,10 +2066,11 @@ mod tests {
         init_test_registry();
 
         let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.set_selected_item(ItemStack::with_count(&ITEMS.carved_pumpkin, 2));
-        inventory
-            .equipment_mut()
-            .set(EquipmentSlot::Head, ItemStack::new(&ITEMS.diamond_helmet));
+        inventory.set_selected_item(ItemStack::with_count(&vanilla_items::CARVED_PUMPKIN, 2));
+        inventory.equipment_mut().set(
+            EquipmentSlot::Head,
+            ItemStack::new(&vanilla_items::DIAMOND_HELMET),
+        );
 
         let result = inventory.try_swap_with_equipment_slot(
             InteractionHand::MainHand,
@@ -2072,13 +2082,13 @@ mod tests {
         assert_eq!(inventory.get_selected_item().count(), 1);
         assert_eq!(
             inventory.equipment().get_ref(EquipmentSlot::Head),
-            &ItemStack::new(&ITEMS.carved_pumpkin)
+            &ItemStack::new(&vanilla_items::CARVED_PUMPKIN)
         );
         assert!(
             inventory
                 .get_items()
                 .iter()
-                .any(|stack| stack.is(&ITEMS.diamond_helmet))
+                .any(|stack| stack.is(&vanilla_items::DIAMOND_HELMET))
         );
     }
 }

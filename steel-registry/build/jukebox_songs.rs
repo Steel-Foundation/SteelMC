@@ -45,7 +45,7 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::jukebox_song::{
-            JukeboxSong, JukeboxSongRegistry,
+            JukeboxSong, JukeboxSongRegistry, JukeboxSongValue,
         };
         use steel_utils::Identifier;
         use text_components::{TextComponent, translation::TranslatedMessage};
@@ -72,13 +72,15 @@ pub(crate) fn build() -> TokenStream {
         let comparator_output = jukebox_song.comparator_output;
 
         stream.extend(quote! {
-            pub static #jukebox_song_ident: JukeboxSong = JukeboxSong {
-                key: #key,
-                sound_event: #sound_event,
-                description: #description,
-                length_in_seconds: #length_in_seconds,
-                comparator_output: #comparator_output,
-            };
+            pub static #jukebox_song_ident: JukeboxSong = JukeboxSong::new(
+                #key,
+                JukeboxSongValue {
+                    sound_event: crate::sound_event::SoundEventHolder::registry(#sound_event),
+                    description: #description,
+                    length_in_seconds: #length_in_seconds,
+                    comparator_output: #comparator_output,
+                },
+            );
         });
 
         register_stream.extend(quote! {

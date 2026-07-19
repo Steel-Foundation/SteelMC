@@ -14,7 +14,8 @@ use steel_utils::{
     locks::{AsyncMutex, SyncRwLock},
 };
 
-use crate::{saved_data::names as saved_data_names, server::worlds::WorldMap, world::World};
+use crate::{server::worlds::WorldMap, world::World};
+use steel_utils::saved_data::names as saved_data_names;
 
 #[derive(Default, Deserialize, Serialize)]
 struct PersistentCommandStorage {
@@ -225,7 +226,7 @@ mod tests {
     use steel_utils::Identifier;
     use tokio::fs;
 
-    use crate::saved_data::SavedDataManager;
+    use steel_utils::saved_data::SavedDataManager;
 
     use super::*;
 
