@@ -641,12 +641,20 @@ pub fn compute_margin(tick_count: i32) -> f64 {
     (f64::from(tick_count - 2) / 20.0).clamp(0.0, MAX_ENTITY_HIT_MARGIN)
 }
 
+/// Result of vanilla `ProjectileUtil.getHitResultOnViewVector`.
 pub enum ViewVectorHitResult {
+    /// No block or matching entity was hit within range.
     Miss,
+    /// Nearest hit was a block collider (or world border).
     Block(ClipHitResult),
+    /// Nearest hit was a matching entity, closer than any block along the ray.
     Entity(EntityHitResult),
 }
 
+/// Vanilla `ProjectileUtil.getHitResultOnViewVector`.
+///
+/// Casts from the source eye along the look vector for `distance` blocks using
+/// collider shapes, then prefers a matching entity hit over the block hit.
 #[must_use]
 pub fn get_hit_result_on_view_vector(
     world: &World,
