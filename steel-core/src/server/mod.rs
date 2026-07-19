@@ -277,8 +277,9 @@ mod tests {
     use steel_protocol::packets::game::CRemovePlayerInfo;
     use steel_protocol::utils::ConnectionProtocol;
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::packets::play::C_SYSTEM_CHAT;
+    use steel_registry::packets::play::{C_ADD_ENTITY, C_PLAYER_INFO_UPDATE, C_SYSTEM_CHAT};
     use steel_registry::{vanilla_dimension_types, vanilla_entities};
+    use steel_utils::ChunkPos;
     use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
     use text_components::TextComponent;
     use tokio::{fs, runtime::Builder};
@@ -300,9 +301,10 @@ mod tests {
 
     use super::{
         AsyncMutex, CancellationToken, CommandRegistry, CommandRequestQueue, DomainCommandStorage,
-        DomainScoreboards, FxHashMap, KeyStore, KnownPlayerCacheState, KnownPlayerSaveStep,
-        KnownPlayers, Notify, PacketProcessor, PlayerDataStorage, PlayerDisconnectQueue,
-        PlayerJoinQueue, PlayerMap, RegistryCache, Server, ServerJobQueue, SyncMutex, SyncRwLock,
+        DomainPlayerData, DomainPlayerState, DomainScoreboards, FxHashMap, KeyStore,
+        KnownPlayerCacheState, KnownPlayerSaveStep, KnownPlayers, Notify, PacketProcessor,
+        PendingPlayerJoin, PlayerDataStorage, PlayerDisconnectQueue, PlayerJoinQueue, PlayerMap,
+        PreparedSpawn, RegistryCache, Server, ServerJobQueue, SyncMutex, SyncRwLock,
         TickRateManager, UncachedPlayerTarget, WorldMap, can_entity_return_from_end_to_overworld,
         cap_positive_thread_count, classify_uncached_player_target, create_registered_dispatcher,
         direct_uuid_profile, is_allowed_to_enter_portal_target, is_end_return_transition,
@@ -537,6 +539,115 @@ mod tests {
             panic!("system chat component should decode");
         };
         component
+    }
+
+    fn packet_id(packet: &EncodedPacket) -> i32 {
+        let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+        assert!(
+            VarInt::read(&mut cursor).is_ok(),
+            "packet length should decode"
+        );
+        match VarInt::read(&mut cursor) {
+            Ok(packet_id) => packet_id.0,
+            Err(error) => panic!("packet id should decode: {error}"),
+        }
+    }
+
+    #[test]
+    fn initial_player_info_precedes_entity_spawn_for_existing_players() {
+        let world = fresh_test_world("join_player_info_before_spawn");
+        let runtime = Builder::new_current_thread().enable_all().build();
+        let Ok(runtime) = runtime else {
+            panic!("test runtime should initialize");
+        };
+
+        runtime.block_on(async {
+            let storage_root = test_storage_root("join-player-info-before-spawn");
+            let server = test_server(
+                Arc::clone(&world),
+                PermissionSubjectIndex::new(),
+                &storage_root,
+            )
+            .await;
+            let Ok(server) = server else {
+                panic!("test server should initialize");
+            };
+            let (existing, existing_packets) = test_player_with_packets(
+                &server,
+                Arc::clone(&world),
+                Uuid::from_u128(1),
+                "ExistingPlayer",
+                1,
+            );
+            assert!(server.online_players.insert(Arc::clone(&existing)));
+            assert!(world.add_player(Arc::clone(&existing), ResetReason::InitialJoin));
+            let _ = existing.mark_joined_world();
+
+            let spawn_position = existing.position();
+            let spawn_chunk = ChunkPos::from_entity_pos(spawn_position);
+            existing
+                .chunk_sender
+                .lock()
+                .mark_chunk_sent_for_test(spawn_chunk);
+            existing_packets.lock().clear();
+
+            let joining = test_player_with_packets(
+                &server,
+                Arc::clone(&world),
+                Uuid::from_u128(2),
+                "JoiningPlayer",
+                2,
+            )
+            .0;
+            assert!(server.reserve_player_join(&joining));
+            let default_spawn = PreparedSpawn {
+                position: spawn_position,
+                rotation: (0.0, 0.0),
+            };
+            let state = DomainPlayerState {
+                world: Arc::clone(&world),
+                data: DomainPlayerData::FirstVisit { default_spawn },
+                _spawn_chunk_request: world.request_player_spawn_chunks(spawn_position),
+            };
+
+            server.finish_prepared_player_join(PendingPlayerJoin {
+                player: Arc::clone(&joining),
+                state: Ok(state),
+            });
+
+            assert!(
+                world.players.get_by_uuid(&joining.gameprofile.id).is_some(),
+                "joining player should enter the world"
+            );
+            let packet_ids = existing_packets
+                .lock()
+                .iter()
+                .map(packet_id)
+                .collect::<Vec<_>>();
+            let Some(player_info_index) = packet_ids
+                .iter()
+                .position(|packet_id| *packet_id == C_PLAYER_INFO_UPDATE)
+            else {
+                panic!("existing player should receive joining player info");
+            };
+            let Some(entity_spawn_index) = packet_ids
+                .iter()
+                .position(|packet_id| *packet_id == C_ADD_ENTITY)
+            else {
+                panic!("existing player should receive joining player entity spawn");
+            };
+            assert!(
+                player_info_index < entity_spawn_index,
+                "player info must precede the entity spawn; packet ids: {packet_ids:?}"
+            );
+
+            drop(joining);
+            drop(existing);
+            drop(server);
+            if let Err(error) = fs::remove_dir_all(&storage_root).await {
+                panic!("test storage should be removed: {error}");
+            }
+        });
     }
 
     #[test]
@@ -2662,14 +2773,18 @@ impl Server {
         Self::apply_domain_player_state(&player, &state);
         let pos = player.position();
         let rotation = player.rotation();
+        // The client drops a player entity spawn when it does not already know that
+        // player's profile. Vanilla publishes player info before adding the player to
+        // the level, which can immediately start entity tracking for existing players.
+        self.sync_tab_list(&player);
         let admitted = player.spawn(pos, rotation, ResetReason::InitialJoin);
         if !admitted {
             self.remove_online_player_sync(&player);
+            self.broadcast_to_online(CRemovePlayerInfo { uuids: vec![uuid] });
             return;
         }
         let previous_name = self.record_known_player(&player.gameprofile);
         self.broadcast_player_join_message(&player, previous_name.as_deref());
-        self.sync_tab_list(&player);
         if player.mark_joined_world() {
             player.send_inventory_to_remote();
         }

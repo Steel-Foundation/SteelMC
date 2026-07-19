@@ -385,6 +385,12 @@ impl ChunkSender {
     pub fn sent_chunks_snapshot(&self) -> FxHashSet<ChunkPos> {
         self.sent_chunks.clone()
     }
+
+    #[cfg(test)]
+    pub(crate) fn mark_chunk_sent_for_test(&mut self, pos: ChunkPos) {
+        self.pending_chunks.remove(&pos);
+        self.sent_chunks.insert(pos);
+    }
 }
 
 impl Default for ChunkSender {
