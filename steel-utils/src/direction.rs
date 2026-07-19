@@ -38,7 +38,7 @@ impl ReadFrom for Direction {
 }
 
 impl Direction {
-    /// Vanilla Direction.get3DDataValue() like Down=0,…,East=5.
+    /// Vanilla `Direction.get3DDataValue()` like Down=0,…,East=5.
     #[must_use]
     pub const fn get_3d_data_value(self) -> i32 {
         match self {
@@ -52,9 +52,8 @@ impl Direction {
     }
 
     /// Vanilla `Direction.from3DDataValue(int)`.
-    ///
     /// Uses Java remainder semantics (toward zero) then absolute value
-    /// BY_3D_DATA[Mth.abs(data % 6)].
+    /// `BY_3D_DATA`[Mth.abs(data % 6)].
     #[must_use]
     pub const fn from_3d_data_value(data: i32) -> Direction {
         let rem = data % 6;
