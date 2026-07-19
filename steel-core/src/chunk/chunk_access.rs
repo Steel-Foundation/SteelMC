@@ -6,7 +6,6 @@ use steel_utils::{BlockPos, BlockStateId, ChunkPos, types::UpdateFlags};
 use wincode::{SchemaRead, SchemaWrite};
 
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
-use rustc_hash::FxHashSet;
 
 use crate::block_entity::SharedBlockEntity;
 use crate::chunk::{
@@ -19,7 +18,7 @@ use crate::chunk::{
 };
 use crate::entity::SharedEntity;
 use crate::world::World;
-use crate::world::tick_scheduler::{BlockTick, FluidTick, ScheduledTickKey, TickPriority};
+use crate::world::tick_scheduler::TickPriority;
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
 /// The status of a chunk.
@@ -763,14 +762,11 @@ impl ChunkAccess {
     ) {
         match self {
             Self::Full(chunk) => {
-                let tick = BlockTick {
-                    tick_type: block,
-                    pos,
-                    delay,
-                    priority,
-                    sub_tick_order,
-                };
-                if chunk.block_ticks.lock().schedule(tick) {
+                if chunk
+                    .block_ticks
+                    .lock()
+                    .schedule(block, pos, delay, priority, sub_tick_order)
+                {
                     chunk.dirty.store(true, Ordering::Release);
                 }
             }
@@ -790,14 +786,11 @@ impl ChunkAccess {
     ) {
         match self {
             Self::Full(chunk) => {
-                let tick = FluidTick {
-                    tick_type: fluid,
-                    pos,
-                    delay,
-                    priority,
-                    sub_tick_order,
-                };
-                if chunk.fluid_ticks.lock().schedule(tick) {
+                if chunk
+                    .fluid_ticks
+                    .lock()
+                    .schedule(fluid, pos, delay, priority, sub_tick_order)
+                {
                     chunk.dirty.store(true, Ordering::Release);
                 }
             }
@@ -849,59 +842,6 @@ impl ChunkAccess {
             Self::Full(chunk) => chunk.structure_references.write(),
             Self::Proto(proto) => proto.structure_references.write(),
             Self::Unloaded => unreachable!(),
-        }
-    }
-
-    /// Ticks the chunk if it's a full chunk.
-    ///
-    /// Drains ready scheduled ticks into the provided vecs, then processes random ticks.
-    pub fn tick(
-        &self,
-        random_tick_speed: u32,
-        tick_count: i32,
-        ready_block_ticks: &mut Vec<BlockTick>,
-        ready_fluid_ticks: &mut Vec<FluidTick>,
-    ) {
-        if let Self::Full(chunk) = self {
-            chunk.tick(
-                random_tick_speed,
-                tick_count,
-                ready_block_ticks,
-                ready_fluid_ticks,
-            );
-        }
-    }
-
-    /// Drains ready scheduled ticks if this is a full chunk.
-    pub fn drain_ready_scheduled_ticks(
-        &self,
-        ready_block_ticks: &mut Vec<BlockTick>,
-        ready_fluid_ticks: &mut Vec<FluidTick>,
-    ) {
-        if let Self::Full(chunk) = self {
-            chunk.drain_ready_scheduled_ticks(ready_block_ticks, ready_fluid_ticks);
-        }
-    }
-
-    /// Advances and collects ready scheduled tick candidates if this is a full chunk.
-    pub fn advance_and_collect_ready_scheduled_ticks(
-        &self,
-        ready_block_ticks: &mut Vec<BlockTick>,
-        ready_fluid_ticks: &mut Vec<FluidTick>,
-    ) {
-        if let Self::Full(chunk) = self {
-            chunk.advance_and_collect_ready_scheduled_ticks(ready_block_ticks, ready_fluid_ticks);
-        }
-    }
-
-    /// Removes globally selected scheduled ticks if this is a full chunk.
-    pub fn remove_selected_scheduled_ticks(
-        &self,
-        selected_block_ticks: &FxHashSet<ScheduledTickKey>,
-        selected_fluid_ticks: &FxHashSet<ScheduledTickKey>,
-    ) {
-        if let Self::Full(chunk) = self {
-            chunk.remove_selected_scheduled_ticks(selected_block_ticks, selected_fluid_ticks);
         }
     }
 

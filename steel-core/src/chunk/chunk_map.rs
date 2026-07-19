@@ -57,7 +57,9 @@ use crate::chunk::{
 use crate::chunk_saver::ChunkStorage;
 use crate::player::connection::NetworkConnection;
 use crate::world::World;
-use crate::world::tick_scheduler::{BlockTick, FluidTick, select_ticks_to_run};
+use crate::world::tick_scheduler::{
+    BlockTick, FluidTick, advance_tick_containers, collect_ticks_to_run,
+};
 use crate::worldgen::{ChunkGeneratorType, WorldGenContext};
 use crate::{entity::Entity, player::Player};
 
@@ -90,6 +92,48 @@ pub struct ChunkMapGameTickTimings {
 struct TickableChunk {
     holder: Arc<ChunkHolder>,
     simulation_level: ChunkTicketLevel,
+}
+
+struct BlockTickBatchGuard<'a> {
+    world: &'a World,
+}
+
+impl<'a> BlockTickBatchGuard<'a> {
+    fn new(world: &'a World, ticks: &[BlockTick]) -> Self {
+        world.begin_scheduled_block_tick_batch(ticks);
+        Self { world }
+    }
+
+    fn start(&self, tick: &BlockTick) {
+        self.world.start_scheduled_block_tick(tick);
+    }
+}
+
+impl Drop for BlockTickBatchGuard<'_> {
+    fn drop(&mut self) {
+        self.world.end_scheduled_block_tick_batch();
+    }
+}
+
+struct FluidTickBatchGuard<'a> {
+    world: &'a World,
+}
+
+impl<'a> FluidTickBatchGuard<'a> {
+    fn new(world: &'a World, ticks: &[FluidTick]) -> Self {
+        world.begin_scheduled_fluid_tick_batch(ticks);
+        Self { world }
+    }
+
+    fn start(&self, tick: &FluidTick) {
+        self.world.start_scheduled_fluid_tick(tick);
+    }
+}
+
+impl Drop for FluidTickBatchGuard<'_> {
+    fn drop(&mut self) {
+        self.world.end_scheduled_fluid_tick_batch();
+    }
 }
 
 struct TickingReadinessCandidate {
@@ -1716,8 +1760,6 @@ impl ChunkMap {
         runs_normally: bool,
     ) -> ChunkMapGameTickTimings {
         let mut timings = ChunkMapGameTickTimings::default();
-        let mut ready_block_ticks = Vec::new();
-        let mut ready_fluid_ticks = Vec::new();
 
         if tick_count.is_multiple_of(100) {
             tracing::debug!(
@@ -1765,27 +1807,12 @@ impl ChunkMap {
                 )
                 .entered();
                 let start = Instant::now();
-                for tickable_chunk in &tickable_chunks {
-                    if let Some(chunk_guard) = tickable_chunk.holder.try_chunk(ChunkStatus::Full) {
-                        chunk_guard.advance_and_collect_ready_scheduled_ticks(
-                            &mut ready_block_ticks,
-                            &mut ready_fluid_ticks,
-                        );
-                    }
-                }
-                let selected_block_ticks =
-                    select_ticks_to_run(&mut ready_block_ticks, MAX_SCHEDULED_TICKS_PER_TICK);
-                let selected_fluid_ticks =
-                    select_ticks_to_run(&mut ready_fluid_ticks, MAX_SCHEDULED_TICKS_PER_TICK);
-                for tickable_chunk in &tickable_chunks {
-                    if let Some(chunk_guard) = tickable_chunk.holder.try_chunk(ChunkStatus::Full) {
-                        chunk_guard.remove_selected_scheduled_ticks(
-                            &selected_block_ticks,
-                            &selected_fluid_ticks,
-                        );
-                    }
-                }
-                Self::execute_scheduled_ticks(world, ready_block_ticks, ready_fluid_ticks);
+                let ready_block_ticks = Self::collect_scheduled_block_ticks(&tickable_chunks);
+                Self::execute_scheduled_block_ticks(world, ready_block_ticks);
+
+                let ready_fluid_ticks = Self::collect_scheduled_fluid_ticks(&tickable_chunks);
+                Self::execute_scheduled_fluid_ticks(world, ready_fluid_ticks);
+
                 for tickable_chunk in &tickable_chunks {
                     // Vanilla random chunk ticks use the entity-ticking range but only require
                     // the same confirmed block-ticking chunk used by scheduled ticks.
@@ -2017,15 +2044,82 @@ impl ChunkMap {
             .unwrap_or(false)
     }
 
-    /// Sorts and executes all ready scheduled ticks, calling block/fluid behavior callbacks.
-    fn execute_scheduled_ticks(
-        world: &Arc<World>,
-        ready_block_ticks: Vec<BlockTick>,
-        ready_fluid_ticks: Vec<FluidTick>,
-    ) {
+    /// Advances both active clocks and collects this tick's block batch.
+    fn collect_scheduled_block_ticks(tickable_chunks: &[TickableChunk]) -> Vec<BlockTick> {
+        let full_chunk_guards: Vec<_> = tickable_chunks
+            .iter()
+            .filter_map(|tickable| tickable.holder.try_chunk(ChunkStatus::Full))
+            .collect();
+        let level_chunks: Vec<_> = full_chunk_guards
+            .iter()
+            .filter_map(|chunk| chunk.as_full())
+            .collect();
+
+        let (advanced_block_containers, collected) = {
+            let mut tick_guards: Vec<_> = level_chunks
+                .iter()
+                .map(|chunk| chunk.block_ticks.lock())
+                .collect();
+            let mut tick_lists: Vec<_> = tick_guards.iter_mut().map(|ticks| &mut **ticks).collect();
+            let advanced = advance_tick_containers(&mut tick_lists);
+            let collected = collect_ticks_to_run(&mut tick_lists, MAX_SCHEDULED_TICKS_PER_TICK);
+            (advanced, collected)
+        };
+        for index in advanced_block_containers
+            .into_iter()
+            .chain(collected.changed_containers.iter().copied())
+        {
+            level_chunks[index].dirty.store(true, Ordering::Release);
+        }
+
+        // Both clocks enter this active chunk tick before callbacks run. Fluid collection
+        // remains after block execution, matching `ServerLevel.tick`.
+        let advanced_fluid_containers = {
+            let mut tick_guards: Vec<_> = level_chunks
+                .iter()
+                .map(|chunk| chunk.fluid_ticks.lock())
+                .collect();
+            let mut tick_lists: Vec<_> = tick_guards.iter_mut().map(|ticks| &mut **ticks).collect();
+            advance_tick_containers(&mut tick_lists)
+        };
+        for index in advanced_fluid_containers {
+            level_chunks[index].dirty.store(true, Ordering::Release);
+        }
+
+        collected.ticks
+    }
+
+    /// Collects this tick's fluid batch after block callbacks have run.
+    fn collect_scheduled_fluid_ticks(tickable_chunks: &[TickableChunk]) -> Vec<FluidTick> {
+        let full_chunk_guards: Vec<_> = tickable_chunks
+            .iter()
+            .filter_map(|tickable| tickable.holder.try_chunk(ChunkStatus::Full))
+            .collect();
+        let level_chunks: Vec<_> = full_chunk_guards
+            .iter()
+            .filter_map(|chunk| chunk.as_full())
+            .collect();
+        let collected = {
+            let mut tick_guards: Vec<_> = level_chunks
+                .iter()
+                .map(|chunk| chunk.fluid_ticks.lock())
+                .collect();
+            let mut tick_lists: Vec<_> = tick_guards.iter_mut().map(|ticks| &mut **ticks).collect();
+            collect_ticks_to_run(&mut tick_lists, MAX_SCHEDULED_TICKS_PER_TICK)
+        };
+        for index in &collected.changed_containers {
+            level_chunks[*index].dirty.store(true, Ordering::Release);
+        }
+        collected.ticks
+    }
+
+    /// Executes ready scheduled block ticks in their collected order.
+    fn execute_scheduled_block_ticks(world: &Arc<World>, ready_block_ticks: Vec<BlockTick>) {
         if !ready_block_ticks.is_empty() {
+            let batch = BlockTickBatchGuard::new(world, &ready_block_ticks);
             let block_behaviors = &*BLOCK_BEHAVIORS;
             for tick in &ready_block_ticks {
+                batch.start(tick);
                 let state = world.get_block_state(tick.pos);
                 if state.get_block() != tick.tick_type {
                     continue;
@@ -2035,10 +2129,15 @@ impl ChunkMap {
                     .tick(state, world, tick.pos);
             }
         }
+    }
 
+    /// Executes ready scheduled fluid ticks in their collected order.
+    fn execute_scheduled_fluid_ticks(world: &Arc<World>, ready_fluid_ticks: Vec<FluidTick>) {
         if !ready_fluid_ticks.is_empty() {
+            let batch = FluidTickBatchGuard::new(world, &ready_fluid_ticks);
             let fluid_behaviors = &*FLUID_BEHAVIORS;
             for tick in &ready_fluid_ticks {
+                batch.start(tick);
                 let state = world.get_block_state(tick.pos);
                 let fluid_state = state.get_fluid_state();
 

@@ -9,7 +9,6 @@ use std::{
 };
 
 use rand::RngExt;
-use rustc_hash::FxHashSet;
 use steel_protocol::packets::game::{
     BlockEntityInfo, ChunkPacketData, HeightmapType as ProtocolHeightmapType, Heightmaps,
     LightUpdatePacketData,
@@ -36,9 +35,7 @@ use crate::chunk::{
 };
 use crate::entity::SharedEntity;
 use crate::world::World;
-use crate::world::tick_scheduler::{
-    BlockTick, BlockTickList, FluidTick, FluidTickList, ScheduledTickKey,
-};
+use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
 use crate::{
     behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS},
     world::game_event_context::GameEventContext,
@@ -106,66 +103,6 @@ pub(crate) enum LevelChunkBlockSetResult {
 }
 
 impl LevelChunk {
-    /// Ticks this chunk, processing scheduled and random block ticks.
-    ///
-    /// For each section that contains randomly-ticking blocks, selects
-    /// `random_tick_speed` random blocks and calls their `random_tick` behavior.
-    /// # Arguments
-    /// * `random_tick_speed` - Number of random blocks to tick per section per tick.
-    ///   This is controlled by the `randomTickSpeed` game rule.
-    /// * `tick_count` - Current server tick count (for entity sync timing).
-    ///
-    /// # Panics
-    /// Panics if the block behavior registry has not been initialized.
-    pub fn tick(
-        &self,
-        random_tick_speed: u32,
-        _tick_count: i32,
-        ready_block_ticks: &mut Vec<BlockTick>,
-        ready_fluid_ticks: &mut Vec<FluidTick>,
-    ) {
-        self.drain_ready_scheduled_ticks(ready_block_ticks, ready_fluid_ticks);
-        self.tick_random_blocks(random_tick_speed);
-    }
-
-    /// Drains ready scheduled block and fluid ticks into the provided buffers.
-    pub fn drain_ready_scheduled_ticks(
-        &self,
-        ready_block_ticks: &mut Vec<BlockTick>,
-        ready_fluid_ticks: &mut Vec<FluidTick>,
-    ) {
-        ready_block_ticks.extend(self.block_ticks.lock().drain_ready());
-        ready_fluid_ticks.extend(self.fluid_ticks.lock().drain_ready());
-    }
-
-    /// Advances scheduled ticks and collects ready candidates without removing them.
-    pub fn advance_and_collect_ready_scheduled_ticks(
-        &self,
-        ready_block_ticks: &mut Vec<BlockTick>,
-        ready_fluid_ticks: &mut Vec<FluidTick>,
-    ) {
-        self.block_ticks
-            .lock()
-            .advance_and_collect_ready(ready_block_ticks);
-        self.fluid_ticks
-            .lock()
-            .advance_and_collect_ready(ready_fluid_ticks);
-    }
-
-    /// Removes the ready ticks chosen by the world-level scheduler cap.
-    pub fn remove_selected_scheduled_ticks(
-        &self,
-        selected_block_ticks: &FxHashSet<ScheduledTickKey>,
-        selected_fluid_ticks: &FxHashSet<ScheduledTickKey>,
-    ) {
-        self.block_ticks
-            .lock()
-            .remove_selected(selected_block_ticks);
-        self.fluid_ticks
-            .lock()
-            .remove_selected(selected_fluid_ticks);
-    }
-
     /// Runs vanilla random block ticks for this chunk.
     pub fn tick_random_blocks(&self, random_tick_speed: u32) {
         if random_tick_speed == 0 {
@@ -267,8 +204,10 @@ impl LevelChunk {
         let structure_starts = proto_chunk.structure_starts.into_inner();
         let structure_references = proto_chunk.structure_references.into_inner();
         let postprocessing = proto_chunk.postprocessing.into_inner();
-        let block_ticks = proto_chunk.block_ticks.into_inner();
-        let fluid_ticks = proto_chunk.fluid_ticks.into_inner();
+        let mut block_ticks = proto_chunk.block_ticks.into_inner();
+        let mut fluid_ticks = proto_chunk.fluid_ticks.into_inner();
+        block_ticks.unpack();
+        fluid_ticks.unpack();
         let block_entities = proto_chunk.block_entities;
         let pending_entities = proto_chunk.entities.get_all();
         let sky_light_sources = proto_chunk.sky_light_sources.into_inner();

@@ -14,7 +14,7 @@ use crate::entity::{
     MAX_ENTITY_TAGS, RemovalReason, SharedEntity,
 };
 use crate::world::World;
-use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, TickPriority};
+use crate::world::tick_scheduler::{BlockTickList, FluidTickList, SavedTick, TickPriority};
 use crate::worldgen::carving_mask::CarvingMask;
 use glam::{DVec3, IVec3};
 use rustc_hash::FxHashSet;
@@ -1626,14 +1626,14 @@ impl ChunkStorage {
         chunk_pos: ChunkPos,
     ) -> Vec<PersistentTick> {
         ticks
-            .iter()
+            .pack()
+            .into_iter()
             .map(|t| PersistentTick {
                 x: (t.pos.0.x - chunk_pos.0.x * 16) as u8,
                 y: t.pos.0.y as i16,
                 z: (t.pos.0.z - chunk_pos.0.y * 16) as u8,
                 delay: t.delay,
                 priority: t.priority as i8,
-                sub_tick_order: t.sub_tick_order,
                 tick_type: t.tick_type.key.clone(),
             })
             .collect()
@@ -1645,14 +1645,14 @@ impl ChunkStorage {
         chunk_pos: ChunkPos,
     ) -> Vec<PersistentTick> {
         ticks
-            .iter()
+            .pack()
+            .into_iter()
             .map(|t| PersistentTick {
                 x: (t.pos.0.x - chunk_pos.0.x * 16) as u8,
                 y: t.pos.0.y as i16,
                 z: (t.pos.0.z - chunk_pos.0.y * 16) as u8,
                 delay: t.delay,
                 priority: t.priority as i8,
-                sub_tick_order: t.sub_tick_order,
                 tick_type: t.tick_type.key.clone(),
             })
             .collect()
@@ -1673,16 +1673,15 @@ impl ChunkStorage {
                     chunk_pos.0.y * 16 + i32::from(pt.z),
                 );
                 let priority = TickPriority::from_i8(pt.priority).unwrap_or(TickPriority::Normal);
-                Some(ScheduledTick {
+                Some(SavedTick {
                     tick_type: block,
                     pos,
                     delay: pt.delay,
                     priority,
-                    sub_tick_order: pt.sub_tick_order,
                 })
             })
             .collect();
-        BlockTickList::from_ticks(ticks)
+        BlockTickList::from_saved_ticks(ticks)
     }
 
     /// Reconstructs fluid tick list from persistent data.
@@ -1700,16 +1699,15 @@ impl ChunkStorage {
                     chunk_pos.0.y * 16 + i32::from(pt.z),
                 );
                 let priority = TickPriority::from_i8(pt.priority).unwrap_or(TickPriority::Normal);
-                Some(ScheduledTick {
+                Some(SavedTick {
                     tick_type: fluid,
                     pos,
                     delay: pt.delay,
                     priority,
-                    sub_tick_order: pt.sub_tick_order,
                 })
             })
             .collect();
-        FluidTickList::from_ticks(ticks)
+        FluidTickList::from_saved_ticks(ticks)
     }
 
     /// Converts chunk heightmaps to persistent format for saving.

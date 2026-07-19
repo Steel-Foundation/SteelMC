@@ -436,6 +436,10 @@ pub struct World {
     /// Provides stable ordering when multiple ticks fire on the same game tick
     /// with the same priority.
     sub_tick_count: AtomicI64,
+    /// Block ticks selected for this tick whose callbacks have not started yet.
+    scheduled_block_ticks_this_tick: SyncMutex<tick_scheduler::ScheduledTickRunSet>,
+    /// Fluid ticks selected for this tick whose callbacks have not started yet.
+    scheduled_fluid_ticks_this_tick: SyncMutex<tick_scheduler::ScheduledTickRunSet>,
     /// Point of interest storage for efficient spatial queries of special blocks.
     pub poi_storage: SyncMutex<PointOfInterestStorage>,
     /// Section-indexed listeners for vanilla game events.
@@ -549,6 +553,12 @@ impl World {
                 navigating_mobs: NavigatingMobTracker::new(),
                 weather: SyncMutex::new(weather),
                 sub_tick_count: AtomicI64::new(0),
+                scheduled_block_ticks_this_tick: SyncMutex::new(
+                    tick_scheduler::ScheduledTickRunSet::default(),
+                ),
+                scheduled_fluid_ticks_this_tick: SyncMutex::new(
+                    tick_scheduler::ScheduledTickRunSet::default(),
+                ),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
                 game_event_listeners: GameEventListenerStorage::new(),
                 pending_world_changes: SyncMutex::new(Vec::new()),
@@ -2785,7 +2795,7 @@ impl World {
 
     /// Schedules a block tick at the given position.
     ///
-    /// The tick will fire after `delay` game ticks with the given priority.
+    /// The tick will fire after `delay` block-ticking chunk ticks with the given priority.
     /// Only one tick per `(pos, block)` pair can be active at a time — duplicates
     /// are silently ignored.
     pub fn schedule_block_tick(
@@ -2799,14 +2809,13 @@ impl World {
         self.chunk_map.with_full_chunk(chunk_pos, |chunk_access| {
             if let Some(chunk) = chunk_access.as_full() {
                 let order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
-                let tick = tick_scheduler::BlockTick {
-                    tick_type: block,
-                    pos,
-                    delay,
-                    priority,
-                    sub_tick_order: order,
-                };
-                chunk.block_ticks.lock().schedule(tick);
+                if chunk
+                    .block_ticks
+                    .lock()
+                    .schedule(block, pos, delay, priority, order)
+                {
+                    chunk.dirty.store(true, Ordering::Release);
+                }
             }
         });
     }
@@ -2818,7 +2827,7 @@ impl World {
 
     /// Schedules a fluid tick at the given position.
     ///
-    /// The tick will fire after `delay` game ticks with the given priority.
+    /// The tick will fire after `delay` block-ticking chunk ticks with the given priority.
     /// Only one tick per `(pos, fluid)` pair can be active at a time.
     pub fn schedule_fluid_tick(
         &self,
@@ -2831,14 +2840,13 @@ impl World {
         self.chunk_map.with_full_chunk(chunk_pos, |chunk_access| {
             if let Some(chunk) = chunk_access.as_full() {
                 let order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
-                let tick = tick_scheduler::FluidTick {
-                    tick_type: fluid,
-                    pos,
-                    delay,
-                    priority,
-                    sub_tick_order: order,
-                };
-                chunk.fluid_ticks.lock().schedule(tick);
+                if chunk
+                    .fluid_ticks
+                    .lock()
+                    .schedule(fluid, pos, delay, priority, order)
+                {
+                    chunk.dirty.store(true, Ordering::Release);
+                }
             }
         });
     }
@@ -2870,6 +2878,48 @@ impl World {
                     .is_some_and(|chunk| chunk.fluid_ticks.lock().has_tick(pos, fluid))
             })
             .unwrap_or(false)
+    }
+
+    /// Returns whether a selected block tick at `(pos, block)` has not started yet.
+    ///
+    /// This mirrors `LevelTickAccess.willTickThisTick` and is distinct from
+    /// [`Self::has_scheduled_block_tick`], because selected ticks have already
+    /// been removed from their owning chunk queue.
+    pub fn will_tick_block_this_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
+        self.scheduled_block_ticks_this_tick
+            .lock()
+            .contains(pos, block)
+    }
+
+    /// Returns whether a selected fluid tick at `(pos, fluid)` has not started yet.
+    pub fn will_tick_fluid_this_tick(&self, pos: BlockPos, fluid: FluidRef) -> bool {
+        self.scheduled_fluid_ticks_this_tick
+            .lock()
+            .contains(pos, fluid)
+    }
+
+    pub(crate) fn begin_scheduled_block_tick_batch(&self, ticks: &[tick_scheduler::BlockTick]) {
+        self.scheduled_block_ticks_this_tick.lock().begin(ticks);
+    }
+
+    pub(crate) fn start_scheduled_block_tick(&self, tick: &tick_scheduler::BlockTick) {
+        self.scheduled_block_ticks_this_tick.lock().start(tick);
+    }
+
+    pub(crate) fn end_scheduled_block_tick_batch(&self) {
+        self.scheduled_block_ticks_this_tick.lock().clear();
+    }
+
+    pub(crate) fn begin_scheduled_fluid_tick_batch(&self, ticks: &[tick_scheduler::FluidTick]) {
+        self.scheduled_fluid_ticks_this_tick.lock().begin(ticks);
+    }
+
+    pub(crate) fn start_scheduled_fluid_tick(&self, tick: &tick_scheduler::FluidTick) {
+        self.scheduled_fluid_ticks_this_tick.lock().start(tick);
+    }
+
+    pub(crate) fn end_scheduled_fluid_tick_batch(&self) {
+        self.scheduled_fluid_ticks_this_tick.lock().clear();
     }
 
     /// Advances game time and this world's clock instances, then periodically synchronizes game time.
@@ -5140,9 +5190,17 @@ impl ScheduledTickAccess for Arc<World> {
         self.as_ref().has_scheduled_block_tick(pos, block)
     }
 
+    fn will_tick_block_this_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
+        self.as_ref().will_tick_block_this_tick(pos, block)
+    }
+
     fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
         self.as_ref().schedule_fluid_tick_default(pos, fluid, delay);
         true
+    }
+
+    fn will_tick_fluid_this_tick(&self, pos: BlockPos, fluid: FluidRef) -> bool {
+        self.as_ref().will_tick_fluid_this_tick(pos, fluid)
     }
 }
 
