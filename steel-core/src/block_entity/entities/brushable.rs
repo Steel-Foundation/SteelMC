@@ -355,7 +355,10 @@ mod tests {
         nbt.insert("LootTable", "minecraft:archaeology/desert_pyramid");
         nbt.insert("LootTableSeed", 42_i64);
         nbt.insert("hit_direction", Direction::North.get_3d_data_value() as i8);
-        nbt.insert("item", ItemStack::new(&vanilla_items::STICK).to_nbt_tag_ref());
+        nbt.insert(
+            "item",
+            ItemStack::new(&vanilla_items::STICK).to_nbt_tag_ref(),
+        );
         load_from_owned_nbt(&mut entity, &nbt);
 
         let mut saved = NbtCompound::new();
@@ -392,7 +395,10 @@ mod tests {
     fn save_item_only_when_no_loot_table() {
         let mut entity = brushable();
         let mut nbt = NbtCompound::new();
-        nbt.insert("item", ItemStack::new(&vanilla_items::STICK).to_nbt_tag_ref());
+        nbt.insert(
+            "item",
+            ItemStack::new(&vanilla_items::STICK).to_nbt_tag_ref(),
+        );
         load_from_owned_nbt(&mut entity, &nbt);
 
         let mut saved = NbtCompound::new();
@@ -407,7 +413,10 @@ mod tests {
         let mut entity = brushable();
         let mut nbt = NbtCompound::new();
         nbt.insert("LootTable", "minecraft:archaeology/desert_pyramid");
-        nbt.insert("item", ItemStack::new(&vanilla_items::STICK).to_nbt_tag_ref());
+        nbt.insert(
+            "item",
+            ItemStack::new(&vanilla_items::STICK).to_nbt_tag_ref(),
+        );
         load_from_owned_nbt(&mut entity, &nbt);
 
         let mut saved = NbtCompound::new();
@@ -441,7 +450,10 @@ mod tests {
         let mut entity = brushable();
         let mut nbt = NbtCompound::new();
         nbt.insert("hit_direction", Direction::North.get_3d_data_value() as i8);
-        nbt.insert("item", ItemStack::new(&vanilla_items::STICK).to_nbt_tag_ref());
+        nbt.insert(
+            "item",
+            ItemStack::new(&vanilla_items::STICK).to_nbt_tag_ref(),
+        );
         load_from_owned_nbt(&mut entity, &nbt);
 
         let mut disk = NbtCompound::new();
