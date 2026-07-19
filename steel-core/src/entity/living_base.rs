@@ -547,7 +547,7 @@ pub struct ActiveItemUseState {
 impl ActiveItemUseState {
     /// Creates active item-use state from the hand, stack snapshot, and duration.
     #[must_use]
-    pub fn new(hand: InteractionHand, item: ItemStack, duration: i32) -> Self {
+    pub const fn new(hand: InteractionHand, item: ItemStack, duration: i32) -> Self {
         Self {
             hand,
             item,

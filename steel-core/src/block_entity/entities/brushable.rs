@@ -11,7 +11,7 @@ use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::loot_table::LootContext;
+use steel_registry::loot_table::{LootContext, LootTableRef};
 use steel_registry::{REGISTRY, RegistryExt as _, vanilla_block_entity_types, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeKey, Identifier};
@@ -153,7 +153,7 @@ impl BrushableBlockEntity {
 
     fn unpack_loot_items<R: rand::Rng>(
         &mut self,
-        loot_table: steel_registry::loot_table::LootTableRef,
+        loot_table: LootTableRef,
         rng: &mut R,
         brush: &ItemStack,
     ) {
@@ -188,8 +188,9 @@ impl BrushableBlockEntity {
         let turns_into = BLOCK_BEHAVIORS
             .get_behavior_for_state(self.state)
             .and_then(|behavior| behavior.brushable_data(self.state))
-            .map(|(turns_into, _, _)| turns_into.default_state())
-            .unwrap_or(vanilla_blocks::AIR.default_state());
+            .map_or(vanilla_blocks::AIR.default_state(), |(turns_into, _, _)| {
+                turns_into.default_state()
+            });
 
         world.set_block(self.pos, turns_into, UpdateFlags::UPDATE_ALL);
     }
