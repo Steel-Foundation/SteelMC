@@ -230,32 +230,10 @@ impl BrushableBlockEntity {
         }
     }
 
-    fn load_direction(value: &str) -> Option<Direction> {
-        match value {
-            "down" => Some(Direction::Down),
-            "up" => Some(Direction::Up),
-            "north" => Some(Direction::North),
-            "south" => Some(Direction::South),
-            "west" => Some(Direction::West),
-            "east" => Some(Direction::East),
-            _ => None,
-        }
-    }
-
-    const fn direction_name(direction: Direction) -> &'static str {
-        match direction {
-            Direction::Down => "down",
-            Direction::Up => "up",
-            Direction::North => "north",
-            Direction::South => "south",
-            Direction::West => "west",
-            Direction::East => "east",
-        }
-    }
-
+    /// Client-only fields (`getUpdateTag`): hit direction byte + optional item.
     fn save_client_data(&self, nbt: &mut NbtCompound) {
         if let Some(direction) = self.hit_direction {
-            nbt.insert("hit_direction", Self::direction_name(direction));
+            nbt.insert("hit_direction", direction.get_3d_data_value() as i8);
         }
         if !self.item.is_empty() {
             nbt.insert("item", self.item.to_nbt_tag_ref());
@@ -303,28 +281,180 @@ impl BlockEntity for BrushableBlockEntity {
             .string("LootTable")
             .and_then(|value| Identifier::from_str(&value.to_str()).ok());
         self.loot_table_seed = nbt_view.long("LootTableSeed").unwrap_or(0);
+
+        // Vanilla: LootTable and item are mutually exclusive on load.
+        if self.loot_table.is_some() {
+            self.item = ItemStack::empty();
+        } else {
+            self.item = nbt_view
+                .compound("item")
+                .and_then(|compound| ItemStack::from_borrowed_compound(&compound))
+                .unwrap_or_else(ItemStack::empty);
+        }
+
+        // Vanilla Direction.LEGACY_ID_CODEC: byte 3D data value.
         self.hit_direction = nbt_view
-            .string("hit_direction")
-            .and_then(|value| Self::load_direction(&value.to_str()));
-        self.item = nbt_view
-            .compound("item")
-            .and_then(|compound| ItemStack::from_borrowed_compound(&compound))
-            .unwrap_or_else(ItemStack::empty);
+            .byte("hit_direction")
+            .map(|value| Direction::from_3d_data_value(i32::from(value)));
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
+        // Vanilla trySaveLootTable: if loot is present, skip item and never write hit_direction.
         if let Some(loot_table) = &self.loot_table {
             nbt.insert("LootTable", loot_table.to_string());
             if self.loot_table_seed != 0 {
                 nbt.insert("LootTableSeed", self.loot_table_seed);
             }
+            return;
         }
-        self.save_client_data(nbt);
+
+        if !self.item.is_empty() {
+            nbt.insert("item", self.item.to_nbt_tag_ref());
+        }
     }
 
     fn get_update_tag(&self) -> Option<NbtCompound> {
         let mut nbt = NbtCompound::new();
         self.save_client_data(&mut nbt);
         Some(nbt)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+    use std::sync::Weak;
+
+    use simdnbt::borrow::read_compound as read_borrowed_compound;
+    use steel_registry::vanilla_items;
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+
+    use super::*;
+
+    fn load_from_owned_nbt(entity: &mut BrushableBlockEntity, nbt: &NbtCompound) {
+        let mut bytes = Vec::new();
+        nbt.write(&mut bytes);
+        let borrowed = read_borrowed_compound(&mut Cursor::new(bytes.as_slice()))
+            .expect("test nbt should reborrow");
+        entity.load_additional(&borrowed);
+    }
+
+    fn brushable() -> BrushableBlockEntity {
+        init_test_registry();
+        BrushableBlockEntity::new(
+            Weak::new(),
+            BlockPos::new(1, 64, 2),
+            vanilla_blocks::SUSPICIOUS_SAND.default_state(),
+        )
+    }
+
+    #[test]
+    fn save_loot_table_excludes_item_and_hit_direction() {
+        let mut entity = brushable();
+        let mut nbt = NbtCompound::new();
+        nbt.insert("LootTable", "minecraft:archaeology/desert_pyramid");
+        nbt.insert("LootTableSeed", 42_i64);
+        nbt.insert("hit_direction", Direction::North.get_3d_data_value() as i8);
+        nbt.insert("item", ItemStack::new(&vanilla_items::STICK).to_nbt_tag_ref());
+        load_from_owned_nbt(&mut entity, &nbt);
+
+        let mut saved = NbtCompound::new();
+        entity.save_additional(&mut saved);
+
+        assert_eq!(
+            saved.string("LootTable").map(|s| s.to_string()),
+            Some("minecraft:archaeology/desert_pyramid".to_owned())
+        );
+        assert_eq!(saved.long("LootTableSeed"), Some(42));
+        assert!(saved.compound("item").is_none());
+        assert!(saved.byte("hit_direction").is_none());
+    }
+
+    #[test]
+    fn save_loot_table_omits_zero_seed() {
+        let mut entity = brushable();
+        let mut nbt = NbtCompound::new();
+        nbt.insert("LootTable", "minecraft:archaeology/ocean_ruin_warm");
+        nbt.insert("LootTableSeed", 0_i64);
+        load_from_owned_nbt(&mut entity, &nbt);
+
+        let mut saved = NbtCompound::new();
+        entity.save_additional(&mut saved);
+
+        assert_eq!(
+            saved.string("LootTable").map(|s| s.to_string()),
+            Some("minecraft:archaeology/ocean_ruin_warm".to_owned())
+        );
+        assert!(saved.long("LootTableSeed").is_none());
+    }
+
+    #[test]
+    fn save_item_only_when_no_loot_table() {
+        let mut entity = brushable();
+        let mut nbt = NbtCompound::new();
+        nbt.insert("item", ItemStack::new(&vanilla_items::STICK).to_nbt_tag_ref());
+        load_from_owned_nbt(&mut entity, &nbt);
+
+        let mut saved = NbtCompound::new();
+        entity.save_additional(&mut saved);
+
+        assert!(saved.string("LootTable").is_none());
+        assert!(saved.compound("item").is_some());
+    }
+
+    #[test]
+    fn load_loot_table_discards_item() {
+        let mut entity = brushable();
+        let mut nbt = NbtCompound::new();
+        nbt.insert("LootTable", "minecraft:archaeology/desert_pyramid");
+        nbt.insert("item", ItemStack::new(&vanilla_items::STICK).to_nbt_tag_ref());
+        load_from_owned_nbt(&mut entity, &nbt);
+
+        let mut saved = NbtCompound::new();
+        entity.save_additional(&mut saved);
+
+        assert!(saved.string("LootTable").is_some());
+        assert!(saved.compound("item").is_none());
+    }
+
+    #[test]
+    fn load_item_when_no_loot_table() {
+        let mut entity = brushable();
+        let mut nbt = NbtCompound::new();
+        nbt.insert(
+            "item",
+            ItemStack::with_count(&vanilla_items::STICK, 3).to_nbt_tag_ref(),
+        );
+        load_from_owned_nbt(&mut entity, &nbt);
+
+        assert_eq!(entity.item.count(), 3);
+        assert!(entity.item.is(&vanilla_items::STICK));
+
+        let mut saved = NbtCompound::new();
+        entity.save_additional(&mut saved);
+        assert!(saved.compound("item").is_some());
+        assert!(saved.string("LootTable").is_none());
+    }
+
+    #[test]
+    fn hit_direction_is_byte_on_update_tag_not_disk() {
+        let mut entity = brushable();
+        let mut nbt = NbtCompound::new();
+        nbt.insert("hit_direction", Direction::North.get_3d_data_value() as i8);
+        nbt.insert("item", ItemStack::new(&vanilla_items::STICK).to_nbt_tag_ref());
+        load_from_owned_nbt(&mut entity, &nbt);
+
+        let mut disk = NbtCompound::new();
+        entity.save_additional(&mut disk);
+        assert!(disk.byte("hit_direction").is_none());
+        assert!(disk.compound("item").is_some());
+
+        let update = entity.get_update_tag().expect("update tag");
+        assert_eq!(
+            update.byte("hit_direction"),
+            Some(Direction::North.get_3d_data_value() as i8)
+        );
+        assert!(update.compound("item").is_some());
+        assert!(update.string("LootTable").is_none());
     }
 }

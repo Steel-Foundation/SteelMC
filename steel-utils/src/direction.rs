@@ -29,19 +29,39 @@ pub enum Direction {
 impl ReadFrom for Direction {
     fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
         let id = VarInt::read(data)?.0;
-        match id {
-            0 => Ok(Direction::Down),
-            1 => Ok(Direction::Up),
-            2 => Ok(Direction::North),
-            3 => Ok(Direction::South),
-            4 => Ok(Direction::West),
-            5 => Ok(Direction::East),
-            _ => Err(io::Error::other("Invalid Direction id")),
+        if (0..6).contains(&id) {
+            Ok(Direction::from_3d_data_value(id))
+        } else {
+            Err(io::Error::other("Invalid Direction id"))
         }
     }
 }
 
 impl Direction {
+    /// Mimic Direction.get3DDataValue().
+    #[must_use]
+    pub const fn get_3d_data_value(self) -> i32 {
+        match self {
+            Direction::Down => 0,
+            Direction::Up => 1,
+            Direction::North => 2,
+            Direction::South => 3,
+            Direction::West => 4,
+            Direction::East => 5,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_3d_data_value(data: i32) -> Direction {
+        let rem = data % 6;
+        let idx = if rem < 0 {
+            (-rem) as usize
+        } else {
+            rem as usize
+        };
+        Direction::ALL[idx]
+    }
+
     /// Returns the block position offset for this direction.
     #[must_use]
     pub const fn offset(self) -> (i32, i32, i32) {
@@ -370,6 +390,24 @@ mod tests {
                 Direction::East,
             ]
         );
+    }
+
+    #[test]
+    fn three_d_data_value_round_trips_vanilla_ids() {
+        for direction in Direction::ALL {
+            let id = direction.get_3d_data_value();
+            assert_eq!(Direction::from_3d_data_value(id), direction);
+        }
+    }
+
+    #[test]
+    fn from_3d_data_value_matches_java_abs_mod_wrap() {
+        // Vanilla is "BY_3D_DATA[Mth.abs(data % 6)]".
+        assert_eq!(Direction::from_3d_data_value(6), Direction::Down);
+        assert_eq!(Direction::from_3d_data_value(7), Direction::Up);
+        assert_eq!(Direction::from_3d_data_value(-1), Direction::Up);
+        assert_eq!(Direction::from_3d_data_value(-7), Direction::Up);
+        assert_eq!(Direction::from_3d_data_value(-6), Direction::Down);
     }
 
     #[test]
