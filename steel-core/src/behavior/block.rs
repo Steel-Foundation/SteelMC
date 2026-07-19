@@ -733,6 +733,25 @@ pub trait BlockBehavior: Send + Sync {
         // Override for redstone components, doors, etc.
     }
 
+    /// Handles a queued server block event.
+    ///
+    /// Mirrors Vanilla `BlockBehaviour.triggerEvent`. Returning `true` publishes
+    /// the corresponding event packet to nearby clients.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn trigger_event(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        param_a: i32,
+        param_b: i32,
+    ) -> bool {
+        false
+    }
+
     /// Returns the item stack to give when a player picks this block (middle click).
     ///
     /// The default implementation looks up an item with the same key as the block.

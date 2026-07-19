@@ -26,7 +26,7 @@ use steel_utils::saved_data::{SavedDataManager, names as saved_data_names};
 use glam::DVec3;
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
-    CBlockDestruction, CBlockEvent, CChangeDifficulty, CGameEvent, CInitializeBorder, CLevelEvent,
+    CBlockDestruction, CChangeDifficulty, CGameEvent, CInitializeBorder, CLevelEvent,
     CLevelParticles, CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize,
     CSetBorderWarningDelay, CSetBorderWarningDistance, CSetEntityData, CSetEntityLink,
     CSetEquipment, CSound, CSystemChat, CUpdateAttributes, GameEventType, SoundSource,
@@ -183,6 +183,7 @@ impl ClipHitResult {
     }
 }
 
+mod block_event;
 mod border;
 pub(crate) mod clock;
 mod environment;
@@ -199,6 +200,7 @@ mod world_entities;
 pub use crate::config::WorldStorageConfig;
 use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
+use block_event::BlockEventQueue;
 pub use border::WorldBorderError;
 use border::{WorldBorder, WorldBorderSnapshot};
 pub use level_reader::{LevelAccessor, LevelReader, ScheduledTickAccess};
@@ -420,6 +422,8 @@ pub struct World {
     /// Whether the tick rate is running normally (not frozen/paused).
     /// When false, movement validation checks are skipped.
     tick_runs_normally: AtomicBool,
+    /// Ordered, duplicate-suppressing server block events awaiting execution.
+    block_events: SyncMutex<BlockEventQueue>,
     /// Central runtime entity ownership and lookup.
     entity_manager: WorldEntityManager,
     /// Entity tracker for managing which players can see which entities.
@@ -539,6 +543,7 @@ impl World {
                 sea_level,
                 default_gamemode,
                 tick_runs_normally: AtomicBool::new(true),
+                block_events: SyncMutex::new(BlockEventQueue::default()),
                 entity_manager: WorldEntityManager::new(),
                 entity_tracker: EntityTracker::new(),
                 navigating_mobs: NavigatingMobTracker::new(),
@@ -2315,6 +2320,11 @@ impl World {
             self.chunk_map
                 .tick_game(self, tick_count, random_tick_speed, runs_normally);
 
+        if runs_normally {
+            let _span = tracing::trace_span!("block_events").entered();
+            self.run_block_events();
+        }
+
         let entity_tick = {
             let _span = tracing::trace_span!("entity_tick").entered();
             let start = Instant::now();
@@ -4029,7 +4039,7 @@ impl World {
 
         self.players.iter_players(|_, player| {
             if exclude != Some(player.id())
-                && Self::level_event_recipient_in_range(player.position(), pos)
+                && Self::recipient_within_64_blocks(player.position(), pos)
             {
                 player.connection.send_encoded(encoded.clone());
             }
@@ -4037,7 +4047,7 @@ impl World {
         });
     }
 
-    fn level_event_recipient_in_range(player_pos: DVec3, event_pos: BlockPos) -> bool {
+    fn recipient_within_64_blocks(player_pos: DVec3, event_pos: BlockPos) -> bool {
         const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
 
         let dx = f64::from(event_pos.x()) - player_pos.x;
@@ -4325,55 +4335,6 @@ impl World {
         }
 
         loot_table.get_random_items(&mut ctx)
-    }
-
-    /// Broadcasts a block event to nearby players within 64 blocks.
-    ///
-    /// Block events are used for special block behaviors like pistons, note blocks,
-    /// chests, and bells. Each block type interprets the parameters differently.
-    ///
-    /// # Arguments
-    /// * `pos` - The position of the block
-    /// * `block` - The block reference
-    /// * `action_id` - The action ID (block-specific meaning)
-    /// * `action_param` - The action parameter (block-specific meaning)
-    pub fn block_event(&self, pos: BlockPos, block: BlockRef, action_id: u8, action_param: u8) {
-        const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
-
-        let block_id = block.id() as i32;
-
-        let chunk = ChunkPos::new(
-            SectionPos::block_to_section_coord(pos.x()),
-            SectionPos::block_to_section_coord(pos.z()),
-        );
-        let packet = CBlockEvent::new(pos, action_id, action_param, block_id);
-        let Ok(encoded) =
-            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
-        else {
-            log::warn!("Failed to encode block event packet");
-            return;
-        };
-
-        // Get players tracking this chunk, then filter by 64-block distance
-        let event_pos = (
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
-        );
-
-        for entity_id in self.player_area_map.get_tracking_players(chunk) {
-            if let Some(player) = self.players.get_by_entity_id(entity_id) {
-                let player_pos = player.position();
-                let dx = player_pos.x - event_pos.0;
-                let dy = player_pos.y - event_pos.1;
-                let dz = player_pos.z - event_pos.2;
-                let dist_sq = dx * dx + dy * dy + dz * dz;
-
-                if dist_sq <= MAX_DISTANCE_SQ {
-                    player.connection.send_encoded(encoded.clone());
-                }
-            }
-        }
     }
 
     /// Plays a sound at a specific position, broadcasting to nearby players.
@@ -5366,15 +5327,15 @@ mod tests {
     fn level_event_recipient_range_uses_block_corner_and_strict_boundary() {
         let event_pos = BlockPos::ZERO;
 
-        assert!(World::level_event_recipient_in_range(
+        assert!(World::recipient_within_64_blocks(
             DVec3::new(-63.999, 0.0, 0.0),
             event_pos,
         ));
-        assert!(!World::level_event_recipient_in_range(
+        assert!(!World::recipient_within_64_blocks(
             DVec3::new(-64.0, 0.0, 0.0),
             event_pos,
         ));
-        assert!(!World::level_event_recipient_in_range(
+        assert!(!World::recipient_within_64_blocks(
             DVec3::new(64.25, 0.0, 0.0),
             event_pos,
         ));
@@ -5387,7 +5348,7 @@ mod tests {
         let view = PlayerChunkView::new(ChunkPos::new(0, 0), 2);
 
         assert!(!view.contains(ChunkPos::from_block_pos(event_pos)));
-        assert!(World::level_event_recipient_in_range(player_pos, event_pos,));
+        assert!(World::recipient_within_64_blocks(player_pos, event_pos));
     }
 
     #[test]

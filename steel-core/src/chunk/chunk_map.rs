@@ -533,6 +533,17 @@ impl ChunkMap {
             .unwrap_or(false)
     }
 
+    /// Returns whether the chunk is in block simulation range with confirmed r1 readiness.
+    #[must_use]
+    pub(crate) fn is_block_ticking_full_chunk_simulated(&self, pos: ChunkPos) -> bool {
+        self.chunks
+            .read_sync(&pos, |_, holder| {
+                is_block_ticking(holder.simulation_level())
+                    && holder.ticking_readiness_snapshot().is_block_ticking()
+            })
+            .unwrap_or(false)
+    }
+
     /// Executes a function with access to a chunk at the requested generation status or later.
     /// Returns `None` if the chunk is not loaded or has not reached the requested status.
     pub(crate) fn with_chunk_at_status<F, R>(
