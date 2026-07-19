@@ -1,3 +1,5 @@
+//! Brushable block entity for archaeology brush progress and delayed loot.
+
 use std::str::FromStr as _;
 use std::sync::{Arc, Weak};
 
@@ -39,6 +41,8 @@ pub struct BrushableBlockEntity {
     loot_table: Option<Identifier>,
     loot_table_seed: i64,
 }
+
+// SAFETY: This key is owned by Steel and uniquely identifies `BrushableBlockEntity`.
 unsafe impl DowncastType for BrushableBlockEntity {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:block_entity/brushable");
 }

@@ -1,3 +1,5 @@
+//! Brush item behavior for continuous archaeology brushing.
+
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -8,7 +10,7 @@ use steel_registry::sound_events;
 use steel_registry::vanilla_particle_types;
 use steel_utils::Downcast as _;
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, Direction};
+use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior, UseAnimation};
@@ -112,7 +114,7 @@ fn release_player_use(user: &dyn LivingEntity) {
 fn spawn_dust_particles(
     world: &World,
     player: &Player,
-    state: steel_utils::BlockStateId,
+    state: BlockStateId,
     hit_location: DVec3,
     hit_direction: Direction,
 ) {

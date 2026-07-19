@@ -1,3 +1,5 @@
+//! Brushable block behavior for suspicious sand and suspicious gravel.
+
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
@@ -10,6 +12,7 @@ use steel_utils::Downcast as _;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
+use crate::block_entity::entities::BrushableBlockEntity;
 use crate::block_entity::{BLOCK_ENTITIES, BlockEntity, SharedBlockEntity};
 use crate::world::{ScheduledTickAccess, World};
 
@@ -81,9 +84,7 @@ impl BlockBehavior for BrushableBlock {
             return;
         };
         let mut guard = block_entity.lock();
-        let Some(brushable) =
-            guard.downcast_mut::<crate::block_entity::entities::BrushableBlockEntity>()
-        else {
+        let Some(brushable) = guard.downcast_mut::<BrushableBlockEntity>() else {
             return;
         };
 
