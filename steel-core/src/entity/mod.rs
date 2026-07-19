@@ -794,7 +794,8 @@ pub use movement_sync::{
 };
 pub use projectile::{
     EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
-    ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, compute_margin,
+    ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
+    compute_margin, get_hit_result_on_view_vector,
 };
 #[cfg(test)]
 pub(crate) use registry::init_test_entities;

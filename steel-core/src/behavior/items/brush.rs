@@ -2,22 +2,22 @@
 
 use std::sync::Arc;
 
-use glam::DVec3;
 use steel_macros::item_behavior;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::particle_type::{BlockParticleOption, ParticleData};
 use steel_registry::sound_events;
-use steel_registry::vanilla_particle_types;
+use steel_registry::vanilla_attributes;
 use steel_utils::Downcast as _;
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, BlockStateId, Direction};
+use steel_utils::{BlockPos, Direction};
 
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior, UseAnimation};
 use crate::block_entity::entities::BrushableBlockEntity;
-use crate::entity::{Entity as _, LivingEntity};
-use crate::player::{HumanoidArm, Player};
-use crate::world::{ClipBlockShape, ClipFluid, World};
+use crate::entity::projectile::{ViewVectorHitResult, get_hit_result_on_view_vector};
+use crate::entity::{Entity, LivingEntity};
+use crate::inventory::equipment::EquipmentSlot;
+use crate::player::Player;
+use crate::world::World;
 
 const USE_DURATION: i32 = 200;
 const ANIMATION_DURATION: i32 = 10;
@@ -29,11 +29,9 @@ pub struct BrushItem;
 
 impl ItemBehavior for BrushItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        if calculate_hit_result(context.world, context.player).is_none() {
-            return InteractionResult::Pass;
+        if calculate_block_hit(context.world, context.player).is_some() {
+            context.player.start_using_item(context.hand);
         }
-
-        context.player.start_using_item(context.hand);
         InteractionResult::Consume
     }
 
@@ -60,7 +58,7 @@ impl ItemBehavior for BrushItem {
         let Some(player) = user.as_player() else {
             return;
         };
-        let Some((pos, direction, hit_location)) = calculate_hit_result(world, player) else {
+        let Some((pos, direction)) = calculate_block_hit(world, player) else {
             player.release_using_item();
             return;
         };
@@ -71,7 +69,6 @@ impl ItemBehavior for BrushItem {
         }
 
         let state = world.get_block_state(pos);
-        spawn_dust_particles(world, player, state, hit_location, direction);
         let sound = BLOCK_BEHAVIORS
             .get_behavior_for_state(state)
             .and_then(|behavior| behavior.brushable_data(state))
@@ -90,90 +87,38 @@ impl ItemBehavior for BrushItem {
         };
 
         if brushable.brush(world.game_time(), world, player, direction, stack) {
-            stack.hurt_and_break(1, player.has_infinite_materials());
+            let slot = equipped_brush_slot(player, stack);
+            if stack.hurt_and_break(1, player.has_infinite_materials()) {
+                player.on_equipped_item_broken(slot);
+            }
         }
     }
 }
 
-fn calculate_hit_result(world: &World, player: &Player) -> Option<(BlockPos, Direction, DVec3)> {
-    let (start, end) = player.get_ray_endpoints();
-    let hit = world.clip(start, end, ClipBlockShape::Outline, ClipFluid::None);
-    if hit.is_miss() {
-        None
+fn calculate_block_hit(world: &World, player: &Player) -> Option<(BlockPos, Direction)> {
+    let distance = player
+        .attributes()
+        .lock()
+        .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
+        .unwrap_or(4.5);
+    match get_hit_result_on_view_vector(world, player, distance, |entity| entity.is_pickable()) {
+        ViewVectorHitResult::Block(hit) => Some((hit.block_pos, hit.direction)),
+        ViewVectorHitResult::Miss | ViewVectorHitResult::Entity(_) => None,
+    }
+}
+
+fn equipped_brush_slot(player: &Player, stack: &ItemStack) -> EquipmentSlot {
+    let inventory = player.inventory.lock();
+    let offhand = inventory.get_item_in_hand(InteractionHand::OffHand);
+    if ItemStack::matches(stack, offhand) {
+        EquipmentSlot::OffHand
     } else {
-        Some((hit.block_pos, hit.direction, hit.location))
+        EquipmentSlot::MainHand
     }
 }
 
 fn release_player_use(user: &dyn LivingEntity) {
     if let Some(player) = user.as_player() {
         player.release_using_item();
-    }
-}
-
-fn spawn_dust_particles(
-    world: &World,
-    player: &Player,
-    state: BlockStateId,
-    hit_location: DVec3,
-    hit_direction: Direction,
-) {
-    let flip = if brushing_arm(player) == HumanoidArm::Right {
-        1.0
-    } else {
-        -1.0
-    };
-    let (delta_x, delta_z) = dust_particles_delta(player.look_angle(), hit_direction);
-    let particle_count = rand::random_range(7..12);
-    let particle = ParticleData::new(
-        &vanilla_particle_types::BLOCK,
-        BlockParticleOption::new(state),
-    );
-    let pos = DVec3::new(
-        hit_location.x
-            - if hit_direction == Direction::West {
-                1.0e-6
-            } else {
-                0.0
-            },
-        hit_location.y,
-        hit_location.z
-            - if hit_direction == Direction::North {
-                1.0e-6
-            } else {
-                0.0
-            },
-    );
-
-    // Vanilla uses count 0 so the client treats offset as a single-particle velocity.
-    for _ in 0..particle_count {
-        let spread = DVec3::new(
-            delta_x * flip * 3.0 * rand::random::<f64>(),
-            0.0,
-            delta_z * flip * 3.0 * rand::random::<f64>(),
-        );
-        world.send_particles_with_options(particle.clone(), false, false, pos, 0, spread, 1.0);
-    }
-}
-
-fn brushing_arm(player: &Player) -> HumanoidArm {
-    let main_arm = player.main_arm();
-    if player.active_item_use_hand() == Some(InteractionHand::MainHand) {
-        return main_arm;
-    }
-
-    match main_arm {
-        HumanoidArm::Left => HumanoidArm::Right,
-        HumanoidArm::Right => HumanoidArm::Left,
-    }
-}
-
-fn dust_particles_delta(view_vector: DVec3, hit_direction: Direction) -> (f64, f64) {
-    match hit_direction {
-        Direction::Down | Direction::Up => (view_vector.z, -view_vector.x),
-        Direction::North => (1.0, -0.1),
-        Direction::South => (-1.0, 0.1),
-        Direction::West => (-0.1, -1.0),
-        Direction::East => (0.1, 1.0),
     }
 }
