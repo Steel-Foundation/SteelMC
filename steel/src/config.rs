@@ -542,7 +542,7 @@ fn validate(config: &ServerConfig) -> Result<(), &'static str> {
     if config.allow_extended_view_distance
         && !(1..=MAX_SUPPORTED_VIEW_DISTANCE).contains(&config.view_distance)
     {
-        return Err("View distance must in range 1..125");
+        return Err("View distance must in range 1..128");
     }
     if let Some(auth_server) = &config.auth_server {
         let Ok(url) = Url::parse(auth_server) else {
@@ -823,8 +823,8 @@ mod tests {
                 "allow_extended_view_distance = false",
                 "allow_extended_view_distance = true",
             )
-            .replace("view_distance = 10", "view_distance = 125")
-            .replace("simulation_distance = 10", "simulation_distance = 125");
+            .replace("view_distance = 10", "view_distance = 128")
+            .replace("simulation_distance = 10", "simulation_distance = 128");
         let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
         validate(&config.server).expect("extended view distance validates");
@@ -837,12 +837,12 @@ mod tests {
                 "allow_extended_view_distance = false",
                 "allow_extended_view_distance = true",
             )
-            .replace("view_distance = 10", "view_distance = 126");
+            .replace("view_distance = 10", "view_distance = 129");
         let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
         assert_eq!(
             validate(&config.server),
-            Err("View distance must in range 1..125")
+            Err("View distance must in range 1..128")
         );
     }
 

@@ -11,7 +11,7 @@ use steel_utils::ChunkPos;
 use crate::chunk::{chunk_access::ChunkStatus, chunk_pyramid::GENERATION_PYRAMID};
 
 /// The maximum supported view distance for players.
-pub const MAX_SUPPORTED_VIEW_DISTANCE: u8 = 125;
+pub const MAX_SUPPORTED_VIEW_DISTANCE: u8 = 128;
 const FULL_CHUNK_LEVEL_RAW: u8 = MAX_SUPPORTED_VIEW_DISTANCE + 2;
 const RADIUS_AROUND_FULL_CHUNK: u8 = GENERATION_PYRAMID
     .get_step_to(ChunkStatus::Full)
@@ -1227,6 +1227,9 @@ mod tests {
     fn maximum_player_view_distance_fits_ticket_level() {
         let ticket = ChunkTicket::player(MAX_SUPPORTED_VIEW_DISTANCE, MAX_SUPPORTED_VIEW_DISTANCE);
 
+        assert_eq!(ChunkTicketLevel::ENTITY_TICKING_CHUNK.raw(), 128);
+        assert_eq!(ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw(), 129);
+        assert_eq!(ChunkTicketLevel::FULL_CHUNK.raw(), 130);
         assert_eq!(ticket.load_level().raw(), 0);
         assert_eq!(
             ticket.simulation_level().map(ChunkTicketLevel::raw),
