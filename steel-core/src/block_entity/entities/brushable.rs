@@ -153,28 +153,28 @@ impl BrushableBlockEntity {
 
     /// Applies vanilla delayed progress decay after brushing stops.
     pub fn check_reset(&mut self, world: &Arc<World>) -> BrushableWorldMutation {
-        if self.brush_count == 0 || world.game_time() < self.brush_count_resets_at_tick {
-            return BrushableWorldMutation::default();
+        let mut mutation = BrushableWorldMutation::default();
+        let game_time = world.game_time();
+
+        if self.brush_count != 0 && game_time >= self.brush_count_resets_at_tick {
+            let previous_completion_state = self.completion_state();
+            self.brush_count = 0.max(self.brush_count - 2);
+            let completion_state = self.completion_state();
+            if previous_completion_state != completion_state {
+                mutation.set_block = Some(self.with_dusted(completion_state));
+            }
+            self.brush_count_resets_at_tick = game_time + RESET_BRUSH_COUNT_TICKS;
+            self.set_changed();
         }
 
-        let previous_completion_state = self.completion_state();
-        self.brush_count = 0.max(self.brush_count - 2);
         if self.brush_count == 0 {
             self.hit_direction = None;
             self.brush_count_resets_at_tick = 0;
             self.cool_down_ends_at_tick = 0;
         } else {
-            self.brush_count_resets_at_tick = world.game_time() + RESET_BRUSH_COUNT_TICKS;
             world.schedule_block_tick_default(self.pos, self.state.get_block(), 2);
         }
 
-        let mut mutation = BrushableWorldMutation::default();
-        let completion_state = self.completion_state();
-        if previous_completion_state != completion_state {
-            mutation.set_block = Some(self.with_dusted(completion_state));
-        }
-
-        self.set_changed();
         mutation
     }
 
