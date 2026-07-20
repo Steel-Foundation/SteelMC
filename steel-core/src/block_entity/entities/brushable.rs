@@ -12,7 +12,9 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::loot_table::{LootContext, LootTableRef};
-use steel_registry::{REGISTRY, RegistryExt as _, vanilla_block_entity_types, vanilla_blocks};
+use steel_registry::{
+    REGISTRY, RegistryExt as _, vanilla_block_entity_types, vanilla_blocks, vanilla_entities,
+};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeKey, Identifier};
 
@@ -253,10 +255,15 @@ impl BrushableBlockEntity {
         let drop_pos = direction.relative(self.pos);
         let count = rand::random_range(10..=30).min(self.item.count());
         let dropped = self.item.split(count);
+        self.item = ItemStack::empty();
+        let size = f64::from(vanilla_entities::ITEM.dimensions.width);
+        let center_range = 1.0 - size;
+        let half_size = size / 2.0;
+        let item_height = f64::from(vanilla_entities::ITEM.dimensions.height);
         let pos = DVec3::new(
-            f64::from(drop_pos.x()) + 0.5,
-            f64::from(drop_pos.y()) + 0.5,
-            f64::from(drop_pos.z()) + 0.5,
+            f64::from(drop_pos.x()) + 0.5 * center_range + half_size,
+            f64::from(drop_pos.y()) + 0.5 + item_height / 2.0,
+            f64::from(drop_pos.z()) + 0.5 * center_range + half_size,
         );
         Some((pos, dropped))
     }
