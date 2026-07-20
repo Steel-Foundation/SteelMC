@@ -182,51 +182,52 @@ impl BrushableBlockEntity {
     }
 
     fn unpack_loot_table(&mut self, _world: &Arc<World>, player: &Player, brush: &ItemStack) {
-        if !self.item.is_empty() {
-            self.loot_table = None;
-            return;
-        }
-
         let Some(loot_table_key) = self.loot_table.take() else {
             return;
         };
-        let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_table_key) else {
-            return;
-        };
+        let loot_table = REGISTRY.loot_tables.by_key(&loot_table_key);
 
         if self.loot_table_seed == 0 {
             let mut rng = rand::rng();
-            self.unpack_loot_items(loot_table, &mut rng, player, brush);
+            self.unpack_loot_items(loot_table, &loot_table_key, &mut rng, player, brush);
         } else {
             let mut rng = StdRng::seed_from_u64(self.loot_table_seed as u64);
-            self.unpack_loot_items(loot_table, &mut rng, player, brush);
+            self.unpack_loot_items(loot_table, &loot_table_key, &mut rng, player, brush);
         }
+        self.set_changed();
     }
 
     fn unpack_loot_items<R: rand::Rng>(
         &mut self,
-        loot_table: LootTableRef,
+        loot_table: Option<LootTableRef>,
+        loot_table_key: &Identifier,
         rng: &mut R,
         player: &Player,
         brush: &ItemStack,
     ) {
-        let mut ctx = LootContext::new(rng)
-            .with_luck(player.get_luck())
-            .with_tool(brush)
-            .with_origin(
-                f64::from(self.pos.x()) + 0.5,
-                f64::from(self.pos.y()) + 0.5,
-                f64::from(self.pos.z()) + 0.5,
-            )
-            .with_this_entity(entity_loot_ref(player));
-
-        if let Some(item) = loot_table
-            .get_random_items(&mut ctx)
-            .into_iter()
-            .find(|item| !item.is_empty())
-        {
-            self.item = item;
-        }
+        let loot = match loot_table {
+            Some(table) => {
+                let mut ctx = LootContext::new(rng)
+                    .with_luck(player.get_luck())
+                    .with_tool(brush)
+                    .with_origin(
+                        f64::from(self.pos.x()) + 0.5,
+                        f64::from(self.pos.y()) + 0.5,
+                        f64::from(self.pos.z()) + 0.5,
+                    )
+                    .with_this_entity(entity_loot_ref(player));
+                table.get_random_items(&mut ctx)
+            }
+            None => Vec::new(),
+        };
+        self.item = match loot.len() {
+            0 => ItemStack::empty(),
+            1 => loot.into_iter().next().unwrap_or_else(ItemStack::empty),
+            n => {
+                log::warn!("Expected max 1 loot from loot table {loot_table_key}, but got {n}");
+                loot.into_iter().next().unwrap_or_else(ItemStack::empty)
+            }
+        };
     }
 
     fn brushing_completed_mutation(&mut self) -> BrushableWorldMutation {
