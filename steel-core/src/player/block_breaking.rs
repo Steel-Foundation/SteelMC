@@ -8,7 +8,6 @@ use std::sync::Arc;
 use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::loot_table::LootContext;
-use steel_registry::vanilla_attributes;
 use steel_registry::{
     REGISTRY, RegistryExt, blocks::properties::Direction, vanilla_blocks, vanilla_game_events,
 };
@@ -462,17 +461,11 @@ fn drop_block_loot(player: &Player, _world: &Arc<World>, pos: BlockPos, state: B
     };
 
     let mut rng = rand::rng();
-    let luck = player
-        .attributes()
-        .lock()
-        .get_value(vanilla_attributes::LUCK)
-        .unwrap_or(0.0) as f32;
-
     let drops = {
         let inventory = player.inventory.lock();
         let tool = inventory.get_selected_item();
         let mut ctx = LootContext::new(&mut rng)
-            .with_luck(luck)
+            .with_luck(player.get_luck())
             .with_block_state(state)
             .with_tool(tool)
             .with_origin(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));

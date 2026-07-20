@@ -18,6 +18,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeK
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::block_entity::BlockEntity;
+use crate::entity::{LivingEntity as _, entity_loot_ref};
 use crate::player::Player;
 use crate::world::World;
 
@@ -178,7 +179,7 @@ impl BrushableBlockEntity {
         mutation
     }
 
-    fn unpack_loot_table(&mut self, _world: &Arc<World>, _player: &Player, brush: &ItemStack) {
+    fn unpack_loot_table(&mut self, _world: &Arc<World>, player: &Player, brush: &ItemStack) {
         if !self.item.is_empty() {
             self.loot_table = None;
             return;
@@ -193,10 +194,10 @@ impl BrushableBlockEntity {
 
         if self.loot_table_seed == 0 {
             let mut rng = rand::rng();
-            self.unpack_loot_items(loot_table, &mut rng, brush);
+            self.unpack_loot_items(loot_table, &mut rng, player, brush);
         } else {
             let mut rng = StdRng::seed_from_u64(self.loot_table_seed as u64);
-            self.unpack_loot_items(loot_table, &mut rng, brush);
+            self.unpack_loot_items(loot_table, &mut rng, player, brush);
         }
     }
 
@@ -204,17 +205,18 @@ impl BrushableBlockEntity {
         &mut self,
         loot_table: LootTableRef,
         rng: &mut R,
+        player: &Player,
         brush: &ItemStack,
     ) {
-        // TODO: wire player luck
         let mut ctx = LootContext::new(rng)
-            .with_block_state(self.state)
+            .with_luck(player.get_luck())
             .with_tool(brush)
             .with_origin(
-                f64::from(self.pos.x()),
-                f64::from(self.pos.y()),
-                f64::from(self.pos.z()),
-            );
+                f64::from(self.pos.x()) + 0.5,
+                f64::from(self.pos.y()) + 0.5,
+                f64::from(self.pos.z()) + 0.5,
+            )
+            .with_this_entity(entity_loot_ref(player));
 
         if let Some(item) = loot_table
             .get_random_items(&mut ctx)

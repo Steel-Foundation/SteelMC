@@ -5108,6 +5108,11 @@ pub trait LivingEntity: Entity {
         self.living_base().attributes()
     }
 
+    /// Vanilla `LivingEntity.getLuck` — non-players contribute no luck to loot.
+    fn get_luck(&self) -> f32 {
+        0.0
+    }
+
     /// Appends vanilla-shaped living state used by command NBT predicates.
     fn save_command_nbt(&self, nbt: &mut NbtCompound) {
         nbt.insert("Health", self.get_health());

@@ -2649,6 +2649,12 @@ impl LivingEntity for Player {
         &self.living_base
     }
 
+    fn get_luck(&self) -> f32 {
+        self.attributes()
+            .lock()
+            .required_value(vanilla_attributes::LUCK) as f32
+    }
+
     fn can_be_seen_as_enemy(&self) -> bool {
         !self.abilities.lock().invulnerable
             && !self.is_invulnerable()
