@@ -365,7 +365,7 @@ mod tests {
         entity.save_additional(&mut saved);
 
         assert_eq!(
-            saved.string("LootTable").map(|s| s.to_string()),
+            saved.string("LootTable").map(str::to_owned),
             Some("minecraft:archaeology/desert_pyramid".to_owned())
         );
         assert_eq!(saved.long("LootTableSeed"), Some(42));
@@ -385,7 +385,7 @@ mod tests {
         entity.save_additional(&mut saved);
 
         assert_eq!(
-            saved.string("LootTable").map(|s| s.to_string()),
+            saved.string("LootTable").map(str::to_owned),
             Some("minecraft:archaeology/ocean_ruin_warm".to_owned())
         );
         assert!(saved.long("LootTableSeed").is_none());
