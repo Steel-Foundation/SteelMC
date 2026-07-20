@@ -2,6 +2,9 @@
 
 use std::sync::Arc;
 
+use steel_registry::data_components::vanilla_components::{
+    BLOCKS_ATTACKS, CONSUMABLE, KINETIC_WEAPON,
+};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
@@ -14,30 +17,7 @@ use crate::entity::{Entity, LivingEntity};
 use crate::player::Player;
 use crate::world::World;
 
-/// Vanilla item-use animation shown while a living entity is actively using an item.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UseAnimation {
-    /// No active use animation.
-    None,
-    /// Food eating animation.
-    Eat,
-    /// Drink animation.
-    Drink,
-    /// Blocking animation.
-    Block,
-    /// Bow draw animation.
-    Bow,
-    /// Spear/trident use animation.
-    Spear,
-    /// Crossbow charge animation.
-    Crossbow,
-    /// Spyglass animation.
-    Spyglass,
-    /// Goat horn animation.
-    TootHorn,
-    /// Brush animation.
-    Brush,
-}
+pub use steel_registry::data_components::vanilla_components::ItemUseAnimation;
 
 /// Trait defining the behavior of an item.
 ///
@@ -65,13 +45,27 @@ pub trait ItemBehavior: Send + Sync {
     }
 
     /// Returns vanilla `Item.getUseAnimation`.
-    fn get_use_animation(&self, _stack: &ItemStack) -> UseAnimation {
-        UseAnimation::None
+    fn get_use_animation(&self, stack: &ItemStack) -> ItemUseAnimation {
+        if let Some(consumable) = stack.get(CONSUMABLE) {
+            consumable.animation()
+        } else if stack.has(BLOCKS_ATTACKS) {
+            ItemUseAnimation::Block
+        } else if stack.has(KINETIC_WEAPON) {
+            ItemUseAnimation::Spear
+        } else {
+            ItemUseAnimation::None
+        }
     }
 
     /// Returns vanilla `Item.getUseDuration`.
-    fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
-        0
+    fn get_use_duration(&self, stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+        if let Some(consumable) = stack.get(CONSUMABLE) {
+            consumable.consume_ticks()
+        } else if stack.has(BLOCKS_ATTACKS) || stack.has(KINETIC_WEAPON) {
+            72000
+        } else {
+            0
+        }
     }
 
     /// Called every tick while a living entity is actively using this item.

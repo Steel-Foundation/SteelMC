@@ -73,7 +73,7 @@ pub use context::{
     PlacementSource, UseItemContext, UseOnContext,
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
-pub use item::{ItemBehavior, ItemBehaviorRegistry, UseAnimation};
+pub use item::{ItemBehavior, ItemBehaviorRegistry, ItemUseAnimation};
 use item_behaviors::register_item_behaviors;
 pub use items::{
     BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem, HangingSignItem,

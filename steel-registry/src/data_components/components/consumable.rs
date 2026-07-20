@@ -174,6 +174,11 @@ impl Consumable {
     }
 
     #[must_use]
+    pub fn consume_ticks(&self) -> i32 {
+        (self.consume_seconds * 20.0) as i32
+    }
+
+    #[must_use]
     pub const fn animation(&self) -> ItemUseAnimation {
         self.animation
     }
@@ -553,6 +558,11 @@ mod tests {
             .get(CONSUMABLE)
             .expect("milk should be consumable");
         assert_eq!(milk.animation(), ItemUseAnimation::Drink);
+        assert_eq!(
+            milk.consume_ticks(),
+            (milk.consume_seconds() * 20.0) as i32,
+            "consume_ticks must match vanilla (int)(seconds * 20)"
+        );
         assert!(!milk.has_consume_particles());
         assert!(
             milk.on_consume_effects()[0]

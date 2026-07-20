@@ -11,7 +11,7 @@ use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Direction};
 
 use crate::behavior::context::{InteractionResult, UseOnContext};
-use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior, UseAnimation};
+use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior, ItemUseAnimation};
 use crate::block_entity::entities::BrushableBlockEntity;
 use crate::entity::projectile::{ViewVectorHitResult, get_hit_result_on_view_vector};
 use crate::entity::{Entity, LivingEntity};
@@ -39,8 +39,8 @@ impl ItemBehavior for BrushItem {
         USE_DURATION
     }
 
-    fn get_use_animation(&self, _stack: &ItemStack) -> UseAnimation {
-        UseAnimation::Brush
+    fn get_use_animation(&self, _stack: &ItemStack) -> ItemUseAnimation {
+        ItemUseAnimation::Brush
     }
 
     fn on_use_tick(
