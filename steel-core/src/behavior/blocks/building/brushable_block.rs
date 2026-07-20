@@ -83,13 +83,16 @@ impl BlockBehavior for BrushableBlock {
         let Some(block_entity) = world.get_block_entity(pos) else {
             return;
         };
-        let mut guard = block_entity.lock();
-        let Some(brushable) = guard.downcast_mut::<BrushableBlockEntity>() else {
-            return;
-        };
+        let mutation = {
+            let mut guard = block_entity.lock();
+            let Some(brushable) = guard.downcast_mut::<BrushableBlockEntity>() else {
+                return;
+            };
 
-        brushable.set_block_state(state);
-        brushable.check_reset(world);
+            brushable.set_block_state(state);
+            brushable.check_reset(world)
+        };
+        mutation.apply(world, pos);
     }
 
     fn has_block_entity(&self) -> bool {

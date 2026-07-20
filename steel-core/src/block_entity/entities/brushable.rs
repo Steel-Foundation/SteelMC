@@ -27,6 +27,40 @@ const REQUIRED_BRUSHES: i32 = 10;
 const RESET_BRUSH_COUNT_TICKS: i64 = 4;
 const BRUSH_COMPLETED_LEVEL_EVENT: i32 = 3008;
 
+/// `LevelChunk::set_block_state` re-locks the same block entity to update its
+/// cached state, so callers must not hold that mutex while applying these.
+#[derive(Default)]
+pub struct BrushableWorldMutation {
+    pub set_block: Option<BlockStateId>,
+    pub completed_level_event_data: Option<i32>,
+    pub drop: Option<(DVec3, ItemStack)>,
+}
+
+impl BrushableWorldMutation {
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.set_block.is_none() && self.completed_level_event_data.is_none() && self.drop.is_none()
+    }
+
+    pub fn apply(self, world: &Arc<World>, pos: BlockPos) {
+        if let Some((drop_pos, item)) = self.drop {
+            let _ = world.spawn_item_with_velocity(drop_pos, item, DVec3::ZERO);
+        }
+        if let Some(data) = self.completed_level_event_data {
+            world.level_event(BRUSH_COMPLETED_LEVEL_EVENT, pos, data, None);
+        }
+        if let Some(state) = self.set_block {
+            let _ = world.set_block(pos, state, UpdateFlags::UPDATE_ALL);
+        }
+    }
+}
+
+/// Result of one brush attempt, including deferred world work for the caller.
+pub struct BrushOutcome {
+    pub durability_damage: bool,
+    pub mutation: BrushableWorldMutation,
+}
+
 /// Stores vanilla archaeology brush progress and delayed loot for brushable blocks.
 pub struct BrushableBlockEntity {
     level: Weak<World>,
@@ -66,7 +100,9 @@ impl BrushableBlockEntity {
         }
     }
 
-    /// Applies one vanilla brush attempt and returns whether the brush should lose durability.
+    /// Applies one vanilla brush attempt.
+    /// Returns deferred world mutations that must be applied after the
+    /// block-entity mutex is released.
     pub fn brush(
         &mut self,
         game_time: i64,
@@ -74,14 +110,17 @@ impl BrushableBlockEntity {
         player: &Player,
         hit_direction: Direction,
         brush: &ItemStack,
-    ) -> bool {
+    ) -> BrushOutcome {
         if self.hit_direction.is_none() {
             self.hit_direction = Some(hit_direction);
         }
 
         self.brush_count_resets_at_tick = game_time + BRUSH_RESET_TICKS;
         if game_time < self.cool_down_ends_at_tick {
-            return false;
+            return BrushOutcome {
+                durability_damage: false,
+                mutation: BrushableWorldMutation::default(),
+            };
         }
 
         self.cool_down_ends_at_tick = game_time + BRUSH_COOLDOWN_TICKS;
@@ -90,24 +129,32 @@ impl BrushableBlockEntity {
         let previous_completion_state = self.completion_state();
         self.brush_count += 1;
         if self.brush_count >= REQUIRED_BRUSHES {
-            self.brushing_completed(world);
-            return true;
+            let mutation = self.brushing_completed_mutation();
+            self.set_changed();
+            return BrushOutcome {
+                durability_damage: true,
+                mutation,
+            };
         }
 
         world.schedule_block_tick_default(self.pos, self.state.get_block(), 2);
+        let mut mutation = BrushableWorldMutation::default();
         let completion_state = self.completion_state();
         if previous_completion_state != completion_state {
-            self.update_dusted_state(world, completion_state);
+            mutation.set_block = Some(self.with_dusted(completion_state));
         }
 
         self.set_changed();
-        false
+        BrushOutcome {
+            durability_damage: false,
+            mutation,
+        }
     }
 
     /// Applies vanilla delayed progress decay after brushing stops.
-    pub fn check_reset(&mut self, world: &Arc<World>) {
+    pub fn check_reset(&mut self, world: &Arc<World>) -> BrushableWorldMutation {
         if self.brush_count == 0 || world.game_time() < self.brush_count_resets_at_tick {
-            return;
+            return BrushableWorldMutation::default();
         }
 
         let previous_completion_state = self.completion_state();
@@ -121,12 +168,14 @@ impl BrushableBlockEntity {
             world.schedule_block_tick_default(self.pos, self.state.get_block(), 2);
         }
 
+        let mut mutation = BrushableWorldMutation::default();
         let completion_state = self.completion_state();
         if previous_completion_state != completion_state {
-            self.update_dusted_state(world, completion_state);
+            mutation.set_block = Some(self.with_dusted(completion_state));
         }
 
         self.set_changed();
+        mutation
     }
 
     fn unpack_loot_table(&mut self, _world: &Arc<World>, _player: &Player, brush: &ItemStack) {
@@ -176,14 +225,12 @@ impl BrushableBlockEntity {
         }
     }
 
-    fn brushing_completed(&mut self, world: &Arc<World>) {
-        self.drop_content(world);
-        world.level_event(
-            BRUSH_COMPLETED_LEVEL_EVENT,
-            self.pos,
-            i32::from(self.state.0),
-            None,
-        );
+    fn brushing_completed_mutation(&mut self) -> BrushableWorldMutation {
+        let mut mutation = BrushableWorldMutation {
+            completed_level_event_data: Some(i32::from(self.state.0)),
+            drop: self.take_drop_content(),
+            set_block: None,
+        };
 
         let turns_into = BLOCK_BEHAVIORS
             .get_behavior_for_state(self.state)
@@ -191,13 +238,13 @@ impl BrushableBlockEntity {
             .map_or(vanilla_blocks::AIR.default_state(), |(turns_into, _, _)| {
                 turns_into.default_state()
             });
-
-        world.set_block(self.pos, turns_into, UpdateFlags::UPDATE_ALL);
+        mutation.set_block = Some(turns_into);
+        mutation
     }
 
-    fn drop_content(&mut self, world: &Arc<World>) {
+    fn take_drop_content(&mut self) -> Option<(DVec3, ItemStack)> {
         if self.item.is_empty() {
-            return;
+            return None;
         }
 
         let direction = self.hit_direction.unwrap_or(Direction::Up);
@@ -209,16 +256,15 @@ impl BrushableBlockEntity {
             f64::from(drop_pos.y()) + 0.5,
             f64::from(drop_pos.z()) + 0.5,
         );
-        let _ = world.spawn_item_with_velocity(pos, dropped, DVec3::ZERO);
+        Some((pos, dropped))
     }
 
-    fn update_dusted_state(&mut self, world: &Arc<World>, completion_state: i32) {
-        let state = world
-            .get_block_state(self.pos)
+    fn with_dusted(&mut self, completion_state: i32) -> BlockStateId {
+        let state = self
+            .state
             .set_value(&BlockStateProperties::DUSTED, completion_state as u8);
-        if world.set_block(self.pos, state, UpdateFlags::UPDATE_ALL) {
-            self.state = state;
-        }
+        self.state = state;
+        state
     }
 
     const fn completion_state(&self) -> i32 {

@@ -81,12 +81,16 @@ impl ItemBehavior for BrushItem {
         let Some(block_entity) = world.get_block_entity(pos) else {
             return;
         };
-        let mut guard = block_entity.lock();
-        let Some(brushable) = guard.downcast_mut::<BrushableBlockEntity>() else {
-            return;
+        let outcome = {
+            let mut guard = block_entity.lock();
+            let Some(brushable) = guard.downcast_mut::<BrushableBlockEntity>() else {
+                return;
+            };
+            brushable.brush(world.game_time(), world, player, direction, stack)
         };
+        outcome.mutation.apply(world, pos);
 
-        if brushable.brush(world.game_time(), world, player, direction, stack) {
+        if outcome.durability_damage {
             let slot = equipped_brush_slot(player, stack);
             if stack.hurt_and_break(1, player.has_infinite_materials()) {
                 player.on_equipped_item_broken(slot);
