@@ -19,7 +19,7 @@ use rustc_hash::FxHashMap;
 use crate::blocks::behavior::BlockConfig;
 use crate::blocks::properties::Property;
 use crate::blocks::shapes::ShapeChannel;
-use crate::{RegistryExt, TaggedRegistryExt};
+use crate::{RegistryExt, RegistryTags, TaggedRegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
@@ -305,7 +305,7 @@ pub type BlockRef = &'static Block;
 pub struct BlockRegistry {
     blocks_by_id: Vec<BlockRef>,
     blocks_by_key: FxHashMap<Identifier, usize>,
-    tags: crate::RegistryTags,
+    tags: RegistryTags,
     allows_registering: bool,
     pub state_to_block_lookup: Vec<BlockRef>,
     /// Maps state IDs to block IDs (parallel to `state_to_block_lookup` for O(1) lookup)
@@ -329,7 +329,7 @@ impl BlockRegistry {
         Self {
             blocks_by_id: Vec::new(),
             blocks_by_key: FxHashMap::default(),
-            tags: crate::RegistryTags::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
             state_to_block_lookup: Vec::new(),
             state_to_block_id: Vec::new(),

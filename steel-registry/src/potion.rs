@@ -3,6 +3,7 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
+use crate::RegistryTags;
 use crate::mob_effect::MobEffectRef;
 
 /// One base effect supplied by a registered potion.
@@ -32,7 +33,7 @@ pub type PotionRef = &'static Potion;
 pub struct PotionRegistry {
     potions_by_id: Vec<PotionRef>,
     potions_by_key: FxHashMap<Identifier, usize>,
-    tags: crate::RegistryTags,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -42,7 +43,7 @@ impl PotionRegistry {
         Self {
             potions_by_id: Vec::new(),
             potions_by_key: FxHashMap::default(),
-            tags: crate::RegistryTags::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }
