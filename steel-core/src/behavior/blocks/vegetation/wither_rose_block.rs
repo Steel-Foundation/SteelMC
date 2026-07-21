@@ -5,6 +5,7 @@ use steel_registry::{vanilla_blocks, vanilla_damage_types, vanilla_mob_effects};
 use steel_utils::types::Difficulty;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
+use crate::behavior::blocks::vegetation::vegetation_block::survival_update_shape;
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, InsideBlockEffectCollector, MobEffectInstance};
@@ -40,11 +41,7 @@ impl BlockBehavior for WitherRoseBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if self.can_survive(state, world, pos) {
-            state
-        } else {
-            vanilla_blocks::AIR.default_state()
-        }
+        survival_update_shape(self, state, world, pos)
     }
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         default_surviving_state(self.block, self, context)
