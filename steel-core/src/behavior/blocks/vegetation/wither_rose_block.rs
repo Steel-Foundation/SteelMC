@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::{vanilla_blocks, vanilla_damage_types, vanilla_mob_effects};
+use steel_registry::{vanilla_damage_types, vanilla_mob_effects};
 use steel_utils::types::Difficulty;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
