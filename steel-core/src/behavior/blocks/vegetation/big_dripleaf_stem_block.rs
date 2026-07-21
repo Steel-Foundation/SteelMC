@@ -150,16 +150,6 @@ impl Bonemealable for BigDripleafStemBlock {
         }
     }
 
-    fn is_bonemeal_success(
-        &self,
-        _state: BlockStateId,
-        _world: &Arc<World>,
-        _rng: &mut dyn Rng,
-        _pos: BlockPos,
-    ) -> bool {
-        true
-    }
-
     fn perform_bonemeal(
         &self,
         state: BlockStateId,
