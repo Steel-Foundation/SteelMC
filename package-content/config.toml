@@ -6,9 +6,9 @@
 server_port = 25565
 # Maximum number of players allowed on the server
 max_players = 20
-# Allow view_distance above vanilla's 32-chunk cap, up to 127.
+# Allow view_distance above vanilla's 32-chunk cap, up to 128.
 allow_extended_view_distance = false
-# Maximum view distance in chunks. Normally 1-32; 1-127 when allow_extended_view_distance is true.
+# Maximum view distance in chunks. Normally 1-32; 1-128 when allow_extended_view_distance is true.
 view_distance = 10
 # Maximum simulation distance in chunks
 simulation_distance = 10
@@ -42,8 +42,12 @@ command_spam_threshold_seconds = 10
 main_runtime = 0
 # Worker threads for the chunk Tokio runtime.
 chunk_runtime = 0
+# Persistent workers for inter-tick gameplay packet processing.
+packet_workers = 0
 # Worker threads for the Rayon chunk generation pool.
 chunk_generation = 0
+# Worker threads for the Rayon chunk encoding pool.
+chunk_encoding = 0
 
 # Compression settings
 [server.compression]

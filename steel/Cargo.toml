@@ -54,6 +54,9 @@ strip-ansi-escapes = "0.2.1"
 [lints]
 workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [features]
 default = ["mimalloc"]
 stand-alone = []

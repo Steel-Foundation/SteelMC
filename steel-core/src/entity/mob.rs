@@ -22,7 +22,7 @@ use steel_registry::{
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
-use steel_utils::{BlockPos, ChunkPos, Identifier, WorldAabb, axis::Axis};
+use steel_utils::{BlockPos, ChunkPos, Downcast as _, Identifier, WorldAabb, axis::Axis};
 use uuid::Uuid;
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
@@ -205,9 +205,9 @@ impl MobHomeRestriction {
 
 impl LeashData {
     fn from_entity(holder: &SharedEntity) -> Self {
-        let attachment = holder.as_leash_fence_knot().map_or_else(
+        let attachment = holder.downcast_ref::<LeashFenceKnotEntity>().map_or_else(
             || LeashAttachment::Entity(holder.uuid()),
-            |knot| LeashAttachment::FenceKnot(knot.leash_fence_pos()),
+            |knot| LeashAttachment::FenceKnot(knot.block_pos()),
         );
         Self {
             attachment,
@@ -230,17 +230,17 @@ impl LeashData {
 
     fn saved_attachment(&self) -> LeashAttachment {
         self.holder().map_or(self.attachment, |holder| {
-            holder.as_leash_fence_knot().map_or_else(
+            holder.downcast_ref::<LeashFenceKnotEntity>().map_or_else(
                 || LeashAttachment::Entity(holder.uuid()),
-                |knot| LeashAttachment::FenceKnot(knot.leash_fence_pos()),
+                |knot| LeashAttachment::FenceKnot(knot.block_pos()),
             )
         })
     }
 
     fn set_holder(&mut self, holder: &SharedEntity) {
-        self.attachment = holder.as_leash_fence_knot().map_or_else(
+        self.attachment = holder.downcast_ref::<LeashFenceKnotEntity>().map_or_else(
             || LeashAttachment::Entity(holder.uuid()),
-            |knot| LeashAttachment::FenceKnot(knot.leash_fence_pos()),
+            |knot| LeashAttachment::FenceKnot(knot.block_pos()),
         );
         self.holder = Some(Arc::downgrade(holder));
         self.angular_momentum = 0.0;
@@ -2417,14 +2417,6 @@ mod tests {
             self.entity_type
         }
 
-        fn as_living_entity(&self) -> Option<&dyn LivingEntity> {
-            Some(self)
-        }
-
-        fn as_mob(&self) -> Option<&dyn Mob> {
-            Some(self)
-        }
-
         fn controlling_passenger(&self) -> Option<SharedEntity> {
             self.controlling_passenger.lock().clone()
         }
@@ -2478,10 +2470,6 @@ mod tests {
 
         fn entity_type(&self) -> EntityTypeRef {
             &vanilla_entities::PIG
-        }
-
-        fn as_living_entity(&self) -> Option<&dyn LivingEntity> {
-            Some(self)
         }
     }
 

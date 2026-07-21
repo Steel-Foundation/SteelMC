@@ -28,6 +28,8 @@ pub trait Property: Debug + Sync + Send {
     where
         Self: Sized;
 
+    fn value_count(&self) -> usize;
+    fn value_name_from_index(&self, index: usize) -> &str;
     fn get_possible_value_names(&self) -> Box<[&str]>;
     fn get_name(&self) -> &'static str;
 }
@@ -60,6 +62,14 @@ impl BoolProperty {
 
 impl Property for BoolProperty {
     type Value = bool;
+
+    fn value_count(&self) -> usize {
+        2
+    }
+
+    fn value_name_from_index(&self, index: usize) -> &str {
+        ["true", "false"][index]
+    }
 
     fn get_possible_value_names(&self) -> Box<[&str]> {
         ["true", "false"].into()
@@ -127,6 +137,14 @@ impl IntProperty {
 impl Property for IntProperty {
     type Value = u8;
 
+    fn value_count(&self) -> usize {
+        IntProperty::value_count(self)
+    }
+
+    fn value_name_from_index(&self, index: usize) -> &str {
+        NUM_STR[self.min as usize + index]
+    }
+
     fn get_possible_value_names(&self) -> Box<[&str]> {
         (self.min..=self.max).map(|v| NUM_STR[v as usize]).collect()
     }
@@ -178,6 +196,14 @@ pub struct EnumProperty<T: PropertyEnum + 'static> {
 
 impl<T: PropertyEnum + 'static> Property for EnumProperty<T> {
     type Value = T;
+
+    fn value_count(&self) -> usize {
+        EnumProperty::value_count(self)
+    }
+
+    fn value_name_from_index(&self, index: usize) -> &str {
+        self.possible_values[index].as_str()
+    }
 
     fn get_possible_value_names(&self) -> Box<[&str]> {
         self.possible_values

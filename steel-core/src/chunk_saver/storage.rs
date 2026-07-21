@@ -14,7 +14,7 @@ use crate::entity::{
     MAX_ENTITY_TAGS, RemovalReason, SharedEntity,
 };
 use crate::world::World;
-use crate::world::tick_scheduler::{BlockTickList, FluidTickList, ScheduledTick, TickPriority};
+use crate::world::tick_scheduler::{BlockTickList, FluidTickList, SavedTick, TickPriority};
 use crate::worldgen::carving_mask::CarvingMask;
 use glam::{DVec3, IVec3};
 use rustc_hash::FxHashSet;
@@ -663,7 +663,7 @@ impl ChunkStorage {
             ChunkAccess::Proto(proto) => {
                 proto.postprocessing.read().iter().map(Vec::clone).collect()
             }
-            ChunkAccess::Full(_) => Vec::new(),
+            ChunkAccess::Full(full) => full.postprocessing_for_serialization(),
             ChunkAccess::Unloaded => unreachable!(),
         };
 
@@ -1320,6 +1320,7 @@ impl ChunkStorage {
                 block_ticks,
                 fluid_ticks,
                 heightmaps,
+                persistent.postprocessing.iter().map(Vec::clone).collect(),
                 structure_starts,
                 structure_references,
                 light,
@@ -1625,14 +1626,14 @@ impl ChunkStorage {
         chunk_pos: ChunkPos,
     ) -> Vec<PersistentTick> {
         ticks
-            .iter()
+            .pack()
+            .into_iter()
             .map(|t| PersistentTick {
                 x: (t.pos.0.x - chunk_pos.0.x * 16) as u8,
                 y: t.pos.0.y as i16,
                 z: (t.pos.0.z - chunk_pos.0.y * 16) as u8,
                 delay: t.delay,
                 priority: t.priority as i8,
-                sub_tick_order: t.sub_tick_order,
                 tick_type: t.tick_type.key.clone(),
             })
             .collect()
@@ -1644,14 +1645,14 @@ impl ChunkStorage {
         chunk_pos: ChunkPos,
     ) -> Vec<PersistentTick> {
         ticks
-            .iter()
+            .pack()
+            .into_iter()
             .map(|t| PersistentTick {
                 x: (t.pos.0.x - chunk_pos.0.x * 16) as u8,
                 y: t.pos.0.y as i16,
                 z: (t.pos.0.z - chunk_pos.0.y * 16) as u8,
                 delay: t.delay,
                 priority: t.priority as i8,
-                sub_tick_order: t.sub_tick_order,
                 tick_type: t.tick_type.key.clone(),
             })
             .collect()
@@ -1672,16 +1673,15 @@ impl ChunkStorage {
                     chunk_pos.0.y * 16 + i32::from(pt.z),
                 );
                 let priority = TickPriority::from_i8(pt.priority).unwrap_or(TickPriority::Normal);
-                Some(ScheduledTick {
+                Some(SavedTick {
                     tick_type: block,
                     pos,
                     delay: pt.delay,
                     priority,
-                    sub_tick_order: pt.sub_tick_order,
                 })
             })
             .collect();
-        BlockTickList::from_ticks(ticks)
+        BlockTickList::from_saved_ticks(ticks)
     }
 
     /// Reconstructs fluid tick list from persistent data.
@@ -1699,16 +1699,15 @@ impl ChunkStorage {
                     chunk_pos.0.y * 16 + i32::from(pt.z),
                 );
                 let priority = TickPriority::from_i8(pt.priority).unwrap_or(TickPriority::Normal);
-                Some(ScheduledTick {
+                Some(SavedTick {
                     tick_type: fluid,
                     pos,
                     delay: pt.delay,
                     priority,
-                    sub_tick_order: pt.sub_tick_order,
                 })
             })
             .collect();
-        FluidTickList::from_ticks(ticks)
+        FluidTickList::from_saved_ticks(ticks)
     }
 
     /// Converts chunk heightmaps to persistent format for saving.
@@ -3257,6 +3256,55 @@ mod tests {
         };
 
         assert_eq!(loaded_proto.postprocessing.read()[0], vec![packed]);
+    }
+
+    #[test]
+    fn full_chunk_postprocessing_roundtrips_through_persistent_chunk() {
+        init_test_registry();
+        init_runtime_registries();
+
+        let pos = ChunkPos::new(-2, 1);
+        let marked = BlockPos::new(-17, -63, 31);
+        let packed = ProtoChunk::pack_postprocessing_offset(marked);
+        let persistent = ChunkStorage::to_persistent(
+            &single_empty_section(),
+            &[],
+            &[],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            PersistentLightData::default(),
+            None,
+            vec![vec![packed]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            pos,
+        );
+
+        let loaded = ChunkStorage::persistent_to_chunk(
+            &persistent,
+            pos,
+            ChunkStatus::Full,
+            -64,
+            16,
+            Weak::new(),
+        );
+        let ChunkAccess::Full(loaded_full) = loaded.chunk else {
+            panic!("full status should load as a full chunk");
+        };
+        assert_eq!(
+            loaded_full.postprocessing_for_serialization(),
+            vec![vec![packed]]
+        );
+
+        let chunk = ChunkAccess::Full(loaded_full);
+        chunk.mark_dirty();
+        let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, &[], false) else {
+            panic!("dirty full chunk should prepare for saving");
+        };
+
+        assert_eq!(prepared.persistent.postprocessing, vec![vec![packed]]);
     }
 
     #[test]

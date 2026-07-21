@@ -252,6 +252,7 @@ pub fn init_block_entities() {
         Arc::new(SyncMutex::new(BeehiveBlockEntity::new(level, pos, state)))
     });
 
+    // Register brushable block entity factory
     registry.register(
         &vanilla_block_entity_types::BRUSHABLE_BLOCK,
         |level, pos, state| Arc::new(SyncMutex::new(BrushableBlockEntity::new(level, pos, state))),

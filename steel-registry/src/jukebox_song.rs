@@ -10,7 +10,7 @@ use steel_utils::serial::{ReadFrom, WriteTo};
 use text_components::TextComponent;
 
 use crate::sound_event::SoundEventHolder;
-use crate::{REGISTRY, RegistryExt, RegistryHolderEntry};
+use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
 
 #[derive(Debug, Clone)]
 pub struct JukeboxSongValue {
@@ -116,7 +116,7 @@ pub type JukeboxSongRef = &'static JukeboxSong;
 pub struct JukeboxSongRegistry {
     jukebox_songs_by_id: Vec<JukeboxSongRef>,
     jukebox_songs_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -126,7 +126,7 @@ impl JukeboxSongRegistry {
         Self {
             jukebox_songs_by_id: Vec::new(),
             jukebox_songs_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

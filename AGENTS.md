@@ -41,6 +41,8 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
 **Code standard**
  - Use vanilla names unless they are misleading or a Rust design is explicitly approved. Document intentional differences on the relevant struct, method, or module.
  - Minimize duplication when it reduces maintenance risk, but a few local lines are usually fine.
+ - Keep files focused and reasonably sized. Split a file once it contains distinct responsibilities or becomes difficult to navigate.
+ - Plan module structure around expected growth. If an area will contain many implementations, start with a directory and separate modules instead of accumulating them in one large file.
  - Treat foundational systems with extra rigor; shortcuts in shared interfaces like block behavior become expensive once implementations depend on them.
  - No workarounds. Create the right helper/abstraction when the code needs one.
  - Don't add trivial wrapper methods that just alias an existing method. If `height()` already exists, don't add `get_y_size()` that returns `self.height()`. Use the existing method directly.
@@ -59,7 +61,10 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
 - Vanilla `ServerLevel.sendParticles` corresponds to `World::send_particles`; level and entity events continue to use their existing packets.
 
 **Testing**
- - Add tests for advanced systems, code using unsafe (always use `// SAFETY:` comments), or code that needs to match vanilla determinism (ItemComponent hashing or worldgen).
+ - Test meaningful behavior, especially advanced systems, edge cases whose expected handling is not obvious, code using unsafe (always use `// SAFETY:` comments), and behavior that must match vanilla determinism (ItemComponent hashing or worldgen).
+ - Don't add tests merely to increase coverage. Avoid tests that only restate constants, field values, type shapes, or other facts the compiler or a direct code inspection already makes obvious.
+ - A test should catch a plausible regression or quickly communicate non-obvious behavior. If it would fail only when the implementation has been edited to contradict an equally obvious assertion, omit it.
+ - Keep small, focused tests beside their implementation. Move a growing test suite into a dedicated test module file or integration test directory before it makes the implementation file difficult to navigate.
  - After code changes, run the narrowest check/test that exercises the touched code. If you cannot run it, state exactly why.
  - Suppress clippy lints with `#[expect(clippy::lint_name, reason = "...")]`. False positives and intentional deviations (e.g., function length for readability) are acceptable when explained.
 
@@ -104,28 +109,6 @@ Tooling: `ast-grep` is available for structural code search/rewrites.
 Steel = Minecraft server in Rust.
 
 **Crates:** `steel` (thin wrapper) -> `steel-login` (initial connection) → `steel-core` (game logic) → `steel-worldgen` (worldgen) → `steel-protocol` (packets) → `steel-macros` (derives) → `steel-registry` (generated data) → `steel-utils`/`steel-math` (common) → `steel-crypto` (encryption)
-
-## Packets
-Serverbound = `ReadFrom`, Clientbound = `WriteTo`.
-
-```rust
-// Serverbound
-#[derive(ReadFrom, ServerPacket, Clone, Debug)]
-pub struct SSwing { pub hand: InteractionHand }
-
-// Clientbound
-#[derive(ClientPacket, WriteTo, Clone, Debug)]
-#[packet_id(Play = C_ANIMATE)]
-pub struct CAnimate {
-    #[write(as = VarInt)]
-    pub entity_id: i32,
-    pub action: AnimateAction,
-}
-```
-
-**Attributes:** `#[read/write(as = VarInt)]`, `#[read(as = Prefixed(VarInt))]`
-
-**After creating:** Export in `steel-protocol/src/packets/game/mod.rs`, add handler in `steel-core/src/player/networking.rs`
 
 ## Key Paths
 

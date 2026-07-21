@@ -30,7 +30,7 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::entity::ai::path::PathComputationType;
 use crate::fluid::{FluidStateExt, is_lava_fluid, is_water_fluid};
 use crate::player::Player;
-use crate::world::{ScheduledTickAccess, World};
+use crate::world::{ConditionalBlockSetResult, ScheduledTickAccess, World};
 
 use super::BubbleColumnBlock;
 
@@ -257,7 +257,11 @@ impl BlockBehavior for LiquidBlock {
         }
 
         let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
-        world.set_block(pos, air, UpdateFlags::UPDATE_ALL_IMMEDIATE);
+        if world.set_block_if_unchanged(pos, state, air, UpdateFlags::UPDATE_ALL_IMMEDIATE)
+            != ConditionalBlockSetResult::Changed
+        {
+            return None;
+        }
 
         let bucket = if is_water_fluid(self.fluid) {
             &vanilla_items::WATER_BUCKET

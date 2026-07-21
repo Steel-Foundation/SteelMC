@@ -402,14 +402,11 @@ async fn shutdown_worlds(server: &Arc<Server>) {
     }
 
     let mut players_to_save = Vec::new();
-    for world in server.worlds.values() {
-        world.players.iter_players(|_, player| {
-            let domain = player.get_world().domain().to_owned();
-            let data = PersistentPlayerData::from_player(player);
-            player.store_ender_pearls_with_player();
-            players_to_save.push((player.clone(), domain, data));
-            true
-        });
+    for player in server.get_players() {
+        let domain = player.get_world().domain().to_owned();
+        let data = PersistentPlayerData::from_player(&player);
+        player.store_ender_pearls_with_player();
+        players_to_save.push((player, domain, data));
     }
 
     // Save all dirty chunks before shutdown

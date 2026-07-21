@@ -64,7 +64,6 @@ pub use known_players::{KnownPlayer, KnownPlayers};
 pub use profile_lookup::ProfileLookupError;
 pub(crate) use profile_lookup::lookup_online_profile;
 use std::sync::{Arc, Weak};
-use steel_macros::entity_impl;
 use steel_protocol::packets::game::{
     AttributeSnapshot, CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn,
     CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
@@ -2245,7 +2244,6 @@ impl ResetReason {
     }
 }
 
-#[entity_impl(class(player))]
 impl Entity for Player {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -2253,6 +2251,10 @@ impl Entity for Player {
 
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::PLAYER
+    }
+
+    fn base_tick(&self) {
+        LivingEntity::base_tick_living_entity(self);
     }
 
     fn scoreboard_name(&self) -> String {
@@ -2769,7 +2771,9 @@ impl LivingEntity for Player {
             self.reset_fall_distance();
         }
 
-        self.default_ai_step()
+        let result = self.default_ai_step();
+        self.set_y_head_rot(self.rotation().0);
+        result
     }
 
     fn travel(&self, input: DVec3) -> Option<MoveResult> {
@@ -2851,8 +2855,9 @@ mod tests {
     use text_components::TextComponent;
     use uuid::Uuid;
 
+    use crate::behavior::init_behaviors;
     use crate::config::RuntimeConfig;
-    use crate::entity::{EntitySyncedData, LivingEntity, damage::DamageSource};
+    use crate::entity::{Entity, EntitySyncedData, LivingEntity, damage::DamageSource};
     use crate::inventory::{container::Container as _, equipment::EquipmentSlot, menu::Menu as _};
     use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
     use crate::player::connection::NetworkConnection;
@@ -2910,7 +2915,9 @@ mod tests {
             command_spam_threshold_seconds: 10,
             compression: None,
             server_links: None,
+            packet_workers: Some(1),
             chunk_generation_threads: Some(1),
+            chunk_encoding_threads: Some(1),
         })
     }
 
@@ -2978,6 +2985,19 @@ mod tests {
     #[test]
     fn respawn_request_is_allowed_after_dead_reconnect() {
         assert!(Player::should_process_respawn(0.0));
+    }
+
+    #[test]
+    fn ai_step_copies_player_yaw_to_head_yaw() {
+        init_test_registry();
+        init_behaviors();
+        let player = test_player(Arc::clone(test_world()));
+        player.set_rotation((90.0, 15.0));
+        player.set_y_head_rot(-45.0);
+
+        let _ = player.ai_step();
+
+        assert_eq!(player.y_head_rot().to_bits(), 90.0_f32.to_bits());
     }
 
     #[test]

@@ -56,7 +56,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v18: Added entity `Invulnerable` persistence.
 /// v19: Added shared entity save-data persistence.
 /// v20: Added chunk-owned light section persistence.
-pub const FORMAT_VERSION: u16 = 20;
+/// v21: Matched vanilla scheduled-tick persistence by rebuilding sub-tick order on load.
+pub const FORMAT_VERSION: u16 = 21;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -374,7 +375,7 @@ pub struct PersistentChunk {
     pub light: PersistentLightData,
     /// Proto chunk carving mask as Steel's packed bitset layout.
     pub carving_mask: Option<Vec<u64>>,
-    /// Proto chunk postprocessing offsets grouped by section index.
+    /// Pending postprocessing offsets grouped by section index.
     pub postprocessing: Vec<Vec<u16>>,
     /// Structure starts originating in this chunk.
     pub structure_starts: Vec<PersistentStructureStart>,
@@ -505,7 +506,7 @@ pub struct PersistentEntity {
 /// A scheduled tick stored with a chunk.
 ///
 /// Stores the tick's position relative to the chunk, its remaining delay,
-/// priority, ordering, and the block/fluid identifier.
+/// priority, and the block/fluid identifier. Sub-tick order is rebuilt on load.
 #[derive(SchemaWrite, SchemaRead)]
 pub struct PersistentTick {
     /// Relative X position within chunk (0-15).
@@ -518,8 +519,6 @@ pub struct PersistentTick {
     pub delay: i32,
     /// Tick priority as `i8` (maps to `TickPriority` enum, -3 to 3).
     pub priority: i8,
-    /// Sub-tick ordering value for stable sort within same priority.
-    pub sub_tick_order: i64,
     /// Block or fluid identifier (e.g., "`minecraft:stone_button`").
     pub tick_type: Identifier,
 }
