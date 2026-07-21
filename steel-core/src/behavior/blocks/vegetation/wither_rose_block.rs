@@ -73,7 +73,7 @@ impl BlockBehavior for WitherRoseBlock {
         living_entity.add_mob_effect(MobEffectInstance::with_duration(
             vanilla_mob_effects::WITHER,
             40,
-            1,
+            0,
         ));
     }
 }
