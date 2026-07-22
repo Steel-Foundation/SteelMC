@@ -105,7 +105,7 @@ fn calculate_block_hit(world: &World, player: &Player) -> Option<(BlockPos, Dire
         .lock()
         .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
         .unwrap_or(4.5);
-    match get_hit_result_on_view_vector(world, player, distance, |entity| entity.is_pickable()) {
+    match get_hit_result_on_view_vector(world, player, distance, Entity::is_pickable) {
         ViewVectorHitResult::Block(hit) => Some((hit.block_pos, hit.direction)),
         ViewVectorHitResult::Miss | ViewVectorHitResult::Entity(_) => None,
     }
