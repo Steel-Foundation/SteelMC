@@ -3667,7 +3667,7 @@ impl Server {
             hardcore: false,
             levels: self.worlds.keys().cloned().collect(),
             max_players: self.config.max_players as i32,
-            chunk_radius: player.view_distance().into(),
+            chunk_radius: self.config.view_distance.into(),
             simulation_distance: self.config.simulation_distance.into(),
             reduced_debug_info,
             show_death_screen: !immediate_respawn,

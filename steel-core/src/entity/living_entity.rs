@@ -1108,7 +1108,39 @@ pub trait LivingEntity: Entity {
 
     /// Checks if the entity can be affected by potions.
     fn is_affected_by_potions(&self) -> bool {
+        !self.is_dead_or_dying()
+    }
+
+    /// Returns vanilla base `LivingEntity.canBeAffected` eligibility.
+    fn default_can_be_affected(&self, effect: &MobEffectInstance) -> bool {
+        if REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::IMMUNE_TO_INFESTED)
+        {
+            return effect.effect() != vanilla_mob_effects::INFESTED;
+        }
+        if REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::IMMUNE_TO_OOZING)
+        {
+            return effect.effect() != vanilla_mob_effects::OOZING;
+        }
+        if REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::IGNORES_POISON_AND_REGEN)
+        {
+            return effect.effect() != vanilla_mob_effects::REGENERATION
+                && effect.effect() != vanilla_mob_effects::POISON;
+        }
+
         true
+    }
+
+    /// Returns whether this entity accepts a mob-effect instance.
+    ///
+    /// Concrete entities override this for vanilla class-specific immunities.
+    fn can_be_affected(&self, effect: &MobEffectInstance) -> bool {
+        self.default_can_be_affected(effect)
     }
 
     /// Returns vanilla `LivingEntity.hasEffect()`.
@@ -1133,7 +1165,7 @@ pub trait LivingEntity: Entity {
 
     /// Adds or updates active vanilla mob-effect state.
     fn add_mob_effect(&self, effect: MobEffectInstance) -> bool {
-        if !self.is_affected_by_potions() {
+        if !self.can_be_affected(&effect) {
             return false;
         }
         self.living_base().add_mob_effect(effect)
@@ -1153,9 +1185,26 @@ pub trait LivingEntity: Entity {
         self.living_base().remove_mob_effect(effect)
     }
 
-    /// Ticks vanilla mob-effect durations.
+    /// Ticks vanilla server-side mob-effect behavior and durations.
     fn tick_mob_effects(&self) {
-        self.living_base().tick_mob_effects();
+        let world = self.level();
+        for effect in self.active_mob_effects() {
+            if !effect.has_remaining_duration() {
+                self.living_base().tick_mob_effect_duration(effect.effect());
+                continue;
+            }
+
+            if effect.should_apply_effect_tick_this_tick(self.tick_count())
+                && world
+                    .as_deref()
+                    .is_some_and(|world| !effect.apply_effect_tick(world, self))
+            {
+                self.remove_mob_effect(effect.effect());
+                continue;
+            }
+
+            self.living_base().tick_mob_effect_duration(effect.effect());
+        }
     }
 
     /// Returns whether vanilla effects keep this entity from drowning.
