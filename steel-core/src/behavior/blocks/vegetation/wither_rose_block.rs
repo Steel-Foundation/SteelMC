@@ -14,7 +14,7 @@ use crate::{behavior::block::BlockBehavior, world::World};
 
 use super::{BlockRef, default_surviving_state, survives_on_tag};
 
-/// Vanilla `WitherRoseBlock` differs from `FlowerBlock` by its support tag.
+/// Behavior for wither roses.
 #[block_behavior]
 pub struct WitherRoseBlock {
     block: BlockRef,
