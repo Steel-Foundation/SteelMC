@@ -145,6 +145,23 @@ impl BlockBehavior for PotentSulfurBlock {
     // TODO: Implement vanilla animateTick once Steel has client-side ambient tick/particle support:
     // sulfur bubbles above non-dry states and occasional noxious gas ambient sound.
 
+    fn trigger_event(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        _param_a: i32,
+        _param_b: i32,
+    ) -> bool {
+        if let Some(block_entity) = world.get_block_entity(pos) {
+            let mut block_entity = block_entity.lock();
+            if let Some(sulfur) = block_entity.downcast_mut::<PotentSulfurBlockEntity>() {
+                sulfur.eruption_tick = world.game_time();
+            }
+        }
+        true
+    }
+
     fn has_block_entity(&self) -> bool {
         true
     }

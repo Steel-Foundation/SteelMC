@@ -4,8 +4,9 @@
 //! tick. The three-phase design (prepare → encode → commit) minimizes lock hold
 //! time on the per-player `ChunkSender` mutex so that game-tick operations like
 //! `mark_chunk_pending_to_send` and `drop_chunk` are never blocked for long.
-use rustc_hash::FxHashSet;
-use std::sync::Arc;
+use rayon::{ThreadPool, prelude::*};
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::sync::{Arc, Weak};
 
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket};
 use steel_protocol::packets::game::{
@@ -18,7 +19,7 @@ use steel_utils::{ChunkPos, PackedChunkPos};
 use crate::{
     chunk::{
         chunk_access::{ChunkAccess, ChunkStatus},
-        chunk_holder::ChunkHolder,
+        chunk_holder::{ChunkHolder, TickingReadinessSnapshot},
     },
     player::PlayerConnection,
     player::connection::NetworkConnection,
@@ -40,6 +41,8 @@ pub struct PreparedChunk {
     pub pos: ChunkPos,
     /// Chunk holder to encode.
     pub holder: Arc<ChunkHolder>,
+    /// Exact readiness generation observed while selecting the holder.
+    readiness: TickingReadinessSnapshot,
 }
 
 /// Data collected during the prepare phase, used to encode and then commit.
@@ -52,12 +55,29 @@ pub struct PreparedBatch {
     pub epoch_snapshot: u32,
 }
 
-/// Encoded chunk packet plus the holder content revision it was built from.
+/// Encoded chunk packet plus the holder and readiness generation it was built from.
 #[derive(Clone)]
 pub struct EncodedChunk {
     pos: ChunkPos,
     packet: EncodedPacket,
     content_revision: u64,
+    holder: Weak<ChunkHolder>,
+    readiness: TickingReadinessSnapshot,
+}
+
+impl EncodedChunk {
+    fn is_current_for(&self, prepared: &PreparedChunk) -> bool {
+        let Some(encoded_holder) = self.holder.upgrade() else {
+            return false;
+        };
+
+        self.pos == prepared.pos
+            && Arc::ptr_eq(&encoded_holder, &prepared.holder)
+            && self.readiness == prepared.readiness
+            && prepared.readiness.is_block_ticking()
+            && prepared.holder.ticking_readiness_snapshot() == prepared.readiness
+            && prepared.holder.packet_content_revision() == self.content_revision
+    }
 }
 
 /// This struct is responsible for sending chunks to the client.
@@ -143,60 +163,76 @@ impl ChunkSender {
 
     /// Phase 2: Encode chunks without holding any lock. Called between prepare and commit.
     ///
-    /// Uses a per-tick local cache so multiple players sharing the same chunks
-    /// don't re-encode them within the same sending tick. No mutex needed.
+    /// Uses the dedicated encoding pool to encode chunks in parallel. A per-tick
+    /// local cache prevents multiple players sharing the same chunks from
+    /// re-encoding them within the same sending tick.
     ///
     /// # Panics
     /// Panics if a chunk packet fails to encode.
     pub fn encode_batch(
         batch: &PreparedBatch,
-        cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedChunk>,
+        cache: &mut FxHashMap<ChunkPos, EncodedChunk>,
         compression: Option<CompressionInfo>,
+        encoding_pool: &ThreadPool,
     ) -> Vec<EncodedChunk> {
-        let mut encoded_chunks = Vec::with_capacity(batch.chunks.len());
+        let cached_chunks = &*cache;
+        let encoded_chunks = encoding_pool.install(|| {
+            batch
+                .chunks
+                .par_iter()
+                .map(|prepared| {
+                    let holder = &prepared.holder;
+                    let pos = prepared.pos;
 
-        for prepared in &batch.chunks {
-            let holder = &prepared.holder;
-            let pos = prepared.pos;
+                    if let Some(cached) = cached_chunks.get(&pos)
+                        && cached.is_current_for(prepared)
+                    {
+                        return Some(cached.clone());
+                    }
 
-            if let Some(cached) = cache.get(&pos)
-                && cached.content_revision == holder.packet_content_revision()
-            {
-                encoded_chunks.push(cached.clone());
-                continue;
-            }
+                    if !prepared.readiness.is_block_ticking()
+                        || holder.ticking_readiness_snapshot() != prepared.readiness
+                    {
+                        return None;
+                    }
+                    let revision_before = holder.packet_content_revision();
+                    let chunk_guard = holder.try_chunk(ChunkStatus::Full)?;
+                    let ChunkAccess::Full(chunk) = &*chunk_guard else {
+                        return None;
+                    };
 
-            let revision_before = holder.packet_content_revision();
-            let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full) else {
-                continue;
-            };
-            let ChunkAccess::Full(chunk) = &*chunk_guard else {
-                continue;
-            };
+                    let packet = EncodedPacket::from_bare(
+                        CLevelChunkWithLight {
+                            x: pos.0.x,
+                            z: pos.0.y,
+                            chunk_data: chunk.extract_chunk_data(),
+                            light_data: chunk.extract_light_data(batch.has_skylight),
+                        },
+                        compression,
+                        ConnectionProtocol::Play,
+                    )
+                    .expect("Failed to encode chunk packet");
+                    let revision_after = holder.packet_content_revision();
+                    if revision_before != revision_after
+                        || holder.ticking_readiness_snapshot() != prepared.readiness
+                    {
+                        return None;
+                    }
 
-            let encoded = EncodedPacket::from_bare(
-                CLevelChunkWithLight {
-                    x: pos.0.x,
-                    z: pos.0.y,
-                    chunk_data: chunk.extract_chunk_data(),
-                    light_data: chunk.extract_light_data(batch.has_skylight),
-                },
-                compression,
-                ConnectionProtocol::Play,
-            )
-            .expect("Failed to encode chunk packet");
-            let revision_after = holder.packet_content_revision();
-            if revision_before != revision_after {
-                continue;
-            }
+                    Some(EncodedChunk {
+                        pos,
+                        packet,
+                        content_revision: revision_after,
+                        holder: Arc::downgrade(holder),
+                        readiness: prepared.readiness,
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+        let encoded_chunks = encoded_chunks.into_iter().flatten().collect::<Vec<_>>();
 
-            let encoded = EncodedChunk {
-                pos,
-                packet: encoded,
-                content_revision: revision_after,
-            };
-            cache.insert(pos, encoded.clone());
-            encoded_chunks.push(encoded);
+        for encoded in &encoded_chunks {
+            cache.insert(encoded.pos, encoded.clone());
         }
 
         encoded_chunks
@@ -227,7 +263,7 @@ impl ChunkSender {
             let Some(prepared) = batch.chunks.iter().find(|chunk| chunk.pos == encoded.pos) else {
                 continue;
             };
-            if prepared.holder.packet_content_revision() != encoded.content_revision {
+            if !encoded.is_current_for(prepared) {
                 continue;
             }
             valid_chunks.push(encoded);
@@ -287,7 +323,14 @@ impl ChunkSender {
                 .read_sync(&pos, |_, chunk| chunk.clone())
                 && holder.persisted_status() == Some(ChunkStatus::Full)
             {
-                chunks_to_send.push(PreparedChunk { pos, holder });
+                let readiness = holder.ticking_readiness_snapshot();
+                if readiness.is_block_ticking() {
+                    chunks_to_send.push(PreparedChunk {
+                        pos,
+                        holder,
+                        readiness,
+                    });
+                }
             }
         }
         chunks_to_send
@@ -342,6 +385,12 @@ impl ChunkSender {
     pub fn sent_chunks_snapshot(&self) -> FxHashSet<ChunkPos> {
         self.sent_chunks.clone()
     }
+
+    #[cfg(test)]
+    pub(crate) fn mark_chunk_sent_for_test(&mut self, pos: ChunkPos) {
+        self.pending_chunks.remove(&pos);
+        self.sent_chunks.insert(pos);
+    }
 }
 
 impl Default for ChunkSender {
@@ -360,6 +409,174 @@ impl Default for ChunkSender {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::chunk::{
+        chunk_holder::TickingReadiness,
+        chunk_ticket_manager::ChunkTicketLevel,
+        heightmap::ChunkHeightmaps,
+        level_chunk::LevelChunk,
+        light::ChunkLightData,
+        section::{ChunkSection, Sections},
+    };
+    use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
+    use std::sync::Weak;
+    use steel_registry::test_support::init_test_registry;
+    use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
+
+    fn prepared_full_chunk(pos: ChunkPos) -> PreparedChunk {
+        let chunk = LevelChunk::from_disk(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            pos,
+            0,
+            16,
+            Weak::new(),
+            BlockTickList::new(),
+            FluidTickList::new(),
+            ChunkHeightmaps::new(0, 16),
+            Vec::new(),
+            StructureStartMap::default(),
+            StructureReferenceMap::default(),
+            ChunkLightData::for_valid_world_height(0, 16),
+        );
+        let holder = Arc::new(ChunkHolder::new(
+            pos,
+            ChunkTicketLevel::FULL_CHUNK,
+            Some(ChunkTicketLevel::FULL_CHUNK),
+            0,
+            16,
+        ));
+        holder.insert_chunk(ChunkAccess::Full(chunk), ChunkStatus::Full);
+        holder.transition_ticking_readiness(TickingReadiness::BlockTicking);
+        let readiness = holder.ticking_readiness_snapshot();
+        PreparedChunk {
+            pos,
+            holder,
+            readiness,
+        }
+    }
+
+    #[test]
+    fn parallel_chunk_encoding_preserves_batch_order_and_cache_entries() {
+        init_test_registry();
+        init_behaviors();
+        let positions = [
+            ChunkPos::new(3, -2),
+            ChunkPos::new(-1, 4),
+            ChunkPos::new(8, 5),
+            ChunkPos::new(0, 0),
+        ];
+        let batch = PreparedBatch {
+            chunks: positions.into_iter().map(prepared_full_chunk).collect(),
+            has_skylight: true,
+            epoch_snapshot: 0,
+        };
+        let encoding_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(2)
+            .build()
+            .expect("test chunk encoding pool should initialize");
+        let mut cache = FxHashMap::default();
+
+        let encoded = ChunkSender::encode_batch(&batch, &mut cache, None, &encoding_pool);
+
+        assert_eq!(
+            encoded.iter().map(|chunk| chunk.pos).collect::<Vec<_>>(),
+            positions
+        );
+        assert_eq!(cache.len(), positions.len());
+        for chunk in &encoded {
+            let cached = cache
+                .get(&chunk.pos)
+                .expect("every encoded chunk should be cached");
+            assert!(Arc::ptr_eq(
+                &cached.packet.encoded_data,
+                &chunk.packet.encoded_data
+            ));
+        }
+
+        let encoded_again = ChunkSender::encode_batch(&batch, &mut cache, None, &encoding_pool);
+        for (first, second) in encoded.iter().zip(&encoded_again) {
+            assert_eq!(first.pos, second.pos);
+            assert!(Arc::ptr_eq(
+                &first.packet.encoded_data,
+                &second.packet.encoded_data
+            ));
+        }
+    }
+
+    #[test]
+    fn readiness_demotion_invalidates_prepared_chunk_encoding() {
+        init_test_registry();
+        init_behaviors();
+        let prepared = prepared_full_chunk(ChunkPos::new(4, -7));
+        prepared
+            .holder
+            .transition_ticking_readiness(TickingReadiness::Unready);
+        let batch = PreparedBatch {
+            chunks: vec![prepared],
+            has_skylight: true,
+            epoch_snapshot: 0,
+        };
+        let encoding_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("test chunk encoding pool should initialize");
+        let mut cache = FxHashMap::default();
+
+        assert!(ChunkSender::encode_batch(&batch, &mut cache, None, &encoding_pool).is_empty());
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn encoding_cache_requires_holder_identity_and_exact_readiness_generation() {
+        init_test_registry();
+        init_behaviors();
+        let pos = ChunkPos::new(-5, 9);
+        let first_batch = PreparedBatch {
+            chunks: vec![prepared_full_chunk(pos)],
+            has_skylight: true,
+            epoch_snapshot: 0,
+        };
+        let encoding_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("test chunk encoding pool should initialize");
+        let mut cache = FxHashMap::default();
+
+        let first = ChunkSender::encode_batch(&first_batch, &mut cache, None, &encoding_pool);
+        assert_eq!(first.len(), 1);
+
+        let replacement_batch = PreparedBatch {
+            chunks: vec![prepared_full_chunk(pos)],
+            has_skylight: true,
+            epoch_snapshot: 0,
+        };
+        let replacement =
+            ChunkSender::encode_batch(&replacement_batch, &mut cache, None, &encoding_pool);
+        assert_eq!(replacement.len(), 1);
+        assert!(!Arc::ptr_eq(
+            &first[0].packet.encoded_data,
+            &replacement[0].packet.encoded_data
+        ));
+
+        let holder = Arc::clone(&replacement_batch.chunks[0].holder);
+        holder.transition_ticking_readiness(TickingReadiness::Unready);
+        holder.transition_ticking_readiness(TickingReadiness::BlockTicking);
+        let rebound_batch = PreparedBatch {
+            chunks: vec![PreparedChunk {
+                pos,
+                readiness: holder.ticking_readiness_snapshot(),
+                holder,
+            }],
+            has_skylight: true,
+            epoch_snapshot: 0,
+        };
+        let rebound = ChunkSender::encode_batch(&rebound_batch, &mut cache, None, &encoding_pool);
+        assert_eq!(rebound.len(), 1);
+        assert!(!Arc::ptr_eq(
+            &replacement[0].packet.encoded_data,
+            &rebound[0].packet.encoded_data
+        ));
+    }
 
     #[test]
     fn chunk_batch_ack_without_outstanding_batch_does_not_update_pacing() {

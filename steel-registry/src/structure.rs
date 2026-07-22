@@ -3,6 +3,8 @@ use std::sync::OnceLock;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
+use crate::RegistryTags;
+
 /// A registered worldgen structure definition.
 ///
 /// Mirrors vanilla's `Structure`: common settings are stored here, while
@@ -42,7 +44,7 @@ pub type StructureRef = &'static StructureData;
 pub struct StructureRegistry {
     structures_by_id: Vec<StructureRef>,
     structures_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -52,7 +54,7 @@ impl StructureRegistry {
         Self {
             structures_by_id: Vec::new(),
             structures_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

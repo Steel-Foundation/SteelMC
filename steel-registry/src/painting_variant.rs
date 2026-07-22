@@ -1,4 +1,4 @@
-use crate::{REGISTRY, RegistryExt, RegistryHolderEntry};
+use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
 use rustc_hash::FxHashMap;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
@@ -115,7 +115,7 @@ pub type PaintingVariantRef = &'static PaintingVariant;
 pub struct PaintingVariantRegistry {
     painting_variants_by_id: Vec<PaintingVariantRef>,
     painting_variants_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -125,7 +125,7 @@ impl PaintingVariantRegistry {
         Self {
             painting_variants_by_id: Vec::new(),
             painting_variants_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

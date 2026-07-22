@@ -11,7 +11,7 @@ use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::serial::{PrefixedRead, PrefixedWrite, ReadFrom, WriteTo};
 
-use crate::{REGISTRY, RegistryExt, RegistryHolderEntry};
+use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
 
 const MAX_NETWORK_STRING_LENGTH: usize = 32_767;
 const MAX_NETWORK_STRING_BYTES: usize = MAX_NETWORK_STRING_LENGTH * 3;
@@ -159,7 +159,7 @@ pub type BannerPatternRef = &'static BannerPattern;
 pub struct BannerPatternRegistry {
     banner_patterns_by_id: Vec<BannerPatternRef>,
     banner_patterns_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -169,7 +169,7 @@ impl BannerPatternRegistry {
         Self {
             banner_patterns_by_id: Vec::new(),
             banner_patterns_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

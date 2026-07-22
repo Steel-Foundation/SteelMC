@@ -1,6 +1,8 @@
 //! Fluid registry for Minecraft fluids.
 
-use crate::{RegistryExt, TaggedRegistryExt, vanilla_fluid_tags::FluidTag, vanilla_fluids};
+use crate::{
+    RegistryExt, RegistryTags, TaggedRegistryExt, vanilla_fluid_tags::FluidTag, vanilla_fluids,
+};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -196,7 +198,7 @@ impl FluidState {
 pub struct FluidRegistry {
     fluids_by_id: Vec<FluidRef>,
     fluids_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -213,7 +215,7 @@ impl FluidRegistry {
         Self {
             fluids_by_id: Vec::new(),
             fluids_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

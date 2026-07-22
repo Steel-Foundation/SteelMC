@@ -4,7 +4,6 @@ use std::sync::Arc;
 use steel_protocol::packets::game::{CGameEvent, GameEventType};
 use steel_registry::vanilla_entities;
 use steel_utils::ChunkPos;
-use tokio::time::Instant;
 
 use crate::{
     entity::{
@@ -98,13 +97,22 @@ impl World {
         true
     }
 
-    /// Removes a player from the world.
-    pub async fn remove_player(self: &Arc<Self>, player: Arc<Player>) {
-        let Some(player) = self.players.remove_player(&player).await else {
-            if player.has_won_game() {
-                self.remove_detached_end_credits_player(player).await;
+    /// Detaches a disconnecting player from live world state and snapshots it.
+    ///
+    /// Persistence happens asynchronously after the server's pre-tick phase completes.
+    pub(crate) fn detach_player_for_disconnect(
+        self: &Arc<Self>,
+        player: Arc<Player>,
+    ) -> Option<(Arc<Player>, String, PersistentPlayerData)> {
+        let Some(player) = self.players.remove_player_sync(&player) else {
+            if !player.has_won_game() {
+                return None;
             }
-            return;
+
+            let domain = self.domain().to_owned();
+            let player_data = PersistentPlayerData::from_player(&player);
+            player.store_ender_pearls_with_player();
+            return Some((player, domain, player_data));
         };
         let entity_id = player.id();
         let domain = self.domain().to_owned();
@@ -120,37 +128,7 @@ impl World {
         self.player_area_map.on_player_leave(&player);
         self.chunk_map.remove_player(&player);
 
-        let start = Instant::now();
-
-        // Save after world indexes are cleared so a fast reconnect cannot collide
-        // with this player's stale entity ID/UUID cache entries.
-        player
-            .server()
-            .remove_online_player_after_disconnect(player.clone(), domain, player_data)
-            .await;
-        log::info!(
-            "Player {} removed in {:?}",
-            player.gameprofile.id,
-            start.elapsed()
-        );
-    }
-
-    async fn remove_detached_end_credits_player(self: &Arc<Self>, player: Arc<Player>) {
-        let domain = self.domain().to_owned();
-        let player_data = PersistentPlayerData::from_player(&player);
-        let start = Instant::now();
-
-        player.store_ender_pearls_with_player();
-
-        player
-            .server()
-            .remove_online_player_after_disconnect(player.clone(), domain, player_data)
-            .await;
-        log::info!(
-            "Detached End credits player {} removed in {:?}",
-            player.gameprofile.id,
-            start.elapsed()
-        );
+        Some((player, domain, player_data))
     }
 
     /// Removes a player from the world during a world change.

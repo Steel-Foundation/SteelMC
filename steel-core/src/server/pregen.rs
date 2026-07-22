@@ -313,7 +313,7 @@ async fn generate_pregen(
         }
 
         drain_pregen_broadcasts(world);
-        world.chunk_map.tick_scheduling();
+        world.chunk_map.advance_scheduling();
         update_unload_backpressure(world, &mut unload_backpressure);
 
         for active in &mut active_windows {
@@ -340,7 +340,7 @@ async fn generate_pregen(
             fill_active_windows(world, &mut pending_windows, &mut active_windows);
         }
         drain_pregen_broadcasts(world);
-        world.chunk_map.tick_scheduling();
+        world.chunk_map.advance_scheduling();
         update_unload_backpressure(world, &mut unload_backpressure);
         release_unneeded_completed_windows(world, &mut active_windows);
 
@@ -467,12 +467,12 @@ fn release_unneeded_completed_windows(
             .any(|window| protected.overlaps(window.protected_rect()))
     });
 
-    world.chunk_map.tick_scheduling();
+    world.chunk_map.advance_scheduling();
 }
 
 fn release_all_windows(world: &Arc<World>, active_windows: &mut Vec<ActivePregenWindow>) {
     active_windows.clear();
-    world.chunk_map.tick_scheduling();
+    world.chunk_map.advance_scheduling();
 }
 
 #[cfg(test)]
