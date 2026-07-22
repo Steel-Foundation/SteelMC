@@ -24,21 +24,21 @@
         },
         "allow_extended_view_distance": {
           "type": "boolean",
-          "description": "Allow view_distance above vanilla's 32-chunk cap, up to Steel's 127-chunk cap",
+          "description": "Allow view_distance above vanilla's 32-chunk cap, up to Steel's 128-chunk cap",
           "default": false
         },
         "view_distance": {
           "type": "integer",
-          "description": "Maximum view distance in chunks. Normally 1-32; 1-127 when allow_extended_view_distance is true.",
+          "description": "Maximum view distance in chunks. Normally 1-32; 1-128 when allow_extended_view_distance is true.",
           "minimum": 1,
-          "maximum": 127,
+          "maximum": 128,
           "default": 10
         },
         "simulation_distance": {
           "type": "integer",
           "description": "Maximum simulation distance in chunks",
           "minimum": 1,
-          "maximum": 127,
+          "maximum": 128,
           "default": 10
         },
         "online_mode": {
@@ -225,9 +225,21 @@
               "minimum": 0,
               "default": 0
             },
+            "packet_workers": {
+              "type": "integer",
+              "description": "Persistent workers for inter-tick gameplay packet processing",
+              "minimum": 0,
+              "default": 0
+            },
             "chunk_generation": {
               "type": "integer",
               "description": "Worker threads for the Rayon chunk generation pool",
+              "minimum": 0,
+              "default": 0
+            },
+            "chunk_encoding": {
+              "type": "integer",
+              "description": "Worker threads for the Rayon chunk encoding pool",
               "minimum": 0,
               "default": 0
             }
@@ -260,7 +272,7 @@
           "then": {
             "properties": {
               "view_distance": {
-                "maximum": 127
+                "maximum": 128
               }
             }
           },

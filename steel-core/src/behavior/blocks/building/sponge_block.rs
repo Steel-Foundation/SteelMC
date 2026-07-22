@@ -15,7 +15,7 @@ use crate::behavior::{
     BLOCK_BEHAVIORS, BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt,
     pickup_waterlogged_block,
 };
-use crate::world::World;
+use crate::world::{ConditionalBlockSetResult, World};
 
 const MAX_DEPTH: i32 = 6;
 const MAX_COUNT: i32 = 64;
@@ -93,11 +93,12 @@ impl SpongeBlock {
         }
 
         if state.get_block() == &vanilla_blocks::WATER {
-            return world.set_block(
+            return world.set_block_if_unchanged(
                 pos,
+                state,
                 vanilla_blocks::AIR.default_state(),
                 UpdateFlags::UPDATE_ALL,
-            );
+            ) == ConditionalBlockSetResult::Changed;
         }
 
         if !Self::is_absorbable_water_plant(state) {

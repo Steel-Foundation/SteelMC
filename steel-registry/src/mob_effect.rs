@@ -1,5 +1,6 @@
 use std::hash::{Hash, Hasher};
 
+use crate::RegistryTags;
 use crate::attribute::{AttributeModifierOperation, AttributeRef};
 use crate::particle_type::{ColorParticleOption, ParticleData, ParticleTypeRef};
 use rustc_hash::FxHashMap;
@@ -102,7 +103,7 @@ pub type MobEffectRef = &'static MobEffect;
 pub struct MobEffectRegistry {
     effects_by_id: Vec<MobEffectRef>,
     effects_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -118,7 +119,7 @@ impl MobEffectRegistry {
         Self {
             effects_by_id: Vec::new(),
             effects_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

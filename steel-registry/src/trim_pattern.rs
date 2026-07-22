@@ -11,7 +11,7 @@ use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 use text_components::TextComponent;
 
-use crate::{REGISTRY, RegistryExt, RegistryHolderEntry};
+use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
 
 /// Complete registry-independent trim pattern definition.
 #[derive(Debug, Clone, PartialEq)]
@@ -146,7 +146,7 @@ pub type TrimPatternRef = &'static TrimPattern;
 pub struct TrimPatternRegistry {
     trim_patterns_by_id: Vec<TrimPatternRef>,
     trim_patterns_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -156,7 +156,7 @@ impl TrimPatternRegistry {
         Self {
             trim_patterns_by_id: Vec::new(),
             trim_patterns_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

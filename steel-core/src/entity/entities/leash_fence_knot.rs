@@ -10,11 +10,11 @@ use steel_registry::sound_events;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entities;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, WorldAabb};
+use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityCapabilities, LeashFenceKnot,
-    RemovalReason, SharedEntity, next_entity_id,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, RemovalReason, SharedEntity,
+    next_entity_id,
 };
 use crate::world::World;
 
@@ -121,8 +121,8 @@ impl LeashFenceKnotEntity {
         world
             .get_entities_in_aabb_matching(&search_box, |entity| {
                 entity
-                    .as_leash_fence_knot()
-                    .is_some_and(|knot| knot.leash_fence_pos() == pos)
+                    .downcast_ref::<Self>()
+                    .is_some_and(|knot| knot.block_pos() == pos)
             })
             .into_iter()
             .next()
@@ -205,10 +205,6 @@ impl Entity for LeashFenceKnotEntity {
         )
     }
 
-    fn capabilities(&self) -> EntityCapabilities<'_> {
-        EntityCapabilities::none().with_leash_fence_knot(self)
-    }
-
     fn notify_leashee_removed(&self, _leashable: &dyn Entity) {
         if self.level().is_some() && self.leashables_leashed_to().is_empty() {
             self.set_removed(RemovalReason::Discarded);
@@ -228,12 +224,6 @@ impl Entity for LeashFenceKnotEntity {
 
     fn is_pickable(&self) -> bool {
         true
-    }
-}
-
-impl LeashFenceKnot for LeashFenceKnotEntity {
-    fn leash_fence_pos(&self) -> BlockPos {
-        self.block_pos()
     }
 }
 

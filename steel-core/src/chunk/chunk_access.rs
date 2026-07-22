@@ -9,12 +9,16 @@ use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 
 use crate::block_entity::SharedBlockEntity;
 use crate::chunk::{
-    heightmap::HeightmapType, level_chunk::LevelChunk, light::ChunkLightData,
-    light::ChunkSkyLightSources, proto_chunk::ProtoChunk, section::Sections,
+    heightmap::HeightmapType,
+    level_chunk::{LevelChunk, LevelChunkBlockSetResult},
+    light::ChunkLightData,
+    light::ChunkSkyLightSources,
+    proto_chunk::ProtoChunk,
+    section::Sections,
 };
 use crate::entity::SharedEntity;
 use crate::world::World;
-use crate::world::tick_scheduler::{BlockTick, FluidTick, TickPriority};
+use crate::world::tick_scheduler::TickPriority;
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
 /// The status of a chunk.
@@ -642,6 +646,21 @@ impl ChunkAccess {
         }
     }
 
+    pub(crate) fn set_block_state_if_unchanged(
+        &self,
+        pos: BlockPos,
+        expected_state: BlockStateId,
+        new_state: BlockStateId,
+        flags: UpdateFlags,
+    ) -> Option<LevelChunkBlockSetResult> {
+        match self {
+            Self::Full(chunk) => {
+                chunk.set_block_state_if_unchanged(pos, expected_state, new_state, flags)
+            }
+            Self::Proto(_) | Self::Unloaded => None,
+        }
+    }
+
     /// Gets a block state at the given position.
     #[must_use]
     pub fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
@@ -743,14 +762,11 @@ impl ChunkAccess {
     ) {
         match self {
             Self::Full(chunk) => {
-                let tick = BlockTick {
-                    tick_type: block,
-                    pos,
-                    delay,
-                    priority,
-                    sub_tick_order,
-                };
-                if chunk.block_ticks.lock().schedule(tick) {
+                if chunk
+                    .block_ticks
+                    .lock()
+                    .schedule(block, pos, delay, priority, sub_tick_order)
+                {
                     chunk.dirty.store(true, Ordering::Release);
                 }
             }
@@ -770,14 +786,11 @@ impl ChunkAccess {
     ) {
         match self {
             Self::Full(chunk) => {
-                let tick = FluidTick {
-                    tick_type: fluid,
-                    pos,
-                    delay,
-                    priority,
-                    sub_tick_order,
-                };
-                if chunk.fluid_ticks.lock().schedule(tick) {
+                if chunk
+                    .fluid_ticks
+                    .lock()
+                    .schedule(fluid, pos, delay, priority, sub_tick_order)
+                {
                     chunk.dirty.store(true, Ordering::Release);
                 }
             }
@@ -829,37 +842,6 @@ impl ChunkAccess {
             Self::Full(chunk) => chunk.structure_references.write(),
             Self::Proto(proto) => proto.structure_references.write(),
             Self::Unloaded => unreachable!(),
-        }
-    }
-
-    /// Ticks the chunk if it's a full chunk.
-    ///
-    /// Drains ready scheduled ticks into the provided vecs, then processes random ticks.
-    pub fn tick(
-        &self,
-        random_tick_speed: u32,
-        tick_count: i32,
-        ready_block_ticks: &mut Vec<BlockTick>,
-        ready_fluid_ticks: &mut Vec<FluidTick>,
-    ) {
-        if let Self::Full(chunk) = self {
-            chunk.tick(
-                random_tick_speed,
-                tick_count,
-                ready_block_ticks,
-                ready_fluid_ticks,
-            );
-        }
-    }
-
-    /// Drains ready scheduled ticks if this is a full chunk.
-    pub fn drain_ready_scheduled_ticks(
-        &self,
-        ready_block_ticks: &mut Vec<BlockTick>,
-        ready_fluid_ticks: &mut Vec<FluidTick>,
-    ) {
-        if let Self::Full(chunk) = self {
-            chunk.drain_ready_scheduled_ticks(ready_block_ticks, ready_fluid_ticks);
         }
     }
 
@@ -1105,6 +1087,7 @@ mod tests {
             BlockTickList::new(),
             FluidTickList::new(),
             ChunkHeightmaps::new(0, 16),
+            Vec::new(),
             StructureStartMap::default(),
             StructureReferenceMap::default(),
             ChunkLightData::for_valid_world_height(0, 16),
@@ -1132,6 +1115,7 @@ mod tests {
             BlockTickList::new(),
             FluidTickList::new(),
             ChunkHeightmaps::new(0, 16),
+            Vec::new(),
             StructureStartMap::default(),
             StructureReferenceMap::default(),
             ChunkLightData::for_valid_world_height(0, 16),
@@ -1209,6 +1193,7 @@ mod tests {
             BlockTickList::new(),
             FluidTickList::new(),
             ChunkHeightmaps::new(0, 16),
+            Vec::new(),
             StructureStartMap::default(),
             StructureReferenceMap::default(),
             ChunkLightData::for_valid_world_height(0, 16),
@@ -1230,6 +1215,7 @@ mod tests {
             BlockTickList::new(),
             FluidTickList::new(),
             ChunkHeightmaps::new(0, 16),
+            Vec::new(),
             StructureStartMap::default(),
             StructureReferenceMap::default(),
             ChunkLightData::for_valid_world_height(0, 16),

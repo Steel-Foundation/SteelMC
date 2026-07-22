@@ -24,6 +24,7 @@ use crate::chunk::chunk_generation_task::{NeighborReady, StaticCache2D};
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicketLevel, generation_status, is_entity_ticking, is_full,
 };
+use crate::chunk::full_chunk_readiness::FullPublicationQueue;
 use crate::chunk::light::{
     LightLayer, LightSectionRange, LightWorkWindowGate, LightWorkWindowReservation,
 };
@@ -62,6 +63,49 @@ pub enum ChunkResult {
     Unloaded,
     /// The chunk operation succeeded.
     Ok(ChunkStatus),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub(crate) enum TickingReadiness {
+    Unready,
+    BlockTicking,
+    EntityTicking,
+}
+
+/// Exact ticking-readiness generation captured by concurrent consumers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TickingReadinessSnapshot(u64);
+
+impl TickingReadinessSnapshot {
+    #[must_use]
+    pub(crate) const fn readiness(self) -> TickingReadiness {
+        match self.0 & 0b11 {
+            0 => TickingReadiness::Unready,
+            1 => TickingReadiness::BlockTicking,
+            2 => TickingReadiness::EntityTicking,
+            _ => unreachable!(),
+        }
+    }
+
+    #[must_use]
+    pub(crate) const fn is_block_ticking(self) -> bool {
+        matches!(
+            self.readiness(),
+            TickingReadiness::BlockTicking | TickingReadiness::EntityTicking
+        )
+    }
+
+    #[must_use]
+    pub(crate) const fn is_entity_ticking(self) -> bool {
+        matches!(self.readiness(), TickingReadiness::EntityTicking)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PostProcessGenerationError {
+    ChunkNotFull,
+    WorldUnavailable,
 }
 
 struct ChunkGuard(SyncRwLock<ChunkAccess>);
@@ -143,6 +187,12 @@ pub struct ChunkHolder {
     queued_for_broadcast: AtomicBool,
     /// Monotonic revision for client-visible chunk packet content.
     packet_content_revision: AtomicU64,
+    /// Packed ticking readiness generation. The low two bits store `TickingReadiness`.
+    ticking_readiness: AtomicU64,
+    /// Whether Full post-load initialization completed and was published for readiness.
+    full_status_initialized: AtomicBool,
+    /// Weak sink for Full status publication notifications.
+    full_publications: Weak<FullPublicationQueue>,
     /// Per-section sets of changed block positions.
     /// Index is `(block_y - min_y) / 16`.
     changed_blocks_per_section: Box<[SyncMutex<FxHashSet<PackedSectionBlockPos>>]>,
@@ -204,6 +254,24 @@ impl ChunkHolder {
         min_y: i32,
         height: i32,
     ) -> Self {
+        Self::new_with_full_publications(
+            pos,
+            load_level,
+            simulation_level,
+            min_y,
+            height,
+            Weak::new(),
+        )
+    }
+
+    pub(crate) fn new_with_full_publications(
+        pos: ChunkPos,
+        load_level: ChunkTicketLevel,
+        simulation_level: Option<ChunkTicketLevel>,
+        min_y: i32,
+        height: i32,
+        full_publications: Weak<FullPublicationQueue>,
+    ) -> Self {
         let (sender, receiver) = watch::channel(ChunkResult::Unloaded);
         let highest_allowed_status =
             generation_status(Some(load_level)).map_or(STATUS_NONE, |s| s.get_index() as u8);
@@ -230,6 +298,9 @@ impl ChunkHolder {
             has_changed_sections: AtomicBool::new(false),
             queued_for_broadcast: AtomicBool::new(false),
             packet_content_revision: AtomicU64::new(0),
+            ticking_readiness: AtomicU64::new(0),
+            full_status_initialized: AtomicBool::new(false),
+            full_publications,
             changed_blocks_per_section,
             changed_light_sections: SyncMutex::new(ChangedLightSectionSets::default()),
         }
@@ -270,7 +341,9 @@ impl ChunkHolder {
             return EntityVisibility::Hidden;
         }
 
-        if is_entity_ticking(self.simulation_level()) {
+        if is_entity_ticking(self.simulation_level())
+            && self.ticking_readiness_snapshot().is_entity_ticking()
+        {
             EntityVisibility::Ticking
         } else {
             EntityVisibility::Tracked
@@ -288,7 +361,10 @@ impl ChunkHolder {
     /// Records a block change at the given position.
     /// Returns `true` if this is the first change (chunk should be added to broadcast list).
     pub fn block_changed(&self, pos: BlockPos) -> bool {
-        if pos.0.y < self.min_y || pos.0.y >= self.min_y + self.height {
+        if !self.ticking_readiness_snapshot().is_block_ticking()
+            || pos.0.y < self.min_y
+            || pos.0.y >= self.min_y + self.height
+        {
             return false;
         }
 
@@ -353,7 +429,7 @@ impl ChunkHolder {
         match &*chunk {
             ChunkAccess::Full(_) => {
                 chunk.mark_dirty();
-                Some(true)
+                Some(self.ticking_readiness_snapshot().is_block_ticking())
             }
             ChunkAccess::Proto(_) => {
                 chunk.mark_dirty();
@@ -407,6 +483,47 @@ impl ChunkHolder {
     /// Returns the current client-visible content revision.
     pub fn packet_content_revision(&self) -> u64 {
         self.packet_content_revision.load(Ordering::Acquire)
+    }
+
+    #[must_use]
+    pub(crate) fn ticking_readiness_snapshot(&self) -> TickingReadinessSnapshot {
+        TickingReadinessSnapshot(self.ticking_readiness.load(Ordering::Acquire))
+    }
+
+    #[must_use]
+    pub(crate) fn is_full_status_initialized(&self) -> bool {
+        self.full_status_initialized.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn transition_ticking_readiness(
+        &self,
+        target: TickingReadiness,
+    ) -> Option<TickingReadiness> {
+        let mut current = self.ticking_readiness.load(Ordering::Acquire);
+        loop {
+            let snapshot = TickingReadinessSnapshot(current);
+            let previous = snapshot.readiness();
+            if previous == target {
+                return None;
+            }
+
+            let generation = current >> 2;
+            assert!(
+                generation != u64::MAX >> 2,
+                "chunk ticking readiness generation exhausted"
+            );
+            let next_generation = generation + 1;
+            let next = (next_generation << 2) | target as u64;
+            match self.ticking_readiness.compare_exchange(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Some(previous),
+                Err(observed) => current = observed,
+            }
+        }
     }
 
     /// Returns the number of sections in this chunk.
@@ -912,17 +1029,19 @@ impl ChunkHolder {
             return None;
         }
 
-        holder.insert_chunk(loaded.chunk, loaded_status);
-        context.world().on_entity_chunk_loaded(holder.pos);
-        context
-            .world()
-            .update_entity_chunk_visibility(holder.pos, holder.entity_visibility());
+        holder.store_and_publish_chunk_status(loaded.chunk, loaded_status);
+        let world = context.world();
+        world.on_entity_chunk_loaded(holder.pos);
+        world.update_entity_chunk_visibility(holder.pos, holder.entity_visibility());
         if !loaded.pending_entities.is_empty() {
-            context.world().register_loaded_chunk_entities(
+            world.register_loaded_chunk_entities(
                 holder.pos,
                 loaded_status,
                 loaded.pending_entities,
             );
+        }
+        if loaded_status == ChunkStatus::Full {
+            holder.publish_full();
         }
         Some(())
     }
@@ -1078,30 +1197,31 @@ impl ChunkHolder {
             }
         });
         if let (Some(world), Some((pos, pending_entities))) = (world, promoted_entities) {
-            world.update_entity_chunk_visibility(pos, self.entity_visibility());
             world.register_loaded_chunk_entities(pos, ChunkStatus::Full, pending_entities);
         }
     }
 
-    fn post_process_generation(&self) {
+    pub(crate) fn post_process_generation(&self) -> Result<(), PostProcessGenerationError> {
         let postprocessing = {
             let chunk = self.data.read();
             let ChunkAccess::Full(full) = &*chunk else {
-                return;
+                return Err(PostProcessGenerationError::ChunkNotFull);
             };
-            full.get_level().and_then(|world| {
-                full.take_postprocessing()
-                    .map(|postprocessing| (world, full.pos, full.min_y(), postprocessing))
-            })
+            let world = full
+                .get_level()
+                .ok_or(PostProcessGenerationError::WorldUnavailable)?;
+            full.take_postprocessing()
+                .map(|postprocessing| (world, full.pos, full.min_y(), postprocessing))
         };
 
         if let Some((world, pos, min_y, postprocessing)) = postprocessing {
             LevelChunk::post_process_generation(&world, pos, min_y, postprocessing);
         }
+        Ok(())
     }
 
     /// Finishes a generated status on the async scheduler after the Rayon task returns.
-    fn finish_generation_status(&self, status: ChunkStatus) {
+    fn finish_generation_status(self: &Arc<Self>, status: ChunkStatus) {
         {
             let stored_chunk = self.data.read();
             if let ChunkAccess::Proto(proto_chunk) = &*stored_chunk
@@ -1123,19 +1243,22 @@ impl ChunkHolder {
             ChunkResult::Ok(_) => {}
         });
 
-        self.post_publish_status_hooks(status);
-    }
-
-    fn post_publish_status_hooks(&self, status: ChunkStatus) {
         if status == ChunkStatus::Full {
-            self.post_process_generation();
+            self.publish_full();
         }
     }
 
     /// Inserts a chunk into the holder with a specific status.
     /// This notifies watchers - use `insert_chunk_no_notify` + separate notification
     /// if calling from a rayon thread to avoid contention.
-    pub fn insert_chunk(&self, chunk: ChunkAccess, status: ChunkStatus) {
+    pub fn insert_chunk(self: &Arc<Self>, chunk: ChunkAccess, status: ChunkStatus) {
+        self.store_and_publish_chunk_status(chunk, status);
+        if status == ChunkStatus::Full {
+            self.publish_full();
+        }
+    }
+
+    fn store_and_publish_chunk_status(&self, chunk: ChunkAccess, status: ChunkStatus) {
         if let ChunkAccess::Proto(proto) = &chunk {
             debug_assert!(
                 status < ChunkStatus::Full,
@@ -1146,6 +1269,23 @@ impl ChunkHolder {
         self.data.with_write(|c| *c = chunk);
         self.mark_status_work_published(status);
         self.sender.send_replace(ChunkResult::Ok(status));
+    }
+
+    fn publish_full(self: &Arc<Self>) {
+        let world = {
+            let chunk = self.data.read();
+            let ChunkAccess::Full(full) = &*chunk else {
+                return;
+            };
+            full.get_level()
+        };
+        if let Some(world) = world {
+            world.update_entity_chunk_visibility(self.pos, self.entity_visibility());
+        }
+        self.full_status_initialized.store(true, Ordering::Release);
+        if let Some(publications) = self.full_publications.upgrade() {
+            publications.publish(self);
+        }
     }
 
     /// Inserts a chunk into the holder without notifying watchers.
@@ -1253,6 +1393,87 @@ mod tests {
             panic!("inserted test chunk should remain proto");
         };
         assert_eq!(proto.status(), ChunkStatus::Light);
+    }
+
+    #[test]
+    fn full_readiness_publication_waits_for_post_load_initialization() {
+        init_chunk_test_registry();
+        let publications = Arc::new(FullPublicationQueue::default());
+        let holder = Arc::new(ChunkHolder::new_with_full_publications(
+            ChunkPos::new(0, 0),
+            ChunkTicketLevel::FULL_CHUNK,
+            None,
+            0,
+            16,
+            Arc::downgrade(&publications),
+        ));
+        let full =
+            LevelChunk::from_proto(test_proto_chunk(ChunkStatus::Light), 0, 16, Weak::new()).chunk;
+
+        holder.store_and_publish_chunk_status(ChunkAccess::Full(full), ChunkStatus::Full);
+
+        assert_eq!(holder.persisted_status(), Some(ChunkStatus::Full));
+        assert!(!holder.is_full_status_initialized());
+        assert!(publications.drain().is_empty());
+
+        holder.publish_full();
+
+        assert!(holder.is_full_status_initialized());
+        assert_eq!(publications.drain().len(), 1);
+    }
+
+    #[test]
+    fn generated_full_status_is_accessible_when_readiness_is_published() {
+        init_chunk_test_registry();
+        let holder = test_holder();
+        holder.insert_chunk(
+            ChunkAccess::Proto(test_proto_chunk(ChunkStatus::Light)),
+            ChunkStatus::Light,
+        );
+        holder.upgrade_to_full(Weak::new());
+
+        assert_eq!(holder.entity_visibility(), EntityVisibility::Hidden);
+        assert!(!holder.is_full_status_initialized());
+
+        holder.finish_generation_status(ChunkStatus::Full);
+
+        assert_eq!(holder.entity_visibility(), EntityVisibility::Tracked);
+        assert!(holder.is_full_status_initialized());
+    }
+
+    #[test]
+    fn client_deltas_require_confirmed_block_readiness() {
+        init_chunk_test_registry();
+        let holder = test_holder();
+        let full =
+            LevelChunk::from_proto(test_proto_chunk(ChunkStatus::Light), 0, 16, Weak::new()).chunk;
+        holder.insert_chunk(ChunkAccess::Full(full), ChunkStatus::Full);
+        let pos = BlockPos::new(1, 1, 1);
+        let section_pos = SectionPos::new(0, 0, 0);
+        let revision = holder.packet_content_revision();
+        let chunk = holder
+            .try_chunk(ChunkStatus::Full)
+            .expect("the test holder should contain a Full chunk");
+        chunk.clear_dirty();
+        drop(chunk);
+
+        assert!(!holder.block_changed(pos));
+        assert!(!holder.light_changed(LightLayer::Block, section_pos));
+        assert_eq!(holder.packet_content_revision(), revision);
+        assert!(
+            holder
+                .try_chunk(ChunkStatus::Full)
+                .is_some_and(|chunk| chunk.is_dirty()),
+            "pre-readiness light changes must still be persisted"
+        );
+
+        holder.transition_ticking_readiness(TickingReadiness::BlockTicking);
+
+        assert!(holder.light_changed(LightLayer::Block, section_pos));
+        assert_eq!(holder.packet_content_revision(), revision + 1);
+        holder.clear_broadcast_queued();
+        assert!(holder.block_changed(pos));
+        assert_eq!(holder.packet_content_revision(), revision + 2);
     }
 
     #[test]

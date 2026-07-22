@@ -25,6 +25,10 @@ pub(crate) fn test_world() -> &'static Arc<World> {
     WORLD.get_or_init(|| create_test_world("test"))
 }
 
+pub(crate) fn fresh_test_world(key: &'static str) -> Arc<World> {
+    create_test_world(key)
+}
+
 pub(crate) fn cross_world_damage_test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();
     WORLD.get_or_init(|| {

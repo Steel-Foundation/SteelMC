@@ -2,6 +2,8 @@ use glam::DVec3;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
+use crate::RegistryTags;
+
 /// Mob category for spawn classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MobCategory {
@@ -294,7 +296,7 @@ pub type EntityTypeRef = &'static EntityType;
 pub struct EntityTypeRegistry {
     types_by_id: Vec<EntityTypeRef>,
     types_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -311,7 +313,7 @@ impl EntityTypeRegistry {
         Self {
             types_by_id: Vec::new(),
             types_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

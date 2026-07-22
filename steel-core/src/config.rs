@@ -80,8 +80,12 @@ pub struct RuntimeConfig {
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links.
     pub server_links: Option<ServerLinks>,
+    /// Optional count of persistent inter-tick gameplay packet workers.
+    pub packet_workers: Option<usize>,
     /// Optional worker count for the Rayon chunk generation pool.
     pub chunk_generation_threads: Option<usize>,
+    /// Optional worker count for the Rayon chunk encoding pool.
+    pub chunk_encoding_threads: Option<usize>,
 }
 
 impl RuntimeConfig {

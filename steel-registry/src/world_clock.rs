@@ -3,6 +3,8 @@ use simdnbt::ToNbtTag;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_utils::Identifier;
 
+use crate::RegistryTags;
+
 /// Represents a `world_clock` definition from a data pack JSON file.
 #[derive(Debug)]
 pub struct WorldClock {
@@ -20,7 +22,7 @@ pub type WorldClockRef = &'static WorldClock;
 pub struct WorldClockRegistry {
     world_clocks_by_id: Vec<WorldClockRef>,
     world_clocks_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -30,7 +32,7 @@ impl WorldClockRegistry {
         Self {
             world_clocks_by_id: Vec::new(),
             world_clocks_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

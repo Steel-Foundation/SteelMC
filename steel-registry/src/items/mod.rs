@@ -8,7 +8,7 @@ use text_components::TextComponent;
 pub mod item;
 
 use crate::{
-    REGISTRY, RegistryExt, TaggedRegistryExt,
+    REGISTRY, RegistryExt, RegistryTags, TaggedRegistryExt,
     blocks::BlockRef,
     data_components::{
         DataComponentMap,
@@ -107,7 +107,7 @@ pub struct ItemRegistry {
     items_by_id: Vec<ItemRef>,
     items_by_key: FxHashMap<Identifier, usize>,
     items_by_block: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -124,7 +124,7 @@ impl ItemRegistry {
             items_by_id: Vec::new(),
             items_by_key: FxHashMap::default(),
             items_by_block: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }
