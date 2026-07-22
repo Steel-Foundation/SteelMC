@@ -88,8 +88,6 @@ impl Bonemealable for WeepingVinesBlock {
         pos: BlockPos,
     ) -> bool {
         self.growing_plant_head_block()
-            .as_bonemealable()
-            .expect("failed to get weeping_vines_block as bonemealable")
             .is_valid_bonemeal_target(state, world, pos)
     }
 
@@ -101,12 +99,56 @@ impl Bonemealable for WeepingVinesBlock {
         pos: BlockPos,
     ) {
         self.growing_plant_head_block()
-            .as_bonemealable()
-            .expect("failed to get weeping_vines_block as bonemealable")
             .perform_bonemeal(state, world, rng, pos);
     }
 
     fn bonemeal_action_type(&self) -> BonemealAction {
         BonemealAction::Grower
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::test_support::init_test_registry;
+
+    use super::*;
+    use crate::test_support::TestLevel;
+
+    #[test]
+    fn bonemeal_target_requires_open_growth_position() {
+        init_test_registry();
+
+        let behavior = WeepingVinesBlock::new(&vanilla_blocks::WEEPING_VINES);
+        let state = vanilla_blocks::WEEPING_VINES.default_state();
+        let open_level = TestLevel::default();
+        assert!(behavior.is_valid_bonemeal_target(state, &open_level, BlockPos::ZERO));
+
+        let blocked_level = TestLevel::default().with_block(
+            BlockPos::ZERO.below(),
+            vanilla_blocks::NETHERRACK.default_state(),
+        );
+        assert!(!behavior.is_valid_bonemeal_target(state, &blocked_level, BlockPos::ZERO));
+    }
+
+    #[test]
+    fn connected_head_converts_to_body() {
+        init_test_registry();
+
+        let behavior = WeepingVinesBlock::new(&vanilla_blocks::WEEPING_VINES);
+        let state = vanilla_blocks::WEEPING_VINES.default_state();
+        let level = TestLevel::default();
+        let converted = behavior.update_shape(
+            state,
+            &level,
+            BlockPos::ZERO,
+            Direction::Down,
+            BlockPos::ZERO.below(),
+            vanilla_blocks::WEEPING_VINES_PLANT.default_state(),
+        );
+
+        assert_eq!(
+            converted,
+            vanilla_blocks::WEEPING_VINES_PLANT.default_state()
+        );
     }
 }

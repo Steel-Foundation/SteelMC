@@ -1,7 +1,7 @@
 use rand::Rng;
 use std::sync::Arc;
 use steel_macros::block_behavior;
-use steel_registry::vanilla_blocks;
+use steel_registry::{item_stack::ItemStack, vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::blocks::vegetation::bonemealable::BonemealAction;
@@ -73,6 +73,14 @@ impl BlockBehavior for WeepingVinesPlantBlock {
         self.growing_plant_body_block()
             .get_state_for_placement(context)
     }
+    fn get_clone_item_stack(
+        &self,
+        _block: BlockRef,
+        _state: BlockStateId,
+        _include_data: bool,
+    ) -> Option<ItemStack> {
+        Some(ItemStack::new(&vanilla_items::WEEPING_VINES))
+    }
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }
@@ -85,8 +93,6 @@ impl Bonemealable for WeepingVinesPlantBlock {
         pos: BlockPos,
     ) -> bool {
         self.growing_plant_body_block()
-            .as_bonemealable()
-            .expect("failed to get weeping_vines_plant_block as bonemealable")
             .is_valid_bonemeal_target(state, world, pos)
     }
 
@@ -98,12 +104,37 @@ impl Bonemealable for WeepingVinesPlantBlock {
         pos: BlockPos,
     ) {
         self.growing_plant_body_block()
-            .as_bonemealable()
-            .expect("failed to get weeping_vines_plant_block as bonemealable")
             .perform_bonemeal(state, world, rng, pos);
     }
 
     fn bonemeal_action_type(&self) -> BonemealAction {
         BonemealAction::Grower
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::test_support::init_test_registry;
+
+    use super::*;
+    use crate::test_support::TestLevel;
+
+    #[test]
+    fn bonemeal_target_follows_connected_head() {
+        init_test_registry();
+
+        let behavior = WeepingVinesPlantBlock::new(&vanilla_blocks::WEEPING_VINES_PLANT);
+        let state = vanilla_blocks::WEEPING_VINES_PLANT.default_state();
+        let open_level = TestLevel::default().with_block(
+            BlockPos::ZERO.below(),
+            vanilla_blocks::WEEPING_VINES.default_state(),
+        );
+        assert!(behavior.is_valid_bonemeal_target(state, &open_level, BlockPos::ZERO));
+
+        let blocked_level = open_level.with_block(
+            BlockPos::ZERO.below().below(),
+            vanilla_blocks::NETHERRACK.default_state(),
+        );
+        assert!(!behavior.is_valid_bonemeal_target(state, &blocked_level, BlockPos::ZERO));
     }
 }
