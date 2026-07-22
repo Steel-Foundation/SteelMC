@@ -5,9 +5,9 @@ use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
-use crate::REGISTRY;
 use crate::TaggedRegistryExt;
 use crate::sound_event::SoundEventRef;
+use crate::{REGISTRY, RegistryTags};
 
 #[derive(Debug)]
 pub struct Biome {
@@ -273,7 +273,7 @@ pub type BiomeRef = &'static Biome;
 pub struct BiomeRegistry {
     biomes_by_id: Vec<BiomeRef>,
     biomes_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -283,7 +283,7 @@ impl BiomeRegistry {
         Self {
             biomes_by_id: Vec::new(),
             biomes_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

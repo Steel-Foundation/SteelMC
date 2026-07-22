@@ -109,6 +109,13 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     /// Block entities receive a `Weak<World>` at construction time.
     fn get_level(&self) -> Option<Arc<World>>;
 
+    /// Handles a block event delegated by the owning block behavior.
+    ///
+    /// Mirrors Vanilla `BlockEntity.triggerEvent`.
+    fn trigger_event(&mut self, _param_a: i32, _param_b: i32) -> bool {
+        false
+    }
+
     /// Called before the block entity is removed to handle side effects.
     ///
     /// For example, containers should drop their contents here.

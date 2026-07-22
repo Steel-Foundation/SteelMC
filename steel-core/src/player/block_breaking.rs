@@ -23,7 +23,7 @@ use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt};
 use crate::entity::{Entity, LivingEntity};
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
-use crate::world::{World, game_event_context::GameEventContext};
+use crate::world::{ConditionalBlockSetResult, World, game_event_context::GameEventContext};
 
 /// Manages the block breaking state for a player.
 ///
@@ -298,8 +298,11 @@ impl BlockBreakingManager {
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
         // block leaves water behind instead of air.
         let replacement = fluid_state_to_block(state.get_fluid_state());
+        // player_will_destroy may mutate the world itself, so block breaking remains globally
+        // exclusive. The normal removal path still rejects a stale observed state.
         let changed = changed_by_player_will_destroy
-            || world.set_block(pos, replacement, UpdateFlags::UPDATE_ALL);
+            || world.set_block_if_unchanged(pos, state, replacement, UpdateFlags::UPDATE_ALL)
+                == ConditionalBlockSetResult::Changed;
 
         if changed {
             // Play block destruction particles and sound (skip for fire blocks like vanilla)

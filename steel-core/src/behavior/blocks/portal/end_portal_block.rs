@@ -89,6 +89,20 @@ impl BlockBehavior for EndPortalBlock {
         ))))
     }
 
+    fn trigger_event(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        param_a: i32,
+        param_b: i32,
+    ) -> bool {
+        let Some(block_entity) = world.get_block_entity(pos) else {
+            return false;
+        };
+        block_entity.lock().trigger_event(param_a, param_b)
+    }
+
     fn entity_inside(
         &self,
         _state: BlockStateId,
@@ -158,6 +172,20 @@ impl BlockBehavior for EndGatewayBlock {
         Some(Arc::new(SyncMutex::new(EndGatewayBlockEntity::new(
             level, pos, state,
         ))))
+    }
+
+    fn trigger_event(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        param_a: i32,
+        param_b: i32,
+    ) -> bool {
+        let Some(block_entity) = world.get_block_entity(pos) else {
+            return false;
+        };
+        block_entity.lock().trigger_event(param_a, param_b)
     }
 
     fn entity_inside(

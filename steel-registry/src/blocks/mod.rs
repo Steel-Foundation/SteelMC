@@ -19,7 +19,7 @@ use rustc_hash::FxHashMap;
 use crate::blocks::behavior::BlockConfig;
 use crate::blocks::properties::Property;
 use crate::blocks::shapes::ShapeChannel;
-use crate::{RegistryExt, TaggedRegistryExt};
+use crate::{RegistryExt, RegistryTags, TaggedRegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
@@ -289,7 +289,7 @@ impl Block {
     pub fn state_count(&self) -> u16 {
         self.properties
             .iter()
-            .map(|p| p.get_possible_value_names().len() as u16)
+            .map(|property| property.value_count() as u16)
             .product()
     }
 
@@ -305,7 +305,7 @@ pub type BlockRef = &'static Block;
 pub struct BlockRegistry {
     blocks_by_id: Vec<BlockRef>,
     blocks_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
     pub state_to_block_lookup: Vec<BlockRef>,
     /// Maps state IDs to block IDs (parallel to `state_to_block_lookup` for O(1) lookup)
@@ -329,7 +329,7 @@ impl BlockRegistry {
         Self {
             blocks_by_id: Vec::new(),
             blocks_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
             state_to_block_lookup: Vec::new(),
             state_to_block_id: Vec::new(),
@@ -422,12 +422,7 @@ impl BlockRegistry {
         Self::decode_property_indices(block, relative_index)
             .into_iter()
             .zip(block.properties)
-            .map(|(value_index, prop)| {
-                (
-                    prop.get_name(),
-                    prop.get_possible_value_names()[value_index],
-                )
-            })
+            .map(|(value_index, prop)| (prop.get_name(), prop.value_name_from_index(value_index)))
             .collect()
     }
 
@@ -514,7 +509,7 @@ impl BlockRegistry {
         let mut property_indices = vec![0; block.properties.len()];
 
         for (i, prop) in block.properties.iter().enumerate().rev() {
-            let count = prop.get_possible_value_names().len() as u16;
+            let count = prop.value_count() as u16;
             property_indices[i] = (offset % count) as usize;
             offset /= count;
         }
@@ -534,10 +529,8 @@ impl BlockRegistry {
                 .position(|p| p.get_name() == prop_name)?;
 
             let prop = block.properties[prop_idx];
-            let value_idx = prop
-                .get_possible_value_names()
-                .iter()
-                .position(|v| *v == prop_value)?;
+            let value_idx = (0..prop.value_count())
+                .find(|&index| prop.value_name_from_index(index) == prop_value)?;
 
             property_indices[prop_idx] = value_idx;
         }
@@ -550,10 +543,17 @@ impl BlockRegistry {
         let mut multiplier = 1u16;
         for (idx, prop) in property_indices.iter().zip(block.properties.iter()).rev() {
             offset += *idx as u16 * multiplier;
-            multiplier *= prop.get_possible_value_names().len() as u16;
+            multiplier *= prop.value_count() as u16;
         }
 
         offset
+    }
+
+    fn property_stride(block: BlockRef, property_index: usize) -> u16 {
+        block.properties[property_index + 1..]
+            .iter()
+            .map(|property| property.value_count() as u16)
+            .product()
     }
 
     // Panics if that property isn't supposed to be on this block.
@@ -584,10 +584,11 @@ impl BlockRegistry {
         // Calculate the relative state index
         let relative_index = id.0 - base_state_id;
 
-        let property_indices = Self::decode_property_indices(block, relative_index);
         let block_property = block.properties[property_index];
-        let block_values = block_property.get_possible_value_names();
-        let block_value = block_values[property_indices[property_index]];
+        let stride = Self::property_stride(block, property_index);
+        let value_index =
+            usize::from(relative_index / stride % block_property.value_count() as u16);
+        let block_value = block_property.value_name_from_index(value_index);
 
         property.get_value(block_value)
     }
@@ -621,22 +622,12 @@ impl BlockRegistry {
         // Calculate the relative state index
         let relative_index = id.0 - base_state_id;
 
-        // Decode all property indices from the relative state index.
-        // Properties are decoded in reverse order (last property = inner loop).
-        let mut index = relative_index;
-        let mut property_indices = vec![0usize; block.properties.len()];
-
-        for (i, prop) in block.properties.iter().enumerate().rev() {
-            let count = prop.get_possible_value_names().len() as u16;
-            property_indices[i] = (index % count) as usize;
-            index /= count;
-        }
-
         let caller_value_index = property.get_internal_index(&value);
-        let caller_values = property.get_possible_value_names();
-        let value_name = caller_values[caller_value_index];
-        let block_values = block.properties[property_index].get_possible_value_names();
-        let Some(new_value_index) = block_values.iter().position(|v| *v == value_name) else {
+        let value_name = property.value_name_from_index(caller_value_index);
+        let block_property = block.properties[property_index];
+        let Some(new_value_index) = (0..block_property.value_count())
+            .find(|&index| block_property.value_name_from_index(index) == value_name)
+        else {
             panic!(
                 "Value {} for property {} not found on block {}",
                 value_name,
@@ -644,17 +635,14 @@ impl BlockRegistry {
                 block.key
             );
         };
-        property_indices[property_index] = new_value_index;
-
-        // Re-encode the property indices back to a state ID.
-        // Properties are processed in reverse order (last property = inner loop).
-        let mut new_relative_index = 0u16;
-        let mut multiplier = 1u16;
-        for (i, prop) in block.properties.iter().enumerate().rev() {
-            let count = prop.get_possible_value_names().len() as u16;
-            new_relative_index += property_indices[i] as u16 * multiplier;
-            multiplier *= count;
-        }
+        let stride = Self::property_stride(block, property_index);
+        let old_value_index =
+            usize::from(relative_index / stride % block_property.value_count() as u16);
+        let new_relative_index = if new_value_index >= old_value_index {
+            relative_index + (new_value_index - old_value_index) as u16 * stride
+        } else {
+            relative_index - (old_value_index - new_value_index) as u16 * stride
+        };
 
         BlockStateId(base_state_id + new_relative_index)
     }
@@ -936,6 +924,45 @@ mod tests {
         vanilla_blocks::register_blocks(&mut registry);
         registry.freeze();
         registry
+    }
+
+    #[test]
+    fn tag_modification_keeps_order_and_membership_in_sync() {
+        let mut registry = BlockRegistry::new();
+        vanilla_blocks::register_blocks(&mut registry);
+        let tag = Identifier::new_static("test", "ordered_membership");
+        registry.register_tag(
+            Identifier::new_static("test", "ordered_membership"),
+            &["stone", "dirt"],
+        );
+
+        assert!(registry.is_in_tag(&vanilla_blocks::STONE, &tag));
+        assert_eq!(
+            registry
+                .iter_tag(&tag)
+                .map(|block| block.key.path.as_ref())
+                .collect::<Vec<_>>(),
+            ["stone", "dirt"]
+        );
+
+        registry.modify_tag(&tag, |_| {
+            vec![
+                Identifier::vanilla_static("oak_log"),
+                Identifier::vanilla_static("dirt"),
+            ]
+        });
+        registry.freeze();
+
+        assert!(!registry.is_in_tag(&vanilla_blocks::STONE, &tag));
+        assert!(registry.is_in_tag(&vanilla_blocks::OAK_LOG, &tag));
+        assert!(registry.is_in_tag(&vanilla_blocks::DIRT, &tag));
+        assert_eq!(
+            registry
+                .iter_tag(&tag)
+                .map(|block| block.key.path.as_ref())
+                .collect::<Vec<_>>(),
+            ["oak_log", "dirt"]
+        );
     }
 
     #[test]

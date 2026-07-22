@@ -112,9 +112,26 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-/// Main entry point for the Steel Minecraft server.
-///
-///
+// Windows defaults to a 1 MB main thread stack, which overflows in debug
+// builds due to deeply nested generated density functions.
+fn main() {
+    #[cfg(all(windows, debug_assertions))]
+    {
+        thread::Builder::new()
+            .name("steel-main".to_owned())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(steel_main)
+            .expect("failed to spawn steel-main bootstrap thread")
+            .join()
+            .expect("steel-main thread panicked");
+    }
+
+    #[cfg(not(all(windows, debug_assertions)))]
+    {
+        steel_main();
+    }
+}
+
 /// Why 2 runtimes?
 ///
 /// The chunk runtime is very task heavy as it sometimes spawns thousands of tasks at once. It is also very await heavy in the part where it awaits its current layer.
@@ -126,7 +143,7 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
     clippy::unwrap_used,
     reason = "runtime build failures are fatal and unrecoverable at startup"
 )]
-fn main() {
+fn steel_main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
@@ -385,14 +402,11 @@ async fn shutdown_worlds(server: &Arc<Server>) {
     }
 
     let mut players_to_save = Vec::new();
-    for world in server.worlds.values() {
-        world.players.iter_players(|_, player| {
-            let domain = player.get_world().domain().to_owned();
-            let data = PersistentPlayerData::from_player(player);
-            player.store_ender_pearls_with_player();
-            players_to_save.push((player.clone(), domain, data));
-            true
-        });
+    for player in server.get_players() {
+        let domain = player.get_world().domain().to_owned();
+        let data = PersistentPlayerData::from_player(&player);
+        player.store_ender_pearls_with_player();
+        players_to_save.push((player, domain, data));
     }
 
     // Save all dirty chunks before shutdown

@@ -1,6 +1,8 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
+use crate::RegistryTags;
+
 #[derive(Debug)]
 pub struct VillagerType {
     pub key: Identifier,
@@ -11,7 +13,7 @@ pub type VillagerTypeRef = &'static VillagerType;
 pub struct VillagerTypeRegistry {
     villager_types_by_id: Vec<VillagerTypeRef>,
     villager_types_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -21,7 +23,7 @@ impl VillagerTypeRegistry {
         Self {
             villager_types_by_id: Vec::new(),
             villager_types_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

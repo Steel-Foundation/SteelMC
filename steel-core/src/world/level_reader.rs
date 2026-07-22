@@ -105,8 +105,26 @@ pub trait ScheduledTickAccess: LevelReader {
         false
     }
 
+    /// Returns whether the same `(pos, block)` was selected for this tick and has not started.
+    #[expect(
+        unused_variables,
+        reason = "worldgen and most test level surfaces do not execute scheduled tick batches"
+    )]
+    fn will_tick_block_this_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
+        false
+    }
+
     /// Schedules a fluid tick using vanilla's default priority.
     fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool;
+
+    /// Returns whether the same `(pos, fluid)` was selected for this tick and has not started.
+    #[expect(
+        unused_variables,
+        reason = "worldgen and most test level surfaces do not execute scheduled tick batches"
+    )]
+    fn will_tick_fluid_this_tick(&self, pos: BlockPos, fluid: FluidRef) -> bool {
+        false
+    }
 }
 
 /// Mutable level access needed by vanilla `LevelAccessor` block hooks.

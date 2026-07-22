@@ -3,6 +3,7 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
+use crate::RegistryTags;
 use crate::mob_effect::MobEffectRef;
 
 /// One base effect supplied by a registered potion.
@@ -32,7 +33,7 @@ pub type PotionRef = &'static Potion;
 pub struct PotionRegistry {
     potions_by_id: Vec<PotionRef>,
     potions_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -42,7 +43,7 @@ impl PotionRegistry {
         Self {
             potions_by_id: Vec::new(),
             potions_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }
@@ -70,7 +71,10 @@ mod tests {
     use steel_utils::Identifier;
 
     use crate::test_support::init_test_registry;
-    use crate::{REGISTRY, RegistryExt, TaggedRegistryExt};
+    use crate::{REGISTRY, RegistryExt, TaggedRegistryExt, potion::Potion};
+
+    static FIRST_DUPLICATE: Potion = Potion::new(Identifier::vanilla_static("duplicate"), &[]);
+    static SECOND_DUPLICATE: Potion = Potion::new(Identifier::vanilla_static("duplicate"), &[]);
 
     #[test]
     fn extracted_potions_follow_vanilla_ids_and_effects() {
@@ -100,5 +104,23 @@ mod tests {
         init_test_registry();
         let tradeable = Identifier::vanilla_static("tradeable");
         assert!(REGISTRY.potions.get_tag(&tradeable).is_some());
+    }
+
+    #[test]
+    fn tag_membership_and_iteration_follow_duplicate_key_replacement() {
+        let mut registry = super::PotionRegistry::new();
+        let tag = Identifier::vanilla_static("test_tag");
+        registry.register(&FIRST_DUPLICATE);
+        registry.register_tag(tag.clone(), &["duplicate"]);
+        registry.register(&SECOND_DUPLICATE);
+
+        assert!(registry.is_in_tag(&FIRST_DUPLICATE, &tag));
+        assert!(registry.is_in_tag(&SECOND_DUPLICATE, &tag));
+        assert!(
+            registry
+                .iter_tag(&tag)
+                .next()
+                .is_some_and(|entry| std::ptr::eq(entry, &raw const SECOND_DUPLICATE))
+        );
     }
 }

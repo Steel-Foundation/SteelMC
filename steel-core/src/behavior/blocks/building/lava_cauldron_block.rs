@@ -68,7 +68,7 @@ impl BlockBehavior for LavaCauldronBlock {
         effect_collector.apply(InsideBlockEffectType::LavaIgnite);
         effect_collector.run_after(
             InsideBlockEffectType::LavaIgnite,
-            Box::new(|entity| entity.lava_hurt()),
+            Box::new(Entity::lava_hurt),
         );
     }
 }

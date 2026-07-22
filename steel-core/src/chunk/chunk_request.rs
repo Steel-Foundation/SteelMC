@@ -9,6 +9,7 @@ use crate::chunk::{
     chunk_access::ChunkStatus,
     chunk_holder::ChunkHolder,
     chunk_map::ChunkMap,
+    chunk_scheduler::ChunkTicketRevision,
     chunk_ticket_manager::{ChunkTicket, ticket_level_for_status},
 };
 
@@ -71,13 +72,14 @@ struct ChunkRequestInner {
     status: ChunkStatus,
     ticket_kind: ChunkTicketKind,
     ticket: ChunkTicket,
+    submission_revision: Option<ChunkTicketRevision>,
 }
 
 /// Handle for a ticketed chunk request.
 ///
 /// Dropping or cancelling the handle releases its tickets. The handle never
-/// creates chunk holders directly; holder creation remains owned by the normal
-/// chunk scheduling tick.
+/// creates chunk holders directly; lifecycle publication remains owned by the
+/// game-tick boundary.
 pub struct ChunkRequestHandle {
     inner: Option<ChunkRequestInner>,
 }
@@ -94,13 +96,7 @@ impl ChunkRequestHandle {
         ticket: ChunkTicket,
     ) -> Self {
         let positions = dedupe_positions(request.positions);
-
-        {
-            let mut tickets = chunk_map.chunk_tickets.lock();
-            for &pos in &positions {
-                tickets.add_ticket(pos, ticket);
-            }
-        }
+        let submission_revision = chunk_map.add_chunk_tickets(&positions, ticket);
 
         Self {
             inner: Some(ChunkRequestInner {
@@ -109,6 +105,7 @@ impl ChunkRequestHandle {
                 status: request.status,
                 ticket_kind: request.ticket_kind,
                 ticket,
+                submission_revision,
             }),
         }
     }
@@ -134,7 +131,7 @@ impl ChunkRequestHandle {
     }
 
     /// Polls request readiness. Chunk holder creation and generation scheduling
-    /// are owned by the chunk scheduling tick.
+    /// are owned by the chunk scheduling epochs.
     #[must_use]
     pub fn poll(&self) -> ChunkRequestState {
         let Some(inner) = &self.inner else {
@@ -143,6 +140,9 @@ impl ChunkRequestHandle {
         if inner.positions.is_empty() {
             return ChunkRequestState::Ready;
         }
+        let ticket_revision_committed = inner
+            .submission_revision
+            .is_none_or(|revision| inner.chunk_map.is_ticket_revision_committed(revision));
 
         let mut ready = 0;
         for &pos in &inner.positions {
@@ -159,7 +159,7 @@ impl ChunkRequestHandle {
             }
         }
 
-        if ready == inner.positions.len() {
+        if ticket_revision_committed && ready == inner.positions.len() {
             ChunkRequestState::Ready
         } else {
             ChunkRequestState::Pending {
@@ -173,6 +173,12 @@ impl ChunkRequestHandle {
     #[must_use]
     pub fn ready_chunks(&self) -> Option<ReadyChunks> {
         let inner = self.inner.as_ref()?;
+        if inner
+            .submission_revision
+            .is_some_and(|revision| !inner.chunk_map.is_ticket_revision_committed(revision))
+        {
+            return None;
+        }
         let mut holders = Vec::with_capacity(inner.positions.len());
 
         for &pos in &inner.positions {
@@ -202,10 +208,9 @@ impl ChunkRequestHandle {
             return;
         };
 
-        let mut tickets = inner.chunk_map.chunk_tickets.lock();
-        for pos in inner.positions {
-            tickets.remove_ticket(pos, inner.ticket);
-        }
+        let _ = inner
+            .chunk_map
+            .remove_chunk_tickets(&inner.positions, inner.ticket);
     }
 }
 
@@ -219,7 +224,7 @@ impl ChunkMap {
     /// Adds tickets for a chunk request and returns a pollable handle.
     ///
     /// The returned handle owns the tickets. Holder creation and generation
-    /// scheduling are handled by the chunk scheduling tick.
+    /// scheduling are handled by chunk scheduling epochs.
     #[must_use]
     pub fn request_chunks(self: &Arc<Self>, request: ChunkRequest) -> ChunkRequestHandle {
         ChunkRequestHandle::new(self.clone(), request)
@@ -282,6 +287,19 @@ fn dedupe_positions(positions: Vec<ChunkPos>) -> Box<[ChunkPos]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::fresh_test_world;
+    use std::{thread, time::Duration};
+
+    fn drive_request_until_ready(chunk_map: &Arc<ChunkMap>, request: &ChunkRequestHandle) {
+        for _ in 0..10_000 {
+            chunk_map.advance_scheduling();
+            if request.poll() == ChunkRequestState::Ready {
+                return;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        panic!("chunk request did not become ready");
+    }
 
     #[test]
     fn dedupe_positions_preserves_first_occurrence_order() {
@@ -291,5 +309,30 @@ mod tests {
             ChunkPos::new(1, 2),
         ]);
         assert_eq!(&*positions, &[ChunkPos::new(1, 2), ChunkPos::new(3, 4)]);
+    }
+
+    #[test]
+    fn ready_chunk_still_waits_for_its_ticket_revision_to_commit() {
+        let world = fresh_test_world("chunk_request_revision");
+        let pos = ChunkPos::new(4, -7);
+        let first =
+            world
+                .chunk_map
+                .request_chunk(pos, ChunkStatus::Empty, ChunkTicketKind::Command);
+        drive_request_until_ready(&world.chunk_map, &first);
+
+        let second =
+            world
+                .chunk_map
+                .request_chunk(pos, ChunkStatus::Empty, ChunkTicketKind::Command);
+
+        assert_eq!(
+            second.poll(),
+            ChunkRequestState::Pending { ready: 1, total: 1 }
+        );
+        assert!(second.ready_chunks().is_none());
+
+        drive_request_until_ready(&world.chunk_map, &second);
+        assert!(second.ready_chunks().is_some());
     }
 }

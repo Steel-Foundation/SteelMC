@@ -20,7 +20,7 @@ use steel_core::chunk::chunk_holder::ChunkHolder;
 use steel_core::chunk::chunk_map::ChunkMap;
 use steel_core::chunk::chunk_pyramid::{ChunkDependencies, ChunkStep, GENERATION_PYRAMID};
 use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
-use steel_core::chunk::chunk_ticket_manager::{ChunkTicketLevel, MAX_VIEW_DISTANCE};
+use steel_core::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::entity::init_entities;
@@ -70,8 +70,7 @@ static BENCH_GENERATION_POOL: LazyLock<Arc<rayon::ThreadPool>> = LazyLock::new(|
             .expect("bench generation pool should build"),
     )
 });
-const BENCH_HOLDER_LOAD_LEVEL: ChunkTicketLevel =
-    ChunkTicketLevel::for_full_chunk_radius(MAX_VIEW_DISTANCE);
+const BENCH_HOLDER_LOAD_LEVEL: ChunkTicketLevel = ChunkTicketLevel::STRONGEST;
 
 fn ensure_registry() {
     INIT.call_once(|| {

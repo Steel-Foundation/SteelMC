@@ -12,7 +12,7 @@ use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entr
 use steel_utils::serial::{PrefixedRead, PrefixedWrite, ReadFrom, WriteTo};
 use text_components::TextComponent;
 
-use crate::{REGISTRY, RegistryExt, RegistryHolderEntry};
+use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
 
 /// Texture suffix used by an armor trim material.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -331,7 +331,7 @@ pub type TrimMaterialRef = &'static TrimMaterial;
 pub struct TrimMaterialRegistry {
     trim_materials_by_id: Vec<TrimMaterialRef>,
     trim_materials_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -341,7 +341,7 @@ impl TrimMaterialRegistry {
         Self {
             trim_materials_by_id: Vec::new(),
             trim_materials_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

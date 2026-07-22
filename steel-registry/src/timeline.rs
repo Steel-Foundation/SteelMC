@@ -3,6 +3,7 @@ use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
+use crate::RegistryTags;
 use crate::world_clock::WorldClockRef;
 
 #[derive(Debug, Clone)]
@@ -164,7 +165,7 @@ pub type TimelineRef = &'static Timeline;
 pub struct TimelineRegistry {
     timelines_by_id: Vec<TimelineRef>,
     timelines_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -174,7 +175,7 @@ impl TimelineRegistry {
         Self {
             timelines_by_id: Vec::new(),
             timelines_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

@@ -147,6 +147,7 @@ pub mod sound_event;
 pub mod structure;
 pub mod structure_processor;
 pub mod structure_set;
+mod tags;
 pub mod template_pool;
 pub mod timeline;
 pub mod trim_material;
@@ -174,6 +175,7 @@ pub use resolvable_profile::{
     PartialProfile, PlayerModelType, PlayerSkinPatch, ProfileProperty, ResolvableProfile,
     ResolvableProfileContents, StoredGameProfile,
 };
+pub use tags::RegistryTags;
 
 #[expect(warnings)]
 #[rustfmt::skip]

@@ -14,14 +14,13 @@ use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_entity_data::ItemEntityData;
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
-use steel_utils::{DowncastType, DowncastTypeKey};
+use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
 use uuid::Uuid;
 
 use crate::entity::damage::DamageSource;
 
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityCapabilities, EntitySyncedData,
-    ItemMergeEntity, RemovalReason,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData, RemovalReason,
 };
 use crate::inventory::container::Container;
 use crate::physics::MoverType;
@@ -404,12 +403,12 @@ impl ItemEntity {
     ///
     /// Mirrors vanilla's `ItemEntity.tryToMerge()`.
     /// The item with fewer items is merged into the one with more.
-    fn try_to_merge(&self, other: &dyn ItemMergeEntity) {
+    fn try_to_merge(&self, other: &Self) {
         let this_stack = self.get_item();
-        let other_stack = other.item_merge_stack();
+        let other_stack = other.get_item();
 
         // Both items must have the same owner (target)
-        if self.get_owner() != other.item_merge_owner() {
+        if self.get_owner() != other.get_owner() {
             return;
         }
 
@@ -429,9 +428,9 @@ impl ItemEntity {
     ///
     /// Mirrors vanilla's `ItemEntity.merge(ItemEntity, ItemStack, ItemEntity, ItemStack)`.
     fn merge_stacks(
-        to_item: &dyn ItemMergeEntity,
+        to_item: &Self,
         to_stack: &ItemStack,
-        from_item: &dyn ItemMergeEntity,
+        from_item: &Self,
         from_stack: &ItemStack,
     ) {
         // Calculate how many items to transfer
@@ -448,10 +447,25 @@ impl ItemEntity {
         new_from_stack.shrink(transfer_count);
 
         // Update the destination item
-        let (from_pickup_delay, from_age) = from_item.item_merge_timing();
-        to_item.apply_item_merge_destination(new_to_stack, from_pickup_delay, from_age);
+        let (from_pickup_delay, from_age) = {
+            let state = from_item.item_state.lock();
+            (state.pickup_delay, state.age)
+        };
+        to_item.set_item(new_to_stack);
 
-        from_item.apply_item_merge_source(new_from_stack);
+        // Pickup delay is the max of both so merged items do not become instantly pickable.
+        // Age is the min of both so merged items do not despawn prematurely.
+        {
+            let mut state = to_item.item_state.lock();
+            state.pickup_delay = state.pickup_delay.max(from_pickup_delay);
+            state.age = state.age.min(from_age);
+        }
+
+        if new_from_stack.is_empty() {
+            from_item.set_removed(RemovalReason::Discarded);
+        } else {
+            from_item.set_item(new_from_stack);
+        }
     }
 
     /// Attempts to merge this item with nearby item entities.
@@ -474,10 +488,9 @@ impl ItemEntity {
                 continue;
             }
 
-            // Try to get as ItemEntity
-            if let Some(other_item) = entity.as_item_merge_entity() {
+            if let Some(other_item) = entity.downcast_ref::<Self>() {
                 // Double-check mergability (might have changed)
-                if other_item.is_mergeable_item_entity() {
+                if other_item.is_mergeable() {
                     self.try_to_merge(other_item);
 
                     // If we've been removed (merged into other), stop
@@ -660,10 +673,6 @@ impl Entity for ItemEntity {
         Some(&self.entity_data)
     }
 
-    fn capabilities(&self) -> EntityCapabilities<'_> {
-        EntityCapabilities::none().with_item_merge_entity(self)
-    }
-
     fn block_pos_below_that_affects_movement(&self) -> Option<BlockPos> {
         self.on_pos(0.999_999)
     }
@@ -763,47 +772,6 @@ impl Entity for ItemEntity {
     }
 }
 
-impl ItemMergeEntity for ItemEntity {
-    fn is_mergeable_item_entity(&self) -> bool {
-        self.is_mergeable()
-    }
-
-    fn try_merge_item_entity(&self, other: &dyn ItemMergeEntity) {
-        self.try_to_merge(other);
-    }
-
-    fn item_merge_stack(&self) -> ItemStack {
-        self.get_item()
-    }
-
-    fn item_merge_owner(&self) -> Option<Uuid> {
-        self.get_owner()
-    }
-
-    fn item_merge_timing(&self) -> (i32, i32) {
-        let state = self.item_state.lock();
-        (state.pickup_delay, state.age)
-    }
-
-    fn apply_item_merge_destination(&self, stack: ItemStack, pickup_delay: i32, age: i32) {
-        self.set_item(stack);
-
-        // Pickup delay is the max of both so merged items do not become instantly pickable.
-        // Age is the min of both so merged items do not despawn prematurely.
-        let mut state = self.item_state.lock();
-        state.pickup_delay = state.pickup_delay.max(pickup_delay);
-        state.age = state.age.min(age);
-    }
-
-    fn apply_item_merge_source(&self, stack: ItemStack) {
-        if stack.is_empty() {
-            self.set_removed(RemovalReason::Discarded);
-        } else {
-            self.set_item(stack);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Weak;
@@ -815,7 +783,7 @@ mod tests {
         vanilla_entities, vanilla_items,
     };
 
-    use crate::entity::{Entity, ItemMergeEntity, damage::DamageSource};
+    use crate::entity::{Entity, damage::DamageSource};
     use crate::test_support::test_world;
     use crate::world::World;
 
@@ -891,7 +859,7 @@ mod tests {
     }
 
     #[test]
-    fn item_merge_capability_preserves_vanilla_stack_and_timing() {
+    fn item_merge_preserves_vanilla_stack_and_timing() {
         init_test_registry();
 
         let source = ItemEntity::with_item(
@@ -914,8 +882,7 @@ mod tests {
         target.set_pickup_delay(1);
         target.set_age(50);
 
-        assert!(source.as_item_merge_entity().is_some());
-        source.try_merge_item_entity(&target);
+        source.try_to_merge(&target);
 
         assert!(source.is_removed());
         assert_eq!(target.get_item().count(), 30);

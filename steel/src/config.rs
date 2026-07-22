@@ -16,6 +16,7 @@ use tracing_subscriber::filter::Directive;
 
 use futures::future::BoxFuture;
 use reqwest::Url;
+use steel_core::chunk::chunk_ticket_manager::MAX_SUPPORTED_VIEW_DISTANCE;
 use steel_core::config::{
     CompressionInfo, RuntimeConfig, ServerLinks, WorldsConfig, validate_login_security,
 };
@@ -324,7 +325,9 @@ impl ServerConfig {
             command_spam_threshold_seconds: self.command_spam_threshold_seconds,
             compression: self.compression,
             server_links: self.server_links,
+            packet_workers: self.threads.packet_workers,
             chunk_generation_threads: self.threads.chunk_generation,
+            chunk_encoding_threads: self.threads.chunk_encoding,
         }
     }
 }
@@ -339,8 +342,12 @@ pub struct ThreadConfig {
     pub main_runtime: Option<usize>,
     /// Worker threads for the chunk Tokio runtime.
     pub chunk_runtime: Option<usize>,
+    /// Persistent workers for inter-tick gameplay packet processing.
+    pub packet_workers: Option<usize>,
     /// Worker threads for the Rayon chunk generation pool.
     pub chunk_generation: Option<usize>,
+    /// Worker threads for the Rayon chunk encoding pool.
+    pub chunk_encoding: Option<usize>,
 }
 
 /// Logging configuration
@@ -532,8 +539,10 @@ fn validate(config: &ServerConfig) -> Result<(), &'static str> {
     if !config.allow_extended_view_distance && !(1..=32).contains(&config.view_distance) {
         return Err("View distance must in range 1..32");
     }
-    if config.allow_extended_view_distance && !(1..=127).contains(&config.view_distance) {
-        return Err("View distance must in range 1..127");
+    if config.allow_extended_view_distance
+        && !(1..=MAX_SUPPORTED_VIEW_DISTANCE).contains(&config.view_distance)
+    {
+        return Err("View distance must in range 1..128");
     }
     if let Some(auth_server) = &config.auth_server {
         let Ok(url) = Url::parse(auth_server) else {
@@ -612,6 +621,24 @@ mod tests {
             toml::from_str(DEFAULT_GROUPS).expect("default groups parse");
         PermissionGroups::from_config(groups).expect("default groups validate");
         assert!(DEFAULT_GROUPS.starts_with(GROUPS_CONFIG_HEADER));
+    }
+
+    #[test]
+    fn packaged_schema_declares_server_thread_settings() {
+        let Ok(schema) = serde_json::from_str::<serde_json::Value>(include_str!(
+            "../../package-content/config.schema.json"
+        )) else {
+            panic!("packaged config schema should be valid JSON");
+        };
+        let Some(thread_properties) = schema
+            .pointer("/properties/server/properties/threads/properties")
+            .and_then(serde_json::Value::as_object)
+        else {
+            panic!("packaged config schema should define server thread properties");
+        };
+
+        assert!(thread_properties.contains_key("packet_workers"));
+        assert!(thread_properties.contains_key("chunk_encoding"));
     }
 
     #[tokio::test]
@@ -734,20 +761,27 @@ mod tests {
     }
 
     #[test]
-    fn configured_thread_counts_parse_and_generation_flows_to_runtime_config() {
+    fn configured_thread_counts_parse_and_flow_to_runtime_config() {
         let config_toml = DEFAULT_CONFIG
             .replace("main_runtime = 0", "main_runtime = 3")
             .replace("chunk_runtime = 0", "chunk_runtime = 4")
-            .replace("chunk_generation = 0", "chunk_generation = 5");
+            .replace("packet_workers = 0", "packet_workers = 5")
+            .replace("chunk_generation = 0", "chunk_generation = 6")
+            .replace("chunk_encoding = 0", "chunk_encoding = 7");
         let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
         assert_eq!(config.server.threads.main_runtime, Some(3));
         assert_eq!(config.server.threads.chunk_runtime, Some(4));
-        assert_eq!(config.server.threads.chunk_generation, Some(5));
+        assert_eq!(config.server.threads.packet_workers, Some(5));
+        assert_eq!(config.server.threads.chunk_generation, Some(6));
+        assert_eq!(config.server.threads.chunk_encoding, Some(7));
         assert_eq!(
-            config.server.into_runtime_config().chunk_generation_threads,
+            config.server.clone().into_runtime_config().packet_workers,
             Some(5)
         );
+        let runtime_config = config.server.into_runtime_config();
+        assert_eq!(runtime_config.chunk_generation_threads, Some(6));
+        assert_eq!(runtime_config.chunk_encoding_threads, Some(7));
     }
 
     #[test]
@@ -789,11 +823,27 @@ mod tests {
                 "allow_extended_view_distance = false",
                 "allow_extended_view_distance = true",
             )
-            .replace("view_distance = 10", "view_distance = 127")
-            .replace("simulation_distance = 10", "simulation_distance = 127");
+            .replace("view_distance = 10", "view_distance = 128")
+            .replace("simulation_distance = 10", "simulation_distance = 128");
         let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
 
         validate(&config.server).expect("extended view distance validates");
+    }
+
+    #[test]
+    fn validate_rejects_view_distance_above_supported_ticket_range() {
+        let config_toml = DEFAULT_CONFIG
+            .replace(
+                "allow_extended_view_distance = false",
+                "allow_extended_view_distance = true",
+            )
+            .replace("view_distance = 10", "view_distance = 129");
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(
+            validate(&config.server),
+            Err("View distance must in range 1..128")
+        );
     }
 
     #[test]

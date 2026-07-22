@@ -22,7 +22,9 @@ use crate::behavior::{
 };
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::player::Player;
-use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
+use crate::world::{
+    ConditionalBlockSetResult, LevelAccessor, LevelReader, ScheduledTickAccess, World,
+};
 
 /// Vanilla `BubbleColumnBlock` column propagation and fluid state.
 #[block_behavior]
@@ -200,14 +202,18 @@ impl BlockBehavior for BubbleColumnBlock {
         &self,
         world: &Arc<World>,
         pos: BlockPos,
-        _state: BlockStateId,
+        state: BlockStateId,
         _player: Option<&Player>,
     ) -> Option<PickupResult> {
-        world.set_block(
+        if world.set_block_if_unchanged(
             pos,
+            state,
             vanilla_blocks::AIR.default_state(),
             UpdateFlags::UPDATE_ALL_IMMEDIATE,
-        );
+        ) != ConditionalBlockSetResult::Changed
+        {
+            return None;
+        }
         Some(PickupResult {
             filled_bucket: ItemStack::new(&vanilla_items::WATER_BUCKET),
             sound: Some(&sound_events::ITEM_BUCKET_FILL),

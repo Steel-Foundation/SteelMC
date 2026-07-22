@@ -4,6 +4,8 @@ use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 use text_components::{EmbeddedNbtCodec, TextComponent};
 
+use crate::RegistryTags;
+
 /// Represents a dialog defined in data packs.
 #[derive(Debug)]
 pub struct Dialog {
@@ -71,7 +73,7 @@ pub type DialogRef = &'static Dialog;
 pub struct DialogRegistry {
     dialogs_by_id: Vec<DialogRef>,
     dialogs_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -81,7 +83,7 @@ impl DialogRegistry {
         Self {
             dialogs_by_id: Vec::new(),
             dialogs_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

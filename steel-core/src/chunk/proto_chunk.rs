@@ -32,9 +32,7 @@ use crate::chunk::{
 };
 use crate::entity::{EntityStorage, SharedEntity};
 use crate::world::World;
-use crate::world::tick_scheduler::{
-    BlockTick, BlockTickList, FluidTick, FluidTickList, TickPriority,
-};
+use crate::world::tick_scheduler::{BlockTickList, FluidTickList, TickPriority};
 use crate::worldgen::carving_mask::CarvingMask;
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
@@ -43,7 +41,10 @@ fn empty_postprocessing(height: i32) -> Box<[Vec<u16>]> {
     (0..section_count).map(|_| Vec::new()).collect()
 }
 
-fn postprocessing_from_disk(height: i32, mut postprocessing: Vec<Vec<u16>>) -> Box<[Vec<u16>]> {
+pub(crate) fn postprocessing_from_disk(
+    height: i32,
+    mut postprocessing: Vec<Vec<u16>>,
+) -> Box<[Vec<u16>]> {
     let section_count = (height / 16) as usize;
     postprocessing.resize_with(section_count, Vec::new);
     postprocessing.truncate(section_count);
@@ -356,15 +357,7 @@ impl ProtoChunk {
     /// so worldgen-scheduled proto ticks run after promotion instead of preserving the
     /// requested delay from generation time.
     pub fn schedule_block_tick(&self, pos: BlockPos, block: BlockRef, priority: TickPriority) {
-        let tick = BlockTick {
-            tick_type: block,
-            pos,
-            delay: 0,
-            priority,
-            sub_tick_order: 0,
-        };
-
-        if self.block_ticks.lock().schedule(tick) {
+        if self.block_ticks.lock().schedule(block, pos, 0, priority, 0) {
             self.mark_unsaved();
         }
     }
@@ -373,15 +366,7 @@ impl ProtoChunk {
     ///
     /// See [`Self::schedule_block_tick`] for why proto ticks use delay `0`.
     pub fn schedule_fluid_tick(&self, pos: BlockPos, fluid: FluidRef, priority: TickPriority) {
-        let tick = FluidTick {
-            tick_type: fluid,
-            pos,
-            delay: 0,
-            priority,
-            sub_tick_order: 0,
-        };
-
-        if self.fluid_ticks.lock().schedule(tick) {
+        if self.fluid_ticks.lock().schedule(fluid, pos, 0, priority, 0) {
             self.mark_unsaved();
         }
     }
@@ -701,11 +686,10 @@ mod tests {
 
         proto.schedule_block_tick(pos, &vanilla_blocks::DIRT, TickPriority::Normal);
 
-        let ticks = proto.block_ticks.lock();
-        let tick = ticks
-            .iter()
-            .next()
-            .expect("proto chunk should store scheduled block tick");
+        let ticks = proto.block_ticks.lock().pack();
+        let Some(tick) = ticks.first() else {
+            panic!("proto chunk should store scheduled block tick");
+        };
 
         assert_eq!(tick.pos, pos);
         assert_eq!(tick.tick_type, &vanilla_blocks::DIRT);

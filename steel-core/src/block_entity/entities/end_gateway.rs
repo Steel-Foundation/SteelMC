@@ -15,7 +15,7 @@ use crate::world::World;
 const SPAWN_TIME: i64 = 200;
 const COOLDOWN_TIME: i32 = 40;
 const ATTENTION_INTERVAL: i64 = 2400;
-const EVENT_COOLDOWN: u8 = 1;
+const EVENT_COOLDOWN: i32 = 1;
 
 /// Vanilla `TheEndGatewayBlockEntity`.
 pub struct EndGatewayBlockEntity {
@@ -133,6 +133,14 @@ impl BlockEntity for EndGatewayBlockEntity {
 
     fn get_level(&self) -> Option<Arc<World>> {
         self.world.upgrade()
+    }
+
+    fn trigger_event(&mut self, param_a: i32, _param_b: i32) -> bool {
+        if param_a != EVENT_COOLDOWN {
+            return false;
+        }
+        self.teleport_cooldown = COOLDOWN_TIME;
+        true
     }
 
     fn load_additional(&mut self, nbt: &BorrowedNbtCompound<'_>) {
