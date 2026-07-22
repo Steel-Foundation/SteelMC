@@ -123,7 +123,7 @@ pub trait LivingEntity: Entity {
         self.living_base().attributes()
     }
 
-    /// Vanilla `LivingEntity.getLuck` — non-players contribute no luck to loot.
+    /// Vanilla `LivingEntity.getLuck` - non-players contribute no luck to loot.
     fn get_luck(&self) -> f32 {
         0.0
     }
