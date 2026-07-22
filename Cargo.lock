@@ -2800,7 +2800,6 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 name = "steel"
 version = "0.14.0+mc26.2"
 dependencies = [
- "base64",
  "chrono",
  "crossterm",
  "dhat",
@@ -2831,7 +2830,6 @@ dependencies = [
 name = "steel-core"
 version = "0.14.0+mc26.2"
 dependencies = [
- "anyhow",
  "arc-swap",
  "bitflags",
  "chrono",
@@ -2883,14 +2881,9 @@ dependencies = [
 name = "steel-crypto"
 version = "0.14.0+mc26.2"
 dependencies = [
- "base64",
  "log",
  "rand 0.10.0",
- "reqwest 0.13.2",
  "rsa",
- "serde",
- "serde_json",
- "steel-utils",
  "thiserror 2.0.18",
 ]
 
@@ -2986,7 +2979,6 @@ dependencies = [
  "glam",
  "heck",
  "md5",
- "num-traits",
  "parking_lot",
  "phf 0.13.1",
  "phf_codegen 0.13.1",

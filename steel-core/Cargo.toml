@@ -35,7 +35,6 @@ wincode.workspace = true
 
 # Error handling
 thiserror.workspace = true
-anyhow.workspace = true
 
 # Concurrency
 arc-swap.workspace = true
