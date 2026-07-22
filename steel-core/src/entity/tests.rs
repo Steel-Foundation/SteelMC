@@ -20,7 +20,7 @@ use steel_registry::{
 };
 use steel_utils::Downcast as _;
 use steel_utils::locks::SyncMutex;
-use steel_utils::types::InteractionHand;
+use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{
     BlockPos, BlockStateId, Direction, Identifier, SectionPos, WorldAabb, axis::Axis,
     block_util::FoundRectangle,
@@ -28,14 +28,14 @@ use steel_utils::{
 use text_components::{Modifier as _, TextComponent, format::Color, interactivity::ClickEvent};
 use uuid::Uuid;
 
-use crate::behavior::init_behaviors;
+use crate::behavior::{BlockBehavior, blocks::WitherRoseBlock, init_behaviors};
 use crate::chunk_saver::ChunkStorage;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::PigEntity;
 use crate::entity::mob::Mob;
 use crate::inventory::equipment::EquipmentSlot;
 use crate::portal::PortalKind;
-use crate::test_support::{cross_world_damage_test_world, test_world};
+use crate::test_support::{cross_world_damage_test_world, fresh_test_world, test_world};
 use crate::world::game_event_context::GameEventContext;
 use crate::world::game_event_listener::{GameEventListener, SharedGameEventListener};
 use crate::world::{LevelReader, World};
@@ -44,14 +44,14 @@ use super::{
     ActiveMobEffect, AttributeModifier, AttributeModifierOperation, DAMAGE_KNOCKBACK_POWER,
     DEFAULT_SWING_DURATION, DEFAULT_TICKS_REQUIRED_TO_FREEZE, Entity, EntityBase,
     EntityFluidContact, EntityLevelCallback, EntityMoveError, EntityOwnership, EntitySyncedData,
-    EntityVerticalMovementStateUpdate, InsideBlockEffectType, LivingEntity, LivingEntityBase,
-    LivingTravelInput, RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID, SharedEntity,
-    block_state_suffocates_eye_box, closest_open_space_direction, fall_damage_reset_clip_target,
-    fall_flying_collision_damage, fall_flying_free_fall_interval, get_input_vector,
-    indirect_passengers, passenger_transition_position, passenger_transition_rotation,
-    remove_after_changing_dimensions, should_apply_entity_cramming_damage,
-    should_apply_resolved_movement, start_riding_entities, transfer_leashables_to_holder,
-    trapdoor_usable_as_ladder_state,
+    EntityVerticalMovementStateUpdate, InsideBlockEffectCollector, InsideBlockEffectType,
+    LivingEntity, LivingEntityBase, LivingTravelInput, MobEffectInstance, RemovalReason,
+    SPEED_MODIFIER_POWDER_SNOW_ID, SharedEntity, block_state_suffocates_eye_box,
+    closest_open_space_direction, fall_damage_reset_clip_target, fall_flying_collision_damage,
+    fall_flying_free_fall_interval, get_input_vector, indirect_passengers,
+    passenger_transition_position, passenger_transition_rotation, remove_after_changing_dimensions,
+    should_apply_entity_cramming_damage, should_apply_resolved_movement, start_riding_entities,
+    transfer_leashables_to_holder, trapdoor_usable_as_ladder_state,
 };
 
 struct PushableTestEntity {
@@ -613,6 +613,7 @@ struct LivingFluidTestEntity {
     on_non_air_block_for_frost: bool,
     in_wall_for_base_tick: bool,
     flying_player: bool,
+    rejects_wither: bool,
 }
 
 impl LivingFluidTestEntity {
@@ -643,6 +644,7 @@ impl LivingFluidTestEntity {
             on_non_air_block_for_frost: false,
             in_wall_for_base_tick: false,
             flying_player: false,
+            rejects_wither: false,
         }
     }
 
@@ -684,6 +686,11 @@ impl LivingFluidTestEntity {
 
     const fn with_flying_player(mut self) -> Self {
         self.flying_player = true;
+        self
+    }
+
+    const fn rejecting_wither(mut self) -> Self {
+        self.rejects_wither = true;
         self
     }
 
@@ -765,6 +772,13 @@ impl LivingEntity for LivingFluidTestEntity {
         *self.health.lock() = health.clamp(0.0, self.get_max_health());
     }
 
+    fn can_be_affected(&self, effect: &MobEffectInstance) -> bool {
+        if self.rejects_wither && effect.effect() == vanilla_mob_effects::WITHER {
+            return false;
+        }
+        self.default_can_be_affected(effect)
+    }
+
     fn is_affected_by_fluids(&self) -> bool {
         self.affected_by_fluids
     }
@@ -780,6 +794,130 @@ impl LivingEntity for LivingFluidTestEntity {
     fn is_in_wall(&self) -> bool {
         !self.is_sleeping() && (self.in_wall_for_base_tick || Entity::is_in_wall(self))
     }
+}
+
+fn apply_wither_rose_effect(world: &Arc<World>, entity: &dyn Entity) {
+    let behavior = WitherRoseBlock::new(&vanilla_blocks::WITHER_ROSE);
+    behavior.entity_inside(
+        vanilla_blocks::WITHER_ROSE.default_state(),
+        world,
+        BlockPos::ZERO,
+        entity,
+        &mut InsideBlockEffectCollector::new(),
+        false,
+    );
+}
+
+#[test]
+fn wither_rose_effect_ticks_vanilla_wither_damage() {
+    let world = test_world();
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world);
+
+    apply_wither_rose_effect(world, &entity);
+
+    let effect = entity
+        .mob_effect(vanilla_mob_effects::WITHER)
+        .expect("wither rose should apply Wither");
+    assert_eq!(effect.duration(), 40);
+    assert_eq!(effect.amplifier(), 0);
+
+    entity.tick_mob_effects();
+
+    assert_f32_close(entity.get_health(), 19.0);
+    assert_eq!(
+        entity.damage_type_keys(),
+        vec![vanilla_damage_types::WITHER.key.clone()]
+    );
+    assert_eq!(
+        entity
+            .mob_effect(vanilla_mob_effects::WITHER)
+            .expect("Wither should remain active")
+            .duration(),
+        39
+    );
+}
+
+#[test]
+fn wither_effect_only_damages_on_its_vanilla_interval() {
+    let world = test_world();
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world);
+    assert!(entity.add_mob_effect(MobEffectInstance::with_duration(
+        vanilla_mob_effects::WITHER,
+        39,
+        0,
+    )));
+
+    entity.tick_mob_effects();
+
+    assert_f32_close(entity.get_health(), 20.0);
+    assert!(entity.damage_type_keys().is_empty());
+    assert_eq!(
+        entity
+            .mob_effect(vanilla_mob_effects::WITHER)
+            .expect("Wither should remain active")
+            .duration(),
+        38
+    );
+}
+
+#[test]
+fn wither_rose_respects_difficulty_invulnerability_and_effect_immunity() {
+    let peaceful_world = fresh_test_world("wither_rose_peaceful");
+    peaceful_world.set_difficulty(Difficulty::Peaceful);
+    let peaceful_entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, &peaceful_world);
+    apply_wither_rose_effect(&peaceful_world, &peaceful_entity);
+    assert!(!peaceful_entity.has_mob_effect(vanilla_mob_effects::WITHER));
+
+    let world = test_world();
+    let invulnerable = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world);
+    invulnerable.set_invulnerable(true);
+    apply_wither_rose_effect(world, &invulnerable);
+    assert!(!invulnerable.has_mob_effect(vanilla_mob_effects::WITHER));
+
+    let effect_immune =
+        LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world).rejecting_wither();
+    apply_wither_rose_effect(world, &effect_immune);
+    assert!(!effect_immune.has_mob_effect(vanilla_mob_effects::WITHER));
+}
+
+#[test]
+fn default_mob_effect_eligibility_uses_vanilla_entity_type_tags() {
+    init_test_registry();
+    let silverfish =
+        LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::SILVERFISH);
+    assert!(
+        !silverfish.can_be_affected(&MobEffectInstance::with_duration(
+            vanilla_mob_effects::INFESTED,
+            20,
+            0,
+        ))
+    );
+
+    let slime =
+        LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::SLIME);
+    assert!(!slime.can_be_affected(&MobEffectInstance::with_duration(
+        vanilla_mob_effects::OOZING,
+        20,
+        0,
+    )));
+
+    let zombie =
+        LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::ZOMBIE);
+    assert!(!zombie.can_be_affected(&MobEffectInstance::with_duration(
+        vanilla_mob_effects::POISON,
+        20,
+        0,
+    )));
+    assert!(!zombie.can_be_affected(&MobEffectInstance::with_duration(
+        vanilla_mob_effects::REGENERATION,
+        20,
+        0,
+    )));
+    assert!(zombie.can_be_affected(&MobEffectInstance::with_duration(
+        vanilla_mob_effects::WITHER,
+        20,
+        0,
+    )));
 }
 
 struct ControlledVehicleTestEntity {

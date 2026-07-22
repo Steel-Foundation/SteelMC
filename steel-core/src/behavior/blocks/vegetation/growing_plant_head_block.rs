@@ -11,7 +11,13 @@ use steel_registry::{
 use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, blocks::vegetation::growing_plant_can_survive},
+    behavior::{
+        BlockBehavior, BlockPlaceContext,
+        blocks::vegetation::{
+            bonemealable::{BonemealAction, Bonemealable},
+            growing_plant_can_survive,
+        },
+    },
     world::{LevelAccessor, LevelReader, ScheduledTickAccess, World},
 };
 
@@ -24,6 +30,7 @@ pub struct GrowingPlantHeadBlock {
     body_block: BlockRef,
     update_body_after_converted_from_head: fn(BlockStateId, BlockStateId) -> BlockStateId,
     update_grow_into_state: fn(BlockStateId, &mut dyn Rng) -> BlockStateId,
+    get_blocks_to_grow_when_bonemealed: Option<fn(&mut dyn Rng) -> i32>,
 }
 const AGE: IntProperty = BlockStateProperties::AGE_25;
 
@@ -36,6 +43,7 @@ impl GrowingPlantHeadBlock {
         schedule_fluid_ticks: bool,
         grow_per_tick_probability: f64,
         body_block: BlockRef,
+        get_blocks_to_grow_when_bonemealed: Option<fn(&mut dyn Rng) -> i32>,
     ) -> Self {
         Self {
             block,
@@ -45,6 +53,7 @@ impl GrowingPlantHeadBlock {
             body_block,
             update_body_after_converted_from_head: Self::unchanged_converted_state,
             update_grow_into_state: Self::unchanged_grown_state,
+            get_blocks_to_grow_when_bonemealed,
         }
     }
 
@@ -188,6 +197,66 @@ impl BlockBehavior for GrowingPlantHeadBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.state_for_placement(context.world, context.place_pos(), &mut rng()))
     }
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        Some(self)
+    }
+}
+impl Bonemealable for GrowingPlantHeadBlock {
+    fn is_valid_bonemeal_target(
+        &self,
+        _state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> bool {
+        let growth_pos = pos.relative(self.growth_direction);
+        Self::can_grow_into(world.get_block_state(growth_pos))
+            && !world.is_outside_build_height(growth_pos.y())
+    }
+
+    fn is_bonemeal_success(
+        &self,
+        _state: BlockStateId,
+        _world: &Arc<World>,
+        _rng: &mut dyn Rng,
+        _pos: BlockPos,
+    ) -> bool {
+        true
+    }
+
+    fn perform_bonemeal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        rng: &mut dyn Rng,
+        pos: BlockPos,
+    ) {
+        let mut forward_pos = pos.relative(self.growth_direction);
+        let mut next_age = (state.get_value(&AGE) + 1).min(25);
+        let Some(get_blocks_to_grow) = self.get_blocks_to_grow_when_bonemealed else {
+            return;
+        };
+        let blocks_to_grow = get_blocks_to_grow(rng);
+
+        for _ in 0..blocks_to_grow {
+            if !Self::can_grow_into(world.get_block_state(forward_pos))
+                || world.is_outside_build_height(forward_pos.y())
+            {
+                break;
+            }
+
+            world.set_block(
+                forward_pos,
+                state.set_value(&AGE, next_age),
+                UpdateFlags::UPDATE_ALL,
+            );
+            forward_pos = forward_pos.relative(self.growth_direction);
+            next_age = 25.min(next_age + 1);
+        }
+    }
+
+    fn bonemeal_action_type(&self) -> BonemealAction {
+        BonemealAction::Grower
+    }
 }
 
 #[cfg(test)]
@@ -208,6 +277,7 @@ mod tests {
             false,
             0.1,
             &vanilla_blocks::CAVE_VINES_PLANT,
+            None,
         );
         let level = TestLevel::default().with_block(
             BlockPos::ZERO.below(),
