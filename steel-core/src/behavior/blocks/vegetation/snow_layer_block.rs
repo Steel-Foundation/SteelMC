@@ -1,14 +1,22 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::blocks::shapes;
 use steel_registry::vanilla_block_tags::BlockTag;
+use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
+use tracing::Instrument;
 
+use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::vegetation::vegetation_block::survival_update_shape;
 use crate::behavior::context::BlockPlaceContext;
+use crate::chunk::light::LightLayer;
 use crate::entity::ai::path::PathComputationType;
-use crate::world::LevelReader;
+use crate::fluid::fluid_state_to_block;
+use crate::world::{LevelReader, World};
 
 use super::BlockRef;
 
@@ -18,12 +26,12 @@ use super::BlockRef;
 /// 2. If below is in `support_override_snow_layer`, true.
 /// 3. Otherwise: below's collision shape has a full UP face, or below is snow
 ///    with `LAYERS = 8`.
-// TODO: Implement melting, layering on placement, and entity step damage.
+// TODO: Implement entity step damage.
 #[block_behavior]
 pub struct SnowLayerBlock {
     block: BlockRef,
 }
-
+const LAYERS: IntProperty = BlockStateProperties::LAYERS;
 impl SnowLayerBlock {
     /// Creates a new snow layer block behavior.
     #[must_use]
@@ -52,15 +60,57 @@ impl BlockBehavior for SnowLayerBlock {
         // Below is another snow layer fully filled (LAYERS == 8).
         below_block == self.block && below.get_value(&BlockStateProperties::LAYERS) == 8
     }
-
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn crate::world::ScheduledTickAccess,
+        pos: BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        survival_update_shape(self, state, world, pos)
+    }
+    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
+        true
+    }
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        if world.brightness(LightLayer::Block, pos) > 11 {
+            world.drop_resources(state, pos);
+            world.set_block(
+                pos,
+                fluid_state_to_block(state.get_fluid_state()),
+                UpdateFlags::UPDATE_ALL,
+            );
+        }
+    }
+    fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
+        let layers = state.get_value(&LAYERS);
+        //TODO: these methods aren't implemented
+        /*if context.get_item_in_hand() == self.as_item() || layers >= 8 {
+            return layers == 1;
+        }*/
+        if context.replaces_clicked_block() {
+            return context.clicked_face() == Direction::Up;
+        }
+        true
+    }
     fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
         computation_type == PathComputationType::Land
             && state.get_value(&BlockStateProperties::LAYERS) < 5
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let state = self.block.default_state();
-        self.can_survive(state, context.world, context.place_pos())
-            .then_some(state)
+        let pos = if context.replaces_clicked_block() {
+            context.hit_pos()
+        } else {
+            context.place_pos()
+        };
+        let state = context.world.get_block_state(pos);
+        if state.get_block() == self.block {
+            let layers = state.get_value(&LAYERS);
+            return Some(state.set_value(&LAYERS, 8.min(layers + 1)));
+        }
+        return Some(self.block.default_state());
     }
 }

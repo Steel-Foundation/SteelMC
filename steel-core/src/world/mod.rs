@@ -5128,6 +5128,9 @@ impl LevelReader for World {
 
         sky_light.max(self.light_value_at(LightLayer::Block, pos))
     }
+    fn brightness(&self, light_layer: LightLayer, pos: BlockPos) -> u8 {
+        self.light_value_at(light_layer, pos)
+    }
 
     fn can_see_sky(&self, pos: BlockPos) -> bool {
         Self::can_see_sky(self, pos)
@@ -5157,6 +5160,9 @@ impl LevelReader for Arc<World> {
 
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
         self.as_ref().raw_brightness(pos, sky_darkening)
+    }
+    fn brightness(&self, light_layer: LightLayer, pos: BlockPos) -> u8 {
+        self.as_ref().brightness(light_layer, pos)
     }
 
     fn can_see_sky(&self, pos: BlockPos) -> bool {
