@@ -30,7 +30,7 @@ impl KelpPlantBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
-    fn update_head_after_converted_from_body(
+    const fn update_head_after_converted_from_body(
         _body_state: BlockStateId,
         head_state: BlockStateId,
     ) -> BlockStateId {
