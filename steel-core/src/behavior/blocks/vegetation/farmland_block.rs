@@ -102,7 +102,7 @@ impl FarmlandBlock {
     }
 
     /// Turns the farmland into dirt.
-    fn turn_to_dirt(
+    pub(crate) fn turn_to_dirt(
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
