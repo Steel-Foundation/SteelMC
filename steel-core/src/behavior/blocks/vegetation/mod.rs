@@ -89,7 +89,7 @@ pub use big_dripleaf_stem_block::BigDripleafStemBlock;
 pub use bush_block::BushBlock;
 pub use cactus_block::CactusBlock;
 pub use cactus_flower_block::CactusFlowerBlock;
-pub use carpet_block::CarpetBlock;
+pub use carpet_block::{CarpetBlock, WoolCarpetBlock};
 pub use carrot::CarrotBlock;
 pub use cave_vines_block::CaveVinesBlock;
 pub use cave_vines_plant_block::CaveVinesPlantBlock;
