@@ -1,7 +1,3 @@
-//! Dirt path block behavior.
-//!
-//! Vanilla equivalent: `DirtPathBlock`.
-
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
