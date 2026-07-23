@@ -39,6 +39,10 @@ impl CaveVinesBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+    fn can_grow_into(state: BlockStateId) -> bool {
+        state.is_air()
+    }
+
     const fn growing_plant_head_block(&self) -> GrowingPlantHeadBlock {
         GrowingPlantHeadBlock::new(
             self.block,
@@ -47,6 +51,7 @@ impl CaveVinesBlock {
             0.1,
             &vanilla_blocks::CAVE_VINES_PLANT,
             None,
+            Self::can_grow_into,
         )
         .with_update_body_after_converted_from_head(Self::update_body_after_converted_from_head)
         .with_update_grow_into_state(Self::update_grow_into_state)

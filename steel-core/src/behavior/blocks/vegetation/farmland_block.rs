@@ -137,10 +137,10 @@ impl BlockBehavior for FarmlandBlock {
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let moisture: u8 = state.get_value(&BlockStateProperties::MOISTURE);
 
-        // TODO: Check for rain when weather is implemented
         let is_near_water = Self::is_near_water(world, pos);
+        let is_raining = world.is_raining_at(pos.above());
 
-        if !is_near_water {
+        if !is_near_water && !is_raining {
             // Not near water - decrease moisture or turn to dirt
             if moisture > 0 {
                 // Decrease moisture by 1

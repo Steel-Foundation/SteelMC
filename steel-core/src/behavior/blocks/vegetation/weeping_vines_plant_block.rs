@@ -1,6 +1,7 @@
 use rand::Rng;
 use std::sync::Arc;
 use steel_macros::block_behavior;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::{item_stack::ItemStack, vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -24,12 +25,17 @@ impl WeepingVinesPlantBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+    fn can_grow_into(state: BlockStateId) -> bool {
+        state.is_air()
+    }
+
     const fn growing_plant_body_block(&self) -> GrowingPlantBodyBlock {
         GrowingPlantBodyBlock::new(
             self.block,
             Direction::Down,
             false,
             &vanilla_blocks::WEEPING_VINES,
+            Self::can_grow_into,
         )
     }
 }

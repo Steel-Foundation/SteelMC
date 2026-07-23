@@ -372,8 +372,11 @@ pub(super) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
     {
         return false;
     }
-
-    attached_state.get_block() == &vanilla_blocks::KELP
-        || attached_state.get_block() == &vanilla_blocks::KELP_PLANT
-        || attached_state.is_face_sturdy_at(attached_pos, Direction::Up)
+    growing_plant_can_survive(
+        world,
+        pos,
+        Direction::Up,
+        &vanilla_blocks::KELP,
+        &vanilla_blocks::KELP_PLANT,
+    )
 }

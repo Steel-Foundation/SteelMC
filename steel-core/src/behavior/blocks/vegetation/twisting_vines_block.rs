@@ -8,6 +8,7 @@ use crate::world::{LevelReader, ScheduledTickAccess, World};
 use rand::Rng;
 use std::sync::Arc;
 use steel_macros::block_behavior;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -25,6 +26,10 @@ impl TwistingVinesBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+    fn can_grow_into(state: BlockStateId) -> bool {
+        state.is_air()
+    }
+
     const fn growing_plant_head_block(&self) -> GrowingPlantHeadBlock {
         GrowingPlantHeadBlock::new(
             self.block,
@@ -33,6 +38,7 @@ impl TwistingVinesBlock {
             0.1,
             &vanilla_blocks::TWISTING_VINES_PLANT,
             Some(nether_vines_get_blocks_to_grow_when_bonemealed),
+            Self::can_grow_into,
         )
     }
 }
