@@ -18,11 +18,10 @@ pub use building::{
     CampfireBlock, DoorBlock, FenceBlock, FenceGateBlock, GlazedTerracottaBlock, HayBlock,
     HoneyBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock, MagmaBlock, PotentSulfurBlock,
     PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SpongeBlock,
-    StairBlock,
-    TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState, WeatheringCopper,
-    WeatheringCopperBarsBlock, WeatheringCopperDoorBlock, WeatheringCopperFullBlock,
-    WeatheringCopperGrateBlock, WeatheringCopperSlabBlock, WeatheringCopperStairBlock,
-    WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
+    StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState,
+    WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
+    WeatheringCopperFullBlock, WeatheringCopperGrateBlock, WeatheringCopperSlabBlock,
+    WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
 };
 pub use colored::StainedGlassPaneBlock;
 pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};
