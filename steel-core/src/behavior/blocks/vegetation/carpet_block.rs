@@ -89,4 +89,3 @@ impl BlockBehavior for WoolCarpetBlock {
         default_surviving_state(self.block, self, context)
     }
 }
-
