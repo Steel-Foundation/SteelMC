@@ -4,8 +4,6 @@
 //! `canSurvive` should depend on the world-reading surface, not on the concrete
 //! `World` type. `World` and `WorldGenRegion` both implement this trait.
 
-use std::u8;
-
 use steel_registry::blocks::BlockRef;
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
@@ -13,7 +11,6 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::block_entity::SharedBlockEntity;
-use crate::chunk::light::LightLayer;
 use crate::world::game_event_context::GameEventContext;
 
 const VANILLA_HORIZONTAL_LIMIT: i32 = 30_000_000;
@@ -34,8 +31,6 @@ pub trait LevelReader {
 
     /// Returns vanilla raw brightness at a position after sky darkening.
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8;
-    /// Returns vanilla `level.getBrightness()`
-    fn brightness(&self, light_layer: LightLayer, pos: BlockPos) -> u8;
 
     /// Returns vanilla `BlockAndLightGetter.canSeeSky`.
     fn can_see_sky(&self, pos: BlockPos) -> bool {

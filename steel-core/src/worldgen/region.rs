@@ -24,6 +24,7 @@ use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, PackedSectionBlockPos, SectionPos, types::UpdateFlags,
 };
 
+use crate::behavior::FLUID_BEHAVIORS;
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::chunk::{
     chunk_access::{ChunkAccess, ChunkStatus},
@@ -38,7 +39,6 @@ use crate::world::tick_scheduler::TickPriority;
 use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
 use crate::worldgen::context::WorldGenContext;
 use crate::worldgen::feature::instrumentation::OreFeatureStats;
-use crate::{behavior::FLUID_BEHAVIORS, chunk::light::LightLayer};
 
 /// Chunk-cache backed worldgen view for the current generation step.
 ///
@@ -1253,9 +1253,6 @@ impl LevelReader for WorldGenRegion<'_> {
         };
 
         sky_light.max(self.block_light_at(pos))
-    }
-    fn brightness(&self, _light_layer: LightLayer, pos: BlockPos) -> u8 {
-        self.block_light_at(pos)
     }
 
     fn can_see_sky(&self, pos: BlockPos) -> bool {

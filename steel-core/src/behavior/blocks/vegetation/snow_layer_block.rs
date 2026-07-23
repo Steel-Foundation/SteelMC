@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
+use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::blocks::shapes;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
-use tracing::Instrument;
 
 use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::block::BlockBehavior;
@@ -16,17 +16,11 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::chunk::light::LightLayer;
 use crate::entity::ai::path::PathComputationType;
 use crate::fluid::fluid_state_to_block;
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::BlockRef;
 
-/// Vanilla `SnowLayerBlock` survival.
-///
-/// 1. If below is in `cannot_support_snow_layer`, false.
-/// 2. If below is in `support_override_snow_layer`, true.
-/// 3. Otherwise: below's collision shape has a full UP face, or below is snow
-///    with `LAYERS = 8`.
-// TODO: Implement entity step damage.
+/// Vanilla `SnowLayerBlock` behavior
 #[block_behavior]
 pub struct SnowLayerBlock {
     block: BlockRef,
@@ -63,7 +57,7 @@ impl BlockBehavior for SnowLayerBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
-        world: &dyn crate::world::ScheduledTickAccess,
+        world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         _direction: Direction,
         _neighbor_pos: BlockPos,
@@ -86,10 +80,11 @@ impl BlockBehavior for SnowLayerBlock {
     }
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
         let layers = state.get_value(&LAYERS);
-        //TODO: these methods aren't implemented
-        /*if context.get_item_in_hand() == self.as_item() || layers >= 8 {
+        if !context.with_item(|item| item.item() == REGISTRY.items.by_block(state.get_block()))
+            || layers >= 8
+        {
             return layers == 1;
-        }*/
+        }
         if context.replaces_clicked_block() {
             return context.clicked_face() == Direction::Up;
         }
@@ -111,6 +106,6 @@ impl BlockBehavior for SnowLayerBlock {
             let layers = state.get_value(&LAYERS);
             return Some(state.set_value(&LAYERS, 8.min(layers + 1)));
         }
-        return Some(self.block.default_state());
+        Some(self.block.default_state())
     }
 }
