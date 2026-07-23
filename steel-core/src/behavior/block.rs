@@ -639,6 +639,26 @@ pub trait BlockBehavior: Send + Sync {
         state
     }
 
+    /// Called after a player destroys this block and drops/effects are processed.
+    ///
+    /// Vanilla parity: `Block.playerDestroy(Level, Player, BlockPos, BlockState, BlockEntity, ItemStack)`.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn player_destroy(
+        &self,
+        world: &Arc<World>,
+        player: &Player,
+        pos: BlockPos,
+        state: BlockStateId,
+        block_entity: Option<&SharedBlockEntity>,
+        tool: &ItemStack,
+    ) {
+        // Default: no-op
+    }
+
+
     /// Called after this block is removed from the world, to affect neighbors.
     ///
     /// This is used for things like rails notifying neighbors when removed.

@@ -1849,7 +1849,16 @@ impl World {
             .unwrap_or_else(|| self.default_light_value(layer))
     }
 
+    /// Returns vanilla raw brightness for the specified light layer.
+    ///
+    /// Mirrors vanilla `Level.getBrightness(LightLayer, BlockPos)`.
+    #[must_use]
+    pub fn get_brightness(&self, layer: LightLayer, pos: BlockPos) -> u8 {
+        self.light_value_at(layer, pos)
+    }
+
     const fn default_light_value(&self, layer: LightLayer) -> u8 {
+
         match layer {
             LightLayer::Sky if self.dimension_type.has_skylight => MAX_LIGHT_LEVEL,
             LightLayer::Sky | LightLayer::Block => 0,

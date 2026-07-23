@@ -356,9 +356,23 @@ impl BlockBreakingManager {
                 && game_mode != GameType::Creative
                 && has_correct_tool
             {
-                // TODO: Call playerDestroy to spawn drops
                 drop_block_loot(player, world, pos, adjusted_state);
+                let tool = player
+                    .inventory
+                    .lock()
+                    .get_item_in_hand(InteractionHand::MainHand)
+                    .clone();
+                let block_entity = world.get_block_entity(pos);
+                behavior.player_destroy(
+                    world,
+                    player,
+                    pos,
+                    adjusted_state,
+                    block_entity.as_ref(),
+                    &tool,
+                );
             }
+
         }
 
         changed

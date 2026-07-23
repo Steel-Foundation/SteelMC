@@ -10,7 +10,9 @@ mod fence_block;
 mod fence_gate_block;
 mod hay_block;
 mod honey_block;
+mod ice_block;
 mod ladder_block;
+
 mod lava_cauldron_block;
 mod magma_block;
 mod potent_sulfur_block;
@@ -40,6 +42,7 @@ pub use fence_block::FenceBlock;
 pub use fence_gate_block::FenceGateBlock;
 pub use hay_block::HayBlock;
 pub use honey_block::HoneyBlock;
+pub use ice_block::IceBlock;
 pub use ladder_block::LadderBlock;
 pub use lava_cauldron_block::LavaCauldronBlock;
 pub use magma_block::MagmaBlock;
