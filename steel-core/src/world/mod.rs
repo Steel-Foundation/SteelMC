@@ -1858,7 +1858,6 @@ impl World {
     }
 
     const fn default_light_value(&self, layer: LightLayer) -> u8 {
-
         match layer {
             LightLayer::Sky if self.dimension_type.has_skylight => MAX_LIGHT_LEVEL,
             LightLayer::Sky | LightLayer::Block => 0,

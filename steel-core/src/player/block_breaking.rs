@@ -372,7 +372,6 @@ impl BlockBreakingManager {
                     &tool,
                 );
             }
-
         }
 
         changed

@@ -655,9 +655,9 @@ pub trait BlockBehavior: Send + Sync {
         block_entity: Option<&SharedBlockEntity>,
         tool: &ItemStack,
     ) {
-        // Default: no-op
+        //TODO: award stats, cause food exhaustion and drop resources.
+        // maybe this is already handled somewhere else?
     }
-
 
     /// Called after this block is removed from the world, to affect neighbors.
     ///

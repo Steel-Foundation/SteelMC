@@ -12,7 +12,6 @@ mod hay_block;
 mod honey_block;
 mod ice_block;
 mod ladder_block;
-
 mod lava_cauldron_block;
 mod magma_block;
 mod potent_sulfur_block;
