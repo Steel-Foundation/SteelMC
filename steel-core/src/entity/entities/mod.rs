@@ -1,5 +1,6 @@
 //! Concrete entity implementations.
 
+pub mod animal;
 mod block_display;
 mod chest_minecart;
 mod end_crystal;
@@ -9,9 +10,9 @@ mod firework_rocket;
 mod item;
 mod item_frame;
 mod leash_fence_knot;
-mod pig;
 mod raw;
 
+pub use animal::PigEntity;
 pub use block_display::BlockDisplayEntity;
 pub use chest_minecart::ChestMinecartEntity;
 pub use end_crystal::EndCrystalEntity;
@@ -21,5 +22,4 @@ pub use firework_rocket::FireworkRocketEntity;
 pub use item::ItemEntity;
 pub use item_frame::ItemFrameEntity;
 pub use leash_fence_knot::LeashFenceKnotEntity;
-pub use pig::PigEntity;
 pub use raw::RawEntity;
