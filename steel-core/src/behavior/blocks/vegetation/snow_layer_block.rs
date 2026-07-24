@@ -20,12 +20,19 @@ use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::BlockRef;
 
-/// Vanilla `SnowLayerBlock` behavior
+/// Vanilla `SnowLayerBlock` survival.
+///
+/// 1. If below is in `cannot_support_snow_layer`, false.
+/// 2. If below is in `support_override_snow_layer`, true.
+/// 3. Otherwise: below's collision shape has a full UP face, or below is snow
+///    with `LAYERS = 8`.
 #[block_behavior]
 pub struct SnowLayerBlock {
     block: BlockRef,
 }
+
 const LAYERS: IntProperty = BlockStateProperties::LAYERS;
+
 impl SnowLayerBlock {
     /// Creates a new snow layer block behavior.
     #[must_use]
@@ -52,7 +59,7 @@ impl BlockBehavior for SnowLayerBlock {
         }
 
         // Below is another snow layer fully filled (LAYERS == 8).
-        below_block == self.block && below.get_value(&BlockStateProperties::LAYERS) == 8
+        below_block == self.block && below.get_value(&LAYERS) == 8
     }
     fn update_shape(
         &self,
@@ -91,8 +98,7 @@ impl BlockBehavior for SnowLayerBlock {
         true
     }
     fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
-        computation_type == PathComputationType::Land
-            && state.get_value(&BlockStateProperties::LAYERS) < 5
+        computation_type == PathComputationType::Land && state.get_value(&LAYERS) < 5
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

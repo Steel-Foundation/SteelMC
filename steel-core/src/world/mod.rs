@@ -1815,10 +1815,13 @@ impl World {
             .with_full_chunk(Self::chunk_pos_for_block(pos), |_| ())
             .is_some()
     }
+
     ///Vanilla `level.getBrightness()`
+    #[must_use]
     pub fn brightness(&self, light_layer: LightLayer, pos: BlockPos) -> u8 {
         self.light_value_at(light_layer, pos)
     }
+
     pub(crate) fn queue_light_change_after_block_set(
         &self,
         pos: BlockPos,
