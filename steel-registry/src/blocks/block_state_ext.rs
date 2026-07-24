@@ -2,10 +2,11 @@ use crate::vanilla_blocks;
 use crate::{
     REGISTRY,
     blocks::{
-        self, BlockRef,
+        self, BlockRef, BlockStateTickingMetadata,
         properties::{Direction, Property},
         shapes::{OffsetVoxelShape, SupportType},
     },
+    fluid::FluidState,
 };
 use glam::DVec3;
 use steel_utils::BlockPos;
@@ -14,6 +15,19 @@ use steel_utils::BlockStateId;
 pub trait BlockStateExt {
     fn get_block(&self) -> BlockRef;
     fn is_air(&self) -> bool;
+    /// Returns Vanilla's immutable cached fluid/random-tick metadata for this state.
+    fn get_ticking_metadata(&self) -> BlockStateTickingMetadata;
+    /// Mirrors Vanilla's cached `BlockState.getFluidState()`.
+    fn get_fluid_state(&self) -> FluidState;
+    /// Returns whether the cached fluid state is non-empty.
+    fn has_fluid(&self) -> bool;
+    /// Mirrors Vanilla's cached `BlockState.isRandomlyTicking()` for the block callback.
+    fn is_randomly_ticking(&self) -> bool;
+    /// Returns whether this block structurally supports a block entity.
+    ///
+    /// Extracted Vanilla type memberships match `EntityBlock` exactly. Steel extends that into a
+    /// registration contract: plugin blocks must be accepted by at least one registered block
+    /// entity type, while the owning block behavior remains responsible for instance creation.
     fn has_block_entity(&self) -> bool;
     fn get_value<P: Property>(&self, property: &P) -> P::Value;
     /// Gets the value of a property, returning `None` if the block doesn't have this property.
@@ -67,6 +81,9 @@ pub trait BlockStateExt {
     fn is_solid_render(&self) -> bool;
     /// Returns vanilla `BlockState.isSuffocating`.
     fn is_suffocating(&self) -> bool;
+    /// Returns the extracted static `BlockState.isRedstoneConductor` value.
+    /// Dynamic behavior queries must also receive the live level and position.
+    fn is_static_redstone_conductor(&self) -> bool;
     /// Returns if a block can be replaced extracted from the minecraft data
     fn is_replaceable(&self) -> bool;
 }
@@ -84,12 +101,32 @@ impl BlockStateExt for BlockStateId {
             .copy_matching_properties(source, self.get_block())
     }
     fn is_air(&self) -> bool {
-        self.get_block().config.is_air
+        self.get_ticking_metadata().is_air()
+    }
+
+    fn get_ticking_metadata(&self) -> BlockStateTickingMetadata {
+        let Some(metadata) = REGISTRY.blocks.get_ticking_metadata(*self) else {
+            panic!("invalid block state id {}", self.0);
+        };
+        metadata
+    }
+
+    fn get_fluid_state(&self) -> FluidState {
+        self.get_ticking_metadata().fluid_state()
+    }
+
+    fn has_fluid(&self) -> bool {
+        self.get_ticking_metadata().has_fluid()
+    }
+
+    fn is_randomly_ticking(&self) -> bool {
+        self.get_ticking_metadata().randomly_ticking_block()
     }
 
     fn has_block_entity(&self) -> bool {
-        // TODO: Implement when block entities are added
-        false
+        REGISTRY
+            .block_entity_types
+            .has_block_entity(self.get_block())
     }
 
     fn get_value<P: Property>(&self, property: &P) -> P::Value {
@@ -228,6 +265,10 @@ impl BlockStateExt for BlockStateId {
         REGISTRY.blocks.is_suffocating(*self)
     }
 
+    fn is_static_redstone_conductor(&self) -> bool {
+        REGISTRY.blocks.is_static_redstone_conductor(*self)
+    }
+
     fn is_replaceable(&self) -> bool {
         self.get_block().config.replaceable
     }
@@ -239,7 +280,7 @@ mod tests {
     use crate::blocks::behavior::OffsetType;
     use crate::blocks::properties::BlockStateProperties;
     use crate::blocks::shapes::{ShapeChannel, SupportType};
-    use crate::test_support::init_test_registry;
+    use crate::{test_support::init_test_registry, vanilla_fluids};
     use steel_utils::Direction;
 
     #[test]
@@ -318,12 +359,51 @@ mod tests {
     }
 
     #[test]
+    fn static_redstone_conductor_uses_extracted_vanilla_state_predicate() {
+        init_test_registry();
+
+        assert!(
+            vanilla_blocks::STONE
+                .default_state()
+                .is_static_redstone_conductor()
+        );
+        assert!(
+            vanilla_blocks::SOUL_SAND
+                .default_state()
+                .is_static_redstone_conductor()
+        );
+        assert!(
+            !vanilla_blocks::REDSTONE_BLOCK
+                .default_state()
+                .is_static_redstone_conductor()
+        );
+        assert!(
+            !vanilla_blocks::PISTON
+                .default_state()
+                .is_static_redstone_conductor()
+        );
+    }
+
+    #[test]
     fn vanilla_air_variants_are_air() {
         init_test_registry();
 
         assert!(vanilla_blocks::AIR.default_state().is_air());
         assert!(vanilla_blocks::CAVE_AIR.default_state().is_air());
         assert!(vanilla_blocks::VOID_AIR.default_state().is_air());
+    }
+
+    #[test]
+    fn block_entity_presence_uses_extracted_type_validity() {
+        init_test_registry();
+
+        assert!(
+            vanilla_blocks::MOVING_PISTON
+                .default_state()
+                .has_block_entity()
+        );
+        assert!(vanilla_blocks::CHEST.default_state().has_block_entity());
+        assert!(!vanilla_blocks::STONE.default_state().has_block_entity());
     }
 
     #[test]
@@ -373,5 +453,83 @@ mod tests {
         let target = vanilla_blocks::CANDLE.default_state();
 
         assert_eq!(target.with_properties_of(source), target);
+    }
+
+    #[test]
+    fn cached_random_tick_metadata_tracks_state_dependent_predicates() {
+        init_test_registry();
+
+        let decaying_leaves = vanilla_blocks::OAK_LEAVES.default_state();
+        assert!(decaying_leaves.is_randomly_ticking());
+        assert!(
+            !decaying_leaves
+                .set_value(&BlockStateProperties::DISTANCE, 6)
+                .is_randomly_ticking()
+        );
+        assert!(
+            !decaying_leaves
+                .set_value(&BlockStateProperties::PERSISTENT, true)
+                .is_randomly_ticking()
+        );
+
+        let immature_wheat = vanilla_blocks::WHEAT.default_state();
+        assert!(immature_wheat.is_randomly_ticking());
+        assert!(
+            !immature_wheat
+                .set_value(&BlockStateProperties::AGE_7, 7)
+                .is_randomly_ticking()
+        );
+    }
+
+    #[test]
+    fn cached_fluid_state_preserves_source_flowing_and_falling_variants() {
+        init_test_registry();
+
+        let wet_slab = vanilla_blocks::OAK_SLAB
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+        assert_eq!(
+            wet_slab.get_fluid_state(),
+            FluidState::source(&vanilla_fluids::WATER)
+        );
+
+        let wet_grate = vanilla_blocks::COPPER_GRATE
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+        assert_eq!(
+            wet_grate.get_fluid_state(),
+            FluidState::new(&vanilla_fluids::WATER, 8, true)
+        );
+
+        let source_water = vanilla_blocks::WATER.default_state();
+        assert_eq!(
+            source_water.get_fluid_state(),
+            FluidState::source(&vanilla_fluids::WATER)
+        );
+        assert_eq!(
+            source_water
+                .set_value(&BlockStateProperties::LEVEL, 1)
+                .get_fluid_state(),
+            FluidState::flowing(&vanilla_fluids::FLOWING_WATER, 7, false)
+        );
+        assert_eq!(
+            source_water
+                .set_value(&BlockStateProperties::LEVEL, 8)
+                .get_fluid_state(),
+            FluidState::flowing(&vanilla_fluids::FLOWING_WATER, 8, true)
+        );
+    }
+
+    #[test]
+    fn cached_metadata_keeps_block_and_fluid_random_ticks_distinct() {
+        init_test_registry();
+
+        let lava = vanilla_blocks::LAVA.default_state().get_ticking_metadata();
+        assert!(lava.randomly_ticking_block());
+        assert!(lava.randomly_ticking_fluid());
+
+        let water = vanilla_blocks::WATER.default_state().get_ticking_metadata();
+        assert!(!water.randomly_ticking_block());
+        assert!(!water.randomly_ticking_fluid());
     }
 }

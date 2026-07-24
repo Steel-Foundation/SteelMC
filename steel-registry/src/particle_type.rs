@@ -191,10 +191,6 @@ impl ParticleTypeRegistry {
         }
     }
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "network dispatch requires exact registered particle type identity"
-    )]
     fn registered_entry_with_id(&self, entry: ParticleTypeRef) -> Option<(usize, ParticleTypeRef)> {
         let id = self.particle_types_by_key.get(&entry.key).copied()?;
         let registered = self.particle_types_by_id.get(id).copied()?;

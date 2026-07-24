@@ -13,7 +13,6 @@ use steel_registry::fluid::FluidRef;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
 
-use crate::fluid::collision::can_pass_horizontally_internal;
 use crate::fluid::is_hole;
 use crate::world::World;
 /// Context for fluid spread calculations with local caching.
@@ -66,23 +65,26 @@ impl<'a> SpreadContext<'a> {
             .or_insert_with(|| self.world.get_block_state(pos))
     }
 
+    /// Seeds a state already read by the outer spread calculation.
+    pub fn cache_block_state(&mut self, pos: BlockPos, state: BlockStateId) {
+        let key = self.encode_key(pos);
+        self.state_cache.insert(key, state);
+    }
+
     /// Checks if the position is a hole (can fluid flow down into it?), with caching.
     #[must_use]
     pub fn is_hole(&mut self, pos: BlockPos, fluid_id: FluidRef) -> bool {
         let key = self.encode_key(pos);
-        *self
-            .hole_cache
-            .entry(key)
-            .or_insert_with(|| is_hole(self.world, pos, fluid_id))
-    }
+        if let Some(is_hole) = self.hole_cache.get(&key) {
+            return *is_hole;
+        }
 
-    /// Checks if fluid can pass horizontally to the given position.
-    ///
-    /// This uses the cached block state for efficiency.
-    #[must_use]
-    pub fn can_pass_horizontally(&mut self, pos: BlockPos, fluid_id: FluidRef) -> bool {
         let state = self.get_block_state(pos);
-        can_pass_horizontally_internal(state, fluid_id)
+        let below = pos.below();
+        let below_state = self.world.get_block_state(below);
+        let result = is_hole(self.world, pos, state, below, below_state, fluid_id);
+        self.hole_cache.insert(key, result);
+        result
     }
 
     /// Returns a reference to the world.

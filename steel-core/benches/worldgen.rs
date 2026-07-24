@@ -20,7 +20,7 @@ use steel_core::chunk::chunk_holder::ChunkHolder;
 use steel_core::chunk::chunk_map::ChunkMap;
 use steel_core::chunk::chunk_pyramid::{ChunkDependencies, ChunkStep, GENERATION_PYRAMID};
 use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
-use steel_core::chunk::chunk_ticket_manager::{ChunkTicketLevel, MAX_VIEW_DISTANCE};
+use steel_core::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::entity::init_entities;
@@ -70,8 +70,7 @@ static BENCH_GENERATION_POOL: LazyLock<Arc<rayon::ThreadPool>> = LazyLock::new(|
             .expect("bench generation pool should build"),
     )
 });
-const BENCH_HOLDER_LOAD_LEVEL: ChunkTicketLevel =
-    ChunkTicketLevel::for_full_chunk_radius(MAX_VIEW_DISTANCE);
+const BENCH_HOLDER_LOAD_LEVEL: ChunkTicketLevel = ChunkTicketLevel::STRONGEST;
 
 fn ensure_registry() {
     INIT.call_once(|| {
@@ -578,6 +577,7 @@ fn build_feature_fixture_at(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -847,6 +847,7 @@ fn build_concurrent_feature_fixture(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -936,6 +937,7 @@ fn build_concurrent_full_pipeline_fixture(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -969,9 +971,7 @@ fn build_concurrent_full_pipeline_fixture(
             dim.min_y,
             dim.height,
         ));
-        let _ = chunk_map_for_factory
-            .chunks
-            .insert_sync(pos, holder.clone());
+        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, holder.clone());
         holder
     }));
     let stages = full_pipeline_stages(&cache, &centers);
@@ -1031,6 +1031,7 @@ fn build_concurrent_light_fixture(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -1061,9 +1062,7 @@ fn build_concurrent_light_fixture(
             dim.min_y,
             dim.height,
         ));
-        let _ = chunk_map_for_factory
-            .chunks
-            .insert_sync(pos, holder.clone());
+        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, holder.clone());
         holder
     }));
     let setup_stages =

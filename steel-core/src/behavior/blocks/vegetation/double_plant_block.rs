@@ -46,18 +46,16 @@ impl DoublePlantBlock {
             state
         }
     }
-}
 
-impl Vegetation for DoublePlantBlock {}
-
-impl BlockBehavior for DoublePlantBlock {
-    fn update_shape(
+    /// Runs Vanilla `DoublePlantBlock.updateShape` while preserving virtual
+    /// `canSurvive` dispatch for subclasses such as small dripleaf.
+    pub(super) fn update_shape_with_survival(
         &self,
+        survival_behavior: &dyn BlockBehavior,
         state: BlockStateId,
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
-        _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
         let half = state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF);
@@ -73,12 +71,28 @@ impl BlockBehavior for DoublePlantBlock {
 
         if half == DoubleBlockHalf::Lower
             && direction == Direction::Down
-            && !self.can_survive(state, world, pos)
+            && !survival_behavior.can_survive(state, world, pos)
         {
             return vanilla_blocks::AIR.default_state();
         }
 
         state
+    }
+}
+
+impl Vegetation for DoublePlantBlock {}
+
+impl BlockBehavior for DoublePlantBlock {
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        direction: Direction,
+        _neighbor_pos: BlockPos,
+        neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        self.update_shape_with_survival(self, state, world, pos, direction, neighbor_state)
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {

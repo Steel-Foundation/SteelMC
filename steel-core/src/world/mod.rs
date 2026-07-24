@@ -5,20 +5,24 @@ use std::{
     path::Path,
     sync::{
         Arc, LazyLock, Weak,
-        atomic::{AtomicBool, AtomicI64, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
 
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use crate::chunk::chunk_ticket_manager::{PersistentChunkTickets, TimedChunkTickets};
+use crate::chunk::gameplay_chunk_lookup_cache::GameplayChunkLookupCacheScope;
+use crate::chunk::level_chunk::{LevelChunk, LevelChunkBlockSetResult};
 use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
 use crate::world::game_event_context::GameEventContext;
-use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
+use crate::world::game_event_listener::{
+    GameEventDispatcher, GameEventListenerCount, GameEventListenerStorage, SharedGameEventListener,
+};
 use crate::world::sleep_status::SleepStatus;
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 use steel_utils::saved_data::{SavedDataManager, names as saved_data_names};
@@ -28,7 +32,7 @@ const WAKE_UP_FROM_SLEEP_TIME_MARKER: Identifier = Identifier::vanilla_static("w
 use glam::DVec3;
 use sha2::{Digest, Sha256};
 use steel_protocol::packets::game::{
-    CBlockDestruction, CBlockEvent, CChangeDifficulty, CGameEvent, CInitializeBorder, CLevelEvent,
+    CBlockDestruction, CChangeDifficulty, CGameEvent, CInitializeBorder, CLevelEvent,
     CLevelParticles, CPlayerChat, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize,
     CSetBorderWarningDelay, CSetBorderWarningDistance, CSetEntityData, CSetEntityLink,
     CSetEquipment, CSound, CSystemChat, CUpdateAttributes, GameEventType, SoundSource,
@@ -45,8 +49,8 @@ use steel_registry::biome::{BiomeRef, TemperatureModifier};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{Axis, BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::{
-    BooleanOp, OffsetVoxelShape, VoxelShape, is_offset_face_full, is_offset_shape_full_block,
-    is_shape_full_block, join_is_not_empty,
+    BooleanOp, OffsetVoxelShape, SupportType, VoxelShape, is_offset_face_full, is_shape_full_block,
+    join_is_not_empty,
 };
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::game_events::GameEventRef;
@@ -101,16 +105,17 @@ use tokio::{runtime::Runtime, time::Instant};
 
 use crate::{
     ChunkMap,
-    behavior::BlockStateBehaviorExt,
-    behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, FLUID_BEHAVIORS},
-    block_entity::{SharedBlockEntity, entities::EndGatewayBlockEntity},
+    behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, BlockLootContext, FLUID_BEHAVIORS},
+    block_entity::{BlockEntity, SharedBlockEntity, entities::EndGatewayBlockEntity},
     chunk::{heightmap::HeightmapType, player_chunk_view::PlayerChunkView},
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     entity::{
         AddEntityError, Entity, EntityChangeSenders, EntityChunkCallback, EntityLifecycleChanges,
         EntityMovementSyncPacket, EntityOwnership, EntityTracker, EntityVisibility,
         InactiveEntityCallback, LivingEntity, MobEffectSyncPacket, RemovalReason, SharedEntity,
-        WorldEntityManager, entities::ItemEntity, entity_loot_ref,
+        WorldEntityManager,
+        entities::{ExperienceOrbEntity, ItemEntity},
+        entity_loot_ref,
     },
     fluid::{FluidStateExt as _, fluid_state_to_block},
     level_data::{LevelDataManager, RespawnData, WorldBorderData, WorldGenerationSettings},
@@ -187,15 +192,20 @@ impl ClipHitResult {
     }
 }
 
+mod block_entity_ticker;
+mod block_event;
 mod border;
 pub(crate) mod clock;
 mod environment;
 pub mod game_event_context;
 pub mod game_event_listener;
 mod level_reader;
+mod neighbor_updater;
 mod player_area_map;
 mod player_map;
 pub(crate) mod player_spawn_finder;
+mod redstone;
+mod signal_getter;
 mod sleep_status;
 pub mod tick_scheduler;
 mod weather;
@@ -204,11 +214,17 @@ mod world_entities;
 pub use crate::config::WorldStorageConfig;
 use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
+use block_event::BlockEventQueue;
 pub use border::WorldBorderError;
 use border::{WorldBorder, WorldBorderSnapshot};
 pub use level_reader::{LevelAccessor, LevelReader, ScheduledTickAccess};
+use neighbor_updater::{CollectingNeighborUpdater, ShapeUpdate};
 pub use player_area_map::PlayerAreaMap;
 pub use player_map::PlayerMap;
+pub use signal_getter::{SignalGetter, SignalQueryContext};
+pub(crate) use signal_getter::{
+    get_best_neighbor_signal, get_control_input_signal, get_signal, is_redstone_conductor,
+};
 pub use tick_scheduler::ScheduledTick;
 
 /// Generates a random value using triangle distribution.
@@ -321,6 +337,20 @@ pub struct WorldGameTickTimings {
     pub entity_tick: Duration,
 }
 
+/// Result of replacing a block only when its current state still matches a prior read.
+#[must_use]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConditionalBlockSetResult {
+    /// The expected state was claimed and replaced.
+    Changed,
+    /// The expected state already equals the requested state, so no callbacks ran.
+    Unchanged,
+    /// The current state did not match the caller's expected state.
+    Stale(BlockStateId),
+    /// The position is invalid, the chunk is unavailable, or the update limit was exhausted.
+    Unavailable,
+}
+
 /// Configuration for creating a new world.
 #[derive(Clone)]
 pub struct WorldConfig {
@@ -336,6 +366,8 @@ pub struct WorldConfig {
     pub view_distance: u8,
     /// Server simulation distance.
     pub simulation_distance: u8,
+    /// Maximum queued neighbor-update tasks in one chained run; negative means unlimited.
+    pub max_chained_neighbor_updates: i32,
     /// Compression settings for encoding broadcast packets.
     pub compression: Option<CompressionInfo>,
     /// Whether the world should be marked as flat in login/respawn packets.
@@ -413,22 +445,36 @@ pub struct World {
     /// Whether the tick rate is running normally (not frozen/paused).
     /// When false, movement validation checks are skipped.
     tick_runs_normally: AtomicBool,
+    /// Whether vanilla's scheduled/chunk/block-event tick phase is active.
+    handling_tick: AtomicBool,
+    /// Ordered, duplicate-suppressing server block events awaiting execution.
+    block_events: SyncMutex<BlockEventQueue>,
+    /// Vanilla collecting neighbor updater shared by all live block mutations.
+    neighbor_updater: CollectingNeighborUpdater,
     /// Central runtime entity ownership and lookup.
     entity_manager: WorldEntityManager,
+    /// World-global ordered block-entity ticker phase.
+    block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers,
+    /// Physical entries retained by this world's chunk-owned game-event registries.
+    game_event_listener_count: Arc<GameEventListenerCount>,
     /// Entity tracker for managing which players can see which entities.
     entity_tracker: EntityTracker,
     /// Runtime IDs for pathfinder mobs currently visible to the active world.
     navigating_mobs: NavigatingMobTracker,
     /// Weather Data needed for animating starting and stopping of rain clientside
     pub weather: SyncMutex<Weather>,
-    /// Monotonic counter for `sub_tick_order` on scheduled ticks.
-    /// Provides stable ordering when multiple ticks fire on the same game tick
-    /// with the same priority.
-    sub_tick_count: AtomicI64,
+    /// Per-level recent toggle history used by vanilla redstone-torch burnout.
+    redstone_torch_toggles: SyncMutex<redstone::RedstoneTorchToggleTracker>,
+    /// World registration and sparse head index for chunk-owned scheduled ticks.
+    scheduled_ticks: tick_scheduler::WorldTickScheduler,
+    /// Published block batch used by `willTickThisTick` queries during callbacks.
+    scheduled_block_ticks_this_tick:
+        SyncMutex<Option<Arc<tick_scheduler::ScheduledTickRunBatch<BlockRef>>>>,
+    /// Published fluid batch used by `willTickThisTick` queries during callbacks.
+    scheduled_fluid_ticks_this_tick:
+        SyncMutex<Option<Arc<tick_scheduler::ScheduledTickRunBatch<FluidRef>>>>,
     /// Point of interest storage for efficient spatial queries of special blocks.
     pub poi_storage: SyncMutex<PointOfInterestStorage>,
-    /// Section-indexed listeners for vanilla game events.
-    game_event_listeners: GameEventListenerStorage,
     /// World-change requests queued by world-local ticks for server safe-point processing.
     pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
 }
@@ -455,6 +501,7 @@ impl World {
     ) -> io::Result<Arc<Self>> {
         let view_distance = config.view_distance;
         let simulation_distance = config.simulation_distance;
+        let max_chained_neighbor_updates = config.max_chained_neighbor_updates;
         let compression = config.compression;
         let is_flat = config.is_flat;
         let sea_level = config.sea_level;
@@ -533,13 +580,22 @@ impl World {
                 sea_level,
                 default_gamemode,
                 tick_runs_normally: AtomicBool::new(true),
+                handling_tick: AtomicBool::new(false),
+                block_events: SyncMutex::new(BlockEventQueue::default()),
+                neighbor_updater: CollectingNeighborUpdater::new(max_chained_neighbor_updates),
                 entity_manager: WorldEntityManager::new(),
+                block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers::new(),
+                game_event_listener_count: GameEventListenerCount::shared(),
                 entity_tracker: EntityTracker::new(),
                 navigating_mobs: NavigatingMobTracker::new(),
                 weather: SyncMutex::new(weather),
-                sub_tick_count: AtomicI64::new(0),
+                redstone_torch_toggles: SyncMutex::new(
+                    redstone::RedstoneTorchToggleTracker::default(),
+                ),
+                scheduled_ticks: tick_scheduler::WorldTickScheduler::new(),
+                scheduled_block_ticks_this_tick: SyncMutex::new(None),
+                scheduled_fluid_ticks_this_tick: SyncMutex::new(None),
                 poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
-                game_event_listeners: GameEventListenerStorage::new(),
                 pending_world_changes: SyncMutex::new(Vec::new()),
             }
         }))
@@ -1066,8 +1122,7 @@ impl World {
         let Some(block_entity) = self.get_block_entity(origin) else {
             return false;
         };
-        let mut block_entity = block_entity.lock();
-        let Some(gateway) = block_entity.downcast_mut::<EndGatewayBlockEntity>() else {
+        let Some(gateway) = block_entity.downcast_ref::<EndGatewayBlockEntity>() else {
             return false;
         };
         gateway.set_exit_position(exit, exact);
@@ -1664,6 +1719,12 @@ impl World {
             .store(runs_normally, Ordering::Relaxed);
     }
 
+    /// Mirrors `ServerLevel.isHandlingTick` for piston early-retraction rules.
+    #[must_use]
+    pub(crate) fn is_handling_tick(&self) -> bool {
+        self.handling_tick.load(Ordering::Relaxed)
+    }
+
     /// Gets the value of a game rule.
     /// WARNING: this function acquires a read lock on the level data.
     /// if you already have a write lock on level data, this will DEADLOCK
@@ -1987,33 +2048,15 @@ impl World {
         true
     }
 
-    /// Gets a block state for generation postprocessing.
-    ///
-    /// Vanilla delays `LevelChunk.postProcessGeneration` until neighboring
-    /// chunks are full because that hook runs during the ticking-chunk
-    /// transition. Steel runs it as the center chunk reaches full. At that
-    /// point the chunk pyramid guarantees the 3x3 neighbors have reached
-    /// `Light`, which means they have completed `Features`, the last
-    /// block-mutating generation stage. Postprocessing only needs block
-    /// states, so reading light-stage proto chunks here is intentional.
-    #[must_use]
-    pub(crate) fn get_postprocessing_block_state(&self, pos: BlockPos) -> BlockStateId {
-        if !self.is_in_valid_bounds(pos) {
-            return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR);
-        }
-
-        let chunk_pos = Self::chunk_pos_for_block(pos);
-        self.chunk_map
-            .with_chunk_at_status(chunk_pos, ChunkStatus::Features, |chunk| {
-                chunk.get_block_state(pos)
-            })
-            .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
-    }
-
     /// Sets a block at the given position.
     ///
     /// Returns `true` if the block was successfully set, `false` otherwise.
     /// Uses the default update limit of 512 (matching vanilla).
+    ///
+    /// Live gameplay callers must run in Steel's serialized world-mutation phase. Palette and
+    /// block-entity ownership claims are atomic, but the following Vanilla-ordered callbacks,
+    /// neighbor updates, and derived-cache writes are intentionally not one concurrent
+    /// transaction for the same position.
     pub fn set_block(
         self: &Arc<Self>,
         pos: BlockPos,
@@ -2025,10 +2068,11 @@ impl World {
 
     /// Sets a block at the given position with a custom update limit.
     ///
-    /// The update limit prevents infinite recursion when shape updates trigger
-    /// further block changes. Each recursive call decrements the limit.
+    /// The update limit bounds recursive shape propagation. The block mutation
+    /// itself still occurs when the limit is zero or negative, matching vanilla.
     ///
     /// Returns `true` if the block was successfully set, `false` otherwise.
+    /// See [`Self::set_block`] for the serialized world-mutation requirement.
     pub fn set_block_with_limit(
         self: &Arc<Self>,
         pos: BlockPos,
@@ -2036,10 +2080,6 @@ impl World {
         flags: UpdateFlags,
         update_limit: i32,
     ) -> bool {
-        if update_limit <= 0 {
-            return false;
-        }
-
         if !self.is_in_valid_bounds(pos) {
             return false;
         }
@@ -2055,11 +2095,83 @@ impl World {
             return false;
         };
 
-        // Record the block change for broadcasting to clients
-        self.chunk_map.block_changed(pos);
-        self.update_navigating_mobs_after_block_collision_change(pos, old_state, block_state);
+        self.finish_block_set(pos, old_state, block_state, flags, update_limit);
+        true
+    }
 
-        // Neighbor updates (when UPDATE_NEIGHBORS is set)
+    /// Replaces a block only if it still has `expected_state`.
+    ///
+    /// The comparison and palette write are performed under one chunk-section write lock. This
+    /// prevents two consumers of the same observed block state from both succeeding. Block
+    /// callbacks still run after that state claim, so callers must remain in a serialized
+    /// world-mutation phase such as an exclusive packet handler or ordered tick commit.
+    pub fn set_block_if_unchanged(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        expected_state: BlockStateId,
+        new_state: BlockStateId,
+        flags: UpdateFlags,
+    ) -> ConditionalBlockSetResult {
+        self.set_block_if_unchanged_with_limit(pos, expected_state, new_state, flags, 512)
+    }
+
+    /// Conditional variant of [`Self::set_block_with_limit`].
+    pub fn set_block_if_unchanged_with_limit(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        expected_state: BlockStateId,
+        new_state: BlockStateId,
+        flags: UpdateFlags,
+        update_limit: i32,
+    ) -> ConditionalBlockSetResult {
+        if !self.is_in_valid_bounds(pos) {
+            return ConditionalBlockSetResult::Unavailable;
+        }
+
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        let Some(result) = self
+            .chunk_map
+            .with_full_chunk(chunk_pos, |chunk| {
+                chunk.set_block_state_if_unchanged(pos, expected_state, new_state, flags)
+            })
+            .flatten()
+        else {
+            return ConditionalBlockSetResult::Unavailable;
+        };
+
+        match result {
+            LevelChunkBlockSetResult::Changed(old_state) => {
+                self.finish_block_set(pos, old_state, new_state, flags, update_limit);
+                ConditionalBlockSetResult::Changed
+            }
+            LevelChunkBlockSetResult::Unchanged => ConditionalBlockSetResult::Unchanged,
+            LevelChunkBlockSetResult::Stale(current_state) => {
+                ConditionalBlockSetResult::Stale(current_state)
+            }
+        }
+    }
+
+    fn finish_block_set(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        old_state: BlockStateId,
+        block_state: BlockStateId,
+        flags: UpdateFlags,
+        update_limit: i32,
+    ) {
+        let new_state = self.get_block_state(pos);
+        if new_state != block_state {
+            return;
+        }
+
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        if flags.contains(UpdateFlags::UPDATE_CLIENTS)
+            && self.chunk_map.is_block_ticking_full_chunk_loaded(chunk_pos)
+        {
+            self.chunk_map.block_changed(pos);
+            self.update_navigating_mobs_after_block_collision_change(pos, old_state, block_state);
+        }
+
         if flags.contains(UpdateFlags::UPDATE_NEIGHBORS) {
             self.update_neighbors_at(pos, old_state.get_block());
             let behavior = BLOCK_BEHAVIORS.get_behavior(block_state.get_block());
@@ -2068,28 +2180,35 @@ impl World {
             }
         }
 
-        // Shape updates (unless UPDATE_KNOWN_SHAPE is set)
         if !flags.contains(UpdateFlags::UPDATE_KNOWN_SHAPE) && update_limit > 0 {
-            // Clear UPDATE_NEIGHBORS and UPDATE_SUPPRESS_DROPS for propagation
             let neighbor_flags =
                 flags & !(UpdateFlags::UPDATE_NEIGHBORS | UpdateFlags::UPDATE_SUPPRESS_DROPS);
-
-            // Notify all 6 neighbors about our shape change
-            for direction in Direction::UPDATE_SHAPE_ORDER {
-                let neighbor_pos = pos.relative(direction);
-
-                // Tell the neighbor that we (at pos) changed
-                self.neighbor_shape_changed(
-                    direction.opposite(), // Direction from us to neighbor
-                    neighbor_pos,         // Neighbor's position
-                    pos,                  // Our position (the one that changed)
-                    block_state,          // Our new state
-                    neighbor_flags,
-                    update_limit - 1,
-                );
-            }
+            let old_behavior = BLOCK_BEHAVIORS.get_behavior(old_state.get_block());
+            old_behavior.update_indirect_neighbour_shapes(
+                old_state,
+                self,
+                pos,
+                neighbor_flags,
+                update_limit - 1,
+            );
+            self.update_neighbour_shapes(block_state, pos, neighbor_flags, update_limit - 1);
+            let new_behavior = BLOCK_BEHAVIORS.get_behavior(block_state.get_block());
+            new_behavior.update_indirect_neighbour_shapes(
+                block_state,
+                self,
+                pos,
+                neighbor_flags,
+                update_limit - 1,
+            );
         }
-        true
+
+        if REGISTRY.poi_types.type_id_for_state(old_state)
+            != REGISTRY.poi_types.type_id_for_state(new_state)
+        {
+            self.poi_storage
+                .lock()
+                .on_block_state_change(pos, old_state, new_state);
+        }
     }
 
     fn update_navigating_mobs_after_block_collision_change(
@@ -2159,24 +2278,26 @@ impl World {
             .get_collision_shape(state, self, pos, BlockCollisionContext::empty())
     }
 
-    /// Order in which neighbors are updated (matches vanilla's `NeighborUpdater.UPDATE_ORDER`).
-    const NEIGHBOR_UPDATE_ORDER: [Direction; 6] = [
-        Direction::West,
-        Direction::East,
-        Direction::Down,
-        Direction::Up,
-        Direction::North,
-        Direction::South,
-    ];
-
     /// Updates all neighbors of the given position about a block change.
     ///
     /// This is the Rust equivalent of vanilla's `Level.updateNeighborsAt()`.
     pub fn update_neighbors_at(self: &Arc<Self>, pos: BlockPos, source_block: BlockRef) {
-        for direction in Self::NEIGHBOR_UPDATE_ORDER {
-            let neighbor_pos = pos.relative(direction);
-            self.neighbor_changed(neighbor_pos, source_block, false);
-        }
+        self.neighbor_updater
+            .update_neighbors_at_except_from_facing(self, pos, source_block, None);
+    }
+
+    /// Updates all neighbors except the one in `skip_direction`.
+    ///
+    /// Mirrors vanilla `Level.updateNeighborsAtExceptFromFacing` without the
+    /// experimental redstone `Orientation` value.
+    pub fn update_neighbors_at_except_from_facing(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        source_block: BlockRef,
+        skip_direction: Direction,
+    ) {
+        self.neighbor_updater
+            .update_neighbors_at_except_from_facing(self, pos, source_block, Some(skip_direction));
     }
 
     /// Updates all neighboring shapes around `pos`.
@@ -2203,6 +2324,9 @@ impl World {
     /// Updates comparators that can read analog output from `pos`.
     ///
     /// Mirrors vanilla `Level.updateNeighbourForOutputSignal`.
+    /// Steel intentionally never synchronously loads the second neighbor chunk:
+    /// block-ticking chunks have a radius-one Full-chunk safety border, while
+    /// other call sites retain the game-tick no-blocking policy.
     pub(crate) fn update_neighbor_for_output_signal(
         self: &Arc<Self>,
         pos: BlockPos,
@@ -2216,11 +2340,11 @@ impl World {
 
             let mut state = self.get_block_state(relative_pos);
             if state.get_block() == &vanilla_blocks::COMPARATOR {
-                self.neighbor_changed(relative_pos, changed_block, false);
+                self.neighbor_changed_with_state(state, relative_pos, changed_block, false);
                 continue;
             }
 
-            if !Self::is_redstone_conductor(state, relative_pos) {
+            if !self.is_redstone_conductor(state, relative_pos) {
                 continue;
             }
 
@@ -2230,19 +2354,74 @@ impl World {
             }
             state = self.get_block_state(relative_pos);
             if state.get_block() == &vanilla_blocks::COMPARATOR {
-                self.neighbor_changed(relative_pos, changed_block, false);
+                self.neighbor_changed_with_state(state, relative_pos, changed_block, false);
             }
         }
     }
 
-    fn is_redstone_conductor(state: BlockStateId, pos: BlockPos) -> bool {
-        is_offset_shape_full_block(state.get_collision_shape_at(pos))
+    pub(crate) fn update_neighbour_shapes(
+        self: &Arc<Self>,
+        state: BlockStateId,
+        pos: BlockPos,
+        flags: UpdateFlags,
+        update_limit: i32,
+    ) {
+        for direction in Direction::UPDATE_SHAPE_ORDER {
+            let neighbor_pos = pos.relative(direction);
+            self.neighbor_shape_changed(
+                direction.opposite(),
+                neighbor_pos,
+                pos,
+                state,
+                flags,
+                update_limit,
+            );
+        }
+    }
+
+    /// Recomputes a state against all neighbors in vanilla shape-update order.
+    pub(crate) fn update_from_neighbor_shapes(
+        self: &Arc<Self>,
+        state: BlockStateId,
+        pos: BlockPos,
+    ) -> BlockStateId {
+        let mut updated = state;
+        for direction in Direction::UPDATE_SHAPE_ORDER {
+            let neighbor_pos = pos.relative(direction);
+            let neighbor_state = self.get_block_state(neighbor_pos);
+            updated = BLOCK_BEHAVIORS
+                .get_behavior(updated.get_block())
+                .update_shape(updated, self, pos, direction, neighbor_pos, neighbor_state);
+        }
+        updated
     }
 
     /// Called when a neighbor's shape changes, to update this block's state.
     ///
     /// This is the Rust equivalent of vanilla's `NeighborUpdater.executeShapeUpdate()`.
-    fn neighbor_shape_changed(
+    pub(crate) fn neighbor_shape_changed(
+        self: &Arc<Self>,
+        direction: Direction,
+        pos: BlockPos,
+        neighbor_pos: BlockPos,
+        neighbor_state: BlockStateId,
+        flags: UpdateFlags,
+        update_limit: i32,
+    ) {
+        self.neighbor_updater.shape_update(
+            self,
+            ShapeUpdate::new(
+                direction,
+                neighbor_state,
+                pos,
+                neighbor_pos,
+                flags,
+                update_limit,
+            ),
+        );
+    }
+
+    fn execute_neighbor_shape_update(
         self: &Arc<Self>,
         direction: Direction,
         pos: BlockPos,
@@ -2275,21 +2454,9 @@ impl World {
         );
 
         self.update_or_destroy(current_state, new_state, pos, flags, update_limit);
-
-        // Vanilla parity: `SimpleWaterloggedBlock.updateShape` / `Level.neighborShapeChanged` —
-        // always reschedule the fluid tick when a block with fluid has a neighbor shape change,
-        // regardless of whether the block state itself changed. This ensures waterlogged blocks
-        // (fences, slabs, stairs…) propagate their fluid when adjacent blocks are removed.
-        let fluid_state = new_state.get_fluid_state();
-        if !fluid_state.is_empty() {
-            let delay = FLUID_BEHAVIORS
-                .get_behavior(fluid_state.fluid_id)
-                .tick_delay(self);
-            self.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
-        }
     }
 
-    fn update_or_destroy(
+    pub(crate) fn update_or_destroy(
         self: &Arc<World>,
         old_state: BlockStateId,
         new_state: BlockStateId,
@@ -2302,17 +2469,48 @@ impl World {
         }
 
         if new_state.is_air() {
-            self.destroy_block(pos, !flags.contains(UpdateFlags::UPDATE_SUPPRESS_DROPS));
+            self.destroy_block_with_limit(
+                pos,
+                !flags.contains(UpdateFlags::UPDATE_SUPPRESS_DROPS),
+                recursion_left,
+            );
         } else {
-            self.set_block_with_limit(pos, new_state, flags, recursion_left);
+            self.set_block_with_limit(
+                pos,
+                new_state,
+                flags & !UpdateFlags::UPDATE_SUPPRESS_DROPS,
+                recursion_left,
+            );
         }
     }
 
     /// Notifies a block that one of its neighbors changed.
     ///
     /// This is the Rust equivalent of vanilla's `Level.neighborChanged()`.
-    pub(crate) fn neighbor_changed(
+    pub(crate) fn neighbor_changed(self: &Arc<Self>, pos: BlockPos, source_block: BlockRef) {
+        self.neighbor_updater
+            .neighbor_changed(self, pos, source_block);
+    }
+
+    pub(crate) fn neighbor_changed_with_state(
         self: &Arc<Self>,
+        state: BlockStateId,
+        pos: BlockPos,
+        source_block: BlockRef,
+        moved_by_piston: bool,
+    ) {
+        self.neighbor_updater.neighbor_changed_with_state(
+            self,
+            state,
+            pos,
+            source_block,
+            moved_by_piston,
+        );
+    }
+
+    fn execute_neighbor_update(
+        self: &Arc<Self>,
+        state: BlockStateId,
         pos: BlockPos,
         source_block: BlockRef,
         moved_by_piston: bool,
@@ -2320,8 +2518,6 @@ impl World {
         if !self.is_in_valid_bounds(pos) {
             return;
         }
-
-        let state = self.get_block_state(pos);
         let block_behaviors = &*BLOCK_BEHAVIORS;
         let behavior = block_behaviors.get_behavior(state.get_block());
         behavior.handle_neighbor_changed(state, self, pos, source_block, moved_by_piston);
@@ -2342,9 +2538,43 @@ impl World {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk| {
-                chunk.as_full().and_then(|lc| lc.get_block_entity(pos))
+                chunk
+                    .as_full()
+                    .and_then(|lc| lc.get_block_entity_immediate(pos))
             })
             .flatten()
+    }
+
+    /// Adds a block entity to the loaded full chunk at its position.
+    pub(crate) fn set_block_entity(&self, block_entity: SharedBlockEntity) -> bool {
+        let pos = block_entity.get_block_pos();
+        if !self.is_in_valid_bounds(pos) {
+            return false;
+        }
+
+        self.chunk_map
+            .with_full_chunk(Self::chunk_pos_for_block(pos), |chunk| {
+                chunk
+                    .as_full()
+                    .is_some_and(|chunk| chunk.add_and_register_block_entity(block_entity))
+            })
+            .unwrap_or(false)
+    }
+
+    /// Removes a block entity only while it still owns its position.
+    pub(crate) fn remove_block_entity_if_same(&self, expected: &dyn BlockEntity) -> bool {
+        let pos = expected.get_block_pos();
+        if !self.is_in_valid_bounds(pos) {
+            return false;
+        }
+
+        self.chunk_map
+            .with_full_chunk(Self::chunk_pos_for_block(pos), |chunk| {
+                chunk
+                    .as_full()
+                    .is_some_and(|chunk| chunk.remove_block_entity_if_same(expected))
+            })
+            .unwrap_or(false)
     }
 
     /// Called when a block entity's data changes.
@@ -2389,6 +2619,8 @@ impl World {
         runs_normally: bool,
     ) -> WorldGameTickTimings {
         let world_start = Instant::now();
+        let lookup_cache_scope = GameplayChunkLookupCacheScope::enter(&self.chunk_map);
+        self.handling_tick.store(true, Ordering::Relaxed);
         self.set_tick_runs_normally(runs_normally);
         if runs_normally {
             self.tick_world_border();
@@ -2405,6 +2637,14 @@ impl World {
             self.chunk_map
                 .tick_game(self, tick_count, random_tick_speed, runs_normally);
 
+        if runs_normally {
+            let _span = tracing::trace_span!("block_events").entered();
+            self.run_block_events();
+        }
+
+        // Vanilla clears this before ticking entities and block entities.
+        self.handling_tick.store(false, Ordering::Relaxed);
+
         let entity_tick = {
             let _span = tracing::trace_span!("entity_tick").entered();
             let start = Instant::now();
@@ -2417,8 +2657,12 @@ impl World {
             start.elapsed()
         };
 
-        self.chunk_map
-            .tick_block_entities(&mut chunk_map_timings, runs_normally);
+        {
+            let _span = tracing::trace_span!("block_entities").entered();
+            let start = Instant::now();
+            self.block_entity_tickers.tick(self, runs_normally);
+            chunk_map_timings.tick_block_entities = start.elapsed();
+        }
 
         {
             let _span = tracing::trace_span!("entity_tracker_send_changes").entered();
@@ -2504,6 +2748,7 @@ impl World {
             );
         }
 
+        chunk_map_timings.lookup_cache = lookup_cache_scope.finish();
         WorldGameTickTimings {
             elapsed: world_start.elapsed(),
             chunk_map: chunk_map_timings,
@@ -2729,6 +2974,24 @@ impl World {
         environment::sky_darkening(self.sky_light_level())
     }
 
+    /// Returns the current vanilla `SUN_ANGLE` environment attribute in degrees.
+    pub fn sun_angle_degrees(&self) -> f32 {
+        let level_data = self.level_data.read();
+        environment::sun_angle_degrees(self.dimension_type, level_data.world_clocks())
+    }
+
+    /// Returns sky-layer light after the current sky darkening is subtracted.
+    ///
+    /// Mirrors vanilla `LevelReader.getEffectiveSkyBrightness` without allowing
+    /// block light to raise the result.
+    pub fn effective_sky_brightness(&self, pos: BlockPos) -> u8 {
+        if !self.dimension_type.has_skylight {
+            return 0;
+        }
+        self.light_value_at(LightLayer::Sky, pos)
+            .saturating_sub(self.sky_darkening())
+    }
+
     /// Returns vanilla `Level.isBrightOutside`.
     pub fn is_bright_outside(&self) -> bool {
         self.dimension_type.fixed_time.is_none() && self.sky_darkening() < 4
@@ -2865,7 +3128,8 @@ impl World {
 
     /// Schedules a block tick at the given position.
     ///
-    /// The tick will fire after `delay` game ticks with the given priority.
+    /// The tick will fire after `delay` world game ticks with the given priority.
+    /// Its deadline continues to age while the loaded chunk is outside simulation distance.
     /// Only one tick per `(pos, block)` pair can be active at a time — duplicates
     /// are silently ignored.
     pub fn schedule_block_tick(
@@ -2875,18 +3139,12 @@ impl World {
         delay: i32,
         priority: tick_scheduler::TickPriority,
     ) {
+        let trigger_tick = self.game_time().wrapping_add(i64::from(delay));
+        let order = self.scheduled_ticks.next_sub_tick_order();
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map.with_full_chunk(chunk_pos, |chunk_access| {
             if let Some(chunk) = chunk_access.as_full() {
-                let order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
-                let tick = tick_scheduler::BlockTick {
-                    tick_type: block,
-                    pos,
-                    delay,
-                    priority,
-                    sub_tick_order: order,
-                };
-                chunk.block_ticks.lock().schedule(tick);
+                chunk.schedule_block_tick(pos, block, trigger_tick, priority, order);
             }
         });
     }
@@ -2898,7 +3156,8 @@ impl World {
 
     /// Schedules a fluid tick at the given position.
     ///
-    /// The tick will fire after `delay` game ticks with the given priority.
+    /// The tick will fire after `delay` world game ticks with the given priority.
+    /// Its deadline continues to age while the loaded chunk is outside simulation distance.
     /// Only one tick per `(pos, fluid)` pair can be active at a time.
     pub fn schedule_fluid_tick(
         &self,
@@ -2907,18 +3166,12 @@ impl World {
         delay: i32,
         priority: tick_scheduler::TickPriority,
     ) {
+        let trigger_tick = self.game_time().wrapping_add(i64::from(delay));
+        let order = self.scheduled_ticks.next_sub_tick_order();
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map.with_full_chunk(chunk_pos, |chunk_access| {
             if let Some(chunk) = chunk_access.as_full() {
-                let order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
-                let tick = tick_scheduler::FluidTick {
-                    tick_type: fluid,
-                    pos,
-                    delay,
-                    priority,
-                    sub_tick_order: order,
-                };
-                chunk.fluid_ticks.lock().schedule(tick);
+                chunk.schedule_fluid_tick(pos, fluid, trigger_tick, priority, order);
             }
         });
     }
@@ -2929,27 +3182,228 @@ impl World {
     }
 
     /// Returns `true` if a block tick is already scheduled for the given `(pos, block)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a published Full chunk's scheduled-tick container was finalized,
+    /// which violates the chunk publication invariant.
     pub fn has_scheduled_block_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk_access| {
-                chunk_access
-                    .as_full()
-                    .is_some_and(|chunk| chunk.block_ticks.lock().has_tick(pos, block))
+                let Some(chunk) = chunk_access.as_full() else {
+                    return false;
+                };
+                match chunk.has_scheduled_block_tick(pos, block) {
+                    Ok(has_tick) => has_tick,
+                    Err(error) => {
+                        panic!("Full chunk scheduled-tick ownership invariant failed: {error:?}")
+                    }
+                }
             })
             .unwrap_or(false)
     }
 
     /// Returns `true` if a fluid tick is already scheduled for the given `(pos, fluid)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a published Full chunk's scheduled-tick container was finalized,
+    /// which violates the chunk publication invariant.
     pub fn has_scheduled_fluid_tick(&self, pos: BlockPos, fluid: FluidRef) -> bool {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk_access| {
-                chunk_access
-                    .as_full()
-                    .is_some_and(|chunk| chunk.fluid_ticks.lock().has_tick(pos, fluid))
+                let Some(chunk) = chunk_access.as_full() else {
+                    return false;
+                };
+                match chunk.has_scheduled_fluid_tick(pos, fluid) {
+                    Ok(has_tick) => has_tick,
+                    Err(error) => {
+                        panic!("Full chunk scheduled-tick ownership invariant failed: {error:?}")
+                    }
+                }
             })
             .unwrap_or(false)
+    }
+
+    pub(crate) fn register_full_chunk_ticks(
+        &self,
+        chunk: &LevelChunk,
+    ) -> Result<(), tick_scheduler::TickSchedulerError> {
+        self.scheduled_ticks.register_chunk(chunk)
+    }
+
+    pub(crate) fn unregister_full_chunk_ticks(&self, pos: ChunkPos) {
+        self.scheduled_ticks.unregister_chunk(pos);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_registered_full_chunk_ticks(&self, pos: ChunkPos) -> bool {
+        self.scheduled_ticks.has_registered_chunk(pos)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_indexed_scheduled_tick_head(&self, pos: ChunkPos) -> bool {
+        self.scheduled_ticks.has_indexed_head(pos)
+    }
+
+    pub(crate) fn schedule_block_tick_for_chunk(
+        &self,
+        chunk: &LevelChunk,
+        pos: BlockPos,
+        block: BlockRef,
+        trigger_tick: i64,
+        priority: tick_scheduler::TickPriority,
+        sub_tick_order: i64,
+    ) -> Result<bool, tick_scheduler::TickSchedulerError> {
+        self.scheduled_ticks.schedule_block(
+            chunk,
+            block,
+            pos,
+            trigger_tick,
+            priority,
+            sub_tick_order,
+        )
+    }
+
+    pub(crate) fn schedule_fluid_tick_for_chunk(
+        &self,
+        chunk: &LevelChunk,
+        pos: BlockPos,
+        fluid: FluidRef,
+        trigger_tick: i64,
+        priority: tick_scheduler::TickPriority,
+        sub_tick_order: i64,
+    ) -> Result<bool, tick_scheduler::TickSchedulerError> {
+        self.scheduled_ticks.schedule_fluid(
+            chunk,
+            fluid,
+            pos,
+            trigger_tick,
+            priority,
+            sub_tick_order,
+        )
+    }
+
+    pub(crate) fn unpack_scheduled_ticks(
+        &self,
+        pos: ChunkPos,
+    ) -> Result<(), tick_scheduler::TickSchedulerError> {
+        self.scheduled_ticks.unpack_chunk(pos, self.game_time())
+    }
+
+    pub(crate) fn reconcile_active_scheduled_tick_chunks<I>(
+        &self,
+        active_chunks: I,
+    ) -> Result<(), tick_scheduler::TickSchedulerError>
+    where
+        I: Iterator<Item = ChunkPos> + Clone,
+    {
+        self.scheduled_ticks.reconcile_active_chunks(active_chunks)
+    }
+
+    pub(crate) fn begin_scheduled_tick_phase(
+        &self,
+        current_tick: i64,
+        max_ticks: usize,
+    ) -> tick_scheduler::ScheduledTickBatch<BlockRef> {
+        self.scheduled_ticks.begin_tick(current_tick, max_ticks)
+    }
+
+    pub(crate) fn collect_scheduled_fluid_tick_batch(
+        &self,
+        current_tick: i64,
+        max_ticks: usize,
+    ) -> tick_scheduler::ScheduledTickBatch<FluidRef> {
+        self.scheduled_ticks
+            .collect_fluid_ticks(current_tick, max_ticks)
+    }
+
+    /// Returns whether a selected block tick at `(pos, block)` has not started yet.
+    ///
+    /// This mirrors `LevelTickAccess.willTickThisTick` and is distinct from
+    /// [`Self::has_scheduled_block_tick`], because selected ticks have already
+    /// been removed from their owning chunk queue.
+    pub fn will_tick_block_this_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
+        let batch = self
+            .scheduled_block_ticks_this_tick
+            .lock()
+            .as_ref()
+            .map(Arc::clone);
+        batch.is_some_and(|batch| batch.contains(pos, block))
+    }
+
+    /// Returns whether a selected fluid tick at `(pos, fluid)` has not started yet.
+    pub fn will_tick_fluid_this_tick(&self, pos: BlockPos, fluid: FluidRef) -> bool {
+        let batch = self
+            .scheduled_fluid_ticks_this_tick
+            .lock()
+            .as_ref()
+            .map(Arc::clone);
+        batch.is_some_and(|batch| batch.contains(pos, fluid))
+    }
+
+    pub(crate) fn begin_scheduled_block_tick_batch(
+        &self,
+        ticks: Vec<tick_scheduler::BlockTick>,
+    ) -> Arc<tick_scheduler::ScheduledTickRunBatch<BlockRef>> {
+        let batch = Arc::new(tick_scheduler::ScheduledTickRunBatch::new(ticks));
+        let mut current = self.scheduled_block_ticks_this_tick.lock();
+        assert!(
+            current.is_none(),
+            "scheduled block-tick batch was already active"
+        );
+        *current = Some(Arc::clone(&batch));
+        batch
+    }
+
+    pub(crate) fn end_scheduled_block_tick_batch(
+        &self,
+        batch: &Arc<tick_scheduler::ScheduledTickRunBatch<BlockRef>>,
+    ) {
+        let removed = {
+            let mut current = self.scheduled_block_ticks_this_tick.lock();
+            assert!(
+                current
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, batch)),
+                "scheduled block-tick batch identity changed during execution"
+            );
+            current.take()
+        };
+        drop(removed);
+    }
+
+    pub(crate) fn begin_scheduled_fluid_tick_batch(
+        &self,
+        ticks: Vec<tick_scheduler::FluidTick>,
+    ) -> Arc<tick_scheduler::ScheduledTickRunBatch<FluidRef>> {
+        let batch = Arc::new(tick_scheduler::ScheduledTickRunBatch::new(ticks));
+        let mut current = self.scheduled_fluid_ticks_this_tick.lock();
+        assert!(
+            current.is_none(),
+            "scheduled fluid-tick batch was already active"
+        );
+        *current = Some(Arc::clone(&batch));
+        batch
+    }
+
+    pub(crate) fn end_scheduled_fluid_tick_batch(
+        &self,
+        batch: &Arc<tick_scheduler::ScheduledTickRunBatch<FluidRef>>,
+    ) {
+        let removed = {
+            let mut current = self.scheduled_fluid_ticks_this_tick.lock();
+            assert!(
+                current
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, batch)),
+                "scheduled fluid-tick batch identity changed during execution"
+            );
+            current.take()
+        };
+        drop(removed);
     }
 
     /// Advances game time and this world's clock instances, then periodically synchronizes game time.
@@ -3381,12 +3835,9 @@ impl World {
         let Some(block_entity) = self.get_block_entity(pos) else {
             return;
         };
-        let update = {
-            let block_entity = block_entity.lock();
-            block_entity
-                .get_update_tag()
-                .map(|tag| (block_entity.get_type(), tag))
-        };
+        let update = block_entity
+            .get_update_tag()
+            .map(|tag| (block_entity.get_type(), tag));
         if let Some((block_entity_type, tag)) = update {
             self.broadcast_block_entity_update(pos, block_entity_type, tag);
         }
@@ -4119,7 +4570,7 @@ impl World {
 
         self.players.iter_players(|_, player| {
             if exclude != Some(player.id())
-                && Self::level_event_recipient_in_range(player.position(), pos)
+                && Self::recipient_within_64_blocks(player.position(), pos)
             {
                 player.connection.send_encoded(encoded.clone());
             }
@@ -4127,7 +4578,7 @@ impl World {
         });
     }
 
-    fn level_event_recipient_in_range(player_pos: DVec3, event_pos: BlockPos) -> bool {
+    fn recipient_within_64_blocks(player_pos: DVec3, event_pos: BlockPos) -> bool {
         const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
 
         let dx = f64::from(event_pos.x()) - player_pos.x;
@@ -4309,6 +4760,19 @@ impl World {
         self.destroy_block_with_limit(pos, drop_items, 512)
     }
 
+    /// Replaces a block with its fluid state's legacy block.
+    ///
+    /// Mirrors vanilla `Level.removeBlock`, including the piston-move update flag.
+    pub fn remove_block(self: &Arc<Self>, pos: BlockPos, moved_by_piston: bool) -> bool {
+        let state = self.get_block_state(pos);
+        let replacement = fluid_state_to_block(state.get_fluid_state());
+        let mut flags = UpdateFlags::UPDATE_ALL;
+        if moved_by_piston {
+            flags |= UpdateFlags::UPDATE_MOVE_BY_PISTON;
+        }
+        self.set_block(pos, replacement, flags)
+    }
+
     /// Destroys a block with an entity source for game-event context.
     pub fn destroy_block_by_entity(
         self: &Arc<Self>,
@@ -4375,7 +4839,6 @@ impl World {
     /// This is the no-tool/no-entity overload. Player block breaking uses
     /// `block_breaking::drop_block_loot` which includes tool context for
     /// fortune/silk touch.
-    // TODO: `spawnAfterBreak` (XP orbs for ores) not called yet.
     // TODO: block entity and entity drops
     pub fn drop_resources(self: &Arc<Self>, state: BlockStateId, pos: BlockPos) {
         self.drop_resources_with_entity(state, pos, None);
@@ -4387,18 +4850,28 @@ impl World {
         pos: BlockPos,
         entity: Option<&dyn Entity>,
     ) {
-        for item in Self::block_drops(state, pos, entity) {
+        let context = BlockLootContext::new(self, pos).with_entity(entity);
+        for item in context.get_drops(state) {
             if !item.is_empty() {
                 self.pop_resource(pos, item);
             }
         }
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .spawn_after_break(state, self, pos, &ItemStack::empty(), true);
     }
 
-    fn block_drops(
+    pub(crate) fn block_drops(
         state: BlockStateId,
-        pos: BlockPos,
-        entity: Option<&dyn Entity>,
+        context: &BlockLootContext<'_>,
     ) -> Vec<ItemStack> {
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+        behavior
+            .get_drops(state, context)
+            .unwrap_or_else(|| Self::default_block_drops(state, context))
+    }
+
+    fn default_block_drops(state: BlockStateId, context: &BlockLootContext<'_>) -> Vec<ItemStack> {
         let block = state.get_block();
         let loot_key = steel_utils::Identifier::vanilla(format!("blocks/{}", block.key.path));
 
@@ -4408,62 +4881,21 @@ impl World {
 
         let mut rng = rand::rng();
         let mut ctx = LootContext::new(&mut rng)
+            .with_luck(context.luck())
             .with_block_state(state)
-            .with_origin(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
-        if let Some(entity) = entity {
+            .with_origin(
+                f64::from(context.pos().x()),
+                f64::from(context.pos().y()),
+                f64::from(context.pos().z()),
+            );
+        if let Some(tool) = context.tool() {
+            ctx = ctx.with_tool(tool);
+        }
+        if let Some(entity) = context.entity() {
             ctx = ctx.with_this_entity(entity_loot_ref(entity));
         }
 
         loot_table.get_random_items(&mut ctx)
-    }
-
-    /// Broadcasts a block event to nearby players within 64 blocks.
-    ///
-    /// Block events are used for special block behaviors like pistons, note blocks,
-    /// chests, and bells. Each block type interprets the parameters differently.
-    ///
-    /// # Arguments
-    /// * `pos` - The position of the block
-    /// * `block` - The block reference
-    /// * `action_id` - The action ID (block-specific meaning)
-    /// * `action_param` - The action parameter (block-specific meaning)
-    pub fn block_event(&self, pos: BlockPos, block: BlockRef, action_id: u8, action_param: u8) {
-        const MAX_DISTANCE_SQ: f64 = 64.0 * 64.0;
-
-        let block_id = block.id() as i32;
-
-        let chunk = ChunkPos::new(
-            SectionPos::block_to_section_coord(pos.x()),
-            SectionPos::block_to_section_coord(pos.z()),
-        );
-        let packet = CBlockEvent::new(pos, action_id, action_param, block_id);
-        let Ok(encoded) =
-            EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
-        else {
-            log::warn!("Failed to encode block event packet");
-            return;
-        };
-
-        // Get players tracking this chunk, then filter by 64-block distance
-        let event_pos = (
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
-        );
-
-        for entity_id in self.player_area_map.get_tracking_players(chunk) {
-            if let Some(player) = self.players.get_by_entity_id(entity_id) {
-                let player_pos = player.position();
-                let dx = player_pos.x - event_pos.0;
-                let dy = player_pos.y - event_pos.1;
-                let dz = player_pos.z - event_pos.2;
-                let dist_sq = dx * dx + dy * dy + dz * dz;
-
-                if dist_sq <= MAX_DISTANCE_SQ {
-                    player.connection.send_encoded(encoded.clone());
-                }
-            }
-        }
     }
 
     /// Plays a sound at a specific position, broadcasting to nearby players.
@@ -4573,6 +5005,20 @@ impl World {
     #[must_use]
     pub(crate) const fn entity_manager(&self) -> &WorldEntityManager {
         &self.entity_manager
+    }
+
+    /// Returns the world-global block-entity ticker owner.
+    #[must_use]
+    pub(crate) const fn block_entity_tickers(
+        &self,
+    ) -> &block_entity_ticker::WorldBlockEntityTickers {
+        &self.block_entity_tickers
+    }
+
+    /// Shares the counter used to skip game-event dispatch when no chunk has listeners.
+    #[must_use]
+    pub(crate) fn game_event_listener_count(&self) -> Arc<GameEventListenerCount> {
+        Arc::clone(&self.game_event_listener_count)
     }
 
     /// Returns the entity tracker for managing player-entity visibility.
@@ -4891,6 +5337,25 @@ impl World {
         Some(entity)
     }
 
+    /// Spawns experience at a block position when block drops are enabled.
+    ///
+    /// Mirrors Vanilla's `Block.popExperience`.
+    pub fn pop_experience(self: &Arc<Self>, pos: BlockPos, amount: i32) {
+        if amount <= 0 || !self.get_game_rule(&BLOCK_DROPS) {
+            return;
+        }
+
+        ExperienceOrbEntity::award(
+            self,
+            DVec3::new(
+                f64::from(pos.x()) + 0.5,
+                f64::from(pos.y()) + 0.5,
+                f64::from(pos.z()) + 0.5,
+            ),
+            amount,
+        );
+    }
+
     /// Drops an item from a block face with directional velocity.
     ///
     /// Mirrors vanilla's `Block.popResourceFromFace()`. Used for items ejected
@@ -5129,7 +5594,11 @@ impl World {
         section_pos: SectionPos,
         listener: SharedGameEventListener,
     ) {
-        self.game_event_listeners.register(section_pos, listener);
+        let chunk_pos = ChunkPos::new(section_pos.x(), section_pos.z());
+        let registry = self.game_event_listener_storage(chunk_pos);
+        if let Some(registry) = registry {
+            registry.register(section_pos.y(), listener);
+        }
     }
 
     /// Unregisters a game event listener from a chunk section.
@@ -5138,7 +5607,23 @@ impl World {
         section_pos: SectionPos,
         listener: &SharedGameEventListener,
     ) -> bool {
-        self.game_event_listeners.unregister(section_pos, listener)
+        let chunk_pos = ChunkPos::new(section_pos.x(), section_pos.z());
+        let registry = self.game_event_listener_storage(chunk_pos);
+        registry.is_some_and(|registry| registry.unregister(section_pos.y(), listener))
+    }
+
+    /// Returns a stable registry handle without retaining the chunk holder read guard.
+    fn game_event_listener_storage(
+        &self,
+        chunk_pos: ChunkPos,
+    ) -> Option<Arc<GameEventListenerStorage>> {
+        self.chunk_map
+            .with_full_chunk(chunk_pos, |chunk| {
+                chunk
+                    .as_full()
+                    .map(|chunk| Arc::clone(&chunk.game_event_listeners.registry))
+            })
+            .flatten()
     }
 
     /// Dispatches a game event to all listeners in range.
@@ -5166,8 +5651,30 @@ impl World {
         source_pos: DVec3,
         context: &GameEventContext,
     ) {
-        self.game_event_listeners
-            .dispatch(self, event, source_pos, context);
+        if !self.game_event_listener_count.has_any() {
+            return;
+        }
+        let radius = event.notification_radius.max(0);
+        let center = BlockPos::from(source_pos);
+        let section_min_x = SectionPos::block_to_section_coord(center.x() - radius);
+        let section_min_y = SectionPos::block_to_section_coord(center.y() - radius);
+        let section_min_z = SectionPos::block_to_section_coord(center.z() - radius);
+        let section_max_x = SectionPos::block_to_section_coord(center.x() + radius);
+        let section_max_y = SectionPos::block_to_section_coord(center.y() + radius);
+        let section_max_z = SectionPos::block_to_section_coord(center.z() + radius);
+        let mut dispatcher = GameEventDispatcher::new(self, event, source_pos, context);
+
+        for section_x in section_min_x..=section_max_x {
+            for section_z in section_min_z..=section_max_z {
+                let registry =
+                    self.game_event_listener_storage(ChunkPos::new(section_x, section_z));
+                if let Some(registry) = registry {
+                    dispatcher.visit_chunk(&registry, section_min_y, section_max_y);
+                }
+            }
+        }
+
+        dispatcher.finish();
     }
 }
 
@@ -5191,6 +5698,18 @@ impl LevelReader for World {
 
     fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
         Self::get_block_entity(self, pos)
+    }
+
+    fn is_face_sturdy_for(
+        &self,
+        state: BlockStateId,
+        pos: BlockPos,
+        direction: Direction,
+        support_type: SupportType,
+    ) -> bool {
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .is_face_sturdy(state, self, pos, direction, support_type)
     }
 
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
@@ -5234,6 +5753,17 @@ impl LevelReader for Arc<World> {
         self.as_ref().get_block_entity(pos)
     }
 
+    fn is_face_sturdy_for(
+        &self,
+        state: BlockStateId,
+        pos: BlockPos,
+        direction: Direction,
+        support_type: SupportType,
+    ) -> bool {
+        self.as_ref()
+            .is_face_sturdy_for(state, pos, direction, support_type)
+    }
+
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
         self.as_ref().raw_brightness(pos, sky_darkening)
     }
@@ -5269,9 +5799,17 @@ impl ScheduledTickAccess for Arc<World> {
         self.as_ref().has_scheduled_block_tick(pos, block)
     }
 
+    fn will_tick_block_this_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
+        self.as_ref().will_tick_block_this_tick(pos, block)
+    }
+
     fn schedule_fluid_tick_default(&self, pos: BlockPos, fluid: FluidRef, delay: i32) -> bool {
         self.as_ref().schedule_fluid_tick_default(pos, fluid, delay);
         true
+    }
+
+    fn will_tick_fluid_this_tick(&self, pos: BlockPos, fluid: FluidRef) -> bool {
+        self.as_ref().will_tick_fluid_this_tick(pos, fluid)
     }
 }
 
@@ -5300,7 +5838,10 @@ impl LevelAccessor for Arc<World> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Weak};
+    use std::{
+        sync::{Arc, Weak},
+        thread,
+    };
 
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::{
@@ -5310,12 +5851,24 @@ mod tests {
     use uuid::Uuid;
 
     use crate::behavior::init_behaviors;
+    use crate::chunk::chunk_ticket_manager::{ChunkTicket, ChunkTicketLevel};
     use crate::entity::{EntityBase, entities::PigEntity};
-    use crate::test_support::test_world;
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
 
     const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
     const SECOND_HALF: BlockLocalAabb = BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0);
     static SPLIT_BLOCK: &[BlockLocalAabb] = &[FIRST_HALF, SECOND_HALF];
+
+    fn advance_scheduling_until(world: &Arc<World>, mut ready: impl FnMut() -> bool) {
+        for _ in 0..10_000 {
+            world.chunk_map.advance_scheduling();
+            if ready() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        panic!("chunk scheduling condition did not become ready");
+    }
 
     #[test]
     fn sound_range_uses_event_range_and_strict_vanilla_boundary() {
@@ -5324,6 +5877,32 @@ mod tests {
 
         assert!(sound_is_within_range(sound, 0.75, 255.0));
         assert!(!sound_is_within_range(sound, 0.75, 256.0));
+    }
+
+    #[test]
+    fn generic_shape_update_does_not_schedule_non_source_fluid() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("shape_update_fluid_ownership");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let pos = BlockPos::new(0, 64, 0);
+        let flowing_water = vanilla_blocks::WATER
+            .default_state()
+            .set_value(&BlockStateProperties::LEVEL, 1);
+
+        assert!(world.set_block(pos, flowing_water, UpdateFlags::UPDATE_SKIP_ON_PLACE));
+        assert!(!world.has_scheduled_fluid_tick(pos, &vanilla_fluids::FLOWING_WATER));
+
+        world.execute_neighbor_shape_update(
+            Direction::North,
+            pos,
+            pos.north(),
+            flowing_water,
+            UpdateFlags::UPDATE_NONE,
+            512,
+        );
+
+        assert!(!world.has_scheduled_fluid_tick(pos, &vanilla_fluids::FLOWING_WATER));
     }
 
     #[test]
@@ -5406,16 +5985,23 @@ mod tests {
     #[test]
     fn entity_breaker_is_available_to_chorus_flower_loot() {
         init_test_registry();
+        init_behaviors();
 
         let state = vanilla_blocks::CHORUS_FLOWER.default_state();
         let pos = BlockPos::new(1_312, 64, 1_312);
         let breaker = TrackerTestEntity::shared(987_654);
-        let drops = World::block_drops(state, pos, Some(breaker.as_ref()));
+        let world = fresh_test_world("entity_breaker_loot");
+        let context = BlockLootContext::new(&world, pos).with_entity(Some(breaker.as_ref()));
+        let drops = context.get_drops(state);
 
         assert_eq!(drops.len(), 1);
         assert_eq!(drops[0].item(), &*vanilla_items::CHORUS_FLOWER);
         assert_eq!(drops[0].count(), 1);
-        assert!(World::block_drops(state, pos, None).is_empty());
+        assert!(
+            BlockLootContext::new(&world, pos)
+                .get_drops(state)
+                .is_empty()
+        );
     }
 
     fn assert_vec3_close(left: DVec3, right: DVec3) {
@@ -5441,15 +6027,15 @@ mod tests {
     fn level_event_recipient_range_uses_block_corner_and_strict_boundary() {
         let event_pos = BlockPos::ZERO;
 
-        assert!(World::level_event_recipient_in_range(
+        assert!(World::recipient_within_64_blocks(
             DVec3::new(-63.999, 0.0, 0.0),
             event_pos,
         ));
-        assert!(!World::level_event_recipient_in_range(
+        assert!(!World::recipient_within_64_blocks(
             DVec3::new(-64.0, 0.0, 0.0),
             event_pos,
         ));
-        assert!(!World::level_event_recipient_in_range(
+        assert!(!World::recipient_within_64_blocks(
             DVec3::new(64.25, 0.0, 0.0),
             event_pos,
         ));
@@ -5462,7 +6048,7 @@ mod tests {
         let view = PlayerChunkView::new(ChunkPos::new(0, 0), 2);
 
         assert!(!view.contains(ChunkPos::from_block_pos(event_pos)));
-        assert!(World::level_event_recipient_in_range(player_pos, event_pos,));
+        assert!(World::recipient_within_64_blocks(player_pos, event_pos));
     }
 
     #[test]
@@ -5525,6 +6111,153 @@ mod tests {
             world.get_block_state(BlockPos::new(BlockPos::MAX_HORIZONTAL_COORDINATE, 0, 0)),
             vanilla_blocks::VOID_AIR.default_state()
         );
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one state sequence documents the Vanilla client-publication gates"
+    )]
+    fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
+        init_test_registry();
+        init_behaviors();
+
+        let world = Arc::clone(test_world());
+        let pos = BlockPos::new(1_504, 64, 1_504);
+        let chunk_pos = ChunkPos::from_block_pos(pos);
+        let simulation_ticket = ChunkTicket::simulated_full_chunks(1);
+        let simulation_revision = world
+            .chunk_map
+            .add_chunk_ticket(chunk_pos, simulation_ticket);
+        advance_scheduling_until(&world, || {
+            world
+                .chunk_map
+                .is_ticket_revision_committed(simulation_revision)
+                && world.chunk_map.with_full_chunk(chunk_pos, |_| ()).is_some()
+                && world
+                    .chunk_map
+                    .is_block_ticking_full_chunk_loaded(chunk_pos)
+        });
+
+        let holder = world
+            .chunk_map
+            .chunks
+            .read_sync(&chunk_pos, |_, holder| Arc::clone(holder))
+            .expect("loaded test chunk should have a holder");
+        assert!(
+            world
+                .chunk_map
+                .is_block_ticking_full_chunk_loaded(chunk_pos)
+        );
+
+        let revision = holder.packet_content_revision();
+        assert!(world.set_block_with_limit(
+            pos,
+            vanilla_blocks::DIRT.default_state(),
+            UpdateFlags::UPDATE_NONE,
+            0,
+        ));
+        assert_eq!(
+            world.get_block_state(pos),
+            vanilla_blocks::DIRT.default_state()
+        );
+        assert_eq!(holder.packet_content_revision(), revision);
+
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        assert_eq!(holder.packet_content_revision(), revision);
+
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::DIRT.default_state(),
+            UpdateFlags::UPDATE_CLIENTS,
+        ));
+        assert_eq!(holder.packet_content_revision(), revision + 1);
+
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_INVISIBLE,
+        ));
+        assert_eq!(holder.packet_content_revision(), revision + 2);
+
+        let unsupported_fire_pos = pos.offset(2, 0, 0);
+        assert!(world.get_block_state(unsupported_fire_pos).is_air());
+        assert!(world.set_block(
+            unsupported_fire_pos,
+            vanilla_blocks::FIRE.default_state(),
+            UpdateFlags::UPDATE_CLIENTS,
+        ));
+        assert!(world.get_block_state(unsupported_fire_pos).is_air());
+        assert_eq!(holder.packet_content_revision(), revision + 3);
+
+        let loading_ticket = ChunkTicket::loading(ChunkTicketLevel::BLOCK_TICKING_CHUNK);
+        let loading_revision = world.chunk_map.add_chunk_ticket(chunk_pos, loading_ticket);
+        let removal_revision = world
+            .chunk_map
+            .remove_chunk_ticket(chunk_pos, simulation_ticket);
+        advance_scheduling_until(&world, || {
+            world
+                .chunk_map
+                .is_ticket_revision_committed(loading_revision)
+                && world
+                    .chunk_map
+                    .is_ticket_revision_committed(removal_revision)
+        });
+
+        assert!(
+            world
+                .chunk_map
+                .is_block_ticking_full_chunk_loaded(chunk_pos),
+            "client publication should remain enabled for load-only BlockTicking chunks"
+        );
+        let load_only_revision = holder.packet_content_revision();
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::DIRT.default_state(),
+            UpdateFlags::UPDATE_CLIENTS,
+        ));
+        assert_eq!(holder.packet_content_revision(), load_only_revision + 1);
+
+        let full_only_ticket = ChunkTicket::full_chunks(0);
+        let full_only_revision = world
+            .chunk_map
+            .add_chunk_ticket(chunk_pos, full_only_ticket);
+        let loading_removal_revision = world
+            .chunk_map
+            .remove_chunk_ticket(chunk_pos, loading_ticket);
+        advance_scheduling_until(&world, || {
+            world
+                .chunk_map
+                .is_ticket_revision_committed(full_only_revision)
+                && world
+                    .chunk_map
+                    .is_ticket_revision_committed(loading_removal_revision)
+        });
+
+        assert!(
+            !world
+                .chunk_map
+                .is_block_ticking_full_chunk_loaded(chunk_pos)
+        );
+        let non_ticking_revision = holder.packet_content_revision();
+
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_CLIENTS,
+        ));
+        assert_eq!(holder.packet_content_revision(), non_ticking_revision);
+        world.send_block_updated(pos);
+        assert_eq!(holder.packet_content_revision(), non_ticking_revision);
+
+        world
+            .chunk_map
+            .remove_chunk_ticket(chunk_pos, full_only_ticket);
+        world.chunk_map.advance_scheduling();
     }
 
     #[test]

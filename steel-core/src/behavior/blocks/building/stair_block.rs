@@ -183,10 +183,6 @@ impl BlockBehavior for WeatheringCopperStairBlock {
             .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
 
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        self.weathering.is_randomly_ticking()
-    }
-
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.weathering.change_over_time(state, world, pos);
     }

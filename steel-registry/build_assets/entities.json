@@ -225,7 +225,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -462,7 +463,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -769,6 +771,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -960,7 +963,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "IGNORE"
     }
   },
   {
@@ -1296,6 +1300,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -1631,6 +1636,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": true
@@ -1846,7 +1852,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -2199,6 +2206,7 @@
       "is_pushed_by_fluid": false,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -2438,7 +2446,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -2667,7 +2676,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -2964,6 +2974,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -3312,6 +3323,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -3543,7 +3555,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -3780,7 +3793,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -4086,6 +4100,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": true,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -4407,7 +4422,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "IGNORE"
     }
   },
   {
@@ -4721,6 +4737,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -5015,6 +5032,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -5194,7 +5212,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -5560,6 +5579,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -5936,6 +5956,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -6339,6 +6360,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -6655,6 +6677,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -6886,7 +6909,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -7123,7 +7147,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -7354,7 +7379,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -7698,6 +7724,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -8021,6 +8048,7 @@
       "is_pushed_by_fluid": false,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -8336,6 +8364,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -8583,7 +8612,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -8935,6 +8965,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -9269,6 +9300,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -9593,6 +9625,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -9824,7 +9857,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -10061,7 +10095,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -10405,6 +10440,7 @@
       "is_pushed_by_fluid": false,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -10773,6 +10809,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -10944,7 +10981,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -11275,6 +11313,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -11471,7 +11510,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -11793,6 +11833,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -12119,6 +12160,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": true,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -12413,6 +12455,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -12746,6 +12789,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -12942,7 +12986,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -13119,7 +13164,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -13471,6 +13517,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -13626,7 +13673,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -13820,7 +13868,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -13987,7 +14036,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -14157,7 +14207,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -14328,7 +14379,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -14522,7 +14574,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -14718,7 +14771,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -15083,6 +15137,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -15432,6 +15487,7 @@
       "is_pushed_by_fluid": false,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -15671,7 +15727,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -15961,6 +16018,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -16323,6 +16381,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -16617,6 +16676,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -16832,7 +16892,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -17175,6 +17236,7 @@
       "is_pushed_by_fluid": false,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -17530,6 +17592,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -17846,6 +17909,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -18184,6 +18248,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -18417,7 +18482,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -18775,6 +18841,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -19108,6 +19175,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -19462,6 +19530,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -19647,7 +19716,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "IGNORE"
     }
   },
   {
@@ -19953,6 +20023,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -20122,7 +20193,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -20449,7 +20521,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "IGNORE"
     }
   },
   {
@@ -20654,7 +20727,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -20883,7 +20957,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -21120,7 +21195,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -21281,7 +21357,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -21434,7 +21511,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -21822,6 +21900,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -21985,7 +22064,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -22321,6 +22401,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -22552,7 +22633,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -22789,7 +22871,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -23099,6 +23182,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -23254,7 +23338,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "IGNORE"
     }
   },
   {
@@ -23477,7 +23562,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -23821,6 +23907,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -24189,6 +24276,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -24568,6 +24656,7 @@
       "is_pushed_by_fluid": false,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -24799,7 +24888,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -25036,7 +25126,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -25373,6 +25464,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -25542,7 +25634,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "IGNORE"
     }
   },
   {
@@ -25739,7 +25832,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -25968,7 +26062,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -26205,7 +26300,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -26582,6 +26678,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -26884,6 +26981,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -27264,6 +27362,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -27556,6 +27655,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -27910,6 +28010,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -28256,6 +28357,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -28572,6 +28674,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -28918,6 +29021,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -29257,6 +29361,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": false,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -29461,7 +29566,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -29663,7 +29769,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -29990,6 +30097,7 @@
       "is_pushed_by_fluid": false,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -30329,6 +30437,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -30653,6 +30762,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -30990,6 +31100,7 @@
       "is_pushed_by_fluid": false,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -31328,6 +31439,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -31651,6 +31763,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -31814,7 +31927,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -32106,6 +32220,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -32422,6 +32537,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": false,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -32768,6 +32884,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -33106,6 +33223,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -33302,7 +33420,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -33646,6 +33765,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -33842,7 +33962,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -34147,6 +34268,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": false,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": true,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -34372,7 +34494,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -34571,7 +34694,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -34877,6 +35001,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -35108,7 +35233,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -35345,7 +35471,8 @@
       "can_be_collided_with": true,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -35666,6 +35793,7 @@
       "is_pushed_by_fluid": false,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -35968,6 +36096,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": false,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -36314,6 +36443,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": true,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -36674,6 +36804,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -37004,6 +37135,7 @@
       "is_pushed_by_fluid": false,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -37357,7 +37489,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "IGNORE"
     }
   },
   {
@@ -37532,7 +37665,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -37755,7 +37889,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -38151,6 +38286,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -38374,7 +38510,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -38709,6 +38846,7 @@
       "is_pushed_by_fluid": false,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -39055,6 +39193,7 @@
       "is_pushed_by_fluid": false,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -39363,6 +39502,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -39726,6 +39866,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -40058,6 +40199,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -40395,6 +40537,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -40703,6 +40846,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -40882,7 +41026,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -41218,6 +41363,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -41551,6 +41697,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": false,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -41853,6 +42000,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -42038,7 +42186,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   },
   {
@@ -42439,6 +42588,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": false,
       "can_be_seen_as_enemy": false
@@ -42747,6 +42897,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -43072,6 +43223,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -43418,6 +43570,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -43811,6 +43964,7 @@
       "is_pushed_by_fluid": false,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -44179,6 +44333,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -44512,6 +44667,7 @@
       "is_pushed_by_fluid": true,
       "can_freeze": true,
       "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL",
       "is_sensitive_to_water": false,
       "can_breathe_underwater": true,
       "can_be_seen_as_enemy": false
@@ -45015,7 +45171,8 @@
       "can_be_collided_with": false,
       "is_pushed_by_fluid": true,
       "can_freeze": true,
-      "can_be_hit_by_projectile": false
+      "can_be_hit_by_projectile": false,
+      "piston_push_reaction": "NORMAL"
     }
   }
 ]

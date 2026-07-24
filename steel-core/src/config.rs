@@ -54,6 +54,8 @@ pub struct RuntimeConfig {
     pub view_distance: u8,
     /// The simulation distance of the server.
     pub simulation_distance: u8,
+    /// Maximum queued neighbor-update tasks in one chained run; negative means unlimited.
+    pub max_chained_neighbor_updates: i32,
     /// Whether the server is in online mode.
     pub online_mode: bool,
     /// Optional authentication endpoint for online-mode `hasJoined` checks.
@@ -80,8 +82,12 @@ pub struct RuntimeConfig {
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links.
     pub server_links: Option<ServerLinks>,
+    /// Optional count of persistent inter-tick gameplay packet workers.
+    pub packet_workers: Option<usize>,
     /// Optional worker count for the Rayon chunk generation pool.
     pub chunk_generation_threads: Option<usize>,
+    /// Optional worker count for the Rayon chunk encoding pool.
+    pub chunk_encoding_threads: Option<usize>,
 }
 
 impl RuntimeConfig {

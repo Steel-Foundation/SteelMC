@@ -19,7 +19,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
-use steel_registry::vanilla_mob_effects;
+use steel_registry::{vanilla_damage_types, vanilla_mob_effects};
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Identifier};
@@ -29,6 +29,7 @@ use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifie
 use crate::entity::damage::DamageSource;
 use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
+use crate::world::World;
 
 /// Duration in ticks of the death animation before entity removal.
 pub const DEATH_DURATION: i32 = 20;
@@ -175,8 +176,43 @@ impl MobEffectInstance {
     }
 
     #[must_use]
-    const fn has_remaining_duration(&self) -> bool {
+    pub(crate) const fn has_remaining_duration(&self) -> bool {
         self.is_infinite_duration() || self.duration > 0
+    }
+
+    #[must_use]
+    pub(crate) fn should_apply_effect_tick_this_tick(&self, entity_tick_count: i32) -> bool {
+        let tick_count = if self.is_infinite_duration() {
+            entity_tick_count
+        } else {
+            self.duration
+        };
+
+        if self.effect == vanilla_mob_effects::WITHER {
+            let interval = 40_i32.wrapping_shr(self.amplifier as u32);
+            return interval <= 0 || tick_count % interval == 0;
+        }
+
+        // TODO: Add the remaining vanilla effect schedules as their gameplay systems land.
+        false
+    }
+
+    pub(crate) fn apply_effect_tick<E: LivingEntity + ?Sized>(
+        &self,
+        world: &World,
+        entity: &E,
+    ) -> bool {
+        if self.effect == vanilla_mob_effects::WITHER {
+            entity.hurt(
+                world,
+                &DamageSource::environment(&vanilla_damage_types::WITHER),
+                1.0,
+            );
+        }
+
+        // Vanilla effect ticks return whether the effect remains active. Wither
+        // always returns true, and unimplemented effect ticks are not scheduled.
+        true
     }
 
     #[must_use]
@@ -238,8 +274,6 @@ impl MobEffectInstance {
             return MobEffectTickResult::Expired;
         }
 
-        // TODO: Run effect-specific server ticks such as poison, wither, regeneration,
-        // hunger, saturation, and bad omen once those damage/food/raid hooks exist.
         self.tick_down_duration();
         if self.downgrade_to_hidden_effect() {
             return MobEffectTickResult::Active { downgraded: true };
@@ -939,33 +973,24 @@ impl LivingEntityBase {
         true
     }
 
-    /// Ticks active mob-effect durations and queues vanilla sync changes.
-    pub fn tick_mob_effects(&self) {
-        let mut removed = Vec::new();
-        let mut updated = Vec::new();
-        {
+    /// Ticks one active mob-effect duration after its server behavior has run.
+    pub(super) fn tick_mob_effect_duration(&self, effect_key: MobEffectRef) {
+        let (updated, removed) = {
             let mut effects = self.active_mob_effects.lock();
-            let effect_keys = effects.keys().copied().collect::<Vec<_>>();
-            for effect_key in effect_keys {
-                let Some(effect) = effects.get_mut(&effect_key) else {
-                    continue;
-                };
-                match effect.tick_duration() {
-                    MobEffectTickResult::Active { downgraded } => {
-                        if downgraded || effect.duration() % 600 == 0 {
-                            updated.push(effect.clone());
-                        }
-                    }
-                    MobEffectTickResult::Expired => {
-                        if let Some(effect) = effects.remove(&effect_key) {
-                            removed.push(effect);
-                        }
-                    }
+            let Some(effect) = effects.get_mut(&effect_key) else {
+                return;
+            };
+            match effect.tick_duration() {
+                MobEffectTickResult::Active { downgraded } => {
+                    let updated =
+                        (downgraded || effect.duration() % 600 == 0).then(|| effect.clone());
+                    (updated, None)
                 }
+                MobEffectTickResult::Expired => (None, effects.remove(&effect_key)),
             }
-        }
+        };
 
-        for effect in updated {
+        if let Some(effect) = updated {
             self.refresh_effect_attribute_modifiers(&effect);
             self.mark_effects_dirty();
             self.queue_mob_effect_sync(MobEffectSyncChange::Update {
@@ -974,7 +999,7 @@ impl LivingEntityBase {
             });
         }
 
-        for effect in removed {
+        if let Some(effect) = removed {
             self.remove_effect_attribute_modifiers(effect.effect);
             self.mark_effects_dirty();
             self.queue_mob_effect_sync(MobEffectSyncChange::Remove {
@@ -2040,7 +2065,7 @@ mod tests {
         ));
         base.drain_dirty_mob_effects();
 
-        base.tick_mob_effects();
+        base.tick_mob_effect_duration(vanilla_mob_effects::DOLPHINS_GRACE);
 
         assert!(!base.has_mob_effect(vanilla_mob_effects::DOLPHINS_GRACE));
         assert_eq!(
@@ -2068,8 +2093,8 @@ mod tests {
         ));
         base.drain_dirty_mob_effects();
 
-        base.tick_mob_effects();
-        base.tick_mob_effects();
+        base.tick_mob_effect_duration(vanilla_mob_effects::SPEED);
+        base.tick_mob_effect_duration(vanilla_mob_effects::SPEED);
 
         let effect = base
             .mob_effect(vanilla_mob_effects::SPEED)

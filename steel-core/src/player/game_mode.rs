@@ -1559,12 +1559,11 @@ impl Player {
             return;
         };
 
-        let mut guard = block_entity.lock();
-        let Some(sign) = guard.downcast_mut::<SignBlockEntity>() else {
+        let Some(sign) = block_entity.downcast_ref::<SignBlockEntity>() else {
             return;
         };
 
-        if sign.is_waxed {
+        if sign.is_waxed() {
             return;
         }
 
@@ -1576,7 +1575,7 @@ impl Player {
             return;
         }
 
-        let text = sign.get_text_mut(packet.is_front_text);
+        let mut text = sign.get_text(packet.is_front_text);
         for (i, line) in packet.lines.iter().enumerate() {
             if i < 4 {
                 let stripped = strip_formatting_codes(line);
@@ -1584,14 +1583,13 @@ impl Player {
             }
         }
 
+        sign.set_text(text, packet.is_front_text);
         sign.set_player_who_may_edit(None);
         sign.set_changed();
 
         let update_tag = sign.get_update_tag();
         let block_entity_type = sign.get_type();
         let pos = packet.pos;
-
-        drop(guard);
 
         if let Some(nbt) = update_tag {
             world.broadcast_block_entity_update(pos, block_entity_type, nbt);
@@ -1606,11 +1604,10 @@ impl Player {
     pub fn open_sign_editor(&self, pos: BlockPos, is_front_text: bool) {
         let world = self.get_world();
 
-        if let Some(block_entity) = world.get_block_entity(pos) {
-            let mut guard = block_entity.lock();
-            if let Some(sign) = guard.downcast_mut::<SignBlockEntity>() {
-                sign.set_player_who_may_edit(Some(self.gameprofile.id));
-            }
+        if let Some(block_entity) = world.get_block_entity(pos)
+            && let Some(sign) = block_entity.downcast_ref::<SignBlockEntity>()
+        {
+            sign.set_player_who_may_edit(Some(self.gameprofile.id));
         }
 
         let state = world.get_block_state(pos);

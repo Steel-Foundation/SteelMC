@@ -240,7 +240,7 @@ impl CommandTextResolutionSource for CommandSource {
                     return Ok(Vec::new());
                 };
                 Ok(vec![NbtTag::Compound(
-                    block_entity.lock().save_with_full_metadata(),
+                    block_entity.save_with_full_metadata(),
                 )])
             }
             NbtSource::Storage(identifier) => {

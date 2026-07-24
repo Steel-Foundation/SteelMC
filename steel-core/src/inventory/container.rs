@@ -10,8 +10,6 @@ use enum_dispatch::enum_dispatch;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::ErasedType;
 
-use crate::player::Player;
-
 /// Default distance buffer for container interaction range checks.
 pub const DEFAULT_DISTANCE_BUFFER: f32 = 4.0;
 
@@ -22,6 +20,16 @@ pub const DEFAULT_DISTANCE_BUFFER: f32 = 4.0;
 ///
 /// Concrete implementations must implement [`steel_utils::DowncastType`] with
 /// a unique, stable key so erased container references can recover their type.
+///
+/// # Locking contract
+///
+/// Implementations stored in a [`crate::inventory::lock::ContainerRef`] must keep
+/// their methods storage-local. In particular, `set_item`, `remove_item`, and
+/// `set_changed` must not call into the world or a block entity while the
+/// container mutex is held. Block-entity persistence and comparator callbacks
+/// belong to the owner supplied through
+/// [`crate::inventory::lock::ContainerRef::owned_by_block_entity`], which runs
+/// only after every container lock has been released.
 #[enum_dispatch]
 pub trait Container: ErasedType + Send + Sync {
     /// Returns the number of slots in this container.
@@ -85,21 +93,6 @@ pub trait Container: ErasedType + Send + Sync {
 
     /// Marks this container as changed (dirty) for saving/syncing.
     fn set_changed(&mut self);
-
-    /// Returns true if the player can still interact with this container.
-    ///
-    /// This is used to validate that:
-    /// - The container still exists (e.g., chest block hasn't been destroyed)
-    /// - The player is within interaction range
-    /// - Any other conditions for valid interaction
-    ///
-    /// The default implementation always returns true (e.g., for player inventory).
-    /// Block-based containers should override this to check block existence and distance.
-    ///
-    /// Based on Java's `Container.stillValid(Player)`.
-    fn still_valid(&self, _player: &Player) -> bool {
-        true
-    }
 
     /// Returns true if the specified item can be placed in the specified slot.
     fn can_place_item(&self, _slot: usize, _stack: &ItemStack) -> bool {
@@ -350,9 +343,9 @@ pub fn calculate_redstone_signal_from_container(container: &dyn Container) -> i3
 
     total_percent /= size as f32;
 
-    // Lerp from 0 to 15 based on fullness
-    // Equivalent to Java's Mth.lerpDiscrete(totalPercent, 0, 15)
-    (total_percent * 15.0).round() as i32
+    // Vanilla `Mth.lerpDiscrete(totalPercent, 0, 15)` gives every non-empty
+    // container at least one signal level, then distributes the other 14.
+    (total_percent * 14.0).floor() as i32 + i32::from(total_percent > 0.0)
 }
 
 #[cfg(test)]
@@ -478,6 +471,19 @@ mod tests {
 
         assert_eq!(count, 7);
         assert!(container.is_empty());
+    }
+
+    #[test]
+    fn comparator_signal_uses_vanilla_discrete_non_empty_floor() {
+        init_test_registry();
+        let mut container = TestContainer::new(27);
+        container.set_item(0, ItemStack::new(&vanilla_items::STONE));
+        assert_eq!(calculate_redstone_signal_from_container(&container), 1);
+
+        for slot in 0..container.get_container_size() {
+            container.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
+        }
+        assert_eq!(calculate_redstone_signal_from_container(&container), 15);
     }
 
     #[test]

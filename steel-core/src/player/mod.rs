@@ -66,7 +66,6 @@ pub use known_players::{KnownPlayer, KnownPlayers};
 pub use profile_lookup::ProfileLookupError;
 pub(crate) use profile_lookup::lookup_online_profile;
 use std::sync::{Arc, Weak};
-use steel_macros::entity_impl;
 use steel_protocol::packets::game::{
     AnimateAction, AttributeSnapshot, CAnimate, CEntityEvent, CPlayerCombatKill, CPlayerLookAt,
     CRespawn, CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, CSound,
@@ -2865,7 +2864,6 @@ impl ResetReason {
     }
 }
 
-#[entity_impl(class(player))]
 impl Entity for Player {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -2873,6 +2871,10 @@ impl Entity for Player {
 
     fn entity_type(&self) -> EntityTypeRef {
         &vanilla_entities::PLAYER
+    }
+
+    fn base_tick(&self) {
+        LivingEntity::base_tick_living_entity(self);
     }
 
     fn scoreboard_name(&self) -> String {
@@ -3391,7 +3393,9 @@ impl LivingEntity for Player {
             self.reset_fall_distance();
         }
 
-        self.default_ai_step()
+        let result = self.default_ai_step();
+        self.set_y_head_rot(self.rotation().0);
+        result
     }
 
     fn travel(&self, input: DVec3) -> Option<MoveResult> {
@@ -3466,30 +3470,38 @@ mod tests {
 
     use glam::DVec3;
     use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
+    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+    use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+    use steel_registry::data_component_predicate::DataComponentMatchers;
+    use steel_registry::data_components::vanilla_components::CAN_BREAK;
+    use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
     use steel_registry::{
-        item_stack::ItemStack, test_support::init_test_registry, vanilla_attributes,
-        vanilla_blocks, vanilla_damage_types, vanilla_game_rules, vanilla_items,
+        RegistryHolderSet, item_stack::ItemStack, test_support::init_test_registry,
+        vanilla_attributes, vanilla_blocks, vanilla_damage_types, vanilla_game_rules,
+        vanilla_items,
     };
-    use steel_utils::types::{Difficulty, GameType};
-    use steel_utils::{BlockPos, Direction};
+    use steel_utils::types::{Difficulty, GameType, UpdateFlags};
+    use steel_utils::{BlockPos, ChunkPos};
     use text_components::TextComponent;
     use uuid::Uuid;
 
     use crate::behavior::{BlockStateBehaviorExt as _, init_behaviors};
     use crate::config::RuntimeConfig;
-    use crate::entity::{EntitySyncedData, LivingEntity, damage::DamageSource};
+    use crate::entity::{Entity, EntitySyncedData, LivingEntity, damage::DamageSource};
     use crate::inventory::{container::Container as _, equipment::EquipmentSlot, menu::Menu as _};
     use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
     use crate::player::connection::NetworkConnection;
     use crate::server::Server;
-    use crate::test_support::{hard_damage_test_world, test_world};
+    use crate::test_support::{
+        fresh_test_world, hard_damage_test_world, insert_ready_full_chunk, test_world,
+    };
     use crate::world::World;
 
     use super::abilities::{DEFAULT_FLYING_SPEED, DEFAULT_WALKING_SPEED};
     use super::{
         ClientInformation, GameProfile, Player, PlayerConnection, PlayerPermissionState,
-        PlayerRespawnJob, ResetReason, experience::Experience, first_point_level_up_sound,
-        nullable_game_mode_id, player_data::PersistentPlayerData,
+        PlayerRespawnJob, ResetReason, block_breaking::BlockBreakAction, experience::Experience,
+        first_point_level_up_sound, nullable_game_mode_id, player_data::PersistentPlayerData,
     };
 
     struct TestConnection;
@@ -3523,6 +3535,7 @@ mod tests {
             max_players: 1,
             view_distance: 2,
             simulation_distance: 2,
+            max_chained_neighbor_updates: 1_000_000,
             online_mode: false,
             auth_server: None,
             profile_server: None,
@@ -3536,7 +3549,9 @@ mod tests {
             command_spam_threshold_seconds: 10,
             compression: None,
             server_links: None,
+            packet_workers: Some(1),
             chunk_generation_threads: Some(1),
+            chunk_encoding_threads: Some(1),
         })
     }
 
@@ -3604,6 +3619,19 @@ mod tests {
     #[test]
     fn respawn_request_is_allowed_after_dead_reconnect() {
         assert!(Player::should_process_respawn(0.0));
+    }
+
+    #[test]
+    fn ai_step_copies_player_yaw_to_head_yaw() {
+        init_test_registry();
+        init_behaviors();
+        let player = test_player(Arc::clone(test_world()));
+        player.set_rotation((90.0, 15.0));
+        player.set_y_head_rot(-45.0);
+
+        let _ = player.ai_step();
+
+        assert_eq!(player.y_head_rot().to_bits(), 90.0_f32.to_bits());
     }
 
     #[test]
@@ -4091,5 +4119,66 @@ mod tests {
         player.living_base.mark_effects_dirty();
         player.update_dirty_mob_effect_entity_data();
         assert!(!player.entity_data.is_base_invisible_flag());
+    }
+
+    #[test]
+    fn block_action_restriction_precedes_redstone_ore_attack() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("redstone_ore_block_action_restriction");
+        let pos = BlockPos::new(1, 64, 0);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::REDSTONE_ORE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+
+        let player = test_player(Arc::clone(&world));
+        player.base.set_position_local(DVec3::new(1.0, 64.0, 0.0));
+
+        for game_mode in [GameType::Spectator, GameType::Adventure] {
+            player.restore_game_modes(game_mode, None);
+            player.abilities.lock().update_for_game_mode(game_mode);
+            player.block_breaking.lock().handle_block_break_action(
+                &player,
+                &world,
+                pos,
+                BlockBreakAction::Start,
+                Direction::Up,
+            );
+            assert!(
+                !world
+                    .get_block_state(pos)
+                    .get_value(&BlockStateProperties::LIT)
+            );
+        }
+
+        let predicate = BlockPredicate::new(
+            Some(RegistryHolderSet::Direct(vec![
+                &vanilla_blocks::REDSTONE_ORE,
+            ])),
+            None,
+            None,
+            DataComponentMatchers::ANY,
+        );
+        let can_break =
+            AdventureModePredicate::new(vec![predicate]).expect("one block predicate is valid");
+        let mut tool = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
+        tool.set(CAN_BREAK, can_break);
+        player.inventory.lock().set_selected_item(tool);
+
+        player.block_breaking.lock().handle_block_break_action(
+            &player,
+            &world,
+            pos,
+            BlockBreakAction::Start,
+            Direction::Up,
+        );
+        assert!(
+            world
+                .get_block_state(pos)
+                .get_value(&BlockStateProperties::LIT)
+        );
     }
 }

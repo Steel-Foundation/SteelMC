@@ -46,6 +46,7 @@ impl CaveVinesBlock {
             false,
             0.1,
             &vanilla_blocks::CAVE_VINES_PLANT,
+            None,
         )
         .with_update_body_after_converted_from_head(Self::update_body_after_converted_from_head)
         .with_update_grow_into_state(Self::update_grow_into_state)
@@ -117,9 +118,7 @@ impl BlockBehavior for CaveVinesBlock {
         self.growing_plant_head_block()
             .can_survive(state, world, pos)
     }
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        self.growing_plant_head_block().is_randomly_ticking(state)
-    }
+
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.growing_plant_head_block()
             .random_tick(state, world, pos);
@@ -173,16 +172,6 @@ impl Bonemealable for CaveVinesBlock {
         _pos: BlockPos,
     ) -> bool {
         !state.get_value(&BERRIES)
-    }
-
-    fn is_bonemeal_success(
-        &self,
-        _state: BlockStateId,
-        _world: &Arc<World>,
-        _rng: &mut dyn Rng,
-        _pos: BlockPos,
-    ) -> bool {
-        true
     }
 
     fn perform_bonemeal(

@@ -8,7 +8,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_macros::{entity_behavior, entity_impl};
+use steel_macros::entity_behavior;
 use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem, SoundSource};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
@@ -363,7 +363,6 @@ impl PigEntity {
     }
 }
 
-#[entity_impl(class(animal), interfaces(item_steerable))]
 impl Entity for PigEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -371,6 +370,10 @@ impl Entity for PigEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn base_tick(&self) {
+        Mob::base_tick_mob(self);
     }
 
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
@@ -873,7 +876,7 @@ mod tests {
     }
 
     #[test]
-    fn pig_exposes_living_entity_behavior_without_downcasting() {
+    fn try_as_dyn_exposes_pig_living_entity_behavior() {
         init_test_registry();
 
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
@@ -887,7 +890,7 @@ mod tests {
     }
 
     #[test]
-    fn pig_exposes_pathfinder_mob_behavior_without_downcasting() {
+    fn try_as_dyn_exposes_pig_pathfinder_mob_behavior() {
         init_test_registry();
 
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
@@ -901,7 +904,7 @@ mod tests {
     }
 
     #[test]
-    fn pig_exposes_mob_behavior_without_downcasting() {
+    fn try_as_dyn_exposes_pig_mob_behavior() {
         init_test_registry();
 
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
@@ -918,7 +921,7 @@ mod tests {
     }
 
     #[test]
-    fn pig_exposes_animal_behavior_without_downcasting() {
+    fn try_as_dyn_exposes_pig_animal_behavior() {
         init_test_registry();
 
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
@@ -934,7 +937,7 @@ mod tests {
     }
 
     #[test]
-    fn pig_exposes_item_steerable_behavior_without_downcasting() {
+    fn try_as_dyn_exposes_pig_item_steerable_behavior() {
         init_test_registry();
 
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());

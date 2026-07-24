@@ -15,11 +15,11 @@ pub mod vegetation;
 
 pub use building::{
     AmethystBlock, AmethystClusterBlock, BarrierBlock, BedBlock, BuddingAmethystBlock,
-    CampfireBlock, DoorBlock, FenceBlock, FenceGateBlock, HayBlock, HoneyBlock, IronBarsBlock,
-    LadderBlock, LavaCauldronBlock, MagmaBlock, PotentSulfurBlock, PowderSnowBlock,
-    RespawnAnchorBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SpongeBlock,
-    StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState,
-    WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
+    CampfireBlock, CauldronBlock, ComposterBlock, DoorBlock, FenceBlock, FenceGateBlock, HayBlock,
+    HoneyBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock, LayeredCauldronBlock, MagmaBlock,
+    PotentSulfurBlock, PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock,
+    SlimeBlock, SpongeBlock, StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock,
+    WeatherState, WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
     WeatheringCopperFullBlock, WeatheringCopperGrateBlock, WeatheringCopperSlabBlock,
     WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
 };
@@ -33,11 +33,15 @@ pub use decoration::{
 pub use fluid::{BubbleColumnBlock, LiquidBlock};
 pub use portal::{
     EndGatewayBlock, EndPortalBlock, EndPortalFrameBlock, FireBlock, NetherPortalBlock,
-    SoulFireBlock,
+    RespawnAnchorBlock, SoulFireBlock,
 };
 pub use redstone::{
-    ButtonBlock, PressurePlateBlock, RedstoneTorchBlock, RedstoneWallTorchBlock,
-    WeightedPressurePlateBlock,
+    ButtonBlock, ComparatorBlock, CopperBulbBlock, DaylightDetectorBlock, DetectorRailBlock,
+    LeverBlock, MovingPistonBlock, NoteBlock, ObserverBlock, PistonBaseBlock, PistonHeadBlock,
+    PoweredBlock, PoweredRailBlock, PressurePlateBlock, PressurePlateSensitivity, RailBlock,
+    RedStoneOreBlock, RedStoneWireBlock, RedstoneLampBlock, RedstoneTorchBlock,
+    RedstoneWallTorchBlock, RepeaterBlock, TargetBlock, TripWireBlock, TripWireHookBlock,
+    WeatheringCopperBulbBlock, WeightedPressurePlateBlock,
 };
 pub use vegetation::{
     AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock,

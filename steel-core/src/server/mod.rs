@@ -1,6 +1,7 @@
 //! This module contains the `Server` struct, which is the main entry point for the server.
 /// Tick-polled server jobs.
 pub mod jobs;
+mod packet_processor;
 mod pregen;
 /// The registry cache for the server.
 pub mod registry_cache;
@@ -43,6 +44,7 @@ use crate::permission::{
 };
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
 use crate::player::connection::NetworkConnection;
+use crate::player::networking::ScheduledPlayPacket;
 use crate::player::player_data::{
     PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle,
 };
@@ -57,12 +59,14 @@ use crate::portal::{
 };
 use crate::scoreboard::DomainScoreboards;
 use crate::server::jobs::{FnServerJob, JobPoll, ServerJob, ServerJobContext, ServerJobQueue};
+use crate::server::packet_processor::PacketProcessor;
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
 use crate::world::{PlayerMap, World, WorldConfig, WorldGameTickTimings};
 use crate::worldgen::WorldGeneratorRegistry;
 use crate::worldgen::registry::GeneratorOutput;
+use crossbeam::queue::SegQueue;
 use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use rustc_hash::FxHashMap;
@@ -98,7 +102,12 @@ use steel_utils::{
 };
 use text_components::{Modifier, TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
-use tokio::{runtime::Runtime, sync::Notify, task::spawn_blocking, time::sleep};
+use tokio::{
+    runtime::Runtime,
+    sync::Notify,
+    task::{JoinSet, spawn_blocking},
+    time::sleep,
+};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -110,6 +119,25 @@ const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
 /// Wall-clock interval between saves of command-owned persistent server data.
 /// Matches vanilla's intended five-minute autosave cadence.
 const COMMAND_DATA_AUTOSAVE_INTERVAL: Duration = Duration::from_secs(300);
+
+#[derive(Clone, Copy)]
+struct TabListTickStats {
+    tps: f32,
+    recent_mspt: f32,
+    average_mspt: f32,
+    p95_mspt: f32,
+}
+
+impl TabListTickStats {
+    fn capture(tick_manager: &TickRateManager) -> Self {
+        Self {
+            tps: tick_manager.get_tps(),
+            recent_mspt: tick_manager.get_smoothed_mspt(),
+            average_mspt: tick_manager.get_average_mspt(),
+            p95_mspt: tick_manager.get_p95(),
+        }
+    }
+}
 
 /// Results from saving every command-owned persistent data set.
 pub struct CommandDataSaveResults {
@@ -213,11 +241,19 @@ enum KnownPlayerSaveStep {
 /// Tick rate for the chunk sending loop.
 const CHUNK_SENDING_TPS: u64 = 20;
 
-/// Tick rate for the chunk scheduling loop.
-const CHUNK_SCHEDULING_TPS: u64 = 20;
+/// Work duration at which background chunk work is considered slow.
+const SLOW_CHUNK_TICK_THRESHOLD: Duration = Duration::from_millis(50);
 
 fn configured_chunk_generation_threads(configured_threads: Option<usize>) -> Option<usize> {
     cap_positive_thread_count(configured_threads, available_worker_threads())
+}
+
+fn configured_chunk_encoding_threads(configured_threads: Option<usize>) -> Option<usize> {
+    cap_positive_thread_count(configured_threads, available_worker_threads())
+}
+
+fn configured_packet_workers(configured_workers: Option<usize>) -> usize {
+    packet_workers_for_available(configured_workers, available_worker_threads())
 }
 
 fn available_worker_threads() -> usize {
@@ -230,6 +266,18 @@ fn cap_positive_thread_count(
 ) -> Option<usize> {
     let configured_threads = configured_threads.filter(|&threads| threads > 0)?;
     Some(configured_threads.min(available_threads.max(1)))
+}
+
+fn packet_workers_for_available(
+    configured_workers: Option<usize>,
+    available_threads: usize,
+) -> usize {
+    let available_threads = available_threads.max(1);
+    if let Some(configured_workers) = configured_workers.filter(|&workers| workers > 0) {
+        return configured_workers.min(available_threads);
+    }
+
+    ((available_threads / 2).max(2)).min(available_threads)
 }
 
 #[cfg(test)]
@@ -245,9 +293,12 @@ mod tests {
 
     use glam::DVec3;
     use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
+    use steel_protocol::packets::game::CRemovePlayerInfo;
+    use steel_protocol::utils::ConnectionProtocol;
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::packets::play::C_SYSTEM_CHAT;
+    use steel_registry::packets::play::{C_ADD_ENTITY, C_PLAYER_INFO_UPDATE, C_SYSTEM_CHAT};
     use steel_registry::{vanilla_dimension_types, vanilla_entities};
+    use steel_utils::ChunkPos;
     use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
     use text_components::TextComponent;
     use tokio::{fs, runtime::Builder};
@@ -263,19 +314,21 @@ mod tests {
         PermissionSubjectIndex, PermissionSubjectState,
     };
     use crate::player::connection::NetworkConnection;
-    use crate::player::{ClientInformation, GameProfile, Player, PlayerConnection};
-    use crate::test_support::test_world;
+    use crate::player::{ClientInformation, GameProfile, Player, PlayerConnection, ResetReason};
+    use crate::test_support::{fresh_test_world, test_world};
     use crate::world::World;
 
     use super::{
         AsyncMutex, CancellationToken, CommandRegistry, CommandRequestQueue, DomainCommandStorage,
-        DomainScoreboards, FxHashMap, KeyStore, KnownPlayerCacheState, KnownPlayerSaveStep,
-        KnownPlayers, Notify, PlayerDataStorage, PlayerJoinQueue, PlayerMap, RegistryCache, Server,
-        ServerJobQueue, SyncMutex, SyncRwLock, TickRateManager, UncachedPlayerTarget, WorldMap,
+        DomainPlayerData, DomainPlayerState, DomainScoreboards, FxHashMap, KeyStore,
+        KnownPlayerCacheState, KnownPlayerSaveStep, KnownPlayers, Notify, PacketProcessor,
+        PendingPlayerJoin, PlayerDataStorage, PlayerDisconnectQueue, PlayerJoinQueue, PlayerMap,
+        PreparedSpawn, RegistryCache, Server, ServerJobQueue, SyncMutex, SyncRwLock,
+        TabListTickStats, TickRateManager, UncachedPlayerTarget, WorldMap,
         can_entity_return_from_end_to_overworld, cap_positive_thread_count,
         classify_uncached_player_target, create_registered_dispatcher, direct_uuid_profile,
         is_allowed_to_enter_portal_target, is_end_return_transition, offline_uuid,
-        validate_player_permission_group_update,
+        packet_workers_for_available, validate_player_permission_group_update,
     };
 
     struct TestConnection {
@@ -310,11 +363,45 @@ mod tests {
         }
     }
 
+    struct RecordingConnection {
+        packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
+        closed: bool,
+    }
+
+    impl NetworkConnection for RecordingConnection {
+        fn compression(&self) -> Option<CompressionInfo> {
+            None
+        }
+
+        fn send_encoded(&self, packet: EncodedPacket) {
+            self.packets.lock().push(packet);
+        }
+
+        fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
+            self.packets.lock().extend(packets);
+        }
+
+        fn disconnect_with_reason(&self, _reason: TextComponent) {}
+
+        fn tick(&self) {}
+
+        fn latency(&self) -> i32 {
+            0
+        }
+
+        fn close(&self) {}
+
+        fn closed(&self) -> bool {
+            self.closed
+        }
+    }
+
     fn test_runtime_config() -> Arc<RuntimeConfig> {
         Arc::new(RuntimeConfig {
             max_players: 1,
             view_distance: 2,
             simulation_distance: 2,
+            max_chained_neighbor_updates: 1_000_000,
             online_mode: false,
             auth_server: None,
             profile_server: None,
@@ -328,7 +415,9 @@ mod tests {
             command_spam_threshold_seconds: 10,
             compression: None,
             server_links: None,
+            packet_workers: Some(1),
             chunk_generation_threads: Some(1),
+            chunk_encoding_threads: Some(1),
         })
     }
 
@@ -392,6 +481,11 @@ mod tests {
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
             command_permission_keys,
             command_requests: CommandRequestQueue::new(),
+            packet_processor: PacketProcessor::new(),
+            chunk_encoding_pool: rayon::ThreadPoolBuilder::new()
+                .num_threads(1)
+                .build()
+                .expect("test chunk encoding pool should initialize"),
             jobs: ServerJobQueue::new(),
             player_data_storage,
             player_permission_states: SyncRwLock::new(player_permission_states),
@@ -400,6 +494,7 @@ mod tests {
             known_player_save_idle: Notify::new(),
             profile_lookup_client: reqwest::Client::new(),
             pending_player_joins: PlayerJoinQueue::new(),
+            pending_player_disconnects: PlayerDisconnectQueue::new(),
             pending_world_changes: SyncMutex::new(Vec::new()),
             pending_domain_switches: SyncMutex::new(Vec::new()),
         }))
@@ -409,18 +504,15 @@ mod tests {
         test_player_with_packets(server, world, uuid, "TestPlayer", 1).0
     }
 
-    fn test_player_with_packets(
+    fn test_player_with_connection(
         server: &Arc<Server>,
         world: Arc<World>,
         uuid: Uuid,
         name: &str,
         entity_id: i32,
-    ) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
-        let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
-        let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection {
-            sent_packets: Arc::clone(&sent_packets),
-        })));
-        let player = Arc::new_cyclic(|weak_player| {
+        connection: Arc<PlayerConnection>,
+    ) -> Arc<Player> {
+        Arc::new_cyclic(|weak_player| {
             Player::new(
                 GameProfile {
                     id: uuid,
@@ -436,7 +528,21 @@ mod tests {
                 weak_player,
                 ClientInformation::default(),
             )
-        });
+        })
+    }
+
+    fn test_player_with_packets(
+        server: &Arc<Server>,
+        world: Arc<World>,
+        uuid: Uuid,
+        name: &str,
+        entity_id: i32,
+    ) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
+        let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
+        let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection {
+            sent_packets: Arc::clone(&sent_packets),
+        })));
+        let player = test_player_with_connection(server, world, uuid, name, entity_id, connection);
         (player, sent_packets)
     }
 
@@ -454,6 +560,309 @@ mod tests {
             panic!("system chat component should decode");
         };
         component
+    }
+
+    fn packet_id(packet: &EncodedPacket) -> i32 {
+        let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+        assert!(
+            VarInt::read(&mut cursor).is_ok(),
+            "packet length should decode"
+        );
+        match VarInt::read(&mut cursor) {
+            Ok(packet_id) => packet_id.0,
+            Err(error) => panic!("packet id should decode: {error}"),
+        }
+    }
+
+    #[test]
+    fn initial_player_info_precedes_entity_spawn_for_existing_players() {
+        let world = fresh_test_world("join_player_info_before_spawn");
+        let runtime = Builder::new_current_thread().enable_all().build();
+        let Ok(runtime) = runtime else {
+            panic!("test runtime should initialize");
+        };
+
+        runtime.block_on(async {
+            let storage_root = test_storage_root("join-player-info-before-spawn");
+            let server = test_server(
+                Arc::clone(&world),
+                PermissionSubjectIndex::new(),
+                &storage_root,
+            )
+            .await;
+            let Ok(server) = server else {
+                panic!("test server should initialize");
+            };
+            let (existing, existing_packets) = test_player_with_packets(
+                &server,
+                Arc::clone(&world),
+                Uuid::from_u128(1),
+                "ExistingPlayer",
+                1,
+            );
+            assert!(server.online_players.insert(Arc::clone(&existing)));
+            assert!(world.add_player(Arc::clone(&existing), ResetReason::InitialJoin));
+            let _ = existing.mark_joined_world();
+
+            let spawn_position = existing.position();
+            let spawn_chunk = ChunkPos::from_entity_pos(spawn_position);
+            existing
+                .chunk_sender
+                .lock()
+                .mark_chunk_sent_for_test(spawn_chunk);
+            existing_packets.lock().clear();
+
+            let joining = test_player_with_packets(
+                &server,
+                Arc::clone(&world),
+                Uuid::from_u128(2),
+                "JoiningPlayer",
+                2,
+            )
+            .0;
+            assert!(server.reserve_player_join(&joining));
+            let default_spawn = PreparedSpawn {
+                position: spawn_position,
+                rotation: (0.0, 0.0),
+            };
+            let state = DomainPlayerState {
+                world: Arc::clone(&world),
+                data: DomainPlayerData::FirstVisit { default_spawn },
+                _spawn_chunk_request: world.request_player_spawn_chunks(spawn_position),
+            };
+
+            server.finish_prepared_player_join(PendingPlayerJoin {
+                player: Arc::clone(&joining),
+                state: Ok(state),
+            });
+
+            assert!(
+                world.players.get_by_uuid(&joining.gameprofile.id).is_some(),
+                "joining player should enter the world"
+            );
+            let packet_ids = existing_packets
+                .lock()
+                .iter()
+                .map(packet_id)
+                .collect::<Vec<_>>();
+            let Some(player_info_index) = packet_ids
+                .iter()
+                .position(|packet_id| *packet_id == C_PLAYER_INFO_UPDATE)
+            else {
+                panic!("existing player should receive joining player info");
+            };
+            let Some(entity_spawn_index) = packet_ids
+                .iter()
+                .position(|packet_id| *packet_id == C_ADD_ENTITY)
+            else {
+                panic!("existing player should receive joining player entity spawn");
+            };
+            assert!(
+                player_info_index < entity_spawn_index,
+                "player info must precede the entity spawn; packet ids: {packet_ids:?}"
+            );
+
+            drop(joining);
+            drop(existing);
+            drop(server);
+            if let Err(error) = fs::remove_dir_all(&storage_root).await {
+                panic!("test storage should be removed: {error}");
+            }
+        });
+    }
+
+    #[test]
+    fn player_disconnect_detaches_before_async_persistence() {
+        let world = fresh_test_world("disconnect_safe_point");
+        let runtime = Builder::new_current_thread().enable_all().build();
+        let Ok(runtime) = runtime else {
+            panic!("test runtime should initialize");
+        };
+
+        runtime.block_on(async {
+            let storage_root = test_storage_root("disconnect-safe-point");
+            let server = test_server(
+                Arc::clone(&world),
+                PermissionSubjectIndex::new(),
+                &storage_root,
+            )
+            .await;
+            let Ok(server) = server else {
+                panic!("test server should initialize");
+            };
+            let player = test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+
+            assert!(server.online_players.insert(Arc::clone(&player)));
+            assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+            let _ = player.mark_joined_world();
+
+            let pending = server.process_player_disconnect(Arc::clone(&player));
+
+            assert!(pending.is_some());
+            assert!(
+                server
+                    .online_players
+                    .get_by_uuid(&player.gameprofile.id)
+                    .is_none()
+            );
+            assert!(world.players.get_by_uuid(&player.gameprofile.id).is_none());
+            assert!(world.get_entity_by_id(player.id()).is_none());
+
+            drop(pending);
+            drop(player);
+            drop(server);
+            if let Err(error) = fs::remove_dir_all(&storage_root).await {
+                panic!("test storage should be removed: {error}");
+            }
+        });
+    }
+
+    #[test]
+    fn simultaneous_disconnects_batch_tab_list_removal() {
+        let world = fresh_test_world("batched_disconnects");
+        let runtime = Builder::new_current_thread().enable_all().build();
+        let Ok(runtime) = runtime else {
+            panic!("test runtime should initialize");
+        };
+
+        runtime.block_on(async {
+            let storage_root = test_storage_root("batched-disconnects");
+            let server = test_server(
+                Arc::clone(&world),
+                PermissionSubjectIndex::new(),
+                &storage_root,
+            )
+            .await;
+            let Ok(server) = server else {
+                panic!("test server should initialize");
+            };
+
+            let survivor_packets = Arc::new(SyncMutex::new(Vec::new()));
+            let survivor = test_player_with_connection(
+                &server,
+                Arc::clone(&world),
+                Uuid::from_u128(1),
+                "TestPlayer",
+                1,
+                Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+                    packets: Arc::clone(&survivor_packets),
+                    closed: false,
+                }))),
+            );
+            let first_uuid = Uuid::from_u128(2);
+            let first = test_player_with_connection(
+                &server,
+                Arc::clone(&world),
+                first_uuid,
+                "TestPlayer",
+                2,
+                Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+                    packets: Arc::new(SyncMutex::new(Vec::new())),
+                    closed: true,
+                }))),
+            );
+            let second_uuid = Uuid::from_u128(3);
+            let second = test_player_with_connection(
+                &server,
+                Arc::clone(&world),
+                second_uuid,
+                "TestPlayer",
+                3,
+                Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+                    packets: Arc::new(SyncMutex::new(Vec::new())),
+                    closed: true,
+                }))),
+            );
+
+            for player in [&survivor, &first, &second] {
+                assert!(server.online_players.insert(Arc::clone(player)));
+                assert!(world.add_player(Arc::clone(player), ResetReason::InitialJoin));
+                let _ = player.mark_joined_world();
+            }
+            survivor_packets.lock().clear();
+
+            server.queue_player_disconnect(Arc::clone(&first));
+            server.queue_player_disconnect(Arc::clone(&second));
+            let pending = server.process_player_disconnects();
+
+            assert_eq!(pending.len(), 2);
+            {
+                let packets = survivor_packets.lock();
+                assert_eq!(packets.len(), 3);
+                for packet in &packets[..2] {
+                    assert_eq!(
+                        decode_system_chat(packet).to_plain(&DisplayResolutor),
+                        "TestPlayer left the game"
+                    );
+                }
+                let expected = EncodedPacket::from_bare(
+                    CRemovePlayerInfo {
+                        uuids: vec![first_uuid, second_uuid],
+                    },
+                    None,
+                    ConnectionProtocol::Play,
+                );
+                let Ok(expected) = expected else {
+                    panic!("expected player removal packet should encode");
+                };
+                assert_eq!(
+                    packets[2].encoded_data.as_slice(),
+                    expected.encoded_data.as_slice()
+                );
+            }
+
+            drop(pending);
+            drop(first);
+            drop(second);
+            drop(survivor);
+            drop(server);
+            if let Err(error) = fs::remove_dir_all(&storage_root).await {
+                panic!("test storage should be removed: {error}");
+            }
+        });
+    }
+
+    #[test]
+    fn online_player_snapshot_includes_player_detached_for_end_credits() {
+        let world = fresh_test_world("end_credits_shutdown_snapshot");
+        let runtime = Builder::new_current_thread().enable_all().build();
+        let Ok(runtime) = runtime else {
+            panic!("test runtime should initialize");
+        };
+
+        runtime.block_on(async {
+            let storage_root = test_storage_root("end-credits-shutdown-snapshot");
+            let server = test_server(
+                Arc::clone(&world),
+                PermissionSubjectIndex::new(),
+                &storage_root,
+            )
+            .await;
+            let Ok(server) = server else {
+                panic!("test server should initialize");
+            };
+            let player = test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+
+            assert!(server.online_players.insert(Arc::clone(&player)));
+            assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+            let _ = player.mark_joined_world();
+
+            player.show_end_credits();
+
+            assert!(world.players.get_by_uuid(&player.gameprofile.id).is_none());
+            assert!(
+                server
+                    .get_players()
+                    .iter()
+                    .any(|online| Arc::ptr_eq(online, &player))
+            );
+
+            drop(player);
+            drop(server);
+            if let Err(error) = fs::remove_dir_all(&storage_root).await {
+                panic!("test storage should be removed: {error}");
+            }
+        });
     }
 
     struct TestEntity {
@@ -505,6 +914,34 @@ mod tests {
     fn zero_thread_count_keeps_pool_default() {
         assert_eq!(cap_positive_thread_count(Some(0), 8), None);
         assert_eq!(cap_positive_thread_count(None, 8), None);
+    }
+
+    #[test]
+    fn packet_worker_count_uses_the_configured_cap() {
+        assert_eq!(packet_workers_for_available(Some(16), 8), 8);
+        assert_eq!(packet_workers_for_available(Some(4), 8), 4);
+    }
+
+    #[test]
+    fn packet_worker_count_uses_the_automatic_default() {
+        assert_eq!(packet_workers_for_available(Some(0), 8), 4);
+        assert_eq!(packet_workers_for_available(None, 8), 4);
+        assert_eq!(packet_workers_for_available(None, 1), 1);
+    }
+
+    #[test]
+    fn tab_list_distinguishes_recent_and_five_second_tick_times() {
+        let (_, footer) = Server::tab_list_components(TabListTickStats {
+            tps: 20.0,
+            recent_mspt: 1.02,
+            average_mspt: 7.84,
+            p95_mspt: 12.31,
+        });
+
+        assert_eq!(
+            footer.to_plain(&DisplayResolutor),
+            "\nTPS: 20.0 | MSPT: 1.02 recent | 7.84 avg (5s) | 12.31 p95\n"
+        );
     }
 
     #[test]
@@ -1059,6 +1496,12 @@ struct PendingPlayerJoin {
     state: Result<DomainPlayerState, String>,
 }
 
+struct PendingPlayerDisconnect {
+    player: Arc<Player>,
+    domain: String,
+    player_data: PersistentPlayerData,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PlayerAdmissionState {
     Joining,
@@ -1090,6 +1533,30 @@ impl PlayerJoinQueue {
             joins.push(join);
         }
         joins
+    }
+}
+
+struct PlayerDisconnectQueue {
+    queued: SegQueue<Arc<Player>>,
+}
+
+impl PlayerDisconnectQueue {
+    const fn new() -> Self {
+        Self {
+            queued: SegQueue::new(),
+        }
+    }
+
+    fn send(&self, player: Arc<Player>) {
+        self.queued.push(player);
+    }
+
+    fn pop(&self) -> Option<Arc<Player>> {
+        self.queued.pop()
+    }
+
+    fn clear(&self) {
+        while self.queued.pop().is_some() {}
     }
 }
 
@@ -1898,6 +2365,10 @@ pub struct Server {
     command_permission_keys: Vec<String>,
     /// Command work submitted from connection and console tasks.
     command_requests: CommandRequestQueue,
+    /// Decoded serverbound play packets handled during the inter-tick phase.
+    packet_processor: PacketProcessor,
+    /// Dedicated worker pool for CPU-heavy chunk packet extraction and encoding.
+    chunk_encoding_pool: ThreadPool,
     /// Jobs resumed from a known point in the server game tick.
     pub jobs: ServerJobQueue,
     /// Player data storage for saving/loading player state.
@@ -1914,10 +2385,33 @@ pub struct Server {
     profile_lookup_client: reqwest::Client,
     /// Player joins prepared by async I/O and finalized at the game tick safe point.
     pending_player_joins: PlayerJoinQueue,
+    /// Disconnected players waiting to be detached at the next game tick safe point.
+    pending_player_disconnects: PlayerDisconnectQueue,
     /// Queued world changes to process after the tick.
     pub pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
     /// Queued domain switches to process after world ticks.
     pending_domain_switches: SyncMutex<Vec<DomainSwitchRequest>>,
+}
+
+struct GameTickTaskGuard {
+    server: Arc<Server>,
+    cancel_token: CancellationToken,
+}
+
+impl GameTickTaskGuard {
+    const fn new(server: Arc<Server>, cancel_token: CancellationToken) -> Self {
+        Self {
+            server,
+            cancel_token,
+        }
+    }
+}
+
+impl Drop for GameTickTaskGuard {
+    fn drop(&mut self) {
+        self.server.packet_processor.stop();
+        self.cancel_token.cancel();
+    }
 }
 
 impl Server {
@@ -2030,6 +2524,18 @@ impl Server {
                 .build()
                 .map_err(|e| format!("failed to create generation thread pool: {e}"))?
         });
+        let chunk_encoding_pool = {
+            let mut builder =
+                ThreadPoolBuilder::new().thread_name(|i| format!("rayon-chunk-encode-{i}"));
+            if let Some(chunk_encoding_threads) =
+                configured_chunk_encoding_threads(config.chunk_encoding_threads)
+            {
+                builder = builder.num_threads(chunk_encoding_threads);
+            }
+            builder
+                .build()
+                .map_err(|e| format!("failed to create chunk encoding thread pool: {e}"))?
+        };
 
         let player_data_storage = PlayerDataStorage::new(
             resolved_worlds.save_path.clone(),
@@ -2098,6 +2604,7 @@ impl Server {
                     generation_settings,
                     view_distance: config.view_distance,
                     simulation_distance: config.simulation_distance,
+                    max_chained_neighbor_updates: config.max_chained_neighbor_updates,
                     compression: config.compression,
                     is_flat: generator_output.is_flat,
                     sea_level: generator_output.sea_level,
@@ -2144,6 +2651,8 @@ impl Server {
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
             command_permission_keys,
             command_requests: CommandRequestQueue::new(),
+            packet_processor: PacketProcessor::new(),
+            chunk_encoding_pool,
             jobs: ServerJobQueue::new(),
             player_data_storage,
             player_permission_states: SyncRwLock::new(player_permission_states),
@@ -2152,6 +2661,7 @@ impl Server {
             known_player_save_idle: Notify::new(),
             profile_lookup_client: reqwest::Client::new(),
             pending_player_joins: PlayerJoinQueue::new(),
+            pending_player_disconnects: PlayerDisconnectQueue::new(),
             pending_world_changes: SyncMutex::new(vec![]),
             pending_domain_switches: SyncMutex::new(vec![]),
         })
@@ -2191,6 +2701,17 @@ impl Server {
             transaction_id,
             input,
         })
+    }
+
+    /// Schedules a decoded play packet for the inter-tick packet phase.
+    pub(crate) fn schedule_play_packet(
+        &self,
+        player: Arc<Player>,
+        packet: ScheduledPlayPacket,
+        payload_bytes: usize,
+    ) {
+        self.packet_processor
+            .schedule(player, packet, payload_bytes);
     }
 
     /// Returns Brigadier completions visible to a command sender.
@@ -2289,23 +2810,25 @@ impl Server {
         Self::apply_domain_player_state(&player, &state);
         let pos = player.position();
         let rotation = player.rotation();
+        // The client drops a player entity spawn when it does not already know that
+        // player's profile. Vanilla publishes player info before adding the player to
+        // the level, which can immediately start entity tracking for existing players.
+        self.sync_tab_list(&player);
         let admitted = player.spawn(pos, rotation, ResetReason::InitialJoin);
         if !admitted {
             self.remove_online_player_sync(&player);
+            self.broadcast_to_online(CRemovePlayerInfo { uuids: vec![uuid] });
             return;
         }
         let previous_name = self.record_known_player(&player.gameprofile);
         self.broadcast_player_join_message(&player, previous_name.as_deref());
-        self.sync_tab_list(&player);
         if player.mark_joined_world() {
             player.send_inventory_to_remote();
         }
         self.schedule_root_vehicle_restore(&player, &state);
         self.schedule_ender_pearl_restores(&player, &state);
         if player.connection.closed() {
-            tokio::spawn(async move {
-                state.world.remove_player(player).await;
-            });
+            self.queue_player_disconnect(player);
         }
     }
 
@@ -2364,26 +2887,72 @@ impl Server {
         let _ = self.online_players.remove_player_sync(player);
     }
 
-    pub(crate) async fn remove_online_player_after_disconnect(
-        &self,
-        player: Arc<Player>,
-        domain: String,
-        player_data: PersistentPlayerData,
-    ) {
+    pub(crate) fn queue_player_disconnect(&self, player: Arc<Player>) {
+        debug_assert!(
+            player.connection.closed(),
+            "only closed players may enter the disconnect queue"
+        );
+        self.pending_player_disconnects.send(player);
+    }
+
+    fn process_player_disconnects(&self) -> Vec<PendingPlayerDisconnect> {
+        let mut pending = Vec::new();
+        while let Some(player) = self.pending_player_disconnects.pop() {
+            if let Some(disconnect) = self.process_player_disconnect(player) {
+                pending.push(disconnect);
+            }
+        }
+
+        if !pending.is_empty() {
+            // Steel batches the protocol-supported UUID list to avoid quadratic broadcast work
+            // during mass disconnects; Vanilla normally emits one packet per player.
+            let uuids = pending
+                .iter()
+                .map(|disconnect| disconnect.player.gameprofile.id)
+                .collect();
+            self.broadcast_to_online(CRemovePlayerInfo { uuids });
+        }
+        pending
+    }
+
+    fn process_player_disconnect(&self, player: Arc<Player>) -> Option<PendingPlayerDisconnect> {
         let uuid = player.gameprofile.id;
         if !self.reserve_player_disconnect(&player) {
-            return;
+            return None;
         }
+
+        let world = player.get_world();
+        let Some((player, domain, player_data)) =
+            world.detach_player_for_disconnect(Arc::clone(&player))
+        else {
+            self.release_player_admission(uuid, PlayerAdmissionState::Disconnecting);
+            return None;
+        };
 
         // Vanilla broadcasts before removing the player from its global player list.
         self.broadcast_player_leave_message(&player);
-        self.broadcast_to_online(CRemovePlayerInfo::single(uuid));
         let player = self.online_players.remove_player_sync(&player);
 
         let Some(player) = player else {
             self.release_player_admission(uuid, PlayerAdmissionState::Disconnecting);
-            return;
+            return None;
         };
+
+        Some(PendingPlayerDisconnect {
+            player,
+            domain,
+            player_data,
+        })
+    }
+
+    async fn save_disconnected_player(&self, pending: PendingPlayerDisconnect) {
+        let PendingPlayerDisconnect {
+            player,
+            domain,
+            player_data,
+        } = pending;
+        let uuid = player.gameprofile.id;
+        let start = Instant::now();
 
         if let Err(e) = self
             .player_data_storage
@@ -2407,6 +2976,22 @@ impl Server {
 
         player.cleanup();
         self.release_player_admission(uuid, PlayerAdmissionState::Disconnecting);
+        log::info!("Player {uuid} removed in {:?}", start.elapsed());
+    }
+
+    fn start_player_disconnect_saves(self: &Arc<Self>, saves: &mut JoinSet<()>) {
+        for pending in self.process_player_disconnects() {
+            let server = Arc::clone(self);
+            saves.spawn(async move {
+                server.save_disconnected_player(pending).await;
+            });
+        }
+
+        while let Some(result) = saves.try_join_next() {
+            if let Err(error) = result {
+                log::error!("Player disconnect save task failed: {error}");
+            }
+        }
     }
 
     /// Broadcasts a packet to every online player, regardless of world membership.
@@ -3119,7 +3704,7 @@ impl Server {
             hardcore: false,
             levels: self.worlds.keys().cloned().collect(),
             max_players: self.config.max_players as i32,
-            chunk_radius: player.view_distance().into(),
+            chunk_radius: self.config.view_distance.into(),
             simulation_distance: self.config.simulation_distance.into(),
             reduced_debug_info,
             show_death_screen: !immediate_respawn,
@@ -3309,24 +3894,55 @@ impl Server {
         self.worlds.get(&key)
     }
 
-    /// Runs the three independent tick loops concurrently.
+    /// Runs gameplay packets, game ticks, and chunk sending. Game-tick boundaries
+    /// fork background chunk-scheduling epochs through each world's task tracker.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
+        self.packet_processor.open_after_tick();
+        let packet_worker_count = configured_packet_workers(self.config.packet_workers);
+        let mut packet_handles = Vec::with_capacity(packet_worker_count);
+        for worker_id in 0..packet_worker_count {
+            let s = self.clone();
+            let t = cancel_token.clone();
+            packet_handles.push(tokio::spawn(async move {
+                if let Err(error) = spawn_blocking(move || s.packet_processor.run(&s)).await {
+                    log::error!("Gameplay packet worker {worker_id} failed: {error}");
+                    t.cancel();
+                }
+            }));
+        }
+        let packet_supervisor_cancel = cancel_token.clone();
+        let packet_workers = async move {
+            for handle in packet_handles {
+                if let Err(error) = handle.await {
+                    log::error!("Gameplay packet supervisor failed: {error}");
+                    packet_supervisor_cancel.cancel();
+                }
+            }
+        };
         let game_handle = {
             let s = self.clone();
             let t = cancel_token.clone();
-            tokio::spawn(async move { s.run_game_tick(t).await })
+            let task_guard = GameTickTaskGuard::new(self.clone(), cancel_token.clone());
+            tokio::spawn(async move {
+                let _task_guard = task_guard;
+                s.run_game_tick(t).await;
+            })
         };
         let chunk_send_handle = {
             let s = self.clone();
             let t = cancel_token.clone();
             tokio::spawn(async move { s.run_chunk_sending_tick(t).await })
         };
-        let chunk_sched_handle = {
-            let s = self.clone();
-            let t = cancel_token.clone();
-            tokio::spawn(async move { s.run_chunk_scheduling_tick(t).await })
-        };
-        let _ = tokio::join!(game_handle, chunk_send_handle, chunk_sched_handle);
+        let ((), game_result, chunk_send_result) =
+            tokio::join!(packet_workers, game_handle, chunk_send_handle);
+        for (task, result) in [
+            ("Game tick", game_result),
+            ("Chunk sending tick", chunk_send_result),
+        ] {
+            if let Err(error) = result {
+                log::error!("{task} task failed: {error}");
+            }
+        }
     }
 
     /// The main game tick loop (20 TPS, governed by tick rate manager).
@@ -3335,6 +3951,7 @@ impl Server {
         let mut next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
         let mut player_info_ticks = 0_u64;
         let mut pending_command_executions = PendingCommandExecutionQueue::<CommandSource>::new();
+        let mut player_disconnect_saves = JoinSet::new();
 
         loop {
             if cancel_token.is_cancelled() {
@@ -3373,14 +3990,15 @@ impl Server {
             }
 
             let tick_start = Instant::now();
+            self.packet_processor.close_for_tick().await;
+            self.advance_chunk_scheduling();
+            self.start_player_disconnect_saves(&mut player_disconnect_saves);
 
             let (tick_count, runs_normally) = {
                 let mut tick_manager = self.tick_rate_manager.write();
                 tick_manager.tick();
                 let runs_normally = tick_manager.runs_normally();
-                if runs_normally {
-                    tick_manager.increment_tick_count();
-                }
+                tick_manager.increment_tick_count();
                 (tick_manager.tick_count, runs_normally)
             };
 
@@ -3410,26 +4028,48 @@ impl Server {
                 next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
             }
 
-            let (tps, mspt) = {
-                let tick_duration_nanos = tick_start.elapsed().as_nanos() as u64;
-                let mut tick_manager = self.tick_rate_manager.write();
-                tick_manager.record_tick_time(tick_duration_nanos);
-                (tick_manager.get_tps(), tick_manager.get_average_mspt())
-            };
+            let tab_list_tick_stats = self.record_tick_and_capture_tab_stats(
+                tick_count,
+                tick_start.elapsed().as_nanos() as u64,
+            );
 
-            if tick_count % TAB_LIST_UPDATE_INTERVAL == 0 {
-                self.broadcast_tab_list(tps, mspt);
+            if let Some(tick_stats) = tab_list_tick_stats {
+                self.broadcast_tab_list(tick_stats);
             }
 
             if should_sprint_this_tick {
                 let mut tick_manager = self.tick_rate_manager.write();
                 tick_manager.end_tick_work();
             }
+
+            self.packet_processor.open_after_tick();
+            if should_sprint_this_tick || Instant::now() >= next_tick_time {
+                self.packet_processor.wait_for_overload_progress().await;
+            }
         }
 
         self.jobs.cancel_all();
         pending_command_executions.cancel_all();
         self.command_requests.clear();
+        self.packet_processor.stop();
+        self.pending_player_disconnects.clear();
+        while let Some(result) = player_disconnect_saves.join_next().await {
+            if let Err(error) = result {
+                log::error!("Player disconnect save task failed during shutdown: {error}");
+            }
+        }
+    }
+
+    fn record_tick_and_capture_tab_stats(
+        &self,
+        tick_count: u64,
+        tick_duration_nanos: u64,
+    ) -> Option<TabListTickStats> {
+        let mut tick_manager = self.tick_rate_manager.write();
+        tick_manager.record_tick_time(tick_duration_nanos);
+        tick_count
+            .is_multiple_of(TAB_LIST_UPDATE_INTERVAL)
+            .then(|| TabListTickStats::capture(&tick_manager))
     }
 
     async fn autosave_command_data(&self) {
@@ -3595,48 +4235,28 @@ impl Server {
         }
     }
 
-    /// Chunk scheduling tick loop — ticket updates, holder creation, generation, unloads.
-    async fn run_chunk_scheduling_tick(self: Arc<Self>, cancel_token: CancellationToken) {
-        let nanos_per_tick = 1_000_000_000 / CHUNK_SCHEDULING_TPS;
-        let mut next_tick_time = Instant::now();
-
-        loop {
-            if cancel_token.is_cancelled() {
-                break;
-            }
-
-            let now = Instant::now();
-            if now < next_tick_time {
-                tokio::select! {
-                    () = cancel_token.cancelled() => break,
-                    () = sleep(next_tick_time - now) => {}
-                }
-            }
-            next_tick_time += Duration::from_nanos(nanos_per_tick);
-
-            if cancel_token.is_cancelled() {
-                break;
-            }
-
-            let server = self.clone();
-            let _ = spawn_blocking(move || {
-                server.tick_chunk_scheduling();
-            })
-            .await;
-        }
-    }
-
     /// Executes one chunk sending tick across all worlds and players.
     ///
     /// A per-world per-tick encode cache is used so overlapping view areas
     /// don't re-encode the same chunk within a single tick.
     fn tick_chunk_sending(&self) {
+        let tick_start = Instant::now();
         for world in self.worlds.values() {
             let mut encode_cache = rustc_hash::FxHashMap::default();
             world.players.iter_players(|_uuid, player| {
-                Self::send_chunks_for_player(player, world, &mut encode_cache);
+                Self::send_chunks_for_player(
+                    player,
+                    world,
+                    &mut encode_cache,
+                    &self.chunk_encoding_pool,
+                );
                 true
             });
+        }
+
+        let elapsed = tick_start.elapsed();
+        if elapsed >= SLOW_CHUNK_TICK_THRESHOLD {
+            tracing::warn!(?elapsed, "Chunk sending tick slow");
         }
     }
 
@@ -3646,6 +4266,7 @@ impl Server {
         player: &Arc<Player>,
         world: &Arc<World>,
         encode_cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedChunk>,
+        encoding_pool: &ThreadPool,
     ) {
         let chunk_pos = *player.last_chunk_pos.lock();
         let connection = &player.connection;
@@ -3662,7 +4283,7 @@ impl Server {
 
         // Phase 2: encode (no lock held — uses per-tick local cache)
         let compression = connection.compression();
-        let encoded = ChunkSender::encode_batch(&batch, encode_cache, compression);
+        let encoded = ChunkSender::encode_batch(&batch, encode_cache, compression, encoding_pool);
 
         // Phase 3: commit (brief lock + generation check)
         let sent_chunks = {
@@ -3683,28 +4304,49 @@ impl Server {
             .update_player(player, &view, |chunk| sent_chunks.contains(&chunk));
     }
 
-    /// Executes one chunk scheduling tick across all worlds.
-    fn tick_chunk_scheduling(&self) {
+    /// Commits ready chunk lifecycle epochs and forks the next background work.
+    fn advance_chunk_scheduling(&self) {
         for (i, world) in self.worlds.values().enumerate() {
-            let timings = world.chunk_map.tick_scheduling();
+            let timings = world.chunk_map.advance_scheduling();
 
-            let total = timings.ticket_updates
-                + timings.holder_creation
+            let background_elapsed = timings.ticket_updates
                 + timings.schedule_generation
                 + timings.run_generation
                 + timings.process_unloads;
+            let boundary_elapsed = timings.block_entity_unloads
+                + timings.readiness_demotions
+                + timings.lifecycle_commit
+                + timings.readiness_reconcile
+                + timings.ticking_snapshot_rebuild;
+            let work_elapsed = background_elapsed + boundary_elapsed;
 
-            if total.as_millis() >= 50 {
+            if work_elapsed >= SLOW_CHUNK_TICK_THRESHOLD {
                 tracing::warn!(
                     world = i,
-                    elapsed = ?total,
+                    work_elapsed = ?work_elapsed,
+                    background_elapsed = ?background_elapsed,
+                    boundary_elapsed = ?boundary_elapsed,
                     ticket_updates = ?timings.ticket_updates,
-                    holder_creation = ?timings.holder_creation,
+                    block_entity_unloads = ?timings.block_entity_unloads,
+                    readiness_demotions = ?timings.readiness_demotions,
+                    lifecycle_commit = ?timings.lifecycle_commit,
+                    readiness_reconcile = ?timings.readiness_reconcile,
+                    post_process_generation = ?timings.post_process_generation,
+                    post_process_chunk_count = timings.post_process_chunk_count,
+                    post_process_position_count = timings.post_process_position_count,
+                    readiness_candidate_count = timings.readiness_candidate_count,
+                    ticking_snapshot_rebuild = ?timings.ticking_snapshot_rebuild,
+                    rebuilt_ticking_chunk_count = timings.rebuilt_ticking_chunk_count,
+                    lookup_cache_holder_hits = timings.lookup_cache.holder_hits,
+                    lookup_cache_missing_hits = timings.lookup_cache.missing_hits,
+                    lookup_cache_scc_lookups = timings.lookup_cache.scc_lookups,
+                    lookup_cache_foreign_map_bypasses = timings.lookup_cache.foreign_map_bypasses,
+                    lookup_cache_evictions = timings.lookup_cache.evictions,
                     schedule_generation = ?timings.schedule_generation,
                     scheduled_count = timings.scheduled_count,
                     run_generation = ?timings.run_generation,
                     process_unloads = ?timings.process_unloads,
-                    "Chunk scheduling tick slow"
+                    "Chunk scheduling epoch slow"
                 );
             }
         }
@@ -4257,6 +4899,11 @@ impl Server {
                 tick_block_entities = ?cm.tick_block_entities,
                 tickable_count = cm.tickable_count,
                 total_chunks = cm.total_chunks,
+                lookup_cache_holder_hits = cm.lookup_cache.holder_hits,
+                lookup_cache_missing_hits = cm.lookup_cache.missing_hits,
+                lookup_cache_scc_lookups = cm.lookup_cache.scc_lookups,
+                lookup_cache_foreign_map_bypasses = cm.lookup_cache.foreign_map_bypasses,
+                lookup_cache_evictions = cm.lookup_cache.evictions,
                 "Game tick slow"
             );
         }
@@ -4287,22 +4934,23 @@ impl Server {
         });
     }
 
-    /// Broadcasts the tab list header/footer with current TPS and MSPT values.
-    fn broadcast_tab_list(&self, tps: f32, mspt: f32) {
+    /// Builds the tab list header/footer with recent and five-second tick statistics.
+    fn tab_list_components(tick_stats: TabListTickStats) -> (TextComponent, TextComponent) {
         // Color TPS based on value
-        let tps_color = if tps >= 19.5 {
+        let tps_color = if tick_stats.tps >= 19.5 {
             Color::Green
-        } else if tps >= 15.0 {
+        } else if tick_stats.tps >= 15.0 {
             Color::Yellow
         } else {
             Color::Red
         };
 
-        // Color MSPT based on value (under 50ms is good)
-        let mspt_color = if mspt <= 50.0 {
-            Color::Aqua
-        } else {
-            Color::Red
+        let mspt_color = |mspt: f32| {
+            if mspt <= 50.0 {
+                Color::Aqua
+            } else {
+                Color::Red
+            }
         };
 
         let header = TextComponent::plain("\n").add_children(vec![
@@ -4311,12 +4959,27 @@ impl Server {
         ]);
         let footer = TextComponent::plain("\n").add_children(vec![
             TextComponent::plain("TPS: ").color(Color::Gray),
-            TextComponent::plain(format!("{tps:.1}")).color(tps_color),
+            TextComponent::plain(format!("{:.1}", tick_stats.tps)).color(tps_color),
             TextComponent::plain(" | ").color(Color::DarkGray),
             TextComponent::plain("MSPT: ").color(Color::Gray),
-            TextComponent::plain(format!("{mspt:.2}")).color(mspt_color),
+            TextComponent::plain(format!("{:.2}", tick_stats.recent_mspt))
+                .color(mspt_color(tick_stats.recent_mspt)),
+            TextComponent::plain(" recent | ").color(Color::Gray),
+            TextComponent::plain(format!("{:.2}", tick_stats.average_mspt))
+                .color(mspt_color(tick_stats.average_mspt)),
+            TextComponent::plain(" avg (5s) | ").color(Color::Gray),
+            TextComponent::plain(format!("{:.2}", tick_stats.p95_mspt))
+                .color(mspt_color(tick_stats.p95_mspt)),
+            TextComponent::plain(" p95").color(Color::Gray),
             TextComponent::plain("\n"),
         ]);
+
+        (header, footer)
+    }
+
+    /// Broadcasts the tab list header/footer with current TPS and MSPT statistics.
+    fn broadcast_tab_list(&self, tick_stats: TabListTickStats) {
+        let (header, footer) = Self::tab_list_components(tick_stats);
 
         self.broadcast_to_online_with(|player| CTabList::new(&header, &footer, player));
     }

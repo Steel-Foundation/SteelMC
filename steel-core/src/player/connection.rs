@@ -6,7 +6,6 @@
 use enum_dispatch::enum_dispatch;
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::SClientInformation;
-use steel_protocol::packets::game::CSetChunkCacheRadius;
 use steel_protocol::utils::ConnectionProtocol;
 use text_components::TextComponent;
 
@@ -154,11 +153,9 @@ impl Player {
         };
         self.set_client_information(info);
 
-        let new_view_distance = self.view_distance();
-        if old_view_distance != new_view_distance {
-            self.send_packet(CSetChunkCacheRadius {
-                radius: i32::from(new_view_distance),
-            });
+        // Vanilla does not echo CSetChunkCacheRadius here; it is only broadcast
+        // when the server-wide view distance changes.
+        if old_view_distance != self.view_distance() {
             self.get_world().chunk_map.update_player_status(self);
         }
     }

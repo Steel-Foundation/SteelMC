@@ -15,7 +15,6 @@ use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_fluid_tags;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::ai::path::PathComputationType;
@@ -120,10 +119,6 @@ impl BlockBehavior for CactusBlock {
         }
     }
 
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        true
-    }
-
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let above_pos = pos.above();
 
@@ -170,7 +165,7 @@ impl BlockBehavior for CactusBlock {
             );
             let new_state = state.set_value(&BlockStateProperties::AGE_15, 0);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_NONE);
-            world.neighbor_changed(above_pos, &vanilla_blocks::CACTUS, false);
+            world.neighbor_changed(above_pos, &vanilla_blocks::CACTUS);
         }
 
         if age < 15 {

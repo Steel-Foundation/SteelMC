@@ -12,13 +12,13 @@ use simdnbt::owned::NbtCompound;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
-use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
 use super::entities::{
-    BarrelBlockEntity, BeehiveBlockEntity, EndGatewayBlockEntity, EndPortalBlockEntity,
-    PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity,
+    BarrelBlockEntity, BeehiveBlockEntity, ComparatorBlockEntity, DaylightDetectorBlockEntity,
+    EndGatewayBlockEntity, EndPortalBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity,
+    RawBlockEntity, SignBlockEntity,
 };
 use crate::world::World;
 
@@ -92,12 +92,7 @@ impl BlockEntityRegistry {
         if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
             factory(level, pos, state)
         } else {
-            Arc::new(SyncMutex::new(RawBlockEntity::new(
-                block_entity_type,
-                level,
-                pos,
-                state,
-            )))
+            Arc::new(RawBlockEntity::new(block_entity_type, level, pos, state))
         }
     }
 
@@ -114,7 +109,7 @@ impl BlockEntityRegistry {
         nbt: &BorrowedNbtCompound<'_>,
     ) -> Option<SharedBlockEntity> {
         let entity = self.create(block_entity_type, level, pos, state)?;
-        entity.lock().load_additional(nbt);
+        entity.load_additional(nbt);
         Some(entity)
     }
 
@@ -131,17 +126,17 @@ impl BlockEntityRegistry {
         let id = block_entity_type.id();
         if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
             let entity = factory(level, pos, state);
-            entity.lock().load_additional(nbt);
+            entity.load_additional(nbt);
             entity
         } else {
             let nbt_view: BorrowedRootNbtCompound<'_, '_> = nbt.into();
-            Arc::new(SyncMutex::new(RawBlockEntity::with_data(
+            Arc::new(RawBlockEntity::with_data(
                 block_entity_type,
                 level,
                 pos,
                 state,
                 nbt_view.to_owned(),
-            )))
+            ))
         }
     }
 
@@ -161,7 +156,7 @@ impl BlockEntityRegistry {
             let mut nbt_bytes = Vec::new();
             nbt.write(&mut nbt_bytes);
             if let Ok(borrowed) = read_borrowed_compound(&mut Cursor::new(&nbt_bytes)) {
-                entity.lock().load_additional(&borrowed);
+                entity.load_additional(&borrowed);
             } else {
                 log::warn!(
                     "failed to reborrow owned NBT for block entity {}",
@@ -170,13 +165,13 @@ impl BlockEntityRegistry {
             }
             entity
         } else {
-            Arc::new(SyncMutex::new(RawBlockEntity::with_data(
+            Arc::new(RawBlockEntity::with_data(
                 block_entity_type,
                 level,
                 pos,
                 state,
                 nbt,
-            )))
+            ))
         }
     }
 
@@ -210,6 +205,10 @@ impl BlockEntityRegistryLock {
     pub fn set(&self, registry: BlockEntityRegistry) -> Result<(), BlockEntityRegistry> {
         self.0.set(registry)
     }
+
+    fn get_or_init(&self, init: impl FnOnce() -> BlockEntityRegistry) -> &BlockEntityRegistry {
+        self.0.get_or_init(init)
+    }
 }
 
 /// Global block entity registry.
@@ -219,67 +218,65 @@ pub static BLOCK_ENTITIES: BlockEntityRegistryLock = BlockEntityRegistryLock(Onc
 
 /// Initializes the global block entity registry.
 ///
-/// This should be called once after the main registry is frozen.
-///
-/// # Panics
-///
-/// Panics if called more than once.
+/// This should be called after the main registry is frozen. Repeated calls are a no-op.
 pub fn init_block_entities() {
-    let mut registry = BlockEntityRegistry::new();
+    BLOCK_ENTITIES.get_or_init(|| {
+        let mut registry = BlockEntityRegistry::new();
 
-    // Register sign block entity factory
-    registry.register(&vanilla_block_entity_types::SIGN, |level, pos, state| {
-        Arc::new(SyncMutex::new(SignBlockEntity::new(level, pos, state)))
+        // Register sign block entity factory
+        registry.register(&vanilla_block_entity_types::SIGN, |level, pos, state| {
+            Arc::new(SignBlockEntity::new(level, pos, state))
+        });
+
+        // Register hanging sign block entity factory
+        registry.register(
+            &vanilla_block_entity_types::HANGING_SIGN,
+            |level, pos, state| Arc::new(SignBlockEntity::new_hanging(level, pos, state)),
+        );
+
+        // Register barrel block entity factory
+        registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
+            Arc::new(BarrelBlockEntity::new(level, pos, state))
+        });
+
+        // Register beehive block entity factory
+        registry.register(&vanilla_block_entity_types::BEEHIVE, |level, pos, state| {
+            Arc::new(BeehiveBlockEntity::new(level, pos, state))
+        });
+
+        // Register comparator block entity factory
+        registry.register(
+            &vanilla_block_entity_types::COMPARATOR,
+            |level, pos, state| Arc::new(ComparatorBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(
+            &vanilla_block_entity_types::DAYLIGHT_DETECTOR,
+            |level, pos, state| Arc::new(DaylightDetectorBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(&vanilla_block_entity_types::PISTON, |level, pos, state| {
+            Arc::new(PistonMovingBlockEntity::new(level, pos, state))
+        });
+
+        // Register End gateway block entity factory
+        registry.register(
+            &vanilla_block_entity_types::END_GATEWAY,
+            |level, pos, state| Arc::new(EndGatewayBlockEntity::new(level, pos, state)),
+        );
+
+        // Register End portal block entity factory
+        registry.register(
+            &vanilla_block_entity_types::END_PORTAL,
+            |level, pos, state| Arc::new(EndPortalBlockEntity::new(level, pos, state)),
+        );
+
+        // Register potent sulfur block entity factory
+        registry.register(
+            &vanilla_block_entity_types::POTENT_SULFUR,
+            |level, pos, state| Arc::new(PotentSulfurBlockEntity::new(level, pos, state)),
+        );
+
+        registry
     });
-
-    // Register hanging sign block entity factory
-    registry.register(
-        &vanilla_block_entity_types::HANGING_SIGN,
-        |level, pos, state| {
-            Arc::new(SyncMutex::new(SignBlockEntity::new_hanging(
-                level, pos, state,
-            )))
-        },
-    );
-
-    // Register barrel block entity factory
-    registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
-        Arc::new(SyncMutex::new(BarrelBlockEntity::new(level, pos, state)))
-    });
-
-    // Register beehive block entity factory
-    registry.register(&vanilla_block_entity_types::BEEHIVE, |level, pos, state| {
-        Arc::new(SyncMutex::new(BeehiveBlockEntity::new(level, pos, state)))
-    });
-
-    // Register End gateway block entity factory
-    registry.register(
-        &vanilla_block_entity_types::END_GATEWAY,
-        |level, pos, state| {
-            Arc::new(SyncMutex::new(EndGatewayBlockEntity::new(
-                level, pos, state,
-            )))
-        },
-    );
-
-    // Register End portal block entity factory
-    registry.register(
-        &vanilla_block_entity_types::END_PORTAL,
-        |level, pos, state| Arc::new(SyncMutex::new(EndPortalBlockEntity::new(level, pos, state))),
-    );
-
-    // Register potent sulfur block entity factory
-    registry.register(
-        &vanilla_block_entity_types::POTENT_SULFUR,
-        |level, pos, state| {
-            Arc::new(SyncMutex::new(PotentSulfurBlockEntity::new(
-                level, pos, state,
-            )))
-        },
-    );
-
-    assert!(
-        BLOCK_ENTITIES.set(registry).is_ok(),
-        "Block entity registry already initialized"
-    );
 }

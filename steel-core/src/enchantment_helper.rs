@@ -1053,10 +1053,6 @@ mod tests {
         fn entity_type(&self) -> EntityTypeRef {
             self.entity_type
         }
-
-        fn as_living_entity(&self) -> Option<&dyn LivingEntity> {
-            Some(self)
-        }
     }
 
     impl LivingEntity for TestLivingEntity {

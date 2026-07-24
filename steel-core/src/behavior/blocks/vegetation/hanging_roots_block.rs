@@ -50,7 +50,7 @@ impl BlockBehavior for HangingRootsBlock {
         // Vanilla: the block above must be face-sturdy on its DOWN face.
         let above_pos = pos.above();
         let above = world.get_block_state(above_pos);
-        above.is_face_sturdy_at(above_pos, Direction::Down)
+        world.is_face_sturdy(above, above_pos, Direction::Down)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

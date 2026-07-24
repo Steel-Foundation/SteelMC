@@ -142,19 +142,15 @@ macro_rules! impl_tagged_registry {
                     "Cannot register tags after registry has been frozen"
                 );
 
-                let identifiers: Vec<steel_utils::Identifier> = keys
+                let entry_keys = keys
                     .iter()
                     .filter_map(|key| {
                         let ident = steel_utils::registry::registry_vanilla_or_custom_tag(key);
-                        if self.$key_field.contains_key(&ident) {
-                            Some(ident)
-                        } else {
-                            None
-                        }
+                        $crate::RegistryExt::by_key(self, &ident).map($crate::RegistryEntry::key)
                     })
                     .collect();
 
-                self.tags.insert(tag, identifiers);
+                self.tags.insert(tag, entry_keys);
             }
 
             fn modify_tag(
@@ -162,37 +158,40 @@ macro_rules! impl_tagged_registry {
                 tag: &steel_utils::Identifier,
                 f: impl FnOnce(Vec<steel_utils::Identifier>) -> Vec<steel_utils::Identifier>,
             ) {
-                let existing = self.tags.remove(tag).unwrap_or_default();
-                let entries = f(existing)
+                let existing = self
+                    .tags
+                    .remove(tag)
+                    .unwrap_or_default()
                     .into_iter()
-                    .filter(|key| {
-                        let exists = self.$key_field.contains_key(key);
-                        if !exists {
+                    .cloned()
+                    .collect();
+                let entry_keys = f(existing)
+                    .into_iter()
+                    .filter_map(|key| {
+                        let Some(entry) = $crate::RegistryExt::by_key(self, &key) else {
                             tracing::error!(
                                 "{} {} not found in registry, skipping from tag {}",
                                 $entity_name,
                                 key,
                                 tag,
                             );
-                        }
-                        exists
+                            return None;
+                        };
+                        Some($crate::RegistryEntry::key(entry))
                     })
                     .collect();
-                self.tags.insert(tag.clone(), entries);
+                self.tags.insert(tag.clone(), entry_keys);
             }
 
             fn is_in_tag(&self, entry: &Self::Entry, tag: &steel_utils::Identifier) -> bool {
-                self.tags
-                    .get(tag)
-                    .is_some_and(|entries| entries.contains(&entry.key))
+                self.tags.contains(tag, $crate::RegistryEntry::key(entry))
             }
 
             fn get_tag(&self, tag: &steel_utils::Identifier) -> Option<Vec<&'static Self::Entry>> {
-                use $crate::RegistryExt;
-                self.tags.get(tag).map(|idents| {
-                    idents
+                self.tags.get(tag).map(|entry_keys| {
+                    entry_keys
                         .iter()
-                        .filter_map(|ident| self.by_key(ident))
+                        .filter_map(|key| $crate::RegistryExt::by_key(self, key))
                         .collect()
                 })
             }
@@ -201,11 +200,11 @@ macro_rules! impl_tagged_registry {
                 &self,
                 tag: &steel_utils::Identifier,
             ) -> impl Iterator<Item = &'static Self::Entry> + '_ {
-                use $crate::RegistryExt;
-                self.tags
-                    .get(tag)
-                    .into_iter()
-                    .flat_map(|v| v.iter().filter_map(|ident| self.by_key(ident)))
+                self.tags.get(tag).into_iter().flat_map(|entry_keys| {
+                    entry_keys
+                        .iter()
+                        .filter_map(|key| $crate::RegistryExt::by_key(self, key))
+                })
             }
 
             fn tag_keys(&self) -> impl Iterator<Item = &steel_utils::Identifier> + '_ {

@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell};
+use std::slice;
 use std::sync::{Arc, OnceLock};
 
 use steel_registry::blocks::BlockRef;
@@ -13,16 +14,65 @@ use steel_utils::{BlockPos, BlockStateId, Identifier};
 use tokio::runtime::{Builder, Runtime};
 use toml::map::Map;
 
+use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use crate::chunk::chunk_holder::{ChunkHolder, TickingReadiness};
+use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
+use crate::chunk::level_chunk::LevelChunk;
+use crate::chunk::proto_chunk::ProtoChunk;
+use crate::chunk::section::{ChunkSection, Sections};
+use crate::entity::Entity;
 use crate::level_data::WorldGenerationSettings;
 use crate::world::game_event_context::GameEventContext;
 use crate::world::{
     LevelAccessor, LevelReader, ScheduledTickAccess, World, WorldConfig, WorldStorageConfig,
 };
 use crate::worldgen::{ChunkGeneratorType, EmptyChunkGenerator};
+use steel_utils::ChunkPos;
 
 pub(crate) fn test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();
     WORLD.get_or_init(|| create_test_world("test"))
+}
+
+pub(crate) fn fresh_test_world(key: &'static str) -> Arc<World> {
+    create_test_world(key)
+}
+
+pub(crate) fn insert_ready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<ChunkHolder> {
+    let min_y = world.get_min_y();
+    let height = world.get_height();
+    let sections = (0..height / 16)
+        .map(|_| ChunkSection::new_empty())
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    let proto = ProtoChunk::new(
+        Sections::from_owned(sections),
+        pos,
+        min_y,
+        height,
+        Arc::downgrade(world),
+    );
+    let chunk = LevelChunk::from_proto(proto, min_y, height, Arc::downgrade(world)).chunk;
+    let holder = Arc::new(ChunkHolder::new(
+        pos,
+        ChunkTicketLevel::BLOCK_TICKING_CHUNK,
+        Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
+        min_y,
+        height,
+    ));
+    holder.insert_chunk(ChunkAccess::Full(chunk), ChunkStatus::Full);
+    assert_eq!(
+        holder.transition_ticking_readiness(TickingReadiness::BlockTicking),
+        Some(TickingReadiness::Unready)
+    );
+    let _ = world.chunk_map.chunks.insert_sync(pos, Arc::clone(&holder));
+    world.on_entity_chunk_loaded(pos);
+    world.update_entity_chunk_visibility(pos, holder.entity_visibility());
+    world
+        .chunk_map
+        .activate_block_entities(slice::from_ref(&holder));
+    world.chunk_map.rebuild_ticking_chunk_snapshot();
+    holder
 }
 
 pub(crate) fn cross_world_damage_test_world() -> &'static Arc<World> {
@@ -108,6 +158,7 @@ fn create_test_world_with_difficulty(key: &'static str, difficulty: Difficulty) 
                 generation_settings,
                 view_distance: 2,
                 simulation_distance: 2,
+                max_chained_neighbor_updates: 1_000_000,
                 compression: None,
                 is_flat: false,
                 sea_level: 63,
@@ -153,6 +204,7 @@ pub(crate) struct PlayedBlockSound {
 pub(crate) struct RecordedGameEvent {
     pub(crate) event: GameEventRef,
     pub(crate) pos: BlockPos,
+    pub(crate) source_entity_id: Option<i32>,
     pub(crate) affected_state: Option<BlockStateId>,
 }
 
@@ -318,6 +370,7 @@ impl LevelAccessor for TestLevel {
         self.game_events.borrow_mut().push(RecordedGameEvent {
             event,
             pos,
+            source_entity_id: context.source_entity().map(Entity::id),
             affected_state: context.affected_state(),
         });
     }

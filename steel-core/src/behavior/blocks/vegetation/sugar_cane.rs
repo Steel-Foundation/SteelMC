@@ -14,8 +14,8 @@ use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluid_tags;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
+use crate::behavior::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::behavior::{BlockBehavior, BlockStateBehaviorExt};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 /// Maximum sugar cane stack height (vanilla: 3 blocks).
@@ -71,10 +71,6 @@ impl BlockBehavior for SugarCaneBlock {
         if !self.can_survive(state, world, pos) {
             world.destroy_block(pos, true);
         }
-    }
-
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        true
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

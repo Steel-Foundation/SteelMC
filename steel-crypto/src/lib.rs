@@ -10,7 +10,6 @@
 )]
 #![expect(
     clippy::absolute_paths,
-    clippy::assigning_clones,
     clippy::manual_let_else,
     clippy::missing_panics_doc,
     reason = "crypto code keeps direct error-path tests and small explicit RSA type paths"
@@ -24,7 +23,6 @@
 )]
 
 pub mod key_store;
-pub mod mojang_api;
 pub mod rsa_utils;
 pub mod signature;
 

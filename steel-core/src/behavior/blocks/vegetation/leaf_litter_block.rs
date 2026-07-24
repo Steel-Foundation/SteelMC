@@ -6,10 +6,7 @@ use crate::behavior::blocks::vegetation::segmentable_block::{
 };
 use crate::world::{LevelReader, ScheduledTickAccess};
 use steel_macros::block_behavior;
-use steel_registry::blocks::{
-    block_state_ext::BlockStateExt,
-    properties::{BlockStateProperties, IntProperty},
-};
+use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use super::vegetation_block::survival_update_shape;
@@ -33,9 +30,7 @@ impl LeafLitterBlock {
 impl BlockBehavior for LeafLitterBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let below_pos = pos.below();
-        world
-            .get_block_state(below_pos)
-            .is_face_sturdy_at(below_pos, Direction::Up)
+        world.is_face_sturdy(world.get_block_state(below_pos), below_pos, Direction::Up)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

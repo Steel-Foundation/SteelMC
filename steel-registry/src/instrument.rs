@@ -11,7 +11,7 @@ use steel_utils::serial::{ReadFrom, WriteTo};
 use text_components::TextComponent;
 
 use crate::sound_event::SoundEventHolder;
-use crate::{REGISTRY, RegistryExt, RegistryHolderEntry};
+use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
 
 /// A complete instrument definition, either registered or stored inline.
 ///
@@ -224,7 +224,7 @@ pub type InstrumentRef = &'static Instrument;
 pub struct InstrumentRegistry {
     instruments_by_id: Vec<InstrumentRef>,
     instruments_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -234,7 +234,7 @@ impl InstrumentRegistry {
         Self {
             instruments_by_id: Vec::new(),
             instruments_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

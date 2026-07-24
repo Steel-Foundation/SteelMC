@@ -2,7 +2,7 @@ use crate::enchantment_effect::EnchantmentEffects;
 use crate::equipment::EquipmentSlot;
 pub use crate::equipment::EquipmentSlotGroup;
 use crate::items::ItemRef;
-use crate::{REGISTRY, RegistryEntry, RegistryExt, TaggedRegistryExt};
+use crate::{REGISTRY, RegistryEntry, RegistryExt, RegistryTags, TaggedRegistryExt};
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
@@ -163,7 +163,7 @@ pub type EnchantmentRef = &'static Enchantment;
 pub struct EnchantmentRegistry {
     enchantments_by_id: Vec<EnchantmentRef>,
     enchantments_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -173,7 +173,7 @@ impl EnchantmentRegistry {
         Self {
             enchantments_by_id: Vec::new(),
             enchantments_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

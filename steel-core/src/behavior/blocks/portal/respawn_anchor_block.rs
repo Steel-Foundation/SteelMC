@@ -4,7 +4,9 @@ use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::{
-    BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties,
+    BlockRef,
+    block_state_ext::BlockStateExt,
+    properties::{BlockStateProperties, Direction},
 };
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
@@ -21,7 +23,7 @@ use crate::{
     entity::Entity,
     level_data::RespawnData,
     player::{Player, PlayerRespawnConfig},
-    world::{World, game_event_context::GameEventContext},
+    world::{LevelReader, World, game_event_context::GameEventContext},
 };
 
 /// Vanilla respawn anchor
@@ -268,8 +270,9 @@ impl BlockBehavior for RespawnAnchorBlock {
     fn get_analog_output_signal(
         &self,
         state: BlockStateId,
-        _world: &Arc<World>,
+        _world: &dyn LevelReader,
         _pos: BlockPos,
+        _direction: Direction,
     ) -> i32 {
         Self::analog_output_signal(state.get_value(&BlockStateProperties::RESPAWN_ANCHOR_CHARGES))
     }

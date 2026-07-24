@@ -42,11 +42,8 @@ const BASE_CHANCE: f32 = 0.056_888_89;
 ///
 /// Add this as a field to block implementations that should support weathering.
 ///
-/// In `YourBlock::is_randomly_ticking` first check if self.block is a copper variant and then
-/// call [`WeatheringCopper::is_randomly_ticking`]
-///
 /// In `YourBlock::random_tick` call [`WeatheringCopper::change_over_time`]
-// TODO: Add weathering support for doors, trapdoors, grates, bars, bulbs, lanterns, chains, chests, and golem statues
+// TODO: Add weathering support for lanterns, chests, golem statues, and lightning rods.
 pub struct WeatheringCopper {
     weather_state: WeatherState,
 }
@@ -56,12 +53,6 @@ impl WeatheringCopper {
     #[must_use]
     pub const fn new(weather_state: WeatherState) -> Self {
         Self { weather_state }
-    }
-
-    /// Whether this block should receive random ticks. (false if fully Oxidized)
-    #[must_use]
-    pub fn is_randomly_ticking(&self) -> bool {
-        self.weather_state != WeatherState::Oxidized
     }
 
     /// Advances the weathering state and replaces the block, with a 5.7% chance.
@@ -172,10 +163,6 @@ impl WeatheringCopperFullBlock {
 impl BlockBehavior for WeatheringCopperFullBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
-    }
-
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        self.weathering.is_randomly_ticking()
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
