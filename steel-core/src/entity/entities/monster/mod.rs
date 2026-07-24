@@ -1,0 +1,1 @@
+//! Monster entity implementations.
