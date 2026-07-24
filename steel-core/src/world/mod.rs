@@ -1816,7 +1816,7 @@ impl World {
             .is_some()
     }
 
-    ///Vanilla `level.getBrightness()`
+    /// Vanilla `level.getBrightness()`
     #[must_use]
     pub fn brightness(&self, light_layer: LightLayer, pos: BlockPos) -> u8 {
         self.light_value_at(light_layer, pos)
