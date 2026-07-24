@@ -811,13 +811,15 @@ pub trait BlockBehavior: Send + Sync {
     ) -> BlockStateId {
         state
     }
+
     /// Called after a player successfully removes this block.
     ///
     /// Mirrors vanilla `Block.destroy(LevelAccessor, BlockPos, BlockState)`.
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores all params"
-    )]    fn destroy(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+    )]
+    fn destroy(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         // Default: no-op
     }
 
@@ -857,7 +859,6 @@ pub trait BlockBehavior: Send + Sync {
         tool: &ItemStack,
         drop_experience: bool,
     ) {
->>>>>>> b79cf41011846d6bfeb205df86fdaf28916c0058
     }
 
     /// Called after this block is removed from the world, to affect neighbors.
