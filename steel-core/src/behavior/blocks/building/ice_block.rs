@@ -9,7 +9,7 @@ use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::{BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt};
+use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::block_entity::SharedBlockEntity;
 use crate::chunk::light::LightLayer;
 use crate::player::Player;
@@ -96,9 +96,6 @@ impl BlockBehavior for IceBlock {
                 world.set_block(pos, Self::melts_into(), UpdateFlags::UPDATE_ALL);
             }
         }
-    }
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        true
     }
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if world.get_brightness(LightLayer::Block, pos) > 11 - state.get_light_dampening() {

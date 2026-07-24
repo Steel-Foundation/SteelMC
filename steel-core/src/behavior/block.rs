@@ -793,6 +793,25 @@ pub trait BlockBehavior: Send + Sync {
     )]
     fn attack(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, player: &Player) {}
 
+    /// Called after a player destroys this block and drops/effects are processed.
+    ///
+    /// Vanilla parity: `Block.playerDestroy(Level, Player, BlockPos, BlockState, BlockEntity, ItemStack)`.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn player_destroy(
+        &self,
+        world: &Arc<World>,
+        player: &Player,
+        pos: BlockPos,
+        state: BlockStateId,
+        block_entity: Option<&SharedBlockEntity>,
+        tool: &ItemStack,
+    ) {
+        // Default: no-op
+    }
+
     /// Called before a player removes this block.
     ///
     /// Vanilla parity: `Block.playerWillDestroy(Level, BlockPos, BlockState, Player)`.

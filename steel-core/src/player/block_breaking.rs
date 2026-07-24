@@ -433,7 +433,7 @@ impl BlockBreakingManager {
                 && game_mode != GameType::Creative
                 && has_correct_tool
             {
-                drop_block_loot(player, world, pos, adjusted_state);
+                drop_block_loot(player, world, pos, adjusted_state, &destroyed_with);
                 let tool = player
                     .inventory
                     .lock()
