@@ -102,10 +102,6 @@ impl BlockBehavior for BambooSaplingBlock {
         BambooStalkBlock::can_survive(world, pos)
     }
 
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        true
-    }
-
     fn random_tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if rand::random_range(0..3) == 0
             && world.get_block_state(pos.above()).is_air()

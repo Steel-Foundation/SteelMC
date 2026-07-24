@@ -21,7 +21,6 @@ use steel_utils::{BlockPos, BlockStateId, Identifier, types::UpdateFlags};
 use steel_worldgen::density::DimensionNoises;
 use steel_worldgen::surface::{SurfaceConditionNoiseCache, SurfaceRuleContext};
 
-use crate::behavior::BlockStateBehaviorExt as _;
 use crate::chunk::{
     chunk_access::ChunkAccess,
     heightmap::{Heightmap, HeightmapType},

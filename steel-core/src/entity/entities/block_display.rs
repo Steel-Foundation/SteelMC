@@ -107,6 +107,10 @@ impl Entity for BlockDisplayEntity {
         Some(&self.entity_data)
     }
 
+    fn is_ignoring_block_triggers(&self) -> bool {
+        true
+    }
+
     fn save_additional(&self, nbt: &mut NbtCompound) {
         // Save block state ID directly - these are deterministic in Minecraft
         let block_state_id = *self.entity_data.lock().block_state.get();

@@ -1,22 +1,21 @@
 use std::sync::Arc;
 
-use rand::Rng;
-use steel_macros::block_behavior;
-use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::Direction;
-use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt};
-use steel_registry::item_stack::ItemStack;
-use steel_registry::{vanilla_blocks, vanilla_items};
-use steel_utils::{BlockPos, BlockStateId};
-
-use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
 use crate::behavior::blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
-use super::{BlockRef, kelp_can_survive, water_source_fluid_state};
+use rand::Rng;
+use steel_macros::block_behavior;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::properties::Direction;
+use steel_registry::fluid::{FluidRef, FluidStateExt};
+use steel_registry::item_stack::ItemStack;
+use steel_registry::{vanilla_blocks, vanilla_items};
+use steel_utils::{BlockPos, BlockStateId};
+
+use super::{BlockRef, kelp_can_survive};
 
 /// Vanilla `KelpBlock` survival and fluid state.
 #[block_behavior]
@@ -61,9 +60,6 @@ impl BlockBehavior for KelpBlock {
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::KELP))
     }
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        self.growing_plant_head_block().is_randomly_ticking(state)
-    }
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.growing_plant_head_block()
             .random_tick(state, world, pos);
@@ -102,10 +98,6 @@ impl BlockBehavior for KelpBlock {
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.growing_plant_head_block().tick(state, world, pos);
-    }
-
-    fn get_fluid_state(&self, _state: BlockStateId) -> FluidState {
-        water_source_fluid_state()
     }
 
     fn is_liquid_container(&self, _state: BlockStateId) -> bool {

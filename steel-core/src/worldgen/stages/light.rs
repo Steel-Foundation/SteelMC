@@ -15,6 +15,8 @@ use crate::chunk::{
 use crate::worldgen::context::WorldGenContext;
 use steel_utils::SectionPos;
 
+use super::leaf_distance::resolve_generated_leaf_distances;
+
 pub(crate) fn initialize(
     _context: Arc<WorldGenContext>,
     _step: &ChunkStep,
@@ -95,6 +97,8 @@ fn run_light_stage(
     ) else {
         panic!("required light-stage chunk is missing");
     };
+
+    resolve_generated_leaf_distances(&workset, holder);
 
     let sky_updates = if has_skylight {
         match propagate_sky_light_chunk(&workset, SkyLightChunkEdgeChecks::Required) {
@@ -191,7 +195,11 @@ fn publish_light_updates(
 mod tests {
     use std::sync::{Arc, Weak};
 
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{
+        blocks::{block_state_ext::BlockStateExt as _, properties::BlockStateProperties},
+        test_support::init_test_registry,
+        vanilla_blocks, vanilla_fluids,
+    };
     use steel_utils::{BlockPos, ChunkPos};
 
     use super::*;
@@ -203,6 +211,7 @@ mod tests {
         proto_chunk::ProtoChunk,
         section::{ChunkSection, Sections},
     };
+    use crate::world::tick_scheduler::TickPriority;
 
     fn init_tests() {
         init_test_registry();
@@ -280,6 +289,25 @@ mod tests {
         *target = LightSection::visible(data);
     }
 
+    fn schedule_proto_ticks(holder: &ChunkHolder, leaf_pos: BlockPos, other_pos: BlockPos) {
+        let Some(chunk) = holder.try_chunk(ChunkStatus::Empty) else {
+            panic!("test chunk should be available");
+        };
+        let ChunkAccess::Proto(proto) = &*chunk else {
+            panic!("test chunk should remain proto");
+        };
+        proto.schedule_block_tick(leaf_pos, &vanilla_blocks::OAK_LEAVES, TickPriority::Normal);
+        proto.schedule_block_tick(other_pos, &vanilla_blocks::STONE, TickPriority::Low);
+        proto.schedule_fluid_tick(leaf_pos, &vanilla_fluids::WATER, TickPriority::Normal);
+    }
+
+    fn block_state(holder: &ChunkHolder, pos: BlockPos) -> steel_utils::BlockStateId {
+        let Some(chunk) = holder.try_chunk(ChunkStatus::Empty) else {
+            panic!("test chunk should be available");
+        };
+        chunk.get_block_state(pos)
+    }
+
     #[test]
     fn light_stage_generates_center_sky_and_block_light() {
         init_tests();
@@ -326,6 +354,69 @@ mod tests {
     }
 
     #[test]
+    fn generated_light_resolves_leaf_distances_and_preserves_other_ticks() {
+        init_tests();
+        let center_pos = ChunkPos::new(0, 0);
+        let east_pos = ChunkPos::new(1, 0);
+        let center_leaf_pos = BlockPos::new(15, 8, 8);
+        let east_leaf_pos = BlockPos::new(16, 8, 8);
+        let other_tick_pos = BlockPos::new(1, 1, 1);
+        let distance_seven = vanilla_blocks::OAK_LEAVES
+            .default_state()
+            .set_value(&BlockStateProperties::DISTANCE, 7);
+
+        let mut center_section = ChunkSection::new_empty();
+        center_section.set_block_state(15, 8, 8, distance_seven);
+        let center_holder =
+            holder_with_section(center_pos, ChunkStatus::InitializeLight, center_section);
+        schedule_proto_ticks(&center_holder, center_leaf_pos, other_tick_pos);
+
+        let mut east_section = ChunkSection::new_empty();
+        east_section.set_block_state(0, 8, 8, distance_seven);
+        east_section.set_block_state(1, 8, 8, vanilla_blocks::OAK_LOG.default_state());
+        let east_holder = holder_with_section(east_pos, ChunkStatus::Light, east_section);
+
+        let cache_center = Arc::clone(&center_holder);
+        let cache_east = Arc::clone(&east_holder);
+        let cache = StaticCache2D::create(center_pos.0.x, center_pos.0.y, 2, move |x, z| {
+            let pos = ChunkPos::new(x, z);
+            if pos == center_pos {
+                Arc::clone(&cache_center)
+            } else if pos == east_pos {
+                Arc::clone(&cache_east)
+            } else {
+                empty_holder(pos, ChunkStatus::Light)
+            }
+        });
+
+        let _ = run_light_stage(&cache, &center_holder, false);
+
+        assert_eq!(
+            block_state(&center_holder, center_leaf_pos)
+                .try_get_value(&BlockStateProperties::DISTANCE),
+            Some(2)
+        );
+        assert_eq!(
+            block_state(&east_holder, east_leaf_pos).try_get_value(&BlockStateProperties::DISTANCE),
+            Some(7),
+            "the center light task must not mutate a neighboring proto chunk"
+        );
+
+        let Some(chunk) = center_holder.try_chunk(ChunkStatus::Empty) else {
+            panic!("test chunk should be available");
+        };
+        let ChunkAccess::Proto(proto) = &*chunk else {
+            panic!("test chunk should remain proto");
+        };
+        let block_ticks = proto.block_ticks.lock();
+        assert_eq!(block_ticks.pending_entries().len(), 1);
+        assert_eq!(block_ticks.pending_entries()[0].pos, other_tick_pos);
+        drop(block_ticks);
+        assert_eq!(proto.fluid_ticks.lock().pending_entries().len(), 1);
+        assert!(!proto.sections.sections[0].read().is_randomly_ticking());
+    }
+
+    #[test]
     fn loaded_light_stage_preserves_persisted_interior_block_light() {
         init_tests();
         let center_pos = ChunkPos::new(0, 0);
@@ -340,6 +431,35 @@ mod tests {
 
         assert!(sky_updates.is_empty());
         assert_eq!(light_value(&center_holder, LightLayer::Block, block_pos), 7);
+    }
+
+    #[test]
+    fn loaded_light_stage_keeps_pending_leaf_ticks() {
+        init_tests();
+        let center_pos = ChunkPos::new(0, 0);
+        let leaf_pos = BlockPos::new(8, 8, 8);
+        let mut section = ChunkSection::new_empty();
+        section.set_block_state(8, 8, 8, vanilla_blocks::OAK_LEAVES.default_state());
+        let center_holder = holder_with_section(center_pos, ChunkStatus::Light, section);
+        let Some(chunk) = center_holder.try_chunk(ChunkStatus::Empty) else {
+            panic!("test chunk should be available");
+        };
+        let ChunkAccess::Proto(proto) = &*chunk else {
+            panic!("test chunk should remain proto");
+        };
+        proto.schedule_block_tick(leaf_pos, &vanilla_blocks::OAK_LEAVES, TickPriority::Normal);
+        drop(chunk);
+        let cache = cache_with_center(center_pos, &center_holder, ChunkStatus::Light);
+
+        let _ = run_loaded_light_stage(&cache, &center_holder, false);
+
+        let Some(chunk) = center_holder.try_chunk(ChunkStatus::Empty) else {
+            panic!("test chunk should be available");
+        };
+        let ChunkAccess::Proto(proto) = &*chunk else {
+            panic!("test chunk should remain proto");
+        };
+        assert_eq!(proto.block_ticks.lock().pending_entries().len(), 1);
     }
 
     #[test]

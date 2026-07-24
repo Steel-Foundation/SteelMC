@@ -269,7 +269,6 @@ fn store_block_data_value(
     path: &NbtPath,
     value: NbtTag,
 ) -> Result<(), StoreDataMutationError> {
-    let mut block_entity = block_entity.lock();
     let data = mutate_compound_path(block_entity.save_with_full_metadata(), path, value)?;
     let mut bytes = Vec::new();
     data.write(&mut bytes);

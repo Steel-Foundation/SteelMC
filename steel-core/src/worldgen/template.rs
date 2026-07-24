@@ -1101,9 +1101,7 @@ impl StructureTemplate {
     }
 
     fn fluid_state_for_block(state: BlockStateId) -> FluidState {
-        BLOCK_BEHAVIORS
-            .get_behavior(state.get_block())
-            .get_fluid_state(state)
+        state.get_fluid_state()
     }
 
     fn is_liquid_block_container(state: BlockStateId) -> bool {

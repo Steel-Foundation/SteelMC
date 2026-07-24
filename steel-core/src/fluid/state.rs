@@ -13,7 +13,7 @@ use steel_registry::fluid::{FluidRef, FluidState, is_lava_fluid, is_water_fluid}
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
-use crate::behavior::{BlockStateBehaviorExt as _, FLUID_BEHAVIORS};
+use crate::behavior::FLUID_BEHAVIORS;
 use crate::world::World;
 use steel_registry::vanilla_fluids;
 

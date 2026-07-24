@@ -129,11 +129,6 @@ impl BlockBehavior for FarmlandBlock {
         )
     }
 
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        // Farmland always needs random ticks to manage moisture
-        true
-    }
-
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let moisture: u8 = state.get_value(&BlockStateProperties::MOISTURE);
 

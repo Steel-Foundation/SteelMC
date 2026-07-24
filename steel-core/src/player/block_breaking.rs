@@ -7,23 +7,80 @@ use std::sync::Arc;
 
 use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::loot_table::LootContext;
+use steel_registry::data_components::AdventureModePredicate;
+use steel_registry::data_components::vanilla_components::CAN_BREAK;
 use steel_registry::vanilla_attributes;
 use steel_registry::{
-    REGISTRY, RegistryExt, blocks::properties::Direction, vanilla_blocks, vanilla_game_events,
+    REGISTRY, blocks::properties::Direction, item_stack::ItemStack, vanilla_blocks,
+    vanilla_game_events,
 };
-use steel_utils::Identifier;
 use steel_utils::{
     BlockPos, BlockStateId,
+    nbt::compare_nbt_compounds,
     types::{GameType, InteractionHand, UpdateFlags},
 };
 
 use super::food_data::food_constants;
-use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt};
+use crate::behavior::{BLOCK_BEHAVIORS, BlockLootContext};
 use crate::entity::{Entity, LivingEntity};
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
 use crate::world::{ConditionalBlockSetResult, World, game_event_context::GameEventContext};
+
+impl Player {
+    /// Mirrors vanilla `Player.blockActionRestricted` for block breaking.
+    pub(super) fn block_action_restricted(&self, world: &World, pos: BlockPos) -> bool {
+        let game_mode = self.game_mode();
+        if !matches!(game_mode, GameType::Adventure | GameType::Spectator) {
+            return false;
+        }
+        if game_mode == GameType::Spectator {
+            return true;
+        }
+        if self.abilities.lock().may_build {
+            return false;
+        }
+
+        // TODO: Retain Vanilla's mutable per-component AdventureModePredicate
+        // cache once Steel's item components support that identity. Until then,
+        // snapshotting safely releases the inventory lock but reevaluates each use.
+        let can_break = {
+            let inventory = self.inventory.lock();
+            let item = inventory.get_selected_item();
+            if item.is_empty() {
+                return true;
+            }
+            item.get(CAN_BREAK).cloned()
+        };
+        let Some(can_break) = can_break else {
+            return true;
+        };
+        !Self::can_break_block_in_adventure_mode(&can_break, world, pos)
+    }
+
+    fn can_break_block_in_adventure_mode(
+        predicate: &AdventureModePredicate,
+        world: &World,
+        pos: BlockPos,
+    ) -> bool {
+        let state = world.get_block_state(pos);
+        // Vanilla's BlockInWorld overload intentionally does not test the
+        // predicate's block-entity component matchers.
+        predicate.predicates().iter().any(|predicate| {
+            if !predicate.matches_state(state) {
+                return false;
+            }
+            let Some(expected_nbt) = predicate.nbt() else {
+                return true;
+            };
+            let Some(block_entity) = world.get_block_entity(pos) else {
+                return false;
+            };
+            let actual_nbt = block_entity.save_with_full_metadata();
+            compare_nbt_compounds(expected_nbt.tag(), &actual_nbt, true)
+        })
+    }
+}
 
 /// Manages the block breaking state for a player.
 ///
@@ -176,14 +233,22 @@ impl BlockBreakingManager {
                     return;
                 }
 
-                // Check if player can break this block (adventure mode restrictions, etc.)
-                // TODO: Implement blockActionRestricted check
+                if player.block_action_restricted(world, pos) {
+                    player.send_packet(CBlockUpdate {
+                        pos,
+                        block_state: world.get_block_state(pos),
+                    });
+                    return;
+                }
 
                 self.destroy_progress_start = self.game_ticks;
                 let block_state = world.get_block_state(pos);
 
                 if !is_air(block_state) {
-                    // TODO: Call EnchantmentHelper.onHitBlock and blockState.attack
+                    // TODO: Call EnchantmentHelper.onHitBlock before blockState.attack.
+                    BLOCK_BEHAVIORS
+                        .get_behavior(block_state.get_block())
+                        .attack(block_state, world, pos, player);
 
                     let progress = get_destroy_progress(player, block_state);
 
@@ -293,34 +358,46 @@ impl BlockBreakingManager {
             pos,
             &GameEventContext::new(Some(player), Some(adjusted_state)),
         );
-        let changed_by_player_will_destroy = world.get_block_state(pos) != state;
+        let state_after_player_will_destroy = world.get_block_state(pos);
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
         // block leaves water behind instead of air.
         let replacement = fluid_state_to_block(state.get_fluid_state());
-        // player_will_destroy may mutate the world itself, so block breaking remains globally
-        // exclusive. The normal removal path still rejects a stale observed state.
-        let changed = changed_by_player_will_destroy
-            || world.set_block_if_unchanged(pos, state, replacement, UpdateFlags::UPDATE_ALL)
-                == ConditionalBlockSetResult::Changed;
+        // Vanilla removes the live state after `playerWillDestroy`; tripwire uses
+        // that callback to set DISARMED before the same block is removed.
+        let removed_by_player_break = !state_after_player_will_destroy.is_air()
+            && world.set_block_if_unchanged(
+                pos,
+                state_after_player_will_destroy,
+                replacement,
+                UpdateFlags::UPDATE_ALL,
+            ) == ConditionalBlockSetResult::Changed;
+        let changed_by_player_will_destroy = state_after_player_will_destroy != state;
+        let changed = changed_by_player_will_destroy || removed_by_player_break;
 
-        if changed {
+        if removed_by_player_break {
+            behavior.destroy(adjusted_state, world, pos);
+
             // Play block destruction particles and sound (skip for fire blocks like vanilla)
             // Exclude the breaking player as they see the effect client-side
             let block = REGISTRY.blocks.by_state_id(adjusted_state);
             let is_fire = block.is_some_and(|b| {
                 b.key == vanilla_blocks::FIRE.key || b.key == vanilla_blocks::SOUL_FIRE.key
             });
-            if !changed_by_player_will_destroy && !is_fire {
+            if !is_fire {
                 world.destroy_block_effect(pos, u32::from(adjusted_state.0), Some(player.id()));
             }
 
-            // Check if player has correct tool for drops
-            let has_correct_tool = {
+            // Vanilla snapshots the tool before Item.mineBlock can damage or
+            // consume it, then uses that snapshot for loot and post-break effects.
+            let (has_correct_tool, destroyed_with) = {
                 let inv = player.inventory.lock();
                 let main_hand = inv.get_item_in_hand(InteractionHand::MainHand);
-                main_hand.is_correct_tool_for_drops(adjusted_state)
-                    || !requires_correct_tool(adjusted_state)
+                (
+                    main_hand.is_correct_tool_for_drops(adjusted_state)
+                        || !requires_correct_tool(adjusted_state),
+                    main_hand.copy_with_count(main_hand.count),
+                )
             };
 
             // Damage the tool if the block has non-zero destroy time
@@ -357,7 +434,7 @@ impl BlockBreakingManager {
                 && has_correct_tool
             {
                 // TODO: Call playerDestroy to spawn drops
-                drop_block_loot(player, world, pos, adjusted_state);
+                drop_block_loot(player, world, pos, adjusted_state, &destroyed_with);
             }
         }
 
@@ -453,35 +530,23 @@ fn get_destroy_progress(player: &Player, block_state: BlockStateId) -> f32 {
 }
 
 /// Drops loot for a destroyed block using its loot table.
-fn drop_block_loot(player: &Player, _world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
-    let block = state.get_block();
-
-    // Build the loot table key: "blocks/{block_name}"
-    let loot_table_key = Identifier::vanilla(format!("blocks/{}", block.key.path));
-
-    let Some(loot_table) = REGISTRY.loot_tables.by_key(&loot_table_key) else {
-        // No loot table for this block (e.g., air, bedrock)
-        return;
-    };
-
-    let mut rng = rand::rng();
+fn drop_block_loot(
+    player: &Player,
+    world: &Arc<World>,
+    pos: BlockPos,
+    state: BlockStateId,
+    tool: &ItemStack,
+) {
     let luck = player
         .attributes()
         .lock()
         .get_value(vanilla_attributes::LUCK)
         .unwrap_or(0.0) as f32;
 
-    let drops = {
-        let inventory = player.inventory.lock();
-        let tool = inventory.get_selected_item();
-        let mut ctx = LootContext::new(&mut rng)
-            .with_luck(luck)
-            .with_block_state(state)
-            .with_tool(tool)
-            .with_origin(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
-
-        loot_table.get_random_items(&mut ctx)
-    };
+    let drops = BlockLootContext::new(world, pos)
+        .with_luck(luck)
+        .with_tool(tool)
+        .get_drops(state);
 
     // Spawn each dropped item using the player's world reference (Arc<World>)
     for item in drops {
@@ -489,4 +554,8 @@ fn drop_block_loot(player: &Player, _world: &Arc<World>, pos: BlockPos, state: B
             player.get_world().pop_resource(pos, item);
         }
     }
+
+    BLOCK_BEHAVIORS
+        .get_behavior(state.get_block())
+        .spawn_after_break(state, world, pos, tool, true);
 }

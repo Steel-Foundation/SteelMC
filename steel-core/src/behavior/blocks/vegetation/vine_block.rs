@@ -329,9 +329,7 @@ impl BlockBehavior for VineBlock {
             vanilla_blocks::AIR.default_state()
         }
     }
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        true
-    }
+
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if !world.get_game_rule(&vanilla_game_rules::SPREAD_VINES) {
             return;

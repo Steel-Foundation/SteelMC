@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use rand::Rng;
 use steel_macros::block_behavior;
-use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::Direction;
-use steel_registry::fluid::{FluidRef, FluidState};
+use steel_registry::blocks::{block_state_ext::BlockStateExt, properties::Direction};
+use steel_registry::fluid::FluidRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId};
@@ -16,7 +15,7 @@ use crate::behavior::{
 };
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
-use super::{BlockRef, kelp_can_survive, water_source_fluid_state};
+use super::{BlockRef, kelp_can_survive};
 
 /// Vanilla `KelpPlantBlock` survival and fluid state.
 #[block_behavior]
@@ -91,10 +90,6 @@ impl BlockBehavior for KelpPlantBlock {
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.growing_plant_body_block().tick(state, world, pos);
-    }
-
-    fn get_fluid_state(&self, _state: BlockStateId) -> FluidState {
-        water_source_fluid_state()
     }
 
     fn is_liquid_container(&self, _state: BlockStateId) -> bool {
