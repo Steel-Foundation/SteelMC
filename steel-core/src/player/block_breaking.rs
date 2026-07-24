@@ -434,11 +434,6 @@ impl BlockBreakingManager {
                 && has_correct_tool
             {
                 drop_block_loot(player, world, pos, adjusted_state, &destroyed_with);
-                let tool = player
-                    .inventory
-                    .lock()
-                    .get_item_in_hand(InteractionHand::MainHand)
-                    .clone();
                 let block_entity = world.get_block_entity(pos);
                 behavior.player_destroy(
                     world,
@@ -446,7 +441,7 @@ impl BlockBreakingManager {
                     pos,
                     adjusted_state,
                     block_entity.as_ref(),
-                    &tool,
+                    &destroyed_with,
                 );
             }
         }
