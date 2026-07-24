@@ -9,6 +9,7 @@ use serde::Deserialize;
 struct BehaviorProperties {
     is_empty: bool,
     is_source: bool,
+    is_randomly_ticking: bool,
     #[expect(
         dead_code,
         reason = "extracted fluid behavior field is retained for validation context"
@@ -78,6 +79,7 @@ pub(crate) fn build() -> TokenStream {
         let fluid_name = &fluid.name;
         let is_empty = fluid.behavior_properties.is_empty;
         let is_source = fluid.behavior_properties.is_source;
+        let is_randomly_ticking = fluid.behavior_properties.is_randomly_ticking;
         let block = &fluid.block;
         let bucket_item = &fluid.bucket_item;
         let tick_delay = fluid.behavior_properties.tick_delay.unwrap_or(0);
@@ -103,6 +105,7 @@ pub(crate) fn build() -> TokenStream {
                 key: Identifier::vanilla_static(#fluid_name),
                 is_empty: #is_empty,
                 is_source: #is_source,
+                is_randomly_ticking: #is_randomly_ticking,
                 block: Identifier::vanilla_static(#block),
                 bucket_item: Identifier::vanilla_static(#bucket_item),
                 source_fluid: #source_fluid,

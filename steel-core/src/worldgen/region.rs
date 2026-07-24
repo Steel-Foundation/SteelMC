@@ -13,18 +13,19 @@ use std::{
     time::Instant,
 };
 
-use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::RwLockReadGuard;
 use simdnbt::owned::NbtCompound;
 use steel_registry::{
     REGISTRY, block_entity_type::BlockEntityTypeRef, blocks::BlockRef,
-    blocks::block_state_ext::BlockStateExt as _, fluid::FluidRef, vanilla_blocks,
+    blocks::block_state_ext::BlockStateExt as _, blocks::properties::Direction,
+    blocks::shapes::SupportType, fluid::FluidRef, vanilla_blocks,
 };
 use steel_utils::random::RandomSource;
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, PackedSectionBlockPos, SectionPos, types::UpdateFlags,
 };
 
-use crate::behavior::FLUID_BEHAVIORS;
+use crate::behavior::{BLOCK_BEHAVIORS, BlockEntityCreation, FLUID_BEHAVIORS};
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::chunk::{
     chunk_access::{ChunkAccess, ChunkStatus},
@@ -32,7 +33,7 @@ use crate::chunk::{
     chunk_holder::ChunkHolder,
     chunk_pyramid::ChunkStep,
     heightmap::{Heightmap, HeightmapType},
-    section::{ChunkSection, SectionHolder},
+    section::{ChunkSection, SectionHolder, SectionWriteGuard},
 };
 use crate::entity::SharedEntity;
 use crate::world::tick_scheduler::TickPriority;
@@ -361,7 +362,17 @@ impl<'a> WorldGenRegion<'a> {
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
         self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
-            chunk.get_block_entity(pos)
+            let block_entity = match chunk {
+                ChunkAccess::Full(full) => full.get_block_entity(pos),
+                ChunkAccess::Proto(proto) => proto
+                    .get_block_entity(pos)
+                    .or_else(|| proto.promote_pending_block_entity(pos)),
+                ChunkAccess::Unloaded => unreachable!(),
+            };
+            if block_entity.is_none() && chunk.get_block_state(pos).has_block_entity() {
+                log::warn!("Tried to access a block entity before it was created at {pos:?}");
+            }
+            block_entity
         })
     }
 
@@ -407,9 +418,45 @@ impl<'a> WorldGenRegion<'a> {
         else {
             return false;
         };
-
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
-            chunk.set_block_state(pos, state, flags);
+            let old_state = chunk.set_block_state(pos, state, flags);
+            if state.has_block_entity() {
+                match chunk {
+                    ChunkAccess::Full(full) => {
+                        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+                        match behavior.new_block_entity(chunk.level_weak(), pos, state) {
+                            BlockEntityCreation::Created(block_entity) => {
+                                let added = full
+                                    .add_and_register_block_entity_if_state(block_entity, state);
+                                debug_assert!(
+                                    added || full.get_block_state(pos) != state,
+                                    "worldgen block-entity factory returned an invalid entity"
+                                );
+                            }
+                            BlockEntityCreation::NoEntity => {
+                                full.remove_block_entity_if_state(pos, state);
+                            }
+                            BlockEntityCreation::Unimplemented => {
+                                full.set_pending_block_entity_if_state(pos, state);
+                            }
+                        }
+                    }
+                    ChunkAccess::Proto(proto) => {
+                        proto.set_pending_block_entity_if_state(pos, state);
+                    }
+                    ChunkAccess::Unloaded => unreachable!(),
+                }
+            } else if old_state.is_some_and(|old_state| old_state.has_block_entity()) {
+                match chunk {
+                    ChunkAccess::Full(full) => {
+                        full.remove_block_entity_if_state(pos, state);
+                    }
+                    ChunkAccess::Proto(proto) => {
+                        proto.remove_block_entity_if_state(pos, state);
+                    }
+                    ChunkAccess::Unloaded => unreachable!(),
+                }
+            }
         });
         if !flags.contains(UpdateFlags::UPDATE_KNOWN_SHAPE)
             && let Some(postprocess_pos) = Self::postprocess_pos_for_state(state, pos)
@@ -452,6 +499,14 @@ impl<'a> WorldGenRegion<'a> {
         else {
             return false;
         };
+        if !block_entity_type.is_valid(state.get_block()) {
+            log::warn!(
+                "Worldgen block entity {} at {pos:?} does not accept block {}",
+                block_entity_type.key,
+                state.get_block().key,
+            );
+            return false;
+        }
 
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
             let entity = BLOCK_ENTITIES.create_and_load_owned_or_raw(
@@ -461,9 +516,8 @@ impl<'a> WorldGenRegion<'a> {
                 state,
                 nbt,
             );
-            chunk.add_and_register_block_entity(entity);
-        });
-        true
+            chunk.add_and_register_block_entity(entity)
+        })
     }
 
     /// Removes block entity data at a writable worldgen position.
@@ -506,10 +560,15 @@ impl<'a> WorldGenRegion<'a> {
         delay: i32,
         priority: TickPriority,
     ) -> bool {
-        let (chunk_x, chunk_z, status) = self.dependency_chunk_for_pos(pos, "schedule block tick");
+        let trigger_tick = self
+            .context
+            .world()
+            .game_time()
+            .wrapping_add(i64::from(delay));
         let sub_tick_order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
+        let (chunk_x, chunk_z, status) = self.dependency_chunk_for_pos(pos, "schedule block tick");
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
-            chunk.schedule_block_tick(pos, block, delay, priority, sub_tick_order);
+            chunk.schedule_block_tick(pos, block, trigger_tick, priority, sub_tick_order);
         });
         true
     }
@@ -531,10 +590,15 @@ impl<'a> WorldGenRegion<'a> {
         delay: i32,
         priority: TickPriority,
     ) -> bool {
-        let (chunk_x, chunk_z, status) = self.dependency_chunk_for_pos(pos, "schedule fluid tick");
+        let trigger_tick = self
+            .context
+            .world()
+            .game_time()
+            .wrapping_add(i64::from(delay));
         let sub_tick_order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
+        let (chunk_x, chunk_z, status) = self.dependency_chunk_for_pos(pos, "schedule fluid tick");
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
-            chunk.schedule_fluid_tick(pos, fluid, delay, priority, sub_tick_order);
+            chunk.schedule_fluid_tick(pos, fluid, trigger_tick, priority, sub_tick_order);
         });
         true
     }
@@ -976,7 +1040,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             profile.record_section_read_attempt(chunk_x, chunk_z, section_index);
         });
         let section_guard = if let Some(profile) = ore_profile {
-            if let Some(guard) = section.section.try_read() {
+            if let Some(guard) = section.try_read() {
                 guard
             } else {
                 if let Ok(mut profile) = profile.try_borrow_mut() {
@@ -1085,12 +1149,12 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         ore_profile: Option<&RefCell<OreFeatureStats>>,
         section: &'section SectionHolder,
         key: WritableSectionKey,
-    ) -> RwLockWriteGuard<'section, ChunkSection> {
+    ) -> SectionWriteGuard<'section> {
         Self::with_ore_profile_ref(ore_profile, |profile| {
             profile.record_section_write_attempt(key.chunk_x, key.chunk_z, key.section_index);
         });
         if let Some(profile) = ore_profile {
-            if let Some(guard) = section.section.try_write() {
+            if let Some(guard) = section.try_write() {
                 guard
             } else {
                 if let Ok(mut profile) = profile.try_borrow_mut() {
@@ -1243,6 +1307,22 @@ const fn abs_diff(left: i32, right: i32) -> i32 {
 impl LevelReader for WorldGenRegion<'_> {
     fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
         self.block_state(pos)
+    }
+
+    fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        self.block_entity(pos)
+    }
+
+    fn is_face_sturdy_for(
+        &self,
+        state: BlockStateId,
+        pos: BlockPos,
+        direction: Direction,
+        support_type: SupportType,
+    ) -> bool {
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .is_face_sturdy(state, self, pos, direction, support_type)
     }
 
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {

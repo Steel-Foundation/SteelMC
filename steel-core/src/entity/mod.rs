@@ -16,7 +16,7 @@ use steel_protocol::packets::game::{
     CTeleportEntity, EquipmentSlotItem, RelativeMovement, SoundSource,
 };
 use steel_registry::blocks::{
-    block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
+    behavior::PushReaction, block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
     shapes::is_shape_full_block,
 };
 use steel_registry::data_components::vanilla_components::{
@@ -59,8 +59,8 @@ use text_components::{
 use uuid::Uuid;
 
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, EntityFallOnContext,
-    EntityLandingContext, FLUID_BEHAVIORS, InteractionResult,
+    BLOCK_BEHAVIORS, BlockCollisionContext, EntityFallOnContext, EntityLandingContext,
+    FLUID_BEHAVIORS, InteractionResult,
 };
 use crate::chunk_saver::ChunkStorage;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
@@ -746,6 +746,7 @@ mod fluid_contact;
 mod generated_entities;
 mod inside_block_effects;
 mod item_based_steering;
+mod item_frame;
 mod living_base;
 mod living_entity;
 mod manager;
@@ -786,6 +787,7 @@ pub use inside_block_effects::{
     InsideBlockEffectCallback, InsideBlockEffectCollector, InsideBlockEffectType,
 };
 pub(crate) use item_based_steering::{ItemBasedSteering, ItemSteerable};
+pub use item_frame::ItemFrame;
 pub use living_base::{
     ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase, LivingRotationState,
     LivingSwingState, LivingTravelInput, MobEffectInstance, MobEffectSyncChange,

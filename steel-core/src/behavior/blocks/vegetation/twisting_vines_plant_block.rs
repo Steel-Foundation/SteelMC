@@ -39,9 +39,6 @@ impl BlockBehavior for TwistingVinesPlantBlock {
         self.growing_plant_body_block()
             .can_survive(state, world, pos)
     }
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        self.growing_plant_body_block().is_randomly_ticking(state)
-    }
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.growing_plant_body_block()
             .random_tick(state, world, pos);

@@ -5,7 +5,6 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_utils::BlockPos;
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
 
-use crate::behavior::BlockStateBehaviorExt as _;
 use crate::entity::PathfinderMob;
 use crate::entity::ai::path::PathfindingContext;
 use crate::entity::ai::walk::WalkPathEvaluator;

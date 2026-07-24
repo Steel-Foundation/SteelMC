@@ -512,6 +512,24 @@ impl MenuBehavior {
         anything_changed
     }
 
+    /// Writes a quick-move remainder back to its source slot with Vanilla's
+    /// `setByPlayer`/`setChanged` callback split.
+    pub(crate) fn update_quick_move_source(
+        &self,
+        guard: &mut ContainerLockGuard,
+        slot_index: usize,
+        remaining: &ItemStack,
+        previous: &ItemStack,
+    ) {
+        let slot = &self.slots[slot_index];
+        if remaining.is_empty() {
+            slot.set_by_player(guard, ItemStack::empty(), previous);
+        } else {
+            *slot.get_item_mut(guard) = remaining.clone();
+            slot.set_changed(guard);
+        }
+    }
+
     /// Returns the current state ID.
     #[must_use]
     pub const fn get_state_id(&self) -> u32 {
@@ -656,6 +674,7 @@ impl MenuBehavior {
 
         // First, update last_slots from actual slot contents
         self.update_last_slots(&guard);
+        drop(guard);
         let state_id = self.increment_state_id();
 
         // Send full container content
@@ -697,6 +716,7 @@ impl MenuBehavior {
 
         // Update last_slots from actual slot contents
         self.update_last_slots(&guard);
+        drop(guard);
 
         // Check each slot for changes
         for i in 0..self.last_slots.len() {
@@ -936,10 +956,6 @@ impl MenuBehavior {
 
     /// Handles pickup click (left/right click to pick up or place items).
     /// Based on Java's `AbstractContainerMenu::doClick` for ClickType.PICKUP.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "splitting would hurt readability of the click-handling state machine"
-    )]
     pub fn do_pickup(&mut self, slot_num: i16, button: i8, player: &Player) {
         // Slot -999 means clicked outside the inventory (drop items)
         if slot_num == -999 {
@@ -967,21 +983,13 @@ impl MenuBehavior {
 
         // Get the current item in the slot
         let slot_item = slot.get_item(&guard).clone();
-        let mut carried = mem::take(&mut self.carried);
+        let carried = mem::take(&mut self.carried);
 
         if slot_item.is_empty() {
             // Slot is empty - place carried items (if allowed)
             if !carried.is_empty() && slot.may_place(&carried) {
-                let max_for_slot = slot.get_max_stack_size_for_item(&guard, &carried);
                 let requested = if button == 0 { carried.count } else { 1 };
-                let amount = requested.min(max_for_slot);
-
-                let to_place = carried.split(amount);
-                if !carried.is_empty() {
-                    self.carried = carried;
-                }
-
-                slot.set_by_player(&mut guard, to_place, &ItemStack::empty());
+                self.carried = slot.safe_insert(&mut guard, carried, requested);
             } else {
                 // Can't place - keep carrying
                 self.carried = carried;
@@ -1007,40 +1015,9 @@ impl MenuBehavior {
             }
         } else if ItemStack::is_same_item_same_components(&slot_item, &carried) {
             // Same item type - try to stack (if slot allows this item type)
-            if slot.may_place(&carried) {
-                if button == 0 {
-                    // Left click - add as many as possible to slot
-                    let max = slot.get_max_stack_size_for_item(&guard, &carried);
-                    let space = max - slot_item.count;
-                    let to_add = space.min(carried.count);
-
-                    if to_add > 0 {
-                        slot.get_item_mut(&mut guard)
-                            .set_count(slot_item.count + to_add);
-                        let remaining = carried.count - to_add;
-                        if remaining > 0 {
-                            let mut new_carried = carried;
-                            new_carried.set_count(remaining);
-                            self.carried = new_carried;
-                        }
-                    } else {
-                        self.carried = carried;
-                    }
-                } else {
-                    // Right click - add one to slot
-                    let max = slot.get_max_stack_size_for_item(&guard, &carried);
-                    if slot_item.count < max {
-                        slot.get_item_mut(&mut guard).set_count(slot_item.count + 1);
-                        let remaining = carried.count - 1;
-                        if remaining > 0 {
-                            let mut new_carried = carried;
-                            new_carried.set_count(remaining);
-                            self.carried = new_carried;
-                        }
-                    } else {
-                        self.carried = carried;
-                    }
-                }
+            if slot.may_pickup(&guard, player) && slot.may_place(&carried) {
+                let requested = if button == 0 { carried.count } else { 1 };
+                self.carried = slot.safe_insert(&mut guard, carried, requested);
             } else {
                 // Can't place this item type in this slot
                 // In Java, if items are same type but may_place fails, try to take from slot
@@ -1143,7 +1120,7 @@ impl MenuBehavior {
 
         let dropped = slot.safe_take(&mut guard, amount, i32::MAX, player);
         if !dropped.is_empty() {
-            let _ = player.drop_item(dropped.clone(), false, true);
+            let _ = guard.run_unlocked(|| player.drop_item(dropped.clone(), false, true));
         }
 
         // Ctrl+Q: Keep dropping while the slot has the same item type
@@ -1165,7 +1142,7 @@ impl MenuBehavior {
                 if more_dropped.is_empty() {
                     break;
                 }
-                let _ = player.drop_item(more_dropped, false, true);
+                let _ = guard.run_unlocked(|| player.drop_item(more_dropped, false, true));
             }
         }
     }
@@ -1339,13 +1316,11 @@ pub trait Menu {
 
         if source_item.is_empty() {
             // Move from target to inventory
-            if target_slot.may_pickup(&guard, player)
-                && let Some(taken) =
-                    target_slot.try_remove(&mut guard, target_item.count, i32::MAX, player)
-            {
+            if target_slot.may_pickup(&guard, player) {
                 if let Some(inv) = guard.get_mut(player_inv_id) {
-                    inv.set_item(inventory_slot, taken);
+                    inv.set_item(inventory_slot, target_item.clone());
                 }
+                target_slot.set_by_player(&mut guard, ItemStack::empty(), &target_item);
                 if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
                     player.add_item_or_drop_with_guard(&mut guard, remainder);
                 }
@@ -1356,14 +1331,11 @@ pub trait Menu {
                 let max_size = target_slot.get_max_stack_size_for_item(&guard, &source_item);
                 if source_item.count > max_size {
                     // Split the stack
-                    target_slot.set_by_player(
-                        &mut guard,
-                        source_item.copy_with_count(max_size),
-                        &ItemStack::empty(),
-                    );
-                    if let Some(inv) = guard.get_mut(player_inv_id) {
-                        inv.get_item_mut(inventory_slot).shrink(max_size);
-                    }
+                    let Some(inv) = guard.get_mut(player_inv_id) else {
+                        return;
+                    };
+                    let to_place = inv.get_item_mut(inventory_slot).split(max_size);
+                    target_slot.set_by_player(&mut guard, to_place, &ItemStack::empty());
                 } else {
                     // Move entire stack
                     if let Some(inv) = guard.get_mut(player_inv_id) {
@@ -1378,18 +1350,15 @@ pub trait Menu {
                 let max_size = target_slot.get_max_stack_size_for_item(&guard, &source_item);
                 if source_item.count > max_size {
                     // Source is too big - place partial and add target to inventory
-                    target_slot.set_by_player(
-                        &mut guard,
-                        source_item.copy_with_count(max_size),
-                        &target_item,
-                    );
+                    let Some(inv) = guard.get_mut(player_inv_id) else {
+                        return;
+                    };
+                    let to_place = inv.get_item_mut(inventory_slot).split(max_size);
+                    target_slot.set_by_player(&mut guard, to_place, &target_item);
                     if let Some(remainder) = target_slot.on_take(&mut guard, &target_item, player) {
                         player.add_item_or_drop_with_guard(&mut guard, remainder);
                     }
                     // Try to add target item to inventory, drop if can't fit
-                    if let Some(inv) = guard.get_mut(player_inv_id) {
-                        inv.get_item_mut(inventory_slot).shrink(max_size);
-                    }
                     player.add_item_or_drop_with_guard(&mut guard, target_item);
                 } else {
                     // Simple swap
@@ -1469,5 +1438,124 @@ pub trait Menu {
                 i += step;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use steel_registry::{item_stack::ItemStack, test_support::init_test_registry, vanilla_items};
+    use steel_utils::{DowncastType, DowncastTypeKey, locks::SyncMutex};
+
+    use super::MenuBehavior;
+    use crate::inventory::{
+        container::Container,
+        lock::ContainerRef,
+        slot::{NormalSlot, Slot as _, SlotType},
+    };
+
+    struct RecordingContainer {
+        item: ItemStack,
+        set_item_calls: usize,
+        set_changed_calls: usize,
+    }
+
+    // SAFETY: This test-only key uniquely identifies `RecordingContainer`.
+    unsafe impl DowncastType for RecordingContainer {
+        const TYPE_KEY: DowncastTypeKey =
+            DowncastTypeKey::new("steel:test/container/quick_move_recording");
+    }
+
+    impl Container for RecordingContainer {
+        fn get_container_size(&self) -> usize {
+            1
+        }
+
+        fn get_item(&self, _slot: usize) -> &ItemStack {
+            &self.item
+        }
+
+        fn get_item_mut(&mut self, _slot: usize) -> &mut ItemStack {
+            &mut self.item
+        }
+
+        fn set_item(&mut self, _slot: usize, stack: ItemStack) {
+            self.item = stack;
+            self.set_item_calls += 1;
+        }
+
+        fn set_changed(&mut self) {
+            self.set_changed_calls += 1;
+        }
+    }
+
+    #[test]
+    fn quick_move_source_persists_cloned_remainder_with_vanilla_callbacks() {
+        init_test_registry();
+        let container = Arc::new(SyncMutex::new(RecordingContainer {
+            item: ItemStack::with_count(&vanilla_items::STONE, 5),
+            set_item_calls: 0,
+            set_changed_calls: 0,
+        }));
+        let container_ref = ContainerRef::from(Arc::clone(&container));
+        let container_id = container_ref.container_id();
+        let behavior = MenuBehavior::new(
+            vec![SlotType::Normal(NormalSlot::new(container_ref, 0))],
+            1,
+            None,
+        );
+        let mut guard = behavior.lock_all_containers();
+        let previous = ItemStack::with_count(&vanilla_items::STONE, 5);
+        let remainder = ItemStack::with_count(&vanilla_items::STONE, 2);
+
+        behavior.update_quick_move_source(&mut guard, 0, &remainder, &previous);
+        let state = guard
+            .get_typed::<RecordingContainer>(container_id)
+            .expect("recording container should remain locked");
+        assert_eq!(state.item.count(), 2);
+        assert_eq!(state.set_item_calls, 0);
+        assert_eq!(state.set_changed_calls, 1);
+
+        behavior.update_quick_move_source(&mut guard, 0, &ItemStack::empty(), &remainder);
+        let state = guard
+            .get_typed::<RecordingContainer>(container_id)
+            .expect("recording container should remain locked");
+        assert!(state.item.is_empty());
+        assert_eq!(state.set_item_calls, 1);
+        assert_eq!(state.set_changed_calls, 2);
+    }
+
+    #[test]
+    fn safe_insert_uses_set_by_player_before_the_menu_notification() {
+        init_test_registry();
+        let container = Arc::new(SyncMutex::new(RecordingContainer {
+            item: ItemStack::with_count(&vanilla_items::STONE, 5),
+            set_item_calls: 0,
+            set_changed_calls: 0,
+        }));
+        let container_ref = ContainerRef::from(Arc::clone(&container));
+        let container_id = container_ref.container_id();
+        let behavior = MenuBehavior::new(
+            vec![SlotType::Normal(NormalSlot::new(container_ref, 0))],
+            1,
+            None,
+        );
+        let mut guard = behavior.lock_all_containers();
+
+        let remainder = behavior.slots[0].safe_insert(
+            &mut guard,
+            ItemStack::with_count(&vanilla_items::STONE, 3),
+            3,
+        );
+        behavior.slots[0].set_changed(&mut guard);
+
+        assert!(remainder.is_empty());
+        let state = guard
+            .get_typed::<RecordingContainer>(container_id)
+            .expect("recording container should remain locked");
+        assert_eq!(state.item.count(), 8);
+        assert_eq!(state.set_item_calls, 1);
+        assert_eq!(state.set_changed_calls, 2);
     }
 }

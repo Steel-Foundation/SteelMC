@@ -12,11 +12,11 @@ use simdnbt::borrow::{
 use simdnbt::owned::{NbtCompound, NbtList};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::{DyeColor, vanilla_block_entity_types};
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 use text_components::{TextComponent, content::Content};
 use uuid::Uuid;
 
-use crate::block_entity::{BlockEntity, BlockEntityTickAction};
+use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::entity::Entity;
 use crate::world::World;
 
@@ -131,22 +131,17 @@ impl SignText {
 ///
 /// Stores text on both front and back sides of the sign.
 pub struct SignBlockEntity {
-    /// Weak reference to the world for marking chunks dirty.
-    level: Weak<World>,
-    /// Block entity type (sign or `hanging_sign`).
-    block_entity_type: BlockEntityTypeRef,
-    /// Position in the world.
-    pos: BlockPos,
-    /// Current block state.
-    state: BlockStateId,
-    /// Whether this entity has been marked for removal.
-    removed: bool,
+    base: BlockEntityBase,
+    sign: SyncMutex<SignState>,
+}
+
+struct SignState {
     /// Text on the front side.
-    pub front_text: SignText,
+    front_text: SignText,
     /// Text on the back side.
-    pub back_text: SignText,
+    back_text: SignText,
     /// Whether the sign is waxed (prevents editing).
-    pub is_waxed: bool,
+    is_waxed: bool,
     /// UUID of the player currently allowed to edit this sign.
     /// Used to prevent multiple players from editing simultaneously.
     player_who_may_edit: Option<Uuid>,
@@ -180,131 +175,114 @@ impl SignBlockEntity {
         state: BlockStateId,
     ) -> Self {
         Self {
-            level,
-            block_entity_type,
-            pos,
-            state,
-            removed: false,
-            front_text: SignText::new(),
-            back_text: SignText::new(),
-            is_waxed: false,
-            player_who_may_edit: None,
+            base: BlockEntityBase::new(block_entity_type, level, pos, state),
+            sign: SyncMutex::new(SignState {
+                front_text: SignText::new(),
+                back_text: SignText::new(),
+                is_waxed: false,
+                player_who_may_edit: None,
+            }),
         }
     }
 
     /// Gets the UUID of the player currently allowed to edit this sign.
     #[must_use]
-    pub const fn get_player_who_may_edit(&self) -> Option<Uuid> {
-        self.player_who_may_edit
+    pub fn get_player_who_may_edit(&self) -> Option<Uuid> {
+        self.sign.lock().player_who_may_edit
     }
 
     /// Sets the player allowed to edit this sign.
-    pub const fn set_player_who_may_edit(&mut self, player: Option<Uuid>) {
-        self.player_who_may_edit = player;
+    pub fn set_player_who_may_edit(&self, player: Option<Uuid>) {
+        self.sign.lock().player_who_may_edit = player;
     }
 
     /// Checks if another player (not the given one) is currently editing this sign.
     #[must_use]
     pub fn is_other_player_editing(&self, player_uuid: Uuid) -> bool {
-        self.player_who_may_edit
+        self.sign
+            .lock()
+            .player_who_may_edit
             .is_some_and(|editor| editor != player_uuid)
     }
 
     /// Gets the text for a side.
     #[must_use]
-    pub const fn get_text(&self, front: bool) -> &SignText {
+    pub fn get_text(&self, front: bool) -> SignText {
+        let sign = self.sign.lock();
         if front {
-            &self.front_text
+            sign.front_text.clone()
         } else {
-            &self.back_text
+            sign.back_text.clone()
         }
     }
 
-    /// Gets mutable text for a side.
-    pub const fn get_text_mut(&mut self, front: bool) -> &mut SignText {
-        if front {
-            &mut self.front_text
-        } else {
-            &mut self.back_text
+    /// Returns whether this sign is waxed.
+    #[must_use]
+    pub fn is_waxed(&self) -> bool {
+        self.sign.lock().is_waxed
+    }
+
+    /// Makes this sign waxed, returning whether its state changed.
+    pub fn wax(&self) -> bool {
+        let mut sign = self.sign.lock();
+        if sign.is_waxed {
+            return false;
         }
+        sign.is_waxed = true;
+        true
     }
 
     /// Sets the text for a side.
-    pub fn set_text(&mut self, text: SignText, front: bool) {
+    pub fn set_text(&self, text: SignText, front: bool) {
+        let mut sign = self.sign.lock();
         if front {
-            self.front_text = text;
+            sign.front_text = text;
         } else {
-            self.back_text = text;
+            sign.back_text = text;
         }
     }
 }
 
 impl BlockEntity for SignBlockEntity {
-    fn get_type(&self) -> BlockEntityTypeRef {
-        self.block_entity_type
+    fn base(&self) -> &BlockEntityBase {
+        &self.base
     }
 
-    fn get_block_pos(&self) -> BlockPos {
-        self.pos
-    }
-
-    fn get_block_state(&self) -> BlockStateId {
-        self.state
-    }
-
-    fn set_block_state(&mut self, state: BlockStateId) {
-        self.state = state;
-    }
-
-    fn is_removed(&self) -> bool {
-        self.removed
-    }
-
-    fn set_removed(&mut self) {
-        self.removed = true;
-    }
-
-    fn clear_removed(&mut self) {
-        self.removed = false;
-    }
-
-    fn get_level(&self) -> Option<Arc<World>> {
-        self.level.upgrade()
-    }
-
-    fn load_additional(&mut self, nbt: &BorrowedNbtCompound<'_>) {
+    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         // Convert to NbtCompound view for accessing methods
         let nbt_view: BorrowedNbtCompoundView<'_, '_> = nbt.into();
+        let mut sign = self.sign.lock();
 
         // Load front text
         if let Some(front_nbt) = nbt_view.compound("front_text") {
-            self.front_text.load(front_nbt);
+            sign.front_text.load(front_nbt);
         }
 
         // Load back text
         if let Some(back_nbt) = nbt_view.compound("back_text") {
-            self.back_text.load(back_nbt);
+            sign.back_text.load(back_nbt);
         }
 
         // Load waxed state
         if let Some(waxed) = nbt_view.byte("is_waxed") {
-            self.is_waxed = waxed != 0;
+            sign.is_waxed = waxed != 0;
         }
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
+        let sign = self.sign.lock();
         // Save front text
         let mut front_nbt = NbtCompound::new();
-        self.front_text.save(&mut front_nbt);
+        sign.front_text.save(&mut front_nbt);
         nbt.insert("front_text", front_nbt);
 
         // Save back text
         let mut back_nbt = NbtCompound::new();
-        self.back_text.save(&mut back_nbt);
+        sign.back_text.save(&mut back_nbt);
         nbt.insert("back_text", back_nbt);
 
         // Save waxed state
-        nbt.insert("is_waxed", i8::from(self.is_waxed));
+        nbt.insert("is_waxed", i8::from(sign.is_waxed));
     }
 
     fn get_update_tag(&self) -> Option<NbtCompound> {
@@ -314,44 +292,48 @@ impl BlockEntity for SignBlockEntity {
         Some(nbt)
     }
 
-    fn is_ticking(&self) -> bool {
-        // Signs tick to clear the edit lock if the player moves away
-        self.player_who_may_edit.is_some()
-    }
-
-    fn tick(&mut self, world: &Arc<World>) -> Option<BlockEntityTickAction> {
+    fn tick(&self, world: &Arc<World>) {
         // Clear the edit lock if the editing player is too far away or gone
-        if let Some(editor_uuid) = self.player_who_may_edit {
-            let should_clear = world
-                .players
-                .get_by_uuid(&editor_uuid)
-                .is_none_or(|player| {
-                    let pos = self.pos;
-                    let player_pos = player.position();
-                    let dx = player_pos.x - f64::from(pos.0.x) - 0.5;
-                    let dy = player_pos.y - f64::from(pos.0.y) - 0.5;
-                    let dz = player_pos.z - f64::from(pos.0.z) - 0.5;
-                    let distance_sq = dx * dx + dy * dy + dz * dz;
-                    distance_sq > MAX_EDIT_DISTANCE * MAX_EDIT_DISTANCE
-                });
+        let editor_uuid = self.sign.lock().player_who_may_edit;
+        let Some(editor_uuid) = editor_uuid else {
+            return;
+        };
+        let should_clear = world
+            .players
+            .get_by_uuid(&editor_uuid)
+            .is_none_or(|player| {
+                let pos = self.get_block_pos();
+                let player_pos = player.position();
+                let dx = player_pos.x - f64::from(pos.0.x) - 0.5;
+                let dy = player_pos.y - f64::from(pos.0.y) - 0.5;
+                let dz = player_pos.z - f64::from(pos.0.z) - 0.5;
+                let distance_sq = dx * dx + dy * dy + dz * dz;
+                distance_sq > MAX_EDIT_DISTANCE * MAX_EDIT_DISTANCE
+            });
 
-            if should_clear {
-                self.player_who_may_edit = None;
+        if should_clear {
+            let mut sign = self.sign.lock();
+            if sign.player_who_may_edit == Some(editor_uuid) {
+                sign.player_who_may_edit = None;
             }
         }
-        None
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{array, io::Cursor};
+    use std::{array, io::Cursor, sync::Arc};
 
     use simdnbt::borrow::read_tag;
     use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_utils::BlockPos;
     use text_components::{Modifier as _, TextComponent};
+    use uuid::Uuid;
 
-    use super::SignText;
+    use super::{SignBlockEntity, SignText};
+    use crate::block_entity::BlockEntity as _;
+    use crate::test_support::fresh_test_world;
 
     #[test]
     fn plain_sign_lines_save_as_a_string_list() {
@@ -400,5 +382,20 @@ mod tests {
         assert_eq!(decoded.messages, expected.messages);
         assert_eq!(decoded.color, expected.color);
         assert_eq!(decoded.has_glowing_text, expected.has_glowing_text);
+    }
+
+    #[test]
+    fn sign_tick_releases_state_before_player_lookup_and_editor_clear() {
+        init_test_registry();
+        let world = fresh_test_world("sign_editor_clear");
+        let sign = SignBlockEntity::new(
+            Arc::downgrade(&world),
+            BlockPos::new(8, 64, 8),
+            vanilla_blocks::OAK_SIGN.default_state(),
+        );
+        sign.set_player_who_may_edit(Some(Uuid::from_u128(1)));
+
+        sign.tick(&world);
+        assert_eq!(sign.get_player_who_may_edit(), None);
     }
 }

@@ -10,13 +10,14 @@ use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::vanilla_blocks;
-use steel_utils::BlockPos;
 use steel_utils::types::UpdateFlags;
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS};
 use crate::fluid::{
-    FluidBehavior, FluidState, can_hold_any_fluid, can_hold_specific_fluid, can_pass_through_wall,
-    fluid_state_to_block, fluid_state_to_block_with_existing, get_new_liquid, get_spread, is_hole,
+    FluidBehavior, FluidState, can_hold_any_fluid_state, can_hold_specific_fluid,
+    can_pass_through_wall, fluid_state_to_block, fluid_state_to_block_with_existing,
+    get_new_liquid, get_spread, is_hole,
 };
 use crate::world::World;
 
@@ -24,26 +25,35 @@ use crate::world::World;
 /// In vanilla Minecraft, this is the `FlowingFluid` abstract class.
 pub trait FlowingFluid: FluidBehavior {
     /// The base tick logic
-    fn base_tick(&self, world: &Arc<World>, pos: BlockPos) {
-        let mut current_fluid = world.get_block_state(pos).get_fluid_state();
-
+    fn base_tick(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        mut block_state: BlockStateId,
+        mut current_fluid: FluidState,
+    ) {
         if current_fluid.is_empty() || !self.is_same(current_fluid.fluid_id) {
             return;
         }
 
         if !current_fluid.is_source() {
-            let new_fluid = get_new_liquid(world, pos, self.fluid_type(), self.drop_off(world));
+            let new_fluid = get_new_liquid(
+                world,
+                pos,
+                block_state,
+                self.fluid_type(),
+                self.drop_off(world),
+            );
 
             if new_fluid.is_empty() {
                 current_fluid = new_fluid;
                 // Vanilla: unconditionally sets Blocks.AIR when fluid empties
-                let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
-                world.set_block(pos, air, UpdateFlags::UPDATE_ALL);
+                block_state = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
+                world.set_block(pos, block_state, UpdateFlags::UPDATE_ALL);
             } else if new_fluid != current_fluid {
                 let old_fluid = current_fluid;
                 current_fluid = new_fluid;
-                let existing_state = world.get_block_state(pos);
-                let block_state = fluid_state_to_block_with_existing(new_fluid, existing_state);
+                block_state = fluid_state_to_block_with_existing(new_fluid, block_state);
                 world.set_block(pos, block_state, UpdateFlags::UPDATE_ALL);
 
                 world.schedule_fluid_tick_default(
@@ -54,13 +64,19 @@ pub trait FlowingFluid: FluidBehavior {
             }
         }
 
-        self.spread(world, pos, current_fluid);
+        self.spread(world, pos, block_state, current_fluid);
     }
 
     /// The base spread logic.
     ///
     /// Vanilla equivalent: `FlowingFluid.spread()`.
-    fn base_spread(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
+    fn base_spread(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        block_state: BlockStateId,
+        fluid_state: FluidState,
+    ) {
         if fluid_state.is_empty() {
             return;
         }
@@ -73,12 +89,17 @@ pub trait FlowingFluid: FluidBehavior {
         //          + canBeReplacedWith + canHoldSpecificFluid
         let can_spread_down = world.is_in_valid_bounds(below)
             && !(self.is_same(below_fluid.fluid_id) && below_fluid.is_source())
-            && can_hold_any_fluid(world, below)
-            && can_pass_through_wall(world, pos, below, Direction::Down);
+            && can_hold_any_fluid_state(below_state)
+            && can_pass_through_wall(world, pos, block_state, below, below_state, Direction::Down);
 
         if can_spread_down {
-            let new_below_fluid =
-                get_new_liquid(world, below, self.fluid_type(), self.drop_off(world));
+            let new_below_fluid = get_new_liquid(
+                world,
+                below,
+                below_state,
+                self.fluid_type(),
+                self.drop_off(world),
+            );
 
             if !new_below_fluid.is_empty() {
                 let existing_behavior = FLUID_BEHAVIORS.get_behavior(below_fluid.fluid_id);
@@ -94,15 +115,24 @@ pub trait FlowingFluid: FluidBehavior {
                     self.spread_to(world, below, new_below_fluid, Direction::Down);
 
                     if self.source_neighbor_count(world, pos) >= 3 {
-                        self.spread_to_sides(world, pos, fluid_state);
+                        self.spread_to_sides(world, pos, block_state, fluid_state);
                     }
                     return;
                 }
             }
         }
 
-        if fluid_state.is_source() || !is_hole(world, pos, self.fluid_type()) {
-            self.spread_to_sides(world, pos, fluid_state);
+        if fluid_state.is_source()
+            || !is_hole(
+                world,
+                pos,
+                block_state,
+                below,
+                below_state,
+                self.fluid_type(),
+            )
+        {
+            self.spread_to_sides(world, pos, block_state, fluid_state);
         }
     }
 
@@ -161,7 +191,13 @@ pub trait FlowingFluid: FluidBehavior {
     /// Vanilla equivalent: `FlowingFluid.spreadToSides()`.
     /// Computes outgoing amount, overrides to 7 for falling fluids, and skips
     /// if the outgoing amount is zero.
-    fn spread_to_sides(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
+    fn spread_to_sides(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        block_state: BlockStateId,
+        fluid_state: FluidState,
+    ) {
         // Vanilla: neighbor = amount - dropOff; if (falling) neighbor = 7; if (neighbor <= 0) skip
         let mut neighbor = fluid_state.amount.saturating_sub(self.drop_off(world));
         if fluid_state.falling {
@@ -174,6 +210,7 @@ pub trait FlowingFluid: FluidBehavior {
         let spreads = get_spread(
             world,
             pos,
+            block_state,
             self.fluid_type(),
             self.drop_off(world),
             self.slope_find_distance(world),

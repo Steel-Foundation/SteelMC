@@ -70,7 +70,8 @@ impl BlockBehavior for CandleBlock {
         pos: BlockPos,
     ) -> bool {
         let below_pos = pos.below();
-        world.get_block_state(below_pos).is_face_sturdy_for_at(
+        world.is_face_sturdy_for(
+            world.get_block_state(below_pos),
             below_pos,
             Direction::Up,
             SupportType::Center,

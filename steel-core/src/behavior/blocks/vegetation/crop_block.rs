@@ -259,11 +259,6 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
         survival_update_shape(self, state, world, pos)
     }
 
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        // Only tick if not fully grown
-        !self.is_max_age(state)
-    }
-
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if self.should_random_tick() {
             self.on_random_tick(state, world, pos);

@@ -12,8 +12,7 @@ use steel_utils::{
 };
 
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt,
-    pickup_waterlogged_block,
+    BLOCK_BEHAVIORS, BlockBehavior, BlockPlaceContext, pickup_waterlogged_block,
 };
 use crate::world::{ConditionalBlockSetResult, World};
 

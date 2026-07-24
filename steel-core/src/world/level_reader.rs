@@ -5,6 +5,9 @@
 //! `World` type. `World` and `WorldGenRegion` both implement this trait.
 
 use steel_registry::blocks::BlockRef;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::blocks::properties::Direction;
+use steel_registry::blocks::shapes::SupportType;
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
 use steel_registry::sound_event::SoundEventRef;
@@ -27,6 +30,26 @@ pub trait LevelReader {
     )]
     fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
         None
+    }
+
+    /// Mirrors vanilla `BlockState.isFaceSturdy` with full-face support.
+    fn is_face_sturdy(&self, state: BlockStateId, pos: BlockPos, direction: Direction) -> bool {
+        self.is_face_sturdy_for(state, pos, direction, SupportType::Full)
+    }
+
+    /// Mirrors vanilla `BlockState.isFaceSturdy` for a specific support type.
+    ///
+    /// Lightweight and worldgen views default to extracted support shapes.
+    /// Live views override this to dispatch through block behavior for dynamic
+    /// world-dependent shapes.
+    fn is_face_sturdy_for(
+        &self,
+        state: BlockStateId,
+        pos: BlockPos,
+        direction: Direction,
+        support_type: SupportType,
+    ) -> bool {
+        state.is_face_sturdy_for_at(pos, direction, support_type)
     }
 
     /// Returns vanilla raw brightness at a position after sky darkening.

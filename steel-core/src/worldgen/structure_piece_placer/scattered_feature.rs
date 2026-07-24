@@ -8,7 +8,6 @@ use steel_utils::random::Random;
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, types::UpdateFlags};
 
-use crate::behavior::BlockStateBehaviorExt as _;
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::SharedEntity;
 use crate::world::World;

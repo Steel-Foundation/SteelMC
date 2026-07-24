@@ -130,7 +130,6 @@ pub(crate) fn calculate_transition(
 
 fn gateway_exit_state(world: &World, portal_pos: BlockPos) -> Option<GatewayExitState> {
     let block_entity = world.get_block_entity(portal_pos)?;
-    let block_entity = block_entity.lock();
     let gateway = block_entity.downcast_ref::<EndGatewayBlockEntity>()?;
     Some(match gateway.exit_portal() {
         Some(exit) => GatewayExitState::Stored {
@@ -152,8 +151,7 @@ fn set_gateway_exit_position(
     let Some(block_entity) = world.get_block_entity(portal_pos) else {
         return false;
     };
-    let mut block_entity = block_entity.lock();
-    let Some(gateway) = block_entity.downcast_mut::<EndGatewayBlockEntity>() else {
+    let Some(gateway) = block_entity.downcast_ref::<EndGatewayBlockEntity>() else {
         return false;
     };
     gateway.set_exit_position(exit, exact);

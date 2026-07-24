@@ -5,10 +5,7 @@ use std::sync::Arc;
 use rand::Rng;
 
 use crate::{
-    behavior::{
-        BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt,
-        blocks::vegetation::bonemealable::Bonemealable,
-    },
+    behavior::{BlockBehavior, BlockPlaceContext, blocks::vegetation::bonemealable::Bonemealable},
     fluid::fluid_state_to_block,
     world::{LevelReader, ScheduledTickAccess, World},
 };
@@ -130,9 +127,6 @@ impl BlockBehavior for LeavesBlock {
             context.place_pos(),
         ))
     }
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        Self::decaying(state)
-    }
 }
 /// Used for cherry tree leaves.
 #[block_behavior]
@@ -175,9 +169,6 @@ impl BlockBehavior for UntintedParticleLeavesBlock {
         self.leaves()
             .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        self.leaves().is_randomly_ticking(state)
-    }
 }
 /// Used for oak, spruce, jungle... tree leaves.
 #[block_behavior]
@@ -219,10 +210,6 @@ impl BlockBehavior for TintedParticleLeavesBlock {
     ) -> BlockStateId {
         self.leaves()
             .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
-    }
-
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        self.leaves().is_randomly_ticking(state)
     }
 }
 
@@ -270,10 +257,6 @@ impl BlockBehavior for MangroveLeavesBlock {
             .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
 
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        self.leaves().is_randomly_ticking(state)
-    }
-
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }
@@ -314,17 +297,6 @@ mod tests {
     };
 
     use super::*;
-
-    #[test]
-    fn leaves_only_randomly_tick_while_decaying() {
-        init_test_registry();
-        let behavior = LeavesBlock::new(&vanilla_blocks::OAK_LEAVES);
-        let decaying = vanilla_blocks::OAK_LEAVES.default_state();
-
-        assert!(behavior.is_randomly_ticking(decaying));
-        assert!(!behavior.is_randomly_ticking(decaying.set_value(&DISTANCE, 6)));
-        assert!(!behavior.is_randomly_ticking(decaying.set_value(&PERSISTENT, true)));
-    }
 
     #[test]
     fn waterlogged_leaves_decay_into_water() {

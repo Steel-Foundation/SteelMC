@@ -90,6 +90,23 @@ struct FlagsEntry {
     can_breathe_underwater: bool,
     #[serde(default)]
     can_be_seen_as_enemy: bool,
+    #[serde(default = "default_piston_push_reaction")]
+    piston_push_reaction: String,
+}
+
+fn default_piston_push_reaction() -> String {
+    "NORMAL".to_owned()
+}
+
+fn piston_push_reaction_variant(reaction: &str) -> TokenStream {
+    match reaction {
+        "NORMAL" => quote! { PushReaction::Normal },
+        "DESTROY" => quote! { PushReaction::Destroy },
+        "BLOCK" => quote! { PushReaction::Block },
+        "IGNORE" => quote! { PushReaction::Ignore },
+        "PUSH_ONLY" => quote! { PushReaction::PushOnly },
+        _ => panic!("Unknown piston push reaction: {reaction}"),
+    }
 }
 
 fn mob_category_variant(category: &str) -> TokenStream {
@@ -133,6 +150,7 @@ pub(crate) fn build() -> TokenStream {
             EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityFlags, EntityType,
             EntityTypeRegistry, MobCategory,
         };
+        use crate::blocks::behavior::PushReaction;
         use steel_utils::Identifier;
     });
 
@@ -170,14 +188,14 @@ pub(crate) fn build() -> TokenStream {
             .class_hierarchy
             .iter()
             .any(|class| class.simple_name == "AbstractMinecart");
-        let is_vehicle_entity = entity_type
-            .class_hierarchy
-            .iter()
-            .any(|class| class.simple_name == "VehicleEntity");
         let is_projectile = entity_type
             .class_hierarchy
             .iter()
             .any(|class| class.simple_name == "Projectile");
+        let is_abstract_arrow = entity_type
+            .class_hierarchy
+            .iter()
+            .any(|class| class.simple_name == "AbstractArrow");
 
         // Flags (with defaults for entities that don't have them, like fishing_bobber)
         let flags = entity_type.flags.as_ref();
@@ -191,6 +209,10 @@ pub(crate) fn build() -> TokenStream {
         let is_sensitive_to_water = flags.is_some_and(|f| f.is_sensitive_to_water);
         let can_breathe_underwater = flags.is_some_and(|f| f.can_breathe_underwater);
         let can_be_seen_as_enemy = flags.is_some_and(|f| f.can_be_seen_as_enemy);
+        let piston_push_reaction = flags.map_or_else(
+            || quote! { PushReaction::Normal },
+            |flags| piston_push_reaction_variant(&flags.piston_push_reaction),
+        );
 
         let default_attributes_tokens = if let Some(attrs) = &entity_type.attributes {
             let mut sorted: Vec<(&String, &f64)> = attrs.iter().collect();
@@ -233,8 +255,8 @@ pub(crate) fn build() -> TokenStream {
                 can_serialize: #can_serialize,
                 is_abstract_boat: #is_abstract_boat,
                 is_abstract_minecart: #is_abstract_minecart,
-                is_vehicle_entity: #is_vehicle_entity,
                 is_projectile: #is_projectile,
+                is_abstract_arrow: #is_abstract_arrow,
                 flags: EntityFlags {
                     is_pushable: #is_pushable,
                     is_attackable: #is_attackable,
@@ -246,6 +268,7 @@ pub(crate) fn build() -> TokenStream {
                     is_sensitive_to_water: #is_sensitive_to_water,
                     can_breathe_underwater: #can_breathe_underwater,
                     can_be_seen_as_enemy: #can_be_seen_as_enemy,
+                    piston_push_reaction: #piston_push_reaction,
                 },
                 default_attributes: #default_attributes_tokens,
             };

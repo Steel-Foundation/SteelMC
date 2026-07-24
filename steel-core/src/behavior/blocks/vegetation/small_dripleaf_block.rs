@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, DoubleBlockHalf};
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, DoubleBlockHalf};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::context::{BlockPlaceContext, PlacementSource};
 use crate::fluid::{FluidStateExt, get_fluid_state_from_block};
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::{BlockRef, DoublePlantBlock};
 
@@ -33,6 +33,26 @@ impl SmallDripleafBlock {
 }
 
 impl BlockBehavior for SmallDripleafBlock {
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        direction: Direction,
+        _neighbor_pos: BlockPos,
+        neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        schedule_water_tick_if_waterlogged(state, world, pos);
+        self.double_plant.update_shape_with_survival(
+            self,
+            state,
+            world,
+            pos,
+            direction,
+            neighbor_state,
+        )
+    }
+
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Upper {
             return self.double_plant.can_survive(state, world, pos);
@@ -94,5 +114,43 @@ impl BlockBehavior for SmallDripleafBlock {
                 ),
         );
         world.set_block(upper_pos, upper_state, UpdateFlags::UPDATE_ALL);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::test_support::TestLevel;
+
+    #[test]
+    fn small_dripleaf_schedules_water_before_double_plant_survival() {
+        init_test_registry();
+        init_behaviors();
+        let behavior = SmallDripleafBlock::new(&vanilla_blocks::SMALL_DRIPLEAF);
+        let state = vanilla_blocks::SMALL_DRIPLEAF
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, true)
+            .set_value(
+                &BlockStateProperties::DOUBLE_BLOCK_HALF,
+                DoubleBlockHalf::Lower,
+            );
+        let level = TestLevel::default();
+
+        assert!(
+            behavior
+                .update_shape(
+                    state,
+                    &level,
+                    BlockPos::ZERO,
+                    Direction::Down,
+                    BlockPos::ZERO.below(),
+                    vanilla_blocks::AIR.default_state(),
+                )
+                .is_air()
+        );
+        assert!(level.scheduled_water_tick());
     }
 }

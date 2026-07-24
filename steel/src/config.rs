@@ -240,6 +240,10 @@ const fn default_spam_threshold_seconds() -> i32 {
     10
 }
 
+const fn default_max_chained_neighbor_updates() -> i32 {
+    1_000_000
+}
+
 fn default_log_path() -> String {
     "./.logs".to_string()
 }
@@ -270,6 +274,9 @@ pub struct ServerConfig {
     pub view_distance: u8,
     /// The simulation distance of the server.
     pub simulation_distance: u8,
+    /// Maximum queued neighbor-update tasks in one chained run; negative means unlimited.
+    #[serde(default = "default_max_chained_neighbor_updates")]
+    pub max_chained_neighbor_updates: i32,
     /// Whether the server is in online mode.
     pub online_mode: bool,
     /// Optional authentication endpoint for online-mode `hasJoined` checks.
@@ -312,6 +319,7 @@ impl ServerConfig {
             max_players: self.max_players,
             view_distance: self.view_distance,
             simulation_distance: self.simulation_distance,
+            max_chained_neighbor_updates: self.max_chained_neighbor_updates,
             online_mode: self.online_mode,
             auth_server: self.auth_server,
             profile_server: self.profile_server,
@@ -699,7 +707,7 @@ mod tests {
     }
 
     #[test]
-    fn server_config_defaults_allow_flight_to_false() {
+    fn server_config_defaults_backward_compatible_fields() {
         let input = r#"
             [server]
             server_port = 25565
@@ -719,6 +727,7 @@ mod tests {
         let config: SteelConfig = toml::from_str(input).expect("config should parse");
 
         assert!(!config.server.allow_flight);
+        assert_eq!(config.server.max_chained_neighbor_updates, 1_000_000);
     }
 
     #[test]

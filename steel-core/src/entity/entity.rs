@@ -386,6 +386,28 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         false
     }
 
+    /// Returns whether this entity is excluded from pressure plates and tripwires.
+    ///
+    /// Mirrors vanilla `Entity.isIgnoringBlockTriggers`. Display-like entities
+    /// and marker entities override this capability.
+    fn is_ignoring_block_triggers(&self) -> bool {
+        false
+    }
+
+    /// Returns how vanilla lets this entity respond to piston movement.
+    fn piston_push_reaction(&self) -> PushReaction {
+        if self.is_marker_armor_stand() {
+            PushReaction::Ignore
+        } else {
+            self.entity_type().flags.piston_push_reaction
+        }
+    }
+
+    /// Returns whether this entity's main supporting block is `pos`.
+    fn is_supported_by(&self, pos: BlockPos) -> bool {
+        self.base().supporting_block() == Some(pos)
+    }
+
     /// Returns whether vanilla lets this entity interact with its loaded level.
     fn can_interact_with_level(&self) -> bool {
         self.is_alive() && !self.is_removed() && !self.is_spectator()
@@ -1084,10 +1106,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns vanilla's dimension-changing portal cooldown delay in ticks.
     ///
     /// Mirrors vanilla `getDimensionChangingDelay` overrides for players,
-    /// vehicle entities, projectiles, and base entities with a player passenger.
+    /// projectiles, and base entities with a player passenger. Concrete vehicle
+    /// implementations override this method directly.
     fn dimension_changing_delay(&self) -> i32 {
         let entity_type = self.entity_type();
-        if self.as_player().is_some() || entity_type.is_vehicle_entity {
+        if self.as_player().is_some() {
             return 10;
         }
         if entity_type.is_projectile {
@@ -1427,6 +1450,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.as_living_entity().is_some()
     }
 
+    /// Returns whether this entity belongs to vanilla's `AbstractArrow` hierarchy.
+    fn is_abstract_arrow(&self) -> bool {
+        self.entity_type().is_abstract_arrow
+    }
+
     /// Returns this entity as a projectile when it has projectile behavior.
     fn as_projectile(&self) -> Option<&dyn Projectile> {
         try_as_dyn::<Self, dyn Projectile>(self)
@@ -1437,6 +1465,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla's frequent `instanceof LivingEntity` branches.
     fn as_living_entity(&self) -> Option<&dyn LivingEntity> {
         try_as_dyn::<Self, dyn LivingEntity>(self)
+    }
+
+    /// Returns this entity as an item frame when it has item-frame behavior.
+    ///
+    /// Mirrors vanilla's `instanceof ItemFrame` branches.
+    fn as_item_frame(&self) -> Option<&dyn ItemFrame> {
+        try_as_dyn::<Self, dyn ItemFrame>(self)
     }
 
     /// Returns this entity as a player when it is the concrete server player.
@@ -2307,6 +2342,15 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let entity = self.as_entity_event_source();
         let movements = self.base().take_movements_for_block_effects();
         apply_effects_from_block_movements(entity, &movements);
+    }
+
+    /// Applies block-contact effects for one explicit movement segment.
+    ///
+    /// Mirrors vanilla's `Entity.applyEffectsFromBlocks(Vec3, Vec3)` overload,
+    /// which does not finalize or clear the entity's normal movement trace.
+    fn apply_effects_from_blocks_between(&self, from: DVec3, to: DVec3) {
+        let entity = self.as_entity_event_source();
+        apply_effects_from_block_movements(entity, &[EntityMovement::new(from, to)]);
     }
 
     /// Replays the last finalized block-contact movement list.

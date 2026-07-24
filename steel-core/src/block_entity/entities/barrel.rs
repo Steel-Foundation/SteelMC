@@ -3,21 +3,21 @@
 //! Barrels are container block entities with 27 slots (3x9 grid),
 //! functioning similarly to chests but without double-chest behavior.
 
-use std::sync::{Arc, Weak};
+use std::{
+    mem,
+    sync::{Arc, Weak},
+};
 
 use simdnbt::ToNbtTag;
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-use steel_registry::block_entity_type::BlockEntityTypeRef;
-use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_entity_types;
-use steel_registry::vanilla_blocks;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
-use crate::block_entity::BlockEntity;
+use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::inventory::container::Container;
-use crate::player::Player;
+use crate::inventory::lock::{ContainerRef, SharedContainer};
 use crate::world::World;
 
 /// Number of slots in a barrel (3 rows of 9).
@@ -27,15 +27,12 @@ pub const BARREL_SLOTS: usize = 27;
 ///
 /// A simple container with 27 slots, using the same menu as chests.
 pub struct BarrelBlockEntity {
-    /// Weak reference to the world for marking chunks dirty.
-    level: Weak<World>,
-    /// Position in the world.
-    pos: BlockPos,
-    /// Current block state.
-    state: BlockStateId,
-    /// Whether this entity has been marked for removal.
-    removed: bool,
-    /// The 27 item slots.
+    base: Arc<BlockEntityBase>,
+    container: Arc<SyncMutex<BarrelContainer>>,
+    container_ref: ContainerRef,
+}
+
+struct BarrelContainer {
     items: Vec<ItemStack>,
 }
 
@@ -44,65 +41,57 @@ unsafe impl DowncastType for BarrelBlockEntity {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:block_entity/barrel");
 }
 
+// SAFETY: This key is owned by Steel and uniquely identifies the independently
+// lockable inventory data used by a barrel block entity.
+unsafe impl DowncastType for BarrelContainer {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:container/barrel");
+}
+
 impl BarrelBlockEntity {
     /// Creates a new barrel block entity.
     #[must_use]
     pub fn new(level: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
-        Self {
+        let base = Arc::new(BlockEntityBase::new(
+            &vanilla_block_entity_types::BARREL,
             level,
             pos,
             state,
-            removed: false,
+        ));
+        let container = Arc::new(SyncMutex::new(BarrelContainer {
             items: vec![ItemStack::empty(); BARREL_SLOTS],
+        }));
+        let shared_container: SharedContainer = container.clone();
+        Self {
+            container_ref: ContainerRef::owned_by_block_entity(shared_container, Arc::clone(&base)),
+            base,
+            container,
         }
     }
 }
 
 impl BlockEntity for BarrelBlockEntity {
-    fn get_type(&self) -> BlockEntityTypeRef {
-        &vanilla_block_entity_types::BARREL
+    fn base(&self) -> &BlockEntityBase {
+        &self.base
     }
 
-    fn get_block_pos(&self) -> BlockPos {
-        self.pos
-    }
-
-    fn get_block_state(&self) -> BlockStateId {
-        self.state
-    }
-
-    fn set_block_state(&mut self, state: BlockStateId) {
-        self.state = state;
-    }
-
-    fn is_removed(&self) -> bool {
-        self.removed
-    }
-
-    fn set_removed(&mut self) {
-        self.removed = true;
-    }
-
-    fn clear_removed(&mut self) {
-        self.removed = false;
-    }
-
-    fn get_level(&self) -> Option<Arc<World>> {
-        self.level.upgrade()
-    }
-
-    fn pre_remove_side_effects(&mut self, pos: BlockPos, _state: BlockStateId) {
-        // Drop all items when the barrel is broken
-        if let Some(world) = self.level.upgrade() {
-            for item in self.items.drain(..) {
-                world.drop_item_stack(pos, item);
-            }
+    fn pre_remove_side_effects(&self, pos: BlockPos, _state: BlockStateId) {
+        let items = {
+            let mut container = self.container.lock();
+            mem::replace(&mut container.items, vec![ItemStack::empty(); BARREL_SLOTS])
+        };
+        let Some(world) = self.get_level() else {
+            return;
+        };
+        for item in items {
+            world.drop_item_stack(pos, item);
         }
     }
 
-    fn load_additional(&mut self, nbt: &BorrowedNbtCompound<'_>) {
+    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         // Convert to NbtCompound view for accessing methods
         let nbt_view: NbtCompoundView<'_, '_> = nbt.into();
+        let mut container = self.container.lock();
+        container.items.fill(ItemStack::empty());
 
         // Load items from NBT using borrowed NBT for proper ItemStack parsing
         if let Some(items_list) = nbt_view.list("Items")
@@ -115,7 +104,7 @@ impl BlockEntity for BarrelBlockEntity {
                     if slot < BARREL_SLOTS {
                         // Parse item directly from the borrowed compound
                         if let Some(item) = ItemStack::from_borrowed_compound(&compound) {
-                            self.items[slot] = item;
+                            container.items[slot] = item;
                         }
                     }
                 }
@@ -125,8 +114,9 @@ impl BlockEntity for BarrelBlockEntity {
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
         // Save items to NBT (only non-empty slots)
+        let container = self.container.lock();
         let mut items: Vec<NbtCompound> = Vec::new();
-        for (slot, item) in self.items.iter().enumerate() {
+        for (slot, item) in container.items.iter().enumerate() {
             if !item.is_empty() {
                 // Use ItemStack's ToNbtTag implementation for proper component serialization
                 if let NbtTag::Compound(mut item_nbt) = item.clone().to_nbt_tag() {
@@ -144,16 +134,12 @@ impl BlockEntity for BarrelBlockEntity {
         None
     }
 
-    fn as_container(&self) -> Option<&(dyn Container + 'static)> {
-        Some(self)
-    }
-
-    fn as_container_mut(&mut self) -> Option<&mut (dyn Container + 'static)> {
-        Some(self)
+    fn container_ref(&self) -> Option<ContainerRef> {
+        Some(self.container_ref.clone())
     }
 }
 
-impl Container for BarrelBlockEntity {
+impl Container for BarrelContainer {
     fn get_container_size(&self) -> usize {
         BARREL_SLOTS
     }
@@ -166,10 +152,13 @@ impl Container for BarrelBlockEntity {
         &mut self.items[slot]
     }
 
-    fn set_item(&mut self, slot: usize, stack: ItemStack) {
+    fn set_item(&mut self, slot: usize, mut stack: ItemStack) {
         if slot < BARREL_SLOTS {
+            let max_stack_size = self.get_max_stack_size_for_item(&stack);
+            if !stack.is_empty() && stack.count() > max_stack_size {
+                stack.set_count(max_stack_size);
+            }
             self.items[slot] = stack;
-            self.set_changed();
         }
     }
 
@@ -177,20 +166,50 @@ impl Container for BarrelBlockEntity {
         64
     }
 
-    fn still_valid(&self, player: &Player) -> bool {
-        if self.removed {
-            return false;
-        }
+    fn set_changed(&mut self) {}
+}
 
-        let Some(level) = self.level.upgrade() else {
-            return false;
-        };
+#[cfg(test)]
+mod tests {
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_items};
 
-        level.get_block_state(self.pos).get_block() == &vanilla_blocks::BARREL
-            && player.is_within_block_interaction_range_with_buffer(self.pos, 4.0)
+    use super::*;
+
+    fn test_barrel() -> BarrelBlockEntity {
+        init_test_registry();
+        BarrelBlockEntity::new(
+            Weak::new(),
+            BlockPos::new(1, 2, 3),
+            vanilla_blocks::BARREL.default_state(),
+        )
     }
 
-    fn set_changed(&mut self) {
-        BlockEntity::set_changed(self);
+    #[test]
+    fn set_item_limits_stack_to_vanilla_container_maximum() {
+        let barrel = test_barrel();
+        barrel
+            .container
+            .lock()
+            .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 100));
+
+        assert_eq!(barrel.container.lock().get_item(0).count(), 64);
+    }
+
+    #[test]
+    fn pre_remove_preserves_slots_for_existing_menu_references() {
+        let barrel = test_barrel();
+        barrel
+            .container
+            .lock()
+            .set_item(0, ItemStack::new(&vanilla_items::STONE));
+
+        barrel.pre_remove_side_effects(
+            BlockPos::new(1, 2, 3),
+            vanilla_blocks::BARREL.default_state(),
+        );
+
+        let container = barrel.container.lock();
+        assert_eq!(container.items.len(), BARREL_SLOTS);
+        assert!(container.items.iter().all(ItemStack::is_empty));
     }
 }

@@ -120,6 +120,25 @@ const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
 /// Matches vanilla's intended five-minute autosave cadence.
 const COMMAND_DATA_AUTOSAVE_INTERVAL: Duration = Duration::from_secs(300);
 
+#[derive(Clone, Copy)]
+struct TabListTickStats {
+    tps: f32,
+    recent_mspt: f32,
+    average_mspt: f32,
+    p95_mspt: f32,
+}
+
+impl TabListTickStats {
+    fn capture(tick_manager: &TickRateManager) -> Self {
+        Self {
+            tps: tick_manager.get_tps(),
+            recent_mspt: tick_manager.get_smoothed_mspt(),
+            average_mspt: tick_manager.get_average_mspt(),
+            p95_mspt: tick_manager.get_p95(),
+        }
+    }
+}
+
 /// Results from saving every command-owned persistent data set.
 pub struct CommandDataSaveResults {
     /// Number of dirty domain scoreboards written, or the save error.
@@ -305,10 +324,11 @@ mod tests {
         KnownPlayerCacheState, KnownPlayerSaveStep, KnownPlayers, Notify, PacketProcessor,
         PendingPlayerJoin, PlayerDataStorage, PlayerDisconnectQueue, PlayerJoinQueue, PlayerMap,
         PreparedSpawn, RegistryCache, Server, ServerJobQueue, SyncMutex, SyncRwLock,
-        TickRateManager, UncachedPlayerTarget, WorldMap, can_entity_return_from_end_to_overworld,
-        cap_positive_thread_count, classify_uncached_player_target, create_registered_dispatcher,
-        direct_uuid_profile, is_allowed_to_enter_portal_target, is_end_return_transition,
-        offline_uuid, packet_workers_for_available, validate_player_permission_group_update,
+        TabListTickStats, TickRateManager, UncachedPlayerTarget, WorldMap,
+        can_entity_return_from_end_to_overworld, cap_positive_thread_count,
+        classify_uncached_player_target, create_registered_dispatcher, direct_uuid_profile,
+        is_allowed_to_enter_portal_target, is_end_return_transition, offline_uuid,
+        packet_workers_for_available, validate_player_permission_group_update,
     };
 
     struct TestConnection {
@@ -381,6 +401,7 @@ mod tests {
             max_players: 1,
             view_distance: 2,
             simulation_distance: 2,
+            max_chained_neighbor_updates: 1_000_000,
             online_mode: false,
             auth_server: None,
             profile_server: None,
@@ -906,6 +927,21 @@ mod tests {
         assert_eq!(packet_workers_for_available(Some(0), 8), 4);
         assert_eq!(packet_workers_for_available(None, 8), 4);
         assert_eq!(packet_workers_for_available(None, 1), 1);
+    }
+
+    #[test]
+    fn tab_list_distinguishes_recent_and_five_second_tick_times() {
+        let (_, footer) = Server::tab_list_components(TabListTickStats {
+            tps: 20.0,
+            recent_mspt: 1.02,
+            average_mspt: 7.84,
+            p95_mspt: 12.31,
+        });
+
+        assert_eq!(
+            footer.to_plain(&DisplayResolutor),
+            "\nTPS: 20.0 | MSPT: 1.02 recent | 7.84 avg (5s) | 12.31 p95\n"
+        );
     }
 
     #[test]
@@ -2568,6 +2604,7 @@ impl Server {
                     generation_settings,
                     view_distance: config.view_distance,
                     simulation_distance: config.simulation_distance,
+                    max_chained_neighbor_updates: config.max_chained_neighbor_updates,
                     compression: config.compression,
                     is_flat: generator_output.is_flat,
                     sea_level: generator_output.sea_level,
@@ -3961,9 +3998,7 @@ impl Server {
                 let mut tick_manager = self.tick_rate_manager.write();
                 tick_manager.tick();
                 let runs_normally = tick_manager.runs_normally();
-                if runs_normally {
-                    tick_manager.increment_tick_count();
-                }
+                tick_manager.increment_tick_count();
                 (tick_manager.tick_count, runs_normally)
             };
 
@@ -3993,15 +4028,13 @@ impl Server {
                 next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
             }
 
-            let (tps, mspt) = {
-                let tick_duration_nanos = tick_start.elapsed().as_nanos() as u64;
-                let mut tick_manager = self.tick_rate_manager.write();
-                tick_manager.record_tick_time(tick_duration_nanos);
-                (tick_manager.get_tps(), tick_manager.get_average_mspt())
-            };
+            let tab_list_tick_stats = self.record_tick_and_capture_tab_stats(
+                tick_count,
+                tick_start.elapsed().as_nanos() as u64,
+            );
 
-            if tick_count % TAB_LIST_UPDATE_INTERVAL == 0 {
-                self.broadcast_tab_list(tps, mspt);
+            if let Some(tick_stats) = tab_list_tick_stats {
+                self.broadcast_tab_list(tick_stats);
             }
 
             if should_sprint_this_tick {
@@ -4025,6 +4058,18 @@ impl Server {
                 log::error!("Player disconnect save task failed during shutdown: {error}");
             }
         }
+    }
+
+    fn record_tick_and_capture_tab_stats(
+        &self,
+        tick_count: u64,
+        tick_duration_nanos: u64,
+    ) -> Option<TabListTickStats> {
+        let mut tick_manager = self.tick_rate_manager.write();
+        tick_manager.record_tick_time(tick_duration_nanos);
+        tick_count
+            .is_multiple_of(TAB_LIST_UPDATE_INTERVAL)
+            .then(|| TabListTickStats::capture(&tick_manager))
     }
 
     async fn autosave_command_data(&self) {
@@ -4264,18 +4309,39 @@ impl Server {
         for (i, world) in self.worlds.values().enumerate() {
             let timings = world.chunk_map.advance_scheduling();
 
-            let total = timings.ticket_updates
-                + timings.lifecycle_commit
+            let background_elapsed = timings.ticket_updates
                 + timings.schedule_generation
                 + timings.run_generation
                 + timings.process_unloads;
+            let boundary_elapsed = timings.block_entity_unloads
+                + timings.readiness_demotions
+                + timings.lifecycle_commit
+                + timings.readiness_reconcile
+                + timings.ticking_snapshot_rebuild;
+            let work_elapsed = background_elapsed + boundary_elapsed;
 
-            if total >= SLOW_CHUNK_TICK_THRESHOLD {
+            if work_elapsed >= SLOW_CHUNK_TICK_THRESHOLD {
                 tracing::warn!(
                     world = i,
-                    elapsed = ?total,
+                    work_elapsed = ?work_elapsed,
+                    background_elapsed = ?background_elapsed,
+                    boundary_elapsed = ?boundary_elapsed,
                     ticket_updates = ?timings.ticket_updates,
+                    block_entity_unloads = ?timings.block_entity_unloads,
+                    readiness_demotions = ?timings.readiness_demotions,
                     lifecycle_commit = ?timings.lifecycle_commit,
+                    readiness_reconcile = ?timings.readiness_reconcile,
+                    post_process_generation = ?timings.post_process_generation,
+                    post_process_chunk_count = timings.post_process_chunk_count,
+                    post_process_position_count = timings.post_process_position_count,
+                    readiness_candidate_count = timings.readiness_candidate_count,
+                    ticking_snapshot_rebuild = ?timings.ticking_snapshot_rebuild,
+                    rebuilt_ticking_chunk_count = timings.rebuilt_ticking_chunk_count,
+                    lookup_cache_holder_hits = timings.lookup_cache.holder_hits,
+                    lookup_cache_missing_hits = timings.lookup_cache.missing_hits,
+                    lookup_cache_scc_lookups = timings.lookup_cache.scc_lookups,
+                    lookup_cache_foreign_map_bypasses = timings.lookup_cache.foreign_map_bypasses,
+                    lookup_cache_evictions = timings.lookup_cache.evictions,
                     schedule_generation = ?timings.schedule_generation,
                     scheduled_count = timings.scheduled_count,
                     run_generation = ?timings.run_generation,
@@ -4833,6 +4899,11 @@ impl Server {
                 tick_block_entities = ?cm.tick_block_entities,
                 tickable_count = cm.tickable_count,
                 total_chunks = cm.total_chunks,
+                lookup_cache_holder_hits = cm.lookup_cache.holder_hits,
+                lookup_cache_missing_hits = cm.lookup_cache.missing_hits,
+                lookup_cache_scc_lookups = cm.lookup_cache.scc_lookups,
+                lookup_cache_foreign_map_bypasses = cm.lookup_cache.foreign_map_bypasses,
+                lookup_cache_evictions = cm.lookup_cache.evictions,
                 "Game tick slow"
             );
         }
@@ -4863,22 +4934,23 @@ impl Server {
         });
     }
 
-    /// Broadcasts the tab list header/footer with current TPS and MSPT values.
-    fn broadcast_tab_list(&self, tps: f32, mspt: f32) {
+    /// Builds the tab list header/footer with recent and five-second tick statistics.
+    fn tab_list_components(tick_stats: TabListTickStats) -> (TextComponent, TextComponent) {
         // Color TPS based on value
-        let tps_color = if tps >= 19.5 {
+        let tps_color = if tick_stats.tps >= 19.5 {
             Color::Green
-        } else if tps >= 15.0 {
+        } else if tick_stats.tps >= 15.0 {
             Color::Yellow
         } else {
             Color::Red
         };
 
-        // Color MSPT based on value (under 50ms is good)
-        let mspt_color = if mspt <= 50.0 {
-            Color::Aqua
-        } else {
-            Color::Red
+        let mspt_color = |mspt: f32| {
+            if mspt <= 50.0 {
+                Color::Aqua
+            } else {
+                Color::Red
+            }
         };
 
         let header = TextComponent::plain("\n").add_children(vec![
@@ -4887,12 +4959,27 @@ impl Server {
         ]);
         let footer = TextComponent::plain("\n").add_children(vec![
             TextComponent::plain("TPS: ").color(Color::Gray),
-            TextComponent::plain(format!("{tps:.1}")).color(tps_color),
+            TextComponent::plain(format!("{:.1}", tick_stats.tps)).color(tps_color),
             TextComponent::plain(" | ").color(Color::DarkGray),
             TextComponent::plain("MSPT: ").color(Color::Gray),
-            TextComponent::plain(format!("{mspt:.2}")).color(mspt_color),
+            TextComponent::plain(format!("{:.2}", tick_stats.recent_mspt))
+                .color(mspt_color(tick_stats.recent_mspt)),
+            TextComponent::plain(" recent | ").color(Color::Gray),
+            TextComponent::plain(format!("{:.2}", tick_stats.average_mspt))
+                .color(mspt_color(tick_stats.average_mspt)),
+            TextComponent::plain(" avg (5s) | ").color(Color::Gray),
+            TextComponent::plain(format!("{:.2}", tick_stats.p95_mspt))
+                .color(mspt_color(tick_stats.p95_mspt)),
+            TextComponent::plain(" p95").color(Color::Gray),
             TextComponent::plain("\n"),
         ]);
+
+        (header, footer)
+    }
+
+    /// Broadcasts the tab list header/footer with current TPS and MSPT statistics.
+    fn broadcast_tab_list(&self, tick_stats: TabListTickStats) {
+        let (header, footer) = Self::tab_list_components(tick_stats);
 
         self.broadcast_to_online_with(|player| CTabList::new(&header, &footer, player));
     }
