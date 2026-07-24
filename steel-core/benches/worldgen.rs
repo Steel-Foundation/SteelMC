@@ -577,6 +577,7 @@ fn build_feature_fixture_at(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -846,6 +847,7 @@ fn build_concurrent_feature_fixture(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -935,6 +937,7 @@ fn build_concurrent_full_pipeline_fixture(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -968,9 +971,7 @@ fn build_concurrent_full_pipeline_fixture(
             dim.min_y,
             dim.height,
         ));
-        let _ = chunk_map_for_factory
-            .chunks
-            .insert_sync(pos, holder.clone());
+        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, holder.clone());
         holder
     }));
     let stages = full_pipeline_stages(&cache, &centers);
@@ -1030,6 +1031,7 @@ fn build_concurrent_light_fixture(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -1060,9 +1062,7 @@ fn build_concurrent_light_fixture(
             dim.min_y,
             dim.height,
         ));
-        let _ = chunk_map_for_factory
-            .chunks
-            .insert_sync(pos, holder.clone());
+        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, holder.clone());
         holder
     }));
     let setup_stages =

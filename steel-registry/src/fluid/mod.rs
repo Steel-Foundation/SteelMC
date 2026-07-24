@@ -15,6 +15,8 @@ pub struct Fluid {
     pub is_empty: bool,
     /// Whether this is a source fluid (vs flowing).
     pub is_source: bool,
+    /// Whether this fluid receives random ticks.
+    pub is_randomly_ticking: bool,
     /// The block this fluid places.
     pub block: Identifier,
     /// The bucket item for this fluid.
@@ -77,7 +79,7 @@ pub type FluidRef = &'static Fluid;
 
 /// A fluid state instance with amount and falling properties.
 ///
-/// This is computed on-demand from block states rather than stored.
+/// Registered block states cache this value in their immutable state metadata.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FluidState {
     /// The fluid type (water, lava, empty).
@@ -149,6 +151,12 @@ impl FluidState {
     #[must_use]
     pub const fn is_full(&self) -> bool {
         self.amount == 8
+    }
+
+    /// Returns whether this fluid receives random ticks.
+    #[must_use]
+    pub const fn is_randomly_ticking(&self) -> bool {
+        self.fluid_id.is_randomly_ticking
     }
 
     /// Returns the fluid's own height (0.0 to ~0.89).

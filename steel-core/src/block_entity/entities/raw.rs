@@ -1,26 +1,26 @@
 //! NBT-preserving fallback block entity.
 
-use std::sync::{Arc, Weak};
+use std::sync::Weak;
 
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
-use crate::block_entity::BlockEntity;
+use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::world::World;
+
+struct RawBlockEntityState {
+    data: NbtCompound,
+}
 
 /// Steel-specific fallback for block entity types whose runtime behavior is not implemented yet.
 ///
 /// Vanilla has concrete classes for every block entity type. Steel uses this only to preserve
 /// worldgen and disk NBT until the corresponding typed implementation is added.
 pub struct RawBlockEntity {
-    block_entity_type: BlockEntityTypeRef,
-    level: Weak<World>,
-    pos: BlockPos,
-    state: BlockStateId,
-    removed: bool,
-    data: NbtCompound,
+    base: BlockEntityBase,
+    state: SyncMutex<RawBlockEntityState>,
 }
 
 // SAFETY: This key identifies the Steel fallback implementation, independently
@@ -43,7 +43,7 @@ impl RawBlockEntity {
 
     /// Creates a raw block entity with already-owned additional NBT.
     #[must_use]
-    pub const fn with_data(
+    pub fn with_data(
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
         pos: BlockPos,
@@ -51,56 +51,24 @@ impl RawBlockEntity {
         data: NbtCompound,
     ) -> Self {
         Self {
-            block_entity_type,
-            level,
-            pos,
-            state,
-            removed: false,
-            data,
+            base: BlockEntityBase::new(block_entity_type, level, pos, state),
+            state: SyncMutex::new(RawBlockEntityState { data }),
         }
     }
 }
 
 impl BlockEntity for RawBlockEntity {
-    fn get_type(&self) -> BlockEntityTypeRef {
-        self.block_entity_type
+    fn base(&self) -> &BlockEntityBase {
+        &self.base
     }
 
-    fn get_block_pos(&self) -> BlockPos {
-        self.pos
-    }
-
-    fn get_block_state(&self) -> BlockStateId {
-        self.state
-    }
-
-    fn set_block_state(&mut self, state: BlockStateId) {
-        self.state = state;
-    }
-
-    fn is_removed(&self) -> bool {
-        self.removed
-    }
-
-    fn set_removed(&mut self) {
-        self.removed = true;
-    }
-
-    fn clear_removed(&mut self) {
-        self.removed = false;
-    }
-
-    fn get_level(&self) -> Option<Arc<World>> {
-        self.level.upgrade()
-    }
-
-    fn load_additional(&mut self, nbt: &BorrowedNbtCompound<'_>) {
+    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt_view: NbtCompoundView<'_, '_> = nbt.into();
-        self.data = nbt_view.to_owned();
+        self.state.lock().data = nbt_view.to_owned();
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
-        *nbt = self.data.clone();
+        *nbt = self.state.lock().data.clone();
     }
 }
 
@@ -143,5 +111,17 @@ mod tests {
         assert!(!custom.contains("id"));
         assert!(!custom.contains("x"));
         assert_eq!(custom.int("custom"), Some(7));
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid block entity minecraft:barrel state minecraft:stone")]
+    fn constructor_rejects_a_type_state_mismatch() {
+        init_test_registry();
+        let _ = RawBlockEntity::new(
+            &vanilla_block_entity_types::BARREL,
+            Weak::new(),
+            BlockPos::new(2, 70, -4),
+            vanilla_blocks::STONE.default_state(),
+        );
     }
 }

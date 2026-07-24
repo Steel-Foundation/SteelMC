@@ -127,9 +127,6 @@ impl GrowingPlantHeadBlock {
 }
 
 impl BlockBehavior for GrowingPlantHeadBlock {
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        state.get_value(&AGE) < 25
-    }
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         growing_plant_can_survive(
             world,

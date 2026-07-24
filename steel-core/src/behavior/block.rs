@@ -3,36 +3,41 @@
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
+use smallvec::SmallVec;
+use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::{
-    BooleanOp, ShapeChannel, VoxelShape, is_shape_full_block, join_unoptimized_boxes,
+    BooleanOp, ShapeChannel, SupportType, VoxelShape, is_block_local_face_sturdy,
+    is_shape_full_block, join_unoptimized_boxes,
 };
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entities;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_blocks};
 use steel_registry::{vanilla_damage_types, vanilla_items};
 use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
-use steel_utils::{BlockPos, BlockStateId, WorldAabb, axis::Axis};
+use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Identifier, WorldAabb, axis::Axis};
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
-use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt};
 use crate::behavior::{InventoryAccess, PlacementSource};
-use crate::block_entity::SharedBlockEntity;
+use crate::block_entity::{BlockEntity, BlockEntityTicker, SharedBlockEntity};
 use crate::entity::ai::path::PathComputationType;
 use crate::entity::projectile::Projectile;
 use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource};
 use crate::fluid::is_water_fluid;
 use crate::physics::collide;
 use crate::player::Player;
+use crate::world::game_event_listener::SharedGameEventListener;
 use crate::world::{
     ClipHitResult, ConditionalBlockSetResult, LevelAccessor, LevelReader, ScheduledTickAccess,
-    World,
+    SignalQueryContext, World,
 };
 use steel_registry::vanilla_fluids;
 
@@ -50,6 +55,132 @@ pub(crate) fn default_can_be_replaced(
 pub struct PickupResult {
     pub filled_bucket: ItemStack,
     pub sound: Option<SoundEventRef>,
+}
+
+/// Result of invoking a block's Vanilla block-entity factory.
+///
+/// `NoEntity` is distinct from `Unimplemented`: some Vanilla blocks, notably the moving-piston
+/// placeholder, intentionally return no entity from normal block creation even though their
+/// state accepts an explicitly-created block entity.
+pub enum BlockEntityCreation {
+    /// The block factory created its entity.
+    Created(SharedBlockEntity),
+    /// The implemented Vanilla factory intentionally created no entity.
+    NoEntity,
+    /// Steel has not implemented this block's factory yet.
+    Unimplemented,
+}
+
+impl BlockEntityCreation {
+    /// Converts an optional registered implementation into a factory result.
+    #[must_use]
+    pub fn from_registered_factory(entity: Option<SharedBlockEntity>) -> Self {
+        entity.map_or(Self::Unimplemented, Self::Created)
+    }
+
+    /// Returns the created entity, if the factory produced one.
+    #[must_use]
+    pub fn into_created(self) -> Option<SharedBlockEntity> {
+        match self {
+            Self::Created(entity) => Some(entity),
+            Self::NoEntity | Self::Unimplemented => None,
+        }
+    }
+}
+
+/// Shared behavior exposed by blocks in vanilla's `BaseRailBlock` hierarchy.
+///
+/// Rail topology uses this capability in addition to the `minecraft:rails` tag.
+/// This keeps class-hierarchy checks extensible without relying on concrete
+/// downcasts.
+pub trait RailBehavior: Send + Sync {
+    /// Returns whether this rail forbids curved shapes.
+    fn is_straight(&self) -> bool;
+}
+
+/// Resolved block-local collision boxes for a live block state.
+///
+/// Most blocks materialize their extracted static voxel shape here. Dynamic
+/// blocks such as moving pistons can instead return boxes computed from live
+/// world data without forcing runtime shapes into the static registry.
+pub type BlockCollisionBoxes = SmallVec<[BlockLocalAabb; 4]>;
+
+/// Live parameters used to resolve a block's loot.
+///
+/// This is the Steel counterpart to vanilla's block `LootParams`. Behaviors can
+/// override loot generation while retaining the original tool, entity, luck,
+/// and position when delegating to another block state.
+pub struct BlockLootContext<'a> {
+    world: &'a Arc<World>,
+    pos: BlockPos,
+    entity: Option<&'a dyn Entity>,
+    tool: Option<&'a ItemStack>,
+    luck: f32,
+}
+
+impl<'a> BlockLootContext<'a> {
+    /// Creates a no-tool block loot context.
+    #[must_use]
+    pub const fn new(world: &'a Arc<World>, pos: BlockPos) -> Self {
+        Self {
+            world,
+            pos,
+            entity: None,
+            tool: None,
+            luck: 0.0,
+        }
+    }
+
+    /// Adds the entity responsible for destroying the block.
+    #[must_use]
+    pub const fn with_entity(mut self, entity: Option<&'a dyn Entity>) -> Self {
+        self.entity = entity;
+        self
+    }
+
+    /// Adds the tool used to destroy the block.
+    #[must_use]
+    pub const fn with_tool(mut self, tool: &'a ItemStack) -> Self {
+        self.tool = Some(tool);
+        self
+    }
+
+    /// Adds the luck used to evaluate the loot table.
+    #[must_use]
+    pub const fn with_luck(mut self, luck: f32) -> Self {
+        self.luck = luck;
+        self
+    }
+
+    /// Returns the world containing the block.
+    #[must_use]
+    pub const fn world(&self) -> &'a Arc<World> {
+        self.world
+    }
+
+    /// Returns the block position whose loot is being resolved.
+    #[must_use]
+    pub const fn pos(&self) -> BlockPos {
+        self.pos
+    }
+
+    /// Resolves loot for another state with the same vanilla loot parameters.
+    #[must_use]
+    pub fn get_drops(&self, state: BlockStateId) -> Vec<ItemStack> {
+        World::block_drops(state, self)
+    }
+
+    pub(crate) const fn entity(&self) -> Option<&'a dyn Entity> {
+        self.entity
+    }
+
+    pub(crate) const fn tool(&self) -> Option<&'a ItemStack> {
+        self.tool
+    }
+
+    pub(crate) const fn luck(&self) -> f32 {
+        self.luck
+    }
 }
 
 #[must_use]
@@ -103,6 +234,19 @@ pub(crate) fn schedule_placed_liquid_tick(
 ) {
     let delay = level.fluid_tick_delay(fluid_state.fluid_id);
     level.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay);
+}
+
+/// Mirrors the water-tick side effect shared by Vanilla waterlogged block
+/// `updateShape` implementations.
+pub(crate) fn schedule_water_tick_if_waterlogged(
+    state: BlockStateId,
+    level: &dyn ScheduledTickAccess,
+    pos: BlockPos,
+) {
+    if state.try_get_value(&BlockStateProperties::WATERLOGGED) == Some(true) {
+        let delay = level.fluid_tick_delay(&vanilla_fluids::WATER);
+        level.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
+    }
 }
 
 pub(crate) fn place_simple_waterlogged_liquid(
@@ -539,6 +683,8 @@ pub trait BlockBehavior: Send + Sync {
     }
     /// Called when a neighboring block changes shape.
     /// Returns the new state for this block after considering the neighbor change.
+    /// Implementations also own any block or fluid ticks that Vanilla schedules
+    /// from `updateShape`; the world dispatcher does not infer them from the result.
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -549,6 +695,24 @@ pub trait BlockBehavior: Send + Sync {
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
         state
+    }
+
+    /// Queues indirect neighbor-shape updates after this state changes.
+    ///
+    /// Vanilla's default is a no-op. Redstone wire overrides this for vertical
+    /// corner connections.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn update_indirect_neighbour_shapes(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        flags: UpdateFlags,
+        update_limit: i32,
+    ) {
     }
 
     /// Returns whether this block can survive at the given position.
@@ -620,6 +784,15 @@ pub trait BlockBehavior: Send + Sync {
         // Default: no-op
     }
 
+    /// Called when a player starts attacking this block.
+    ///
+    /// Vanilla parity: `Block.attack(BlockState, Level, BlockPos, Player)`.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn attack(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, player: &Player) {}
+
     /// Called before a player removes this block.
     ///
     /// Vanilla parity: `Block.playerWillDestroy(Level, BlockPos, BlockState, Player)`.
@@ -637,6 +810,55 @@ pub trait BlockBehavior: Send + Sync {
         player: &Player,
     ) -> BlockStateId {
         state
+    }
+
+    /// Called after a player successfully removes this block.
+    ///
+    /// Mirrors vanilla `Block.destroy(LevelAccessor, BlockPos, BlockState)`.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn destroy(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        // Default: no-op
+    }
+
+    /// Overrides the loot generated for this block state.
+    ///
+    /// Returning `None` evaluates the state's normal loot table. Returning
+    /// `Some` uses the provided items, including an empty list. This mirrors
+    /// vanilla's per-block `getDrops` override point.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn get_drops(
+        &self,
+        state: BlockStateId,
+        context: &BlockLootContext<'_>,
+    ) -> Option<Vec<ItemStack>> {
+        None
+    }
+
+    /// Called for post-break effects such as experience drops.
+    ///
+    /// Vanilla parity: `Block.spawnAfterBreak(BlockState, ServerLevel, BlockPos,
+    /// ItemStack, boolean)`. Normal block destruction invokes this after loot;
+    /// other destruction paths retain their Vanilla-specific ordering. Ore
+    /// experience and similar non-item drops belong here rather than in the
+    /// loot-table override.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn spawn_after_break(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        tool: &ItemStack,
+        drop_experience: bool,
+    ) {
     }
 
     /// Called after this block is removed from the world, to affect neighbors.
@@ -733,6 +955,84 @@ pub trait BlockBehavior: Send + Sync {
         // Override for redstone components, doors, etc.
     }
 
+    /// Returns whether this state is a redstone signal source.
+    fn is_signal_source(&self, _state: BlockStateId, _context: SignalQueryContext) -> bool {
+        false
+    }
+
+    /// Returns whether this behavior is a vanilla diode block.
+    ///
+    /// Vanilla uses its `DiodeBlock` class hierarchy for side-input filtering.
+    fn is_diode(&self) -> bool {
+        false
+    }
+
+    /// Returns whether this behavior implements vanilla `TrapDoorBlock` semantics.
+    ///
+    /// Redstone wire uses this class-hierarchy check when deciding whether it
+    /// can climb onto a neighboring block.
+    fn is_trapdoor(&self) -> bool {
+        false
+    }
+
+    /// Returns whether this behavior implements vanilla `BaseRailBlock` semantics.
+    fn is_rail(&self) -> bool {
+        self.as_rail().is_some()
+    }
+
+    /// Returns whether this behavior implements vanilla `PistonBaseBlock` semantics.
+    fn is_piston_base(&self) -> bool {
+        false
+    }
+
+    /// Returns this state's direction-independent redstone signal strength.
+    fn get_own_signal(
+        &self,
+        _state: BlockStateId,
+        _world: &dyn LevelReader,
+        _pos: BlockPos,
+        _context: SignalQueryContext,
+    ) -> i32 {
+        0
+    }
+
+    /// Returns the weak redstone signal emitted toward `direction`.
+    fn get_signal(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        _direction: Direction,
+        context: SignalQueryContext,
+    ) -> i32 {
+        self.get_own_signal(state, world, pos, context)
+    }
+
+    /// Returns the direct redstone signal emitted toward `direction`.
+    fn get_direct_signal(
+        &self,
+        _state: BlockStateId,
+        _world: &dyn LevelReader,
+        _pos: BlockPos,
+        _direction: Direction,
+        _context: SignalQueryContext,
+    ) -> i32 {
+        0
+    }
+
+    /// Returns whether this state conducts direct redstone power through itself.
+    ///
+    /// Most blocks use extracted state data. Dynamic blocks can override this with
+    /// a live level/position query, matching vanilla's state predicate surface.
+    fn is_redstone_conductor(
+        &self,
+        state: BlockStateId,
+        _world: &dyn LevelReader,
+        _pos: BlockPos,
+    ) -> bool {
+        state.is_static_redstone_conductor()
+    }
+
     /// Handles a queued server block event.
     ///
     /// Mirrors Vanilla `BlockBehaviour.triggerEvent`. Returning `true` publishes
@@ -774,19 +1074,6 @@ pub trait BlockBehavior: Send + Sync {
     ) -> Option<ItemStack> {
         // Default: look up item by block's key
         REGISTRY.items.by_key(&block.key).map(ItemStack::new)
-    }
-
-    /// Returns whether this block should receive random ticks.
-    ///
-    /// Override to return true for blocks like crops, grass, ice, fire, etc.
-    /// This is used to optimize chunk ticking by skipping sections with no
-    /// randomly-ticking blocks.
-    #[expect(
-        unused_variables,
-        reason = "default trait implementation ignores all params"
-    )]
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        false
     }
 
     /// Returns whether this block state is pathfindable for the supplied vanilla path computation.
@@ -886,6 +1173,88 @@ pub trait BlockBehavior: Send + Sync {
         DVec3::ZERO
     }
 
+    /// Resolves this block state's collision shape to owned block-local boxes.
+    ///
+    /// Vanilla dynamic-shape blocks may override this directly. Static blocks
+    /// inherit the collision shape and positional offset hooks above.
+    fn get_collision_boxes(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        context: BlockCollisionContext,
+    ) -> BlockCollisionBoxes {
+        let shape = self.get_collision_shape(state, world, pos, context);
+        if shape.is_empty() {
+            return BlockCollisionBoxes::new();
+        }
+
+        let offset = self.get_collision_shape_offset(state, world, pos, context);
+        shape
+            .into_iter()
+            .map(|aabb| aabb.translate(offset))
+            .collect()
+    }
+
+    /// Resolves vanilla `BlockState.getBlockSupportShape` to owned block-local boxes.
+    ///
+    /// Most states use extracted support shapes. Dynamic blocks can override this
+    /// hook to consult live world data, as vanilla does when its state cache is
+    /// disabled by `dynamicShape()`.
+    #[expect(
+        unused_variables,
+        reason = "the default support shape is extracted and independent of world data"
+    )]
+    fn get_block_support_boxes(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> BlockCollisionBoxes {
+        let shape = state.get_static_support_shape();
+        if shape.is_empty() {
+            return BlockCollisionBoxes::new();
+        }
+
+        let offset = if state
+            .get_block()
+            .shape_offsets
+            .uses_offset(ShapeChannel::Support)
+        {
+            state.get_offset(pos)
+        } else {
+            DVec3::ZERO
+        };
+        shape
+            .into_iter()
+            .map(|aabb| aabb.translate(offset))
+            .collect()
+    }
+
+    /// Mirrors vanilla `BlockState.isFaceSturdy(level, pos, direction, supportType)`.
+    ///
+    /// Static states retain their registry fast path. Dynamic states evaluate
+    /// the live support boxes so block entities and other world-dependent
+    /// shapes remain observable to attachment logic.
+    fn is_face_sturdy(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        direction: Direction,
+        support_type: SupportType,
+    ) -> bool {
+        if !state.get_block().config.dynamic_shape {
+            return state.is_face_sturdy_for_at(pos, direction, support_type);
+        }
+
+        is_block_local_face_sturdy(
+            &self.get_block_support_boxes(state, world, pos),
+            direction,
+            support_type,
+        )
+    }
+
     /// Returns this block state's shape used by vanilla entity-inside effects.
     ///
     /// Vanilla baseline for
@@ -917,7 +1286,7 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Called on random tick for blocks that support random ticking.
     ///
-    /// This is only called if `is_randomly_ticking()` returns true.
+    /// This is only called when the block state's extracted metadata marks it as randomly ticking.
     /// Used for crop growth, grass spread, ice melting, fire behavior, etc.
     ///
     /// # Arguments
@@ -1114,16 +1483,11 @@ pub trait BlockBehavior: Send + Sync {
         self.default_step_on(state, world, pos, entity);
     }
 
-    /// Returns whether this block has an associated block entity.
-    ///
-    /// Override to return `true` for blocks like chests, furnaces, signs, etc.
-    fn has_block_entity(&self) -> bool {
-        false
-    }
-
     /// Creates a new block entity for this block.
     ///
-    /// Only called if `has_block_entity()` returns `true`.
+    /// Structural block-entity presence comes from the extracted block-entity type registry.
+    /// The result distinguishes a missing Steel implementation from a Vanilla factory that
+    /// intentionally returns no entity.
     ///
     /// # Arguments
     /// * `level` - Weak reference to the world
@@ -1138,24 +1502,62 @@ pub trait BlockBehavior: Send + Sync {
         level: Weak<World>,
         pos: BlockPos,
         state: BlockStateId,
-    ) -> Option<SharedBlockEntity> {
+    ) -> BlockEntityCreation {
+        BlockEntityCreation::Unimplemented
+    }
+
+    /// Returns the server ticker selected by this live block state and entity type.
+    ///
+    /// Mirrors Vanilla `EntityBlock.getTicker`. Selection runs without chunk,
+    /// section, or block-entity storage locks.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation has no block-entity ticker"
+    )]
+    fn get_block_entity_ticker(
+        &self,
+        world: &Arc<World>,
+        state: BlockStateId,
+        block_entity_type: BlockEntityTypeRef,
+    ) -> Option<BlockEntityTicker> {
         None
     }
 
-    /// Returns whether the block entity should be kept when the block state changes.
+    /// Returns the game-event listener exposed by this block entity.
     ///
-    /// This is used when a block changes to a different block type that shares
-    /// the same block entity type (e.g., different chest variants).
+    /// Mirrors Vanilla `EntityBlock.getListener`. Block implementations may override the
+    /// provider result; the default delegates to the block entity's listener capability.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation only delegates to the block entity"
+    )]
+    fn get_game_event_listener(
+        &self,
+        world: &Arc<World>,
+        block_entity: &dyn BlockEntity,
+    ) -> Option<SharedGameEventListener> {
+        block_entity.game_event_listener()
+    }
+
+    /// Returns whether this new block should keep the old state's block entity.
+    ///
+    /// Vanilla defaults to `false`; copper chests and copper golem statues explicitly
+    /// keep their entity across transformations within their respective block family.
+    /// Steel checks those two extracted tags here until those block classes have their
+    /// own complete behaviors, rather than registering partial block implementations.
+    /// Non-Vanilla behaviors must opt in explicitly even if a plugin extends either tag.
     ///
     /// # Arguments
     /// * `old_state` - The previous block state
-    /// * `new_state` - The new block state
-    #[expect(
-        unused_variables,
-        reason = "default trait implementation ignores all params"
-    )]
+    /// * `new_state` - The requested replacement state
     fn should_keep_block_entity(&self, old_state: BlockStateId, new_state: BlockStateId) -> bool {
-        false
+        let old_block = old_state.get_block();
+        let new_block = new_state.get_block();
+        new_block.key.namespace == Identifier::VANILLA_NAMESPACE
+            && ((old_block.has_tag(&BlockTag::COPPER_CHESTS)
+                && new_block.has_tag(&BlockTag::COPPER_CHESTS))
+                || (old_block.has_tag(&BlockTag::COPPER_GOLEM_STATUES)
+                    && new_block.has_tag(&BlockTag::COPPER_GOLEM_STATUES)))
     }
 
     /// Returns whether this block can provide an analog output signal to comparators.
@@ -1179,6 +1581,7 @@ pub trait BlockBehavior: Send + Sync {
     /// * `state` - The current block state
     /// * `world` - The world
     /// * `pos` - The position of the block
+    /// * `direction` - The face from which the comparator reads the block
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores all params"
@@ -1186,24 +1589,11 @@ pub trait BlockBehavior: Send + Sync {
     fn get_analog_output_signal(
         &self,
         state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         pos: BlockPos,
+        direction: Direction,
     ) -> i32 {
         0
-    }
-
-    /// Returns the fluid state for this block state.
-    ///
-    /// Default (`SimpleWaterloggedBlock`): returns water source when `WATERLOGGED = true`,
-    /// otherwise `FluidState::EMPTY`.
-    ///
-    /// Override for liquid blocks (water/lava) to return the appropriate fluid based on LEVEL.
-    fn get_fluid_state(&self, state: BlockStateId) -> FluidState {
-        if let Some(true) = state.try_get_value(&BlockStateProperties::WATERLOGGED) {
-            FluidState::source(&vanilla_fluids::WATER)
-        } else {
-            FluidState::EMPTY
-        }
     }
 
     /// Vanilla parity: whether this block implements `LiquidBlockContainer`.
@@ -1285,9 +1675,14 @@ pub trait BlockBehavior: Send + Sync {
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         None
     }
+
+    /// Returns the shared vanilla rail capability implemented by this block.
+    fn as_rail(&self) -> Option<&dyn RailBehavior> {
+        None
+    }
 }
 
-/// Default block behavior that returns the block's default state for placement.
+/// Default placement plus the common water tick used by unported waterlogged blocks.
 pub struct DefaultBlockBehavior {
     block: BlockRef,
 }
@@ -1301,9 +1696,21 @@ impl DefaultBlockBehavior {
 }
 
 impl BlockBehavior for DefaultBlockBehavior {
-    // TODO: This fallback only preserves generic block placement. Unported
-    // SimpleWaterloggedBlock implementations still need vanilla placement and
-    // update_shape water tick handling when they get real behaviors.
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        schedule_water_tick_if_waterlogged(state, world, pos);
+        state
+    }
+
+    // This fallback only preserves generic block placement. Blocks with
+    // class-specific placement rules still need their own behavior.
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
@@ -1450,13 +1857,13 @@ mod tests {
             .default_state()
             .set_value(&BlockStateProperties::WATERLOGGED, false);
         let wet_ladder = dry_ladder.set_value(&BlockStateProperties::WATERLOGGED, true);
-        let behavior = DefaultBlockBehavior::new(&vanilla_blocks::LADDER);
         let level = TestLevel::default();
 
         assert_eq!(
-            behavior.get_fluid_state(wet_ladder),
+            wet_ladder.get_fluid_state(),
             FluidState::source(&vanilla_fluids::WATER)
         );
+        let behavior = DefaultBlockBehavior::new(&vanilla_blocks::LADDER);
         assert!(behavior.is_liquid_container(dry_ladder));
         assert!(behavior.can_place_liquid(dry_ladder, &vanilla_fluids::WATER));
         assert!(behavior.place_liquid(
@@ -1467,6 +1874,52 @@ mod tests {
         ));
         assert_eq!(level.last_placed_state(), Some(wet_ladder));
         assert!(level.scheduled_water_tick());
+    }
+
+    #[test]
+    fn default_behavior_schedules_shape_ticks_only_for_waterlogged_states() {
+        init_test_registry();
+        let behavior = DefaultBlockBehavior::new(&vanilla_blocks::OAK_SLAB);
+        let level = TestLevel::default();
+        let pos = BlockPos::new(3, 64, 5);
+        let dry_state = vanilla_blocks::OAK_SLAB
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, false);
+        let wet_state = dry_state.set_value(&BlockStateProperties::WATERLOGGED, true);
+
+        assert_eq!(
+            behavior.update_shape(
+                dry_state,
+                &level,
+                pos,
+                Direction::North,
+                pos.north(),
+                vanilla_blocks::STONE.default_state(),
+            ),
+            dry_state
+        );
+        assert!(level.scheduled_fluid_ticks.borrow().is_empty());
+
+        assert_eq!(
+            behavior.update_shape(
+                wet_state,
+                &level,
+                pos,
+                Direction::North,
+                pos.north(),
+                vanilla_blocks::STONE.default_state(),
+            ),
+            wet_state
+        );
+        assert_eq!(
+            level
+                .scheduled_fluid_ticks
+                .borrow()
+                .iter()
+                .map(|tick| (tick.pos, tick.fluid, tick.delay))
+                .collect::<Vec<_>>(),
+            vec![(pos, &vanilla_fluids::WATER, 5)]
+        );
     }
 
     #[test]

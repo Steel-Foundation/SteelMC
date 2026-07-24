@@ -8,7 +8,6 @@ use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
-use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::blocks::BigDripleafBlock;
 use crate::behavior::blocks::vegetation::bonemealable::BonemealAction;
 use crate::behavior::blocks::vegetation::get_top_connected_block;

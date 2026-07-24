@@ -4,7 +4,6 @@ use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
-use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, PotentSulfurState};
 use steel_registry::vanilla_block_entity_types;
@@ -15,10 +14,12 @@ use steel_registry::{
 use steel_utils::random::xoroshiro::Xoroshiro;
 use steel_utils::random::{PositionalRandom, Random, RandomSource, RandomSplitter};
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, WorldAabb};
+use steel_utils::{
+    BlockPos, BlockStateId, DowncastType, DowncastTypeKey, WorldAabb, locks::SyncMutex,
+};
 
-use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _};
-use crate::block_entity::{BlockEntity, BlockEntityTickAction};
+use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
+use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _};
 use crate::fluid::FluidStateExt as _;
 use crate::world::World;
 
@@ -32,14 +33,15 @@ const FORCE_HEIGHT_MULTIPLIER: i32 = 6;
 
 /// Block entity for `potent_sulfur` blocks
 pub struct PotentSulfurBlockEntity {
-    world: Weak<World>,
-    pos: BlockPos,
-    state: BlockStateId,
-    removed: bool,
+    base: BlockEntityBase,
+    sulfur: SyncMutex<PotentSulfurData>,
+}
+
+struct PotentSulfurData {
     /// Countdown for 20 tick steps before the state toggles. -1 is uninitialized
-    pub waiting_countdown: i32,
+    waiting_countdown: i32,
     /// Game tick at which the current eruption started
-    pub eruption_tick: i64,
+    eruption_tick: i64,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `PotentSulfurBlockEntity`.
@@ -53,18 +55,27 @@ impl PotentSulfurBlockEntity {
     pub fn new(world: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
         let eruption_tick = world.upgrade().map_or(-1, |w| w.game_time());
         Self {
-            world,
-            pos,
-            state,
-            removed: false,
-            waiting_countdown: -1,
-            eruption_tick,
+            base: BlockEntityBase::new(
+                &vanilla_block_entity_types::POTENT_SULFUR,
+                world,
+                pos,
+                state,
+            ),
+            sulfur: SyncMutex::new(PotentSulfurData {
+                waiting_countdown: -1,
+                eruption_tick,
+            }),
         }
     }
 
     /// Resets the countdown so it reinitializes on the next tick
-    pub const fn reset_countdown(&mut self) {
-        self.waiting_countdown = -1;
+    pub fn reset_countdown(&self) {
+        self.sulfur.lock().waiting_countdown = -1;
+    }
+
+    /// Records the tick at which an eruption started.
+    pub fn set_eruption_tick(&self, eruption_tick: i64) {
+        self.sulfur.lock().eruption_tick = eruption_tick;
     }
 
     fn geyser_positional_rng(seed: i64, pos: BlockPos) -> Xoroshiro {
@@ -135,19 +146,21 @@ impl PotentSulfurBlockEntity {
     }
 
     fn tick_countdown(
+        &self,
         world: &World,
         pos: BlockPos,
         state: BlockStateId,
-        entity: &mut Self,
-    ) -> Option<BlockEntityTickAction> {
+    ) -> Option<(BlockStateId, bool)> {
         let source = Self::find_source_block(world, pos)?;
+        let water_blocks = source.y() - pos.y() - 1;
+        let mut rng = Self::geyser_positional_rng(world.seed(), pos);
+        let game_time = world.game_time();
+        let mut sulfur = self.sulfur.lock();
 
-        if entity.waiting_countdown <= 0 {
-            let water_blocks = source.y() - pos.y() - 1;
-            let mut rng = Self::geyser_positional_rng(world.seed(), pos);
+        if sulfur.waiting_countdown <= 0 {
             let current_state = state.get_value(&BlockStateProperties::POTENT_SULFUR_STATE);
 
-            entity.waiting_countdown = if current_state == PotentSulfurState::Dormant {
+            sulfur.waiting_countdown = if current_state == PotentSulfurState::Dormant {
                 10 * (water_blocks - 1) + rng.next_i32_between(15, 30)
             } else {
                 rng.next_i32();
@@ -155,11 +168,11 @@ impl PotentSulfurBlockEntity {
             };
         }
 
-        if entity.waiting_countdown > 0 {
-            entity.waiting_countdown -= 1;
+        if sulfur.waiting_countdown > 0 {
+            sulfur.waiting_countdown -= 1;
         }
 
-        if entity.waiting_countdown == 0 {
+        if sulfur.waiting_countdown == 0 {
             let current_state = state.get_value(&BlockStateProperties::POTENT_SULFUR_STATE);
             let next_state = if current_state == PotentSulfurState::Dormant {
                 PotentSulfurState::Erupting
@@ -170,14 +183,9 @@ impl PotentSulfurBlockEntity {
             let activates = next_state == PotentSulfurState::Erupting;
             let new_state = state.set_value(&BlockStateProperties::POTENT_SULFUR_STATE, next_state);
             if activates {
-                entity.eruption_tick = world.game_time();
+                sulfur.eruption_tick = game_time;
             }
-            return Some(BlockEntityTickAction::SetBlock {
-                pos,
-                state: new_state,
-                flags: UpdateFlags::UPDATE_ALL,
-                game_event: deactivates.then_some((&vanilla_game_events::BLOCK_DEACTIVATE, state)),
-            });
+            return Some((new_state, deactivates));
         }
 
         None
@@ -237,64 +245,33 @@ impl PotentSulfurBlockEntity {
 }
 
 impl BlockEntity for PotentSulfurBlockEntity {
-    fn get_type(&self) -> BlockEntityTypeRef {
-        &vanilla_block_entity_types::POTENT_SULFUR
+    fn base(&self) -> &BlockEntityBase {
+        &self.base
     }
 
-    fn get_block_pos(&self) -> BlockPos {
-        self.pos
-    }
-
-    fn get_block_state(&self) -> BlockStateId {
-        self.state
-    }
-
-    fn set_block_state(&mut self, state: BlockStateId) {
-        self.state = state;
-    }
-
-    fn is_removed(&self) -> bool {
-        self.removed
-    }
-
-    fn set_removed(&mut self) {
-        self.removed = true;
-    }
-
-    fn clear_removed(&mut self) {
-        self.removed = false;
-    }
-
-    fn get_level(&self) -> Option<Arc<World>> {
-        self.world.upgrade()
-    }
-
-    fn load_additional(&mut self, nbt: &BorrowedNbtCompound<'_>) {
+    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
         if let Some(countdown) = nbt.int("countdown") {
-            self.waiting_countdown = countdown;
+            self.sulfur.lock().waiting_countdown = countdown;
         }
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
-        nbt.insert("countdown", self.waiting_countdown);
+        nbt.insert("countdown", self.sulfur.lock().waiting_countdown);
     }
 
-    fn is_ticking(&self) -> bool {
-        true
-    }
-
-    fn tick(&mut self, world: &Arc<World>) -> Option<BlockEntityTickAction> {
-        let state = world.get_block_state(self.pos);
+    fn tick(&self, world: &Arc<World>) {
+        let pos = self.get_block_pos();
+        let state = world.get_block_state(pos);
         if state.get_block() != &vanilla_blocks::POTENT_SULFUR {
             self.set_removed();
-            return None;
+            return;
         }
 
         let current = state.get_value(&BlockStateProperties::POTENT_SULFUR_STATE);
 
         if current == PotentSulfurState::Dry {
-            return None;
+            return;
         }
 
         let game_time = world.game_time();
@@ -306,8 +283,7 @@ impl BlockEntity for PotentSulfurBlockEntity {
             PotentSulfurState::Dormant | PotentSulfurState::Erupting
         ) && game_time % COUNTDOWN_FREQUENCY_TICKS == 0
         {
-            let pos = self.pos;
-            Self::tick_countdown(world, pos, state, self)
+            self.tick_countdown(world, pos, state)
         } else {
             None
         };
@@ -316,9 +292,18 @@ impl BlockEntity for PotentSulfurBlockEntity {
             &current,
             PotentSulfurState::Erupting | PotentSulfurState::Continuous
         ) {
-            Self::tick_launch(world, self.pos);
+            Self::tick_launch(world, pos);
         }
 
-        action
+        if let Some((new_state, deactivates)) = action {
+            world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+            if deactivates {
+                world.game_event(
+                    &vanilla_game_events::BLOCK_DEACTIVATE,
+                    pos,
+                    &crate::world::game_event_context::GameEventContext::new(None, Some(state)),
+                );
+            }
+        }
     }
 }

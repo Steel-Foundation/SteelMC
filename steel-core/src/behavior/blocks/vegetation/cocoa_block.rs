@@ -90,10 +90,6 @@ impl BlockBehavior for CocoaBlock {
         state
     }
 
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        Self::age(state) < MAX_AGE
-    }
-
     fn is_pathfindable(
         &self,
         _state: BlockStateId,

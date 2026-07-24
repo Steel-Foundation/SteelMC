@@ -1229,14 +1229,14 @@ impl Player {
         }
 
         let inv_id = ContainerId::from_arc(&self.inventory);
-        if let Some(inv) = guard.get_mut(inv_id) {
+        let should_drop = if let Some(inv) = guard.get_mut(inv_id) {
             let added = inv.add(&mut item);
-            if !added || !item.is_empty() {
-                let _ = self.drop_item(item, false, false);
-            }
+            !added || !item.is_empty()
         } else {
-            // Inventory not in guard - this shouldn't happen but drop the item to be safe
-            let _ = self.drop_item(item, false, false);
+            true
+        };
+        if should_drop {
+            let _ = guard.run_unlocked(|| self.drop_item(item, false, false));
         }
     }
 }

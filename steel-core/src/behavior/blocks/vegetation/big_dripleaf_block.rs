@@ -13,7 +13,6 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use super::BlockRef;
-use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::BigDripleafStemBlock;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
@@ -21,7 +20,7 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::entity::{Entity, InsideBlockEffectCollector, projectile::Projectile};
 use crate::world::game_event_context::GameEventContext;
 use crate::world::tick_scheduler::TickPriority;
-use crate::world::{ClipHitResult, LevelReader, ScheduledTickAccess, World};
+use crate::world::{ClipHitResult, LevelReader, ScheduledTickAccess, SignalGetter as _, World};
 
 const TILT: EnumProperty<Tilt> = BlockStateProperties::TILT;
 const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
@@ -188,8 +187,10 @@ impl BlockBehavior for BigDripleafBlock {
         _is_precise: bool,
     ) {
         let tilt = state.get_value(&TILT);
-        //TODO: also check !level.hasNeighborSignal(pos)) once steel implements redstone
-        if tilt == Tilt::None && BigDripleafBlock::can_entity_tilt(&pos, entity) {
+        if tilt == Tilt::None
+            && BigDripleafBlock::can_entity_tilt(&pos, entity)
+            && !world.has_neighbor_signal(pos)
+        {
             Self::set_tilt_and_schedule_tick(self, state, world, &pos, Tilt::Unstable, None);
         }
     }
@@ -209,9 +210,11 @@ impl BlockBehavior for BigDripleafBlock {
         );
     }
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        //if block_receives_redstone_power(world, pos) {
-        //    reset_tilt(state.id, world, pos);
-        //} else {
+        if world.has_neighbor_signal(pos) {
+            Self::reset_tilt(state, world, &pos);
+            return;
+        }
+
         let tilt = state.get_value(&TILT);
 
         if tilt == Tilt::Unstable {
@@ -235,7 +238,18 @@ impl BlockBehavior for BigDripleafBlock {
         } else if tilt == Tilt::Full {
             Self::reset_tilt(state, world, &pos);
         }
-        //}
+    }
+    fn handle_neighbor_changed(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        _source_block: BlockRef,
+        _moved_by_piston: bool,
+    ) {
+        if world.has_neighbor_signal(pos) {
+            Self::reset_tilt(state, world, &pos);
+        }
     }
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
@@ -279,5 +293,79 @@ impl Bonemealable for BigDripleafBlock {
 
     fn bonemeal_action_type(&self) -> BonemealAction {
         BonemealAction::Grower
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use glam::DVec3;
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_entities};
+    use steel_utils::{ChunkPos, types::UpdateFlags};
+
+    use super::*;
+    use crate::{
+        behavior::{BLOCK_BEHAVIORS, init_behaviors},
+        entity::{InsideBlockEffectCollector, entities::RawEntity},
+        test_support::{fresh_test_world, insert_ready_full_chunk},
+    };
+
+    #[test]
+    fn redstone_holds_big_dripleaf_upright() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("big_dripleaf_redstone");
+        let pos = BlockPos::new(8, 64, 8);
+        let power_pos = pos.west();
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        assert!(world.set_block(
+            power_pos,
+            vanilla_blocks::REDSTONE_BLOCK.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let tilted = vanilla_blocks::BIG_DRIPLEAF
+            .default_state()
+            .set_value(&BlockStateProperties::TILT, Tilt::Partial);
+        assert!(world.set_block(pos, tilted, UpdateFlags::UPDATE_NONE));
+        let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::BIG_DRIPLEAF);
+
+        behavior.handle_neighbor_changed(
+            tilted,
+            &world,
+            pos,
+            &vanilla_blocks::REDSTONE_BLOCK,
+            false,
+        );
+        assert_eq!(
+            world
+                .get_block_state(pos)
+                .get_value(&BlockStateProperties::TILT),
+            Tilt::None,
+        );
+
+        let entity = Arc::new(RawEntity::new(
+            7_003,
+            DVec3::new(8.5, 65.0, 8.5),
+            Arc::downgrade(&world),
+            &vanilla_entities::PIG,
+        ));
+        entity.set_on_ground(true);
+        let mut effects = InsideBlockEffectCollector::new();
+        behavior.entity_inside(
+            world.get_block_state(pos),
+            &world,
+            pos,
+            entity.as_ref(),
+            &mut effects,
+            true,
+        );
+        assert_eq!(
+            world
+                .get_block_state(pos)
+                .get_value(&BlockStateProperties::TILT),
+            Tilt::None,
+        );
+        assert!(!world.has_scheduled_block_tick(pos, &vanilla_blocks::BIG_DRIPLEAF));
     }
 }

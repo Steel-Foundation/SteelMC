@@ -130,9 +130,19 @@ impl InventoryMenu {
     /// Updates the crafting result based on the current grid contents.
     /// Should be called whenever a crafting grid slot changes.
     pub fn update_crafting_result(&self) {
-        let crafting = self.crafting_container.lock();
-        let mut result = self.result_container.lock();
-        recipe_manager::slot_changed_crafting_grid(&crafting, &mut *result, true);
+        let crafting_ref = self.crafting_container_ref();
+        let result_ref = self.result_container_ref();
+        let mut guard = ContainerLockGuard::lock_all(&[&crafting_ref, &result_ref]);
+        let Some((crafting, result)) = guard
+            .get_two_typed_mut::<CraftingContainer, ResultContainer>(
+                crafting_ref.container_id(),
+                result_ref.container_id(),
+            )
+        else {
+            log::error!("inventory crafting containers lost their concrete types");
+            return;
+        };
+        recipe_manager::slot_changed_crafting_grid(crafting, result, true);
     }
 
     /// Returns a reference to the crafting container.
@@ -348,30 +358,25 @@ impl Menu for InventoryMenu {
             return ItemStack::empty();
         }
 
-        // Update the source slot with the remaining items
-        self.behavior.slots[slot_index].set_item(guard, stack_mut.clone());
+        self.behavior
+            .update_quick_move_source(guard, slot_index, &stack_mut, &clicked);
 
         // Check if unchanged
         if stack_mut.count == clicked.count {
             return ItemStack::empty();
         }
 
-        self.behavior.slots[slot_index].set_changed(guard);
+        if let Some(remainder) = self.behavior.slots[slot_index].on_take(guard, &stack_mut, player)
+        {
+            // Try to place crafting remainders (e.g., empty buckets) back in inventory
+            player.add_item_or_drop_with_guard(guard, remainder);
+        }
 
-        // Call on_take for the result slot to consume ingredients
-        // This must happen after set_item so the slot reflects the new state
         if slot_index == slots::RESULT_SLOT {
-            if let Some(remainder) =
-                self.behavior.slots[slot_index].on_take(guard, &clicked, player)
-            {
-                // Try to place crafting remainders (e.g., empty buckets) back in inventory
-                player.add_item_or_drop_with_guard(guard, remainder);
-            }
-
             // Java: if (slotIndex == 0) { player.drop(stack, false); }
             // Drop any items from the result slot that couldn't fit in the inventory
             if !stack_mut.is_empty() {
-                let _ = player.drop_item(stack_mut, false, true);
+                let _ = guard.run_unlocked(|| player.drop_item(stack_mut, false, true));
             }
         }
 

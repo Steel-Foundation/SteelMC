@@ -185,6 +185,37 @@ pub trait Slot {
         }
     }
 
+    /// Inserts up to `amount` items with Vanilla's `Slot::safeInsert` callback behavior.
+    fn safe_insert(
+        &self,
+        guard: &mut ContainerLockGuard,
+        mut input: ItemStack,
+        amount: i32,
+    ) -> ItemStack {
+        if input.is_empty() || !self.may_place(&input) {
+            return input;
+        }
+
+        let slot_stack = self.get_item(guard).clone();
+        let transferable = amount
+            .min(input.count())
+            .min(self.get_max_stack_size_for_item(guard, &input) - slot_stack.count());
+        if transferable <= 0 {
+            return input;
+        }
+
+        if slot_stack.is_empty() {
+            self.set_by_player(guard, input.split(transferable), &slot_stack);
+        } else if ItemStack::is_same_item_same_components(&slot_stack, &input) {
+            input.shrink(transferable);
+            let mut new_slot_stack = slot_stack.clone();
+            new_slot_stack.grow(transferable);
+            self.set_by_player(guard, new_slot_stack, &slot_stack);
+        }
+
+        input
+    }
+
     /// Marks the slot's container as changed.
     fn set_changed(&self, guard: &mut ContainerLockGuard);
 
@@ -236,17 +267,27 @@ impl Slot for NormalSlot {
     }
 
     fn set_item(&self, guard: &mut ContainerLockGuard, stack: ItemStack) {
+        assert!(
+            guard.set_item(self.container.container_id(), self.index, stack),
+            "container not locked"
+        );
+        self.set_changed(guard);
+    }
+
+    fn remove(&self, guard: &mut ContainerLockGuard, amount: i32) -> ItemStack {
+        if amount <= 0 || self.get_item(guard).is_empty() {
+            return ItemStack::empty();
+        }
         guard
-            .get_mut(self.container.container_id())
+            .remove_item(self.container.container_id(), self.index, amount)
             .expect("container not locked")
-            .set_item(self.index, stack);
     }
 
     fn set_changed(&self, guard: &mut ContainerLockGuard) {
-        guard
-            .get_mut(self.container.container_id())
-            .expect("container not locked")
-            .set_changed();
+        assert!(
+            guard.set_changed(self.container.container_id()),
+            "container not locked"
+        );
     }
 
     fn get_container_slot(&self) -> usize {

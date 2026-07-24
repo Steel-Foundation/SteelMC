@@ -3,6 +3,7 @@
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
+use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, PotentSulfurState};
@@ -12,9 +13,9 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_events;
 use steel_utils::{BlockPos, BlockStateId, Direction, Downcast as _};
 
-use crate::behavior::{BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt as _};
+use crate::behavior::{BlockBehavior, BlockEntityCreation, BlockPlaceContext};
 use crate::block_entity::entities::PotentSulfurBlockEntity;
-use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
+use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker};
 use crate::fluid::FluidStateExt as _;
 use crate::world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext};
 
@@ -66,9 +67,7 @@ impl PotentSulfurBlock {
             );
             if !is_geyser
                 && let Some(block_entity) = world.get_block_entity(pos)
-                && let Some(potent_sulfur) = block_entity
-                    .lock()
-                    .downcast_mut::<PotentSulfurBlockEntity>()
+                && let Some(potent_sulfur) = block_entity.downcast_ref::<PotentSulfurBlockEntity>()
             {
                 potent_sulfur.reset_countdown();
             }
@@ -153,16 +152,11 @@ impl BlockBehavior for PotentSulfurBlock {
         _param_a: i32,
         _param_b: i32,
     ) -> bool {
-        if let Some(block_entity) = world.get_block_entity(pos) {
-            let mut block_entity = block_entity.lock();
-            if let Some(sulfur) = block_entity.downcast_mut::<PotentSulfurBlockEntity>() {
-                sulfur.eruption_tick = world.game_time();
-            }
+        if let Some(block_entity) = world.get_block_entity(pos)
+            && let Some(sulfur) = block_entity.downcast_ref::<PotentSulfurBlockEntity>()
+        {
+            sulfur.set_eruption_tick(world.game_time());
         }
-        true
-    }
-
-    fn has_block_entity(&self) -> bool {
         true
     }
 
@@ -171,12 +165,83 @@ impl BlockBehavior for PotentSulfurBlock {
         level: Weak<World>,
         pos: BlockPos,
         state: BlockStateId,
-    ) -> Option<SharedBlockEntity> {
-        BLOCK_ENTITIES.create(
+    ) -> BlockEntityCreation {
+        BlockEntityCreation::from_registered_factory(BLOCK_ENTITIES.create(
             &vanilla_block_entity_types::POTENT_SULFUR,
             level,
             pos,
             state,
+        ))
+    }
+
+    fn get_block_entity_ticker(
+        &self,
+        _world: &Arc<World>,
+        state: BlockStateId,
+        block_entity_type: BlockEntityTypeRef,
+    ) -> Option<BlockEntityTicker> {
+        if state.get_value(&BlockStateProperties::POTENT_SULFUR_STATE) == PotentSulfurState::Dry {
+            return None;
+        }
+        BlockEntityTicker::for_matching_entity_tick(
+            block_entity_type,
+            &vanilla_block_entity_types::POTENT_SULFUR,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::test_support::init_test_registry;
+    use steel_registry::vanilla_blocks;
+
+    use super::*;
+    use crate::test_support::fresh_test_world;
+
+    #[test]
+    fn potent_sulfur_ticker_selection_matches_live_geyser_state() {
+        init_test_registry();
+        let world = fresh_test_world("potent_sulfur_ticker");
+        let behavior = PotentSulfurBlock::new(&vanilla_blocks::POTENT_SULFUR);
+        let base = vanilla_blocks::POTENT_SULFUR.default_state();
+
+        let dry = base.set_value(
+            &BlockStateProperties::POTENT_SULFUR_STATE,
+            PotentSulfurState::Dry,
+        );
+        assert!(
+            behavior
+                .get_block_entity_ticker(&world, dry, &vanilla_block_entity_types::POTENT_SULFUR,)
+                .is_none()
+        );
+
+        let wet = base.set_value(
+            &BlockStateProperties::POTENT_SULFUR_STATE,
+            PotentSulfurState::Wet,
+        );
+
+        for sulfur_state in [
+            PotentSulfurState::Wet,
+            PotentSulfurState::Dormant,
+            PotentSulfurState::Erupting,
+            PotentSulfurState::Continuous,
+        ] {
+            let state = base.set_value(&BlockStateProperties::POTENT_SULFUR_STATE, sulfur_state);
+            assert!(
+                behavior
+                    .get_block_entity_ticker(
+                        &world,
+                        state,
+                        &vanilla_block_entity_types::POTENT_SULFUR,
+                    )
+                    .is_some()
+            );
+        }
+
+        assert!(
+            behavior
+                .get_block_entity_ticker(&world, wet, &vanilla_block_entity_types::CHEST)
+                .is_none()
+        );
     }
 }

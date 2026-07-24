@@ -67,9 +67,7 @@ impl BlockBehavior for AmethystClusterBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let direction = state.get_value(FACING);
         let adjacent = pos.relative(direction.opposite());
-        world
-            .get_block_state(adjacent)
-            .is_face_sturdy_at(adjacent, direction)
+        world.is_face_sturdy(world.get_block_state(adjacent), adjacent, direction)
     }
 
     fn on_projectile_hit(

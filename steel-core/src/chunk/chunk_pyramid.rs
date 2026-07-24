@@ -407,6 +407,7 @@ define_pyramid! {
         },
         Light => {
             requirements: [(InitializeLight, 1)],
+            block_state_write_radius: 0,
             task: ChunkStatusTasks::light,
         },
         Spawn => {

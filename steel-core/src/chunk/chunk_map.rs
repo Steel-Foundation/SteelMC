@@ -1,3 +1,4 @@
+use arc_swap::ArcSwap;
 use rayon::ThreadPool;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::{
@@ -13,9 +14,12 @@ use steel_protocol::packets::game::{
     BlockChange, CBlockUpdate, CLightUpdate, CSectionBlocksUpdate, CSetChunkCenter,
 };
 use steel_protocol::utils::ConnectionProtocol;
-use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::dimension_type::DimensionTypeRef;
-use steel_utils::{BlockPos, ChunkPos, SectionPos, locks::SyncMutex};
+use steel_registry::{
+    blocks::{BlockRef, block_state_ext::BlockStateExt},
+    fluid::FluidRef,
+};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, PackedChunkPos, SectionPos, locks::SyncMutex};
 use tokio::runtime::Runtime;
 use tokio::sync::Notify;
 use tokio::time::sleep;
@@ -23,15 +27,15 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::instrument;
 
-use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
+use crate::block_entity::{BlockEntityLifecycleExt as _, ClearedBlockEntities, SharedBlockEntity};
 use crate::chunk::chunk_holder::{
     ChunkHolder, ChunkSaveDependency, PostProcessGenerationError, TickingReadiness,
 };
 pub(crate) use crate::chunk::chunk_scheduler::ChunkMapSchedulingTimings;
 use crate::chunk::chunk_scheduler::{
-    ChunkSchedulingBoundaryStep, ChunkSchedulingCoordinator, ChunkTicketOperation,
-    ChunkTicketRevision, PreparedChunkSchedulingEpoch,
+    ChunkMapPreparationTimings, ChunkSchedulingBoundaryStep, ChunkSchedulingCoordinator,
+    ChunkTicketOperation, ChunkTicketRevision, PreparedChunkSchedulingEpoch,
 };
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicket, ChunkTicketLevel, ChunkTicketManager, ENDER_PEARL_TICKET_TIMEOUT_TICKS,
@@ -41,6 +45,10 @@ use crate::chunk::chunk_ticket_manager::{
 use crate::chunk::full_chunk_readiness::{
     FullNeighborhoodCounts, FullNeighborhoodError, FullNeighborhoodIndex, FullPublication,
     FullPublicationQueue,
+};
+pub use crate::chunk::gameplay_chunk_lookup_cache::GameplayChunkLookupCacheStats;
+use crate::chunk::gameplay_chunk_lookup_cache::{
+    GameplayChunkLookupCacheScope, lookup_or_insert_with,
 };
 use crate::chunk::light::{
     LIGHT_CACHE_RADIUS, LightCacheLayout, LightCacheSetupRadius, LightLayer,
@@ -53,13 +61,13 @@ use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::chunk::{
     chunk_access::{ChunkAccess, ChunkStatus},
     chunk_generation_task::ChunkGenerationTask,
+    level_chunk::BlockRandomPositionGenerator,
+    section::RandomTickSectionBits,
 };
 use crate::chunk_saver::ChunkStorage;
 use crate::player::connection::NetworkConnection;
 use crate::world::World;
-use crate::world::tick_scheduler::{
-    BlockTick, FluidTick, advance_tick_containers, collect_ticks_to_run,
-};
+use crate::world::tick_scheduler::{BlockTick, FluidTick, ScheduledTickRunBatch};
 use crate::worldgen::{ChunkGeneratorType, WorldGenContext};
 use crate::{entity::Entity, player::Player};
 
@@ -87,52 +95,89 @@ pub struct ChunkMapGameTickTimings {
     pub tickable_count: usize,
     /// Total number of loaded chunks.
     pub total_chunks: usize,
+    /// Scoped holder-cache activity across the world game tick.
+    pub lookup_cache: GameplayChunkLookupCacheStats,
 }
 
+#[derive(Clone)]
 struct TickableChunk {
+    pos: ChunkPos,
     holder: Arc<ChunkHolder>,
-    simulation_level: ChunkTicketLevel,
+    randomly_ticking_sections: Arc<RandomTickSectionBits>,
+}
+
+/// Immutable views of the chunk sets consumed during a game tick.
+///
+/// Entries retain the optimized SCC traversal order captured at the last
+/// membership-changing lifecycle boundary. This is also Steel's documented
+/// final order for the implementation-specific cross-chunk ties that Vanilla
+/// derives from its fastutil map state.
+#[derive(Default)]
+struct TickingChunkSnapshot {
+    block: Box<[TickableChunk]>,
+    random_chunk_indices: Box<[usize]>,
+    entity_indices: Box<[usize]>,
+}
+
+struct FinalizedBlockEntityUnload {
+    holder: Arc<ChunkHolder>,
+    lifecycle_dispatchers: Vec<SharedBlockEntity>,
+    positions: Vec<BlockPos>,
 }
 
 struct BlockTickBatchGuard<'a> {
     world: &'a World,
+    batch: Arc<ScheduledTickRunBatch<BlockRef>>,
 }
 
 impl<'a> BlockTickBatchGuard<'a> {
-    fn new(world: &'a World, ticks: &[BlockTick]) -> Self {
-        world.begin_scheduled_block_tick_batch(ticks);
-        Self { world }
+    fn new(world: &'a World, ticks: Vec<BlockTick>) -> Self {
+        Self {
+            world,
+            batch: world.begin_scheduled_block_tick_batch(ticks),
+        }
     }
 
-    fn start(&self, tick: &BlockTick) {
-        self.world.start_scheduled_block_tick(tick);
+    fn ticks(&self) -> &[BlockTick] {
+        self.batch.ticks()
+    }
+
+    fn start(&self, index: usize) {
+        self.batch.start(index);
     }
 }
 
 impl Drop for BlockTickBatchGuard<'_> {
     fn drop(&mut self) {
-        self.world.end_scheduled_block_tick_batch();
+        self.world.end_scheduled_block_tick_batch(&self.batch);
     }
 }
 
 struct FluidTickBatchGuard<'a> {
     world: &'a World,
+    batch: Arc<ScheduledTickRunBatch<FluidRef>>,
 }
 
 impl<'a> FluidTickBatchGuard<'a> {
-    fn new(world: &'a World, ticks: &[FluidTick]) -> Self {
-        world.begin_scheduled_fluid_tick_batch(ticks);
-        Self { world }
+    fn new(world: &'a World, ticks: Vec<FluidTick>) -> Self {
+        Self {
+            world,
+            batch: world.begin_scheduled_fluid_tick_batch(ticks),
+        }
     }
 
-    fn start(&self, tick: &FluidTick) {
-        self.world.start_scheduled_fluid_tick(tick);
+    fn ticks(&self) -> &[FluidTick] {
+        self.batch.ticks()
+    }
+
+    fn start(&self, index: usize) {
+        self.batch.start(index);
     }
 }
 
 impl Drop for FluidTickBatchGuard<'_> {
     fn drop(&mut self) {
-        self.world.end_scheduled_fluid_tick_batch();
+        self.world.end_scheduled_fluid_tick_batch(&self.batch);
     }
 }
 
@@ -141,6 +186,15 @@ struct TickingReadinessCandidate {
     holder: Arc<ChunkHolder>,
     desired: TickingReadiness,
     target: TickingReadiness,
+}
+
+#[derive(Default)]
+struct ReadinessReconcileResult {
+    snapshot_changed: bool,
+    post_process_generation: Duration,
+    post_process_chunk_count: usize,
+    post_process_position_count: usize,
+    candidate_count: usize,
 }
 
 #[derive(Debug, Default)]
@@ -343,9 +397,9 @@ impl PendingChunkLightUpdates {
 /// A map of chunks managing their state, loading, and generation.
 pub struct ChunkMap {
     /// Map of active chunks.
-    pub chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
+    pub(crate) chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
     /// Map of chunks currently being unloaded.
-    pub unloading_chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
+    pub(crate) unloading_chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
     /// Queue of pending generation tasks.
     pub pending_generation_tasks: SyncMutex<Vec<Arc<ChunkGenerationTask>>>,
     /// Tracker for background scheduling, generation, save, and unload tasks.
@@ -356,6 +410,10 @@ pub struct ChunkMap {
     full_publications: Arc<FullPublicationQueue>,
     /// Incremental radius-1/radius-2 Full-neighborhood state.
     full_neighborhood: SyncMutex<FullNeighborhoodIndex>,
+    /// Readiness-driven chunk views published at lifecycle boundaries.
+    ticking_chunks: ArcSwap<TickingChunkSnapshot>,
+    /// Final-unload callbacks waiting for the serialized lifecycle boundary.
+    finalized_block_entity_unloads: SyncMutex<Vec<FinalizedBlockEntityUnload>>,
     /// Timed gameplay ticket owners that expire through the game tick.
     timed_chunk_tickets: SyncMutex<TimedChunkTickets>,
     /// The world generation context.
@@ -376,8 +434,6 @@ pub struct ChunkMap {
     light_updates_progress_notify: Notify,
     /// Radius-2 work-window gate for light-engine worksets.
     light_work_window_gate: Arc<LightWorkWindowGate>,
-    /// Last length of `tickable_chunks` to pre-allocate with appropriate capacity.
-    last_tickable_len: AtomicUsize,
     /// Number of top-level generation tasks currently running.
     running_generation_tasks: AtomicUsize,
     /// Wakes the generation refill loop when pending/running task state changes.
@@ -486,6 +542,8 @@ impl ChunkMap {
             scheduling: ChunkSchedulingCoordinator::new(chunk_tickets),
             full_publications,
             full_neighborhood: SyncMutex::new(FullNeighborhoodIndex::default()),
+            ticking_chunks: ArcSwap::from_pointee(TickingChunkSnapshot::default()),
+            finalized_block_entity_unloads: SyncMutex::new(Vec::new()),
             timed_chunk_tickets: SyncMutex::new(timed_chunk_tickets),
             world_gen_context: Arc::new(WorldGenContext::new(
                 generator,
@@ -501,7 +559,6 @@ impl ChunkMap {
             light_updates: SyncMutex::new(LightUpdateState::default()),
             light_updates_progress_notify: Notify::new(),
             light_work_window_gate: Arc::new(LightWorkWindowGate::new()),
-            last_tickable_len: AtomicUsize::new(0),
             running_generation_tasks: AtomicUsize::new(0),
             generation_refill_notify: Notify::new(),
             generation_refill_cancel_token: CancellationToken::new(),
@@ -566,26 +623,41 @@ impl ChunkMap {
         self.with_chunk_at_status(pos, ChunkStatus::Full, f)
     }
 
+    /// Inserts a non-simulated holder into an empty gameplay view for worldgen benchmarks.
+    ///
+    /// Runtime lifecycle code must use ticket-driven insertion. Benchmark holders
+    /// cannot enter a ticking snapshot, so bulk fixture construction needs no rebuild.
+    #[doc(hidden)]
+    #[cfg(feature = "benchmark-support")]
+    pub fn insert_benchmark_chunk_holder(&self, pos: ChunkPos, holder: Arc<ChunkHolder>) {
+        assert!(holder.simulation_level().is_none());
+        assert!(self.ticking_chunks.load().block.is_empty());
+        let _ = self.chunks.insert_sync(pos, holder);
+    }
+
+    #[inline]
+    fn lookup_active_holder(&self, pos: ChunkPos) -> Option<Arc<ChunkHolder>> {
+        lookup_or_insert_with(self, pos, || {
+            self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder))
+        })
+    }
+
     /// Returns whether an active full chunk is currently block ticking.
     #[must_use]
     pub(crate) fn is_block_ticking_full_chunk_loaded(&self, pos: ChunkPos) -> bool {
-        self.chunks
-            .read_sync(&pos, |_, holder| {
-                is_block_ticking(holder.load_level())
-                    && holder.ticking_readiness_snapshot().is_block_ticking()
-            })
-            .unwrap_or(false)
+        self.lookup_active_holder(pos).is_some_and(|holder| {
+            is_block_ticking(holder.load_level())
+                && holder.ticking_readiness_snapshot().is_block_ticking()
+        })
     }
 
     /// Returns whether the chunk is in block simulation range with confirmed r1 readiness.
     #[must_use]
     pub(crate) fn is_block_ticking_full_chunk_simulated(&self, pos: ChunkPos) -> bool {
-        self.chunks
-            .read_sync(&pos, |_, holder| {
-                is_block_ticking(holder.simulation_level())
-                    && holder.ticking_readiness_snapshot().is_block_ticking()
-            })
-            .unwrap_or(false)
+        self.lookup_active_holder(pos).is_some_and(|holder| {
+            is_block_ticking(holder.simulation_level())
+                && holder.ticking_readiness_snapshot().is_block_ticking()
+        })
     }
 
     /// Executes a function with access to a chunk at the requested generation status or later.
@@ -599,7 +671,12 @@ impl ChunkMap {
     where
         F: FnOnce(&ChunkAccess) -> R,
     {
-        let chunk_holder = self.chunks.read_sync(&pos, |_, chunk| chunk.clone())?;
+        let chunk_holder = self.lookup_active_holder(pos)?;
+        // Holders retain completed higher-status data for saving and quick revival. Gameplay
+        // lookups must still honor the currently permitted generation status.
+        if chunk_holder.is_status_disallowed(status) {
+            return None;
+        }
         let guard = chunk_holder.try_chunk(status)?;
         Some(f(&guard))
     }
@@ -766,7 +843,7 @@ impl ChunkMap {
             SectionPos::block_to_section_coord(pos.0.z),
         );
 
-        if let Some(holder) = self.chunks.read_sync(&chunk_pos, |_, h| h.clone())
+        if let Some(holder) = self.lookup_active_holder(chunk_pos)
             && holder.block_changed(pos)
         {
             // First change for this chunk - add to broadcast list
@@ -776,7 +853,7 @@ impl ChunkMap {
 
     /// Marks client-visible chunk packet content as changed.
     pub fn packet_content_changed(&self, chunk_pos: ChunkPos) {
-        if let Some(holder) = self.chunks.read_sync(&chunk_pos, |_, h| Arc::clone(h)) {
+        if let Some(holder) = self.lookup_active_holder(chunk_pos) {
             holder.mark_packet_content_changed();
         }
     }
@@ -785,7 +862,7 @@ impl ChunkMap {
     pub fn light_changed(&self, layer: LightLayer, section_pos: SectionPos) {
         let chunk_pos = ChunkPos::new(section_pos.x(), section_pos.z());
 
-        if let Some(holder) = self.chunks.read_sync(&chunk_pos, |_, h| Arc::clone(h)) {
+        if let Some(holder) = self.lookup_active_holder(chunk_pos) {
             if holder.light_changed(layer, section_pos) {
                 self.chunks_to_broadcast.lock().push(holder);
             }
@@ -1105,10 +1182,10 @@ impl ChunkMap {
         .ok()
     }
 
-    /// Broadcasts all pending block and light changes to nearby players.
+    /// Broadcasts pending block changes and completed light changes to nearby players.
     #[expect(
         clippy::too_many_lines,
-        reason = "broadcasting block and light packets is one ordered publish workflow"
+        reason = "block and light packet construction share the same holder drain"
     )]
     pub fn broadcast_changed_chunks(&self) {
         self.propagate_queued_light_changes();
@@ -1122,15 +1199,10 @@ impl ChunkMap {
         };
 
         let mut world = None;
-        let mut deferred_holders = Vec::new();
 
         for holder in holders {
             let chunk_pos = holder.get_pos();
-            if self.light_updates.lock().touches_chunk(chunk_pos) {
-                deferred_holders.push(holder);
-                continue;
-            }
-
+            // Vanilla publishes block changes independently of unfinished light propagation.
             let world = world.get_or_insert_with(|| self.world_gen_context.world());
             let has_skylight = world.dimension_type.has_skylight;
             let min_y = holder.min_y();
@@ -1286,10 +1358,6 @@ impl ChunkMap {
                 }
             }
         }
-
-        if !deferred_holders.is_empty() {
-            self.chunks_to_broadcast.lock().extend(deferred_holders);
-        }
     }
 
     /// Schedules a new generation task.
@@ -1425,6 +1493,14 @@ impl ChunkMap {
                 world.on_entity_chunk_loaded(pos);
                 world.update_entity_chunk_visibility(pos, chunk_holder.entity_visibility());
             }
+            if is_full(level)
+                && !old.is_some_and(is_full)
+                && chunk_holder.is_full_status_initialized()
+                && chunk_holder.persisted_status() == Some(ChunkStatus::Full)
+                && chunk_holder.try_chunk(ChunkStatus::Full).is_some()
+            {
+                self.full_publications.publish(&chunk_holder);
+            }
             Some(chunk_holder)
         } else {
             //log::info!("Unloading chunk at {pos:?}");
@@ -1441,6 +1517,12 @@ impl ChunkMap {
             world.on_entity_chunk_unload_start(pos);
             world.poi_storage.lock().remove_chunk(pos);
 
+            if let Some(chunk) = chunk_holder.try_chunk(ChunkStatus::Full)
+                && let Some(chunk) = chunk.as_full()
+            {
+                chunk.suspend_block_entities(&chunk_holder);
+            }
+
             // Move to unloading_chunks for deferred unload
             if let Some((_, holder)) = self.chunks.remove_sync(&pos) {
                 let _ = self.unloading_chunks.insert_sync(pos, holder);
@@ -1452,9 +1534,9 @@ impl ChunkMap {
     fn prepare_ticking_readiness_demotions(
         &self,
         changes: &[LevelChange],
-    ) -> Result<(), FullNeighborhoodError> {
+    ) -> Result<bool, FullNeighborhoodError> {
         if changes.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
 
         let new_levels = changes
@@ -1484,27 +1566,38 @@ impl ChunkMap {
         };
 
         let candidates = self.readiness_candidates(&dirty, Some(&new_levels));
-        self.apply_readiness_demotions(&candidates);
+        let snapshot_changed = self.apply_readiness_demotions(&candidates);
         self.update_pending_readiness(&candidates);
-        Ok(())
+        Ok(snapshot_changed)
     }
 
+    #[cfg(test)]
     fn reconcile_ticking_readiness(
         &self,
         changed_positions: &[ChunkPos],
-    ) -> Result<(), FullNeighborhoodError> {
+    ) -> Result<bool, FullNeighborhoodError> {
+        self.reconcile_ticking_readiness_measured(changed_positions)
+            .map(|result| result.snapshot_changed)
+    }
+
+    fn reconcile_ticking_readiness_measured(
+        &self,
+        changed_positions: &[ChunkPos],
+    ) -> Result<ReadinessReconcileResult, FullNeighborhoodError> {
         let publications = self.full_publications.drain();
         if publications.is_empty() && changed_positions.is_empty() {
-            return Ok(());
+            return Ok(ReadinessReconcileResult::default());
         }
         let mut contributor_updates = FxHashMap::default();
+        let mut activation_holders = FxHashMap::default();
 
         for &pos in changed_positions {
             contributor_updates.insert(pos, self.current_full_contributor(pos));
         }
         for publication in publications {
             if let Some(holder) = self.validate_full_publication(&publication) {
-                contributor_updates.insert(publication.pos, Some(holder));
+                contributor_updates.insert(publication.pos, Some(Arc::clone(&holder)));
+                activation_holders.insert(publication.pos, holder);
             }
         }
 
@@ -1519,10 +1612,101 @@ impl ChunkMap {
             neighborhood.take_dirty_counts()
         };
 
-        self.apply_final_readiness(dirty);
-        Ok(())
+        let mut activation_holders = activation_holders.into_values().collect::<Vec<_>>();
+        // Vanilla runs each Full-load callback from the main-executor task whose
+        // ordering depends on asynchronous completion history. Steel deliberately
+        // stabilizes this load-only cross-chunk tie by packed chunk position while
+        // retaining each chunk's native block-entity map order.
+        activation_holders.sort_unstable_by_key(|holder| PackedChunkPos::from(holder.get_pos()));
+        self.activate_block_entities(&activation_holders);
+        Ok(self.apply_final_readiness(dirty))
     }
 
+    /// Rebuilds every gameplay ticking view from one optimized SCC traversal.
+    ///
+    /// This runs only after lifecycle/readiness changes, never as fixed per-tick
+    /// bookkeeping. The published snapshot owns holders but never chunk guards,
+    /// so callbacks cannot retain section or chunk locks.
+    pub(crate) fn rebuild_ticking_chunk_snapshot(&self) -> usize {
+        let mut block = Vec::new();
+        let mut random_chunk_indices = Vec::new();
+        let mut entity_indices = Vec::new();
+
+        self.chunks.iter_sync(|pos, holder| {
+            let Some(simulation_level) = holder.simulation_level() else {
+                return true;
+            };
+            let readiness = holder.ticking_readiness_snapshot();
+            if !simulation_level.is_block_ticking() || !readiness.is_block_ticking() {
+                return true;
+            }
+            let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
+                return true;
+            };
+            let Some(full) = chunk.as_full() else {
+                return true;
+            };
+            let randomly_ticking_sections = Arc::clone(full.sections.random_tick_sections());
+
+            let index = block.len();
+            block.push(TickableChunk {
+                pos: *pos,
+                holder: Arc::clone(holder),
+                randomly_ticking_sections,
+            });
+            if simulation_level.is_entity_ticking() {
+                random_chunk_indices.push(index);
+                if readiness.is_entity_ticking() {
+                    entity_indices.push(index);
+                }
+            }
+            true
+        });
+
+        if let Err(error) = self
+            .world_gen_context
+            .world()
+            .reconcile_active_scheduled_tick_chunks(block.iter().map(|chunk| chunk.pos))
+        {
+            panic!(
+                "Full chunk scheduled-tick ownership invariant failed during ticking snapshot rebuild: {error:?}"
+            );
+        }
+
+        let ticking_chunk_count = block.len();
+        self.ticking_chunks.store(Arc::new(TickingChunkSnapshot {
+            block: block.into_boxed_slice(),
+            random_chunk_indices: random_chunk_indices.into_boxed_slice(),
+            entity_indices: entity_indices.into_boxed_slice(),
+        }));
+        ticking_chunk_count
+    }
+
+    fn ticking_snapshot_membership(
+        readiness: TickingReadiness,
+        simulation_level: Option<ChunkTicketLevel>,
+    ) -> (bool, bool, bool) {
+        let block = simulation_level.is_some_and(ChunkTicketLevel::is_block_ticking)
+            && readiness != TickingReadiness::Unready;
+        let random = block && simulation_level.is_some_and(ChunkTicketLevel::is_entity_ticking);
+        let entity = random && readiness == TickingReadiness::EntityTicking;
+        (block, random, entity)
+    }
+
+    fn simulation_changes_ticking_snapshot(&self, changes: &[LevelChange]) -> bool {
+        changes.iter().any(|change| {
+            self.chunks
+                .read_sync(&change.pos, |_, holder| {
+                    let readiness = holder.ticking_readiness_snapshot().readiness();
+                    Self::ticking_snapshot_membership(readiness, holder.simulation_level())
+                        != Self::ticking_snapshot_membership(readiness, change.new_simulation_level)
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    // Readiness bookkeeping scans candidates once. Keep these lookups uncached so the
+    // four-entry gameplay cache remains focused on repeated callback locality.
     fn current_full_contributor(&self, pos: ChunkPos) -> Option<Arc<ChunkHolder>> {
         let holder = self
             .chunks
@@ -1608,30 +1792,45 @@ impl ChunkMap {
         }
     }
 
-    fn apply_readiness_demotions(&self, candidates: &[TickingReadinessCandidate]) {
+    fn apply_readiness_demotions(&self, candidates: &[TickingReadinessCandidate]) -> bool {
         let world = self.world_gen_context.world();
+        let mut snapshot_changed = false;
         for candidate in candidates {
             let current = candidate.holder.ticking_readiness_snapshot().readiness();
             if current <= candidate.target {
                 continue;
             }
-            candidate
+            let Some(previous) = candidate
                 .holder
-                .transition_ticking_readiness(candidate.target);
+                .transition_ticking_readiness(candidate.target)
+            else {
+                continue;
+            };
+            let simulation_level = candidate.holder.simulation_level();
+            snapshot_changed |= Self::ticking_snapshot_membership(previous, simulation_level)
+                != Self::ticking_snapshot_membership(candidate.target, simulation_level);
             world.update_entity_chunk_visibility(
                 candidate.pos,
                 candidate.holder.entity_visibility(),
             );
         }
+        snapshot_changed
     }
 
-    fn apply_final_readiness(&self, dirty: Vec<(ChunkPos, FullNeighborhoodCounts)>) {
+    fn apply_final_readiness(
+        &self,
+        dirty: Vec<(ChunkPos, FullNeighborhoodCounts)>,
+    ) -> ReadinessReconcileResult {
         if dirty.is_empty() {
-            return;
+            return ReadinessReconcileResult::default();
         }
 
         let candidates = self.readiness_candidates(&dirty, None);
-        self.apply_readiness_demotions(&candidates);
+        let mut result = ReadinessReconcileResult {
+            snapshot_changed: self.apply_readiness_demotions(&candidates),
+            candidate_count: candidates.len(),
+            ..ReadinessReconcileResult::default()
+        };
         self.update_pending_readiness(&candidates);
 
         let world = self.world_gen_context.world();
@@ -1641,16 +1840,39 @@ impl ChunkMap {
                 continue;
             }
 
-            if current == TickingReadiness::Unready
-                && let Err(error) = candidate.holder.post_process_generation()
-            {
-                Self::log_postprocessing_failure(candidate, error);
-                continue;
+            if current == TickingReadiness::Unready {
+                let start = Instant::now();
+                let post_process_result = candidate.holder.post_process_generation();
+                result.post_process_generation += start.elapsed();
+                let post_process_position_count = match post_process_result {
+                    Ok(count) => count,
+                    Err(error) => {
+                        Self::log_postprocessing_failure(candidate, error);
+                        continue;
+                    }
+                };
+                result.post_process_chunk_count += 1;
+                result.post_process_position_count += post_process_position_count;
             }
 
-            candidate
+            if current == TickingReadiness::Unready
+                && let Err(error) = world.unpack_scheduled_ticks(candidate.pos)
+            {
+                panic!(
+                    "Full chunk scheduled-tick ownership invariant failed during readiness activation: {error:?}"
+                );
+            }
+
+            let Some(previous) = candidate
                 .holder
-                .transition_ticking_readiness(candidate.target);
+                .transition_ticking_readiness(candidate.target)
+            else {
+                continue;
+            };
+            let simulation_level = candidate.holder.simulation_level();
+            result.snapshot_changed |=
+                Self::ticking_snapshot_membership(previous, simulation_level)
+                    != Self::ticking_snapshot_membership(candidate.target, simulation_level);
             world.update_entity_chunk_visibility(
                 candidate.pos,
                 candidate.holder.entity_visibility(),
@@ -1658,6 +1880,7 @@ impl ChunkMap {
         }
 
         self.update_pending_readiness(&candidates);
+        result
     }
 
     fn update_pending_readiness(&self, candidates: &[TickingReadinessCandidate]) {
@@ -1699,7 +1922,7 @@ impl ChunkMap {
         });
     }
 
-    fn rebuild_ticking_readiness(&self) -> Result<(), FullNeighborhoodError> {
+    fn rebuild_ticking_readiness(&self) -> Result<ReadinessReconcileResult, FullNeighborhoodError> {
         self.full_publications.drain();
         let mut active = Vec::new();
         self.chunks.iter_sync(|pos, holder| {
@@ -1723,24 +1946,33 @@ impl ChunkMap {
         }
         let dirty = rebuilt.take_dirty_counts();
         *self.full_neighborhood.lock() = rebuilt;
-        self.apply_final_readiness(dirty);
-        Ok(())
+        let mut activation_holders = active.iter().map(|(_, holder)| holder).collect::<Vec<_>>();
+        activation_holders.sort_unstable_by_key(|holder| PackedChunkPos::from(holder.get_pos()));
+        self.activate_block_entities(activation_holders);
+        Ok(self.apply_final_readiness(dirty))
     }
 
-    fn recover_ticking_readiness_index(&self, error: FullNeighborhoodError) {
+    fn recover_ticking_readiness_index(
+        &self,
+        error: FullNeighborhoodError,
+    ) -> ReadinessReconcileResult {
         tracing::error!(
             ?error,
             "Full-neighborhood index invariant failed; rebuilding from active chunks"
         );
         self.clear_all_ticking_readiness();
         *self.full_neighborhood.lock() = FullNeighborhoodIndex::default();
-        if let Err(rebuild_error) = self.rebuild_ticking_readiness() {
-            tracing::error!(
-                ?rebuild_error,
-                "Failed to rebuild Full-neighborhood index; ticking readiness remains revoked"
-            );
-            self.clear_all_ticking_readiness();
-            *self.full_neighborhood.lock() = FullNeighborhoodIndex::default();
+        match self.rebuild_ticking_readiness() {
+            Ok(result) => result,
+            Err(rebuild_error) => {
+                tracing::error!(
+                    ?rebuild_error,
+                    "Failed to rebuild Full-neighborhood index; ticking readiness remains revoked"
+                );
+                self.clear_all_ticking_readiness();
+                *self.full_neighborhood.lock() = FullNeighborhoodIndex::default();
+                ReadinessReconcileResult::default()
+            }
         }
     }
 
@@ -1770,57 +2002,60 @@ impl ChunkMap {
         }
 
         if !runs_normally {
+            let _span = tracing::trace_span!("broadcast_changes").entered();
+            let start = Instant::now();
+            self.broadcast_changed_chunks();
+            timings.broadcast_changes = start.elapsed();
             return timings;
         }
 
         {
             let _span = tracing::trace_span!("collect_tickable").entered();
             let start = Instant::now();
-            let mut total_chunks = 0;
-            let last_len = self.last_tickable_len.load(Ordering::Relaxed);
-            let mut tickable_chunks = Vec::with_capacity(last_len);
-            self.chunks.iter_sync(|_, holder| {
-                total_chunks += 1;
-                let Some(simulation_level) = holder.simulation_level() else {
-                    return true;
-                };
-                let readiness = holder.ticking_readiness_snapshot();
-                if simulation_level.is_block_ticking() && readiness.is_block_ticking() {
-                    tickable_chunks.push(TickableChunk {
-                        holder: holder.clone(),
-                        simulation_level,
-                    });
-                }
-                true
-            });
-            self.last_tickable_len
-                .store(tickable_chunks.len(), Ordering::Relaxed);
+            let tickable_chunks = self.ticking_chunks.load();
             timings.collect_tickable = start.elapsed();
-            timings.total_chunks = total_chunks;
-            timings.tickable_count = tickable_chunks.len();
+            timings.total_chunks = self.chunks.len();
+            timings.tickable_count = tickable_chunks.block.len();
 
-            if !tickable_chunks.is_empty() {
+            if !tickable_chunks.block.is_empty() {
                 let _span = tracing::trace_span!(
                     "tick_chunks",
-                    block_ticking_count = tickable_chunks.len(),
-                    total_chunks
+                    block_ticking_count = tickable_chunks.block.len(),
+                    total_chunks = timings.total_chunks
                 )
                 .entered();
                 let start = Instant::now();
-                let ready_block_ticks = Self::collect_scheduled_block_ticks(&tickable_chunks);
+                // Block and fluid collection share the same post-`tick_time`
+                // timestamp even though block callbacks run between the phases.
+                let current_tick = world.game_time();
+                let ready_block_ticks =
+                    Self::collect_scheduled_block_ticks(world, &tickable_chunks, current_tick);
                 Self::execute_scheduled_block_ticks(world, ready_block_ticks);
 
-                let ready_fluid_ticks = Self::collect_scheduled_fluid_ticks(&tickable_chunks);
+                let ready_fluid_ticks =
+                    Self::collect_scheduled_fluid_ticks(world, &tickable_chunks, current_tick);
                 Self::execute_scheduled_fluid_ticks(world, ready_fluid_ticks);
 
-                for tickable_chunk in &tickable_chunks {
-                    // Vanilla random chunk ticks use the entity-ticking range but only require
-                    // the same confirmed block-ticking chunk used by scheduled ticks.
-                    if !tickable_chunk.simulation_level.is_entity_ticking() {
-                        continue;
-                    }
-                    if let Some(chunk_guard) = tickable_chunk.holder.try_chunk(ChunkStatus::Full) {
-                        chunk_guard.tick_random_blocks(random_tick_speed);
+                if random_tick_speed > 0 {
+                    // Intentional Steel difference: this uses Vanilla's coordinate LCG,
+                    // but seeds it per tick from runtime RNG instead of sharing Level RNG.
+                    let mut random_positions = BlockRandomPositionGenerator::from_runtime_rng();
+                    for &index in &tickable_chunks.random_chunk_indices {
+                        // Vanilla random chunk ticks use the entity-ticking range but only
+                        // require the same confirmed block-ticking chunk used by scheduled ticks.
+                        let tickable_chunk = &tickable_chunks.block[index];
+                        if tickable_chunk.randomly_ticking_sections.is_empty() {
+                            continue;
+                        }
+                        if let Some(chunk_guard) =
+                            tickable_chunk.holder.try_chunk(ChunkStatus::Full)
+                        {
+                            chunk_guard.tick_random_blocks(
+                                world,
+                                random_tick_speed,
+                                &mut random_positions,
+                            );
+                        }
                     }
                 }
                 timings.tick_chunks = start.elapsed();
@@ -1838,25 +2073,6 @@ impl ChunkMap {
     }
 
     /// Ticks block entities in tickable full chunks.
-    pub fn tick_block_entities(&self, timings: &mut ChunkMapGameTickTimings, runs_normally: bool) {
-        if !runs_normally {
-            return;
-        }
-
-        let _span = tracing::trace_span!("block_entities").entered();
-        let start = Instant::now();
-        self.chunks.iter_sync(|_, holder| {
-            if is_block_ticking(holder.simulation_level())
-                && holder.ticking_readiness_snapshot().is_block_ticking()
-                && let Some(chunk_guard) = holder.try_chunk(ChunkStatus::Full)
-            {
-                chunk_guard.tick_block_entities();
-            }
-            true
-        });
-        timings.tick_block_entities = start.elapsed();
-    }
-
     /// Commits a ready scheduling epoch and forks the next background epoch.
     ///
     /// This must run at a gameplay lifecycle boundary or during startup before
@@ -1886,22 +2102,45 @@ impl ChunkMap {
             mut ticket_manager,
             applied_revision,
             mut changes,
-            mut timings,
+            timings,
         } = epoch;
+        let mut timings = timings.into_scheduling_timings();
 
-        let changed_positions = changes.iter().map(|change| change.pos).collect::<Vec<_>>();
-        let rebuild_readiness = if let Err(error) =
-            self.prepare_ticking_readiness_demotions(&changes)
         {
-            tracing::error!(
-                ?error,
-                "Full-neighborhood index invariant failed before lifecycle commit; rebuilding after the commit"
-            );
-            self.clear_all_ticking_readiness();
-            *self.full_neighborhood.lock() = FullNeighborhoodIndex::default();
-            true
-        } else {
-            false
+            let _span = tracing::trace_span!("block_entity_unloads").entered();
+            let start = Instant::now();
+            // Finalized old holders leave the block-entity world before a new holder at
+            // the same position can be committed and activated below.
+            self.finish_block_entity_unloads();
+            timings.block_entity_unloads = start.elapsed();
+        }
+
+        let (changed_positions, mut rebuild_ticking_snapshot, rebuild_readiness) = {
+            let _span = tracing::trace_span!("readiness_demotions").entered();
+            let start = Instant::now();
+            let changed_positions = changes.iter().map(|change| change.pos).collect::<Vec<_>>();
+            let mut rebuild_ticking_snapshot = self.simulation_changes_ticking_snapshot(&changes);
+            let rebuild_readiness = match self.prepare_ticking_readiness_demotions(&changes) {
+                Ok(changed) => {
+                    rebuild_ticking_snapshot |= changed;
+                    false
+                }
+                Err(error) => {
+                    tracing::error!(
+                        ?error,
+                        "Full-neighborhood index invariant failed before lifecycle commit; rebuilding after the commit"
+                    );
+                    self.clear_all_ticking_readiness();
+                    *self.full_neighborhood.lock() = FullNeighborhoodIndex::default();
+                    true
+                }
+            };
+            timings.readiness_demotions = start.elapsed();
+            (
+                changed_positions,
+                rebuild_ticking_snapshot,
+                rebuild_readiness,
+            )
         };
 
         let holders_to_schedule = {
@@ -1922,12 +2161,42 @@ impl ChunkMap {
             holders
         };
 
-        if rebuild_readiness {
-            if let Err(error) = self.rebuild_ticking_readiness() {
-                self.recover_ticking_readiness_index(error);
-            }
-        } else if let Err(error) = self.reconcile_ticking_readiness(&changed_positions) {
-            self.recover_ticking_readiness_index(error);
+        let lookup_cache_scope = GameplayChunkLookupCacheScope::enter(self);
+        let readiness_result = {
+            let _span = tracing::trace_span!("readiness_reconcile").entered();
+            let start = Instant::now();
+            let result = if rebuild_readiness {
+                rebuild_ticking_snapshot = true;
+                match self.rebuild_ticking_readiness() {
+                    Ok(result) => result,
+                    Err(error) => self.recover_ticking_readiness_index(error),
+                }
+            } else {
+                match self.reconcile_ticking_readiness_measured(&changed_positions) {
+                    Ok(result) => {
+                        rebuild_ticking_snapshot |= result.snapshot_changed;
+                        result
+                    }
+                    Err(error) => {
+                        rebuild_ticking_snapshot = true;
+                        self.recover_ticking_readiness_index(error)
+                    }
+                }
+            };
+            timings.readiness_reconcile = start.elapsed();
+            result
+        };
+        timings.lookup_cache = lookup_cache_scope.finish();
+        timings.post_process_generation = readiness_result.post_process_generation;
+        timings.post_process_chunk_count = readiness_result.post_process_chunk_count;
+        timings.post_process_position_count = readiness_result.post_process_position_count;
+        timings.readiness_candidate_count = readiness_result.candidate_count;
+
+        if rebuild_ticking_snapshot {
+            let _span = tracing::trace_span!("ticking_snapshot_rebuild").entered();
+            let start = Instant::now();
+            timings.rebuilt_ticking_chunk_count = self.rebuild_ticking_chunk_snapshot();
+            timings.ticking_snapshot_rebuild = start.elapsed();
         }
 
         ticket_manager.recycle_changes(changes);
@@ -1964,7 +2233,7 @@ impl ChunkMap {
         applied_revision: ChunkTicketRevision,
         holders_to_schedule: Vec<(Arc<ChunkHolder>, ChunkTicketLevel)>,
     ) -> PreparedChunkSchedulingEpoch {
-        let mut timings = ChunkMapSchedulingTimings::default();
+        let mut timings = ChunkMapPreparationTimings::default();
 
         let applied_revision = {
             let _span = tracing::trace_span!("ticket_updates").entered();
@@ -2024,17 +2293,12 @@ impl ChunkMap {
 
     /// Returns full chunks whose simulation level currently allows entity ticks.
     pub fn tickable_full_chunk_positions(&self) -> Vec<ChunkPos> {
-        let mut chunks = Vec::new();
-        self.chunks.iter_sync(|_, holder| {
-            if is_entity_ticking(holder.simulation_level())
-                && holder.ticking_readiness_snapshot().is_entity_ticking()
-                && holder.try_chunk(ChunkStatus::Full).is_some()
-            {
-                chunks.push(holder.get_pos());
-            }
-            true
-        });
-        chunks
+        let snapshot = self.ticking_chunks.load();
+        snapshot
+            .entity_indices
+            .iter()
+            .map(|&index| snapshot.block[index].pos)
+            .collect()
     }
 
     /// Returns whether the chunk is full and currently allows entity ticks.
@@ -2044,71 +2308,189 @@ impl ChunkMap {
             .unwrap_or(false)
     }
 
-    /// Advances both active clocks and collects this tick's block batch.
-    fn collect_scheduled_block_ticks(tickable_chunks: &[TickableChunk]) -> Vec<BlockTick> {
-        let full_chunk_guards: Vec<_> = tickable_chunks
-            .iter()
-            .filter_map(|tickable| tickable.holder.try_chunk(ChunkStatus::Full))
-            .collect();
-        let level_chunks: Vec<_> = full_chunk_guards
-            .iter()
-            .filter_map(|chunk| chunk.as_full())
-            .collect();
-
-        let (advanced_block_containers, collected) = {
-            let mut tick_guards: Vec<_> = level_chunks
-                .iter()
-                .map(|chunk| chunk.block_ticks.lock())
-                .collect();
-            let mut tick_lists: Vec<_> = tick_guards.iter_mut().map(|ticks| &mut **ticks).collect();
-            let advanced = advance_tick_containers(&mut tick_lists);
-            let collected = collect_ticks_to_run(&mut tick_lists, MAX_SCHEDULED_TICKS_PER_TICK);
-            (advanced, collected)
-        };
-        for index in advanced_block_containers
-            .into_iter()
-            .chain(collected.changed_containers.iter().copied())
+    /// Captures the live state for an exact block-entity owner in an eligible holder.
+    ///
+    /// Holder data remains the outermost guard; `LevelChunk` then acquires section
+    /// and storage reads in the same order as block-state writers.
+    pub(crate) fn block_entity_tick_state_if_owned(
+        &self,
+        holder: &Arc<ChunkHolder>,
+        pos: BlockPos,
+        expected: &SharedBlockEntity,
+    ) -> Option<BlockStateId> {
+        let chunk_pos = ChunkPos::from_block_pos(pos);
+        let active = self
+            .chunks
+            .read_sync(&chunk_pos, |_, current| Arc::ptr_eq(current, holder))
+            .unwrap_or(false);
+        if !active
+            || !is_block_ticking(holder.simulation_level())
+            || !holder.ticking_readiness_snapshot().is_block_ticking()
         {
-            level_chunks[index].dirty.store(true, Ordering::Release);
+            return None;
         }
 
-        // Both clocks enter this active chunk tick before callbacks run. Fluid collection
-        // remains after block execution, matching `ServerLevel.tick`.
-        let advanced_fluid_containers = {
-            let mut tick_guards: Vec<_> = level_chunks
-                .iter()
-                .map(|chunk| chunk.fluid_ticks.lock())
-                .collect();
-            let mut tick_lists: Vec<_> = tick_guards.iter_mut().map(|ticks| &mut **ticks).collect();
-            advance_tick_containers(&mut tick_lists)
+        let chunk = holder.try_chunk(ChunkStatus::Full)?;
+        chunk
+            .as_full()?
+            .block_entity_tick_state_if_owned(pos, expected)
+    }
+
+    /// Re-selects one ticker from the live state without retaining a chunk guard
+    /// across behavior selection or manager registration.
+    pub(crate) fn reconcile_block_entity_ticker(&self, holder: &Arc<ChunkHolder>, pos: BlockPos) {
+        let world = self.world_gen_context.world();
+        let chunk_pos = ChunkPos::from_block_pos(pos);
+        let active = self
+            .chunks
+            .read_sync(&chunk_pos, |_, current| Arc::ptr_eq(current, holder))
+            .unwrap_or(false);
+        if !active {
+            world.block_entity_tickers().remove(holder, pos);
+            return;
+        }
+
+        let target = {
+            let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
+                world.block_entity_tickers().remove(holder, pos);
+                return;
+            };
+            chunk
+                .as_full()
+                .and_then(|chunk| chunk.block_entity_tick_target(pos))
         };
-        for index in advanced_fluid_containers {
-            level_chunks[index].dirty.store(true, Ordering::Release);
+        let Some((state, block_entity)) = target else {
+            world.block_entity_tickers().remove(holder, pos);
+            return;
+        };
+        if block_entity.is_removed() {
+            world.block_entity_tickers().remove(holder, pos);
+            return;
+        }
+
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+        let ticker = behavior.get_block_entity_ticker(&world, state, block_entity.get_type());
+        let ticker = ticker.filter(|ticker| {
+            let valid = ticker.accepts(block_entity.get_type());
+            if !valid {
+                tracing::error!(
+                    block = %state.get_block().key,
+                    block_entity_type = %block_entity.get_type().key,
+                    ?pos,
+                    "Block behavior returned a ticker for the wrong block-entity type"
+                );
+            }
+            valid
+        });
+        world
+            .block_entity_tickers()
+            .reconcile(holder, block_entity, ticker);
+    }
+
+    pub(crate) fn activate_block_entities<'a>(
+        &self,
+        holders: impl IntoIterator<Item = &'a Arc<ChunkHolder>>,
+    ) {
+        for holder in holders {
+            if !holder.load_level().is_some_and(is_full)
+                || !self
+                    .chunks
+                    .read_sync(&holder.get_pos(), |_, active| Arc::ptr_eq(active, holder))
+                    .unwrap_or(false)
+                || !holder.is_full_status_initialized()
+                || holder.persisted_status() != Some(ChunkStatus::Full)
+            {
+                continue;
+            }
+            let batch = {
+                let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
+                    continue;
+                };
+                chunk
+                    .as_full()
+                    .and_then(|chunk| chunk.prepare_block_entity_activation(holder))
+            };
+            let Some(batch) = batch else {
+                continue;
+            };
+            for block_entity in batch.lifecycle_dispatchers {
+                block_entity.dispatch_lifecycle_events();
+            }
+            for pos in batch.positions {
+                {
+                    let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
+                        break;
+                    };
+                    let Some(chunk) = chunk.as_full() else {
+                        break;
+                    };
+                    chunk.reconcile_block_entity_game_event_listener(pos);
+                }
+                self.reconcile_block_entity_ticker(holder, pos);
+            }
+        }
+    }
+
+    fn finish_block_entity_unloads(&self) {
+        let finalized = mem::take(&mut *self.finalized_block_entity_unloads.lock());
+        if finalized.is_empty() {
+            return;
+        }
+
+        let world = self.world_gen_context.world();
+        for mut unload in finalized {
+            let mut lifecycle_dispatchers = unload
+                .holder
+                .try_chunk(ChunkStatus::Empty)
+                .and_then(|chunk| {
+                    chunk
+                        .as_full()
+                        .map(|chunk| chunk.deactivate_block_entities(&unload.holder))
+                })
+                .unwrap_or_default();
+            world
+                .block_entity_tickers()
+                .remove_positions(&unload.holder, &unload.positions);
+            lifecycle_dispatchers.append(&mut unload.lifecycle_dispatchers);
+            for block_entity in lifecycle_dispatchers {
+                block_entity.dispatch_lifecycle_events();
+            }
+        }
+    }
+
+    /// Collects this tick's block batch from sparse live-container heads.
+    fn collect_scheduled_block_ticks(
+        world: &World,
+        tickable_chunks: &TickingChunkSnapshot,
+        current_tick: i64,
+    ) -> Vec<BlockTick> {
+        let collected =
+            world.begin_scheduled_tick_phase(current_tick, MAX_SCHEDULED_TICKS_PER_TICK);
+        for index in collected.changed_containers {
+            let tickable = &tickable_chunks.block[index];
+            let Some(chunk) = tickable.holder.try_chunk(ChunkStatus::Full) else {
+                panic!("published ticking snapshot lost a Full chunk");
+            };
+            chunk.mark_dirty();
         }
 
         collected.ticks
     }
 
     /// Collects this tick's fluid batch after block callbacks have run.
-    fn collect_scheduled_fluid_ticks(tickable_chunks: &[TickableChunk]) -> Vec<FluidTick> {
-        let full_chunk_guards: Vec<_> = tickable_chunks
-            .iter()
-            .filter_map(|tickable| tickable.holder.try_chunk(ChunkStatus::Full))
-            .collect();
-        let level_chunks: Vec<_> = full_chunk_guards
-            .iter()
-            .filter_map(|chunk| chunk.as_full())
-            .collect();
-        let collected = {
-            let mut tick_guards: Vec<_> = level_chunks
-                .iter()
-                .map(|chunk| chunk.fluid_ticks.lock())
-                .collect();
-            let mut tick_lists: Vec<_> = tick_guards.iter_mut().map(|ticks| &mut **ticks).collect();
-            collect_ticks_to_run(&mut tick_lists, MAX_SCHEDULED_TICKS_PER_TICK)
-        };
-        for index in &collected.changed_containers {
-            level_chunks[*index].dirty.store(true, Ordering::Release);
+    fn collect_scheduled_fluid_ticks(
+        world: &World,
+        tickable_chunks: &TickingChunkSnapshot,
+        current_tick: i64,
+    ) -> Vec<FluidTick> {
+        let collected =
+            world.collect_scheduled_fluid_tick_batch(current_tick, MAX_SCHEDULED_TICKS_PER_TICK);
+        for index in collected.changed_containers {
+            let tickable = &tickable_chunks.block[index];
+            let Some(chunk) = tickable.holder.try_chunk(ChunkStatus::Full) else {
+                panic!("published ticking snapshot lost a Full chunk");
+            };
+            chunk.mark_dirty();
         }
         collected.ticks
     }
@@ -2116,10 +2498,10 @@ impl ChunkMap {
     /// Executes ready scheduled block ticks in their collected order.
     fn execute_scheduled_block_ticks(world: &Arc<World>, ready_block_ticks: Vec<BlockTick>) {
         if !ready_block_ticks.is_empty() {
-            let batch = BlockTickBatchGuard::new(world, &ready_block_ticks);
+            let batch = BlockTickBatchGuard::new(world, ready_block_ticks);
             let block_behaviors = &*BLOCK_BEHAVIORS;
-            for tick in &ready_block_ticks {
-                batch.start(tick);
+            for (index, tick) in batch.ticks().iter().enumerate() {
+                batch.start(index);
                 let state = world.get_block_state(tick.pos);
                 if state.get_block() != tick.tick_type {
                     continue;
@@ -2134,10 +2516,10 @@ impl ChunkMap {
     /// Executes ready scheduled fluid ticks in their collected order.
     fn execute_scheduled_fluid_ticks(world: &Arc<World>, ready_fluid_ticks: Vec<FluidTick>) {
         if !ready_fluid_ticks.is_empty() {
-            let batch = FluidTickBatchGuard::new(world, &ready_fluid_ticks);
+            let batch = FluidTickBatchGuard::new(world, ready_fluid_ticks);
             let fluid_behaviors = &*FLUID_BEHAVIORS;
-            for tick in &ready_fluid_ticks {
-                batch.start(tick);
+            for (index, tick) in batch.ticks().iter().enumerate() {
+                batch.start(index);
                 let state = world.get_block_state(tick.pos);
                 let fluid_state = state.get_fluid_state();
 
@@ -2146,9 +2528,12 @@ impl ChunkMap {
                     continue;
                 }
 
-                fluid_behaviors
-                    .get_behavior(tick.tick_type)
-                    .tick(world, tick.pos);
+                fluid_behaviors.get_behavior(tick.tick_type).tick(
+                    world,
+                    tick.pos,
+                    state,
+                    fluid_state,
+                );
             }
         }
     }
@@ -2232,19 +2617,23 @@ impl ChunkMap {
     fn process_unloads(self: &Arc<Self>, staged_revivals: &FxHashSet<ChunkPos>) {
         self.propagate_queued_light_changes();
 
-        let light_updates = self.light_updates.lock();
-        self.unloading_chunks.retain_sync(|pos, holder| {
-            // Prepared ticket changes publish only at the next lifecycle boundary.
-            if staged_revivals.contains(pos) {
-                return true;
-            }
+        let mut finalized = Vec::new();
+        {
+            let light_updates = self.light_updates.lock();
+            self.unloading_chunks.retain_sync(|pos, holder| {
+                // Prepared ticket changes publish only at the next lifecycle boundary.
+                if staged_revivals.contains(pos) {
+                    return true;
+                }
 
-            if light_updates.touches_chunk(*pos) {
-                return true;
-            }
+                if light_updates.touches_chunk(*pos) {
+                    return true;
+                }
 
-            if Arc::strong_count(holder) == 1 {
-                // Check if dirty by trying to get chunk access
+                if Arc::strong_count(holder) != 1 {
+                    return true;
+                }
+
                 let is_dirty = holder
                     .try_chunk(ChunkStatus::StructureStarts)
                     .is_some_and(|chunk| chunk.is_dirty());
@@ -2255,35 +2644,51 @@ impl ChunkMap {
                     .has_save_pending_for_chunk(*pos);
 
                 if is_dirty || has_save_pending_entities {
-                    // Save the chunk, keep until next tick when it's clean
                     let save_dependency = holder.add_save_dependency();
-                    let holder_clone = holder.clone();
-                    let map_clone = self.clone();
+                    let holder_clone = Arc::clone(holder);
+                    let map_clone = Arc::clone(self);
                     self.task_tracker.spawn(async move {
                         map_clone.save_chunk(&holder_clone, save_dependency).await;
                     });
-                    true // keep until clean
-                } else if holder.try_chunk(ChunkStatus::Empty).is_none() {
-                    let world = self.world_gen_context.world();
-                    world.on_entity_chunk_unload_finalized(*pos);
-                    false
-                } else {
-                    // Clean and no refs - release region handle and remove
-                    let pos = *pos;
-                    let world = self.world_gen_context.world();
-                    world.on_entity_chunk_unload_finalized(pos);
-                    let map_clone = self.clone();
-                    self.task_tracker.spawn(async move {
-                        if let Err(e) = map_clone.storage.release_chunk(pos).await {
-                            tracing::error!(?pos, "Error releasing chunk: {e}");
-                        }
-                    });
-                    false // remove
+                    return true;
                 }
+
+                let has_chunk = holder.try_chunk(ChunkStatus::Empty).is_some();
+                finalized.push((*pos, Arc::clone(holder), has_chunk));
+                false
+            });
+        }
+
+        let world = self.world_gen_context.world();
+        for (pos, holder, has_chunk) in finalized {
+            let cleared = if has_chunk {
+                holder
+                    .try_chunk(ChunkStatus::Empty)
+                    .map_or_else(ClearedBlockEntities::default, |chunk| {
+                        chunk.clear_all_block_entities_staged()
+                    })
             } else {
-                true // keep, still has refs
+                ClearedBlockEntities::default()
+            };
+            self.finalized_block_entity_unloads
+                .lock()
+                .push(FinalizedBlockEntityUnload {
+                    holder: Arc::clone(&holder),
+                    lifecycle_dispatchers: cleared.lifecycle_dispatchers,
+                    positions: cleared.positions,
+                });
+
+            world.unregister_full_chunk_ticks(pos);
+            world.on_entity_chunk_unload_finalized(pos);
+            if has_chunk {
+                let map_clone = Arc::clone(self);
+                self.task_tracker.spawn(async move {
+                    if let Err(e) = map_clone.storage.release_chunk(pos).await {
+                        tracing::error!(?pos, "Error releasing chunk: {e}");
+                    }
+                });
             }
-        });
+        }
     }
 
     /// Updates the player's status in the chunk map.
@@ -2538,18 +2943,130 @@ impl ChunkMap {
 mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
+    use crate::block_entity::{
+        SharedBlockEntity,
+        entities::{ComparatorBlockEntity, SignBlockEntity},
+    };
     use crate::chunk::heightmap::ChunkHeightmaps;
     use crate::chunk::level_chunk::LevelChunk;
     use crate::chunk::light::ChunkLightData;
     use crate::chunk::proto_chunk::ProtoChunk;
     use crate::chunk::section::{ChunkSection, Sections};
     use crate::chunk_saver::RamOnlyStorage;
-    use crate::test_support::fresh_test_world;
-    use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
+    use crate::config::RuntimeConfig;
+    use crate::player::connection::NetworkConnection;
+    use crate::player::{ClientInformation, GameProfile, PlayerConnection, ResetReason};
+    use crate::server::Server;
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::world::tick_scheduler::{BlockTickList, FluidTickList, SavedTick, TickPriority};
     use crate::worldgen::EmptyChunkGenerator;
+    use std::io::Cursor;
     use std::thread;
-    use steel_registry::{test_support::init_test_registry, vanilla_dimension_types::OVERWORLD};
+    use steel_protocol::packet_traits::CompressionInfo;
+    use steel_registry::{
+        packets::play::{C_BLOCK_CHANGED_ACK, C_BLOCK_UPDATE},
+        test_support::init_test_registry,
+        vanilla_blocks,
+        vanilla_dimension_types::OVERWORLD,
+        vanilla_fluids,
+    };
+    use steel_utils::codec::VarInt;
+    use steel_utils::serial::ReadFrom;
+    use steel_utils::types::UpdateFlags;
     use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
+    use text_components::TextComponent;
+    use uuid::Uuid;
+
+    struct RecordingConnection {
+        packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
+    }
+
+    impl NetworkConnection for RecordingConnection {
+        fn compression(&self) -> Option<CompressionInfo> {
+            None
+        }
+
+        fn send_encoded(&self, packet: EncodedPacket) {
+            self.packets.lock().push(packet);
+        }
+
+        fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
+            self.packets.lock().extend(packets);
+        }
+
+        fn disconnect_with_reason(&self, _reason: TextComponent) {}
+
+        fn tick(&self) {}
+
+        fn latency(&self) -> i32 {
+            0
+        }
+
+        fn close(&self) {}
+
+        fn closed(&self) -> bool {
+            false
+        }
+    }
+
+    fn recording_player(world: &Arc<World>) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
+        let packets = Arc::new(SyncMutex::new(Vec::new()));
+        let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+            packets: Arc::clone(&packets),
+        })));
+        let config = Arc::new(RuntimeConfig {
+            max_players: 1,
+            view_distance: 2,
+            simulation_distance: 2,
+            max_chained_neighbor_updates: 1_000_000,
+            online_mode: false,
+            auth_server: None,
+            profile_server: None,
+            encryption: false,
+            allow_flight: false,
+            motd: String::new(),
+            use_favicon: false,
+            favicon: String::new(),
+            enforce_secure_chat: false,
+            chat_spam_threshold_seconds: 10,
+            command_spam_threshold_seconds: 10,
+            compression: None,
+            server_links: None,
+            packet_workers: Some(1),
+            chunk_generation_threads: Some(1),
+            chunk_encoding_threads: Some(1),
+        });
+        let player = Arc::new_cyclic(|weak_player| {
+            Player::new(
+                GameProfile {
+                    id: Uuid::from_u128(1),
+                    name: "TestPlayer".to_owned(),
+                    properties: Vec::new(),
+                    profile_actions: None,
+                },
+                Arc::clone(&connection),
+                Arc::clone(world),
+                Weak::<Server>::new(),
+                config,
+                1,
+                weak_player,
+                ClientInformation::default(),
+            )
+        });
+        (player, packets)
+    }
+
+    fn packet_id(packet: &EncodedPacket) -> i32 {
+        let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+        assert!(
+            VarInt::read(&mut cursor).is_ok(),
+            "packet length should decode"
+        );
+        match VarInt::read(&mut cursor) {
+            Ok(packet_id) => packet_id.0,
+            Err(error) => panic!("packet id should decode: {error}"),
+        }
+    }
 
     fn advance_until_revision(chunk_map: &Arc<ChunkMap>, revision: ChunkTicketRevision) {
         for _ in 0..10_000 {
@@ -2560,6 +3077,46 @@ mod tests {
             thread::sleep(Duration::from_millis(1));
         }
         panic!("chunk ticket revision did not commit");
+    }
+
+    fn add_test_comparator(chunk: &ChunkAccess, pos: BlockPos) -> SharedBlockEntity {
+        let Some(full) = chunk.as_full() else {
+            panic!("test comparator requires a full chunk");
+        };
+        let Ok(relative_y) = usize::try_from(pos.y() - full.min_y()) else {
+            panic!("test comparator position must be inside the chunk height");
+        };
+        let state = vanilla_blocks::COMPARATOR.default_state();
+        full.sections.set_relative_block(
+            (pos.x() & 15) as usize,
+            relative_y,
+            (pos.z() & 15) as usize,
+            state,
+        );
+        let block_entity: SharedBlockEntity =
+            Arc::new(ComparatorBlockEntity::new(full.level_weak(), pos, state));
+        assert!(full.add_and_register_block_entity(Arc::clone(&block_entity)));
+        block_entity
+    }
+
+    fn add_test_sign(chunk: &ChunkAccess, pos: BlockPos) -> SharedBlockEntity {
+        let Some(full) = chunk.as_full() else {
+            panic!("test sign requires a full chunk");
+        };
+        let Ok(relative_y) = usize::try_from(pos.y() - full.min_y()) else {
+            panic!("test sign position must be inside the chunk height");
+        };
+        let state = vanilla_blocks::OAK_SIGN.default_state();
+        full.sections.set_relative_block(
+            (pos.x() & 15) as usize,
+            relative_y,
+            (pos.z() & 15) as usize,
+            state,
+        );
+        let block_entity: SharedBlockEntity =
+            Arc::new(SignBlockEntity::new(full.level_weak(), pos, state));
+        assert!(full.add_and_register_block_entity(Arc::clone(&block_entity)));
+        block_entity
     }
 
     #[test]
@@ -2711,6 +3268,22 @@ mod tests {
         load_level: ChunkTicketLevel,
         postprocessing: Vec<Vec<u16>>,
     ) -> Arc<ChunkHolder> {
+        insert_active_full_holder_with_ticks(
+            world,
+            pos,
+            load_level,
+            postprocessing,
+            BlockTickList::new(),
+        )
+    }
+
+    fn insert_active_full_holder_with_ticks(
+        world: &Arc<World>,
+        pos: ChunkPos,
+        load_level: ChunkTicketLevel,
+        postprocessing: Vec<Vec<u16>>,
+        block_ticks: BlockTickList,
+    ) -> Arc<ChunkHolder> {
         let min_y = world.chunk_map.world_gen_context.min_y();
         let height = world.chunk_map.world_gen_context.height();
         let sections = (0..height / 16)
@@ -2723,7 +3296,7 @@ mod tests {
             min_y,
             height,
             Arc::downgrade(world),
-            BlockTickList::new(),
+            block_ticks,
             FluidTickList::new(),
             ChunkHeightmaps::new(min_y, height),
             postprocessing,
@@ -2759,6 +3332,83 @@ mod tests {
                 .all(Vec::is_empty),
             "loaded Full postprocessing should run at the r1 transition"
         );
+    }
+
+    #[test]
+    fn cached_holder_rechecks_publication_and_generation_permission() {
+        init_test_registry();
+        let world = fresh_test_world("cached_holder_status_recheck");
+        let pos = ChunkPos::new(4, -3);
+        let load_level = ChunkTicketLevel::FULL_CHUNK;
+        let min_y = world.chunk_map.world_gen_context.min_y();
+        let height = world.chunk_map.world_gen_context.height();
+        let holder = Arc::new(ChunkHolder::new_with_full_publications(
+            pos,
+            load_level,
+            None,
+            min_y,
+            height,
+            Arc::downgrade(&world.chunk_map.full_publications),
+        ));
+        let _ = world.chunk_map.chunks.insert_sync(pos, Arc::clone(&holder));
+        let scope = GameplayChunkLookupCacheScope::enter(&world.chunk_map);
+
+        assert!(
+            world
+                .chunk_map
+                .with_chunk_at_status(pos, ChunkStatus::Empty, |_| ())
+                .is_none(),
+            "an unpublished status must remain unavailable after the holder is cached"
+        );
+
+        let sections = (0..height / 16)
+            .map(|_| ChunkSection::new_empty())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        holder.insert_chunk(
+            ChunkAccess::Proto(ProtoChunk::new(
+                Sections::from_owned(sections),
+                pos,
+                min_y,
+                height,
+                Arc::downgrade(&world),
+            )),
+            ChunkStatus::Empty,
+        );
+        assert!(
+            world
+                .chunk_map
+                .with_chunk_at_status(pos, ChunkStatus::Empty, |_| ())
+                .is_some(),
+            "publication must become visible through a cached holder"
+        );
+
+        holder.update_highest_allowed_status(None);
+        assert!(
+            world
+                .chunk_map
+                .with_chunk_at_status(pos, ChunkStatus::Empty, |_| ())
+                .is_none(),
+            "a cached holder must still honor generation permission revocation"
+        );
+
+        holder.update_highest_allowed_status(Some(load_level));
+        assert_eq!(
+            world
+                .chunk_map
+                .with_chunk_at_status(pos, ChunkStatus::Empty, |_| {
+                    world
+                        .chunk_map
+                        .with_chunk_at_status(pos, ChunkStatus::Empty, |_| ())
+                        .is_some()
+                }),
+            Some(true),
+            "callbacks must run after releasing the cache's RefCell borrow"
+        );
+
+        let stats = scope.finish();
+        assert_eq!(stats.scc_lookups, 1);
+        assert_eq!(stats.holder_hits, 4);
     }
 
     #[test]
@@ -2799,10 +3449,12 @@ mod tests {
             }
         }
 
-        world
+        let readiness_result = world
             .chunk_map
-            .reconcile_ticking_readiness(&[])
+            .reconcile_ticking_readiness_measured(&[])
             .expect("a unique 3x3 Full square should reconcile");
+        assert_eq!(readiness_result.post_process_chunk_count, 1);
+        assert_eq!(readiness_result.post_process_position_count, 1);
         let center = center.expect("the center holder should be inserted");
         assert_eq!(
             center.ticking_readiness_snapshot().readiness(),
@@ -2879,6 +3531,160 @@ mod tests {
             center.ticking_readiness_snapshot().readiness(),
             TickingReadiness::Unready,
             "r1 must be revoked before the contributor's lifecycle mutation"
+        );
+    }
+
+    #[test]
+    fn first_block_readiness_anchors_pending_ticks_once() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("pending_tick_readiness_anchor");
+        world.level_data.write().set_game_time(100);
+        let center_pos = ChunkPos::new(0, 0);
+        let tick_pos = BlockPos::new(1, 64, 1);
+        let mut center = None;
+
+        for z in -1..=1 {
+            for x in -1..=1 {
+                let pos = ChunkPos::new(x, z);
+                let load_level = if pos == center_pos {
+                    ChunkTicketLevel::ENTITY_TICKING_CHUNK
+                } else {
+                    ChunkTicketLevel::FULL_CHUNK
+                };
+                let block_ticks = if pos == center_pos {
+                    BlockTickList::from_saved_ticks(vec![SavedTick {
+                        tick_type: &vanilla_blocks::STONE,
+                        pos: tick_pos,
+                        delay: 5,
+                        priority: TickPriority::Normal,
+                    }])
+                } else {
+                    BlockTickList::new()
+                };
+                let holder = insert_active_full_holder_with_ticks(
+                    &world,
+                    pos,
+                    load_level,
+                    Vec::new(),
+                    block_ticks,
+                );
+                if pos == center_pos {
+                    center = Some(holder);
+                }
+            }
+        }
+
+        world
+            .chunk_map
+            .reconcile_ticking_readiness(&[])
+            .expect("a unique 3x3 Full square should reconcile");
+        let center = center.expect("the center holder should be inserted");
+        assert_eq!(
+            center.ticking_readiness_snapshot().readiness(),
+            TickingReadiness::BlockTicking
+        );
+        let chunk = center
+            .try_chunk(ChunkStatus::Full)
+            .expect("the center should remain Full");
+        let full = chunk
+            .as_full()
+            .expect("the center should remain a LevelChunk");
+        assert_eq!(full.scheduled_tick_snapshot().block[0].delay, 5);
+
+        world.level_data.write().set_game_time(200);
+        world
+            .unpack_scheduled_ticks(center_pos)
+            .expect("repeated readiness unpack should remain valid");
+        assert_eq!(full.scheduled_tick_snapshot().block[0].delay, -95);
+    }
+
+    #[test]
+    fn ticking_snapshot_preserves_scc_order_and_distinct_readiness_gates() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("ticking_chunk_snapshot");
+        let block_only_pos = ChunkPos::new(0, 0);
+        let random_pos = ChunkPos::new(1, 0);
+        let entity_pos = ChunkPos::new(2, 0);
+
+        insert_ready_full_chunk(&world, block_only_pos);
+        let random = insert_ready_full_chunk(&world, random_pos);
+        random.set_simulation_level(Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK));
+        let entity = insert_ready_full_chunk(&world, entity_pos);
+        entity.set_simulation_level(Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK));
+        entity.transition_ticking_readiness(TickingReadiness::EntityTicking);
+
+        world.chunk_map.rebuild_ticking_chunk_snapshot();
+        let snapshot = world.chunk_map.ticking_chunks.load();
+        let mut scc_order = Vec::new();
+        world.chunk_map.chunks.iter_sync(|pos, _| {
+            scc_order.push(*pos);
+            true
+        });
+        assert_eq!(
+            snapshot
+                .block
+                .iter()
+                .map(|chunk| chunk.pos)
+                .collect::<Vec<_>>(),
+            scc_order
+        );
+
+        let random_positions = snapshot
+            .random_chunk_indices
+            .iter()
+            .map(|&index| snapshot.block[index].pos)
+            .collect::<FxHashSet<_>>();
+        assert_eq!(
+            random_positions,
+            FxHashSet::from_iter([random_pos, entity_pos])
+        );
+        let entity_positions = snapshot
+            .entity_indices
+            .iter()
+            .map(|&index| snapshot.block[index].pos)
+            .collect::<Vec<_>>();
+        assert_eq!(entity_positions, [entity_pos]);
+    }
+
+    #[test]
+    fn simulation_changes_rebuild_only_eligible_snapshot_membership() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("simulation_snapshot_membership");
+        let pos = ChunkPos::new(0, 0);
+        let holder = insert_ready_full_chunk(&world, pos);
+
+        let entity_ticking = LevelChange {
+            pos,
+            new_level: Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
+            new_simulation_level: Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK),
+        };
+        assert!(
+            world
+                .chunk_map
+                .simulation_changes_ticking_snapshot(&[entity_ticking]),
+            "entering the random-tick set must republish the snapshot"
+        );
+
+        let unchanged = LevelChange {
+            new_simulation_level: Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
+            ..entity_ticking
+        };
+        assert!(
+            !world
+                .chunk_map
+                .simulation_changes_ticking_snapshot(&[unchanged]),
+            "an unchanged simulation class must retain the snapshot"
+        );
+
+        holder.transition_ticking_readiness(TickingReadiness::Unready);
+        assert!(
+            !world
+                .chunk_map
+                .simulation_changes_ticking_snapshot(&[entity_ticking]),
+            "simulation changes cannot add an unready holder to the snapshot"
         );
     }
 
@@ -3097,39 +3903,118 @@ mod tests {
     }
 
     #[test]
-    fn broadcast_changed_chunks_defers_holder_while_light_work_is_blocked() {
-        let chunk_map = test_chunk_map();
+    fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("blocked_light_block_publication");
         let center = ChunkPos::new(0, 0);
-        let holder = unloaded_full_holder(center);
-        assert_eq!(
-            holder.transition_ticking_readiness(TickingReadiness::BlockTicking),
-            Some(TickingReadiness::Unready)
-        );
-        assert!(holder.block_changed(BlockPos::new(1, 2, 3)));
-        chunk_map
-            .chunks_to_broadcast
-            .lock()
-            .push(Arc::clone(&holder));
-        chunk_map.light_updates.lock().pending.queue_change(
-            center,
-            BlockPos::new(1, 2, 3),
-            true,
-            None,
-        );
-        let Some(_reservation) = chunk_map
+        let holder = insert_ready_full_chunk(&world, center);
+        for z in -LIGHT_CACHE_RADIUS..=LIGHT_CACHE_RADIUS {
+            for x in -LIGHT_CACHE_RADIUS..=LIGHT_CACHE_RADIUS {
+                if x != 0 || z != 0 {
+                    insert_ready_full_chunk(&world, ChunkPos::new(x, z));
+                }
+            }
+        }
+        let pos = BlockPos::new(1, 2, 3);
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        world.chunk_map.broadcast_changed_chunks();
+        assert!(!world.chunk_map.light_update_touches_chunk(center));
+
+        let (player, packets) = recording_player(&world);
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let _ = player.mark_joined_world();
+        player.set_client_loaded(true);
+        player.chunk_sender.lock().mark_chunk_sent_for_test(center);
+        packets.lock().clear();
+
+        let Some(reservation) = world
+            .chunk_map
             .light_work_window_gate
             .try_reserve_centered(center)
         else {
             panic!("test should reserve the light work window");
         };
 
-        chunk_map.broadcast_changed_chunks();
-
-        assert_eq!(chunk_map.chunks_to_broadcast.lock().len(), 1);
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
         assert!(holder.has_changes_to_broadcast());
-        let changes = holder.take_changed_blocks();
-        assert_eq!(changes.len(), 1);
-        assert!(chunk_map.light_update_touches_chunk(center));
+        assert!(world.chunk_map.light_update_touches_chunk(center));
+        player.ack_block_changes_up_to(1);
+
+        world.tick_game(1, true);
+
+        assert!(world.chunk_map.chunks_to_broadcast.lock().is_empty());
+        assert!(!holder.has_changes_to_broadcast());
+        assert!(holder.take_changed_blocks().is_empty());
+        assert!(world.chunk_map.light_update_touches_chunk(center));
+        let relevant_packet_ids = packets
+            .lock()
+            .iter()
+            .map(packet_id)
+            .filter(|id| matches!(*id, C_BLOCK_UPDATE | C_BLOCK_CHANGED_ACK))
+            .collect::<Vec<_>>();
+        assert_eq!(relevant_packet_ids, [C_BLOCK_UPDATE, C_BLOCK_CHANGED_ACK]);
+
+        drop(reservation);
+        world.chunk_map.broadcast_changed_chunks();
+
+        assert!(!world.chunk_map.light_update_touches_chunk(center));
+        assert!(world.chunk_map.chunks_to_broadcast.lock().is_empty());
+        world.remove_player_for_world_change(&player);
+    }
+
+    #[test]
+    fn frozen_tick_broadcasts_block_changes_before_acknowledging_them() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("frozen_block_change_publication");
+        let chunk_pos = ChunkPos::new(0, 0);
+        let holder = insert_ready_full_chunk(&world, chunk_pos);
+        let pos = BlockPos::new(1, 64, 1);
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        world.chunk_map.broadcast_changed_chunks();
+
+        let (player, packets) = recording_player(&world);
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let _ = player.mark_joined_world();
+        player.set_client_loaded(true);
+        player
+            .chunk_sender
+            .lock()
+            .mark_chunk_sent_for_test(chunk_pos);
+        packets.lock().clear();
+
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        assert!(holder.has_changes_to_broadcast());
+        player.ack_block_changes_up_to(1);
+
+        world.tick_game(1, false);
+
+        assert!(!holder.has_changes_to_broadcast());
+        let relevant_packet_ids = packets
+            .lock()
+            .iter()
+            .map(packet_id)
+            .filter(|id| matches!(*id, C_BLOCK_UPDATE | C_BLOCK_CHANGED_ACK))
+            .collect::<Vec<_>>();
+        assert_eq!(relevant_packet_ids, [C_BLOCK_UPDATE, C_BLOCK_CHANGED_ACK]);
+        world.remove_player_for_world_change(&player);
     }
 
     #[test]
@@ -3165,6 +4050,313 @@ mod tests {
             Some(&false)
         );
         assert!(drained[1].1.changed_positions.contains(&east_block));
+    }
+
+    #[test]
+    fn sparse_scheduler_collects_a_registered_chunk_owned_tick() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("chunk_owned_tick_collection");
+        let chunk_pos = ChunkPos::new(0, 0);
+        let block_pos = BlockPos::new(1, 64, 1);
+        insert_ready_full_chunk(&world, chunk_pos);
+        world.schedule_block_tick(block_pos, &vanilla_blocks::STONE, 1, TickPriority::Normal);
+        assert!(world.has_scheduled_block_tick(block_pos, &vanilla_blocks::STONE));
+
+        // This focused test enters `ChunkMap` directly, so mirror the world
+        // phase that advances game time before scheduled-tick collection.
+        world.level_data.write().set_game_time(1);
+        world.chunk_map.tick_game(&world, 1, 0, true);
+
+        assert!(!world.has_scheduled_block_tick(block_pos, &vanilla_blocks::STONE));
+    }
+
+    #[test]
+    fn block_callback_ticks_respect_the_block_fluid_phase_boundary() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("scheduled_tick_phase_boundary");
+        let chunk_pos = ChunkPos::new(0, 0);
+        let initial_block_pos = BlockPos::new(1, 64, 1);
+        let callback_block_pos = BlockPos::new(2, 64, 1);
+        let callback_fluid_pos = BlockPos::new(3, 64, 1);
+        insert_ready_full_chunk(&world, chunk_pos);
+        world.level_data.write().set_game_time(20);
+        world.schedule_block_tick(
+            initial_block_pos,
+            &vanilla_blocks::STONE,
+            0,
+            TickPriority::Normal,
+        );
+        let blocks = world.begin_scheduled_tick_phase(20, MAX_SCHEDULED_TICKS_PER_TICK);
+        assert_eq!(blocks.ticks.len(), 1);
+        assert_eq!(blocks.ticks[0].pos, initial_block_pos);
+
+        // Simulate the selected block callback. Block collection has already
+        // closed, while the same game tick's fluid phase has not yet started.
+        world.schedule_block_tick(
+            callback_block_pos,
+            &vanilla_blocks::STONE,
+            0,
+            TickPriority::Normal,
+        );
+        world.schedule_fluid_tick(
+            callback_fluid_pos,
+            &vanilla_fluids::WATER,
+            0,
+            TickPriority::Normal,
+        );
+
+        let fluids = world.collect_scheduled_fluid_tick_batch(20, MAX_SCHEDULED_TICKS_PER_TICK);
+        assert_eq!(fluids.ticks.len(), 1);
+        assert_eq!(fluids.ticks[0].pos, callback_fluid_pos);
+        assert!(world.has_scheduled_block_tick(callback_block_pos, &vanilla_blocks::STONE));
+
+        let next_blocks = world.begin_scheduled_tick_phase(21, MAX_SCHEDULED_TICKS_PER_TICK);
+        assert_eq!(next_blocks.ticks.len(), 1);
+        assert_eq!(next_blocks.ticks[0].pos, callback_block_pos);
+    }
+
+    #[test]
+    fn earlier_live_insertion_replaces_the_sparse_container_head() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("scheduled_tick_head_replacement");
+        let chunk_pos = ChunkPos::new(0, 0);
+        let later_pos = BlockPos::new(1, 64, 1);
+        let earlier_pos = BlockPos::new(2, 64, 1);
+        insert_ready_full_chunk(&world, chunk_pos);
+
+        world.schedule_block_tick(later_pos, &vanilla_blocks::STONE, 10, TickPriority::Normal);
+        world.schedule_block_tick(earlier_pos, &vanilla_blocks::STONE, 1, TickPriority::Normal);
+        world.schedule_block_tick(earlier_pos, &vanilla_blocks::STONE, 20, TickPriority::High);
+        world.level_data.write().set_game_time(1);
+        world.chunk_map.tick_game(&world, 1, 0, true);
+
+        assert!(!world.has_scheduled_block_tick(earlier_pos, &vanilla_blocks::STONE));
+        assert!(world.has_scheduled_block_tick(later_pos, &vanilla_blocks::STONE));
+    }
+
+    #[test]
+    fn registered_full_chunks_use_active_order_for_equal_explicit_tick_heads() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("registered_explicit_tick_tie");
+        let first_chunk_pos = ChunkPos::new(0, 0);
+        let second_chunk_pos = ChunkPos::new(1, 0);
+        let first_tick_pos = BlockPos::new(1, 64, 1);
+        let second_tick_pos = BlockPos::new(17, 64, 1);
+        let first = insert_ready_full_chunk(&world, first_chunk_pos);
+        let second = insert_ready_full_chunk(&world, second_chunk_pos);
+
+        for (holder, tick_pos) in [(&first, first_tick_pos), (&second, second_tick_pos)] {
+            let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
+                panic!("inserted test chunk must remain Full");
+            };
+            chunk.schedule_block_tick(tick_pos, &vanilla_blocks::STONE, 1, TickPriority::Normal, 0);
+        }
+
+        if let Err(error) = world
+            .reconcile_active_scheduled_tick_chunks([second_chunk_pos, first_chunk_pos].into_iter())
+        {
+            panic!("test scheduler invariant failed: {error:?}");
+        }
+        let batch = world.begin_scheduled_tick_phase(1, MAX_SCHEDULED_TICKS_PER_TICK);
+        assert_eq!(
+            batch.ticks.iter().map(|tick| tick.pos).collect::<Vec<_>>(),
+            [second_tick_pos, first_tick_pos]
+        );
+    }
+
+    #[test]
+    fn final_full_chunk_unload_finalizes_chunk_owned_tick_queues() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("chunk_owned_tick_unload");
+        let chunk_pos = ChunkPos::new(0, 0);
+        let holder = insert_ready_full_chunk(&world, chunk_pos);
+        let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
+            panic!("inserted test chunk must remain Full");
+        };
+        let block_entity_pos = BlockPos::new(1, 64, 1);
+        let block_entity = add_test_comparator(&chunk, block_entity_pos);
+        let sign_pos = BlockPos::new(2, 64, 1);
+        let sign = add_test_sign(&chunk, sign_pos);
+        chunk.schedule_block_tick(
+            BlockPos::new(3, 64, 1),
+            &vanilla_blocks::STONE,
+            10,
+            TickPriority::Normal,
+            0,
+        );
+        chunk.take_dirty();
+        drop(chunk);
+        assert!(world.has_registered_full_chunk_ticks(chunk_pos));
+        assert!(world.has_indexed_scheduled_tick_head(chunk_pos));
+        assert_eq!(world.block_entity_tickers().registered_len(), 1);
+
+        world.chunk_map.update_chunk_level(chunk_pos, None, None);
+        world.chunk_map.rebuild_ticking_chunk_snapshot();
+        drop(holder);
+        let _runtime_guard = world.chunk_map.chunk_runtime.enter();
+        world.chunk_map.process_unloads(&FxHashSet::default());
+
+        assert!(!world.chunk_map.unloading_chunks.contains_sync(&chunk_pos));
+        assert!(!world.has_registered_full_chunk_ticks(chunk_pos));
+        assert!(!world.has_indexed_scheduled_tick_head(chunk_pos));
+        assert!(block_entity.is_removed());
+        assert!(sign.is_removed());
+        assert_eq!(world.block_entity_tickers().registered_len(), 1);
+
+        world.chunk_map.finish_block_entity_unloads();
+        assert_eq!(world.block_entity_tickers().registered_len(), 0);
+    }
+
+    #[test]
+    fn unloading_full_chunk_revival_keeps_chunk_owned_tick_queues() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("chunk_owned_tick_revival");
+        let chunk_pos = ChunkPos::new(0, 0);
+        let block_pos = BlockPos::new(1, 64, 1);
+        let original = insert_ready_full_chunk(&world, chunk_pos);
+        world.schedule_block_tick(block_pos, &vanilla_blocks::STONE, 3, TickPriority::Normal);
+        assert!(world.has_indexed_scheduled_tick_head(chunk_pos));
+        let Some(chunk) = original.try_chunk(ChunkStatus::Full) else {
+            panic!("inserted test chunk must remain Full");
+        };
+        let block_entity = add_test_comparator(&chunk, block_pos);
+        drop(chunk);
+
+        world.chunk_map.update_chunk_level(chunk_pos, None, None);
+        assert!(world.has_registered_full_chunk_ticks(chunk_pos));
+        let Some(revived) = world.chunk_map.update_chunk_level(
+            chunk_pos,
+            Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
+            Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
+        ) else {
+            panic!("restored ticket level must revive the unloading holder");
+        };
+        world.chunk_map.rebuild_ticking_chunk_snapshot();
+
+        assert!(Arc::ptr_eq(&original, &revived));
+        assert!(world.has_scheduled_block_tick(block_pos, &vanilla_blocks::STONE));
+        assert!(world.has_indexed_scheduled_tick_head(chunk_pos));
+        let Some(revived_chunk) = revived.try_chunk(ChunkStatus::Full) else {
+            panic!("revived chunk must remain Full");
+        };
+        let Some(revived_block_entity) = revived_chunk.get_block_entity(block_pos) else {
+            panic!("revival should preserve the block entity");
+        };
+        assert!(Arc::ptr_eq(&block_entity, &revived_block_entity));
+        assert!(!block_entity.is_removed());
+    }
+
+    #[test]
+    fn weak_revival_stays_dormant_until_the_same_holder_returns_to_full() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("weak_full_chunk_revival");
+        let chunk_pos = ChunkPos::new(0, 0);
+        let sign_pos = BlockPos::new(1, 64, 1);
+        let original = insert_ready_full_chunk(&world, chunk_pos);
+
+        world.chunk_map.update_chunk_level(chunk_pos, None, None);
+        let Some(revived) =
+            world
+                .chunk_map
+                .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::MAX), None)
+        else {
+            panic!("a weak load level should revive the unloading holder");
+        };
+        assert!(Arc::ptr_eq(&original, &revived));
+
+        let Some(chunk) = revived.try_chunk(ChunkStatus::Full) else {
+            panic!("weak revival should preserve the serialized Full chunk");
+        };
+        let _sign = add_test_sign(&chunk, sign_pos);
+        drop(chunk);
+        assert_eq!(world.block_entity_tickers().registered_len(), 0);
+
+        insert_active_full_holder(
+            &world,
+            ChunkPos::new(8, 8),
+            ChunkTicketLevel::FULL_CHUNK,
+            Vec::new(),
+        );
+        let snapshot_changed = world
+            .chunk_map
+            .reconcile_ticking_readiness(&[])
+            .expect("the unrelated Full publication should reconcile");
+        assert!(
+            !snapshot_changed,
+            "a Full publication without a readiness transition must keep the snapshot"
+        );
+        assert_eq!(
+            world.block_entity_tickers().registered_len(),
+            0,
+            "another holder's publication must not activate a weakly loaded chunk"
+        );
+
+        world.chunk_map.update_chunk_level(
+            chunk_pos,
+            Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
+            Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
+        );
+        world
+            .chunk_map
+            .reconcile_ticking_readiness(&[])
+            .expect("the promoted holder's Full publication should reconcile");
+        assert_eq!(
+            world.block_entity_tickers().registered_len(),
+            1,
+            "promotion back to Full must activate the holder's staged ticker"
+        );
+    }
+
+    #[test]
+    fn full_load_activation_uses_packed_chunk_position_order() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("packed_full_activation_order");
+        let first_chunk = ChunkPos::new(0, 0);
+        let second_chunk = ChunkPos::new(1, 0);
+        let first_sign = BlockPos::new(1, 64, 1);
+        let second_sign = BlockPos::new(17, 64, 1);
+
+        let second = insert_active_full_holder(
+            &world,
+            second_chunk,
+            ChunkTicketLevel::FULL_CHUNK,
+            Vec::new(),
+        );
+        let Some(second) = second.try_chunk(ChunkStatus::Full) else {
+            panic!("inserted second chunk should remain Full");
+        };
+        add_test_sign(&second, second_sign);
+        drop(second);
+
+        let first = insert_active_full_holder(
+            &world,
+            first_chunk,
+            ChunkTicketLevel::FULL_CHUNK,
+            Vec::new(),
+        );
+        let Some(first) = first.try_chunk(ChunkStatus::Full) else {
+            panic!("inserted first chunk should remain Full");
+        };
+        add_test_sign(&first, first_sign);
+        drop(first);
+
+        world
+            .chunk_map
+            .reconcile_ticking_readiness(&[])
+            .expect("the Full publications should reconcile");
+
+        assert_eq!(
+            world.block_entity_tickers().active_positions(),
+            [first_sign, second_sign]
+        );
     }
 
     #[test]

@@ -15,7 +15,6 @@ use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Rotation, types::UpdateFlags};
 
-use crate::behavior::BlockStateBehaviorExt;
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::{
     entities::{ItemFrameEntity, RawEntity},
@@ -531,7 +530,7 @@ impl StructurePiecePlacer {
             direction,
             region.weak_world(),
         ));
-        entity.set_item(ItemStack::new(&vanilla_items::ELYTRA));
+        entity.set_item_with_update(ItemStack::new(&vanilla_items::ELYTRA), false);
         let _ = region.add_fresh_entity(entity);
     }
 

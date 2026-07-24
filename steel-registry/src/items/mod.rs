@@ -8,7 +8,7 @@ use text_components::TextComponent;
 pub mod item;
 
 use crate::{
-    REGISTRY, RegistryExt, RegistryTags, TaggedRegistryExt,
+    REGISTRY, RegistryEntry, RegistryExt, RegistryTags, TaggedRegistryExt,
     blocks::BlockRef,
     data_components::{
         DataComponentMap,
@@ -107,6 +107,7 @@ pub struct ItemRegistry {
     items_by_id: Vec<ItemRef>,
     items_by_key: FxHashMap<Identifier, usize>,
     items_by_block: FxHashMap<Identifier, usize>,
+    block_items_by_id: Vec<bool>,
     tags: RegistryTags,
     allows_registering: bool,
 }
@@ -124,6 +125,7 @@ impl ItemRegistry {
             items_by_id: Vec::new(),
             items_by_key: FxHashMap::default(),
             items_by_block: FxHashMap::default(),
+            block_items_by_id: Vec::new(),
             tags: RegistryTags::default(),
             allows_registering: true,
         }
@@ -140,6 +142,7 @@ impl ItemRegistry {
         assert_eq!(*cached, id, "item registered with conflicting id");
         self.items_by_key.insert(item.key.clone(), id);
         self.items_by_id.push(item);
+        self.block_items_by_id.push(false);
 
         id
     }
@@ -154,6 +157,18 @@ impl ItemRegistry {
             panic!("Cannot associate an unregistered item with a block");
         };
         self.items_by_block.insert(block.key.clone(), item_id);
+        self.block_items_by_id[item_id] = true;
+    }
+
+    /// Returns whether this item is Vanilla's `BlockItem` or one of its subclasses.
+    ///
+    /// `BlockItem` construction registers its block-to-item association, so the
+    /// extracted association is also the complete class-hierarchy capability.
+    #[must_use]
+    pub fn is_block_item(&self, item: ItemRef) -> bool {
+        self.block_items_by_id
+            .get(item.id())
+            .is_some_and(|&is_block_item| is_block_item)
     }
 
     /// Returns the item associated with this block, or air when it has no block item.
@@ -220,6 +235,31 @@ mod tests {
         assert_eq!(
             REGISTRY.items.by_block(&vanilla_blocks::FIRE),
             &*vanilla_items::AIR
+        );
+    }
+
+    #[test]
+    fn block_item_capability_includes_extracted_vanilla_subclasses() {
+        init_test_registry();
+
+        for item in [
+            &*vanilla_items::STONE,
+            &*vanilla_items::OAK_DOOR,
+            &*vanilla_items::OAK_SIGN,
+            &*vanilla_items::OAK_HANGING_SIGN,
+            &*vanilla_items::WHITE_BED,
+            &*vanilla_items::WHITE_BANNER,
+            &*vanilla_items::SCAFFOLDING,
+            &*vanilla_items::LILY_PAD,
+            &*vanilla_items::STRUCTURE_BLOCK,
+            &*vanilla_items::POWDER_SNOW_BUCKET,
+        ] {
+            assert!(REGISTRY.items.is_block_item(item));
+        }
+        assert!(
+            !REGISTRY
+                .items
+                .is_block_item(&vanilla_items::DIAMOND_PICKAXE)
         );
     }
 }
