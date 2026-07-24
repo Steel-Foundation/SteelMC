@@ -19,6 +19,8 @@ shs = "shs"
 replaceables = "replaceables"
 # Mojang's shipped translation key (snbt.parser.undescore_not_allowed).
 undescore = "undescore"
+# Vanilla block tag name minecraft:convertable_to_mud
+convertable = "convertable"
 
 [default]
 locale = "en-us"
