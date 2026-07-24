@@ -2825,12 +2825,20 @@ impl TextResolutor for Player {
 mod tests {
     use std::sync::{Arc, Weak};
 
+    use glam::DVec3;
     use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
+    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+    use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+    use steel_registry::data_component_predicate::DataComponentMatchers;
+    use steel_registry::data_components::vanilla_components::CAN_BREAK;
+    use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
     use steel_registry::{
-        item_stack::ItemStack, test_support::init_test_registry, vanilla_attributes,
-        vanilla_damage_types, vanilla_game_rules, vanilla_items,
+        RegistryHolderSet, item_stack::ItemStack, test_support::init_test_registry,
+        vanilla_attributes, vanilla_blocks, vanilla_damage_types, vanilla_game_rules,
+        vanilla_items,
     };
-    use steel_utils::types::{Difficulty, GameType};
+    use steel_utils::types::{Difficulty, GameType, UpdateFlags};
+    use steel_utils::{BlockPos, ChunkPos};
     use text_components::TextComponent;
     use uuid::Uuid;
 
@@ -2841,13 +2849,15 @@ mod tests {
     use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
     use crate::player::connection::NetworkConnection;
     use crate::server::Server;
-    use crate::test_support::{hard_damage_test_world, test_world};
+    use crate::test_support::{
+        fresh_test_world, hard_damage_test_world, insert_ready_full_chunk, test_world,
+    };
     use crate::world::World;
 
     use super::{
         ClientInformation, GameProfile, Player, PlayerConnection, PlayerPermissionState,
-        ResetReason, experience::Experience, first_point_level_up_sound, nullable_game_mode_id,
-        player_data::PersistentPlayerData,
+        ResetReason, block_breaking::BlockBreakAction, experience::Experience,
+        first_point_level_up_sound, nullable_game_mode_id, player_data::PersistentPlayerData,
     };
 
     struct TestConnection;
@@ -2881,6 +2891,7 @@ mod tests {
             max_players: 1,
             view_distance: 2,
             simulation_distance: 2,
+            max_chained_neighbor_updates: 1_000_000,
             online_mode: false,
             auth_server: None,
             profile_server: None,
@@ -3257,5 +3268,66 @@ mod tests {
         player.living_base.mark_effects_dirty();
         player.update_dirty_mob_effect_entity_data();
         assert!(!player.entity_data.is_base_invisible_flag());
+    }
+
+    #[test]
+    fn block_action_restriction_precedes_redstone_ore_attack() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("redstone_ore_block_action_restriction");
+        let pos = BlockPos::new(1, 64, 0);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::REDSTONE_ORE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+
+        let player = test_player(Arc::clone(&world));
+        player.base.set_position_local(DVec3::new(1.0, 64.0, 0.0));
+
+        for game_mode in [GameType::Spectator, GameType::Adventure] {
+            player.restore_game_modes(game_mode, None);
+            player.abilities.lock().update_for_game_mode(game_mode);
+            player.block_breaking.lock().handle_block_break_action(
+                &player,
+                &world,
+                pos,
+                BlockBreakAction::Start,
+                Direction::Up,
+            );
+            assert!(
+                !world
+                    .get_block_state(pos)
+                    .get_value(&BlockStateProperties::LIT)
+            );
+        }
+
+        let predicate = BlockPredicate::new(
+            Some(RegistryHolderSet::Direct(vec![
+                &vanilla_blocks::REDSTONE_ORE,
+            ])),
+            None,
+            None,
+            DataComponentMatchers::ANY,
+        );
+        let can_break =
+            AdventureModePredicate::new(vec![predicate]).expect("one block predicate is valid");
+        let mut tool = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
+        tool.set(CAN_BREAK, can_break);
+        player.inventory.lock().set_selected_item(tool);
+
+        player.block_breaking.lock().handle_block_break_action(
+            &player,
+            &world,
+            pos,
+            BlockBreakAction::Start,
+            Direction::Up,
+        );
+        assert!(
+            world
+                .get_block_state(pos)
+                .get_value(&BlockStateProperties::LIT)
+        );
     }
 }

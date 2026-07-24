@@ -45,7 +45,7 @@ pub struct PreparedChunkSave {
     /// The chunk position.
     pub pos: ChunkPos,
     /// The serialized chunk data.
-    pub persistent: PersistentChunk,
+    pub persistent: PersistentChunk<'static>,
     /// Runtime manager entity IDs that were either serialized or explicitly skipped.
     pub handled_runtime_entity_ids: Vec<i32>,
 }
@@ -362,7 +362,7 @@ impl RegionManager {
         let data = zstd::decode_all(&compressed[..])?;
 
         // Deserialize
-        let persistent: PersistentChunk = wincode::deserialize(&data)
+        let persistent: PersistentChunk<'_> = wincode::deserialize(&data)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
         // Convert to runtime format (persistent is dropped after this - no duplication!)

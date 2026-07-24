@@ -22,8 +22,8 @@ use super::standing_and_wall_block_item::StandingAndWallBlockItem;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 use crate::entity::Entity;
-use crate::world::World;
 use crate::world::game_event_context::GameEventContext;
+use crate::world::{LevelReader as _, World};
 
 /// Behavior for sign items that place sign blocks and open the editor.
 ///
@@ -158,7 +158,7 @@ fn can_attach_to(
     }
 
     // Otherwise, check for sturdy face with FULL support
-    attach_state.is_face_sturdy_for_at(attach_pos, attach_face, SupportType::Full)
+    world.is_face_sturdy_for(attach_state, attach_pos, attach_face, SupportType::Full)
 }
 
 /// Checks if a wall hanging sign can be placed at the given position.

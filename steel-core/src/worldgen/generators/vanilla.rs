@@ -19,7 +19,6 @@ use steel_worldgen::surface::{
     SurfaceBiomeProvider, SurfaceConditionNoiseCache, SurfaceRuleContext,
 };
 
-use crate::behavior::BlockStateBehaviorExt as _;
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::heightmap::{Heightmap, HeightmapType};
 use crate::worldgen::carver::{

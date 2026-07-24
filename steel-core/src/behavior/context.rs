@@ -304,10 +304,12 @@ impl<'a> BlockPlaceContext<'a> {
     /// This considers both yaw and pitch to determine the nearest direction
     /// among all 6 directions (UP, DOWN, NORTH, SOUTH, EAST, WEST).
     ///
-    /// Based on Java's `Direction.orderedByNearest(Entity)[0]`.
+    /// Based on Java's `Direction.orderedByNearest(Entity)[0]`. Unlike
+    /// [`Self::get_nearest_looking_directions`], this does not reorder around
+    /// the clicked face when placing beside a non-replaceable block.
     #[must_use]
     pub fn get_nearest_looking_direction(&self) -> Direction {
-        self.get_nearest_looking_directions()[0]
+        self.source.orientation.nearest_looking_direction()
     }
 
     /// Returns the vertical direction the player is looking toward.
@@ -381,6 +383,13 @@ pub enum PlacementOrientation {
 }
 
 impl PlacementOrientation {
+    fn nearest_looking_direction(self) -> Direction {
+        match self {
+            Self::Player { rotation, pitch } => Direction::ordered_by_nearest(rotation, pitch)[0],
+            Self::Directional { .. } => Direction::Down,
+        }
+    }
+
     fn horizontal_direction(self) -> Direction {
         match self {
             Self::Player { rotation, .. } => Direction::from_yaw(rotation),
@@ -495,13 +504,16 @@ pub struct PlacementSource<'a> {
 impl<'a> PlacementSource<'a> {
     /// Creates a placement source backed by a player's live hand.
     #[must_use]
-    pub fn player_hand(player: &'a Player, inv: InventoryAccess) -> Self {
+    pub fn player_hand(player: &'a Player, inv: &InventoryAccess) -> Self {
         let (rotation, pitch) = player.rotation();
         let hand = inv.hand;
         Self {
             player: Some(player),
             hand,
-            item: PlacementItemSource::PlayerHand(inv),
+            item: PlacementItemSource::PlayerHand(InventoryAccess::new(
+                Arc::clone(&inv.inventory),
+                hand,
+            )),
             orientation: PlacementOrientation::Player { rotation, pitch },
             is_secondary_use_active: player.is_secondary_use_active(),
         }
@@ -636,7 +648,7 @@ impl<'a> UseOnContext<'a> {
     pub fn build_place_context(&self) -> BlockPlaceContext<'a> {
         BlockPlaceContext::new(
             self.world,
-            PlacementSource::player_hand(self.player, self.inv.clone()),
+            PlacementSource::player_hand(self.player, &self.inv),
             &self.hit_result,
         )
     }
@@ -855,5 +867,36 @@ mod tests {
                 Direction::East,
             ]
         );
+    }
+
+    #[test]
+    fn singular_look_direction_is_not_reordered_around_clicked_face() {
+        init_test_registry();
+        init_behaviors();
+
+        let mut stack = ItemStack::new(&vanilla_items::PISTON);
+        let source = PlacementSource::direct(
+            None,
+            InteractionHand::MainHand,
+            &mut stack,
+            PlacementOrientation::Player {
+                rotation: 0.0,
+                pitch: 80.0,
+            },
+            false,
+        );
+        let hit_result = BlockHitResult {
+            location: DVec3::ZERO,
+            direction: Direction::East,
+            block_pos: BlockPos::new(10, 80, 10),
+            miss: false,
+            inside: false,
+            world_border_hit: false,
+        };
+        let mut context = BlockPlaceContext::new(test_world(), source, &hit_result);
+        context.replaces_clicked_block = false;
+
+        assert_eq!(context.get_nearest_looking_direction(), Direction::Down);
+        assert_eq!(context.get_nearest_looking_directions()[0], Direction::West);
     }
 }

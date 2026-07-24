@@ -4,12 +4,11 @@ use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
-use crate::block_entity::{BlockEntity, BlockEntityTickAction};
+use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _};
 use crate::world::World;
 
 const SPAWN_TIME: i64 = 200;
@@ -19,10 +18,12 @@ const EVENT_COOLDOWN: i32 = 1;
 
 /// Vanilla `TheEndGatewayBlockEntity`.
 pub struct EndGatewayBlockEntity {
-    world: Weak<World>,
-    pos: BlockPos,
-    state: BlockStateId,
-    removed: bool,
+    base: BlockEntityBase,
+    gateway: SyncMutex<EndGatewayState>,
+}
+
+#[derive(Clone, Copy)]
+struct EndGatewayState {
     age: i64,
     teleport_cooldown: i32,
     exit_portal: Option<BlockPos>,
@@ -37,54 +38,61 @@ unsafe impl DowncastType for EndGatewayBlockEntity {
 impl EndGatewayBlockEntity {
     /// Creates an End gateway block entity with vanilla default state.
     #[must_use]
-    pub const fn new(world: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
+    pub fn new(world: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
         Self {
-            world,
-            pos,
-            state,
-            removed: false,
-            age: 0,
-            teleport_cooldown: 0,
-            exit_portal: None,
-            exact_teleport: false,
+            base: BlockEntityBase::new(&vanilla_block_entity_types::END_GATEWAY, world, pos, state),
+            gateway: SyncMutex::new(EndGatewayState {
+                age: 0,
+                teleport_cooldown: 0,
+                exit_portal: None,
+                exact_teleport: false,
+            }),
         }
     }
 
     /// Returns vanilla `TheEndGatewayBlockEntity.isSpawning`.
     #[must_use]
-    pub const fn is_spawning(&self) -> bool {
-        self.age < SPAWN_TIME
+    pub fn is_spawning(&self) -> bool {
+        self.gateway.lock().age < SPAWN_TIME
     }
 
     /// Returns vanilla `TheEndGatewayBlockEntity.isCoolingDown`.
     #[must_use]
-    pub const fn is_cooling_down(&self) -> bool {
-        self.teleport_cooldown > 0
+    pub fn is_cooling_down(&self) -> bool {
+        self.gateway.lock().teleport_cooldown > 0
     }
 
     /// Returns the stored gateway exit position.
     #[must_use]
-    pub const fn exit_portal(&self) -> Option<BlockPos> {
-        self.exit_portal
+    pub fn exit_portal(&self) -> Option<BlockPos> {
+        self.gateway.lock().exit_portal
     }
 
     /// Returns whether the stored exit is used exactly.
     #[must_use]
-    pub const fn exact_teleport(&self) -> bool {
-        self.exact_teleport
+    pub fn exact_teleport(&self) -> bool {
+        self.gateway.lock().exact_teleport
     }
 
     /// Sets the stored gateway exit position.
-    pub fn set_exit_position(&mut self, exact_position: BlockPos, exact: bool) {
-        self.exact_teleport = exact;
-        self.exit_portal = Some(exact_position);
+    pub fn set_exit_position(&self, exact_position: BlockPos, exact: bool) {
+        {
+            let mut gateway = self.gateway.lock();
+            gateway.exact_teleport = exact;
+            gateway.exit_portal = Some(exact_position);
+        }
         self.set_changed();
     }
 
     /// Triggers vanilla gateway cooldown and broadcasts the block event.
-    pub fn trigger_cooldown(&mut self, world: &World) {
-        self.teleport_cooldown = COOLDOWN_TIME;
-        world.block_event(self.pos, self.state.get_block(), EVENT_COOLDOWN, 0);
+    pub fn trigger_cooldown(&self, world: &World) {
+        self.gateway.lock().teleport_cooldown = COOLDOWN_TIME;
+        world.block_event(
+            self.get_block_pos(),
+            self.get_block_state().get_block(),
+            EVENT_COOLDOWN,
+            0,
+        );
         self.set_changed();
     }
 
@@ -103,62 +111,36 @@ impl EndGatewayBlockEntity {
 }
 
 impl BlockEntity for EndGatewayBlockEntity {
-    fn get_type(&self) -> BlockEntityTypeRef {
-        &vanilla_block_entity_types::END_GATEWAY
+    fn base(&self) -> &BlockEntityBase {
+        &self.base
     }
 
-    fn get_block_pos(&self) -> BlockPos {
-        self.pos
-    }
-
-    fn get_block_state(&self) -> BlockStateId {
-        self.state
-    }
-
-    fn set_block_state(&mut self, state: BlockStateId) {
-        self.state = state;
-    }
-
-    fn is_removed(&self) -> bool {
-        self.removed
-    }
-
-    fn set_removed(&mut self) {
-        self.removed = true;
-    }
-
-    fn clear_removed(&mut self) {
-        self.removed = false;
-    }
-
-    fn get_level(&self) -> Option<Arc<World>> {
-        self.world.upgrade()
-    }
-
-    fn trigger_event(&mut self, param_a: i32, _param_b: i32) -> bool {
+    fn trigger_event(&self, param_a: i32, _param_b: i32) -> bool {
         if param_a != EVENT_COOLDOWN {
             return false;
         }
-        self.teleport_cooldown = COOLDOWN_TIME;
+        self.gateway.lock().teleport_cooldown = COOLDOWN_TIME;
         true
     }
 
-    fn load_additional(&mut self, nbt: &BorrowedNbtCompound<'_>) {
+    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
-        self.age = nbt.long("Age").unwrap_or(0);
-        self.exit_portal = Self::load_exit_portal(&nbt);
-        self.exact_teleport = nbt.byte("ExactTeleport").is_some_and(|value| value != 0);
+        let mut gateway = self.gateway.lock();
+        gateway.age = nbt.long("Age").unwrap_or(0);
+        gateway.exit_portal = Self::load_exit_portal(&nbt);
+        gateway.exact_teleport = nbt.byte("ExactTeleport").is_some_and(|value| value != 0);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
-        nbt.insert("Age", self.age);
-        if let Some(exit) = self.exit_portal {
+        let gateway = self.gateway.lock();
+        nbt.insert("Age", gateway.age);
+        if let Some(exit) = gateway.exit_portal {
             nbt.insert(
                 "exit_portal",
                 NbtTag::IntArray(vec![exit.x(), exit.y(), exit.z()]),
             );
         }
-        if self.exact_teleport {
+        if gateway.exact_teleport {
             nbt.insert("ExactTeleport", Self::nbt_bool(true));
         }
     }
@@ -169,33 +151,41 @@ impl BlockEntity for EndGatewayBlockEntity {
         Some(nbt)
     }
 
-    fn is_ticking(&self) -> bool {
-        true
-    }
-
-    fn tick(&mut self, world: &Arc<World>) -> Option<BlockEntityTickAction> {
-        let state = world.get_block_state(self.pos);
+    fn tick(&self, world: &Arc<World>) {
+        let pos = self.get_block_pos();
+        let state = world.get_block_state(pos);
         if state.get_block() != &vanilla_blocks::END_GATEWAY {
             self.set_removed();
-            return None;
+            return;
         }
 
-        self.state = state;
-        let was_spawning = self.is_spawning();
-        let was_cooling_down = self.is_cooling_down();
+        self.set_block_state(state);
+        let (trigger_cooldown, lifecycle_changed) = {
+            let mut gateway = self.gateway.lock();
+            let was_spawning = gateway.age < SPAWN_TIME;
+            let was_cooling_down = gateway.teleport_cooldown > 0;
+            gateway.age += 1;
+            let trigger_cooldown = if was_cooling_down {
+                gateway.teleport_cooldown -= 1;
+                false
+            } else if gateway.age % ATTENTION_INTERVAL == 0 {
+                gateway.teleport_cooldown = COOLDOWN_TIME;
+                true
+            } else {
+                false
+            };
+            let lifecycle_changed = was_spawning != (gateway.age < SPAWN_TIME)
+                || was_cooling_down != (gateway.teleport_cooldown > 0);
+            (trigger_cooldown, lifecycle_changed)
+        };
 
-        self.age += 1;
-        if was_cooling_down {
-            self.teleport_cooldown -= 1;
-        } else if self.age % ATTENTION_INTERVAL == 0 {
-            self.trigger_cooldown(world);
-        }
-
-        if was_spawning != self.is_spawning() || was_cooling_down != self.is_cooling_down() {
+        if trigger_cooldown {
+            world.block_event(pos, state.get_block(), EVENT_COOLDOWN, 0);
             self.set_changed();
         }
-
-        None
+        if lifecycle_changed {
+            self.set_changed();
+        }
     }
 }
 
@@ -209,7 +199,7 @@ mod tests {
 
     use super::*;
 
-    fn load_from_owned_nbt(gateway: &mut EndGatewayBlockEntity, nbt: &NbtCompound) {
+    fn load_from_owned_nbt(gateway: &EndGatewayBlockEntity, nbt: &NbtCompound) {
         let mut bytes = Vec::new();
         nbt.write(&mut bytes);
         let borrowed = read_borrowed_compound(&mut Cursor::new(bytes.as_slice()))
@@ -228,8 +218,8 @@ mod tests {
 
     #[test]
     fn end_gateway_saves_vanilla_nbt_keys() {
-        let mut gateway = gateway();
-        gateway.age = 12;
+        let gateway = gateway();
+        gateway.gateway.lock().age = 12;
         gateway.set_exit_position(BlockPos::new(100, 72, -32), true);
 
         let mut nbt = NbtCompound::new();
@@ -265,10 +255,10 @@ mod tests {
         nbt.insert("exit_portal", NbtTag::IntArray(vec![8, 70, 12]));
         nbt.insert("ExactTeleport", 1_i8);
 
-        let mut gateway = gateway();
-        load_from_owned_nbt(&mut gateway, &nbt);
+        let gateway = gateway();
+        load_from_owned_nbt(&gateway, &nbt);
 
-        assert_eq!(gateway.age, 44);
+        assert_eq!(gateway.gateway.lock().age, 44);
         assert_eq!(gateway.exit_portal(), Some(BlockPos::new(8, 70, 12)));
         assert!(gateway.exact_teleport());
     }
@@ -278,8 +268,8 @@ mod tests {
         let mut nbt = NbtCompound::new();
         nbt.insert("exit_portal", NbtTag::IntArray(vec![0, 20_000_000, 0]));
 
-        let mut gateway = gateway();
-        load_from_owned_nbt(&mut gateway, &nbt);
+        let gateway = gateway();
+        load_from_owned_nbt(&gateway, &nbt);
 
         assert_eq!(gateway.exit_portal(), None);
     }

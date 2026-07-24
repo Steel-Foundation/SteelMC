@@ -19,8 +19,8 @@ use steel_utils::{
     types::UpdateFlags,
 };
 
-use crate::behavior::BLOCK_BEHAVIORS;
-use crate::block_entity::{BlockEntityStorage, SharedBlockEntity};
+use crate::behavior::{BLOCK_BEHAVIORS, BlockEntityCreation};
+use crate::block_entity::{BlockEntityLookup, BlockEntityStorage, SharedBlockEntity};
 use crate::chunk::{
     chunk_access::ChunkStatus,
     heightmap::{HeightmapType, ProtoHeightmaps},
@@ -102,6 +102,11 @@ pub struct ProtoChunk {
     // rebuild cost stays negligible.
 }
 
+enum PendingPromotionCommit {
+    Retry,
+    Complete(Option<SharedBlockEntity>),
+}
+
 impl ProtoChunk {
     /// Creates a new proto chunk at the given position with empty sections.
     #[must_use]
@@ -127,8 +132,8 @@ impl ProtoChunk {
             structure_references: SyncRwLock::new(FxHashMap::default()),
             carving_mask: SyncRwLock::new(None),
             postprocessing: SyncRwLock::new(empty_postprocessing(height)),
-            block_ticks: SyncMutex::new(BlockTickList::new()),
-            fluid_ticks: SyncMutex::new(FluidTickList::new()),
+            block_ticks: SyncMutex::new(BlockTickList::new_pending()),
+            fluid_ticks: SyncMutex::new(FluidTickList::new_pending()),
             sky_light_sources: SyncRwLock::new(ChunkSkyLightSources::for_valid_world_height(
                 min_y, height,
             )),
@@ -304,33 +309,187 @@ impl ProtoChunk {
         self.block_entities.get(pos)
     }
 
-    /// Adds a block entity and registers it for ticking if needed.
-    pub fn add_and_register_block_entity(&self, block_entity: SharedBlockEntity) {
-        self.block_entities.add_and_register(block_entity);
-        self.mark_unsaved();
+    /// Stores a concrete proto block entity if its type accepts the live block state.
+    #[must_use]
+    pub fn set_block_entity(&self, block_entity: SharedBlockEntity) -> bool {
+        let pos = block_entity.get_block_pos();
+        if ChunkPos::from_block_pos(pos) != self.pos {
+            log::warn!(
+                "Trying to set block entity {} at {pos:?} in proto chunk {:?}",
+                block_entity.get_type().key,
+                self.pos,
+            );
+            return false;
+        }
+
+        loop {
+            let state = self.get_block_state(pos);
+            let valid = state.has_block_entity() && block_entity.is_valid_block_state(state);
+            if !valid {
+                let state_unchanged =
+                    self.with_locked_block_state(pos, |live_state| live_state == state);
+                if !state_unchanged {
+                    continue;
+                }
+                log::warn!(
+                    "Trying to set block entity {} at {pos:?}, but block {} does not accept that type",
+                    block_entity.get_type().key,
+                    state.get_block().key,
+                );
+                return false;
+            }
+
+            let committed = self.with_locked_block_state(pos, |live_state| {
+                if live_state != state {
+                    return false;
+                }
+                let _ = self.block_entities.set_without_lifecycle(&block_entity);
+                true
+            });
+            if !committed {
+                continue;
+            }
+            self.mark_unsaved();
+            return true;
+        }
+    }
+
+    /// Stores Vanilla's pending `DUMMY` marker for a worldgen-placed entity block.
+    pub fn set_pending_block_entity(&self, pos: BlockPos) {
+        if ChunkPos::from_block_pos(pos) != self.pos {
+            log::warn!(
+                "Trying to set a pending block entity at {pos:?} in proto chunk {:?}",
+                self.pos,
+            );
+            return;
+        }
+        if self.block_entities.set_pending(pos) {
+            self.mark_unsaved();
+        }
+    }
+
+    /// Stores a pending marker only while `expected_state` is still live.
+    pub(crate) fn set_pending_block_entity_if_state(
+        &self,
+        pos: BlockPos,
+        expected_state: BlockStateId,
+    ) -> bool {
+        if ChunkPos::from_block_pos(pos) != self.pos {
+            return false;
+        }
+        let inserted = self.with_locked_block_state(pos, |live_state| {
+            live_state == expected_state && self.block_entities.set_pending(pos)
+        });
+        if inserted {
+            self.mark_unsaved();
+        }
+        inserted
+    }
+
+    /// Returns pending `DUMMY` positions for promotion or serialization.
+    #[must_use]
+    pub fn pending_block_entity_positions(&self) -> Vec<BlockPos> {
+        self.block_entities.pending_positions()
+    }
+
+    /// Promotes a pending worldgen `DUMMY` on explicit region access without ticking it.
+    pub(crate) fn promote_pending_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        if ChunkPos::from_block_pos(pos) != self.pos {
+            return None;
+        }
+        loop {
+            match self.block_entities.lookup(pos) {
+                BlockEntityLookup::Concrete(block_entity) => return Some(block_entity),
+                BlockEntityLookup::Pending => {}
+                BlockEntityLookup::Absent => return None,
+            }
+
+            let state = self.get_block_state(pos);
+            if !state.has_block_entity() {
+                let state_unchanged =
+                    self.with_locked_block_state(pos, |live_state| live_state == state);
+                if state_unchanged {
+                    return None;
+                }
+                continue;
+            }
+
+            let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+            let creation = behavior.new_block_entity(self.level.clone(), pos, state);
+            match self.commit_pending_creation(pos, state, creation) {
+                PendingPromotionCommit::Retry => {}
+                PendingPromotionCommit::Complete(block_entity) => return block_entity,
+            }
+        }
+    }
+
+    fn commit_pending_creation(
+        &self,
+        pos: BlockPos,
+        expected_state: BlockStateId,
+        creation: BlockEntityCreation,
+    ) -> PendingPromotionCommit {
+        let BlockEntityCreation::Created(block_entity) = creation else {
+            // Proto chunks retain markers for both intentional null factories and Steel's
+            // deferred implementations. Full promotion resolves their final semantics.
+            return self.with_locked_block_state(pos, |live_state| {
+                if live_state == expected_state {
+                    PendingPromotionCommit::Complete(None)
+                } else {
+                    PendingPromotionCommit::Retry
+                }
+            });
+        };
+        let valid = block_entity.get_block_pos() == pos
+            && ChunkPos::from_block_pos(pos) == self.pos
+            && block_entity.is_valid_block_state(expected_state);
+        self.with_locked_block_state(pos, |live_state| {
+            if live_state != expected_state {
+                return PendingPromotionCommit::Retry;
+            }
+            if !valid {
+                return PendingPromotionCommit::Complete(None);
+            }
+            PendingPromotionCommit::Complete(
+                self.block_entities
+                    .promote_without_lifecycle(pos, block_entity),
+            )
+        })
     }
 
     /// Removes a block entity at the given position.
     pub fn remove_block_entity(&self, pos: BlockPos) {
-        self.block_entities.remove(pos);
+        self.block_entities.remove_without_lifecycle(pos);
         self.mark_unsaved();
     }
 
-    /// Updates the ticking status of a block entity.
-    pub fn update_block_entity_ticker(&self, block_entity: &SharedBlockEntity) {
-        self.block_entities.update_ticker(block_entity);
+    /// Removes an entity or marker only while `expected_state` is still live.
+    pub(crate) fn remove_block_entity_if_state(
+        &self,
+        pos: BlockPos,
+        expected_state: BlockStateId,
+    ) -> bool {
+        if ChunkPos::from_block_pos(pos) != self.pos {
+            return false;
+        }
+        let removed = self.with_locked_block_state(pos, |live_state| {
+            live_state == expected_state && self.block_entities.remove_without_lifecycle(pos)
+        });
+        if removed {
+            self.mark_unsaved();
+        }
+        removed
+    }
+
+    /// Drops every `ProtoChunk` block entity without `LevelChunk` lifecycle callbacks or dirtying.
+    pub(crate) fn clear_all_block_entities(&self) {
+        self.block_entities.clear_without_lifecycle();
     }
 
     /// Returns all block entities in this proto chunk.
     #[must_use]
     pub fn get_block_entities(&self) -> Vec<SharedBlockEntity> {
-        self.block_entities.get_all()
-    }
-
-    /// Returns a reference to the block entity storage.
-    #[must_use]
-    pub const fn block_entity_storage(&self) -> &BlockEntityStorage {
-        &self.block_entities
+        self.block_entities.get_all_without_lifecycle_filter()
     }
 
     /// Adds an entity to proto storage.
@@ -357,7 +516,11 @@ impl ProtoChunk {
     /// so worldgen-scheduled proto ticks run after promotion instead of preserving the
     /// requested delay from generation time.
     pub fn schedule_block_tick(&self, pos: BlockPos, block: BlockRef, priority: TickPriority) {
-        if self.block_ticks.lock().schedule(block, pos, 0, priority, 0) {
+        if self
+            .block_ticks
+            .lock()
+            .schedule_pending(block, pos, priority)
+        {
             self.mark_unsaved();
         }
     }
@@ -366,7 +529,11 @@ impl ProtoChunk {
     ///
     /// See [`Self::schedule_block_tick`] for why proto ticks use delay `0`.
     pub fn schedule_fluid_tick(&self, pos: BlockPos, fluid: FluidRef, priority: TickPriority) {
-        if self.fluid_ticks.lock().schedule(fluid, pos, 0, priority, 0) {
+        if self
+            .fluid_ticks
+            .lock()
+            .schedule_pending(fluid, pos, priority)
+        {
             self.mark_unsaved();
         }
     }
@@ -378,7 +545,7 @@ impl ProtoChunk {
         &self,
         pos: BlockPos,
         state: BlockStateId,
-        flags: UpdateFlags,
+        _flags: UpdateFlags,
     ) -> Option<BlockStateId> {
         let y = pos.0.y;
 
@@ -449,7 +616,6 @@ impl ProtoChunk {
 
         self.update_status_heightmaps_after_block_change(local_x, y, local_z, state);
 
-        self.update_block_entity_lifecycle(pos, old_state, state, flags);
         self.mark_unsaved();
         Some(old_state)
     }
@@ -585,44 +751,6 @@ impl ProtoChunk {
         }
     }
 
-    fn update_block_entity_lifecycle(
-        &self,
-        pos: BlockPos,
-        old_state: BlockStateId,
-        state: BlockStateId,
-        flags: UpdateFlags,
-    ) {
-        let old_block = old_state.get_block();
-        let new_block = state.get_block();
-        let block_changed = old_block != new_block;
-        let side_effects = !flags.contains(UpdateFlags::UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS);
-
-        let block_behaviors = &*BLOCK_BEHAVIORS;
-        let old_behavior = block_behaviors.get_behavior(old_block);
-        let new_behavior = block_behaviors.get_behavior(new_block);
-
-        if block_changed && old_behavior.has_block_entity() {
-            let should_keep = new_behavior.should_keep_block_entity(old_state, state);
-            if !should_keep {
-                if side_effects && let Some(block_entity) = self.get_block_entity(pos) {
-                    block_entity.lock().pre_remove_side_effects(pos, old_state);
-                }
-                self.remove_block_entity(pos);
-            }
-        }
-
-        if new_behavior.has_block_entity() {
-            if let Some(existing) = self.get_block_entity(pos) {
-                existing.lock().set_block_state(state);
-                self.update_block_entity_ticker(&existing);
-            } else if let Some(entity) =
-                new_behavior.new_block_entity(self.level.clone(), pos, state)
-            {
-                self.add_and_register_block_entity(entity);
-            }
-        }
-    }
-
     /// Gets a block state at the given position.
     #[must_use]
     pub fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
@@ -644,17 +772,40 @@ impl ProtoChunk {
 
         section_guard.states.get(local_x, local_y, local_z)
     }
+
+    fn with_locked_block_state<R>(&self, pos: BlockPos, f: impl FnOnce(BlockStateId) -> R) -> R {
+        let y = pos.y();
+        if y < self.min_y || y >= self.min_y + self.height {
+            return f(REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR));
+        }
+
+        let section = self.sections.sections[self.get_section_index(y)].read();
+        let state = section.states.get(
+            (pos.x() & 15) as usize,
+            (y & 15) as usize,
+            (pos.z() & 15) as usize,
+        );
+        f(state)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
-    use super::ProtoChunk;
-    use crate::behavior::init_behaviors;
+    use super::{PendingPromotionCommit, ProtoChunk};
+    use crate::behavior::{BlockEntityCreation, init_behaviors};
+    use crate::block_entity::{
+        BlockEntityLifecycleExt as _, SharedBlockEntity,
+        entities::{RawBlockEntity, SignBlockEntity},
+        init_block_entities,
+    };
+    use crate::chunk::level_chunk::LevelChunk;
     use crate::chunk::section::{ChunkSection, Sections};
     use crate::world::tick_scheduler::TickPriority;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{
+        test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
+    };
     use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
 
     #[test]
@@ -686,7 +837,7 @@ mod tests {
 
         proto.schedule_block_tick(pos, &vanilla_blocks::DIRT, TickPriority::Normal);
 
-        let ticks = proto.block_ticks.lock().pack();
+        let ticks = proto.block_ticks.lock().pack(0);
         let Some(tick) = ticks.first() else {
             panic!("proto chunk should store scheduled block tick");
         };
@@ -750,5 +901,224 @@ mod tests {
 
         proto.initialize_light_sources();
         assert_eq!(proto.sections.sections[0].read().non_empty_block_count(), 1);
+    }
+
+    #[test]
+    fn proto_mutation_defers_lifecycle_and_promotion_revalidates_concrete_entities() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let pos = BlockPos::new(3, 4, 5);
+        let sign = vanilla_blocks::OAK_SIGN.default_state();
+        assert!(
+            proto
+                .set_block_state(pos, sign, UpdateFlags::UPDATE_NONE)
+                .is_some()
+        );
+        let entity: SharedBlockEntity = Arc::new(SignBlockEntity::new(Weak::new(), pos, sign));
+        assert!(proto.set_block_entity(Arc::clone(&entity)));
+
+        assert_eq!(
+            proto.set_block_state(
+                pos,
+                vanilla_blocks::STONE.default_state(),
+                UpdateFlags::UPDATE_NONE,
+            ),
+            Some(sign)
+        );
+        assert!(proto.get_block_entity(pos).is_some());
+
+        let full = LevelChunk::from_proto(proto, 0, 16, Weak::new()).chunk;
+        assert!(!entity.is_removed());
+        assert!(full.get_block_entity(pos).is_none());
+    }
+
+    #[test]
+    fn proto_storage_preserves_removed_entries_until_full_promotion() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let pos = BlockPos::new(3, 4, 5);
+        let sign = vanilla_blocks::OAK_SIGN.default_state();
+        assert!(
+            proto
+                .set_block_state(pos, sign, UpdateFlags::UPDATE_NONE)
+                .is_some()
+        );
+        let entity: SharedBlockEntity = Arc::new(SignBlockEntity::new(Weak::new(), pos, sign));
+        entity.set_removed();
+        assert!(proto.set_block_entity(Arc::clone(&entity)));
+
+        assert_eq!(proto.get_block_entities().len(), 1);
+        assert_eq!(
+            proto
+                .block_entities
+                .save_snapshot_without_lifecycle_filter()
+                .0
+                .len(),
+            1
+        );
+
+        let promotion = LevelChunk::from_proto(proto, 0, 16, Weak::new());
+        assert!(!entity.is_removed());
+        assert!(promotion.chunk.get_block_entity(pos).is_some());
+    }
+
+    #[test]
+    fn pending_proto_entity_promotes_without_running_live_lifecycle() {
+        init_test_registry();
+        init_behaviors();
+        init_block_entities();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let pos = BlockPos::new(3, 4, 5);
+        let sign = vanilla_blocks::OAK_SIGN.default_state();
+        assert!(
+            proto
+                .set_block_state(pos, sign, UpdateFlags::UPDATE_NONE)
+                .is_some()
+        );
+        proto.set_pending_block_entity(pos);
+
+        assert!(proto.promote_pending_block_entity(pos).is_some());
+        assert!(proto.pending_block_entity_positions().is_empty());
+    }
+
+    #[test]
+    fn conditional_proto_marker_mutation_rejects_stale_worldgen_state() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let pos = BlockPos::new(3, 4, 5);
+        let copper = vanilla_blocks::COPPER_CHEST.default_state();
+        let exposed = vanilla_blocks::EXPOSED_COPPER_CHEST.default_state();
+        assert!(
+            proto
+                .set_block_state(pos, exposed, UpdateFlags::UPDATE_NONE)
+                .is_some()
+        );
+
+        assert!(!proto.set_pending_block_entity_if_state(pos, copper));
+        assert!(proto.pending_block_entity_positions().is_empty());
+        assert!(proto.set_pending_block_entity_if_state(pos, exposed));
+
+        let stone = vanilla_blocks::STONE.default_state();
+        assert_eq!(
+            proto.set_block_state(pos, stone, UpdateFlags::UPDATE_NONE),
+            Some(exposed)
+        );
+        assert!(!proto.remove_block_entity_if_state(pos, exposed));
+        assert_eq!(proto.pending_block_entity_positions(), [pos]);
+        assert!(proto.remove_block_entity_if_state(pos, stone));
+        assert!(proto.pending_block_entity_positions().is_empty());
+    }
+
+    #[test]
+    fn dummy_factory_outcomes_keep_proto_and_full_stage_semantics() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let moving_pos = BlockPos::new(2, 4, 5);
+        let chest_pos = BlockPos::new(3, 4, 5);
+        assert!(
+            proto
+                .set_block_state(
+                    moving_pos,
+                    vanilla_blocks::MOVING_PISTON.default_state(),
+                    UpdateFlags::UPDATE_NONE,
+                )
+                .is_some()
+        );
+        assert!(
+            proto
+                .set_block_state(
+                    chest_pos,
+                    vanilla_blocks::CHEST.default_state(),
+                    UpdateFlags::UPDATE_NONE,
+                )
+                .is_some()
+        );
+        proto.set_pending_block_entity(moving_pos);
+        proto.set_pending_block_entity(chest_pos);
+
+        assert!(proto.promote_pending_block_entity(moving_pos).is_none());
+        assert!(proto.promote_pending_block_entity(chest_pos).is_none());
+        let pending = proto.pending_block_entity_positions();
+        assert!(pending.contains(&moving_pos));
+        assert!(pending.contains(&chest_pos));
+
+        let full = LevelChunk::from_proto(proto, 0, 16, Weak::new()).chunk;
+        assert!(full.get_block_entity(moving_pos).is_none());
+        assert!(!full.pending_block_entity_positions().contains(&moving_pos));
+        assert!(full.get_block_entity(chest_pos).is_none());
+        assert!(full.pending_block_entity_positions().contains(&chest_pos));
+    }
+
+    #[test]
+    fn stale_proto_factory_cannot_consume_a_replacement_marker() {
+        init_test_registry();
+        init_behaviors();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let pos = BlockPos::new(2, 4, 5);
+        let copper = vanilla_blocks::COPPER_CHEST.default_state();
+        let exposed = vanilla_blocks::EXPOSED_COPPER_CHEST.default_state();
+        assert!(
+            proto
+                .set_block_state(pos, copper, UpdateFlags::UPDATE_NONE)
+                .is_some()
+        );
+        proto.set_pending_block_entity(pos);
+        let stale_entity: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+            &vanilla_block_entity_types::CHEST,
+            Weak::new(),
+            pos,
+            copper,
+        ));
+
+        assert_eq!(
+            proto.set_block_state(pos, exposed, UpdateFlags::UPDATE_NONE),
+            Some(copper)
+        );
+        assert!(matches!(
+            proto.commit_pending_creation(pos, copper, BlockEntityCreation::Created(stale_entity),),
+            PendingPromotionCommit::Retry
+        ));
+        assert_eq!(proto.pending_block_entity_positions(), [pos]);
+        assert!(proto.get_block_entity(pos).is_none());
     }
 }

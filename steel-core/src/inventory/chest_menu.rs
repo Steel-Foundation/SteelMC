@@ -248,27 +248,22 @@ impl Menu for ChestMenu {
             return ItemStack::empty();
         }
 
-        // Update the source slot with remaining items
-        self.behavior.slots[slot_index].set_item(guard, stack_mut.clone());
+        self.behavior
+            .update_quick_move_source(guard, slot_index, &stack_mut, &clicked);
 
         // Check if unchanged
         if stack_mut.count == clicked.count {
             return ItemStack::empty();
         }
 
-        self.behavior.slots[slot_index].set_changed(guard);
-
         clicked
     }
 
     /// Returns true if the container is still valid for interaction.
     ///
-    /// Delegates to the container's `still_valid` method.
+    /// Checks the container's independently stored access capability.
     fn still_valid(&self, player: &Player) -> bool {
-        let guard = self.behavior.lock_all_containers();
-        guard
-            .get(self.container.container_id())
-            .is_some_and(|container| container.still_valid(player))
+        self.container.still_valid(player)
     }
 
     /// Called when the menu is closed.

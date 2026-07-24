@@ -16,8 +16,6 @@ use steel_registry::{
 };
 use steel_utils::BlockStateId;
 
-use crate::behavior::BlockStateBehaviorExt as _;
-
 /// The different types of heightmaps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HeightmapType {

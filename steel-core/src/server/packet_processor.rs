@@ -133,8 +133,11 @@ impl PacketProcessor {
 
     /// Guarantees packet progress when a late tick leaves no normal inter-tick window.
     pub(super) async fn wait_for_overload_progress(&self) {
+        let Some(completed) = self.queued.progress_baseline() else {
+            return;
+        };
         yield_now().await;
-        self.queued.wait_for_progress().await;
+        self.queued.wait_for_progress_since(completed).await;
     }
 
     /// Drains packets submitted before this tick boundary, then closes packet admission.
@@ -330,8 +333,11 @@ where
             return;
         }
         state.phase = PacketPhase::Open;
+        let should_wake = Self::select_next(&state, None).is_some();
         drop(state);
-        self.work_available.notify_all();
+        if should_wake {
+            self.work_available.notify_all();
+        }
     }
 
     #[cfg(test)]
@@ -343,10 +349,12 @@ where
     }
 
     async fn drain_for_tick(&self) {
-        let Some(before_sequence) = self.begin_tick_drain() else {
+        let Some((before_sequence, should_wake)) = self.begin_tick_drain() else {
             return;
         };
-        self.work_available.notify_all();
+        if should_wake {
+            self.work_available.notify_all();
+        }
 
         loop {
             let idle = self.idle.notified();
@@ -366,9 +374,9 @@ where
         }
     }
 
-    fn begin_tick_drain(&self) -> Option<u64> {
+    fn begin_tick_drain(&self) -> Option<(u64, bool)> {
         let mut state = self.state.lock();
-        match state.phase {
+        let before_sequence = match state.phase {
             PacketPhase::Stopped => None,
             PacketPhase::Draining(before_sequence) => Some(before_sequence),
             PacketPhase::Closed | PacketPhase::Open => {
@@ -376,7 +384,9 @@ where
                 state.phase = PacketPhase::Draining(before_sequence);
                 Some(before_sequence)
             }
-        }
+        }?;
+        let should_wake = Self::select_next(&state, Some(before_sequence)).is_some();
+        Some((before_sequence, should_wake))
     }
 
     fn tick_drain_complete(&self, before_sequence: u64) -> bool {
@@ -390,11 +400,7 @@ where
         Self::next_ready_sequence(&state).is_none_or(|sequence| sequence >= before_sequence)
     }
 
-    async fn wait_for_progress(&self) {
-        let Some(completed) = self.progress_baseline() else {
-            return;
-        };
-
+    async fn wait_for_progress_since(&self, completed: u64) {
         loop {
             let progress = self.progress.notified();
             if self.has_progress_since(completed) {
@@ -1368,9 +1374,10 @@ mod tests {
         let queue = PacketQueue::new();
         queue.submit(1, ScheduledPacketExecution::PlayerLocal, "before cutoff");
         queue.open();
-        let Some(before_sequence) = queue.begin_tick_drain() else {
+        let Some((before_sequence, should_wake)) = queue.begin_tick_drain() else {
             panic!("running queue should begin a tick drain");
         };
+        assert!(should_wake);
         queue.submit(2, ScheduledPacketExecution::PlayerLocal, "after cutoff");
 
         let Some(mut before) = queue.try_next() else {
@@ -1400,9 +1407,10 @@ mod tests {
         let Some(active_local) = queue.try_next() else {
             panic!("player-local packet should start before draining");
         };
-        let Some(before_sequence) = queue.begin_tick_drain() else {
+        let Some((before_sequence, should_wake)) = queue.begin_tick_drain() else {
             panic!("running queue should begin a tick drain");
         };
+        assert!(!should_wake);
         queue.submit(
             3,
             ScheduledPacketExecution::Serialized,
@@ -1482,15 +1490,20 @@ mod tests {
         let Some(work) = queue.try_next() else {
             panic!("open packet phase should start queued work");
         };
+        let Some(completed) = queue.progress_baseline() else {
+            panic!("active packet work should require progress");
+        };
+        let progress = queue.wait_for_progress_since(completed);
+        tokio::pin!(progress);
 
         assert!(
-            timeout(Duration::from_millis(10), queue.wait_for_progress())
+            timeout(Duration::from_millis(10), progress.as_mut())
                 .await
                 .is_err()
         );
         drop(work);
         assert!(
-            timeout(Duration::from_secs(1), queue.wait_for_progress())
+            timeout(Duration::from_secs(1), progress.as_mut())
                 .await
                 .is_ok()
         );

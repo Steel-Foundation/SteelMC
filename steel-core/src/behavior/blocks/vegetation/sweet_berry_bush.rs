@@ -79,10 +79,6 @@ impl BlockBehavior for SweetBerryBushBlock {
         vegetation_can_survive(self, state, world, pos)
     }
 
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        state.get_value(&BlockStateProperties::AGE_3) < 3
-    }
-
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let age = state.get_value(&BlockStateProperties::AGE_3);
         if age >= 3 || rand::random_range(0..5) != 0 || world.raw_brightness(pos.above(), 0) < 9 {

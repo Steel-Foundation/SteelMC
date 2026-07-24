@@ -96,8 +96,8 @@ impl<V: Hash + Eq + Copy, const DIM: usize> HeterogeneousPalette<V, DIM> {
 ///
 /// `Building` is a transient mode used during worldgen: it's a raw cube without
 /// palette tracking, so writes are O(1) stores. Must be finalized via
-/// [`Self::finalize_building`] (or implicitly by [`Self::recalculate_counts_with`]
-/// on the parent section) before any serialization or paletted access. Mirrors
+/// [`Self::finalize_building`] (or implicitly when the parent section recalculates
+/// its counters) before any serialization or paletted access. Mirrors
 /// `FastNoise`'s `FastChunkSection` write-only fill mode.
 #[derive(Debug, Clone)]
 pub enum PalettedContainer<V: Hash + Eq + Copy + Default, const DIM: usize> {

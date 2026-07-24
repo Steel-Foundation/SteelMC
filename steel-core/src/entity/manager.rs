@@ -417,6 +417,15 @@ impl WorldEntityManager {
         }
     }
 
+    /// Returns whether runtime entity ownership for this chunk is loaded.
+    ///
+    /// This is Vanilla's separate `areEntitiesLoaded` gate used by block-entity
+    /// ticking; it is intentionally not the stricter entity-ticking visibility.
+    #[must_use]
+    pub(crate) fn is_chunk_loaded(&self, pos: ChunkPos) -> bool {
+        self.state.read().chunk_visibility.contains_key(&pos)
+    }
+
     /// Marks a chunk as loaded and reactivates retained unloading entities.
     pub fn on_chunk_loaded(&self, pos: ChunkPos) -> ChunkEntityLoadResult {
         let mut state = self.state.write();

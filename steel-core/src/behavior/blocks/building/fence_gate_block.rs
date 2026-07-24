@@ -2,10 +2,8 @@
 //!
 //! Vanilla equivalent: `FenceGateBlock` + `HorizontalDirectionalBlock`.
 //!
-//! Fence gates open/close on use, sit flush in walls (`IN_WALL`), and in vanilla
-//! also react to redstone (`POWERED`/`OPEN` driven by `Level.hasNeighborSignal`).
-//! Steel has no neighbor-signal/redstone foundation yet, so the redstone-driven
-//! paths are left as `// TODO:` rather than faked — every other behavior is 1:1.
+//! Fence gates open/close on use, sit flush in walls (`IN_WALL`), and react to
+//! redstone (`POWERED`/`OPEN` driven by `Level.hasNeighborSignal`).
 
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
@@ -14,7 +12,7 @@ use crate::entity::Entity;
 use crate::entity::ai::path::PathComputationType;
 use crate::player::Player;
 use crate::world::game_event_context::GameEventContext;
-use crate::world::{ScheduledTickAccess, World};
+use crate::world::{ScheduledTickAccess, SignalGetter as _, World};
 use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
@@ -99,9 +97,7 @@ impl BlockBehavior for FenceGateBlock {
             Axis::Y => false,
         };
 
-        // TODO: vanilla sets OPEN/POWERED from level.hasNeighborSignal(pos);
-        // blocked on the redstone neighbor-signal foundation. Default closed.
-        let is_open = false;
+        let is_open = world.has_neighbor_signal(pos);
 
         Some(
             self.block
@@ -178,10 +174,92 @@ impl BlockBehavior for FenceGateBlock {
         InteractionResult::Success
     }
 
+    fn handle_neighbor_changed(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        _source_block: BlockRef,
+        _moved_by_piston: bool,
+    ) {
+        let has_power = world.has_neighbor_signal(pos);
+        if state.get_value(&POWERED) == has_power {
+            return;
+        }
+
+        world.set_block(
+            pos,
+            state
+                .set_value(&POWERED, has_power)
+                .set_value(&OPEN, has_power),
+            UpdateFlags::UPDATE_CLIENTS,
+        );
+        if state.get_value(&OPEN) == has_power {
+            return;
+        }
+
+        let sound = if has_power {
+            self.sound_open
+        } else {
+            self.sound_close
+        };
+        let pitch = rand::random::<f32>() * 0.1 + 0.9;
+        world.play_block_sound(sound, pos, 1.0, pitch, None);
+        let event = if has_power {
+            &vanilla_game_events::BLOCK_OPEN
+        } else {
+            &vanilla_game_events::BLOCK_CLOSE
+        };
+        world.game_event(event, pos, &GameEventContext::default());
+    }
+
     fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
         match computation_type {
             PathComputationType::Land | PathComputationType::Air => state.get_value(&OPEN),
             PathComputationType::Water => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::{
+        blocks::properties::BlockStateProperties, test_support::init_test_registry, vanilla_blocks,
+    };
+    use steel_utils::{ChunkPos, types::UpdateFlags};
+
+    use super::*;
+    use crate::{
+        behavior::init_behaviors,
+        test_support::{fresh_test_world, insert_ready_full_chunk},
+    };
+
+    #[test]
+    fn redstone_power_opens_and_closes_fence_gate() {
+        init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("fence_gate_redstone");
+        let pos = BlockPos::new(8, 64, 8);
+        let power_pos = pos.west();
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::OAK_FENCE_GATE.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+
+        assert!(world.set_block(
+            power_pos,
+            vanilla_blocks::REDSTONE_BLOCK.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        let powered = world.get_block_state(pos);
+        assert!(powered.get_value(&BlockStateProperties::POWERED));
+        assert!(powered.get_value(&BlockStateProperties::OPEN));
+
+        assert!(world.remove_block(power_pos, false));
+        let unpowered = world.get_block_state(pos);
+        assert!(!unpowered.get_value(&BlockStateProperties::POWERED));
+        assert!(!unpowered.get_value(&BlockStateProperties::OPEN));
     }
 }
