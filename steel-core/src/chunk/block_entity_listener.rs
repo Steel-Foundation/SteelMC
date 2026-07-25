@@ -6,7 +6,7 @@ use rustc_hash::FxHashMap;
 use steel_utils::{BlockPos, SectionPos, locks::SyncMutex};
 
 use crate::block_entity::SharedBlockEntity;
-use crate::world::game_event_listener::{
+use crate::world::game_event::{
     GameEventListenerCount, GameEventListenerStorage, SharedGameEventListener,
 };
 

@@ -38,8 +38,4 @@ pub use set::{
 pub use subject::{PermissionSubjectIndex, PermissionSubjectState};
 
 #[cfg(test)]
-mod group_tests;
-#[cfg(test)]
-mod manager_tests;
-#[cfg(test)]
 mod tests;

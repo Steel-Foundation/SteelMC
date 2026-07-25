@@ -23,7 +23,7 @@ use crate::{
     entity::Entity,
     level_data::RespawnData,
     player::{Player, PlayerRespawnConfig},
-    world::{LevelReader, World, game_event_context::GameEventContext},
+    world::{LevelReader, World, game_event::GameEventContext},
 };
 
 /// Vanilla respawn anchor

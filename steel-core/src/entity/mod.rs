@@ -71,7 +71,7 @@ use crate::physics::{
     COLLISION_EPSILON, CollisionWorld, EntityPhysicsState, MoveResult, MoverType,
     WorldCollisionProvider, move_entity as resolve_entity_movement,
 };
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, LevelReader, World};
 use crate::{enchantment_helper, entity::damage::DamageSource, player::Player};
 
@@ -756,7 +756,6 @@ mod mob;
 mod movement_sync;
 pub mod projectile;
 mod registry;
-mod shared_flags;
 mod spawn;
 mod storage;
 mod synced_data;
@@ -815,7 +814,6 @@ pub use projectile::{
 #[cfg(test)]
 pub(crate) use registry::init_test_entities;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
-pub(crate) use shared_flags::EntitySharedFlags;
 pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, SpawnGroupData};
 pub(crate) use storage::EntityStorage;
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
