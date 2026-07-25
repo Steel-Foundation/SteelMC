@@ -72,7 +72,7 @@ impl BlockBehavior for SnowLayerBlock {
         survival_update_shape(self, state, world, pos)
     }
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if world.brightness(LightLayer::Block, pos) > 11 {
+        if world.light_value_at(LightLayer::Block, pos) > 11 {
             world.drop_resources(state, pos);
             world.set_block(
                 pos,
