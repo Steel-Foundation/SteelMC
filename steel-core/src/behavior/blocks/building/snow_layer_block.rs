@@ -1,23 +1,20 @@
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
-use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
-use steel_registry::blocks::shapes;
+use steel_registry::blocks::{BlockRef, shapes};
 use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
-use crate::behavior::blocks::vegetation::vegetation_block::survival_update_shape;
 use crate::behavior::context::BlockPlaceContext;
 use crate::chunk::light::LightLayer;
 use crate::entity::ai::path::PathComputationType;
 use crate::fluid::fluid_state_to_block;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
-
-use super::BlockRef;
 
 /// Vanilla `SnowLayerBlock` survival.
 ///
@@ -69,7 +66,11 @@ impl BlockBehavior for SnowLayerBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        survival_update_shape(self, state, world, pos)
+        if self.can_survive(state, world, pos) {
+            state
+        } else {
+            vanilla_blocks::AIR.default_state()
+        }
     }
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if world.light_value_at(LightLayer::Block, pos) > 11 {
