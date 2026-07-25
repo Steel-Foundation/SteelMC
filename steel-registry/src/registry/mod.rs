@@ -96,6 +96,7 @@ use std::{
     sync::{Once, OnceLock},
 };
 use steel_utils::Identifier;
+use crate::custom_stat::CustomStatRegistry;
 
 pub struct RegistryLock(OnceLock<Registry>);
 
@@ -222,6 +223,7 @@ pub const PLACED_FEATURE_REGISTRY: Identifier =
 pub const STRUCTURE_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/structure");
 pub const STRUCTURE_PROCESSOR_LIST_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/processor_list");
+pub const CUSTOM_STAT_REGISTRY: Identifier = Identifier::vanilla_static("custom_stat");
 
 pub struct Registry {
     pub attributes: AttributeRegistry,
@@ -279,6 +281,7 @@ pub struct Registry {
     pub placed_features: PlacedFeatureRegistry,
     pub structures: StructureRegistry,
     pub structure_processors: StructureProcessorListRegistry,
+    pub custom_stats: CustomStatRegistry
 }
 
 impl Debug for Registry {
@@ -725,6 +728,7 @@ impl Registry {
             placed_features: PlacedFeatureRegistry::new(),
             structures: StructureRegistry::new(),
             structure_processors: StructureProcessorListRegistry::new(),
+            custom_stats: CustomStatRegistry::new(),
         }
     }
 }

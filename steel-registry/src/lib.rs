@@ -41,6 +41,7 @@ pub mod chicken_variant;
 pub mod consume_effect;
 pub mod cow_sound_variant;
 pub mod cow_variant;
+pub mod custom_stat;
 pub mod damage_type;
 pub mod data_component_predicate;
 pub mod data_components;
@@ -476,3 +477,8 @@ pub mod vanilla_configured_features;
 #[rustfmt::skip]
 #[path = "generated/vanilla_placed_features.rs"]
 pub mod vanilla_placed_features;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_custom_stats.rs"]
+pub mod vanilla_custom_stats;
