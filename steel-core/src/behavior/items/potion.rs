@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
+use crate::world::game_event::GameEventContext;
 use glam::DVec3;
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
