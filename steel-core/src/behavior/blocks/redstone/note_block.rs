@@ -18,7 +18,7 @@ use crate::behavior::{
 };
 use crate::entity::Entity;
 use crate::player::Player;
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, ScheduledTickAccess, SignalGetter as _, World};
 
 const NOTE_VOLUME: f32 = 3.0;

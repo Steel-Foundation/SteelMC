@@ -705,7 +705,7 @@ impl ProtoChunk {
         };
 
         let mut heightmaps = self.heightmaps.write();
-        heightmaps.prime(heightmap_types, min_y, height, get_block);
+        heightmaps.prime_from_sections(heightmap_types, min_y, height, &sections.sections);
 
         for &hm_type in heightmap_types {
             if let Some(heightmap) = heightmaps.get_mut(hm_type) {
@@ -739,7 +739,7 @@ impl ProtoChunk {
         };
 
         let mut heightmaps = self.heightmaps.write();
-        heightmaps.prime(heightmap_types, min_y, height, get_block);
+        heightmaps.prime_from_sections(heightmap_types, min_y, height, &sections.sections);
 
         for &(relative_y, state) in relative_writes {
             let y = min_y + relative_y as i32;

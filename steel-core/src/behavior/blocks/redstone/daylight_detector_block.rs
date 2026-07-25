@@ -19,7 +19,7 @@ use crate::behavior::{
 };
 use crate::block_entity::{BlockEntityTicker, entities::DaylightDetectorBlockEntity};
 use crate::player::Player;
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, SignalQueryContext, World};
 
 // `(float) (Math.PI / 180.0)` in vanilla.

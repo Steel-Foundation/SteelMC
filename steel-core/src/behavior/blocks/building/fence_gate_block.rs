@@ -11,7 +11,7 @@ use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionRes
 use crate::entity::Entity;
 use crate::entity::ai::path::PathComputationType;
 use crate::player::Player;
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 use crate::world::{ScheduledTickAccess, SignalGetter as _, World};
 use std::sync::Arc;
 use steel_macros::block_behavior;

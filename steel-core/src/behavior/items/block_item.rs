@@ -11,7 +11,7 @@ use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContex
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 use crate::entity::Entity;
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 
 /// Behavior for items that place blocks.
 #[item_behavior]

@@ -28,7 +28,7 @@ use crate::{
     player,
     world::{
         ClipHitResult, LevelAccessor, LevelReader, ScheduledTickAccess, World,
-        game_event_context::GameEventContext,
+        game_event::GameEventContext,
     },
 };
 
