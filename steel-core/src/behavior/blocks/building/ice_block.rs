@@ -98,7 +98,7 @@ impl BlockBehavior for IceBlock {
         }
     }
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if world.get_brightness(LightLayer::Block, pos) > 11 - state.get_light_dampening() {
+        if world.light_value_at(LightLayer::Block, pos) > 11 - state.get_light_dampening() {
             Self::melt(state, world, pos);
         }
     }
