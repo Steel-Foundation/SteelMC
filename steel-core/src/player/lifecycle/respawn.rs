@@ -56,8 +56,7 @@ struct DeathRespawnSpawn {
 struct PlayerRespawnJob {
     player: Arc<Player>,
     source_world: Arc<World>,
-    fallback_world: Arc<World>,
-    fallback_respawn_data: RespawnData,
+    fallback_respawn: Option<(Arc<World>, RespawnData)>,
     target_world: Arc<World>,
     rotation: (f32, f32),
     missing_respawn_block: bool,
@@ -89,7 +88,7 @@ impl PlayerRespawnJob {
         kind: RespawnRequestKind,
     ) -> Result<Self, String> {
         let fallback_rotation = (fallback_respawn_data.yaw, fallback_respawn_data.pitch);
-        let (target_world, rotation, phase) =
+        let (target_world, rotation, phase, fallback_respawn) =
             if let Some((personal_world, config)) = personal_respawn {
                 let pos = config.respawn_data.pos();
                 let request = Self::request_personal_respawn_chunks(&personal_world, pos);
@@ -97,6 +96,7 @@ impl PlayerRespawnJob {
                     personal_world,
                     (config.respawn_data.yaw, config.respawn_data.pitch),
                     PlayerRespawnJobPhase::LoadingPersonalRespawnBlock { config, request },
+                    Some((fallback_world, fallback_respawn_data)),
                 )
             } else {
                 let fallback_search = PlayerSpawnSearch::new(
@@ -105,16 +105,16 @@ impl PlayerRespawnJob {
                     fallback_world.default_gamemode,
                 )?;
                 (
-                    Arc::clone(&fallback_world),
+                    fallback_world,
                     fallback_rotation,
                     PlayerRespawnJobPhase::Searching(fallback_search),
+                    None,
                 )
             };
         Ok(Self {
             player,
             source_world,
-            fallback_world,
-            fallback_respawn_data,
+            fallback_respawn,
             target_world,
             rotation,
             missing_respawn_block: false,
@@ -194,10 +194,16 @@ impl ServerJob for PlayerRespawnJob {
                         return JobPoll::Finished;
                     }
 
+                    let Some((fallback_world, fallback_respawn_data)) =
+                        self.fallback_respawn.take()
+                    else {
+                        self.player.finish_respawn_request();
+                        return JobPoll::Finished;
+                    };
                     let fallback_search = match PlayerSpawnSearch::new(
-                        &self.fallback_world,
-                        self.fallback_respawn_data.pos(),
-                        self.fallback_world.default_gamemode,
+                        &fallback_world,
+                        fallback_respawn_data.pos(),
+                        fallback_world.default_gamemode,
                     ) {
                         Ok(search) => search,
                         Err(error) => {
@@ -209,11 +215,8 @@ impl ServerJob for PlayerRespawnJob {
                             return JobPoll::Finished;
                         }
                     };
-                    self.target_world = Arc::clone(&self.fallback_world);
-                    self.rotation = (
-                        self.fallback_respawn_data.yaw,
-                        self.fallback_respawn_data.pitch,
-                    );
+                    self.target_world = fallback_world;
+                    self.rotation = (fallback_respawn_data.yaw, fallback_respawn_data.pitch);
                     self.missing_respawn_block = true;
                     self.phase = PlayerRespawnJobPhase::Searching(fallback_search);
                 }
@@ -702,7 +705,7 @@ mod tests {
         );
 
         assert_eq!(
-            PlayerRespawnJob::personal_respawn_chunk_positions(BlockPos::new(15, 64, 15)),
+            PlayerRespawnJob::personal_respawn_chunk_positions(BlockPos::new(13, 64, 13)),
             [
                 ChunkPos::new(0, 0),
                 ChunkPos::new(0, 1),

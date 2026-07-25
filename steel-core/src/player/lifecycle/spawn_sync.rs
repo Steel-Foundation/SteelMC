@@ -68,7 +68,7 @@ impl Player {
             *chunk_send_epoch = chunk_send_epoch.wrapping_add(1);
         }
         *self.chunk_sender.lock() = ChunkSender::default();
-        *self.last_tracking_view.lock() = None;
+        // Same-world respawn still needs this view to remove its old player ticket.
         *self.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
 
         restore_state();

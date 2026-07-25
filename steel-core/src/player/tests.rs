@@ -195,6 +195,21 @@ fn end_credits_respawn_keeps_vanilla_attribute_data_only() {
 }
 
 #[test]
+fn same_world_reset_preserves_chunk_view_until_old_ticket_is_removed() {
+    init_test_registry();
+    init_behaviors();
+    let world = fresh_test_world("same_world_respawn_chunk_ticket");
+    let player = test_player(Arc::clone(&world));
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    assert!(player.last_tracking_view.lock().is_some());
+
+    player.reset(Arc::clone(&world), ResetReason::Respawn);
+
+    assert!(player.last_tracking_view.lock().is_some());
+    world.remove_player_for_world_change(&player);
+}
+
+#[test]
 fn disabled_damage_game_rule_matches_vanilla_player_damage_gates() {
     init_test_registry();
 
