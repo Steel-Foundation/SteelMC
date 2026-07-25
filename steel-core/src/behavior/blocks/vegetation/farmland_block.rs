@@ -15,7 +15,7 @@ use crate::behavior::block::{
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::world::World;
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 
 /// Maximum moisture level for farmland.
 const MAX_MOISTURE: u8 = 7;

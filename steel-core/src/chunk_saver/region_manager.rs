@@ -15,6 +15,7 @@ use steel_utils::{ChunkPos, locks::AsyncRwLock};
 use tokio::{
     fs::{self, File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
+    sync::oneshot,
 };
 
 use crate::chunk::chunk_access::ChunkStatus;
@@ -331,6 +332,7 @@ impl RegionManager {
         min_y: i32,
         height: i32,
         level: Weak<World>,
+        thread_pool: &rayon::ThreadPool,
     ) -> io::Result<Option<LoadedChunk>> {
         let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
         let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
@@ -358,22 +360,45 @@ impl RegionManager {
             (compressed, entry.status)
         };
 
-        // Decompress
-        let data = zstd::decode_all(&compressed[..])?;
+        // Keep CPU-heavy decoding off the async runtime. Awaiting the Rayon
+        // handoff also lets the region-lock waiter woken above make progress.
+        let (sender, receiver) = oneshot::channel();
+        thread_pool.spawn(move || {
+            let result = Self::decode_chunk(compressed, pos, status, min_y, height, level);
+            if sender.send(result).is_err() {
+                tracing::trace!(
+                    chunk = ?pos,
+                    "Discarding decoded chunk after its load task was canceled"
+                );
+            }
+        });
 
-        // Deserialize
+        receiver
+            .await
+            .map_err(|_| io::Error::other("chunk decode task ended without returning a result"))?
+            .map(Some)
+    }
+
+    fn decode_chunk(
+        compressed: Vec<u8>,
+        pos: ChunkPos,
+        status: ChunkStatus,
+        min_y: i32,
+        height: i32,
+        level: Weak<World>,
+    ) -> io::Result<LoadedChunk> {
+        let data = zstd::decode_all(&compressed[..])?;
         let persistent: PersistentChunk<'_> = wincode::deserialize(&data)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
-        // Convert to runtime format (persistent is dropped after this - no duplication!)
-        Ok(Some(ChunkStorage::persistent_to_chunk(
+        Ok(ChunkStorage::persistent_to_chunk(
             &persistent,
             pos,
             status,
             min_y,
             height,
             level,
-        )))
+        ))
     }
 
     /// Acquires a chunk, incrementing the region's reference count.

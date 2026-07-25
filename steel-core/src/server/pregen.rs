@@ -263,26 +263,47 @@ fn build_pregen_windows(center_chunk: ChunkPos, radius: i32) -> VecDeque<PregenW
     let max_x = center_chunk.0.x + radius;
     let min_z = center_chunk.0.y - radius;
     let max_z = center_chunk.0.y + radius;
+    let x_ranges = pregen_window_ranges(min_x, max_x);
+    let z_ranges = pregen_window_ranges(min_z, max_z);
     let mut windows = VecDeque::new();
 
-    let mut z = min_z;
-    while z <= max_z {
-        let window_max_z = (z + PREGEN_WINDOW_SIZE - 1).min(max_z);
-        let mut x = min_x;
-        while x <= max_x {
-            let window_max_x = (x + PREGEN_WINDOW_SIZE - 1).min(max_x);
-            windows.push_back(PregenWindow {
-                min_x: x,
-                max_x: window_max_x,
-                min_z: z,
-                max_z: window_max_z,
-            });
-            x = window_max_x + 1;
+    // A two-row serpentine keeps the bounded active set spatially local while
+    // reusing one of every two dependency boundaries between window rows.
+    for (strip_index, z_pair) in z_ranges.chunks(2).enumerate() {
+        let mut push_column = |&(window_min_x, window_max_x): &(i32, i32)| {
+            for &(window_min_z, window_max_z) in z_pair {
+                windows.push_back(PregenWindow {
+                    min_x: window_min_x,
+                    max_x: window_max_x,
+                    min_z: window_min_z,
+                    max_z: window_max_z,
+                });
+            }
+        };
+
+        if strip_index % 2 == 0 {
+            for x_range in &x_ranges {
+                push_column(x_range);
+            }
+        } else {
+            for x_range in x_ranges.iter().rev() {
+                push_column(x_range);
+            }
         }
-        z = window_max_z + 1;
     }
 
     windows
+}
+
+fn pregen_window_ranges(min: i32, max: i32) -> Vec<(i32, i32)> {
+    let mut ranges = Vec::new();
+    let mut start = min;
+    while start <= max {
+        let end = (start + PREGEN_WINDOW_SIZE - 1).min(max);
+        ranges.push((start, end));
+        start = end + 1;
+    }
+    ranges
 }
 
 async fn generate_pregen(
@@ -503,5 +524,26 @@ mod tests {
     #[test]
     fn pregen_size_rejects_negative_side_lengths() {
         assert!(PregenSize::from_side_length(-1).is_err());
+    }
+
+    #[test]
+    fn pregen_window_order_keeps_consecutive_dependency_areas_local() {
+        let radius = PREGEN_WINDOW_SIZE * 2;
+        let windows = build_pregen_windows(ChunkPos::new(0, 0), radius);
+
+        assert_eq!(windows.len(), 25);
+        assert_eq!(
+            windows
+                .iter()
+                .map(|window| window.chunk_count())
+                .sum::<usize>(),
+            total_chunks(radius * 2 + 1)
+        );
+        assert!(
+            windows
+                .iter()
+                .zip(windows.iter().skip(1))
+                .all(|(current, next)| current.protected_rect().overlaps(next.protected_rect()))
+        );
     }
 }

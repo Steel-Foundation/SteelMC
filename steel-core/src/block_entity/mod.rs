@@ -53,7 +53,7 @@ use crate::inventory::lock::ContainerRef;
 use crate::player::Player;
 
 use crate::world::World;
-use crate::world::game_event_listener::SharedGameEventListener;
+use crate::world::game_event::SharedGameEventListener;
 
 /// Erased block-state-selected ticker for one concrete block-entity type.
 ///

@@ -20,7 +20,7 @@ use crate::behavior::{InteractionResult, InventoryAccess};
 use crate::behavior::{block::BlockBehavior, blocks::vegetation::bonemealable::Bonemealable};
 use crate::entity::{Entity, entity_loot_ref};
 use crate::player::Player;
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::BlockRef;

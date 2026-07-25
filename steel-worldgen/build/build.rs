@@ -7,10 +7,8 @@
 use std::{env, fs, io, path::Path, process::Command};
 
 mod density;
-mod density_functions;
 mod multi_noise;
 mod noise_parameters;
-mod surface_rules;
 
 const FMT: bool = cfg!(feature = "fmt");
 
@@ -42,7 +40,7 @@ pub fn main() {
         panic!("failed to rustfmt generated worldgen files: {err}");
     }
 
-    let df = density_functions::build();
+    let df = density::build();
     let df_dir = out_dir.join("vanilla_density_functions");
     fs::create_dir_all(&df_dir).expect("failed to create generated density function directory");
 
