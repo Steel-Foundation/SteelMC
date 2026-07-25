@@ -21,6 +21,8 @@ pub struct IceBlock {
     block: BlockRef,
 }
 
+const BASE_MELT_LIGHT_LEVEL: u8 = 11;
+
 impl IceBlock {
     /// Creates an ice block behavior.
     #[must_use]
@@ -98,7 +100,9 @@ impl BlockBehavior for IceBlock {
         }
     }
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if world.light_value_at(LightLayer::Block, pos) > 11 - state.get_light_dampening() {
+        if world.light_value_at(LightLayer::Block, pos)
+            > BASE_MELT_LIGHT_LEVEL - state.get_light_dampening()
+        {
             Self::melt(state, world, pos);
         }
     }
