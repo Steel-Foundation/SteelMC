@@ -19,7 +19,7 @@ use crate::{
     player::{
         Player,
         connection::NetworkConnection,
-        networking::{ScheduledPacketExecution, ScheduledPlayPacket},
+        connection::{ScheduledPacketExecution, ScheduledPlayPacket},
     },
 };
 

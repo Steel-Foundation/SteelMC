@@ -23,8 +23,7 @@ use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionRes
 use crate::entity::{Entity, InsideBlockEffectCollector, SharedEntity};
 use crate::player::Player;
 use crate::world::{
-    LevelReader, ScheduledTickAccess, SignalQueryContext, World,
-    game_event_context::GameEventContext,
+    LevelReader, ScheduledTickAccess, SignalQueryContext, World, game_event::GameEventContext,
 };
 
 /// Behavior for all button block variants.

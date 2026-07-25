@@ -28,7 +28,7 @@ use steel_registry::vanilla_items;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 
 /// Handles all bucket variants (empty, water, lava).
 #[item_behavior]

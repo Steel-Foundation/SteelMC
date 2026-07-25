@@ -2664,7 +2664,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "steel"
-version = "0.15.0+mc26.2"
+version = "0.15.1+mc26.2"
 dependencies = [
  "chrono",
  "crossterm",
@@ -2694,7 +2694,7 @@ dependencies = [
 
 [[package]]
 name = "steel-core"
-version = "0.15.0+mc26.2"
+version = "0.15.1+mc26.2"
 dependencies = [
  "arc-swap",
  "bitflags",
@@ -2745,7 +2745,7 @@ dependencies = [
 
 [[package]]
 name = "steel-crypto"
-version = "0.15.0+mc26.2"
+version = "0.15.1+mc26.2"
 dependencies = [
  "log",
  "rand 0.10.2",
@@ -2755,7 +2755,7 @@ dependencies = [
 
 [[package]]
 name = "steel-login"
-version = "0.15.0+mc26.2"
+version = "0.15.1+mc26.2"
 dependencies = [
  "base64 0.23.0",
  "crossbeam",
@@ -2779,7 +2779,7 @@ dependencies = [
 
 [[package]]
 name = "steel-macros"
-version = "0.15.0+mc26.2"
+version = "0.15.1+mc26.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2788,11 +2788,11 @@ dependencies = [
 
 [[package]]
 name = "steel-math"
-version = "0.15.0+mc26.2"
+version = "0.15.1+mc26.2"
 
 [[package]]
 name = "steel-protocol"
-version = "0.15.0+mc26.2"
+version = "0.15.1+mc26.2"
 dependencies = [
  "aes",
  "cfb8",
@@ -2815,7 +2815,7 @@ dependencies = [
 
 [[package]]
 name = "steel-registry"
-version = "0.15.0+mc26.2"
+version = "0.15.1+mc26.2"
 dependencies = [
  "flate2",
  "glam",
@@ -2836,7 +2836,7 @@ dependencies = [
 
 [[package]]
 name = "steel-utils"
-version = "0.15.0+mc26.2"
+version = "0.15.1+mc26.2"
 dependencies = [
  "bitflags",
  "crc32c",
@@ -2871,7 +2871,7 @@ dependencies = [
 
 [[package]]
 name = "steel-worldgen"
-version = "0.15.0+mc26.2"
+version = "0.15.1+mc26.2"
 dependencies = [
  "criterion",
  "glam",
@@ -3048,9 +3048,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.51.0"
+version = "1.53.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bd1c4c0fc4a7ab90fc15ef6daaa3ec3b893f004f915f2392557ed23237820cd"
+checksum = "202caea871b69668250d242070849eb495be178ed697a3e98aebce5bc81a0bed"
 dependencies = [
  "bytes",
  "libc",

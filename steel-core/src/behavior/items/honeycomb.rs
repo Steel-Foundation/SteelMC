@@ -11,7 +11,7 @@ use crate::{
     },
     block_entity::{BlockEntity, entities::SignBlockEntity},
     entity::Entity,
-    world::game_event_context::GameEventContext,
+    world::game_event::GameEventContext,
 };
 
 use super::copper_chest_events::emit_connected_chest_block_change;

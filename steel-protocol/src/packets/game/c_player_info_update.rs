@@ -6,7 +6,7 @@ use text_components::TextComponent;
 use uuid::Uuid;
 
 // Import RemoteChatSessionData for chat session transmission
-use super::chat_session_data::ProtocolRemoteChatSessionData;
+use super::ProtocolRemoteChatSessionData;
 use crate::packets::login::GameProfileProperty;
 
 /// Actions for the player info update packet.

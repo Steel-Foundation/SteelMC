@@ -14,7 +14,7 @@ use std::{
 use crossbeam::atomic::AtomicCell;
 use steel_core::player::{
     ClientInformation, GameProfile, PlayerConnection,
-    networking::{JavaNetworkWriter, OutboundPacket},
+    connection::{JavaNetworkWriter, OutboundPacket},
 };
 use steel_core::server::Server;
 use steel_protocol::{
