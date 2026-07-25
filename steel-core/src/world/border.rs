@@ -455,6 +455,177 @@ fn clamp_f64(value: f64, min: f64, max: f64) -> f64 {
     }
 }
 
+use super::{
+    CInitializeBorder, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize,
+    CSetBorderWarningDelay, CSetBorderWarningDistance, HeightmapType, RespawnData, World,
+    initialize_border_packet,
+};
+
+impl World {
+    #[must_use]
+    pub(crate) fn world_border_snapshot(&self) -> WorldBorderSnapshot {
+        self.world_border.lock().snapshot()
+    }
+
+    /// Returns whether a block position is inside this world's vanilla world border.
+    #[must_use]
+    pub fn is_block_within_world_border(&self, pos: BlockPos) -> bool {
+        self.world_border_snapshot().is_block_within_bounds(pos)
+    }
+
+    /// Clamps a world-space position to this world's vanilla world border and floors it to a block position.
+    #[must_use]
+    pub fn clamp_to_world_border(&self, x: f64, y: f64, z: f64) -> BlockPos {
+        self.world_border_snapshot().clamp_to_bounds(x, y, z)
+    }
+
+    #[must_use]
+    pub(crate) fn initialize_border_packet(&self) -> CInitializeBorder {
+        initialize_border_packet(self.world_border_snapshot())
+    }
+
+    #[must_use]
+    pub(crate) fn world_border_adjusted_respawn_data(
+        &self,
+        respawn_data: RespawnData,
+    ) -> RespawnData {
+        let pos = respawn_data.pos();
+        if self.is_block_within_world_border(pos) {
+            return respawn_data;
+        }
+
+        let border = self.world_border_snapshot();
+        let center_pos = BlockPos::containing(border.center_x, 0.0, border.center_z);
+        let new_pos = self.heightmap_pos(HeightmapType::MotionBlocking, center_pos);
+        RespawnData::of(
+            respawn_data.dimension().clone(),
+            new_pos,
+            respawn_data.yaw,
+            respawn_data.pitch,
+        )
+    }
+
+    /// Sets the world border center and broadcasts the vanilla center update packet.
+    pub fn set_world_border_center(&self, x: f64, z: f64) -> Result<(), WorldBorderError> {
+        let (snapshot, data) = {
+            let mut border = self.world_border.lock();
+            border.set_center(x, z)?;
+            (border.snapshot(), border.to_data())
+        };
+        self.store_world_border_data_if_changed(data);
+        self.broadcast_to_all(CSetBorderCenter {
+            new_center_x: snapshot.center_x,
+            new_center_z: snapshot.center_z,
+        });
+        Ok(())
+    }
+
+    /// Sets a static world border size and broadcasts the vanilla size update packet.
+    pub fn set_world_border_size(&self, size: f64) -> Result<(), WorldBorderError> {
+        let (snapshot, data) = {
+            let mut border = self.world_border.lock();
+            border.set_size(size)?;
+            (border.snapshot(), border.to_data())
+        };
+        self.store_world_border_data_if_changed(data);
+        self.broadcast_to_all(CSetBorderSize {
+            size: snapshot.new_size,
+        });
+        Ok(())
+    }
+
+    /// Starts a vanilla world border size lerp and broadcasts the lerp update packet.
+    pub fn lerp_world_border_size_between(
+        &self,
+        from: f64,
+        to: f64,
+        ticks: i64,
+    ) -> Result<(), WorldBorderError> {
+        let (snapshot, data) = {
+            let mut border = self.world_border.lock();
+            border.lerp_size_between(from, to, ticks)?;
+            (border.snapshot(), border.to_data())
+        };
+        self.store_world_border_data_if_changed(data);
+        self.broadcast_to_all(CSetBorderLerpSize {
+            old_size: snapshot.old_size,
+            new_size: snapshot.new_size,
+            lerp_time: snapshot.lerp_time,
+        });
+        Ok(())
+    }
+
+    /// Sets the client warning time and broadcasts the vanilla warning-delay packet.
+    pub fn set_world_border_warning_time(&self, warning_time: i32) {
+        let data = {
+            let mut border = self.world_border.lock();
+            border.set_warning_time(warning_time);
+            border.to_data()
+        };
+        self.store_world_border_data_if_changed(data);
+        self.broadcast_to_all(CSetBorderWarningDelay {
+            warning_delay: warning_time,
+        });
+    }
+
+    /// Sets the client warning distance and broadcasts the vanilla warning-distance packet.
+    pub fn set_world_border_warning_blocks(&self, warning_blocks: i32) {
+        let data = {
+            let mut border = self.world_border.lock();
+            border.set_warning_blocks(warning_blocks);
+            border.to_data()
+        };
+        self.store_world_border_data_if_changed(data);
+        self.broadcast_to_all(CSetBorderWarningDistance { warning_blocks });
+    }
+
+    /// Sets world border damage per block outside the safe zone.
+    pub fn set_world_border_damage_per_block(
+        &self,
+        damage_per_block: f64,
+    ) -> Result<(), WorldBorderError> {
+        let data = {
+            let mut border = self.world_border.lock();
+            border.set_damage_per_block(damage_per_block)?;
+            border.to_data()
+        };
+        self.store_world_border_data_if_changed(data);
+        Ok(())
+    }
+
+    /// Sets the safe distance outside the world border before damage starts.
+    pub fn set_world_border_safe_zone(&self, safe_zone: f64) -> Result<(), WorldBorderError> {
+        let data = {
+            let mut border = self.world_border.lock();
+            border.set_safe_zone(safe_zone)?;
+            border.to_data()
+        };
+        self.store_world_border_data_if_changed(data);
+        Ok(())
+    }
+
+    pub(super) fn tick_world_border(&self) {
+        let data = {
+            let mut border = self.world_border.lock();
+            border.tick();
+            border.to_data()
+        };
+        self.store_world_border_data_if_changed(data);
+    }
+
+    pub(super) fn sync_world_border_to_level_data(&self) {
+        let data = self.world_border.lock().to_data();
+        self.store_world_border_data_if_changed(data);
+    }
+
+    pub(super) fn store_world_border_data_if_changed(&self, data: WorldBorderData) {
+        let mut level_data = self.level_data.write();
+        if level_data.data().world_border != data {
+            level_data.data_mut().world_border = data;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

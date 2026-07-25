@@ -12,8 +12,7 @@ use crate::{
     behavior::{BlockBehavior, BlockPlaceContext, block::schedule_placed_liquid_tick},
     entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, projectile::Projectile},
     world::{
-        ClipHitResult, LevelAccessor, ScheduledTickAccess, World,
-        game_event_context::GameEventContext,
+        ClipHitResult, LevelAccessor, ScheduledTickAccess, World, game_event::GameEventContext,
     },
 };
 

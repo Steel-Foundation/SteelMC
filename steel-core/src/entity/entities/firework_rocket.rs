@@ -32,7 +32,7 @@ use crate::entity::{
     RemovalReason, SharedEntity,
 };
 use crate::physics::MoverType;
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
 
 const INITIAL_VERTICAL_VELOCITY: f64 = 0.05;

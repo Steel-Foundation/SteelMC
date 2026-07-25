@@ -6,7 +6,7 @@ use steel_utils::{BoundingBox, ChunkPos};
 
 use super::prelude::*;
 use super::sorter::{FeatureSorter, FeatureStepData};
-use crate::worldgen::structure_piece_placer::StructurePiecePlacer;
+use crate::worldgen::structure::piece_placer::StructurePiecePlacer;
 #[cfg(test)]
 use steel_worldgen::structure::StructureReferenceMap;
 use steel_worldgen::structure::StructureStart;

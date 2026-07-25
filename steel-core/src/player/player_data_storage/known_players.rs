@@ -3,7 +3,7 @@ use uuid::Uuid;
 use wincode::{SchemaRead, SchemaWrite};
 
 use super::{decode_file, encode_file};
-use crate::player::known_players::{GAME_PROFILE_CACHE_LIMIT, KnownPlayer, KnownPlayers};
+use crate::player::{GAME_PROFILE_CACHE_LIMIT, KnownPlayer, KnownPlayers};
 
 const KNOWN_PLAYERS_MAGIC: [u8; 4] = *b"STLK";
 pub(super) const KNOWN_PLAYERS_STORAGE_VERSION: u16 = 1;
