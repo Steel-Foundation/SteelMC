@@ -10,7 +10,7 @@ use crate::{
     entity::Entity,
     entity::ai::path::PathComputationType,
     player::Player,
-    world::{ScheduledTickAccess, SignalGetter as _, World, game_event_context::GameEventContext},
+    world::{ScheduledTickAccess, SignalGetter as _, World, game_event::GameEventContext},
 };
 use std::sync::Arc;
 use steel_macros::block_behavior;

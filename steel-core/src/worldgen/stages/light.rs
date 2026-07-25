@@ -12,7 +12,7 @@ use crate::chunk::{
         propagate_block_light_chunk, propagate_sky_light_chunk,
     },
 };
-use crate::worldgen::context::WorldGenContext;
+use crate::worldgen::generator::context::WorldGenContext;
 use steel_utils::SectionPos;
 
 use super::leaf_distance::resolve_generated_leaf_distances;

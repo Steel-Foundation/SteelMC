@@ -17,7 +17,7 @@ use crate::behavior::{BlockBehavior, BlockEntityCreation, BlockPlaceContext};
 use crate::block_entity::entities::PotentSulfurBlockEntity;
 use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker};
 use crate::fluid::FluidStateExt as _;
-use crate::world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext};
+use crate::world::{LevelReader, ScheduledTickAccess, World, game_event::GameEventContext};
 
 /// Vanilla `PotentSulfurBlock` behavior
 #[block_behavior]

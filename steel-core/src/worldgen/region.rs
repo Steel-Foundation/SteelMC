@@ -38,8 +38,8 @@ use crate::chunk::{
 use crate::entity::SharedEntity;
 use crate::world::tick_scheduler::TickPriority;
 use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
-use crate::worldgen::context::WorldGenContext;
 use crate::worldgen::feature::instrumentation::OreFeatureStats;
+use crate::worldgen::generator::context::WorldGenContext;
 
 /// Chunk-cache backed worldgen view for the current generation step.
 ///

@@ -29,8 +29,8 @@ use crate::chunk::{
 };
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 use crate::world::World;
-use crate::world::game_event_context::GameEventContext;
-use crate::world::game_event_listener::{GameEventListener, SharedGameEventListener};
+use crate::world::game_event::GameEventContext;
+use crate::world::game_event::{GameEventListener, SharedGameEventListener};
 
 struct RecordingGameEventListener {
     pos: DVec3,

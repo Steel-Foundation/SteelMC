@@ -33,8 +33,7 @@ use crate::{
     fluid::fluid_state_to_block,
     player::Player,
     world::{
-        LevelReader, ScheduledTickAccess, SignalGetter as _, World,
-        game_event_context::GameEventContext,
+        LevelReader, ScheduledTickAccess, SignalGetter as _, World, game_event::GameEventContext,
     },
 };
 
