@@ -30,7 +30,7 @@ pub(crate) fn build() -> TokenStream {
         let key = generate_identifier(&custom_stat.key);
 
         constants.extend(quote! {
-            pub static #ident: VillagerType = VillagerType {
+            pub static #ident: CustomStat = CustomStat {
                 key: #key,
             };
         });
@@ -41,13 +41,13 @@ pub(crate) fn build() -> TokenStream {
     }
 
     quote! {
-        use crate::villager_type::{VillagerType, VillagerTypeRegistry};
+        use crate::stat::custom::{CustomStat, CustomStatRegistry};
         use std::borrow::Cow;
         use steel_utils::Identifier;
 
         #constants
 
-        pub fn register_villager_types(registry: &mut VillagerTypeRegistry) {
+        pub fn register_custom_stats(registry: &mut CustomStatRegistry) {
             #registrations
         }
     }

@@ -1,10 +1,10 @@
 use rustc_hash::FxHashMap;
-use steel_utils::Identifier;
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
 /// A custom stat definition.
 #[derive(Debug)]
 pub struct CustomStat {
-    pub key: Identifier
+    pub key: Identifier,
 }
 
 pub type CustomStatRef = &'static CustomStat;
@@ -13,6 +13,11 @@ pub struct CustomStatRegistry {
     custom_stats_by_id: Vec<CustomStatRef>,
     custom_stats_by_key: FxHashMap<Identifier, usize>,
     allows_registering: bool,
+}
+
+// SAFETY: This Steel-owned key uniquely identifies the custom stat registry.
+unsafe impl DowncastType for CustomStatRegistry {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:registry/custom_stat");
 }
 
 impl CustomStatRegistry {
