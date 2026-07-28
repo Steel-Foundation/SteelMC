@@ -82,7 +82,7 @@ SteelMC currently includes:
 Important limitations:
 
 - Survival gameplay is incomplete.
-- Only a small number of mobs have meaningful behavior.
+- Only a small number of entities have meaningful behavior.
 - Full vanilla and protocol parity have not been reached.
 - Plugins are not available yet.
 - Paper, Bukkit, Fabric, Forge, and NeoForge extensions are not compatible.
