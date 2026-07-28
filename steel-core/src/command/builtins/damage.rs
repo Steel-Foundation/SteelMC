@@ -8,7 +8,10 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+use crate::entity::damage::DamageSource;
+use steel_registry::vanilla_damage_types;
 use steel_utils::Identifier;
+use steel_utils::translations::{COMMANDS_DAMAGE_INVULNERABLE, COMMANDS_DAMAGE_SUCCESS};
 use text_components::TextComponent;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
@@ -17,7 +20,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("damage").then(
-        argument("targets", SteelArgumentType::players()).then(
+        argument("target", SteelArgumentType::entity()).then(
             argument("amount", ArgumentType::float(0.0, f32::MAX))
                 .executes(damage)
                 .then(
@@ -44,13 +47,61 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 }
 
 fn damage(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    let targets = context.players("targets")?;
+    let target = context.entity("target")?;
+    let Some(amount) = context.float("amount") else {
+        return Err(CommandSyntaxError::dynamic(
+            "Parsed value for amount is missing from the command context",
+        ));
+    };
 
-    for target in &targets {
-        target.send_message(&TextComponent::plain("test"))
+    // The base damage type for this command is generic
+    let damage_type = context
+        .damage_type("amount")
+        .unwrap_or(&vanilla_damage_types::GENERIC);
+
+    // Create the DamageSource to apply modifiers after
+    let mut damage_source = DamageSource::environment(&damage_type);
+
+    // If we can get "location" from the context, it's from "at"
+    if let Some(coordinates) = context.coordinates("location") {
+        damage_source.source_position = Some(coordinates.position(context.source()))
     }
 
-    i32::try_from(targets.len()).map_err(|_| {
-        CommandSyntaxError::dynamic("Target player count exceeds the command result range")
-    })
+    // Else, it's from the "by", or maybe it's nothing
+    if let Ok(entity) = context.entity("entity") {
+        damage_source.direct_entity_id = Some(entity.id());
+
+        // Maybe even the causing entity is known
+        if let Ok(cause) = context.entity("cause") {
+            damage_source.causing_entity_id = Some(cause.id());
+        }
+    }
+
+    let Some(target_world) = target.level() else {
+        return Err(CommandSyntaxError::dynamic(
+            "The entity is not in a world or the world was dropped.",
+        ));
+    };
+
+    if target.hurt(&target_world, &damage_source, amount) {
+        // When using format! with a f32, if it's 1.0, it will just display 1 and not 1.0
+        // We just correct that so it's like vanilla
+        let mut display_amount = format!("{amount}");
+        if !display_amount.contains('.') {
+            display_amount.push_str(".0");
+        }
+
+        context.source().send_success(
+            &COMMANDS_DAMAGE_SUCCESS
+                .message([TextComponent::plain(display_amount), target.display_name()])
+                .component(),
+            true,
+        );
+        Ok(1)
+    } else {
+        context
+            .source()
+            .send_failure(COMMANDS_DAMAGE_INVULNERABLE.msg().component());
+        Ok(0)
+    }
 }
