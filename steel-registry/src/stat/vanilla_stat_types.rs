@@ -1,40 +1,48 @@
 //! This module defines all the stat types from Vanilla.
 
 use crate::REGISTRY;
-use crate::blocks::Block;
-use crate::entity_type::EntityType;
-use crate::items::Item;
-use crate::stat::custom::CustomStat;
+use crate::blocks::BlockRegistry;
+use crate::entity_type::EntityTypeRegistry;
+use crate::items::ItemRegistry;
+use crate::stat::custom::CustomStatRegistry;
 use crate::stat::registry::{StatType, StatTypeRegistry};
-use steel_utils::Identifier;
-use text_components::{TextComponent, translation::TranslatedMessage};
+use steel_utils::{Identifier, translations};
+use text_components::TextComponent;
 
 /// Creates a Vanilla stat type from its given name. This name is used for its identifier and
 /// display name.
 macro_rules! vanilla_stat_type {
     ($name: literal) => {
+        StatType::new(Identifier::vanilla_static($name), None)
+    };
+    ($name: literal, $translation_name: ident) => {
         StatType::new(
             Identifier::vanilla_static($name),
-            TextComponent::translated(TranslatedMessage::new(
-                concat!("stat_type.minecraft.", $name),
-                None,
+            Some(TextComponent::translated(
+                translations::$translation_name.msg(),
             )),
         )
     };
 }
 
-pub const BLOCK_MINED: StatType<Block> = vanilla_stat_type!("mined");
+// Only the block and item stat types have an actual zero-argument translation for their names.
+pub const BLOCK_MINED: StatType<BlockRegistry> =
+    vanilla_stat_type!("mined", STAT_TYPE_MINECRAFT_BROKEN);
 
-pub const ITEM_CRAFTED: StatType<Item> = vanilla_stat_type!("crafted");
-pub const ITEM_USED: StatType<Item> = vanilla_stat_type!("used");
-pub const ITEM_BROKEN: StatType<Item> = vanilla_stat_type!("broken");
-pub const ITEM_PICKED_UP: StatType<Item> = vanilla_stat_type!("picked_up");
-pub const ITEM_DROPPED: StatType<Item> = vanilla_stat_type!("dropped");
+pub const ITEM_CRAFTED: StatType<ItemRegistry> =
+    vanilla_stat_type!("crafted", STAT_TYPE_MINECRAFT_CRAFTED);
+pub const ITEM_USED: StatType<ItemRegistry> = vanilla_stat_type!("used", STAT_TYPE_MINECRAFT_USED);
+pub const ITEM_BROKEN: StatType<ItemRegistry> =
+    vanilla_stat_type!("broken", STAT_TYPE_MINECRAFT_BROKEN);
+pub const ITEM_PICKED_UP: StatType<ItemRegistry> =
+    vanilla_stat_type!("picked_up", STAT_TYPE_MINECRAFT_PICKED_UP);
+pub const ITEM_DROPPED: StatType<ItemRegistry> =
+    vanilla_stat_type!("dropped", STAT_TYPE_MINECRAFT_DROPPED);
 
-pub const ENTITY_KILLED: StatType<EntityType> = vanilla_stat_type!("killed");
-pub const ENTITY_KILLED_BY: StatType<EntityType> = vanilla_stat_type!("killed_by");
+pub const ENTITY_KILLED: StatType<EntityTypeRegistry> = vanilla_stat_type!("killed");
+pub const ENTITY_KILLED_BY: StatType<EntityTypeRegistry> = vanilla_stat_type!("killed_by");
 
-pub const CUSTOM: StatType<CustomStat> = vanilla_stat_type!("custom");
+pub const CUSTOM: StatType<CustomStatRegistry> = vanilla_stat_type!("custom");
 
 /// Registers all vanilla stat types.
 ///

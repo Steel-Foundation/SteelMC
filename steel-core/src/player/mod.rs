@@ -1873,5 +1873,6 @@ impl TextResolutor for Player {
     }
 }
 
+mod stats_counter;
 #[cfg(test)]
 mod tests;
