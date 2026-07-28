@@ -29,6 +29,12 @@ use crate::world::{
 use crate::worldgen::{ChunkGeneratorType, EmptyChunkGenerator};
 use steel_utils::ChunkPos;
 
+mod connection;
+mod player;
+
+pub(crate) use connection::TestConnection;
+pub(crate) use player::{TestPlayerBuilder, test_runtime_config};
+
 pub(crate) fn test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();
     WORLD.get_or_init(|| create_test_world("test"))
@@ -36,6 +42,10 @@ pub(crate) fn test_world() -> &'static Arc<World> {
 
 pub(crate) fn fresh_test_world(key: &'static str) -> Arc<World> {
     create_test_world(key)
+}
+
+pub(crate) fn fresh_test_world_in_domain(domain: &'static str, key: &'static str) -> Arc<World> {
+    create_test_world_with_key(Identifier::new_static(domain, key), Difficulty::Normal)
 }
 
 pub(crate) fn insert_ready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<ChunkHolder> {
@@ -132,6 +142,10 @@ fn create_test_world(key: &'static str) -> Arc<World> {
 }
 
 fn create_test_world_with_difficulty(key: &'static str, difficulty: Difficulty) -> Arc<World> {
+    create_test_world_with_key(Identifier::vanilla_static(key), difficulty)
+}
+
+fn create_test_world_with_key(key: Identifier, difficulty: Difficulty) -> Arc<World> {
     init_test_registry();
     let resources = test_world_resources();
     let generator = Arc::new(ChunkGeneratorType::Empty(EmptyChunkGenerator::new()));
@@ -148,7 +162,7 @@ fn create_test_world_with_difficulty(key: &'static str, difficulty: Difficulty) 
         .runtime
         .block_on(World::new_with_config(
             Arc::clone(&resources.runtime),
-            Identifier::vanilla_static(key),
+            key,
             &vanilla_dimension_types::OVERWORLD,
             0,
             WorldConfig {

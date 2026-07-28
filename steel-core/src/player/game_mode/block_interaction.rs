@@ -146,7 +146,6 @@ impl Player {
 
                 let changed = self.inventory.lock().swap_hands();
                 if changed {
-                    self.broadcast_entity_event(EntityStatus::SwapHands);
                     self.broadcast_inventory_changes();
                 }
                 // TODO: Stop active item use once the using-item foundation exists.

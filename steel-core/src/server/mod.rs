@@ -23,7 +23,7 @@ use crate::command::execution::{
     CommandExecutionContext, CommandResultCallback, CommandSource, ExecutionCommandSource,
     ExecutionStop,
 };
-use crate::command::sender::CommandSender;
+use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::command::storage::DomainCommandStorage;
 use crate::command::{
     COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CommandCompletion, CommandDispatcher,
@@ -51,9 +51,10 @@ use crate::player::player_data::{
     PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle,
 };
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
+use crate::player::player_inventory::MenuRemovalStatus;
 use crate::player::{
-    GameProfile, KnownPlayer, KnownPlayerNameLookup, KnownPlayers, Player, ProfileLookupError,
-    ResetReason, is_valid_player_name, lookup_online_profile, offline_uuid,
+    DomainResidenceToken, GameProfile, KnownPlayer, KnownPlayerNameLookup, KnownPlayers, Player,
+    ProfileLookupError, ResetReason, is_valid_player_name, lookup_online_profile, offline_uuid,
 };
 use crate::portal::{
     PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, end_gateway,
@@ -214,20 +215,6 @@ fn apply_default_spawn(player: &Arc<Player>, world: &Arc<World>, spawn: Prepared
         .update_for_game_mode(world.default_gamemode);
 }
 
-fn world_spawn_transition(world: Arc<World>) -> TeleportTransition {
-    let spawn = local_respawn_data_for_world(&world);
-    TeleportTransition {
-        target_world: world,
-        position: respawn_position(&spawn),
-        rotation: (spawn.yaw, spawn.pitch),
-        velocity: DVec3::ZERO,
-        relatives: RelativeMovement::NONE,
-        portal_cooldown: 0,
-        as_passenger: false,
-        post_transition: TeleportPostTransition::do_nothing(),
-    }
-}
-
 fn is_allowed_to_enter_portal(source_world: &World, target_world: &World) -> bool {
     is_allowed_to_enter_portal_target(
         is_nether_dimension_type(target_world),
@@ -310,15 +297,6 @@ fn local_respawn_data_for_world(world: &World) -> RespawnData {
     RespawnData::of(world.key.clone(), data.spawn_pos(), data.spawn.angle, 0.0)
 }
 
-fn respawn_position(respawn_data: &RespawnData) -> DVec3 {
-    let pos = respawn_data.pos();
-    DVec3::new(
-        f64::from(pos.x()) + 0.5,
-        f64::from(pos.y()),
-        f64::from(pos.z()) + 0.5,
-    )
-}
-
 fn generation_settings_for_world(
     world_entry: &ResolvedWorldConfig,
     generator_output: &GeneratorOutput,
@@ -343,7 +321,19 @@ fn world_config_registries() -> Result<(WorldGeneratorRegistry, WorldStorageRegi
 struct DomainPlayerState {
     world: Arc<World>,
     data: DomainPlayerData,
-    _spawn_chunk_request: ChunkRequestHandle,
+    spawn_chunk_request: ChunkRequestHandle,
+}
+
+struct UnpreparedDomainPlayerState {
+    world: Arc<World>,
+    explicit_target: bool,
+    data: UnpreparedDomainPlayerData,
+}
+
+enum UnpreparedDomainPlayerData {
+    SavedRestored { data: Box<PersistentPlayerData> },
+    SavedWithoutLocation { data: Box<PersistentPlayerData> },
+    FirstVisit,
 }
 
 enum DomainPlayerData {
@@ -352,10 +342,10 @@ enum DomainPlayerData {
     },
     SavedWithoutLocation {
         data: Box<PersistentPlayerData>,
-        default_spawn: PreparedSpawn,
+        spawn: PreparedSpawn,
     },
     FirstVisit {
-        default_spawn: PreparedSpawn,
+        spawn: PreparedSpawn,
     },
 }
 
@@ -363,7 +353,7 @@ struct DomainSwitchRequest {
     player: Arc<Player>,
     target_domain: String,
     target_world: Option<Arc<World>>,
-    restore_saved_location: bool,
+    pending_token: PendingWorldChangeToken,
 }
 
 /// Failure while atomically editing one player's persisted permission state.
@@ -398,9 +388,11 @@ use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQu
 
 mod world_changes;
 
+use jobs::domain_switch::DomainSwitchJob;
 use jobs::teleport::{
     EndGatewayTeleportJob, EndPortalTeleportJob, EnderPearlRestoreJob, NetherPortalTeleportJob,
-    RootVehicleRestoreJob, clear_pending_world_change, portal_entity_still_valid,
+    RootVehicleRestoreJob, WorldSpawnTeleportJob, clear_pending_world_change,
+    portal_entity_still_valid,
 };
 
 /// The main server struct.
@@ -755,8 +747,10 @@ impl Server {
         sender: CommandSender,
         command: String,
     ) -> Result<(), CommandQueueFull> {
-        self.command_requests
-            .submit(CommandRequest::Execute { sender, command })
+        self.command_requests.submit(CommandRequest::Execute {
+            owner: CommandExecutionOwner::capture(sender, self),
+            command,
+        })
     }
 
     pub(crate) fn submit_command_suggestions(
@@ -766,7 +760,7 @@ impl Server {
         input: String,
     ) -> Result<(), CommandQueueFull> {
         self.command_requests.submit(CommandRequest::Suggestions {
-            player,
+            owner: CommandExecutionOwner::capture(CommandSender::Player(player), self),
             transaction_id,
             input,
         })
@@ -789,6 +783,9 @@ impl Server {
         sender: CommandSender,
         input: &str,
     ) -> Vec<CommandCompletion> {
+        if !CommandExecutionOwner::capture(sender.clone(), self).is_current(self) {
+            return Vec::new();
+        }
         match self.build_command_suggestions(sender, input) {
             Ok(suggestions) => {
                 let range = suggestions.range();

@@ -322,6 +322,23 @@ fn lifecycle_state_tracks_pending_world_change_tokens() {
 }
 
 #[test]
+fn killed_player_respawn_can_retain_admission_ownership() {
+    let dimensions = EntityDimensions::new(0.6, 1.8, 1.62);
+    let base = EntityBase::new(1, DVec3::ZERO, dimensions, Weak::<World>::new());
+    base.set_removed(RemovalReason::Killed);
+
+    assert_eq!(base.begin_pending_world_change(), None);
+    let Some(pending_token) = base.begin_pending_player_respawn() else {
+        panic!("a killed player should be able to reserve respawn preparation");
+    };
+    assert!(base.clear_removed());
+    base.reset_for_player_respawn_during_world_change(dimensions, pending_token);
+
+    assert!(base.is_world_change_token_pending(pending_token));
+    assert!(base.finish_pending_world_change(pending_token));
+}
+
+#[test]
 fn try_set_position_rolls_back_when_commit_fails() {
     let base = EntityBase::new(
         1,

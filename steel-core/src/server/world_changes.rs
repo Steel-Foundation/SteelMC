@@ -1,12 +1,12 @@
 use super::{
-    Arc, BlockPos, DomainSwitchRequest, EndGatewayTeleportJob, EndPortalTeleportJob, Entity,
-    GlobalPlayerData, NetherPortalTeleportJob, NetworkConnection, PendingWorldChangeToken,
-    PersistentPlayerData, Player, PortalKind, ResetReason, RespawnData, Server, SharedEntity,
-    World, WorldChangeRequest, can_teleport_between_worlds, change_entity_world,
-    clear_pending_world_change, is_allowed_to_enter_portal, is_end_dimension_type,
-    is_nether_dimension_type, mem, nether_portal, portal_entity_still_valid,
-    world_spawn_transition,
+    Arc, BlockPos, DomainSwitchJob, DomainSwitchRequest, EndGatewayTeleportJob,
+    EndPortalTeleportJob, Entity, MenuRemovalStatus, NetherPortalTeleportJob, NetworkConnection,
+    PendingWorldChangeToken, Player, PlayerAdmissionState, PortalKind, RespawnData, Server,
+    SharedEntity, World, WorldChangeRequest, WorldSpawnTeleportJob, can_teleport_between_worlds,
+    change_entity_world, clear_pending_world_change, is_allowed_to_enter_portal,
+    is_end_dimension_type, is_nether_dimension_type, mem, nether_portal, portal_entity_still_valid,
 };
+use crate::entity::LivingEntity as _;
 
 impl Server {
     pub(super) fn process_world_changes(self: &Arc<Self>, tick_count: u64, runs_normally: bool) {
@@ -23,10 +23,16 @@ impl Server {
                 WorldChangeRequest::Computed(transition) => {
                     change_entity_world(entity, &transition);
                 }
-                WorldChangeRequest::WorldSpawn { target_world } => {
-                    let transition = world_spawn_transition(target_world);
-                    change_entity_world(entity, &transition);
-                }
+                WorldChangeRequest::WorldSpawn {
+                    target_world,
+                    pending_token,
+                } => self.process_player_world_selection(
+                    entity,
+                    target_world,
+                    pending_token,
+                    tick_count,
+                    runs_normally,
+                ),
                 WorldChangeRequest::Portal {
                     portal: PortalKind::Nether,
                     source_world,
@@ -363,6 +369,75 @@ impl Server {
         Ok((target_world, respawn_data))
     }
 
+    fn begin_player_relocation(
+        &self,
+        player: &Player,
+    ) -> Result<(Arc<World>, PendingWorldChangeToken), String> {
+        let current_world = self
+            .live_world_for_player(player)
+            .ok_or_else(|| "player is not present in a live world".to_owned())?;
+        if player.connection.closed() {
+            return Err("player is disconnecting".to_owned());
+        }
+        if player.get_health() <= 0.0 {
+            return Err("cannot change worlds while dead".to_owned());
+        }
+        if player.has_won_game() {
+            return Err("cannot change worlds from the End credits screen".to_owned());
+        }
+        let Some(pending_token) = player.begin_pending_world_change() else {
+            return Err("another player relocation is already in progress".to_owned());
+        };
+        Ok((current_world, pending_token))
+    }
+
+    /// Queues a selected loaded world through the player's relocation lease.
+    ///
+    /// Same-domain selections move to the world's spawn. Cross-domain
+    /// selections restore that domain while honoring the explicit target.
+    pub fn queue_player_world_selection(
+        &self,
+        player: Arc<Player>,
+        target_world: Arc<World>,
+    ) -> Result<(), String> {
+        let target_world = self
+            .worlds
+            .get(&target_world.key)
+            .filter(|registered| Arc::ptr_eq(registered, &target_world))
+            .cloned()
+            .ok_or_else(|| "target world is not the registered loaded world".to_owned())?;
+        let target_domain = target_world.domain().to_owned();
+        if !self.worlds.has_domain(&target_domain) {
+            return Err(format!("unknown domain {target_domain}"));
+        }
+        let (current_world, pending_token) = self.begin_player_relocation(&player)?;
+
+        if current_world.domain() == target_domain {
+            self.pending_world_changes.lock().push((
+                player,
+                WorldChangeRequest::WorldSpawn {
+                    target_world,
+                    pending_token,
+                },
+            ));
+            return Ok(());
+        }
+
+        if !player.begin_domain_switch(pending_token) {
+            player.finish_pending_world_change(pending_token);
+            return Err("domain switch already in progress".to_owned());
+        }
+        self.pending_domain_switches
+            .lock()
+            .push(DomainSwitchRequest {
+                player,
+                target_domain,
+                target_world: Some(target_world),
+                pending_token,
+            });
+        Ok(())
+    }
+
     /// Queues a player domain switch for processing at the server tick safe point.
     pub fn queue_domain_switch(
         &self,
@@ -373,14 +448,14 @@ impl Server {
             return Err(format!("unknown domain {target_domain}"));
         }
 
-        let current_domain = player.get_world().domain().to_owned();
+        let (current_world, pending_token) = self.begin_player_relocation(&player)?;
+        let current_domain = current_world.domain().to_owned();
         if current_domain == target_domain {
+            player.finish_pending_world_change(pending_token);
             return Err(format!("already in domain {target_domain}"));
         }
-        if player.connection.closed() {
-            return Err("player is disconnecting".to_owned());
-        }
-        if !player.begin_domain_switch() {
+        if !player.begin_domain_switch(pending_token) {
+            player.finish_pending_world_change(pending_token);
             return Err("domain switch already in progress".to_owned());
         }
 
@@ -390,134 +465,133 @@ impl Server {
                 player,
                 target_domain,
                 target_world: None,
-                restore_saved_location: true,
+                pending_token,
             });
         Ok(())
     }
 
-    /// Queues a cross-domain teleport using saved target-domain location or target-world spawn.
-    pub fn queue_domain_switch_to_world(
-        &self,
-        player: Arc<Player>,
-        target_world: Arc<World>,
-    ) -> Result<(), String> {
-        let target_domain = target_world.domain().to_owned();
-        if player.connection.closed() {
-            return Err("player is disconnecting".to_owned());
-        }
-        if !player.begin_domain_switch() {
-            return Err("domain switch already in progress".to_owned());
-        }
-
-        self.pending_domain_switches
-            .lock()
-            .push(DomainSwitchRequest {
-                player,
-                target_domain,
-                target_world: Some(target_world),
-                restore_saved_location: true,
-            });
-        Ok(())
-    }
-
-    pub(super) async fn process_domain_switches(&self) {
+    pub(super) fn process_domain_switches(self: &Arc<Self>) {
         let switches = mem::take(&mut *self.pending_domain_switches.lock());
 
         for request in switches {
-            let player = request.player.clone();
+            let player = Arc::clone(&request.player);
             let player_name = player.gameprofile.name.clone();
-            let result = self.process_domain_switch(request).await;
-            player.finish_domain_switch();
-
-            if let Err(error) = result {
-                log::error!("Failed to switch {player_name} domain: {error}");
-                if !player.connection.closed() {
-                    player.disconnect("Failed to switch domain");
-                }
+            let pending_token = request.pending_token;
+            if let Err(error) = self.start_domain_switch(request) {
+                player.finish_domain_switch(pending_token);
+                clear_pending_world_change(&(Arc::clone(&player) as SharedEntity), pending_token);
+                log::warn!("Did not start domain switch for {player_name}: {error}");
             }
         }
     }
 
-    async fn process_domain_switch(&self, request: DomainSwitchRequest) -> Result<(), String> {
+    fn start_domain_switch(self: &Arc<Self>, request: DomainSwitchRequest) -> Result<(), String> {
         let DomainSwitchRequest {
             player,
             target_domain,
             target_world,
-            restore_saved_location,
+            pending_token,
         } = request;
         if player.connection.closed() {
-            return Ok(());
+            return Err("player is disconnecting".to_owned());
+        }
+        if !player.is_domain_switch_queued(pending_token)
+            || !player.is_world_change_token_pending(pending_token)
+        {
+            return Err("domain switch no longer owns the player relocation".to_owned());
         }
         if !self.worlds.has_domain(&target_domain) {
             return Err(format!("unknown domain {target_domain}"));
         }
 
-        let current_domain = player.get_world().domain().to_owned();
+        let current_world = self
+            .live_world_for_player(&player)
+            .ok_or_else(|| "player is not present in a live world".to_owned())?;
+        let current_domain = current_world.domain().to_owned();
         if current_domain == target_domain {
-            return Ok(());
+            return Err(format!("already in domain {target_domain}"));
         }
-
-        let current_data = PersistentPlayerData::from_player(&player);
-        if let Err(e) = self
-            .player_data_storage
-            .save_domain_data(&current_domain, player.gameprofile.id, &current_data)
-            .await
-        {
-            return Err(format!("failed to save current domain data: {e}"));
+        if player.get_health() <= 0.0 {
+            return Err("player died before the domain switch started".to_owned());
         }
-
-        if player.connection.closed() {
-            return Ok(());
+        if player.has_won_game() {
+            return Err("player entered the End credits screen".to_owned());
         }
-
-        let target_state = match self
-            .load_domain_player_state(
-                &player,
-                &target_domain,
-                target_world.clone(),
-                restore_saved_location,
-            )
-            .await
-        {
-            Ok(state) => state,
-            Err(error) => {
-                return Err(error);
+        if let Some(target_world) = target_world.as_ref() {
+            let registered = self
+                .worlds
+                .get(&target_world.key)
+                .ok_or_else(|| "target world is no longer loaded".to_owned())?;
+            if !Arc::ptr_eq(registered, target_world) || target_world.domain() != target_domain {
+                return Err("target world registration changed before the switch".to_owned());
             }
+        }
+
+        if player.remove_all_menus() != MenuRemovalStatus::Complete {
+            return Err("cannot save domain data while a menu callback is active".to_owned());
+        }
+        if !self.reserve_player_relocation(&player) {
+            return Err("domain switch could not reserve player persistence".to_owned());
+        }
+        if !player.mark_domain_switch_detached(pending_token) {
+            self.release_player_admission(player.gameprofile.id, PlayerAdmissionState::Relocating);
+            return Err("domain switch lost ownership before detaching".to_owned());
+        }
+        let Some((current_data, residence_token)) =
+            current_world.detach_player_for_domain_switch(&player)
+        else {
+            self.release_player_admission(player.gameprofile.id, PlayerAdmissionState::Relocating);
+            return Err("player is not present in the current world".to_owned());
         };
-
-        if player.connection.closed() {
-            return Ok(());
-        }
-
-        let restore_player = Arc::clone(&player);
-        player.reset_after_domain_save_and_restore(target_state.world.clone(), || {
-            Self::apply_domain_player_state(&restore_player, &target_state);
-        });
-        let pos = player.position();
-        let rotation = player.rotation();
-        if !player.spawn(pos, rotation, ResetReason::WorldChange) {
-            return Err("failed to add player to target world".to_owned());
-        }
-        self.schedule_root_vehicle_restore(&player, &target_state);
-        self.schedule_ender_pearl_restores(&player, &target_state);
-
-        if let Err(e) = self
-            .player_data_storage
-            .save_global(
-                player.gameprofile.id,
-                &GlobalPlayerData {
-                    last_active_domain: target_domain,
-                },
-            )
-            .await
-        {
-            log::error!(
-                "Failed to save global player data for {} after domain switch: {e}",
-                player.gameprofile.name
-            );
-        }
+        self.jobs.spawn(DomainSwitchJob::new(
+            self,
+            player,
+            current_domain,
+            current_data,
+            target_domain,
+            target_world,
+            pending_token,
+            residence_token,
+        ));
 
         Ok(())
+    }
+
+    fn process_player_world_selection(
+        self: &Arc<Self>,
+        entity: SharedEntity,
+        target_world: Arc<World>,
+        pending_token: PendingWorldChangeToken,
+        tick_count: u64,
+        runs_normally: bool,
+    ) {
+        if !entity.is_world_change_token_pending(pending_token) {
+            return;
+        }
+        let Some(player) = entity.as_player() else {
+            tracing::error!("world selection request does not belong to a player");
+            clear_pending_world_change(&entity, pending_token);
+            return;
+        };
+        let Some(source_world) = self.live_world_for_player(player) else {
+            clear_pending_world_change(&entity, pending_token);
+            return;
+        };
+        let job = match WorldSpawnTeleportJob::new(
+            Arc::clone(&entity),
+            source_world,
+            target_world,
+            pending_token,
+        ) {
+            Ok(job) => job,
+            Err(error) => {
+                clear_pending_world_change(&entity, pending_token);
+                log::warn!("Did not start player world selection: {error}");
+                return;
+            }
+        };
+        self.jobs
+            .poll_now_or_spawn(Arc::downgrade(self), tick_count, runs_normally, job);
     }
 
     /// Queues a world change to be processed after the current tick.

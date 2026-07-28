@@ -145,7 +145,7 @@ impl Enchantment {
         enchantment: EnchantmentRef,
         item: &crate::item_stack::ItemStack,
     ) -> bool {
-        let Some(enchantments) = item.get_enchantments() else {
+        let Some(enchantments) = item.get_enchantments_for_crafting() else {
             return true;
         };
         for (existing_key, _) in enchantments.iter() {
@@ -244,6 +244,22 @@ mod tests {
         assert!(Enchantment::is_compatible_with_existing(
             &vanilla_enchantments::UNBREAKING,
             &sword
+        ));
+    }
+
+    #[test]
+    fn compatibility_checks_stored_enchantments_on_enchanted_books() {
+        init_test_registry();
+        let mut book = ItemStack::new(&vanilla_items::ENCHANTED_BOOK);
+        book.upgrade_enchantment(vanilla_enchantments::SHARPNESS.key.clone(), 1);
+
+        assert!(!Enchantment::is_compatible_with_existing(
+            &vanilla_enchantments::SMITE,
+            &book
+        ));
+        assert!(Enchantment::is_compatible_with_existing(
+            &vanilla_enchantments::UNBREAKING,
+            &book
         ));
     }
 

@@ -7,6 +7,9 @@ use steel_utils::Identifier;
 #[derive(Debug)]
 pub struct MenuType {
     pub key: Identifier,
+    /// Total number of slots constructed by the client menu, including the
+    /// player's inventory slots when that menu displays them.
+    pub slot_count: usize,
 }
 
 pub type MenuTypeRef = &'static MenuType;
