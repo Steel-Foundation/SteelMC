@@ -60,11 +60,11 @@ fn damage(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSy
         .unwrap_or(&vanilla_damage_types::GENERIC);
 
     // Create the DamageSource to apply modifiers after
-    let mut damage_source = DamageSource::environment(&damage_type);
+    let mut damage_source = DamageSource::environment(damage_type);
 
     // If we can get "location" from the context, it's from "at"
     if let Some(coordinates) = context.coordinates("location") {
-        damage_source.source_position = Some(coordinates.position(context.source()))
+        damage_source.source_position = Some(coordinates.position(context.source()));
     }
 
     // Else, it's from the "by", or maybe it's nothing
