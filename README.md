@@ -139,3 +139,18 @@ SteelMC is free software licensed under the
 [GNU Affero General Public License v3.0 or later](LICENSE).
 
 The SteelMC logo was designed by **colonthreeing**.
+
+## Acknowledgements
+
+SteelMC has been inspired by the work of
+[C2ME](https://github.com/RelativityMC/C2ME-fabric),
+[ScalableLux](https://github.com/RelativityMC/ScalableLux),
+[FastNoise](https://codeberg.org/ZenXArch/FastNoise),
+[Lithium](https://github.com/CaffeineMC/lithium), and
+[Structure Layout Optimizer](https://github.com/TelepathicGrunt/StructureLayoutOptimizer).
+
+## Top contributors
+
+<a href="https://github.com/Steel-Foundation/SteelMC/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Steel-Foundation/SteelMC" alt="SteelMC contributors">
+</a>
