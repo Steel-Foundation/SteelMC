@@ -130,6 +130,7 @@ mod tests {
             [
                 "clear",
                 "deop",
+                "damage",
                 "difficulty",
                 "domain",
                 "enchant",
