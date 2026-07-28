@@ -391,6 +391,7 @@ impl Entity for PigEntity {
         self.default_tick();
         self.living_base.decrement_invulnerable_time();
         self.tick_mob_effects();
+        self.detect_equipment_updates();
 
         if self.is_dead_or_dying() {
             LivingEntity::tick_death(self);

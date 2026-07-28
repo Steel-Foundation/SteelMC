@@ -1,9 +1,8 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::collections::VecDeque;
 
 use steel_utils::locks::SyncMutex;
-use uuid::Uuid;
 
-use crate::{command::sender::CommandSender, player::Player};
+use crate::command::sender::{CommandExecutionOwner, CommandSuggestionKey};
 
 const DEFAULT_COMMAND_REQUEST_CAPACITY: usize = 1024;
 const DEFAULT_SUGGESTION_REQUEST_CAPACITY: usize = 1024;
@@ -14,11 +13,11 @@ pub(crate) const COMMAND_REQUESTS_PER_TICK: usize = 128;
 /// Work submitted from connection or console tasks for the game tick to handle.
 pub(crate) enum CommandRequest {
     Execute {
-        sender: CommandSender,
+        owner: CommandExecutionOwner,
         command: String,
     },
     Suggestions {
-        player: Arc<Player>,
+        owner: CommandExecutionOwner,
         transaction_id: i32,
         input: String,
     },
@@ -125,7 +124,7 @@ impl<K: Eq, E, S> PendingRequestQueues<K, E, S> {
 
 /// Bounded cross-task requests drained by the main game tick.
 pub(crate) struct CommandRequestQueue {
-    queued: SyncMutex<PendingRequestQueues<Uuid, CommandRequest, CommandRequest>>,
+    queued: SyncMutex<PendingRequestQueues<CommandSuggestionKey, CommandRequest, CommandRequest>>,
 }
 
 impl CommandRequestQueue {
@@ -143,13 +142,13 @@ impl CommandRequestQueue {
         match request {
             request @ CommandRequest::Execute { .. } => queued.submit_execution(request),
             CommandRequest::Suggestions {
-                player,
+                owner,
                 transaction_id,
                 input,
             } => queued.submit_suggestions(
-                player.gameprofile.id,
+                owner.suggestion_key(),
                 CommandRequest::Suggestions {
-                    player,
+                    owner,
                     transaction_id,
                     input,
                 },
@@ -159,13 +158,13 @@ impl CommandRequestQueue {
 
     pub(crate) fn pop_front_runnable(
         &self,
-        mut execution_allowed: impl FnMut(&CommandSender) -> bool,
+        mut execution_allowed: impl FnMut(&CommandExecutionOwner) -> bool,
     ) -> Option<CommandRequest> {
         let request = self.queued.lock().pop_front_where(|request| {
-            let CommandRequest::Execute { sender, .. } = request else {
+            let CommandRequest::Execute { owner, .. } = request else {
                 return false;
             };
-            execution_allowed(sender)
+            execution_allowed(owner)
         })?;
         match request {
             PendingRequest::Execute(request) | PendingRequest::Suggestions(request) => {

@@ -1,4 +1,11 @@
 use super::*;
+use crate::server::Server;
+
+#[derive(Clone, Copy)]
+enum PlayerSelection {
+    Gameplay,
+    OnlineProfile,
+}
 
 impl EntitySelector {
     pub(super) fn new(
@@ -76,6 +83,23 @@ impl EntitySelector {
         &self,
         source: &CommandSource,
     ) -> Result<Vec<Arc<Player>>, CommandSyntaxError> {
+        self.find_players_with(source, PlayerSelection::Gameplay)
+    }
+
+    pub(crate) fn find_online_profile_players(
+        &self,
+        source: &CommandSource,
+    ) -> Result<Vec<Arc<Player>>, CommandSyntaxError> {
+        // Profile administration is server-global. Explicit spatial selector
+        // options still limit candidates to the source world.
+        self.find_players_with(source, PlayerSelection::OnlineProfile)
+    }
+
+    fn find_players_with(
+        &self,
+        source: &CommandSource,
+        selection: PlayerSelection,
+    ) -> Result<Vec<Arc<Player>>, CommandSyntaxError> {
         self.check_selector_permission(source)?;
         let server = source.server();
         let position = selector_position(self, source);
@@ -84,26 +108,36 @@ impl EntitySelector {
             SelectorKind::PlayerName(name) => server
                 .get_players()
                 .into_iter()
-                .filter(|player| player.get_world().domain() == source.world().domain())
+                .filter(|player| match selection {
+                    PlayerSelection::Gameplay => selected_player_world(server, player, selection)
+                        .is_some_and(|world| world.domain() == source.world().domain()),
+                    PlayerSelection::OnlineProfile => true,
+                })
                 .filter(|player| player_name_matches(&player.gameprofile.name, name))
                 .collect::<Vec<_>>(),
             SelectorKind::EntityUuid(uuid) => server
                 .get_players()
                 .into_iter()
-                .filter(|player| player.get_world().domain() == source.world().domain())
+                .filter(|player| match selection {
+                    PlayerSelection::Gameplay => selected_player_world(server, player, selection)
+                        .is_some_and(|world| world.domain() == source.world().domain()),
+                    PlayerSelection::OnlineProfile => true,
+                })
                 .filter(|player| player.uuid() == *uuid)
                 .collect::<Vec<_>>(),
             SelectorKind::Selector(SelectorType::SelfEntity) => {
                 let Some(player) = source.player() else {
                     return Ok(Vec::new());
                 };
-                if self.matches_entity(player.as_ref(), position, aabb, source)? {
+                if selected_player_world(server, player, selection).is_some()
+                    && self.matches_entity(player.as_ref(), position, aabb, source)?
+                {
                     vec![Arc::clone(player)]
                 } else {
                     Vec::new()
                 }
             }
-            SelectorKind::Selector(_) => self.candidate_players(source),
+            SelectorKind::Selector(_) => self.candidate_players(source, selection),
         };
 
         if !matches!(self.kind, SelectorKind::Selector(SelectorType::SelfEntity)) {
@@ -160,6 +194,11 @@ impl EntitySelector {
             }
             SelectorKind::Selector(_) => self.candidate_entities(source, aabb),
         };
+        entities.retain(|entity| {
+            entity
+                .as_player()
+                .is_none_or(|player| source.server().command_world_for_player(player).is_some())
+        });
 
         if !matches!(self.kind, SelectorKind::Selector(SelectorType::SelfEntity)) {
             let mut filtered = Vec::new();
@@ -194,13 +233,23 @@ impl EntitySelector {
         Ok(())
     }
 
-    fn candidate_players(&self, source: &CommandSource) -> Vec<Arc<Player>> {
+    fn candidate_players(
+        &self,
+        source: &CommandSource,
+        selection: PlayerSelection,
+    ) -> Vec<Arc<Player>> {
         let mut players = source.server().get_players();
         if self.world_limited {
-            players.retain(|player| Arc::ptr_eq(&player.get_world(), source.world()));
-        } else {
+            players.retain(|player| {
+                selected_player_world(source.server(), player, selection)
+                    .is_some_and(|world| Arc::ptr_eq(&world, source.world()))
+            });
+        } else if matches!(selection, PlayerSelection::Gameplay) {
             let domain = source.world().domain();
-            players.retain(|player| player.get_world().domain() == domain);
+            players.retain(|player| {
+                selected_player_world(source.server(), player, selection)
+                    .is_some_and(|world| world.domain() == domain)
+            });
         }
         players
     }
@@ -338,6 +387,17 @@ impl EntitySelector {
             SelectorOrder::Arbitrary => {}
         }
         entities.truncate(self.max_results);
+    }
+}
+
+fn selected_player_world(
+    server: &Server,
+    player: &Player,
+    selection: PlayerSelection,
+) -> Option<Arc<World>> {
+    match selection {
+        PlayerSelection::Gameplay => server.command_world_for_player(player),
+        PlayerSelection::OnlineProfile => server.live_world_for_player(player),
     }
 }
 

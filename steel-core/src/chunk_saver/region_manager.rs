@@ -236,29 +236,26 @@ impl RegionManager {
         &self,
         prepared: PreparedChunkSave,
         status: ChunkStatus,
+        thread_pool: &rayon::ThreadPool,
     ) -> io::Result<bool> {
         let pos = prepared.pos;
         let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
         let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
         let index = RegionHeader::chunk_index(local_x, local_z);
 
-        // Serialize the prepared data
-        let data = wincode::serialize(&prepared.persistent)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-
-        // Compress with zstd
-        let compressed = zstd::encode_all(&data[..], 3)?;
-
-        if compressed.len() > MAX_CHUNK_SIZE {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Chunk too large: {} bytes (max {})",
-                    compressed.len(),
-                    MAX_CHUNK_SIZE
-                ),
-            ));
-        }
+        let (sender, receiver) = oneshot::channel();
+        thread_pool.spawn(move || {
+            let result = Self::encode_chunk(prepared);
+            if sender.send(result).is_err() {
+                tracing::trace!(
+                    chunk = ?pos,
+                    "Discarding encoded chunk after its save task was canceled"
+                );
+            }
+        });
+        let compressed = receiver.await.map_err(|_| {
+            io::Error::other("chunk encode task ended without returning a result")
+        })??;
 
         let mut regions = self.regions.write().await;
 
@@ -310,6 +307,25 @@ impl RegionManager {
         }
 
         Ok(true)
+    }
+
+    fn encode_chunk(prepared: PreparedChunkSave) -> io::Result<Vec<u8>> {
+        let data = wincode::serialize(&prepared.persistent)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        let compressed = zstd::encode_all(&data[..], 3)?;
+
+        if compressed.len() > MAX_CHUNK_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Chunk too large: {} bytes (max {})",
+                    compressed.len(),
+                    MAX_CHUNK_SIZE
+                ),
+            ));
+        }
+
+        Ok(compressed)
     }
 
     /// Loads a chunk from the appropriate region.

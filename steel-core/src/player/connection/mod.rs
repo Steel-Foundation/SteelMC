@@ -192,6 +192,16 @@ impl Player {
         self.connection.disconnect_with_reason(reason.into());
     }
 
+    /// Marks the player's connection as closed without sending a disconnect
+    /// packet.
+    ///
+    /// Used during shutdown so that container-close logic treats the player as
+    /// disconnected — dropping open-menu contents into the world instead of the
+    /// saved inventory, matching vanilla's removal-on-shutdown behavior.
+    pub fn close_connection(&self) {
+        self.connection.close();
+    }
+
     /// Handles client information updates during play phase.
     pub fn handle_client_information(&self, packet: SClientInformation) {
         let old_view_distance = self.view_distance();

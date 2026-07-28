@@ -496,9 +496,10 @@ impl ChunkStorage {
         &self,
         prepared: PreparedChunkSave,
         status: ChunkStatus,
+        thread_pool: &rayon::ThreadPool,
     ) -> io::Result<bool> {
         match self {
-            Self::Disk(rm) => rm.save_chunk_data(prepared, status).await,
+            Self::Disk(rm) => rm.save_chunk_data(prepared, status, thread_pool).await,
             Self::RamOnly(ram) => ram.save_chunk_data(prepared, status).await,
         }
     }

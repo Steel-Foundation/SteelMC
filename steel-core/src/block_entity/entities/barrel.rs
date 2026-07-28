@@ -140,16 +140,16 @@ impl BlockEntity for BarrelBlockEntity {
 }
 
 impl Container for BarrelContainer {
+    fn items(&self) -> &[ItemStack] {
+        &self.items
+    }
+
+    fn items_mut(&mut self) -> &mut [ItemStack] {
+        &mut self.items
+    }
+
     fn get_container_size(&self) -> usize {
         BARREL_SLOTS
-    }
-
-    fn get_item(&self, slot: usize) -> &ItemStack {
-        &self.items[slot]
-    }
-
-    fn get_item_mut(&mut self, slot: usize) -> &mut ItemStack {
-        &mut self.items[slot]
     }
 
     fn set_item(&mut self, slot: usize, mut stack: ItemStack) {

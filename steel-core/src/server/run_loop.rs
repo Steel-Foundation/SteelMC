@@ -1,13 +1,13 @@
 use super::{
     Arc, CCommandSuggestions, CHUNK_SENDING_TPS, COMMAND_DATA_AUTOSAVE_INTERVAL,
     COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CancellationToken, ChunkPos,
-    ChunkSender, CommandExecutionContext, CommandRequest, CommandResultCallback, CommandSender,
-    CommandSource, Duration, EncodedChunk, ExecutionCommandSource, ExecutionStop,
-    GameTickTaskGuard, Instant, JoinSet, NetworkConnection, PendingCommandExecutionQueue, Player,
-    SEND_PLAYER_INFO_INTERVAL, SLOW_CHUNK_TICK_THRESHOLD, Server, StringReader, SuggestionError,
-    Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats, ThreadPool, World,
-    WorldGameTickTimings, command_suggestions_packet, configured_packet_workers, sleep,
-    spawn_blocking,
+    ChunkSender, CommandExecutionContext, CommandExecutionOwner, CommandRequest,
+    CommandResultCallback, CommandSender, CommandSource, Duration, EncodedChunk,
+    ExecutionCommandSource, ExecutionStop, GameTickTaskGuard, Instant, JoinSet, NetworkConnection,
+    PendingCommandExecutionQueue, Player, SEND_PLAYER_INFO_INTERVAL, SLOW_CHUNK_TICK_THRESHOLD,
+    Server, StringReader, SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats,
+    ThreadPool, World, WorldGameTickTimings, command_suggestions_packet, configured_packet_workers,
+    sleep, spawn_blocking,
 };
 
 impl Server {
@@ -63,12 +63,17 @@ impl Server {
     }
 
     /// The main game tick loop (20 TPS, governed by tick rate manager).
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the ordered tick phases and their shutdown joins remain easier to audit together"
+    )]
     async fn run_game_tick(self: Arc<Self>, cancel_token: CancellationToken) {
         let mut next_tick_time = Instant::now();
         let mut next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
         let mut player_info_ticks = 0_u64;
         let mut pending_command_executions = PendingCommandExecutionQueue::<CommandSource>::new();
         let mut player_disconnect_saves = JoinSet::new();
+        let mut command_data_autosaves = JoinSet::new();
 
         loop {
             if cancel_token.is_cancelled() {
@@ -119,7 +124,7 @@ impl Server {
                 (tick_manager.tick_count, runs_normally)
             };
 
-            Self::tick_pending_command_executions(&mut pending_command_executions);
+            self.tick_pending_command_executions(&mut pending_command_executions);
             self.tick_command_requests(&mut pending_command_executions);
             self.tick_worlds_game(tick_count, runs_normally).await;
             player_info_ticks += 1;
@@ -138,12 +143,12 @@ impl Server {
                         .await;
             }
 
-            self.process_domain_switches().await;
+            self.process_domain_switches();
 
-            if Instant::now() >= next_command_data_autosave {
-                self.autosave_command_data().await;
-                next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
-            }
+            self.tick_command_data_autosave(
+                &mut next_command_data_autosave,
+                &mut command_data_autosaves,
+            );
 
             let tab_list_tick_stats = self.record_tick_and_capture_tab_stats(
                 tick_count,
@@ -169,10 +174,16 @@ impl Server {
         pending_command_executions.cancel_all();
         self.command_requests.clear();
         self.packet_processor.stop();
+        self.start_player_disconnect_saves(&mut player_disconnect_saves);
         self.pending_player_disconnects.clear();
         while let Some(result) = player_disconnect_saves.join_next().await {
             if let Err(error) = result {
                 log::error!("Player disconnect save task failed during shutdown: {error}");
+            }
+        }
+        while let Some(result) = command_data_autosaves.join_next().await {
+            if let Err(error) = result {
+                log::error!("Command data autosave task failed during shutdown: {error}");
             }
         }
     }
@@ -202,8 +213,35 @@ impl Server {
         }
     }
 
-    fn tick_pending_command_executions(pending: &mut PendingCommandExecutionQueue<CommandSource>) {
-        let stats = pending.tick(COMMAND_RESUMPTIONS_PER_TICK);
+    fn tick_command_data_autosave(
+        self: &Arc<Self>,
+        next_autosave: &mut Instant,
+        saves: &mut JoinSet<()>,
+    ) {
+        while let Some(result) = saves.try_join_next() {
+            if let Err(error) = result {
+                log::error!("Command data autosave task failed: {error}");
+            }
+        }
+        if Instant::now() < *next_autosave {
+            return;
+        }
+        if saves.is_empty() {
+            let server = Arc::clone(self);
+            saves.spawn(async move {
+                server.autosave_command_data().await;
+            });
+        } else {
+            tracing::warn!("Skipping command data autosave while the previous save runs");
+        }
+        *next_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
+    }
+
+    fn tick_pending_command_executions(
+        &self,
+        pending: &mut PendingCommandExecutionQueue<CommandSource>,
+    ) {
+        let stats = pending.tick(COMMAND_RESUMPTIONS_PER_TICK, |owner| owner.is_current(self));
         if stats.polled == COMMAND_RESUMPTIONS_PER_TICK && stats.pending > 0 {
             tracing::debug!(
                 polled = stats.polled,
@@ -222,31 +260,32 @@ impl Server {
         for _ in 0..COMMAND_REQUESTS_PER_TICK {
             let Some(request) = self
                 .command_requests
-                .pop_front_runnable(|sender| !pending.blocks(sender.key()))
+                .pop_front_runnable(|owner| !pending.blocks(owner.key()))
             else {
                 break;
             };
             handled += 1;
 
             match request {
-                CommandRequest::Execute { sender, command } => {
-                    if sender
-                        .get_player()
-                        .is_some_and(|player| player.connection.closed())
-                    {
+                CommandRequest::Execute { owner, command } => {
+                    if !owner.is_current(self) {
                         continue;
                     }
-                    self.execute_command_request(pending, sender, &command);
+                    self.execute_command_request(pending, owner, &command);
                 }
                 CommandRequest::Suggestions {
-                    player,
+                    owner,
                     transaction_id,
                     input,
                 } => {
-                    if player.connection.closed() {
+                    if !owner.is_current(self) {
                         continue;
                     }
-                    self.send_command_suggestions(&player, transaction_id, &input);
+                    let Some(player) = owner.sender().get_player() else {
+                        tracing::error!("command suggestion request has a non-player owner");
+                        continue;
+                    };
+                    self.send_command_suggestions(player, transaction_id, &input);
                 }
             }
         }
@@ -259,11 +298,10 @@ impl Server {
     fn execute_command_request(
         self: &Arc<Self>,
         pending: &mut PendingCommandExecutionQueue<CommandSource>,
-        sender: CommandSender,
+        owner: CommandExecutionOwner,
         command: &str,
     ) {
-        let sender_key = sender.key();
-        let source = CommandSource::new(sender, Arc::clone(self));
+        let source = CommandSource::new(owner.sender().clone(), Arc::clone(self));
         let command = command.strip_prefix('/').unwrap_or(command);
         let chain = {
             let dispatcher = self.command_dispatcher.read();
@@ -280,8 +318,7 @@ impl Server {
 
         let mut execution = CommandExecutionContext::for_source(&source);
         execution.queue_initial_command(chain, source, CommandResultCallback::empty());
-        if execution.run() == ExecutionStop::Suspended
-            && !pending.push_suspended(sender_key, execution)
+        if execution.run() == ExecutionStop::Suspended && !pending.push_suspended(owner, execution)
         {
             tracing::error!("suspended command execution could not be retained");
         }
@@ -365,7 +402,7 @@ impl Server {
                     player,
                     world,
                     &mut encode_cache,
-                    &self.chunk_encoding_pool,
+                    self.chunk_encoding_pool.as_ref(),
                 );
                 true
             });
@@ -402,7 +439,16 @@ impl Server {
         let compression = connection.compression();
         let encoded = ChunkSender::encode_batch(&batch, encode_cache, compression, encoding_pool);
 
-        // Phase 3: commit (brief lock + generation check)
+        // Phase 3: commit while holding the tracking view that world detachment invalidates.
+        // This makes membership validation, packet commit, and tracker refresh one side of
+        // the same synchronization boundary.
+        let tracking_view = player.last_tracking_view.lock();
+        let Some(view) = *tracking_view else {
+            return;
+        };
+        if !world.contains_player(player) {
+            return;
+        }
         let sent_chunks = {
             let mut sender = player.chunk_sender.lock();
             sender.commit_batch(&batch, encoded, connection, &player.chunk_send_epoch)
@@ -412,9 +458,6 @@ impl Server {
             return;
         }
 
-        let Some(view) = *player.last_tracking_view.lock() else {
-            return;
-        };
         let sent_chunks = player.chunk_sender.lock().sent_chunks_snapshot();
         world
             .entity_tracker()
@@ -513,7 +556,7 @@ impl Server {
         }
     }
 
-    fn tick_jobs(self: &Arc<Self>, tick_count: u64, runs_normally: bool) {
+    pub(super) fn tick_jobs(self: &Arc<Self>, tick_count: u64, runs_normally: bool) {
         let stats = self
             .jobs
             .tick(Arc::downgrade(self), tick_count, runs_normally);
@@ -525,5 +568,48 @@ impl Server {
                 "Server jobs pending"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use rustc_hash::FxHashMap;
+    use uuid::Uuid;
+
+    use super::Server;
+    use crate::{
+        player::ResetReason,
+        test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
+    };
+    use steel_utils::ChunkPos;
+
+    #[test]
+    fn chunk_send_commit_rechecks_live_world_membership() {
+        let world = fresh_test_world("chunk_send_membership_revalidation");
+        let center = ChunkPos::new(0, 0);
+        insert_ready_full_chunk(&world, center);
+        let player =
+            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(1), "ChunkTester", 1)
+                .build();
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        assert!(world.players.remove_player_sync(&player).is_some());
+
+        let encoding_pool = rayon::ThreadPoolBuilder::new().num_threads(1).build();
+        let Ok(encoding_pool) = encoding_pool else {
+            panic!("test chunk encoding pool should initialize");
+        };
+        let mut encode_cache = FxHashMap::default();
+        Server::send_chunks_for_player(&player, &world, &mut encode_cache, &encoding_pool);
+
+        let sender = player.chunk_sender.lock();
+        assert!(sender.pending_chunks.contains(&center));
+        assert!(!sender.is_chunk_sent(center));
+        assert_eq!(sender.unacknowledged_batches, 0);
+        drop(sender);
+
+        assert!(world.players.insert(Arc::clone(&player)));
+        world.remove_player_for_world_change(&player);
     }
 }
