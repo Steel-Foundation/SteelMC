@@ -5,8 +5,7 @@
 <h1 align="center">SteelMC</h1>
 
 <p align="center">
-  A Minecraft Java Edition server written in Rust, built for vanilla-compatible behavior,
-  parallelism, performance, and foundations that last.
+  A Minecraft Java Edition server written in Rust.
 </p>
 
 <p align="center">
@@ -26,43 +25,29 @@
 ![A sunset over a SteelMC-generated world, with forests, rivers, mountains, and a lit village](.github/assets/readme/sunset.webp)
 
 > [!IMPORTANT]
-> SteelMC is in pre-alpha. You can connect, explore generated worlds, and test the
-> systems already in place, but survival gameplay and vanilla parity are not complete.
-> Do not replace a production server with SteelMC yet.
+> SteelMC is still pre-alpha. You can connect and explore generated worlds, but
+> survival gameplay is incomplete and many vanilla systems are still missing. Do not
+> replace your production server with it yet.
 
 ## What is SteelMC?
 
-SteelMC is an independent implementation of the Minecraft Java Edition server. The
-current release line targets **Minecraft Java Edition 26.2**.
+SteelMC is an independent implementation of the Minecraft Java Edition server. It
+tracks the latest Java Edition release and currently targets **Minecraft 26.2**.
 
-Clients can join a persistent multiplayer world, move and interact, use inventories
-and commands, and return to chunks that have been saved. SteelMC is already more than
-a protocol or world-generation demo, but it remains early enough that testing,
-feedback, and contributions make a meaningful difference.
+The goal is to match vanilla behavior while making better use of modern multicore
+hardware. Gameplay updates remain synchronous, while chunk generation, lighting,
+packet processing, and chunk sending can run outside the main tick.
 
-The project is guided by three priorities:
+## World generation
 
-- **Vanilla-compatible behavior.** SteelMC studies the vanilla implementation and
-  preserves behavior players depend on, including useful quirks, instead of treating
-  compatibility as a surface-level protocol target.
-- **Parallel foundations.** Chunk scheduling, generation, lighting, packet
-  processing, and chunk sending are designed to use modern hardware without giving
-  up well-defined synchronous points for gameplay logic.
-- **Maintainable systems.** Shared foundations are designed around the complicated
-  cases they will eventually need to support, keeping the codebase pleasant to work
-  in as the server grows.
+World generation is currently the most complete part of SteelMC. Its parity suite
+compares 7,500 randomly selected chunks with a reproducible vanilla reference: 2,500
+in each dimension. All tested chunks match block for block. Entity spawning is not
+included because most entity behavior has not been implemented yet.
 
-## Something real to test
-
-SteelMC's terrain-generation output has matched vanilla block for block across
-**7,500 randomly selected test chunks**: 2,500 in each dimension. The comparison
-uses a reproducible vanilla reference with entity spawning excluded and a small
-number of order-dependent behaviors normalized.
-
-The world generator also scales across many CPU cores. In a focused benchmark on a
-Ryzen 9 9950X, SteelMC generated a fresh 10,201-chunk Overworld area in a median of
-3.96 seconds. This is a world-generation benchmark, not a claim about every server
-workload.
+In a focused benchmark on a Ryzen 9 9950X, SteelMC generated a fresh
+10,201-chunk Overworld area in a median of 3.98 seconds. Results vary with hardware,
+and this benchmark does not represent every server workload.
 
 Read [Introducing SteelMC](https://steelmc.dev/blog/announcement/) for the design
 story, parity methodology, benchmark context, and limitations. Full results and
@@ -71,7 +56,9 @@ reproduction instructions are available on the
 
 ## Current status
 
-SteelMC currently includes:
+Today, clients can join a persistent multiplayer world, move and interact, use
+inventories and commands, and return later to saved chunks. SteelMC currently
+provides:
 
 - Java Edition networking, authentication, encryption, and compression
 - Persistent chunk generation, loading, saving, and lighting
@@ -79,7 +66,7 @@ SteelMC currently includes:
 - Commands, permissions, chat, and server configuration
 - Early entity, block entity, and gameplay behavior implementations
 
-Important limitations:
+SteelMC is not ready to replace an established server:
 
 - Survival gameplay is incomplete.
 - Only a small number of entities have meaningful behavior.
@@ -90,7 +77,7 @@ Important limitations:
 Follow the [implementation tracker](https://steelmc.dev/tracker) for a more detailed
 view of what is available today.
 
-## Try SteelMC
+## Try it
 
 Pre-built releases, Docker images, and source-build instructions are available in
 the [installation guide](https://steelmc.dev/getting-started/installation/).
@@ -101,10 +88,11 @@ on [Discord](https://steelmc.dev/discord) or open a
 
 ## Contributing
 
-SteelMC is built by people who care about understanding Minecraft's behavior and
-turning that understanding into clear, reliable Rust. New contributors are welcome.
+Contributions are welcome. Most changes begin by reading the vanilla source,
+understanding the behavior it implements, and deciding how to express that behavior
+cleanly in Rust.
 
-Before starting:
+Before you start:
 
 1. Check existing issues and pull requests, then discuss substantial changes with
    the community.
@@ -132,9 +120,9 @@ every line they submit. Fully autonomous pull requests are not accepted.
 
 ## Community
 
-Questions, design discussions, progress updates, and contributor coordination happen
-on the [SteelMC Discord](https://steelmc.dev/discord). You can also follow project
-updates on the [SteelMC website](https://steelmc.dev/).
+The [SteelMC Discord](https://steelmc.dev/discord) is where we discuss designs,
+coordinate work, share progress, and answer questions. Longer project updates are
+published on the [SteelMC website](https://steelmc.dev/).
 
 ## License
 
@@ -145,7 +133,7 @@ The SteelMC logo was designed by **colonthreeing**.
 
 ## Acknowledgements
 
-SteelMC has been inspired by the work of
+SteelMC's world generation, lighting, and other performance work has drawn ideas from
 [C2ME](https://github.com/RelativityMC/C2ME-fabric),
 [ScalableLux](https://github.com/RelativityMC/ScalableLux),
 [FastNoise](https://codeberg.org/ZenXArch/FastNoise),
