@@ -124,6 +124,9 @@ cargo clippy -r --all-targets --all-features
 typos
 ```
 
+Generated documentation for SteelMC's Rust crates is available in the
+[Rust API reference](https://rustdoc.steelmc.dev/steel_core/index.html).
+
 AI may be used as a tool, but contributors must understand and be able to explain
 every line they submit. Fully autonomous pull requests are not accepted.
 
