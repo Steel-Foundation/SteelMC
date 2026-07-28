@@ -10,11 +10,9 @@ use crate::chunk::light::ChunkLightData;
 use crate::chunk::proto_chunk::ProtoChunk;
 use crate::chunk::section::{ChunkSection, Sections};
 use crate::chunk_saver::RamOnlyStorage;
-use crate::config::RuntimeConfig;
 use crate::player::connection::NetworkConnection;
-use crate::player::{ClientInformation, GameProfile, PlayerConnection, ResetReason};
-use crate::server::Server;
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::player::{PlayerConnection, ResetReason};
+use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, SavedTick, TickPriority};
 use crate::worldgen::EmptyChunkGenerator;
 use std::io::Cursor;
@@ -71,45 +69,9 @@ fn recording_player(world: &Arc<World>) -> (Arc<Player>, Arc<SyncMutex<Vec<Encod
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
         packets: Arc::clone(&packets),
     })));
-    let config = Arc::new(RuntimeConfig {
-        max_players: 1,
-        view_distance: 2,
-        simulation_distance: 2,
-        max_chained_neighbor_updates: 1_000_000,
-        online_mode: false,
-        auth_server: None,
-        profile_server: None,
-        encryption: false,
-        allow_flight: false,
-        motd: String::new(),
-        use_favicon: false,
-        favicon: String::new(),
-        enforce_secure_chat: false,
-        chat_spam_threshold_seconds: 10,
-        command_spam_threshold_seconds: 10,
-        compression: None,
-        server_links: None,
-        packet_workers: Some(1),
-        chunk_generation_threads: Some(1),
-        chunk_encoding_threads: Some(1),
-    });
-    let player = Arc::new_cyclic(|weak_player| {
-        Player::new(
-            GameProfile {
-                id: Uuid::from_u128(1),
-                name: "TestPlayer".to_owned(),
-                properties: Vec::new(),
-                profile_actions: None,
-            },
-            Arc::clone(&connection),
-            Arc::clone(world),
-            Weak::<Server>::new(),
-            config,
-            1,
-            weak_player,
-            ClientInformation::default(),
-        )
-    });
+    let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(1), "TestPlayer", 1)
+        .connection(connection)
+        .build();
     (player, packets)
 }
 

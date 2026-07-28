@@ -3,15 +3,14 @@ use std::sync::LazyLock;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::types::InteractionHand;
 
-use crate::inventory::{container::Container, equipment::EquipmentSlot};
+use crate::inventory::{
+    container::Container,
+    equipment::{EntityEquipment, EquipmentSlot},
+};
 
 use super::core::PlayerInventory;
 
-/// Maps inventory slot indices (36+) to equipment slots.
-/// Slots 36-39: Armor (feet, legs, chest, head)
-/// Slot 40: Offhand
-/// Slot 41: Body armor (for animals, not used for players)
-/// Slot 42: Saddle (for animals, not used for players)
+/// Maps vanilla player-container indices 36-42 to equipment slots.
 const fn slot_to_equipment(slot: usize) -> Option<EquipmentSlot> {
     match slot {
         36 => Some(EquipmentSlot::Feet),
@@ -23,6 +22,16 @@ const fn slot_to_equipment(slot: usize) -> Option<EquipmentSlot> {
         42 => Some(EquipmentSlot::Saddle),
         _ => None,
     }
+}
+
+/// The equipment slot for an armor/offhand container index.
+///
+/// # Panics
+/// Panics if `index` is not an equipment index. Menu sections restrict
+/// themselves to [`PlayerInventory::ARMOR_TOP_DOWN`] and
+/// [`PlayerInventory::SLOT_OFFHAND`], so this is unreachable from them.
+pub(crate) const fn armor_equipment(index: usize) -> EquipmentSlot {
+    slot_to_equipment(index).expect("armor sections only cover armor indices")
 }
 
 impl PlayerInventory {
@@ -71,9 +80,16 @@ static EMPTY_ITEM: LazyLock<ItemStack> = LazyLock::new(ItemStack::empty);
 pub struct InvalidHotbarSlot;
 
 impl Container for PlayerInventory {
+    fn items(&self) -> &[ItemStack] {
+        &self.items
+    }
+
+    fn items_mut(&mut self) -> &mut [ItemStack] {
+        &mut self.items
+    }
+
     fn get_container_size(&self) -> usize {
-        // 36 main slots + 7 equipment slots (feet, legs, chest, head, offhand, body, saddle)
-        Self::INVENTORY_SIZE + 7
+        Self::CONTAINER_SIZE
     }
 
     /// Adds an item to the player's main inventory (slots 0-35 only).
@@ -89,9 +105,11 @@ impl Container for PlayerInventory {
         let max_size = self.get_max_stack_size_for_item(stack);
         let mut changed = false;
 
-        // First pass: try to stack with existing items in main inventory only
+        // Vanilla prioritizes the selected slot, then an existing compatible
+        // offhand stack, before scanning the remaining main inventory.
         if stack.is_stackable() {
-            for slot in 0..Self::INVENTORY_SIZE {
+            let selected = self.selected as usize;
+            for slot in [selected, Self::SLOT_OFFHAND] {
                 if stack.is_empty() {
                     if changed {
                         self.set_changed();
@@ -106,9 +124,29 @@ impl Container for PlayerInventory {
                         let to_add = stack.count().min(space);
                         existing.grow(to_add);
                         stack.shrink(to_add);
-                        if slot == self.selected as usize {
-                            self.mark_main_hand_dirty();
-                        }
+                        changed = true;
+                    }
+                }
+            }
+
+            for slot in 0..Self::INVENTORY_SIZE {
+                if stack.is_empty() {
+                    if changed {
+                        self.set_changed();
+                    }
+                    return true;
+                }
+                if slot == selected {
+                    continue;
+                }
+                let existing = &mut self.items[slot];
+                if !existing.is_empty() && ItemStack::is_same_item_same_components(existing, stack)
+                {
+                    let space = max_size - existing.count();
+                    if space > 0 {
+                        let to_add = stack.count().min(space);
+                        existing.grow(to_add);
+                        stack.shrink(to_add);
                         changed = true;
                     }
                 }
@@ -126,10 +164,6 @@ impl Container for PlayerInventory {
             if self.items[slot].is_empty() {
                 let to_place = stack.count().min(max_size);
                 self.items[slot] = stack.split(to_place);
-                if slot == self.selected as usize {
-                    self.mark_main_hand_dirty();
-                    self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
-                }
                 changed = true;
             }
         }
@@ -141,61 +175,35 @@ impl Container for PlayerInventory {
     }
 
     fn get_item(&self, slot: usize) -> &ItemStack {
-        if slot < Self::INVENTORY_SIZE {
+        if slot < Self::CONTAINER_SIZE {
             &self.items[slot]
-        } else if let Some(eq_slot) = slot_to_equipment(slot) {
-            self.equipment.get_ref(eq_slot)
         } else {
             &EMPTY_ITEM
         }
     }
 
     fn get_item_mut(&mut self, slot: usize) -> &mut ItemStack {
-        if slot < Self::INVENTORY_SIZE {
-            if slot == self.selected as usize {
-                self.mark_main_hand_dirty();
-            }
-            &mut self.items[slot]
-        } else if let Some(eq_slot) = slot_to_equipment(slot) {
-            self.equipment.get_mut(eq_slot)
-        } else {
-            panic!("Invalid slot index: {slot}");
-        }
+        assert!(slot < Self::CONTAINER_SIZE, "Invalid slot index: {slot}");
+        &mut self.items[slot]
     }
 
     fn set_item(&mut self, slot: usize, stack: ItemStack) {
+        if slot == self.selected as usize {
+            let _ = EntityEquipment::set(self, EquipmentSlot::MainHand, stack);
+            return;
+        }
+        if let Some(equipment_slot) = slot_to_equipment(slot) {
+            let _ = EntityEquipment::set(self, equipment_slot, stack);
+            return;
+        }
         if slot < Self::INVENTORY_SIZE {
-            let refresh_main_hand = slot == self.selected as usize && self.items[slot] != stack;
-            if refresh_main_hand {
-                self.mark_main_hand_dirty();
-            }
             self.items[slot] = stack;
-            if refresh_main_hand {
-                self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
-            }
-        } else if let Some(eq_slot) = slot_to_equipment(slot) {
-            let old = self.equipment.set(eq_slot, stack);
-            if old != *self.equipment.get_ref(eq_slot) {
-                self.refresh_player_equipment_attribute_modifiers(eq_slot);
-            }
         }
         self.set_changed();
     }
 
     fn is_empty(&self) -> bool {
-        for item in &self.items {
-            if !item.is_empty() {
-                return false;
-            }
-        }
-
-        for slot in EquipmentSlot::ALL {
-            if !self.equipment.get_ref(slot).is_empty() {
-                return false;
-            }
-        }
-
-        true
+        self.items.iter().all(ItemStack::is_empty)
     }
 
     fn set_changed(&mut self) {
@@ -204,23 +212,9 @@ impl Container for PlayerInventory {
 
     fn clear_content(&mut self) -> i32 {
         let mut count = 0;
-        let selected = self.selected as usize;
-        if !self.items[selected].is_empty() {
-            self.mark_main_hand_dirty();
-        }
         for item in &mut self.items {
             count += item.count();
             *item = ItemStack::empty();
-        }
-        for slot in EquipmentSlot::ALL {
-            count += self.equipment.get_ref(slot).count();
-        }
-        self.equipment.clear();
-        self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
-        for slot in EquipmentSlot::ALL {
-            if slot != EquipmentSlot::MainHand {
-                self.refresh_player_equipment_attribute_modifiers(slot);
-            }
         }
         if count > 0 {
             self.set_changed();
@@ -230,44 +224,15 @@ impl Container for PlayerInventory {
 
     fn clear_content_matching(&mut self, predicate: &mut dyn FnMut(&mut ItemStack) -> bool) -> i32 {
         let mut count = 0;
-        let selected = self.selected as usize;
-        let mut main_hand_changed = false;
-        let mut equipment_changed = [false; 8];
-        for slot in 0..Self::INVENTORY_SIZE {
-            if predicate(&mut self.items[slot]) {
-                if slot == selected {
-                    self.mark_main_hand_dirty();
-                    main_hand_changed = true;
-                }
-                count += self.items[slot].count();
-                self.items[slot] = ItemStack::empty();
-            }
-        }
-        for slot in EquipmentSlot::ALL {
-            let item = self.equipment.get_mut(slot);
+        for item in &mut self.items {
             if predicate(item) {
                 count += item.count();
                 *item = ItemStack::empty();
-                equipment_changed[slot.index()] = true;
-            }
-        }
-        if main_hand_changed {
-            self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
-        }
-        for slot in EquipmentSlot::ALL {
-            if equipment_changed[slot.index()] {
-                self.refresh_player_equipment_attribute_modifiers(slot);
             }
         }
         if count > 0 {
             self.set_changed();
         }
         count
-    }
-}
-
-impl PlayerInventory {
-    pub(super) const fn mark_main_hand_dirty(&mut self) {
-        self.dirty_main_hand = true;
     }
 }

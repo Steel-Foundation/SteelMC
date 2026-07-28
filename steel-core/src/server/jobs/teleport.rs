@@ -1,11 +1,13 @@
 use super::super::{
     Arc, BlockPos, ChunkPos, ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkStatus,
-    ChunkStorage, ChunkTicketKind, DVec3, EntityBase, NetworkConnection, PendingWorldChangeToken,
-    PersistentEntity, PersistentRootVehicle, Player, PlayerSpawnSearch, PlayerSpawnSearchPoll,
-    RemovalReason, RespawnData, SharedEntity, Uuid, World, change_entity_world, end_gateway,
-    end_portal, is_allowed_to_enter_portal, nether_portal, vanilla_entities,
+    ChunkStorage, ChunkTicketKind, DVec3, DomainResidenceToken, EntityBase, NetworkConnection,
+    PendingWorldChangeToken, PersistentEntity, PersistentRootVehicle, Player, PlayerSpawnSearch,
+    PlayerSpawnSearchPoll, PreparedSpawn, RelativeMovement, RemovalReason, RespawnData, Server,
+    SharedEntity, TeleportPostTransition, TeleportTransition, Uuid, World, change_entity_world,
+    end_gateway, end_portal, is_allowed_to_enter_portal, nether_portal, vanilla_entities,
 };
 use super::{JobPoll, ServerJob, ServerJobContext};
+use crate::entity::LivingEntity as _;
 
 pub(in crate::server) struct RootVehicleRestoreJob {
     player: Arc<Player>,
@@ -13,6 +15,7 @@ pub(in crate::server) struct RootVehicleRestoreJob {
     request: ChunkRequestHandle,
     attach: [u8; 16],
     root_uuid: [u8; 16],
+    residence_token: DomainResidenceToken,
 }
 
 impl RootVehicleRestoreJob {
@@ -20,6 +23,7 @@ impl RootVehicleRestoreJob {
         player: Arc<Player>,
         world: Arc<World>,
         root_vehicle: &PersistentRootVehicle,
+        residence_token: DomainResidenceToken,
     ) -> Option<Self> {
         let root_chunk = persistent_entity_chunk(&root_vehicle.entity)?;
         let request = world.chunk_map.request_chunk(
@@ -33,6 +37,7 @@ impl RootVehicleRestoreJob {
             request,
             attach: root_vehicle.attach,
             root_uuid: root_vehicle.entity.uuid,
+            residence_token,
         })
     }
 }
@@ -40,8 +45,10 @@ impl RootVehicleRestoreJob {
 impl ServerJob for RootVehicleRestoreJob {
     fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
         if self.player.connection.closed()
-            || !self.player.has_joined_world()
-            || !Arc::ptr_eq(&self.player.get_world(), &self.world)
+            || !self
+                .player
+                .is_domain_residence_current(self.residence_token)
+            || !self.world.contains_player(&self.player)
         {
             return JobPoll::Finished;
         }
@@ -54,6 +61,7 @@ impl ServerJob for RootVehicleRestoreJob {
                     return JobPoll::Pending;
                 };
                 if let Some(root_vehicle) = self.player.take_matching_pending_root_vehicle(
+                    self.residence_token,
                     &self.world,
                     self.attach,
                     self.root_uuid,
@@ -74,7 +82,11 @@ pub(in crate::server) fn clear_pending_world_change(
     entity: &SharedEntity,
     pending_token: PendingWorldChangeToken,
 ) {
-    entity.finish_pending_world_change(pending_token);
+    if entity.finish_pending_world_change(pending_token)
+        && let Some(player) = entity.as_player()
+    {
+        player.retry_deferred_death_respawn();
+    }
 }
 
 fn finish_pending_world_change_after_transition(
@@ -84,11 +96,11 @@ fn finish_pending_world_change_after_transition(
 ) {
     match changed_entity {
         Some(changed_entity) if Arc::ptr_eq(entity, &changed_entity) => {
-            changed_entity.finish_pending_world_change(pending_token);
+            clear_pending_world_change(&changed_entity, pending_token);
         }
         Some(_) => {}
         None => {
-            entity.finish_pending_world_change(pending_token);
+            clear_pending_world_change(entity, pending_token);
         }
     }
 }
@@ -108,6 +120,7 @@ pub(in crate::server) fn portal_entity_still_valid(
     pending_token: PendingWorldChangeToken,
 ) -> bool {
     !entity.is_removed()
+        && entity.can_use_portal(false)
         && entity.is_world_change_token_pending(pending_token)
         && entity
             .level()
@@ -135,6 +148,159 @@ fn poll_portal_chunks_until_ready(
             } else {
                 Some(JobPoll::Pending)
             }
+        }
+    }
+}
+
+const WORLD_SPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
+
+pub(in crate::server) struct WorldSpawnTeleportJob {
+    entity: SharedEntity,
+    source_world: Arc<World>,
+    target_world: Arc<World>,
+    pending_token: PendingWorldChangeToken,
+    rotation: (f32, f32),
+    phase: WorldSpawnTeleportPhase,
+}
+
+enum WorldSpawnTeleportPhase {
+    Searching(PlayerSpawnSearch),
+    Loading {
+        spawn: PreparedSpawn,
+        request: ChunkRequestHandle,
+    },
+}
+
+impl WorldSpawnTeleportJob {
+    pub(in crate::server) fn new(
+        entity: SharedEntity,
+        source_world: Arc<World>,
+        target_world: Arc<World>,
+        pending_token: PendingWorldChangeToken,
+    ) -> Result<Self, String> {
+        if entity.as_player().is_none() {
+            return Err("world spawn selection does not belong to a player".to_owned());
+        }
+        let (spawn_suggestion, rotation) = {
+            let level_data = target_world.level_data.read();
+            let data = level_data.data();
+            (data.spawn_pos(), (data.spawn.angle, 0.0))
+        };
+        let search = PlayerSpawnSearch::new(
+            &target_world,
+            spawn_suggestion,
+            target_world.default_gamemode,
+        )?;
+        Ok(Self {
+            entity,
+            source_world,
+            target_world,
+            pending_token,
+            rotation,
+            phase: WorldSpawnTeleportPhase::Searching(search),
+        })
+    }
+
+    fn still_valid(&self, server: &Server) -> bool {
+        let Some(player) = self.entity.as_player() else {
+            return false;
+        };
+        !self.entity.is_removed()
+            && !player.connection.closed()
+            && player.get_health() > 0.0
+            && !player.has_won_game()
+            && self
+                .entity
+                .is_world_change_token_pending(self.pending_token)
+            && self
+                .entity
+                .level()
+                .is_some_and(|world| Arc::ptr_eq(&world, &self.source_world))
+            && self.source_world.contains_player(player)
+            && self.source_world.domain() == self.target_world.domain()
+            && server
+                .worlds
+                .get(&self.target_world.key)
+                .is_some_and(|registered| Arc::ptr_eq(registered, &self.target_world))
+    }
+
+    fn finish_pending(&self) {
+        clear_pending_world_change(&self.entity, self.pending_token);
+    }
+}
+
+impl ServerJob for WorldSpawnTeleportJob {
+    fn poll(&mut self, context: &mut ServerJobContext) -> JobPoll {
+        let Some(server) = context.server() else {
+            self.finish_pending();
+            return JobPoll::Finished;
+        };
+        if !self.still_valid(&server) {
+            self.finish_pending();
+            return JobPoll::Finished;
+        }
+
+        loop {
+            match &mut self.phase {
+                WorldSpawnTeleportPhase::Searching(search) => {
+                    match search.poll_with_ready_candidate_budget(
+                        &self.target_world,
+                        WORLD_SPAWN_SEARCH_READY_CANDIDATE_BUDGET,
+                    ) {
+                        PlayerSpawnSearchPoll::Pending => return JobPoll::Pending,
+                        PlayerSpawnSearchPoll::Cancelled => {
+                            self.finish_pending();
+                            return JobPoll::Finished;
+                        }
+                        PlayerSpawnSearchPoll::Ready(position) => {
+                            let spawn = PreparedSpawn {
+                                position,
+                                rotation: self.rotation,
+                            };
+                            let request = self
+                                .target_world
+                                .request_player_spawn_chunks(spawn.position);
+                            self.phase = WorldSpawnTeleportPhase::Loading { spawn, request };
+                        }
+                    }
+                }
+                WorldSpawnTeleportPhase::Loading { spawn, request } => match request.poll() {
+                    ChunkRequestState::Pending { .. } => return JobPoll::Pending,
+                    ChunkRequestState::Cancelled => {
+                        self.finish_pending();
+                        return JobPoll::Finished;
+                    }
+                    ChunkRequestState::Ready => {
+                        if request.ready_chunks().is_none() {
+                            return JobPoll::Pending;
+                        }
+                        let transition = TeleportTransition {
+                            target_world: Arc::clone(&self.target_world),
+                            position: spawn.position,
+                            rotation: spawn.rotation,
+                            velocity: DVec3::ZERO,
+                            relatives: RelativeMovement::NONE,
+                            portal_cooldown: 0,
+                            as_passenger: false,
+                            post_transition: TeleportPostTransition::do_nothing(),
+                        };
+                        let changed_entity =
+                            change_entity_world(Arc::clone(&self.entity), &transition);
+                        return finish_portal_world_change(
+                            &self.entity,
+                            self.pending_token,
+                            changed_entity,
+                        );
+                    }
+                },
+            }
+        }
+    }
+
+    fn cancel(&mut self) {
+        self.finish_pending();
+        if let WorldSpawnTeleportPhase::Loading { request, .. } = &mut self.phase {
+            request.cancel();
         }
     }
 }
@@ -689,7 +855,7 @@ pub(in crate::server) struct EnderPearlRestoreJob {
     world: Arc<World>,
     request: ChunkRequestHandle,
     uuid: Uuid,
-    entity: PersistentEntity,
+    residence_token: DomainResidenceToken,
 }
 
 impl EnderPearlRestoreJob {
@@ -697,6 +863,7 @@ impl EnderPearlRestoreJob {
         player: Arc<Player>,
         world: Arc<World>,
         entity: PersistentEntity,
+        residence_token: DomainResidenceToken,
     ) -> Option<Self> {
         let chunk = persistent_entity_chunk(&entity)?;
         let uuid = Uuid::from_bytes(entity.uuid);
@@ -710,16 +877,42 @@ impl EnderPearlRestoreJob {
             world,
             request,
             uuid,
-            entity,
+            residence_token,
         })
     }
 }
 
 impl ServerJob for EnderPearlRestoreJob {
     fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
-        // The pearl lives in its own world, which may differ from the player's, so
-        // only the connection (not the player's current world) gates the restore.
-        if self.player.connection.closed() {
+        // The pearl may live in another world in the same domain, so require a
+        // live same-domain owner rather than membership in the pearl's exact world.
+        if self.player.connection.closed()
+            || !self
+                .player
+                .is_domain_residence_current(self.residence_token)
+        {
+            return JobPoll::Finished;
+        }
+        let Some(server) = self.player.server.upgrade() else {
+            return JobPoll::Finished;
+        };
+        if !server.owns_online_player(&self.player) {
+            return JobPoll::Finished;
+        }
+        let Some(player_world) = server.live_world_for_player(&self.player) else {
+            // End credits temporarily detaches a connected player without ending
+            // their domain residence. Retain the payload and resume after respawn.
+            return JobPoll::Pending;
+        };
+        if player_world.domain() != self.world.domain() {
+            tracing::error!(
+                player = %self.player.gameprofile.name,
+                player_domain = player_world.domain(),
+                pearl_domain = self.world.domain(),
+                "Discarding a pending ender pearl whose owner changed domains without a new residence"
+            );
+            self.player
+                .discard_pending_ender_pearl(self.residence_token, self.uuid);
             return JobPoll::Finished;
         }
 
@@ -730,9 +923,14 @@ impl ServerJob for EnderPearlRestoreJob {
                 if self.request.ready_chunks().is_none() {
                     return JobPoll::Pending;
                 }
-                if !restore_ender_pearl_for_player(&self.player, &self.world, &self.entity) {
-                    self.player.remove_pending_ender_pearl(self.uuid);
-                }
+                let Some(pearl) = self.player.take_matching_pending_ender_pearl(
+                    self.residence_token,
+                    &self.world,
+                    self.uuid,
+                ) else {
+                    return JobPoll::Finished;
+                };
+                restore_ender_pearl_for_player(&self.player, &self.world, &pearl.entity);
                 JobPoll::Finished
             }
         }

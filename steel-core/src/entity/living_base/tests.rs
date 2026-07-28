@@ -294,7 +294,7 @@ fn equipment_is_living_entity_state() {
     init_test_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
-    assert!(base.equipment().lock().is_empty());
+    assert!(base.equipment().lock().non_empty_items().is_empty());
 
     base.equipment()
         .lock()

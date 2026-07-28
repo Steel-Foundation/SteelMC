@@ -887,6 +887,23 @@ impl EntityBase {
 
     /// Resets state that vanilla gets from constructing a fresh player entity for death respawn.
     pub fn reset_for_player_respawn(&self, dimensions: EntityDimensions) {
+        self.reset_for_player_respawn_inner(dimensions, None);
+    }
+
+    /// Resets death-respawn state while retaining the relocation that owns admission.
+    pub(crate) fn reset_for_player_respawn_during_world_change(
+        &self,
+        dimensions: EntityDimensions,
+        pending_token: PendingWorldChangeToken,
+    ) {
+        self.reset_for_player_respawn_inner(dimensions, Some(pending_token));
+    }
+
+    fn reset_for_player_respawn_inner(
+        &self,
+        dimensions: EntityDimensions,
+        pending_world_change: Option<PendingWorldChangeToken>,
+    ) {
         {
             let mut state = self.state.lock();
             let position = state.position;
@@ -915,7 +932,7 @@ impl EntityBase {
 
         self.movement_trace.lock().reset();
         *self.portal_process.lock() = None;
-        self.lifecycle.lock().pending_world_change = None;
+        self.lifecycle.lock().pending_world_change = pending_world_change;
 
         let mut save_data = self.save_data.lock();
         let tags = mem::take(&mut save_data.tags);
@@ -932,6 +949,22 @@ impl EntityBase {
     pub fn begin_pending_world_change(&self) -> Option<PendingWorldChangeToken> {
         let mut lifecycle = self.lifecycle.lock();
         if lifecycle.removal_reason.is_some() || lifecycle.pending_world_change.is_some() {
+            return None;
+        }
+        let token = lifecycle.next_world_change_token();
+        lifecycle.pending_world_change = Some(token);
+        Some(token)
+    }
+
+    /// Marks a live or killed player as waiting for respawn preparation.
+    ///
+    /// Killed players remain eligible because their async spawn search may need
+    /// to be retried after the death animation removes their live entity.
+    pub(crate) fn begin_pending_player_respawn(&self) -> Option<PendingWorldChangeToken> {
+        let mut lifecycle = self.lifecycle.lock();
+        if !matches!(lifecycle.removal_reason, None | Some(RemovalReason::Killed))
+            || lifecycle.pending_world_change.is_some()
+        {
             return None;
         }
         let token = lifecycle.next_world_change_token();

@@ -5,12 +5,13 @@ use std::sync::Arc;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::BlockPos;
+use steel_utils::locks::Shared;
 use steel_utils::types::InteractionHand;
 
 use crate::behavior::BlockStateBehaviorExt;
 use crate::entity::Entity;
 use crate::fluid::FluidStateExt;
-use crate::inventory::lock::{ContainerLockGuard, ContainerRef, SyncPlayerInv};
+use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;
 use crate::world::World;
@@ -573,20 +574,20 @@ impl<'a> PlacementSource<'a> {
 /// through block behavior, world mutation, or menu opening.
 #[derive(Clone)]
 pub struct InventoryAccess {
-    inventory: SyncPlayerInv,
+    inventory: Shared<PlayerInventory>,
     hand: InteractionHand,
 }
 
 impl InventoryAccess {
     /// Creates a new `InventoryAccess` instance.
-    pub const fn new(inventory: SyncPlayerInv, hand: InteractionHand) -> Self {
+    pub const fn new(inventory: Shared<PlayerInventory>, hand: InteractionHand) -> Self {
         Self { inventory, hand }
     }
 
     /// Runs `f` with mutable access to the item in the player's hand.
     pub fn with_item<R>(&self, f: impl FnOnce(&mut ItemStack) -> R) -> R {
         let mut inventory = self.inventory.lock();
-        f(inventory.get_item_in_hand_mut(self.hand))
+        inventory.mutate_item_in_hand(self.hand, f)
     }
 
     /// Runs `f` with mutable access to the player's inventory.
@@ -632,7 +633,7 @@ impl<'a> UseOnContext<'a> {
         hand: InteractionHand,
         hit_result: BlockHitResult,
         world: &'a Arc<World>,
-        inventory: SyncPlayerInv,
+        inventory: Shared<PlayerInventory>,
     ) -> Self {
         Self {
             player,
@@ -676,7 +677,7 @@ impl<'a> UseItemContext<'a> {
         player: &'a Player,
         hand: InteractionHand,
         world: &'a Arc<World>,
-        inventory: SyncPlayerInv,
+        inventory: Shared<PlayerInventory>,
     ) -> Self {
         Self {
             player,
@@ -689,7 +690,7 @@ impl<'a> UseItemContext<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::sync::Arc;
 
     use steel_registry::data_components::vanilla_components::BLOCK_STATE;
     use steel_registry::test_support::init_test_registry;
@@ -716,7 +717,7 @@ mod tests {
     fn player_hand_source_reads_current_components_and_mutates_the_hand() {
         init_test_registry();
 
-        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new(Weak::new())));
+        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
         inventory
             .lock()
             .set_item(0, ItemStack::with_count(&vanilla_items::LIGHT, 2));
@@ -748,7 +749,7 @@ mod tests {
         init_test_registry();
         init_behaviors();
 
-        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new(Weak::new())));
+        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
         inventory
             .lock()
             .set_item(0, ItemStack::new(&vanilla_items::STONE));

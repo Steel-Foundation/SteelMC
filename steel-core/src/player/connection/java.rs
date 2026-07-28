@@ -11,14 +11,14 @@ use steel_protocol::packets::common::{
     SPingRequest,
 };
 use steel_protocol::packets::game::{
-    CBundleDelimiter, CCommandSuggestions, PlayerAction, PlayerCommandAction, SAcceptTeleportation,
-    SAttack, SChangeDifficulty, SChangeGameMode, SChat, SChatAck, SChatCommand, SChatSessionUpdate,
-    SChunkBatchReceived, SClientCommand, SClientTickEnd, SCommandSuggestion, SContainerButtonClick,
-    SContainerClick, SContainerClose, SContainerSlotStateChanged, SInteract, SMovePlayer,
-    SMovePlayerPos, SMovePlayerPosRot, SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle,
-    SPickItemFromBlock, SPlayerAbilities, SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad,
-    SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem,
-    SUseItemOn,
+    CBundleDelimiter, CCommandSuggestions, ClientCommandAction, PlayerAction, PlayerCommandAction,
+    SAcceptTeleportation, SAttack, SChangeDifficulty, SChangeGameMode, SChat, SChatAck,
+    SChatCommand, SChatSessionUpdate, SChunkBatchReceived, SClientCommand, SClientTickEnd,
+    SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
+    SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
+    SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
+    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem, SSetCarriedItem,
+    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem, SUseItemOn,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
@@ -92,6 +92,7 @@ enum ScheduledPlayPacketKind {
     PlayerInput(SPlayerInput),
     PlayerCommand(SPlayerCommand),
     PlayerAbilities(SPlayerAbilities),
+    RenameItem(SRenameItem),
     UseItemOn(SUseItemOn),
     UseItem(SUseItem),
     SetCarriedItem(SSetCarriedItem),
@@ -118,6 +119,31 @@ enum DecodedPlayPacket {
 }
 
 impl ScheduledPlayPacket {
+    /// Returns whether this packet acknowledges target-world synchronization.
+    pub(crate) const fn is_domain_handshake_packet(&self) -> bool {
+        matches!(
+            self.0,
+            ScheduledPlayPacketKind::AcceptTeleportation(_) | ScheduledPlayPacketKind::PlayerLoaded
+        )
+    }
+
+    /// Returns whether this is the death screen's one-shot respawn request.
+    pub(crate) const fn is_perform_respawn(&self) -> bool {
+        matches!(
+            self.0,
+            ScheduledPlayPacketKind::ClientCommand(SClientCommand {
+                action: ClientCommandAction::PerformRespawn,
+            })
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn perform_respawn_for_test() -> Self {
+        Self(ScheduledPlayPacketKind::ClientCommand(SClientCommand {
+            action: ClientCommandAction::PerformRespawn,
+        }))
+    }
+
     /// Returns the handler's audited cross-player concurrency class.
     ///
     /// This match is intentionally exhaustive so every newly implemented packet requires an
@@ -173,6 +199,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::MovePlayer(_)
             | ScheduledPlayPacketKind::MoveVehicle(_)
             | ScheduledPlayPacketKind::ContainerClick(_)
+            | ScheduledPlayPacketKind::RenameItem(_)
             | ScheduledPlayPacketKind::UseItemOn(_)
             | ScheduledPlayPacketKind::UseItem(_)
             | ScheduledPlayPacketKind::SignUpdate(_)
@@ -277,6 +304,7 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::PlayerAbilities(packet) => {
                 player.handle_player_abilities(packet);
             }
+            ScheduledPlayPacketKind::RenameItem(packet) => player.handle_rename_item(packet),
             ScheduledPlayPacketKind::UseItemOn(packet) => player.handle_use_item_on(packet),
             ScheduledPlayPacketKind::UseItem(packet) => player.handle_use_item(packet),
             ScheduledPlayPacketKind::SetCarriedItem(packet) => {
@@ -547,6 +575,13 @@ impl JavaConnection {
         )
     }
 
+    const fn can_process_during_domain_handshake(packet_id: i32) -> bool {
+        matches!(
+            packet_id,
+            play::S_ACCEPT_TELEPORTATION | play::S_CHUNK_BATCH_RECEIVED | play::S_PLAYER_LOADED
+        )
+    }
+
     /// Decodes and dispatches one packet received from the client.
     fn process_packet(
         &self,
@@ -558,14 +593,12 @@ impl JavaConnection {
             return Ok(());
         }
 
-        if player.is_domain_switching()
-            && !matches!(packet.id, play::S_KEEP_ALIVE | play::S_PING_REQUEST)
-        {
-            return Ok(());
-        }
-
         let payload_bytes = packet.payload.len();
-        match Self::decode_play_packet(packet)? {
+        let Some(packet) = Self::decode_domain_gated_packet(packet, &player)? else {
+            return Ok(());
+        };
+
+        match packet {
             DecodedPlayPacket::Scheduled(packet) => {
                 server.schedule_play_packet(player, packet, payload_bytes);
             }
@@ -574,6 +607,31 @@ impl JavaConnection {
             }
         }
         Ok(())
+    }
+
+    fn decode_domain_gated_packet(
+        packet: RawPacket,
+        player: &Player,
+    ) -> Result<Option<DecodedPlayPacket>, PacketError> {
+        let maintenance_packet = matches!(packet.id, play::S_KEEP_ALIVE | play::S_PING_REQUEST);
+        let handshake_packet = Self::can_process_during_domain_handshake(packet.id);
+        if packet.id == play::S_CLIENT_COMMAND {
+            let decoded = Self::decode_play_packet(packet)?;
+            let perform_respawn = matches!(
+                &decoded,
+                DecodedPlayPacket::Scheduled(packet) if packet.is_perform_respawn()
+            );
+            if player.gate_domain_switch_packet(false, perform_respawn) {
+                return Ok(Some(decoded));
+            }
+            return Ok(None);
+        }
+
+        if !maintenance_packet && !player.gate_domain_switch_packet(handshake_packet, false) {
+            return Ok(None);
+        }
+
+        Self::decode_play_packet(packet).map(Some)
     }
 
     #[expect(
@@ -675,6 +733,9 @@ impl JavaConnection {
             )),
             play::S_PLAYER_ABILITIES => scheduled(ScheduledPlayPacketKind::PlayerAbilities(
                 SPlayerAbilities::read_packet(data)?,
+            )),
+            play::S_RENAME_ITEM => scheduled(ScheduledPlayPacketKind::RenameItem(
+                SRenameItem::read_packet(data)?,
             )),
             play::S_USE_ITEM_ON => scheduled(ScheduledPlayPacketKind::UseItemOn(
                 SUseItemOn::read_packet(data)?,
@@ -902,6 +963,10 @@ impl NetworkConnection for JavaConnection {
 mod tests {
     use std::array;
 
+    use crate::{
+        entity::{Entity as _, LivingEntity as _},
+        test_support::{TestPlayerBuilder, fresh_test_world},
+    };
     use rustc_hash::FxHashMap;
     use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
     use steel_protocol::packets::game::{ClickType, ClientCommandAction, HashedStack};
@@ -930,6 +995,40 @@ mod tests {
         assert!(!JavaConnection::can_process_before_join(
             play::C_CUSTOM_PAYLOAD
         ));
+    }
+
+    #[test]
+    fn queued_domain_switch_records_only_perform_respawn_at_connection_gate() {
+        let world = fresh_test_world("queued_domain_switch_respawn_packet");
+        let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "RespawnTester", 1).build();
+        let Some(token) = player.begin_pending_world_change() else {
+            panic!("test player should acquire a world-change token");
+        };
+        assert!(player.begin_domain_switch(token));
+        player.set_health(0.0);
+
+        let request_stats = JavaConnection::decode_domain_gated_packet(
+            RawPacket {
+                id: play::S_CLIENT_COMMAND,
+                payload: vec![ClientCommandAction::RequestStats as u8],
+            },
+            &player,
+        );
+        assert!(matches!(request_stats, Ok(None)));
+        assert!(!player.has_deferred_death_respawn_for_test());
+
+        let perform_respawn = JavaConnection::decode_domain_gated_packet(
+            RawPacket {
+                id: play::S_CLIENT_COMMAND,
+                payload: vec![ClientCommandAction::PerformRespawn as u8],
+            },
+            &player,
+        );
+        assert!(matches!(perform_respawn, Ok(None)));
+        assert!(player.has_deferred_death_respawn_for_test());
+
+        assert!(player.finish_domain_switch(token));
+        assert!(player.finish_pending_world_change(token));
     }
 
     #[test]
@@ -963,6 +1062,39 @@ mod tests {
         assert!(JavaConnection::can_process_before_join(
             play::S_PLAYER_LOADED
         ));
+        assert!(JavaConnection::can_process_during_domain_handshake(
+            play::S_ACCEPT_TELEPORTATION
+        ));
+        assert!(JavaConnection::can_process_during_domain_handshake(
+            play::S_CHUNK_BATCH_RECEIVED
+        ));
+        assert!(JavaConnection::can_process_during_domain_handshake(
+            play::S_PLAYER_LOADED
+        ));
+        assert!(!JavaConnection::can_process_during_domain_handshake(
+            play::S_MOVE_PLAYER_POS
+        ));
+    }
+
+    #[test]
+    fn scheduled_domain_handshake_classification_is_narrow() {
+        let accept = decode(RawPacket {
+            id: play::S_ACCEPT_TELEPORTATION,
+            payload: vec![0],
+        });
+        let DecodedPlayPacket::Scheduled(accept) = accept else {
+            panic!("teleport acknowledgement should be scheduled");
+        };
+        assert!(accept.is_domain_handshake_packet());
+
+        let client_tick_end = decode(RawPacket {
+            id: play::S_CLIENT_TICK_END,
+            payload: Vec::new(),
+        });
+        let DecodedPlayPacket::Scheduled(client_tick_end) = client_tick_end else {
+            panic!("client tick end should be scheduled");
+        };
+        assert!(!client_tick_end.is_domain_handshake_packet());
     }
 
     #[test]

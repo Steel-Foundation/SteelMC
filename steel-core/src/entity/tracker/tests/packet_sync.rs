@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use super::*;
 
 #[test]
@@ -109,6 +111,44 @@ fn send_changes_broadcasts_dirty_equipment_once() {
         },
     );
     assert!(updates.is_empty());
+}
+
+#[test]
+fn send_changes_broadcasts_equipment_before_attributes() {
+    test_support::init_test_registry();
+
+    let tracker = EntityTracker::new();
+    let entity_typed = PairingTestEntity::new(1, Vec::new());
+    let entity: SharedEntity = entity_typed.clone();
+    tracker.add(&entity, |_| Vec::new(), |_| None);
+
+    entity_typed.set_dirty_equipment(vec![EquipmentSlotItem {
+        slot: EquipmentSlot::Chest,
+        item_stack: ItemStack::new(&vanilla_items::ELYTRA),
+    }]);
+    entity_typed.set_dirty_attributes(vec![AttributeSnapshot {
+        attribute_id: 7,
+        base_value: 2.5,
+        modifiers: Vec::new(),
+    }]);
+
+    let updates = RefCell::new(Vec::new());
+    tracker.send_changes(
+        |_| Vec::new(),
+        |_| None,
+        EntityChangeSenders {
+            movement: |_, _| {},
+            self_movement: |_, _| {},
+            entity_data: |_, _| {},
+            attributes: |_, _| updates.borrow_mut().push("attributes"),
+            mob_effects: |_, _| {},
+            equipment: |_, _| updates.borrow_mut().push("equipment"),
+            passengers: |_, _| {},
+            entity_link: |_, _| {},
+        },
+    );
+
+    assert_eq!(*updates.borrow(), ["equipment", "attributes"]);
 }
 
 #[test]

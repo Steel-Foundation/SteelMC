@@ -1,10 +1,26 @@
+use std::ptr;
+
+use crate::player::connection::NetworkConnection;
+
 use super::{
     Arc, CLogin, CSetDefaultSpawnPosition, CommonPlayerSpawnInfo, DVec3, DomainPlayerData,
-    DomainPlayerState, EnderPearlRestoreJob, Entity, IMMEDIATE_RESPAWN, Identifier,
-    LIMITED_CRAFTING, PersistentEnderPearl, PersistentRootVehicle, Player, PreparedSpawn,
-    REDUCED_DEBUG_INFO, RegistryEntry, RespawnData, RootVehicleRestoreJob, Server, Uuid, World,
-    apply_default_spawn, local_respawn_data_for_world,
+    DomainPlayerState, DomainResidenceToken, EnderPearlRestoreJob, Entity, IMMEDIATE_RESPAWN,
+    Identifier, LIMITED_CRAFTING, PersistentEnderPearl, PersistentRootVehicle, Player,
+    PreparedSpawn, REDUCED_DEBUG_INFO, RegistryEntry, RespawnData, RootVehicleRestoreJob, Server,
+    UnpreparedDomainPlayerData, UnpreparedDomainPlayerState, Uuid, World, apply_default_spawn,
+    local_respawn_data_for_world,
 };
+
+pub(super) struct PreparedDomainRestores {
+    pub(super) target_world: Arc<World>,
+    pub(super) root_vehicle: Option<PersistentRootVehicle>,
+    pub(super) ender_pearls: Vec<PreparedEnderPearlRestore>,
+}
+
+pub(super) struct PreparedEnderPearlRestore {
+    pub(super) world: Arc<World>,
+    pub(super) payload: PersistentEnderPearl,
+}
 
 impl Server {
     pub(super) async fn load_join_domain(&self, player: &Player) -> Result<String, String> {
@@ -33,18 +49,26 @@ impl Server {
         &self,
         player: &Player,
         target_domain: &str,
-        fallback_world: Option<Arc<World>>,
-        restore_saved_location: bool,
+        explicit_target_world: Option<Arc<World>>,
     ) -> Result<DomainPlayerState, String> {
-        let explicit_target_world = fallback_world.is_some();
-        let mut world = self
+        let state = self
+            .load_unprepared_domain_player_state(player, target_domain, explicit_target_world)
+            .await?;
+        self.prepare_domain_player_state(target_domain, state).await
+    }
+
+    pub(in crate::server) async fn load_unprepared_domain_player_state(
+        &self,
+        player: &Player,
+        target_domain: &str,
+        explicit_target_world: Option<Arc<World>>,
+    ) -> Result<UnpreparedDomainPlayerState, String> {
+        let has_explicit_target = explicit_target_world.is_some();
+        let default_world = self
             .worlds
             .default_world(target_domain)
             .cloned()
             .ok_or_else(|| format!("domain {target_domain} has no default world"))?;
-        if let Some(fallback_world) = fallback_world {
-            world = fallback_world;
-        }
 
         match self
             .player_data_storage
@@ -52,41 +76,32 @@ impl Server {
             .await
         {
             Ok(Some(saved_data)) => {
-                let restore_location = restore_saved_location
-                    && self.resolve_saved_world(
-                        &saved_data.world,
-                        target_domain,
-                        &mut world,
-                        &player.gameprofile.name,
-                    );
-                let (data, spawn_position) = if restore_location {
-                    let spawn_position =
-                        DVec3::new(saved_data.pos[0], saved_data.pos[1], saved_data.pos[2]);
+                let saved_world = self.resolve_saved_world(
+                    &saved_data.world,
+                    target_domain,
+                    explicit_target_world.as_ref().map(|world| &world.key),
+                    &player.gameprofile.name,
+                );
+                let (world, data) = if let Some(saved_world) = saved_world {
                     (
-                        DomainPlayerData::SavedRestored {
+                        saved_world,
+                        UnpreparedDomainPlayerData::SavedRestored {
                             data: Box::new(saved_data),
                         },
-                        spawn_position,
                     )
                 } else {
-                    let (default_world, default_spawn) = self
-                        .prepare_domain_default_spawn(target_domain, explicit_target_world, &world)
-                        .await?;
-                    world = default_world;
                     (
-                        DomainPlayerData::SavedWithoutLocation {
+                        explicit_target_world.unwrap_or(default_world),
+                        UnpreparedDomainPlayerData::SavedWithoutLocation {
                             data: Box::new(saved_data),
-                            default_spawn,
                         },
-                        default_spawn.position,
                     )
                 };
-                let spawn_chunk_request = world.prepare_player_spawn_chunks(spawn_position).await?;
                 log::info!("Loaded saved data for player {}", player.gameprofile.name);
-                Ok(DomainPlayerState {
+                Ok(UnpreparedDomainPlayerState {
                     world,
                     data,
-                    _spawn_chunk_request: spawn_chunk_request,
+                    explicit_target: has_explicit_target,
                 })
             }
             Ok(None) => {
@@ -95,17 +110,10 @@ impl Server {
                     player.gameprofile.name,
                     target_domain
                 );
-                let (default_world, default_spawn) = self
-                    .prepare_domain_default_spawn(target_domain, explicit_target_world, &world)
-                    .await?;
-                world = default_world;
-                let spawn_chunk_request = world
-                    .prepare_player_spawn_chunks(default_spawn.position)
-                    .await?;
-                Ok(DomainPlayerState {
-                    world,
-                    data: DomainPlayerData::FirstVisit { default_spawn },
-                    _spawn_chunk_request: spawn_chunk_request,
+                Ok(UnpreparedDomainPlayerState {
+                    world: explicit_target_world.unwrap_or(default_world),
+                    data: UnpreparedDomainPlayerData::FirstVisit,
+                    explicit_target: has_explicit_target,
                 })
             }
             Err(e) => Err(format!(
@@ -115,7 +123,48 @@ impl Server {
         }
     }
 
-    async fn prepare_domain_default_spawn(
+    async fn prepare_domain_player_state(
+        &self,
+        target_domain: &str,
+        state: UnpreparedDomainPlayerState,
+    ) -> Result<DomainPlayerState, String> {
+        let UnpreparedDomainPlayerState {
+            mut world,
+            explicit_target,
+            data,
+        } = state;
+        let (data, spawn_position) = match data {
+            UnpreparedDomainPlayerData::SavedRestored { data } => {
+                let spawn_position = DVec3::new(data.pos[0], data.pos[1], data.pos[2]);
+                (DomainPlayerData::SavedRestored { data }, spawn_position)
+            }
+            UnpreparedDomainPlayerData::SavedWithoutLocation { data } => {
+                let (spawn_world, spawn) = self
+                    .prepare_target_spawn(target_domain, explicit_target, &world)
+                    .await?;
+                world = spawn_world;
+                (
+                    DomainPlayerData::SavedWithoutLocation { data, spawn },
+                    spawn.position,
+                )
+            }
+            UnpreparedDomainPlayerData::FirstVisit => {
+                let (spawn_world, spawn) = self
+                    .prepare_target_spawn(target_domain, explicit_target, &world)
+                    .await?;
+                world = spawn_world;
+                (DomainPlayerData::FirstVisit { spawn }, spawn.position)
+            }
+        };
+        let spawn_chunk_request = world.prepare_player_spawn_chunks(spawn_position).await?;
+        Ok(DomainPlayerState {
+            world,
+            data,
+            spawn_chunk_request,
+        })
+    }
+
+    async fn prepare_target_spawn(
         &self,
         target_domain: &str,
         explicit_target_world: bool,
@@ -164,29 +213,33 @@ impl Server {
         &self,
         saved_world: &str,
         target_domain: &str,
-        world: &mut Arc<World>,
+        explicit_target_world: Option<&Identifier>,
         player_name: &str,
-    ) -> bool {
+    ) -> Option<Arc<World>> {
         let Ok(saved_world_key) = saved_world.parse::<Identifier>() else {
             log::warn!(
-                "Saved world {saved_world} for player {player_name} is invalid, using domain default spawn"
+                "Saved world {saved_world} for player {player_name} is invalid, using target spawn"
             );
-            return false;
+            return None;
         };
         if saved_world_key.namespace.as_ref() != target_domain {
             log::warn!(
-                "Saved world {saved_world_key} for player {player_name} is outside target domain {target_domain}, using domain default spawn"
+                "Saved world {saved_world_key} for player {player_name} is outside target domain {target_domain}, using target spawn"
             );
-            return false;
+            return None;
+        }
+        if let Some(explicit_target_world) = explicit_target_world
+            && explicit_target_world != &saved_world_key
+        {
+            return None;
         }
         let Some(saved_world) = self.worlds.get(&saved_world_key) else {
             log::warn!(
-                "Saved world {saved_world_key} for player {player_name} is missing, using domain default spawn"
+                "Saved world {saved_world_key} for player {player_name} is missing, using target spawn"
             );
-            return false;
+            return None;
         };
-        *world = saved_world.clone();
-        true
+        Some(Arc::clone(saved_world))
     }
 
     pub(super) fn apply_domain_player_state(player: &Arc<Player>, state: &DomainPlayerState) {
@@ -194,70 +247,100 @@ impl Server {
             DomainPlayerData::SavedRestored { data } => {
                 data.apply_to_player(player);
             }
-            DomainPlayerData::SavedWithoutLocation {
-                data,
-                default_spawn,
-            } => {
-                apply_default_spawn(player, &state.world, *default_spawn);
+            DomainPlayerData::SavedWithoutLocation { data, spawn } => {
+                apply_default_spawn(player, &state.world, *spawn);
                 data.apply_to_player_without_location(player);
             }
-            DomainPlayerData::FirstVisit { default_spawn } => {
-                apply_default_spawn(player, &state.world, *default_spawn);
+            DomainPlayerData::FirstVisit { spawn } => {
+                player.reset_domain_data_for_first_visit();
+                apply_default_spawn(player, &state.world, *spawn);
             }
         }
     }
 
-    pub(super) fn schedule_root_vehicle_restore(
+    pub(super) fn prepare_domain_restores(
         &self,
-        player: &Arc<Player>,
+        player: &Player,
         state: &DomainPlayerState,
-    ) {
-        let Some(root_vehicle) = Self::root_vehicle_to_restore(state) else {
-            player.clear_pending_root_vehicle();
-            return;
-        };
-        player.set_pending_root_vehicle(&state.world, root_vehicle.clone());
-        let Some(job) =
-            RootVehicleRestoreJob::new(Arc::clone(player), Arc::clone(&state.world), &root_vehicle)
-        else {
-            player.clear_pending_root_vehicle();
-            return;
-        };
-        self.jobs.spawn(job);
+    ) -> PreparedDomainRestores {
+        let target_domain = state.world.domain();
+        let ender_pearls = Self::ender_pearls_to_restore(state)
+            .into_iter()
+            .filter_map(|payload| {
+                self.resolve_pearl_world(&payload.world, target_domain, player)
+                    .map(|world| PreparedEnderPearlRestore { world, payload })
+            })
+            .collect();
+        PreparedDomainRestores {
+            target_world: Arc::clone(&state.world),
+            root_vehicle: Self::root_vehicle_to_restore(state),
+            ender_pearls,
+        }
     }
 
-    fn root_vehicle_to_restore(state: &DomainPlayerState) -> Option<PersistentRootVehicle> {
+    pub(super) fn install_domain_restores(
+        player: &Player,
+        residence_token: DomainResidenceToken,
+        restores: &PreparedDomainRestores,
+    ) -> bool {
+        player.install_pending_domain_restores(
+            residence_token,
+            &restores.target_world,
+            restores.root_vehicle.clone(),
+            restores
+                .ender_pearls
+                .iter()
+                .map(|restore| restore.payload.clone())
+                .collect(),
+        )
+    }
+
+    pub(super) fn schedule_domain_restores(
+        &self,
+        player: &Arc<Player>,
+        residence_token: DomainResidenceToken,
+        restores: PreparedDomainRestores,
+    ) {
+        if let Some(root_vehicle) = restores.root_vehicle {
+            if let Some(job) = RootVehicleRestoreJob::new(
+                Arc::clone(player),
+                Arc::clone(&restores.target_world),
+                &root_vehicle,
+                residence_token,
+            ) {
+                self.jobs.spawn(job);
+            } else {
+                player.take_matching_pending_root_vehicle(
+                    residence_token,
+                    &restores.target_world,
+                    root_vehicle.attach,
+                    root_vehicle.entity.uuid,
+                );
+            }
+        }
+
+        for restore in restores.ender_pearls {
+            let pearl_uuid = Uuid::from_bytes(restore.payload.entity.uuid);
+            if let Some(job) = EnderPearlRestoreJob::new(
+                Arc::clone(player),
+                restore.world,
+                restore.payload.entity,
+                residence_token,
+            ) {
+                self.jobs.spawn(job);
+            } else {
+                player.discard_pending_ender_pearl(residence_token, pearl_uuid);
+            }
+        }
+    }
+
+    pub(super) fn root_vehicle_to_restore(
+        state: &DomainPlayerState,
+    ) -> Option<PersistentRootVehicle> {
         match &state.data {
             DomainPlayerData::SavedRestored { data } => data.root_vehicle.clone(),
             DomainPlayerData::SavedWithoutLocation { .. } | DomainPlayerData::FirstVisit { .. } => {
                 None
-            }
-        }
-    }
-
-    /// Spawns a restore job per persisted ender pearl, each in its own world
-    /// (vanilla `ServerPlayer.loadAndSpawnEnderPearls`).
-    pub(super) fn schedule_ender_pearl_restores(
-        &self,
-        player: &Arc<Player>,
-        state: &DomainPlayerState,
-    ) {
-        let pearls = Self::ender_pearls_to_restore(state);
-        if pearls.is_empty() {
-            player.clear_pending_ender_pearls();
-            return;
-        }
-        player.set_pending_ender_pearls(pearls.clone());
-        for pearl in pearls {
-            let pearl_uuid = Uuid::from_bytes(pearl.entity.uuid);
-            let Some(world) = self.resolve_pearl_world(&pearl.world, player) else {
-                player.remove_pending_ender_pearl(pearl_uuid);
-                continue;
-            };
-            if let Some(job) = EnderPearlRestoreJob::new(Arc::clone(player), world, pearl.entity) {
-                self.jobs.spawn(job);
-            } else {
-                player.remove_pending_ender_pearl(pearl_uuid);
             }
         }
     }
@@ -270,7 +353,12 @@ impl Server {
         }
     }
 
-    fn resolve_pearl_world(&self, world_key: &str, player: &Player) -> Option<Arc<World>> {
+    pub(super) fn resolve_pearl_world(
+        &self,
+        world_key: &str,
+        expected_domain: &str,
+        player: &Player,
+    ) -> Option<Arc<World>> {
         let Ok(key) = world_key.parse::<Identifier>() else {
             log::warn!(
                 "Saved ender pearl world {world_key} for player {} is invalid, skipping",
@@ -285,6 +373,14 @@ impl Server {
             );
             return None;
         };
+        if world.domain() != expected_domain {
+            log::warn!(
+                "Saved ender pearl world {key} belongs to domain {}, not player domain \
+                 {expected_domain}, skipping",
+                world.domain()
+            );
+            return None;
+        }
         Some(world.clone())
     }
 
@@ -331,6 +427,39 @@ impl Server {
             true
         });
         players
+    }
+
+    /// Returns whether this exact player owns the online session for its UUID.
+    pub(crate) fn owns_online_player(&self, player: &Player) -> bool {
+        self.online_players
+            .get_by_uuid(&player.gameprofile.id)
+            .is_some_and(|online| ptr::eq(online.as_ref(), player))
+    }
+
+    /// Returns the world that owns this exact online player.
+    ///
+    /// The player's stored world pointer intentionally remains unchanged while
+    /// detached domain data is loading, so live membership must also be present
+    /// in that world's player index.
+    pub(crate) fn live_world_for_player(&self, player: &Player) -> Option<Arc<World>> {
+        if !self.owns_online_player(player) {
+            return None;
+        }
+
+        let world = player.get_world();
+        world.contains_player(player).then_some(world)
+    }
+
+    /// Returns the live world in which a player may participate in gameplay commands.
+    ///
+    /// A queued domain switch still has source-world membership until the safe
+    /// point, but gameplay work must stop as soon as that transition owns the
+    /// player. Finalization is live again and therefore remains available.
+    pub(crate) fn command_world_for_player(&self, player: &Player) -> Option<Arc<World>> {
+        if player.connection.closed() || player.domain_switch_blocks_gameplay() {
+            return None;
+        }
+        self.live_world_for_player(player)
     }
 
     /// Returns the total number of players currently online across all worlds.

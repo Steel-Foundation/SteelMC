@@ -1,5 +1,6 @@
 //! Tick-polled server jobs.
 
+pub(in crate::server) mod domain_switch;
 pub(super) mod teleport;
 
 use std::{

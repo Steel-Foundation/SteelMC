@@ -66,13 +66,13 @@ use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
     vanilla_game_events,
 };
-use steel_utils::entity_events::EntityStatus;
+use steel_utils::{entity_events::EntityStatus, locks::Shared};
 use tick_state::PlayerTickState;
 use uuid::Uuid;
 
 use arc_swap::ArcSwap;
 use steel_utils::locks::SyncMutex;
-use steel_utils::types::{Difficulty, GameType};
+use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use text_components::resolving::TextResolutor;
 use text_components::translation::TranslatedMessage;
 use text_components::{
@@ -81,6 +81,7 @@ use text_components::{
 };
 use text_components::{content::Resolvable, custom::CustomData};
 
+use crate::behavior::InteractionResult;
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
@@ -88,11 +89,13 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
     EntitySyncedData, LivingEntity, LivingEntityBase, MobEffectSyncChange, MobEffectSyncPacket,
-    RemovalReason, SharedEntity, apply_entity_look_at, equipment_items_to_packet_items,
-    start_riding_entities,
+    RemovalReason, SharedEntity, apply_entity_look_at, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
-use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
+use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
+use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
+use crate::inventory::menu::Menu;
+use crate::inventory::menu::kinds::inventory_menu;
 use crate::level_data::RespawnData;
 use crate::permission::{
     PermissionContext, PermissionExpr, PermissionMetadataSet, PermissionMetadataValue,
@@ -101,7 +104,9 @@ use crate::permission::{
 use crate::physics::MoveResult;
 use crate::player::experience::Experience;
 use crate::player::player_data::{PersistentEnderPearl, PersistentRootVehicle};
-use crate::player::player_inventory::PlayerInventory;
+use crate::player::player_inventory::{
+    MenuItemDisposition, MenuRemovalStatus, PlayerInventory, PlayerInventorySyncState,
+};
 use crate::server::{
     Server,
     jobs::{JobPoll, ServerJob, ServerJobContext},
@@ -120,7 +125,7 @@ use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, Identifier, UuidExt as _,
 };
 
-use crate::inventory::{MenuInstance, container::Container, inventory_menu::InventoryMenu};
+use crate::inventory::container::Container;
 
 const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 
@@ -176,17 +181,20 @@ pub struct Player {
     game_modes: SyncMutex<PlayerGameModeState>,
 
     /// The player's inventory container (shared with `inventory_menu`).
-    pub inventory: SyncPlayerInv,
+    pub inventory: Shared<PlayerInventory>,
+
+    /// Logical inventory slots that must be resent directly to this player's client.
+    inventory_sync: SyncMutex<PlayerInventorySyncState>,
 
     /// Last main-hand stack used for vanilla attack-strength reset checks.
     last_item_in_main_hand: SyncMutex<ItemStack>,
 
     /// The player's inventory menu (always open, even when `container_id` is 0).
-    inventory_menu: SyncMutex<InventoryMenu>,
+    inventory_menu: SyncMutex<Menu>,
 
     /// The currently open menu (None if player inventory is open).
     /// This is separate from `inventory_menu` which is always present.
-    open_menu: SyncMutex<Option<Box<dyn MenuInstance>>>,
+    open_menu: SyncMutex<player_inventory::OpenMenuState>,
 
     /// Counter for generating container IDs (1-100, wraps around).
     container_counter: SyncMutex<ContainerCounter>,
@@ -231,10 +239,8 @@ pub struct Player {
     /// snapshots this before encoding and compares after to detect stale batches.
     pub chunk_send_epoch: SyncMutex<u32>,
 
-    /// Persisted `RootVehicle` payload awaiting live entity restoration.
-    pending_root_vehicle: SyncMutex<Option<PendingRootVehicleRestore>>,
-    /// Persisted ender pearl payloads awaiting live entity restoration.
-    pending_ender_pearls: SyncMutex<Vec<PersistentEnderPearl>>,
+    /// Domain-residence identity and persisted entities awaiting restoration.
+    residence: SyncMutex<PlayerResidenceState>,
     /// In-flight ender pearls thrown by this player, kept weakly so they persist
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
     ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
@@ -249,6 +255,36 @@ unsafe impl DowncastType for Player {
 struct PendingRootVehicleRestore {
     world: Identifier,
     root_vehicle: PersistentRootVehicle,
+}
+
+/// Runtime identity for one continuous stay in a Steel domain.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DomainResidenceToken(u64);
+
+struct PlayerResidenceState {
+    token: DomainResidenceToken,
+    pending_root_vehicle: Option<PendingRootVehicleRestore>,
+    pending_ender_pearls: Vec<PersistentEnderPearl>,
+}
+
+impl PlayerResidenceState {
+    const fn new() -> Self {
+        Self {
+            token: DomainResidenceToken(1),
+            pending_root_vehicle: None,
+            pending_ender_pearls: Vec::new(),
+        }
+    }
+
+    fn advance(&mut self) -> DomainResidenceToken {
+        let Some(next_token) = self.token.0.checked_add(1) else {
+            panic!("domain residence token space exhausted");
+        };
+        self.token = DomainResidenceToken(next_token);
+        self.pending_root_vehicle = None;
+        self.pending_ender_pearls.clear();
+        self.token
+    }
 }
 
 impl Player {
@@ -290,7 +326,6 @@ impl Player {
     }
 
     /// Creates a new player.
-    #[expect(clippy::too_many_arguments, reason = "Player::new is complex")]
     pub fn new(
         gameprofile: GameProfile,
         connection: Arc<PlayerConnection>,
@@ -298,15 +333,15 @@ impl Player {
         server: Weak<Server>,
         config: Arc<RuntimeConfig>,
         entity_id: i32,
-        player: &Weak<Player>,
         client_information: ClientInformation,
     ) -> Self {
         // Create a single shared inventory container used by both the player and inventory menu
-        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new(player.clone())));
+        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
 
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
-        let living_base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+        let equipment = inventory.clone();
+        let living_base = LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment);
         let player_uuid = gameprofile.id;
         let world_ref = Arc::downgrade(&world);
         let chat_spam_threshold_seconds = config.chat_spam_threshold_seconds;
@@ -343,9 +378,10 @@ impl Player {
             )),
             game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: inventory.clone(),
+            inventory_sync: SyncMutex::new(PlayerInventorySyncState::new()),
             last_item_in_main_hand: SyncMutex::new(ItemStack::empty()),
-            inventory_menu: SyncMutex::new(InventoryMenu::new(inventory)),
-            open_menu: SyncMutex::new(None),
+            inventory_menu: SyncMutex::new(inventory_menu(inventory)),
+            open_menu: SyncMutex::new(player_inventory::OpenMenuState::new()),
             container_counter: SyncMutex::new(ContainerCounter::new()),
             teleport_state: SyncMutex::new(TeleportState::new()),
             item_cooldowns: SyncMutex::new(ItemCooldowns::default()),
@@ -360,8 +396,7 @@ impl Player {
             seen_credits: SyncMutex::new(false),
             won_game: SyncMutex::new(false),
             chunk_send_epoch: SyncMutex::new(0),
-            pending_root_vehicle: SyncMutex::new(None),
-            pending_ender_pearls: SyncMutex::new(Vec::new()),
+            residence: SyncMutex::new(PlayerResidenceState::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
         }
     }
@@ -392,6 +427,7 @@ impl Player {
         self.reset_vehicle_movement_for_tick();
 
         self.default_tick();
+        self.detect_equipment_updates();
         self.ai_step();
 
         // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
@@ -442,6 +478,8 @@ impl Player {
 
         self.tick_living_state();
 
+        self.tick_open_menu();
+        self.flush_inventory_resync();
         self.broadcast_inventory_changes();
         self.update_pose();
 
@@ -485,15 +523,6 @@ impl Player {
         self.connection.tick();
     }
 
-    fn refresh_equipment_attribute_modifiers_from_stack(
-        &self,
-        slot: EquipmentSlot,
-        item_stack: &ItemStack,
-    ) {
-        self.living_base
-            .refresh_equipment_attribute_modifiers(slot, item_stack);
-    }
-
     /// Ticks the death animation timer.
     /// Vanilla: `LivingEntity.tickDeath()` (not overridden by `ServerPlayer`).
     fn tick_death(&self) {
@@ -512,10 +541,15 @@ impl Player {
             );
 
             world.unregister_player_entity(self);
+            world.chunk_map.remove_player(self);
             world.entity_tracker().on_player_leave(self.id());
             world.player_area_map.remove_by_entity_id(self.id());
-            world.chunk_map.remove_player(self);
             self.set_removed(RemovalReason::Killed);
+            assert_eq!(
+                self.remove_all_menus_with_disposition(MenuItemDisposition::Drop),
+                MenuRemovalStatus::Complete,
+                "death removal menu cleanup must run outside a menu callback"
+            );
         }
     }
 
@@ -755,25 +789,52 @@ impl Player {
             .expect("player must not outlive server")
     }
 
-    pub(crate) fn set_pending_root_vehicle(
+    /// Returns the identity of the player's current continuous domain stay.
+    pub(crate) fn domain_residence_token(&self) -> DomainResidenceToken {
+        self.residence.lock().token
+    }
+
+    /// Starts a new continuous domain stay and invalidates old restore work.
+    pub(crate) fn advance_domain_residence(&self) -> DomainResidenceToken {
+        self.residence.lock().advance()
+    }
+
+    /// Returns whether delayed work still belongs to the current domain stay.
+    pub(crate) fn is_domain_residence_current(&self, token: DomainResidenceToken) -> bool {
+        self.residence.lock().token == token
+    }
+
+    /// Installs both persisted restore payloads for a token-owned domain stay.
+    pub(crate) fn install_pending_domain_restores(
         &self,
+        token: DomainResidenceToken,
         world: &World,
-        root_vehicle: PersistentRootVehicle,
-    ) {
-        *self.pending_root_vehicle.lock() = Some(PendingRootVehicleRestore {
-            world: world.key.clone(),
-            root_vehicle,
-        });
+        root_vehicle: Option<PersistentRootVehicle>,
+        ender_pearls: Vec<PersistentEnderPearl>,
+    ) -> bool {
+        let mut residence = self.residence.lock();
+        if residence.token != token {
+            return false;
+        }
+
+        residence.pending_root_vehicle =
+            root_vehicle.map(|root_vehicle| PendingRootVehicleRestore {
+                world: world.key.clone(),
+                root_vehicle,
+            });
+        residence.pending_ender_pearls = ender_pearls;
+        true
     }
 
     pub(crate) fn clear_pending_root_vehicle(&self) {
-        *self.pending_root_vehicle.lock() = None;
+        self.residence.lock().pending_root_vehicle = None;
     }
 
     pub(crate) fn pending_root_vehicle_for_current_world(&self) -> Option<PersistentRootVehicle> {
         let world_key = self.get_world().key.clone();
-        self.pending_root_vehicle
+        self.residence
             .lock()
+            .pending_root_vehicle
             .as_ref()
             .filter(|pending| pending.world == world_key)
             .map(|pending| pending.root_vehicle.clone())
@@ -781,39 +842,75 @@ impl Player {
 
     pub(crate) fn take_matching_pending_root_vehicle(
         &self,
+        token: DomainResidenceToken,
         world: &World,
         attach: [u8; 16],
         root_uuid: [u8; 16],
     ) -> Option<PersistentRootVehicle> {
-        let mut pending = self.pending_root_vehicle.lock();
-        let matches = pending.as_ref().is_some_and(|pending| {
-            pending.world == world.key
-                && pending.root_vehicle.attach == attach
-                && pending.root_vehicle.entity.uuid == root_uuid
-        });
+        let mut residence = self.residence.lock();
+        if residence.token != token {
+            return None;
+        }
+        let matches = residence
+            .pending_root_vehicle
+            .as_ref()
+            .is_some_and(|pending| {
+                pending.world == world.key
+                    && pending.root_vehicle.attach == attach
+                    && pending.root_vehicle.entity.uuid == root_uuid
+            });
         if matches {
-            pending.take().map(|pending| pending.root_vehicle)
+            residence
+                .pending_root_vehicle
+                .take()
+                .map(|pending| pending.root_vehicle)
         } else {
             None
         }
     }
 
-    pub(crate) fn set_pending_ender_pearls(&self, pearls: Vec<PersistentEnderPearl>) {
-        *self.pending_ender_pearls.lock() = pearls;
-    }
-
     pub(crate) fn pending_ender_pearls(&self) -> Vec<PersistentEnderPearl> {
-        self.pending_ender_pearls.lock().clone()
-    }
-
-    pub(crate) fn clear_pending_ender_pearls(&self) {
-        self.pending_ender_pearls.lock().clear();
+        self.residence.lock().pending_ender_pearls.clone()
     }
 
     pub(crate) fn remove_pending_ender_pearl(&self, uuid: Uuid) {
-        self.pending_ender_pearls
+        self.residence
             .lock()
+            .pending_ender_pearls
             .retain(|pearl| Uuid::from_bytes(pearl.entity.uuid) != uuid);
+    }
+
+    pub(crate) fn discard_pending_ender_pearl(
+        &self,
+        token: DomainResidenceToken,
+        uuid: Uuid,
+    ) -> bool {
+        let mut residence = self.residence.lock();
+        if residence.token != token {
+            return false;
+        }
+        let old_len = residence.pending_ender_pearls.len();
+        residence
+            .pending_ender_pearls
+            .retain(|pearl| Uuid::from_bytes(pearl.entity.uuid) != uuid);
+        residence.pending_ender_pearls.len() != old_len
+    }
+
+    pub(crate) fn take_matching_pending_ender_pearl(
+        &self,
+        token: DomainResidenceToken,
+        world: &World,
+        uuid: Uuid,
+    ) -> Option<PersistentEnderPearl> {
+        let mut residence = self.residence.lock();
+        if residence.token != token {
+            return None;
+        }
+        let world_key = world.key.to_string();
+        let index = residence.pending_ender_pearls.iter().position(|pearl| {
+            pearl.world == world_key && Uuid::from_bytes(pearl.entity.uuid) == uuid
+        })?;
+        Some(residence.pending_ender_pearls.remove(index))
     }
 
     /// Registers a thrown ender pearl so it persists with this player and
@@ -1250,11 +1347,11 @@ impl Entity for Player {
     }
 
     fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
-        equipment_items_to_packet_items(self.inventory.lock().non_empty_equipment_items())
+        self.pack_living_equipment()
     }
 
     fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
-        equipment_items_to_packet_items(self.inventory.lock().drain_dirty_equipment_items())
+        self.drain_dirty_living_equipment()
     }
 
     fn max_up_step(&self) -> f32 {
@@ -1425,11 +1522,7 @@ impl LivingEntity for Player {
 
     fn with_equipment_slot(&self, slot: EquipmentSlot, visitor: &mut dyn FnMut(&ItemStack)) {
         let inventory = self.inventory.lock();
-        if slot == EquipmentSlot::MainHand {
-            visitor(inventory.get_selected_item());
-        } else {
-            visitor(inventory.equipment().get_ref(slot));
-        }
+        visitor(inventory.get_ref(slot));
     }
 
     fn with_equipment_slot_mut(
@@ -1438,11 +1531,95 @@ impl LivingEntity for Player {
         visitor: &mut dyn FnMut(&mut ItemStack),
     ) {
         let mut inventory = self.inventory.lock();
-        if slot == EquipmentSlot::MainHand {
-            inventory.with_selected_item_mut(visitor);
-        } else {
-            visitor(inventory.equipment_mut().get_mut(slot));
+        inventory.with_equipment_item_mut(slot, visitor);
+    }
+
+    fn interact_living_entity_with_equippable(
+        &self,
+        player: &Player,
+        hand: InteractionHand,
+    ) -> InteractionResult {
+        let item_stack = {
+            let inventory = player.inventory.lock();
+            let item_stack = inventory.get_item_in_hand(hand);
+            item_stack.copy_with_count(item_stack.count())
+        };
+        let Some(equippable) = item_stack.get_equippable() else {
+            return InteractionResult::Pass;
+        };
+        if !equippable.equip_on_interact {
+            return InteractionResult::Pass;
         }
+
+        let slot = equippable.slot;
+        let can_equip = |stack: &ItemStack| {
+            stack.get_equippable().is_some_and(|equippable| {
+                equippable.equip_on_interact
+                    && equippable.slot == slot
+                    && self.is_equippable_in_slot(stack, slot)
+            })
+        };
+        if !can_equip(&item_stack) || !Entity::is_alive(self) {
+            return InteractionResult::Pass;
+        }
+
+        let source_ref = ContainerRef::from(player.inventory.clone());
+        let target_ref = ContainerRef::from(self.inventory.clone());
+        let source_id = source_ref.container_id();
+        let target_id = target_ref.container_id();
+        let mut guard = ContainerLockGuard::lock_all(&[source_ref, target_ref]);
+        let source_slot = match hand {
+            InteractionHand::MainHand => EquipmentSlot::MainHand,
+            InteractionHand::OffHand => EquipmentSlot::OffHand,
+        };
+
+        let equipped = if source_id == target_id {
+            let Some(inventory) = guard.get_typed_mut::<PlayerInventory>(source_id) else {
+                unreachable!("player inventory container retains its concrete type");
+            };
+            if !can_equip(inventory.get_item_in_hand(hand)) || !inventory.get_ref(slot).is_empty() {
+                return InteractionResult::Pass;
+            }
+
+            let equipped = inventory.get_mut(source_slot).split(1);
+            if equipped.is_empty() {
+                return InteractionResult::Pass;
+            }
+            let equipped_for_effects = equipped.copy_with_count(1);
+            *inventory.get_mut(slot) = equipped;
+            equipped_for_effects
+        } else {
+            let Some((source_inventory, target_inventory)) =
+                guard.get_two_typed_mut::<PlayerInventory, PlayerInventory>(source_id, target_id)
+            else {
+                unreachable!("player inventory containers retain their concrete type");
+            };
+            if !can_equip(source_inventory.get_item_in_hand(hand))
+                || !target_inventory.get_ref(slot).is_empty()
+            {
+                return InteractionResult::Pass;
+            }
+
+            let equipped = source_inventory.get_mut(source_slot).split(1);
+            if equipped.is_empty() {
+                return InteractionResult::Pass;
+            }
+            let equipped_for_effects = equipped.copy_with_count(1);
+            *target_inventory.get_mut(slot) = equipped;
+            equipped_for_effects
+        };
+        drop(guard);
+
+        player.inventory.lock().set_changed();
+        if source_id != target_id {
+            self.inventory.lock().set_changed();
+        }
+
+        if let Some(sound) = self.equip_sound(slot, &equipped) {
+            self.play_sound(sound, 1.0, 1.0);
+        }
+        // TODO: Emit EQUIP game event once game-event dispatch is implemented.
+        InteractionResult::Success
     }
 
     fn has_infinite_materials(&self) -> bool {
