@@ -16,10 +16,12 @@ use steel_registry::{
     REGISTRY, RegistryExt as _, vanilla_block_entity_types, vanilla_blocks, vanilla_entities,
 };
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeKey, Identifier};
+use steel_utils::{
+    BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeKey, Identifier, locks::SyncMutex,
+};
 
 use crate::behavior::BLOCK_BEHAVIORS;
-use crate::block_entity::BlockEntity;
+use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::entity::{LivingEntity as _, entity_loot_ref};
 use crate::player::Player;
 use crate::world::World;
@@ -66,10 +68,11 @@ pub struct BrushOutcome {
 
 /// Stores vanilla archaeology brush progress and delayed loot for brushable blocks.
 pub struct BrushableBlockEntity {
-    level: Weak<World>,
-    pos: BlockPos,
-    state: BlockStateId,
-    removed: bool,
+    base: BlockEntityBase,
+    state: SyncMutex<BrushableState>,
+}
+
+struct BrushableState {
     brush_count: i32,
     brush_count_resets_at_tick: i64,
     cool_down_ends_at_tick: i64,
@@ -89,17 +92,21 @@ impl BrushableBlockEntity {
     #[must_use]
     pub fn new(level: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
         Self {
-            level,
-            pos,
-            state,
-            removed: false,
-            brush_count: 0,
-            brush_count_resets_at_tick: 0,
-            cool_down_ends_at_tick: 0,
-            item: ItemStack::empty(),
-            hit_direction: None,
-            loot_table: None,
-            loot_table_seed: 0,
+            base: BlockEntityBase::new(
+                &vanilla_block_entity_types::BRUSHABLE_BLOCK,
+                level,
+                pos,
+                state,
+            ),
+            state: SyncMutex::new(BrushableState {
+                brush_count: 0,
+                brush_count_resets_at_tick: 0,
+                cool_down_ends_at_tick: 0,
+                item: ItemStack::empty(),
+                hit_direction: None,
+                loot_table: None,
+                loot_table_seed: 0,
+            }),
         }
     }
 
@@ -107,32 +114,33 @@ impl BrushableBlockEntity {
     /// Returns deferred world mutations that must be applied after the
     /// block-entity mutex is released.
     pub fn brush(
-        &mut self,
+        &self,
         game_time: i64,
         world: &Arc<World>,
         player: &Player,
         hit_direction: Direction,
         brush: &ItemStack,
     ) -> BrushOutcome {
-        if self.hit_direction.is_none() {
-            self.hit_direction = Some(hit_direction);
+        let mut state = self.state.lock();
+        if state.hit_direction.is_none() {
+            state.hit_direction = Some(hit_direction);
         }
 
-        self.brush_count_resets_at_tick = game_time + BRUSH_RESET_TICKS;
-        if game_time < self.cool_down_ends_at_tick {
+        state.brush_count_resets_at_tick = game_time + BRUSH_RESET_TICKS;
+        if game_time < state.cool_down_ends_at_tick {
             return BrushOutcome {
                 durability_damage: false,
                 mutation: BrushableWorldMutation::default(),
             };
         }
 
-        self.cool_down_ends_at_tick = game_time + BRUSH_COOLDOWN_TICKS;
-        self.unpack_loot_table(world, player, brush);
+        state.cool_down_ends_at_tick = game_time + BRUSH_COOLDOWN_TICKS;
+        self.unpack_loot_table(&mut state, player, brush);
 
-        let previous_completion_state = self.completion_state();
-        self.brush_count += 1;
-        if self.brush_count >= REQUIRED_BRUSHES {
-            let mutation = self.brushing_completed_mutation();
+        let previous_completion_state = state.completion_state();
+        state.brush_count += 1;
+        if state.brush_count >= REQUIRED_BRUSHES {
+            let mutation = self.brushing_completed_mutation(&mut state);
             self.set_changed();
             return BrushOutcome {
                 durability_damage: true,
@@ -140,9 +148,13 @@ impl BrushableBlockEntity {
             };
         }
 
-        world.schedule_block_tick_default(self.pos, self.state.get_block(), 2);
+        world.schedule_block_tick_default(
+            self.get_block_pos(),
+            self.get_block_state().get_block(),
+            2,
+        );
         let mut mutation = BrushableWorldMutation::default();
-        let completion_state = self.completion_state();
+        let completion_state = state.completion_state();
         if previous_completion_state != completion_state {
             mutation.set_block = Some(self.with_dusted(completion_state));
         }
@@ -155,50 +167,56 @@ impl BrushableBlockEntity {
     }
 
     /// Applies vanilla delayed progress decay after brushing stops.
-    pub fn check_reset(&mut self, world: &Arc<World>) -> BrushableWorldMutation {
+    pub fn check_reset(&self, world: &Arc<World>) -> BrushableWorldMutation {
+        let mut state = self.state.lock();
         let mut mutation = BrushableWorldMutation::default();
         let game_time = world.game_time();
 
-        if self.brush_count != 0 && game_time >= self.brush_count_resets_at_tick {
-            let previous_completion_state = self.completion_state();
-            self.brush_count = 0.max(self.brush_count - 2);
-            let completion_state = self.completion_state();
+        if state.brush_count != 0 && game_time >= state.brush_count_resets_at_tick {
+            let previous_completion_state = state.completion_state();
+            state.brush_count = 0.max(state.brush_count - 2);
+            let completion_state = state.completion_state();
             if previous_completion_state != completion_state {
                 mutation.set_block = Some(self.with_dusted(completion_state));
             }
-            self.brush_count_resets_at_tick = game_time + RESET_BRUSH_COUNT_TICKS;
+            state.brush_count_resets_at_tick = game_time + RESET_BRUSH_COUNT_TICKS;
             self.set_changed();
         }
 
-        if self.brush_count == 0 {
-            self.hit_direction = None;
-            self.brush_count_resets_at_tick = 0;
-            self.cool_down_ends_at_tick = 0;
+        if state.brush_count == 0 {
+            state.hit_direction = None;
+            state.brush_count_resets_at_tick = 0;
+            state.cool_down_ends_at_tick = 0;
         } else {
-            world.schedule_block_tick_default(self.pos, self.state.get_block(), 2);
+            world.schedule_block_tick_default(
+                self.get_block_pos(),
+                self.get_block_state().get_block(),
+                2,
+            );
         }
 
         mutation
     }
 
-    fn unpack_loot_table(&mut self, _world: &Arc<World>, player: &Player, brush: &ItemStack) {
-        let Some(loot_table_key) = self.loot_table.take() else {
+    fn unpack_loot_table(&self, state: &mut BrushableState, player: &Player, brush: &ItemStack) {
+        let Some(loot_table_key) = state.loot_table.take() else {
             return;
         };
         let loot_table = REGISTRY.loot_tables.by_key(&loot_table_key);
 
-        if self.loot_table_seed == 0 {
+        if state.loot_table_seed == 0 {
             let mut rng = rand::rng();
-            self.unpack_loot_items(loot_table, &loot_table_key, &mut rng, player, brush);
+            self.unpack_loot_items(state, loot_table, &loot_table_key, &mut rng, player, brush);
         } else {
-            let mut rng = StdRng::seed_from_u64(self.loot_table_seed as u64);
-            self.unpack_loot_items(loot_table, &loot_table_key, &mut rng, player, brush);
+            let mut rng = StdRng::seed_from_u64(state.loot_table_seed as u64);
+            self.unpack_loot_items(state, loot_table, &loot_table_key, &mut rng, player, brush);
         }
         self.set_changed();
     }
 
     fn unpack_loot_items<R: rand::Rng>(
-        &mut self,
+        &self,
+        state: &mut BrushableState,
         loot_table: Option<LootTableRef>,
         loot_table_key: &Identifier,
         rng: &mut R,
@@ -211,16 +229,16 @@ impl BrushableBlockEntity {
                     .with_luck(player.get_luck())
                     .with_tool(brush)
                     .with_origin(
-                        f64::from(self.pos.x()) + 0.5,
-                        f64::from(self.pos.y()) + 0.5,
-                        f64::from(self.pos.z()) + 0.5,
+                        f64::from(self.get_block_pos().x()) + 0.5,
+                        f64::from(self.get_block_pos().y()) + 0.5,
+                        f64::from(self.get_block_pos().z()) + 0.5,
                     )
                     .with_this_entity(entity_loot_ref(player));
                 table.get_random_items(&mut ctx)
             }
             None => Vec::new(),
         };
-        self.item = match loot.len() {
+        state.item = match loot.len() {
             0 => ItemStack::empty(),
             1 => loot.into_iter().next().unwrap_or_else(ItemStack::empty),
             n => {
@@ -230,16 +248,16 @@ impl BrushableBlockEntity {
         };
     }
 
-    fn brushing_completed_mutation(&mut self) -> BrushableWorldMutation {
+    fn brushing_completed_mutation(&self, state: &mut BrushableState) -> BrushableWorldMutation {
         let mut mutation = BrushableWorldMutation {
-            completed_level_event_data: Some(i32::from(self.state.0)),
-            drop: self.take_drop_content(),
+            completed_level_event_data: Some(i32::from(self.get_block_state().0)),
+            drop: self.take_drop_content(state),
             set_block: None,
         };
 
         let turns_into = BLOCK_BEHAVIORS
-            .get_behavior_for_state(self.state)
-            .and_then(|behavior| behavior.brushable_data(self.state))
+            .get_behavior_for_state(self.get_block_state())
+            .and_then(|behavior| behavior.brushable_data(self.get_block_state()))
             .map_or(vanilla_blocks::AIR.default_state(), |(turns_into, _, _)| {
                 turns_into.default_state()
             });
@@ -247,16 +265,16 @@ impl BrushableBlockEntity {
         mutation
     }
 
-    fn take_drop_content(&mut self) -> Option<(DVec3, ItemStack)> {
-        if self.item.is_empty() {
+    fn take_drop_content(&self, state: &mut BrushableState) -> Option<(DVec3, ItemStack)> {
+        if state.item.is_empty() {
             return None;
         }
 
-        let direction = self.hit_direction.unwrap_or(Direction::Up);
-        let drop_pos = direction.relative(self.pos);
-        let count = rand::random_range(10..=30).min(self.item.count());
-        let dropped = self.item.split(count);
-        self.item = ItemStack::empty();
+        let direction = state.hit_direction.unwrap_or(Direction::Up);
+        let drop_pos = direction.relative(self.get_block_pos());
+        let count = rand::random_range(10..=30).min(state.item.count());
+        let dropped = state.item.split(count);
+        state.item = ItemStack::empty();
         let size = f64::from(vanilla_entities::ITEM.dimensions.width);
         let center_range = 1.0 - size;
         let half_size = size / 2.0;
@@ -269,14 +287,13 @@ impl BrushableBlockEntity {
         Some((pos, dropped))
     }
 
-    fn with_dusted(&mut self, completion_state: i32) -> BlockStateId {
-        let state = self
-            .state
-            .set_value(&BlockStateProperties::DUSTED, completion_state as u8);
-        self.state = state;
-        state
+    fn with_dusted(&self, completion_state: i32) -> BlockStateId {
+        self.get_block_state()
+            .set_value(&BlockStateProperties::DUSTED, completion_state as u8)
     }
+}
 
+impl BrushableState {
     const fn completion_state(&self) -> i32 {
         match self.brush_count {
             0 => 0,
@@ -298,80 +315,54 @@ impl BrushableBlockEntity {
 }
 
 impl BlockEntity for BrushableBlockEntity {
-    fn get_type(&self) -> BlockEntityTypeRef {
-        &vanilla_block_entity_types::BRUSHABLE_BLOCK
+    fn base(&self) -> &BlockEntityBase {
+        &self.base
     }
 
-    fn get_block_pos(&self) -> BlockPos {
-        self.pos
-    }
-
-    fn get_block_state(&self) -> BlockStateId {
-        self.state
-    }
-
-    fn set_block_state(&mut self, state: BlockStateId) {
-        self.state = state;
-    }
-
-    fn is_removed(&self) -> bool {
-        self.removed
-    }
-
-    fn set_removed(&mut self) {
-        self.removed = true;
-    }
-
-    fn clear_removed(&mut self) {
-        self.removed = false;
-    }
-
-    fn get_level(&self) -> Option<Arc<World>> {
-        self.level.upgrade()
-    }
-
-    fn load_additional(&mut self, nbt: &BorrowedNbtCompound<'_>) {
+    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt_view: NbtCompoundView<'_, '_> = nbt.into();
+        let mut state = self.state.lock();
 
-        self.loot_table = nbt_view
+        state.loot_table = nbt_view
             .string("LootTable")
             .and_then(|value| Identifier::from_str(&value.to_str()).ok());
-        self.loot_table_seed = nbt_view.long("LootTableSeed").unwrap_or(0);
+        state.loot_table_seed = nbt_view.long("LootTableSeed").unwrap_or(0);
 
         // Vanilla: LootTable and item are mutually exclusive on load.
-        if self.loot_table.is_some() {
-            self.item = ItemStack::empty();
+        if state.loot_table.is_some() {
+            state.item = ItemStack::empty();
         } else {
-            self.item = nbt_view
+            state.item = nbt_view
                 .compound("item")
                 .and_then(|compound| ItemStack::from_borrowed_compound(&compound))
                 .unwrap_or_else(ItemStack::empty);
         }
 
         // Vanilla Direction.LEGACY_ID_CODEC: byte 3D data value.
-        self.hit_direction = nbt_view
+        state.hit_direction = nbt_view
             .byte("hit_direction")
             .map(|value| Direction::from_3d_data_value(i32::from(value)));
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
+        let state = self.state.lock();
         // Vanilla trySaveLootTable: if loot is present, skip item and never write hit_direction.
-        if let Some(loot_table) = &self.loot_table {
+        if let Some(loot_table) = &state.loot_table {
             nbt.insert("LootTable", loot_table.to_string());
-            if self.loot_table_seed != 0 {
-                nbt.insert("LootTableSeed", self.loot_table_seed);
+            if state.loot_table_seed != 0 {
+                nbt.insert("LootTableSeed", state.loot_table_seed);
             }
             return;
         }
 
-        if !self.item.is_empty() {
-            nbt.insert("item", self.item.to_nbt_tag_ref());
+        if !state.item.is_empty() {
+            nbt.insert("item", state.item.to_nbt_tag_ref());
         }
     }
 
     fn get_update_tag(&self) -> Option<NbtCompound> {
         let mut nbt = NbtCompound::new();
-        self.save_client_data(&mut nbt);
+        self.state.lock().save_client_data(&mut nbt);
         Some(nbt)
     }
 }

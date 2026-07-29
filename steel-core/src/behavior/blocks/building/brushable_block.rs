@@ -11,9 +11,9 @@ use steel_registry::vanilla_block_entity_types;
 use steel_utils::Downcast as _;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::{BlockBehavior, BlockPlaceContext};
+use crate::behavior::{BlockBehavior, BlockEntityCreation, BlockPlaceContext};
+use crate::block_entity::BLOCK_ENTITIES;
 use crate::block_entity::entities::BrushableBlockEntity;
-use crate::block_entity::{BLOCK_ENTITIES, BlockEntity, SharedBlockEntity};
 use crate::world::{ScheduledTickAccess, World};
 
 /// Vanilla archaeology block behavior for suspicious sand and suspicious gravel.
@@ -83,20 +83,11 @@ impl BlockBehavior for BrushableBlock {
         let Some(block_entity) = world.get_block_entity(pos) else {
             return;
         };
-        let mutation = {
-            let mut guard = block_entity.lock();
-            let Some(brushable) = guard.downcast_mut::<BrushableBlockEntity>() else {
-                return;
-            };
-
-            brushable.set_block_state(state);
-            brushable.check_reset(world)
+        let Some(brushable) = block_entity.downcast_ref::<BrushableBlockEntity>() else {
+            return;
         };
+        let mutation = brushable.check_reset(world);
         mutation.apply(world, pos);
-    }
-
-    fn has_block_entity(&self) -> bool {
-        true
     }
 
     fn new_block_entity(
@@ -104,13 +95,13 @@ impl BlockBehavior for BrushableBlock {
         level: Weak<World>,
         pos: BlockPos,
         state: BlockStateId,
-    ) -> Option<SharedBlockEntity> {
-        BLOCK_ENTITIES.create(
+    ) -> BlockEntityCreation {
+        BlockEntityCreation::from_registered_factory(BLOCK_ENTITIES.create(
             &vanilla_block_entity_types::BRUSHABLE_BLOCK,
             level,
             pos,
             state,
-        )
+        ))
     }
 
     fn should_keep_block_entity(&self, old_state: BlockStateId, new_state: BlockStateId) -> bool {

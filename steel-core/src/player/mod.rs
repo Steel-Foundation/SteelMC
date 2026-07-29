@@ -52,7 +52,7 @@ use steel_protocol::packets::game::{
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::entity_data::{EntityPose, ParticleList};
+use steel_registry::entity_data::{EntityPose, HumanoidArm, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::game_rules::GameRuleRef;
 use steel_registry::sound_event::SoundEventRef;
@@ -81,7 +81,7 @@ use text_components::{
 };
 use text_components::{content::Resolvable, custom::CustomData};
 
-use crate::behavior::InteractionResult;
+use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
@@ -294,6 +294,56 @@ impl Player {
         self.living_base
             .active_item_use()
             .map(|active| active.hand())
+    }
+
+    /// Starts using the item currently held in `hand`.
+    pub fn start_using_item(&self, hand: InteractionHand) {
+        let item = self.inventory.lock().get_item_in_hand(hand).clone();
+        let duration = ITEM_BEHAVIORS
+            .get_behavior(item.item())
+            .get_use_duration(&item, self);
+        let _ = self.living_base.start_using_item(hand, item, duration);
+    }
+
+    /// Releases the currently used item and invokes its release hook.
+    pub fn release_using_item(&self) {
+        let Some(active) = self.living_base.stop_using_item() else {
+            return;
+        };
+        let hand = active.hand();
+        let mut item = {
+            let mut inventory = self.inventory.lock();
+            std::mem::replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+        };
+        let world = self.get_world();
+        ITEM_BEHAVIORS.get_behavior(item.item()).release_using(
+            &mut item,
+            &world,
+            self,
+            active.remaining_ticks(),
+        );
+        self.inventory.lock().set_item_in_hand(hand, item);
+    }
+
+    fn tick_active_item_use(&self) {
+        let Some(active) = self.living_base.decrement_active_item_use() else {
+            return;
+        };
+        let hand = active.hand();
+        let mut item = {
+            let mut inventory = self.inventory.lock();
+            std::mem::replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+        };
+        let world = self.get_world();
+        let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
+        behavior.on_use_tick(&world, self, &mut item, active.remaining_ticks());
+
+        if active.remaining_ticks() <= 0 && self.active_item_use_hand() == Some(hand) {
+            item = behavior.finish_using(&mut item, &world, self);
+            self.living_base.stop_using_item();
+        }
+
+        self.inventory.lock().set_item_in_hand(hand, item);
     }
 
     /// Returns the player's configured main arm.

@@ -81,13 +81,10 @@ impl ItemBehavior for BrushItem {
         let Some(block_entity) = world.get_block_entity(pos) else {
             return;
         };
-        let outcome = {
-            let mut guard = block_entity.lock();
-            let Some(brushable) = guard.downcast_mut::<BrushableBlockEntity>() else {
-                return;
-            };
-            brushable.brush(world.game_time(), world, player, direction, stack)
+        let Some(brushable) = block_entity.downcast_ref::<BrushableBlockEntity>() else {
+            return;
         };
+        let outcome = brushable.brush(world.game_time(), world, player, direction, stack);
         outcome.mutation.apply(world, pos);
 
         if outcome.durability_damage {
@@ -111,13 +108,10 @@ fn calculate_block_hit(world: &World, player: &Player) -> Option<(BlockPos, Dire
     }
 }
 
-fn equipped_brush_slot(player: &Player, stack: &ItemStack) -> EquipmentSlot {
-    let inventory = player.inventory.lock();
-    let offhand = inventory.get_item_in_hand(InteractionHand::OffHand);
-    if ItemStack::matches(stack, offhand) {
-        EquipmentSlot::OffHand
-    } else {
-        EquipmentSlot::MainHand
+fn equipped_brush_slot(player: &Player, _stack: &ItemStack) -> EquipmentSlot {
+    match player.active_item_use_hand() {
+        Some(InteractionHand::OffHand) => EquipmentSlot::OffHand,
+        Some(InteractionHand::MainHand) | None => EquipmentSlot::MainHand,
     }
 }
 
