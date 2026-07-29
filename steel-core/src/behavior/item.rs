@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
+use std::borrow::Cow;
 use steel_registry::data_components::vanilla_components::{
     BLOCKS_ATTACKS, CONSUMABLE, KINETIC_WEAPON,
 };
-use std::borrow::Cow;
 
 use steel_registry::data_components::vanilla_components::ITEM_NAME;
 use steel_registry::item_stack::ItemStack;
