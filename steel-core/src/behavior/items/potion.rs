@@ -8,10 +8,6 @@ use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::data_components::{PotionContents, vanilla_components};
 use steel_registry::item_stack::ItemStack;
-use text_components::TextComponent;
-
-use super::dynamic_name::potion_name;
-use crate::world::game_event::GameEventContext;
 use steel_registry::particle_type::ParticleData;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
@@ -20,6 +16,9 @@ use steel_registry::{
 };
 use steel_utils::Direction;
 use steel_utils::types::UpdateFlags;
+use text_components::TextComponent;
+
+use super::dynamic_name::potion_name;
 
 /// Potion behavior providing Vanilla's potion-content-dependent name.
 // TODO: Add PotionItem's water default instance when Steel has item-specific
