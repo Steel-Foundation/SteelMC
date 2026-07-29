@@ -5,7 +5,7 @@ pub mod vanilla_stat_types;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 // Re-export some core types
-pub use registry::{StatType, StatTypeEntry, StatTypeEntryRef, StatTypeRegistry};
+pub use registry::{StatType, StatTypeEntry, StatTypeEntryRef, StatTypeRef, StatTypeRegistry};
 
 use crate::stat::registry::StatValueRegistryEntry;
 use crate::{REGISTRY, RegistryEntry, RegistryExt};
@@ -27,15 +27,11 @@ impl Stat {
     /// Attempts to create a new erased stat from its type and value with type safety.
     /// This function panics if the stat type provided is unregistered
     /// with the [`StatTypeRegistry`].
-    pub fn new<R: RegistryExt>(stat_type: StatType<R>, value: &'static R::Entry) -> Self
+    pub fn new<R: RegistryExt>(stat_type: StatTypeRef<R>, value: &'static R::Entry) -> Self
     where
         R::Entry: StatValueRegistryEntry,
     {
-        let stat_type_entry = REGISTRY
-            .stat_types
-            .by_key(stat_type.key())
-            .expect("cannot create a stat with an unregistered stat type");
-
+        let stat_type_entry = stat_type.stat_type_entry_ref();
         Self {
             stat_type_entry,
             value,
@@ -133,7 +129,7 @@ mod tests {
     use steel_utils::codec::VarInt;
     use steel_utils::serial::{ReadFrom, WriteTo};
 
-    const UNREGISTERED_STAT_TYPE: StatType<ItemRegistry> =
+    static UNREGISTERED_STAT_TYPE: StatType<ItemRegistry> =
         StatType::new(Identifier::new_static("test", "unregistered"), None);
 
     #[test]
@@ -141,9 +137,9 @@ mod tests {
         init_test_registry();
 
         // Test if stat creation succeeds or fails appropriately.
-        let stat = Stat::new(vanilla_stat_types::ITEM_USED, &vanilla_items::DIAMOND);
+        let stat = vanilla_stat_types::ITEM_USED.get(&vanilla_items::DIAMOND);
         let should_panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            Stat::new(UNREGISTERED_STAT_TYPE, &vanilla_items::DIAMOND)
+            UNREGISTERED_STAT_TYPE.get(&vanilla_items::DIAMOND)
         }));
         assert!(
             should_panic.is_err(),
@@ -162,13 +158,8 @@ mod tests {
         assert_eq!(decoded, stat);
 
         // Check if we are able to decode a stat whose item ID is invalid, so it is invalid.
-        let stat_type_entry = REGISTRY
-            .stat_types
-            .by_stat_type(vanilla_stat_types::ITEM_BROKEN)
-            .expect("ITEM_BROKEN should have been registered with the stat type registry");
-
         encoded.clear();
-        VarInt(stat_type_entry.id() as i32)
+        VarInt(vanilla_stat_types::ITEM_BROKEN.stat_type_entry_ref().id() as i32)
             .write(&mut encoded)
             .expect("VarInt for stat type should have encoded successfully");
         VarInt(REGISTRY.items.len() as i32)

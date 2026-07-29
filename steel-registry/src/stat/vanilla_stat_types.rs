@@ -26,23 +26,23 @@ macro_rules! vanilla_stat_type {
 }
 
 // Only the block and item stat types have an actual zero-argument translation for their names.
-pub const BLOCK_MINED: StatType<BlockRegistry> =
+pub static BLOCK_MINED: StatType<BlockRegistry> =
     vanilla_stat_type!("mined", STAT_TYPE_MINECRAFT_BROKEN);
 
-pub const ITEM_CRAFTED: StatType<ItemRegistry> =
+pub static ITEM_CRAFTED: StatType<ItemRegistry> =
     vanilla_stat_type!("crafted", STAT_TYPE_MINECRAFT_CRAFTED);
-pub const ITEM_USED: StatType<ItemRegistry> = vanilla_stat_type!("used", STAT_TYPE_MINECRAFT_USED);
-pub const ITEM_BROKEN: StatType<ItemRegistry> =
+pub static ITEM_USED: StatType<ItemRegistry> = vanilla_stat_type!("used", STAT_TYPE_MINECRAFT_USED);
+pub static ITEM_BROKEN: StatType<ItemRegistry> =
     vanilla_stat_type!("broken", STAT_TYPE_MINECRAFT_BROKEN);
-pub const ITEM_PICKED_UP: StatType<ItemRegistry> =
+pub static ITEM_PICKED_UP: StatType<ItemRegistry> =
     vanilla_stat_type!("picked_up", STAT_TYPE_MINECRAFT_PICKED_UP);
-pub const ITEM_DROPPED: StatType<ItemRegistry> =
+pub static ITEM_DROPPED: StatType<ItemRegistry> =
     vanilla_stat_type!("dropped", STAT_TYPE_MINECRAFT_DROPPED);
 
-pub const ENTITY_KILLED: StatType<EntityTypeRegistry> = vanilla_stat_type!("killed");
-pub const ENTITY_KILLED_BY: StatType<EntityTypeRegistry> = vanilla_stat_type!("killed_by");
+pub static ENTITY_KILLED: StatType<EntityTypeRegistry> = vanilla_stat_type!("killed");
+pub static ENTITY_KILLED_BY: StatType<EntityTypeRegistry> = vanilla_stat_type!("killed_by");
 
-pub const CUSTOM: StatType<CustomStatRegistry> = vanilla_stat_type!("custom");
+pub static CUSTOM: StatType<CustomStatRegistry> = vanilla_stat_type!("custom");
 
 /// Registers all vanilla stat types.
 ///
@@ -50,26 +50,26 @@ pub const CUSTOM: StatType<CustomStatRegistry> = vanilla_stat_type!("custom");
 /// as the component's network ID is determined by its registration order.
 pub fn register_vanilla_stat_types(registry: &mut StatTypeRegistry) {
     // 0: mined
-    registry.register(BLOCK_MINED, || &REGISTRY.blocks);
+    registry.register(&BLOCK_MINED, || &REGISTRY.blocks);
 
     // 1: crafted
-    registry.register(ITEM_CRAFTED, || &REGISTRY.items);
+    registry.register(&ITEM_CRAFTED, || &REGISTRY.items);
     // 2: used
-    registry.register(ITEM_USED, || &REGISTRY.items);
+    registry.register(&ITEM_USED, || &REGISTRY.items);
     // 3: broken
-    registry.register(ITEM_BROKEN, || &REGISTRY.items);
+    registry.register(&ITEM_BROKEN, || &REGISTRY.items);
     // 4: picked_up
-    registry.register(ITEM_PICKED_UP, || &REGISTRY.items);
+    registry.register(&ITEM_PICKED_UP, || &REGISTRY.items);
     // 5: dropped
-    registry.register(ITEM_DROPPED, || &REGISTRY.items);
+    registry.register(&ITEM_DROPPED, || &REGISTRY.items);
 
     // 6: killed
-    registry.register(ENTITY_KILLED, || &REGISTRY.entity_types);
+    registry.register(&ENTITY_KILLED, || &REGISTRY.entity_types);
     // 7: killed_by
-    registry.register(ENTITY_KILLED_BY, || &REGISTRY.entity_types);
+    registry.register(&ENTITY_KILLED_BY, || &REGISTRY.entity_types);
 
     // 8: custom
-    registry.register(CUSTOM, || &REGISTRY.custom_stats);
+    registry.register(&CUSTOM, || &REGISTRY.custom_stats);
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@ use crate::{RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 use steel_utils::{Downcast, DowncastType, DowncastTypeKey, ErasedType, Identifier};
 use text_components::TextComponent;
 
@@ -62,6 +62,7 @@ pub struct StatType<R: RegistryExt> {
     pub key: Identifier,
     pub display_name: Option<TextComponent>,
 
+    stat_type_entry_ref: OnceLock<StatTypeEntryRef>,
     _phantom: PhantomData<R>,
 }
 
@@ -74,6 +75,7 @@ where
         Self {
             key,
             display_name,
+            stat_type_entry_ref: OnceLock::new(),
             _phantom: PhantomData,
         }
     }
@@ -90,15 +92,28 @@ where
         self.display_name.as_ref()
     }
 
+    /// Gets the reference to the entry corresponding to their stat type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this stat type has not been registered with the [`StatTypeRegistry`].
+    pub fn stat_type_entry_ref(&self) -> StatTypeEntryRef {
+        self.stat_type_entry_ref
+            .get()
+            .expect("attempted to get the entry reference of an unregistered stat type")
+    }
+
     /// Gets a [`Stat`] of this type with a given value.
     ///
     /// # Panics
     ///
     /// Panics if this stat type is unregistered with the [`StatTypeRegistry`].
-    pub fn get(self, value: &'static R::Entry) -> Stat {
+    pub fn get(&'static self, value: &'static R::Entry) -> Stat {
         Stat::new(self, value)
     }
 }
+
+pub type StatTypeRef<R> = &'static StatType<R>;
 
 /// A type-erased registry whose values can be used for identifying a particular stat.
 /// Internally, the registry is stored in a [`LazyLock`] so that the reference
@@ -194,7 +209,7 @@ impl StatTypeRegistry {
     ///
     /// The registry supplied in this function must be in a supplier so that
     /// it only runs once when the registries are initialized.
-    pub fn register<R, F>(&mut self, stat_type: StatType<R>, registry_supplier: F)
+    pub fn register<R, F>(&mut self, stat_type: StatTypeRef<R>, registry_supplier: F)
     where
         R: RegistryExt + StatValueRegistry,
         F: (FnOnce() -> &'static R) + Send + Sync + 'static,
@@ -213,6 +228,9 @@ impl StatTypeRegistry {
         let entry_ref = Box::leak(Box::new(entry));
         let id = self.stat_types_by_id.len();
 
+        let locked_ref = stat_type.stat_type_entry_ref.get_or_init(|| entry_ref);
+        assert_eq!(entry_ref, *locked_ref);
+
         self.stat_types_by_id.push(entry_ref);
         self.stat_types_by_key.insert(stat_type.key.clone(), id);
     }
@@ -223,12 +241,6 @@ impl StatTypeRegistry {
             .iter()
             .enumerate()
             .map(|(id, &entry)| (id, entry))
-    }
-
-    /// Gets the erased stat type entry from its statically typed stat type.
-    #[must_use]
-    pub fn by_stat_type<R: RegistryExt>(&self, stat_type: StatType<R>) -> Option<StatTypeEntryRef> {
-        Some(self.stat_types_by_id[*self.stat_types_by_key.get(&stat_type.key)?])
     }
 }
 
