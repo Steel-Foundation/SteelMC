@@ -8,17 +8,17 @@
 
 use std::sync::Arc;
 
+use crate::command::brigadier::{
+    CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
+    ContextChain,
+};
+use steel_registry::blocks::BlockRef;
 use steel_registry::{
     enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
     timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::GameType};
 use text_components::TextComponent;
-
-use crate::command::brigadier::{
-    CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
-    ContextChain,
-};
 
 use super::{
     BiomeOrTag, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
@@ -32,6 +32,7 @@ use super::{
     },
     selector::EntitySelector,
 };
+use crate::command::execution::argument::BlockValue;
 use crate::{
     chunk::heightmap::HeightmapType,
     entity::{EntityAnchor, SharedEntity},
@@ -275,6 +276,11 @@ where
 
     pub(crate) fn block_predicate(&self, name: &str) -> Option<&BlockPredicate> {
         self.typed_argument(name)
+    }
+
+    pub(crate) fn block(&self, name: &str) -> Option<&BlockRef> {
+        self.typed_argument::<BlockValue>(name)
+            .map(|value| &value.0)
     }
 
     /// Returns a configured Steel domain name.
