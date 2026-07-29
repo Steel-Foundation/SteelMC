@@ -3,6 +3,7 @@ mod registry;
 pub mod vanilla_stat_types;
 
 use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
 // Re-export some core types
 pub use registry::{StatType, StatTypeEntry, StatTypeEntryRef, StatTypeRegistry};
 
@@ -12,11 +13,10 @@ use steel_utils::codec::VarInt;
 use steel_utils::serial::{ReadFrom, WriteTo};
 
 /// Identifies a particular stat whose generic type is erased.
-/// It stores the erased stat type and the value used to identify it by its registry index.
 /// This stat can also be encoded to and decoded from the network.
 ///
-/// This is analogous to `Stat<?>`.
-#[derive(Copy, Clone, PartialEq)]
+/// This is analogous to Vanilla's `Stat<?>`.
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Stat {
     stat_type: StatTypeEntryRef,
     value_id: usize,
@@ -24,17 +24,18 @@ pub struct Stat {
 
 impl Stat {
     /// Attempts to create a new erased stat from its type and value with type safety.
-    /// The stat type provided must be registered with the [`StatTypeRegistry`] for
-    /// the function to succeed.
-    pub fn from_stat_type<R: RegistryExt>(
-        stat_type: StatType<R>,
-        value: &'static R::Entry,
-    ) -> Option<Self> {
-        let stat_type_entry = REGISTRY.stat_types.by_stat_type(stat_type)?;
-        Some(Self {
+    /// This function panics if the stat type provided is unregistered
+    /// with the [`StatTypeRegistry`].
+    pub fn new<R: RegistryExt>(stat_type: StatType<R>, value: &'static R::Entry) -> Self {
+        let stat_type_entry = REGISTRY
+            .stat_types
+            .by_key(stat_type.key())
+            .expect("cannot create a stat with an unregistered stat type");
+
+        Self {
             stat_type: stat_type_entry,
             value_id: value.id(),
-        })
+        }
     }
 }
 
@@ -84,6 +85,13 @@ impl ReadFrom for Stat {
     }
 }
 
+impl Hash for Stat {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.stat_type.key.hash(state);
+        self.value_id.hash(state);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::items::ItemRegistry;
@@ -103,10 +111,15 @@ mod tests {
     fn network_encode_and_decode_stat() {
         init_test_registry();
 
-        assert!(Stat::from_stat_type(UNREGISTERED_STAT_TYPE, &vanilla_items::DIAMOND).is_none());
-
-        let stat = Stat::from_stat_type(vanilla_stat_types::ITEM_USED, &vanilla_items::DIAMOND)
-            .expect("stat should have been created successfully");
+        // Test if stat creation succeeds or fails appropriately.
+        let stat = Stat::new(vanilla_stat_types::ITEM_USED, &vanilla_items::DIAMOND);
+        let should_panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Stat::new(UNREGISTERED_STAT_TYPE, &vanilla_items::DIAMOND)
+        }));
+        assert!(
+            should_panic.is_err(),
+            "creating a stat with an unregistered stat type should have failed"
+        );
 
         // Try to encode the stat.
         let mut encoded = Vec::new();

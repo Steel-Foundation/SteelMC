@@ -1,4 +1,5 @@
 use crate::RegistryExt;
+use crate::stat::Stat;
 use rustc_hash::FxHashMap;
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
@@ -24,8 +25,9 @@ where
 /// A structure that identifies a type of stat, using the
 /// registry type [`R`] for using items from it to identify a particular stat.
 pub struct StatType<R: RegistryExt> {
-    pub(crate) key: Identifier,
-    pub(crate) display_name: Option<TextComponent>,
+    /// The identifier that identifies this stat type uniquely.
+    pub key: Identifier,
+    pub display_name: Option<TextComponent>,
 
     _phantom: PhantomData<R>,
 }
@@ -50,6 +52,15 @@ impl<R: RegistryExt> StatType<R> {
     #[must_use]
     pub const fn display_name(&self) -> Option<&TextComponent> {
         self.display_name.as_ref()
+    }
+
+    /// Gets a [`Stat`] of this type with a given value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this stat type is unregistered with the [`StatTypeRegistry`].
+    pub fn get(self, value: &'static R::Entry) -> Stat {
+        Stat::new(self, value)
     }
 }
 
@@ -153,8 +164,8 @@ impl StatTypeRegistry {
         };
 
         let entry_ref = Box::leak(Box::new(entry));
-
         let id = self.stat_types_by_id.len();
+
         self.stat_types_by_id.push(entry_ref);
         self.stat_types_by_key.insert(stat_type.key.clone(), id);
     }
