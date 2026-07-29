@@ -1,8 +1,5 @@
 //! Vanilla set block command.
 
-use steel_utils::Identifier;
-use text_components::TextComponent;
-
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
     execution::{
@@ -11,6 +8,9 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
+use steel_utils::Identifier;
+use steel_utils::types::UpdateFlags;
+use text_components::TextComponent;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("setblock"), |_| command())
@@ -31,10 +31,26 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 
 /// Set a block in the desired position with a mode (destroy, keep, replace, strict), and return 1 if the block os placed, 0 else.
 fn set_block(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    context
-        .source()
-        .sender()
-        .send_message(&TextComponent::plain("test"));
+    let Some(coordinates) = context.coordinates("pos") else {
+        return Err(missing_argument("pos"));
+    };
+
+
+    let Some(block) = context.block("block") else {
+        return Err(missing_argument("block"));
+    };
+
+    context.source().world().set_block(
+        coordinates.block_pos(context.source()),
+        block.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    );
 
     Ok(1)
+}
+
+fn missing_argument(name: &str) -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(format!(
+        "Parsed value for {name} is missing from the command context"
+    ))
 }
