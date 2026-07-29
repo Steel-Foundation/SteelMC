@@ -8,7 +8,8 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::world::LevelAccessor;
+use crate::command::execution::BlockPredicate;
+use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::Identifier;
 use steel_utils::translations::{COMMANDS_SETBLOCK_FAILED, COMMANDS_SETBLOCK_SUCCESS};
@@ -34,7 +35,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("setblock").then(
         argument("pos", SteelArgumentType::block_pos()).then(
-            argument("block", SteelArgumentType::block_state())
+            argument("block", SteelArgumentType::block_predicate())
                 .executes(set_block_replace)
                 .then(literal("destroy").executes(set_block_destroy))
                 .then(literal("keep").executes(set_block_keep))
@@ -77,38 +78,62 @@ fn set_block(
     };
     let block_pos = coordinates.block_pos(context.source());
 
-    // Block
-    let Some(block) = context.block_state("block") else {
+    // Block predicate into block state
+    let Some(block_predicate) = context.block_predicate("block") else {
         return Err(missing_argument("block"));
+    };
+
+    let block_state = match block_predicate {
+        BlockPredicate::Block {
+            // TODO: use nbt with container for example
+            block, properties, ..
+        } => {
+            // Adapt properties for the next function
+            let properties_vec: Vec<(&str, &str)> = properties
+                .iter()
+                .map(|(name, value)| (name.as_ref(), value.as_ref()))
+                .collect();
+
+            // Get the block state id
+            let Some(block_state_id) = REGISTRY
+                .blocks
+                .state_id_from_block_properties(block, &properties_vec)
+            else {
+                return Err(CommandSyntaxError::dynamic(
+                    "This Block is not registered or a property name/value is invalid.",
+                ));
+            };
+
+            block_state_id
+        }
+        BlockPredicate::Tag { .. } => unreachable!(),
     };
 
     // World the player is in
     let level = context.source().world();
 
     // Keep mode throw an error when you try to replace an air block
-    if let SetBlockMode::Keep = mode
-        && level.get_block_state(block_pos).is_air()
-    {
+    if matches!(mode, SetBlockMode::Keep) && level.get_block_state(block_pos).is_air() {
         return Ok(set_block_failed(context.source()));
     }
 
-    let place_needed = if let SetBlockMode::Destroy = mode {
+    let place_needed = if matches!(mode, SetBlockMode::Destroy) {
         level.destroy_block(block_pos, true);
 
-        !block.is_air() || level.get_block_state(block_pos).is_air()
+        !block_state.is_air() || level.get_block_state(block_pos).is_air()
     } else {
         true
     };
 
-    let update_bits = if let SetBlockMode::Strict = mode {
+    let update_bits = if matches!(mode, SetBlockMode::Strict) {
         816
     } else {
         256
     };
     if place_needed
-        && !level.set_block_state(
+        && !level.set_block(
             block_pos,
-            block,
+            block_state,
             UpdateFlags::from_bits_truncate(2 | update_bits),
         )
     {
@@ -116,7 +141,8 @@ fn set_block(
     }
 
     if !matches!(mode, SetBlockMode::Strict) {
-        level.update_neighbors_at(block_pos, block.get_block());
+        /// TODO: use vanilla "updateNeighboursOnBlockSet"
+        level.update_neighbors_at(block_pos, block_state.get_block());
     }
 
     context.source().send_success(
