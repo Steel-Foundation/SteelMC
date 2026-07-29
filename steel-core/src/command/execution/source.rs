@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::{collections::BTreeSet, ptr, sync::Arc};
 
 use glam::DVec3;
 use steel_registry::{
@@ -21,7 +21,7 @@ use crate::{
         PermissionContext, PermissionExpr, PermissionKey, PermissionMetadataExpression,
         PermissionRuleExpression, PermissionSet, PermissionState,
     },
-    player::{KnownPlayer, Player},
+    player::{DomainResidenceToken, KnownPlayer, Player},
     scoreboard::Scoreboard,
     server::Server,
     world::World,
@@ -159,6 +159,11 @@ pub(crate) trait CommandArgumentSource: Send + Sync {
 pub(crate) trait ExecutionCommandSource:
     CommandArgumentSource + Sized + Send + Sync + 'static
 {
+    /// Returns whether delayed work may still execute for this exact source.
+    fn execution_is_current(&self) -> bool {
+        true
+    }
+
     fn with_callback(&self, callback: CommandResultCallback) -> Self;
 
     fn callback(&self) -> CommandResultCallback;
@@ -187,13 +192,22 @@ pub(crate) trait CommandPermissionSource: ExecutionCommandSource {
 struct CommandAuthorizationContext {
     permission_context: PermissionContext,
     player_permissions: Option<PermissionSet>,
+    world_scope: CommandWorldScope,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CommandWorldScope {
+    Global,
+    Domain(Box<str>),
 }
 
 impl CommandAuthorizationContext {
     fn for_player(world: steel_utils::Identifier, permissions: PermissionSet) -> Self {
+        let domain = world.namespace.to_string().into_boxed_str();
         Self {
             permission_context: PermissionContext::for_world(world),
             player_permissions: Some(permissions),
+            world_scope: CommandWorldScope::Domain(domain),
         }
     }
 
@@ -201,6 +215,7 @@ impl CommandAuthorizationContext {
         Self {
             permission_context: PermissionContext::for_world(world),
             player_permissions: None,
+            world_scope: CommandWorldScope::Global,
         }
     }
 
@@ -213,6 +228,13 @@ impl CommandAuthorizationContext {
             return Some(PermissionState::Allow);
         };
         permissions.resolve_in(permission, self.permission_context())
+    }
+
+    fn allows_execution_domain(&self, domain: &str) -> bool {
+        match &self.world_scope {
+            CommandWorldScope::Global => true,
+            CommandWorldScope::Domain(execution_domain) => execution_domain.as_ref() == domain,
+        }
     }
 }
 
@@ -228,6 +250,8 @@ pub(crate) struct CommandSource {
     rotation: (f32, f32),
     anchor: EntityAnchor,
     authorization: CommandAuthorizationContext,
+    sender_residence: Option<DomainResidenceToken>,
+    effective_player_residence: Option<DomainResidenceToken>,
     callback: CommandResultCallback,
     silent: bool,
 }
@@ -253,12 +277,21 @@ impl CommandSource {
         let rotation = entity
             .as_ref()
             .map_or((0.0, 0.0), |entity| entity.rotation());
-        let authorization = match &player {
-            Some(player) => CommandAuthorizationContext::for_player(
+        let sender_residence = sender
+            .get_player()
+            .map(|player| player.domain_residence_token());
+        let effective_player_residence = entity
+            .as_ref()
+            .and_then(|entity| entity.as_player())
+            .map(Player::domain_residence_token);
+        let authorization = match &sender {
+            CommandSender::Player(player) => CommandAuthorizationContext::for_player(
                 world.key.clone(),
                 server.command_permission_snapshot(player.gameprofile.id),
             ),
-            None => CommandAuthorizationContext::unrestricted(world.key.clone()),
+            CommandSender::Console | CommandSender::Rcon => {
+                CommandAuthorizationContext::unrestricted(world.key.clone())
+            }
         };
 
         Self {
@@ -271,6 +304,8 @@ impl CommandSource {
             rotation,
             anchor: EntityAnchor::default(),
             authorization,
+            sender_residence,
+            effective_player_residence,
             callback: CommandResultCallback::empty(),
             silent: false,
         }
@@ -300,6 +335,14 @@ impl CommandSource {
         &self.server
     }
 
+    /// Returns whether `/execute` may project this source into `domain`.
+    ///
+    /// Player-originated command chains remain confined to their initial
+    /// domain. Console and Rcon sources are unrestricted.
+    pub(crate) fn allows_execution_domain(&self, domain: &str) -> bool {
+        self.authorization.allows_execution_domain(domain)
+    }
+
     pub(crate) const fn position(&self) -> DVec3 {
         self.position
     }
@@ -318,13 +361,19 @@ impl CommandSource {
             self.server
                 .get_players()
                 .into_iter()
-                .find(|player| player.uuid() == entity_player.uuid())
+                .find(|player| ptr::eq(player.as_ref(), entity_player))
         });
+        source.effective_player_residence = entity.as_player().map(Player::domain_residence_token);
         source.entity = Some(entity);
         source
     }
 
-    pub(crate) fn with_world(&self, world: Arc<World>) -> Self {
+    pub(crate) fn with_world(&self, world: Arc<World>) -> Result<Self, CommandSyntaxError> {
+        if !self.allows_execution_domain(world.domain()) {
+            return Err(CommandSyntaxError::dynamic(
+                "Players cannot execute commands across Steel domains",
+            ));
+        }
         let mut source = self.clone();
         if self.world.key != world.key {
             let scale =
@@ -333,7 +382,7 @@ impl CommandSource {
             source.position.z *= scale;
         }
         source.world = world;
-        source
+        Ok(source)
     }
 
     pub(crate) fn with_position(&self, position: DVec3) -> Self {
@@ -454,6 +503,28 @@ impl CommandSource {
 }
 
 impl ExecutionCommandSource for CommandSource {
+    fn execution_is_current(&self) -> bool {
+        let sender_is_current = self.sender.get_player().is_none_or(|player| {
+            self.sender_residence.is_some_and(|residence| {
+                self.server.command_world_for_player(player).is_some()
+                    && player.is_domain_residence_current(residence)
+            })
+        });
+        if !sender_is_current {
+            return false;
+        }
+
+        self.entity
+            .as_ref()
+            .and_then(|entity| entity.as_player())
+            .is_none_or(|player| {
+                self.effective_player_residence.is_some_and(|residence| {
+                    self.server.command_world_for_player(player).is_some()
+                        && player.is_domain_residence_current(residence)
+                })
+            })
+    }
+
     fn with_callback(&self, callback: CommandResultCallback) -> Self {
         let mut source = self.clone();
         source.callback = callback;
@@ -622,7 +693,11 @@ impl CommandArgumentSource for CommandSource {
         self.server
             .get_players()
             .into_iter()
-            .filter(|player| player.get_world().domain() == domain)
+            .filter(|player| {
+                self.server
+                    .command_world_for_player(player)
+                    .is_some_and(|world| world.domain() == domain)
+            })
             .map(|player| player.gameprofile.name.clone())
             .collect()
     }
@@ -663,15 +738,17 @@ fn profile_argument_uuids(
     argument: &GameProfileArgument,
 ) -> BTreeSet<uuid::Uuid> {
     match argument {
-        GameProfileArgument::Selector(selector) => selector.find_players(source).map_or_else(
-            |_| BTreeSet::new(),
-            |players| {
-                players
-                    .into_iter()
-                    .map(|player| player.gameprofile.id)
-                    .collect()
-            },
-        ),
+        GameProfileArgument::Selector(selector) => {
+            selector.find_online_profile_players(source).map_or_else(
+                |_| BTreeSet::new(),
+                |players| {
+                    players
+                        .into_iter()
+                        .map(|player| player.gameprofile.id)
+                        .collect()
+                },
+            )
+        }
         GameProfileArgument::Direct(value) => {
             let known = source.server.known_players();
             let uuid = uuid::Uuid::parse_str(value)
@@ -874,6 +951,8 @@ mod tests {
             authorization.permission_context(),
             &PermissionContext::for_world(world)
         );
+        assert!(authorization.allows_execution_domain("lobby"));
+        assert!(!authorization.allows_execution_domain("survival"));
     }
 
     #[test]
@@ -902,5 +981,7 @@ mod tests {
             authorization.permission_state(&permission),
             Some(PermissionState::Allow)
         );
+        assert!(authorization.allows_execution_domain("default"));
+        assert!(authorization.allows_execution_domain("survival"));
     }
 }

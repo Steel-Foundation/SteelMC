@@ -879,8 +879,14 @@ impl ChunkHolder {
         }
 
         if chunk_exists {
-            return Self::apply_existing_empty_step(&holder, target_status, &context, &storage)
-                .await;
+            return Self::apply_existing_empty_step(
+                &holder,
+                target_status,
+                &context,
+                &storage,
+                &thread_pool,
+            )
+            .await;
         }
 
         if holder.is_status_disallowed(target_status) {
@@ -921,6 +927,7 @@ impl ChunkHolder {
         target_status: ChunkStatus,
         context: &Arc<WorldGenContext>,
         storage: &Arc<ChunkStorage>,
+        thread_pool: &rayon::ThreadPool,
     ) -> Option<()> {
         let loaded = match storage
             .load_chunk(
@@ -928,6 +935,7 @@ impl ChunkHolder {
                 holder.min_y(),
                 holder.height(),
                 context.weak_world(),
+                thread_pool,
             )
             .await
         {

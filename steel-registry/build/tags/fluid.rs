@@ -1,0 +1,60 @@
+use heck::ToShoutySnakeCase;
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::quote;
+
+use super::common;
+
+pub(crate) fn build() -> TokenStream {
+    let tag_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/tags/fluid";
+    println!("cargo:rerun-if-changed={tag_dir}");
+    let all_tags = common::read_all_tags(tag_dir);
+    let sorted_tags = common::resolve_all_tags(&all_tags);
+
+    let mut stream = TokenStream::new();
+
+    stream.extend(quote! {
+        use crate::fluid::FluidRegistry;
+        use crate::TaggedRegistryExt;
+        use steel_utils::Identifier;
+    });
+
+    let mut register_stream = TokenStream::new();
+    let mut tag_stream = TokenStream::new();
+    for (tag_name, fluids) in &sorted_tags {
+        let tag_array = Ident::new(
+            &format!("{}_TAG_LIST", tag_name.to_shouty_snake_case()),
+            Span::call_site(),
+        );
+        let tag_ident = Ident::new(&tag_name.to_shouty_snake_case(), Span::call_site());
+
+        let fluid_strs = fluids.iter().map(std::string::String::as_str);
+
+        stream.extend(quote! {
+            static #tag_array: &[&str] = &[#(#fluid_strs),*];
+        });
+        let tag_key = tag_name.clone();
+
+        tag_stream.extend(quote! {
+            pub const #tag_ident: Identifier = Identifier::vanilla_static(#tag_key);
+        });
+        register_stream.extend(quote! {
+            registry.register_tag(
+                Self::#tag_ident,
+                #tag_array
+            );
+        });
+    }
+
+    stream.extend(quote! {
+        pub struct FluidTag {}
+        impl FluidTag {
+            #tag_stream
+            pub fn register_fluid_tags(registry: &mut FluidRegistry) {
+                #register_stream
+            }
+
+        }
+    });
+
+    stream
+}

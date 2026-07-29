@@ -301,7 +301,7 @@ impl BlockEntity for PotentSulfurBlockEntity {
                 world.game_event(
                     &vanilla_game_events::BLOCK_DEACTIVATE,
                     pos,
-                    &crate::world::game_event_context::GameEventContext::new(None, Some(state)),
+                    &crate::world::game_event::GameEventContext::new(None, Some(state)),
                 );
             }
         }

@@ -12,7 +12,10 @@ use crate::{
     inventory::container::Container,
 };
 
-use super::{Player, abilities::Abilities, experience::Experience};
+use super::{
+    Player, abilities::Abilities, experience::Experience, food_data::FoodData,
+    player_inventory::PlayerInventory,
+};
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
@@ -178,7 +181,7 @@ impl PersistentPlayerData {
         // Collect non-empty inventory slots
         let mut slots = Vec::new();
         // Main inventory (0-35) and equipment (36-42)
-        for slot in 0..43 {
+        for slot in 0..PlayerInventory::CONTAINER_SIZE {
             let item = inventory.get_item(slot);
             if !item.is_empty() {
                 slots.push(PersistentSlot {
@@ -277,6 +280,31 @@ impl PersistentPlayerData {
     }
 }
 
+impl Player {
+    /// Resets domain-scoped gameplay data to the defaults used for a new player.
+    pub(crate) fn reset_domain_data_for_first_visit(&self) {
+        use glam::DVec3;
+
+        self.set_velocity(DVec3::ZERO);
+        self.set_on_ground(false);
+        self.set_fall_flying(false);
+        self.base()
+            .set_fire_freeze_state(EntityFireFreezeState::new());
+        self.sync_base_fire_freeze_entity_data();
+        self.set_health(self.get_max_health());
+        *self.abilities.lock() = Abilities::default();
+        *self.inventory.lock() = PlayerInventory::new();
+        *self.food_data.lock() = FoodData::new();
+
+        let mut experience = Experience::default();
+        experience.dirty = true;
+        *self.experience.lock() = experience;
+
+        self.set_score(0);
+        self.set_seen_credits(false);
+    }
+}
+
 impl Default for PersistentAbilities {
     fn default() -> Self {
         Self {
@@ -329,8 +357,8 @@ impl PersistentPlayerData {
 
     /// Applies saved gameplay state without restoring world-local location data.
     ///
-    /// Used when the saved world no longer exists and the player must spawn at
-    /// the target world's default spawn instead of stale coordinates.
+    /// Used when the saved world is unavailable or differs from an explicitly
+    /// selected world, which must use the target spawn instead.
     pub fn apply_to_player_without_location(&self, player: &Player) {
         self.apply_to_player_inner(player, false);
     }
@@ -382,13 +410,13 @@ impl PersistentPlayerData {
         {
             let mut inventory = player.inventory.lock();
             // Clear existing inventory first
-            for slot in 0..43 {
+            for slot in 0..PlayerInventory::CONTAINER_SIZE {
                 inventory.set_item(slot, ItemStack::empty());
             }
             // Restore saved items
             for slot_data in &self.inventory {
                 let slot_index = slot_data.slot as usize;
-                if slot_index < 43 {
+                if slot_index < PlayerInventory::CONTAINER_SIZE {
                     inventory.set_item(slot_index, slot_data.item.clone());
                 }
             }

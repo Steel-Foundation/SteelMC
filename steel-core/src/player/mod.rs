@@ -1,7 +1,6 @@
 //! This module contains all things player-related.
 mod abilities;
-pub mod block_breaking;
-mod chat_state;
+pub mod chat;
 pub mod chunk_sender;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
 pub mod connection;
@@ -12,63 +11,46 @@ pub mod experience;
 pub mod food_data;
 /// Game mode specific logic for player interactions.
 pub mod game_mode;
-mod game_mode_state;
-mod game_profile;
 mod health_sync;
-mod input_state;
 mod item_cooldowns;
-mod known_players;
-mod lifecycle_state;
-pub mod message_chain;
-mod message_validator;
+mod lifecycle;
 pub mod movement;
-mod movement_state;
-/// This module contains the networking implementation for the player.
-pub mod networking;
+mod permissions;
 pub mod player_data;
 pub mod player_data_storage;
 pub mod player_inventory;
-pub mod profile_key;
-mod profile_lookup;
-mod signature_cache;
-mod spam_throttler;
-mod teleport_state;
+mod profile;
 mod tick_state;
 
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
-use chat_state::ChatState;
+use chat::ChatState;
+pub use chat::{LastSeen, LastSeenMessagesValidator, MessageCache};
+use connection::NetworkConnection as _;
+pub use connection::{ClientInformation, PlayerConnection};
 use container_counter::ContainerCounter;
 use food_data::FoodData;
+use game_mode::{BlockBreakingManager, PlayerGameModeState};
 use glam::DVec3;
 use health_sync::HealthSyncState;
-pub use input_state::PlayerInput;
 use item_cooldowns::ItemCooldowns;
-use lifecycle_state::PlayerLifecycleState;
-pub use message_validator::LastSeenMessagesValidator;
-use movement_state::MovementState;
-pub use signature_cache::{LastSeen, MessageCache};
-use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-use steel_protocol::{
-    packet_traits::{CompressionInfo, EncodedPacket},
-    packets::game::{CCooldown, CLevelEvent, CSetEntityData, CSetExperience},
+use lifecycle::PlayerLifecycleState;
+pub(crate) use lifecycle::ResetReason;
+pub use movement::PlayerInput;
+use movement::{MovementState, TeleportState};
+use permissions::PlayerPermissionState;
+pub(crate) use profile::{GAME_PROFILE_CACHE_LIMIT, KnownPlayerNameLookup, lookup_online_profile};
+pub use profile::{
+    GameProfile, GameProfileAction, KnownPlayer, KnownPlayers, ProfileLookupError,
+    is_valid_player_name, offline_uuid,
 };
-use teleport_state::TeleportState;
-use tick_state::PlayerTickState;
-
-use block_breaking::BlockBreakingManager;
-use enum_dispatch::enum_dispatch;
-use game_mode_state::PlayerGameModeState;
-pub use game_profile::{GameProfile, GameProfileAction, is_valid_player_name, offline_uuid};
-pub(crate) use known_players::KnownPlayerNameLookup;
-pub use known_players::{KnownPlayer, KnownPlayers};
-pub use profile_lookup::ProfileLookupError;
-pub(crate) use profile_lookup::lookup_online_profile;
+use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use std::sync::{Arc, Weak};
 use steel_protocol::packets::game::{
     AttributeSnapshot, CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn,
     CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
     EquipmentSlotItem, LookAtAnchor, RelativeMovement, SoundSource,
 };
+use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::{EntityPose, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
@@ -84,12 +66,13 @@ use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
     vanilla_game_events,
 };
-use steel_utils::entity_events::EntityStatus;
+use steel_utils::{entity_events::EntityStatus, locks::Shared};
+use tick_state::PlayerTickState;
 use uuid::Uuid;
 
 use arc_swap::ArcSwap;
 use steel_utils::locks::SyncMutex;
-use steel_utils::types::{Difficulty, GameType};
+use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use text_components::resolving::TextResolutor;
 use text_components::translation::TranslatedMessage;
 use text_components::{
@@ -98,6 +81,7 @@ use text_components::{
 };
 use text_components::{content::Resolvable, custom::CustomData};
 
+use crate::behavior::InteractionResult;
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
@@ -105,11 +89,13 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
     EntitySyncedData, LivingEntity, LivingEntityBase, MobEffectSyncChange, MobEffectSyncPacket,
-    RemovalReason, SharedEntity, apply_entity_look_at, equipment_items_to_packet_items,
-    start_riding_entities,
+    RemovalReason, SharedEntity, apply_entity_look_at, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
-use crate::inventory::{SyncPlayerInv, equipment::EquipmentSlot};
+use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
+use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
+use crate::inventory::menu::Menu;
+use crate::inventory::menu::kinds::inventory_menu;
 use crate::level_data::RespawnData;
 use crate::permission::{
     PermissionContext, PermissionExpr, PermissionMetadataSet, PermissionMetadataValue,
@@ -118,7 +104,9 @@ use crate::permission::{
 use crate::physics::MoveResult;
 use crate::player::experience::Experience;
 use crate::player::player_data::{PersistentEnderPearl, PersistentRootVehicle};
-use crate::player::player_inventory::PlayerInventory;
+use crate::player::player_inventory::{
+    MenuItemDisposition, MenuRemovalStatus, PlayerInventory, PlayerInventorySyncState,
+};
 use crate::server::{
     Server,
     jobs::{JobPoll, ServerJob, ServerJobContext},
@@ -128,7 +116,7 @@ use steel_registry::vanilla_damage_types;
 
 use steel_protocol::packets::{
     common::SCustomPayload,
-    game::{CContainerClose, CGameEvent, CSystemChat, GameEventType, PreviousMessage},
+    game::{CContainerClose, CGameEvent, CSystemChat, GameEventType},
 };
 use steel_registry::RegistryEntry;
 use steel_registry::item_stack::ItemStack;
@@ -137,72 +125,12 @@ use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, Identifier, UuidExt as _,
 };
 
-use crate::inventory::{MenuInstance, container::Container, inventory_menu::InventoryMenu};
-
-/// Re-export `PreviousMessage` as `PreviousMessageEntry` for use in `signature_cache`
-pub type PreviousMessageEntry = PreviousMessage;
-
-pub use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
+use crate::inventory::container::Container;
 
 const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 
-/// Client-side settings sent via `SClientInformation` packet.
-/// This is stored separately from the packet struct to allow default initialization.
-#[derive(Debug, Clone)]
-pub struct ClientInformation {
-    /// The client's language (e.g., "`en_us`").
-    pub language: String,
-    /// The client's requested view distance in chunks.
-    pub view_distance: u8,
-    /// Chat visibility setting.
-    pub chat_visibility: ChatVisibility,
-    /// Whether chat colors are enabled.
-    pub chat_colors: bool,
-    /// Bitmask for displayed skin parts.
-    pub model_customization: i32,
-    /// The player's main hand (left or right).
-    pub main_hand: HumanoidArm,
-    /// Whether text filtering is enabled.
-    pub text_filtering_enabled: bool,
-    /// Whether the player appears in the server list.
-    pub allows_listing: bool,
-    /// Particle rendering setting.
-    pub particle_status: ParticleStatus,
-}
-
-impl Default for ClientInformation {
-    fn default() -> Self {
-        Self {
-            language: "en_us".to_string(),
-            view_distance: 8, // Default client view distance
-            chat_visibility: ChatVisibility::Full,
-            chat_colors: true,
-            model_customization: 0,
-            main_hand: HumanoidArm::Right,
-            text_filtering_enabled: false,
-            allows_listing: true,
-            particle_status: ParticleStatus::All,
-        }
-    }
-}
-
-use crate::player::connection::NetworkConnection;
-
-/// Concrete player connection type using `enum_dispatch` for zero-cost dispatch.
-///
-/// The `Java` variant handles real network connections (hot path),
-/// while `Other` uses dynamic dispatch for test connections.
-#[enum_dispatch(NetworkConnection)]
-pub enum PlayerConnection {
-    /// A real Java client connection (zero-cost dispatch).
-    Java(JavaConnection),
-    /// A dynamic connection for tests or other backends.
-    Other(Box<dyn NetworkConnection>),
-}
-
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::player::chunk_sender::ChunkSender;
-use crate::player::networking::JavaConnection;
 use crate::portal::{
     PortalTicketTarget, TeleportPostAction, TeleportPostTransition, TeleportTransition,
 };
@@ -253,17 +181,20 @@ pub struct Player {
     game_modes: SyncMutex<PlayerGameModeState>,
 
     /// The player's inventory container (shared with `inventory_menu`).
-    pub inventory: SyncPlayerInv,
+    pub inventory: Shared<PlayerInventory>,
+
+    /// Logical inventory slots that must be resent directly to this player's client.
+    inventory_sync: SyncMutex<PlayerInventorySyncState>,
 
     /// Last main-hand stack used for vanilla attack-strength reset checks.
     last_item_in_main_hand: SyncMutex<ItemStack>,
 
     /// The player's inventory menu (always open, even when `container_id` is 0).
-    inventory_menu: SyncMutex<InventoryMenu>,
+    inventory_menu: SyncMutex<Menu>,
 
     /// The currently open menu (None if player inventory is open).
     /// This is separate from `inventory_menu` which is always present.
-    open_menu: SyncMutex<Option<Box<dyn MenuInstance>>>,
+    open_menu: SyncMutex<player_inventory::OpenMenuState>,
 
     /// Counter for generating container IDs (1-100, wraps around).
     container_counter: SyncMutex<ContainerCounter>,
@@ -308,10 +239,8 @@ pub struct Player {
     /// snapshots this before encoding and compares after to detect stale batches.
     pub chunk_send_epoch: SyncMutex<u32>,
 
-    /// Persisted `RootVehicle` payload awaiting live entity restoration.
-    pending_root_vehicle: SyncMutex<Option<PendingRootVehicleRestore>>,
-    /// Persisted ender pearl payloads awaiting live entity restoration.
-    pending_ender_pearls: SyncMutex<Vec<PersistentEnderPearl>>,
+    /// Domain-residence identity and persisted entities awaiting restoration.
+    residence: SyncMutex<PlayerResidenceState>,
     /// In-flight ender pearls thrown by this player, kept weakly so they persist
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
     ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
@@ -328,168 +257,33 @@ struct PendingRootVehicleRestore {
     root_vehicle: PersistentRootVehicle,
 }
 
-#[derive(Clone, Debug, Default)]
-struct PlayerPermissionState {
-    groups: Vec<String>,
-    overrides: PermissionSet,
-    metadata_overrides: PermissionMetadataSet,
-    effective: PermissionSet,
-    effective_metadata: PermissionMetadataSet,
-    version: u64,
+/// Runtime identity for one continuous stay in a Steel domain.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DomainResidenceToken(u64);
+
+struct PlayerResidenceState {
+    token: DomainResidenceToken,
+    pending_root_vehicle: Option<PendingRootVehicleRestore>,
+    pending_ender_pearls: Vec<PersistentEnderPearl>,
 }
 
-impl PlayerPermissionState {
-    fn replace(
-        &mut self,
-        groups: Vec<String>,
-        overrides: PermissionSet,
-        metadata_overrides: PermissionMetadataSet,
-        effective: PermissionSet,
-        effective_metadata: PermissionMetadataSet,
-    ) -> u64 {
-        let version = self.version.wrapping_add(1);
-        *self = Self {
-            groups,
-            overrides,
-            metadata_overrides,
-            effective,
-            effective_metadata,
-            version,
+impl PlayerResidenceState {
+    const fn new() -> Self {
+        Self {
+            token: DomainResidenceToken(1),
+            pending_root_vehicle: None,
+            pending_ender_pearls: Vec::new(),
+        }
+    }
+
+    fn advance(&mut self) -> DomainResidenceToken {
+        let Some(next_token) = self.token.0.checked_add(1) else {
+            panic!("domain residence token space exhausted");
         };
-        version
-    }
-}
-
-#[derive(Clone, Copy)]
-struct DeathRespawnSpawn {
-    position: DVec3,
-    rotation: (f32, f32),
-}
-
-struct PlayerRespawnJob {
-    player: Arc<Player>,
-    source_world: Arc<World>,
-    target_world: Arc<World>,
-    rotation: (f32, f32),
-    kind: RespawnRequestKind,
-    phase: PlayerRespawnJobPhase,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RespawnRequestKind {
-    Death,
-    EndCredits,
-}
-
-enum PlayerRespawnJobPhase {
-    Searching(PlayerSpawnSearch),
-    LoadingSpawnChunks {
-        spawn: DeathRespawnSpawn,
-        request: ChunkRequestHandle,
-    },
-}
-
-impl PlayerRespawnJob {
-    fn new(
-        player: Arc<Player>,
-        source_world: Arc<World>,
-        target_world: Arc<World>,
-        respawn_data: RespawnData,
-        kind: RespawnRequestKind,
-    ) -> Result<Self, String> {
-        let search = PlayerSpawnSearch::new(
-            &target_world,
-            respawn_data.pos(),
-            target_world.default_gamemode,
-        )?;
-        Ok(Self {
-            player,
-            source_world,
-            target_world,
-            rotation: (respawn_data.yaw, respawn_data.pitch),
-            kind,
-            phase: PlayerRespawnJobPhase::Searching(search),
-        })
-    }
-
-    fn still_valid(&self) -> bool {
-        !self.player.connection.closed()
-            && Arc::ptr_eq(&self.player.get_world(), &self.source_world)
-            && match self.kind {
-                RespawnRequestKind::Death => {
-                    Player::should_process_respawn(self.player.get_health())
-                }
-                RespawnRequestKind::EndCredits => self.player.has_won_game(),
-            }
-    }
-}
-
-impl ServerJob for PlayerRespawnJob {
-    fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
-        if !self.still_valid() {
-            self.player.finish_respawn_request();
-            return JobPoll::Finished;
-        }
-
-        loop {
-            match &mut self.phase {
-                PlayerRespawnJobPhase::Searching(search) => {
-                    match search.poll_with_ready_candidate_budget(
-                        &self.target_world,
-                        RESPAWN_SEARCH_READY_CANDIDATE_BUDGET,
-                    ) {
-                        PlayerSpawnSearchPoll::Pending => return JobPoll::Pending,
-                        PlayerSpawnSearchPoll::Cancelled => {
-                            self.player.finish_respawn_request();
-                            return JobPoll::Finished;
-                        }
-                        PlayerSpawnSearchPoll::Ready(position) => {
-                            let spawn = DeathRespawnSpawn {
-                                position,
-                                rotation: self.rotation,
-                            };
-                            let request = self.target_world.request_player_spawn_chunks(position);
-                            self.phase =
-                                PlayerRespawnJobPhase::LoadingSpawnChunks { spawn, request };
-                        }
-                    }
-                }
-                PlayerRespawnJobPhase::LoadingSpawnChunks { spawn, request } => {
-                    match request.poll() {
-                        ChunkRequestState::Pending { .. } => return JobPoll::Pending,
-                        ChunkRequestState::Cancelled => {
-                            self.player.finish_respawn_request();
-                            return JobPoll::Finished;
-                        }
-                        ChunkRequestState::Ready => {
-                            if request.ready_chunks().is_none() {
-                                return JobPoll::Pending;
-                            }
-
-                            match self.kind {
-                                RespawnRequestKind::Death => self.player.finish_death_respawn(
-                                    &self.source_world,
-                                    &self.target_world,
-                                    *spawn,
-                                ),
-                                RespawnRequestKind::EndCredits => {
-                                    self.player.finish_end_credits_respawn(
-                                        &self.source_world,
-                                        &self.target_world,
-                                        *spawn,
-                                    );
-                                }
-                            }
-                            return JobPoll::Finished;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn cancel(&mut self) {
-        self.player.finish_respawn_request();
+        self.token = DomainResidenceToken(next_token);
+        self.pending_root_vehicle = None;
+        self.pending_ender_pearls.clear();
+        self.token
     }
 }
 
@@ -532,7 +326,6 @@ impl Player {
     }
 
     /// Creates a new player.
-    #[expect(clippy::too_many_arguments, reason = "Player::new is complex")]
     pub fn new(
         gameprofile: GameProfile,
         connection: Arc<PlayerConnection>,
@@ -540,15 +333,15 @@ impl Player {
         server: Weak<Server>,
         config: Arc<RuntimeConfig>,
         entity_id: i32,
-        player: &Weak<Player>,
         client_information: ClientInformation,
     ) -> Self {
         // Create a single shared inventory container used by both the player and inventory menu
-        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new(player.clone())));
+        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
 
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
-        let living_base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+        let equipment = inventory.clone();
+        let living_base = LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment);
         let player_uuid = gameprofile.id;
         let world_ref = Arc::downgrade(&world);
         let chat_spam_threshold_seconds = config.chat_spam_threshold_seconds;
@@ -585,9 +378,10 @@ impl Player {
             )),
             game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: inventory.clone(),
+            inventory_sync: SyncMutex::new(PlayerInventorySyncState::new()),
             last_item_in_main_hand: SyncMutex::new(ItemStack::empty()),
-            inventory_menu: SyncMutex::new(InventoryMenu::new(inventory)),
-            open_menu: SyncMutex::new(None),
+            inventory_menu: SyncMutex::new(inventory_menu(inventory)),
+            open_menu: SyncMutex::new(player_inventory::OpenMenuState::new()),
             container_counter: SyncMutex::new(ContainerCounter::new()),
             teleport_state: SyncMutex::new(TeleportState::new()),
             item_cooldowns: SyncMutex::new(ItemCooldowns::default()),
@@ -602,8 +396,7 @@ impl Player {
             seen_credits: SyncMutex::new(false),
             won_game: SyncMutex::new(false),
             chunk_send_epoch: SyncMutex::new(0),
-            pending_root_vehicle: SyncMutex::new(None),
-            pending_ender_pearls: SyncMutex::new(Vec::new()),
+            residence: SyncMutex::new(PlayerResidenceState::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
         }
     }
@@ -634,6 +427,7 @@ impl Player {
         self.reset_vehicle_movement_for_tick();
 
         self.default_tick();
+        self.detect_equipment_updates();
         self.ai_step();
 
         // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
@@ -684,6 +478,8 @@ impl Player {
 
         self.tick_living_state();
 
+        self.tick_open_menu();
+        self.flush_inventory_resync();
         self.broadcast_inventory_changes();
         self.update_pose();
 
@@ -727,15 +523,6 @@ impl Player {
         self.connection.tick();
     }
 
-    fn refresh_equipment_attribute_modifiers_from_stack(
-        &self,
-        slot: EquipmentSlot,
-        item_stack: &ItemStack,
-    ) {
-        self.living_base
-            .refresh_equipment_attribute_modifiers(slot, item_stack);
-    }
-
     /// Ticks the death animation timer.
     /// Vanilla: `LivingEntity.tickDeath()` (not overridden by `ServerPlayer`).
     fn tick_death(&self) {
@@ -754,10 +541,15 @@ impl Player {
             );
 
             world.unregister_player_entity(self);
+            world.chunk_map.remove_player(self);
             world.entity_tracker().on_player_leave(self.id());
             world.player_area_map.remove_by_entity_id(self.id());
-            world.chunk_map.remove_player(self);
             self.set_removed(RemovalReason::Killed);
+            assert_eq!(
+                self.remove_all_menus_with_disposition(MenuItemDisposition::Drop),
+                MenuRemovalStatus::Complete,
+                "death removal menu cleanup must run outside a menu callback"
+            );
         }
     }
 
@@ -974,292 +766,11 @@ impl Player {
         }
     }
 
-    /// TODO: personal respawn blocks/anchors and noRespawnBlockAvailable.
-    pub fn respawn(&self) {
-        let health = self.get_health();
-        if !Self::should_process_respawn(health) {
-            return;
-        }
-
-        let source_world = self.get_world();
-        let Some(player_arc) = source_world.players.get_by_entity_id(self.id()) else {
-            return;
-        };
-        if !self.begin_respawn_request() {
-            return;
-        }
-
-        let Some(server) = self.server.upgrade() else {
-            self.finish_respawn_request();
-            log::error!(
-                "Failed to schedule respawn for player {}: server is gone",
-                self.gameprofile.name
-            );
-            return;
-        };
-        let (target_world, respawn_data) =
-            match server.respawn_world_and_data_for_domain(source_world.domain()) {
-                Ok(resolved) => resolved,
-                Err(error) => {
-                    self.finish_respawn_request();
-                    log::error!(
-                        "Failed to schedule respawn for player {}: {error}",
-                        self.gameprofile.name
-                    );
-                    return;
-                }
-            };
-
-        match PlayerRespawnJob::new(
-            player_arc,
-            source_world,
-            target_world,
-            respawn_data,
-            RespawnRequestKind::Death,
-        ) {
-            Ok(job) => server.jobs.spawn(job),
-            Err(error) => {
-                self.finish_respawn_request();
-                log::error!(
-                    "Failed to schedule respawn for player {}: {error}",
-                    self.gameprofile.name
-                );
-            }
-        }
-    }
-
-    fn finish_death_respawn(
-        self: &Arc<Self>,
-        source_world: &Arc<World>,
-        target_world: &Arc<World>,
-        spawn: DeathRespawnSpawn,
-    ) {
-        self.finish_respawn_request();
-
-        if self.connection.closed()
-            || !Arc::ptr_eq(&self.get_world(), source_world)
-            || !Self::should_process_respawn(self.get_health())
-        {
-            return;
-        }
-
-        self.reset_state_for_death_respawn();
-        let was_removed = self.base.clear_removed();
-
-        // TODO: personal respawn blocks/anchors and NO_RESPAWN_BLOCK_AVAILABLE.
-
-        if !was_removed && Arc::ptr_eq(source_world, target_world) {
-            source_world.unregister_player_entity(self);
-        }
-
-        // Shared reset (clears transient state, sends CRespawn)
-        self.reset(target_world.clone(), ResetReason::Respawn);
-
-        self.send_difficulty();
-
-        // Handle XP and score loss on death.
-        let loses_inventory =
-            !target_world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator;
-        {
-            let mut experience = self.experience.lock();
-            if loses_inventory {
-                // TODO: drop XP orbs (min(level * 7, 100))
-                experience.clear();
-            }
-            // Re-send XP to client after respawn regardless of keepInventory
-            experience.dirty = true;
-        }
-        if loses_inventory {
-            self.set_score(0);
-        }
-
-        // TODO: send mob effect packets once effects are implemented
-
-        // Shared spawn (teleport, abilities, weather, time, chunk tracking reset)
-        let _ = self.spawn(spawn.position, spawn.rotation, ResetReason::Respawn);
-    }
-
-    fn finish_end_credits_respawn(
-        self: &Arc<Self>,
-        source_world: &Arc<World>,
-        target_world: &Arc<World>,
-        spawn: DeathRespawnSpawn,
-    ) {
-        self.finish_respawn_request();
-
-        if self.connection.closed()
-            || !Arc::ptr_eq(&self.get_world(), source_world)
-            || !self.has_won_game()
-        {
-            return;
-        }
-
-        self.set_won_game(false);
-        self.reset(target_world.clone(), ResetReason::EndCredits);
-        self.send_difficulty();
-        self.experience.lock().dirty = true;
-        let _ = self.spawn(spawn.position, spawn.rotation, ResetReason::EndCredits);
-    }
-
-    fn reset_state_for_death_respawn(&self) {
-        self.close_container();
-        self.detach_relationships_for_respawn();
-
-        self.attributes().lock().remove_all_transient();
-        self.living_base.reset_for_player_respawn();
-        self.base
-            .reset_for_player_respawn(Self::dimensions_for_pose(EntityPose::Standing));
-
-        self.set_health(self.get_max_health());
-        self.set_pose(EntityPose::Standing);
-        self.reset_entity_state();
-        self.sync_base_entity_data();
-        self.update_dirty_mob_effect_entity_data();
-
-        *self.food_data.lock() = FoodData::new();
-        *self.block_breaking.lock() = BlockBreakingManager::new();
-        *self.teleport_state.lock() = TeleportState::new();
-        *self.tick_state.lock() = PlayerTickState::new();
-        *self.last_item_in_main_hand.lock() = ItemStack::empty();
-        self.health_sync.lock().reset_for_respawn();
-        self.clear_pending_root_vehicle();
-        self.movement.lock().reset_last_known_client_movement();
-    }
-
-    fn begin_respawn_request(&self) -> bool {
-        self.lifecycle.lock().begin_respawn()
-    }
-
-    fn finish_respawn_request(&self) {
-        self.lifecycle.lock().finish_respawn();
-    }
-
-    fn detach_relationships_for_respawn(&self) {
-        for passenger in self.passengers() {
-            passenger.stop_riding();
-        }
-        self.stop_riding();
-        self.base.set_boarding_cooldown(0);
-    }
-
-    /// Handles client commands, requestStats and `RequestGameRuleValues` are still todo
-    pub fn handle_client_command(self: &Arc<Self>, action: ClientCommandAction) {
-        match action {
-            ClientCommandAction::PerformRespawn => {
-                if self.has_won_game() {
-                    self.respawn_after_end_credits();
-                } else {
-                    self.respawn();
-                }
-            }
-            ClientCommandAction::RequestStats | ClientCommandAction::RequestGameRuleValues => {
-                // TODO: implement stats
-            }
-        }
-    }
-
-    /// Vanilla accepts a client respawn request only when player health is dead-or-dying.
-    /// Steel's death-processed guard is not respawn authority.
-    #[must_use]
-    const fn should_process_respawn(health: f32) -> bool {
-        health <= 0.0
-    }
-
     /// Returns whether the Player can eat
     pub fn can_eat(&self, can_always_eat: bool) -> bool {
         let invulnerable = { self.abilities.lock().invulnerable };
         let needs_foods = { self.food_data.lock().needs_food() };
         invulnerable || can_always_eat || needs_foods
-    }
-
-    /// Returns vanilla `ServerPlayer.seenCredits`.
-    #[must_use]
-    pub fn has_seen_credits(&self) -> bool {
-        *self.seen_credits.lock()
-    }
-
-    /// Sets vanilla `ServerPlayer.seenCredits`.
-    pub fn set_seen_credits(&self, seen_credits: bool) {
-        *self.seen_credits.lock() = seen_credits;
-    }
-
-    /// Returns vanilla `ServerPlayer.wonGame`.
-    #[must_use]
-    pub(crate) fn has_won_game(&self) -> bool {
-        *self.won_game.lock()
-    }
-
-    fn set_won_game(&self, won_game: bool) {
-        *self.won_game.lock() = won_game;
-    }
-
-    /// Starts the vanilla End credits flow.
-    pub(crate) fn show_end_credits(&self) {
-        let world = self.get_world();
-        let Some(player) = world.players.get_by_entity_id(self.id()) else {
-            return;
-        };
-
-        world.remove_player_for_world_change(&player);
-        if player.has_won_game() {
-            return;
-        }
-
-        player.set_won_game(true);
-        player.send_packet(CGameEvent {
-            event: GameEventType::WinGame,
-            data: 0.0,
-        });
-        player.set_seen_credits(true);
-    }
-
-    fn respawn_after_end_credits(self: &Arc<Self>) {
-        if !self.has_won_game() {
-            return;
-        }
-
-        let source_world = self.get_world();
-        if !self.begin_respawn_request() {
-            return;
-        }
-
-        let Some(server) = self.server.upgrade() else {
-            self.finish_respawn_request();
-            log::error!(
-                "Failed to schedule End credits respawn for player {}: server is gone",
-                self.gameprofile.name
-            );
-            return;
-        };
-        let (target_world, respawn_data) =
-            match server.respawn_world_and_data_for_domain(source_world.domain()) {
-                Ok(resolved) => resolved,
-                Err(error) => {
-                    self.finish_respawn_request();
-                    log::error!(
-                        "Failed to schedule End credits respawn for player {}: {error}",
-                        self.gameprofile.name
-                    );
-                    return;
-                }
-            };
-
-        match PlayerRespawnJob::new(
-            Arc::clone(self),
-            source_world,
-            target_world,
-            respawn_data,
-            RespawnRequestKind::EndCredits,
-        ) {
-            Ok(job) => server.jobs.spawn(job),
-            Err(error) => {
-                self.finish_respawn_request();
-                log::error!(
-                    "Failed to schedule End credits respawn for player {}: {error}",
-                    self.gameprofile.name
-                );
-            }
-        }
     }
 
     /// Cleans up player resources.
@@ -1278,207 +789,52 @@ impl Player {
             .expect("player must not outlive server")
     }
 
-    /// Replaces assigned groups, direct overrides, metadata, and effective state.
-    pub fn set_permission_state(
+    /// Returns the identity of the player's current continuous domain stay.
+    pub(crate) fn domain_residence_token(&self) -> DomainResidenceToken {
+        self.residence.lock().token
+    }
+
+    /// Starts a new continuous domain stay and invalidates old restore work.
+    pub(crate) fn advance_domain_residence(&self) -> DomainResidenceToken {
+        self.residence.lock().advance()
+    }
+
+    /// Returns whether delayed work still belongs to the current domain stay.
+    pub(crate) fn is_domain_residence_current(&self, token: DomainResidenceToken) -> bool {
+        self.residence.lock().token == token
+    }
+
+    /// Installs both persisted restore payloads for a token-owned domain stay.
+    pub(crate) fn install_pending_domain_restores(
         &self,
-        groups: Vec<String>,
-        overrides: PermissionSet,
-        metadata_overrides: PermissionMetadataSet,
-        effective: PermissionSet,
-        effective_metadata: PermissionMetadataSet,
-    ) -> u64 {
-        self.permissions.lock().replace(
-            groups,
-            overrides,
-            metadata_overrides,
-            effective,
-            effective_metadata,
-        )
-    }
-
-    /// Returns a snapshot of effective permissions.
-    #[must_use]
-    pub fn permissions(&self) -> PermissionSet {
-        self.permissions.lock().effective.clone()
-    }
-
-    /// Returns assigned permission groups.
-    #[must_use]
-    pub fn permission_groups(&self) -> Vec<String> {
-        self.permissions.lock().groups.clone()
-    }
-
-    /// Returns whether the latest published subject state assigns the operator group.
-    #[must_use]
-    pub(crate) fn is_operator(&self) -> bool {
-        self.server
-            .upgrade()
-            .is_some_and(|server| server.is_operator(self.gameprofile.id))
-    }
-
-    /// Returns direct permission overrides.
-    #[must_use]
-    pub fn permission_overrides(&self) -> PermissionSet {
-        self.permissions.lock().overrides.clone()
-    }
-
-    /// Returns direct permission metadata overrides.
-    #[must_use]
-    pub fn permission_metadata_overrides(&self) -> PermissionMetadataSet {
-        self.permissions.lock().metadata_overrides.clone()
-    }
-
-    /// Returns the current permission snapshot version.
-    #[must_use]
-    pub fn permission_state_version(&self) -> u64 {
-        self.permissions.lock().version
-    }
-
-    /// Returns whether the player satisfies an expression in their current world.
-    #[must_use]
-    pub fn has_permission(&self, permission: &PermissionExpr) -> bool {
-        let world = self.get_world();
-        let context = PermissionContext::for_world(world.key.clone());
-        self.has_permission_in(permission, &context)
-    }
-
-    /// Returns whether the player satisfies an expression in an explicit context.
-    #[must_use]
-    pub fn has_permission_in(
-        &self,
-        permission: &PermissionExpr,
-        context: &PermissionContext,
-    ) -> bool {
-        self.permissions
-            .lock()
-            .effective
-            .allows_in(permission, context)
-    }
-
-    /// Resolves an expression in the player's current world.
-    #[must_use]
-    pub fn permission_state(&self, permission: &PermissionExpr) -> Option<PermissionState> {
-        let world = self.get_world();
-        let context = PermissionContext::for_world(world.key.clone());
-        self.permission_state_in(permission, &context)
-    }
-
-    /// Resolves an expression in an explicit context.
-    #[must_use]
-    pub fn permission_state_in(
-        &self,
-        permission: &PermissionExpr,
-        context: &PermissionContext,
-    ) -> Option<PermissionState> {
-        self.permissions
-            .lock()
-            .effective
-            .resolve_in(permission, context)
-    }
-
-    /// Resolves one permission metadata value in the player's current world.
-    #[must_use]
-    pub fn permission_metadata(&self, key: &Identifier) -> Option<PermissionMetadataValue> {
-        let world = self.get_world();
-        let context = PermissionContext::for_world(world.key.clone());
-        self.permission_metadata_in(key, &context)
-    }
-
-    /// Resolves one permission metadata value in an explicit context.
-    #[must_use]
-    pub fn permission_metadata_in(
-        &self,
-        key: &Identifier,
-        context: &PermissionContext,
-    ) -> Option<PermissionMetadataValue> {
-        self.permissions
-            .lock()
-            .effective_metadata
-            .resolve_in(key, context)
-            .cloned()
-    }
-
-    /// Sets the world the player is in.
-    ///
-    /// This is used when the correct world isn't known at construction time
-    /// (e.g., when loading saved player data determines the actual world).
-    pub(crate) fn set_world(&self, world: Arc<World>) {
-        self.base.set_world(Arc::downgrade(&world));
-        self.world.store(world);
-    }
-
-    /// Marks the player as switching domains if they are not already in a transition.
-    pub(crate) fn begin_domain_switch(&self) -> bool {
-        self.lifecycle.lock().begin_domain_switch()
-    }
-
-    /// Clears the domain-switch transition marker.
-    pub(crate) fn finish_domain_switch(&self) {
-        self.lifecycle.lock().finish_domain_switch();
-    }
-
-    /// Returns whether this player is currently switching domains.
-    pub fn is_domain_switching(&self) -> bool {
-        self.lifecycle.lock().domain_switching()
-    }
-
-    /// Returns whether the server has inserted this player into a world.
-    #[must_use]
-    pub fn has_joined_world(&self) -> bool {
-        self.lifecycle.lock().joined_world()
-    }
-
-    /// Marks this player as inserted into a world.
-    ///
-    /// Returns `true` when a client-loaded acknowledgement arrived before world
-    /// admission and was applied by this call.
-    pub(crate) fn mark_joined_world(&self) -> bool {
-        let mut lifecycle = self.lifecycle.lock();
-        lifecycle.set_joined_world(true);
-        lifecycle.apply_pending_client_loaded()
-    }
-
-    /// Returns whether the client has sent its play-loaded signal.
-    #[must_use]
-    pub fn has_client_loaded(&self) -> bool {
-        self.lifecycle.lock().client_loaded()
-    }
-
-    /// Marks whether the client has loaded into play.
-    pub fn set_client_loaded(&self, client_loaded: bool) {
-        self.lifecycle.lock().set_client_loaded(client_loaded);
-    }
-
-    /// Applies or buffers the client's play-loaded acknowledgement.
-    ///
-    /// Returns `true` when the acknowledgement can run gameplay side effects now.
-    pub fn mark_client_loaded_from_network(&self) -> bool {
-        self.lifecycle.lock().mark_client_loaded_from_network()
-    }
-
-    fn tick_client_load_timeout(&self) {
-        self.lifecycle.lock().tick_client_load_timeout();
-    }
-
-    pub(crate) fn set_pending_root_vehicle(
-        &self,
+        token: DomainResidenceToken,
         world: &World,
-        root_vehicle: PersistentRootVehicle,
-    ) {
-        *self.pending_root_vehicle.lock() = Some(PendingRootVehicleRestore {
-            world: world.key.clone(),
-            root_vehicle,
-        });
+        root_vehicle: Option<PersistentRootVehicle>,
+        ender_pearls: Vec<PersistentEnderPearl>,
+    ) -> bool {
+        let mut residence = self.residence.lock();
+        if residence.token != token {
+            return false;
+        }
+
+        residence.pending_root_vehicle =
+            root_vehicle.map(|root_vehicle| PendingRootVehicleRestore {
+                world: world.key.clone(),
+                root_vehicle,
+            });
+        residence.pending_ender_pearls = ender_pearls;
+        true
     }
 
     pub(crate) fn clear_pending_root_vehicle(&self) {
-        *self.pending_root_vehicle.lock() = None;
+        self.residence.lock().pending_root_vehicle = None;
     }
 
     pub(crate) fn pending_root_vehicle_for_current_world(&self) -> Option<PersistentRootVehicle> {
         let world_key = self.get_world().key.clone();
-        self.pending_root_vehicle
+        self.residence
             .lock()
+            .pending_root_vehicle
             .as_ref()
             .filter(|pending| pending.world == world_key)
             .map(|pending| pending.root_vehicle.clone())
@@ -1486,39 +842,75 @@ impl Player {
 
     pub(crate) fn take_matching_pending_root_vehicle(
         &self,
+        token: DomainResidenceToken,
         world: &World,
         attach: [u8; 16],
         root_uuid: [u8; 16],
     ) -> Option<PersistentRootVehicle> {
-        let mut pending = self.pending_root_vehicle.lock();
-        let matches = pending.as_ref().is_some_and(|pending| {
-            pending.world == world.key
-                && pending.root_vehicle.attach == attach
-                && pending.root_vehicle.entity.uuid == root_uuid
-        });
+        let mut residence = self.residence.lock();
+        if residence.token != token {
+            return None;
+        }
+        let matches = residence
+            .pending_root_vehicle
+            .as_ref()
+            .is_some_and(|pending| {
+                pending.world == world.key
+                    && pending.root_vehicle.attach == attach
+                    && pending.root_vehicle.entity.uuid == root_uuid
+            });
         if matches {
-            pending.take().map(|pending| pending.root_vehicle)
+            residence
+                .pending_root_vehicle
+                .take()
+                .map(|pending| pending.root_vehicle)
         } else {
             None
         }
     }
 
-    pub(crate) fn set_pending_ender_pearls(&self, pearls: Vec<PersistentEnderPearl>) {
-        *self.pending_ender_pearls.lock() = pearls;
-    }
-
     pub(crate) fn pending_ender_pearls(&self) -> Vec<PersistentEnderPearl> {
-        self.pending_ender_pearls.lock().clone()
-    }
-
-    pub(crate) fn clear_pending_ender_pearls(&self) {
-        self.pending_ender_pearls.lock().clear();
+        self.residence.lock().pending_ender_pearls.clone()
     }
 
     pub(crate) fn remove_pending_ender_pearl(&self, uuid: Uuid) {
-        self.pending_ender_pearls
+        self.residence
             .lock()
+            .pending_ender_pearls
             .retain(|pearl| Uuid::from_bytes(pearl.entity.uuid) != uuid);
+    }
+
+    pub(crate) fn discard_pending_ender_pearl(
+        &self,
+        token: DomainResidenceToken,
+        uuid: Uuid,
+    ) -> bool {
+        let mut residence = self.residence.lock();
+        if residence.token != token {
+            return false;
+        }
+        let old_len = residence.pending_ender_pearls.len();
+        residence
+            .pending_ender_pearls
+            .retain(|pearl| Uuid::from_bytes(pearl.entity.uuid) != uuid);
+        residence.pending_ender_pearls.len() != old_len
+    }
+
+    pub(crate) fn take_matching_pending_ender_pearl(
+        &self,
+        token: DomainResidenceToken,
+        world: &World,
+        uuid: Uuid,
+    ) -> Option<PersistentEnderPearl> {
+        let mut residence = self.residence.lock();
+        if residence.token != token {
+            return None;
+        }
+        let world_key = world.key.to_string();
+        let index = residence.pending_ender_pearls.iter().position(|pearl| {
+            pearl.world == world_key && Uuid::from_bytes(pearl.entity.uuid) == uuid
+        })?;
+        Some(residence.pending_ender_pearls.remove(index))
     }
 
     /// Registers a thrown ender pearl so it persists with this player and
@@ -1644,32 +1036,6 @@ impl Player {
         }
     }
 
-    /// Returns whether the stack's vanilla cooldown group is currently active.
-    pub fn is_item_on_cooldown(&self, stack: &ItemStack) -> bool {
-        self.item_cooldowns.lock().is_on_cooldown(stack)
-    }
-
-    /// Starts the stack's vanilla `use_cooldown`, if it has one.
-    pub fn apply_item_use_cooldown(&self, stack: &ItemStack) {
-        let cooldown = self.item_cooldowns.lock().add_from_stack(stack);
-        if let Some((cooldown_group, duration)) = cooldown {
-            self.send_packet(CCooldown {
-                cooldown_group,
-                duration,
-            });
-        }
-    }
-
-    fn tick_item_cooldowns(&self) {
-        let ended = self.item_cooldowns.lock().tick();
-        for cooldown_group in ended {
-            self.send_packet(CCooldown {
-                cooldown_group,
-                duration: 0,
-            });
-        }
-    }
-
     /// Returns this player's local server tick count.
     #[must_use]
     pub fn tick_count(&self) -> i32 {
@@ -1687,73 +1053,6 @@ impl Player {
         self.tick_state.lock().set_take_xp_delay(delay);
     }
 
-    /// Returns the player's vanilla death-screen score.
-    #[must_use]
-    pub fn score(&self) -> i32 {
-        *self.entity_data.lock().score.get()
-    }
-
-    /// Sets the player's vanilla death-screen score.
-    pub fn set_score(&self, score: i32) {
-        self.entity_data.lock().score.set(score);
-    }
-
-    fn increase_score(&self, amount: i32) {
-        let mut entity_data = self.entity_data.lock();
-        let score = entity_data.score.get().wrapping_add(amount);
-        entity_data.score.set(score);
-    }
-
-    /// Gives raw experience points to this player.
-    pub(crate) fn give_experience_points(&self, points: i32) {
-        if points == 0 {
-            return;
-        }
-        self.increase_score(points);
-        let level_up_sound = {
-            let mut experience = self.experience.lock();
-            let old_level = experience.level();
-            experience.add_points(points);
-            first_point_level_up_sound(old_level, experience.level(), points)
-        };
-        if let Some(level) = level_up_sound {
-            self.play_experience_level_up_sound(level);
-        }
-    }
-
-    /// Gives experience levels to this player.
-    pub(crate) fn give_experience_levels(&self, levels: i32) {
-        let level_up_sound = {
-            let mut experience = self.experience.lock();
-            experience.add_levels(levels);
-            (levels > 0 && experience.level() % 5 == 0).then_some(experience.level())
-        };
-        if let Some(level) = level_up_sound {
-            self.play_experience_level_up_sound(level);
-        }
-    }
-
-    fn play_experience_level_up_sound(&self, level: i32) {
-        if !self.tick_state.lock().mark_level_up_sound_if_due() {
-            return;
-        }
-        let volume = if level > 30 { 1.0 } else { level as f32 / 30.0 };
-        // Vanilla emits this directly through the level, regardless of the player's silent flag.
-        self.get_world().play_sound_at(
-            &sound_events::ENTITY_PLAYER_LEVELUP,
-            SoundSource::Players,
-            self.position(),
-            volume * 0.75,
-            1.0,
-            None,
-        );
-    }
-
-    /// Advances this player's local server tick count.
-    fn advance_tick(&self) {
-        self.tick_state.lock().advance_tick();
-    }
-
     fn primary_step_sound_block_pos(&self, affecting_pos: BlockPos) -> BlockPos {
         let above_pos = affecting_pos.above();
         let above_state = self.get_world().get_block_state(above_pos);
@@ -1765,466 +1064,6 @@ impl Player {
             above_pos
         } else {
             affecting_pos
-        }
-    }
-
-    /// Resets the player's transient state and prepares them for a new world.
-    ///
-    /// This is the shared "clean slate" path used by initial join, respawn, and
-    /// world change. If the player is currently in a different world, they are
-    /// removed from the old world first.
-    ///
-    /// Vanilla equivalent: the work that happens when a fresh `ServerPlayer` is
-    /// constructed during respawn / world change, since vanilla recreates the
-    /// player object. We reuse the same `Player`, so we reset manually.
-    pub(crate) fn reset(self: &Arc<Self>, new_world: Arc<World>, reason: ResetReason) {
-        self.reset_inner_after(new_world, reason, false, || {});
-    }
-
-    /// Resets for a domain switch and restores target-domain state after the
-    /// player has been detached from the old world's live entity indexes.
-    pub(crate) fn reset_after_domain_save_and_restore<F>(
-        self: &Arc<Self>,
-        new_world: Arc<World>,
-        restore_state: F,
-    ) where
-        F: FnOnce(),
-    {
-        self.reset_inner_after(new_world, ResetReason::WorldChange, true, restore_state);
-    }
-
-    fn reset_inner_after<F>(
-        self: &Arc<Self>,
-        new_world: Arc<World>,
-        reason: ResetReason,
-        store_root_vehicle: bool,
-        restore_state: F,
-    ) where
-        F: FnOnce(),
-    {
-        let old_world = self.get_world();
-        let switching_worlds = !Arc::ptr_eq(&old_world, &new_world);
-
-        if switching_worlds {
-            self.do_close_container();
-            self.send_packet(CContainerClose { container_id: 0 });
-            if store_root_vehicle {
-                old_world.remove_player_for_domain_switch(self);
-            } else {
-                old_world.remove_player_for_world_change(self);
-            }
-            self.set_world(new_world.clone());
-        }
-
-        self.set_client_loaded(false);
-        self.set_velocity(DVec3::ZERO);
-        self.movement.lock().reset_last_known_client_movement();
-        self.set_on_ground(false);
-        self.reset_entity_state();
-        *self.block_breaking.lock() = BlockBreakingManager::new();
-
-        // Reset chunk tracking — bump generation counter so the chunk sending tick
-        // discards any in-flight batch encoded against the old world.
-        {
-            let mut chunk_send_epoch = self.chunk_send_epoch.lock();
-            *chunk_send_epoch = chunk_send_epoch.wrapping_add(1);
-        }
-        *self.chunk_sender.lock() = ChunkSender::default();
-        *self.last_tracking_view.lock() = None;
-        *self.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
-
-        restore_state();
-
-        if reason != ResetReason::InitialJoin {
-            // 0x01 = keep attributes, 0x02 = keep entity data
-            let data_kept = reason.respawn_data_kept();
-
-            self.send_packet(CRespawn {
-                dimension_type: new_world.dimension_type.id() as i32,
-                dimension_name: new_world.key.clone(),
-                hashed_seed: new_world.obfuscated_seed(),
-                gamemode: self.game_mode() as u8,
-                previous_gamemode: nullable_game_mode_id(self.previous_game_mode()),
-                is_debug: false,
-                is_flat: new_world.is_flat,
-                has_death_location: false,
-                death_dimension_name: None,
-                death_location: None,
-                portal_cooldown_ticks: self.portal_cooldown(),
-                sea_level: new_world.sea_level,
-                data_kept,
-            });
-        }
-    }
-
-    /// Spawns the player into their current world at the given position.
-    ///
-    /// This is the shared "enter world" path used by initial join, respawn, and
-    /// world change. Sends position sync, abilities, inventory, time, weather,
-    /// and adds the player to the world as appropriate for the given reason.
-    ///
-    /// # Panics
-    /// Panics if the `advance_time` gamerule is not a bool.
-    #[must_use]
-    pub(crate) fn spawn(
-        self: &Arc<Self>,
-        position: DVec3,
-        rotation: (f32, f32),
-        reason: ResetReason,
-    ) -> bool {
-        self.spawn_with_velocity(position, rotation, DVec3::ZERO, reason)
-    }
-
-    #[must_use]
-    pub(crate) fn spawn_with_velocity(
-        self: &Arc<Self>,
-        position: DVec3,
-        rotation: (f32, f32),
-        velocity: DVec3,
-        reason: ResetReason,
-    ) -> bool {
-        self.spawn_with_velocity_packet(
-            position,
-            rotation,
-            velocity,
-            reason,
-            position,
-            rotation,
-            velocity,
-            RelativeMovement::NONE,
-        )
-    }
-
-    #[must_use]
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "packet-relative teleports must keep resolved and protocol values separate"
-    )]
-    pub(crate) fn spawn_with_velocity_packet(
-        self: &Arc<Self>,
-        position: DVec3,
-        rotation: (f32, f32),
-        velocity: DVec3,
-        reason: ResetReason,
-        packet_position: DVec3,
-        packet_rotation: (f32, f32),
-        packet_velocity: DVec3,
-        relatives: RelativeMovement,
-    ) -> bool {
-        let world = self.get_world();
-
-        // Set position and rotation
-        self.base.set_position_local(position);
-        self.set_rotation(rotation);
-        self.set_old_position_to_current();
-        self.movement.lock().reset_for_position_sync(position);
-
-        // Teleport sync (sends CPlayerPosition, sets awaiting_teleport for ack)
-        if let Err(error) = self.teleport_with_velocity_packet(
-            position,
-            velocity,
-            rotation,
-            packet_position,
-            packet_velocity,
-            packet_rotation,
-            relatives,
-        ) {
-            panic!(
-                "failed to synchronize player {} spawn position: {error}",
-                self.id()
-            );
-        }
-        self.reset_flying_ticks();
-
-        self.send_spawn_state_packets(&world);
-
-        // Force health/xp resync on next tick
-        self.reset_sent_info();
-
-        // Resend client context that is not fully covered by CLogin/CRespawn.
-        self.server().resend_player_context(self);
-        self.send_active_effects_for_self();
-
-        // Add to world / re-enter chunk tracking
-        match reason {
-            ResetReason::InitialJoin | ResetReason::WorldChange => {
-                if reason == ResetReason::WorldChange {
-                    log::info!(
-                        "Player {} changed world to {}",
-                        self.gameprofile.name,
-                        world.key
-                    );
-                }
-                world.add_player(self.clone(), reason)
-            }
-            ResetReason::Respawn | ResetReason::EndCredits => {
-                if world.players.get_by_entity_id(self.id()).is_none() {
-                    return world.add_respawned_player(self.clone());
-                }
-
-                // Same world — re-enter chunk tracking
-                world.player_area_map.remove_by_entity_id(self.id());
-                world.chunk_map.remove_player(self);
-                world.entity_tracker().on_player_leave(self.id());
-
-                self.send_packet(CGameEvent {
-                    event: GameEventType::LevelChunksLoadStart,
-                    data: 0.0,
-                });
-                world.register_respawned_player_entity(self);
-                true
-            }
-        }
-    }
-
-    fn send_spawn_state_packets(&self, world: &World) {
-        self.send_abilities();
-        self.send_packet(CSetHeldSlot {
-            slot: i32::from(self.inventory.lock().get_selected_slot()),
-        });
-        self.send_time_sync(world);
-        self.send_packet(world.initialize_border_packet());
-        self.send_default_spawn_position(world);
-        self.send_weather_sync(world);
-    }
-
-    fn send_time_sync(&self, world: &World) {
-        self.send_packet(world.time_sync_packet());
-    }
-
-    fn send_default_spawn_position(&self, world: &World) {
-        if let Some(server) = self.server.upgrade() {
-            match server.respawn_data_for_domain(world.domain()) {
-                Ok(respawn_data) => {
-                    self.send_packet(CSetDefaultSpawnPosition {
-                        global_pos: respawn_data.global_pos,
-                        yaw: respawn_data.yaw,
-                        pitch: respawn_data.pitch,
-                    });
-                }
-                Err(error) => {
-                    log::error!(
-                        "Failed to send default spawn position to player {}: {error}",
-                        self.gameprofile.name
-                    );
-                }
-            }
-        }
-    }
-
-    fn send_weather_sync(&self, world: &World) {
-        if !world.can_have_weather() || !world.is_raining() {
-            return;
-        }
-
-        let (rain_level, thunder_level) = {
-            let weather = world.weather.lock();
-            (weather.rain_level, weather.thunder_level)
-        };
-
-        self.send_packet(CGameEvent {
-            event: GameEventType::StartRaining,
-            data: 0.0,
-        });
-        self.send_packet(CGameEvent {
-            event: GameEventType::RainLevelChange,
-            data: rain_level,
-        });
-        self.send_packet(CGameEvent {
-            event: GameEventType::ThunderLevelChange,
-            data: thunder_level,
-        });
-    }
-
-    fn passenger_ids_for_packet(entity: &dyn Entity) -> Vec<i32> {
-        entity
-            .passengers()
-            .iter()
-            .map(|passenger| passenger.id())
-            .collect()
-    }
-
-    fn send_mob_effect_sync_packet(&self, packet: MobEffectSyncPacket) {
-        match packet {
-            MobEffectSyncPacket::Update(packet) => self.send_packet(packet),
-            MobEffectSyncPacket::Remove(packet) => self.send_packet(packet),
-        }
-    }
-
-    fn send_active_effects_for_self(&self) {
-        for effect in self.living_base.active_mob_effects() {
-            self.send_mob_effect_sync_packet(
-                MobEffectSyncChange::Update {
-                    effect,
-                    blend_for_self: false,
-                }
-                .packet(self.id(), true),
-            );
-        }
-    }
-
-    fn send_active_effects_for_vehicle(&self, vehicle: &dyn Entity) {
-        let Some(living_vehicle) = vehicle.as_living_entity() else {
-            return;
-        };
-        for effect in living_vehicle.active_mob_effects() {
-            self.send_mob_effect_sync_packet(
-                MobEffectSyncChange::Update {
-                    effect,
-                    blend_for_self: false,
-                }
-                .packet(vehicle.id(), false),
-            );
-        }
-    }
-
-    pub(crate) fn send_restored_vehicle_mount_sync(&self, vehicle: &dyn Entity) {
-        self.send_active_effects_for_vehicle(vehicle);
-        self.send_packet(CSetPassengers::new(
-            vehicle.id(),
-            Self::passenger_ids_for_packet(vehicle),
-        ));
-    }
-
-    fn remove_active_effects_for_vehicle(&self, vehicle: &dyn Entity) {
-        let Some(living_vehicle) = vehicle.as_living_entity() else {
-            return;
-        };
-        for effect in living_vehicle.active_mob_effects() {
-            self.send_mob_effect_sync_packet(
-                MobEffectSyncChange::Remove {
-                    effect: effect.effect(),
-                }
-                .packet(vehicle.id(), false),
-            );
-        }
-    }
-
-    fn apply_post_teleport_transition(&self, post_transition: &TeleportPostTransition) {
-        for action in post_transition.actions() {
-            match *action {
-                TeleportPostAction::PlayPortalSound => {
-                    self.send_packet(CLevelEvent::new(
-                        level_events::SOUND_PORTAL_TRAVEL,
-                        BlockPos::ZERO,
-                        0,
-                        false,
-                    ));
-                }
-                TeleportPostAction::PlacePortalTicket(target) => {
-                    let ticket_position = match target {
-                        PortalTicketTarget::Destination => BlockPos::from(self.position()),
-                        PortalTicketTarget::Block(pos) => pos,
-                    };
-                    self.get_world().place_portal_ticket(ticket_position);
-                }
-            }
-        }
-    }
-
-    /// Applies an ordinary player transition that has already passed server world-change checks.
-    /// Cross-domain player state is restored only by the domain-switch workflow.
-    pub(crate) fn change_world_within_domain(
-        self: &Arc<Self>,
-        teleport_transition: &TeleportTransition,
-    ) -> bool {
-        let current_world = self.get_world();
-        let new_world = Arc::clone(&teleport_transition.target_world);
-        if current_world.domain() != new_world.domain() {
-            tracing::error!(
-                entity_id = self.id(),
-                source_domain = current_world.domain(),
-                target_domain = new_world.domain(),
-                "Refusing player world change outside the domain-switch workflow"
-            );
-            return false;
-        }
-
-        let current_position = self.position();
-        let current_rotation = self.rotation();
-        let current_velocity = self.velocity();
-        let position = teleport_transition.resolved_position(current_position);
-        let rotation = teleport_transition.resolved_rotation(current_rotation);
-        let velocity =
-            teleport_transition.resolved_velocity(current_velocity, current_rotation, rotation);
-        self.set_portal_cooldown(teleport_transition.portal_cooldown);
-        if !teleport_transition.as_passenger {
-            self.stop_riding();
-        }
-        if Arc::ptr_eq(&current_world, &new_world) {
-            if let Err(error) = self.teleport_with_velocity_packet(
-                position,
-                velocity,
-                rotation,
-                teleport_transition.position,
-                teleport_transition.velocity,
-                teleport_transition.rotation,
-                teleport_transition.relatives,
-            ) {
-                panic!(
-                    "failed to commit same-world portal teleport for player {}: {error}",
-                    self.id()
-                );
-            }
-            self.reset_flying_ticks();
-        } else {
-            self.reset(new_world, ResetReason::WorldChange);
-            if !self.spawn_with_velocity_packet(
-                position,
-                rotation,
-                velocity,
-                ResetReason::WorldChange,
-                teleport_transition.position,
-                teleport_transition.rotation,
-                teleport_transition.velocity,
-                teleport_transition.relatives,
-            ) {
-                return false;
-            }
-            // Vanilla: PlayerList.sendAllPlayerInfo -> inventoryMenu.sendAllDataToRemote
-            self.send_inventory_to_remote();
-        }
-        self.apply_post_teleport_transition(&teleport_transition.post_transition);
-        true
-    }
-}
-
-fn nullable_game_mode_id(game_mode: Option<GameType>) -> i8 {
-    game_mode.map_or(-1, |game_mode| game_mode as i8)
-}
-
-fn first_point_level_up_sound(old_level: i32, new_level: i32, points: i32) -> Option<i32> {
-    if points <= 0 || new_level <= old_level {
-        return None;
-    }
-    let first_multiple = (i64::from(old_level).div_euclid(5) + 1) * 5;
-    if first_multiple > i64::from(new_level) {
-        return None;
-    }
-    i32::try_from(first_multiple).ok()
-}
-
-/// Why the player is being reset and spawned into a world.
-///
-/// Controls which packets are sent and how world add/remove is handled.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ResetReason {
-    /// First time joining the server. `CLogin` was already sent, so `CRespawn` is skipped.
-    InitialJoin,
-    /// Respawning after death in the same world.
-    Respawn,
-    /// Respawning after the End credits screen with vanilla packet flags.
-    EndCredits,
-    /// Teleporting to a different loaded world.
-    WorldChange,
-}
-
-impl ResetReason {
-    const fn respawn_data_kept(self) -> i8 {
-        match self {
-            Self::InitialJoin | Self::Respawn => 0x00,
-            Self::EndCredits => 0x01,
-            Self::WorldChange => 0x03,
         }
     }
 }
@@ -2508,11 +1347,11 @@ impl Entity for Player {
     }
 
     fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
-        equipment_items_to_packet_items(self.inventory.lock().non_empty_equipment_items())
+        self.pack_living_equipment()
     }
 
     fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
-        equipment_items_to_packet_items(self.inventory.lock().drain_dirty_equipment_items())
+        self.drain_dirty_living_equipment()
     }
 
     fn max_up_step(&self) -> f32 {
@@ -2683,11 +1522,7 @@ impl LivingEntity for Player {
 
     fn with_equipment_slot(&self, slot: EquipmentSlot, visitor: &mut dyn FnMut(&ItemStack)) {
         let inventory = self.inventory.lock();
-        if slot == EquipmentSlot::MainHand {
-            visitor(inventory.get_selected_item());
-        } else {
-            visitor(inventory.equipment().get_ref(slot));
-        }
+        visitor(inventory.get_ref(slot));
     }
 
     fn with_equipment_slot_mut(
@@ -2696,11 +1531,95 @@ impl LivingEntity for Player {
         visitor: &mut dyn FnMut(&mut ItemStack),
     ) {
         let mut inventory = self.inventory.lock();
-        if slot == EquipmentSlot::MainHand {
-            inventory.with_selected_item_mut(visitor);
-        } else {
-            visitor(inventory.equipment_mut().get_mut(slot));
+        inventory.with_equipment_item_mut(slot, visitor);
+    }
+
+    fn interact_living_entity_with_equippable(
+        &self,
+        player: &Player,
+        hand: InteractionHand,
+    ) -> InteractionResult {
+        let item_stack = {
+            let inventory = player.inventory.lock();
+            let item_stack = inventory.get_item_in_hand(hand);
+            item_stack.copy_with_count(item_stack.count())
+        };
+        let Some(equippable) = item_stack.get_equippable() else {
+            return InteractionResult::Pass;
+        };
+        if !equippable.equip_on_interact {
+            return InteractionResult::Pass;
         }
+
+        let slot = equippable.slot;
+        let can_equip = |stack: &ItemStack| {
+            stack.get_equippable().is_some_and(|equippable| {
+                equippable.equip_on_interact
+                    && equippable.slot == slot
+                    && self.is_equippable_in_slot(stack, slot)
+            })
+        };
+        if !can_equip(&item_stack) || !Entity::is_alive(self) {
+            return InteractionResult::Pass;
+        }
+
+        let source_ref = ContainerRef::from(player.inventory.clone());
+        let target_ref = ContainerRef::from(self.inventory.clone());
+        let source_id = source_ref.container_id();
+        let target_id = target_ref.container_id();
+        let mut guard = ContainerLockGuard::lock_all(&[source_ref, target_ref]);
+        let source_slot = match hand {
+            InteractionHand::MainHand => EquipmentSlot::MainHand,
+            InteractionHand::OffHand => EquipmentSlot::OffHand,
+        };
+
+        let equipped = if source_id == target_id {
+            let Some(inventory) = guard.get_typed_mut::<PlayerInventory>(source_id) else {
+                unreachable!("player inventory container retains its concrete type");
+            };
+            if !can_equip(inventory.get_item_in_hand(hand)) || !inventory.get_ref(slot).is_empty() {
+                return InteractionResult::Pass;
+            }
+
+            let equipped = inventory.get_mut(source_slot).split(1);
+            if equipped.is_empty() {
+                return InteractionResult::Pass;
+            }
+            let equipped_for_effects = equipped.copy_with_count(1);
+            *inventory.get_mut(slot) = equipped;
+            equipped_for_effects
+        } else {
+            let Some((source_inventory, target_inventory)) =
+                guard.get_two_typed_mut::<PlayerInventory, PlayerInventory>(source_id, target_id)
+            else {
+                unreachable!("player inventory containers retain their concrete type");
+            };
+            if !can_equip(source_inventory.get_item_in_hand(hand))
+                || !target_inventory.get_ref(slot).is_empty()
+            {
+                return InteractionResult::Pass;
+            }
+
+            let equipped = source_inventory.get_mut(source_slot).split(1);
+            if equipped.is_empty() {
+                return InteractionResult::Pass;
+            }
+            let equipped_for_effects = equipped.copy_with_count(1);
+            *target_inventory.get_mut(slot) = equipped;
+            equipped_for_effects
+        };
+        drop(guard);
+
+        player.inventory.lock().set_changed();
+        if source_id != target_id {
+            self.inventory.lock().set_changed();
+        }
+
+        if let Some(sound) = self.equip_sound(slot, &equipped) {
+            self.play_sound(sound, 1.0, 1.0);
+        }
+        // TODO: Emit EQUIP game event once game-event dispatch is implemented.
+        InteractionResult::Success
     }
 
     fn has_infinite_materials(&self) -> bool {
@@ -2822,512 +1741,4 @@ impl TextResolutor for Player {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::{Arc, Weak};
-
-    use glam::DVec3;
-    use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
-    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-    use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-    use steel_registry::data_component_predicate::DataComponentMatchers;
-    use steel_registry::data_components::vanilla_components::CAN_BREAK;
-    use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
-    use steel_registry::{
-        RegistryHolderSet, item_stack::ItemStack, test_support::init_test_registry,
-        vanilla_attributes, vanilla_blocks, vanilla_damage_types, vanilla_game_rules,
-        vanilla_items,
-    };
-    use steel_utils::types::{Difficulty, GameType, UpdateFlags};
-    use steel_utils::{BlockPos, ChunkPos};
-    use text_components::TextComponent;
-    use uuid::Uuid;
-
-    use crate::behavior::init_behaviors;
-    use crate::config::RuntimeConfig;
-    use crate::entity::{Entity, EntitySyncedData, LivingEntity, damage::DamageSource};
-    use crate::inventory::{container::Container as _, equipment::EquipmentSlot, menu::Menu as _};
-    use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
-    use crate::player::connection::NetworkConnection;
-    use crate::server::Server;
-    use crate::test_support::{
-        fresh_test_world, hard_damage_test_world, insert_ready_full_chunk, test_world,
-    };
-    use crate::world::World;
-
-    use super::{
-        ClientInformation, GameProfile, Player, PlayerConnection, PlayerPermissionState,
-        ResetReason, block_breaking::BlockBreakAction, experience::Experience,
-        first_point_level_up_sound, nullable_game_mode_id, player_data::PersistentPlayerData,
-    };
-
-    struct TestConnection;
-
-    impl NetworkConnection for TestConnection {
-        fn compression(&self) -> Option<CompressionInfo> {
-            None
-        }
-
-        fn send_encoded(&self, _packet: EncodedPacket) {}
-
-        fn send_encoded_bundle(&self, _packets: Vec<EncodedPacket>) {}
-
-        fn disconnect_with_reason(&self, _reason: TextComponent) {}
-
-        fn tick(&self) {}
-
-        fn latency(&self) -> i32 {
-            0
-        }
-
-        fn close(&self) {}
-
-        fn closed(&self) -> bool {
-            false
-        }
-    }
-
-    fn test_runtime_config() -> Arc<RuntimeConfig> {
-        Arc::new(RuntimeConfig {
-            max_players: 1,
-            view_distance: 2,
-            simulation_distance: 2,
-            max_chained_neighbor_updates: 1_000_000,
-            online_mode: false,
-            auth_server: None,
-            profile_server: None,
-            encryption: false,
-            allow_flight: false,
-            motd: String::new(),
-            use_favicon: false,
-            favicon: String::new(),
-            enforce_secure_chat: false,
-            chat_spam_threshold_seconds: 10,
-            command_spam_threshold_seconds: 10,
-            compression: None,
-            server_links: None,
-            packet_workers: Some(1),
-            chunk_generation_threads: Some(1),
-            chunk_encoding_threads: Some(1),
-        })
-    }
-
-    fn test_player(world: Arc<World>) -> Arc<Player> {
-        let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection)));
-        let config = test_runtime_config();
-        let player = Arc::new_cyclic(|weak_player| {
-            Player::new(
-                GameProfile {
-                    id: Uuid::from_u128(1),
-                    name: "TestPlayer".to_owned(),
-                    properties: Vec::new(),
-                    profile_actions: None,
-                },
-                Arc::clone(&connection),
-                Arc::clone(&world),
-                Weak::<Server>::new(),
-                Arc::clone(&config),
-                1,
-                weak_player,
-                ClientInformation::default(),
-            )
-        });
-        player.set_client_loaded(true);
-        player
-    }
-
-    fn permission_key(value: &str) -> PermissionKey {
-        match PermissionKey::parse(value) {
-            Ok(key) => key,
-            Err(error) => panic!("test permission key should parse: {error}"),
-        }
-    }
-
-    #[test]
-    fn permission_state_replacement_is_versioned_and_keeps_both_rule_sets() {
-        let mut state = PlayerPermissionState::default();
-        let overrides =
-            PermissionSet::from_entries([PermissionEntry::deny(permission_key("steel.fly"))]);
-        let effective =
-            PermissionSet::from_entries([PermissionEntry::allow(permission_key("steel.build"))]);
-
-        let first = state.replace(
-            vec!["builder".to_owned()],
-            overrides.clone(),
-            PermissionMetadataSet::new(),
-            effective.clone(),
-            PermissionMetadataSet::new(),
-        );
-        let second = state.replace(
-            vec!["moderator".to_owned()],
-            overrides,
-            PermissionMetadataSet::new(),
-            effective,
-            PermissionMetadataSet::new(),
-        );
-
-        assert_eq!(first, 1);
-        assert_eq!(second, 2);
-        assert_eq!(state.groups, ["moderator"]);
-        assert!(!state.overrides.allows_key(&permission_key("steel.fly")));
-        assert!(state.effective.allows_key(&permission_key("steel.build")));
-    }
-
-    #[test]
-    fn respawn_request_is_allowed_after_dead_reconnect() {
-        assert!(Player::should_process_respawn(0.0));
-    }
-
-    #[test]
-    fn ai_step_copies_player_yaw_to_head_yaw() {
-        init_test_registry();
-        init_behaviors();
-        let player = test_player(Arc::clone(test_world()));
-        player.set_rotation((90.0, 15.0));
-        player.set_y_head_rot(-45.0);
-
-        let _ = player.ai_step();
-
-        assert_eq!(player.y_head_rot().to_bits(), 90.0_f32.to_bits());
-    }
-
-    #[test]
-    fn respawn_request_is_ignored_while_alive() {
-        assert!(!Player::should_process_respawn(20.0));
-    }
-
-    #[test]
-    fn respawn_request_uses_health_not_death_processed_guard() {
-        struct RespawnGateInput {
-            health: f32,
-            death_processed: bool,
-        }
-
-        let input = RespawnGateInput {
-            health: 20.0,
-            death_processed: true,
-        };
-
-        assert!(input.death_processed);
-        assert!(!Player::should_process_respawn(input.health));
-    }
-
-    #[test]
-    fn end_credits_respawn_keeps_vanilla_attribute_data_only() {
-        assert_eq!(ResetReason::InitialJoin.respawn_data_kept(), 0x00);
-        assert_eq!(ResetReason::Respawn.respawn_data_kept(), 0x00);
-        assert_eq!(ResetReason::EndCredits.respawn_data_kept(), 0x01);
-        assert_eq!(ResetReason::WorldChange.respawn_data_kept(), 0x03);
-    }
-
-    #[test]
-    fn disabled_damage_game_rule_matches_vanilla_player_damage_gates() {
-        init_test_registry();
-
-        let cases = [
-            (
-                &vanilla_damage_types::DROWN,
-                &vanilla_game_rules::DROWNING_DAMAGE,
-            ),
-            (
-                &vanilla_damage_types::FALL,
-                &vanilla_game_rules::FALL_DAMAGE,
-            ),
-            (
-                &vanilla_damage_types::LAVA,
-                &vanilla_game_rules::FIRE_DAMAGE,
-            ),
-            (
-                &vanilla_damage_types::FREEZE,
-                &vanilla_game_rules::FREEZE_DAMAGE,
-            ),
-        ];
-
-        for (damage_type, rule) in cases {
-            let source = DamageSource::environment(damage_type);
-            let mapped = Player::disabled_damage_game_rule(&source);
-            assert!(mapped.is_some_and(|mapped| mapped.key() == rule.key()));
-        }
-    }
-
-    #[test]
-    fn disabled_damage_game_rule_ignores_unrelated_damage() {
-        init_test_registry();
-        let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
-
-        assert!(Player::disabled_damage_game_rule(&source).is_none());
-    }
-
-    #[test]
-    fn hurt_uses_explicit_world_difficulty() {
-        let attached_world = Arc::clone(test_world());
-        let damage_world = hard_damage_test_world();
-        let player = test_player(attached_world);
-        let source = DamageSource::environment(&vanilla_damage_types::EXPLOSION);
-
-        assert_eq!(player.get_world().difficulty(), Difficulty::Normal);
-        assert_eq!(damage_world.difficulty(), Difficulty::Hard);
-        assert_eq!(player.get_health().to_bits(), 20.0_f32.to_bits());
-
-        assert!(player.hurt(damage_world, &source, 4.0));
-        assert_eq!(player.get_health().to_bits(), 14.0_f32.to_bits());
-    }
-
-    #[test]
-    fn conditional_damage_does_not_scale_for_player_or_unresolved_causes() {
-        let world = hard_damage_test_world();
-        let causing_player = test_player(Arc::clone(world));
-        let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
-
-        assert!(!source.scales_with_difficulty(Some(causing_player.as_ref())));
-
-        let target = test_player(Arc::clone(world));
-        let unresolved_source = source.with_causing_entity(2);
-        assert!(target.hurt(world, &unresolved_source, 4.0));
-        assert_eq!(target.get_health().to_bits(), 16.0_f32.to_bits());
-    }
-
-    #[test]
-    fn player_damage_applies_armor_and_absorption() {
-        init_test_registry();
-        let world = Arc::clone(test_world());
-        let player = test_player(Arc::clone(&world));
-        {
-            let mut attributes = player.attributes().lock();
-            attributes.set_base_value(vanilla_attributes::ARMOR, 20.0);
-            attributes.set_base_value(vanilla_attributes::MAX_ABSORPTION, 3.0);
-        }
-        player.set_absorption_amount(3.0);
-        let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
-
-        assert!(player.hurt(&world, &source, 10.0));
-
-        assert_eq!(player.get_health().to_bits(), 19.0_f32.to_bits());
-        assert_eq!(player.get_absorption_amount().to_bits(), 0.0_f32.to_bits());
-    }
-
-    #[test]
-    fn player_absorption_amount_clamps_to_attribute_range() {
-        let world = Arc::clone(test_world());
-        let player = test_player(world);
-        player
-            .attributes()
-            .lock()
-            .set_base_value(vanilla_attributes::MAX_ABSORPTION, 4.0);
-
-        player.set_absorption_amount(10.0);
-        assert_eq!(player.get_absorption_amount().to_bits(), 4.0_f32.to_bits());
-
-        player.set_absorption_amount(-1.0);
-        assert_eq!(player.get_absorption_amount().to_bits(), 0.0_f32.to_bits());
-    }
-
-    #[test]
-    fn player_damage_hurts_armor_equipment() {
-        init_test_registry();
-        let world = Arc::clone(test_world());
-        let player = test_player(Arc::clone(&world));
-        player.inventory.lock().equipment_mut().set(
-            EquipmentSlot::Chest,
-            ItemStack::new(&vanilla_items::DIAMOND_CHESTPLATE),
-        );
-        let source = DamageSource::environment(&vanilla_damage_types::FIREWORKS);
-
-        assert!(player.hurt(&world, &source, 8.0));
-
-        let inventory = player.inventory.lock();
-        assert_eq!(
-            inventory
-                .equipment()
-                .get_ref(EquipmentSlot::Chest)
-                .get_damage_value(),
-            2,
-        );
-    }
-
-    #[test]
-    fn nullable_game_mode_id_matches_vanilla_encoding() {
-        assert_eq!(nullable_game_mode_id(None), -1);
-        assert_eq!(nullable_game_mode_id(Some(GameType::Creative)), 1);
-    }
-
-    #[test]
-    fn clear_matching_items_uses_inventory_crafting_then_carried_order() {
-        init_test_registry();
-        let player = test_player(Arc::clone(test_world()));
-        player
-            .inventory
-            .lock()
-            .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
-        {
-            let inventory_menu = player.inventory_menu.lock();
-            inventory_menu
-                .crafting_container()
-                .lock()
-                .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 2));
-        }
-        player
-            .inventory_menu
-            .lock()
-            .behavior_mut()
-            .set_carried(ItemStack::with_count(&vanilla_items::STONE, 4));
-
-        let stone = |stack: &ItemStack| stack.is(&vanilla_items::STONE);
-        assert_eq!(player.clear_or_count_matching_items(&stone, 5), 5);
-        assert!(player.inventory.lock().get_item(0).is_empty());
-        assert!(
-            player
-                .inventory_menu
-                .lock()
-                .crafting_container()
-                .lock()
-                .get_item(0)
-                .is_empty()
-        );
-        assert_eq!(
-            player
-                .inventory_menu
-                .lock()
-                .behavior()
-                .get_carried()
-                .count(),
-            4
-        );
-
-        assert_eq!(player.clear_or_count_matching_items(&stone, 0), 4);
-        assert_eq!(
-            player
-                .inventory_menu
-                .lock()
-                .behavior()
-                .get_carried()
-                .count(),
-            4
-        );
-        assert_eq!(player.clear_or_count_matching_items(&stone, -1), 4);
-        assert!(
-            player
-                .inventory_menu
-                .lock()
-                .behavior()
-                .get_carried()
-                .is_empty()
-        );
-    }
-
-    #[test]
-    fn point_level_up_sound_uses_first_crossed_five_level_boundary() {
-        assert_eq!(first_point_level_up_sound(0, 4, 100), None);
-        assert_eq!(first_point_level_up_sound(0, 5, 100), Some(5));
-        assert_eq!(first_point_level_up_sound(4, 12, 100), Some(5));
-        assert_eq!(first_point_level_up_sound(5, 10, 100), Some(10));
-        assert_eq!(first_point_level_up_sound(5, 10, -100), None);
-    }
-
-    #[test]
-    fn point_grants_update_entity_score_with_java_wrapping() {
-        let player = test_player(Arc::clone(test_world()));
-        player.set_score(i32::MAX - 10);
-
-        player.give_experience_points(100);
-
-        assert_eq!(player.score(), (i32::MAX - 10).wrapping_add(100));
-        assert_eq!(player.experience.lock().total_points(), 100);
-    }
-
-    #[test]
-    fn persistent_player_data_restores_independent_experience_fields_and_score() {
-        init_test_registry();
-        let player = test_player(Arc::clone(test_world()));
-        *player.experience.lock() = Experience::from_parts(7, 0.5, 32);
-        player.set_score(19);
-        let persistent = PersistentPlayerData::from_player(&player);
-
-        *player.experience.lock() = Experience::default();
-        player.set_score(-1);
-        persistent.apply_to_player_without_location(&player);
-
-        let experience = player.experience.lock();
-        assert_eq!(experience.level(), 7);
-        assert_eq!(experience.progress().to_bits(), 0.5_f32.to_bits());
-        assert_eq!(experience.total_points(), 32);
-        drop(experience);
-        assert_eq!(player.score(), 19);
-    }
-
-    #[test]
-    fn effect_visibility_refresh_preserves_spectator_invisibility() {
-        init_test_registry();
-        let player = test_player(Arc::clone(test_world()));
-
-        player.restore_game_modes(GameType::Spectator, Some(GameType::Survival));
-        player.living_base.mark_effects_dirty();
-        player.update_dirty_mob_effect_entity_data();
-        assert!(player.entity_data.is_base_invisible_flag());
-
-        player.restore_game_modes(GameType::Survival, Some(GameType::Spectator));
-        player.living_base.mark_effects_dirty();
-        player.update_dirty_mob_effect_entity_data();
-        assert!(!player.entity_data.is_base_invisible_flag());
-    }
-
-    #[test]
-    fn block_action_restriction_precedes_redstone_ore_attack() {
-        init_test_registry();
-        init_behaviors();
-        let world = fresh_test_world("redstone_ore_block_action_restriction");
-        let pos = BlockPos::new(1, 64, 0);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
-        assert!(world.set_block(
-            pos,
-            vanilla_blocks::REDSTONE_ORE.default_state(),
-            UpdateFlags::UPDATE_ALL,
-        ));
-
-        let player = test_player(Arc::clone(&world));
-        player.base.set_position_local(DVec3::new(1.0, 64.0, 0.0));
-
-        for game_mode in [GameType::Spectator, GameType::Adventure] {
-            player.restore_game_modes(game_mode, None);
-            player.abilities.lock().update_for_game_mode(game_mode);
-            player.block_breaking.lock().handle_block_break_action(
-                &player,
-                &world,
-                pos,
-                BlockBreakAction::Start,
-                Direction::Up,
-            );
-            assert!(
-                !world
-                    .get_block_state(pos)
-                    .get_value(&BlockStateProperties::LIT)
-            );
-        }
-
-        let predicate = BlockPredicate::new(
-            Some(RegistryHolderSet::Direct(vec![
-                &vanilla_blocks::REDSTONE_ORE,
-            ])),
-            None,
-            None,
-            DataComponentMatchers::ANY,
-        );
-        let can_break =
-            AdventureModePredicate::new(vec![predicate]).expect("one block predicate is valid");
-        let mut tool = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
-        tool.set(CAN_BREAK, can_break);
-        player.inventory.lock().set_selected_item(tool);
-
-        player.block_breaking.lock().handle_block_break_action(
-            &player,
-            &world,
-            pos,
-            BlockBreakAction::Start,
-            Direction::Up,
-        );
-        assert!(
-            world
-                .get_block_state(pos)
-                .get_value(&BlockStateProperties::LIT)
-        );
-    }
-}
+mod tests;

@@ -18,7 +18,7 @@ use crate::behavior::blocks::BigDripleafStemBlock;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::{Entity, InsideBlockEffectCollector, projectile::Projectile};
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 use crate::world::tick_scheduler::TickPriority;
 use crate::world::{ClipHitResult, LevelReader, ScheduledTickAccess, SignalGetter as _, World};
 

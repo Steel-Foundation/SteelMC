@@ -15,7 +15,7 @@ use crate::behavior::{
     BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
 };
 use crate::player::Player;
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, SignalQueryContext, World};
 
 /// Vanilla `LeverBlock` source behavior.

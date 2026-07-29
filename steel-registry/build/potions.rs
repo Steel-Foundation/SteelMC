@@ -9,6 +9,7 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 struct PotionJson {
     id: usize,
+    key: String,
     name: String,
     effects: Vec<PotionEffectJson>,
 }
@@ -33,11 +34,12 @@ pub(crate) fn build() -> TokenStream {
     let mut registrations = TokenStream::new();
     for (expected_id, potion) in potions.iter().enumerate() {
         assert_eq!(potion.id, expected_id, "potion registry IDs must be dense");
-        let ident = Ident::new(&potion.name.to_shouty_snake_case(), Span::call_site());
+        let ident = Ident::new(&potion.key.to_shouty_snake_case(), Span::call_site());
         let effects_ident = Ident::new(
-            &format!("{}_EFFECTS", potion.name.to_shouty_snake_case()),
+            &format!("{}_EFFECTS", potion.key.to_shouty_snake_case()),
             Span::call_site(),
         );
+        let key = &potion.key;
         let name = &potion.name;
         let effects = potion.effects.iter().map(|effect| {
             let effect_ident = Ident::new(&effect.effect.to_shouty_snake_case(), Span::call_site());
@@ -54,7 +56,8 @@ pub(crate) fn build() -> TokenStream {
         definitions.extend(quote! {
             static #effects_ident: &[PotionEffect] = &[#(#effects),*];
             pub static #ident: Potion = Potion::new(
-                Identifier::vanilla_static(#name),
+                Identifier::vanilla_static(#key),
+                #name,
                 #effects_ident,
             );
         });
