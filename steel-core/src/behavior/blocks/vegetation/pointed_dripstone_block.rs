@@ -11,11 +11,11 @@ use steel_registry::{
 };
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::block::{
     BlockBehavior, BlockCollisionContext, EntityFallDamage, EntityFallOnContext,
 };
 use crate::behavior::context::BlockPlaceContext;
-use crate::behavior::{BLOCK_BEHAVIORS, BlockStateBehaviorExt as _};
 use crate::entity::damage::DamageSource;
 use crate::entity::projectile::Projectile;
 use crate::fluid::FluidStateExt as _;
@@ -93,10 +93,6 @@ impl BlockBehavior for PointedDripstoneBlock {
         self.speleothem().tick(state, world, pos);
     }
 
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        true
-    }
-
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.speleothem().random_tick(state, world, pos);
     }
@@ -168,10 +164,6 @@ impl BlockBehavior for SulfurSpikeBlock {
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.speleothem().tick(state, world, pos);
-    }
-
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        true
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
@@ -253,7 +245,7 @@ impl SpeleothemBlockBehavior {
         let behind_pos = pos.relative(tip_direction.opposite());
         let behind_state = world.get_block_state(behind_pos);
 
-        behind_state.is_face_sturdy_at(behind_pos, tip_direction)
+        world.is_face_sturdy(behind_state, behind_pos, tip_direction)
             || (Self::is_speleothem_with_direction(behind_state, tip_direction)
                 && behind_state.get_block() == self.block)
     }

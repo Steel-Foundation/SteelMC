@@ -1,3 +1,10 @@
+use steel_protocol::packets::game::SoundSource;
+use steel_registry::sound_events;
+
+use crate::entity::Entity;
+
+use super::Player;
+
 /// Vanilla player experience state.
 ///
 /// These three fields are intentionally independent. Vanilla commands and save
@@ -212,4 +219,88 @@ fn level_for_total_points(total_points: i32) -> i32 {
         return ((40.5 + f64::sqrt(-1959.75 + 10.0 * points)) / 5.0) as i32;
     }
     ((162.5 + f64::sqrt(-13553.75 + 18.0 * points)) / 9.0) as i32
+}
+
+impl Player {
+    /// Returns the player's vanilla death-screen score.
+    #[must_use]
+    pub fn score(&self) -> i32 {
+        *self.entity_data.lock().score.get()
+    }
+
+    /// Sets the player's vanilla death-screen score.
+    pub fn set_score(&self, score: i32) {
+        self.entity_data.lock().score.set(score);
+    }
+
+    fn increase_score(&self, amount: i32) {
+        let mut entity_data = self.entity_data.lock();
+        let score = entity_data.score.get().wrapping_add(amount);
+        entity_data.score.set(score);
+    }
+
+    /// Gives raw experience points to this player.
+    pub(crate) fn give_experience_points(&self, points: i32) {
+        if points == 0 {
+            return;
+        }
+        self.increase_score(points);
+        let level_up_sound = {
+            let mut experience = self.experience.lock();
+            let old_level = experience.level();
+            experience.add_points(points);
+            first_point_level_up_sound(old_level, experience.level(), points)
+        };
+        if let Some(level) = level_up_sound {
+            self.play_experience_level_up_sound(level);
+        }
+    }
+
+    /// Gives experience levels to this player.
+    pub(crate) fn give_experience_levels(&self, levels: i32) {
+        let level_up_sound = {
+            let mut experience = self.experience.lock();
+            experience.add_levels(levels);
+            (levels > 0 && experience.level() % 5 == 0).then_some(experience.level())
+        };
+        if let Some(level) = level_up_sound {
+            self.play_experience_level_up_sound(level);
+        }
+    }
+
+    fn play_experience_level_up_sound(&self, level: i32) {
+        if !self.tick_state.lock().mark_level_up_sound_if_due() {
+            return;
+        }
+        let volume = if level > 30 { 1.0 } else { level as f32 / 30.0 };
+        // Vanilla emits this directly through the level, regardless of the player's silent flag.
+        self.get_world().play_sound_at(
+            &sound_events::ENTITY_PLAYER_LEVELUP,
+            SoundSource::Players,
+            self.position(),
+            volume * 0.75,
+            1.0,
+            None,
+        );
+    }
+
+    /// Advances this player's local server tick count.
+    pub(super) fn advance_tick(&self) {
+        self.tick_state.lock().advance_tick();
+    }
+}
+
+pub(super) fn first_point_level_up_sound(
+    old_level: i32,
+    new_level: i32,
+    points: i32,
+) -> Option<i32> {
+    if points <= 0 || new_level <= old_level {
+        return None;
+    }
+    let first_multiple = (i64::from(old_level).div_euclid(5) + 1) * 5;
+    if first_multiple > i64::from(new_level) {
+        return None;
+    }
+    i32::try_from(first_multiple).ok()
 }

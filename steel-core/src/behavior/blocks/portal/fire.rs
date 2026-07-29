@@ -76,9 +76,7 @@ impl FireBlock {
     /// or an adjacent block is flammable.
     fn can_survive_at(world: &dyn LevelReader, pos: BlockPos) -> bool {
         let below_pos = pos.below();
-        world
-            .get_block_state(below_pos)
-            .is_face_sturdy_at(below_pos, Direction::Up)
+        world.is_face_sturdy(world.get_block_state(below_pos), below_pos, Direction::Up)
         // TODO: || is_valid_fire_location (check adjacent flammable blocks once flammability exists)
     }
 

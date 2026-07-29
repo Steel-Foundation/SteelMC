@@ -5,7 +5,7 @@ use steel_utils::BlockPos;
 
 use super::random_pos::default_random_pos;
 use super::selector::{Goal, GoalControls};
-use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _};
+use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::entity::PathfinderMob;
 use crate::fluid::FluidStateExt as _;
 

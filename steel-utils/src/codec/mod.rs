@@ -7,16 +7,9 @@ pub mod glam;
 pub mod lp_vec3;
 /// A module for an Or type that can be one of two types.
 pub mod or;
-/// A module for a variable-length integer.
-pub mod var_int;
-/// A module for a variable-length long integer.
-pub mod var_long;
-/// A module for a variable-length unsigned integer.
-pub mod var_uint;
+mod variable_integer;
 
 pub use bit_set::BitSet;
 pub use lp_vec3::LpVec3;
 pub use or::Or;
-pub use var_int::VarInt;
-pub use var_long::VarLong;
-pub use var_uint::VarUint;
+pub use variable_integer::{VarInt, VarLong, VarUint};

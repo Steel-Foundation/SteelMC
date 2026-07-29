@@ -8,7 +8,7 @@ use crate::chunk::{
     proto_chunk::ProtoChunk,
     section::{ChunkSection, Sections},
 };
-use crate::worldgen::context::WorldGenContext;
+use crate::worldgen::generator::context::WorldGenContext;
 
 pub(crate) fn generate(
     context: Arc<WorldGenContext>,

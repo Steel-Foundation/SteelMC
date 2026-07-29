@@ -1,26 +1,31 @@
 [
   {
     "id": 0,
+    "key": "water",
     "name": "water",
     "effects": []
   },
   {
     "id": 1,
+    "key": "mundane",
     "name": "mundane",
     "effects": []
   },
   {
     "id": 2,
+    "key": "thick",
     "name": "thick",
     "effects": []
   },
   {
     "id": 3,
+    "key": "awkward",
     "name": "awkward",
     "effects": []
   },
   {
     "id": 4,
+    "key": "night_vision",
     "name": "night_vision",
     "effects": [
       {
@@ -32,7 +37,8 @@
   },
   {
     "id": 5,
-    "name": "long_night_vision",
+    "key": "long_night_vision",
+    "name": "night_vision",
     "effects": [
       {
         "effect": "night_vision",
@@ -43,6 +49,7 @@
   },
   {
     "id": 6,
+    "key": "invisibility",
     "name": "invisibility",
     "effects": [
       {
@@ -54,7 +61,8 @@
   },
   {
     "id": 7,
-    "name": "long_invisibility",
+    "key": "long_invisibility",
+    "name": "invisibility",
     "effects": [
       {
         "effect": "invisibility",
@@ -65,6 +73,7 @@
   },
   {
     "id": 8,
+    "key": "leaping",
     "name": "leaping",
     "effects": [
       {
@@ -76,7 +85,8 @@
   },
   {
     "id": 9,
-    "name": "long_leaping",
+    "key": "long_leaping",
+    "name": "leaping",
     "effects": [
       {
         "effect": "jump_boost",
@@ -87,7 +97,8 @@
   },
   {
     "id": 10,
-    "name": "strong_leaping",
+    "key": "strong_leaping",
+    "name": "leaping",
     "effects": [
       {
         "effect": "jump_boost",
@@ -98,6 +109,7 @@
   },
   {
     "id": 11,
+    "key": "fire_resistance",
     "name": "fire_resistance",
     "effects": [
       {
@@ -109,7 +121,8 @@
   },
   {
     "id": 12,
-    "name": "long_fire_resistance",
+    "key": "long_fire_resistance",
+    "name": "fire_resistance",
     "effects": [
       {
         "effect": "fire_resistance",
@@ -120,6 +133,7 @@
   },
   {
     "id": 13,
+    "key": "swiftness",
     "name": "swiftness",
     "effects": [
       {
@@ -131,7 +145,8 @@
   },
   {
     "id": 14,
-    "name": "long_swiftness",
+    "key": "long_swiftness",
+    "name": "swiftness",
     "effects": [
       {
         "effect": "speed",
@@ -142,7 +157,8 @@
   },
   {
     "id": 15,
-    "name": "strong_swiftness",
+    "key": "strong_swiftness",
+    "name": "swiftness",
     "effects": [
       {
         "effect": "speed",
@@ -153,6 +169,7 @@
   },
   {
     "id": 16,
+    "key": "slowness",
     "name": "slowness",
     "effects": [
       {
@@ -164,7 +181,8 @@
   },
   {
     "id": 17,
-    "name": "long_slowness",
+    "key": "long_slowness",
+    "name": "slowness",
     "effects": [
       {
         "effect": "slowness",
@@ -175,7 +193,8 @@
   },
   {
     "id": 18,
-    "name": "strong_slowness",
+    "key": "strong_slowness",
+    "name": "slowness",
     "effects": [
       {
         "effect": "slowness",
@@ -186,6 +205,7 @@
   },
   {
     "id": 19,
+    "key": "turtle_master",
     "name": "turtle_master",
     "effects": [
       {
@@ -202,7 +222,8 @@
   },
   {
     "id": 20,
-    "name": "long_turtle_master",
+    "key": "long_turtle_master",
+    "name": "turtle_master",
     "effects": [
       {
         "effect": "slowness",
@@ -218,7 +239,8 @@
   },
   {
     "id": 21,
-    "name": "strong_turtle_master",
+    "key": "strong_turtle_master",
+    "name": "turtle_master",
     "effects": [
       {
         "effect": "slowness",
@@ -234,6 +256,7 @@
   },
   {
     "id": 22,
+    "key": "water_breathing",
     "name": "water_breathing",
     "effects": [
       {
@@ -245,7 +268,8 @@
   },
   {
     "id": 23,
-    "name": "long_water_breathing",
+    "key": "long_water_breathing",
+    "name": "water_breathing",
     "effects": [
       {
         "effect": "water_breathing",
@@ -256,6 +280,7 @@
   },
   {
     "id": 24,
+    "key": "healing",
     "name": "healing",
     "effects": [
       {
@@ -267,7 +292,8 @@
   },
   {
     "id": 25,
-    "name": "strong_healing",
+    "key": "strong_healing",
+    "name": "healing",
     "effects": [
       {
         "effect": "instant_health",
@@ -278,6 +304,7 @@
   },
   {
     "id": 26,
+    "key": "harming",
     "name": "harming",
     "effects": [
       {
@@ -289,7 +316,8 @@
   },
   {
     "id": 27,
-    "name": "strong_harming",
+    "key": "strong_harming",
+    "name": "harming",
     "effects": [
       {
         "effect": "instant_damage",
@@ -300,6 +328,7 @@
   },
   {
     "id": 28,
+    "key": "poison",
     "name": "poison",
     "effects": [
       {
@@ -311,7 +340,8 @@
   },
   {
     "id": 29,
-    "name": "long_poison",
+    "key": "long_poison",
+    "name": "poison",
     "effects": [
       {
         "effect": "poison",
@@ -322,7 +352,8 @@
   },
   {
     "id": 30,
-    "name": "strong_poison",
+    "key": "strong_poison",
+    "name": "poison",
     "effects": [
       {
         "effect": "poison",
@@ -333,6 +364,7 @@
   },
   {
     "id": 31,
+    "key": "regeneration",
     "name": "regeneration",
     "effects": [
       {
@@ -344,7 +376,8 @@
   },
   {
     "id": 32,
-    "name": "long_regeneration",
+    "key": "long_regeneration",
+    "name": "regeneration",
     "effects": [
       {
         "effect": "regeneration",
@@ -355,7 +388,8 @@
   },
   {
     "id": 33,
-    "name": "strong_regeneration",
+    "key": "strong_regeneration",
+    "name": "regeneration",
     "effects": [
       {
         "effect": "regeneration",
@@ -366,6 +400,7 @@
   },
   {
     "id": 34,
+    "key": "strength",
     "name": "strength",
     "effects": [
       {
@@ -377,7 +412,8 @@
   },
   {
     "id": 35,
-    "name": "long_strength",
+    "key": "long_strength",
+    "name": "strength",
     "effects": [
       {
         "effect": "strength",
@@ -388,7 +424,8 @@
   },
   {
     "id": 36,
-    "name": "strong_strength",
+    "key": "strong_strength",
+    "name": "strength",
     "effects": [
       {
         "effect": "strength",
@@ -399,6 +436,7 @@
   },
   {
     "id": 37,
+    "key": "weakness",
     "name": "weakness",
     "effects": [
       {
@@ -410,7 +448,8 @@
   },
   {
     "id": 38,
-    "name": "long_weakness",
+    "key": "long_weakness",
+    "name": "weakness",
     "effects": [
       {
         "effect": "weakness",
@@ -421,6 +460,7 @@
   },
   {
     "id": 39,
+    "key": "luck",
     "name": "luck",
     "effects": [
       {
@@ -432,6 +472,7 @@
   },
   {
     "id": 40,
+    "key": "slow_falling",
     "name": "slow_falling",
     "effects": [
       {
@@ -443,7 +484,8 @@
   },
   {
     "id": 41,
-    "name": "long_slow_falling",
+    "key": "long_slow_falling",
+    "name": "slow_falling",
     "effects": [
       {
         "effect": "slow_falling",
@@ -454,6 +496,7 @@
   },
   {
     "id": 42,
+    "key": "wind_charged",
     "name": "wind_charged",
     "effects": [
       {
@@ -465,6 +508,7 @@
   },
   {
     "id": 43,
+    "key": "weaving",
     "name": "weaving",
     "effects": [
       {
@@ -476,6 +520,7 @@
   },
   {
     "id": 44,
+    "key": "oozing",
     "name": "oozing",
     "effects": [
       {
@@ -487,6 +532,7 @@
   },
   {
     "id": 45,
+    "key": "infested",
     "name": "infested",
     "effects": [
       {

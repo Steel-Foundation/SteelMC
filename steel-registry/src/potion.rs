@@ -18,13 +18,19 @@ pub struct PotionEffect {
 #[derive(Debug)]
 pub struct Potion {
     pub key: Identifier,
+    /// Translation-key suffix used for item names.
+    pub name: &'static str,
     pub effects: &'static [PotionEffect],
 }
 
 impl Potion {
     #[must_use]
-    pub const fn new(key: Identifier, effects: &'static [PotionEffect]) -> Self {
-        Self { key, effects }
+    pub const fn new(
+        key: Identifier,
+        name: &'static str,
+        effects: &'static [PotionEffect],
+    ) -> Self {
+        Self { key, name, effects }
     }
 }
 
@@ -73,8 +79,10 @@ mod tests {
     use crate::test_support::init_test_registry;
     use crate::{REGISTRY, RegistryExt, TaggedRegistryExt, potion::Potion};
 
-    static FIRST_DUPLICATE: Potion = Potion::new(Identifier::vanilla_static("duplicate"), &[]);
-    static SECOND_DUPLICATE: Potion = Potion::new(Identifier::vanilla_static("duplicate"), &[]);
+    static FIRST_DUPLICATE: Potion =
+        Potion::new(Identifier::vanilla_static("duplicate"), "duplicate", &[]);
+    static SECOND_DUPLICATE: Potion =
+        Potion::new(Identifier::vanilla_static("duplicate"), "duplicate", &[]);
 
     #[test]
     fn extracted_potions_follow_vanilla_ids_and_effects() {
@@ -84,6 +92,11 @@ mod tests {
             REGISTRY.potions.by_id(0).map(|potion| &potion.key),
             Some(&Identifier::vanilla_static("water"))
         );
+        let long_swiftness = REGISTRY
+            .potions
+            .by_key(&Identifier::vanilla_static("long_swiftness"))
+            .expect("long swiftness should be registered");
+        assert_eq!(long_swiftness.name, "swiftness");
         let turtle_master = REGISTRY
             .potions
             .by_key(&Identifier::vanilla_static("turtle_master"))

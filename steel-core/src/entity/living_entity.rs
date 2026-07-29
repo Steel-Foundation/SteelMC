@@ -1113,7 +1113,39 @@ pub trait LivingEntity: Entity {
 
     /// Checks if the entity can be affected by potions.
     fn is_affected_by_potions(&self) -> bool {
+        !self.is_dead_or_dying()
+    }
+
+    /// Returns vanilla base `LivingEntity.canBeAffected` eligibility.
+    fn default_can_be_affected(&self, effect: &MobEffectInstance) -> bool {
+        if REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::IMMUNE_TO_INFESTED)
+        {
+            return effect.effect() != vanilla_mob_effects::INFESTED;
+        }
+        if REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::IMMUNE_TO_OOZING)
+        {
+            return effect.effect() != vanilla_mob_effects::OOZING;
+        }
+        if REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::IGNORES_POISON_AND_REGEN)
+        {
+            return effect.effect() != vanilla_mob_effects::REGENERATION
+                && effect.effect() != vanilla_mob_effects::POISON;
+        }
+
         true
+    }
+
+    /// Returns whether this entity accepts a mob-effect instance.
+    ///
+    /// Concrete entities override this for vanilla class-specific immunities.
+    fn can_be_affected(&self, effect: &MobEffectInstance) -> bool {
+        self.default_can_be_affected(effect)
     }
 
     /// Returns vanilla `LivingEntity.hasEffect()`.
@@ -1138,7 +1170,7 @@ pub trait LivingEntity: Entity {
 
     /// Adds or updates active vanilla mob-effect state.
     fn add_mob_effect(&self, effect: MobEffectInstance) -> bool {
-        if !self.is_affected_by_potions() {
+        if !self.can_be_affected(&effect) {
             return false;
         }
         self.living_base().add_mob_effect(effect)
@@ -1158,9 +1190,26 @@ pub trait LivingEntity: Entity {
         self.living_base().remove_mob_effect(effect)
     }
 
-    /// Ticks vanilla mob-effect durations.
+    /// Ticks vanilla server-side mob-effect behavior and durations.
     fn tick_mob_effects(&self) {
-        self.living_base().tick_mob_effects();
+        let world = self.level();
+        for effect in self.active_mob_effects() {
+            if !effect.has_remaining_duration() {
+                self.living_base().tick_mob_effect_duration(effect.effect());
+                continue;
+            }
+
+            if effect.should_apply_effect_tick_this_tick(self.tick_count())
+                && world
+                    .as_deref()
+                    .is_some_and(|world| !effect.apply_effect_tick(world, self))
+            {
+                self.remove_mob_effect(effect.effect());
+                continue;
+            }
+
+            self.living_base().tick_mob_effect_duration(effect.effect());
+        }
     }
 
     /// Returns whether vanilla effects keep this entity from drowning.
@@ -1490,7 +1539,6 @@ pub trait LivingEntity: Entity {
             equipment.get_ref(slot).copy_with_count(1)
         };
 
-        self.refresh_equipment_attribute_modifiers(slot);
         if let Some(sound) = self.equip_sound(slot, &equipped) {
             self.play_sound(sound, 1.0, 1.0);
         }
@@ -1509,11 +1557,52 @@ pub trait LivingEntity: Entity {
         });
     }
 
-    /// Refreshes transient item attribute modifiers for all equipment slots.
-    fn refresh_all_equipment_attribute_modifiers(&self) {
-        for slot in EquipmentSlot::ALL {
-            self.refresh_equipment_attribute_modifiers(slot);
+    /// Detects and applies Vanilla living-equipment changes once per tick.
+    fn detect_equipment_updates(&self) {
+        let mut changes = self.living_base().collect_equipment_changes();
+        if changes.is_empty() {
+            return;
         }
+
+        for (slot, _, current) in &changes {
+            self.living_base()
+                .refresh_equipment_attribute_modifiers(*slot, current);
+        }
+
+        let main_hand = changes
+            .iter()
+            .find(|(slot, _, _)| *slot == EquipmentSlot::MainHand);
+        let offhand = changes
+            .iter()
+            .find(|(slot, _, _)| *slot == EquipmentSlot::OffHand);
+        let hands_swapped = main_hand.zip(offhand).is_some_and(
+            |((_, previous_main, current_main), (_, previous_off, current_off))| {
+                ItemStack::matches(current_main, previous_off)
+                    && ItemStack::matches(current_off, previous_main)
+            },
+        );
+
+        if hands_swapped {
+            if let Some(world) = self.level() {
+                world.broadcast_to_entity_trackers(
+                    self.id(),
+                    CEntityEvent {
+                        entity_id: self.id(),
+                        event: EntityStatus::SwapHands,
+                    },
+                    None,
+                );
+            }
+            changes.retain(|(slot, _, _)| {
+                !matches!(slot, EquipmentSlot::MainHand | EquipmentSlot::OffHand)
+            });
+        }
+
+        self.living_base().queue_equipment_changes(
+            changes
+                .into_iter()
+                .map(|(slot, _, current)| (slot, current)),
+        );
     }
 
     /// Packs non-empty living equipment slots for initial spawn pairing.
@@ -1523,7 +1612,7 @@ pub trait LivingEntity: Entity {
 
     /// Drains dirty living equipment slots for tracker sync.
     fn drain_dirty_living_equipment(&self) -> Vec<EquipmentSlotItem> {
-        equipment_items_to_packet_items(self.living_base().equipment().lock().drain_dirty_items())
+        equipment_items_to_packet_items(self.living_base().drain_equipment_changes())
     }
 
     /// Returns whether equipment durability should be skipped for this entity.

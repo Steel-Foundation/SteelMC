@@ -5,7 +5,6 @@ use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
 };
-use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_fluids;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -51,14 +50,6 @@ impl BlockBehavior for WaterloggedTransparentBlock {
 
         state
     }
-
-    fn get_fluid_state(&self, state: BlockStateId) -> FluidState {
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
-            FluidState::new(&vanilla_fluids::WATER, 8, true)
-        } else {
-            FluidState::EMPTY
-        }
-    }
 }
 
 /// Vanilla `WeatheringCopperGrateBlock` behavior.
@@ -98,14 +89,6 @@ impl BlockBehavior for WeatheringCopperGrateBlock {
             .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
 
-    fn get_fluid_state(&self, state: BlockStateId) -> FluidState {
-        self.transparent.get_fluid_state(state)
-    }
-
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        self.weathering.is_randomly_ticking()
-    }
-
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.weathering.change_over_time(state, world, pos);
     }
@@ -120,12 +103,11 @@ mod tests {
     #[test]
     fn waterlogged_transparent_block_returns_falling_source_water() {
         init_test_registry();
-        let behavior = WaterloggedTransparentBlock::new(&vanilla_blocks::WAXED_COPPER_GRATE);
         let state = vanilla_blocks::WAXED_COPPER_GRATE
             .default_state()
             .set_value(&BlockStateProperties::WATERLOGGED, true);
 
-        let fluid = behavior.get_fluid_state(state);
+        let fluid = state.get_fluid_state();
 
         assert_eq!(fluid.fluid_id, &vanilla_fluids::WATER);
         assert!(fluid.is_source());

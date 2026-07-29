@@ -6,26 +6,15 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-# Internal crates
-steel-utils.workspace = true
-
-# Serialization
-serde.workspace = true
-serde_json.workspace = true
-
 # Error handling
 thiserror.workspace = true
 
 # Logging
 log.workspace = true
 
-# Networking
-reqwest.workspace = true
-
 # Cryptography
 rsa.workspace = true
 rand.workspace = true
-base64.workspace = true
 
 [lints]
 workspace = true

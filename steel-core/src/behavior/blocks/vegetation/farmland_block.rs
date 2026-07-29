@@ -15,7 +15,7 @@ use crate::behavior::block::{
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::world::World;
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 
 /// Maximum moisture level for farmland.
 const MAX_MOISTURE: u8 = 7;
@@ -127,11 +127,6 @@ impl BlockBehavior for FarmlandBlock {
                 .default_state()
                 .set_value(&BlockStateProperties::MOISTURE, 0u8),
         )
-    }
-
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        // Farmland always needs random ticks to manage moisture
-        true
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

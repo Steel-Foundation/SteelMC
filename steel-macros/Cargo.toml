@@ -10,7 +10,7 @@ proc-macro = true
 
 [dependencies]
 # Proc macros
-syn.workspace = true
+syn = { workspace = true, features = ["full"] }
 quote.workspace = true
 proc-macro2.workspace = true
 

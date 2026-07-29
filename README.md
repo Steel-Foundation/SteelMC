@@ -1,62 +1,147 @@
-[![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=plastic&logo=rust&logoColor=white)](https://www.youtube.com/watch?v=cE0wfjsybIQ&t=73s)
-[![License](https://img.shields.io/github/license/Steel-Foundation/SteelMC?style=social)](https://github.com/Steel-Foundation/SteelMC/blob/master/LICENSE)
-[![SteelMC](https://dcbadge.limes.pink/api/server/MwChEHnAbh?style=social)](https://discord.gg/MwChEHnAbh)
-[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Steel-Foundation/SteelMC)
-![Tests](https://github.com/Steel-Foundation/SteelMC/actions/workflows/test.yml/badge.svg)
-![Lint](https://github.com/Steel-Foundation/SteelMC/actions/workflows/lint.yml/badge.svg)
-![Build](https://github.com/Steel-Foundation/SteelMC/actions/workflows/release.yml/badge.svg)
+<p align="center">
+  <img src=".github/assets/readme/steel-logo.png" alt="SteelMC logo" width="192">
+</p>
 
+<h1 align="center">SteelMC</h1>
 
+<p align="center">
+  A Minecraft Java Edition server written in Rust.
+</p>
 
-<div align="center">
+<p align="center">
+  <a href="https://github.com/Steel-Foundation/SteelMC/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Steel-Foundation/SteelMC?display_name=tag&sort=semver&style=flat-square"></a>
+  <a href="https://github.com/Steel-Foundation/SteelMC/actions/workflows/test.yml"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/Steel-Foundation/SteelMC/test.yml?branch=master&label=tests&style=flat-square"></a>
+  <a href="https://github.com/Steel-Foundation/SteelMC/actions/workflows/lint.yml"><img alt="Lint" src="https://img.shields.io/github/actions/workflow/status/Steel-Foundation/SteelMC/lint.yml?branch=master&label=lint&style=flat-square"></a>
+  <a href="LICENSE"><img alt="AGPL-3.0-or-later license" src="https://img.shields.io/github/license/Steel-Foundation/SteelMC?style=flat-square"></a>
+</p>
 
-# Steel
+<p align="center">
+  <a href="https://steelmc.dev/">Website</a> ·
+  <a href="https://steelmc.dev/getting-started/introduction/">Documentation</a> ·
+  <a href="https://steelmc.dev/tracker">Implementation tracker</a> ·
+  <a href="https://steelmc.dev/discord">Discord</a>
+</p>
 
-![Logo](https://i.imgur.com/lFQ6jH2.png)
-
-Steel is a lightweight Rust implementation of the Minecraft server.
-It focuses on clean code, performance, extensibility, and ease of use.
-
-<img width="800" height="450" alt="showcase" src="https://github.com/user-attachments/assets/5b423815-3623-4d9d-868e-e6d93aad0b14" />
-
-
-</div>
-
----
-
-## 🔗 Links
-<div align="center">
-
-[Discord](https://discord.gg/MwChEHnAbh) | [GitCraft](https://github.com/WinPlay02/GitCraft)
-</div>
-
----
-
-## ⚙ How to Contribute
-
-1. Identify a feature you'd like to add or an issue to work on.
-   You should always create a post in the channel [feature-discussion](https://canary.discord.com/channels/1428487339759370322/1429074039015473272) when considering adding a major feature.
-2. Decompile Minecraft 26.1 by running the provided script:
-   ```bash
-   ./update-minecraft-src.sh
-   ```
-   This will clone GitCraft and generate the decompiled source in `minecraft-src/`.
-3. Fork the `master` branch of this repository.
-4. Examine the vanilla implementation and translate it into idiomatic Rust as cleanly and efficiently as possible.
-5. Commit your changes to your fork and open a pull request.
-
-> [!NOTE]
-> It is highly recommended to join the [Discord server](https://discord.gg/MwChEHnAbh) and reach out to [4lve](https://github.com/4lve) if you have code-related questions or encounter any ambiguities.
+![A sunset over a SteelMC-generated world, with forests, rivers, mountains, and a lit village](.github/assets/readme/sunset.webp)
 
 > [!IMPORTANT]
-> This project is still in a very early stage of development.
+> SteelMC is still pre-alpha. You can connect and explore generated worlds, but
+> survival gameplay is incomplete and many vanilla systems are still missing. Do not
+> replace your production server with it yet.
 
-### Precommit Hook
-This repository uses [prek](https://prek.j178.dev/) to ensure that all commits follow the style guide and makes sure the cicd will pass.
-To install the hook, some things needed to be installed first:
+## What is SteelMC?
+
+SteelMC is an independent implementation of the Minecraft Java Edition server. It
+tracks the latest Java Edition release and currently targets **Minecraft 26.2**.
+
+The goal is to match vanilla behavior while making better use of modern multicore
+hardware. Gameplay updates remain synchronous, while chunk generation, lighting,
+packet processing, and chunk sending can run outside the main tick.
+
+## World generation
+
+World generation is currently the most complete part of SteelMC. Its parity suite
+compares 7,500 randomly selected chunks with a reproducible vanilla reference: 2,500
+in each dimension. All tested chunks match block for block. Entity spawning is not
+included because most entity behavior has not been implemented yet.
+
+In a focused benchmark on a Ryzen 9 9950X, SteelMC generated a fresh
+10,201-chunk Overworld area in a median of 3.98 seconds. Results vary with hardware,
+and this benchmark does not represent every server workload.
+
+Read [Introducing SteelMC](https://steelmc.dev/blog/announcement/) for the design
+story, parity methodology, benchmark context, and limitations. Full results and
+reproduction instructions are available on the
+[benchmark page](https://steelmc.dev/reference/benchmarks/).
+
+## Current status
+
+Today, clients can join a persistent multiplayer world, move and interact, use
+inventories and commands, and return later to saved chunks. SteelMC currently
+provides:
+
+- Java Edition networking, authentication, encryption, and compression
+- Persistent chunk generation, loading, saving, and lighting
+- Player movement, collision, block interaction, and inventories
+- Commands, permissions, chat, and server configuration
+- Early entity, block entity, and gameplay behavior implementations
+
+SteelMC is not ready to replace an established server:
+
+- Survival gameplay is incomplete.
+- Only a small number of entities have meaningful behavior.
+- Full vanilla and protocol parity have not been reached.
+- Plugins are not available yet.
+- Paper, Bukkit, Fabric, Forge, and NeoForge extensions are not compatible.
+
+Follow the [implementation tracker](https://steelmc.dev/tracker) for a more detailed
+view of what is available today.
+
+## Try it
+
+Pre-built releases, Docker images, and source-build instructions are available in
+the [installation guide](https://steelmc.dev/getting-started/installation/).
+
+Expect bugs and incomplete mechanics. If you try SteelMC, please share what you find
+on [Discord](https://steelmc.dev/discord) or open a
+[GitHub issue](https://github.com/Steel-Foundation/SteelMC/issues).
+
+## Contributing
+
+Contributions are welcome. Most changes begin by reading the vanilla source,
+understanding the behavior it implements, and deciding how to express that behavior
+cleanly in Rust.
+
+Before you start:
+
+1. Check existing issues and pull requests, then discuss substantial changes with
+   the community.
+2. Read the [contributor guide](https://steelmc.dev/development/start-contributing/)
+   and [code standards](https://steelmc.dev/development/code-standard/).
+3. Generate the targeted vanilla source with `./update-minecraft-src.sh` and verify
+   behavior against it.
+4. Run the relevant tests and checks before opening a pull request.
+
+The repository uses a pinned nightly Rust toolchain. The common validation commands
+are:
+
 ```bash
-cargo install prek typos-cli --locked
+cargo test
+cargo fmt --all --check
+cargo clippy -r --all-targets --all-features
+typos
 ```
 
-Then you can run `prek install` to install the hook and it is configured to run automatically before every commit.
-It will fix some things already for you, but the commit will still fail and please check the changes.
+Generated documentation for SteelMC's Rust crates is available in the
+[Rust API reference](https://rustdoc.steelmc.dev/steel_core/index.html).
+
+AI may be used as a tool, but contributors must understand and be able to explain
+every line they submit. Fully autonomous pull requests are not accepted.
+
+## Community
+
+The [SteelMC Discord](https://steelmc.dev/discord) is where we discuss designs,
+coordinate work, share progress, and answer questions. Longer project updates are
+published on the [SteelMC website](https://steelmc.dev/).
+
+## License
+
+SteelMC is free software licensed under the
+[GNU Affero General Public License v3.0 or later](LICENSE).
+
+The SteelMC logo was designed by **colonthreeing**.
+
+## Acknowledgements
+
+SteelMC's world generation, lighting, and other performance work has drawn ideas from
+[C2ME](https://github.com/RelativityMC/C2ME-fabric),
+[ScalableLux](https://github.com/RelativityMC/ScalableLux),
+[FastNoise](https://codeberg.org/ZenXArch/FastNoise),
+[Lithium](https://github.com/CaffeineMC/lithium), and
+[Structure Layout Optimizer](https://github.com/TelepathicGrunt/StructureLayoutOptimizer).
+
+## Top contributors
+
+<a href="https://github.com/Steel-Foundation/SteelMC/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Steel-Foundation/SteelMC" alt="SteelMC contributors">
+</a>

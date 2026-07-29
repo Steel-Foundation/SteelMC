@@ -41,6 +41,13 @@
           "maximum": 128,
           "default": 10
         },
+        "max_chained_neighbor_updates": {
+          "type": "integer",
+          "description": "Maximum queued neighbor-update tasks in one chained run. Negative values disable the limit.",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "default": 1000000
+        },
         "online_mode": {
           "type": "boolean",
           "description": "Whether to use Mojang's authentication service",

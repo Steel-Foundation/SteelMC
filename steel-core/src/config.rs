@@ -54,6 +54,8 @@ pub struct RuntimeConfig {
     pub view_distance: u8,
     /// The simulation distance of the server.
     pub simulation_distance: u8,
+    /// Maximum queued neighbor-update tasks in one chained run; negative means unlimited.
+    pub max_chained_neighbor_updates: i32,
     /// Whether the server is in online mode.
     pub online_mode: bool,
     /// Optional authentication endpoint for online-mode `hasJoined` checks.
