@@ -35,7 +35,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("setblock").then(
         argument("pos", SteelArgumentType::block_pos()).then(
-            argument("block", SteelArgumentType::block_predicate())
+            argument("block", SteelArgumentType::block_state())
                 .executes(set_block_replace)
                 .then(literal("destroy").executes(set_block_destroy))
                 .then(literal("keep").executes(set_block_keep))
@@ -86,7 +86,9 @@ fn set_block(
     let block_state = match block_predicate {
         BlockPredicate::Block {
             // TODO: use nbt with container for example
-            block, properties, ..
+            block,
+            properties,
+            ..
         } => {
             // Adapt properties for the next function
             let properties_vec: Vec<(&str, &str)> = properties
@@ -130,6 +132,7 @@ fn set_block(
     } else {
         256
     };
+    let old_state = level.get_block_state(block_pos);
     if place_needed
         && !level.set_block(
             block_pos,
@@ -141,8 +144,7 @@ fn set_block(
     }
 
     if !matches!(mode, SetBlockMode::Strict) {
-        /// TODO: use vanilla "updateNeighboursOnBlockSet"
-        level.update_neighbors_at(block_pos, block_state.get_block());
+        level.update_neighbour_on_block_set(block_pos, old_state);
     }
 
     context.source().send_success(
