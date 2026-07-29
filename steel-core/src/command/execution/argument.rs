@@ -1,23 +1,5 @@
 use std::{fmt, sync::Arc};
 
-use crate::command::brigadier::{
-    ArgumentSuggestionContext, ArgumentType, CommandArgumentParser, CommandSyntaxError,
-    CommandSyntaxErrorKind, ContainsPrimitiveArgumentValue, PrimitiveArgumentValue, StringReader,
-    SuggestionsBuilder,
-};
-use glam::DVec3;
-use steel_protocol::packets::game::{
-    ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
-};
-use steel_registry::{enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack, timeline::TimelineRef, world_clock::WorldClockRef, RegistryExt as _, BLOCKS_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY};
-use steel_utils::{
-    Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
-    nbt::{NbtPath, parse_snbt_argument},
-    translations,
-    types::GameType,
-};
-use text_components::TextComponent;
-use steel_registry::blocks::BlockRef;
 use super::{
     BiomeOrTag, BlockPredicate, CommandArgumentSource, Coordinates, IntRange, ItemPredicate,
     ScoreHolderArgument, StructureOrTagKey, WorldArgument,
@@ -36,8 +18,31 @@ use super::{
     world::{parse_world_argument, suggest_worlds},
 };
 use crate::chunk::heightmap::HeightmapType;
+use crate::command::brigadier::{
+    ArgumentSuggestionContext, ArgumentType, CommandArgumentParser, CommandSyntaxError,
+    CommandSyntaxErrorKind, ContainsPrimitiveArgumentValue, PrimitiveArgumentValue, StringReader,
+    SuggestionsBuilder,
+};
 use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
+use glam::DVec3;
+use steel_protocol::packets::game::{
+    ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
+};
+use steel_registry::blocks::BlockRef;
+use steel_registry::{
+    BLOCKS_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _,
+    TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY, enchantment::EnchantmentRef,
+    entity_type::EntityTypeRef, item_stack::ItemStack, timeline::TimelineRef,
+    world_clock::WorldClockRef,
+};
+use steel_utils::{
+    Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
+    nbt::{NbtPath, parse_snbt_argument},
+    translations,
+    types::GameType,
+};
+use text_components::TextComponent;
 
 /// Axes selected by vanilla's coordinate swizzle argument.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -517,10 +522,7 @@ argument_value_wrapper!(
     "steel:command/value/world_clock"
 );
 argument_value_wrapper!(TimelineValue(TimelineRef), "steel:command/value/timeline");
-argument_value_wrapper!(
-    BlockValue(BlockRef),
-    "steel:command/value/block"
-);
+argument_value_wrapper!(BlockValue(BlockRef), "steel:command/value/block");
 
 macro_rules! unit_argument_parser {
     (
@@ -925,13 +927,7 @@ unit_argument_parser!(
     },
     suggest | _context,
     builder | {
-        suggest_resources(
-            REGISTRY
-                .blocks
-                .iter()
-                .map(|(_, block)| &block.key),
-            builder,
-        );
+        suggest_resources(REGISTRY.blocks.iter().map(|(_, block)| &block.key), builder);
     },
     protocol(
         ProtocolArgumentType::Resource {
