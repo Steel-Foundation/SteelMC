@@ -130,7 +130,7 @@ mod tests {
     use steel_utils::serial::{ReadFrom, WriteTo};
 
     static UNREGISTERED_STAT_TYPE: StatType<ItemRegistry> =
-        StatType::new(Identifier::new_static("test", "unregistered"), None);
+        StatType::new(Identifier::new_static("test", "unregistered"));
 
     #[test]
     fn network_encode_and_decode_stat() {

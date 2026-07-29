@@ -5,7 +5,6 @@ use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 use std::sync::{LazyLock, OnceLock};
 use steel_utils::{Downcast, DowncastType, DowncastTypeKey, ErasedType, Identifier};
-use text_components::TextComponent;
 
 /// Behavior required for a registry so that the values stored in that registry
 /// can be used for identifying a particular stat.
@@ -60,7 +59,6 @@ where
 pub struct StatType<R: RegistryExt> {
     /// The identifier that identifies this stat type uniquely.
     pub key: Identifier,
-    pub display_name: Option<TextComponent>,
 
     stat_type_entry_ref: OnceLock<StatTypeEntryRef>,
     _phantom: PhantomData<R>,
@@ -71,10 +69,9 @@ where
     R::Entry: StatValueRegistryEntry,
 {
     /// Creates a new [`StatType`] from a key and its display name.
-    pub(crate) const fn new(key: Identifier, display_name: Option<TextComponent>) -> Self {
+    pub(crate) const fn new(key: Identifier) -> Self {
         Self {
             key,
-            display_name,
             stat_type_entry_ref: OnceLock::new(),
             _phantom: PhantomData,
         }
@@ -84,12 +81,6 @@ where
     #[must_use]
     pub const fn key(&self) -> &Identifier {
         &self.key
-    }
-
-    /// Returns the display name of this stat type.
-    #[must_use]
-    pub const fn display_name(&self) -> Option<&TextComponent> {
-        self.display_name.as_ref()
     }
 
     /// Gets the reference to the entry corresponding to their stat type.
@@ -116,8 +107,6 @@ where
 pub type StatTypeRef<R> = &'static StatType<R>;
 
 /// A type-erased registry whose values can be used for identifying a particular stat.
-/// Internally, the registry is stored in a [`LazyLock`] so that the reference
-/// to the registry is only loaded after it has initialized.
 ///
 /// Registries retain their concrete Rust type and can be recovered with [`Self::downcast_ref`].
 #[derive(Copy, Clone)]
@@ -147,12 +136,12 @@ impl StatValueRegistryData {
 
 /// An entry stored in the stat type registry. It contains the registry responsible
 /// for the encoding and decoding of the stat identity involved.
+///
+/// Internally, the registry is stored in a [`LazyLock`], so that the reference
+/// to the registry is only loaded after it has initialized.
 pub struct StatTypeEntry {
     /// The identifier of this stat type.
     pub key: Identifier,
-
-    /// The display name of this stat type.
-    pub display_name: Option<TextComponent>,
 
     /// The registry that can encode and decode the stat identity involved in this stat type.
     registry:
@@ -221,7 +210,6 @@ impl StatTypeRegistry {
 
         let entry = StatTypeEntry {
             key: stat_type.key.clone(),
-            display_name: stat_type.display_name.clone(),
             registry: LazyLock::new(Box::new(|| StatValueRegistryData::new(registry_supplier()))),
         };
 

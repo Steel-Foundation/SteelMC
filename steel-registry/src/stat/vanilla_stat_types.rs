@@ -6,43 +6,28 @@ use crate::entity_type::EntityTypeRegistry;
 use crate::items::ItemRegistry;
 use crate::stat::custom::CustomStatRegistry;
 use crate::stat::registry::{StatType, StatTypeRegistry};
-use steel_utils::{Identifier, translations};
-use text_components::TextComponent;
+use steel_utils::Identifier;
 
-/// Creates a Vanilla stat type from its given name. This name is used for its identifier and
-/// display name.
-macro_rules! vanilla_stat_type {
-    ($name: literal) => {
-        StatType::new(Identifier::vanilla_static($name), None)
-    };
-    ($name: literal, $translation_name: ident) => {
-        StatType::new(
-            Identifier::vanilla_static($name),
-            Some(TextComponent::translated(
-                translations::$translation_name.msg(),
-            )),
-        )
-    };
-}
-
-// Only the block and item stat types have an actual zero-argument translation for their names.
 pub static BLOCK_MINED: StatType<BlockRegistry> =
-    vanilla_stat_type!("mined", STAT_TYPE_MINECRAFT_BROKEN);
+    StatType::new(Identifier::vanilla_static("mined"));
 
 pub static ITEM_CRAFTED: StatType<ItemRegistry> =
-    vanilla_stat_type!("crafted", STAT_TYPE_MINECRAFT_CRAFTED);
-pub static ITEM_USED: StatType<ItemRegistry> = vanilla_stat_type!("used", STAT_TYPE_MINECRAFT_USED);
+    StatType::new(Identifier::vanilla_static("crafted"));
+pub static ITEM_USED: StatType<ItemRegistry> = StatType::new(Identifier::vanilla_static("used"));
 pub static ITEM_BROKEN: StatType<ItemRegistry> =
-    vanilla_stat_type!("broken", STAT_TYPE_MINECRAFT_BROKEN);
+    StatType::new(Identifier::vanilla_static("broken"));
 pub static ITEM_PICKED_UP: StatType<ItemRegistry> =
-    vanilla_stat_type!("picked_up", STAT_TYPE_MINECRAFT_PICKED_UP);
+    StatType::new(Identifier::vanilla_static("picked_up"));
 pub static ITEM_DROPPED: StatType<ItemRegistry> =
-    vanilla_stat_type!("dropped", STAT_TYPE_MINECRAFT_DROPPED);
+    StatType::new(Identifier::vanilla_static("dropped"));
 
-pub static ENTITY_KILLED: StatType<EntityTypeRegistry> = vanilla_stat_type!("killed");
-pub static ENTITY_KILLED_BY: StatType<EntityTypeRegistry> = vanilla_stat_type!("killed_by");
+pub static ENTITY_KILLED: StatType<EntityTypeRegistry> =
+    StatType::new(Identifier::vanilla_static("killed"));
+pub static ENTITY_KILLED_BY: StatType<EntityTypeRegistry> =
+    StatType::new(Identifier::vanilla_static("killed_by"));
 
-pub static CUSTOM: StatType<CustomStatRegistry> = vanilla_stat_type!("custom");
+pub static CUSTOM: StatType<CustomStatRegistry> =
+    StatType::new(Identifier::vanilla_static("custom"));
 
 /// Registers all vanilla stat types.
 ///

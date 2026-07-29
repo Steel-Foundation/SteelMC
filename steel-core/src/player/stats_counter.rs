@@ -10,10 +10,10 @@ use steel_registry::stat::{Stat, StatTypeRef, vanilla_stat_types};
 pub struct StatsCounter {
     /// The map of values stored in the counters for each stat that is
     /// currently being tracked.
-    stats: FxHashMap<Stat, i32>,
+    pub(super) stats: FxHashMap<Stat, i32>,
 
     /// Stats that have been modified which haven't been updated to the client yet.
-    dirty: FxHashSet<Stat>,
+    pub(super) dirty: FxHashSet<Stat>,
 }
 
 impl StatsCounter {
@@ -62,6 +62,11 @@ impl StatsCounter {
             dirty.push((stat, count));
         }
         dirty
+    }
+
+    /// Returns the number of stats currently being tracked for this player.
+    pub fn len(&self) -> usize {
+        self.stats.len()
     }
 }
 
