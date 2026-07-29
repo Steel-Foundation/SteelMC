@@ -19,23 +19,6 @@ impl World {
             .with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos))
             .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
     }
-    ///Vanilla equivalent: `level.getBrightness()`
-    pub fn light_value_at(&self, layer: LightLayer, pos: BlockPos) -> u8 {
-        if layer == LightLayer::Sky && !self.dimension_type.has_skylight {
-            return 0;
-        }
-        if !self.is_in_valid_bounds_horizontal(pos) {
-            return self.default_light_value(layer);
-        }
-
-        let chunk_pos = Self::chunk_pos_for_block(pos);
-        self.chunk_map
-            .with_chunk_at_status(chunk_pos, ChunkStatus::Light, |chunk| {
-                let light = chunk.light();
-                light.get_light_value(layer, pos)
-            })
-            .unwrap_or_else(|| self.default_light_value(layer))
-    }
 
     ///Vanilla equivalent: `level.getBrightness()`
     pub fn light_value_at(&self, layer: LightLayer, pos: BlockPos) -> u8 {
