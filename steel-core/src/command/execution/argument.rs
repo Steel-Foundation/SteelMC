@@ -9,11 +9,7 @@ use glam::DVec3;
 use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
-use steel_registry::{
-    ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY,
-    WORLD_CLOCK_REGISTRY, enchantment::EnchantmentRef, entity_type::EntityTypeRef,
-    item_stack::ItemStack, timeline::TimelineRef, world_clock::WorldClockRef,
-};
+use steel_registry::{enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack, timeline::TimelineRef, world_clock::WorldClockRef, RegistryExt as _, BLOCKS_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY};
 use steel_utils::{
     Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
     nbt::{NbtPath, parse_snbt_argument},
@@ -21,7 +17,7 @@ use steel_utils::{
     types::GameType,
 };
 use text_components::TextComponent;
-
+use steel_registry::blocks::BlockRef;
 use super::{
     BiomeOrTag, BlockPredicate, CommandArgumentSource, Coordinates, IntRange, ItemPredicate,
     ScoreHolderArgument, StructureOrTagKey, WorldArgument,
@@ -167,6 +163,10 @@ impl SteelArgumentType {
 
     pub(crate) fn block_pos() -> Self {
         Self::new(BlockPosParser)
+    }
+
+    pub(crate) fn block() -> Self {
+        Self::new(BlockParser)
     }
 
     pub(crate) fn vec3(center_integers: bool) -> Self {
@@ -517,6 +517,10 @@ argument_value_wrapper!(
     "steel:command/value/world_clock"
 );
 argument_value_wrapper!(TimelineValue(TimelineRef), "steel:command/value/timeline");
+argument_value_wrapper!(
+    BlockValue(BlockRef),
+    "steel:command/value/block"
+);
 
 macro_rules! unit_argument_parser {
     (
@@ -905,6 +909,35 @@ unit_argument_parser!(
     protocol(
         ProtocolArgumentType::Dimension,
         Some(ProtocolSuggestionType::AskServer),
+    )
+);
+unit_argument_parser!(
+    BlockParser,
+    "steel:command/parser/block",
+    BlockValue,
+    parse | reader,
+    _source | {
+        let key = parse_identifier(reader)?;
+        REGISTRY.blocks.by_key(&key).map_or_else(
+            || Err(unknown_resource(reader, &key, &BLOCKS_REGISTRY)),
+            |enchantment| Ok(BlockValue(enchantment)),
+        )
+    },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY
+                .blocks
+                .iter()
+                .map(|(_, block)| &block.key),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::Resource {
+            identifier: "minecraft:block",
+        },
+        None,
     )
 );
 unit_argument_parser!(
