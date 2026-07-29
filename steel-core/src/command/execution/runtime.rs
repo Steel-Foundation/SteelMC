@@ -12,12 +12,13 @@ use crate::command::brigadier::{
     CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
     ContextChain,
 };
-use steel_registry::blocks::BlockRef;
 use steel_registry::{
     enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
     timeline::TimelineRef, world_clock::WorldClockRef,
 };
-use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::GameType};
+use steel_utils::{
+    BlockStateId, DowncastType, Identifier, nbt::NbtPath, translations, types::GameType,
+};
 use text_components::TextComponent;
 
 use super::{
@@ -32,7 +33,7 @@ use super::{
     },
     selector::EntitySelector,
 };
-use crate::command::execution::argument::BlockValue;
+use crate::command::execution::argument::BlockStateValue;
 use crate::{
     chunk::heightmap::HeightmapType,
     entity::{EntityAnchor, SharedEntity},
@@ -278,9 +279,9 @@ where
         self.typed_argument(name)
     }
 
-    pub(crate) fn block(&self, name: &str) -> Option<&BlockRef> {
-        self.typed_argument::<BlockValue>(name)
-            .map(|value| &value.0)
+    pub(crate) fn block_state(&self, name: &str) -> Option<BlockStateId> {
+        self.typed_argument::<BlockStateValue>(name)
+            .map(|value| value.0)
     }
 
     /// Returns a configured Steel domain name.

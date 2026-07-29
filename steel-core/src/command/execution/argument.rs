@@ -4,7 +4,7 @@ use super::{
     BiomeOrTag, BlockPredicate, CommandArgumentSource, Coordinates, IntRange, ItemPredicate,
     ScoreHolderArgument, StructureOrTagKey, WorldArgument,
     biome::{parse_biome_or_tag, suggest_biomes},
-    block::{parse_block_predicate, suggest_blocks},
+    block::{parse_block_predicate, parse_block_state, suggest_blocks},
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
@@ -29,15 +29,13 @@ use glam::DVec3;
 use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
-use steel_registry::blocks::BlockRef;
 use steel_registry::{
-    BLOCKS_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _,
-    TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY, enchantment::EnchantmentRef,
-    entity_type::EntityTypeRef, item_stack::ItemStack, timeline::TimelineRef,
-    world_clock::WorldClockRef,
+    ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY,
+    WORLD_CLOCK_REGISTRY, enchantment::EnchantmentRef, entity_type::EntityTypeRef,
+    item_stack::ItemStack, timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::{
-    Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
+    BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
     nbt::{NbtPath, parse_snbt_argument},
     translations,
     types::GameType,
@@ -170,8 +168,8 @@ impl SteelArgumentType {
         Self::new(BlockPosParser)
     }
 
-    pub(crate) fn block() -> Self {
-        Self::new(BlockParser)
+    pub(crate) fn block_state() -> Self {
+        Self::new(BlockStateParser)
     }
 
     pub(crate) fn vec3(center_integers: bool) -> Self {
@@ -522,7 +520,10 @@ argument_value_wrapper!(
     "steel:command/value/world_clock"
 );
 argument_value_wrapper!(TimelineValue(TimelineRef), "steel:command/value/timeline");
-argument_value_wrapper!(BlockValue(BlockRef), "steel:command/value/block");
+argument_value_wrapper!(
+    BlockStateValue(BlockStateId),
+    "steel:command/value/block_state"
+);
 
 macro_rules! unit_argument_parser {
     (
@@ -914,27 +915,14 @@ unit_argument_parser!(
     )
 );
 unit_argument_parser!(
-    BlockParser,
-    "steel:command/parser/block",
-    BlockValue,
+    BlockStateParser,
+    "steel:command/parser/block_state",
+    BlockStateValue,
     parse | reader,
-    _source | {
-        let key = parse_identifier(reader)?;
-        REGISTRY.blocks.by_key(&key).map_or_else(
-            || Err(unknown_resource(reader, &key, &BLOCKS_REGISTRY)),
-            |enchantment| Ok(BlockValue(enchantment)),
-        )
-    },
+    _source | { parse_block_state(reader) },
     suggest | _context,
-    builder | {
-        suggest_resources(REGISTRY.blocks.iter().map(|(_, block)| &block.key), builder);
-    },
-    protocol(
-        ProtocolArgumentType::Resource {
-            identifier: "minecraft:block",
-        },
-        None,
-    )
+    _builder | {},
+    protocol(ProtocolArgumentType::BlockState, None)
 );
 unit_argument_parser!(
     SummonableEntityParser,

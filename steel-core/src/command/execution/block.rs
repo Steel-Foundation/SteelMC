@@ -1,16 +1,15 @@
 //! Block-state and block-entity predicates used by commands.
 
+use super::argument::{BlockStateValue, matches_substring, parse_identifier, unknown_resource};
+use crate::command::brigadier::{
+    CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder,
+};
 use simdnbt::owned::NbtCompound;
 use steel_registry::{
     BLOCKS_REGISTRY, REGISTRY, RegistryExt as _, TaggedRegistryExt as _, blocks::BlockRef,
 };
 use steel_utils::{BlockStateId, Identifier, nbt::parse_snbt_compound_argument};
 use text_components::TextComponent;
-
-use super::argument::{matches_substring, parse_identifier, unknown_resource};
-use crate::command::brigadier::{
-    CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder,
-};
 
 type BlockProperties = Vec<(Box<str>, Box<str>)>;
 
@@ -101,6 +100,38 @@ fn parse_concrete_block_predicate(
     })
 }
 
+pub(super) fn parse_block_state(
+    reader: &mut StringReader<'_>,
+) -> Result<BlockStateValue, CommandSyntaxError> {
+    // Parse command
+    let key = parse_identifier(reader)?;
+    let Some(block) = REGISTRY.blocks.by_key(&key) else {
+        return Err(unknown_resource(reader, &key, &BLOCKS_REGISTRY));
+    };
+    let properties = if reader.peek() == Some('[') {
+        parse_properties(reader, Some(block))?
+    } else {
+        Vec::new()
+    };
+
+    // Adapt properties for the next function
+    let properties_vec: Vec<(&str, &str)> = properties
+        .iter()
+        .map(|(name, value)| (name.as_ref(), value.as_ref()))
+        .collect();
+
+    // Get the block state id
+    let Some(block_state_id) = REGISTRY
+        .blocks
+        .state_id_from_block_properties(block, &properties_vec)
+    else {
+        return Err(CommandSyntaxError::dynamic(
+            "This Block is not registered or a property name/value is invalid.",
+        ));
+    };
+
+    Ok(BlockStateValue(block_state_id))
+}
 fn parse_tag_predicate(
     reader: &mut StringReader<'_>,
 ) -> Result<BlockPredicate, CommandSyntaxError> {
