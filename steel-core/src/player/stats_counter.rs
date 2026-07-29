@@ -1,7 +1,9 @@
 use crate::player::Player;
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_protocol::packets::game::CAwardStats;
-use steel_registry::stat::Stat;
+use steel_registry::RegistryExt;
+use steel_registry::stat::custom::CustomStatRef;
+use steel_registry::stat::{Stat, StatType, vanilla_stat_types};
 
 /// Manages the counters for every statistic for a particular player.
 /// Analogous to Vanilla's `ServerStatsCounter.java`.
@@ -70,14 +72,49 @@ impl Default for StatsCounter {
 }
 
 impl Player {
+    /// Awards one count of a particular stat to this player.
+    pub fn award_stat<R: RegistryExt>(&self, stat_type: StatType<R>, value: &'static R::Entry)
+    where
+        R::Entry: Send + Sync,
+    {
+        self.award_erased_stat(stat_type.get(value));
+    }
+
     /// Awards a given amount of a particular stat to this player.
-    pub fn award_stat(&self, stat: Stat, count: i32) {
+    pub fn award_stat_with_count<R: RegistryExt>(
+        &self,
+        stat_type: StatType<R>,
+        value: &'static R::Entry,
+        count: i32,
+    ) where
+        R::Entry: Send + Sync,
+    {
+        self.award_erased_stat_with_count(stat_type.get(value), count);
+    }
+
+    /// Awards a given amount of a custom stat to this player.
+    pub fn award_custom_stat(&self, stat: CustomStatRef) {
+        self.award_stat(vanilla_stat_types::CUSTOM, stat);
+    }
+
+    /// Awards a given amount of a custom stat to this player.
+    pub fn award_custom_stat_with_count(&self, stat: CustomStatRef, count: i32) {
+        self.award_stat_with_count(vanilla_stat_types::CUSTOM, stat, count);
+    }
+
+    /// Awards one count of a particular stat to this player.
+    pub(crate) fn award_erased_stat(&self, stat: Stat) {
+        self.award_erased_stat_with_count(stat, 1);
+    }
+
+    /// Awards a given amount of a particular stat to this player.
+    pub(crate) fn award_erased_stat_with_count(&self, stat: Stat, count: i32) {
         self.stats.lock().increment(stat, count);
         // TODO: Add score to the objectives having the criterion of this stat for the player.
     }
 
-    /// Clears the counter of a stat from this player by setting it to zero.
-    pub fn clear_stat(&self, stat: Stat) {
+    /// Resets the counter of a stat from this player to zero.
+    pub fn reset_stat(&self, stat: Stat) {
         self.stats.lock().set(stat, 0);
         // TODO: Reset score of the objectives having the criterion of this stat for the player.
     }

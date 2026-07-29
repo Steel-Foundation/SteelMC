@@ -1,5 +1,5 @@
-use crate::RegistryExt;
 use crate::stat::Stat;
+use crate::{RegistryEntry, RegistryExt};
 use rustc_hash::FxHashMap;
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
@@ -9,16 +9,49 @@ use text_components::TextComponent;
 
 /// Behavior required for a registry so that the values stored in that registry
 /// can be used for identifying a particular stat.
-pub trait StatKeyRegistry: ErasedType + Send + Sync + 'static {
+pub trait StatValueRegistry: ErasedType + Send + Sync + 'static {
     fn len(&self) -> usize;
+    fn key_from_id(&self, id: usize) -> Option<&'static Identifier>;
+    fn value_from_id(&self, id: usize) -> Option<&'static dyn StatValueRegistryEntry>;
 }
 
-impl<E, R> StatKeyRegistry for R
+impl<R> StatValueRegistry for R
 where
-    R: RegistryExt<Entry = E> + ErasedType + Send + Sync + 'static,
+    R: RegistryExt + ErasedType + Send + Sync + 'static,
+    R::Entry: StatValueRegistryEntry,
 {
     fn len(&self) -> usize {
         self.len()
+    }
+
+    fn key_from_id(&self, id: usize) -> Option<&'static Identifier> {
+        self.by_id(id).map(StatValueRegistryEntry::stat_value_key)
+    }
+
+    fn value_from_id(&self, id: usize) -> Option<&'static dyn StatValueRegistryEntry> {
+        self.by_id(id)
+            .map(|value| value as &dyn StatValueRegistryEntry)
+    }
+}
+
+/// Behavior required for a registry entry so that it can be used for identifying a particular stat.
+pub trait StatValueRegistryEntry: Send + Sync + 'static {
+    // The functions here are prefixed so that it doesn't conflict
+    // with those of RegistryEntry.
+    fn stat_value_key(&self) -> &Identifier;
+    fn stat_value_id(&self) -> usize;
+}
+
+impl<E> StatValueRegistryEntry for E
+where
+    E: RegistryEntry + Send + Sync,
+{
+    fn stat_value_key(&self) -> &Identifier {
+        self.key()
+    }
+
+    fn stat_value_id(&self) -> usize {
+        self.id()
     }
 }
 
@@ -32,7 +65,10 @@ pub struct StatType<R: RegistryExt> {
     _phantom: PhantomData<R>,
 }
 
-impl<R: RegistryExt> StatType<R> {
+impl<R: RegistryExt> StatType<R>
+where
+    R::Entry: StatValueRegistryEntry,
+{
     /// Creates a new [`StatType`] from a key and its display name.
     pub(crate) const fn new(key: Identifier, display_name: Option<TextComponent>) -> Self {
         Self {
@@ -70,20 +106,20 @@ impl<R: RegistryExt> StatType<R> {
 ///
 /// Registries retain their concrete Rust type and can be recovered with [`Self::downcast_ref`].
 #[derive(Copy, Clone)]
-pub struct StatKeyRegistryData {
-    value: &'static dyn StatKeyRegistry,
+pub struct StatValueRegistryData {
+    value: &'static dyn StatValueRegistry,
 }
 
-impl StatKeyRegistryData {
+impl StatValueRegistryData {
     /// Erases the type of the provided registry.
     #[must_use]
-    pub fn new(value: &'static dyn StatKeyRegistry) -> Self {
+    pub fn new(value: &'static dyn StatValueRegistry) -> Self {
         Self { value }
     }
 
     /// Returns the concrete registry when it has type `R`.
     #[must_use]
-    pub fn downcast_ref<R: StatKeyRegistry + DowncastType>(&self) -> Option<&'static R> {
+    pub fn downcast_ref<R: StatValueRegistry + DowncastType>(&self) -> Option<&'static R> {
         (*self.value).downcast_ref::<R>()
     }
 
@@ -104,13 +140,24 @@ pub struct StatTypeEntry {
     pub display_name: Option<TextComponent>,
 
     /// The registry that can encode and decode the stat identity involved in this stat type.
-    registry: LazyLock<StatKeyRegistryData, Box<dyn FnOnce() -> StatKeyRegistryData + Send + Sync>>,
+    registry:
+        LazyLock<StatValueRegistryData, Box<dyn FnOnce() -> StatValueRegistryData + Send + Sync>>,
 }
 
 impl StatTypeEntry {
     /// Gets the number of entries in the registry that this stat type is associated with.
     pub fn registry_len(&self) -> usize {
         self.registry.value.len()
+    }
+
+    /// Gets the key of an item by its registry ID.
+    pub fn key_from_id(&self, id: usize) -> Option<&Identifier> {
+        self.registry.value.key_from_id(id)
+    }
+
+    /// Gets the erased value of an item by its registry ID.
+    pub fn value_from_id(&self, id: usize) -> Option<&dyn StatValueRegistryEntry> {
+        self.registry.value.value_from_id(id)
     }
 }
 
@@ -149,7 +196,7 @@ impl StatTypeRegistry {
     /// it only runs once when the registries are initialized.
     pub fn register<R, F>(&mut self, stat_type: StatType<R>, registry_supplier: F)
     where
-        R: RegistryExt + StatKeyRegistry,
+        R: RegistryExt + StatValueRegistry,
         F: (FnOnce() -> &'static R) + Send + Sync + 'static,
     {
         assert!(
@@ -160,7 +207,7 @@ impl StatTypeRegistry {
         let entry = StatTypeEntry {
             key: stat_type.key.clone(),
             display_name: stat_type.display_name.clone(),
-            registry: LazyLock::new(Box::new(|| StatKeyRegistryData::new(registry_supplier()))),
+            registry: LazyLock::new(Box::new(|| StatValueRegistryData::new(registry_supplier()))),
         };
 
         let entry_ref = Box::leak(Box::new(entry));
