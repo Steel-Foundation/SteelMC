@@ -44,6 +44,7 @@ pub use profile::{
     is_valid_player_name, offline_uuid,
 };
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use std::mem::replace;
 use std::sync::{Arc, Weak};
 use steel_protocol::packets::game::{
     AttributeSnapshot, CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn,
@@ -313,7 +314,7 @@ impl Player {
         let hand = active.hand();
         let mut item = {
             let mut inventory = self.inventory.lock();
-            std::mem::replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
         };
         let world = self.get_world();
         ITEM_BEHAVIORS.get_behavior(item.item()).release_using(
@@ -332,7 +333,7 @@ impl Player {
         let hand = active.hand();
         let mut item = {
             let mut inventory = self.inventory.lock();
-            std::mem::replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
         };
         let world = self.get_world();
         let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
