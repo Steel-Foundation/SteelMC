@@ -4,7 +4,7 @@ use super::{
     BiomeOrTag, BlockPredicate, CommandArgumentSource, Coordinates, IntRange, ItemPredicate,
     ScoreHolderArgument, StructureOrTagKey, WorldArgument,
     biome::{parse_biome_or_tag, suggest_biomes},
-    block::{parse_block_predicate, parse_block_state, suggest_blocks},
+    block::{parse_block_predicate, suggest_blocks},
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
@@ -35,7 +35,7 @@ use steel_registry::{
     item_stack::ItemStack, timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::{
-    BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
+    Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
     nbt::{NbtPath, parse_snbt_argument},
     translations,
     types::GameType,
@@ -166,10 +166,6 @@ impl SteelArgumentType {
 
     pub(crate) fn block_pos() -> Self {
         Self::new(BlockPosParser)
-    }
-
-    pub(crate) fn block_state() -> Self {
-        Self::new(BlockStateParser)
     }
 
     pub(crate) fn vec3(center_integers: bool) -> Self {
@@ -520,10 +516,6 @@ argument_value_wrapper!(
     "steel:command/value/world_clock"
 );
 argument_value_wrapper!(TimelineValue(TimelineRef), "steel:command/value/timeline");
-argument_value_wrapper!(
-    BlockStateValue(BlockStateId),
-    "steel:command/value/block_state"
-);
 
 macro_rules! unit_argument_parser {
     (
@@ -913,16 +905,6 @@ unit_argument_parser!(
         ProtocolArgumentType::Dimension,
         Some(ProtocolSuggestionType::AskServer),
     )
-);
-unit_argument_parser!(
-    BlockStateParser,
-    "steel:command/parser/block_state",
-    BlockStateValue,
-    parse | reader,
-    _source | { parse_block_state(reader) },
-    suggest | _context,
-    _builder | {},
-    protocol(ProtocolArgumentType::BlockState, None)
 );
 unit_argument_parser!(
     SummonableEntityParser,
