@@ -15,17 +15,17 @@ pub mod vegetation;
 
 pub use building::{
     AmethystBlock, AmethystClusterBlock, BarrierBlock, BedBlock, BuddingAmethystBlock,
-    CampfireBlock, CauldronBlock, ComposterBlock, DoorBlock, FenceBlock, FenceGateBlock, HayBlock,
-    HoneyBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock, LayeredCauldronBlock, MagmaBlock,
-    PotentSulfurBlock, PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock,
-    SlimeBlock, SnowLayerBlock, SpongeBlock, StairBlock, TrapDoorBlock, WallBlock,
-    WaterloggedTransparentBlock, WeatherState, WeatheringCopper, WeatheringCopperBarsBlock,
-    WeatheringCopperDoorBlock, WeatheringCopperFullBlock, WeatheringCopperGrateBlock,
-    WeatheringCopperSlabBlock, WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock,
-    WetSpongeBlock,
+    CampfireBlock, CauldronBlock, ComposterBlock, DoorBlock, FenceBlock, FenceGateBlock,
+    GlazedTerracottaBlock, HayBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock,
+    LavaCauldronBlock, LayeredCauldronBlock, MagmaBlock, PotentSulfurBlock, PowderSnowBlock,
+    RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock, SpongeBlock,
+    StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState,
+    WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
+    WeatheringCopperFullBlock, WeatheringCopperGrateBlock, WeatheringCopperSlabBlock,
+    WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
 };
 pub use colored::StainedGlassPaneBlock;
-pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock};
+pub use container::{AnvilBlock, BarrelBlock, BeehiveBlock, CraftingTableBlock};
 pub use decoration::{
     CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
     StandingSignBlock, TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,

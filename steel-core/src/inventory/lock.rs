@@ -7,9 +7,11 @@
 use parking_lot::ArcMutexGuard;
 use parking_lot::RawMutex;
 use rustc_hash::FxHashMap;
+use std::borrow::Borrow;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use steel_utils::locks::Shared;
 use steel_utils::{Downcast as _, DowncastType, locks::SyncMutex};
 
 use crate::{
@@ -19,11 +21,8 @@ use crate::{
 };
 use steel_registry::item_stack::ItemStack;
 
-/// Thread-safe reference to a player inventory.
-pub type SyncPlayerInv = Arc<SyncMutex<PlayerInventory>>;
-
 /// Thread-safe reference to an erased container.
-pub type SharedContainer = Arc<SyncMutex<dyn Container>>;
+pub type SharedContainer = Shared<dyn Container>;
 
 struct LockedContainer(ArcMutexGuard<RawMutex, dyn Container>);
 
@@ -52,11 +51,11 @@ pub struct ContainerRef {
     owner: Option<Arc<BlockEntityBase>>,
 }
 
-impl<T> From<Arc<SyncMutex<T>>> for ContainerRef
+impl<T> From<Shared<T>> for ContainerRef
 where
     T: Container + 'static,
 {
-    fn from(container: Arc<SyncMutex<T>>) -> Self {
+    fn from(container: Shared<T>) -> Self {
         let id = ContainerId::from_arc(&container);
         let container: SharedContainer = container;
         Self {
@@ -64,6 +63,27 @@ where
             source: container,
             owner: None,
         }
+    }
+}
+
+impl<T> From<&Shared<T>> for ContainerRef
+where
+    T: Container + 'static,
+{
+    fn from(container: &Shared<T>) -> Self {
+        container.clone().into()
+    }
+}
+
+impl From<&ContainerRef> for ContainerRef {
+    fn from(r: &ContainerRef) -> Self {
+        r.clone()
+    }
+}
+
+impl From<&SharedContainer> for ContainerRef {
+    fn from(container: &SharedContainer) -> Self {
+        container.clone().into()
     }
 }
 
@@ -156,11 +176,13 @@ impl ContainerLockGuard {
     /// a consistent lock order across all call sites, preventing deadlocks.
     /// Duplicate containers (same Arc) are automatically deduplicated.
     #[must_use]
-    pub fn lock_all(containers: &[&ContainerRef]) -> Self {
-        // Collect container IDs and references, then sort
+    pub fn lock_all<C>(containers: &[C]) -> Self
+    where
+        C: Borrow<ContainerRef>,
+    {
         let mut sources: Vec<_> = containers
             .iter()
-            .map(|container| (container.container_id(), (*container).clone()))
+            .map(|c| (c.borrow().container_id(), c.borrow().clone()))
             .collect();
 
         // Sort by ID for deterministic lock order (prevents deadlocks)
@@ -188,6 +210,21 @@ impl ContainerLockGuard {
             guards,
             id_to_index,
         }
+    }
+
+    /// Get mutable access to N locked containers simultaneously
+    ///
+    /// Returns `None` if any ID is not locked or if any IDs are duplicates
+    pub fn get_disjoint_mut<const N: usize>(
+        &mut self,
+        ids: [ContainerId; N],
+    ) -> Option<[&mut dyn Container; N]> {
+        let mut indices = [0usize; N];
+        for (i, id) in ids.iter().enumerate() {
+            indices[i] = *self.id_to_index.get(id)?;
+        }
+        let entries = self.guards.get_disjoint_mut(indices).ok()?;
+        Some(entries.map(|(_, locked)| &mut **locked as &mut dyn Container))
     }
 
     /// Unlock all containers and relock with a new set.
@@ -360,8 +397,8 @@ impl ContainerId {
     }
 }
 
-impl From<&SyncPlayerInv> for ContainerId {
-    fn from(value: &SyncPlayerInv) -> Self {
+impl From<&Shared<PlayerInventory>> for ContainerId {
+    fn from(value: &Shared<PlayerInventory>) -> Self {
         Self::from_arc(value)
     }
 }
@@ -386,9 +423,8 @@ mod tests {
         entities::{BarrelBlockEntity, RawBlockEntity},
         init_block_entities,
     };
-    use crate::inventory::container::Container;
-    use crate::inventory::crafting::{CraftingContainer, ResultContainer};
-    use crate::inventory::slot::{NormalSlot, Slot as _};
+    use crate::inventory::container::{Container, CraftingContainer, ResultContainer};
+    use crate::inventory::slots::{NormalSlot, Slot as _};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     #[test]

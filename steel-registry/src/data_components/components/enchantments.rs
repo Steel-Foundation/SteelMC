@@ -65,6 +65,16 @@ impl ItemEnchantments {
     }
 }
 
+impl IntoIterator for ItemEnchantments {
+    type Item = (Identifier, u32);
+
+    type IntoIter = <FxHashMap<Identifier, u32> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.levels.into_iter()
+    }
+}
+
 impl Default for ItemEnchantments {
     fn default() -> Self {
         Self::empty()

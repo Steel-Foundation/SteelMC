@@ -234,6 +234,8 @@ pub struct ChunkMap {
     pub world_gen_context: Arc<WorldGenContext>,
     /// The thread pool to use for chunk generation (throughput-oriented).
     pub generation_pool: Arc<ThreadPool>,
+    /// The thread pool to use for CPU-heavy chunk persistence work.
+    chunk_encoding_pool: Arc<ThreadPool>,
     /// The thread pool to use for chunk ticking (latency-oriented).
     //pub tick_pool: Arc<ThreadPool>,
     /// The runtime to use for chunk tasks.
@@ -317,6 +319,7 @@ impl ChunkMap {
         generator: Arc<ChunkGeneratorType>,
         generation_pool: Arc<ThreadPool>,
     ) -> Self {
+        let chunk_encoding_pool = Arc::clone(&generation_pool);
         Self::new_with_storage_and_timed_tickets(
             chunk_runtime,
             world,
@@ -325,6 +328,7 @@ impl ChunkMap {
             storage,
             generator,
             generation_pool,
+            chunk_encoding_pool,
             TimedChunkTickets::default(),
         )
     }
@@ -342,6 +346,7 @@ impl ChunkMap {
         storage: Arc<ChunkStorage>,
         generator: Arc<ChunkGeneratorType>,
         generation_pool: Arc<ThreadPool>,
+        chunk_encoding_pool: Arc<ThreadPool>,
         timed_chunk_tickets: TimedChunkTickets,
     ) -> Self {
         let mut chunk_tickets = ChunkTicketManager::new();
@@ -367,6 +372,7 @@ impl ChunkMap {
                 sea_level,
             )),
             generation_pool,
+            chunk_encoding_pool,
             chunk_runtime,
             storage,
             chunks_to_broadcast: SyncMutex::new(Vec::new()),

@@ -493,16 +493,16 @@ impl EntityTracker {
             (senders.entity_data)(entity_id, dirty_entity_data);
         }
 
+        for (entity_id, dirty_equipment) in equipment_to_broadcast {
+            (senders.equipment)(entity_id, CSetEquipment::new(entity_id, dirty_equipment));
+        }
+
         for (entity_id, dirty_attributes) in attributes_to_broadcast {
             (senders.attributes)(entity_id, dirty_attributes);
         }
 
         for (player_id, packet) in mob_effect_packets_to_send {
             (senders.mob_effects)(player_id, packet);
-        }
-
-        for (entity_id, dirty_equipment) in equipment_to_broadcast {
-            (senders.equipment)(entity_id, CSetEquipment::new(entity_id, dirty_equipment));
         }
 
         for (entity_id, packet) in entity_links_to_broadcast {
