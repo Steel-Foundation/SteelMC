@@ -79,7 +79,7 @@ impl BlockBehavior for BrushableBlock {
         state
     }
 
-    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+    fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let Some(block_entity) = world.get_block_entity(pos) else {
             return;
         };

@@ -483,8 +483,9 @@ mod tests {
         );
         load_from_owned_nbt(&mut entity, &nbt);
 
-        assert_eq!(entity.item.count(), 3);
-        assert!(entity.item.is(&vanilla_items::STICK));
+        let state = entity.state.lock();
+        assert_eq!(state.item.count(), 3);
+        assert!(state.item.is(&vanilla_items::STICK));
 
         let mut saved = NbtCompound::new();
         entity.save_additional(&mut saved);
