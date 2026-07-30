@@ -16,10 +16,10 @@ use crate::behavior::block::{
     BlockBehavior, BlockCollisionContext, EntityFallDamage, EntityFallOnContext, push_entities_up,
 };
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::game_event::GameEventContext;
 use crate::entity::damage::DamageSource;
 use crate::entity::projectile::Projectile;
 use crate::fluid::FluidStateExt as _;
+use crate::world::game_event::GameEventContext;
 use crate::world::{ClipHitResult, World};
 use crate::world::{LevelReader, ScheduledTickAccess};
 
@@ -701,7 +701,8 @@ impl SpeleothemBlockBehavior {
         {
             if !world.dimension_type.water_evaporates {
                 let clay_state = vanilla_blocks::CLAY.default_state();
-                let _ = push_entities_up(fluid_info.source_state, clay_state, world, fluid_info.pos);
+                let _ =
+                    push_entities_up(fluid_info.source_state, clay_state, world, fluid_info.pos);
                 world.set_block(fluid_info.pos, clay_state, UpdateFlags::UPDATE_ALL);
                 world.game_event(
                     &vanilla_game_events::BLOCK_CHANGE,

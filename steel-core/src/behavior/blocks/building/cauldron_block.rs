@@ -13,9 +13,9 @@ use steel_registry::{
         block_state_ext::BlockStateExt as _,
         properties::{BlockStateProperties, Direction},
     },
-    level_events, vanilla_blocks, vanilla_game_events, vanilla_fluids,
+    level_events, vanilla_blocks, vanilla_fluids, vanilla_game_events,
 };
-use steel_utils::{types::UpdateFlags, BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
     behavior::{BlockBehavior, BlockPlaceContext, blocks::vegetation},
@@ -65,7 +65,9 @@ impl BlockBehavior for CauldronBlock {
     }
 
     fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        let Some(stalactite_pos) = vegetation::find_stalactite_tip_above_cauldron(world.as_ref(), pos) else {
+        let Some(stalactite_pos) =
+            vegetation::find_stalactite_tip_above_cauldron(world.as_ref(), pos)
+        else {
             return;
         };
         let Some(fluid) = vegetation::get_cauldron_fill_fluid_type(world, stalactite_pos) else {
@@ -138,7 +140,9 @@ impl BlockBehavior for LayeredCauldronBlock {
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        let Some(stalactite_pos) = vegetation::find_stalactite_tip_above_cauldron(world.as_ref(), pos) else {
+        let Some(stalactite_pos) =
+            vegetation::find_stalactite_tip_above_cauldron(world.as_ref(), pos)
+        else {
             return;
         };
         let Some(fluid) = vegetation::get_cauldron_fill_fluid_type(world, stalactite_pos) else {
