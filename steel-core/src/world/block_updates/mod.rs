@@ -516,7 +516,7 @@ impl World {
 
     /// Called when a block changed with a command (setblock, fill, ...)
     ///
-    /// This is the Rust equivalent of vanilla's `ServerLevel.updateNeighboursOnBlockSet()`.
+    /// This is the Rust equivalent of vanilla's `ServerLevel.updateNeighborsOnBlockSet()`.
     pub(crate) fn update_neighbour_on_block_set(
         self: &Arc<Self>,
         pos: BlockPos,

@@ -21,7 +21,7 @@ use text_components::TextComponent;
 
 /// How the block should be placed
 enum SetBlockMode {
-    /// Destroy the previous block and drop the loot according to the loot tabke
+    /// Destroy the previous block and drop the loot according to the loot table
     Destroy,
     /// Can only place a block if the previous block was air
     Keep,
