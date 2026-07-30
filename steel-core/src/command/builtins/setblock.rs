@@ -10,8 +10,6 @@ use super::super::{
 };
 use crate::command::execution::BlockPredicate;
 use crate::world::tick_scheduler::TickPriority;
-use log::info;
-use simdnbt::borrow;
 use simdnbt::borrow::read_compound;
 use std::io::Cursor;
 use steel_registry::REGISTRY;
@@ -72,7 +70,7 @@ fn set_block_strict(
     set_block(context, SetBlockMode::Strict)
 }
 
-/// Set a block in the desired position with a mode (destroy, keep, replace, strict), and return 1 if the block os placed, 0 else.
+/// Set a block in the desired position with a mode (destroy, keep, replace, strict), and return 1 if the block is placed, 0 else.
 fn set_block(
     context: &SteelCommandContext<CommandSource>,
     mode: SetBlockMode,
@@ -166,6 +164,14 @@ fn set_block(
 
     if !matches!(mode, SetBlockMode::Strict) {
         level.update_neighbour_on_block_set(block_pos, old_state);
+        if block_state.has_fluid() {
+            level.schedule_fluid_tick(
+                block_pos,
+                block_state.get_fluid_state().fluid_id,
+                0,
+                TickPriority::ExtremelyHigh,
+            );
+        }
     }
 
     context.source().send_success(
