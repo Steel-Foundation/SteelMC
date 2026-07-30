@@ -528,13 +528,13 @@ impl World {
         let behavior = block_behaviors.get_behavior(old_state.get_block());
 
         if old_state != block_state {
-            behavior.affect_neighbors_after_removal(old_state, &self, pos, false);
+            behavior.affect_neighbors_after_removal(old_state, self, pos, false);
         }
 
         self.update_neighbors_at(pos, block_state.get_block());
 
         if behavior.has_analog_output_signal(block_state) {
-            self.update_neighbor_for_output_signal(pos, block_state.get_block())
+            self.update_neighbor_for_output_signal(pos, block_state.get_block());
         }
     }
 
