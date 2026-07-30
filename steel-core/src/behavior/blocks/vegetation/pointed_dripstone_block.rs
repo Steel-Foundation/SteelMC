@@ -720,7 +720,10 @@ impl SpeleothemBlockBehavior {
         };
 
         world.level_event(level_events::DRIPSTONE_DRIP, tip_pos, 0, None);
-        Self::fill_cauldron(world, cauldron_pos, fluid_info.fluid);
+        let fall_distance = tip_pos.y() - cauldron_pos.y();
+        let delay = 50 + fall_distance;
+        let cauldron_state = world.get_block_state(cauldron_pos);
+        let _ = world.schedule_block_tick_default(cauldron_pos, cauldron_state.get_block(), delay);
     }
 
     fn get_fluid_above_stalactite(
@@ -821,73 +824,60 @@ impl SpeleothemBlockBehavior {
         }
     }
 
-    fn fill_cauldron(
-        world: &Arc<World>,
-        cauldron_pos: BlockPos,
-        fluid: FluidRef,
-    ) {
-        let cauldron_state = world.get_block_state(cauldron_pos);
-        let cauldron_block = cauldron_state.get_block();
-
-        if fluid == &vanilla_fluids::WATER {
-            if cauldron_block == &vanilla_blocks::CAULDRON {
-                let new_state = vanilla_blocks::WATER_CAULDRON
-                    .default_state()
-                    .set_value(&BlockStateProperties::LEVEL_CAULDRON, 1);
-                world.set_block(cauldron_pos, new_state, UpdateFlags::UPDATE_ALL);
-                world.game_event(
-                    &vanilla_game_events::BLOCK_CHANGE,
-                    cauldron_pos,
-                    &GameEventContext::default(),
-                );
-                world.level_event(
-                    level_events::SOUND_DRIP_WATER_INTO_CAULDRON,
-                    cauldron_pos,
-                    0,
-                    None,
-                );
-            } else if cauldron_block == &vanilla_blocks::WATER_CAULDRON {
-                let level = cauldron_state.get_value(&BlockStateProperties::LEVEL_CAULDRON);
-                if level < 3 {
-                    let new_state =
-                        cauldron_state.set_value(&BlockStateProperties::LEVEL_CAULDRON, level + 1);
-                    world.set_block(cauldron_pos, new_state, UpdateFlags::UPDATE_ALL);
-                    world.game_event(
-                        &vanilla_game_events::BLOCK_CHANGE,
-                        cauldron_pos,
-                        &GameEventContext::default(),
-                    );
-                    world.level_event(
-                        level_events::SOUND_DRIP_WATER_INTO_CAULDRON,
-                        cauldron_pos,
-                        0,
-                        None,
-                    );
-                }
-            }
-        } else if fluid == &vanilla_fluids::LAVA && cauldron_block == &vanilla_blocks::CAULDRON {
-            let new_state = vanilla_blocks::LAVA_CAULDRON.default_state();
-            world.set_block(cauldron_pos, new_state, UpdateFlags::UPDATE_ALL);
-            world.game_event(
-                &vanilla_game_events::BLOCK_CHANGE,
-                cauldron_pos,
-                &GameEventContext::default(),
-            );
-            world.level_event(
-                level_events::SOUND_DRIP_LAVA_INTO_CAULDRON,
-                cauldron_pos,
-                0,
-                None,
-            );
-        }
-    }
-
     fn thickness(state: BlockStateId) -> SpeleothemThickness {
         state.get_value(&BlockStateProperties::SPELEOTHEM_THICKNESS)
     }
 
     fn with_thickness(state: BlockStateId, thickness: SpeleothemThickness) -> BlockStateId {
         state.set_value(&BlockStateProperties::SPELEOTHEM_THICKNESS, thickness)
+    }
+}
+
+/// Searches upward from cauldron position to find an overhanging stalactite tip.
+#[must_use]
+pub fn find_stalactite_tip_above_cauldron(
+    world: &dyn LevelReader,
+    cauldron_pos: BlockPos,
+) -> Option<BlockPos> {
+    let mut current_pos = cauldron_pos;
+    for _ in 0..MAX_SEARCH_LENGTH_BETWEEN_STALACTITE_TIP_AND_CAULDRON {
+        current_pos = current_pos.above();
+        let state = world.get_block_state(current_pos);
+
+        if SpeleothemBlockBehavior::is_free_hanging_stalactite(state) {
+            return Some(current_pos);
+        }
+
+        if !SpeleothemBlockBehavior::can_drip_through(world, current_pos, state) {
+            return None;
+        }
+
+        if world.is_outside_build_height(current_pos.y()) {
+            return None;
+        }
+    }
+    None
+}
+
+/// Determines which fluid (water or lava) a stalactite would fill a cauldron with.
+#[must_use]
+pub fn get_cauldron_fill_fluid_type(
+    world: &Arc<World>,
+    stalactite_pos: BlockPos,
+) -> Option<FluidRef> {
+    let state = world.get_block_state(stalactite_pos);
+    let dripstone = SpeleothemBlockBehavior {
+        block: &vanilla_blocks::POINTED_DRIPSTONE,
+        kind: SpeleothemKind::PointedDripstone,
+    };
+    let fluid = dripstone
+        .get_fluid_above_stalactite(world, stalactite_pos, state)?
+        .fluid;
+
+    if fluid == &vanilla_fluids::WATER || fluid == &vanilla_fluids::LAVA {
+        Some(fluid)
+    } else {
+        None
     }
 }
 
@@ -1070,6 +1060,9 @@ mod tests {
         let (behavior, dripstone) = stalactite_setup(&world, pos);
         behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
 
+        world.level_data.write().set_game_time(51);
+        world.chunk_map.tick_game(&world, 51, 0, true);
+
         let cauldron_state = world.get_block_state(pos.below());
         assert_eq!(cauldron_state.get_block(), &vanilla_blocks::WATER_CAULDRON);
         assert_eq!(
@@ -1095,6 +1088,9 @@ mod tests {
 
         let (behavior, dripstone) = stalactite_setup(&world, pos);
         behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+
+        world.level_data.write().set_game_time(51);
+        world.chunk_map.tick_game(&world, 51, 0, true);
 
         let cauldron_state = world.get_block_state(pos.below());
         assert_eq!(cauldron_state.get_block(), &vanilla_blocks::WATER_CAULDRON);
@@ -1148,6 +1144,9 @@ mod tests {
 
         let (behavior, dripstone) = stalactite_setup(&world, pos);
         behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+
+        world.level_data.write().set_game_time(51);
+        world.chunk_map.tick_game(&world, 51, 0, true);
 
         assert_eq!(
             world.get_block_state(pos.below()).get_block(),
