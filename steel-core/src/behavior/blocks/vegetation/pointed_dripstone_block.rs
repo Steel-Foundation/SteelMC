@@ -43,7 +43,6 @@ impl PointedDripstoneBlock {
         Self { block }
     }
 
-    #[must_use]
     fn fall_damage_for_state(state: BlockStateId, fall_distance: f64) -> Option<EntityFallDamage> {
         if state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) != Direction::Up
             || state.get_value(&BlockStateProperties::SPELEOTHEM_THICKNESS)
@@ -119,8 +118,8 @@ impl BlockBehavior for PointedDripstoneBlock {
     }
 }
 
-#[block_behavior]
 /// Vanilla `SulfurSpikeBlock` behavior
+#[block_behavior]
 pub struct SulfurSpikeBlock {
     block: BlockRef,
 }
@@ -707,7 +706,7 @@ impl SpeleothemBlockBehavior {
                 world.game_event(
                     &vanilla_game_events::BLOCK_CHANGE,
                     fluid_info.pos,
-                    &GameEventContext::default(),
+                    &GameEventContext::new(None, Some(clay_state)),
                 );
                 world.level_event(level_events::DRIPSTONE_DRIP, tip_pos, 0, None);
             }
@@ -841,7 +840,7 @@ pub fn find_stalactite_tip_above_cauldron(
     cauldron_pos: BlockPos,
 ) -> Option<BlockPos> {
     let mut current_pos = cauldron_pos;
-    for _ in 0..MAX_SEARCH_LENGTH_BETWEEN_STALACTITE_TIP_AND_CAULDRON {
+    for _ in 1..MAX_SEARCH_LENGTH_BETWEEN_STALACTITE_TIP_AND_CAULDRON {
         current_pos = current_pos.above();
         let state = world.get_block_state(current_pos);
 

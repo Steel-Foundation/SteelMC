@@ -82,7 +82,7 @@ impl BlockBehavior for CauldronBlock {
             world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 pos,
-                &GameEventContext::default(),
+                &GameEventContext::new(None, Some(new_state)),
             );
             world.level_event(level_events::SOUND_DRIP_WATER_INTO_CAULDRON, pos, 0, None);
         } else if fluid == &vanilla_fluids::LAVA {
@@ -91,7 +91,7 @@ impl BlockBehavior for CauldronBlock {
             world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 pos,
-                &GameEventContext::default(),
+                &GameEventContext::new(None, Some(new_state)),
             );
             world.level_event(level_events::SOUND_DRIP_LAVA_INTO_CAULDRON, pos, 0, None);
         }
@@ -157,7 +157,7 @@ impl BlockBehavior for LayeredCauldronBlock {
                 world.game_event(
                     &vanilla_game_events::BLOCK_CHANGE,
                     pos,
-                    &GameEventContext::default(),
+                    &GameEventContext::new(None, Some(new_state)),
                 );
                 world.level_event(level_events::SOUND_DRIP_WATER_INTO_CAULDRON, pos, 0, None);
             }
