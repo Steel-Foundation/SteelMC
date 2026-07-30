@@ -1196,7 +1196,7 @@ mod tests {
         ));
 
         let (behavior, dripstone) = stalactite_setup(&world, pos);
-        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.2);
+        behavior.maybe_transfer_fluid(dripstone, &world, pos, WATER_TRANSFER_PROBABILITY_PER_RANDOM_TICK + 0.01);
 
         assert_eq!(
             world.get_block_state(pos.below()).get_block(),
@@ -1221,7 +1221,7 @@ mod tests {
         ));
 
         let (behavior, dripstone) = stalactite_setup(&world, pos);
-        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.1);
+        behavior.maybe_transfer_fluid(dripstone, &world, pos, LAVA_TRANSFER_PROBABILITY_PER_RANDOM_TICK + 0.01);
 
         assert_eq!(
             world.get_block_state(pos.below()).get_block(),
