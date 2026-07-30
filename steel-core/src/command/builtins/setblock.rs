@@ -9,6 +9,11 @@ use super::super::{
     registration::CommandRegistration,
 };
 use crate::command::execution::BlockPredicate;
+use crate::world::tick_scheduler::TickPriority;
+use log::info;
+use simdnbt::borrow;
+use simdnbt::borrow::read_compound;
+use std::io::Cursor;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::Identifier;
@@ -83,12 +88,11 @@ fn set_block(
         return Err(missing_argument("block"));
     };
 
-    let block_state = match block_predicate {
+    let (block_state, nbt) = match block_predicate {
         BlockPredicate::Block {
-            // TODO: use nbt with container for example
             block,
             properties,
-            ..
+            nbt,
         } => {
             // Adapt properties for the next function
             let properties_vec: Vec<(&str, &str)> = properties
@@ -106,7 +110,7 @@ fn set_block(
                 ));
             };
 
-            block_state_id
+            (block_state_id, nbt)
         }
         BlockPredicate::Tag { .. } => unreachable!(),
     };
@@ -132,7 +136,11 @@ fn set_block(
     } else {
         256
     };
+
+    // Save the old state to update the neighbors later
     let old_state = level.get_block_state(block_pos);
+
+    // Place the block and update with the right flag
     if place_needed
         && !level.set_block(
             block_pos,
@@ -141,6 +149,19 @@ fn set_block(
         )
     {
         return Ok(set_block_failed(context.source()));
+    }
+
+    // Load the NBT data into the block entity if it exists
+    if let Some(block_entity) = level.get_block_entity(block_pos)
+        && let Some(nbt) = nbt
+    {
+        let mut bytes = Vec::new();
+        nbt.write(&mut bytes);
+        let borrowed = read_compound(&mut Cursor::new(bytes.as_slice())).map_err(|_| {
+            CommandSyntaxError::dynamic("Failed to transpose owned compound into borrowed ")
+        })?;
+        block_entity.load_additional(&borrowed);
+        block_entity.set_changed();
     }
 
     if !matches!(mode, SetBlockMode::Strict) {
