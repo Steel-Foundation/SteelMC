@@ -14,6 +14,7 @@ mod invsee;
 mod kill;
 mod list;
 mod locate;
+mod message;
 mod operator;
 mod perms;
 mod return_command;
@@ -70,9 +71,12 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(kill::registration())?;
     builder.register(list::registration())?;
     builder.register(locate::registration())?;
+    builder.register(message::me_registration())?;
+    builder.register(message::msg_registration())?;
     builder.register(operator::op_registration())?;
     builder.register(perms::registration())?;
     builder.register(return_command::registration())?;
+    builder.register(message::say_registration())?;
     builder.register(seed::registration())?;
     builder.register(setworldspawn::registration())?;
     builder.register(stop::registration())?;
@@ -141,9 +145,14 @@ mod tests {
                 "kill",
                 "list",
                 "locate",
+                "me",
+                "msg",
+                "tell",
+                "w",
                 "op",
                 "perms",
                 "return",
+                "say",
                 "seed",
                 "setworldspawn",
                 "stop",

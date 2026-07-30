@@ -46,6 +46,17 @@ impl<'a> CommandTextResolver<'a, CommandSource> {
             default_scoreboard_name: Some(entity.scoreboard_name()),
         }
     }
+
+    /// Resolves selectors and scores relative to the command source itself.
+    ///
+    /// Used by commands such as `/say` and `/msg` that resolve their message
+    /// once against the source rather than per recipient.
+    pub(crate) const fn for_source(source: &'a CommandSource) -> Self {
+        Self {
+            source,
+            default_scoreboard_name: None,
+        }
+    }
 }
 
 impl<S> TryTextResolutor for CommandTextResolver<'_, S>

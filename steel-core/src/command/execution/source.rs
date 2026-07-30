@@ -311,10 +311,6 @@ impl CommandSource {
         }
     }
 
-    #[expect(
-        dead_code,
-        reason = "source-aware runtime extensions need access to the original sender"
-    )]
     pub(crate) const fn sender(&self) -> &CommandSender {
         &self.sender
     }
