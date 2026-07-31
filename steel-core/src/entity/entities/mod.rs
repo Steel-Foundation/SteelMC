@@ -13,8 +13,8 @@ pub mod vehicle;
 
 pub use boss::EndCrystalEntity;
 pub use decoration::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity};
-pub use passive::PigEntity;
 pub use item::{ExperienceOrbEntity, ItemEntity};
+pub use passive::PigEntity;
 pub use projectile::{EnderPearlEntity, FireworkRocketEntity};
 pub use raw::RawEntity;
 pub use vehicle::ChestMinecartEntity;
