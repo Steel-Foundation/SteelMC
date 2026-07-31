@@ -15,7 +15,7 @@ use steel_registry::{
     item_stack::ItemStack, timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::{
-    Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
+    Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier, java,
     nbt::{NbtPath, parse_snbt_argument},
     translations,
     types::GameType,
@@ -1163,6 +1163,26 @@ fn selected_clock(
 
 fn parse_component(reader: &mut StringReader<'_>) -> Result<TextComponent, CommandSyntaxError> {
     let start = reader.checkpoint();
+    let component = if starts_structured_component(reader.remaining()) {
+        parse_structured_component(reader)?
+    } else {
+        // Vanilla message arguments are greedy: multi-word input that does not open a
+        // structured SNBT component is consumed whole as literal text instead of failing
+        // on the first space.
+        TextComponent::plain(reader.read_remaining().to_owned())
+    };
+    validate_component_syntax(&component).map_err(|error| {
+        reader.restore(start);
+        invalid_component(reader, error)
+    })?;
+    Ok(component)
+}
+
+/// Parses a single structured SNBT component (`{...}`, `[...]`, or a quoted string).
+fn parse_structured_component(
+    reader: &mut StringReader<'_>,
+) -> Result<TextComponent, CommandSyntaxError> {
+    let start = reader.checkpoint();
     let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
         reader.advance_bytes(error.cursor());
         component_snbt_error(reader, error.component())
@@ -1173,16 +1193,21 @@ fn parse_component(reader: &mut StringReader<'_>) -> Result<TextComponent, Comma
             "Invalid text component cursor",
         ));
     }
-
-    let component = TextComponent::try_from_nbt(&tag).map_err(|error| {
+    TextComponent::try_from_nbt(&tag).map_err(|error| {
         reader.restore(start);
         invalid_component(reader, error.to_string())
-    })?;
-    validate_component_syntax(&component).map_err(|error| {
-        reader.restore(start);
-        invalid_component(reader, error)
-    })?;
-    Ok(component)
+    })
+}
+
+/// Whether the argument opens a structured SNBT component (`{...}`, `[...]`, or a quoted
+/// string) rather than greedy plain text.
+fn starts_structured_component(input: &str) -> bool {
+    matches!(
+        input
+            .chars()
+            .find(|character| !java::is_whitespace(*character)),
+        Some('{' | '[' | '"' | '\'')
+    )
 }
 
 fn component_snbt_error(

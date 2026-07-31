@@ -105,6 +105,34 @@ fn component_argument_parses_vanilla_snbt_forms() {
 }
 
 #[test]
+fn component_argument_greedily_consumes_plain_multi_word_text() {
+    let dispatcher = resource_dispatcher(SteelArgumentType::component());
+
+    // Input that does not open a structured SNBT component is consumed whole as literal
+    // text, so multi-word messages (e.g. `/msg Player hello world`) no longer fail on the
+    // first space. Only a leading `{`, `[`, or quote routes to the SNBT parser.
+    for (argument, expected) in [
+        ("hello world", "hello world"),
+        ("this is a longer message", "this is a longer message"),
+        ("true", "true"),
+        ("@a", "@a"),
+        ("say {not structured}", "say {not structured}"),
+    ] {
+        let input = format!("resource {argument}");
+        let parse = dispatcher.parse(&input, TestSource::new());
+        let Ok(chain) = dispatcher.context_chain(parse) else {
+            panic!("plain component {argument} should parse greedily");
+        };
+
+        assert_eq!(
+            chain.top_context().text_component("value"),
+            Some(&TextComponent::plain(expected)),
+            "{argument}"
+        );
+    }
+}
+
+#[test]
 fn permission_arguments_parse_contexts_and_suggest_discovered_values() {
     let dispatcher = resource_dispatcher(SteelArgumentType::permission_rule());
     let parse = dispatcher.parse(
