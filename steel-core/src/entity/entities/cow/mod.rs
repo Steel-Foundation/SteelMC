@@ -42,12 +42,17 @@ use crate::world::World;
 
 const COW_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.75, 0.0)];
+const COW_BABY_WIDTH: f32 = 0.45;
+const COW_BABY_HEIGHT: f32 = 0.7;
+const COW_BABY_EYE_HEIGHT: f32 = 0.69;
+
 const COW_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attachments(
-    0.45,
-    0.7,
-    0.69,
+    COW_BABY_WIDTH,
+    COW_BABY_HEIGHT,
+    COW_BABY_EYE_HEIGHT,
     EntityAttachments::new(&COW_BABY_PASSENGER_ATTACHMENTS, &[], &[], &[]),
 );
+const DEFAULT_STEP_HEIGHT: f32 = 0.6;
 
 #[entity_behavior(class = "Cow")]
 /// Vanilla cow entity with synced variant and sound-variant state.
@@ -431,7 +436,7 @@ impl Entity for CowEntity {
         self.attributes()
             .lock()
             .get_value(vanilla_attributes::STEP_HEIGHT)
-            .unwrap_or(0.6) as f32
+            .unwrap_or(f64::from(DEFAULT_STEP_HEIGHT)) as f32
     }
 
     fn sound_source(&self) -> SoundSource {
