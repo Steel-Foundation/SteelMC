@@ -1,7 +1,9 @@
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext},
-    world::{LevelReader, ScheduledTickAccess},
+    behavior::{BlockBehavior, BlockPlaceContext, blocks::AmethystBlock},
+    entity::projectile::Projectile,
+    world::{ClipHitResult, LevelReader, ScheduledTickAccess, World},
 };
+use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
@@ -36,8 +38,8 @@ impl BlockBehavior for AmethystClusterBlock {
             .block
             .default_state()
             .set_value(WATERLOGGED, context.is_water_source())
-            .set_value(FACING, context.clicked_face);
-        self.can_survive(state, context.world, context.place_pos)
+            .set_value(FACING, context.clicked_face());
+        self.can_survive(state, context.world, context.place_pos())
             .then_some(state)
     }
 
@@ -65,10 +67,18 @@ impl BlockBehavior for AmethystClusterBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let direction = state.get_value(FACING);
         let adjacent = pos.relative(direction.opposite());
-        world
-            .get_block_state(adjacent)
-            .is_face_sturdy_at(adjacent, direction)
+        world.is_face_sturdy(world.get_block_state(adjacent), adjacent, direction)
     }
-    // TODO: OnProjectile hit from AmethystBlock inheritance
+
+    fn on_projectile_hit(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        hit: &ClipHitResult,
+        _projectile: &dyn Projectile,
+    ) {
+        AmethystBlock::play_projectile_hit_sound(world, hit.block_pos);
+    }
+
     // TODO: Mirror and Rotate functions
 }

@@ -15,7 +15,7 @@ use crate::behavior::block::{
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::world::World;
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 
 /// Maximum moisture level for farmland.
 const MAX_MOISTURE: u8 = 7;
@@ -129,11 +129,6 @@ impl BlockBehavior for FarmlandBlock {
         )
     }
 
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        // Farmland always needs random ticks to manage moisture
-        true
-    }
-
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let moisture: u8 = state.get_value(&BlockStateProperties::MOISTURE);
 
@@ -164,10 +159,7 @@ impl BlockBehavior for FarmlandBlock {
         pos: BlockPos,
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
-        let mob_griefing = world
-            .get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
-            .as_bool()
-            == Some(true);
+        let mob_griefing = world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING);
         let random_float = rand::random::<f32>();
         if Self::should_turn_to_dirt_on_fall(context, mob_griefing, random_float) {
             Self::turn_to_dirt(state, world, pos, context.source_entity());

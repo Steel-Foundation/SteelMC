@@ -168,10 +168,7 @@ pub(super) fn destroy_crop_on_ravager_contact(
 ) {
     if ravager_breaks_crop(
         entity.entity_type(),
-        world
-            .get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
-            .as_bool()
-            == Some(true),
+        world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING),
     ) {
         world.destroy_block_by_entity(pos, true, entity);
     }
@@ -199,7 +196,7 @@ impl CropLike for CropBlock {
     }
 
     fn clone_item_stack(&self) -> ItemStack {
-        ItemStack::new(&vanilla_items::ITEMS.wheat_seeds)
+        ItemStack::new(&vanilla_items::WHEAT_SEEDS)
     }
 }
 
@@ -231,9 +228,9 @@ impl Bonemealable for CropBlock {
 impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if self.may_place_on(
-            context.world.get_block_state(context.place_pos.below()),
+            context.world.get_block_state(context.place_pos().below()),
             context.world,
-            context.place_pos.below(),
+            context.place_pos().below(),
         ) {
             Some(self.block().default_state())
         } else {
@@ -260,11 +257,6 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
         survival_update_shape(self, state, world, pos)
-    }
-
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        // Only tick if not fully grown
-        !self.is_max_age(state)
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

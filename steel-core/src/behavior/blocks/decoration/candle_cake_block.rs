@@ -14,17 +14,17 @@ use steel_utils::{
 
 use crate::{
     behavior::{
-        BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess, blocks::CakeBlock,
+        BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
+        blocks::{CakeBlock, CandleBlock},
     },
-    entity::Entity,
+    entity::{Entity, projectile::Projectile},
     player::Player,
-    world::{LevelReader, ScheduledTickAccess, World},
+    world::{ClipHitResult, LevelReader, ScheduledTickAccess, World},
 };
 
 /// Behavior for Candle Cakes
 /// TODO:
 /// - [ ] animation ticks
-/// - [ ] onProjectile
 /// - [ ] onExplosion
 #[block_behavior]
 pub struct CandleCakeBlock {
@@ -43,7 +43,7 @@ impl BlockBehavior for CandleCakeBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if context
             .world
-            .get_block_state(context.place_pos.below())
+            .get_block_state(context.place_pos().below())
             .is_solid()
         {
             Some(self.block.default_state())
@@ -64,8 +64,8 @@ impl BlockBehavior for CandleCakeBlock {
     ) -> InteractionResult {
         let (is_fire_charge, is_flint_and_steel, is_empty) = inv.with_item(|item_stack| {
             (
-                item_stack.is(&vanilla_items::ITEMS.fire_charge),
-                item_stack.is(&vanilla_items::ITEMS.flint_and_steel),
+                item_stack.is(&vanilla_items::FIRE_CHARGE),
+                item_stack.is(&vanilla_items::FLINT_AND_STEEL),
                 item_stack.is_empty(),
             )
         });
@@ -129,20 +129,35 @@ impl BlockBehavior for CandleCakeBlock {
         }
     }
 
+    fn on_projectile_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        hit: &ClipHitResult,
+        projectile: &dyn Projectile,
+    ) {
+        let Some(lit_state) = CandleBlock::projectile_lit_state(state, projectile.is_on_fire())
+        else {
+            return;
+        };
+        world.set_block(hit.block_pos, lit_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
+    }
+
     fn get_clone_item_stack(
         &self,
         _block: BlockRef,
         _state: BlockStateId,
         _include_data: bool,
     ) -> Option<ItemStack> {
-        Some(ItemStack::new(&vanilla_items::ITEMS.cake))
+        Some(ItemStack::new(&vanilla_items::CAKE))
     }
 
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        _world: &Arc<World>,
+        _world: &dyn LevelReader,
         _pos: BlockPos,
+        _direction: Direction,
     ) -> i32 {
         CakeBlock::analog_output_signal(0)
     }

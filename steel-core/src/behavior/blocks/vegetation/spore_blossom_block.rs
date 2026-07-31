@@ -1,5 +1,4 @@
 use steel_macros::block_behavior;
-use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::shapes::SupportType;
 use steel_utils::{BlockPos, BlockStateId};
@@ -29,7 +28,8 @@ impl SporeBlossomBlock {
 impl BlockBehavior for SporeBlossomBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let above_pos = pos.above();
-        world.get_block_state(above_pos).is_face_sturdy_for_at(
+        world.is_face_sturdy_for(
+            world.get_block_state(above_pos),
             above_pos,
             Direction::Down,
             SupportType::Center,

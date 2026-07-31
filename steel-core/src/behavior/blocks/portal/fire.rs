@@ -76,9 +76,7 @@ impl FireBlock {
     /// or an adjacent block is flammable.
     fn can_survive_at(world: &dyn LevelReader, pos: BlockPos) -> bool {
         let below_pos = pos.below();
-        world
-            .get_block_state(below_pos)
-            .is_face_sturdy_at(below_pos, Direction::Up)
+        world.is_face_sturdy(world.get_block_state(below_pos), below_pos, Direction::Up)
         // TODO: || is_valid_fire_location (check adjacent flammable blocks once flammability exists)
     }
 
@@ -134,7 +132,7 @@ impl FireBlock {
 
 impl BlockBehavior for FireBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        if SoulFireBlock::can_survive_at(context.world.as_ref(), context.place_pos) {
+        if SoulFireBlock::can_survive_at(context.world.as_ref(), context.place_pos()) {
             Some(vanilla_blocks::SOUL_FIRE.default_state())
         } else {
             Some(self.block.default_state())
@@ -214,7 +212,7 @@ impl SoulFireBlock {
 impl BlockBehavior for SoulFireBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.block.default_state();
-        self.can_survive(state, context.world, context.place_pos)
+        self.can_survive(state, context.world, context.place_pos())
             .then_some(state)
     }
 

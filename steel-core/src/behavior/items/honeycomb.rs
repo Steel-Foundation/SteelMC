@@ -11,7 +11,7 @@ use crate::{
     },
     block_entity::{BlockEntity, entities::SignBlockEntity},
     entity::Entity,
-    world::game_event_context::GameEventContext,
+    world::game_event::GameEventContext,
 };
 
 use super::copper_chest_events::emit_connected_chest_block_change;
@@ -61,16 +61,14 @@ impl ItemBehavior for HoneycombItem {
             return InteractionResult::Pass;
         };
 
-        let mut guard = block_entity.lock();
-        let Some(sign) = guard.downcast_mut::<SignBlockEntity>() else {
+        let Some(sign) = block_entity.downcast_ref::<SignBlockEntity>() else {
             return InteractionResult::Pass;
         };
 
-        if sign.is_waxed {
+        if !sign.wax() {
             return InteractionResult::Pass;
         }
 
-        sign.is_waxed = true;
         sign.set_changed();
         context.inv.with_item(|item| item.shrink(1));
         context.world.level_event(

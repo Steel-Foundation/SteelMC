@@ -3,6 +3,8 @@ use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
+use crate::RegistryTags;
+
 /// Represents a damage type definition from a data pack JSON file.
 #[derive(Debug)]
 pub struct DamageType {
@@ -83,7 +85,7 @@ pub type DamageTypeRef = &'static DamageType;
 pub struct DamageTypeRegistry {
     damage_types_by_id: Vec<DamageTypeRef>,
     damage_types_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -94,7 +96,7 @@ impl DamageTypeRegistry {
             damage_types_by_id: Vec::new(),
             damage_types_by_key: FxHashMap::default(),
             allows_registering: true,
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
         }
     }
 }

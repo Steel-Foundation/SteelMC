@@ -3,6 +3,7 @@
 //! Chains are oriented blocks with an axis property that determines their direction.
 //! They can also be waterlogged.
 
+use crate::behavior::block::schedule_water_tick_if_waterlogged;
 use crate::behavior::blocks::{WeatherState, WeatheringCopper};
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::entity::ai::path::PathComputationType;
@@ -14,7 +15,6 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty,
 };
-use steel_registry::vanilla_fluids;
 use steel_utils::axis::Axis;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -45,7 +45,7 @@ impl BlockBehavior for ChainBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&AXIS, context.clicked_face.get_axis())
+                .set_value(&AXIS, context.clicked_face().get_axis())
                 .set_value(&WATERLOGGED, context.is_water_source()),
         )
     }
@@ -98,13 +98,9 @@ impl BlockBehavior for WeatheringCopperChainBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&AXIS, context.clicked_face.get_axis())
+                .set_value(&AXIS, context.clicked_face().get_axis())
                 .set_value(&WATERLOGGED, context.is_water_source()),
         )
-    }
-
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        self.weathering.is_randomly_ticking()
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
@@ -130,16 +126,5 @@ impl BlockBehavior for WeatheringCopperChainBlock {
         _computation_type: PathComputationType,
     ) -> bool {
         false
-    }
-}
-
-fn schedule_water_tick_if_waterlogged(
-    state: BlockStateId,
-    world: &dyn ScheduledTickAccess,
-    pos: BlockPos,
-) {
-    if state.get_value(&WATERLOGGED) {
-        let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-        world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
     }
 }

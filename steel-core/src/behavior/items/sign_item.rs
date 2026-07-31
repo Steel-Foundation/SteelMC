@@ -22,8 +22,8 @@ use super::standing_and_wall_block_item::StandingAndWallBlockItem;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
 use crate::entity::Entity;
-use crate::world::World;
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
+use crate::world::{LevelReader as _, World};
 
 /// Behavior for sign items that place sign blocks and open the editor.
 ///
@@ -68,10 +68,11 @@ impl SignItem {
 
 impl ItemBehavior for SignItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let Some(place_context) = context.build_place_context() else {
+        let mut place_context = context.build_place_context();
+        if !place_context.can_place() {
             return InteractionResult::Fail;
-        };
-        let place_pos = place_context.place_pos;
+        }
+        let place_pos = place_context.place_pos();
 
         let Some(new_state) = self.inner.get_placement_state(&place_context) else {
             return InteractionResult::Fail;
@@ -100,7 +101,7 @@ impl ItemBehavior for SignItem {
             &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
-        context.inv.with_item(|item| item.shrink(1));
+        place_context.with_item_mut(|item| item.shrink(1));
 
         // Sign-specific: Open the sign editor for the player (front text by default)
         context.player.open_sign_editor(place_pos, true);
@@ -157,7 +158,7 @@ fn can_attach_to(
     }
 
     // Otherwise, check for sturdy face with FULL support
-    attach_state.is_face_sturdy_for_at(attach_pos, attach_face, SupportType::Full)
+    world.is_face_sturdy_for(attach_state, attach_pos, attach_face, SupportType::Full)
 }
 
 /// Checks if a wall hanging sign can be placed at the given position.
@@ -206,10 +207,11 @@ fn can_place_hanging_sign(world: &Arc<World>, state: BlockStateId, pos: BlockPos
 
 impl ItemBehavior for HangingSignItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let Some(place_context) = context.build_place_context() else {
+        let mut place_context = context.build_place_context();
+        if !place_context.can_place() {
             return InteractionResult::Fail;
-        };
-        let place_pos = place_context.place_pos;
+        }
+        let place_pos = place_context.place_pos();
 
         let block_behaviors = &*BLOCK_BEHAVIORS;
 
@@ -269,7 +271,7 @@ impl ItemBehavior for HangingSignItem {
             &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
-        context.inv.with_item(|item| item.shrink(1));
+        place_context.with_item_mut(|item| item.shrink(1));
 
         // Sign-specific: Open the sign editor for the player (front text by default)
         context.player.open_sign_editor(place_pos, true);

@@ -1,9 +1,9 @@
 use glam::DVec3;
 use steel_math::fast_floor;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_utils::BlockPos;
 
 use super::selector::{Goal, GoalControls};
-use crate::behavior::BlockStateBehaviorExt as _;
 use crate::entity::PathfinderMob;
 use crate::fluid::FluidStateExt as _;
 

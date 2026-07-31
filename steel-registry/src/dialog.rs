@@ -2,7 +2,9 @@ use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
-use text_components::TextComponent;
+use text_components::{EmbeddedNbtCodec, TextComponent};
+
+use crate::RegistryTags;
 
 /// Represents a dialog defined in data packs.
 #[derive(Debug)]
@@ -43,12 +45,12 @@ impl ToNbtTag for &Dialog {
                 DialogVariant::ServerLinks => "minecraft:server_links",
             },
         );
-        compound.insert("title", (&self.title).to_nbt_tag());
-        compound.insert("external_title", (&self.external_title).to_nbt_tag());
+        compound.insert("title", self.title.to_codec_nbt());
+        compound.insert("external_title", self.external_title.to_codec_nbt());
         compound.insert("button_width", self.button_width);
         compound.insert("columns", self.columns);
         let mut exit_action = NbtCompound::new();
-        exit_action.insert("label", (&self.exit_action.label).to_nbt_tag());
+        exit_action.insert("label", self.exit_action.label.to_codec_nbt());
         exit_action.insert("width", self.exit_action.width);
         compound.insert("exit_action", NbtTag::Compound(exit_action));
         if let DialogVariant::DialogList { dialogs } = &self.variant {
@@ -58,12 +60,20 @@ impl ToNbtTag for &Dialog {
     }
 }
 
+impl EmbeddedNbtCodec for &Dialog {
+    type Error = std::convert::Infallible;
+
+    fn encode_embedded_nbt(self) -> Result<NbtTag, Self::Error> {
+        Ok(self.to_nbt_tag())
+    }
+}
+
 pub type DialogRef = &'static Dialog;
 
 pub struct DialogRegistry {
     dialogs_by_id: Vec<DialogRef>,
     dialogs_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -73,7 +83,7 @@ impl DialogRegistry {
         Self {
             dialogs_by_id: Vec::new(),
             dialogs_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

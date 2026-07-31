@@ -74,7 +74,7 @@ impl BlockBehavior for TallSeagrassBlock {
         } else {
             get_fluid_state_from_block(current)
         };
-        below.is_face_sturdy_at(below_pos, Direction::Up)
+        world.is_face_sturdy(below, below_pos, Direction::Up)
             && !below
                 .get_block()
                 .has_tag(&BlockTag::CANNOT_SUPPORT_SEAGRASS)
@@ -83,7 +83,7 @@ impl BlockBehavior for TallSeagrassBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        if context.place_pos.y() >= context.world.max_y_exclusive() - 1 {
+        if context.place_pos().y() >= context.world.max_y_exclusive() - 1 {
             return None;
         }
         if !context.is_full_water() {
@@ -91,7 +91,7 @@ impl BlockBehavior for TallSeagrassBlock {
         }
 
         let above_fluid =
-            get_fluid_state_from_block(context.world.get_block_state(context.place_pos.above()));
+            get_fluid_state_from_block(context.world.get_block_state(context.place_pos().above()));
         if !above_fluid.is_water() || !above_fluid.is_full() {
             return None;
         }
@@ -100,7 +100,7 @@ impl BlockBehavior for TallSeagrassBlock {
             &BlockStateProperties::DOUBLE_BLOCK_HALF,
             DoubleBlockHalf::Lower,
         );
-        self.can_survive(state, context.world, context.place_pos)
+        self.can_survive(state, context.world, context.place_pos())
             .then_some(state)
     }
 
@@ -110,11 +110,7 @@ impl BlockBehavior for TallSeagrassBlock {
         _state: BlockStateId,
         _include_data: bool,
     ) -> Option<ItemStack> {
-        Some(ItemStack::new(&vanilla_items::ITEMS.seagrass))
-    }
-
-    fn get_fluid_state(&self, _state: BlockStateId) -> FluidState {
-        water_source_fluid_state()
+        Some(ItemStack::new(&vanilla_items::SEAGRASS))
     }
 
     fn is_liquid_container(&self, _state: BlockStateId) -> bool {

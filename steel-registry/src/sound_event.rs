@@ -3,11 +3,10 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use std::io::{Cursor, Error, Result, Write};
 use std::str::FromStr;
-use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
-use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
 use crate::{REGISTRY, RegistryEntry, RegistryExt};
 
@@ -42,13 +41,50 @@ impl SoundEvent {
 pub type SoundEventRef = &'static SoundEvent;
 
 /// Vanilla `Holder<SoundEvent>`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum SoundEventHolder {
     Registry(SoundEventRef),
     Direct {
         sound_id: Identifier,
         fixed_range: Option<f32>,
     },
+}
+
+impl PartialEq for SoundEventHolder {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Registry(left), Self::Registry(right)) => left == right,
+            (
+                Self::Direct {
+                    sound_id: left_id,
+                    fixed_range: left_range,
+                },
+                Self::Direct {
+                    sound_id: right_id,
+                    fixed_range: right_range,
+                },
+            ) => left_id == right_id && optional_float_equals(*left_range, *right_range),
+            (Self::Registry(_), Self::Direct { .. }) | (Self::Direct { .. }, Self::Registry(_)) => {
+                false
+            }
+        }
+    }
+}
+
+const fn optional_float_equals(left: Option<f32>, right: Option<f32>) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => {
+            (left.is_nan() && right.is_nan()) || left.to_bits() == right.to_bits()
+        }
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => false,
+    }
+}
+
+// SAFETY: This Steel-owned key uniquely identifies `SoundEventHolder` within
+// the linked process.
+unsafe impl DowncastType for SoundEventHolder {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:registry/sound_event_holder");
 }
 
 impl SoundEventHolder {
@@ -63,6 +99,24 @@ impl SoundEventHolder {
             Self::Registry(sound) => Some(*sound),
             Self::Direct { .. } => None,
         }
+    }
+
+    pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
+        if let Some(value) = tag.string() {
+            let id = Identifier::from_str(&value.to_string()).ok()?;
+            return REGISTRY.sound_events.by_key(&id).map(Self::Registry);
+        }
+
+        let compound = tag.compound()?;
+        let sound_id =
+            Identifier::from_str(&compound.get("sound_id")?.string()?.to_string()).ok()?;
+        let fixed_range = compound
+            .get("range")
+            .and_then(steel_utils::nbt::NbtNumeric::codec_f32);
+        Some(Self::Direct {
+            sound_id,
+            fixed_range,
+        })
     }
 }
 
@@ -134,22 +188,7 @@ impl ToNbtTag for SoundEventHolder {
 
 impl FromNbtTag for SoundEventHolder {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        if let Some(value) = tag.string() {
-            let id = Identifier::from_str(&value.to_str()).ok()?;
-            return REGISTRY.sound_events.by_key(&id).map(Self::Registry);
-        }
-
-        let compound = tag.compound()?;
-        let sound_id = compound
-            .get("sound_id")?
-            .string()
-            .and_then(|value| Identifier::from_str(&value.to_str()).ok())?;
-        // Vanilla uses lenientOptionalFieldOf here: malformed values are absent.
-        let fixed_range = compound.get("range").and_then(|tag| tag.codec_f32());
-        Some(Self::Direct {
-            sound_id,
-            fixed_range,
-        })
+        Self::from_owned_nbt(&tag.to_owned())
     }
 }
 
@@ -226,6 +265,7 @@ mod tests {
     use simdnbt::FromNbtTag;
     use simdnbt::borrow::{NbtTag as BorrowedNbtTag, read_tag};
     use simdnbt::owned::{NbtCompound, NbtTag};
+    use steel_utils::Identifier;
 
     use super::SoundEventHolder;
 
@@ -264,5 +304,16 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn direct_sound_equality_matches_java_float_rules() {
+        let direct = |range| SoundEventHolder::Direct {
+            sound_id: Identifier::vanilla_static("test"),
+            fixed_range: Some(range),
+        };
+
+        assert_eq!(direct(f32::NAN), direct(f32::NAN));
+        assert_ne!(direct(0.0), direct(-0.0));
     }
 }

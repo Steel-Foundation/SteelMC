@@ -41,12 +41,12 @@ impl BlockBehavior for CactusFlowerBlock {
         below
             .get_block()
             .has_tag(&BlockTag::SUPPORT_OVERRIDE_CACTUS_FLOWER)
-            || below.is_face_sturdy_for_at(below_pos, Direction::Up, SupportType::Center)
+            || world.is_face_sturdy_for(below, below_pos, Direction::Up, SupportType::Center)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.block.default_state();
-        self.can_survive(state, context.world, context.place_pos)
+        self.can_survive(state, context.world, context.place_pos())
             .then_some(state)
     }
 

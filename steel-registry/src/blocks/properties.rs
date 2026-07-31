@@ -3,21 +3,39 @@
     reason = "property value lookup only unwraps values known to be declared by the property"
 )]
 
+use std::cmp::Ordering;
 use std::fmt::Debug;
 
 pub use steel_utils::{Direction, axis::Axis, codec::VarInt, serial::ReadFrom};
 
-pub trait Property<T>: Sync + Send {
-    fn get_value(&self, value: &str) -> Option<T>;
-    fn get_possible_values(&self) -> Box<[T]>;
-    fn get_internal_index(&self, value: &T) -> usize;
-    fn value_from_index(&self, index: usize) -> T;
-    fn as_dyn(&self) -> &dyn DynProperty;
-}
+pub trait Property: Debug + Sync + Send {
+    type Value
+    where
+        Self: Sized;
 
-pub trait DynProperty: Debug + Sync + Send {
-    fn get_possible_values(&self) -> Box<[&str]>;
+    fn get_value(&self, value: &str) -> Option<Self::Value>
+    where
+        Self: Sized;
+
+    fn get_possible_values(&self) -> Box<[Self::Value]>
+    where
+        Self: Sized;
+
+    fn get_internal_index(&self, value: &Self::Value) -> usize
+    where
+        Self: Sized;
+
+    fn value_from_index(&self, index: usize) -> Self::Value
+    where
+        Self: Sized;
+
+    fn value_count(&self) -> usize;
+    fn value_name_from_index(&self, index: usize) -> &str;
+    fn get_possible_value_names(&self) -> Box<[&str]>;
     fn get_name(&self) -> &'static str;
+
+    /// Parses and compares two serialized values using Vanilla's `Comparable` order.
+    fn compare_value_names(&self, left: &str, right: &str) -> Option<Ordering>;
 }
 
 pub trait PropertyEnum: PartialEq + Clone + Debug + Sync + Send {
@@ -46,18 +64,30 @@ impl BoolProperty {
     }
 }
 
-impl DynProperty for BoolProperty {
-    fn get_possible_values(&self) -> Box<[&str]> {
+impl Property for BoolProperty {
+    type Value = bool;
+
+    fn value_count(&self) -> usize {
+        2
+    }
+
+    fn value_name_from_index(&self, index: usize) -> &str {
+        ["true", "false"][index]
+    }
+
+    fn get_possible_value_names(&self) -> Box<[&str]> {
         ["true", "false"].into()
     }
 
     fn get_name(&self) -> &'static str {
         self.name
     }
-}
 
-impl Property<bool> for BoolProperty {
-    fn get_value(&self, value: &str) -> Option<bool> {
+    fn compare_value_names(&self, left: &str, right: &str) -> Option<Ordering> {
+        Some(self.get_value(left)?.cmp(&self.get_value(right)?))
+    }
+
+    fn get_value(&self, value: &str) -> Option<Self::Value> {
         if value == "true" {
             Some(true)
         } else if value == "false" {
@@ -67,20 +97,16 @@ impl Property<bool> for BoolProperty {
         }
     }
 
-    fn get_possible_values(&self) -> Box<[bool]> {
+    fn get_possible_values(&self) -> Box<[Self::Value]> {
         [true, false].into()
     }
 
-    fn get_internal_index(&self, value: &bool) -> usize {
+    fn get_internal_index(&self, value: &Self::Value) -> usize {
         usize::from(!*value)
     }
 
-    fn value_from_index(&self, index: usize) -> bool {
+    fn value_from_index(&self, index: usize) -> Self::Value {
         index == 0
-    }
-
-    fn as_dyn(&self) -> &dyn DynProperty {
-        self
     }
 }
 
@@ -116,29 +142,41 @@ impl IntProperty {
     }
 }
 
-impl DynProperty for IntProperty {
-    fn get_possible_values(&self) -> Box<[&str]> {
+impl Property for IntProperty {
+    type Value = u8;
+
+    fn value_count(&self) -> usize {
+        IntProperty::value_count(self)
+    }
+
+    fn value_name_from_index(&self, index: usize) -> &str {
+        NUM_STR[self.min as usize + index]
+    }
+
+    fn get_possible_value_names(&self) -> Box<[&str]> {
         (self.min..=self.max).map(|v| NUM_STR[v as usize]).collect()
     }
 
     fn get_name(&self) -> &'static str {
         self.name
     }
-}
 
-impl Property<u8> for IntProperty {
-    fn get_value(&self, value: &str) -> Option<u8> {
+    fn compare_value_names(&self, left: &str, right: &str) -> Option<Ordering> {
+        Some(self.get_value(left)?.cmp(&self.get_value(right)?))
+    }
+
+    fn get_value(&self, value: &str) -> Option<Self::Value> {
         value
             .parse()
             .ok()
             .filter(|v| v >= &self.min && v <= &self.max)
     }
 
-    fn get_possible_values(&self) -> Box<[u8]> {
+    fn get_possible_values(&self) -> Box<[Self::Value]> {
         (self.min..=self.max).collect()
     }
 
-    fn get_internal_index(&self, value: &u8) -> usize {
+    fn get_internal_index(&self, value: &Self::Value) -> usize {
         if *value <= self.max {
             (*value - self.min) as usize
         } else {
@@ -146,12 +184,8 @@ impl Property<u8> for IntProperty {
         }
     }
 
-    fn value_from_index(&self, index: usize) -> u8 {
+    fn value_from_index(&self, index: usize) -> Self::Value {
         self.min + index as u8
-    }
-
-    fn as_dyn(&self) -> &dyn DynProperty {
-        self
     }
 }
 
@@ -170,10 +204,21 @@ impl IntProperty {
 pub struct EnumProperty<T: PropertyEnum + 'static> {
     pub name: &'static str,
     pub possible_values: &'static [T],
+    comparison_values: &'static [T],
 }
 
-impl<T: PropertyEnum + 'static> DynProperty for EnumProperty<T> {
-    fn get_possible_values(&self) -> Box<[&str]> {
+impl<T: PropertyEnum + 'static> Property for EnumProperty<T> {
+    type Value = T;
+
+    fn value_count(&self) -> usize {
+        EnumProperty::value_count(self)
+    }
+
+    fn value_name_from_index(&self, index: usize) -> &str {
+        self.possible_values[index].as_str()
+    }
+
+    fn get_possible_value_names(&self) -> Box<[&str]> {
         self.possible_values
             .iter()
             .map(PropertyEnum::as_str)
@@ -183,47 +228,73 @@ impl<T: PropertyEnum + 'static> DynProperty for EnumProperty<T> {
     fn get_name(&self) -> &'static str {
         self.name
     }
-}
 
-impl<T: PropertyEnum> EnumProperty<T> {
-    pub const fn new(name: &'static str, possible_values: &'static [T]) -> Self {
-        Self {
-            name,
-            possible_values,
-        }
+    fn compare_value_names(&self, left: &str, right: &str) -> Option<Ordering> {
+        let left = self.get_value(left)?;
+        let right = self.get_value(right)?;
+        let left = self
+            .comparison_values
+            .iter()
+            .position(|value| value == &left)?;
+        let right = self
+            .comparison_values
+            .iter()
+            .position(|value| value == &right)?;
+        Some(left.cmp(&right))
     }
 
-    #[must_use]
-    pub const fn value_count(&self) -> usize {
-        self.possible_values.len()
-    }
-}
-
-impl<T: PropertyEnum> Property<T> for EnumProperty<T> {
-    fn get_value(&self, value: &str) -> Option<T> {
+    fn get_value(&self, value: &str) -> Option<Self::Value> {
         self.possible_values
             .iter()
             .find(|v| v.as_str() == value)
             .cloned()
     }
 
-    fn get_possible_values(&self) -> Box<[T]> {
+    fn get_possible_values(&self) -> Box<[Self::Value]> {
         self.possible_values.into()
     }
 
-    fn get_internal_index(&self, value: &T) -> usize {
+    fn get_internal_index(&self, value: &Self::Value) -> usize {
         self.possible_values
             .iter()
             .position(|v| v == value)
             .unwrap()
     }
 
-    fn value_from_index(&self, index: usize) -> T {
+    fn value_from_index(&self, index: usize) -> Self::Value {
         self.possible_values[index].clone()
     }
+}
 
-    fn as_dyn(&self) -> &dyn DynProperty {
-        self
+impl<T: PropertyEnum> EnumProperty<T> {
+    /// Creates an enum property whose state and natural comparison orders match.
+    pub const fn new(name: &'static str, possible_values: &'static [T]) -> Self {
+        Self {
+            name,
+            possible_values,
+            comparison_values: possible_values,
+        }
+    }
+
+    /// Creates a property whose state order differs from the enum's natural order.
+    ///
+    /// `comparison_values` must contain every possible value in the order used
+    /// by the Vanilla enum's `Comparable` implementation.
+    pub const fn with_comparison_order(
+        name: &'static str,
+        possible_values: &'static [T],
+        comparison_values: &'static [T],
+    ) -> Self {
+        Self {
+            name,
+            possible_values,
+            comparison_values,
+        }
+    }
+
+    #[must_use]
+    pub const fn value_count(&self) -> usize {
+        self.possible_values.len()
     }
 }
 
@@ -339,7 +410,7 @@ impl PropertyEnum for WallSide {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 #[derive_const(PartialEq)]
 pub enum RedstoneSide {
     Up,
@@ -409,7 +480,7 @@ impl PropertyEnum for SideChainPart {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, Eq)]
 #[derive_const(PartialEq)]
 pub enum RailShape {
     NorthSouth,
@@ -422,6 +493,17 @@ pub enum RailShape {
     SouthWest,
     NorthWest,
     NorthEast,
+}
+
+impl RailShape {
+    /// Returns whether this shape raises one end of a rail by one block.
+    #[must_use]
+    pub const fn is_slope(&self) -> bool {
+        matches!(
+            self,
+            Self::AscendingEast | Self::AscendingWest | Self::AscendingNorth | Self::AscendingSouth
+        )
+    }
 }
 
 impl PropertyEnum for RailShape {
@@ -507,7 +589,7 @@ impl PropertyEnum for DoorHingeSide {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 #[derive_const(PartialEq)]
 pub enum NoteBlockInstrument {
     Harp,
@@ -537,6 +619,35 @@ pub enum NoteBlockInstrument {
     WitherSkeleton,
     Piglin,
     CustomHead,
+}
+
+impl NoteBlockInstrument {
+    /// Vanilla `NoteBlockInstrument.isTunable`.
+    #[must_use]
+    pub const fn is_tunable(&self) -> bool {
+        !matches!(
+            self,
+            Self::Zombie
+                | Self::Skeleton
+                | Self::Creeper
+                | Self::Dragon
+                | Self::WitherSkeleton
+                | Self::Piglin
+                | Self::CustomHead
+        )
+    }
+
+    /// Vanilla `NoteBlockInstrument.hasCustomSound`.
+    #[must_use]
+    pub const fn has_custom_sound(&self) -> bool {
+        matches!(self, Self::CustomHead)
+    }
+
+    /// Vanilla `NoteBlockInstrument.worksAboveNoteBlock`.
+    #[must_use]
+    pub const fn works_above_note_block(&self) -> bool {
+        !self.is_tunable()
+    }
 }
 
 impl PropertyEnum for NoteBlockInstrument {
@@ -926,7 +1037,7 @@ impl BlockStateProperties {
     pub const EAST: BoolProperty = BoolProperty::new("east");
     pub const SOUTH: BoolProperty = BoolProperty::new("south");
     pub const WEST: BoolProperty = BoolProperty::new("west");
-    pub const FACING: EnumProperty<Direction> = EnumProperty::new(
+    pub const FACING: EnumProperty<Direction> = EnumProperty::with_comparison_order(
         "facing",
         &[
             Direction::North,
@@ -935,6 +1046,14 @@ impl BlockStateProperties {
             Direction::West,
             Direction::Up,
             Direction::Down,
+        ],
+        &[
+            Direction::Down,
+            Direction::Up,
+            Direction::North,
+            Direction::South,
+            Direction::West,
+            Direction::East,
         ],
     );
     pub const FACING_HOPPER: EnumProperty<Direction> = EnumProperty::new(
@@ -1161,8 +1280,11 @@ impl BlockStateProperties {
         "tilt",
         &[Tilt::None, Tilt::Unstable, Tilt::Partial, Tilt::Full],
     );
-    pub const VERTICAL_DIRECTION: EnumProperty<Direction> =
-        EnumProperty::new("vertical_direction", &[Direction::Up, Direction::Down]);
+    pub const VERTICAL_DIRECTION: EnumProperty<Direction> = EnumProperty::with_comparison_order(
+        "vertical_direction",
+        &[Direction::Up, Direction::Down],
+        &[Direction::Down, Direction::Up],
+    );
     pub const DRIPSTONE_THICKNESS: EnumProperty<DripstoneThickness> = EnumProperty::new(
         "thickness",
         &[

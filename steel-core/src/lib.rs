@@ -2,6 +2,8 @@
 //!
 //! The core library for the Steel Minecraft server. Handles everything related to the PLAY state.
 
+#![feature(try_as_dyn)]
+
 use crate::chunk::chunk_map::ChunkMap;
 
 pub mod behavior;
@@ -20,7 +22,6 @@ pub mod physics;
 pub mod player;
 pub mod poi;
 pub(crate) mod portal;
-pub mod saved_data;
 pub mod scoreboard;
 pub mod server;
 #[cfg(test)]

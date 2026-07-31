@@ -10,9 +10,8 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::Vegetation;
 use crate::behavior::blocks::vegetation::default_surviving_state;
 use crate::behavior::blocks::vegetation::vegetation_block::double_plant_can_survive;
-use crate::behavior::context::{BlockPlaceContext, InventoryAccess};
+use crate::behavior::context::{BlockPlaceContext, PlacementSource};
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
-use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::BlockRef;
@@ -47,18 +46,16 @@ impl DoublePlantBlock {
             state
         }
     }
-}
 
-impl Vegetation for DoublePlantBlock {}
-
-impl BlockBehavior for DoublePlantBlock {
-    fn update_shape(
+    /// Runs Vanilla `DoublePlantBlock.updateShape` while preserving virtual
+    /// `canSurvive` dispatch for subclasses such as small dripleaf.
+    pub(super) fn update_shape_with_survival(
         &self,
+        survival_behavior: &dyn BlockBehavior,
         state: BlockStateId,
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
-        _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
         let half = state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF);
@@ -74,12 +71,28 @@ impl BlockBehavior for DoublePlantBlock {
 
         if half == DoubleBlockHalf::Lower
             && direction == Direction::Down
-            && !self.can_survive(state, world, pos)
+            && !survival_behavior.can_survive(state, world, pos)
         {
             return vanilla_blocks::AIR.default_state();
         }
 
         state
+    }
+}
+
+impl Vegetation for DoublePlantBlock {}
+
+impl BlockBehavior for DoublePlantBlock {
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        direction: Direction,
+        _neighbor_pos: BlockPos,
+        neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        self.update_shape_with_survival(self, state, world, pos, direction, neighbor_state)
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
@@ -91,8 +104,7 @@ impl BlockBehavior for DoublePlantBlock {
         _state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        _player: Option<&Player>,
-        _inv: &InventoryAccess,
+        _source: &PlacementSource<'_>,
     ) {
         let upper_pos = pos.above();
         let upper_state = Self::copy_waterlogged_from(
@@ -107,12 +119,12 @@ impl BlockBehavior for DoublePlantBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        if context.place_pos.y() >= context.world.max_y_exclusive() - 1 {
+        if context.place_pos().y() >= context.world.max_y_exclusive() - 1 {
             return None;
         }
         if !context
             .world
-            .get_block_state(context.place_pos.above())
+            .get_block_state(context.place_pos().above())
             .is_replaceable()
         {
             return None;

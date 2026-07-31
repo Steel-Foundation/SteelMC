@@ -45,6 +45,8 @@ pub(crate) use runtime::{
     argument, literal,
 };
 pub(crate) use score::{IntRange, ScoreHolderArgument, ScoreHolderWildcard};
+#[cfg(test)]
+pub(crate) use selector::parse_entity_selector_text;
 pub(crate) use source::{
     CommandArgumentSource, CommandPermissionSource, CommandResultCallback, CommandSource,
     ExecutionCommandSource,

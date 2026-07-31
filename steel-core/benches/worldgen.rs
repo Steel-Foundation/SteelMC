@@ -20,7 +20,7 @@ use steel_core::chunk::chunk_holder::ChunkHolder;
 use steel_core::chunk::chunk_map::ChunkMap;
 use steel_core::chunk::chunk_pyramid::{ChunkDependencies, ChunkStep, GENERATION_PYRAMID};
 use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
-use steel_core::chunk::chunk_ticket_manager::{ChunkTicketLevel, MAX_VIEW_DISTANCE};
+use steel_core::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::entity::init_entities;
@@ -61,8 +61,16 @@ static LIGHT_PROFILE_LOG_LIMIT: LazyLock<u64> = LazyLock::new(|| {
         .and_then(|value| value.parse().ok())
         .unwrap_or(16)
 });
-const BENCH_HOLDER_LOAD_LEVEL: ChunkTicketLevel =
-    ChunkTicketLevel::for_full_chunk_radius(MAX_VIEW_DISTANCE);
+static BENCH_GENERATION_POOL: LazyLock<Arc<rayon::ThreadPool>> = LazyLock::new(|| {
+    Arc::new(
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .thread_name(|index| format!("bench-generator-{index}"))
+            .build()
+            .expect("bench generation pool should build"),
+    )
+});
+const BENCH_HOLDER_LOAD_LEVEL: ChunkTicketLevel = ChunkTicketLevel::STRONGEST;
 
 fn ensure_registry() {
     INIT.call_once(|| {
@@ -86,7 +94,9 @@ fn create_benchmark_generator(
     let generator_config = registry
         .validate_config(generator_key, &generator_config)
         .expect(context);
-    registry.create(&generator_config, seed).expect(context)
+    registry
+        .create(None, &generator_config, seed, BENCH_GENERATION_POOL.clone())
+        .expect(context)
 }
 
 fn make_proto_chunk(chunk_x: i32, chunk_z: i32, dim: &DimensionType) -> ChunkAccess {
@@ -213,7 +223,7 @@ fn bench_overworld_noise(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
-    let generator = OverworldGenerator::new(source, 0);
+    let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("overworld_fill_from_noise", |b| {
         b.iter(|| {
@@ -227,7 +237,7 @@ fn bench_nether_noise(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
-    let generator = NetherGenerator::new(source, 0);
+    let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("nether_fill_from_noise", |b| {
         b.iter(|| {
@@ -241,7 +251,7 @@ fn bench_end_noise(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
-    let generator = EndGenerator::new(source, 0);
+    let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("end_fill_from_noise", |b| {
         b.iter(|| {
@@ -257,7 +267,7 @@ fn bench_overworld_surface(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
-    let generator = OverworldGenerator::new(source, 0);
+    let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("overworld_build_surface", |b| {
         b.iter_batched(
@@ -280,7 +290,7 @@ fn bench_nether_surface(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
-    let generator = NetherGenerator::new(source, 0);
+    let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("nether_build_surface", |b| {
         b.iter_batched(
@@ -303,7 +313,7 @@ fn bench_end_surface(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
-    let generator = EndGenerator::new(source, 0);
+    let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("end_build_surface", |b| {
         b.iter_batched(
@@ -331,7 +341,7 @@ fn bench_overworld_recalculate_counts(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
-    let generator = OverworldGenerator::new(source, 0);
+    let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("overworld_recalculate_counts", |b| {
         b.iter_batched(
@@ -357,7 +367,7 @@ fn bench_overworld_carvers(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
-    let generator = OverworldGenerator::new(source, 0);
+    let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("overworld_apply_carvers", |b| {
         b.iter_batched(
@@ -383,7 +393,7 @@ fn bench_nether_carvers(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
-    let generator = NetherGenerator::new(source, 0);
+    let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("nether_apply_carvers", |b| {
         b.iter_batched(
@@ -409,7 +419,7 @@ fn bench_end_carvers(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
-    let generator = EndGenerator::new(source, 0);
+    let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("end_apply_carvers", |b| {
         b.iter_batched(
@@ -567,6 +577,7 @@ fn build_feature_fixture_at(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -836,6 +847,7 @@ fn build_concurrent_feature_fixture(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -925,6 +937,7 @@ fn build_concurrent_full_pipeline_fixture(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -958,9 +971,7 @@ fn build_concurrent_full_pipeline_fixture(
             dim.min_y,
             dim.height,
         ));
-        let _ = chunk_map_for_factory
-            .chunks
-            .insert_sync(pos, holder.clone());
+        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, holder.clone());
         holder
     }));
     let stages = full_pipeline_stages(&cache, &centers);
@@ -1020,6 +1031,7 @@ fn build_concurrent_light_fixture(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -1050,9 +1062,7 @@ fn build_concurrent_light_fixture(
             dim.min_y,
             dim.height,
         ));
-        let _ = chunk_map_for_factory
-            .chunks
-            .insert_sync(pos, holder.clone());
+        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, holder.clone());
         holder
     }));
     let setup_stages =
@@ -1520,7 +1530,7 @@ fn bench_overworld_structure_starts(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
-    let generator = OverworldGenerator::new(source, 0);
+    let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("overworld_create_structures", |b| {
         b.iter_batched(
@@ -1535,7 +1545,7 @@ fn bench_nether_structure_starts(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
-    let generator = NetherGenerator::new(source, 0);
+    let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("nether_create_structures", |b| {
         b.iter_batched(
@@ -1550,7 +1560,7 @@ fn bench_end_structure_starts(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
-    let generator = EndGenerator::new(source, 0);
+    let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("end_create_structures", |b| {
         b.iter_batched(
@@ -1664,7 +1674,13 @@ struct ReferencesFixture {
 fn bench_overworld_structure_references(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::OVERWORLD;
-    let generator = OverworldGenerator::new(BiomeSourceKind::overworld(0), 0).into();
+    let generator = OverworldGenerator::new(
+        None,
+        BiomeSourceKind::overworld(0),
+        0,
+        BENCH_GENERATION_POOL.as_ref(),
+    )
+    .into();
     let (context, cache, target) = build_references_fixture(dim, generator);
     bench_references(
         c,
@@ -1680,7 +1696,13 @@ fn bench_overworld_structure_references(c: &mut Criterion) {
 fn bench_nether_structure_references(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::THE_NETHER;
-    let generator = NetherGenerator::new(BiomeSourceKind::nether(0), 0).into();
+    let generator = NetherGenerator::new(
+        None,
+        BiomeSourceKind::nether(0),
+        0,
+        BENCH_GENERATION_POOL.as_ref(),
+    )
+    .into();
     let (context, cache, target) = build_references_fixture(dim, generator);
     bench_references(
         c,
@@ -1696,7 +1718,13 @@ fn bench_nether_structure_references(c: &mut Criterion) {
 fn bench_end_structure_references(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::THE_END;
-    let generator = EndGenerator::new(BiomeSourceKind::end(0), 0).into();
+    let generator = EndGenerator::new(
+        None,
+        BiomeSourceKind::end(0),
+        0,
+        BENCH_GENERATION_POOL.as_ref(),
+    )
+    .into();
     let (context, cache, target) = build_references_fixture(dim, generator);
     bench_references(
         c,
@@ -1715,7 +1743,7 @@ fn bench_overworld_full(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::OVERWORLD;
     let source = BiomeSourceKind::overworld(0);
-    let generator = OverworldGenerator::new(source, 0);
+    let generator = OverworldGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("overworld_full_through_carvers", |b| {
         b.iter(|| {
@@ -1735,7 +1763,7 @@ fn bench_nether_full(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::THE_NETHER;
     let source = BiomeSourceKind::nether(0);
-    let generator = NetherGenerator::new(source, 0);
+    let generator = NetherGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("nether_full_through_carvers", |b| {
         b.iter(|| {
@@ -1755,7 +1783,7 @@ fn bench_end_full(c: &mut Criterion) {
     ensure_registry();
     let dim = &vanilla_dimension_types::THE_END;
     let source = BiomeSourceKind::end(0);
-    let generator = EndGenerator::new(source, 0);
+    let generator = EndGenerator::new(None, source, 0, BENCH_GENERATION_POOL.as_ref());
 
     c.bench_function("end_full_through_carvers", |b| {
         b.iter(|| {

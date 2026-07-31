@@ -2,13 +2,20 @@ use std::sync::OnceLock;
 
 use rustc_hash::FxHashMap;
 
-use steel_utils::Identifier;
+use steel_utils::{DowncastType, Identifier};
+use text_components::TextComponent;
 
 pub mod item;
 
 use crate::{
-    REGISTRY, RegistryExt, TaggedRegistryExt, blocks::BlockRef, data_components::DataComponentMap,
+    REGISTRY, RegistryEntry, RegistryExt, RegistryTags, TaggedRegistryExt,
+    blocks::BlockRef,
+    data_components::{
+        DataComponentMap,
+        vanilla_components::{ITEM_MODEL, ITEM_NAME},
+    },
     item_stack::ItemStack,
+    vanilla_items,
 };
 
 /// A Minecraft item type.
@@ -29,29 +36,41 @@ impl std::fmt::Debug for Item {
 }
 
 impl Item {
+    /// Creates an item with Vanilla's mandatory name and default model components.
     #[must_use]
-    pub fn from_block(block: BlockRef) -> Self {
+    pub fn new(
+        key: Identifier,
+        item_name: TextComponent,
+        craft_remainder: Option<Identifier>,
+    ) -> Self {
+        let mut components = DataComponentMap::common_item_components();
+        components.set(ITEM_NAME, Some(item_name));
+        components.set(ITEM_MODEL, Some(key.clone()));
         Self {
-            key: block.key.clone(),
-            components: DataComponentMap::common_item_components(),
-            craft_remainder: None,
+            key,
+            components,
+            craft_remainder,
             id: OnceLock::new(),
         }
     }
 
     #[must_use]
-    pub fn from_block_custom_name(_block: BlockRef, name: &'static str) -> Self {
-        Self {
-            key: Identifier::vanilla_static(name),
-            components: DataComponentMap::common_item_components(),
-            craft_remainder: None,
-            id: OnceLock::new(),
-        }
+    pub fn from_block(block: BlockRef, item_name: TextComponent) -> Self {
+        Self::new(block.key.clone(), item_name, None)
+    }
+
+    #[must_use]
+    pub fn from_block_custom_name(
+        _block: BlockRef,
+        name: &'static str,
+        item_name: TextComponent,
+    ) -> Self {
+        Self::new(Identifier::vanilla_static(name), item_name, None)
     }
 
     /// Builder method to set a component on this item. Used during static initialization.
     #[must_use]
-    pub fn builder_set<T: crate::data_components::Component>(
+    pub fn builder_set<T: crate::data_components::Component + DowncastType>(
         mut self,
         component: crate::data_components::DataComponentType<T>,
         value: Option<T>,
@@ -87,7 +106,9 @@ pub type ItemRef = &'static Item;
 pub struct ItemRegistry {
     items_by_id: Vec<ItemRef>,
     items_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    items_by_block: FxHashMap<Identifier, usize>,
+    block_items_by_id: Vec<bool>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -103,7 +124,9 @@ impl ItemRegistry {
         Self {
             items_by_id: Vec::new(),
             items_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            items_by_block: FxHashMap::default(),
+            block_items_by_id: Vec::new(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }
@@ -119,8 +142,43 @@ impl ItemRegistry {
         assert_eq!(*cached, id, "item registered with conflicting id");
         self.items_by_key.insert(item.key.clone(), id);
         self.items_by_id.push(item);
+        self.block_items_by_id.push(false);
 
         id
+    }
+
+    /// Registers the vanilla `BlockItem` association used by `Block.asItem()`.
+    pub fn register_block_item(&mut self, block: BlockRef, item: ItemRef) {
+        assert!(
+            self.allows_registering,
+            "Cannot register block items after the registry has been frozen"
+        );
+        let Some(&item_id) = self.items_by_key.get(&item.key) else {
+            panic!("Cannot associate an unregistered item with a block");
+        };
+        self.items_by_block.insert(block.key.clone(), item_id);
+        self.block_items_by_id[item_id] = true;
+    }
+
+    /// Returns whether this item is Vanilla's `BlockItem` or one of its subclasses.
+    ///
+    /// `BlockItem` construction registers its block-to-item association, so the
+    /// extracted association is also the complete class-hierarchy capability.
+    #[must_use]
+    pub fn is_block_item(&self, item: ItemRef) -> bool {
+        self.block_items_by_id
+            .get(item.id())
+            .is_some_and(|&is_block_item| is_block_item)
+    }
+
+    /// Returns the item associated with this block, or air when it has no block item.
+    ///
+    /// Vanilla equivalent: `Item.byBlock(Block)` / `Block.asItem()`.
+    #[must_use]
+    pub fn by_block(&self, block: BlockRef) -> ItemRef {
+        self.items_by_block
+            .get(&block.key)
+            .map_or(&vanilla_items::AIR, |&item_id| self.items_by_id[item_id])
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, ItemRef)> + '_ {
@@ -128,6 +186,81 @@ impl ItemRegistry {
             .iter()
             .enumerate()
             .map(|(id, &item)| (id, item))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::Identifier;
+    use text_components::TextComponent;
+
+    use super::Item;
+    use crate::{
+        REGISTRY,
+        data_components::vanilla_components::{ITEM_MODEL, ITEM_NAME},
+        test_support::init_test_registry,
+        vanilla_blocks, vanilla_items,
+    };
+
+    #[test]
+    fn new_item_uses_its_key_as_the_default_model() {
+        let key = Identifier::new_static("steel", "test_item");
+        let name = TextComponent::plain("Test Item");
+        let item = Item::new(key.clone(), name.clone(), None);
+
+        assert_eq!(item.components.get_ref(ITEM_MODEL), Some(&key));
+        assert_eq!(item.components.get_ref(ITEM_NAME), Some(&name));
+    }
+
+    #[test]
+    fn extracted_block_item_associations_match_vanilla() {
+        init_test_registry();
+
+        assert_eq!(
+            REGISTRY.items.by_block(&vanilla_blocks::LEAF_LITTER),
+            &*vanilla_items::LEAF_LITTER
+        );
+        assert_eq!(
+            REGISTRY.items.by_block(&vanilla_blocks::REDSTONE_WIRE),
+            &*vanilla_items::REDSTONE
+        );
+        assert_eq!(
+            REGISTRY.items.by_block(&vanilla_blocks::WALL_TORCH),
+            &*vanilla_items::TORCH
+        );
+        assert_eq!(
+            REGISTRY.items.by_block(&vanilla_blocks::BIG_DRIPLEAF_STEM),
+            &*vanilla_items::BIG_DRIPLEAF
+        );
+        assert_eq!(
+            REGISTRY.items.by_block(&vanilla_blocks::FIRE),
+            &*vanilla_items::AIR
+        );
+    }
+
+    #[test]
+    fn block_item_capability_includes_extracted_vanilla_subclasses() {
+        init_test_registry();
+
+        for item in [
+            &*vanilla_items::STONE,
+            &*vanilla_items::OAK_DOOR,
+            &*vanilla_items::OAK_SIGN,
+            &*vanilla_items::OAK_HANGING_SIGN,
+            &*vanilla_items::WHITE_BED,
+            &*vanilla_items::WHITE_BANNER,
+            &*vanilla_items::SCAFFOLDING,
+            &*vanilla_items::LILY_PAD,
+            &*vanilla_items::STRUCTURE_BLOCK,
+            &*vanilla_items::POWDER_SNOW_BUCKET,
+        ] {
+            assert!(REGISTRY.items.is_block_item(item));
+        }
+        assert!(
+            !REGISTRY
+                .items
+                .is_block_item(&vanilla_items::DIAMOND_PICKAXE)
+        );
     }
 }
 

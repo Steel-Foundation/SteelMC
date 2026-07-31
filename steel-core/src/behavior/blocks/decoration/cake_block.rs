@@ -71,7 +71,7 @@ impl BlockBehavior for CakeBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if context
             .world
-            .get_block_state(context.place_pos.below())
+            .get_block_state(context.place_pos().below())
             .is_solid()
         {
             Some(self.block.default_state())
@@ -157,8 +157,9 @@ impl BlockBehavior for CakeBlock {
     fn get_analog_output_signal(
         &self,
         state: BlockStateId,
-        _world: &Arc<World>,
+        _world: &dyn LevelReader,
         _pos: BlockPos,
+        _direction: Direction,
     ) -> i32 {
         Self::analog_output_signal(i32::from(state.get_value(&BlockStateProperties::BITES)))
     }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use steel_core::entity::next_entity_id;
 use steel_core::player::PlayerConnection;
-use steel_core::player::networking::JavaConnection;
+use steel_core::player::connection::JavaConnection;
 use steel_core::player::{ClientInformation, Player};
 use steel_protocol::packets::common::CCustomPayload;
 use steel_protocol::packets::common::{SClientInformation, SCustomPayload};
@@ -101,8 +101,6 @@ impl JavaTcpClient {
             .clone()
             .expect("Game profile is empty");
 
-        self.server.record_known_player(&gameprofile);
-
         let client_info = self.client_information.lock().await.clone();
 
         let world = self.server.overworld().clone();
@@ -126,7 +124,6 @@ impl JavaTcpClient {
                 Arc::downgrade(&self.server),
                 self.server.config.clone(),
                 entity_id,
-                player_weak,
                 client_info,
             )
         });

@@ -64,13 +64,14 @@ pub mod weathering;
 
 pub(crate) use block::pickup_waterlogged_block;
 pub use block::{
-    BlockBehavior, BlockBehaviorRegistry, BlockCollisionContext, DefaultBlockBehavior,
-    EntityFallDamage, EntityFallOnContext, EntityFallOnFacts, EntityLandingContext,
+    BlockBehavior, BlockBehaviorRegistry, BlockCollisionBoxes, BlockCollisionContext,
+    BlockEntityCreation, BlockLootContext, DefaultBlockBehavior, EntityFallDamage,
+    EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, RailBehavior,
 };
 use block_behaviors::register_block_behaviors;
 pub use context::{
-    BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, UseItemContext,
-    UseOnContext,
+    BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, PlacementOrientation,
+    PlacementSource, UseItemContext, UseOnContext,
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub use item::{ItemBehavior, ItemBehaviorRegistry};
@@ -83,7 +84,6 @@ use std::ops::Deref;
 use std::sync::OnceLock;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_fluids;
 use steel_utils::BlockStateId;
 
@@ -117,35 +117,20 @@ impl Deref for ItemBehaviorLock {
 /// This is separate from `BlockStateExt` (in steel-registry) because these methods
 /// require access to the behavior registry which lives in steel-core.
 pub trait BlockStateBehaviorExt {
-    /// Returns the fluid state for this block state.
-    ///
-    /// Delegates to the block's `BlockBehavior::get_fluid_state` implementation.
-    fn get_fluid_state(&self) -> FluidState;
-
-    /// Returns true when vanilla `BlockState.getFluidState()` is non-empty.
-    fn has_fluid(&self) -> bool;
-
     /// Returns whether this block state belongs to a vanilla `LiquidBlockContainer`.
     fn is_liquid_container(&self) -> bool;
 
     /// Returns whether this block state can be replaced by the given fluid block.
     fn can_be_replaced_by_fluid(&self, fluid_block: BlockRef) -> bool;
 
+    /// Returns whether this block state can be replaced in this placement context.
+    fn can_be_replaced(&self, context: &BlockPlaceContext<'_>) -> bool;
+
     /// Returns whether this block state is pathfindable for the supplied vanilla computation type.
     fn is_pathfindable(&self, computation_type: PathComputationType) -> bool;
 }
 
 impl BlockStateBehaviorExt for BlockStateId {
-    fn get_fluid_state(&self) -> FluidState {
-        let block = self.get_block();
-        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
-        behavior.get_fluid_state(*self)
-    }
-
-    fn has_fluid(&self) -> bool {
-        !self.get_fluid_state().is_empty()
-    }
-
     fn is_liquid_container(&self) -> bool {
         let block = self.get_block();
         let behavior = BLOCK_BEHAVIORS.get_behavior(block);
@@ -156,6 +141,12 @@ impl BlockStateBehaviorExt for BlockStateId {
         let block = self.get_block();
         let behavior = BLOCK_BEHAVIORS.get_behavior(block);
         behavior.can_be_replaced_by_fluid(*self, fluid_block)
+    }
+
+    fn can_be_replaced(&self, context: &BlockPlaceContext<'_>) -> bool {
+        let block = self.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        behavior.can_be_replaced(*self, context)
     }
 
     fn is_pathfindable(&self, computation_type: PathComputationType) -> bool {

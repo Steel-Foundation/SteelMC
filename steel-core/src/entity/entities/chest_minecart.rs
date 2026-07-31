@@ -108,6 +108,10 @@ impl Entity for ChestMinecartEntity {
         true
     }
 
+    fn dimension_changing_delay(&self) -> i32 {
+        10
+    }
+
     fn get_relative_portal_position(&self, axis: Axis, portal_area: FoundRectangle) -> DVec3 {
         reset_forward_direction_of_relative_portal_position(PortalShape::get_relative_position(
             portal_area,

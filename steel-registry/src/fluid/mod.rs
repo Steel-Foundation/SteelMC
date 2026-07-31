@@ -1,6 +1,8 @@
 //! Fluid registry for Minecraft fluids.
 
-use crate::{RegistryExt, TaggedRegistryExt, vanilla_fluid_tags::FluidTag, vanilla_fluids};
+use crate::{
+    RegistryExt, RegistryTags, TaggedRegistryExt, vanilla_fluid_tags::FluidTag, vanilla_fluids,
+};
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
@@ -13,6 +15,8 @@ pub struct Fluid {
     pub is_empty: bool,
     /// Whether this is a source fluid (vs flowing).
     pub is_source: bool,
+    /// Whether this fluid receives random ticks.
+    pub is_randomly_ticking: bool,
     /// The block this fluid places.
     pub block: Identifier,
     /// The bucket item for this fluid.
@@ -75,7 +79,7 @@ pub type FluidRef = &'static Fluid;
 
 /// A fluid state instance with amount and falling properties.
 ///
-/// This is computed on-demand from block states rather than stored.
+/// Registered block states cache this value in their immutable state metadata.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FluidState {
     /// The fluid type (water, lava, empty).
@@ -149,6 +153,12 @@ impl FluidState {
         self.amount == 8
     }
 
+    /// Returns whether this fluid receives random ticks.
+    #[must_use]
+    pub const fn is_randomly_ticking(&self) -> bool {
+        self.fluid_id.is_randomly_ticking
+    }
+
     /// Returns the fluid's own height (0.0 to ~0.89).
     #[must_use]
     pub fn own_height(&self) -> f32 {
@@ -196,7 +206,7 @@ impl FluidState {
 pub struct FluidRegistry {
     fluids_by_id: Vec<FluidRef>,
     fluids_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -213,7 +223,7 @@ impl FluidRegistry {
         Self {
             fluids_by_id: Vec::new(),
             fluids_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

@@ -1,7 +1,10 @@
 use rustc_hash::FxHashMap;
+use steel_protocol::packets::game::CCooldown;
 use steel_registry::data_components::vanilla_components::USE_COOLDOWN;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::Identifier;
+
+use super::Player;
 
 #[derive(Clone, Copy)]
 struct CooldownInstance {
@@ -61,6 +64,34 @@ fn cooldown_group(stack: &ItemStack) -> Identifier {
         .unwrap_or_else(|| stack.item().key.clone())
 }
 
+impl Player {
+    /// Returns whether the stack's vanilla cooldown group is currently active.
+    pub fn is_item_on_cooldown(&self, stack: &ItemStack) -> bool {
+        self.item_cooldowns.lock().is_on_cooldown(stack)
+    }
+
+    /// Starts the stack's vanilla `use_cooldown`, if it has one.
+    pub fn apply_item_use_cooldown(&self, stack: &ItemStack) {
+        let cooldown = self.item_cooldowns.lock().add_from_stack(stack);
+        if let Some((cooldown_group, duration)) = cooldown {
+            self.send_packet(CCooldown {
+                cooldown_group,
+                duration,
+            });
+        }
+    }
+
+    pub(super) fn tick_item_cooldowns(&self) {
+        let ended = self.item_cooldowns.lock().tick();
+        for cooldown_group in ended {
+            self.send_packet(CCooldown {
+                cooldown_group,
+                duration: 0,
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use steel_registry::data_components::vanilla_components::{USE_COOLDOWN, UseCooldown};
@@ -73,14 +104,14 @@ mod tests {
     fn cooldown_blocks_until_duration_ticks_pass() {
         init_test_registry();
 
-        let stack = ItemStack::with_count(&vanilla_items::ITEMS.ender_pearl, 1);
+        let stack = ItemStack::with_count(&vanilla_items::ENDER_PEARL, 1);
         let mut cooldowns = ItemCooldowns::default();
 
         let Some((group, duration)) = cooldowns.add_from_stack(&stack) else {
             panic!("ender pearl should have a use cooldown");
         };
 
-        assert_eq!(group, vanilla_items::ITEMS.ender_pearl.key);
+        assert_eq!(group, vanilla_items::ENDER_PEARL.key);
         assert_eq!(duration, 20);
         assert!(cooldowns.is_on_cooldown(&stack));
 
@@ -91,7 +122,7 @@ mod tests {
 
         assert_eq!(
             cooldowns.tick(),
-            vec![vanilla_items::ITEMS.ender_pearl.key.clone()]
+            vec![vanilla_items::ENDER_PEARL.key.clone()]
         );
         assert!(!cooldowns.is_on_cooldown(&stack));
     }
@@ -101,11 +132,11 @@ mod tests {
         init_test_registry();
 
         let group = steel_utils::Identifier::vanilla_static("test_group");
-        let mut stack = ItemStack::with_count(&vanilla_items::ITEMS.ender_pearl, 1);
+        let mut stack = ItemStack::with_count(&vanilla_items::ENDER_PEARL, 1);
         stack.set(USE_COOLDOWN, UseCooldown::new(0.5, Some(group.clone())));
-        let mut other = ItemStack::with_count(&vanilla_items::ITEMS.chorus_fruit, 1);
+        let mut other = ItemStack::with_count(&vanilla_items::CHORUS_FRUIT, 1);
         other.set(USE_COOLDOWN, UseCooldown::new(1.0, Some(group.clone())));
-        let unrelated = ItemStack::with_count(&vanilla_items::ITEMS.wind_charge, 1);
+        let unrelated = ItemStack::with_count(&vanilla_items::WIND_CHARGE, 1);
         let mut cooldowns = ItemCooldowns::default();
 
         let Some((started_group, duration)) = cooldowns.add_from_stack(&stack) else {

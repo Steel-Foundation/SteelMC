@@ -6,19 +6,17 @@
 use std::array;
 use std::sync::{Arc, Weak};
 
-use simdnbt::ToNbtTag;
 use simdnbt::borrow::{
     BaseNbtCompound as BorrowedNbtCompound, NbtCompound as BorrowedNbtCompoundView,
 };
-use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use simdnbt::owned::{NbtCompound, NbtList};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
-use steel_registry::loot_table::DyeColor;
-use steel_registry::vanilla_block_entity_types;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use steel_registry::{DyeColor, vanilla_block_entity_types};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 use text_components::{TextComponent, content::Content};
 use uuid::Uuid;
 
-use crate::block_entity::{BlockEntity, BlockEntityTickAction};
+use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::entity::Entity;
 use crate::world::World;
 
@@ -84,21 +82,23 @@ impl SignText {
 
     /// Loads sign text from borrowed NBT.
     pub fn load(&mut self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        // Load messages - they are stored as a list of compounds (text components)
-        if let Some(messages) = nbt.list("messages")
-            && let Some(compounds) = messages.compounds()
-        {
-            for (i, compound) in compounds.into_iter().enumerate().take(SIGN_LINES) {
-                if let Some(text) = TextComponent::from_nbt(&NbtTag::Compound(compound.to_owned()))
-                {
-                    self.messages[i] = text;
-                }
+        if let Some(messages) = nbt.list("messages") {
+            let tags = messages.to_owned().as_nbt_tags();
+            let messages = tags
+                .iter()
+                .map(TextComponent::from_nbt)
+                .collect::<Option<Vec<_>>>();
+            if let Some(messages) = messages
+                && let Ok(messages) = <[TextComponent; SIGN_LINES]>::try_from(messages)
+            {
+                self.messages = messages;
             }
         }
 
         // Load color
         if let Some(color_str) = nbt.string("color") {
-            self.color = dye_color_from_str(&color_str.to_str());
+            self.color =
+                DyeColor::from_serialized_name(&color_str.to_str()).unwrap_or(DyeColor::Black);
         }
 
         // Load glow
@@ -109,16 +109,18 @@ impl SignText {
 
     /// Saves sign text to NBT.
     pub fn save(&self, nbt: &mut NbtCompound) {
-        // Save messages as a list of compounds (text components)
-        let compounds: Vec<NbtCompound> = self
-            .messages
-            .iter()
-            .map(|msg| msg.to_nbt_tag().into_compound().unwrap_or_default())
-            .collect();
-        nbt.insert("messages", NbtList::Compound(compounds));
+        nbt.insert(
+            "messages",
+            NbtList::from(
+                self.messages
+                    .iter()
+                    .map(TextComponent::to_codec_nbt)
+                    .collect::<Vec<_>>(),
+            ),
+        );
 
         // Save color
-        nbt.insert("color", dye_color_to_str(self.color));
+        nbt.insert("color", self.color.serialized_name());
 
         // Save glow
         nbt.insert("has_glowing_text", i8::from(self.has_glowing_text));
@@ -129,22 +131,17 @@ impl SignText {
 ///
 /// Stores text on both front and back sides of the sign.
 pub struct SignBlockEntity {
-    /// Weak reference to the world for marking chunks dirty.
-    level: Weak<World>,
-    /// Block entity type (sign or `hanging_sign`).
-    block_entity_type: BlockEntityTypeRef,
-    /// Position in the world.
-    pos: BlockPos,
-    /// Current block state.
-    state: BlockStateId,
-    /// Whether this entity has been marked for removal.
-    removed: bool,
+    base: BlockEntityBase,
+    sign: SyncMutex<SignState>,
+}
+
+struct SignState {
     /// Text on the front side.
-    pub front_text: SignText,
+    front_text: SignText,
     /// Text on the back side.
-    pub back_text: SignText,
+    back_text: SignText,
     /// Whether the sign is waxed (prevents editing).
-    pub is_waxed: bool,
+    is_waxed: bool,
     /// UUID of the player currently allowed to edit this sign.
     /// Used to prevent multiple players from editing simultaneously.
     player_who_may_edit: Option<Uuid>,
@@ -178,131 +175,114 @@ impl SignBlockEntity {
         state: BlockStateId,
     ) -> Self {
         Self {
-            level,
-            block_entity_type,
-            pos,
-            state,
-            removed: false,
-            front_text: SignText::new(),
-            back_text: SignText::new(),
-            is_waxed: false,
-            player_who_may_edit: None,
+            base: BlockEntityBase::new(block_entity_type, level, pos, state),
+            sign: SyncMutex::new(SignState {
+                front_text: SignText::new(),
+                back_text: SignText::new(),
+                is_waxed: false,
+                player_who_may_edit: None,
+            }),
         }
     }
 
     /// Gets the UUID of the player currently allowed to edit this sign.
     #[must_use]
-    pub const fn get_player_who_may_edit(&self) -> Option<Uuid> {
-        self.player_who_may_edit
+    pub fn get_player_who_may_edit(&self) -> Option<Uuid> {
+        self.sign.lock().player_who_may_edit
     }
 
     /// Sets the player allowed to edit this sign.
-    pub const fn set_player_who_may_edit(&mut self, player: Option<Uuid>) {
-        self.player_who_may_edit = player;
+    pub fn set_player_who_may_edit(&self, player: Option<Uuid>) {
+        self.sign.lock().player_who_may_edit = player;
     }
 
     /// Checks if another player (not the given one) is currently editing this sign.
     #[must_use]
     pub fn is_other_player_editing(&self, player_uuid: Uuid) -> bool {
-        self.player_who_may_edit
+        self.sign
+            .lock()
+            .player_who_may_edit
             .is_some_and(|editor| editor != player_uuid)
     }
 
     /// Gets the text for a side.
     #[must_use]
-    pub const fn get_text(&self, front: bool) -> &SignText {
+    pub fn get_text(&self, front: bool) -> SignText {
+        let sign = self.sign.lock();
         if front {
-            &self.front_text
+            sign.front_text.clone()
         } else {
-            &self.back_text
+            sign.back_text.clone()
         }
     }
 
-    /// Gets mutable text for a side.
-    pub const fn get_text_mut(&mut self, front: bool) -> &mut SignText {
-        if front {
-            &mut self.front_text
-        } else {
-            &mut self.back_text
+    /// Returns whether this sign is waxed.
+    #[must_use]
+    pub fn is_waxed(&self) -> bool {
+        self.sign.lock().is_waxed
+    }
+
+    /// Makes this sign waxed, returning whether its state changed.
+    pub fn wax(&self) -> bool {
+        let mut sign = self.sign.lock();
+        if sign.is_waxed {
+            return false;
         }
+        sign.is_waxed = true;
+        true
     }
 
     /// Sets the text for a side.
-    pub fn set_text(&mut self, text: SignText, front: bool) {
+    pub fn set_text(&self, text: SignText, front: bool) {
+        let mut sign = self.sign.lock();
         if front {
-            self.front_text = text;
+            sign.front_text = text;
         } else {
-            self.back_text = text;
+            sign.back_text = text;
         }
     }
 }
 
 impl BlockEntity for SignBlockEntity {
-    fn get_type(&self) -> BlockEntityTypeRef {
-        self.block_entity_type
+    fn base(&self) -> &BlockEntityBase {
+        &self.base
     }
 
-    fn get_block_pos(&self) -> BlockPos {
-        self.pos
-    }
-
-    fn get_block_state(&self) -> BlockStateId {
-        self.state
-    }
-
-    fn set_block_state(&mut self, state: BlockStateId) {
-        self.state = state;
-    }
-
-    fn is_removed(&self) -> bool {
-        self.removed
-    }
-
-    fn set_removed(&mut self) {
-        self.removed = true;
-    }
-
-    fn clear_removed(&mut self) {
-        self.removed = false;
-    }
-
-    fn get_level(&self) -> Option<Arc<World>> {
-        self.level.upgrade()
-    }
-
-    fn load_additional(&mut self, nbt: &BorrowedNbtCompound<'_>) {
+    fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         // Convert to NbtCompound view for accessing methods
         let nbt_view: BorrowedNbtCompoundView<'_, '_> = nbt.into();
+        let mut sign = self.sign.lock();
 
         // Load front text
         if let Some(front_nbt) = nbt_view.compound("front_text") {
-            self.front_text.load(front_nbt);
+            sign.front_text.load(front_nbt);
         }
 
         // Load back text
         if let Some(back_nbt) = nbt_view.compound("back_text") {
-            self.back_text.load(back_nbt);
+            sign.back_text.load(back_nbt);
         }
 
         // Load waxed state
         if let Some(waxed) = nbt_view.byte("is_waxed") {
-            self.is_waxed = waxed != 0;
+            sign.is_waxed = waxed != 0;
         }
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
+        let sign = self.sign.lock();
         // Save front text
         let mut front_nbt = NbtCompound::new();
-        self.front_text.save(&mut front_nbt);
+        sign.front_text.save(&mut front_nbt);
         nbt.insert("front_text", front_nbt);
 
         // Save back text
         let mut back_nbt = NbtCompound::new();
-        self.back_text.save(&mut back_nbt);
+        sign.back_text.save(&mut back_nbt);
         nbt.insert("back_text", back_nbt);
 
         // Save waxed state
-        nbt.insert("is_waxed", i8::from(self.is_waxed));
+        nbt.insert("is_waxed", i8::from(sign.is_waxed));
     }
 
     fn get_update_tag(&self) -> Option<NbtCompound> {
@@ -312,75 +292,110 @@ impl BlockEntity for SignBlockEntity {
         Some(nbt)
     }
 
-    fn is_ticking(&self) -> bool {
-        // Signs tick to clear the edit lock if the player moves away
-        self.player_who_may_edit.is_some()
-    }
-
-    fn tick(&mut self, world: &Arc<World>) -> Option<BlockEntityTickAction> {
+    fn tick(&self, world: &Arc<World>) {
         // Clear the edit lock if the editing player is too far away or gone
-        if let Some(editor_uuid) = self.player_who_may_edit {
-            let should_clear = world
-                .players
-                .get_by_uuid(&editor_uuid)
-                .is_none_or(|player| {
-                    let pos = self.pos;
-                    let player_pos = player.position();
-                    let dx = player_pos.x - f64::from(pos.0.x) - 0.5;
-                    let dy = player_pos.y - f64::from(pos.0.y) - 0.5;
-                    let dz = player_pos.z - f64::from(pos.0.z) - 0.5;
-                    let distance_sq = dx * dx + dy * dy + dz * dz;
-                    distance_sq > MAX_EDIT_DISTANCE * MAX_EDIT_DISTANCE
-                });
+        let editor_uuid = self.sign.lock().player_who_may_edit;
+        let Some(editor_uuid) = editor_uuid else {
+            return;
+        };
+        let should_clear = world
+            .players
+            .get_by_uuid(&editor_uuid)
+            .is_none_or(|player| {
+                let pos = self.get_block_pos();
+                let player_pos = player.position();
+                let dx = player_pos.x - f64::from(pos.0.x) - 0.5;
+                let dy = player_pos.y - f64::from(pos.0.y) - 0.5;
+                let dz = player_pos.z - f64::from(pos.0.z) - 0.5;
+                let distance_sq = dx * dx + dy * dy + dz * dz;
+                distance_sq > MAX_EDIT_DISTANCE * MAX_EDIT_DISTANCE
+            });
 
-            if should_clear {
-                self.player_who_may_edit = None;
+        if should_clear {
+            let mut sign = self.sign.lock();
+            if sign.player_who_may_edit == Some(editor_uuid) {
+                sign.player_who_may_edit = None;
             }
         }
-        None
     }
 }
 
-/// Converts a dye color to its string representation.
-const fn dye_color_to_str(color: DyeColor) -> &'static str {
-    match color {
-        DyeColor::White => "white",
-        DyeColor::Orange => "orange",
-        DyeColor::Magenta => "magenta",
-        DyeColor::LightBlue => "light_blue",
-        DyeColor::Yellow => "yellow",
-        DyeColor::Lime => "lime",
-        DyeColor::Pink => "pink",
-        DyeColor::Gray => "gray",
-        DyeColor::LightGray => "light_gray",
-        DyeColor::Cyan => "cyan",
-        DyeColor::Purple => "purple",
-        DyeColor::Blue => "blue",
-        DyeColor::Brown => "brown",
-        DyeColor::Green => "green",
-        DyeColor::Red => "red",
-        DyeColor::Black => "black",
-    }
-}
+#[cfg(test)]
+mod tests {
+    use std::{array, io::Cursor, sync::Arc};
 
-/// Parses a dye color from its string representation.
-fn dye_color_from_str(s: &str) -> DyeColor {
-    match s {
-        "white" => DyeColor::White,
-        "orange" => DyeColor::Orange,
-        "magenta" => DyeColor::Magenta,
-        "light_blue" => DyeColor::LightBlue,
-        "yellow" => DyeColor::Yellow,
-        "lime" => DyeColor::Lime,
-        "pink" => DyeColor::Pink,
-        "gray" => DyeColor::Gray,
-        "light_gray" => DyeColor::LightGray,
-        "cyan" => DyeColor::Cyan,
-        "purple" => DyeColor::Purple,
-        "blue" => DyeColor::Blue,
-        "brown" => DyeColor::Brown,
-        "green" => DyeColor::Green,
-        "red" => DyeColor::Red,
-        _ => DyeColor::Black,
+    use simdnbt::borrow::read_tag;
+    use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_utils::BlockPos;
+    use text_components::{Modifier as _, TextComponent};
+    use uuid::Uuid;
+
+    use super::{SignBlockEntity, SignText};
+    use crate::block_entity::BlockEntity as _;
+    use crate::test_support::fresh_test_world;
+
+    #[test]
+    fn plain_sign_lines_save_as_a_string_list() {
+        let mut text = SignText::new();
+        text.messages = array::from_fn(|index| TextComponent::plain(index.to_string()));
+
+        let mut nbt = NbtCompound::new();
+        text.save(&mut nbt);
+
+        assert_eq!(
+            nbt.get("messages"),
+            Some(&NbtTag::List(NbtList::String(vec![
+                "0".into(),
+                "1".into(),
+                "2".into(),
+                "3".into(),
+            ])))
+        );
+    }
+
+    #[test]
+    fn mixed_sign_lines_round_trip_through_the_component_codec() {
+        let mut expected = SignText::new();
+        expected.messages[0] = TextComponent::plain("plain");
+        expected.messages[1] = TextComponent::plain("styled").bold(true);
+
+        let mut nbt = NbtCompound::new();
+        expected.save(&mut nbt);
+        assert!(matches!(
+            nbt.get("messages"),
+            Some(NbtTag::List(NbtList::Compound(_)))
+        ));
+
+        let mut bytes = Vec::new();
+        NbtTag::Compound(nbt).write(&mut bytes);
+        let borrowed = read_tag(&mut Cursor::new(bytes.as_slice()))
+            .expect("saved sign text should be valid NBT");
+        let borrowed_tag = borrowed.as_tag();
+        let compound = borrowed_tag
+            .compound()
+            .expect("saved sign text should be a compound");
+
+        let mut decoded = SignText::new();
+        decoded.load(compound);
+
+        assert_eq!(decoded.messages, expected.messages);
+        assert_eq!(decoded.color, expected.color);
+        assert_eq!(decoded.has_glowing_text, expected.has_glowing_text);
+    }
+
+    #[test]
+    fn sign_tick_releases_state_before_player_lookup_and_editor_clear() {
+        init_test_registry();
+        let world = fresh_test_world("sign_editor_clear");
+        let sign = SignBlockEntity::new(
+            Arc::downgrade(&world),
+            BlockPos::new(8, 64, 8),
+            vanilla_blocks::OAK_SIGN.default_state(),
+        );
+        sign.set_player_who_may_edit(Some(Uuid::from_u128(1)));
+
+        sign.tick(&world);
+        assert_eq!(sign.get_player_who_may_edit(), None);
     }
 }

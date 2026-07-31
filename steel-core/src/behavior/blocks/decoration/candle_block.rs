@@ -24,10 +24,11 @@ use crate::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
         block::schedule_placed_liquid_tick,
     },
+    entity::projectile::Projectile,
     player,
     world::{
-        LevelAccessor, LevelReader, ScheduledTickAccess, World,
-        game_event_context::GameEventContext,
+        ClipHitResult, LevelAccessor, LevelReader, ScheduledTickAccess, World,
+        game_event::GameEventContext,
     },
 };
 
@@ -48,6 +49,16 @@ impl CandleBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
+    pub(super) fn projectile_lit_state(
+        state: steel_utils::BlockStateId,
+        projectile_is_on_fire: bool,
+    ) -> Option<steel_utils::BlockStateId> {
+        (projectile_is_on_fire
+            && state.try_get_value(&WATERLOGGED) != Some(true)
+            && !state.get_value(&LIT_PROPERTY))
+        .then(|| state.set_value(&LIT_PROPERTY, true))
+    }
 }
 
 impl BlockBehavior for CandleBlock {
@@ -59,7 +70,8 @@ impl BlockBehavior for CandleBlock {
         pos: BlockPos,
     ) -> bool {
         let below_pos = pos.below();
-        world.get_block_state(below_pos).is_face_sturdy_for_at(
+        world.is_face_sturdy_for(
+            world.get_block_state(below_pos),
             below_pos,
             Direction::Up,
             SupportType::Center,
@@ -71,7 +83,7 @@ impl BlockBehavior for CandleBlock {
         context: &BlockPlaceContext<'_>,
     ) -> Option<steel_utils::BlockStateId> {
         let default_state = self.block.default_state();
-        if self.can_survive(default_state, context.world, context.place_pos) {
+        if self.can_survive(default_state, context.world, context.place_pos()) {
             return Some(default_state.set_value(&WATERLOGGED, context.is_water_source()));
         }
         None
@@ -95,6 +107,19 @@ impl BlockBehavior for CandleBlock {
             return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
         state
+    }
+
+    fn on_projectile_hit(
+        &self,
+        state: steel_utils::BlockStateId,
+        world: &Arc<World>,
+        hit: &ClipHitResult,
+        projectile: &dyn Projectile,
+    ) {
+        let Some(lit_state) = Self::projectile_lit_state(state, projectile.is_on_fire()) else {
+            return;
+        };
+        world.set_block(hit.block_pos, lit_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
     }
 
     fn use_item_on(
@@ -207,6 +232,23 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![&vanilla_fluids::WATER]
         );
+    }
+
+    #[test]
+    fn burning_projectile_lights_only_unlit_candles() {
+        init_test_registry();
+
+        let unlit = vanilla_blocks::CANDLE
+            .default_state()
+            .set_value(&LIT_PROPERTY, false)
+            .set_value(&WATERLOGGED, false);
+        let lit = unlit.set_value(&LIT_PROPERTY, true);
+        let waterlogged = unlit.set_value(&WATERLOGGED, true);
+
+        assert_eq!(CandleBlock::projectile_lit_state(unlit, true), Some(lit));
+        assert_eq!(CandleBlock::projectile_lit_state(unlit, false), None);
+        assert_eq!(CandleBlock::projectile_lit_state(lit, true), None);
+        assert_eq!(CandleBlock::projectile_lit_state(waterlogged, true), None);
     }
 
     #[test]

@@ -562,6 +562,13 @@ where
         } = *self;
 
         while chain.stage() == ContextChainStage::Modify {
+            sources.retain(|source| source.execution_is_current());
+            if sources.is_empty() {
+                if modifiers.is_return() {
+                    context.queue_next(frame, FallthroughAction);
+                }
+                return;
+            }
             if chain.top_context().is_forked() {
                 modifiers = modifiers.with_forked();
             }
@@ -610,6 +617,7 @@ where
             chain = next_stage;
         }
 
+        sources.retain(|source| source.execution_is_current());
         if sources.is_empty() {
             if modifiers.is_return() {
                 context.queue_next(frame, FallthroughAction);
@@ -730,6 +738,10 @@ where
             source,
             modifiers,
         } = *self;
+        if !source.execution_is_current() {
+            source.callback().on_result(false, 0);
+            return;
+        }
         context.increment_cost();
         let command_context = chain.top_context().copy_for(Arc::clone(&source));
         let Some(executor) = command_context.executor() else {
@@ -777,6 +789,12 @@ where
     }
 
     fn poll(&mut self) -> CommandSuspensionPoll<S> {
+        if !self.source.execution_is_current() {
+            self.suspension.cancel();
+            return CommandSuspensionPoll::resume(UnavailableCommandResultAction {
+                source: Arc::clone(&self.source),
+            });
+        }
         match self.suspension.poll() {
             CommandResultSuspensionPoll::Pending => CommandSuspensionPoll::Pending,
             CommandResultSuspensionPoll::Ready(result) => {
@@ -791,6 +809,22 @@ where
 
     fn cancel(&mut self) {
         self.suspension.cancel();
+    }
+}
+
+struct UnavailableCommandResultAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    source: Arc<S>,
+}
+
+impl<S> EntryAction<S> for UnavailableCommandResultAction<S>
+where
+    S: ExecutionCommandSource,
+{
+    fn execute(self: Box<Self>, _context: &mut CommandExecutionContext<S>, _frame: Frame) {
+        self.source.callback().on_result(false, 0);
     }
 }
 

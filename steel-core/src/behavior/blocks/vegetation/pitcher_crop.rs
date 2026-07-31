@@ -160,9 +160,9 @@ impl PitcherCropBlock {
 impl BlockBehavior for PitcherCropBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if self.may_place_on(
-            context.world.get_block_state(context.place_pos.below()),
+            context.world.get_block_state(context.place_pos().below()),
             context.world,
-            context.place_pos.below(),
+            context.place_pos().below(),
         ) {
             Some(self.block.default_state())
         } else {
@@ -206,11 +206,6 @@ impl BlockBehavior for PitcherCropBlock {
         _is_precise: bool,
     ) {
         destroy_crop_on_ravager_contact(world, pos, entity);
-    }
-
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        state.get_value(&HALF_PROPERTY) == DoubleBlockHalf::Lower
-            && state.get_value(&AGE_PROPERTY) < 4
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

@@ -28,7 +28,7 @@ use steel_registry::vanilla_items;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 
 /// Handles all bucket variants (empty, water, lava).
 #[item_behavior]
@@ -60,7 +60,7 @@ fn filled_bucket_success_stack(context: &UseItemContext) -> ItemStack {
             .inv
             .with_item(|item| item.copy_with_count(item.count()))
     } else {
-        ItemStack::new(&vanilla_items::ITEMS.bucket)
+        ItemStack::new(&vanilla_items::BUCKET)
     }
 }
 

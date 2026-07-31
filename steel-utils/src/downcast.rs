@@ -57,6 +57,23 @@ pub unsafe trait DowncastType: 'static {
     const TYPE_KEY: DowncastTypeKey;
 }
 
+macro_rules! impl_steel_downcast_type {
+    ($type:ty, $key:literal) => {
+        // SAFETY: This Steel-owned key uniquely identifies the concrete Rust
+        // type within the process.
+        unsafe impl DowncastType for $type {
+            const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new($key);
+        }
+    };
+}
+
+impl_steel_downcast_type!((), "steel:rust_primitive/unit");
+impl_steel_downcast_type!(bool, "steel:rust_primitive/bool");
+impl_steel_downcast_type!(i32, "steel:rust_primitive/i32");
+impl_steel_downcast_type!(f32, "steel:rust_primitive/f32");
+impl_steel_downcast_type!(crate::Identifier, "steel:value/identifier");
+impl_steel_downcast_type!(text_components::TextComponent, "steel:value/text_component");
+
 mod private {
     pub trait Sealed {}
 

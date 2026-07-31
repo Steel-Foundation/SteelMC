@@ -17,9 +17,10 @@ use glam::DVec3;
 use rustc_hash::FxHashMap;
 
 use crate::blocks::behavior::BlockConfig;
-use crate::blocks::properties::{DynProperty, Property};
+use crate::blocks::properties::Property;
 use crate::blocks::shapes::ShapeChannel;
-use crate::{RegistryExt, TaggedRegistryExt};
+use crate::fluid::{FluidRef, FluidState};
+use crate::{RegistryExt, RegistryTags, TaggedRegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
@@ -82,13 +83,127 @@ impl StateBooleanData {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct StateFluidOverwrite {
+    pub offset: u16,
+    pub value: FluidState,
+}
+
+impl StateFluidOverwrite {
+    #[must_use]
+    pub const fn new(offset: u16, value: FluidState) -> Self {
+        Self { offset, value }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct StateFluidData {
+    pub default: FluidState,
+    pub overwrites: &'static [StateFluidOverwrite],
+}
+
+impl StateFluidData {
+    pub const EMPTY: Self = Self::new(FluidState::EMPTY, &[]);
+
+    #[must_use]
+    pub const fn new(default: FluidState, overwrites: &'static [StateFluidOverwrite]) -> Self {
+        Self {
+            default,
+            overwrites,
+        }
+    }
+
+    #[must_use]
+    pub fn value(self, offset: u16) -> FluidState {
+        self.overwrites
+            .iter()
+            .find(|overwrite| overwrite.offset == offset)
+            .map_or(self.default, |overwrite| overwrite.value)
+    }
+}
+
+/// Immutable ticking metadata flattened by global block-state ID during registration.
+///
+/// The fields are packed instead of embedding `FluidState` plus separate booleans, while
+/// retaining direct `FluidRef` access on the random-tick hot path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlockStateTickingMetadata {
+    fluid: FluidRef,
+    amount: u8,
+    flags: u8,
+}
+
+impl BlockStateTickingMetadata {
+    const FALLING: u8 = 1 << 0;
+    const RANDOMLY_TICKING_BLOCK: u8 = 1 << 1;
+    const RANDOMLY_TICKING_FLUID: u8 = 1 << 2;
+    const IS_AIR: u8 = 1 << 3;
+    const HAS_FLUID: u8 = 1 << 4;
+
+    #[must_use]
+    pub const fn new(fluid_state: FluidState, randomly_ticking_block: bool, is_air: bool) -> Self {
+        let mut flags = 0;
+        if fluid_state.falling {
+            flags |= Self::FALLING;
+        }
+        if randomly_ticking_block {
+            flags |= Self::RANDOMLY_TICKING_BLOCK;
+        }
+        if fluid_state.fluid_id.is_randomly_ticking {
+            flags |= Self::RANDOMLY_TICKING_FLUID;
+        }
+        if is_air {
+            flags |= Self::IS_AIR;
+        }
+        if !fluid_state.is_empty() {
+            flags |= Self::HAS_FLUID;
+        }
+        Self {
+            fluid: fluid_state.fluid_id,
+            amount: fluid_state.amount,
+            flags,
+        }
+    }
+
+    #[must_use]
+    pub const fn fluid_state(self) -> FluidState {
+        FluidState::new(self.fluid, self.amount, self.flags & Self::FALLING != 0)
+    }
+
+    #[must_use]
+    pub const fn randomly_ticking_block(self) -> bool {
+        self.flags & Self::RANDOMLY_TICKING_BLOCK != 0
+    }
+
+    #[must_use]
+    pub const fn randomly_ticking_fluid(self) -> bool {
+        self.flags & Self::RANDOMLY_TICKING_FLUID != 0
+    }
+
+    #[must_use]
+    pub const fn is_air(self) -> bool {
+        self.flags & Self::IS_AIR != 0
+    }
+
+    #[must_use]
+    pub const fn has_fluid(self) -> bool {
+        self.flags & Self::HAS_FLUID != 0
+    }
+}
+
 pub struct Block {
     pub key: Identifier,
     pub config: BlockConfig,
-    pub properties: &'static [&'static dyn DynProperty],
+    pub properties: &'static [&'static dyn Property],
     pub default_state_offset: u16,
     /// Vanilla `BlockState.isSuffocating` values indexed by block-local state offset.
     pub suffocating: StateBooleanData,
+    /// Vanilla `BlockState.isRedstoneConductor` values indexed by block-local state offset.
+    pub redstone_conductor: StateBooleanData,
+    /// Vanilla `BlockState.getFluidState` values indexed by block-local state offset.
+    pub fluid_state: StateFluidData,
+    /// Vanilla `BlockState.isRandomlyTicking` values indexed by block-local state offset.
+    pub randomly_ticking: StateBooleanData,
     /// Extracted vanilla light properties indexed by block-local state offset.
     pub light_properties: LightPropertiesFn,
     /// Function to get collision shape for a state offset
@@ -138,14 +253,18 @@ impl Block {
     pub const fn new(
         key: Identifier,
         config: BlockConfig,
-        properties: &'static [&'static dyn DynProperty],
+        properties: &'static [&'static dyn Property],
     ) -> Self {
+        let randomly_ticking = StateBooleanData::new(config.is_randomly_ticking, &[]);
         Self {
             key,
             config,
             properties,
             default_state_offset: 0,
             suffocating: StateBooleanData::TRUE,
+            redstone_conductor: StateBooleanData::TRUE,
+            fluid_state: StateFluidData::EMPTY,
+            randomly_ticking,
             light_properties: opaque_full_block_light_properties,
             collision_shape: full_block_shape,
             support_shape: full_block_shape,
@@ -180,6 +299,24 @@ impl Block {
     /// Sets the extracted vanilla `BlockState.isSuffocating` values for this block.
     pub const fn with_suffocating(mut self, suffocating: StateBooleanData) -> Self {
         self.suffocating = suffocating;
+        self
+    }
+
+    /// Sets the extracted per-state redstone-conductor predicate.
+    pub const fn with_redstone_conductor(mut self, redstone_conductor: StateBooleanData) -> Self {
+        self.redstone_conductor = redstone_conductor;
+        self
+    }
+
+    /// Sets the extracted per-state fluid values.
+    pub const fn with_fluid_state(mut self, fluid_state: StateFluidData) -> Self {
+        self.fluid_state = fluid_state;
+        self
+    }
+
+    /// Sets the extracted per-state random-tick predicate.
+    pub const fn with_randomly_ticking(mut self, randomly_ticking: StateBooleanData) -> Self {
+        self.randomly_ticking = randomly_ticking;
         self
     }
 
@@ -236,6 +373,15 @@ impl Block {
         (self.light_properties)(offset)
     }
 
+    #[must_use]
+    pub fn get_ticking_metadata(&self, offset: u16) -> BlockStateTickingMetadata {
+        BlockStateTickingMetadata::new(
+            self.fluid_state.value(offset),
+            self.randomly_ticking.value(offset),
+            self.config.is_air,
+        )
+    }
+
     /// Returns the vanilla block-state positional offset for this block.
     #[must_use]
     pub fn offset_at(&self, pos: BlockPos) -> DVec3 {
@@ -289,7 +435,7 @@ impl Block {
     pub fn state_count(&self) -> u16 {
         self.properties
             .iter()
-            .map(|p| p.get_possible_values().len() as u16)
+            .map(|property| property.value_count() as u16)
             .product()
     }
 
@@ -305,11 +451,13 @@ pub type BlockRef = &'static Block;
 pub struct BlockRegistry {
     blocks_by_id: Vec<BlockRef>,
     blocks_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
     pub state_to_block_lookup: Vec<BlockRef>,
     /// Maps state IDs to block IDs (parallel to `state_to_block_lookup` for O(1) lookup)
     pub state_to_block_id: Vec<usize>,
+    /// Behavior-independent metadata indexed directly by global block-state ID.
+    state_ticking_metadata: Vec<BlockStateTickingMetadata>,
     /// Maps block IDs to their base state ID
     pub block_to_base_state: Vec<u16>,
     /// The next state ID to be allocated
@@ -329,10 +477,11 @@ impl BlockRegistry {
         Self {
             blocks_by_id: Vec::new(),
             blocks_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
             state_to_block_lookup: Vec::new(),
             state_to_block_id: Vec::new(),
+            state_ticking_metadata: Vec::new(),
             block_to_base_state: Vec::new(),
             next_state_id: 0,
         }
@@ -354,9 +503,11 @@ impl BlockRegistry {
         self.block_to_base_state.push(base_state_id);
 
         let state_count = block.state_count();
-        for _ in 0..state_count {
+        for offset in 0..state_count {
             self.state_to_block_lookup.push(block);
             self.state_to_block_id.push(id);
+            self.state_ticking_metadata
+                .push(block.get_ticking_metadata(offset));
         }
 
         self.next_state_id += state_count;
@@ -404,6 +555,16 @@ impl BlockRegistry {
     }
 
     #[must_use]
+    pub fn get_ticking_metadata(
+        &self,
+        state_id: BlockStateId,
+    ) -> Option<BlockStateTickingMetadata> {
+        self.state_ticking_metadata
+            .get(state_id.0 as usize)
+            .copied()
+    }
+
+    #[must_use]
     pub fn get_properties(&self, id: BlockStateId) -> Vec<(&'static str, &'static str)> {
         let block = self.by_state_id(id).expect("Invalid state ID");
 
@@ -422,7 +583,7 @@ impl BlockRegistry {
         Self::decode_property_indices(block, relative_index)
             .into_iter()
             .zip(block.properties)
-            .map(|(value_index, prop)| (prop.get_name(), prop.get_possible_values()[value_index]))
+            .map(|(value_index, prop)| (prop.get_name(), prop.value_name_from_index(value_index)))
             .collect()
     }
 
@@ -509,7 +670,7 @@ impl BlockRegistry {
         let mut property_indices = vec![0; block.properties.len()];
 
         for (i, prop) in block.properties.iter().enumerate().rev() {
-            let count = prop.get_possible_values().len() as u16;
+            let count = prop.value_count() as u16;
             property_indices[i] = (offset % count) as usize;
             offset /= count;
         }
@@ -529,10 +690,8 @@ impl BlockRegistry {
                 .position(|p| p.get_name() == prop_name)?;
 
             let prop = block.properties[prop_idx];
-            let value_idx = prop
-                .get_possible_values()
-                .iter()
-                .position(|v| *v == prop_value)?;
+            let value_idx = (0..prop.value_count())
+                .find(|&index| prop.value_name_from_index(index) == prop_value)?;
 
             property_indices[prop_idx] = value_idx;
         }
@@ -545,28 +704,39 @@ impl BlockRegistry {
         let mut multiplier = 1u16;
         for (idx, prop) in property_indices.iter().zip(block.properties.iter()).rev() {
             offset += *idx as u16 * multiplier;
-            multiplier *= prop.get_possible_values().len() as u16;
+            multiplier *= prop.value_count() as u16;
         }
 
         offset
     }
 
+    fn property_stride(block: BlockRef, property_index: usize) -> u16 {
+        block.properties[property_index + 1..]
+            .iter()
+            .map(|property| property.value_count() as u16)
+            .product()
+    }
+
     // Panics if that property isn't supposed to be on this block.
-    pub fn get_property<T, P: Property<T>>(&self, id: BlockStateId, property: &P) -> T {
+    pub fn get_property<P: Property>(&self, id: BlockStateId, property: &P) -> P::Value {
         self.try_get_property(id, property)
             .expect("Property not found on this block")
     }
 
     /// Gets the value of a property, returning `None` if the block doesn't have this property.
     #[must_use]
-    pub fn try_get_property<T, P: Property<T>>(&self, id: BlockStateId, property: &P) -> Option<T> {
+    pub fn try_get_property<P: Property>(
+        &self,
+        id: BlockStateId,
+        property: &P,
+    ) -> Option<P::Value> {
         let block = self.by_state_id(id).expect("Invalid state ID");
 
         // Find the property index in the block's property list
         let property_index = block
             .properties
             .iter()
-            .position(|prop| prop.get_name() == property.as_dyn().get_name())?;
+            .position(|prop| prop.get_name() == property.get_name())?;
 
         // Get the base state ID for this block (O(1) lookup)
         let block_id = self.state_to_block_id[id.0 as usize];
@@ -575,20 +745,21 @@ impl BlockRegistry {
         // Calculate the relative state index
         let relative_index = id.0 - base_state_id;
 
-        let property_indices = Self::decode_property_indices(block, relative_index);
         let block_property = block.properties[property_index];
-        let block_values = block_property.get_possible_values();
-        let block_value = block_values[property_indices[property_index]];
+        let stride = Self::property_stride(block, property_index);
+        let value_index =
+            usize::from(relative_index / stride % block_property.value_count() as u16);
+        let block_value = block_property.value_name_from_index(value_index);
 
         property.get_value(block_value)
     }
 
     // Panics if that property isn't supposed to be on this block.
-    pub fn set_property<T, P: Property<T>>(
+    pub fn set_property<P: Property>(
         &self,
         id: BlockStateId,
         property: &P,
-        value: T,
+        value: P::Value,
     ) -> BlockStateId {
         let block = self.by_state_id(id).expect("Invalid state ID");
 
@@ -596,11 +767,11 @@ impl BlockRegistry {
         let property_index = block
             .properties
             .iter()
-            .position(|prop| prop.get_name() == property.as_dyn().get_name())
+            .position(|prop| prop.get_name() == property.get_name())
             .unwrap_or_else(|| {
                 panic!(
                     "Property {} not found on block {}",
-                    property.as_dyn().get_name(),
+                    property.get_name(),
                     block.key
                 )
             });
@@ -612,40 +783,27 @@ impl BlockRegistry {
         // Calculate the relative state index
         let relative_index = id.0 - base_state_id;
 
-        // Decode all property indices from the relative state index.
-        // Properties are decoded in reverse order (last property = inner loop).
-        let mut index = relative_index;
-        let mut property_indices = vec![0usize; block.properties.len()];
-
-        for (i, prop) in block.properties.iter().enumerate().rev() {
-            let count = prop.get_possible_values().len() as u16;
-            property_indices[i] = (index % count) as usize;
-            index /= count;
-        }
-
         let caller_value_index = property.get_internal_index(&value);
-        let caller_values = property.as_dyn().get_possible_values();
-        let value_name = caller_values[caller_value_index];
-        let block_values = block.properties[property_index].get_possible_values();
-        let Some(new_value_index) = block_values.iter().position(|v| *v == value_name) else {
+        let value_name = property.value_name_from_index(caller_value_index);
+        let block_property = block.properties[property_index];
+        let Some(new_value_index) = (0..block_property.value_count())
+            .find(|&index| block_property.value_name_from_index(index) == value_name)
+        else {
             panic!(
                 "Value {} for property {} not found on block {}",
                 value_name,
-                property.as_dyn().get_name(),
+                property.get_name(),
                 block.key
             );
         };
-        property_indices[property_index] = new_value_index;
-
-        // Re-encode the property indices back to a state ID.
-        // Properties are processed in reverse order (last property = inner loop).
-        let mut new_relative_index = 0u16;
-        let mut multiplier = 1u16;
-        for (i, prop) in block.properties.iter().enumerate().rev() {
-            let count = prop.get_possible_values().len() as u16;
-            new_relative_index += property_indices[i] as u16 * multiplier;
-            multiplier *= count;
-        }
+        let stride = Self::property_stride(block, property_index);
+        let old_value_index =
+            usize::from(relative_index / stride % block_property.value_count() as u16);
+        let new_relative_index = if new_value_index >= old_value_index {
+            relative_index + (new_value_index - old_value_index) as u16 * stride
+        } else {
+            relative_index - (old_value_index - new_value_index) as u16 * stride
+        };
 
         BlockStateId(base_state_id + new_relative_index)
     }
@@ -737,6 +895,17 @@ impl BlockRegistry {
             return false;
         };
         block.suffocating.value(offset)
+    }
+
+    /// Returns the extracted static `BlockState.isRedstoneConductor` value.
+    ///
+    /// Dynamic block behaviors may override this value using the live level and position.
+    #[must_use]
+    pub fn is_static_redstone_conductor(&self, state_id: BlockStateId) -> bool {
+        let Some((block, offset)) = self.block_and_state_offset(state_id) else {
+            return false;
+        };
+        block.redstone_conductor.value(offset)
     }
 
     #[must_use]
@@ -877,7 +1046,7 @@ impl BlockRegistry {
             .filter(|(name, _)| target.properties.iter().any(|p| p.get_name() == *name))
             .copied()
             .collect();
-        self.state_id_from_block_properties(target, &matching)
+        self.state_id_from_block_defaulted_properties(target, matching)
             .unwrap_or_else(|| self.get_default_state_id(target))
     }
 }
@@ -930,6 +1099,45 @@ mod tests {
     }
 
     #[test]
+    fn tag_modification_keeps_order_and_membership_in_sync() {
+        let mut registry = BlockRegistry::new();
+        vanilla_blocks::register_blocks(&mut registry);
+        let tag = Identifier::new_static("test", "ordered_membership");
+        registry.register_tag(
+            Identifier::new_static("test", "ordered_membership"),
+            &["stone", "dirt"],
+        );
+
+        assert!(registry.is_in_tag(&vanilla_blocks::STONE, &tag));
+        assert_eq!(
+            registry
+                .iter_tag(&tag)
+                .map(|block| block.key.path.as_ref())
+                .collect::<Vec<_>>(),
+            ["stone", "dirt"]
+        );
+
+        registry.modify_tag(&tag, |_| {
+            vec![
+                Identifier::vanilla_static("oak_log"),
+                Identifier::vanilla_static("dirt"),
+            ]
+        });
+        registry.freeze();
+
+        assert!(!registry.is_in_tag(&vanilla_blocks::STONE, &tag));
+        assert!(registry.is_in_tag(&vanilla_blocks::OAK_LOG, &tag));
+        assert!(registry.is_in_tag(&vanilla_blocks::DIRT, &tag));
+        assert_eq!(
+            registry
+                .iter_tag(&tag)
+                .map(|block| block.key.path.as_ref())
+                .collect::<Vec<_>>(),
+            ["oak_log", "dirt"]
+        );
+    }
+
+    #[test]
     fn test_redstone_wire_properties() {
         let registry = create_test_registry();
         let redstone_wire = registry
@@ -964,7 +1172,7 @@ mod tests {
 
         let mut state_count = 1;
         for prop in redstone_wire.properties {
-            state_count *= prop.get_possible_values().len();
+            state_count *= prop.get_possible_value_names().len();
         }
         assert_eq!(state_count, 3 * 3 * 3 * 3 * 16); // 1296
     }

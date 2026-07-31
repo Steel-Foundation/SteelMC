@@ -19,7 +19,6 @@
     clippy::too_many_lines,
     clippy::trivially_copy_pass_by_ref,
     clippy::unnecessary_debug_formatting,
-    clippy::unnecessary_wraps,
     clippy::unreadable_literal,
     clippy::unwrap_used,
     reason = "registry build scripts transform extracted vanilla data and favor direct generation code over pedantic reshaping"
@@ -29,10 +28,8 @@ use std::{env, fs, path::Path, process::Command};
 
 mod attributes;
 mod banner_patterns;
-mod biome_tags;
 mod biomes;
 mod block_entity_types;
-mod block_tags;
 mod blocks;
 mod carvers;
 mod cat_variants;
@@ -40,13 +37,11 @@ mod chat_types;
 mod chicken_variants;
 mod cow_variants;
 mod damage_types;
-mod dialog_tags;
 mod dialogs;
 mod dimension_types;
 mod entities;
 mod entity_data;
 mod features;
-mod fluid_tags;
 mod fluids;
 
 mod cat_sound_variants;
@@ -56,11 +51,11 @@ mod frog_variants;
 mod game_events;
 mod game_rules;
 mod instruments;
-mod item_tags;
 mod items;
 mod jukebox_songs;
 mod level_events;
 mod loot_tables;
+mod map_decoration_types;
 mod menu_types;
 mod mob_effects;
 mod packets;
@@ -69,14 +64,12 @@ mod particle_types;
 mod pig_sound_variants;
 mod pig_variants;
 mod poi_types;
+mod position_source_types;
+mod potions;
 mod recipes;
 mod sound_events;
 mod sound_types;
-mod structure_processors;
-mod structure_sets;
-mod structure_tags;
-mod template_pools;
-mod timeline_tags;
+mod structure;
 mod timelines;
 mod trim_materials;
 mod trim_patterns;
@@ -87,18 +80,11 @@ mod wolf_variants;
 mod world_clocks;
 mod zombie_nautilus_variants;
 
-mod enchantment_tags;
 mod enchantments;
 
-mod banner_pattern_tags;
-mod damage_type_tags;
-mod entity_type_tags;
 mod generator_functions;
-mod instrument_tags;
-mod painting_variant_tags;
-mod poi_type_tags;
 mod shared_structs;
-mod tag_utils;
+mod tags;
 
 const FMT: bool = cfg!(feature = "fmt");
 
@@ -127,6 +113,7 @@ const COW_VARIANTS: &str = "cow_variants";
 const CHICKEN_VARIANTS: &str = "chicken_variants";
 const PAINTING_VARIANTS: &str = "painting_variants";
 const PARTICLE_TYPES: &str = "particle_types";
+const POSITION_SOURCE_TYPES: &str = "position_source_types";
 const VILLAGER_TYPES: &str = "villager_types";
 const VILLAGER_PROFESSIONS: &str = "villager_professions";
 const DIMENSIONS: &str = "dimension_types";
@@ -143,6 +130,9 @@ const DIALOGS: &str = "dialogs";
 const DIALOG_TAGS: &str = "dialog_tags";
 const MENU_TYPES: &str = "menu_types";
 const MOB_EFFECTS: &str = "mob_effects";
+const MAP_DECORATION_TYPES: &str = "map_decoration_types";
+const POTIONS: &str = "potions";
+const POTION_TAGS: &str = "potion_tags";
 const TIMELINES: &str = "timelines";
 const TIMELINE_TAGS: &str = "timeline_tags";
 const ZOMBIE_NAUTILUS_VARIANTS: &str = "zombie_nautilus_variants";
@@ -189,13 +179,13 @@ pub fn main() {
     let vanilla_builds = [
         (attributes::build(), ATTRIBUTES),
         (blocks::build(), BLOCKS),
-        (block_tags::build(), BLOCK_TAGS),
+        (tags::block(), BLOCK_TAGS),
         (items::build(), ITEMS),
-        (item_tags::build(), ITEM_TAGS),
+        (tags::item(), ITEM_TAGS),
         (packets::build(), PACKETS),
         (banner_patterns::build(), BANNER_PATTERNS),
         (biomes::build(), BIOMES),
-        (biome_tags::build(), BIOME_TAGS),
+        (tags::biome(), BIOME_TAGS),
         (chat_types::build(), CHAT_TYPES),
         (trim_patterns::build(), TRIM_PATTERNS),
         (trim_materials::build(), TRIM_MATERIALS),
@@ -212,25 +202,28 @@ pub fn main() {
         (chicken_variants::build(), CHICKEN_VARIANTS),
         (painting_variants::build(), PAINTING_VARIANTS),
         (particle_types::build(), PARTICLE_TYPES),
+        (position_source_types::build(), POSITION_SOURCE_TYPES),
         (villager_types::build(), VILLAGER_TYPES),
         (villager_professions::build(), VILLAGER_PROFESSIONS),
         (dimension_types::build(), DIMENSIONS),
         (damage_types::build(), DAMAGE_TYPES),
-        (damage_type_tags::build(), DAMAGE_TYPE_TAGS),
+        (tags::damage_type(), DAMAGE_TYPE_TAGS),
         (jukebox_songs::build(), JUKEBOX_SONGS),
         (instruments::build(), INSTRUMENTS),
         (dialogs::build(), DIALOGS),
-        (dialog_tags::build(), DIALOG_TAGS),
+        (tags::dialog(), DIALOG_TAGS),
         (menu_types::build(), MENU_TYPES),
         (mob_effects::build(), MOB_EFFECTS),
+        (map_decoration_types::build(), MAP_DECORATION_TYPES),
+        (potions::build(), POTIONS),
         (timelines::build(), TIMELINES),
-        (timeline_tags::build(), TIMELINE_TAGS),
+        (tags::timeline(), TIMELINE_TAGS),
         (zombie_nautilus_variants::build(), ZOMBIE_NAUTILUS_VARIANTS),
         (recipes::build(), RECIPES),
         (entities::build(), VANILLA_ENTITIES),
         (entity_data::build(), ENTITY_DATA),
         (fluids::build(), FLUIDS),
-        (fluid_tags::build(), FLUID_TAGS),
+        (tags::fluid(), FLUID_TAGS),
         (loot_tables::build(), LOOT_TABLES),
         (block_entity_types::build(), BLOCK_ENTITY_TYPES),
         (game_rules::build(), GAME_RULES),
@@ -240,17 +233,18 @@ pub fn main() {
         (sound_types::build(), SOUND_TYPES),
         (world_clocks::build(), WORLD_CLOCKS),
         (poi_types::build(), POI_TYPES),
-        (structure_sets::build_structures(), STRUCTURES),
-        (structure_processors::build(), STRUCTURE_PROCESSORS),
-        (structure_tags::build(), STRUCTURE_TAGS),
-        (structure_sets::build(), STRUCTURE_SETS),
-        (template_pools::build(), TEMPLATE_POOLS),
-        (banner_pattern_tags::build(), BANNER_PATTERN_TAGS),
-        (entity_type_tags::build(), ENTITY_TYPE_TAGS),
-        (instrument_tags::build(), INSTRUMENT_TAGS),
-        (painting_variant_tags::build(), PAINTING_VARIANT_TAGS),
-        (poi_type_tags::build(), POI_TYPE_TAGS),
-        (enchantment_tags::build(), ENCHANTMENT_TAGS),
+        (structure::structures(), STRUCTURES),
+        (structure::processors(), STRUCTURE_PROCESSORS),
+        (tags::structure(), STRUCTURE_TAGS),
+        (structure::sets(), STRUCTURE_SETS),
+        (structure::template_pools(), TEMPLATE_POOLS),
+        (tags::banner_pattern(), BANNER_PATTERN_TAGS),
+        (tags::entity_type(), ENTITY_TYPE_TAGS),
+        (tags::instrument(), INSTRUMENT_TAGS),
+        (tags::painting_variant(), PAINTING_VARIANT_TAGS),
+        (tags::poi_type(), POI_TYPE_TAGS),
+        (tags::potion(), POTION_TAGS),
+        (tags::enchantment(), ENCHANTMENT_TAGS),
         (enchantments::build(), ENCHANTMENTS),
         (carvers::build(), CARVERS),
         (features::build_configured(), CONFIGURED_FEATURES),

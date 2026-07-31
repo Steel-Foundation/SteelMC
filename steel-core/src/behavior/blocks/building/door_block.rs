@@ -1,8 +1,7 @@
 //! Door block behavior implementation.
 //!
 //! Doors keep their upper and lower halves synchronized through vanilla
-//! neighbor-shape updates. Redstone signal queries are isolated in
-//! `has_neighbor_signal` until Steel has a redstone power graph.
+//! neighbor-shape updates and react to redstone power on either half.
 
 use std::sync::Arc;
 
@@ -26,14 +25,16 @@ use steel_utils::{
 use super::weathering_block::{WeatherState, WeatheringCopper};
 use crate::{
     behavior::{
-        BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt, InteractionResult,
-        InventoryAccess,
+        BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
+        PlacementSource,
     },
     entity::Entity,
     entity::ai::path::PathComputationType,
     fluid::fluid_state_to_block,
     player::Player,
-    world::{LevelReader, ScheduledTickAccess, World, game_event_context::GameEventContext},
+    world::{
+        LevelReader, ScheduledTickAccess, SignalGetter as _, World, game_event::GameEventContext,
+    },
 };
 
 /// Behavior for vanilla door blocks.
@@ -83,9 +84,9 @@ impl DoorBlock {
     }
 
     fn hinge_for_placement(context: &BlockPlaceContext<'_>) -> DoorHingeSide {
-        let pos = context.place_pos;
+        let pos = context.place_pos();
         let above_pos = pos.above();
-        let place_direction = context.horizontal_direction;
+        let place_direction = context.horizontal_direction();
 
         let left_direction = place_direction.rotate_y_counter_clockwise();
         let left_pos = left_direction.relative(pos);
@@ -115,8 +116,8 @@ impl DoorBlock {
         if (!door_left || door_right) && solid_block_balance <= 0 {
             if (!door_right || door_left) && solid_block_balance >= 0 {
                 let (step_x, step_z) = place_direction.offset_xz();
-                let click_x = context.click_location.x - f64::from(pos.x());
-                let click_z = context.click_location.z - f64::from(pos.z());
+                let click_x = context.click_location().x - f64::from(pos.x());
+                let click_z = context.click_location().z - f64::from(pos.z());
 
                 if (step_x >= 0 || click_z >= 0.5)
                     && (step_x <= 0 || click_z <= 0.5)
@@ -133,11 +134,6 @@ impl DoorBlock {
         } else {
             DoorHingeSide::Right
         }
-    }
-
-    const fn has_neighbor_signal<L: LevelReader + ?Sized>(_world: &L, _pos: BlockPos) -> bool {
-        // TODO: Query redstone neighbor signal once Steel has redstone power propagation.
-        false
     }
 
     fn has_correct_tool_for_drops(player: &Player, state: BlockStateId) -> bool {
@@ -187,7 +183,7 @@ impl DoorBlock {
 
 impl BlockBehavior for DoorBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let pos = context.place_pos;
+        let pos = context.place_pos();
         if pos.y() >= context.world.max_y_exclusive() - 1 {
             return None;
         }
@@ -195,14 +191,14 @@ impl BlockBehavior for DoorBlock {
             return None;
         }
 
-        let powered = Self::has_neighbor_signal(context.world, pos)
-            || Self::has_neighbor_signal(context.world, pos.above());
+        let powered = context.world.has_neighbor_signal(pos)
+            || context.world.has_neighbor_signal(pos.above());
         Some(
             self.block
                 .default_state()
                 .set_value(
                     &BlockStateProperties::HORIZONTAL_FACING,
-                    context.horizontal_direction,
+                    context.horizontal_direction(),
                 )
                 .set_value(
                     &BlockStateProperties::DOOR_HINGE,
@@ -252,7 +248,7 @@ impl BlockBehavior for DoorBlock {
         let below_pos = pos.below();
         let below_state = world.get_block_state(below_pos);
         if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Lower {
-            below_state.is_face_sturdy_at(below_pos, Direction::Up)
+            world.is_face_sturdy(below_state, below_pos, Direction::Up)
         } else {
             below_state.get_block() == self.block
         }
@@ -303,8 +299,7 @@ impl BlockBehavior for DoorBlock {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        _player: Option<&Player>,
-        _inv: &InventoryAccess,
+        _source: &PlacementSource<'_>,
     ) {
         world.set_block(
             pos.above(),
@@ -373,8 +368,7 @@ impl BlockBehavior for DoorBlock {
         } else {
             pos.below()
         };
-        let signal = Self::has_neighbor_signal(world, pos)
-            || Self::has_neighbor_signal(world, other_half_pos);
+        let signal = world.has_neighbor_signal(pos) || world.has_neighbor_signal(other_half_pos);
         if signal == state.get_value(&BlockStateProperties::POWERED) {
             return;
         }
@@ -486,10 +480,9 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        player: Option<&Player>,
-        inv: &InventoryAccess,
+        source: &PlacementSource<'_>,
     ) {
-        self.door().set_placed_by(state, world, pos, player, inv);
+        self.door().set_placed_by(state, world, pos, source);
     }
 
     fn player_will_destroy(
@@ -525,10 +518,6 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
     ) {
         self.door()
             .handle_neighbor_changed(state, world, pos, source_block, moved_by_piston);
-    }
-
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        self.weathering.is_randomly_ticking()
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

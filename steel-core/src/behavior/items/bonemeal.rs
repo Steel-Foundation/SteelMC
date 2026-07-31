@@ -4,15 +4,13 @@ use rand::RngExt;
 use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt, shapes::is_offset_shape_full_block},
-    vanilla_blocks,
+    level_events, vanilla_blocks,
 };
 use steel_utils::{BlockPos, Direction, types::UpdateFlags};
 
 use crate::{
-    behavior::{
-        BLOCK_BEHAVIORS, BlockStateBehaviorExt, InteractionResult, ItemBehavior, UseOnContext,
-    },
-    world::World,
+    behavior::{BLOCK_BEHAVIORS, InteractionResult, ItemBehavior, UseOnContext},
+    world::{LevelReader as _, World},
 };
 
 /// Behavior for the Bonemeal item.
@@ -104,12 +102,20 @@ impl ItemBehavior for BoneMealItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         if Self::grow(context.world, context.hit_result.block_pos) {
             context.inv.with_item(|item| item.shrink(1));
-            // TODO: particles
+            context.world.level_event(
+                level_events::PARTICLES_AND_SOUND_PLANT_GROWTH,
+                context.hit_result.block_pos,
+                15,
+                None,
+            );
             return InteractionResult::Success;
         }
         let state = context.world.get_block_state(context.hit_result.block_pos);
-        let is_clicked_face_sturdy =
-            state.is_face_sturdy_at(context.hit_result.block_pos, context.hit_result.direction);
+        let is_clicked_face_sturdy = context.world.is_face_sturdy(
+            state,
+            context.hit_result.block_pos,
+            context.hit_result.direction,
+        );
         if is_clicked_face_sturdy
             && Self::grow_water_plant(
                 context.world,
@@ -121,6 +127,15 @@ impl ItemBehavior for BoneMealItem {
             )
         {
             context.inv.with_item(|item| item.shrink(1));
+            context.world.level_event(
+                level_events::PARTICLES_AND_SOUND_PLANT_GROWTH,
+                context
+                    .hit_result
+                    .block_pos
+                    .relative(context.hit_result.direction),
+                15,
+                None,
+            );
             return InteractionResult::Success;
         }
         InteractionResult::Pass

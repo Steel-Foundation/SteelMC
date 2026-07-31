@@ -9,7 +9,7 @@ use steel_utils::{Direction, types::UpdateFlags};
 use crate::{
     behavior::{InteractionResult, ItemBehavior, UseOnContext},
     entity::Entity,
-    world::game_event_context::GameEventContext,
+    world::game_event::GameEventContext,
 };
 
 /// Behavior for Hoes
@@ -65,7 +65,7 @@ impl ItemBehavior for HoeItem {
             context.world.pop_resource_from_face(
                 context.hit_result.block_pos,
                 context.hit_result.direction,
-                ItemStack::new(&vanilla_items::ITEMS.hanging_roots),
+                ItemStack::new(&vanilla_items::HANGING_ROOTS),
             );
         }
 
