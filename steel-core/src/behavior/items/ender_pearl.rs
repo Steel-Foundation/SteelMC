@@ -6,15 +6,15 @@
 
 use std::sync::Arc;
 
-use glam::DVec3;
-use steel_macros::item_behavior;
-use steel_protocol::packets::game::SoundSource;
-use steel_registry::{sound_events, vanilla_entities};
-
 use crate::behavior::context::{InteractionResult, UseItemContext};
 use crate::behavior::item::ItemBehavior;
 use crate::entity::entities::EnderPearlEntity;
 use crate::entity::{Entity, Projectile, SharedEntity, ThrowableItemProjectile, next_entity_id};
+use glam::DVec3;
+use steel_macros::item_behavior;
+use steel_protocol::packets::game::SoundSource;
+use steel_registry::stat::vanilla_stat_types;
+use steel_registry::{sound_events, vanilla_entities, vanilla_items};
 
 /// Vanilla `EnderpearlItem.PROJECTILE_SHOOT_POWER`.
 const SHOOT_POWER: f32 = 1.5;
@@ -68,7 +68,7 @@ impl ItemBehavior for EnderPearlItem {
         }
         player.register_ender_pearl(&entity);
 
-        // TODO: award the ITEM_USED stat once a stats system exists.
+        player.award_stat(&vanilla_stat_types::ITEM_USED, &vanilla_items::ENDER_PEARL);
         context.inv.with_item(|item| item.shrink(1));
 
         InteractionResult::Success

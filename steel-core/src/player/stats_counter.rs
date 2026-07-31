@@ -1,3 +1,6 @@
+//! This module provides the [`StatsCounter`] which keeps track of stats with their counters, and
+//! implements some stat-related function for the player.
+
 use crate::player::Player;
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_protocol::packets::game::CAwardStats;
@@ -18,6 +21,7 @@ pub struct StatsCounter {
 
 impl StatsCounter {
     /// Creates a new, empty [`StatsCounter`].
+    #[must_use]
     pub fn new() -> Self {
         Self {
             stats: FxHashMap::default(),
@@ -27,6 +31,7 @@ impl StatsCounter {
 
     /// Gets the value of the counter corresponding to the given stat.
     /// If this counter is not currently being tracked, `0` is returned instead.
+    #[must_use]
     pub fn get(&self, stat: &Stat) -> i32 {
         self.stats.get(stat).copied().unwrap_or_default()
     }
@@ -65,8 +70,15 @@ impl StatsCounter {
     }
 
     /// Returns the number of stats currently being tracked for this player.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.stats.len()
+    }
+
+    /// Returns whether there are no stats are currently being tracked or not.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.stats.is_empty()
     }
 }
 

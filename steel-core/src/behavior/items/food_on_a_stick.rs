@@ -2,6 +2,7 @@
 
 use steel_macros::item_behavior;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_items;
 
 use crate::behavior::{InteractionResult, ItemBehavior, UseItemContext};
@@ -30,16 +31,16 @@ impl FoodOnAStickItem {
 impl ItemBehavior for FoodOnAStickItem {
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
         let Some(vehicle) = context.player.controlled_vehicle() else {
-            return Self::pass_without_boost();
+            return Self::pass_without_boost(context);
         };
         if vehicle.entity_type() != self.can_interact_with {
-            return Self::pass_without_boost();
+            return Self::pass_without_boost(context);
         }
         let Some(steerable) = vehicle.as_item_steerable() else {
-            return Self::pass_without_boost();
+            return Self::pass_without_boost(context);
         };
         if !steerable.boost() {
-            return Self::pass_without_boost();
+            return Self::pass_without_boost(context);
         }
 
         let has_infinite_materials = context.player.has_infinite_materials();
@@ -57,8 +58,12 @@ impl ItemBehavior for FoodOnAStickItem {
 }
 
 impl FoodOnAStickItem {
-    const fn pass_without_boost() -> InteractionResult {
-        // TODO: Award Stats.ITEM_USED once the stat foundation exists.
+    fn pass_without_boost(context: &UseItemContext) -> InteractionResult {
+        let item = context.inv.with_item(|item_stack| item_stack.item);
+        context
+            .player
+            .award_stat(&vanilla_stat_types::ITEM_USED, item);
+
         InteractionResult::Pass
     }
 }

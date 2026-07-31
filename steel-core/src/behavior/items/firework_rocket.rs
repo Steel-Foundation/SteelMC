@@ -8,7 +8,8 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
-use steel_registry::{sound_events, vanilla_entities};
+use steel_registry::stat::vanilla_stat_types;
+use steel_registry::{sound_events, vanilla_entities, vanilla_items};
 use steel_utils::Direction;
 
 use crate::behavior::context::{InteractionResult, UseItemContext, UseOnContext};
@@ -109,7 +110,11 @@ impl ItemBehavior for FireworkRocketItem {
             );
             item.shrink(1);
         });
-        // TODO: Award `Stats.ITEM_USED` once Steel has a statistics foundation.
+
+        context.player.award_stat(
+            &vanilla_stat_types::ITEM_USED,
+            &vanilla_items::FIREWORK_ROCKET,
+        );
 
         InteractionResult::Success
     }
