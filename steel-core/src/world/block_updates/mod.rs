@@ -524,8 +524,7 @@ impl World {
     ) {
         let block_state = self.get_block_state(pos);
         // For block behaviors
-        let block_behaviors = &*BLOCK_BEHAVIORS;
-        let behavior = block_behaviors.get_behavior(old_state.get_block());
+        let behavior = BLOCK_BEHAVIORS.get_behavior(old_state.get_block());
 
         if old_state != block_state {
             behavior.affect_neighbors_after_removal(old_state, self, pos, false);
