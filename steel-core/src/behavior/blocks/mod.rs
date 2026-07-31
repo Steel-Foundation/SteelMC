@@ -3,6 +3,7 @@
 //! The actual behavior registration is auto-generated from classes.json.
 //! See `src/generated/behaviors.rs` for the generated registration code.
 
+mod air_block;
 mod building;
 mod colored;
 mod container;
@@ -13,6 +14,7 @@ mod redstone;
 mod utils;
 pub mod vegetation;
 
+pub use air_block::AirBlock;
 pub use building::{
     AmethystBlock, AmethystClusterBlock, BarrierBlock, BedBlock, BuddingAmethystBlock,
     CampfireBlock, CauldronBlock, ComposterBlock, DoorBlock, FenceBlock, FenceGateBlock,
