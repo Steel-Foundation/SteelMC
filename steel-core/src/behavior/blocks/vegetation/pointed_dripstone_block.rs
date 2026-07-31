@@ -673,9 +673,12 @@ impl SpeleothemBlockBehavior {
             return;
         };
 
-        let transfer_probability = if fluid_info.fluid == &vanilla_fluids::WATER {
+        let is_water = fluid_info.fluid == &vanilla_fluids::WATER;
+        let is_lava = fluid_info.fluid == &vanilla_fluids::LAVA;
+
+        let transfer_probability = if is_water {
             WATER_TRANSFER_PROBABILITY_PER_RANDOM_TICK
-        } else if fluid_info.fluid == &vanilla_fluids::LAVA {
+        } else if is_lava {
             LAVA_TRANSFER_PROBABILITY_PER_RANDOM_TICK
         } else {
             return;
@@ -696,7 +699,7 @@ impl SpeleothemBlockBehavior {
         };
 
         if fluid_info.source_state.get_block() == &vanilla_blocks::MUD
-            && fluid_info.fluid == &vanilla_fluids::WATER
+            && is_water
         {
             if !world.dimension_type.water_evaporates {
                 let clay_state = vanilla_blocks::CLAY.default_state();
