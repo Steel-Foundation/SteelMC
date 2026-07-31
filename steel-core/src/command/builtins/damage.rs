@@ -87,7 +87,7 @@ fn damage(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSy
         context.source().send_success(
             &COMMANDS_DAMAGE_SUCCESS
                 .message([
-                    TextComponent::plain(format!("{:?}", amount)),
+                    TextComponent::plain(format!("{amount:?}")),
                     target.display_name(),
                 ])
                 .component(),
