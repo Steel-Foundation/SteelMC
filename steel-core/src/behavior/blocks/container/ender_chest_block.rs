@@ -10,12 +10,12 @@ use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId, translations};
 use text_components::TextComponent;
 
-use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::InventoryAccess;
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
-use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
-use crate::inventory::chest_menu::ChestMenuProvider;
+use crate::block_entity::BLOCK_ENTITIES;
+use crate::inventory::lock::ContainerRef;
+use crate::inventory::menu::kinds::chest;
 use crate::player::Player;
 use crate::world::World;
 
@@ -35,9 +35,12 @@ impl EnderChestBlock {
 
 impl BlockBehavior for EnderChestBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let facing = context.horizontal_direction.opposite();
+        let facing = context.horizontal_direction().opposite();
 
-        let waterlogged = context.world.get_block_state(context.place_pos).has_fluid();
+        let waterlogged = context
+            .world
+            .get_block_state(context.place_pos())
+            .has_fluid();
 
         Some(
             self.block
@@ -67,7 +70,7 @@ impl BlockBehavior for EnderChestBlock {
         };
 
         // Ensure it's an ender chest block entity
-        if block_entity.lock().get_type() != &vanilla_block_entity_types::ENDER_CHEST {
+        if block_entity.get_type() != &vanilla_block_entity_types::ENDER_CHEST {
             return InteractionResult::Pass;
         }
 
@@ -77,12 +80,12 @@ impl BlockBehavior for EnderChestBlock {
         drop(ender_chest_inventory);
 
         // Open the menu using the player's ender chest container
-        let container_ref = player.ender_chest_inventory.clone().into();
-        player.open_menu(&ChestMenuProvider::three_rows(
-            player.inventory.clone(),
-            container_ref,
+        let container_ref: ContainerRef = player.ender_chest_inventory.clone().into();
+        let inventory = player.inventory.clone();
+        player.open_menu(
             TextComponent::translated(translations::CONTAINER_ENDERCHEST.msg()),
-        ));
+            move |context| chest(inventory, context.container_id, container_ref, 3),
+        );
 
         // TODO: Award stat OPEN_ENDERCHEST
         // TODO: Anger nearby piglins
@@ -90,17 +93,18 @@ impl BlockBehavior for EnderChestBlock {
         InteractionResult::Success
     }
 
-    fn has_block_entity(&self) -> bool {
-        true
-    }
-
     fn new_block_entity(
         &self,
         level: Weak<World>,
         pos: BlockPos,
         state: BlockStateId,
-    ) -> Option<SharedBlockEntity> {
-        BLOCK_ENTITIES.create(&vanilla_block_entity_types::ENDER_CHEST, level, pos, state)
+    ) -> BlockEntityCreation {
+        BlockEntityCreation::from_registered_factory(BLOCK_ENTITIES.create(
+            &vanilla_block_entity_types::ENDER_CHEST,
+            level,
+            pos,
+            state,
+        ))
     }
 
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {

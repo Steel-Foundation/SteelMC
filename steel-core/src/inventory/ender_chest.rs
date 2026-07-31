@@ -8,7 +8,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
-use crate::block_entity::BlockEntity;
+use crate::block_entity::{BlockEntity, BlockEntityLifecycleExt};
 use crate::inventory::container::Container;
 use crate::player::Player;
 
@@ -16,7 +16,7 @@ use crate::player::Player;
 pub const ENDER_CHEST_SLOTS: usize = 27;
 
 /// Thread-safe reference to an ender chest block entity.
-type WeakBlockEntity = Weak<SyncMutex<dyn BlockEntity>>;
+type WeakBlockEntity = Weak<dyn BlockEntity>;
 
 /// Thread-safe reference to a player's ender chest container.
 pub type SyncPlayerEnderChest = Arc<SyncMutex<PlayerEnderChestContainer>>;
@@ -57,46 +57,35 @@ impl PlayerEnderChestContainer {
     pub fn clear_active_chest(&mut self) {
         self.active_chest = None;
     }
-}
 
-impl Container for PlayerEnderChestContainer {
-    fn get_container_size(&self) -> usize {
-        ENDER_CHEST_SLOTS
-    }
-
-    fn get_item(&self, slot: usize) -> &ItemStack {
-        &self.items[slot]
-    }
-
-    fn get_item_mut(&mut self, slot: usize) -> &mut ItemStack {
-        &mut self.items[slot]
-    }
-
-    fn set_item(&mut self, slot: usize, stack: ItemStack) {
-        if slot < ENDER_CHEST_SLOTS {
-            self.items[slot] = stack;
-            self.set_changed();
-        }
-    }
-
-    fn set_changed(&mut self) {
-        // Player data saving handles change tracking for this inventory.
-    }
-
-    fn still_valid(&self, player: &Player) -> bool {
+    /// Checks if the container is still valid for the given player.
+    pub fn still_valid(&self, player: &Player) -> bool {
         // If an active chest is set, check if it's still valid (in range, not broken)
         if let Some(weak_chest) = &self.active_chest {
             if let Some(chest) = weak_chest.upgrade() {
-                let guard = chest.lock();
                 // Validate range with default container interaction range
-                return !guard.is_removed()
+                return !chest.is_removed()
                     && player
-                        .is_within_block_interaction_range_with_buffer(guard.get_block_pos(), 4.0);
+                        .is_within_block_interaction_range_with_buffer(chest.get_block_pos(), 4.0);
             }
             // Chest was destroyed while open
             return false;
         }
 
         true
+    }
+}
+
+impl Container for PlayerEnderChestContainer {
+    fn items(&self) -> &[ItemStack] {
+        &self.items
+    }
+
+    fn items_mut(&mut self) -> &mut [ItemStack] {
+        &mut self.items
+    }
+
+    fn set_changed(&mut self) {
+        // Player data saving handles change tracking for this inventory.
     }
 }

@@ -25,7 +25,7 @@ pub use building::{
     WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
 };
 pub use colored::StainedGlassPaneBlock;
-pub use container::{BarrelBlock, BeehiveBlock, CraftingTableBlock, EnderChestBlock};
+pub use container::{AnvilBlock, BarrelBlock, BeehiveBlock, CraftingTableBlock, EnderChestBlock};
 pub use decoration::{
     CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
     StandingSignBlock, TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,

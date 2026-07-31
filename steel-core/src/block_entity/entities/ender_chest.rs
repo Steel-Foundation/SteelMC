@@ -6,23 +6,15 @@ use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::BaseNbtCompound;
 use simdnbt::owned::NbtCompound;
-use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
-use crate::block_entity::BlockEntity;
+use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::world::World;
 
 /// Ender chest block entity.
 pub struct EnderChestBlockEntity {
-    /// Weak reference to the world.
-    level: Weak<World>,
-    /// Position in the world.
-    pos: BlockPos,
-    /// Current block state.
-    state: BlockStateId,
-    /// Whether this entity has been marked for removal.
-    removed: bool,
+    base: Arc<BlockEntityBase>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `EnderChestBlockEntity`.
@@ -33,12 +25,14 @@ unsafe impl DowncastType for EnderChestBlockEntity {
 impl EnderChestBlockEntity {
     /// Creates a new ender chest block entity.
     #[must_use]
-    pub const fn new(level: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
+    pub fn new(level: Weak<World>, pos: BlockPos, state: BlockStateId) -> Self {
         Self {
-            level,
-            pos,
-            state,
-            removed: false,
+            base: Arc::new(BlockEntityBase::new(
+                &vanilla_block_entity_types::ENDER_CHEST,
+                level,
+                pos,
+                state,
+            )),
         }
     }
 
@@ -64,39 +58,11 @@ impl EnderChestBlockEntity {
 }
 
 impl BlockEntity for EnderChestBlockEntity {
-    fn get_type(&self) -> BlockEntityTypeRef {
-        &vanilla_block_entity_types::ENDER_CHEST
+    fn base(&self) -> &BlockEntityBase {
+        &self.base
     }
 
-    fn get_block_pos(&self) -> BlockPos {
-        self.pos
-    }
-
-    fn get_block_state(&self) -> BlockStateId {
-        self.state
-    }
-
-    fn set_block_state(&mut self, state: BlockStateId) {
-        self.state = state;
-    }
-
-    fn is_removed(&self) -> bool {
-        self.removed
-    }
-
-    fn set_removed(&mut self) {
-        self.removed = true;
-    }
-
-    fn clear_removed(&mut self) {
-        self.removed = false;
-    }
-
-    fn get_level(&self) -> Option<Arc<World>> {
-        self.level.upgrade()
-    }
-
-    fn load_additional(&mut self, _nbt: &BaseNbtCompound<'_>) {}
+    fn load_additional(&self, _nbt: &BaseNbtCompound<'_>) {}
 
     fn save_additional(&self, _nbt: &mut NbtCompound) {}
 }
