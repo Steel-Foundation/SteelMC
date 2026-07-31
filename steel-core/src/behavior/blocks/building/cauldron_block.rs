@@ -112,6 +112,8 @@ impl LayeredCauldronBlock {
     }
 }
 
+const MAX_CAULDRON_LEVEL: u8 = 3;
+
 impl BlockBehavior for LayeredCauldronBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
@@ -151,7 +153,7 @@ impl BlockBehavior for LayeredCauldronBlock {
 
         if fluid == &vanilla_fluids::WATER {
             let level = state.get_value(&BlockStateProperties::LEVEL_CAULDRON);
-            if level < 3 {
+            if level < MAX_CAULDRON_LEVEL {
                 let new_state = state.set_value(&BlockStateProperties::LEVEL_CAULDRON, level + 1);
                 world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
                 world.game_event(
