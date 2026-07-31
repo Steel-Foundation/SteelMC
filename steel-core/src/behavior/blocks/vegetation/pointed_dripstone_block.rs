@@ -816,7 +816,8 @@ impl SpeleothemBlockBehavior {
         if fluid == &vanilla_fluids::WATER {
             block == &vanilla_blocks::CAULDRON
                 || (block == &vanilla_blocks::WATER_CAULDRON
-                    && state.get_value(&BlockStateProperties::LEVEL_CAULDRON) < 3)
+                    && state.get_value(&BlockStateProperties::LEVEL_CAULDRON)
+                        < BlockStateProperties::LEVEL_CAULDRON.max)
         } else if fluid == &vanilla_fluids::LAVA {
             block == &vanilla_blocks::CAULDRON
         } else {
