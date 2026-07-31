@@ -698,9 +698,7 @@ impl SpeleothemBlockBehavior {
             return;
         };
 
-        if fluid_info.source_state.get_block() == &vanilla_blocks::MUD
-            && is_water
-        {
+        if fluid_info.source_state.get_block() == &vanilla_blocks::MUD && is_water {
             if !world.dimension_type.water_evaporates {
                 let clay_state = vanilla_blocks::CLAY.default_state();
                 let _ =
