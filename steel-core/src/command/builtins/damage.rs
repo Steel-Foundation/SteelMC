@@ -84,16 +84,12 @@ fn damage(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSy
     };
 
     if target.hurt(&target_world, &damage_source, amount) {
-        // When using format! with a f32, if it's 1.0, it will just display 1 and not 1.0
-        // We just correct that so it's like vanilla
-        let mut display_amount = format!("{amount}");
-        if !display_amount.contains('.') {
-            display_amount.push_str(".0");
-        }
-
         context.source().send_success(
             &COMMANDS_DAMAGE_SUCCESS
-                .message([TextComponent::plain(display_amount), target.display_name()])
+                .message([
+                    TextComponent::plain(format!("{:?}", amount)),
+                    target.display_name(),
+                ])
                 .component(),
             true,
         );
