@@ -1,0 +1,1 @@
+//! Neutral entity implementations.

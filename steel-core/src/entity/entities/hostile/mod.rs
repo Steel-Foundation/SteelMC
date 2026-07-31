@@ -1,0 +1,1 @@
+//! Hostile entity implementations.
