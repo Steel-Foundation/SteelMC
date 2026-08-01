@@ -154,26 +154,6 @@ pub trait PathfinderMob: Mob {
         tick_path_navigation_target(self, &world, game_time, self.can_update_path());
     }
 
-    fn tick_pathfinder_goal_selectors(&self)
-    where
-        Self: Sized,
-    {
-        let id_based_tick_count = self.tick_count().wrapping_add(self.id());
-        if id_based_tick_count % 2 != 0 && self.tick_count() > 1 {
-            self.mob_base()
-                .target_selector()
-                .lock()
-                .tick_running_goals(self, false);
-            self.mob_base()
-                .goal_selector()
-                .lock()
-                .tick_running_goals(self, false);
-        } else {
-            self.mob_base().target_selector().lock().tick(self);
-            self.mob_base().goal_selector().lock().tick(self);
-        }
-    }
-
     fn is_stable_destination(&self, pos: BlockPos) -> bool {
         self.level()
             .is_some_and(|world| world.get_block_state(pos.below()).is_solid_render())

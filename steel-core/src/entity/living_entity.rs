@@ -243,7 +243,7 @@ pub trait LivingEntity: Entity {
 
     /// Returns vanilla `LivingEntity.isBaby()`.
     fn is_baby(&self) -> bool {
-        false
+        self.as_ageable_mob().is_some_and(AgeableMob::is_baby)
     }
 
     /// Returns vanilla `LivingEntity.getSoundVolume`.
@@ -614,7 +614,11 @@ pub trait LivingEntity: Entity {
     }
 
     /// Hook before applying damage after vanilla reductions.
-    fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {}
+    fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {
+        if let Some(animal) = self.as_animal() {
+            animal.reset_love();
+        }
+    }
 
     /// Damages equipment that participates in vanilla armor absorption.
     fn hurt_armor(&self, _source: &DamageSource, _damage: f32) {}
@@ -1727,6 +1731,29 @@ pub trait LivingEntity: Entity {
         has_leather_boots
     }
 
+    /// Runs vanilla `LivingEntity.tick`.
+    ///
+    /// Concrete living entities reach this through the `Entity::tick` default
+    /// routing.
+    fn tick_living_entity(&self) {
+        self.default_tick();
+        self.living_base().decrement_invulnerable_time();
+        self.tick_mob_effects();
+        self.detect_equipment_updates();
+
+        if self.is_dead_or_dying() {
+            self.tick_death();
+            self.tick_living_state();
+            return;
+        }
+
+        if !self.is_removed() {
+            self.ai_step();
+        }
+
+        self.tick_living_state();
+    }
+
     /// Ticks living-entity counters after movement.
     fn tick_living_state(&self) {
         if let Some(mob) = self.as_mob() {
@@ -1943,7 +1970,11 @@ pub trait LivingEntity: Entity {
     }
 
     /// Server AI hook called from vanilla `LivingEntity.aiStep()`.
-    fn server_ai_step(&self) {}
+    fn server_ai_step(&self) {
+        if let Some(mob) = self.as_mob() {
+            mob.mob_server_ai_step();
+        }
+    }
 
     /// Returns vanilla `LivingEntity.getJumpBoostPower()`.
     fn get_jump_boost_power(&self) -> f32 {
@@ -2125,7 +2156,14 @@ pub trait LivingEntity: Entity {
 
     /// Mirrors vanilla `LivingEntity.aiStep()`.
     fn ai_step(&self) -> Option<MoveResult> {
-        self.default_ai_step()
+        let result = self.default_ai_step();
+        if let Some(ageable) = self.as_ageable_mob() {
+            ageable.tick_ageable_mob();
+        }
+        if let Some(animal) = self.as_animal() {
+            animal.tick_animal_love();
+        }
+        result
     }
 
     /// Mirrors vanilla `LivingEntity.pushEntities()`.
