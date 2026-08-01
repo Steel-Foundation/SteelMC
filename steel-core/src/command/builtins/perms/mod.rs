@@ -159,11 +159,11 @@ fn groups_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
         literal("default").then_all([
             literal("add").then(
                 argument("group", SteelArgumentType::permission_group(true))
-                    .executes_suspended(default_group_add),
+                    .executes_suspended(|context| default_group(context, true)),
             ),
             literal("remove").then(
                 argument("group", SteelArgumentType::permission_group(true))
-                    .executes_suspended(default_group_remove),
+                    .executes_suspended(|context| default_group(context, false)),
             ),
         ]),
     ])
@@ -526,18 +526,6 @@ fn groups_list(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<PermsCommandSuspension, CommandSyntaxError> {
     start(context, Operation::GroupsList)
-}
-
-fn default_group_add(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<PermsCommandSuspension, CommandSyntaxError> {
-    default_group(context, true)
-}
-
-fn default_group_remove(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<PermsCommandSuspension, CommandSyntaxError> {
-    default_group(context, false)
 }
 
 fn default_group(

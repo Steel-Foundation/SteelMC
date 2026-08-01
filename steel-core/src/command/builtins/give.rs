@@ -28,34 +28,42 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("give").then_chain([
         argument("targets", SteelArgumentType::players()),
-        argument("item", SteelArgumentType::item_stack()).executes(give_default_count),
-        argument("count", ArgumentType::integer(1, i32::MAX)).executes(give_with_count),
+        argument("item", SteelArgumentType::item_stack())
+            .executes(|context| give(context, GiveCount::Default)),
+        argument("count", ArgumentType::integer(1, i32::MAX))
+            .executes(|context| give(context, GiveCount::Argument)),
     ])
 }
 
-fn give_default_count(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    give(context, 1)
+#[derive(Clone, Copy)]
+enum GiveCount {
+    Default,
+    Argument,
 }
 
-fn give_with_count(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    let Some(count) = context.integer("count") else {
-        return Err(missing_argument("count"));
-    };
-    give(context, count)
+impl GiveCount {
+    fn resolve(
+        self,
+        context: &SteelCommandContext<CommandSource>,
+    ) -> Result<i32, CommandSyntaxError> {
+        match self {
+            Self::Default => Ok(1),
+            Self::Argument => context
+                .integer("count")
+                .ok_or_else(|| missing_argument("count")),
+        }
+    }
 }
 
 fn give(
     context: &SteelCommandContext<CommandSource>,
-    count: i32,
+    count: GiveCount,
 ) -> Result<i32, CommandSyntaxError> {
     let targets = context.players("targets")?;
     let Some(prototype) = context.item_stack("item") else {
         return Err(missing_argument("item"));
     };
+    let count = count.resolve(context)?;
     let max_allowed_count = prototype.max_stack_size() * MAX_ALLOWED_ITEM_STACKS;
     if count > max_allowed_count {
         let message = translations::COMMANDS_GIVE_FAILED_TOOMANYITEMS

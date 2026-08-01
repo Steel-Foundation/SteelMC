@@ -1,6 +1,6 @@
 //! Vanilla entity teleport command.
 
-use std::{slice, sync::Arc};
+use std::sync::Arc;
 
 use glam::DVec3;
 use steel_protocol::packets::game::{AnimateAction, CAnimate, CSetCamera, RelativeMovement};
@@ -28,133 +28,100 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("teleport").then_all([
-        argument("location", SteelArgumentType::vec3(true)).executes(teleport_source_to_position),
-        argument("destination", SteelArgumentType::entity()).executes(teleport_source_to_entity),
+        argument("location", SteelArgumentType::vec3(true))
+            .executes(|context| teleport_to_position(context, PositionTeleport::Source)),
+        argument("destination", SteelArgumentType::entity())
+            .executes(|context| teleport_to_entity(context, TeleportTargets::Source)),
         argument("targets", SteelArgumentType::entities()).then_all([
             target_position_branch(),
             argument("destination", SteelArgumentType::entity())
-                .executes(teleport_targets_to_entity),
+                .executes(|context| teleport_to_entity(context, TeleportTargets::Argument)),
         ]),
     ])
 }
 
 fn target_position_branch() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     argument("location", SteelArgumentType::vec3(true))
-        .executes(teleport_targets_to_position)
+        .executes(|context| teleport_to_position(context, PositionTeleport::Targets))
         .then_all([
-            argument("rotation", SteelArgumentType::rotation())
-                .executes(teleport_targets_to_position_with_rotation),
+            argument("rotation", SteelArgumentType::rotation()).executes(|context| {
+                teleport_to_position(context, PositionTeleport::TargetsWithRotation)
+            }),
             literal("facing").then_all([
                 literal("entity").then_chain([
-                    argument("facingEntity", SteelArgumentType::entity())
-                        .executes(teleport_targets_facing_entity_feet),
-                    argument("facingAnchor", SteelArgumentType::entity_anchor())
-                        .executes(teleport_targets_facing_entity_anchor),
+                    argument("facingEntity", SteelArgumentType::entity()).executes(|context| {
+                        teleport_to_position(context, PositionTeleport::TargetsFacingEntityFeet)
+                    }),
+                    argument("facingAnchor", SteelArgumentType::entity_anchor()).executes(
+                        |context| {
+                            teleport_to_position(
+                                context,
+                                PositionTeleport::TargetsFacingEntityAnchor,
+                            )
+                        },
+                    ),
                 ]),
-                argument("facingLocation", SteelArgumentType::vec3(true))
-                    .executes(teleport_targets_facing_position),
+                argument("facingLocation", SteelArgumentType::vec3(true)).executes(|context| {
+                    teleport_to_position(context, PositionTeleport::TargetsFacingPosition)
+                }),
             ]),
         ])
 }
 
-fn teleport_source_to_position(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    let target = source_entity(context)?;
-    let destination = required_coordinates(context, "location")?;
-    teleport_to_position(context, slice::from_ref(target), destination, None, None)
+#[derive(Clone, Copy)]
+enum TeleportTargets {
+    Source,
+    Argument,
 }
 
-fn teleport_source_to_entity(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    let target = source_entity(context)?;
-    let destination = context.entity("destination")?;
-    teleport_to_entity(context, slice::from_ref(target), &destination)
+enum ResolvedTeleportTargets<'context> {
+    Source(&'context SharedEntity),
+    Argument(Vec<SharedEntity>),
 }
 
-fn teleport_targets_to_position(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    let targets = context.entities("targets")?;
-    let destination = required_coordinates(context, "location")?;
-    teleport_to_position(context, &targets, destination, None, None)
+impl ResolvedTeleportTargets<'_> {
+    fn as_slice(&self) -> &[SharedEntity] {
+        match self {
+            Self::Source(target) => std::slice::from_ref(target),
+            Self::Argument(targets) => targets,
+        }
+    }
 }
 
-fn teleport_targets_to_position_with_rotation(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    let targets = context.entities("targets")?;
-    let destination = required_coordinates(context, "location")?;
-    let rotation = required_coordinates(context, "rotation")?;
-    teleport_to_position(context, &targets, destination, Some(rotation), None)
+struct ResolvedEntityTeleport<'context> {
+    targets: ResolvedTeleportTargets<'context>,
+    destination: SharedEntity,
 }
 
-fn teleport_targets_facing_entity_feet(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    teleport_targets_facing_entity(context, EntityAnchor::Feet)
-}
+impl TeleportTargets {
+    fn resolve(
+        self,
+        context: &SteelCommandContext<CommandSource>,
+    ) -> Result<ResolvedTeleportTargets<'_>, CommandSyntaxError> {
+        match self {
+            Self::Source => {
+                let Some(entity) = context.source().entity() else {
+                    return Err(CommandSyntaxError::dynamic(TextComponent::from(
+                        &translations::PERMISSIONS_REQUIRES_ENTITY,
+                    )));
+                };
+                Ok(ResolvedTeleportTargets::Source(entity))
+            }
+            Self::Argument => Ok(ResolvedTeleportTargets::Argument(
+                context.entities("targets")?,
+            )),
+        }
+    }
 
-fn teleport_targets_facing_entity_anchor(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    let Some(anchor) = context.entity_anchor("facingAnchor") else {
-        return Err(missing_argument("facingAnchor"));
-    };
-    teleport_targets_facing_entity(context, anchor)
-}
-
-fn teleport_targets_facing_entity(
-    context: &SteelCommandContext<CommandSource>,
-    anchor: EntityAnchor,
-) -> Result<i32, CommandSyntaxError> {
-    let targets = context.entities("targets")?;
-    let destination = required_coordinates(context, "location")?;
-    let facing_entity = context.entity("facingEntity")?;
-    teleport_to_position(
-        context,
-        &targets,
-        destination,
-        None,
-        Some(TeleportFacing::Entity {
-            target: facing_entity,
-            anchor,
-        }),
-    )
-}
-
-fn teleport_targets_facing_position(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    let targets = context.entities("targets")?;
-    let destination = required_coordinates(context, "location")?;
-    let facing = required_coordinates(context, "facingLocation")?.position(context.source());
-    teleport_to_position(
-        context,
-        &targets,
-        destination,
-        None,
-        Some(TeleportFacing::Position(facing)),
-    )
-}
-
-fn teleport_targets_to_entity(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    let targets = context.entities("targets")?;
-    let destination = context.entity("destination")?;
-    teleport_to_entity(context, &targets, &destination)
-}
-
-fn source_entity(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<&SharedEntity, CommandSyntaxError> {
-    context.source().entity().ok_or_else(|| {
-        CommandSyntaxError::dynamic(TextComponent::from(
-            &translations::PERMISSIONS_REQUIRES_ENTITY,
-        ))
-    })
+    fn resolve_entity(
+        self,
+        context: &SteelCommandContext<CommandSource>,
+    ) -> Result<ResolvedEntityTeleport<'_>, CommandSyntaxError> {
+        Ok(ResolvedEntityTeleport {
+            targets: self.resolve(context)?,
+            destination: context.entity("destination")?,
+        })
+    }
 }
 
 fn required_coordinates(
@@ -168,9 +135,11 @@ fn required_coordinates(
 
 fn teleport_to_entity(
     context: &SteelCommandContext<CommandSource>,
-    targets: &[SharedEntity],
-    destination: &SharedEntity,
+    target_selection: TeleportTargets,
 ) -> Result<i32, CommandSyntaxError> {
+    let resolved = target_selection.resolve_entity(context)?;
+    let targets = resolved.targets.as_slice();
+    let destination = resolved.destination;
     let Some(target_world) = destination.level() else {
         return Err(CommandSyntaxError::dynamic(
             "Teleport destination is not in a live world",
@@ -199,17 +168,84 @@ fn teleport_to_entity(
     target_count(targets)
 }
 
-fn teleport_to_position(
-    context: &SteelCommandContext<CommandSource>,
-    targets: &[SharedEntity],
-    destination: Coordinates,
+#[derive(Clone, Copy)]
+enum PositionTeleport {
+    Source,
+    Targets,
+    TargetsWithRotation,
+    TargetsFacingEntityFeet,
+    TargetsFacingEntityAnchor,
+    TargetsFacingPosition,
+}
+
+struct ResolvedPositionTeleport {
+    targets: TeleportTargets,
     rotation: Option<Coordinates>,
     facing: Option<TeleportFacing>,
+}
+
+impl PositionTeleport {
+    fn resolve(
+        self,
+        context: &SteelCommandContext<CommandSource>,
+    ) -> Result<ResolvedPositionTeleport, CommandSyntaxError> {
+        let (targets, rotation, facing) = match self {
+            Self::Source => (TeleportTargets::Source, None, None),
+            Self::Targets => (TeleportTargets::Argument, None, None),
+            Self::TargetsWithRotation => (
+                TeleportTargets::Argument,
+                Some(required_coordinates(context, "rotation")?),
+                None,
+            ),
+            Self::TargetsFacingEntityFeet => (
+                TeleportTargets::Argument,
+                None,
+                Some(TeleportFacing::Entity {
+                    target: context.entity("facingEntity")?,
+                    anchor: EntityAnchor::Feet,
+                }),
+            ),
+            Self::TargetsFacingEntityAnchor => {
+                let Some(anchor) = context.entity_anchor("facingAnchor") else {
+                    return Err(missing_argument("facingAnchor"));
+                };
+                (
+                    TeleportTargets::Argument,
+                    None,
+                    Some(TeleportFacing::Entity {
+                        target: context.entity("facingEntity")?,
+                        anchor,
+                    }),
+                )
+            }
+            Self::TargetsFacingPosition => (
+                TeleportTargets::Argument,
+                None,
+                Some(TeleportFacing::Position(
+                    required_coordinates(context, "facingLocation")?.position(context.source()),
+                )),
+            ),
+        };
+        Ok(ResolvedPositionTeleport {
+            targets,
+            rotation,
+            facing,
+        })
+    }
+}
+
+fn teleport_to_position(
+    context: &SteelCommandContext<CommandSource>,
+    variant: PositionTeleport,
 ) -> Result<i32, CommandSyntaxError> {
     let source = context.source();
+    let destination = required_coordinates(context, "location")?;
+    let resolved = variant.resolve(context)?;
+    let targets = resolved.targets.resolve(context)?;
+    let targets = targets.as_slice();
     let position = destination.position(source);
     ensure_spawnable_position(position)?;
-    let resolved_rotation = rotation.map(|rotation| rotation.rotation(source));
+    let resolved_rotation = resolved.rotation.map(|rotation| rotation.rotation(source));
     ensure_same_domain_targets(targets, source.world())?;
 
     for target in targets {
@@ -222,7 +258,9 @@ fn teleport_to_position(
                 destination.is_y_relative(),
                 destination.is_z_relative(),
             ),
-            rotation.map(|rotation| (rotation.is_y_relative(), rotation.is_x_relative())),
+            resolved
+                .rotation
+                .map(|rotation| (rotation.is_y_relative(), rotation.is_x_relative())),
             same_world,
         );
         let target_rotation = target.rotation();
@@ -237,7 +275,7 @@ fn teleport_to_position(
             as_passenger: false,
             post_transition: TeleportPostTransition::do_nothing(),
         };
-        perform_teleport(source, target, transition, facing.as_ref());
+        perform_teleport(source, target, transition, resolved.facing.as_ref());
     }
 
     send_position_success(source, targets, position);

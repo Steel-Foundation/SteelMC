@@ -22,11 +22,11 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("experience").then_all([
-        experience_operation("add", i32::MIN, add_points, add_levels),
-        experience_operation("set", 0, set_points, set_levels),
+        experience_operation("add", i32::MIN, Mutation::Add),
+        experience_operation("set", 0, Mutation::Set),
         literal("query").then(argument("target", SteelArgumentType::player()).then_all([
-            literal("points").executes(query_points),
-            literal("levels").executes(query_levels),
+            literal("points").executes(|context| query_experience(context, ExperienceType::Points)),
+            literal("levels").executes(|context| query_experience(context, ExperienceType::Levels)),
         ])),
         literal("clear")
             .executes(clear_source)
@@ -37,26 +37,21 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 fn experience_operation(
     name: &'static str,
     minimum: i32,
-    points: fn(&SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError>,
-    levels: fn(&SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError>,
+    mutation: Mutation,
 ) -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal(name).then_chain([
         argument("target", SteelArgumentType::players()),
         argument("amount", ArgumentType::integer(minimum, i32::MAX))
-            .executes(points)
+            .executes(move |context| mutate_experience(context, mutation, ExperienceType::Points))
             .then_all([
-                literal("points").executes(points),
-                literal("levels").executes(levels),
+                literal("points").executes(move |context| {
+                    mutate_experience(context, mutation, ExperienceType::Points)
+                }),
+                literal("levels").executes(move |context| {
+                    mutate_experience(context, mutation, ExperienceType::Levels)
+                }),
             ]),
     ])
-}
-
-fn query_points(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    query_experience(context, ExperienceType::Points)
-}
-
-fn query_levels(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    query_experience(context, ExperienceType::Levels)
 }
 
 fn query_experience(
@@ -85,12 +80,15 @@ fn query_experience(
     Ok(amount)
 }
 
-fn add_points(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    add_experience(context, ExperienceType::Points)
-}
-
-fn add_levels(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    add_experience(context, ExperienceType::Levels)
+fn mutate_experience(
+    context: &SteelCommandContext<CommandSource>,
+    mutation: Mutation,
+    experience_type: ExperienceType,
+) -> Result<i32, CommandSyntaxError> {
+    match mutation {
+        Mutation::Add => add_experience(context, experience_type),
+        Mutation::Set => set_experience(context, experience_type),
+    }
 }
 
 fn add_experience(
@@ -108,14 +106,6 @@ fn add_experience(
 
     send_mutation_success(context, &players, amount, experience_type, Mutation::Add);
     player_count_result(&players)
-}
-
-fn set_points(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    set_experience(context, ExperienceType::Points)
-}
-
-fn set_levels(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    set_experience(context, ExperienceType::Levels)
 }
 
 fn set_experience(
