@@ -522,8 +522,7 @@ impl FeatureDecorationRunner {
         let Some(block_entity) = region.block_entity(hive_pos) else {
             return;
         };
-        let mut block_entity = block_entity.lock();
-        let Some(beehive) = block_entity.downcast_mut::<BeehiveBlockEntity>() else {
+        let Some(beehive) = block_entity.downcast_ref::<BeehiveBlockEntity>() else {
             return;
         };
 

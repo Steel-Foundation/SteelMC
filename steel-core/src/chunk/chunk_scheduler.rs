@@ -9,14 +9,35 @@ use std::{
 use steel_utils::{ChunkPos, locks::SyncMutex};
 
 use crate::chunk::chunk_ticket_manager::{ChunkTicket, ChunkTicketManager, LevelChange};
+use crate::chunk::gameplay_chunk_lookup_cache::GameplayChunkLookupCacheStats;
 
 /// Timing information for one background epoch and its boundary commit.
 #[derive(Debug, Default)]
 pub(crate) struct ChunkMapSchedulingTimings {
     /// Time spent applying queued ticket operations and propagating their levels.
     pub(crate) ticket_updates: Duration,
+    /// Time spent finalizing block-entity unloads before the boundary commit.
+    pub(crate) block_entity_unloads: Duration,
+    /// Time spent revoking ticking readiness before holder lifecycle changes.
+    pub(crate) readiness_demotions: Duration,
     /// Time spent committing holder lifecycle changes at the game-tick boundary.
     pub(crate) lifecycle_commit: Duration,
+    /// Time spent reconciling Full neighborhoods and applying ticking readiness.
+    pub(crate) readiness_reconcile: Duration,
+    /// Subset of `readiness_reconcile` spent running generation post-processing.
+    pub(crate) post_process_generation: Duration,
+    /// Number of chunks whose generation post-processing completed.
+    pub(crate) post_process_chunk_count: usize,
+    /// Number of packed generation post-processing positions attempted.
+    pub(crate) post_process_position_count: usize,
+    /// Number of readiness candidates considered during reconciliation.
+    pub(crate) readiness_candidate_count: usize,
+    /// Time spent rebuilding the published ticking-chunk snapshot.
+    pub(crate) ticking_snapshot_rebuild: Duration,
+    /// Number of block-ticking chunks in a snapshot rebuilt during this epoch.
+    pub(crate) rebuilt_ticking_chunk_count: usize,
+    /// Scoped holder-cache activity during readiness reconciliation.
+    pub(crate) lookup_cache: GameplayChunkLookupCacheStats,
     /// Time spent creating or updating chunk-generation tasks.
     pub(crate) schedule_generation: Duration,
     /// Number of holders scheduled for generation.
@@ -25,6 +46,32 @@ pub(crate) struct ChunkMapSchedulingTimings {
     pub(crate) run_generation: Duration,
     /// Time spent processing physical chunk unloads.
     pub(crate) process_unloads: Duration,
+}
+
+/// Timing information produced by the background half of a scheduling epoch.
+///
+/// Boundary-only fields stay out of `PreparedChunkSchedulingEpoch` so the
+/// cross-thread scheduling state does not grow with game-thread observability.
+#[derive(Debug, Default)]
+pub(crate) struct ChunkMapPreparationTimings {
+    pub(crate) ticket_updates: Duration,
+    pub(crate) schedule_generation: Duration,
+    pub(crate) scheduled_count: usize,
+    pub(crate) run_generation: Duration,
+    pub(crate) process_unloads: Duration,
+}
+
+impl ChunkMapPreparationTimings {
+    pub(crate) fn into_scheduling_timings(self) -> ChunkMapSchedulingTimings {
+        ChunkMapSchedulingTimings {
+            ticket_updates: self.ticket_updates,
+            schedule_generation: self.schedule_generation,
+            scheduled_count: self.scheduled_count,
+            run_generation: self.run_generation,
+            process_unloads: self.process_unloads,
+            ..ChunkMapSchedulingTimings::default()
+        }
+    }
 }
 
 /// Revision assigned to an ordered batch of ticket operations.
@@ -129,7 +176,7 @@ pub(crate) struct PreparedChunkSchedulingEpoch {
     pub ticket_manager: ChunkTicketManager,
     pub applied_revision: ChunkTicketRevision,
     pub changes: Vec<LevelChange>,
-    pub timings: ChunkMapSchedulingTimings,
+    pub timings: ChunkMapPreparationTimings,
 }
 
 enum ChunkSchedulingState {
@@ -292,7 +339,7 @@ mod tests {
             ticket_manager,
             applied_revision: applied,
             changes,
-            timings: ChunkMapSchedulingTimings::default(),
+            timings: ChunkMapPreparationTimings::default(),
         });
 
         assert_eq!(applied, revision);

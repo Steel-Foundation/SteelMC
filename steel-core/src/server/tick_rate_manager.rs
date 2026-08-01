@@ -30,7 +30,7 @@ pub struct TickRateManager {
     pub tick_rate: f32,
     /// The number of nanoseconds per tick based on the tick rate.
     pub nanoseconds_per_tick: u64,
-    /// The current tick count.
+    /// The current server tick count, including ticks where game elements are frozen.
     pub tick_count: u64,
     /// Whether the server is currently frozen.
     is_frozen: bool,
@@ -145,7 +145,7 @@ impl TickRateManager {
         }
     }
 
-    /// Increments the tick count. Call this when a tick actually runs.
+    /// Increments the server tick count.
     pub const fn increment_tick_count(&mut self) {
         self.tick_count += 1;
     }

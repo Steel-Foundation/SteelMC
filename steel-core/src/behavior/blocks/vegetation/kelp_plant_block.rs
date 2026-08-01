@@ -5,7 +5,7 @@ use steel_registry::blocks::{
     block_state_ext::BlockStateExt,
     properties::{BlockStateProperties, Direction},
 };
-use steel_registry::fluid::{FluidRef, FluidState};
+use steel_registry::fluid::FluidRef;
 use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -13,7 +13,7 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
-use super::{BlockRef, kelp_can_survive, water_source_fluid_state};
+use super::{BlockRef, kelp_can_survive};
 
 /// Vanilla `KelpPlantBlock` survival and fluid state.
 // TODO: Implement bonemeal forwarding and clone stack behavior.
@@ -79,10 +79,6 @@ impl BlockBehavior for KelpPlantBlock {
         if !self.can_survive(state, world, pos) {
             world.destroy_block(pos, true);
         }
-    }
-
-    fn get_fluid_state(&self, _state: BlockStateId) -> FluidState {
-        water_source_fluid_state()
     }
 
     fn is_liquid_container(&self, _state: BlockStateId) -> bool {

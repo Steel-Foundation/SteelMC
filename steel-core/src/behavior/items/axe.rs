@@ -21,7 +21,7 @@ use crate::{
         waxables::get_normal_from_waxed_variant, weathering::previous_copper_stage,
     },
     entity::Entity,
-    world::game_event_context::GameEventContext,
+    world::game_event::GameEventContext,
 };
 
 use super::copper_chest_events::emit_connected_chest_block_change;

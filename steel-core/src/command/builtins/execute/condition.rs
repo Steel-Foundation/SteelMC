@@ -95,7 +95,7 @@ fn data_match_count(
                 .world()
                 .get_block_entity(position)
                 .ok_or_else(invalid_block_data_source)?;
-            let data = block_entity.lock().save_with_full_metadata();
+            let data = block_entity.save_with_full_metadata();
             NbtTag::Compound(data)
         }
         DataSource::Entity => {
@@ -277,8 +277,6 @@ fn block_entity_data_matches(
     if Arc::ptr_eq(source, destination) {
         return true;
     }
-    let source = source.lock();
-    let destination = destination.lock();
     if source.get_type() != destination.get_type() {
         return false;
     }
@@ -353,7 +351,7 @@ fn block_matches(context: &SteelCommandContext<CommandSource>) -> Result<bool, C
     let Some(block_entity) = world.get_block_entity(position) else {
         return Ok(false);
     };
-    let actual_nbt = block_entity.lock().save_with_full_metadata();
+    let actual_nbt = block_entity.save_with_full_metadata();
     Ok(compare_nbt_compounds(expected_nbt, &actual_nbt, true))
 }
 
@@ -636,7 +634,7 @@ mod tests {
     use steel_registry::{
         test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
     };
-    use steel_utils::{locks::SyncMutex, nbt::parse_nbt_path};
+    use steel_utils::nbt::parse_nbt_path;
 
     use super::*;
     use crate::block_entity::entities::RawBlockEntity;
@@ -651,13 +649,13 @@ mod tests {
             data.insert("other", 11_i32);
         }
         data.insert("x", pos.x());
-        Arc::new(SyncMutex::new(RawBlockEntity::with_data(
+        Arc::new(RawBlockEntity::with_data(
             &vanilla_block_entity_types::BARREL,
             Weak::new(),
             pos,
             vanilla_blocks::BARREL.default_state(),
             data,
-        )))
+        ))
     }
 
     #[test]

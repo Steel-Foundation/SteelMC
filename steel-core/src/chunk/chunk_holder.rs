@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use steel_utils::locks::SyncRwLock;
 use steel_utils::{BlockPos, ChunkPos, PackedSectionBlockPos, SectionPos, locks::SyncMutex};
-use tokio::sync::{oneshot, watch};
+use tokio::sync::{Notify, oneshot};
 #[cfg(feature = "slow_chunk_gen")]
 use tokio::time::sleep;
 
@@ -43,6 +43,7 @@ use crate::{
 };
 
 const STATUS_NONE: u8 = u8::MAX;
+const UNPUBLISHED_STATUS: u8 = 0;
 const NO_TICKET_LEVEL: u8 = u8::MAX;
 
 fn optional_ticket_level_raw(level: Option<ChunkTicketLevel>) -> u8 {
@@ -57,12 +58,21 @@ const fn optional_ticket_level_from_raw(raw: u8) -> Option<ChunkTicketLevel> {
     }
 }
 
-/// The result of a chunk operation.
-pub enum ChunkResult {
-    /// The chunk is not loaded.
-    Unloaded,
-    /// The chunk operation succeeded.
-    Ok(ChunkStatus),
+const fn encoded_published_status(status: ChunkStatus) -> u8 {
+    status.get_index() as u8 + 1
+}
+
+fn decoded_published_status(status: u8) -> Option<ChunkStatus> {
+    if status == UNPUBLISHED_STATUS {
+        return None;
+    }
+
+    let decoded = ChunkStatus::from_index(usize::from(status - 1));
+    assert!(
+        decoded.is_some(),
+        "invalid published chunk status: {status}"
+    );
+    decoded
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -151,19 +161,16 @@ impl ChangedLightSections {
     }
 }
 
-/// Holds a chunk in a watch channel, allowing for concurrent access and state tracking.
+/// Holds chunk data and coordinates asynchronous generation work.
 ///
-/// NOTICE: It is very important to keep data and `chunk_result` in sync.
-///
-/// `ChunkResult::Unloaded` -> data is None
-///
-/// `ChunkResult::Ok(status except Full)` -> data is `Some(ChunkAccess::Proto(ProtoChunk))`
-///
-/// `ChunkResult::Ok(ChunkStatus::Full)` -> data is `Some(ChunkAccess::Full(LevelChunk))`
+/// `published_status` is released only after the corresponding data and Full
+/// tick containers are installed. Synchronous readers acquire it before
+/// reading `data`; `status_changed` wakes async waiters so they can re-check
+/// the atomic state.
 pub struct ChunkHolder {
     data: ChunkGuard,
-    chunk_result: watch::Receiver<ChunkResult>,
-    sender: watch::Sender<ChunkResult>,
+    published_status: AtomicU8,
+    status_changed: Notify,
     generation_task: SyncMutex<Option<Arc<ChunkGenerationTask>>>,
     generation_task_target: AtomicU8,
     pos: ChunkPos,
@@ -272,7 +279,6 @@ impl ChunkHolder {
         height: i32,
         full_publications: Weak<FullPublicationQueue>,
     ) -> Self {
-        let (sender, receiver) = watch::channel(ChunkResult::Unloaded);
         let highest_allowed_status =
             generation_status(Some(load_level)).map_or(STATUS_NONE, |s| s.get_index() as u8);
 
@@ -283,8 +289,8 @@ impl ChunkHolder {
 
         Self {
             data: ChunkGuard::new(ChunkAccess::Unloaded),
-            chunk_result: receiver,
-            sender,
+            published_status: AtomicU8::new(UNPUBLISHED_STATUS),
+            status_changed: Notify::new(),
             generation_task: SyncMutex::new(None),
             generation_task_target: AtomicU8::new(STATUS_NONE),
             pos,
@@ -312,12 +318,12 @@ impl ChunkHolder {
     }
 
     /// Stores the current load ticket level and returns the previous level.
-    pub fn swap_load_level(&self, level: ChunkTicketLevel) -> Option<ChunkTicketLevel> {
+    pub(crate) fn swap_load_level(&self, level: ChunkTicketLevel) -> Option<ChunkTicketLevel> {
         optional_ticket_level_from_raw(self.load_level.swap(level.raw(), Ordering::Relaxed))
     }
 
     /// Clears the current load ticket level.
-    pub fn clear_load_level(&self) {
+    pub(crate) fn clear_load_level(&self) {
         self.load_level.store(NO_TICKET_LEVEL, Ordering::Relaxed);
     }
 
@@ -327,7 +333,7 @@ impl ChunkHolder {
     }
 
     /// Stores the current simulation ticket level.
-    pub fn set_simulation_level(&self, level: Option<ChunkTicketLevel>) {
+    pub(crate) fn set_simulation_level(&self, level: Option<ChunkTicketLevel>) {
         self.simulation_level
             .store(optional_ticket_level_raw(level), Ordering::Relaxed);
     }
@@ -599,54 +605,68 @@ impl ChunkHolder {
     /// Gets access to the chunk if it has reached the given status.
     #[inline]
     pub fn try_chunk(&self, status: ChunkStatus) -> Option<RwLockReadGuard<'_, ChunkAccess>> {
-        let ready = {
-            let chunk_result = self.chunk_result.borrow();
-            matches!(&*chunk_result, ChunkResult::Ok(s) if status <= *s)
-        };
-
-        if ready { Some(self.data.read()) } else { None }
+        let published = self.published_status.load(Ordering::Acquire);
+        (published >= encoded_published_status(status)).then(|| self.data.read())
     }
 
-    fn await_claimed_chunk_status(
+    /// Waits until the chunk has reached the given status.
+    pub async fn await_chunk(
         &self,
         status: ChunkStatus,
-    ) -> impl Future<Output = Option<ChunkStatus>> + '_ {
-        let mut subscriber = self.sender.subscribe();
-        async move {
-            loop {
-                let ready = {
-                    let chunk_result = subscriber.borrow_and_update();
-                    match &*chunk_result {
-                        ChunkResult::Ok(current_status) if status <= *current_status => {
-                            Some(*current_status)
-                        }
-                        ChunkResult::Ok(_) | ChunkResult::Unloaded => None,
-                    }
-                };
+    ) -> Option<RwLockReadGuard<'_, ChunkAccess>> {
+        loop {
+            // Register before checking the state so a concurrent publication
+            // cannot land between the check and the wait.
+            let notified = self.status_changed.notified();
 
-                if ready.is_some() {
-                    return ready;
-                }
-
-                if self.is_status_disallowed(status) || !self.status_work_covers(status) {
-                    return None;
-                }
-
-                if subscriber.changed().await.is_err() {
-                    log::error!("Failed to wait for claimed chunk status");
-                    return None;
-                }
+            if self.published_status.load(Ordering::Acquire) >= encoded_published_status(status) {
+                return Some(self.data.read());
             }
+
+            if self.is_status_disallowed(status) {
+                return None;
+            }
+
+            notified.await;
+        }
+    }
+
+    /// Waits until the chunk has reached the given status without reading chunk data.
+    pub async fn await_chunk_status(&self, status: ChunkStatus) -> Option<ChunkStatus> {
+        loop {
+            let notified = self.status_changed.notified();
+            let published = self.persisted_status();
+            if published.is_some_and(|current| status <= current) {
+                return published;
+            }
+
+            if self.is_status_disallowed(status) {
+                return None;
+            }
+
+            notified.await;
+        }
+    }
+
+    async fn await_claimed_chunk_status(&self, status: ChunkStatus) -> Option<ChunkStatus> {
+        loop {
+            let notified = self.status_changed.notified();
+            let published = self.persisted_status();
+            if published.is_some_and(|current| status <= current) {
+                return published;
+            }
+
+            if self.is_status_disallowed(status) || !self.status_work_covers(status) {
+                return None;
+            }
+
+            notified.await;
         }
     }
 
     /// Gets the persisted status of the chunk.
     pub fn persisted_status(&self) -> Option<ChunkStatus> {
-        let chunk_result = self.chunk_result.borrow();
-        match &*chunk_result {
-            ChunkResult::Ok(s) => Some(*s),
-            ChunkResult::Unloaded => None,
-        }
+        decoded_published_status(self.published_status.load(Ordering::Acquire))
     }
 
     /// Returns whether vanilla timed tickets may age for this chunk.
@@ -859,8 +879,14 @@ impl ChunkHolder {
         }
 
         if chunk_exists {
-            return Self::apply_existing_empty_step(&holder, target_status, &context, &storage)
-                .await;
+            return Self::apply_existing_empty_step(
+                &holder,
+                target_status,
+                &context,
+                &storage,
+                &thread_pool,
+            )
+            .await;
         }
 
         if holder.is_status_disallowed(target_status) {
@@ -901,6 +927,7 @@ impl ChunkHolder {
         target_status: ChunkStatus,
         context: &Arc<WorldGenContext>,
         storage: &Arc<ChunkStorage>,
+        thread_pool: &rayon::ThreadPool,
     ) -> Option<()> {
         let loaded = match storage
             .load_chunk(
@@ -908,6 +935,7 @@ impl ChunkHolder {
                 holder.min_y(),
                 holder.height(),
                 context.weak_world(),
+                thread_pool,
             )
             .await
         {
@@ -1133,12 +1161,15 @@ impl ChunkHolder {
                 ChunkAccess::Unloaded => panic!("Chunk is unloaded, cannot upgrade to full"),
             }
         });
-        if let (Some(world), Some((pos, pending_entities))) = (world, promoted_entities) {
+        if let Some((pos, pending_entities)) = promoted_entities
+            && let Some(world) = world
+        {
             world.register_loaded_chunk_entities(pos, ChunkStatus::Full, pending_entities);
         }
     }
 
-    pub(crate) fn post_process_generation(&self) -> Result<(), PostProcessGenerationError> {
+    /// Runs Full-load post-processing and returns the number of packed positions attempted.
+    pub(crate) fn post_process_generation(&self) -> Result<usize, PostProcessGenerationError> {
         let postprocessing = {
             let chunk = self.data.read();
             let ChunkAccess::Full(full) = &*chunk else {
@@ -1151,10 +1182,20 @@ impl ChunkHolder {
                 .map(|postprocessing| (world, full.pos, full.min_y(), postprocessing))
         };
 
-        if let Some((world, pos, min_y, postprocessing)) = postprocessing {
-            LevelChunk::post_process_generation(&world, pos, min_y, postprocessing);
-        }
-        Ok(())
+        let post_process_position_count =
+            if let Some((world, pos, min_y, postprocessing)) = postprocessing {
+                let position_count = postprocessing.iter().map(Vec::len).sum();
+                LevelChunk::post_process_generation(&world, pos, min_y, postprocessing);
+                position_count
+            } else {
+                0
+            };
+        let chunk = self.data.read();
+        let ChunkAccess::Full(full) = &*chunk else {
+            return Err(PostProcessGenerationError::ChunkNotFull);
+        };
+        full.promote_pending_block_entities();
+        Ok(post_process_position_count)
     }
 
     /// Finishes a generated status on the async scheduler after the Rayon task returns.
@@ -1169,16 +1210,12 @@ impl ChunkHolder {
             }
         }
 
+        if status == ChunkStatus::Full {
+            self.register_full_chunk_ticks();
+        }
+
         self.mark_status_work_published(status);
-        self.sender.send_modify(|chunk| match chunk {
-            ChunkResult::Ok(current_status) if *current_status < status => {
-                *current_status = status;
-            }
-            ChunkResult::Unloaded => {
-                *chunk = ChunkResult::Ok(status);
-            }
-            ChunkResult::Ok(_) => {}
-        });
+        self.publish_generated_status(status);
 
         if status == ChunkStatus::Full {
             self.publish_full();
@@ -1196,6 +1233,11 @@ impl ChunkHolder {
     }
 
     fn store_and_publish_chunk_status(&self, chunk: ChunkAccess, status: ChunkStatus) {
+        assert_eq!(
+            self.published_status.load(Ordering::Acquire),
+            UNPUBLISHED_STATUS,
+            "initial chunk installation cannot replace published data"
+        );
         if let ChunkAccess::Proto(proto) = &chunk {
             debug_assert!(
                 status < ChunkStatus::Full,
@@ -1204,8 +1246,37 @@ impl ChunkHolder {
             proto.set_status(status);
         }
         self.data.with_write(|c| *c = chunk);
+        if status == ChunkStatus::Full {
+            self.register_full_chunk_ticks();
+        }
         self.mark_status_work_published(status);
-        self.sender.send_replace(ChunkResult::Ok(status));
+        self.published_status
+            .store(encoded_published_status(status), Ordering::Release);
+        self.status_changed.notify_waiters();
+    }
+
+    fn publish_generated_status(&self, status: ChunkStatus) {
+        let encoded = encoded_published_status(status);
+        let previous = self.published_status.fetch_max(encoded, Ordering::Release);
+        if previous < encoded {
+            self.status_changed.notify_waiters();
+        }
+    }
+
+    /// Registers tick queues before Full status becomes observable to watchers.
+    fn register_full_chunk_ticks(&self) {
+        let chunk = self.data.read();
+        let ChunkAccess::Full(full) = &*chunk else {
+            panic!("Full status must be backed by a LevelChunk");
+        };
+        let Some(world) = full.get_level() else {
+            // Focused holder tests construct chunks without a live world. Real
+            // loaded/generated chunks always carry the WorldGenContext world.
+            return;
+        };
+        if let Err(error) = world.register_full_chunk_ticks(full) {
+            panic!("Full chunk scheduled-tick registration invariant failed: {error:?}");
+        }
     }
 
     fn publish_full(self: &Arc<Self>) {
@@ -1232,10 +1303,10 @@ impl ChunkHolder {
     }
 
     /// Wakes all `await_chunk` watchers without changing the chunk result.
-    /// This allows futures stuck in `subscriber.changed().await` to re-check
-    /// `is_status_disallowed` and bail out during chunk unload.
+    /// This allows waiting futures to re-check `is_status_disallowed` and bail
+    /// out during chunk unload.
     pub fn wake_all_watchers(&self) {
-        self.sender.send_modify(|_| {});
+        self.status_changed.notify_waiters();
     }
 
     /// Cancels the current generation task.
@@ -1277,10 +1348,15 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{task::Poll, time::Duration as TestDuration};
+    use tokio::time::sleep as test_sleep;
+
     use crate::behavior::init_behaviors;
     use crate::chunk::proto_chunk::ProtoChunk;
     use crate::chunk::section::{ChunkSection, Sections};
-    use steel_registry::test_support::init_test_registry;
+    use crate::test_support::fresh_test_world;
+    use crate::world::tick_scheduler::TickPriority;
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
 
     fn init_chunk_test_registry() {
         init_test_registry();
@@ -1376,6 +1452,112 @@ mod tests {
 
         assert_eq!(holder.entity_visibility(), EntityVisibility::Tracked);
         assert!(holder.is_full_status_initialized());
+    }
+
+    #[test]
+    fn late_lower_generation_completion_does_not_regress_published_status() {
+        init_chunk_test_registry();
+        let holder = test_holder();
+        holder.insert_chunk(
+            ChunkAccess::Proto(test_proto_chunk(ChunkStatus::Light)),
+            ChunkStatus::Light,
+        );
+
+        holder.finish_generation_status(ChunkStatus::Spawn);
+        holder.finish_generation_status(ChunkStatus::Features);
+
+        assert_eq!(holder.persisted_status(), Some(ChunkStatus::Spawn));
+        assert!(holder.try_chunk(ChunkStatus::Spawn).is_some());
+    }
+
+    #[tokio::test]
+    async fn status_waiter_observes_publication_after_subscribing() {
+        init_chunk_test_registry();
+        let holder = test_holder();
+        let waiter = holder.await_chunk_status(ChunkStatus::Empty);
+
+        holder.insert_chunk(
+            ChunkAccess::Proto(test_proto_chunk(ChunkStatus::Empty)),
+            ChunkStatus::Empty,
+        );
+
+        assert_eq!(waiter.await, Some(ChunkStatus::Empty));
+    }
+
+    #[tokio::test]
+    async fn pending_status_waiters_wake_after_publication() {
+        init_chunk_test_registry();
+        let holder = test_holder();
+        let first_waiter = holder.await_chunk_status(ChunkStatus::Empty);
+        let second_waiter = holder.await_chunk_status(ChunkStatus::Empty);
+        tokio::pin!(first_waiter, second_waiter);
+        assert!(matches!(futures::poll!(&mut first_waiter), Poll::Pending));
+        assert!(matches!(futures::poll!(&mut second_waiter), Poll::Pending));
+
+        let publishing_holder = Arc::clone(&holder);
+        let publish_task = tokio::spawn(async move {
+            publishing_holder.insert_chunk(
+                ChunkAccess::Proto(test_proto_chunk(ChunkStatus::Empty)),
+                ChunkStatus::Empty,
+            );
+        });
+
+        let (first_status, second_status) = tokio::select! {
+            biased;
+            () = test_sleep(TestDuration::from_secs(1)) => {
+                panic!("pending status waiters were not woken by publication");
+            }
+            statuses = async { tokio::join!(&mut first_waiter, &mut second_waiter) } => statuses,
+        };
+        assert_eq!(first_status, Some(ChunkStatus::Empty));
+        assert_eq!(second_status, Some(ChunkStatus::Empty));
+        assert!(publish_task.await.is_ok());
+    }
+
+    #[test]
+    fn full_registration_transfers_prepublication_block_and_fluid_ticks() {
+        init_chunk_test_registry();
+        let world = fresh_test_world("prepublication_tick_transfer");
+        let chunk_pos = ChunkPos::new(0, 0);
+        let min_y = world.get_min_y();
+        let height = world.get_height();
+        let sections = (0..height / 16)
+            .map(|_| ChunkSection::new_empty())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let proto = ProtoChunk::new(
+            Sections::from_owned(sections),
+            chunk_pos,
+            min_y,
+            height,
+            Arc::downgrade(&world),
+        );
+        proto.set_status(ChunkStatus::Light);
+        let block_pos = BlockPos::new(1, min_y + 1, 1);
+        let fluid_pos = BlockPos::new(2, min_y + 1, 2);
+        proto.schedule_block_tick(block_pos, &vanilla_blocks::STONE, TickPriority::High);
+        proto.schedule_fluid_tick(fluid_pos, &vanilla_fluids::WATER, TickPriority::Low);
+
+        let holder = Arc::new(ChunkHolder::new(
+            chunk_pos,
+            ChunkTicketLevel::FULL_CHUNK,
+            Some(ChunkTicketLevel::FULL_CHUNK),
+            min_y,
+            height,
+        ));
+        let _ = world
+            .chunk_map
+            .chunks
+            .insert_sync(chunk_pos, Arc::clone(&holder));
+        holder.insert_chunk(ChunkAccess::Proto(proto), ChunkStatus::Light);
+        holder.upgrade_to_full(Arc::downgrade(&world));
+
+        assert!(!world.has_registered_full_chunk_ticks(chunk_pos));
+        holder.finish_generation_status(ChunkStatus::Full);
+
+        assert!(world.has_registered_full_chunk_ticks(chunk_pos));
+        assert!(world.has_scheduled_block_tick(block_pos, &vanilla_blocks::STONE));
+        assert!(world.has_scheduled_fluid_tick(fluid_pos, &vanilla_fluids::WATER));
     }
 
     #[test]

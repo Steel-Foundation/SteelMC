@@ -16,8 +16,6 @@ use steel_registry::{
 };
 use steel_utils::BlockStateId;
 
-use crate::behavior::BlockStateBehaviorExt as _;
-
 /// The different types of heightmaps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HeightmapType {
@@ -465,10 +463,7 @@ impl ProtoHeightmaps {
         heightmap.set_height(local_x, local_z, height);
     }
 
-    /// Primes missing heightmaps by reading sections directly with batched locking.
-    ///
-    /// Instead of a per-block closure (which acquires a lock per call), this
-    /// holds each section's read lock for all 16 Y values before moving on.
+    /// Primes missing heightmaps by scanning each section under one read lock.
     pub fn prime_from_sections(
         &mut self,
         types: &[HeightmapType],
@@ -494,87 +489,49 @@ impl ProtoHeightmaps {
             self.get_or_insert(hm_type, min_y, height);
         }
 
-        for x in 0..16 {
-            for z in 0..16 {
-                let mut pending_mask = pending_mask_base;
+        let mut pending_masks = [pending_mask_base; 16 * 16];
+        let mut pending_columns = pending_masks.len();
 
-                'sections: for section_idx in (0..sections.len()).rev() {
-                    let guard = sections[section_idx].read();
-                    for local_y in (0..16).rev() {
-                        if pending_mask == 0 {
-                            break 'sections;
-                        }
-                        let y = min_y + (section_idx * 16 + local_y) as i32;
-                        let state = guard.states.get(x, local_y, z);
-                        let matched_mask = heightmap_opacity_mask(state, pending_mask);
-                        if matched_mask == 0 {
-                            continue;
-                        }
-                        for &(hm_type, mask) in &types_to_prime {
-                            if matched_mask & mask != 0 {
-                                self.set_primed_height(hm_type, x, z, y + 1);
-                            }
-                        }
-                        pending_mask &= !matched_mask;
-                    }
-                }
+        'sections: for section_idx in (0..sections.len()).rev() {
+            let guard = sections[section_idx].read();
+            if matches!(
+                &guard.states,
+                super::paletted_container::BlockPalette::Homogeneous(state) if state.is_air()
+            ) {
+                continue;
             }
-        }
-    }
 
-    /// Primes missing heightmaps by scanning chunk columns from top to bottom.
-    ///
-    /// Only creates and primes heightmap types that don't already exist.
-    /// For each column, scans downward and records the first opaque block
-    /// for each heightmap type's predicate.
-    pub fn prime<F>(&mut self, types: &[HeightmapType], min_y: i32, height: i32, get_block: F)
-    where
-        F: Fn(usize, i32, usize) -> BlockStateId,
-    {
-        // Collect types that need priming (don't exist yet)
-        let mut types_to_prime = SmallVec::<[(HeightmapType, u8); 4]>::new();
-        let mut pending_mask_base = 0;
-        for &hm_type in types {
-            if self.get(hm_type).is_none() {
-                let mask = hm_type.mask();
-                types_to_prime.push((hm_type, mask));
-                pending_mask_base |= mask;
-            }
-        }
+            // Paletted block storage is contiguous in y-z-x order.
+            for local_y in (0..16).rev() {
+                let y = min_y + (section_idx * 16 + local_y) as i32;
+                let layer_start = local_y * 16 * 16;
 
-        if types_to_prime.is_empty() {
-            return;
-        }
-
-        // Create missing heightmaps
-        for &(hm_type, _) in &types_to_prime {
-            self.get_or_insert(hm_type, min_y, height);
-        }
-
-        let max_y = min_y + height;
-
-        // For each column, scan from top to bottom
-        for x in 0..16 {
-            for z in 0..16 {
-                // Track which heightmaps still need to find their first opaque block
-                let mut pending_mask = pending_mask_base;
-
-                for y in (min_y..max_y).rev() {
-                    if pending_mask == 0 {
-                        break;
+                for (column_index, pending_mask) in pending_masks.iter_mut().enumerate() {
+                    if *pending_mask == 0 {
+                        continue;
                     }
 
-                    let state = get_block(x, y, z);
-                    let matched_mask = heightmap_opacity_mask(state, pending_mask);
+                    let state = guard.states.get_at_index(layer_start + column_index);
+                    let matched_mask = heightmap_opacity_mask(state, *pending_mask);
                     if matched_mask == 0 {
                         continue;
                     }
+
+                    let x = column_index % 16;
+                    let z = column_index / 16;
                     for &(hm_type, mask) in &types_to_prime {
                         if matched_mask & mask != 0 {
                             self.set_primed_height(hm_type, x, z, y + 1);
                         }
                     }
-                    pending_mask &= !matched_mask;
+                    *pending_mask &= !matched_mask;
+                    if *pending_mask == 0 {
+                        pending_columns -= 1;
+                    }
+                }
+
+                if pending_columns == 0 {
+                    break 'sections;
                 }
             }
         }
@@ -710,6 +667,7 @@ mod tests {
     };
 
     use crate::behavior::init_behaviors;
+    use crate::chunk::section::{ChunkSection, Sections};
 
     use super::*;
 
@@ -775,5 +733,74 @@ mod tests {
 
         assert!(!ocean_floor.update_for_initial_fill(0, 4, 0, stone));
         assert_eq!(ocean_floor.get_first_available(0, 0), 6);
+    }
+
+    #[test]
+    fn section_priming_preserves_heightmap_predicates_across_sections() {
+        init_test_state();
+
+        let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
+        let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
+        let leaves = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::OAK_LEAVES);
+        let cobweb = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::COBWEB);
+        let mut lower = ChunkSection::new_empty();
+        let mut upper = ChunkSection::new_empty();
+
+        lower.set_block_state(0, 15, 0, stone);
+        upper.set_block_state(0, 10, 0, water);
+        upper.set_block_state(1, 4, 2, stone);
+        upper.set_block_state(1, 12, 2, leaves);
+        upper.set_block_state(3, 3, 4, stone);
+        upper.set_block_state(3, 14, 4, cobweb);
+
+        let sections = Sections::from_owned(vec![lower, upper].into_boxed_slice());
+        let mut heightmaps = ProtoHeightmaps::new();
+        heightmaps.prime_from_sections(
+            &[
+                HeightmapType::WorldSurface,
+                HeightmapType::MotionBlocking,
+                HeightmapType::MotionBlockingNoLeaves,
+                HeightmapType::OceanFloor,
+                HeightmapType::WorldSurfaceWg,
+                HeightmapType::OceanFloorWg,
+            ],
+            -16,
+            32,
+            &sections.sections,
+        );
+
+        let first_available = |heightmap_type, x, z| {
+            let Some(heightmap) = heightmaps.get(heightmap_type) else {
+                panic!("heightmap {heightmap_type:?} was not primed");
+            };
+            heightmap.get_first_available(x, z)
+        };
+
+        assert_eq!(first_available(HeightmapType::WorldSurface, 0, 0), 11);
+        assert_eq!(first_available(HeightmapType::MotionBlocking, 0, 0), 11);
+        assert_eq!(
+            first_available(HeightmapType::MotionBlockingNoLeaves, 0, 0),
+            11
+        );
+        assert_eq!(first_available(HeightmapType::OceanFloor, 0, 0), 0);
+        assert_eq!(first_available(HeightmapType::WorldSurfaceWg, 0, 0), 11);
+        assert_eq!(first_available(HeightmapType::OceanFloorWg, 0, 0), 0);
+
+        assert_eq!(first_available(HeightmapType::WorldSurface, 1, 2), 13);
+        assert_eq!(first_available(HeightmapType::MotionBlocking, 1, 2), 13);
+        assert_eq!(
+            first_available(HeightmapType::MotionBlockingNoLeaves, 1, 2),
+            5
+        );
+        assert_eq!(first_available(HeightmapType::OceanFloor, 1, 2), 13);
+
+        assert_eq!(first_available(HeightmapType::WorldSurface, 3, 4), 15);
+        assert_eq!(first_available(HeightmapType::MotionBlocking, 3, 4), 4);
+        assert_eq!(first_available(HeightmapType::OceanFloor, 3, 4), 4);
+        assert_eq!(first_available(HeightmapType::WorldSurface, 15, 15), -16);
     }
 }

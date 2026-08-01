@@ -21,17 +21,18 @@ use steel_utils::{BlockPos, BlockStateId, Identifier, types::UpdateFlags};
 use steel_worldgen::density::DimensionNoises;
 use steel_worldgen::surface::{SurfaceConditionNoiseCache, SurfaceRuleContext};
 
-use crate::behavior::BlockStateBehaviorExt as _;
 use crate::chunk::{
     chunk_access::ChunkAccess,
     heightmap::{Heightmap, HeightmapType},
 };
-use crate::worldgen::carving_mask::CarvingMask;
 use crate::worldgen::surface::SurfaceSystem;
 use steel_worldgen::noise::{Aquifer, AquiferResult};
 
 pub mod canyon;
 pub mod cave;
+mod mask;
+
+pub use mask::CarvingMask;
 
 /// The four preliminary-surface-level samples at a chunk's block corners, in
 /// world Y. Indexed by local `(x, z)` corner as `(0,0)`, `(16,0)`, `(0,16)`,

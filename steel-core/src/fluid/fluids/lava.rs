@@ -74,11 +74,6 @@ impl FluidBehavior for LavaFluid {
         100.0
     }
 
-    /// Lava is randomly ticking for fire spread.
-    fn is_randomly_ticking(&self) -> bool {
-        true
-    }
-
     fn can_convert_to_source(&self, world: &Arc<World>) -> bool {
         world.get_game_rule(&LAVA_SOURCE_CONVERSION)
     }
@@ -152,12 +147,24 @@ impl FluidBehavior for LavaFluid {
         );
     }
 
-    fn tick(&self, world: &Arc<World>, pos: BlockPos) {
-        self.base_tick(world, pos);
+    fn tick(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        block_state: BlockStateId,
+        fluid_state: FluidState,
+    ) {
+        self.base_tick(world, pos, block_state, fluid_state);
     }
 
-    fn spread(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
-        self.base_spread(world, pos, fluid_state);
+    fn spread(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        block_state: BlockStateId,
+        fluid_state: FluidState,
+    ) {
+        self.base_spread(world, pos, block_state, fluid_state);
     }
 }
 

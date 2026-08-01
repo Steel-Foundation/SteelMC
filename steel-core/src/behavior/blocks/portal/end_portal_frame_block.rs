@@ -1,16 +1,14 @@
 //! End portal frame block implementation.
 
-use std::sync::Arc;
-
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::World;
+use crate::world::LevelReader;
 
 /// Behavior for end portal frame blocks.
 #[block_behavior]
@@ -45,8 +43,9 @@ impl BlockBehavior for EndPortalFrameBlock {
     fn get_analog_output_signal(
         &self,
         state: BlockStateId,
-        _world: &Arc<World>,
+        _world: &dyn LevelReader,
         _pos: BlockPos,
+        _direction: Direction,
     ) -> i32 {
         Self::analog_output_signal(state.get_value(&BlockStateProperties::EYE))
     }

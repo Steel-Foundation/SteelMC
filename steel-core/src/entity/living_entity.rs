@@ -123,6 +123,37 @@ pub trait LivingEntity: Entity {
         self.living_base().attributes()
     }
 
+    /// Packs syncable attributes for initial spawn pairing.
+    ///
+    /// Mirrors vanilla `ServerEntity.sendPairingData`, which sends all syncable
+    /// living attributes after the add-entity and metadata packets.
+    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        self.attributes().lock().syncable_snapshots()
+    }
+
+    /// Drains syncable dirty attributes for per-tick tracking updates.
+    ///
+    /// Mirrors vanilla `ServerEntity.sendDirtyEntityData`, which sends dirty
+    /// living attributes after dirty entity data.
+    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        self.attributes().lock().drain_dirty_sync()
+    }
+
+    /// Drains dirty mob-effect packet changes for vanilla recipients.
+    fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
+        self.living_base().drain_dirty_mob_effects()
+    }
+
+    /// Packs non-empty equipment slots for initial spawn pairing.
+    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
+        self.pack_living_equipment()
+    }
+
+    /// Drains equipment slots that changed since the last tracker sync.
+    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
+        self.drain_dirty_living_equipment()
+    }
+
     /// Appends vanilla-shaped living state used by command NBT predicates.
     fn save_command_nbt(&self, nbt: &mut NbtCompound) {
         nbt.insert("Health", self.get_health());
@@ -243,7 +274,7 @@ pub trait LivingEntity: Entity {
 
     /// Returns vanilla `LivingEntity.isBaby()`.
     fn is_baby(&self) -> bool {
-        false
+        self.as_ageable_mob().is_some_and(AgeableMob::is_baby)
     }
 
     /// Returns vanilla `LivingEntity.getSoundVolume`.
@@ -614,7 +645,11 @@ pub trait LivingEntity: Entity {
     }
 
     /// Hook before applying damage after vanilla reductions.
-    fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {}
+    fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {
+        if let Some(animal) = self.as_animal() {
+            animal.reset_love();
+        }
+    }
 
     /// Damages equipment that participates in vanilla armor absorption.
     fn hurt_armor(&self, _source: &DamageSource, _damage: f32) {}
@@ -1534,7 +1569,6 @@ pub trait LivingEntity: Entity {
             equipment.get_ref(slot).copy_with_count(1)
         };
 
-        self.refresh_equipment_attribute_modifiers(slot);
         if let Some(sound) = self.equip_sound(slot, &equipped) {
             self.play_sound(sound, 1.0, 1.0);
         }
@@ -1553,11 +1587,52 @@ pub trait LivingEntity: Entity {
         });
     }
 
-    /// Refreshes transient item attribute modifiers for all equipment slots.
-    fn refresh_all_equipment_attribute_modifiers(&self) {
-        for slot in EquipmentSlot::ALL {
-            self.refresh_equipment_attribute_modifiers(slot);
+    /// Detects and applies Vanilla living-equipment changes once per tick.
+    fn detect_equipment_updates(&self) {
+        let mut changes = self.living_base().collect_equipment_changes();
+        if changes.is_empty() {
+            return;
         }
+
+        for (slot, _, current) in &changes {
+            self.living_base()
+                .refresh_equipment_attribute_modifiers(*slot, current);
+        }
+
+        let main_hand = changes
+            .iter()
+            .find(|(slot, _, _)| *slot == EquipmentSlot::MainHand);
+        let offhand = changes
+            .iter()
+            .find(|(slot, _, _)| *slot == EquipmentSlot::OffHand);
+        let hands_swapped = main_hand.zip(offhand).is_some_and(
+            |((_, previous_main, current_main), (_, previous_off, current_off))| {
+                ItemStack::matches(current_main, previous_off)
+                    && ItemStack::matches(current_off, previous_main)
+            },
+        );
+
+        if hands_swapped {
+            if let Some(world) = self.level() {
+                world.broadcast_to_entity_trackers(
+                    self.id(),
+                    CEntityEvent {
+                        entity_id: self.id(),
+                        event: EntityStatus::SwapHands,
+                    },
+                    None,
+                );
+            }
+            changes.retain(|(slot, _, _)| {
+                !matches!(slot, EquipmentSlot::MainHand | EquipmentSlot::OffHand)
+            });
+        }
+
+        self.living_base().queue_equipment_changes(
+            changes
+                .into_iter()
+                .map(|(slot, _, current)| (slot, current)),
+        );
     }
 
     /// Packs non-empty living equipment slots for initial spawn pairing.
@@ -1567,7 +1642,7 @@ pub trait LivingEntity: Entity {
 
     /// Drains dirty living equipment slots for tracker sync.
     fn drain_dirty_living_equipment(&self) -> Vec<EquipmentSlotItem> {
-        equipment_items_to_packet_items(self.living_base().equipment().lock().drain_dirty_items())
+        equipment_items_to_packet_items(self.living_base().drain_equipment_changes())
     }
 
     /// Returns whether equipment durability should be skipped for this entity.
@@ -1674,17 +1749,26 @@ pub trait LivingEntity: Entity {
         }
     }
 
-    /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow()` for living entities.
-    fn default_living_can_walk_on_powder_snow(&self) -> bool {
-        if self.default_can_walk_on_powder_snow() {
-            return true;
+    /// Runs vanilla `LivingEntity.tick`.
+    ///
+    /// The default `Entity::tick` dispatches living entities here.
+    fn tick_living_entity(&self) {
+        self.default_tick();
+        self.living_base().decrement_invulnerable_time();
+        self.tick_mob_effects();
+        self.detect_equipment_updates();
+
+        if self.is_dead_or_dying() {
+            self.tick_death();
+            self.tick_living_state();
+            return;
         }
 
-        let mut has_leather_boots = false;
-        self.with_equipment_slot(EquipmentSlot::Feet, &mut |item_stack| {
-            has_leather_boots = item_stack.is(&vanilla_items::LEATHER_BOOTS);
-        });
-        has_leather_boots
+        if !self.is_removed() {
+            self.ai_step();
+        }
+
+        self.tick_living_state();
     }
 
     /// Ticks living-entity counters after movement.
@@ -2249,7 +2333,9 @@ pub trait LivingEntity: Entity {
         let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
         let mut movement = self.velocity();
         if (result.horizontal_collision || self.is_jumping())
-            && (self.on_climbable() || self.was_in_powder_snow() && self.can_walk_on_powder_snow())
+            && (self.on_climbable()
+                || self.was_in_powder_snow()
+                    && PowderSnowBlock::can_entity_walk_on_powder_snow(self))
         {
             movement.y = 0.2;
         }
