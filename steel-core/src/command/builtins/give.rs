@@ -26,15 +26,11 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("give").then(
-        argument("targets", SteelArgumentType::players()).then(
-            argument("item", SteelArgumentType::item_stack())
-                .executes(give_default_count)
-                .then(
-                    argument("count", ArgumentType::integer(1, i32::MAX)).executes(give_with_count),
-                ),
-        ),
-    )
+    literal("give").then_chain([
+        argument("targets", SteelArgumentType::players()),
+        argument("item", SteelArgumentType::item_stack()).executes(give_default_count),
+        argument("count", ArgumentType::integer(1, i32::MAX)).executes(give_with_count),
+    ])
 }
 
 fn give_default_count(

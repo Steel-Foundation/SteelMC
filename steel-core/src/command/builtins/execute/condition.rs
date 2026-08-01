@@ -31,37 +31,33 @@ pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
     // modeled, including deferred loot-table unpacking.
     // TODO: Add predicate and function after their runtime registries are ported.
     // TODO: Restore Steel stopwatch conditions with the stopwatch command system.
-    literal(name)
-        .then(biome_condition(expected))
-        .then(block_condition(expected))
-        .then(blocks_condition(expected))
-        .then(data_condition(expected))
-        .then(dimension_condition(expected))
-        .then(entity_condition(expected))
-        .then(loaded_condition(expected))
-        .then(score_condition(expected))
+    literal(name).then_all([
+        biome_condition(expected),
+        block_condition(expected),
+        blocks_condition(expected),
+        data_condition(expected),
+        dimension_condition(expected),
+        entity_condition(expected),
+        loaded_condition(expected),
+        score_condition(expected),
+    ])
 }
 
 fn data_condition(expected: bool) -> Builder {
-    literal("data")
-        .then(
-            literal("block").then(
-                argument("sourcePos", SteelArgumentType::block_pos())
-                    .then(data_path(DataSource::Block, expected)),
-            ),
-        )
-        .then(
-            literal("entity").then(
-                argument("source", SteelArgumentType::entity())
-                    .then(data_path(DataSource::Entity, expected)),
-            ),
-        )
-        .then(
-            literal("storage").then(
-                argument("source", SteelArgumentType::storage_key())
-                    .then(data_path(DataSource::Storage, expected)),
-            ),
-        )
+    literal("data").then_all([
+        literal("block").then_chain([
+            argument("sourcePos", SteelArgumentType::block_pos()),
+            data_path(DataSource::Block, expected),
+        ]),
+        literal("entity").then_chain([
+            argument("source", SteelArgumentType::entity()),
+            data_path(DataSource::Entity, expected),
+        ]),
+        literal("storage").then_chain([
+            argument("source", SteelArgumentType::storage_key()),
+            data_path(DataSource::Storage, expected),
+        ]),
+    ])
 }
 
 fn data_path(source: DataSource, expected: bool) -> Builder {
@@ -150,15 +146,14 @@ fn dimension_matches(
 }
 
 fn blocks_condition(expected: bool) -> Builder {
-    literal("blocks").then(
-        argument("start", SteelArgumentType::block_pos()).then(
-            argument("end", SteelArgumentType::block_pos()).then(
-                argument("destination", SteelArgumentType::block_pos())
-                    .then(blocks_mode("all", expected, false))
-                    .then(blocks_mode("masked", expected, true)),
-            ),
-        ),
-    )
+    literal("blocks").then_chain([
+        argument("start", SteelArgumentType::block_pos()),
+        argument("end", SteelArgumentType::block_pos()),
+        argument("destination", SteelArgumentType::block_pos()).then_all([
+            blocks_mode("all", expected, false),
+            blocks_mode("masked", expected, true),
+        ]),
+    ])
 }
 
 fn blocks_mode(name: &'static str, expected: bool, skip_air: bool) -> Builder {
@@ -322,18 +317,17 @@ fn blocks_too_big(area: i64) -> CommandSyntaxError {
 }
 
 fn block_condition(expected: bool) -> Builder {
-    literal("block").then(
-        argument("pos", SteelArgumentType::block_pos()).then(
-            argument("block", SteelArgumentType::block_predicate())
-                .forks(EXECUTE_ROOT, move |context| {
-                    let matches = block_matches(context)?;
-                    Ok(conditional_sources(context.source(), expected, matches))
-                })
-                .executes(move |context| {
-                    execute_boolean_condition(context, expected, block_matches(context)?)
-                }),
-        ),
-    )
+    literal("block").then_chain([
+        argument("pos", SteelArgumentType::block_pos()),
+        argument("block", SteelArgumentType::block_predicate())
+            .forks(EXECUTE_ROOT, move |context| {
+                let matches = block_matches(context)?;
+                Ok(conditional_sources(context.source(), expected, matches))
+            })
+            .executes(move |context| {
+                execute_boolean_condition(context, expected, block_matches(context)?)
+            }),
+    ])
 }
 
 fn block_matches(context: &SteelCommandContext<CommandSource>) -> Result<bool, CommandSyntaxError> {
@@ -356,18 +350,17 @@ fn block_matches(context: &SteelCommandContext<CommandSource>) -> Result<bool, C
 }
 
 fn biome_condition(expected: bool) -> Builder {
-    literal("biome").then(
-        argument("pos", SteelArgumentType::block_pos()).then(
-            argument("biome", SteelArgumentType::biome_or_tag())
-                .forks(EXECUTE_ROOT, move |context| {
-                    let matches = biome_matches(context)?;
-                    Ok(conditional_sources(context.source(), expected, matches))
-                })
-                .executes(move |context| {
-                    execute_boolean_condition(context, expected, biome_matches(context)?)
-                }),
-        ),
-    )
+    literal("biome").then_chain([
+        argument("pos", SteelArgumentType::block_pos()),
+        argument("biome", SteelArgumentType::biome_or_tag())
+            .forks(EXECUTE_ROOT, move |context| {
+                let matches = biome_matches(context)?;
+                Ok(conditional_sources(context.source(), expected, matches))
+            })
+            .executes(move |context| {
+                execute_boolean_condition(context, expected, biome_matches(context)?)
+            }),
+    ])
 }
 
 fn biome_matches(context: &SteelCommandContext<CommandSource>) -> Result<bool, CommandSyntaxError> {
@@ -450,55 +443,40 @@ fn loaded_matches(
 }
 
 fn score_condition(expected: bool) -> Builder {
-    literal("score").then(
-        argument("target", SteelArgumentType::score_holder()).then(
-            argument("targetObjective", SteelArgumentType::objective())
-                .then(score_comparison("=", ScoreComparison::Equal, expected))
-                .then(score_comparison("<", ScoreComparison::Less, expected))
-                .then(score_comparison(
-                    "<=",
-                    ScoreComparison::LessOrEqual,
-                    expected,
-                ))
-                .then(score_comparison(">", ScoreComparison::Greater, expected))
-                .then(score_comparison(
-                    ">=",
-                    ScoreComparison::GreaterOrEqual,
-                    expected,
-                ))
-                .then(
-                    literal("matches").then(
-                        argument("range", SteelArgumentType::int_range())
-                            .forks(EXECUTE_ROOT, move |context| {
-                                let matches = score_range_matches(context)?;
-                                Ok(conditional_sources(context.source(), expected, matches))
-                            })
-                            .executes(move |context| {
-                                execute_boolean_condition(
-                                    context,
-                                    expected,
-                                    score_range_matches(context)?,
-                                )
-                            }),
-                    ),
-                ),
-        ),
-    )
+    literal("score").then_chain([
+        argument("target", SteelArgumentType::score_holder()),
+        argument("targetObjective", SteelArgumentType::objective()).then_all([
+            score_comparison("=", ScoreComparison::Equal, expected),
+            score_comparison("<", ScoreComparison::Less, expected),
+            score_comparison("<=", ScoreComparison::LessOrEqual, expected),
+            score_comparison(">", ScoreComparison::Greater, expected),
+            score_comparison(">=", ScoreComparison::GreaterOrEqual, expected),
+            literal("matches").then(
+                argument("range", SteelArgumentType::int_range())
+                    .forks(EXECUTE_ROOT, move |context| {
+                        let matches = score_range_matches(context)?;
+                        Ok(conditional_sources(context.source(), expected, matches))
+                    })
+                    .executes(move |context| {
+                        execute_boolean_condition(context, expected, score_range_matches(context)?)
+                    }),
+            ),
+        ]),
+    ])
 }
 
 fn score_comparison(name: &'static str, comparison: ScoreComparison, expected: bool) -> Builder {
-    literal(name).then(
-        argument("source", SteelArgumentType::score_holder()).then(
-            argument("sourceObjective", SteelArgumentType::objective())
-                .forks(EXECUTE_ROOT, move |context| {
-                    let matches = scores_match(context, comparison)?;
-                    Ok(conditional_sources(context.source(), expected, matches))
-                })
-                .executes(move |context| {
-                    execute_boolean_condition(context, expected, scores_match(context, comparison)?)
-                }),
-        ),
-    )
+    literal(name).then_chain([
+        argument("source", SteelArgumentType::score_holder()),
+        argument("sourceObjective", SteelArgumentType::objective())
+            .forks(EXECUTE_ROOT, move |context| {
+                let matches = scores_match(context, comparison)?;
+                Ok(conditional_sources(context.source(), expected, matches))
+            })
+            .executes(move |context| {
+                execute_boolean_condition(context, expected, scores_match(context, comparison)?)
+            }),
+    ])
 }
 
 fn scores_match(

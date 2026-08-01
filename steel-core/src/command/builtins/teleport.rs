@@ -27,49 +27,34 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("teleport")
-        .then(
-            argument("location", SteelArgumentType::vec3(true))
-                .executes(teleport_source_to_position),
-        )
-        .then(
+    literal("teleport").then_all([
+        argument("location", SteelArgumentType::vec3(true)).executes(teleport_source_to_position),
+        argument("destination", SteelArgumentType::entity()).executes(teleport_source_to_entity),
+        argument("targets", SteelArgumentType::entities()).then_all([
+            target_position_branch(),
             argument("destination", SteelArgumentType::entity())
-                .executes(teleport_source_to_entity),
-        )
-        .then(
-            argument("targets", SteelArgumentType::entities())
-                .then(target_position_branch())
-                .then(
-                    argument("destination", SteelArgumentType::entity())
-                        .executes(teleport_targets_to_entity),
-                ),
-        )
+                .executes(teleport_targets_to_entity),
+        ]),
+    ])
 }
 
 fn target_position_branch() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     argument("location", SteelArgumentType::vec3(true))
         .executes(teleport_targets_to_position)
-        .then(
+        .then_all([
             argument("rotation", SteelArgumentType::rotation())
                 .executes(teleport_targets_to_position_with_rotation),
-        )
-        .then(
-            literal("facing")
-                .then(
-                    literal("entity").then(
-                        argument("facingEntity", SteelArgumentType::entity())
-                            .executes(teleport_targets_facing_entity_feet)
-                            .then(
-                                argument("facingAnchor", SteelArgumentType::entity_anchor())
-                                    .executes(teleport_targets_facing_entity_anchor),
-                            ),
-                    ),
-                )
-                .then(
-                    argument("facingLocation", SteelArgumentType::vec3(true))
-                        .executes(teleport_targets_facing_position),
-                ),
-        )
+            literal("facing").then_all([
+                literal("entity").then_chain([
+                    argument("facingEntity", SteelArgumentType::entity())
+                        .executes(teleport_targets_facing_entity_feet),
+                    argument("facingAnchor", SteelArgumentType::entity_anchor())
+                        .executes(teleport_targets_facing_entity_anchor),
+                ]),
+                argument("facingLocation", SteelArgumentType::vec3(true))
+                    .executes(teleport_targets_facing_position),
+            ]),
+        ])
 }
 
 fn teleport_source_to_position(

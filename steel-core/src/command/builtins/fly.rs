@@ -22,25 +22,21 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("fly")
-        .executes(toggle_sender_flight)
-        .then(
-            literal("target").then(
-                argument("targets", SteelArgumentType::players())
-                    .executes(toggle_target_flight)
-                    .then(argument("value", ArgumentType::bool()).executes(set_target_flight))
-                    .then(
-                        literal("speed")
-                            .executes(query_target_flying_speed)
-                            .then(speed_argument().executes(set_target_flying_speed)),
-                    ),
-            ),
-        )
-        .then(
-            literal("speed")
-                .executes(query_sender_flying_speed)
-                .then(speed_argument().executes(set_sender_flying_speed)),
-        )
+    literal("fly").executes(toggle_sender_flight).then_all([
+        literal("target").then(
+            argument("targets", SteelArgumentType::players())
+                .executes(toggle_target_flight)
+                .then_all([
+                    argument("value", ArgumentType::bool()).executes(set_target_flight),
+                    literal("speed")
+                        .executes(query_target_flying_speed)
+                        .then(speed_argument().executes(set_target_flying_speed)),
+                ]),
+        ),
+        literal("speed")
+            .executes(query_sender_flying_speed)
+            .then(speed_argument().executes(set_sender_flying_speed)),
+    ])
 }
 
 fn speed_argument() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {

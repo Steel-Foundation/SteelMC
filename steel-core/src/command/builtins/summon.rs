@@ -25,18 +25,16 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("summon").then(
+    literal("summon").then_chain([
         argument("entity", SteelArgumentType::summonable_entity())
-            .executes(|context| summon_entity(context, context.source().position()))
-            .then(
-                argument("pos", SteelArgumentType::vec3(true)).executes(|context| {
-                    let Some(position) = context.coordinates("pos") else {
-                        return Err(missing_argument("pos"));
-                    };
-                    summon_entity(context, position.position(context.source()))
-                }),
-            ),
-    )
+            .executes(|context| summon_entity(context, context.source().position())),
+        argument("pos", SteelArgumentType::vec3(true)).executes(|context| {
+            let Some(position) = context.coordinates("pos") else {
+                return Err(missing_argument("pos"));
+            };
+            summon_entity(context, position.position(context.source()))
+        }),
+    ])
     // TODO: Add the vanilla compound-NBT branch once Steel has an SNBT compound
     // argument and recursive command entity loading.
 }

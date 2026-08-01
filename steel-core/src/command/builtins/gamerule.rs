@@ -16,15 +16,15 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    let mut command = literal("gamerule");
+    let mut rules = Vec::new();
     for (_, rule) in REGISTRY.game_rules.iter() {
         // Vanilla's short identifier only omits the `minecraft` namespace.
         if rule.key().namespace == Identifier::VANILLA_NAMESPACE {
-            command = command.then(rule_literal(rule.key().path.to_string(), rule));
+            rules.push(rule_literal(rule.key().path.to_string(), rule));
         }
-        command = command.then(rule_literal(rule.key().to_string(), rule));
+        rules.push(rule_literal(rule.key().to_string(), rule));
     }
-    command
+    literal("gamerule").then_all(rules)
 }
 
 fn rule_literal(

@@ -21,26 +21,17 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("experience")
-        .then(experience_operation(
-            "add",
-            i32::MIN,
-            add_points,
-            add_levels,
-        ))
-        .then(experience_operation("set", 0, set_points, set_levels))
-        .then(
-            literal("query").then(
-                argument("target", SteelArgumentType::player())
-                    .then(literal("points").executes(query_points))
-                    .then(literal("levels").executes(query_levels)),
-            ),
-        )
-        .then(
-            literal("clear")
-                .executes(clear_source)
-                .then(argument("target", SteelArgumentType::players()).executes(clear_targets)),
-        )
+    literal("experience").then_all([
+        experience_operation("add", i32::MIN, add_points, add_levels),
+        experience_operation("set", 0, set_points, set_levels),
+        literal("query").then(argument("target", SteelArgumentType::player()).then_all([
+            literal("points").executes(query_points),
+            literal("levels").executes(query_levels),
+        ])),
+        literal("clear")
+            .executes(clear_source)
+            .then(argument("target", SteelArgumentType::players()).executes(clear_targets)),
+    ])
 }
 
 fn experience_operation(
@@ -49,14 +40,15 @@ fn experience_operation(
     points: fn(&SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError>,
     levels: fn(&SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError>,
 ) -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal(name).then(
-        argument("target", SteelArgumentType::players()).then(
-            argument("amount", ArgumentType::integer(minimum, i32::MAX))
-                .executes(points)
-                .then(literal("points").executes(points))
-                .then(literal("levels").executes(levels)),
-        ),
-    )
+    literal(name).then_chain([
+        argument("target", SteelArgumentType::players()),
+        argument("amount", ArgumentType::integer(minimum, i32::MAX))
+            .executes(points)
+            .then_all([
+                literal("points").executes(points),
+                literal("levels").executes(levels),
+            ]),
+    ])
 }
 
 fn query_points(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {

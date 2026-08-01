@@ -20,39 +20,33 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("tick")
-        .then(literal("query").executes(query_tick))
-        .then(
-            literal("rate")
-                .then(argument("rate", ArgumentType::float(1.0, 10_000.0)).executes(set_tick_rate)),
-        )
-        .then(
-            literal("step")
-                .executes(|context| step(context, 1))
-                .then(literal("stop").executes(stop_step))
-                .then(
-                    argument("time", SteelArgumentType::time(1)).executes(|context| {
-                        let Some(ticks) = context.time("time") else {
-                            return Err(missing_argument("time"));
-                        };
-                        step(context, ticks)
-                    }),
-                ),
-        )
-        .then(
-            literal("sprint")
-                .then(literal("stop").executes(stop_sprint))
-                .then(
-                    argument("time", SteelArgumentType::time(1)).executes(|context| {
-                        let Some(ticks) = context.time("time") else {
-                            return Err(missing_argument("time"));
-                        };
-                        sprint(context, ticks)
-                    }),
-                ),
-        )
-        .then(literal("unfreeze").executes(|context| set_frozen(context, false)))
-        .then(literal("freeze").executes(|context| set_frozen(context, true)))
+    literal("tick").then_all([
+        literal("query").executes(query_tick),
+        literal("rate")
+            .then(argument("rate", ArgumentType::float(1.0, 10_000.0)).executes(set_tick_rate)),
+        literal("step")
+            .executes(|context| step(context, 1))
+            .then_all([
+                literal("stop").executes(stop_step),
+                argument("time", SteelArgumentType::time(1)).executes(|context| {
+                    let Some(ticks) = context.time("time") else {
+                        return Err(missing_argument("time"));
+                    };
+                    step(context, ticks)
+                }),
+            ]),
+        literal("sprint").then_all([
+            literal("stop").executes(stop_sprint),
+            argument("time", SteelArgumentType::time(1)).executes(|context| {
+                let Some(ticks) = context.time("time") else {
+                    return Err(missing_argument("time"));
+                };
+                sprint(context, ticks)
+            }),
+        ]),
+        literal("unfreeze").executes(|context| set_frozen(context, false)),
+        literal("freeze").executes(|context| set_frozen(context, true)),
+    ])
 }
 
 fn nanos_to_millis_string(nanos: u64) -> String {

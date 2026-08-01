@@ -21,18 +21,12 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("clear").executes(clear_self).then(
-        argument("targets", SteelArgumentType::players())
-            .executes(clear_targets)
-            .then(
-                argument("item", SteelArgumentType::item_predicate())
-                    .executes(clear_matching)
-                    .then(
-                        argument("maxCount", ArgumentType::integer(0, i32::MAX))
-                            .executes(clear_matching_with_limit),
-                    ),
-            ),
-    )
+    literal("clear").executes(clear_self).then_chain([
+        argument("targets", SteelArgumentType::players()).executes(clear_targets),
+        argument("item", SteelArgumentType::item_predicate()).executes(clear_matching),
+        argument("maxCount", ArgumentType::integer(0, i32::MAX))
+            .executes(clear_matching_with_limit),
+    ])
 }
 
 fn clear_self(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {

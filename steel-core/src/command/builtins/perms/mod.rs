@@ -57,153 +57,116 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("perms")
-        .then(user_command())
-        .then(group_command())
-        .then(groups_command())
+    literal("perms").then_all([user_command(), group_command(), groups_command()])
 }
 
 fn user_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("user").then(
-        argument("targets", SteelArgumentType::game_profile())
-            .then(literal("info").executes_suspended(user_info))
-            .then(
-                literal("allow").then(
-                    argument("permission", SteelArgumentType::permission_rule())
-                        .executes_suspended(user_allow),
-                ),
-            )
-            .then(
-                literal("deny").then(
-                    argument("permission", SteelArgumentType::permission_rule())
-                        .executes_suspended(user_deny),
-                ),
-            )
-            .then(
-                literal("unset").then(
-                    argument("permission", SteelArgumentType::user_permission_rule())
-                        .executes_suspended(user_unset),
-                ),
-            )
-            .then(
-                literal("check").then(
-                    argument("permission", SteelArgumentType::permission_rule())
-                        .executes_suspended(user_check),
-                ),
-            )
-            .then(user_metadata_command())
-            .then(
-                literal("group")
-                    .then(
-                        literal("add").then(
-                            argument("group", SteelArgumentType::permission_group(true))
-                                .executes_suspended(user_group_add),
-                        ),
-                    )
-                    .then(
-                        literal("remove").then(
-                            argument("group", SteelArgumentType::permission_group(true))
-                                .executes_suspended(user_group_remove),
-                        ),
-                    ),
+        argument("targets", SteelArgumentType::game_profile()).then_all([
+            literal("info").executes_suspended(user_info),
+            literal("allow").then(
+                argument("permission", SteelArgumentType::permission_rule())
+                    .executes_suspended(user_allow),
             ),
+            literal("deny").then(
+                argument("permission", SteelArgumentType::permission_rule())
+                    .executes_suspended(user_deny),
+            ),
+            literal("unset").then(
+                argument("permission", SteelArgumentType::user_permission_rule())
+                    .executes_suspended(user_unset),
+            ),
+            literal("check").then(
+                argument("permission", SteelArgumentType::permission_rule())
+                    .executes_suspended(user_check),
+            ),
+            user_metadata_command(),
+            literal("group").then_all([
+                literal("add").then(
+                    argument("group", SteelArgumentType::permission_group(true))
+                        .executes_suspended(user_group_add),
+                ),
+                literal("remove").then(
+                    argument("group", SteelArgumentType::permission_group(true))
+                        .executes_suspended(user_group_remove),
+                ),
+            ]),
+        ]),
     )
 }
 
 fn user_metadata_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("metadata")
-        .then(metadata_set_command(user_metadata_set))
-        .then(
-            literal("check").then(
-                argument("metadata", SteelArgumentType::permission_metadata())
-                    .executes_suspended(user_metadata_check),
-            ),
-        )
-        .then(
-            literal("unset").then(
-                argument("metadata", SteelArgumentType::user_permission_metadata())
-                    .executes_suspended(user_metadata_unset),
-            ),
-        )
+    literal("metadata").then_all([
+        metadata_set_command(user_metadata_set),
+        literal("check").then(
+            argument("metadata", SteelArgumentType::permission_metadata())
+                .executes_suspended(user_metadata_check),
+        ),
+        literal("unset").then(
+            argument("metadata", SteelArgumentType::user_permission_metadata())
+                .executes_suspended(user_metadata_unset),
+        ),
+    ])
 }
 
 fn group_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("group").then(
-        argument("group", SteelArgumentType::permission_group(false))
-            .then(literal("create").executes_suspended(group_create))
-            .then(literal("info").executes_suspended(group_info))
-            .then(literal("delete").executes_suspended(group_delete))
-            .then(
-                literal("allow").then(
-                    argument("permission", SteelArgumentType::permission_rule())
-                        .executes_suspended(group_allow),
-                ),
-            )
-            .then(
-                literal("deny").then(
-                    argument("permission", SteelArgumentType::permission_rule())
-                        .executes_suspended(group_deny),
-                ),
-            )
-            .then(
-                literal("unset").then(
-                    argument("permission", SteelArgumentType::group_permission_rule())
-                        .executes_suspended(group_unset),
-                ),
-            )
-            .then(
-                literal("priority").then(
-                    argument("priority", ArgumentType::integer(i32::MIN, i32::MAX))
-                        .executes_suspended(group_priority),
-                ),
-            )
-            .then(
-                literal("inherit")
-                    .then(literal("list").executes_suspended(group_inherit_list))
-                    .then(
-                        literal("add").then(
-                            argument("parent", SteelArgumentType::permission_group(true))
-                                .executes_suspended(group_inherit_add),
-                        ),
-                    )
-                    .then(
-                        literal("remove").then(
-                            argument("parent", SteelArgumentType::permission_group(true))
-                                .executes_suspended(group_inherit_remove),
-                        ),
-                    ),
-            )
-            .then(
-                literal("metadata")
-                    .then(metadata_set_command(group_metadata_set))
-                    .then(
-                        literal("unset").then(
-                            argument("metadata", SteelArgumentType::group_permission_metadata())
-                                .executes_suspended(group_metadata_unset),
-                        ),
-                    ),
+        argument("group", SteelArgumentType::permission_group(false)).then_all([
+            literal("create").executes_suspended(group_create),
+            literal("info").executes_suspended(group_info),
+            literal("delete").executes_suspended(group_delete),
+            literal("allow").then(
+                argument("permission", SteelArgumentType::permission_rule())
+                    .executes_suspended(group_allow),
             ),
+            literal("deny").then(
+                argument("permission", SteelArgumentType::permission_rule())
+                    .executes_suspended(group_deny),
+            ),
+            literal("unset").then(
+                argument("permission", SteelArgumentType::group_permission_rule())
+                    .executes_suspended(group_unset),
+            ),
+            literal("priority").then(
+                argument("priority", ArgumentType::integer(i32::MIN, i32::MAX))
+                    .executes_suspended(group_priority),
+            ),
+            literal("inherit").then_all([
+                literal("list").executes_suspended(group_inherit_list),
+                literal("add").then(
+                    argument("parent", SteelArgumentType::permission_group(true))
+                        .executes_suspended(group_inherit_add),
+                ),
+                literal("remove").then(
+                    argument("parent", SteelArgumentType::permission_group(true))
+                        .executes_suspended(group_inherit_remove),
+                ),
+            ]),
+            literal("metadata").then_all([
+                metadata_set_command(group_metadata_set),
+                literal("unset").then(
+                    argument("metadata", SteelArgumentType::group_permission_metadata())
+                        .executes_suspended(group_metadata_unset),
+                ),
+            ]),
+        ]),
     )
 }
 
 fn groups_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("groups")
-        .then(literal("list").executes_suspended(groups_list))
-        .then(
-            literal("default")
-                .then(
-                    literal("add").then(
-                        argument("group", SteelArgumentType::permission_group(true))
-                            .executes_suspended(default_group_add),
-                    ),
-                )
-                .then(
-                    literal("remove").then(
-                        argument("group", SteelArgumentType::permission_group(true))
-                            .executes_suspended(default_group_remove),
-                    ),
-                ),
-        )
+    literal("groups").then_all([
+        literal("list").executes_suspended(groups_list),
+        literal("default").then_all([
+            literal("add").then(
+                argument("group", SteelArgumentType::permission_group(true))
+                    .executes_suspended(default_group_add),
+            ),
+            literal("remove").then(
+                argument("group", SteelArgumentType::permission_group(true))
+                    .executes_suspended(default_group_remove),
+            ),
+        ]),
+    ])
 }
 
 fn metadata_set_command(
@@ -211,31 +174,23 @@ fn metadata_set_command(
         &SteelCommandContext<CommandSource>,
     ) -> Result<PermsCommandSuspension, CommandSyntaxError>,
 ) -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("set")
-        .then(
-            literal("int").then(
-                argument("metadata_int_value", ArgumentType::long(i64::MIN, i64::MAX)).then(
-                    argument("metadata", SteelArgumentType::permission_metadata())
-                        .executes_suspended(executor),
-                ),
-            ),
-        )
-        .then(
-            literal("bool").then(
-                argument("metadata_bool_value", ArgumentType::bool()).then(
-                    argument("metadata", SteelArgumentType::permission_metadata())
-                        .executes_suspended(executor),
-                ),
-            ),
-        )
-        .then(
-            literal("string").then(
-                argument("metadata_string_value", ArgumentType::string()).then(
-                    argument("metadata", SteelArgumentType::permission_metadata())
-                        .executes_suspended(executor),
-                ),
-            ),
-        )
+    literal("set").then_all([
+        literal("int").then_chain([
+            argument("metadata_int_value", ArgumentType::long(i64::MIN, i64::MAX)),
+            argument("metadata", SteelArgumentType::permission_metadata())
+                .executes_suspended(executor),
+        ]),
+        literal("bool").then_chain([
+            argument("metadata_bool_value", ArgumentType::bool()),
+            argument("metadata", SteelArgumentType::permission_metadata())
+                .executes_suspended(executor),
+        ]),
+        literal("string").then_chain([
+            argument("metadata_string_value", ArgumentType::string()),
+            argument("metadata", SteelArgumentType::permission_metadata())
+                .executes_suspended(executor),
+        ]),
+    ])
 }
 
 #[derive(Clone)]

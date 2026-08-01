@@ -26,16 +26,11 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("enchant").then(
-        argument("targets", SteelArgumentType::entities()).then(
-            argument("enchantment", SteelArgumentType::enchantment())
-                .executes(enchant_default_level)
-                .then(
-                    argument("level", ArgumentType::integer(0, i32::MAX))
-                        .executes(enchant_with_level),
-                ),
-        ),
-    )
+    literal("enchant").then_chain([
+        argument("targets", SteelArgumentType::entities()),
+        argument("enchantment", SteelArgumentType::enchantment()).executes(enchant_default_level),
+        argument("level", ArgumentType::integer(0, i32::MAX)).executes(enchant_with_level),
+    ])
 }
 
 fn enchant_default_level(

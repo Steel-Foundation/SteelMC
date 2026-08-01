@@ -17,10 +17,10 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("tellraw").then(
-        argument("targets", SteelArgumentType::players())
-            .then(argument("message", SteelArgumentType::component()).executes(send_message)),
-    )
+    literal("tellraw").then_chain([
+        argument("targets", SteelArgumentType::players()),
+        argument("message", SteelArgumentType::component()).executes(send_message),
+    ])
 }
 
 fn send_message(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
