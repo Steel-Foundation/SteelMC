@@ -1192,10 +1192,6 @@ impl Entity for Player {
         }
     }
 
-    fn tick(&self) {
-        Player::tick(self);
-    }
-
     fn fall_sounds(&self) -> (SoundEventRef, SoundEventRef) {
         (
             &sound_events::ENTITY_PLAYER_SMALL_FALL,
@@ -1432,6 +1428,10 @@ const fn protocol_look_at_anchor(anchor: EntityAnchor) -> LookAtAnchor {
 }
 
 impl LivingEntity for Player {
+    fn tick_living_entity(&self) {
+        Player::tick(self);
+    }
+
     fn get_health(&self) -> f32 {
         *self.entity_data.lock().living_entity().health.get()
     }

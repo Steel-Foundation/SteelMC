@@ -345,27 +345,9 @@ pub trait Mob: LivingEntity {
         is_saddled
     }
 
-    fn custom_server_ai_step(&self) {
-        if let Some(animal) = self.as_animal() {
-            animal.custom_server_ai_step_animal();
-        }
-    }
+    fn custom_server_ai_step(&self) {}
 
-    fn tick_goal_selectors(&self) {
-        let Some(pathfinder) = self.as_pathfinder_mob() else {
-            return;
-        };
-        let id_based_tick_count = self.tick_count().wrapping_add(self.id());
-        let mut target_selector = self.mob_base().target_selector().lock();
-        let mut goal_selector = self.mob_base().goal_selector().lock();
-        if id_based_tick_count % 2 != 0 && self.tick_count() > 1 {
-            target_selector.tick_running_goals(pathfinder, false);
-            goal_selector.tick_running_goals(pathfinder, false);
-        } else {
-            target_selector.tick(pathfinder);
-            goal_selector.tick(pathfinder);
-        }
-    }
+    fn tick_goal_selectors(&self) {}
 
     fn xp_reward(&self) -> i32 {
         self.mob_base().xp_reward()
@@ -1398,11 +1380,6 @@ pub trait Mob: LivingEntity {
     }
 
     fn tick_path_navigation(&self) {
-        if let Some(pathfinder) = self.as_pathfinder_mob() {
-            pathfinder.tick_pathfinder_path_navigation();
-            return;
-        }
-
         let Some(world) = self.level() else {
             return;
         };

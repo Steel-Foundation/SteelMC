@@ -1764,8 +1764,7 @@ pub trait LivingEntity: Entity {
 
     /// Runs vanilla `LivingEntity.tick`.
     ///
-    /// Concrete living entities reach this through the `Entity::tick` default
-    /// routing.
+    /// Entity ticking call sites dispatch living entities here directly.
     fn tick_living_entity(&self) {
         self.default_tick();
         self.living_base().decrement_invulnerable_time();
@@ -2001,11 +2000,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Server AI hook called from vanilla `LivingEntity.aiStep()`.
-    fn server_ai_step(&self) {
-        if let Some(mob) = self.as_mob() {
-            mob.mob_server_ai_step();
-        }
-    }
+    fn server_ai_step(&self) {}
 
     /// Returns vanilla `LivingEntity.getJumpBoostPower()`.
     fn get_jump_boost_power(&self) -> f32 {
@@ -2187,14 +2182,7 @@ pub trait LivingEntity: Entity {
 
     /// Mirrors vanilla `LivingEntity.aiStep()`.
     fn ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
-        if let Some(ageable) = self.as_ageable_mob() {
-            ageable.tick_ageable_mob();
-        }
-        if let Some(animal) = self.as_animal() {
-            animal.tick_animal_love();
-        }
-        result
+        self.default_ai_step()
     }
 
     /// Mirrors vanilla `LivingEntity.pushEntities()`.

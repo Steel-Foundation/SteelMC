@@ -848,18 +848,22 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Called every game tick when the entity is in a ticked chunk.
     ///
     /// Use `self.level()` to access the world for physics, block queries, etc.
-    fn tick(&self) {
-        if let Some(living) = self.as_living_entity() {
-            living.tick_living_entity();
-        }
-    }
+    /// The caller handles living-entity dispatch and post-tick dirty data sync.
+    ///
+    /// Steel keeps the fallback empty because many vanilla subclasses override
+    /// tick without calling `super.tick()`.
+    fn tick(&self) {}
 
     /// Called every game tick while this entity is riding another entity.
     ///
     /// Mirrors vanilla `Entity.rideTick`.
     fn ride_tick(&self) {
         self.set_velocity(DVec3::ZERO);
-        self.tick();
+        if let Some(living) = self.as_living_entity() {
+            living.tick_living_entity();
+        } else {
+            self.tick();
+        }
         if let Some(vehicle) = self.vehicle() {
             vehicle.position_rider(self.as_entity_event_source());
         }
@@ -870,13 +874,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// This intentionally stays separate from `tick()` because several vanilla
     /// subclasses override tick without calling `super.tick()`.
     fn base_tick(&self) {
-        if let Some(mob) = self.as_mob() {
-            mob.base_tick_mob();
-        } else if let Some(living) = self.as_living_entity() {
-            living.base_tick_living_entity();
-        } else {
-            self.entity_base_tick();
-        }
+        self.entity_base_tick();
     }
 
     /// Runs vanilla `Entity.handlePortal` behavior currently implemented by Steel.

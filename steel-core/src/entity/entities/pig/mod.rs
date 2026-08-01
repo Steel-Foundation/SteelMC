@@ -36,7 +36,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, ItemBasedSteering, ItemSteerable, LivingEntity,
-    LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData,
+    LivingEntityBase, Mob, MobBase, MoveResult, PathfinderMob, SharedEntity, SpawnGroupData,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
@@ -236,6 +236,10 @@ impl Entity for PigEntity {
         self.entity_type
     }
 
+    fn base_tick(&self) {
+        Mob::base_tick_mob(self);
+    }
+
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
         let scale = LivingEntity::get_scale(self);
         if AgeableMob::is_baby(self) {
@@ -339,6 +343,10 @@ impl LivingEntity for PigEntity {
         (slot == EquipmentSlot::Saddle).then_some(&sound_events::ENTITY_PIG_SADDLE)
     }
 
+    fn server_ai_step(&self) {
+        Mob::mob_server_ai_step(self);
+    }
+
     fn tick_ridden(&self, controller: &Player, _ridden_input: DVec3) {
         let (yaw, pitch) = controller.rotation();
         self.set_ridden_rotation(yaw, pitch);
@@ -355,6 +363,13 @@ impl LivingEntity for PigEntity {
             .lock()
             .required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
         movement_speed * 0.225 * ItemSteerable::boost_factor(self)
+    }
+
+    fn ai_step(&self) -> Option<MoveResult> {
+        let result = self.default_ai_step();
+        AgeableMob::tick_ageable_mob(self);
+        Animal::tick_animal_love(self);
+        result
     }
 }
 
@@ -435,6 +450,18 @@ impl ItemSteerable for PigEntity {
 impl Mob for PigEntity {
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
+    }
+
+    fn tick_goal_selectors(&self) {
+        PathfinderMob::tick_pathfinder_goal_selectors(self);
+    }
+
+    fn tick_path_navigation(&self) {
+        PathfinderMob::tick_pathfinder_path_navigation(self);
+    }
+
+    fn custom_server_ai_step(&self) {
+        Animal::custom_server_ai_step_animal(self);
     }
 
     fn ambient_sound(&self) -> Option<SoundEventRef> {
