@@ -142,6 +142,23 @@ fn test_pig_loot_smelt_condition_uses_entity_fire_flag() {
 }
 
 #[test]
+fn test_uniform_get_int_reaches_inclusive_max() {
+    // Vanilla UniformGenerator.getInt uses Mth.nextInt(rand, min, max), which
+    // samples the integer range inclusively; a uniform 1..3 count must yield 3.
+    let provider = NumberProvider::Uniform { min: 1.0, max: 3.0 };
+    let mut seen = [false; 4];
+    for seed in 0u64..1000 {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let value = provider.get_int(&mut rng);
+        seen[value as usize] = true;
+    }
+    assert!(
+        seen[1] && seen[2] && seen[3],
+        "uniform 1..=3 must produce 1, 2 and 3, saw {seen:?}"
+    );
+}
+
+#[test]
 fn test_explosion_decay_function() {
     // Test the explosion_decay function directly
     init_test_registries();
