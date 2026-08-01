@@ -1,19 +1,49 @@
 //! Cooking recipe types.
 
-use steel_utils::Identifier;
+use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::item_stack::ItemStack;
 
-use super::{Ingredient, RecipeResult};
+use super::{CookingRecipeBehavior, CookingRecipeKind, Ingredient, Recipe, RecipeResult};
 
 /// A furnace smelting recipe.
 #[derive(Debug)]
 pub struct SmeltingRecipe {
-    pub id: Identifier,
+    pub group: &'static str,
     pub ingredient: Ingredient,
     pub result: RecipeResult,
     pub experience: f32,
     pub cooking_time: i32,
+}
+
+// SAFETY: This Steel-owned key uniquely identifies the concrete recipe type
+// within the process.
+unsafe impl DowncastType for SmeltingRecipe {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:recipe/smelting");
+}
+
+impl Recipe for SmeltingRecipe {
+    fn group(&self) -> &str {
+        self.group
+    }
+
+    fn as_cooking(&self) -> Option<&dyn CookingRecipeBehavior> {
+        Some(self)
+    }
+}
+
+impl CookingRecipeBehavior for SmeltingRecipe {
+    fn kind(&self) -> CookingRecipeKind {
+        CookingRecipeKind::Smelting
+    }
+
+    fn matches(&self, input: &ItemStack) -> bool {
+        Self::matches(self, input)
+    }
+
+    fn assemble_result(&self, input_count: i32, use_input_count: bool) -> ItemStack {
+        Self::assemble_result(self, input_count, use_input_count)
+    }
 }
 
 impl SmeltingRecipe {
@@ -39,8 +69,6 @@ impl SmeltingRecipe {
 
 #[cfg(test)]
 mod tests {
-    use steel_utils::Identifier;
-
     use crate::recipe::{Ingredient, RecipeResult};
     use crate::{test_support::init_test_registry, vanilla_items};
 
@@ -50,7 +78,7 @@ mod tests {
     fn smelting_result_uses_input_count_when_requested() {
         init_test_registry();
         let recipe = SmeltingRecipe {
-            id: Identifier::vanilla_static("test"),
+            group: "",
             ingredient: Ingredient::Item(&vanilla_items::RAW_IRON),
             result: RecipeResult {
                 item: &vanilla_items::IRON_INGOT,
@@ -70,7 +98,7 @@ mod tests {
     fn smelting_result_can_ignore_input_count() {
         init_test_registry();
         let recipe = SmeltingRecipe {
-            id: Identifier::vanilla_static("test"),
+            group: "",
             ingredient: Ingredient::Item(&vanilla_items::RAW_IRON),
             result: RecipeResult {
                 item: &vanilla_items::IRON_INGOT,

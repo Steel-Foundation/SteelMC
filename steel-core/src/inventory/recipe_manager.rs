@@ -34,7 +34,7 @@ pub fn slot_changed_crafting_grid<R: Container>(
     };
 
     let result_stack = match recipe {
-        Some(r) => r.assemble(),
+        Some(r) => r.value().assemble(),
         None => ItemStack::empty(),
     };
 
@@ -87,7 +87,7 @@ pub fn get_remaining_items(
     }?;
 
     // Get remainders from the recipe using the positioned (trimmed) input
-    let remainders = recipe.get_remaining_items(&positioned.input);
+    let remainders = recipe.value().remaining_items(&positioned.input);
 
     Some((remainders, positioned))
 }

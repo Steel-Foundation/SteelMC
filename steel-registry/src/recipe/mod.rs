@@ -5,13 +5,18 @@
 
 mod cooking;
 mod crafting;
+mod holder;
 mod ingredient;
 mod registry;
 
 pub use cooking::SmeltingRecipe;
 pub use crafting::{
-    CraftingCategory, CraftingInput, CraftingRecipe, PositionedCraftingInput, RecipeResult,
-    ShapedRecipe, ShapelessRecipe,
+    CraftingCategory, CraftingInput, PositionedCraftingInput, RecipeResult, ShapedRecipe,
+    ShapelessRecipe,
+};
+pub use holder::{
+    CookingRecipe, CookingRecipeBehavior, CookingRecipeKind, CraftingRecipe,
+    CraftingRecipeBehavior, Recipe, RecipeHolder, RecipeHolderRef, TypedRecipe,
 };
 pub use ingredient::Ingredient;
 pub use registry::RecipeRegistry;

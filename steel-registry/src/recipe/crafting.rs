@@ -4,10 +4,11 @@
     reason = "crafting recipe tests unwrap known valid generated item stacks"
 )]
 
-use steel_utils::Identifier;
+use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::{item_stack::ItemStack, items::ItemRef};
 
+use super::{CraftingRecipeBehavior, Recipe};
 use super::ingredient::Ingredient;
 
 /// Category for crafting recipes (used by recipe book).
@@ -50,7 +51,7 @@ impl RecipeResult {
 /// A shaped crafting recipe with a specific pattern.
 #[derive(Debug)]
 pub struct ShapedRecipe {
-    pub id: Identifier,
+    pub group: &'static str,
     pub category: CraftingCategory,
     pub width: usize,
     pub height: usize,
@@ -66,7 +67,7 @@ impl ShapedRecipe {
     /// Creates a new shaped recipe, pre-computing symmetry.
     #[must_use]
     pub fn new(
-        id: Identifier,
+        group: &'static str,
         category: CraftingCategory,
         width: usize,
         height: usize,
@@ -76,7 +77,7 @@ impl ShapedRecipe {
     ) -> Self {
         let symmetrical = Self::compute_symmetrical(width, pattern);
         Self {
-            id,
+            group,
             category,
             width,
             height,
@@ -176,13 +177,101 @@ impl ShapedRecipe {
     }
 }
 
+// SAFETY: This Steel-owned key uniquely identifies the concrete recipe type
+// within the process.
+unsafe impl DowncastType for ShapedRecipe {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:recipe/crafting_shaped");
+}
+
+impl Recipe for ShapedRecipe {
+    fn group(&self) -> &str {
+        self.group
+    }
+
+    fn show_notification(&self) -> bool {
+        self.show_notification
+    }
+
+    fn as_crafting(&self) -> Option<&dyn CraftingRecipeBehavior> {
+        Some(self)
+    }
+}
+
+impl CraftingRecipeBehavior for ShapedRecipe {
+    fn category(&self) -> CraftingCategory {
+        self.category
+    }
+
+    fn result(&self) -> &RecipeResult {
+        &self.result
+    }
+
+    fn matches(&self, input: &CraftingInput) -> bool {
+        Self::matches(self, input)
+    }
+
+    fn assemble(&self) -> ItemStack {
+        Self::assemble(self)
+    }
+
+    fn remaining_items(&self, input: &CraftingInput) -> Vec<ItemStack> {
+        Self::get_remaining_items(self, input)
+    }
+
+    fn fits_in_2x2(&self) -> bool {
+        Self::fits_in_2x2(self)
+    }
+}
+
 /// A shapeless crafting recipe where ingredient order doesn't matter.
 #[derive(Debug)]
 pub struct ShapelessRecipe {
-    pub id: Identifier,
+    pub group: &'static str,
     pub category: CraftingCategory,
     pub ingredients: &'static [Ingredient],
     pub result: RecipeResult,
+}
+
+// SAFETY: This Steel-owned key uniquely identifies the concrete recipe type
+// within the process.
+unsafe impl DowncastType for ShapelessRecipe {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:recipe/crafting_shapeless");
+}
+
+impl Recipe for ShapelessRecipe {
+    fn group(&self) -> &str {
+        self.group
+    }
+
+    fn as_crafting(&self) -> Option<&dyn CraftingRecipeBehavior> {
+        Some(self)
+    }
+}
+
+impl CraftingRecipeBehavior for ShapelessRecipe {
+    fn category(&self) -> CraftingCategory {
+        self.category
+    }
+
+    fn result(&self) -> &RecipeResult {
+        &self.result
+    }
+
+    fn matches(&self, input: &CraftingInput) -> bool {
+        Self::matches(self, input)
+    }
+
+    fn assemble(&self) -> ItemStack {
+        Self::assemble(self)
+    }
+
+    fn remaining_items(&self, input: &CraftingInput) -> Vec<ItemStack> {
+        Self::get_remaining_items(self, input)
+    }
+
+    fn fits_in_2x2(&self) -> bool {
+        Self::fits_in_2x2(self)
+    }
 }
 
 impl ShapelessRecipe {
@@ -249,86 +338,6 @@ impl ShapelessRecipe {
     }
 }
 
-/// Unified crafting recipe enum (replaces trait-based approach).
-#[derive(Debug, Clone, Copy)]
-pub enum CraftingRecipe {
-    Shaped(&'static ShapedRecipe),
-    Shapeless(&'static ShapelessRecipe),
-}
-
-impl PartialEq for CraftingRecipe {
-    fn eq(&self, other: &Self) -> bool {
-        self.id() == other.id()
-    }
-}
-
-impl Eq for CraftingRecipe {}
-
-impl CraftingRecipe {
-    /// Returns the recipe identifier.
-    #[must_use]
-    pub const fn id(&self) -> &Identifier {
-        match self {
-            Self::Shaped(r) => &r.id,
-            Self::Shapeless(r) => &r.id,
-        }
-    }
-
-    /// Returns the recipe category.
-    #[must_use]
-    pub const fn category(&self) -> CraftingCategory {
-        match self {
-            Self::Shaped(r) => r.category,
-            Self::Shapeless(r) => r.category,
-        }
-    }
-
-    /// Returns the result of this recipe.
-    #[must_use]
-    pub const fn result(&self) -> &RecipeResult {
-        match self {
-            Self::Shaped(r) => &r.result,
-            Self::Shapeless(r) => &r.result,
-        }
-    }
-
-    /// Tests if the crafting input matches this recipe.
-    /// The input should already be positioned/trimmed.
-    #[must_use]
-    pub fn matches(&self, input: &CraftingInput) -> bool {
-        match self {
-            Self::Shaped(r) => r.matches(input),
-            Self::Shapeless(r) => r.matches(input),
-        }
-    }
-
-    /// Assembles the result item stack.
-    #[must_use]
-    pub fn assemble(&self) -> ItemStack {
-        match self {
-            Self::Shaped(r) => r.assemble(),
-            Self::Shapeless(r) => r.assemble(),
-        }
-    }
-
-    /// Gets the remaining items after crafting (e.g., empty buckets).
-    #[must_use]
-    pub fn get_remaining_items(&self, input: &CraftingInput) -> Vec<ItemStack> {
-        match self {
-            Self::Shaped(r) => r.get_remaining_items(input),
-            Self::Shapeless(r) => r.get_remaining_items(input),
-        }
-    }
-
-    /// Returns true if this recipe fits in a 2x2 grid.
-    #[must_use]
-    pub const fn fits_in_2x2(&self) -> bool {
-        match self {
-            Self::Shaped(r) => r.fits_in_2x2(),
-            Self::Shapeless(r) => r.fits_in_2x2(),
-        }
-    }
-}
 
 /// Represents the current state of a crafting grid.
 ///

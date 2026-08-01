@@ -13,7 +13,7 @@
     reason = "build script must fail immediately on invalid extracted recipe data"
 )]
 
-use std::{fs, path::Path};
+use std::{fs, path::{Path, PathBuf}};
 
 use heck::{ToShoutySnakeCase, ToSnakeCase};
 use proc_macro2::{Ident, Span, TokenStream};
@@ -24,8 +24,6 @@ use serde_json::Value;
 
 #[derive(Deserialize, Debug)]
 struct RecipeJson {
-    #[serde(rename = "type")]
-    recipe_type: String,
     #[serde(default)]
     category: Option<String>,
     // Shaped recipe fields
@@ -48,6 +46,8 @@ struct RecipeJson {
     result: Option<RecipeResult>,
     #[serde(default)]
     show_notification: Option<bool>,
+    #[serde(default)]
+    group: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -111,6 +111,7 @@ fn parse_ingredient(value: &Value) -> ParsedIngredient {
 struct ShapedRecipeData {
     name: String,
     ident: Ident,
+    group: String,
     category: TokenStream,
     width: usize,
     height: usize,
@@ -124,6 +125,7 @@ struct ShapedRecipeData {
 struct ShapelessRecipeData {
     name: String,
     ident: Ident,
+    group: String,
     category: TokenStream,
     ingredient_data: Vec<ParsedIngredient>,
     result_item_ident: Ident,
@@ -133,6 +135,7 @@ struct ShapelessRecipeData {
 struct SmeltingRecipeData {
     name: String,
     ident: Ident,
+    group: String,
     ingredient: ParsedIngredient,
     result_item_ident: Ident,
     result_count: i32,
@@ -196,11 +199,12 @@ fn parse_shaped_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<ShapedR
         _ => quote! { CraftingCategory::Misc },
     };
 
-    let snake_name = recipe_name.to_snake_case();
+    let snake_name = recipe_name.replace('/', "_").to_snake_case();
 
     Some(ShapedRecipeData {
         name: recipe_name.to_string(),
         ident: Ident::new(&snake_name, Span::call_site()),
+        group: recipe.group.clone().unwrap_or_default(),
         category,
         width,
         height,
@@ -250,11 +254,12 @@ fn parse_shapeless_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<Shap
         _ => quote! { CraftingCategory::Misc },
     };
 
-    let snake_name = recipe_name.to_snake_case();
+    let snake_name = recipe_name.replace('/', "_").to_snake_case();
 
     Some(ShapelessRecipeData {
         name: recipe_name.to_string(),
         ident: Ident::new(&snake_name, Span::call_site()),
+        group: recipe.group.clone().unwrap_or_default(),
         category,
         ingredient_data,
         result_item_ident,
@@ -269,11 +274,12 @@ fn parse_smelting_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<Smelt
 
     let result_item_id = result.id.strip_prefix("minecraft:").unwrap_or(&result.id);
     let result_item_ident = Ident::new(&result_item_id.to_shouty_snake_case(), Span::call_site());
-    let snake_name = recipe_name.to_snake_case();
+    let snake_name = recipe_name.replace('/', "_").to_snake_case();
 
     Some(SmeltingRecipeData {
         name: recipe_name.to_string(),
         ident: Ident::new(&snake_name, Span::call_site()),
+        group: recipe.group.clone().unwrap_or_default(),
         ingredient: parse_ingredient(ingredient),
         result_item_ident,
         result_count: result.count,
@@ -318,50 +324,67 @@ pub(crate) fn build() -> TokenStream {
     let mut shapeless_recipes: Vec<ShapelessRecipeData> = Vec::new();
     let mut smelting_recipes: Vec<SmeltingRecipeData> = Vec::new();
 
-    // Read all recipe files
+    // Read all recipe files in deterministic relative-path order.
     fn read_recipes(
         dir: &Path,
+        root: &Path,
         shaped: &mut Vec<ShapedRecipeData>,
         shapeless: &mut Vec<ShapelessRecipeData>,
         smelting: &mut Vec<SmeltingRecipeData>,
     ) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let entry = entry.unwrap();
+        let mut entries: Vec<_> = fs::read_dir(dir)
+            .unwrap_or_else(|error| panic!("Failed to read recipe directory {}: {error}", dir.display()))
+            .collect::<Result<_, _>>()
+            .unwrap_or_else(|error| panic!("Failed to enumerate recipe directory {}: {error}", dir.display()));
+        entries.sort_by_key(|entry| entry.file_name());
+
+        for entry in entries {
             let path = entry.path();
 
             if path.is_dir() {
-                read_recipes(&path, shaped, shapeless, smelting);
+                read_recipes(&path, root, shaped, shapeless, smelting);
             } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                let recipe_name = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unknown");
+                let relative: PathBuf = path
+                    .strip_prefix(root)
+                    .unwrap_or_else(|error| panic!("Recipe path {} is outside {}: {error}", path.display(), root.display()))
+                    .with_extension("");
+                let recipe_name = relative
+                    .to_str()
+                    .unwrap_or_else(|| panic!("Recipe path {} is not UTF-8", path.display()))
+                    .replace('\\', "/");
+                let content = fs::read_to_string(&path)
+                    .unwrap_or_else(|error| panic!("Failed to read recipe {}: {error}", path.display()));
+                let recipe_type = serde_json::from_str::<Value>(&content)
+                    .unwrap_or_else(|error| panic!("Failed to parse recipe {}: {error}", path.display()))
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or_else(|| panic!("Recipe {} has no string type", path.display()))
+                    .to_owned();
 
-                let content = match fs::read_to_string(&path) {
-                    Ok(c) => c,
-                    Err(_) => continue,
-                };
-
-                let recipe: RecipeJson = match serde_json::from_str(&content) {
-                    Ok(r) => r,
-                    Err(_) => continue,
-                };
-
-                match recipe.recipe_type.as_str() {
+                match recipe_type.as_str() {
                     "minecraft:crafting_shaped" => {
-                        if let Some(r) = parse_shaped_recipe(recipe_name, &recipe) {
-                            shaped.push(r);
-                        }
+                        let recipe: RecipeJson = serde_json::from_str(&content).unwrap_or_else(|error| {
+                            panic!("Failed to parse shaped recipe {}: {error}", path.display())
+                        });
+                        shaped.push(parse_shaped_recipe(&recipe_name, &recipe).unwrap_or_else(|| {
+                            panic!("Missing required shaped-recipe field in {}", path.display())
+                        }));
                     }
                     "minecraft:crafting_shapeless" => {
-                        if let Some(r) = parse_shapeless_recipe(recipe_name, &recipe) {
-                            shapeless.push(r);
-                        }
+                        let recipe: RecipeJson = serde_json::from_str(&content).unwrap_or_else(|error| {
+                            panic!("Failed to parse shapeless recipe {}: {error}", path.display())
+                        });
+                        shapeless.push(parse_shapeless_recipe(&recipe_name, &recipe).unwrap_or_else(|| {
+                            panic!("Missing required shapeless-recipe field in {}", path.display())
+                        }));
                     }
                     "minecraft:smelting" => {
-                        if let Some(r) = parse_smelting_recipe(recipe_name, &recipe) {
-                            smelting.push(r);
-                        }
+                        let recipe: RecipeJson = serde_json::from_str(&content).unwrap_or_else(|error| {
+                            panic!("Failed to parse smelting recipe {}: {error}", path.display())
+                        });
+                        smelting.push(parse_smelting_recipe(&recipe_name, &recipe).unwrap_or_else(|| {
+                            panic!("Missing required smelting-recipe field in {}", path.display())
+                        }));
                     }
                     // Skip other recipe types for now (stonecutting, smithing, etc.)
                     _ => {}
@@ -371,6 +394,7 @@ pub(crate) fn build() -> TokenStream {
     }
 
     read_recipes(
+        Path::new(recipe_dir),
         Path::new(recipe_dir),
         &mut shaped_recipes,
         &mut shapeless_recipes,
@@ -385,7 +409,7 @@ pub(crate) fn build() -> TokenStream {
         .iter()
         .map(|r| {
             let fn_ident = Ident::new(&format!("create_shaped_{}", r.ident), Span::call_site());
-            let name = &r.name;
+            let group = &r.group;
             let category = &r.category;
             let width = r.width;
             let height = r.height;
@@ -409,7 +433,7 @@ pub(crate) fn build() -> TokenStream {
                         vec![#(#pattern_tokens),*].into_boxed_slice()
                     );
                     ShapedRecipe {
-                        id: Identifier::vanilla_static(#name),
+                        group: #group,
                         category: #category,
                         width: #width,
                         height: #height,
@@ -431,7 +455,7 @@ pub(crate) fn build() -> TokenStream {
         .iter()
         .map(|r| {
             let fn_ident = Ident::new(&format!("create_shapeless_{}", r.ident), Span::call_site());
-            let name = &r.name;
+            let group = &r.group;
             let category = &r.category;
             let result_item_ident = &r.result_item_ident;
             let result_count = r.result_count;
@@ -451,7 +475,7 @@ pub(crate) fn build() -> TokenStream {
                         vec![#(#ingredient_tokens),*].into_boxed_slice()
                     );
                     ShapelessRecipe {
-                        id: Identifier::vanilla_static(#name),
+                        group: #group,
                         category: #category,
                         ingredients,
                         result: RecipeResult {
@@ -468,7 +492,7 @@ pub(crate) fn build() -> TokenStream {
         .iter()
         .map(|r| {
             let fn_ident = Ident::new(&format!("create_smelting_{}", r.ident), Span::call_site());
-            let name = &r.name;
+            let group = &r.group;
             let ingredient = generate_ingredient_tokens(&r.ingredient);
             let result_item_ident = &r.result_item_ident;
             let result_count = r.result_count;
@@ -479,7 +503,7 @@ pub(crate) fn build() -> TokenStream {
                 #[inline(never)]
                 fn #fn_ident() -> SmeltingRecipe {
                     SmeltingRecipe {
-                        id: Identifier::vanilla_static(#name),
+                        group: #group,
                         ingredient: #ingredient,
                         result: RecipeResult {
                             item: &*vanilla_items::#result_item_ident,
@@ -546,29 +570,40 @@ pub(crate) fn build() -> TokenStream {
         })
         .collect();
 
-    // Generate registration calls
-    let shaped_registers: Vec<TokenStream> = shaped_recipes
-        .iter()
-        .map(|r| {
-            let ident = &r.ident;
-            quote! { registry.register_shaped(&RECIPES.shaped.#ident); }
-        })
-        .collect();
-
-    let shapeless_registers: Vec<TokenStream> = shapeless_recipes
-        .iter()
-        .map(|r| {
-            let ident = &r.ident;
-            quote! { registry.register_shapeless(&RECIPES.shapeless.#ident); }
-        })
-        .collect();
-
-    let smelting_registers: Vec<TokenStream> = smelting_recipes
-        .iter()
-        .map(|r| {
-            let ident = &r.ident;
-            quote! { registry.register_smelting(&RECIPES.smelting.#ident); }
-        })
+    // Register every supported recipe in vanilla identifier order rather than
+    // batching by implementation type.
+    let mut registrations: Vec<(String, TokenStream)> = Vec::new();
+    registrations.extend(shaped_recipes.iter().map(|recipe| {
+        let key = &recipe.name;
+        let ident = &recipe.ident;
+        (
+            key.clone(),
+            quote! { registry.register(Identifier::vanilla_static(#key), &RECIPES.shaped.#ident); },
+        )
+    }));
+    registrations.extend(shapeless_recipes.iter().map(|recipe| {
+        let key = &recipe.name;
+        let ident = &recipe.ident;
+        (
+            key.clone(),
+            quote! { registry.register(Identifier::vanilla_static(#key), &RECIPES.shapeless.#ident); },
+        )
+    }));
+    registrations.extend(smelting_recipes.iter().map(|recipe| {
+        let key = &recipe.name;
+        let ident = &recipe.ident;
+        (
+            key.clone(),
+            quote! { registry.register(Identifier::vanilla_static(#key), &RECIPES.smelting.#ident); },
+        )
+    }));
+    registrations.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    for pair in registrations.windows(2) {
+        assert_ne!(pair[0].0, pair[1].0, "Duplicate generated recipe key: {}", pair[0].0);
+    }
+    let registers: Vec<TokenStream> = registrations
+        .into_iter()
+        .map(|(_, registration)| registration)
         .collect();
 
     quote! {
@@ -642,9 +677,7 @@ pub(crate) fn build() -> TokenStream {
         pub fn register_recipes(registry: &mut RecipeRegistry) {
             // Force initialization of RECIPES
             let _ = &*RECIPES;
-            #(#shaped_registers)*
-            #(#shapeless_registers)*
-            #(#smelting_registers)*
+            #(#registers)*
         }
     }
 }

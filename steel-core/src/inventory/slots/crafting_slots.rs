@@ -74,7 +74,7 @@ impl ResultHandler for CraftingHandler {
             .expect("crafting container not locked");
 
         let result_stack = recipe_manager::find_recipe(crafting, self.is_2x2())
-            .map_or_else(ItemStack::empty, |r| r.assemble());
+            .map_or_else(ItemStack::empty, |r| r.value().assemble());
 
         let result_container = guard
             .get_typed_mut::<ResultContainer>(self.result_id())
@@ -175,6 +175,6 @@ impl ResultHandler for CraftingHandler {
             return false;
         };
 
-        ItemStack::matches(result_item, &recipe.assemble())
+        ItemStack::matches(result_item, &recipe.value().assemble())
     }
 }

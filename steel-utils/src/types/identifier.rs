@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    cmp::Ordering,
     fmt::{self, Debug, Display, Formatter},
     mem::MaybeUninit,
     str::FromStr,
@@ -114,6 +115,20 @@ impl Display for Identifier {
     }
 }
 
+impl PartialOrd for Identifier {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Identifier {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.path
+            .cmp(&other.path)
+            .then_with(|| self.namespace.cmp(&other.namespace))
+    }
+}
+
 impl FromStr for Identifier {
     type Err = &'static str;
 
@@ -208,5 +223,20 @@ impl simdnbt::FromNbtTag for Identifier {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
         let s = tag.string()?.to_str();
         s.parse().ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Identifier;
+
+    #[test]
+    fn ordering_matches_vanilla_identifier_compare_to() {
+        let path_first = Identifier::new_static("z", "apple");
+        let namespace_first = Identifier::new_static("a", "banana");
+        let same_path_later_namespace = Identifier::new_static("z", "banana");
+
+        assert!(path_first < namespace_first);
+        assert!(namespace_first < same_path_later_namespace);
     }
 }
