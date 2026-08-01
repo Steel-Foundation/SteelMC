@@ -1,6 +1,6 @@
 //! Steel player-flight command.
 
-use std::sync::Arc;
+use std::{slice, sync::Arc};
 
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
@@ -66,7 +66,7 @@ enum ResolvedFlyTargets<'context> {
 impl ResolvedFlyTargets<'_> {
     fn as_slice(&self) -> &[Arc<Player>] {
         match self {
-            Self::Source(player) => std::slice::from_ref(player),
+            Self::Source(player) => slice::from_ref(player),
             Self::Argument(players) => players,
         }
     }

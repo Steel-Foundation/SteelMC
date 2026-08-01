@@ -1,5 +1,7 @@
 //! Entity killing command.
 
+use std::slice;
+
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
 
@@ -40,7 +42,7 @@ enum ResolvedKillTargets<'context> {
 impl ResolvedKillTargets<'_> {
     fn as_slice(&self) -> &[SharedEntity] {
         match self {
-            Self::Source(entity) => std::slice::from_ref(entity),
+            Self::Source(entity) => slice::from_ref(entity),
             Self::Argument(entities) => entities,
         }
     }

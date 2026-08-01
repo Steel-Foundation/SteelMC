@@ -1,6 +1,6 @@
 //! Vanilla entity teleport command.
 
-use std::sync::Arc;
+use std::{slice, sync::Arc};
 
 use glam::DVec3;
 use steel_protocol::packets::game::{AnimateAction, CAnimate, CSetCamera, RelativeMovement};
@@ -82,7 +82,7 @@ enum ResolvedTeleportTargets<'context> {
 impl ResolvedTeleportTargets<'_> {
     fn as_slice(&self) -> &[SharedEntity] {
         match self {
-            Self::Source(target) => std::slice::from_ref(target),
+            Self::Source(target) => slice::from_ref(target),
             Self::Argument(targets) => targets,
         }
     }
