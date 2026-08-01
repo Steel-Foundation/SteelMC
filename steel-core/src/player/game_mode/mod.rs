@@ -21,7 +21,6 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};
 use steel_registry::{REGISTRY, vanilla_attributes, vanilla_damage_types, vanilla_entities};
-use steel_utils::entity_events::EntityStatus;
 use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use steel_utils::{BlockPos, Downcast as _, Identifier, WorldAabb};
 use text_components::TextComponent;
@@ -38,8 +37,6 @@ use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostA
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity, SharedEntity};
-use crate::inventory::equipment::EquipmentSlot;
-use crate::inventory::menu::Menu;
 use crate::physics::collision::{CollisionWorld, WorldCollisionProvider};
 use crate::physics::shapes;
 use crate::player::Player;

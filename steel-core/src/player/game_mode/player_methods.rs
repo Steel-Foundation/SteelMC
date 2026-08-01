@@ -147,8 +147,6 @@ impl Player {
     /// Vanilla: `ServerPlayer.updatePlayerAttributes()` — applies creative-mode
     /// range modifiers every tick.
     pub(in crate::player) fn update_player_attributes(&self) {
-        LivingEntity::refresh_all_equipment_attribute_modifiers(self);
-
         let is_creative = self.game_mode() == GameType::Creative;
         let mut attrs = self.attributes().lock();
 

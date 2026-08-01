@@ -1534,7 +1534,6 @@ pub trait LivingEntity: Entity {
             equipment.get_ref(slot).copy_with_count(1)
         };
 
-        self.refresh_equipment_attribute_modifiers(slot);
         if let Some(sound) = self.equip_sound(slot, &equipped) {
             self.play_sound(sound, 1.0, 1.0);
         }
@@ -1553,11 +1552,52 @@ pub trait LivingEntity: Entity {
         });
     }
 
-    /// Refreshes transient item attribute modifiers for all equipment slots.
-    fn refresh_all_equipment_attribute_modifiers(&self) {
-        for slot in EquipmentSlot::ALL {
-            self.refresh_equipment_attribute_modifiers(slot);
+    /// Detects and applies Vanilla living-equipment changes once per tick.
+    fn detect_equipment_updates(&self) {
+        let mut changes = self.living_base().collect_equipment_changes();
+        if changes.is_empty() {
+            return;
         }
+
+        for (slot, _, current) in &changes {
+            self.living_base()
+                .refresh_equipment_attribute_modifiers(*slot, current);
+        }
+
+        let main_hand = changes
+            .iter()
+            .find(|(slot, _, _)| *slot == EquipmentSlot::MainHand);
+        let offhand = changes
+            .iter()
+            .find(|(slot, _, _)| *slot == EquipmentSlot::OffHand);
+        let hands_swapped = main_hand.zip(offhand).is_some_and(
+            |((_, previous_main, current_main), (_, previous_off, current_off))| {
+                ItemStack::matches(current_main, previous_off)
+                    && ItemStack::matches(current_off, previous_main)
+            },
+        );
+
+        if hands_swapped {
+            if let Some(world) = self.level() {
+                world.broadcast_to_entity_trackers(
+                    self.id(),
+                    CEntityEvent {
+                        entity_id: self.id(),
+                        event: EntityStatus::SwapHands,
+                    },
+                    None,
+                );
+            }
+            changes.retain(|(slot, _, _)| {
+                !matches!(slot, EquipmentSlot::MainHand | EquipmentSlot::OffHand)
+            });
+        }
+
+        self.living_base().queue_equipment_changes(
+            changes
+                .into_iter()
+                .map(|(slot, _, current)| (slot, current)),
+        );
     }
 
     /// Packs non-empty living equipment slots for initial spawn pairing.
@@ -1567,7 +1607,7 @@ pub trait LivingEntity: Entity {
 
     /// Drains dirty living equipment slots for tracker sync.
     fn drain_dirty_living_equipment(&self) -> Vec<EquipmentSlotItem> {
-        equipment_items_to_packet_items(self.living_base().equipment().lock().drain_dirty_items())
+        equipment_items_to_packet_items(self.living_base().drain_equipment_changes())
     }
 
     /// Returns whether equipment durability should be skipped for this entity.

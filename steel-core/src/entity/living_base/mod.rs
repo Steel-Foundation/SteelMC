@@ -5,7 +5,7 @@
 //! embed this struct and expose it via `LivingEntity::living_base()`, just like
 //! `EntityBase` is used for core `Entity` fields.
 
-use std::{array, sync::Arc};
+use std::{array, mem, sync::Arc};
 
 use glam::DVec3;
 use rustc_hash::FxHashMap;
@@ -20,7 +20,7 @@ use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
 use steel_registry::{vanilla_damage_types, vanilla_mob_effects};
-use steel_utils::locks::SyncMutex;
+use steel_utils::locks::{IntoShared, Shared, SyncMutex};
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Identifier};
 use uuid::Uuid;
@@ -28,7 +28,7 @@ use uuid::Uuid;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
 use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
-use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
+use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, OwnedEntityEquipment};
 use crate::world::World;
 
 /// Duration in ticks of the death animation before entity removal.
@@ -662,7 +662,9 @@ pub struct LivingEntityBase {
     attributes: SyncMutex<AttributeMap>,
     active_mob_effects: SyncMutex<FxHashMap<MobEffectRef, ActiveMobEffect>>,
     dirty_mob_effects: SyncMutex<Vec<MobEffectSyncChange>>,
-    equipment: SyncMutex<EntityEquipment>,
+    equipment: Shared<dyn EntityEquipment>,
+    last_equipment_items: SyncMutex<[ItemStack; EquipmentSlot::ALL.len()]>,
+    pending_equipment_changes: SyncMutex<[Option<ItemStack>; EquipmentSlot::ALL.len()]>,
     equipment_attribute_modifiers:
         SyncMutex<[Vec<EquipmentAttributeModifierKey>; EquipmentSlot::ALL.len()]>,
 }
@@ -683,6 +685,23 @@ impl LivingEntityBase {
     /// Creates living runtime state from an explicit attribute map.
     #[must_use]
     pub fn with_attributes(attributes: AttributeMap) -> Self {
+        let equipment: Shared<dyn EntityEquipment> = OwnedEntityEquipment::new().into_shared();
+        Self::with_attributes_and_equipment(attributes, equipment)
+    }
+
+    /// Creates living runtime state with an explicit canonical equipment backing.
+    #[must_use]
+    pub fn with_equipment(
+        entity_type: EntityTypeRef,
+        equipment: Shared<dyn EntityEquipment>,
+    ) -> Self {
+        Self::with_attributes_and_equipment(AttributeMap::new_for_entity(entity_type), equipment)
+    }
+
+    fn with_attributes_and_equipment(
+        attributes: AttributeMap,
+        equipment: Shared<dyn EntityEquipment>,
+    ) -> Self {
         let speed = attributes.required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
 
         Self {
@@ -690,7 +709,9 @@ impl LivingEntityBase {
             attributes: SyncMutex::new(attributes),
             active_mob_effects: SyncMutex::new(FxHashMap::default()),
             dirty_mob_effects: SyncMutex::new(Vec::new()),
-            equipment: SyncMutex::new(EntityEquipment::new()),
+            equipment,
+            last_equipment_items: SyncMutex::new(array::from_fn(|_| ItemStack::empty())),
+            pending_equipment_changes: SyncMutex::new(array::from_fn(|_| None)),
             equipment_attribute_modifiers: SyncMutex::new(array::from_fn(|_| Vec::new())),
         }
     }
@@ -715,8 +736,48 @@ impl LivingEntityBase {
 
     /// Returns vanilla `LivingEntity.equipment` storage.
     #[inline]
-    pub const fn equipment(&self) -> &SyncMutex<EntityEquipment> {
+    pub const fn equipment(&self) -> &Shared<dyn EntityEquipment> {
         &self.equipment
+    }
+
+    /// Collects equipment changes against Vanilla's previous-tick snapshots.
+    pub fn collect_equipment_changes(&self) -> Vec<(EquipmentSlot, ItemStack, ItemStack)> {
+        let current_items: [ItemStack; EquipmentSlot::ALL.len()] = {
+            let equipment = self.equipment.lock();
+            array::from_fn(|index| equipment.get_ref(EquipmentSlot::ALL[index]).clone())
+        };
+        let mut last_items = self.last_equipment_items.lock();
+        let mut changes = Vec::new();
+
+        for slot in EquipmentSlot::ALL {
+            let index = slot.index();
+            if ItemStack::matches(&last_items[index], &current_items[index]) {
+                continue;
+            }
+            let previous = mem::replace(&mut last_items[index], current_items[index].clone());
+            changes.push((slot, previous, current_items[index].clone()));
+        }
+        changes
+    }
+
+    /// Coalesces detected equipment changes until entity tracking sends them.
+    pub fn queue_equipment_changes(
+        &self,
+        changes: impl IntoIterator<Item = (EquipmentSlot, ItemStack)>,
+    ) {
+        let mut pending = self.pending_equipment_changes.lock();
+        for (slot, item_stack) in changes {
+            pending[slot.index()] = Some(item_stack);
+        }
+    }
+
+    /// Drains equipment changes detected by the living tick.
+    pub fn drain_equipment_changes(&self) -> Vec<(EquipmentSlot, ItemStack)> {
+        let mut pending = self.pending_equipment_changes.lock();
+        EquipmentSlot::ALL
+            .into_iter()
+            .filter_map(|slot| pending[slot.index()].take().map(|item| (slot, item)))
+            .collect()
     }
 
     /// Returns vanilla living body/head rotation state.
@@ -1514,6 +1575,22 @@ impl LivingEntityBase {
     /// Resets state that vanilla gets from constructing a fresh living player for death respawn.
     pub fn reset_for_player_respawn(&self) {
         self.set_sprinting(false);
+
+        // Vanilla respawns with a newly constructed `LivingEntity`, whose
+        // equipment snapshots and related runtime bookkeeping start empty.
+        // Steel reuses the same `Player`, so reset those fields explicitly.
+        *self.last_equipment_items.lock() = array::from_fn(|_| ItemStack::empty());
+        *self.pending_equipment_changes.lock() = array::from_fn(|_| None);
+        {
+            let mut attributes = self.attributes.lock();
+            let mut installed_modifiers = self.equipment_attribute_modifiers.lock();
+            for modifiers in installed_modifiers.iter_mut() {
+                for key in modifiers.drain(..) {
+                    attributes.remove_modifier(key.attribute, &key.id);
+                }
+            }
+        }
+
         let removed_effects = {
             let mut effects = self.active_mob_effects.lock();
             let removed_effects = effects.keys().copied().collect::<Vec<_>>();

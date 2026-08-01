@@ -318,6 +318,28 @@ impl World {
         config: WorldConfig,
         generation_pool: Arc<rayon::ThreadPool>,
     ) -> io::Result<Arc<Self>> {
+        let chunk_encoding_pool = Arc::clone(&generation_pool);
+        Self::new_with_config_and_encoding_pool(
+            chunk_runtime,
+            key,
+            dimension_type,
+            seed,
+            config,
+            generation_pool,
+            chunk_encoding_pool,
+        )
+        .await
+    }
+
+    pub(crate) async fn new_with_config_and_encoding_pool(
+        chunk_runtime: Arc<Runtime>,
+        key: Identifier,
+        dimension_type: DimensionTypeRef,
+        seed: i64,
+        config: WorldConfig,
+        generation_pool: Arc<rayon::ThreadPool>,
+        chunk_encoding_pool: Arc<rayon::ThreadPool>,
+    ) -> io::Result<Arc<Self>> {
         let view_distance = config.view_distance;
         let simulation_distance = config.simulation_distance;
         let max_chained_neighbor_updates = config.max_chained_neighbor_updates;
@@ -378,6 +400,7 @@ impl World {
                 storage,
                 config.generator,
                 generation_pool,
+                chunk_encoding_pool,
                 timed_chunk_tickets,
             ));
             chunk_map.start_generation_refill_loop();

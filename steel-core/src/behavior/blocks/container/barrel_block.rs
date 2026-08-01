@@ -16,9 +16,9 @@ use crate::behavior::InventoryAccess;
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::BLOCK_ENTITIES;
-use crate::inventory::chest_menu::ChestMenuProvider;
 use crate::inventory::container::calculate_redstone_signal_from_container;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
+use crate::inventory::menu::kinds::chest;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 
@@ -71,11 +71,11 @@ impl BlockBehavior for BarrelBlock {
         };
 
         // Open the chest menu (3 rows for barrel)
-        player.open_menu(&ChestMenuProvider::three_rows(
-            player.inventory.clone(),
-            container_ref,
+        let inventory = player.inventory.clone();
+        player.open_menu(
             TextComponent::translated(translations::CONTAINER_BARREL.msg()),
-        ));
+            move |context| chest(inventory, context.container_id, container_ref, 3),
+        );
 
         // TODO: Award stat OPEN_BARREL
         // TODO: Anger nearby piglins (PiglinAi.angerNearbyPiglins)

@@ -665,89 +665,19 @@ mod tests {
     use glam::DVec3;
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use simdnbt::owned::NbtTag;
-    use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
     use steel_registry::{test_support::init_test_registry, vanilla_entities};
     use steel_utils::{ChunkPos, types::GameType};
-    use text_components::TextComponent;
     use uuid::Uuid;
 
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::block_entity::SharedBlockEntity;
-    use crate::config::RuntimeConfig;
     use crate::entity::{SharedEntity, entities::RawEntity};
-    use crate::player::connection::NetworkConnection;
-    use crate::player::{ClientInformation, GameProfile, Player, PlayerConnection};
-    use crate::server::Server;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
-
-    struct TestConnection;
-
-    impl NetworkConnection for TestConnection {
-        fn compression(&self) -> Option<CompressionInfo> {
-            None
-        }
-
-        fn send_encoded(&self, _packet: EncodedPacket) {}
-
-        fn send_encoded_bundle(&self, _packets: Vec<EncodedPacket>) {}
-
-        fn disconnect_with_reason(&self, _reason: TextComponent) {}
-
-        fn tick(&self) {}
-
-        fn latency(&self) -> i32 {
-            0
-        }
-
-        fn close(&self) {}
-
-        fn closed(&self) -> bool {
-            false
-        }
-    }
+    use crate::player::Player;
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
     fn test_player(world: Arc<World>) -> Arc<Player> {
-        let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection)));
-        let config = Arc::new(RuntimeConfig {
-            max_players: 1,
-            view_distance: 2,
-            simulation_distance: 2,
-            max_chained_neighbor_updates: 1_000_000,
-            online_mode: false,
-            auth_server: None,
-            profile_server: None,
-            encryption: false,
-            allow_flight: false,
-            motd: String::new(),
-            use_favicon: false,
-            favicon: String::new(),
-            enforce_secure_chat: false,
-            chat_spam_threshold_seconds: 10,
-            command_spam_threshold_seconds: 10,
-            compression: None,
-            server_links: None,
-            packet_workers: Some(1),
-            chunk_generation_threads: Some(1),
-            chunk_encoding_threads: Some(1),
-        });
-        Arc::new_cyclic(|weak_player| {
-            Player::new(
-                GameProfile {
-                    id: Uuid::from_u128(1),
-                    name: "PistonTestPlayer".to_owned(),
-                    properties: Vec::new(),
-                    profile_actions: None,
-                },
-                connection,
-                world,
-                Weak::<Server>::new(),
-                config,
-                1,
-                weak_player,
-                ClientInformation::default(),
-            )
-        })
+        TestPlayerBuilder::new(world, Uuid::from_u128(1), "PistonTestPlayer", 1).build()
     }
 
     #[test]

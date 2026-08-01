@@ -8,6 +8,7 @@ pub use respawn::PlayerRespawnConfig;
 pub(super) use spawn_sync::nullable_game_mode_id;
 
 use super::*;
+use crate::entity::PendingWorldChangeToken;
 
 /// Client lifecycle flags that gate gameplay packet handling.
 #[derive(Debug, Clone, Copy)]
@@ -15,8 +16,23 @@ pub(super) struct PlayerLifecycleState {
     joined_world: bool,
     pending_client_loaded: bool,
     client_loaded_timeout: i32,
-    domain_switching: bool,
-    pending_respawn: bool,
+    domain_switch: Option<DomainSwitchState>,
+    respawn: Option<PendingWorldChangeToken>,
+    deferred_death_respawn: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DomainSwitchState {
+    token: PendingWorldChangeToken,
+    phase: DomainSwitchPhase,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DomainSwitchPhase {
+    Queued,
+    Detached,
+    TargetHandshake,
+    Finalizing,
 }
 
 const CLIENT_LOADED_TIMEOUT_TICKS: i32 = 60;
@@ -27,8 +43,9 @@ impl Default for PlayerLifecycleState {
             joined_world: false,
             pending_client_loaded: false,
             client_loaded_timeout: CLIENT_LOADED_TIMEOUT_TICKS,
-            domain_switching: false,
-            pending_respawn: false,
+            domain_switch: None,
+            respawn: None,
+            deferred_death_respawn: false,
         }
     }
 }
@@ -87,38 +104,181 @@ impl PlayerLifecycleState {
 
     #[must_use]
     pub(super) const fn domain_switching(self) -> bool {
-        self.domain_switching
+        self.domain_switch.is_some()
     }
 
-    pub(super) const fn begin_domain_switch(&mut self) -> bool {
-        if self.domain_switching {
+    #[must_use]
+    pub(super) const fn domain_switch_blocks_gameplay(self) -> bool {
+        matches!(
+            self.domain_switch,
+            Some(DomainSwitchState {
+                phase: DomainSwitchPhase::Queued
+                    | DomainSwitchPhase::Detached
+                    | DomainSwitchPhase::TargetHandshake,
+                ..
+            })
+        )
+    }
+
+    #[must_use]
+    pub(super) const fn gate_domain_switch_packet(
+        &mut self,
+        handshake_packet: bool,
+        defer_death_respawn: bool,
+    ) -> bool {
+        match self.domain_switch {
+            None
+            | Some(DomainSwitchState {
+                phase: DomainSwitchPhase::Finalizing,
+                ..
+            }) => true,
+            Some(DomainSwitchState {
+                phase: DomainSwitchPhase::TargetHandshake,
+                ..
+            }) => handshake_packet,
+            Some(DomainSwitchState {
+                phase: DomainSwitchPhase::Queued | DomainSwitchPhase::Detached,
+                ..
+            }) => {
+                if defer_death_respawn && self.respawn.is_none() {
+                    self.deferred_death_respawn = true;
+                }
+                false
+            }
+        }
+    }
+
+    pub(super) const fn begin_domain_switch(&mut self, token: PendingWorldChangeToken) -> bool {
+        if self.domain_switch.is_some() || self.respawn.is_some() {
             return false;
         }
 
-        self.domain_switching = true;
+        self.domain_switch = Some(DomainSwitchState {
+            token,
+            phase: DomainSwitchPhase::Queued,
+        });
         true
     }
 
-    pub(super) const fn finish_domain_switch(&mut self) {
-        self.domain_switching = false;
+    #[must_use]
+    pub(super) fn domain_switch_queued(self, token: PendingWorldChangeToken) -> bool {
+        matches!(
+            self.domain_switch,
+            Some(DomainSwitchState {
+                token: active,
+                phase: DomainSwitchPhase::Queued,
+            }) if active == token
+        )
     }
 
-    pub(super) const fn begin_respawn(&mut self) -> bool {
-        if self.pending_respawn {
+    #[must_use]
+    pub(super) fn domain_switch_detached(self, token: PendingWorldChangeToken) -> bool {
+        matches!(
+            self.domain_switch,
+            Some(DomainSwitchState {
+                token: active,
+                phase: DomainSwitchPhase::Detached,
+            }) if active == token
+        )
+    }
+
+    pub(super) fn mark_domain_switch_detached(&mut self, token: PendingWorldChangeToken) -> bool {
+        let Some(state) = self.domain_switch.as_mut() else {
+            return false;
+        };
+        if state.token != token || state.phase != DomainSwitchPhase::Queued {
             return false;
         }
 
-        self.pending_respawn = true;
+        state.phase = DomainSwitchPhase::Detached;
         true
     }
 
-    pub(super) const fn finish_respawn(&mut self) {
-        self.pending_respawn = false;
+    pub(super) fn mark_domain_switch_target_handshake(
+        &mut self,
+        token: PendingWorldChangeToken,
+    ) -> bool {
+        let Some(state) = self.domain_switch.as_mut() else {
+            return false;
+        };
+        if state.token != token || state.phase != DomainSwitchPhase::Detached {
+            return false;
+        }
+
+        state.phase = DomainSwitchPhase::TargetHandshake;
+        true
     }
 
-    #[cfg(test)]
-    pub(super) const fn respawn_pending(self) -> bool {
-        self.pending_respawn
+    pub(super) fn mark_domain_switch_live(&mut self, token: PendingWorldChangeToken) -> bool {
+        let Some(state) = self.domain_switch.as_mut() else {
+            return false;
+        };
+        if state.token != token || state.phase != DomainSwitchPhase::TargetHandshake {
+            return false;
+        }
+
+        state.phase = DomainSwitchPhase::Finalizing;
+        true
+    }
+
+    pub(super) fn finish_domain_switch(&mut self, token: PendingWorldChangeToken) -> bool {
+        if !matches!(
+            self.domain_switch,
+            Some(DomainSwitchState { token: active, .. }) if active == token
+        ) {
+            return false;
+        }
+
+        self.domain_switch = None;
+        true
+    }
+
+    pub(super) const fn begin_respawn(&mut self, token: PendingWorldChangeToken) -> bool {
+        if self.respawn.is_some() || self.domain_switch_blocks_gameplay() {
+            return false;
+        }
+
+        self.respawn = Some(token);
+        self.deferred_death_respawn = false;
+        true
+    }
+
+    pub(super) const fn defer_death_respawn(&mut self) {
+        if self.respawn.is_none() {
+            self.deferred_death_respawn = true;
+        }
+    }
+
+    pub(super) const fn take_deferred_death_respawn(&mut self) -> bool {
+        let deferred = self.deferred_death_respawn;
+        self.deferred_death_respawn = false;
+        deferred
+    }
+
+    #[must_use]
+    pub(super) fn respawn_pending(self, token: PendingWorldChangeToken) -> bool {
+        self.respawn == Some(token)
+    }
+
+    pub(super) fn finish_respawn(&mut self, token: PendingWorldChangeToken) -> bool {
+        if !self.respawn_pending(token) {
+            return false;
+        }
+
+        self.respawn = None;
+        true
+    }
+
+    pub(super) fn finish_transition(&mut self, token: PendingWorldChangeToken) -> bool {
+        if matches!(
+            self.domain_switch,
+            Some(DomainSwitchState { token: active, .. }) if active == token
+        ) {
+            self.domain_switch = None;
+            return true;
+        }
+
+        self.finish_respawn(token)
     }
 }
 
@@ -133,18 +293,107 @@ impl Player {
     }
 
     /// Marks the player as switching domains if they are not already in a transition.
-    pub(crate) fn begin_domain_switch(&self) -> bool {
-        self.lifecycle.lock().begin_domain_switch()
+    pub(crate) fn begin_domain_switch(&self, token: PendingWorldChangeToken) -> bool {
+        self.lifecycle.lock().begin_domain_switch(token)
     }
 
-    /// Clears the domain-switch transition marker.
-    pub(crate) fn finish_domain_switch(&self) {
-        self.lifecycle.lock().finish_domain_switch();
+    /// Returns whether the queued domain switch still owns this token.
+    pub(crate) fn is_domain_switch_queued(&self, token: PendingWorldChangeToken) -> bool {
+        self.lifecycle.lock().domain_switch_queued(token)
+    }
+
+    /// Returns whether the detached domain switch still owns this token.
+    pub(crate) fn is_domain_switch_detached(&self, token: PendingWorldChangeToken) -> bool {
+        self.lifecycle.lock().domain_switch_detached(token)
+    }
+
+    /// Marks the token-owned domain switch as detached from its source world.
+    pub(crate) fn mark_domain_switch_detached(&self, token: PendingWorldChangeToken) -> bool {
+        self.lifecycle.lock().mark_domain_switch_detached(token)
+    }
+
+    /// Opens only target-world acknowledgement packets before target insertion completes.
+    pub(crate) fn mark_domain_switch_target_handshake(
+        &self,
+        token: PendingWorldChangeToken,
+    ) -> bool {
+        self.lifecycle
+            .lock()
+            .mark_domain_switch_target_handshake(token)
+    }
+
+    /// Marks the token-owned domain switch as live in its target world.
+    pub(crate) fn mark_domain_switch_live(&self, token: PendingWorldChangeToken) -> bool {
+        self.lifecycle.lock().mark_domain_switch_live(token)
+    }
+
+    /// Clears a domain switch only if the caller still owns it.
+    pub(crate) fn finish_domain_switch(&self, token: PendingWorldChangeToken) -> bool {
+        self.lifecycle.lock().finish_domain_switch(token)
+    }
+
+    /// Marks a token as owning respawn preparation if no player transition is active.
+    pub(crate) fn begin_respawn_transition(&self, token: PendingWorldChangeToken) -> bool {
+        self.lifecycle.lock().begin_respawn(token)
+    }
+
+    /// Returns whether respawn preparation still owns this token.
+    pub(crate) fn is_respawn_transition_pending(&self, token: PendingWorldChangeToken) -> bool {
+        self.lifecycle.lock().respawn_pending(token)
+    }
+
+    /// Clears respawn preparation only if the caller still owns it.
+    pub(crate) fn finish_respawn_transition(&self, token: PendingWorldChangeToken) -> bool {
+        self.lifecycle.lock().finish_respawn(token)
+    }
+
+    /// Clears either player transition kind only if the caller owns its token.
+    pub(crate) fn finish_player_transition(&self, token: PendingWorldChangeToken) -> bool {
+        self.lifecycle.lock().finish_transition(token)
+    }
+
+    pub(crate) fn defer_death_respawn(&self) {
+        self.lifecycle.lock().defer_death_respawn();
+    }
+
+    pub(crate) fn retry_deferred_death_respawn(&self) {
+        if !self.lifecycle.lock().take_deferred_death_respawn() {
+            return;
+        }
+        if self.connection.closed() || self.get_health() > 0.0 {
+            return;
+        }
+        self.respawn();
     }
 
     /// Returns whether this player is currently switching domains.
     pub fn is_domain_switching(&self) -> bool {
         self.lifecycle.lock().domain_switching()
+    }
+
+    /// Returns whether the current domain-switch phase blocks gameplay work.
+    pub(crate) fn domain_switch_blocks_gameplay(&self) -> bool {
+        self.lifecycle.lock().domain_switch_blocks_gameplay()
+    }
+
+    /// Gates a packet against the current domain phase.
+    ///
+    /// A dead player's one-shot respawn request is retained while a queued or
+    /// detached switch blocks normal gameplay packets.
+    pub(crate) fn gate_domain_switch_packet(
+        &self,
+        handshake_packet: bool,
+        perform_respawn: bool,
+    ) -> bool {
+        let defer_death_respawn = perform_respawn && self.get_health() <= 0.0;
+        self.lifecycle
+            .lock()
+            .gate_domain_switch_packet(handshake_packet, defer_death_respawn)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_deferred_death_respawn_for_test(&self) -> bool {
+        self.lifecycle.lock().deferred_death_respawn
     }
 
     /// Returns whether the server has inserted this player into a world.
@@ -213,30 +462,53 @@ impl ResetReason {
 #[cfg(test)]
 mod tests {
     use super::{CLIENT_LOADED_TIMEOUT_TICKS, PlayerLifecycleState};
+    use crate::entity::PendingWorldChangeToken;
 
     #[test]
-    fn domain_switch_starts_once_until_finished() {
+    fn domain_switch_requires_matching_phase_and_token() {
         let mut state = PlayerLifecycleState::default();
+        let first = PendingWorldChangeToken::for_test(1);
+        let second = PendingWorldChangeToken::for_test(2);
 
-        assert!(state.begin_domain_switch());
-        assert!(!state.begin_domain_switch());
+        assert!(state.begin_domain_switch(first));
+        assert!(!state.begin_domain_switch(second));
+        assert!(state.domain_switch_queued(first));
+        assert!(!state.domain_switch_queued(second));
+        assert!(state.domain_switch_blocks_gameplay());
+        assert!(!state.gate_domain_switch_packet(false, false));
+        assert!(!state.gate_domain_switch_packet(true, false));
 
-        state.finish_domain_switch();
-        assert!(state.begin_domain_switch());
-    }
+        assert!(!state.mark_domain_switch_detached(second));
+        assert!(state.mark_domain_switch_detached(first));
+        assert!(!state.mark_domain_switch_detached(first));
+        assert!(state.domain_switch_detached(first));
+        assert!(!state.domain_switch_detached(second));
+        assert!(state.domain_switch_blocks_gameplay());
+        assert!(!state.gate_domain_switch_packet(false, true));
+        assert!(state.deferred_death_respawn);
 
-    #[test]
-    fn respawn_starts_once_until_finished() {
-        let mut state = PlayerLifecycleState::default();
-
-        assert!(!state.respawn_pending());
-        assert!(state.begin_respawn());
-        assert!(state.respawn_pending());
-        assert!(!state.begin_respawn());
-
-        state.finish_respawn();
-        assert!(!state.respawn_pending());
-        assert!(state.begin_respawn());
+        assert!(!state.mark_domain_switch_live(second));
+        assert!(!state.mark_domain_switch_live(first));
+        assert!(!state.mark_domain_switch_target_handshake(second));
+        assert!(state.mark_domain_switch_target_handshake(first));
+        assert!(state.domain_switch_blocks_gameplay());
+        assert!(!state.gate_domain_switch_packet(false, false));
+        assert!(state.gate_domain_switch_packet(true, false));
+        assert!(state.mark_domain_switch_live(first));
+        assert!(!state.domain_switch_blocks_gameplay());
+        assert!(state.gate_domain_switch_packet(false, false));
+        assert!(!state.finish_domain_switch(second));
+        assert!(state.domain_switching());
+        assert!(state.begin_respawn(second));
+        assert!(state.respawn_pending(second));
+        assert!(!state.begin_domain_switch(second));
+        assert!(state.finish_domain_switch(first));
+        assert!(!state.domain_switching());
+        assert!(state.respawn_pending(second));
+        assert!(!state.begin_domain_switch(first));
+        assert!(!state.finish_respawn(first));
+        assert!(state.finish_respawn(second));
+        assert!(state.begin_domain_switch(first));
     }
 
     #[test]

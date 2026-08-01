@@ -1132,7 +1132,6 @@ pub trait Mob: LivingEntity {
         let Some(attacker) = self.as_entity_event_source().as_living_entity() else {
             return false;
         };
-        LivingEntity::refresh_equipment_attribute_modifiers(self, EquipmentSlot::MainHand);
         let weapon_item = {
             let mut main_hand = ItemStack::empty();
             self.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {

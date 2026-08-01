@@ -1,11 +1,11 @@
 use super::{
     ATTACK_RANGE_BUFFER, CSetEntityMotion, ClipBlockShape, ClipFluid, DVec3, DamageSource,
     DamageType, ENTITY_INTERACTION_RANGE_BUFFER, EnchantmentDamageContext,
-    EnchantmentPostAttackContext, Entity, EntityTypeRef, EquipmentSlot, GameType, ITEM_BEHAVIORS,
-    InteractionHand, InteractionResult, InventoryAccess, ItemStack, LivingEntity, PiercingWeapon,
-    Player, SAttack, SInteract, SharedEntity, SoundEventHolder, SoundEventRef, TextComponent,
-    TranslatedMessage, World, WorldAabb, enchantment_helper, piercing_ray_hit_t,
-    vanilla_attributes, vanilla_damage_types, vanilla_entities,
+    EnchantmentPostAttackContext, Entity, EntityTypeRef, GameType, ITEM_BEHAVIORS, InteractionHand,
+    InteractionResult, InventoryAccess, ItemStack, LivingEntity, PiercingWeapon, Player, SAttack,
+    SInteract, SharedEntity, SoundEventHolder, SoundEventRef, TextComponent, TranslatedMessage,
+    World, WorldAabb, enchantment_helper, piercing_ray_hit_t, vanilla_attributes,
+    vanilla_damage_types, vanilla_entities,
 };
 
 const fn sound_holder_ref(holder: &SoundEventHolder) -> Option<SoundEventRef> {
@@ -276,7 +276,6 @@ impl Player {
 
     pub(super) fn piercing_attack(&self, item_stack: &ItemStack, piercing_weapon: &PiercingWeapon) {
         let world = self.get_world();
-        LivingEntity::refresh_equipment_attribute_modifiers(self, EquipmentSlot::MainHand);
         let base_damage = self
             .attributes()
             .lock()
@@ -382,7 +381,6 @@ impl Player {
             return false;
         }
 
-        LivingEntity::refresh_equipment_attribute_modifiers(self, EquipmentSlot::MainHand);
         let attacking_item = {
             let inventory = self.inventory.lock();
             let stack = inventory.get_item_in_hand(InteractionHand::MainHand);

@@ -1,6 +1,6 @@
 use super::{
     Arc, BlockBreakingManager, CContainerClose, CGameEvent, CRespawn, CSetDefaultSpawnPosition,
-    CSetHeldSlot, CSetPassengers, ChunkPos, ChunkSender, DVec3, Entity, GameEventType, GameType,
+    CSetHeldSlot, CSetPassengers, DVec3, Entity, GameEventType, GameType, MenuRemovalStatus,
     MobEffectSyncChange, MobEffectSyncPacket, Player, RegistryEntry, RelativeMovement, ResetReason,
     World,
 };
@@ -12,16 +12,15 @@ impl Player {
     /// world change. If the player is currently in a different world, they are
     /// removed from the old world first.
     ///
-    /// Vanilla equivalent: the work that happens when a fresh `ServerPlayer` is
-    /// constructed during respawn / world change, since vanilla recreates the
-    /// player object. We reuse the same `Player`, so we reset manually.
+    /// Vanilla creates a fresh `ServerPlayer` for death and End-credits respawns,
+    /// but reuses it for dimension changes. Steel reuses the same `Player` for
+    /// every path, so this resets only the transient state appropriate to `reason`.
     pub(crate) fn reset(self: &Arc<Self>, new_world: Arc<World>, reason: ResetReason) {
         self.reset_inner_after(new_world, reason, false, || {});
     }
 
-    /// Resets for a domain switch and restores target-domain state after the
-    /// player has been detached from the old world's live entity indexes.
-    pub(crate) fn reset_after_domain_save_and_restore<F>(
+    /// Resets a player already detached from its source domain and restores target-domain state.
+    pub(crate) fn reset_after_detached_domain_restore<F>(
         self: &Arc<Self>,
         new_world: Arc<World>,
         restore_state: F,
@@ -35,23 +34,37 @@ impl Player {
         self: &Arc<Self>,
         new_world: Arc<World>,
         reason: ResetReason,
-        store_root_vehicle: bool,
+        source_world_detached: bool,
         restore_state: F,
     ) where
         F: FnOnce(),
     {
+        if reason != ResetReason::InitialJoin {
+            assert_eq!(
+                self.remove_all_menus(),
+                MenuRemovalStatus::Complete,
+                "player reset menu removal must run outside a menu callback"
+            );
+        }
+        if matches!(reason, ResetReason::Respawn | ResetReason::EndCredits) {
+            // Vanilla creates a fresh ServerPlayer and inventory menu for these paths.
+            self.inventory_menu
+                .lock()
+                .behavior_mut()
+                .reset_quick_craft();
+        }
+
         let old_world = self.get_world();
         let switching_worlds = !Arc::ptr_eq(&old_world, &new_world);
 
         if switching_worlds {
-            self.do_close_container();
             self.send_packet(CContainerClose { container_id: 0 });
-            if store_root_vehicle {
-                old_world.remove_player_for_domain_switch(self);
-            } else {
+            if !source_world_detached {
                 old_world.remove_player_for_world_change(self);
             }
             self.set_world(new_world.clone());
+        } else if !source_world_detached {
+            old_world.chunk_map.remove_player(self);
         }
 
         self.set_client_loaded(false);
@@ -60,16 +73,6 @@ impl Player {
         self.set_on_ground(false);
         self.reset_entity_state();
         *self.block_breaking.lock() = BlockBreakingManager::new();
-
-        // Reset chunk tracking — bump generation counter so the chunk sending tick
-        // discards any in-flight batch encoded against the old world.
-        {
-            let mut chunk_send_epoch = self.chunk_send_epoch.lock();
-            *chunk_send_epoch = chunk_send_epoch.wrapping_add(1);
-        }
-        *self.chunk_sender.lock() = ChunkSender::default();
-        // Same-world respawn still needs this view to remove its old player ticket.
-        *self.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
 
         restore_state();
 
@@ -201,8 +204,8 @@ impl Player {
                 }
 
                 // Same world — re-enter chunk tracking
-                world.player_area_map.remove_by_entity_id(self.id());
                 world.chunk_map.remove_player(self);
+                world.player_area_map.remove_by_entity_id(self.id());
                 world.entity_tracker().on_player_leave(self.id());
 
                 self.send_packet(CGameEvent {
