@@ -848,24 +848,28 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Called every game tick when the entity is in a ticked chunk.
     ///
     /// Use `self.level()` to access the world for physics, block queries, etc.
-    /// The caller handles living-entity dispatch and post-tick dirty data sync.
+    /// The caller handles post-tick dirty data sync.
     ///
-    /// Steel keeps the fallback empty because many vanilla subclasses override
-    /// tick without calling `super.tick()`.
-    fn tick(&self) {}
+    /// The default dispatches vanilla living behavior without requiring every
+    /// living implementation to repeat an `Entity::tick` forwarding method.
+    /// Non-living entities with custom tick behavior override this directly.
+    fn tick(&self) {
+        if let Some(living) = self.as_living_entity() {
+            living.tick_living_entity();
+        }
+    }
 
     /// Called every game tick while this entity is riding another entity.
     ///
     /// Mirrors vanilla `Entity.rideTick`.
     fn ride_tick(&self) {
         self.set_velocity(DVec3::ZERO);
-        if let Some(living) = self.as_living_entity() {
-            living.tick_living_entity();
-        } else {
-            self.tick();
-        }
+        self.tick();
         if let Some(vehicle) = self.vehicle() {
             vehicle.position_rider(self.as_entity_event_source());
+        }
+        if let Some(living) = self.as_living_entity() {
+            living.reset_fall_distance();
         }
     }
 
@@ -1642,14 +1646,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         if let Some(synced_data) = self.synced_data() {
             synced_data.set_fall_flying(fall_flying);
         }
-    }
-
-    /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow`.
-    fn default_can_walk_on_powder_snow(&self) -> bool {
-        REGISTRY.entity_types.is_in_tag(
-            self.entity_type(),
-            &EntityTypeTag::POWDER_SNOW_WALKABLE_MOBS,
-        )
     }
 
     /// Returns whether vanilla excludes this vehicle from floating kicks.

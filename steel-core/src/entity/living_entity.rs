@@ -1749,22 +1749,9 @@ pub trait LivingEntity: Entity {
         }
     }
 
-    /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow()` for living entities.
-    fn can_walk_on_powder_snow(&self) -> bool {
-        if self.default_can_walk_on_powder_snow() {
-            return true;
-        }
-
-        let mut has_leather_boots = false;
-        self.with_equipment_slot(EquipmentSlot::Feet, &mut |item_stack| {
-            has_leather_boots = item_stack.is(&vanilla_items::LEATHER_BOOTS);
-        });
-        has_leather_boots
-    }
-
     /// Runs vanilla `LivingEntity.tick`.
     ///
-    /// Entity ticking call sites dispatch living entities here directly.
+    /// The default `Entity::tick` dispatches living entities here.
     fn tick_living_entity(&self) {
         self.default_tick();
         self.living_base().decrement_invulnerable_time();
@@ -2346,7 +2333,9 @@ pub trait LivingEntity: Entity {
         let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
         let mut movement = self.velocity();
         if (result.horizontal_collision || self.is_jumping())
-            && (self.on_climbable() || self.was_in_powder_snow() && self.can_walk_on_powder_snow())
+            && (self.on_climbable()
+                || self.was_in_powder_snow()
+                    && PowderSnowBlock::can_entity_walk_on_powder_snow(self))
         {
             movement.y = 0.2;
         }

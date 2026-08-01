@@ -1,4 +1,5 @@
 use super::*;
+use crate::behavior::blocks::PowderSnowBlock;
 
 #[test]
 fn can_glide_using_matches_vanilla_component_gate() {
@@ -237,14 +238,14 @@ fn living_powder_snow_walkability_uses_feet_equipment() {
     init_test_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
-    assert!(!entity.can_walk_on_powder_snow());
+    assert!(!PowderSnowBlock::can_entity_walk_on_powder_snow(&entity));
 
     entity.equip(
         EquipmentSlot::Feet,
         ItemStack::new(&vanilla_items::LEATHER_BOOTS),
     );
 
-    assert!(entity.can_walk_on_powder_snow());
+    assert!(PowderSnowBlock::can_entity_walk_on_powder_snow(&entity));
 }
 
 #[test]
@@ -256,7 +257,7 @@ fn living_powder_snow_walkability_ignores_non_feet_equipment() {
         ItemStack::new(&vanilla_items::LEATHER_BOOTS),
     );
 
-    assert!(!entity.can_walk_on_powder_snow());
+    assert!(!PowderSnowBlock::can_entity_walk_on_powder_snow(&entity));
 }
 
 #[test]

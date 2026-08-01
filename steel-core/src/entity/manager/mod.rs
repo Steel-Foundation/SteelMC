@@ -1470,11 +1470,7 @@ impl WorldEntityManager {
     ) {
         snapshot_old_pos_and_rot_for_tick(entity.as_ref());
         entity.advance_tick_count();
-        if let Some(living) = entity.as_living_entity() {
-            living.tick_living_entity();
-        } else {
-            entity.tick();
-        }
+        entity.tick();
         self.mark_dirty_after_tick(entity, dirty_chunks);
         self.tick_vehicle_passengers_with_ticked(entity.as_ref(), ticked_entities, dirty_chunks);
     }
