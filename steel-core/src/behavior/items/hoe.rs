@@ -9,7 +9,7 @@ use steel_utils::{Direction, types::UpdateFlags};
 use crate::{
     behavior::{InteractionResult, ItemBehavior, UseOnContext},
     entity::Entity,
-    world::game_event_context::GameEventContext,
+    world::game_event::GameEventContext,
 };
 
 /// Behavior for Hoes

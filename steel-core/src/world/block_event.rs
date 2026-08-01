@@ -94,7 +94,7 @@ impl World {
     /// load chunks from a piston callback. Steel additionally requires the
     /// confirmed radius-1 Full neighborhood so the game tick never waits for
     /// chunk I/O. Deferred events retain their Vanilla retry behavior.
-    pub(super) fn run_block_events(self: &Arc<Self>) {
+    pub(crate) fn run_block_events(self: &Arc<Self>) {
         let mut deferred = Vec::new();
 
         loop {
@@ -170,8 +170,6 @@ impl World {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use steel_registry::{test_support::init_test_registry, vanilla_blocks};
     use steel_utils::Downcast as _;
     use steel_utils::types::UpdateFlags;
@@ -179,44 +177,8 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::block_entity::entities::EndGatewayBlockEntity;
-    use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
-    use crate::chunk::chunk_holder::{ChunkHolder, TickingReadiness};
     use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
-    use crate::chunk::level_chunk::LevelChunk;
-    use crate::chunk::proto_chunk::ProtoChunk;
-    use crate::chunk::section::{ChunkSection, Sections};
-    use crate::test_support::fresh_test_world;
-
-    fn insert_ready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<ChunkHolder> {
-        let min_y = world.get_min_y();
-        let height = world.get_height();
-        let sections = (0..height / 16)
-            .map(|_| ChunkSection::new_empty())
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        let proto = ProtoChunk::new(
-            Sections::from_owned(sections),
-            pos,
-            min_y,
-            height,
-            Arc::downgrade(world),
-        );
-        let chunk = LevelChunk::from_proto(proto, min_y, height, Arc::downgrade(world)).chunk;
-        let holder = Arc::new(ChunkHolder::new(
-            pos,
-            ChunkTicketLevel::BLOCK_TICKING_CHUNK,
-            Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-            min_y,
-            height,
-        ));
-        holder.insert_chunk(ChunkAccess::Full(chunk), ChunkStatus::Full);
-        assert_eq!(
-            holder.transition_ticking_readiness(TickingReadiness::BlockTicking),
-            Some(TickingReadiness::Unready)
-        );
-        let _ = world.chunk_map.chunks.insert_sync(pos, Arc::clone(&holder));
-        holder
-    }
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     #[test]
     fn ordered_queue_suppresses_only_exact_duplicates() {
@@ -272,7 +234,6 @@ mod tests {
             .expect("placing an end gateway should create its block entity");
         assert!(
             !gateway
-                .lock()
                 .downcast_ref::<EndGatewayBlockEntity>()
                 .expect("the gateway should have its concrete block entity")
                 .is_cooling_down()
@@ -283,7 +244,6 @@ mod tests {
         assert_eq!(world.block_events.lock().len(), 0);
         assert!(
             !gateway
-                .lock()
                 .downcast_ref::<EndGatewayBlockEntity>()
                 .expect("the gateway should remain concrete")
                 .is_cooling_down()
@@ -294,7 +254,6 @@ mod tests {
         assert_eq!(world.block_events.lock().len(), 0);
         assert!(
             !gateway
-                .lock()
                 .downcast_ref::<EndGatewayBlockEntity>()
                 .expect("the gateway should remain concrete")
                 .is_cooling_down()
@@ -308,7 +267,6 @@ mod tests {
         assert_eq!(world.block_events.lock().len(), 1);
         assert!(
             !gateway
-                .lock()
                 .downcast_ref::<EndGatewayBlockEntity>()
                 .expect("the gateway should remain concrete")
                 .is_cooling_down()
@@ -320,7 +278,6 @@ mod tests {
         assert_eq!(world.block_events.lock().len(), 0);
         assert!(
             gateway
-                .lock()
                 .downcast_ref::<EndGatewayBlockEntity>()
                 .expect("the gateway should remain concrete")
                 .is_cooling_down()

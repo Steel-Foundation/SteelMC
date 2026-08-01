@@ -43,7 +43,7 @@ pub(super) fn at_operation() -> Builder {
                     })?;
                     Ok(context
                         .source()
-                        .with_world(world)
+                        .with_world(world)?
                         .with_position(entity.position())
                         .with_rotation(entity.rotation()))
                 })
@@ -200,7 +200,7 @@ pub(super) fn in_operation() -> Builder {
                     .world_argument("dimension")
                     .ok_or_else(|| missing_argument("dimension"))?
                     .resolve(context.source())?;
-                Ok(context.source().with_world(world))
+                context.source().with_world(world)
             },
         ),
     )

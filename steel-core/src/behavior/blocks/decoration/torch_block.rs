@@ -42,7 +42,7 @@ impl BlockBehavior for TorchBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let below_pos = pos.below();
         let below_state = world.get_block_state(below_pos);
-        below_state.is_face_sturdy_for_at(below_pos, Direction::Up, SupportType::Center)
+        world.is_face_sturdy_for(below_state, below_pos, Direction::Up, SupportType::Center)
     }
 
     fn update_shape(
@@ -97,7 +97,7 @@ impl BlockBehavior for WallTorchBlock {
         let attach_direction = facing.opposite();
         let attach_pos = attach_direction.relative(pos);
         let attach_state = world.get_block_state(attach_pos);
-        attach_state.is_face_sturdy_at(attach_pos, facing)
+        world.is_face_sturdy(attach_state, attach_pos, facing)
     }
 
     fn update_shape(

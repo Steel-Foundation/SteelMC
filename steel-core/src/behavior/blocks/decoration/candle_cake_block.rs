@@ -155,8 +155,9 @@ impl BlockBehavior for CandleCakeBlock {
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        _world: &Arc<World>,
+        _world: &dyn LevelReader,
         _pos: BlockPos,
+        _direction: Direction,
     ) -> i32 {
         CakeBlock::analog_output_signal(0)
     }

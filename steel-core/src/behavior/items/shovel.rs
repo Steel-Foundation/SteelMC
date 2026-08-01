@@ -14,7 +14,7 @@ use steel_utils::types::UpdateFlags;
 
 use crate::{
     behavior::{InteractionResult, ItemBehavior, UseOnContext},
-    world::game_event_context::GameEventContext,
+    world::game_event::GameEventContext,
 };
 
 const FLATTENABLES: [&Block; 6] = [

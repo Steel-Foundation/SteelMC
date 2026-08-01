@@ -8,8 +8,8 @@ use crate::chunk::{
     chunk_access::ChunkStatus, chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder,
     chunk_pyramid::ChunkStep,
 };
-use crate::worldgen::context::WorldGenContext;
 use crate::worldgen::generator::ChunkGenerator;
+use crate::worldgen::generator::context::WorldGenContext;
 use steel_worldgen::noise::Beardifier;
 use steel_worldgen::structure::StructureStart;
 

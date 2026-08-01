@@ -10,7 +10,7 @@ use steel_utils::{BlockPos, random::get_seed};
 use crate::sound_types::SoundType;
 
 /// How a block reacts when pushed by a piston.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PushReaction {
     Normal,
     Destroy,

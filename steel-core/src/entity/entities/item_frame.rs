@@ -9,18 +9,21 @@ use steel_macros::entity_behavior;
 use steel_registry::data_components::vanilla_components::MAP_ID;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_data::ItemFrameEntityData;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, Direction, DowncastType, DowncastTypeKey, WorldAabb, axis::Axis};
 
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData};
+use crate::entity::{
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData, ItemFrame,
+};
 use crate::world::World;
 
 /// Item frame state needed by end-city structure markers.
 ///
-/// This intentionally implements only placement, synced item/facing data, and
-/// persistence. Interaction, drops, map tracking, and support checks belong to
-/// the full item-frame entity implementation.
+/// This intentionally implements only placement, synced item/facing data,
+/// persistence, and comparator integration. Interaction, drops, map tracking,
+/// and support checks belong to the full item-frame entity implementation.
 #[entity_behavior(class = "ItemFrame")]
 pub struct ItemFrameEntity {
     base: EntityBase,
@@ -101,12 +104,20 @@ impl ItemFrameEntity {
     }
 
     /// Sets the framed item, matching vanilla by storing a single item.
-    pub fn set_item(&self, mut item: ItemStack) {
+    pub fn set_item(&self, item: ItemStack) {
+        self.set_item_with_update(item, true);
+    }
+
+    /// Sets the framed item and optionally notifies nearby comparators.
+    pub(crate) fn set_item_with_update(&self, mut item: ItemStack, update_comparators: bool) {
         if !item.is_empty() {
             item.set_count(1);
         }
         self.entity_data.lock().item.set(item);
         self.recalculate_position();
+        if update_comparators && let Some(world) = self.level() {
+            world.update_neighbor_for_output_signal(*self.block_pos.lock(), &vanilla_blocks::AIR);
+        }
     }
 
     fn set_direction(&self, direction: Direction) {
@@ -192,6 +203,21 @@ impl ItemFrameEntity {
     }
 }
 
+impl ItemFrame for ItemFrameEntity {
+    fn direction(&self) -> Direction {
+        *self.entity_data.lock().hanging_entity.direction.get()
+    }
+
+    fn analog_output(&self) -> i32 {
+        let entity_data = self.entity_data.lock();
+        if entity_data.item.get().is_empty() {
+            0
+        } else {
+            *entity_data.rotation.get() % 8 + 1
+        }
+    }
+}
+
 impl Entity for ItemFrameEntity {
     fn base(&self) -> &EntityBase {
         &self.base
@@ -254,7 +280,7 @@ impl Entity for ItemFrameEntity {
         if let Some(item_tag) = nbt.compound("Item")
             && let Some(item) = ItemStack::from_borrowed_compound(&item_tag)
         {
-            self.set_item(item);
+            self.set_item_with_update(item, false);
         }
 
         if let Some(item_rotation) = nbt.byte("ItemRotation") {
@@ -354,5 +380,22 @@ mod tests {
         );
 
         assert!(frame.is_pickable());
+    }
+
+    #[test]
+    fn analog_output_uses_item_presence_and_rotation() {
+        let frame = ItemFrameEntity::new_attached(
+            &vanilla_entities::ITEM_FRAME,
+            1,
+            BlockPos::new(12, 80, 14),
+            Direction::West,
+            Weak::new(),
+        );
+        assert_eq!(frame.analog_output(), 0);
+
+        frame.set_item_with_update(ItemStack::new(&vanilla_items::ELYTRA), false);
+        assert_eq!(frame.analog_output(), 1);
+        frame.entity_data.lock().rotation.set(7);
+        assert_eq!(frame.analog_output(), 8);
     }
 }

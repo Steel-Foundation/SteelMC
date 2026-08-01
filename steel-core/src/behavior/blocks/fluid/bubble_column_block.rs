@@ -4,7 +4,6 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_events;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -17,8 +16,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt, block::BlockBehavior,
-    block::PickupResult,
+    BLOCK_BEHAVIORS, BlockCollisionContext, block::BlockBehavior, block::PickupResult,
 };
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::player::Player;
@@ -45,7 +43,22 @@ impl BubbleColumnBlock {
         occupy_at: BlockPos,
         below_state: BlockStateId,
     ) {
-        let occupy_state = level.get_block_state(occupy_at);
+        Self::update_column_with_state(
+            bubble_column,
+            level,
+            occupy_at,
+            level.get_block_state(occupy_at),
+            below_state,
+        );
+    }
+
+    fn update_column_with_state(
+        bubble_column: BlockRef,
+        level: &dyn LevelAccessor,
+        occupy_at: BlockPos,
+        occupy_state: BlockStateId,
+        below_state: BlockStateId,
+    ) {
         if !Self::can_occupy(bubble_column, occupy_state) {
             return;
         }
@@ -178,12 +191,14 @@ impl BlockBehavior for BubbleColumnBlock {
         state
     }
 
-    fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        Self::update_column(self.block, world, pos, world.get_block_state(pos.below()));
-    }
-
-    fn get_fluid_state(&self, _state: BlockStateId) -> FluidState {
-        FluidState::source(&vanilla_fluids::WATER)
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        Self::update_column_with_state(
+            self.block,
+            world,
+            pos,
+            state,
+            world.get_block_state(pos.below()),
+        );
     }
 
     fn entity_inside(

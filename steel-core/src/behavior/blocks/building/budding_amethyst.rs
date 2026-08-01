@@ -1,5 +1,5 @@
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt, blocks::AmethystBlock},
+    behavior::{BlockBehavior, BlockPlaceContext, blocks::AmethystBlock},
     entity::projectile::Projectile,
     fluid::FluidStateExt as _,
     world::{ClipHitResult, World},
@@ -62,10 +62,6 @@ impl BuddingAmethystBlock {
 impl BlockBehavior for BuddingAmethystBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
-    }
-
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        true
     }
 
     fn random_tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

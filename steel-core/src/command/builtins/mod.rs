@@ -10,6 +10,7 @@ mod fly;
 pub(crate) mod gamemode;
 mod gamerule;
 mod give;
+mod invsee;
 mod kill;
 mod list;
 mod locate;
@@ -81,6 +82,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(tick::registration())?;
     builder.register(time::registration())?;
     builder.register(weather::registration())?;
+    builder.register(invsee::registration()?)?;
     builder.extend(extension_commands.into_inner())?;
     builder.build_with_permissions()
 }
@@ -94,9 +96,14 @@ mod tests {
         CommandRegistration as ExtensionCommandRegistration, CommandRegistry,
         literal as extension_literal,
     };
+    use crate::permission::PermissionKey;
     use steel_registry::test_support::init_test_registry;
     use steel_utils::Identifier;
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one cohesive test keeps the expected command graph shape auditable"
+    )]
     #[test]
     fn first_builtin_slice_has_the_expected_graph_shape() {
         init_test_registry();
@@ -146,7 +153,8 @@ mod tests {
                 "tellraw",
                 "tick",
                 "time",
-                "weather"
+                "weather",
+                "invsee"
             ]
         );
 
@@ -237,6 +245,23 @@ mod tests {
                 .iter()
                 .any(|permission| permission.as_str() == "steel_test.command.stop")
         );
+    }
+
+    #[test]
+    fn invsee_discovers_only_steel_namespaced_permissions() {
+        init_test_registry();
+        let Ok(registered) = create_registered_dispatcher(CommandRegistry::new()) else {
+            panic!("built-in commands should register");
+        };
+        let permissions = registered
+            .permissions
+            .iter()
+            .map(PermissionKey::as_str)
+            .collect::<Vec<_>>();
+
+        assert!(permissions.contains(&"steel.command.invsee"));
+        assert!(permissions.contains(&"steel.command.invsee.modify"));
+        assert!(!permissions.contains(&"minecraft.command.invsee"));
     }
 
     #[test]

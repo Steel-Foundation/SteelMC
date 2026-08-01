@@ -1,10 +1,12 @@
 //! Vanilla item, block, state, and NBT predicate codec values.
 
+use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::io::{Cursor, Error, Result, Write};
 
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag, read_tag};
 use simdnbt::{FromNbtTag, ToNbtTag};
+use steel_utils::BlockStateId;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::{
@@ -13,10 +15,10 @@ use steel_utils::nbt::{
 };
 use steel_utils::serial::{ReadFrom, WriteTo};
 
-use crate::RegistryHolderSet;
-use crate::blocks::Block;
+use crate::blocks::{Block, properties::Property};
 use crate::data_component_predicate::DataComponentMatchers;
 use crate::items::Item;
+use crate::{REGISTRY, RegistryHolderSet};
 
 const DEFAULT_NBT_QUOTA: u64 = 2_097_152;
 const MAX_UTF_LENGTH: usize = 32_767;
@@ -239,6 +241,31 @@ pub enum StatePropertyValueMatcher {
 }
 
 impl StatePropertyValueMatcher {
+    fn matches(&self, property: &dyn Property, actual: &str) -> bool {
+        match self {
+            Self::Exact(expected) => {
+                property.compare_value_names(actual, expected) == Some(Ordering::Equal)
+            }
+            Self::Range { min, max } => {
+                if let Some(min) = min
+                    && property
+                        .compare_value_names(actual, min)
+                        .is_none_or(Ordering::is_lt)
+                {
+                    return false;
+                }
+                if let Some(max) = max
+                    && property
+                        .compare_value_names(actual, max)
+                        .is_none_or(Ordering::is_gt)
+                {
+                    return false;
+                }
+                true
+            }
+        }
+    }
+
     pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
         if let Some(value) = tag.string() {
             return Some(Self::Exact(value.to_string()));
@@ -341,6 +368,28 @@ impl StatePropertiesPredicate {
     #[must_use]
     pub fn properties(&self) -> &[StatePropertyMatcher] {
         &self.properties
+    }
+
+    /// Tests this predicate against a registered block state.
+    #[must_use]
+    pub fn matches_block_state(&self, state: BlockStateId) -> bool {
+        let Some(block) = REGISTRY.blocks.by_state_id(state) else {
+            return false;
+        };
+        let values = REGISTRY.blocks.get_properties(state);
+
+        self.properties.iter().all(|matcher| {
+            let Some(index) = block
+                .properties
+                .iter()
+                .position(|property| property.get_name() == matcher.name())
+            else {
+                return false;
+            };
+            matcher
+                .value()
+                .matches(block.properties[index], values[index].1)
+        })
     }
 
     pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
@@ -508,6 +557,24 @@ impl BlockPredicate {
     #[must_use]
     pub const fn components(&self) -> &DataComponentMatchers {
         &self.components
+    }
+
+    /// Tests the block and state-property portions of this predicate.
+    #[must_use]
+    pub fn matches_state(&self, state: BlockStateId) -> bool {
+        let Some(block) = REGISTRY.blocks.by_state_id(state) else {
+            return false;
+        };
+        if self
+            .blocks
+            .as_ref()
+            .is_some_and(|blocks| !blocks.contains(block))
+        {
+            return false;
+        }
+        self.state
+            .as_ref()
+            .is_none_or(|properties| properties.matches_block_state(state))
     }
 
     fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
@@ -923,8 +990,16 @@ pub(crate) fn hash_entries(hasher: &mut ComponentHasher, entries: &mut [HashEntr
 #[cfg(test)]
 mod tests {
     use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+    use steel_utils::Direction;
 
-    use super::{DoubleBounds, NbtPredicate};
+    use super::{
+        BlockPredicate, DoubleBounds, NbtPredicate, StatePropertiesPredicate, StatePropertyMatcher,
+        StatePropertyValueMatcher,
+    };
+    use crate::blocks::block_state_ext::BlockStateExt as _;
+    use crate::blocks::properties::BlockStateProperties;
+    use crate::data_component_predicate::DataComponentMatchers;
+    use crate::{RegistryHolderSet, test_support::init_test_registry, vanilla_blocks};
 
     #[test]
     fn double_bounds_use_java_ordering() {
@@ -947,5 +1022,59 @@ mod tests {
         let encoded = predicate.to_nbt_tag_ref();
         assert_eq!(encoded, NbtTag::String("{values:[7,\"value\"]}".into()));
         assert_eq!(NbtPredicate::from_owned_nbt(&encoded), Some(predicate));
+    }
+
+    #[test]
+    fn block_predicates_use_typed_vanilla_property_order() {
+        init_test_registry();
+
+        let lit = StatePropertiesPredicate::new(vec![StatePropertyMatcher::new(
+            "lit".to_owned(),
+            StatePropertyValueMatcher::Range {
+                min: Some("true".to_owned()),
+                max: None,
+            },
+        )])
+        .expect("one state property is valid");
+        let ore = BlockPredicate::new(
+            Some(RegistryHolderSet::Direct(vec![
+                &vanilla_blocks::REDSTONE_ORE,
+            ])),
+            Some(lit),
+            None,
+            DataComponentMatchers::ANY,
+        );
+        let unlit_ore = vanilla_blocks::REDSTONE_ORE.default_state();
+        assert!(!ore.matches_state(unlit_ore));
+        assert!(ore.matches_state(unlit_ore.set_value(&BlockStateProperties::LIT, true)));
+        assert!(!ore.matches_state(vanilla_blocks::REDSTONE_LAMP.default_state()));
+
+        let power = StatePropertiesPredicate::new(vec![StatePropertyMatcher::new(
+            "power".to_owned(),
+            StatePropertyValueMatcher::Range {
+                min: Some("6".to_owned()),
+                max: Some("8".to_owned()),
+            },
+        )])
+        .expect("one state property is valid");
+        let wire = vanilla_blocks::REDSTONE_WIRE.default_state();
+        assert!(power.matches_block_state(wire.set_value(&BlockStateProperties::POWER, 7)));
+        assert!(!power.matches_block_state(wire.set_value(&BlockStateProperties::POWER, 9)));
+
+        let facing = StatePropertiesPredicate::new(vec![StatePropertyMatcher::new(
+            "facing".to_owned(),
+            StatePropertyValueMatcher::Range {
+                min: Some("up".to_owned()),
+                max: None,
+            },
+        )])
+        .expect("one state property is valid");
+        let dispenser = vanilla_blocks::DISPENSER.default_state();
+        assert!(facing.matches_block_state(
+            dispenser.set_value(&BlockStateProperties::FACING, Direction::North)
+        ));
+        assert!(!facing.matches_block_state(
+            dispenser.set_value(&BlockStateProperties::FACING, Direction::Down)
+        ));
     }
 }

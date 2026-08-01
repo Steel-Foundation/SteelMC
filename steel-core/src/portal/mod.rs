@@ -454,10 +454,12 @@ fn rotate_y(vec: DVec3, radians: f32) -> DVec3 {
 pub enum WorldChangeRequest {
     /// Pre-computed transition (players after chunk pre-warming).
     Computed(TeleportTransition),
-    /// Command-driven world change to the target world's spawn.
+    /// Token-owned player selection of a loaded world's spawn.
     WorldSpawn {
         /// The target world to teleport into.
         target_world: Arc<World>,
+        /// Runtime token proving this request still owns the player's relocation.
+        pending_token: PendingWorldChangeToken,
     },
     /// Portal position — server computes portal-specific destination after chunk pre-warming.
     Portal {

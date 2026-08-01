@@ -125,6 +125,27 @@ pub struct StateBooleanData {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct StateFluidValue {
+    pub fluid: String,
+    pub amount: u8,
+    pub falling: bool,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct StateFluidOverwriteData {
+    pub offset: u16,
+    pub fluid: String,
+    pub amount: u8,
+    pub falling: bool,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct StateFluidData {
+    pub default: StateFluidValue,
+    pub overwrites: Vec<StateFluidOverwriteData>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct Block {
     #[expect(
         dead_code,
@@ -143,7 +164,10 @@ pub struct Block {
     pub interaction_shapes: ShapeData,
     pub visual_shapes: ShapeData,
     pub light_properties: LightPropertiesData,
+    pub fluid_state: StateFluidData,
+    pub randomly_ticking: StateBooleanData,
     pub suffocating: StateBooleanData,
+    pub redstone_conductor: StateBooleanData,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -831,6 +855,51 @@ pub(crate) fn build() -> TokenStream {
                 quote! { StateBooleanOverwrite::new(#offset, #value) }
             })
             .collect::<Vec<_>>();
+        let redstone_conductor_default = block.redstone_conductor.default;
+        let redstone_conductor_overwrites = block
+            .redstone_conductor
+            .overwrites
+            .iter()
+            .map(|overwrite| {
+                let offset = overwrite.offset;
+                let value = overwrite.value;
+                quote! { StateBooleanOverwrite::new(#offset, #value) }
+            })
+            .collect::<Vec<_>>();
+        let randomly_ticking_default = block.randomly_ticking.default;
+        let randomly_ticking_overwrites = block
+            .randomly_ticking
+            .overwrites
+            .iter()
+            .map(|overwrite| {
+                let offset = overwrite.offset;
+                let value = overwrite.value;
+                quote! { StateBooleanOverwrite::new(#offset, #value) }
+            })
+            .collect::<Vec<_>>();
+        let default_fluid = Ident::new(
+            &block.fluid_state.default.fluid.to_shouty_snake_case(),
+            Span::call_site(),
+        );
+        let default_fluid_amount = block.fluid_state.default.amount;
+        let default_fluid_falling = block.fluid_state.default.falling;
+        let fluid_overwrites = block
+            .fluid_state
+            .overwrites
+            .iter()
+            .map(|overwrite| {
+                let offset = overwrite.offset;
+                let fluid = Ident::new(&overwrite.fluid.to_shouty_snake_case(), Span::call_site());
+                let amount = overwrite.amount;
+                let falling = overwrite.falling;
+                quote! {
+                    StateFluidOverwrite::new(
+                        #offset,
+                        FluidState::new(&vanilla_fluids::#fluid, #amount, #falling),
+                    )
+                }
+            })
+            .collect::<Vec<_>>();
 
         // Shape function references (now using deduplicated function IDs)
         let collision_fn = Ident::new(
@@ -906,6 +975,25 @@ pub(crate) fn build() -> TokenStream {
                     #suffocating_default,
                     &[#(#suffocating_overwrites),*],
                 ),
+            ).with_redstone_conductor(
+                StateBooleanData::new(
+                    #redstone_conductor_default,
+                    &[#(#redstone_conductor_overwrites),*],
+                ),
+            ).with_fluid_state(
+                StateFluidData::new(
+                    FluidState::new(
+                        &vanilla_fluids::#default_fluid,
+                        #default_fluid_amount,
+                        #default_fluid_falling,
+                    ),
+                    &[#(#fluid_overwrites),*],
+                ),
+            ).with_randomly_ticking(
+                StateBooleanData::new(
+                    #randomly_ticking_default,
+                    &[#(#randomly_ticking_overwrites),*],
+                ),
             ) #shape_offsets #default_state;
         });
     }
@@ -926,10 +1014,12 @@ pub(crate) fn build() -> TokenStream {
                 behavior::{BlockConfig, OffsetType, PushReaction},
                 shapes::ShapeOffsetFlags,
                 Block, BlockLightProperties, BlockRegistry, StateBooleanData,
-                StateBooleanOverwrite, offset,
+                StateBooleanOverwrite, StateFluidData, StateFluidOverwrite, offset,
             },
             blocks::properties::{self, BlockStateProperties, NoteBlockInstrument},
             blocks::shapes::VoxelShape,
+            fluid::FluidState,
+            vanilla_fluids,
         };
         use steel_utils::{BlockLocalAabb, Identifier};
 

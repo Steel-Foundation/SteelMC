@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
-use steel_registry::blocks::{BlockRef, shapes::VoxelShape};
+use steel_registry::blocks::{BlockRef, properties::Direction, shapes::VoxelShape};
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
 
 use crate::{
     behavior::{BlockBehavior, BlockPlaceContext},
+    entity::ai::path::PathComputationType,
     entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType},
     world::{LevelReader, World},
 };
@@ -26,7 +27,7 @@ const CAULDRON_FILLED_ENTITY_INSIDE_SHAPE: VoxelShape =
 
 /// Behavior for lava cauldrons.
 ///
-/// TODO: Add shared cauldron interaction, drip-fill, and comparator behavior with the cauldron family.
+/// Cauldron interactions and drip filling remain separate block mechanics.
 #[block_behavior]
 pub struct LavaCauldronBlock {
     block: BlockRef,
@@ -55,6 +56,28 @@ impl BlockBehavior for LavaCauldronBlock {
         CAULDRON_FILLED_ENTITY_INSIDE_SHAPE
     }
 
+    fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
+    fn get_analog_output_signal(
+        &self,
+        _state: BlockStateId,
+        _world: &dyn LevelReader,
+        _pos: BlockPos,
+        _direction: Direction,
+    ) -> i32 {
+        3
+    }
+
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
+    }
+
     fn entity_inside(
         &self,
         _state: BlockStateId,
@@ -75,7 +98,13 @@ impl BlockBehavior for LavaCauldronBlock {
 
 #[cfg(test)]
 mod tests {
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+
     use super::*;
+    use crate::{
+        behavior::{BLOCK_BEHAVIORS, init_behaviors},
+        test_support::TestLevel,
+    };
 
     fn assert_f64_close(actual: f64, expected: f64) {
         assert!(
@@ -97,5 +126,24 @@ mod tests {
         assert_f64_close(bounds.max_y(), 0.9375);
         assert_f64_close(bounds.max_z(), 1.0);
         assert_eq!(CAULDRON_FILLED_ENTITY_INSIDE_SHAPE.len(), 9);
+    }
+
+    #[test]
+    fn registered_lava_cauldron_outputs_three() {
+        init_test_registry();
+        init_behaviors();
+        let state = vanilla_blocks::LAVA_CAULDRON.default_state();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::LAVA_CAULDRON);
+
+        assert!(behavior.has_analog_output_signal(state));
+        assert_eq!(
+            behavior.get_analog_output_signal(
+                state,
+                &TestLevel::default(),
+                BlockPos::ZERO,
+                Direction::North,
+            ),
+            3,
+        );
     }
 }

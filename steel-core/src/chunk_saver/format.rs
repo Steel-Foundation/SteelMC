@@ -57,7 +57,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v19: Added shared entity save-data persistence.
 /// v20: Added chunk-owned light section persistence.
 /// v21: Matched vanilla scheduled-tick persistence by rebuilding sub-tick order on load.
-pub const FORMAT_VERSION: u16 = 21;
+/// v22: Preserve Vanilla pending `DUMMY` block entities across chunk stages.
+pub const FORMAT_VERSION: u16 = 22;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
 pub const REGION_SIZE: usize = 32;
@@ -283,11 +284,11 @@ impl Default for RegionHeader {
 
 /// A block state with its identifier and properties.
 #[derive(SchemaWrite, SchemaRead, Clone, PartialEq, Eq, Hash, Debug)]
-pub struct PersistentBlockState {
+pub struct PersistentBlockState<'a> {
     /// Block identifier (e.g., "`minecraft:oak_stairs`").
     pub name: Identifier,
     /// Block properties as key-value pairs (e.g., [("facing", "north")]).
-    pub properties: Vec<(&'static str, &'static str)>,
+    pub properties: Vec<(&'a str, &'a str)>,
 }
 
 /// A heightmap stored with a chunk.
@@ -352,11 +353,11 @@ impl PersistentLightSection {
 /// Each chunk stores its own block state and biome palettes, making it
 /// self-contained. Sections reference indices into these chunk-level palettes.
 #[derive(SchemaWrite, SchemaRead)]
-pub struct PersistentChunk {
+pub struct PersistentChunk<'a> {
     /// Unix timestamp of last modification.
     pub last_modified: u32,
     /// Block states used in this chunk. Sections reference indices into this.
-    pub block_states: Vec<PersistentBlockState>,
+    pub block_states: Vec<PersistentBlockState<'a>>,
     /// Biomes used in this chunk. Sections reference indices into this.
     pub biomes: Vec<Identifier>,
     /// Vertical sections (typically 24 for -64 to 319).
@@ -439,8 +440,8 @@ pub struct PersistentBlockEntity {
     pub y: i16,
     /// Relative Z position within chunk (0-15).
     pub z: u8,
-    /// Block entity type identifier (e.g., "minecraft:chest").
-    pub entity_type: Identifier,
+    /// Block entity type identifier, or `None` for Vanilla's pending `DUMMY` marker.
+    pub entity_type: Option<Identifier>,
     /// Serialized NBT data (simdnbt binary format).
     /// Contains the block entity's custom data from `save_additional`.
     pub nbt_data: Vec<u8>,
@@ -1193,6 +1194,20 @@ impl RegionPos {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn persistent_block_state_properties_round_trip() {
+        let state = PersistentBlockState {
+            name: Identifier::vanilla_static("oak_stairs"),
+            properties: vec![("facing", "north"), ("waterlogged", "false")],
+        };
+
+        let encoded = wincode::serialize(&state).expect("block state should serialize");
+        let decoded: PersistentBlockState<'_> =
+            wincode::deserialize_exact(&encoded).expect("block state should deserialize");
+
+        assert_eq!(decoded, state);
+    }
 
     #[test]
     fn test_region_pos_from_chunk() {

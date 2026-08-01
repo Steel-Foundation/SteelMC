@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use steel_registry::{REGISTRY, RegistryExt as _, world_clock::WorldClockRef};
+use steel_registry::{REGISTRY, world_clock::WorldClockRef};
 use steel_utils::Identifier;
 use thiserror::Error;
 
@@ -209,6 +209,97 @@ impl WorldClockManager {
             state.rate
         };
         Some((id as i32, state.total_ticks, state.partial_tick, rate))
+    }
+}
+
+use super::{CSetTime, RegistryExt, World, clock};
+
+impl World {
+    /// Returns vanilla level game time.
+    pub fn game_time(&self) -> i64 {
+        self.level_data.read().game_time()
+    }
+
+    /// Returns the total ticks of one clock in this world.
+    pub(crate) fn clock_total_ticks(&self, clock: WorldClockRef) -> Option<i64> {
+        self.level_data.read().world_clocks().total_ticks(clock)
+    }
+
+    /// Creates a full per-world time synchronization packet.
+    pub(crate) fn time_sync_packet(&self) -> CSetTime {
+        let level_data = self.level_data.read();
+        let advance_time = self.advance_time_with_guard(&level_data);
+        CSetTime::new(
+            level_data.game_time(),
+            level_data.world_clocks().network_updates(advance_time),
+        )
+    }
+
+    /// Broadcasts all clock states to players in this world.
+    pub(crate) fn broadcast_time_sync(&self) {
+        self.broadcast_to_all(self.time_sync_packet());
+    }
+
+    pub(crate) fn set_clock_total_ticks(
+        &self,
+        clock: WorldClockRef,
+        total_ticks: i64,
+    ) -> Option<()> {
+        self.modify_clock(clock, |manager| manager.set_total_ticks(clock, total_ticks))
+    }
+
+    pub(crate) fn add_clock_ticks(&self, clock: WorldClockRef, ticks: i32) -> Option<i64> {
+        self.modify_clock(clock, |manager| manager.add_ticks(clock, ticks))
+    }
+
+    pub(crate) fn set_clock_paused(&self, clock: WorldClockRef, paused: bool) -> Option<()> {
+        self.modify_clock(clock, |manager| manager.set_paused(clock, paused))
+    }
+
+    pub(crate) fn set_clock_rate(&self, clock: WorldClockRef, rate: f32) -> Option<()> {
+        self.modify_clock(clock, |manager| manager.set_rate(clock, rate))
+    }
+
+    pub(crate) fn move_clock_to_time_marker(
+        &self,
+        clock: WorldClockRef,
+        marker: &Identifier,
+    ) -> Option<bool> {
+        self.modify_clock(clock, |manager| manager.move_to_time_marker(clock, marker))
+    }
+
+    pub(super) fn modify_clock<R>(
+        &self,
+        clock: WorldClockRef,
+        action: impl FnOnce(&mut clock::WorldClockManager) -> Option<R>,
+    ) -> Option<R> {
+        let (result, packet) = {
+            let mut level_data = self.level_data.write();
+            let result = action(level_data.world_clocks_mut())?;
+            let advance_time = self.advance_time_with_guard(&level_data);
+            let update = level_data
+                .world_clocks()
+                .network_update(clock, advance_time)?;
+            (result, CSetTime::new(level_data.game_time(), vec![update]))
+        };
+        self.broadcast_to_all(packet);
+        Some(result)
+    }
+
+    /// Advances game time and this world's clock instances, then periodically synchronizes game time.
+    pub(super) fn tick_time(&self) {
+        let game_time = {
+            let mut lock = self.level_data.write();
+            let updated_game_time = lock.game_time().wrapping_add(1);
+            lock.set_game_time(updated_game_time);
+            let advance_time = self.advance_time_with_guard(&lock);
+            lock.world_clocks_mut().tick(advance_time);
+            updated_game_time
+        };
+
+        if game_time % 20 == 0 {
+            self.broadcast_to_all(CSetTime::new(game_time, Vec::new()));
+        }
     }
 }
 
