@@ -37,6 +37,8 @@ pub struct RespawnAnchorBlock {
 }
 
 impl RespawnAnchorBlock {
+    const MAX_CHARGES: u8 = 4;
+
     /// New respawn anchor behavior
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
@@ -139,7 +141,7 @@ impl RespawnAnchorBlock {
     }
 
     fn can_be_charged(state: BlockStateId) -> bool {
-        state.get_value(&BlockStateProperties::RESPAWN_ANCHOR_CHARGES) < 4
+        state.get_value(&BlockStateProperties::RESPAWN_ANCHOR_CHARGES) < Self::MAX_CHARGES
     }
 
     fn is_respawn_fuel(item_stack: &ItemStack) -> bool {
@@ -153,7 +155,7 @@ impl RespawnAnchorBlock {
     }
 
     fn analog_output_signal(charges: u8) -> i32 {
-        i32::from(charges) * 15 / 4
+        i32::from(charges) * 15 / i32::from(Self::MAX_CHARGES)
     }
 
     fn player_offhand_has_respawn_fuel(player: &Player) -> bool {
@@ -331,7 +333,10 @@ mod tests {
 
         let empty = vanilla_blocks::RESPAWN_ANCHOR.default_state();
         let partial = empty.set_value(&BlockStateProperties::RESPAWN_ANCHOR_CHARGES, 1);
-        let full = empty.set_value(&BlockStateProperties::RESPAWN_ANCHOR_CHARGES, 4);
+        let full = empty.set_value(
+            &BlockStateProperties::RESPAWN_ANCHOR_CHARGES,
+            RespawnAnchorBlock::MAX_CHARGES,
+        );
 
         assert!(!RespawnAnchorBlock::has_charge(empty));
         assert!(RespawnAnchorBlock::can_be_charged(empty));

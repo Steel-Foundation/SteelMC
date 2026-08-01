@@ -36,9 +36,6 @@ pub struct BedBlock {
 }
 
 impl BedBlock {
-    const HEAD_PLACE_FLAGS: UpdateFlags = UpdateFlags::UPDATE_ALL;
-    const UPDATE_NEIGHBOR_SHAPES_LIMIT: i32 = 512;
-
     /// Creates a bed block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
@@ -140,40 +137,40 @@ impl BedBlock {
         block_pos: BlockPos,
     ) -> Option<DVec3> {
         let offsets = Self::bed_surround_standup_offsets(forward_dir, side_dir);
-
-        if let Some(pos) =
-            Self::find_standup_position_at_offset(world, entity, block_pos, &offsets, true)
-        {
-            return Some(pos);
-        }
-
         let below = block_pos.below();
-        if let Some(pos) =
-            Self::find_standup_position_at_offset(world, entity, below, &offsets, true)
-        {
-            return Some(pos);
-        }
-
         let above_offsets = Self::bed_above_standup_offsets(forward_dir);
-        if let Some(pos) =
-            Self::find_standup_position_at_offset(world, entity, block_pos, &above_offsets, true)
-        {
-            return Some(pos);
+
+        for check_dangerous in [true, false] {
+            if let Some(pos) = Self::find_standup_position_at_offset(
+                world,
+                entity,
+                block_pos,
+                &offsets,
+                check_dangerous,
+            ) {
+                return Some(pos);
+            }
+            if let Some(pos) = Self::find_standup_position_at_offset(
+                world,
+                entity,
+                below,
+                &offsets,
+                check_dangerous,
+            ) {
+                return Some(pos);
+            }
+            if let Some(pos) = Self::find_standup_position_at_offset(
+                world,
+                entity,
+                block_pos,
+                &above_offsets,
+                check_dangerous,
+            ) {
+                return Some(pos);
+            }
         }
 
-        if let Some(pos) =
-            Self::find_standup_position_at_offset(world, entity, block_pos, &offsets, false)
-        {
-            return Some(pos);
-        }
-
-        if let Some(pos) =
-            Self::find_standup_position_at_offset(world, entity, below, &offsets, false)
-        {
-            return Some(pos);
-        }
-
-        Self::find_standup_position_at_offset(world, entity, block_pos, &above_offsets, false)
+        None
     }
 
     fn find_standup_position_at_offset(
@@ -368,14 +365,9 @@ impl BlockBehavior for BedBlock {
         let head_pos = facing.relative(pos);
         let head_state = state.set_value(&BlockStateProperties::BED_PART, BedPart::Head);
 
-        world.set_block(head_pos, head_state, Self::HEAD_PLACE_FLAGS);
+        world.set_block(head_pos, head_state, UpdateFlags::UPDATE_ALL);
         world.update_neighbors_at(pos, &vanilla_blocks::AIR);
-        world.update_neighbor_shapes_at(
-            state,
-            pos,
-            Self::HEAD_PLACE_FLAGS,
-            Self::UPDATE_NEIGHBOR_SHAPES_LIMIT,
-        );
+        world.update_neighbor_shapes_at(state, pos, UpdateFlags::UPDATE_ALL, World::UPDATE_LIMIT);
     }
 
     fn use_without_item(

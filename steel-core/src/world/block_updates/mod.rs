@@ -5,6 +5,9 @@ mod neighbor_updater;
 pub(in crate::world) use neighbor_updater::{CollectingNeighborUpdater, ShapeUpdate};
 
 impl World {
+    /// Vanilla block-update recursion limit (`Block.UPDATE_LIMIT`).
+    pub const UPDATE_LIMIT: i32 = 512;
+
     /// Gets the block state at the given position.
     ///
     /// Returns void air out of bounds and air when the containing chunk is not loaded.
@@ -113,7 +116,7 @@ impl World {
         block_state: BlockStateId,
         flags: UpdateFlags,
     ) -> bool {
-        self.set_block_with_limit(pos, block_state, flags, 512)
+        self.set_block_with_limit(pos, block_state, flags, Self::UPDATE_LIMIT)
     }
 
     /// Sets a block at the given position with a custom update limit.
@@ -162,7 +165,13 @@ impl World {
         new_state: BlockStateId,
         flags: UpdateFlags,
     ) -> ConditionalBlockSetResult {
-        self.set_block_if_unchanged_with_limit(pos, expected_state, new_state, flags, 512)
+        self.set_block_if_unchanged_with_limit(
+            pos,
+            expected_state,
+            new_state,
+            flags,
+            Self::UPDATE_LIMIT,
+        )
     }
 
     /// Conditional variant of [`Self::set_block_with_limit`].
