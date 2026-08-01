@@ -6,7 +6,9 @@ use glam::DVec3;
 use steel_registry::{blocks::block_state_ext::BlockStateExt, vanilla_blocks, vanilla_entities};
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, WorldAabb};
 
-use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionBoxes, BlockCollisionContext};
+use crate::behavior::{
+    BLOCK_BEHAVIORS, BlockCollisionBoxes, BlockCollisionContext, blocks::PowderSnowBlock,
+};
 use crate::entity::Entity;
 use crate::physics::COLLISION_EPSILON;
 use crate::physics::shapes::join_is_not_empty;
@@ -269,7 +271,9 @@ impl<'a> WorldCollisionProvider<'a> {
         if let Some(source) = self.source {
             context
                 .with_fall_distance(source.fall_distance())
-                .with_can_walk_on_powder_snow(source.can_walk_on_powder_snow())
+                .with_can_walk_on_powder_snow(PowderSnowBlock::can_entity_walk_on_powder_snow(
+                    source,
+                ))
                 .with_falling_block(source.entity_type() == &vanilla_entities::FALLING_BLOCK)
         } else {
             context
