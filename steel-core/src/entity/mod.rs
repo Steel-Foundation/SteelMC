@@ -458,11 +458,15 @@ fn collided_with_fluid(
 }
 
 fn physics_state_for_move(entity: &dyn Entity) -> EntityPhysicsState {
+    let can_walk_on_powder_snow = entity.as_living_entity().map_or_else(
+        || entity.default_can_walk_on_powder_snow(),
+        LivingEntity::can_walk_on_powder_snow,
+    );
     entity.base().physics_state(base::EntityPhysicsStateInput {
         max_up_step: entity.max_up_step(),
         backs_off_from_edge: entity.backs_off_from_edge(),
         descending: entity.is_descending(),
-        can_walk_on_powder_snow: entity.can_walk_on_powder_snow(),
+        can_walk_on_powder_snow,
         is_falling_block: entity.entity_type() == &vanilla_entities::FALLING_BLOCK,
     })
 }

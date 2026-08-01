@@ -336,6 +336,15 @@ pub trait Mob: LivingEntity {
 
     fn set_mob_flags(&self, flags: i8);
 
+    /// Returns vanilla `Mob.isSaddled`.
+    fn is_saddled(&self) -> bool {
+        let mut is_saddled = false;
+        self.with_equipment_slot(EquipmentSlot::Saddle, &mut |item_stack| {
+            is_saddled = self.is_equippable_in_slot(item_stack, EquipmentSlot::Saddle);
+        });
+        is_saddled
+    }
+
     fn custom_server_ai_step(&self) {
         if let Some(animal) = self.as_animal() {
             animal.custom_server_ai_step_animal();

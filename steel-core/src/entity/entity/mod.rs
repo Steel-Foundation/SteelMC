@@ -1036,45 +1036,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla `Entity.updateDataBeforeSync`.
     fn update_data_before_sync(&self) {}
 
-    /// Packs syncable attributes for initial spawn pairing.
-    ///
-    /// Mirrors vanilla `ServerEntity.sendPairingData`, which sends all syncable
-    /// living attributes after the add-entity and metadata packets.
-    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        self.as_living_entity().map_or_else(Vec::new, |living| {
-            living.attributes().lock().syncable_snapshots()
-        })
-    }
-
-    /// Drains syncable dirty attributes for per-tick tracking updates.
-    ///
-    /// Mirrors vanilla `ServerEntity.sendDirtyEntityData`, which sends dirty
-    /// living attributes after dirty entity data.
-    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        self.as_living_entity().map_or_else(Vec::new, |living| {
-            living.attributes().lock().drain_dirty_sync()
-        })
-    }
-
-    /// Drains dirty mob-effect packet changes for vanilla recipients.
-    fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
-        self.as_living_entity().map_or_else(Vec::new, |living| {
-            living.living_base().drain_dirty_mob_effects()
-        })
-    }
-
-    /// Packs non-empty equipment slots for initial spawn pairing.
-    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
-        self.as_living_entity()
-            .map_or_else(Vec::new, LivingEntity::pack_living_equipment)
-    }
-
-    /// Drains equipment slots that changed since the last tracker sync.
-    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
-        self.as_living_entity()
-            .map_or_else(Vec::new, LivingEntity::drain_dirty_living_equipment)
-    }
-
     /// Returns true if the entity has been marked for removal.
     fn is_removed(&self) -> bool {
         self.base().is_removed()
@@ -1690,14 +1651,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         REGISTRY.entity_types.is_in_tag(
             self.entity_type(),
             &EntityTypeTag::POWDER_SNOW_WALKABLE_MOBS,
-        )
-    }
-
-    /// Returns whether this entity can walk on powder snow.
-    fn can_walk_on_powder_snow(&self) -> bool {
-        self.as_living_entity().map_or_else(
-            || self.default_can_walk_on_powder_snow(),
-            LivingEntity::default_living_can_walk_on_powder_snow,
         )
     }
 

@@ -123,6 +123,37 @@ pub trait LivingEntity: Entity {
         self.living_base().attributes()
     }
 
+    /// Packs syncable attributes for initial spawn pairing.
+    ///
+    /// Mirrors vanilla `ServerEntity.sendPairingData`, which sends all syncable
+    /// living attributes after the add-entity and metadata packets.
+    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        self.attributes().lock().syncable_snapshots()
+    }
+
+    /// Drains syncable dirty attributes for per-tick tracking updates.
+    ///
+    /// Mirrors vanilla `ServerEntity.sendDirtyEntityData`, which sends dirty
+    /// living attributes after dirty entity data.
+    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        self.attributes().lock().drain_dirty_sync()
+    }
+
+    /// Drains dirty mob-effect packet changes for vanilla recipients.
+    fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
+        self.living_base().drain_dirty_mob_effects()
+    }
+
+    /// Packs non-empty equipment slots for initial spawn pairing.
+    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
+        self.pack_living_equipment()
+    }
+
+    /// Drains equipment slots that changed since the last tracker sync.
+    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
+        self.drain_dirty_living_equipment()
+    }
+
     /// Appends vanilla-shaped living state used by command NBT predicates.
     fn save_command_nbt(&self, nbt: &mut NbtCompound) {
         nbt.insert("Health", self.get_health());
@@ -1719,7 +1750,7 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow()` for living entities.
-    fn default_living_can_walk_on_powder_snow(&self) -> bool {
+    fn can_walk_on_powder_snow(&self) -> bool {
         if self.default_can_walk_on_powder_snow() {
             return true;
         }

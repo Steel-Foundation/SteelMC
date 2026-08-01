@@ -13,7 +13,7 @@ use crate::{
         EntityFallOnContext,
     },
     entity::ai::path::PathComputationType,
-    entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType},
+    entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType, LivingEntity},
     world::{LevelReader, World},
 };
 
@@ -93,13 +93,17 @@ impl BlockBehavior for PowderSnowBlock {
         pos: BlockPos,
         entity: &dyn Entity,
     ) -> VoxelShape {
+        let can_walk_on_powder_snow = entity.as_living_entity().map_or_else(
+            || entity.default_can_walk_on_powder_snow(),
+            LivingEntity::can_walk_on_powder_snow,
+        );
         let collision_shape = self.get_collision_shape(
             state,
             world,
             pos,
             BlockCollisionContext::entity(entity.position().y, entity.is_descending())
                 .with_fall_distance(entity.fall_distance())
-                .with_can_walk_on_powder_snow(entity.can_walk_on_powder_snow())
+                .with_can_walk_on_powder_snow(can_walk_on_powder_snow)
                 .with_falling_block(entity.entity_type() == &vanilla_entities::FALLING_BLOCK),
         );
         if collision_shape.is_empty() {

@@ -237,14 +237,14 @@ fn living_powder_snow_walkability_uses_feet_equipment() {
     init_test_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
-    assert!(!entity.default_living_can_walk_on_powder_snow());
+    assert!(!entity.can_walk_on_powder_snow());
 
     entity.equip(
         EquipmentSlot::Feet,
         ItemStack::new(&vanilla_items::LEATHER_BOOTS),
     );
 
-    assert!(entity.default_living_can_walk_on_powder_snow());
+    assert!(entity.can_walk_on_powder_snow());
 }
 
 #[test]
@@ -256,7 +256,7 @@ fn living_powder_snow_walkability_ignores_non_feet_equipment() {
         ItemStack::new(&vanilla_items::LEATHER_BOOTS),
     );
 
-    assert!(!entity.default_living_can_walk_on_powder_snow());
+    assert!(!entity.can_walk_on_powder_snow());
 }
 
 #[test]

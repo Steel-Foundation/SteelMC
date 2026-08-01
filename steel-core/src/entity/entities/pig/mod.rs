@@ -19,8 +19,8 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::PigEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
-    REGISTRY, RegistryExt, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_items,
-    vanilla_pig_sound_variants, vanilla_pig_variants,
+    REGISTRY, RegistryExt, RegistryReference, TaggedRegistryExt, sound_events, vanilla_attributes,
+    vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -140,89 +140,45 @@ impl PigEntity {
         }
     }
 
-    /// Returns the current pig variant registry ID stored in synced data.
-    #[must_use]
-    pub fn variant_id(&self) -> i32 {
-        *self.entity_data.lock().variant.get()
-    }
-
     /// Sets the current pig variant by registry entry.
     pub fn set_variant(&self, variant: PigVariantRef) {
-        let Some(id) = REGISTRY.pig_variants.id_from_key(&variant.key) else {
-            log::error!("pig variant {} is not registered", variant.key);
-            return;
-        };
-        self.set_variant_id_from_usize(id);
+        self.entity_data
+            .lock()
+            .variant
+            .set(RegistryReference::new(variant));
     }
 
-    /// Returns the current pig variant, falling back to vanilla's default holder.
+    /// Returns the current pig variant.
     #[must_use]
     pub fn variant(&self) -> PigVariantRef {
-        let id = self.variant_id();
-        if let Ok(id) = usize::try_from(id)
-            && let Some(variant) = REGISTRY.pig_variants.by_id(id)
-        {
-            return variant;
-        }
-
-        &vanilla_pig_variants::TEMPERATE
-    }
-
-    /// Returns the current pig sound variant registry ID stored in synced data.
-    #[must_use]
-    pub fn sound_variant_id(&self) -> i32 {
-        *self.entity_data.lock().sound_variant.get()
+        self.entity_data.lock().variant.get().value()
     }
 
     /// Sets the current pig sound variant by registry entry.
     pub fn set_sound_variant(&self, sound_variant: PigSoundVariantRef) {
-        let Some(id) = REGISTRY.pig_sound_variants.id_from_key(&sound_variant.key) else {
-            log::error!("pig sound variant {} is not registered", sound_variant.key);
-            return;
-        };
-        self.set_sound_variant_id_from_usize(id);
+        self.entity_data
+            .lock()
+            .sound_variant
+            .set(RegistryReference::new(sound_variant));
     }
 
-    /// Returns the current pig sound variant, falling back to vanilla classic.
+    /// Returns the current pig sound variant.
     #[must_use]
     pub fn sound_variant(&self) -> PigSoundVariantRef {
-        let id = self.sound_variant_id();
-        if let Ok(id) = usize::try_from(id)
-            && let Some(sound_variant) = REGISTRY.pig_sound_variants.by_id(id)
-        {
-            return sound_variant;
-        }
-
-        &vanilla_pig_sound_variants::CLASSIC
-    }
-
-    fn set_variant_id_from_usize(&self, id: usize) {
-        let Ok(id) = i32::try_from(id) else {
-            log::error!("pig variant id {id} does not fit synced-data i32");
-            return;
-        };
-        self.entity_data.lock().variant.set(id);
-    }
-
-    fn set_sound_variant_id_from_usize(&self, id: usize) {
-        let Ok(id) = i32::try_from(id) else {
-            log::error!("pig sound variant id {id} does not fit synced-data i32");
-            return;
-        };
-        self.entity_data.lock().sound_variant.set(id);
+        self.entity_data.lock().sound_variant.get().value()
     }
 
     fn set_variant_by_key(&self, key: &Identifier) -> bool {
-        let Some(id) = REGISTRY.pig_variants.id_from_key(key) else {
+        let Some(variant) = REGISTRY.pig_variants.by_key(key) else {
             return false;
         };
-        self.set_variant_id_from_usize(id);
+        self.set_variant(variant);
         true
     }
 
     fn set_sound_variant_by_key(&self, key: &Identifier) {
-        if let Some(id) = REGISTRY.pig_sound_variants.id_from_key(key) {
-            self.set_sound_variant_id_from_usize(id);
+        if let Some(sound_variant) = REGISTRY.pig_sound_variants.by_key(key) {
+            self.set_sound_variant(sound_variant);
         }
     }
 
@@ -233,40 +189,6 @@ impl PigEntity {
         } else {
             &sound_variant.adult_sounds
         }
-    }
-
-    /// Returns whether this pig has a saddle equipped.
-    #[must_use]
-    pub fn is_saddled(&self) -> bool {
-        LivingEntity::has_item_in_slot(self, EquipmentSlot::Saddle)
-    }
-
-    /// Returns whether this pig can currently use the saddle equipment slot.
-    #[must_use]
-    pub fn can_use_saddle_slot(&self) -> bool {
-        Entity::is_alive(self) && !AgeableMob::is_baby(self)
-    }
-
-    /// Returns whether item-based steering is currently boosting.
-    #[must_use]
-    pub fn is_boosting(&self) -> bool {
-        self.steering.lock().is_boosting()
-    }
-
-    /// Returns the current elapsed boost time.
-    #[must_use]
-    pub fn elapsed_boost_time(&self) -> i32 {
-        self.steering.lock().boost_time()
-    }
-
-    /// Returns vanilla pig ridden speed.
-    #[must_use]
-    pub fn ridden_speed(&self) -> f32 {
-        let movement_speed = self
-            .attributes()
-            .lock()
-            .required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
-        movement_speed * 0.225 * ItemSteerable::boost_factor(self)
     }
 
     fn set_ridden_rotation(&self, controller_yaw: f32, controller_pitch: f32) {
@@ -406,7 +328,7 @@ impl LivingEntity for PigEntity {
     }
 
     fn can_use_slot(&self, slot: EquipmentSlot) -> bool {
-        slot != EquipmentSlot::Saddle || self.can_use_saddle_slot()
+        slot != EquipmentSlot::Saddle || (Entity::is_alive(self) && !AgeableMob::is_baby(self))
     }
 
     fn can_dispenser_equip_into_slot(&self, slot: EquipmentSlot) -> bool {
@@ -428,7 +350,11 @@ impl LivingEntity for PigEntity {
     }
 
     fn ridden_speed(&self, _controller: &Player) -> f32 {
-        PigEntity::ridden_speed(self)
+        let movement_speed = self
+            .attributes()
+            .lock()
+            .required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
+        movement_speed * 0.225 * ItemSteerable::boost_factor(self)
     }
 }
 

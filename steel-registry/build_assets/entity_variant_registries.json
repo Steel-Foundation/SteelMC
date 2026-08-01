@@ -1,0 +1,432 @@
+{
+  "cat_variant": [
+    {
+      "id": 0,
+      "key": "minecraft:all_black"
+    },
+    {
+      "id": 1,
+      "key": "minecraft:black"
+    },
+    {
+      "id": 2,
+      "key": "minecraft:british_shorthair"
+    },
+    {
+      "id": 3,
+      "key": "minecraft:calico"
+    },
+    {
+      "id": 4,
+      "key": "minecraft:jellie"
+    },
+    {
+      "id": 5,
+      "key": "minecraft:persian"
+    },
+    {
+      "id": 6,
+      "key": "minecraft:ragdoll"
+    },
+    {
+      "id": 7,
+      "key": "minecraft:red"
+    },
+    {
+      "id": 8,
+      "key": "minecraft:siamese"
+    },
+    {
+      "id": 9,
+      "key": "minecraft:tabby"
+    },
+    {
+      "id": 10,
+      "key": "minecraft:white"
+    }
+  ],
+  "cat_sound_variant": [
+    {
+      "id": 0,
+      "key": "minecraft:classic"
+    },
+    {
+      "id": 1,
+      "key": "minecraft:royal"
+    }
+  ],
+  "cow_variant": [
+    {
+      "id": 0,
+      "key": "minecraft:cold"
+    },
+    {
+      "id": 1,
+      "key": "minecraft:temperate"
+    },
+    {
+      "id": 2,
+      "key": "minecraft:warm"
+    }
+  ],
+  "cow_sound_variant": [
+    {
+      "id": 0,
+      "key": "minecraft:classic"
+    },
+    {
+      "id": 1,
+      "key": "minecraft:moody"
+    }
+  ],
+  "wolf_variant": [
+    {
+      "id": 0,
+      "key": "minecraft:ashen"
+    },
+    {
+      "id": 1,
+      "key": "minecraft:black"
+    },
+    {
+      "id": 2,
+      "key": "minecraft:chestnut"
+    },
+    {
+      "id": 3,
+      "key": "minecraft:pale"
+    },
+    {
+      "id": 4,
+      "key": "minecraft:rusty"
+    },
+    {
+      "id": 5,
+      "key": "minecraft:snowy"
+    },
+    {
+      "id": 6,
+      "key": "minecraft:spotted"
+    },
+    {
+      "id": 7,
+      "key": "minecraft:striped"
+    },
+    {
+      "id": 8,
+      "key": "minecraft:woods"
+    }
+  ],
+  "wolf_sound_variant": [
+    {
+      "id": 0,
+      "key": "minecraft:angry"
+    },
+    {
+      "id": 1,
+      "key": "minecraft:big"
+    },
+    {
+      "id": 2,
+      "key": "minecraft:classic"
+    },
+    {
+      "id": 3,
+      "key": "minecraft:cute"
+    },
+    {
+      "id": 4,
+      "key": "minecraft:grumpy"
+    },
+    {
+      "id": 5,
+      "key": "minecraft:puglin"
+    },
+    {
+      "id": 6,
+      "key": "minecraft:sad"
+    }
+  ],
+  "frog_variant": [
+    {
+      "id": 0,
+      "key": "minecraft:cold"
+    },
+    {
+      "id": 1,
+      "key": "minecraft:temperate"
+    },
+    {
+      "id": 2,
+      "key": "minecraft:warm"
+    }
+  ],
+  "pig_variant": [
+    {
+      "id": 0,
+      "key": "minecraft:cold"
+    },
+    {
+      "id": 1,
+      "key": "minecraft:temperate"
+    },
+    {
+      "id": 2,
+      "key": "minecraft:warm"
+    }
+  ],
+  "pig_sound_variant": [
+    {
+      "id": 0,
+      "key": "minecraft:big"
+    },
+    {
+      "id": 1,
+      "key": "minecraft:classic"
+    },
+    {
+      "id": 2,
+      "key": "minecraft:mini"
+    }
+  ],
+  "chicken_variant": [
+    {
+      "id": 0,
+      "key": "minecraft:cold"
+    },
+    {
+      "id": 1,
+      "key": "minecraft:temperate"
+    },
+    {
+      "id": 2,
+      "key": "minecraft:warm"
+    }
+  ],
+  "chicken_sound_variant": [
+    {
+      "id": 0,
+      "key": "minecraft:classic"
+    },
+    {
+      "id": 1,
+      "key": "minecraft:picky"
+    }
+  ],
+  "zombie_nautilus_variant": [
+    {
+      "id": 0,
+      "key": "minecraft:temperate"
+    },
+    {
+      "id": 1,
+      "key": "minecraft:warm"
+    }
+  ],
+  "painting_variant": [
+    {
+      "id": 0,
+      "key": "minecraft:alban"
+    },
+    {
+      "id": 1,
+      "key": "minecraft:aztec"
+    },
+    {
+      "id": 2,
+      "key": "minecraft:aztec2"
+    },
+    {
+      "id": 3,
+      "key": "minecraft:backyard"
+    },
+    {
+      "id": 4,
+      "key": "minecraft:baroque"
+    },
+    {
+      "id": 5,
+      "key": "minecraft:bomb"
+    },
+    {
+      "id": 6,
+      "key": "minecraft:bouquet"
+    },
+    {
+      "id": 7,
+      "key": "minecraft:burning_skull"
+    },
+    {
+      "id": 8,
+      "key": "minecraft:bust"
+    },
+    {
+      "id": 9,
+      "key": "minecraft:cavebird"
+    },
+    {
+      "id": 10,
+      "key": "minecraft:changing"
+    },
+    {
+      "id": 11,
+      "key": "minecraft:cotan"
+    },
+    {
+      "id": 12,
+      "key": "minecraft:courbet"
+    },
+    {
+      "id": 13,
+      "key": "minecraft:creebet"
+    },
+    {
+      "id": 14,
+      "key": "minecraft:dennis"
+    },
+    {
+      "id": 15,
+      "key": "minecraft:donkey_kong"
+    },
+    {
+      "id": 16,
+      "key": "minecraft:earth"
+    },
+    {
+      "id": 17,
+      "key": "minecraft:endboss"
+    },
+    {
+      "id": 18,
+      "key": "minecraft:fern"
+    },
+    {
+      "id": 19,
+      "key": "minecraft:fighters"
+    },
+    {
+      "id": 20,
+      "key": "minecraft:finding"
+    },
+    {
+      "id": 21,
+      "key": "minecraft:fire"
+    },
+    {
+      "id": 22,
+      "key": "minecraft:graham"
+    },
+    {
+      "id": 23,
+      "key": "minecraft:humble"
+    },
+    {
+      "id": 24,
+      "key": "minecraft:kebab"
+    },
+    {
+      "id": 25,
+      "key": "minecraft:lowmist"
+    },
+    {
+      "id": 26,
+      "key": "minecraft:match"
+    },
+    {
+      "id": 27,
+      "key": "minecraft:meditative"
+    },
+    {
+      "id": 28,
+      "key": "minecraft:orb"
+    },
+    {
+      "id": 29,
+      "key": "minecraft:owlemons"
+    },
+    {
+      "id": 30,
+      "key": "minecraft:passage"
+    },
+    {
+      "id": 31,
+      "key": "minecraft:pigscene"
+    },
+    {
+      "id": 32,
+      "key": "minecraft:plant"
+    },
+    {
+      "id": 33,
+      "key": "minecraft:pointer"
+    },
+    {
+      "id": 34,
+      "key": "minecraft:pond"
+    },
+    {
+      "id": 35,
+      "key": "minecraft:pool"
+    },
+    {
+      "id": 36,
+      "key": "minecraft:prairie_ride"
+    },
+    {
+      "id": 37,
+      "key": "minecraft:sea"
+    },
+    {
+      "id": 38,
+      "key": "minecraft:skeleton"
+    },
+    {
+      "id": 39,
+      "key": "minecraft:skull_and_roses"
+    },
+    {
+      "id": 40,
+      "key": "minecraft:stage"
+    },
+    {
+      "id": 41,
+      "key": "minecraft:sunflowers"
+    },
+    {
+      "id": 42,
+      "key": "minecraft:sunset"
+    },
+    {
+      "id": 43,
+      "key": "minecraft:tides"
+    },
+    {
+      "id": 44,
+      "key": "minecraft:unpacked"
+    },
+    {
+      "id": 45,
+      "key": "minecraft:void"
+    },
+    {
+      "id": 46,
+      "key": "minecraft:wanderer"
+    },
+    {
+      "id": 47,
+      "key": "minecraft:wasteland"
+    },
+    {
+      "id": 48,
+      "key": "minecraft:water"
+    },
+    {
+      "id": 49,
+      "key": "minecraft:wind"
+    },
+    {
+      "id": 50,
+      "key": "minecraft:wither"
+    }
+  ]
+}
