@@ -67,23 +67,25 @@ ser_write!(ser_item_stack, ItemStack);
 ser_write!(ser_boolean, Boolean);
 ser_write!(ser_block_state, BlockState);
 
-// VarInt serializers (for i32 holder/registry IDs)
+// Plain i32 VarInt serializers
 ser_varint!(ser_int, Int);
-ser_varint!(ser_cat_variant, CatVariant);
-ser_varint!(ser_cat_sound_variant, CatSoundVariant);
-ser_varint!(ser_cow_variant, CowVariant);
-ser_varint!(ser_cow_sound_variant, CowSoundVariant);
-ser_varint!(ser_wolf_variant, WolfVariant);
-ser_varint!(ser_wolf_sound_variant, WolfSoundVariant);
-ser_varint!(ser_frog_variant, FrogVariant);
-ser_varint!(ser_pig_variant, PigVariant);
-ser_varint!(ser_pig_sound_variant, PigSoundVariant);
-ser_varint!(ser_chicken_variant, ChickenVariant);
-ser_varint!(ser_chicken_sound_variant, ChickenSoundVariant);
-ser_varint!(ser_zombie_nautilus_variant, ZombieNautilusVariant);
-ser_varint!(ser_painting_variant, PaintingVariant);
 ser_varint!(ser_copper_golem_state, CopperGolemState);
 ser_varint!(ser_weathering_copper_state, WeatheringCopperState);
+
+// Holder/registry reference serializers resolve protocol IDs at the network edge.
+ser_write!(ser_cat_variant, CatVariant);
+ser_write!(ser_cat_sound_variant, CatSoundVariant);
+ser_write!(ser_cow_variant, CowVariant);
+ser_write!(ser_cow_sound_variant, CowSoundVariant);
+ser_write!(ser_wolf_variant, WolfVariant);
+ser_write!(ser_wolf_sound_variant, WolfSoundVariant);
+ser_write!(ser_frog_variant, FrogVariant);
+ser_write!(ser_pig_variant, PigVariant);
+ser_write!(ser_pig_sound_variant, PigSoundVariant);
+ser_write!(ser_chicken_variant, ChickenVariant);
+ser_write!(ser_chicken_sound_variant, ChickenSoundVariant);
+ser_write!(ser_zombie_nautilus_variant, ZombieNautilusVariant);
+ser_write!(ser_painting_variant, PaintingVariant);
 
 // Enum as VarInt serializers
 ser_enum_varint!(ser_direction, Direction);
@@ -335,8 +337,9 @@ pub fn register_vanilla_entity_data_serializers(registry: &mut EntityDataSeriali
 
 #[cfg(test)]
 mod tests {
-    use crate::RegistryExt;
     use crate::entity_data::ResolvableProfile;
+    use crate::test_support::init_test_registry;
+    use crate::{REGISTRY, RegistryExt, RegistryReference, vanilla_pig_variants};
 
     use super::*;
 
@@ -436,6 +439,37 @@ mod tests {
         let mut buf = Vec::new();
         writer(&EntityData::Boolean(true), &mut buf).unwrap();
         assert_eq!(buf, vec![1]);
+    }
+
+    #[test]
+    fn holder_serializer_resolves_the_registered_variant_id() {
+        init_test_registry();
+
+        let mut serializers = EntityDataSerializerRegistry::new();
+        register_vanilla_entity_data_serializers(&mut serializers);
+        let serializer_id = serializers
+            .id_from_key(&id!("pig_variant"))
+            .expect("pig variant serializer must be registered");
+        let writer = serializers
+            .get_writer(serializer_id as i32)
+            .expect("pig variant serializer must have a writer");
+
+        let mut encoded = Vec::new();
+        writer(
+            &EntityData::PigVariant(RegistryReference::new(&vanilla_pig_variants::WARM)),
+            &mut encoded,
+        )
+        .expect("pig variant reference should encode");
+
+        let variant_id = REGISTRY
+            .pig_variants
+            .id_from_key(&vanilla_pig_variants::WARM.key)
+            .expect("warm pig variant must be registered");
+        let mut expected = Vec::new();
+        VarInt(variant_id as i32)
+            .write(&mut expected)
+            .expect("pig variant id should encode");
+        assert_eq!(encoded, expected);
     }
 
     #[test]

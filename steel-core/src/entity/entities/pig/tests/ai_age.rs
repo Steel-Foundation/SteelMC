@@ -121,11 +121,11 @@ fn pig_age_updates_synchronized_baby_flag_on_boundary() {
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
     pig.set_age(-1);
-    assert!(pig.is_baby());
+    assert!(AgeableMob::is_baby(&pig));
     assert!(*pig.entity_data.lock().ageable_mob().baby.get());
 
     pig.set_age(0);
-    assert!(!pig.is_baby());
+    assert!(!AgeableMob::is_baby(&pig));
     assert!(!*pig.entity_data.lock().ageable_mob().baby.get());
 }
 

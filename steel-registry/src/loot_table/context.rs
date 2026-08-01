@@ -129,7 +129,10 @@ impl NumberProvider {
 
     /// Get the value as an integer.
     pub fn get_int(&self, rng: &mut impl rand::Rng) -> i32 {
-        self.get_simple(rng).floor() as i32
+        match self {
+            Self::Uniform { min, max } => uniform_int(rng, math_round(*min), math_round(*max)),
+            other => math_round(other.get_simple(rng)),
+        }
     }
 
     /// Get the value as an integer with context.
@@ -138,7 +141,25 @@ impl NumberProvider {
         rng: &mut R,
         ctx: Option<&LootContextRef<'_>>,
     ) -> i32 {
-        self.get(rng, ctx).floor() as i32
+        match self {
+            Self::Uniform { min, max } => uniform_int(rng, math_round(*min), math_round(*max)),
+            other => math_round(other.get(rng, ctx)),
+        }
+    }
+}
+
+/// `java.lang.Math.round` semantics for a float.
+fn math_round(value: f32) -> i32 {
+    (value + 0.5).floor() as i32
+}
+
+/// Vanilla `Mth.nextInt(random, min, max)` is inclusive and clamps to `min`
+/// when `min >= max`.
+fn uniform_int(rng: &mut impl rand::Rng, min: i32, max: i32) -> i32 {
+    if min >= max {
+        min
+    } else {
+        rng.random_range(min..=max)
     }
 }
 
