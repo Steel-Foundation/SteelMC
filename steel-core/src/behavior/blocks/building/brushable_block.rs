@@ -88,6 +88,8 @@ impl BlockBehavior for BrushableBlock {
         };
         let mutation = brushable.check_reset(world);
         mutation.apply(world, pos);
+
+        // TODO: Fall without dropping once Steel implements vanilla falling-block entities.
     }
 
     fn new_block_entity(
