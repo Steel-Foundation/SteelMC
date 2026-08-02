@@ -146,7 +146,7 @@ fn pig_death_tick_removes_after_vanilla_death_duration() {
     pig.set_health(0.0);
 
     for _ in 0..DEATH_DURATION {
-        pig.tick();
+        LivingEntity::tick_living_entity(&pig);
     }
 
     assert_eq!(pig.removal_reason(), Some(RemovalReason::Killed));

@@ -719,7 +719,7 @@ fn equipping_player_target_uses_inventory_equipment_storage() {
     );
     LivingEntity::detect_equipment_updates(target.as_ref());
     assert_eq!(
-        Entity::drain_dirty_equipment(target.as_ref()),
+        LivingEntity::drain_dirty_equipment(target.as_ref()),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::Head,
             item_stack: helmet,
@@ -762,14 +762,14 @@ fn living_tick_detects_raw_inventory_equipment_mutation() {
         );
     }
     assert_eq!(
-        Entity::drain_dirty_equipment(player.as_ref()),
+        LivingEntity::drain_dirty_equipment(player.as_ref()),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::Head,
             item_stack: ItemStack::new(&vanilla_items::DIAMOND_HELMET),
         }]
     );
     LivingEntity::detect_equipment_updates(player.as_ref());
-    assert!(Entity::drain_dirty_equipment(player.as_ref()).is_empty());
+    assert!(LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty());
 }
 
 #[test]
@@ -791,7 +791,7 @@ fn death_respawn_redetects_unchanged_kept_equipment() {
 
     LivingEntity::detect_equipment_updates(player.as_ref());
     assert_eq!(
-        Entity::drain_dirty_equipment(player.as_ref()),
+        LivingEntity::drain_dirty_equipment(player.as_ref()),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::Head,
             item_stack: helmet.clone(),
@@ -831,7 +831,7 @@ fn death_respawn_redetects_unchanged_kept_equipment() {
         );
     }
     assert_eq!(
-        Entity::drain_dirty_equipment(player.as_ref()),
+        LivingEntity::drain_dirty_equipment(player.as_ref()),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::Head,
             item_stack: helmet,
@@ -839,7 +839,7 @@ fn death_respawn_redetects_unchanged_kept_equipment() {
     );
 
     LivingEntity::detect_equipment_updates(player.as_ref());
-    assert!(Entity::drain_dirty_equipment(player.as_ref()).is_empty());
+    assert!(LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty());
 }
 
 #[test]
@@ -860,7 +860,7 @@ fn death_respawn_discards_stale_pending_equipment_change() {
     LivingEntity::detect_equipment_updates(player.as_ref());
 
     assert!(
-        Entity::drain_dirty_equipment(player.as_ref()).is_empty(),
+        LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty(),
         "respawn must not emit equipment queued by the removed living entity"
     );
 }
@@ -877,7 +877,7 @@ fn equipment_detection_tracks_selected_main_hand() {
 
     LivingEntity::detect_equipment_updates(player.as_ref());
     assert_eq!(
-        Entity::drain_dirty_equipment(player.as_ref()),
+        LivingEntity::drain_dirty_equipment(player.as_ref()),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::MainHand,
             item_stack: ItemStack::new(&vanilla_items::STICK),
@@ -887,7 +887,7 @@ fn equipment_detection_tracks_selected_main_hand() {
     player.inventory.lock().set_selected_slot(1);
     LivingEntity::detect_equipment_updates(player.as_ref());
     assert_eq!(
-        Entity::drain_dirty_equipment(player.as_ref()),
+        LivingEntity::drain_dirty_equipment(player.as_ref()),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::MainHand,
             item_stack: ItemStack::new(&vanilla_items::OAK_LOG),
@@ -905,13 +905,13 @@ fn equipment_detection_suppresses_exact_hand_swap_packet() {
         inventory.set_offhand_item(ItemStack::new(&vanilla_items::SHIELD));
     }
     LivingEntity::detect_equipment_updates(player.as_ref());
-    let initial = Entity::drain_dirty_equipment(player.as_ref());
+    let initial = LivingEntity::drain_dirty_equipment(player.as_ref());
     assert_eq!(initial.len(), 2);
 
     assert!(player.inventory.lock().swap_hands());
     LivingEntity::detect_equipment_updates(player.as_ref());
 
-    assert!(Entity::drain_dirty_equipment(player.as_ref()).is_empty());
+    assert!(LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty());
 }
 
 #[test]
@@ -931,7 +931,7 @@ fn equipment_detection_coalesces_before_tracker_drain() {
     LivingEntity::detect_equipment_updates(player.as_ref());
 
     assert_eq!(
-        Entity::drain_dirty_equipment(player.as_ref()),
+        LivingEntity::drain_dirty_equipment(player.as_ref()),
         vec![EquipmentSlotItem {
             slot: EquipmentSlot::Head,
             item_stack: ItemStack::new(&vanilla_items::DIAMOND_HELMET),

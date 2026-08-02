@@ -673,12 +673,6 @@ impl LightCacheLayout {
         })
     }
 
-    /// Returns the section/nibble slot for the section containing a block.
-    #[must_use]
-    pub fn section_slot_for_block(self, block_pos: BlockPos) -> Option<usize> {
-        self.section_slot(SectionPos::from_block_pos(block_pos))
-    }
-
     /// Converts a section/nibble slot back to its cached section position.
     #[must_use]
     pub const fn section_pos_for_slot(self, section_slot: usize) -> Option<SectionPos> {
