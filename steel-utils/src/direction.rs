@@ -319,7 +319,7 @@ impl Direction {
 
     /// Returns whether this direction is facing the given yaw angle
     #[must_use]
-    pub fn is_facing_angle(self, yaw: f32) -> bool {
+    pub fn is_facing_yaw(self, yaw: f32) -> bool {
         let radians = yaw.to_radians();
         let dx = -radians.sin();
         let dz = radians.cos();

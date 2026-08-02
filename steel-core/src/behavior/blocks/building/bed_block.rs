@@ -108,7 +108,7 @@ impl BedBlock {
         yaw: f32,
     ) -> Option<DVec3> {
         let right = forward_dir.rotate_y_clockwise();
-        let side = if right.is_facing_angle(yaw) {
+        let side = if right.is_facing_yaw(yaw) {
             right.opposite()
         } else {
             right
