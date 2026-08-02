@@ -858,7 +858,11 @@ impl LivingEntityBase {
             return false;
         }
 
-        self.state.lock().active_item_use = Some(ActiveItemUseState::new(hand, item, duration));
+        let mut state = self.state.lock();
+        if state.active_item_use.is_some() {
+            return false;
+        }
+        state.active_item_use = Some(ActiveItemUseState::new(hand, item, duration));
         true
     }
 

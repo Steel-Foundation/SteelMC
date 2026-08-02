@@ -611,3 +611,28 @@ fn jumping_and_jump_delay_are_shared_living_state() {
     base.tick_no_jump_delay();
     assert_eq!(base.no_jump_delay(), 0);
 }
+
+#[test]
+fn starting_item_use_does_not_replace_active_use() {
+    init_test_registry();
+    let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
+
+    assert!(base.start_using_item(
+        InteractionHand::MainHand,
+        ItemStack::new(&vanilla_items::BRUSH),
+        200,
+    ));
+    assert!(!base.start_using_item(
+        InteractionHand::OffHand,
+        ItemStack::new(&vanilla_items::BOW),
+        72_000,
+    ));
+
+    let Some(active) = base.active_item_use() else {
+        panic!("first active item use should remain present");
+    };
+    assert_eq!(active.hand(), InteractionHand::MainHand);
+    assert!(active.item().is(&vanilla_items::BRUSH));
+    assert_eq!(active.duration(), 200);
+    assert_eq!(active.remaining_ticks(), 200);
+}
