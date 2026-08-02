@@ -39,35 +39,13 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("setblock").then(
         argument("pos", SteelArgumentType::block_pos()).then(
             argument("block", SteelArgumentType::block_state())
-                .executes(set_block_replace)
-                .then(literal("destroy").executes(set_block_destroy))
-                .then(literal("keep").executes(set_block_keep))
-                .then(literal("replace").executes(set_block_replace))
-                .then(literal("strict").executes(set_block_strict)),
+                .executes(|c| set_block(c, SetBlockMode::Replace))
+                .then(literal("destroy").executes(|c| set_block(c, SetBlockMode::Destroy)))
+                .then(literal("keep").executes(|c| set_block(c, SetBlockMode::Keep)))
+                .then(literal("replace").executes(|c| set_block(c, SetBlockMode::Replace)))
+                .then(literal("strict").executes(|c| set_block(c, SetBlockMode::Strict))),
         ),
     )
-}
-
-fn set_block_destroy(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    set_block(context, SetBlockMode::Destroy)
-}
-
-fn set_block_keep(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    set_block(context, SetBlockMode::Keep)
-}
-
-fn set_block_replace(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    set_block(context, SetBlockMode::Replace)
-}
-
-fn set_block_strict(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    set_block(context, SetBlockMode::Strict)
 }
 
 /// Set a block in the desired position with a mode (destroy, keep, replace, strict), and return 1 if the block is placed, 0 else.
