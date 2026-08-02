@@ -9,8 +9,8 @@ use crate::{
         blocks::{BedBlock, RespawnAnchorBlock},
     },
     chunk::{
-        chunk_access::ChunkStatus,
         chunk_request::{ChunkRequest, ChunkTicketKind},
+        status::ChunkStatus,
     },
     player::{Player, player_data::PersistentPlayerData},
 };
