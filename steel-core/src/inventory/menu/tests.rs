@@ -14,7 +14,7 @@ use super::{MenuBuilder, kinds::BasicKind};
 use crate::{
     behavior::init_behaviors,
     block_entity::init_block_entities,
-    chunk::chunk_access::ChunkStatus,
+    chunk::{Chunk, status::ChunkStatus},
     entity::{Entity as _, entities::ItemEntity},
     inventory::{
         click::{Click, DragKind, QuickCraft, SwapTarget},
@@ -191,7 +191,7 @@ fn draining_a_block_entity_slot_marks_its_chunk_dirty() {
     assert!(
         holder
             .try_chunk(ChunkStatus::Full)
-            .is_some_and(|chunk| chunk.is_dirty())
+            .is_some_and(Chunk::is_dirty)
     );
 }
 

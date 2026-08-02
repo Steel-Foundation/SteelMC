@@ -1,5 +1,8 @@
-use crate::chunk::chunk_access::ChunkAccess;
-use crate::worldgen::generator::{ChunkGenerator, xoroshiro_worldgen_region_random};
+use crate::chunk::Chunk;
+use crate::worldgen::generator::{
+    CarversPhase, ChunkGenerator, GenerationChunk, NoisePhase, SurfacePhase,
+    xoroshiro_worldgen_region_random,
+};
 use crate::worldgen::region::WorldGenRegion;
 use glam::IVec3;
 use steel_registry::{biome::BiomeRef, vanilla_biomes};
@@ -32,15 +35,25 @@ impl ChunkGenerator for EmptyChunkGenerator {
         &vanilla_biomes::PLAINS
     }
 
-    fn create_structures(&self, _chunk: &ChunkAccess) {}
+    fn create_structures(&self, _chunk: &Chunk) {}
 
-    fn create_biomes(&self, _chunk: &ChunkAccess) {}
+    fn create_biomes(&self, _chunk: &Chunk) {}
 
-    fn fill_from_noise(&self, _chunk: &ChunkAccess, _beardifier: Option<&Beardifier>) {}
+    fn fill_from_noise(
+        &self,
+        _chunk: GenerationChunk<'_, NoisePhase>,
+        _beardifier: Option<&Beardifier>,
+    ) {
+    }
 
-    fn build_surface(&self, _chunk: &ChunkAccess, _neighbor_biomes: &dyn Fn(IVec3) -> u16) {}
+    fn build_surface(
+        &self,
+        _chunk: GenerationChunk<'_, SurfacePhase>,
+        _neighbor_biomes: &dyn Fn(IVec3) -> u16,
+    ) {
+    }
 
-    fn apply_carvers(&self, _chunk: &ChunkAccess) {}
+    fn apply_carvers(&self, _chunk: GenerationChunk<'_, CarversPhase>) {}
 
     fn create_worldgen_region_random(&self, world_seed: i64, center: ChunkPos) -> RandomSource {
         xoroshiro_worldgen_region_random(world_seed, center)
