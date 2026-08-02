@@ -326,7 +326,7 @@ impl Player {
     }
 
     fn tick_active_item_use(&self) {
-        let Some(active) = self.living_base.decrement_active_item_use() else {
+        let Some(active) = self.living_base.active_item_use() else {
             return;
         };
         let hand = active.hand();
@@ -338,7 +338,15 @@ impl Player {
         let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
         behavior.on_use_tick(&world, self, &mut item, active.remaining_ticks());
 
-        if active.remaining_ticks() <= 0 && self.active_item_use_hand() == Some(hand) {
+        if self.active_item_use_hand() != Some(hand) {
+            self.inventory.lock().set_item_in_hand(hand, item);
+            return;
+        }
+        let Some(active) = self.living_base.decrement_active_item_use() else {
+            self.inventory.lock().set_item_in_hand(hand, item);
+            return;
+        };
+        if active.remaining_ticks() <= 0 {
             item = behavior.finish_using(&mut item, &world, self);
             self.living_base.stop_using_item();
         }
