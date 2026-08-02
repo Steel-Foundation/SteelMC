@@ -11,7 +11,7 @@ use steel_registry::vanilla_block_entity_types;
 use steel_utils::Downcast as _;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::{BlockBehavior, BlockEntityCreation, BlockPlaceContext};
+use crate::behavior::{BlockBehavior, BlockEntityCreation, BlockPlaceContext, BrushableData};
 use crate::block_entity::BLOCK_ENTITIES;
 use crate::block_entity::entities::BrushableBlockEntity;
 use crate::world::{ScheduledTickAccess, World};
@@ -108,14 +108,11 @@ impl BlockBehavior for BrushableBlock {
         old_state.get_block() == new_state.get_block()
     }
 
-    fn brushable_data(
-        &self,
-        _state: BlockStateId,
-    ) -> Option<(BlockRef, SoundEventRef, SoundEventRef)> {
-        Some((
-            self.turns_into,
-            self.brush_sound,
-            self.brush_completed_sound,
-        ))
+    fn brushable_data(&self, _state: BlockStateId) -> Option<BrushableData> {
+        Some(BrushableData {
+            turns_into: self.turns_into,
+            brush_sound: self.brush_sound,
+            brush_completed_sound: self.brush_completed_sound,
+        })
     }
 }

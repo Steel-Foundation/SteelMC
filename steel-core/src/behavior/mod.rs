@@ -65,7 +65,7 @@ pub mod weathering;
 pub(crate) use block::pickup_waterlogged_block;
 pub use block::{
     BlockBehavior, BlockBehaviorRegistry, BlockCollisionBoxes, BlockCollisionContext,
-    BlockEntityCreation, BlockLootContext, DefaultBlockBehavior, EntityFallDamage,
+    BlockEntityCreation, BlockLootContext, BrushableData, DefaultBlockBehavior, EntityFallDamage,
     EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, RailBehavior,
 };
 use block_behaviors::register_block_behaviors;

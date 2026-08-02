@@ -257,8 +257,8 @@ impl BrushableBlockEntity {
         let turns_into = BLOCK_BEHAVIORS
             .get_behavior_for_state(self.get_block_state())
             .and_then(|behavior| behavior.brushable_data(self.get_block_state()))
-            .map_or(vanilla_blocks::AIR.default_state(), |(turns_into, _, _)| {
-                turns_into.default_state()
+            .map_or(vanilla_blocks::AIR.default_state(), |data| {
+                data.turns_into.default_state()
             });
         mutation.set_block = Some(turns_into);
         mutation

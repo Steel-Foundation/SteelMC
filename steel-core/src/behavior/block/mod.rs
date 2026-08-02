@@ -60,6 +60,17 @@ pub use context::{
     RailBehavior,
 };
 
+/// Data exposed by blocks that support vanilla archaeology brushing.
+#[derive(Clone, Copy, Debug)]
+pub struct BrushableData {
+    /// Block produced after brushing completes.
+    pub turns_into: BlockRef,
+    /// Sound played during a successful brush stroke.
+    pub brush_sound: SoundEventRef,
+    /// Sound played when brushing completes.
+    pub brush_completed_sound: SoundEventRef,
+}
+
 mod waterlogging;
 
 #[cfg(test)]
@@ -1013,10 +1024,7 @@ pub trait BlockBehavior: Send + Sync {
     ///
     /// Vanilla keeps this on `BrushableBlock`; exposing it through block behavior lets
     /// `BrushItem` stay generic without matching concrete vanilla blocks
-    fn brushable_data(
-        &self,
-        _state: BlockStateId,
-    ) -> Option<(BlockRef, SoundEventRef, SoundEventRef)> {
+    fn brushable_data(&self, _state: BlockStateId) -> Option<BrushableData> {
         None
     }
 

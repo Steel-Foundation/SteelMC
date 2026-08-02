@@ -72,10 +72,9 @@ impl ItemBehavior for BrushItem {
         let sound = BLOCK_BEHAVIORS
             .get_behavior_for_state(state)
             .and_then(|behavior| behavior.brushable_data(state))
-            .map_or(
-                &sound_events::ITEM_BRUSH_BRUSHING_GENERIC,
-                |(_, sound, _)| sound,
-            );
+            .map_or(&sound_events::ITEM_BRUSH_BRUSHING_GENERIC, |data| {
+                data.brush_sound
+            });
         world.play_block_sound(sound, pos, 1.0, 1.0, Some(player.id()));
 
         let Some(block_entity) = world.get_block_entity(pos) else {
