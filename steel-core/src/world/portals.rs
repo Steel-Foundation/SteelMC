@@ -382,9 +382,7 @@ impl World {
     /// Mirrors vanilla `TheEndGatewayBlockEntity.isChunkEmpty`.
     pub(crate) fn is_end_gateway_chunk_empty(&self, chunk_pos: ChunkPos) -> Option<bool> {
         self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
-            chunk
-                .as_full()
-                .is_some_and(|chunk| chunk.highest_filled_section_index().is_none())
+            chunk.highest_filled_section_index().is_none()
         })
     }
 
@@ -395,7 +393,6 @@ impl World {
     ) -> Option<BlockPos> {
         self.chunk_map
             .with_full_chunk(chunk_pos, |chunk| {
-                let chunk = chunk.as_full()?;
                 let min_x = chunk_pos.0.x * 16;
                 let min_z = chunk_pos.0.y * 16;
                 let max_x = min_x + 15;

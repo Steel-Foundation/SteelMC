@@ -114,7 +114,7 @@ mod tests {
             brigadier::{CommandDispatcher, NodeId},
             execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
         },
-        entity::init_test_entities,
+        test_support::init_test_core,
     };
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn summon_graph_uses_typed_entity_and_deferred_position_arguments() {
-        init_test_entities();
+        init_test_core();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

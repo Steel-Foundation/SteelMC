@@ -246,20 +246,6 @@ impl PlayerDataStorage {
             }
         }
     }
-
-    /// Saves multiple players' data.
-    pub async fn save_all(&self, players: &[Arc<Player>]) -> io::Result<usize> {
-        let mut saved = 0;
-        for player in players {
-            match self.save(player).await {
-                Ok(()) => saved += 1,
-                Err(e) => {
-                    log::error!("Failed to save player {}: {e}", player.gameprofile.id);
-                }
-            }
-        }
-        Ok(saved)
-    }
 }
 
 impl FilePlayerDataStorage {
