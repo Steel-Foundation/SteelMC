@@ -99,7 +99,6 @@ impl FarmlandBlock {
             && (context.entity.is_player() || mob_griefing)
             && context.entity.bounding_box_width_squared_height() > TRAMPLE_VOLUME_THRESHOLD
     }
-
 }
 
 impl BlockBehavior for FarmlandBlock {

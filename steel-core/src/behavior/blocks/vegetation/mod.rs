@@ -162,8 +162,8 @@ use steel_registry::blocks::shapes::{self, SupportType, is_block_local_face_stur
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
 use steel_registry::fluid::{FluidState, FluidStateExt as _};
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::{vanilla_blocks, vanilla_game_events};
 use steel_registry::vanilla_fluids;
+use steel_registry::{vanilla_blocks, vanilla_game_events};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::push_entities_up;
