@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use steel_protocol::packets::game::CSystemChat;
 use steel_registry::vanilla_game_rules::{
     ADVANCE_TIME, ADVANCE_WEATHER, PLAYERS_SLEEPING_PERCENTAGE,
@@ -8,7 +6,7 @@ use steel_utils::Identifier;
 use text_components::{TextComponent, translation::TranslatedMessage};
 
 use super::{World, sleep_status::SleepStatus};
-use crate::{entity::LivingEntity as _, player::Player};
+use crate::entity::LivingEntity as _;
 
 const WAKE_UP_FROM_SLEEP_TIME_MARKER: Identifier = Identifier::vanilla_static("wake_up_from_sleep");
 
@@ -23,23 +21,20 @@ impl World {
         self.get_game_rule(&PLAYERS_SLEEPING_PERCENTAGE)
     }
 
-    fn sleeping_players(&self) -> Vec<Arc<Player>> {
-        let mut players = Vec::new();
-        self.players.iter_players(|_, player| {
-            players.push(Arc::clone(player));
-            true
-        });
-        players
-    }
-
     /// Updates vanilla sleeping player counts and broadcasts the sleep status overlay.
     pub fn update_sleeping_player_list(&self) {
-        let players = self.sleeping_players();
-        if players.is_empty() {
+        if self.players.is_empty() {
             return;
         }
+
+        let mut updated_status = SleepStatus::default();
+        self.players.iter_players(|_, player| {
+            updated_status.add_player(player);
+            true
+        });
+
         let mut sleep_status = self.sleep_status.lock();
-        let changed = sleep_status.update(players.iter().map(Arc::as_ref));
+        let changed = sleep_status.update(updated_status);
         if changed {
             self.announce_sleep_status(*sleep_status);
         }
@@ -121,11 +116,12 @@ impl World {
 
     fn wake_up_all_players(&self) {
         self.sleep_status.lock().remove_all_sleepers();
-        for player in self.sleeping_players() {
+        self.players.iter_players(|_, player| {
             if player.is_sleeping() {
                 player.stop_sleep_in_bed(false, false);
             }
-        }
+            true
+        });
     }
 
     fn reset_weather_cycle(&self) {

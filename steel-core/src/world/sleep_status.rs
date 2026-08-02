@@ -31,21 +31,20 @@ impl SleepStatus {
         self.sleeping_players
     }
 
-    pub(super) fn update<'a>(&mut self, players: impl IntoIterator<Item = &'a Player>) -> bool {
+    pub(super) fn add_player(&mut self, player: &Player) {
+        if player.is_spectator() {
+            return;
+        }
+        self.active_players += 1;
+        if player.is_sleeping() {
+            self.sleeping_players += 1;
+        }
+    }
+
+    pub(super) fn update(&mut self, updated: Self) -> bool {
         let old_active_players = self.active_players;
         let old_sleeping_players = self.sleeping_players;
-        self.active_players = 0;
-        self.sleeping_players = 0;
-
-        for player in players {
-            if player.is_spectator() {
-                continue;
-            }
-            self.active_players += 1;
-            if player.is_sleeping() {
-                self.sleeping_players += 1;
-            }
-        }
+        *self = updated;
 
         (old_sleeping_players > 0 || self.sleeping_players > 0)
             && (old_active_players != self.active_players
