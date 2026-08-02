@@ -141,32 +141,20 @@ impl BedBlock {
         let above_offsets = Self::bed_above_standup_offsets(forward_dir);
 
         for check_dangerous in [true, false] {
-            if let Some(pos) = Self::find_standup_position_at_offset(
-                world,
-                entity,
-                block_pos,
-                &offsets,
-                check_dangerous,
-            ) {
-                return Some(pos);
-            }
-            if let Some(pos) = Self::find_standup_position_at_offset(
-                world,
-                entity,
-                below,
-                &offsets,
-                check_dangerous,
-            ) {
-                return Some(pos);
-            }
-            if let Some(pos) = Self::find_standup_position_at_offset(
-                world,
-                entity,
-                block_pos,
-                &above_offsets,
-                check_dangerous,
-            ) {
-                return Some(pos);
+            for (pos, offsets) in [
+                (block_pos, offsets.as_slice()),
+                (below, offsets.as_slice()),
+                (block_pos, above_offsets.as_slice()),
+            ] {
+                if let Some(pos) = Self::find_standup_position_at_offset(
+                    world,
+                    entity,
+                    pos,
+                    offsets,
+                    check_dangerous,
+                ) {
+                    return Some(pos);
+                }
             }
         }
 
