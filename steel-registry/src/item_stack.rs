@@ -1,15 +1,20 @@
 //! Item stack implementation.
 
-use std::io::{Cursor, Result, Write};
+use std::{
+    borrow::Cow,
+    io::{Cursor, Result, Write},
+};
 
 use rand::RngExt;
 
 use steel_utils::{
     DowncastType, Identifier,
     codec::VarInt,
+    java,
     random::{Random, xoroshiro::Xoroshiro},
     serial::{ReadFrom, WriteTo},
 };
+use text_components::TextComponent;
 
 use crate::{
     REGISTRY, RegistryEntry, RegistryExt,
@@ -19,17 +24,18 @@ use crate::{
         DataComponentPatch, DataComponentType,
         vanilla_components::{
             ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, BUNDLE_CONTENTS, CHARGED_PROJECTILES,
-            CONTAINER, CUSTOM_DATA, DAMAGE, DAMAGE_RESISTANT, DAMAGE_TYPE, ENCHANTABLE,
-            ENCHANTMENTS, EQUIPPABLE, Equippable, ItemAttributeModifiers, ItemEnchantments,
-            MAX_DAMAGE, MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE, OMINOUS_BOTTLE_AMPLIFIER,
-            OminousBottleAmplifier, PIERCING_WEAPON, PiercingWeapon, REPAIRABLE, TOOL, Tool,
-            UNBREAKABLE, WEAPON, Weapon,
+            CONTAINER, CUSTOM_DATA, CUSTOM_NAME, DAMAGE, DAMAGE_RESISTANT, DAMAGE_TYPE,
+            ENCHANTABLE, ENCHANTMENTS, EQUIPPABLE, Equippable, ITEM_NAME, ItemAttributeModifiers,
+            ItemEnchantments, MAX_DAMAGE, MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE,
+            OMINOUS_BOTTLE_AMPLIFIER, OminousBottleAmplifier, PIERCING_WEAPON, PiercingWeapon,
+            REPAIRABLE, STORED_ENCHANTMENTS, TOOL, Tool, UNBREAKABLE, WEAPON, WRITTEN_BOOK_CONTENT,
+            Weapon,
         },
     },
     enchantment_effect::EnchantmentEffectComponent,
     equipment::EquipmentSlot,
     item_stack_template::ItemStackTemplate,
-    items::ItemRef,
+    items::{Item, ItemRef},
     vanilla_items,
 };
 
@@ -553,6 +559,24 @@ impl ItemStack {
         self.get(ENCHANTMENTS)
     }
 
+    /// Vanilla `EnchantmentHelper.getEnchantmentsForCrafting`: enchanted books
+    /// expose `STORED_ENCHANTMENTS` to crafting operations, while every other
+    /// item exposes `ENCHANTMENTS`.
+    #[must_use]
+    pub fn get_enchantments_for_crafting(&self) -> Option<&ItemEnchantments> {
+        self.get(self.enchantment_component())
+    }
+
+    /// Vanilla `EnchantmentHelper.getComponentType`.
+    #[must_use]
+    fn enchantment_component(&self) -> DataComponentType<ItemEnchantments> {
+        if self.is(&vanilla_items::ENCHANTED_BOOK) {
+            STORED_ENCHANTMENTS
+        } else {
+            ENCHANTMENTS
+        }
+    }
+
     /// Mirrors Vanilla's component-based `ItemStack.isEnchantable` check.
     #[must_use]
     pub fn is_enchantable(&self) -> bool {
@@ -760,7 +784,7 @@ impl ItemStack {
 
     pub fn set_enchantments(&mut self, enchantments: &[(Identifier, u32)], add: bool) {
         let mut current = self
-            .get(ENCHANTMENTS)
+            .get(self.enchantment_component())
             .cloned()
             .unwrap_or_else(ItemEnchantments::empty);
 
@@ -773,17 +797,17 @@ impl ItemStack {
             }
         }
 
-        self.set(ENCHANTMENTS, current);
+        self.set(self.enchantment_component(), current);
     }
 
     /// Vanilla `ItemStack.enchant` → `Mutable.upgrade`: keeps the higher of existing vs new level.
     pub fn upgrade_enchantment(&mut self, enchantment: Identifier, level: u32) {
         let mut current = self
-            .get(ENCHANTMENTS)
+            .get(self.enchantment_component())
             .cloned()
             .unwrap_or_else(ItemEnchantments::empty);
         current.upgrade(enchantment, level);
-        self.set(ENCHANTMENTS, current);
+        self.set(self.enchantment_component(), current);
     }
 
     /// Changes the item type entirely.
@@ -987,7 +1011,34 @@ impl ItemStack {
 
         true
     }
+
+    /// Vanilla `ItemStack.getCustomName`: an explicit custom name, or a
+    /// nonblank written-book title.
+    #[must_use]
+    pub fn custom_name(&self) -> Option<Cow<'_, TextComponent>> {
+        if let Some(name) = self.get(CUSTOM_NAME) {
+            return Some(Cow::Borrowed(name));
+        }
+
+        let title = self.get(WRITTEN_BOOK_CONTENT)?.title().raw();
+        (!java::is_blank(title)).then(|| Cow::Owned(TextComponent::plain(title.to_owned())))
+    }
+
+    /// Returns the custom name if set, otherwise the effective `ITEM_NAME`
+    /// component.
+    ///
+    /// This does not apply item-class name overrides such as potion contents;
+    /// callers with access to item behaviors should use their behavior-aware
+    /// hover-name API.
+    #[must_use]
+    pub fn custom_or_component_name(&self) -> Cow<'_, TextComponent> {
+        self.custom_name()
+            .or_else(|| self.get(ITEM_NAME).map(Cow::Borrowed))
+            .unwrap_or(Cow::Borrowed(&EMPTY_NAME))
+    }
 }
+
+static EMPTY_NAME: TextComponent = TextComponent::new();
 
 fn validate_contained_item_sizes<'a>(
     items: impl IntoIterator<Item = &'a ItemStackTemplate>,
@@ -1002,6 +1053,24 @@ fn validate_contained_item_sizes<'a>(
         }
     }
     Ok(())
+}
+
+impl From<&ItemStack> for ItemStack {
+    fn from(stack: &Self) -> Self {
+        stack.to_owned()
+    }
+}
+
+impl From<ItemRef> for ItemStack {
+    fn from(item: ItemRef) -> Self {
+        Self::new(item)
+    }
+}
+
+impl From<&'static std::sync::LazyLock<Item>> for ItemStack {
+    fn from(item: &'static std::sync::LazyLock<Item>) -> Self {
+        Self::new(item)
+    }
 }
 
 impl std::fmt::Display for ItemStack {
@@ -1207,6 +1276,96 @@ fn decode_persistent_count(tag: Option<BorrowedNbtTag<'_, '_>>) -> Option<i32> {
         None => 1,
     };
     (1..=99).contains(&count).then_some(count)
+}
+
+#[cfg(test)]
+mod enchantment_tests {
+    use super::ItemStack;
+    use crate::{test_support::init_test_registry, vanilla_enchantments, vanilla_items};
+
+    #[test]
+    fn stored_book_enchantments_are_not_active_item_enchantments() {
+        init_test_registry();
+        let mut book = ItemStack::new(&vanilla_items::ENCHANTED_BOOK);
+        book.upgrade_enchantment(vanilla_enchantments::SHARPNESS.key.clone(), 3);
+
+        assert_eq!(
+            book.get_enchantment_level(&vanilla_enchantments::SHARPNESS.key),
+            0
+        );
+        assert_eq!(
+            book.get_enchantments_for_crafting().map(|enchantments| {
+                enchantments.get_level(&vanilla_enchantments::SHARPNESS.key)
+            }),
+            Some(3)
+        );
+    }
+}
+
+#[cfg(test)]
+mod name_tests {
+    use text_components::TextComponent;
+
+    use super::ItemStack;
+    use crate::data_components::components::{Filterable, WrittenBookContent};
+    use crate::data_components::vanilla_components::{CUSTOM_NAME, WRITTEN_BOOK_CONTENT};
+    use crate::test_support::init_test_registry;
+    use crate::vanilla_items;
+
+    fn written_book(raw_title: &str, filtered_title: Option<&str>) -> ItemStack {
+        let content = WrittenBookContent::new(
+            Filterable::new(raw_title.to_owned(), filtered_title.map(ToOwned::to_owned)),
+            "Author".to_owned(),
+            0,
+            Vec::new(),
+            true,
+        );
+        let Ok(content) = content else {
+            panic!("test written-book content should be valid");
+        };
+        let mut book = ItemStack::new(&vanilla_items::WRITTEN_BOOK);
+        book.set(WRITTEN_BOOK_CONTENT, content);
+        book
+    }
+
+    #[test]
+    fn written_book_raw_title_is_its_custom_and_hover_name() {
+        init_test_registry();
+        let book = written_book("Raw title", Some("Filtered title"));
+        let expected = TextComponent::plain("Raw title");
+
+        assert_eq!(book.custom_name().as_deref(), Some(&expected));
+        assert_eq!(book.custom_or_component_name().as_ref(), &expected);
+    }
+
+    #[test]
+    fn explicit_custom_name_takes_precedence_over_written_book_title() {
+        init_test_registry();
+        let mut book = written_book("Book title", None);
+        let explicit = TextComponent::plain("Explicit name");
+        book.set(CUSTOM_NAME, explicit.clone());
+
+        assert_eq!(book.custom_name().as_deref(), Some(&explicit));
+        assert_eq!(book.custom_or_component_name().as_ref(), &explicit);
+    }
+
+    #[test]
+    fn written_book_title_uses_java_blank_rules() {
+        init_test_registry();
+        let blank = written_book("\u{00a0}\u{202f}", None);
+        assert!(blank.custom_name().is_none());
+        let Some(default_name) = blank.get(crate::data_components::vanilla_components::ITEM_NAME)
+        else {
+            panic!("written book should have a default item name");
+        };
+        assert_eq!(blank.custom_or_component_name().as_ref(), default_name);
+
+        let next_line = written_book("\u{0085}", None);
+        assert_eq!(
+            next_line.custom_name().as_deref(),
+            Some(&TextComponent::plain("\u{0085}"))
+        );
+    }
 }
 
 #[cfg(test)]

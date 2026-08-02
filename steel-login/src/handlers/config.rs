@@ -124,7 +124,6 @@ impl JavaTcpClient {
                 Arc::downgrade(&self.server),
                 self.server.config.clone(),
                 entity_id,
-                player_weak,
                 client_info,
             )
         });

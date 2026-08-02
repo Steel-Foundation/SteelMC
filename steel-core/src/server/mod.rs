@@ -9,21 +9,22 @@ pub mod registry_cache;
 mod run_loop;
 /// The tick rate manager for the server.
 pub mod tick_rate_manager;
+mod world_tick_workers;
 /// Domain-aware loaded world map.
 pub mod worlds;
 
 use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::chunk::{
-    chunk_access::ChunkStatus,
     chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
+    status::ChunkStatus,
 };
 use crate::command::brigadier::{StringReader, SuggestionError, Suggestions};
 use crate::command::execution::{
     CommandExecutionContext, CommandResultCallback, CommandSource, ExecutionCommandSource,
     ExecutionStop,
 };
-use crate::command::sender::CommandSender;
+use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::command::storage::DomainCommandStorage;
 use crate::command::{
     COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CommandCompletion, CommandDispatcher,
@@ -51,9 +52,10 @@ use crate::player::player_data::{
     PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle,
 };
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
+use crate::player::player_inventory::MenuRemovalStatus;
 use crate::player::{
-    GameProfile, KnownPlayer, KnownPlayerNameLookup, KnownPlayers, Player, ProfileLookupError,
-    ResetReason, is_valid_player_name, lookup_online_profile, offline_uuid,
+    DomainResidenceToken, GameProfile, KnownPlayer, KnownPlayerNameLookup, KnownPlayers, Player,
+    ProfileLookupError, ResetReason, is_valid_player_name, lookup_online_profile, offline_uuid,
 };
 use crate::portal::{
     PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, end_gateway,
@@ -65,7 +67,7 @@ use crate::server::packet_processor::PacketProcessor;
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
-use crate::world::{PlayerMap, World, WorldConfig, WorldGameTickTimings};
+use crate::world::{PlayerMap, World, WorldConfig};
 use crate::worldgen::WorldGeneratorRegistry;
 use crate::worldgen::registry::GeneratorOutput;
 use crossbeam::queue::SegQueue;
@@ -214,20 +216,6 @@ fn apply_default_spawn(player: &Arc<Player>, world: &Arc<World>, spawn: Prepared
         .update_for_game_mode(world.default_gamemode);
 }
 
-fn world_spawn_transition(world: Arc<World>) -> TeleportTransition {
-    let spawn = local_respawn_data_for_world(&world);
-    TeleportTransition {
-        target_world: world,
-        position: respawn_position(&spawn),
-        rotation: (spawn.yaw, spawn.pitch),
-        velocity: DVec3::ZERO,
-        relatives: RelativeMovement::NONE,
-        portal_cooldown: 0,
-        as_passenger: false,
-        post_transition: TeleportPostTransition::do_nothing(),
-    }
-}
-
 fn is_allowed_to_enter_portal(source_world: &World, target_world: &World) -> bool {
     is_allowed_to_enter_portal_target(
         is_nether_dimension_type(target_world),
@@ -310,15 +298,6 @@ fn local_respawn_data_for_world(world: &World) -> RespawnData {
     RespawnData::of(world.key.clone(), data.spawn_pos(), data.spawn.angle, 0.0)
 }
 
-fn respawn_position(respawn_data: &RespawnData) -> DVec3 {
-    let pos = respawn_data.pos();
-    DVec3::new(
-        f64::from(pos.x()) + 0.5,
-        f64::from(pos.y()),
-        f64::from(pos.z()) + 0.5,
-    )
-}
-
 fn generation_settings_for_world(
     world_entry: &ResolvedWorldConfig,
     generator_output: &GeneratorOutput,
@@ -343,7 +322,19 @@ fn world_config_registries() -> Result<(WorldGeneratorRegistry, WorldStorageRegi
 struct DomainPlayerState {
     world: Arc<World>,
     data: DomainPlayerData,
-    _spawn_chunk_request: ChunkRequestHandle,
+    spawn_chunk_request: ChunkRequestHandle,
+}
+
+struct UnpreparedDomainPlayerState {
+    world: Arc<World>,
+    explicit_target: bool,
+    data: UnpreparedDomainPlayerData,
+}
+
+enum UnpreparedDomainPlayerData {
+    SavedRestored { data: Box<PersistentPlayerData> },
+    SavedWithoutLocation { data: Box<PersistentPlayerData> },
+    FirstVisit,
 }
 
 enum DomainPlayerData {
@@ -352,10 +343,10 @@ enum DomainPlayerData {
     },
     SavedWithoutLocation {
         data: Box<PersistentPlayerData>,
-        default_spawn: PreparedSpawn,
+        spawn: PreparedSpawn,
     },
     FirstVisit {
-        default_spawn: PreparedSpawn,
+        spawn: PreparedSpawn,
     },
 }
 
@@ -363,7 +354,7 @@ struct DomainSwitchRequest {
     player: Arc<Player>,
     target_domain: String,
     target_world: Option<Arc<World>>,
-    restore_saved_location: bool,
+    pending_token: PendingWorldChangeToken,
 }
 
 /// Failure while atomically editing one player's persisted permission state.
@@ -398,9 +389,11 @@ use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQu
 
 mod world_changes;
 
+use jobs::domain_switch::DomainSwitchJob;
 use jobs::teleport::{
     EndGatewayTeleportJob, EndPortalTeleportJob, EnderPearlRestoreJob, NetherPortalTeleportJob,
-    RootVehicleRestoreJob, clear_pending_world_change, portal_entity_still_valid,
+    RootVehicleRestoreJob, WorldSpawnTeleportJob, clear_pending_world_change,
+    portal_entity_still_valid,
 };
 
 /// The main server struct.
@@ -435,8 +428,8 @@ pub struct Server {
     command_requests: CommandRequestQueue,
     /// Decoded serverbound play packets handled during the inter-tick phase.
     packet_processor: PacketProcessor,
-    /// Dedicated worker pool for CPU-heavy chunk packet extraction and encoding.
-    chunk_encoding_pool: ThreadPool,
+    /// Dedicated worker pool for CPU-heavy chunk persistence and packet encoding.
+    chunk_encoding_pool: Arc<ThreadPool>,
     /// Jobs resumed from a known point in the server game tick.
     pub jobs: ServerJobQueue,
     /// Player data storage for saving/loading player state.
@@ -592,7 +585,7 @@ impl Server {
                 .build()
                 .map_err(|e| format!("failed to create generation thread pool: {e}"))?
         });
-        let chunk_encoding_pool = {
+        let chunk_encoding_pool = Arc::new({
             let mut builder =
                 ThreadPoolBuilder::new().thread_name(|i| format!("rayon-chunk-encode-{i}"));
             if let Some(chunk_encoding_threads) =
@@ -603,7 +596,7 @@ impl Server {
             builder
                 .build()
                 .map_err(|e| format!("failed to create chunk encoding thread pool: {e}"))?
-        };
+        });
 
         let player_data_storage = PlayerDataStorage::new(
             resolved_worlds.save_path.clone(),
@@ -658,7 +651,7 @@ impl Server {
                 )
                 .map_err(|e| format!("failed to create generator for {}: {e}", world_entry.key))?;
             let generation_settings = generation_settings_for_world(world_entry, &generator_output);
-            let world = World::new_with_config(
+            let world = World::new_with_config_and_encoding_pool(
                 chunk_runtime.clone(),
                 world_entry.key.clone(),
                 generator_output.dimension_type,
@@ -680,6 +673,7 @@ impl Server {
                     difficulty: world_entry.difficulty,
                 },
                 generation_pool.clone(),
+                Arc::clone(&chunk_encoding_pool),
             )
             .await
             .map_err(|e| format!("failed to create world {}: {e}", world_entry.key))?;
@@ -754,8 +748,10 @@ impl Server {
         sender: CommandSender,
         command: String,
     ) -> Result<(), CommandQueueFull> {
-        self.command_requests
-            .submit(CommandRequest::Execute { sender, command })
+        self.command_requests.submit(CommandRequest::Execute {
+            owner: CommandExecutionOwner::capture(sender, self),
+            command,
+        })
     }
 
     pub(crate) fn submit_command_suggestions(
@@ -765,7 +761,7 @@ impl Server {
         input: String,
     ) -> Result<(), CommandQueueFull> {
         self.command_requests.submit(CommandRequest::Suggestions {
-            player,
+            owner: CommandExecutionOwner::capture(CommandSender::Player(player), self),
             transaction_id,
             input,
         })
@@ -788,6 +784,9 @@ impl Server {
         sender: CommandSender,
         input: &str,
     ) -> Vec<CommandCompletion> {
+        if !CommandExecutionOwner::capture(sender.clone(), self).is_current(self) {
+            return Vec::new();
+        }
         match self.build_command_suggestions(sender, input) {
             Ok(suggestions) => {
                 let range = suggestions.range();

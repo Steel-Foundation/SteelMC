@@ -8,7 +8,7 @@ use super::super::{
     execution::{
         CommandExecutionContext, CommandSuspensionOrder, ExecutionCommandSource, ExecutionStop,
     },
-    sender::CommandSenderKey,
+    sender::{CommandExecutionOwner, CommandSenderKey},
 };
 
 /// Maximum retained command executions polled before new command requests in one tick.
@@ -28,7 +28,7 @@ struct PendingCommandExecution<S>
 where
     S: ExecutionCommandSource,
 {
-    source: CommandSenderKey,
+    owner: CommandExecutionOwner,
     order: CommandSuspensionOrder,
     execution: CommandExecutionContext<S>,
 }
@@ -49,15 +49,16 @@ where
     #[must_use]
     pub(crate) fn push_suspended(
         &mut self,
-        source: CommandSenderKey,
+        owner: CommandExecutionOwner,
         execution: CommandExecutionContext<S>,
     ) -> bool {
         let Some(order) = execution.suspension_order() else {
             return false;
         };
+        let source = owner.key();
         self.retain_barrier(source, order);
         self.queued.push_back(PendingCommandExecution {
-            source,
+            owner,
             order,
             execution,
         });
@@ -70,7 +71,11 @@ where
     }
 
     /// Polls each execution selected for this tick at most once, preserving FIFO order.
-    pub(crate) fn tick(&mut self, limit: usize) -> PendingCommandExecutionStats {
+    pub(crate) fn tick(
+        &mut self,
+        limit: usize,
+        mut owner_is_current: impl FnMut(&CommandExecutionOwner) -> bool,
+    ) -> PendingCommandExecutionStats {
         let scheduled = self.queued.len().min(limit);
         let mut polled = 0;
         let mut finished = 0;
@@ -80,17 +85,23 @@ where
                 break;
             };
             polled += 1;
+            if !owner_is_current(&pending.owner) {
+                pending.execution.cancel();
+                self.release_barrier(pending.owner.key(), pending.order);
+                finished += 1;
+                continue;
+            }
             match pending.execution.poll_suspension() {
                 ExecutionStop::Suspended => {
                     let Some(order) = pending.execution.suspension_order() else {
                         tracing::error!("suspended command lost its active suspension");
-                        self.release_barrier(pending.source, pending.order);
+                        self.release_barrier(pending.owner.key(), pending.order);
                         finished += 1;
                         continue;
                     };
                     if order != pending.order {
-                        self.release_barrier(pending.source, pending.order);
-                        self.retain_barrier(pending.source, order);
+                        self.release_barrier(pending.owner.key(), pending.order);
+                        self.retain_barrier(pending.owner.key(), order);
                         pending.order = order;
                     }
                     self.queued.push_back(pending);
@@ -98,7 +109,7 @@ where
                 ExecutionStop::Completed
                 | ExecutionStop::CommandLimit
                 | ExecutionStop::QueueOverflow => {
-                    self.release_barrier(pending.source, pending.order);
+                    self.release_barrier(pending.owner.key(), pending.order);
                     finished += 1;
                 }
             }

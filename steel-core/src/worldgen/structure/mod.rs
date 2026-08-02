@@ -2,7 +2,7 @@
 
 pub(crate) mod piece_placer;
 
-use crate::chunk::chunk_access::ChunkAccess;
+use crate::chunk::Chunk;
 use steel_utils::Identifier;
 use steel_worldgen::structure::StructureGenerationContext;
 
@@ -14,7 +14,7 @@ pub use steel_worldgen::structure::{
 /// Generates structure starts and writes them into the chunk.
 pub fn create_structures(
     generator: &StructureGenerator,
-    chunk: &ChunkAccess,
+    chunk: &Chunk,
     ctx: &mut dyn StructureGenerationContext,
 ) {
     let starts = generator.generate_starts_for_chunk(ctx, |structure: &Identifier| {

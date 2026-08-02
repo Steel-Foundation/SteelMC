@@ -420,38 +420,40 @@ impl EntityTracker {
             if let Some(dirty_entity_data) = dirty_entity_data {
                 entity_data_to_broadcast.push((entity_id, dirty_entity_data));
             }
-            let dirty_attributes = entity.drain_dirty_syncable_attributes();
-            if !dirty_attributes.is_empty() {
-                attributes_to_broadcast.push((entity_id, dirty_attributes));
-            }
-            let dirty_mob_effects = entity.drain_dirty_mob_effects();
-            if !dirty_mob_effects.is_empty() {
-                let mut recipient_ids = FxHashSet::default();
-                if entity.entity_type() == &vanilla_entities::PLAYER
-                    && get_player(entity_id).is_some()
-                {
-                    recipient_ids.insert(entity_id);
+            if let Some(living) = entity.as_living_entity() {
+                let dirty_attributes = living.drain_dirty_syncable_attributes();
+                if !dirty_attributes.is_empty() {
+                    attributes_to_broadcast.push((entity_id, dirty_attributes));
                 }
-                for passenger in entity.passengers() {
-                    let passenger_id = passenger.id();
-                    if passenger.entity_type() == &vanilla_entities::PLAYER
-                        && get_player(passenger_id).is_some()
+                let dirty_mob_effects = living.drain_dirty_mob_effects();
+                if !dirty_mob_effects.is_empty() {
+                    let mut recipient_ids = FxHashSet::default();
+                    if entity.entity_type() == &vanilla_entities::PLAYER
+                        && get_player(entity_id).is_some()
                     {
-                        recipient_ids.insert(passenger_id);
+                        recipient_ids.insert(entity_id);
+                    }
+                    for passenger in entity.passengers() {
+                        let passenger_id = passenger.id();
+                        if passenger.entity_type() == &vanilla_entities::PLAYER
+                            && get_player(passenger_id).is_some()
+                        {
+                            recipient_ids.insert(passenger_id);
+                        }
+                    }
+                    for recipient_id in recipient_ids {
+                        for change in &dirty_mob_effects {
+                            mob_effect_packets_to_send.push((
+                                recipient_id,
+                                change.packet(entity_id, recipient_id == entity_id),
+                            ));
+                        }
                     }
                 }
-                for recipient_id in recipient_ids {
-                    for change in &dirty_mob_effects {
-                        mob_effect_packets_to_send.push((
-                            recipient_id,
-                            change.packet(entity_id, recipient_id == entity_id),
-                        ));
-                    }
+                let dirty_equipment = living.drain_dirty_equipment();
+                if !dirty_equipment.is_empty() {
+                    equipment_to_broadcast.push((entity_id, dirty_equipment));
                 }
-            }
-            let dirty_equipment = entity.drain_dirty_equipment();
-            if !dirty_equipment.is_empty() {
-                equipment_to_broadcast.push((entity_id, dirty_equipment));
             }
 
             let leash_holder_id = leash_holder_id(entity.as_ref());
@@ -493,16 +495,16 @@ impl EntityTracker {
             (senders.entity_data)(entity_id, dirty_entity_data);
         }
 
+        for (entity_id, dirty_equipment) in equipment_to_broadcast {
+            (senders.equipment)(entity_id, CSetEquipment::new(entity_id, dirty_equipment));
+        }
+
         for (entity_id, dirty_attributes) in attributes_to_broadcast {
             (senders.attributes)(entity_id, dirty_attributes);
         }
 
         for (player_id, packet) in mob_effect_packets_to_send {
             (senders.mob_effects)(player_id, packet);
-        }
-
-        for (entity_id, dirty_equipment) in equipment_to_broadcast {
-            (senders.equipment)(entity_id, CSetEquipment::new(entity_id, dirty_equipment));
         }
 
         for (entity_id, packet) in entity_links_to_broadcast {
@@ -863,6 +865,16 @@ impl EntitySpawnPairing {
         let y_rot = to_angle_byte(yaw);
         let head_y_rot = to_angle_byte(head_yaw);
 
+        let (attributes, equipment) = entity.as_living_entity().map_or_else(
+            || (Vec::new(), Vec::new()),
+            |living| {
+                (
+                    living.pack_syncable_attributes(),
+                    living.pack_all_equipment(),
+                )
+            },
+        );
+
         Self {
             spawn_packet: CAddEntity {
                 id: entity.id(),
@@ -876,8 +888,8 @@ impl EntitySpawnPairing {
                 data: entity.spawn_data(),
             },
             entity_data: entity.pack_all_entity_data(),
-            attributes: entity.pack_syncable_attributes(),
-            equipment: entity.pack_all_equipment(),
+            attributes,
+            equipment,
             passenger_packets,
             entity_link_packet: leash_holder_id(entity.as_ref())
                 .map(|holder_id| CSetEntityLink::new(entity.id(), holder_id)),

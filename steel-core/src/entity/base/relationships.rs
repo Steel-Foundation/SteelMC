@@ -33,6 +33,13 @@ impl EntityLifecycleState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PendingWorldChangeToken(u64);
 
+impl PendingWorldChangeToken {
+    #[cfg(test)]
+    pub(crate) const fn for_test(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 /// Vanilla passenger and vehicle relationship state.
 ///
 /// Stored separately from movement state because riding relationships affect

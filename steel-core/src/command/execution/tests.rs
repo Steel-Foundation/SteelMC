@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use steel_utils::locks::SyncMutex;
 use text_components::TextComponent;
@@ -7,7 +10,7 @@ use crate::command::PendingCommandExecutionQueue;
 use crate::command::brigadier::{
     ArgumentType, CommandDispatcher, CommandNodeBuilder, CommandSyntaxError, NodeId,
 };
-use crate::command::sender::CommandSenderKey;
+use crate::command::sender::{CommandExecutionOwner, CommandSender, CommandSenderKey};
 use crate::permission::{PermissionExpr, PermissionState};
 
 use super::{
@@ -29,6 +32,7 @@ struct TestSource {
     name: &'static str,
     callback: CommandResultCallback,
     observed: Arc<Observed>,
+    current: Arc<AtomicBool>,
 }
 
 impl TestSource {
@@ -40,6 +44,7 @@ impl TestSource {
                 callback_observed.results.lock().push((success, result));
             }),
             observed,
+            current: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -48,16 +53,22 @@ impl TestSource {
             name,
             callback: self.callback.clone(),
             observed: Arc::clone(&self.observed),
+            current: Arc::clone(&self.current),
         }
     }
 }
 
 impl ExecutionCommandSource for TestSource {
+    fn execution_is_current(&self) -> bool {
+        self.current.load(Ordering::Acquire)
+    }
+
     fn with_callback(&self, callback: CommandResultCallback) -> Self {
         Self {
             name: self.name,
             callback,
             observed: Arc::clone(&self.observed),
+            current: Arc::clone(&self.current),
         }
     }
 
@@ -139,6 +150,36 @@ fn queue_runs_standard_commands_with_the_runtime_source_callback() {
     assert_eq!(*observed.invocations.lock(), ["runtime"]);
     assert_eq!(*observed.results.lock(), [(true, 7)]);
     assert!(observed.errors.lock().is_empty());
+}
+
+#[test]
+fn queue_drops_a_source_that_became_stale_before_execution() {
+    let observed = Arc::new(Observed::default());
+    let command_observed = Arc::clone(&observed);
+    let mut dispatcher = TestDispatcher::new();
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("run").executes(move |context| {
+            command_observed
+                .invocations
+                .lock()
+                .push(context.source().name);
+            Ok(1)
+        }),
+    );
+    let source = TestSource::new("stale", Arc::clone(&observed));
+    let current = Arc::clone(&source.current);
+    let mut execution = CommandExecutionContext::new(10, 10);
+    execution.queue_initial_command(
+        chain(&dispatcher, "run", Arc::clone(&observed)),
+        source,
+        CommandResultCallback::empty(),
+    );
+    current.store(false, Ordering::Release);
+
+    assert_eq!(execution.run(), ExecutionStop::Completed);
+    assert!(observed.invocations.lock().is_empty());
+    assert!(observed.results.lock().is_empty());
 }
 
 #[test]
@@ -665,6 +706,38 @@ fn suspended_normal_executor_reports_its_delayed_result() {
     assert_eq!(*observed.results.lock(), [(true, 42)]);
     assert!(observed.errors.lock().is_empty());
     assert_eq!(*cancellations.lock(), 0);
+}
+
+#[test]
+fn suspended_normal_executor_cancels_when_its_effective_source_becomes_stale() {
+    let observed = Arc::new(Observed::default());
+    let cancellations = Arc::new(SyncMutex::new(0));
+    let command_cancellations = Arc::clone(&cancellations);
+    let mut dispatcher = TestDispatcher::new();
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("wait").executes_suspended(move |_| {
+            Ok(TestResultSuspension {
+                pending_polls: usize::MAX,
+                result: Some(Ok(42)),
+                cancellations: Arc::clone(&command_cancellations),
+            })
+        }),
+    );
+    let source = TestSource::new("waiting", Arc::clone(&observed));
+    let current = Arc::clone(&source.current);
+    let mut execution = CommandExecutionContext::new(10, 10);
+    execution.queue_initial_command(
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
+        source,
+        CommandResultCallback::empty(),
+    );
+    assert_eq!(execution.run(), ExecutionStop::Suspended);
+
+    current.store(false, Ordering::Release);
+    assert_eq!(execution.poll_suspension(), ExecutionStop::Completed);
+    assert_eq!(*cancellations.lock(), 1);
+    assert_eq!(*observed.results.lock(), [(false, 0)]);
 }
 
 #[test]
@@ -1226,12 +1299,18 @@ fn pending_execution_queue_polls_once_per_tick_in_fifo_order() {
     assert_eq!(second.run(), ExecutionStop::Suspended);
 
     let mut queue = PendingCommandExecutionQueue::new();
-    assert!(queue.push_suspended(CommandSenderKey::Console, first));
-    assert!(queue.push_suspended(CommandSenderKey::Rcon, second));
+    assert!(queue.push_suspended(
+        CommandExecutionOwner::non_player_for_test(CommandSender::Console),
+        first
+    ));
+    assert!(queue.push_suspended(
+        CommandExecutionOwner::non_player_for_test(CommandSender::Rcon),
+        second
+    ));
     assert!(queue.blocks(CommandSenderKey::Console));
     assert!(queue.blocks(CommandSenderKey::Rcon));
 
-    let first_tick = queue.tick(2);
+    let first_tick = queue.tick(2, |_| true);
     assert_eq!(first_tick.polled, 2);
     assert_eq!(first_tick.finished, 1);
     assert_eq!(first_tick.pending, 1);
@@ -1239,7 +1318,7 @@ fn pending_execution_queue_polls_once_per_tick_in_fifo_order() {
     assert!(!queue.blocks(CommandSenderKey::Console));
     assert!(queue.blocks(CommandSenderKey::Rcon));
 
-    let second_tick = queue.tick(2);
+    let second_tick = queue.tick(2, |_| true);
     assert_eq!(second_tick.polled, 1);
     assert_eq!(second_tick.finished, 1);
     assert_eq!(second_tick.pending, 0);
@@ -1273,13 +1352,16 @@ fn global_suspension_blocks_every_command_source_until_completion() {
     assert_eq!(execution.run(), ExecutionStop::Suspended);
 
     let mut queue = PendingCommandExecutionQueue::new();
-    assert!(queue.push_suspended(CommandSenderKey::Console, execution));
+    assert!(queue.push_suspended(
+        CommandExecutionOwner::non_player_for_test(CommandSender::Console),
+        execution
+    ));
     assert!(queue.blocks(CommandSenderKey::Console));
     assert!(queue.blocks(CommandSenderKey::Rcon));
 
-    assert_eq!(queue.tick(1).pending, 1);
+    assert_eq!(queue.tick(1, |_| true).pending, 1);
     assert!(queue.blocks(CommandSenderKey::Rcon));
-    assert_eq!(queue.tick(1).pending, 0);
+    assert_eq!(queue.tick(1, |_| true).pending, 0);
     assert!(!queue.blocks(CommandSenderKey::Console));
     assert!(!queue.blocks(CommandSenderKey::Rcon));
     assert_eq!(*cancellations.lock(), 0);
@@ -1290,7 +1372,10 @@ fn pending_execution_queue_rejects_active_contexts() {
     let mut queue = PendingCommandExecutionQueue::<TestSource>::new();
     let execution = CommandExecutionContext::new(10, 10);
 
-    assert!(!queue.push_suspended(CommandSenderKey::Console, execution));
+    assert!(!queue.push_suspended(
+        CommandExecutionOwner::non_player_for_test(CommandSender::Console),
+        execution
+    ));
     assert_eq!(queue.len(), 0);
 }
 
@@ -1318,10 +1403,49 @@ fn pending_execution_queue_cancels_retained_work() {
     assert_eq!(execution.run(), ExecutionStop::Suspended);
 
     let mut queue = PendingCommandExecutionQueue::new();
-    assert!(queue.push_suspended(CommandSenderKey::Console, execution));
+    assert!(queue.push_suspended(
+        CommandExecutionOwner::non_player_for_test(CommandSender::Console),
+        execution
+    ));
     queue.cancel_all();
 
     assert_eq!(queue.len(), 0);
+    assert!(!queue.blocks(CommandSenderKey::Console));
+    assert_eq!(*cancellations.lock(), 1);
+}
+
+#[test]
+fn pending_execution_queue_cancels_work_whose_owner_is_stale() {
+    let observed = Arc::new(Observed::default());
+    let cancellations = Arc::new(SyncMutex::new(0));
+    let mut dispatcher = TestDispatcher::new();
+    register(
+        &mut dispatcher,
+        literal::<TestSource>("wait").executes_custom(SuspendingExecutor {
+            pending_polls: usize::MAX,
+            invocation: "must not resume",
+            result: 1,
+            observed: Arc::clone(&observed),
+            cancellations: Arc::clone(&cancellations),
+        }),
+    );
+    let mut execution = CommandExecutionContext::new(10, 10);
+    execution.queue_initial_command(
+        chain(&dispatcher, "wait", Arc::clone(&observed)),
+        TestSource::new("waiting", observed),
+        CommandResultCallback::empty(),
+    );
+    assert_eq!(execution.run(), ExecutionStop::Suspended);
+
+    let mut queue = PendingCommandExecutionQueue::new();
+    assert!(queue.push_suspended(
+        CommandExecutionOwner::non_player_for_test(CommandSender::Console),
+        execution
+    ));
+    let stats = queue.tick(1, |_| false);
+
+    assert_eq!(stats.finished, 1);
+    assert_eq!(stats.pending, 0);
     assert!(!queue.blocks(CommandSenderKey::Console));
     assert_eq!(*cancellations.lock(), 1);
 }

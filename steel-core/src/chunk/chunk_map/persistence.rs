@@ -1,13 +1,86 @@
 use super::{
-    Arc, ChunkHolder, ChunkMap, ChunkPos, ChunkSaveDependency, ChunkStatus, ChunkStorage,
+    Arc, Chunk, ChunkHolder, ChunkMap, ChunkPos, ChunkSaveDependency, ChunkStatus, ChunkStorage,
     ClearedBlockEntities, FinalizedBlockEntityUnload, FxHashSet, instrument, io, mem,
 };
+use crate::chunk_saver::PreparedChunkSave;
+use tokio::sync::oneshot;
 
 impl ChunkMap {
+    async fn prepare_chunk_save_on_pool(
+        self: &Arc<Self>,
+        chunk_holder: &Arc<ChunkHolder>,
+    ) -> Option<PreparedChunkSave> {
+        let (sender, receiver) = oneshot::channel();
+        let map = Arc::clone(self);
+        let holder = Arc::clone(chunk_holder);
+        self.chunk_encoding_pool.spawn(move || {
+            let chunk_pos = holder.get_pos();
+            let prepared = {
+                let Some(save_preparation) = holder.try_begin_save_preparation() else {
+                    let _ = sender.send(None);
+                    return;
+                };
+                let Some(chunk_guard) = holder.try_chunk(ChunkStatus::StructureStarts) else {
+                    // Vanilla only persists chunks once they reach StructureStarts.
+                    // Runtime entities in lower-status chunks are an accepted loss
+                    // on unload/shutdown until those chunks cross that boundary.
+                    let _ = sender.send(None);
+                    return;
+                };
+
+                let Some(status) = holder.published_status() else {
+                    let _ = sender.send(None);
+                    return;
+                };
+
+                let world = map.world_gen_context.world();
+                let runtime_entities = world
+                    .entity_manager()
+                    .get_saveable_entities_for_chunk(chunk_pos);
+                let force = world.entity_manager().has_save_pending_for_chunk(chunk_pos);
+                let dirty = chunk_guard.take_dirty();
+                let prepared = if dirty || force {
+                    ChunkStorage::prepare_chunk_save(chunk_guard, status, &runtime_entities, true)
+                } else {
+                    None
+                };
+
+                if prepared.is_none() && dirty {
+                    chunk_guard.mark_dirty();
+                }
+
+                // Revival need not wait for encoding or disk I/O once this owned input exists.
+                drop(save_preparation);
+                prepared
+            };
+
+            if let Err(unsent) = sender.send(prepared) {
+                if unsent.is_some() {
+                    Self::mark_chunk_dirty_for_save_retry(&holder);
+                }
+                tracing::trace!(
+                    chunk = ?chunk_pos,
+                    "Discarding prepared chunk after its save task was canceled"
+                );
+            }
+        });
+
+        if let Ok(prepared) = receiver.await {
+            prepared
+        } else {
+            Self::mark_chunk_dirty_for_save_retry(chunk_holder);
+            tracing::error!(
+                chunk = ?chunk_holder.get_pos(),
+                "Chunk save preparation task ended without returning a result"
+            );
+            None
+        }
+    }
+
     /// Saves a chunk to disk. Does not remove from `unloading_chunks`.
     #[instrument(level = "trace", skip(self, chunk_holder, _save_dependency), fields(chunk = ?chunk_holder.get_pos()))]
     pub(super) async fn save_chunk(
-        &self,
+        self: &Arc<Self>,
         chunk_holder: &Arc<ChunkHolder>,
         _save_dependency: ChunkSaveDependency,
     ) {
@@ -15,45 +88,16 @@ impl ChunkMap {
         self.flush_queued_light_changes_touching_chunk_for_save(chunk_pos)
             .await;
 
-        // Prepare chunk data while holding the lock, then release before async I/O
-        let prepared = {
-            let Some(chunk_guard) = chunk_holder.try_chunk(ChunkStatus::StructureStarts) else {
-                // Vanilla only persists chunks once they reach StructureStarts.
-                // Runtime entities in lower-status chunks are an accepted loss
-                // on unload/shutdown until those chunks cross that boundary.
-                return;
-            };
-
-            let status = chunk_holder
-                .persisted_status()
-                .expect("The check above confirmed it exists");
-
-            let world = self.world_gen_context.world();
-            let runtime_entities = world
-                .entity_manager()
-                .get_saveable_entities_for_chunk(chunk_pos);
-            let force = world.entity_manager().has_save_pending_for_chunk(chunk_pos);
-            let dirty = chunk_guard.take_dirty();
-            let prepared = if dirty || force {
-                ChunkStorage::prepare_chunk_save(&chunk_guard, &runtime_entities, true)
-            } else {
-                None
-            };
-
-            if prepared.is_none() && dirty {
-                chunk_guard.mark_dirty();
-            }
-
-            (prepared, status)
-        }; // chunk_guard dropped here
-
-        let (prepared, status) = prepared;
-
-        // Save chunk data if dirty
-        if let Some(mut prepared) = prepared {
+        // Save chunk data if dirty. Preparation runs on the shared chunk encoding
+        // pool so snapshot locking and persistence conversion never block Tokio workers.
+        if let Some(mut prepared) = self.prepare_chunk_save_on_pool(chunk_holder).await {
             let handled_runtime_entity_ids = mem::take(&mut prepared.handled_runtime_entity_ids);
             let world = self.world_gen_context.world();
-            match self.storage.save_chunk_data(prepared, status).await {
+            match self
+                .storage
+                .save_chunk_data(prepared, self.chunk_encoding_pool.as_ref())
+                .await
+            {
                 Ok(true) => world
                     .entity_manager()
                     .on_chunk_saved(chunk_pos, &handled_runtime_entity_ids),
@@ -102,7 +146,7 @@ impl ChunkMap {
 
                 let is_dirty = holder
                     .try_chunk(ChunkStatus::StructureStarts)
-                    .is_some_and(|chunk| chunk.is_dirty());
+                    .is_some_and(Chunk::is_dirty);
                 let has_save_pending_entities = self
                     .world_gen_context
                     .world()
@@ -128,11 +172,17 @@ impl ChunkMap {
         let world = self.world_gen_context.world();
         for (pos, holder, has_chunk) in finalized {
             let cleared = if has_chunk {
-                holder
-                    .try_chunk(ChunkStatus::Empty)
-                    .map_or_else(ClearedBlockEntities::default, |chunk| {
-                        chunk.clear_all_block_entities_staged()
-                    })
+                holder.try_chunk(ChunkStatus::Empty).map_or_else(
+                    ClearedBlockEntities::default,
+                    |chunk| {
+                        if let Some(full) = holder.try_full_chunk() {
+                            full.clear_all_block_entities_staged()
+                        } else {
+                            chunk.clear_all_block_entities();
+                            ClearedBlockEntities::default()
+                        }
+                    },
+                )
             } else {
                 ClearedBlockEntities::default()
             };
@@ -167,6 +217,10 @@ impl ChunkMap {
     ///
     /// Returns the number of chunks saved.
     #[instrument(level = "info", skip(self), name = "save_all_chunks")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "shutdown persistence keeps chunk coverage and entity auditing in one pass"
+    )]
     pub async fn save_all_chunks(self: &Arc<Self>) -> io::Result<usize> {
         let mut saved_count = 0;
 
@@ -199,7 +253,7 @@ impl ChunkMap {
                     // runtime entity data.
                     continue;
                 };
-                let Some(status) = holder.persisted_status() else {
+                let Some(status) = holder.published_status() else {
                     continue;
                 };
                 let world = self.world_gen_context.world();
@@ -209,7 +263,7 @@ impl ChunkMap {
                 let force = world.entity_manager().has_save_pending_for_chunk(chunk_pos);
                 let dirty = chunk.take_dirty();
                 let prepared = if dirty || force {
-                    ChunkStorage::prepare_chunk_save(&chunk, &runtime_entities, true)
+                    ChunkStorage::prepare_chunk_save(chunk, status, &runtime_entities, true)
                 } else {
                     None
                 };
@@ -221,14 +275,18 @@ impl ChunkMap {
                     }
                     continue;
                 };
-                (prepared, status)
+                prepared
             };
 
-            let (mut prepared, status) = prepared;
+            let mut prepared = prepared;
             let handled_runtime_entity_ids = mem::take(&mut prepared.handled_runtime_entity_ids);
             let world = self.world_gen_context.world();
             let _save_dependency = holder.add_save_dependency();
-            match self.storage.save_chunk_data(prepared, status).await {
+            match self
+                .storage
+                .save_chunk_data(prepared, self.chunk_encoding_pool.as_ref())
+                .await
+            {
                 Ok(true) => {
                     world
                         .entity_manager()
