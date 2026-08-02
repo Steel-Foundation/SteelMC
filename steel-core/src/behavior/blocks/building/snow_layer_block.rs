@@ -28,6 +28,7 @@ pub struct SnowLayerBlock {
 }
 
 const LAYERS: IntProperty = BlockStateProperties::LAYERS;
+const MAX_SNOW_LAYERS: u8 = 8;
 
 impl SnowLayerBlock {
     /// Creates a new snow layer block behavior.
@@ -55,8 +56,9 @@ impl BlockBehavior for SnowLayerBlock {
         }
 
         // Below is another snow layer fully filled (LAYERS == 8).
-        below_block == self.block && below.get_value(&LAYERS) == 8
+        below_block == self.block && below.get_value(&LAYERS) == MAX_SNOW_LAYERS
     }
+
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -72,6 +74,7 @@ impl BlockBehavior for SnowLayerBlock {
             vanilla_blocks::AIR.default_state()
         }
     }
+
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if world.light_value_at(LightLayer::Block, pos) > 11 {
             world.drop_resources(state, pos);
@@ -82,10 +85,11 @@ impl BlockBehavior for SnowLayerBlock {
             );
         }
     }
+
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
         let layers = state.get_value(&LAYERS);
         if !context.with_item(|item| item.item() == REGISTRY.items.by_block(state.get_block()))
-            || layers >= 8
+            || layers >= MAX_SNOW_LAYERS
         {
             return layers == 1;
         }
@@ -94,6 +98,7 @@ impl BlockBehavior for SnowLayerBlock {
         }
         true
     }
+
     fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
         computation_type == PathComputationType::Land && state.get_value(&LAYERS) < 5
     }
@@ -107,7 +112,7 @@ impl BlockBehavior for SnowLayerBlock {
         let state = context.world.get_block_state(pos);
         if state.get_block() == self.block {
             let layers = state.get_value(&LAYERS);
-            return Some(state.set_value(&LAYERS, 8.min(layers + 1)));
+            return Some(state.set_value(&LAYERS, MAX_SNOW_LAYERS.min(layers + 1)));
         }
         Some(self.block.default_state())
     }
