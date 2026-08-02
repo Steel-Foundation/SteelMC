@@ -73,19 +73,6 @@ impl Abilities {
         }
     }
 
-    /// Creates abilities for spectator mode
-    #[must_use]
-    pub fn spectator() -> Self {
-        Self {
-            invulnerable: true,
-            flying: true,
-            may_fly: true,
-            instabuild: false,
-            may_build: false,
-            ..Self::default()
-        }
-    }
-
     /// Updates abilities based on the given game mode.
     /// This mirrors vanilla's `GameType.updatePlayerAbilities()`.
     pub const fn update_for_game_mode(&mut self, game_mode: GameType) {

@@ -23,7 +23,6 @@ use steel_utils::types::GameType;
 
 use crate::entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityMoveError, LivingEntity,
-    get_input_vector,
 };
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
@@ -855,16 +854,6 @@ impl Player {
     #[must_use]
     pub fn last_client_input(&self) -> PlayerInput {
         self.movement.lock().last_client_input()
-    }
-
-    /// Returns vanilla `ServerPlayer.getLastClientMoveIntent()`.
-    #[must_use]
-    pub fn last_client_move_intent(&self) -> DVec3 {
-        get_input_vector(
-            self.last_client_input().movement_input(),
-            1.0,
-            self.rotation().0,
-        )
     }
 
     /// Handles a player input packet (movement keys, sneaking, sprinting).

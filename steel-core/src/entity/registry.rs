@@ -170,24 +170,6 @@ impl EntityRegistry {
             .map(|f| f(entity_type, entity_id, pos, world))
     }
 
-    /// Creates an entity from persisted data and loads its type-specific NBT.
-    ///
-    /// Returns `None` if no load factory is registered for the entity type.
-    #[must_use]
-    pub fn create_and_load(
-        &self,
-        request: EntityLoadRequest,
-        nbt: &BorrowedNbtCompound<'_>,
-    ) -> Option<SharedEntity> {
-        let (entity_type, load) = request.into_base_load();
-        let id = entity_type.id();
-        let load_factory = self.entries.get(id)?.load_factory?;
-
-        let entity = load_factory(entity_type, load);
-        Self::finish_registered_load(&entity, nbt);
-        Some(entity)
-    }
-
     /// Creates an entity from persisted data, falling back to raw NBT preservation.
     #[must_use]
     pub fn create_and_load_or_raw(
@@ -214,15 +196,6 @@ impl EntityRegistry {
     pub fn has_factory(&self, entity_type: EntityTypeRef) -> bool {
         let id = entity_type.id();
         self.entries.get(id).is_some_and(|e| e.factory.is_some())
-    }
-
-    /// Returns whether a load factory is registered for the given type.
-    #[must_use]
-    pub fn has_load_factory(&self, entity_type: EntityTypeRef) -> bool {
-        let id = entity_type.id();
-        self.entries
-            .get(id)
-            .is_some_and(|e| e.load_factory.is_some())
     }
 }
 
