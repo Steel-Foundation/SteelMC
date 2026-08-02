@@ -3,12 +3,16 @@
 pub mod context;
 mod empty;
 mod flat;
+mod generation_chunk;
 pub mod registry;
 pub(crate) mod vanilla;
 
 pub use empty::EmptyChunkGenerator;
 pub use flat::FlatChunkGenerator;
-pub use vanilla::VanillaGenerator;
+#[cfg(feature = "benchmark-support")]
+pub use generation_chunk::benchmark_support as generation_benchmark_support;
+pub use generation_chunk::{CarversPhase, GenerationChunk, NoisePhase, SurfacePhase};
+pub use vanilla::{SteelPostNoiseState, VanillaGenerator, VanillaPostNoiseStateType};
 
 use enum_dispatch::enum_dispatch;
 use glam::IVec3;
@@ -20,7 +24,7 @@ use steel_utils::random::{
 use steel_utils::{BlockPos, ChunkPos};
 
 use self::context::{ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator};
-use crate::chunk::chunk_access::ChunkAccess;
+use crate::chunk::Chunk;
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::StructureGenerator;
 use steel_worldgen::noise::Beardifier;
@@ -54,10 +58,10 @@ pub trait ChunkGenerator: Send + Sync {
     }
 
     /// Creates the structures in a chunk.
-    fn create_structures(&self, chunk: &ChunkAccess);
+    fn create_structures(&self, chunk: &Chunk);
 
     /// Creates the biomes in a chunk.
-    fn create_biomes(&self, chunk: &ChunkAccess);
+    fn create_biomes(&self, chunk: &Chunk);
 
     /// Fills the chunk with noise.
     ///
@@ -66,17 +70,25 @@ pub trait ChunkGenerator: Send + Sync {
     /// structure references and building the beardifier — this trait stays free of any
     /// cross-chunk lookup. `None` skips the integration entirely (cheaper than passing
     /// an empty beardifier).
-    fn fill_from_noise(&self, chunk: &ChunkAccess, beardifier: Option<&Beardifier>);
+    fn fill_from_noise(
+        &self,
+        chunk: GenerationChunk<'_, NoisePhase>,
+        beardifier: Option<&Beardifier>,
+    );
 
     /// Builds the surface of the chunk.
     ///
     /// `neighbor_biomes` maps `(quart_x, quart_y, quart_z)` to a biome palette ID,
     /// reading from neighbor chunk palettes for out-of-chunk biome lookups (matching
     /// vanilla's `WorldGenRegion.getNoiseBiome`).
-    fn build_surface(&self, chunk: &ChunkAccess, neighbor_biomes: &dyn Fn(IVec3) -> u16);
+    fn build_surface(
+        &self,
+        chunk: GenerationChunk<'_, SurfacePhase>,
+        neighbor_biomes: &dyn Fn(IVec3) -> u16,
+    );
 
     /// Applies carvers to the chunk.
-    fn apply_carvers(&self, chunk: &ChunkAccess);
+    fn apply_carvers(&self, chunk: GenerationChunk<'_, CarversPhase>);
 
     /// Creates the per-region random source exposed by vanilla `WorldGenRegion.getRandom()`.
     fn create_worldgen_region_random(&self, world_seed: i64, center: ChunkPos) -> RandomSource;

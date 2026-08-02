@@ -1,6 +1,6 @@
 //! Shared structure placement/selection engine.
 
-use std::{iter, path::Path, slice};
+use std::{iter, path::Path};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_registry::REGISTRY;
@@ -807,12 +807,6 @@ impl StructureGenerator {
     #[must_use]
     pub const fn templates(&self) -> &FxHashMap<Identifier, TemplateData> {
         &self.templates
-    }
-
-    /// Builds a detached locate plan for one structure id.
-    #[must_use]
-    pub fn locate_plan_for_structure(&self, structure: &Identifier) -> Option<StructureLocatePlan> {
-        self.locate_plan_for_structures(slice::from_ref(structure))
     }
 
     /// Builds a detached locate plan for one or more structure ids.

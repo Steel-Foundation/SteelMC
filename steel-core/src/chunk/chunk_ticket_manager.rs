@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use steel_utils::ChunkPos;
 
-use crate::chunk::{chunk_access::ChunkStatus, chunk_pyramid::GENERATION_PYRAMID};
+use crate::chunk::{chunk_pyramid::GENERATION_PYRAMID, status::ChunkStatus};
 
 /// The maximum supported view distance for players.
 pub const MAX_SUPPORTED_VIEW_DISTANCE: u8 = 128;

@@ -159,18 +159,14 @@ pub trait PathfinderMob: Mob {
         Self: Sized,
     {
         let id_based_tick_count = self.tick_count().wrapping_add(self.id());
+        let mut target_selector = self.mob_base().target_selector().lock();
+        let mut goal_selector = self.mob_base().goal_selector().lock();
         if id_based_tick_count % 2 != 0 && self.tick_count() > 1 {
-            self.mob_base()
-                .target_selector()
-                .lock()
-                .tick_running_goals(self, false);
-            self.mob_base()
-                .goal_selector()
-                .lock()
-                .tick_running_goals(self, false);
+            target_selector.tick_running_goals(self, false);
+            goal_selector.tick_running_goals(self, false);
         } else {
-            self.mob_base().target_selector().lock().tick(self);
-            self.mob_base().goal_selector().lock().tick(self);
+            target_selector.tick(self);
+            goal_selector.tick(self);
         }
     }
 

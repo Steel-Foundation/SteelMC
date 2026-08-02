@@ -18,8 +18,8 @@ use steel_utils::{ChunkPos, PackedChunkPos};
 
 use crate::{
     chunk::{
-        chunk_access::{ChunkAccess, ChunkStatus},
         chunk_holder::{ChunkHolder, TickingReadinessSnapshot},
+        status::ChunkStatus,
     },
     player::PlayerConnection,
     player::connection::NetworkConnection,
@@ -196,10 +196,7 @@ impl ChunkSender {
                         return None;
                     }
                     let revision_before = holder.packet_content_revision();
-                    let chunk_guard = holder.try_chunk(ChunkStatus::Full)?;
-                    let ChunkAccess::Full(chunk) = &*chunk_guard else {
-                        return None;
-                    };
+                    let chunk = holder.try_full_chunk()?;
 
                     let packet = EncodedPacket::from_bare(
                         CLevelChunkWithLight {
@@ -321,7 +318,7 @@ impl ChunkSender {
                 .chunk_map
                 .chunks
                 .read_sync(&pos, |_, chunk| chunk.clone())
-                && holder.persisted_status() == Some(ChunkStatus::Full)
+                && holder.published_status() == Some(ChunkStatus::Full)
             {
                 let readiness = holder.ticking_readiness_snapshot();
                 if readiness.is_block_ticking() {
@@ -411,10 +408,10 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::chunk::{
+        Chunk,
         chunk_holder::TickingReadiness,
         chunk_ticket_manager::ChunkTicketLevel,
         heightmap::ChunkHeightmaps,
-        level_chunk::LevelChunk,
         light::ChunkLightData,
         section::{ChunkSection, Sections},
     };
@@ -424,7 +421,7 @@ mod tests {
     use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
     fn prepared_full_chunk(pos: ChunkPos) -> PreparedChunk {
-        let chunk = LevelChunk::from_disk(
+        let chunk = Chunk::from_full_disk(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             pos,
             0,
@@ -445,7 +442,7 @@ mod tests {
             0,
             16,
         ));
-        holder.insert_chunk(ChunkAccess::Full(chunk), ChunkStatus::Full);
+        holder.insert_chunk(chunk, ChunkStatus::Full);
         holder.transition_ticking_readiness(TickingReadiness::BlockTicking);
         let readiness = holder.ticking_readiness_snapshot();
         PreparedChunk {
