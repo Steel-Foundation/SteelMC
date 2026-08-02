@@ -311,6 +311,13 @@ impl Player {
             return;
         };
         let hand = active.hand();
+        let item_matches = {
+            let inventory = self.inventory.lock();
+            ItemStack::is_same_item(inventory.get_item_in_hand(hand), active.item())
+        };
+        if !item_matches {
+            return;
+        }
         let mut item = {
             let mut inventory = self.inventory.lock();
             replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
@@ -330,6 +337,14 @@ impl Player {
             return;
         };
         let hand = active.hand();
+        let item_matches = {
+            let inventory = self.inventory.lock();
+            ItemStack::is_same_item(inventory.get_item_in_hand(hand), active.item())
+        };
+        if !item_matches {
+            self.living_base.stop_using_item();
+            return;
+        }
         let mut item = {
             let mut inventory = self.inventory.lock();
             replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
