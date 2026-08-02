@@ -1,67 +1,38 @@
-mod bias_towards_extreme;
-mod clamp;
-mod corner_noise_3d;
-mod cube;
-mod dot;
-mod fast_floor;
-mod grad_dot;
-mod inverse_lerp;
-mod lerp;
-mod map;
-mod smoothstep;
-mod square;
-mod wrap;
+mod coordinate;
+mod gradient;
+mod interpolation;
 
-pub use bias_towards_extreme::bias_towards_extreme;
-pub use clamp::{clamp, clamp_i32, clamped_lerp, clamped_lerp_simd};
-pub use corner_noise_3d::corner_noise_3d;
-pub use cube::cube;
-pub use dot::dot;
-pub use fast_floor::{fast_floor, fast_floor_simd, fast_lfloor};
-pub use grad_dot::{grad_dot, grad_dot_4x, grad_dot_simd};
-pub use inverse_lerp::inverse_lerp;
-pub use lerp::{lerp, lerp_simd, lerp2, lerp2_simd, lerp3, lerp3_simd};
-pub use map::{map, map_clamped};
-pub use smoothstep::{smoothstep, smoothstep_derivative, smoothstep_simd};
-pub use square::square;
-pub use wrap::{wrap, wrap_simd};
+use core::f64::consts::PI;
 
-/// Gradient vectors shared between Perlin and simplex noise (from vanilla `SimplexNoise.GRADIENT`).
-pub const GRADIENT: [[f64; 3]; 16] = [
-    [1.0, 1.0, 0.0],
-    [-1.0, 1.0, 0.0],
-    [1.0, -1.0, 0.0],
-    [-1.0, -1.0, 0.0],
-    [1.0, 0.0, 1.0],
-    [-1.0, 0.0, 1.0],
-    [1.0, 0.0, -1.0],
-    [-1.0, 0.0, -1.0],
-    [0.0, 1.0, 1.0],
-    [0.0, -1.0, 1.0],
-    [0.0, 1.0, -1.0],
-    [0.0, -1.0, -1.0],
-    [1.0, 1.0, 0.0],
-    [0.0, -1.0, 1.0],
-    [-1.0, 1.0, 0.0],
-    [0.0, -1.0, -1.0],
-];
+pub use coordinate::{fast_floor, fast_floor_simd, fast_lfloor, wrap, wrap_simd};
+pub use gradient::{
+    GRADIENT, GRADIENT_4, corner_noise_3d, dot, grad_dot, grad_dot_4x, grad_dot_simd,
+};
+pub use interpolation::{
+    clamp, clamp_i32, clamped_lerp, clamped_lerp_simd, inverse_lerp, lerp, lerp_simd, lerp2,
+    lerp2_simd, lerp3, lerp3_simd, map, map_clamped, smoothstep, smoothstep_derivative,
+    smoothstep_simd,
+};
 
-/// Same as Gradient but with a fourth 0 to be more simd friendly
-pub const GRADIENT_4: [[f64; 4]; 16] = [
-    [1.0, 1.0, 0.0, 0.],
-    [-1.0, 1.0, 0.0, 0.],
-    [1.0, -1.0, 0.0, 0.],
-    [-1.0, -1.0, 0.0, 0.],
-    [1.0, 0.0, 1.0, 0.],
-    [-1.0, 0.0, 1.0, 0.],
-    [1.0, 0.0, -1.0, 0.],
-    [-1.0, 0.0, -1.0, 0.],
-    [0.0, 1.0, 1.0, 0.],
-    [0.0, -1.0, 1.0, 0.],
-    [0.0, 1.0, -1.0, 0.],
-    [0.0, -1.0, -1.0, 0.],
-    [1.0, 1.0, 0.0, 0.],
-    [0.0, -1.0, 1.0, 0.],
-    [-1.0, 1.0, 0.0, 0.],
-    [0.0, -1.0, -1.0, 0.],
-];
+/// Bias a noise value towards extremes (-1 or 1) using a sine curve.
+///
+/// Java reference: `NoiseUtils.biasTowardsExtreme(double, double)`
+#[inline]
+#[must_use]
+pub fn bias_towards_extreme(noise: f64, factor: f64) -> f64 {
+    noise + (PI * noise).sin() * factor / PI
+}
+
+/// Cube a value.
+#[inline]
+#[must_use]
+pub fn cube(x: f64) -> f64 {
+    x * x * x
+}
+
+/// Square a value.
+#[inline]
+#[must_use]
+pub fn square(x: f64) -> f64 {
+    x * x
+}

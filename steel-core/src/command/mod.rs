@@ -4,10 +4,9 @@ mod api;
 pub(crate) mod brigadier;
 mod builtins;
 pub(crate) mod execution;
-mod pending_execution;
 mod protocol;
+mod queue;
 mod registration;
-mod request_queue;
 pub mod sender;
 pub(crate) mod storage;
 
@@ -22,10 +21,12 @@ pub use execution::CommandSuspensionOrder;
 pub(crate) use builtins::{
     create_registered_dispatcher, gamemode::handle_client_request, player_can_change_difficulty,
 };
-pub(crate) use pending_execution::{COMMAND_RESUMPTIONS_PER_TICK, PendingCommandExecutionQueue};
 pub(crate) use protocol::{command_suggestions_packet, command_tree_packet};
-pub use request_queue::CommandQueueFull;
-pub(crate) use request_queue::{COMMAND_REQUESTS_PER_TICK, CommandRequest, CommandRequestQueue};
+pub use queue::CommandQueueFull;
+pub(crate) use queue::{
+    COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CommandRequest, CommandRequestQueue,
+    PendingCommandExecutionQueue,
+};
 
 use steel_utils::entity_events::EntityStatus;
 

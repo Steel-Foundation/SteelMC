@@ -24,7 +24,6 @@ use crate::{
     world::{LevelReader, ScheduledTickAccess, World},
 };
 
-const MAX_AGE: u8 = 3;
 const AGE_PROPERTY: IntProperty = BlockStateProperties::AGE_3;
 
 /// Behavior for Nether Warts
@@ -68,10 +67,6 @@ impl BlockBehavior for NetherWartBlock {
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         vegetation_can_survive(self, state, world, pos)
-    }
-
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        state.get_value(&AGE_PROPERTY) < MAX_AGE
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

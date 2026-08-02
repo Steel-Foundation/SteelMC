@@ -5,6 +5,7 @@ pub(crate) mod carvers;
 pub(crate) mod empty;
 pub(crate) mod features;
 pub(crate) mod full;
+mod leaf_distance;
 pub(crate) mod light;
 pub(crate) mod noise;
 pub(crate) mod spawn;

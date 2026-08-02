@@ -1,15 +1,16 @@
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
+use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _, shapes::VoxelShape};
 use steel_registry::dimension_type::DimensionTypeRef;
-use steel_registry::vanilla_dimension_types;
-use steel_utils::{BlockPos, BlockStateId, Downcast as _, locks::SyncMutex};
+use steel_registry::{vanilla_block_entity_types, vanilla_dimension_types};
+use steel_utils::{BlockPos, BlockStateId, Downcast as _};
 
 use crate::behavior::BlockPlaceContext;
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::block_entity::{
-    SharedBlockEntity,
+    BlockEntityTicker,
     entities::{EndGatewayBlockEntity, EndPortalBlockEntity},
 };
 use crate::entity::{Entity, InsideBlockEffectCollector};
@@ -74,19 +75,13 @@ impl BlockBehavior for EndPortalBlock {
         false
     }
 
-    fn has_block_entity(&self) -> bool {
-        true
-    }
-
     fn new_block_entity(
         &self,
         level: Weak<World>,
         pos: BlockPos,
         state: BlockStateId,
-    ) -> Option<SharedBlockEntity> {
-        Some(Arc::new(SyncMutex::new(EndPortalBlockEntity::new(
-            level, pos, state,
-        ))))
+    ) -> BlockEntityCreation {
+        BlockEntityCreation::Created(Arc::new(EndPortalBlockEntity::new(level, pos, state)))
     }
 
     fn trigger_event(
@@ -100,7 +95,7 @@ impl BlockBehavior for EndPortalBlock {
         let Some(block_entity) = world.get_block_entity(pos) else {
             return false;
         };
-        block_entity.lock().trigger_event(param_a, param_b)
+        block_entity.trigger_event(param_a, param_b)
     }
 
     fn entity_inside(
@@ -137,8 +132,7 @@ impl EndGatewayBlock {
         let Some(block_entity) = world.get_block_entity(pos) else {
             return;
         };
-        let mut block_entity = block_entity.lock();
-        let Some(gateway) = block_entity.downcast_mut::<EndGatewayBlockEntity>() else {
+        let Some(gateway) = block_entity.downcast_ref::<EndGatewayBlockEntity>() else {
             return;
         };
         if gateway.is_cooling_down() {
@@ -159,19 +153,25 @@ impl BlockBehavior for EndGatewayBlock {
         false
     }
 
-    fn has_block_entity(&self) -> bool {
-        true
-    }
-
     fn new_block_entity(
         &self,
         level: Weak<World>,
         pos: BlockPos,
         state: BlockStateId,
-    ) -> Option<SharedBlockEntity> {
-        Some(Arc::new(SyncMutex::new(EndGatewayBlockEntity::new(
-            level, pos, state,
-        ))))
+    ) -> BlockEntityCreation {
+        BlockEntityCreation::Created(Arc::new(EndGatewayBlockEntity::new(level, pos, state)))
+    }
+
+    fn get_block_entity_ticker(
+        &self,
+        _world: &Arc<World>,
+        _state: BlockStateId,
+        block_entity_type: BlockEntityTypeRef,
+    ) -> Option<BlockEntityTicker> {
+        BlockEntityTicker::for_matching_entity_tick(
+            block_entity_type,
+            &vanilla_block_entity_types::END_GATEWAY,
+        )
     }
 
     fn trigger_event(
@@ -185,7 +185,7 @@ impl BlockBehavior for EndGatewayBlock {
         let Some(block_entity) = world.get_block_entity(pos) else {
             return false;
         };
-        block_entity.lock().trigger_event(param_a, param_b)
+        block_entity.trigger_event(param_a, param_b)
     }
 
     fn entity_inside(
@@ -208,7 +208,7 @@ mod tests {
     use crate::block_entity::entities::{EndGatewayBlockEntity, EndPortalBlockEntity};
     use crate::entity::{Entity, EntityBase};
     use crate::portal::PortalKind;
-    use crate::test_support::TestLevel;
+    use crate::test_support::{TestLevel, fresh_test_world};
     use glam::DVec3;
     use std::sync::Weak;
     use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -297,17 +297,22 @@ mod tests {
         let state = vanilla_blocks::END_PORTAL.default_state();
         let pos = BlockPos::new(2, 70, -4);
 
-        assert!(behavior.has_block_entity());
         let block_entity = behavior
             .new_block_entity(Weak::new(), pos, state)
+            .into_created()
             .expect("end portal block entity");
-        let guard = block_entity.lock();
-
-        assert!(guard.downcast_ref::<EndPortalBlockEntity>().is_some());
-        assert_eq!(guard.get_type(), &vanilla_block_entity_types::END_PORTAL);
-        assert_eq!(guard.get_block_pos(), pos);
-        assert_eq!(guard.get_block_state(), state);
-        assert!(guard.get_update_tag().is_some());
+        assert!(
+            block_entity
+                .downcast_ref::<EndPortalBlockEntity>()
+                .is_some()
+        );
+        assert_eq!(
+            block_entity.get_type(),
+            &vanilla_block_entity_types::END_PORTAL
+        );
+        assert_eq!(block_entity.get_block_pos(), pos);
+        assert_eq!(block_entity.get_block_state(), state);
+        assert!(block_entity.get_update_tag().is_some());
     }
 
     #[test]
@@ -330,18 +335,31 @@ mod tests {
     #[test]
     fn end_gateway_creates_typed_block_entity() {
         init_test_registry();
+        let world = fresh_test_world("end_gateway_ticker");
         let behavior = EndGatewayBlock::new(&vanilla_blocks::END_GATEWAY);
         let state = vanilla_blocks::END_GATEWAY.default_state();
         let pos = BlockPos::new(2, 70, -4);
 
-        assert!(behavior.has_block_entity());
         let block_entity = behavior
             .new_block_entity(Weak::new(), pos, state)
+            .into_created()
             .expect("end gateway block entity");
-        let guard = block_entity.lock();
-
-        assert!(guard.downcast_ref::<EndGatewayBlockEntity>().is_some());
-        assert_eq!(guard.get_block_pos(), pos);
-        assert_eq!(guard.get_block_state(), state);
+        assert!(
+            block_entity
+                .downcast_ref::<EndGatewayBlockEntity>()
+                .is_some()
+        );
+        assert_eq!(block_entity.get_block_pos(), pos);
+        assert_eq!(block_entity.get_block_state(), state);
+        assert!(
+            behavior
+                .get_block_entity_ticker(&world, state, &vanilla_block_entity_types::END_GATEWAY,)
+                .is_some()
+        );
+        assert!(
+            behavior
+                .get_block_entity_ticker(&world, state, &vanilla_block_entity_types::END_PORTAL)
+                .is_none()
+        );
     }
 }

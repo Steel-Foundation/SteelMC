@@ -20,7 +20,7 @@ use crate::behavior::blocks::building::FenceGateBlock;
 use crate::behavior::blocks::utils::is_excluded_for_connection;
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::ai::path::PathComputationType;
-use crate::world::ScheduledTickAccess;
+use crate::world::{LevelReader as _, ScheduledTickAccess};
 
 /// Behavior for wall blocks.
 ///
@@ -89,22 +89,22 @@ impl BlockBehavior for WallBlock {
         // i.e. the opposite of the direction toward the neighbor.
         let north = connects_to(
             north_state,
-            north_state.is_face_sturdy_at(north_pos, Direction::South),
+            world.is_face_sturdy(north_state, north_pos, Direction::South),
             Direction::South,
         );
         let east = connects_to(
             east_state,
-            east_state.is_face_sturdy_at(east_pos, Direction::West),
+            world.is_face_sturdy(east_state, east_pos, Direction::West),
             Direction::West,
         );
         let south = connects_to(
             south_state,
-            south_state.is_face_sturdy_at(south_pos, Direction::North),
+            world.is_face_sturdy(south_state, south_pos, Direction::North),
             Direction::North,
         );
         let west = connects_to(
             west_state,
-            west_state.is_face_sturdy_at(west_pos, Direction::East),
+            world.is_face_sturdy(west_state, west_pos, Direction::East),
             Direction::East,
         );
 
@@ -191,7 +191,7 @@ fn side_update(
     let opposite = direction.opposite();
     let connected = connects_to(
         neighbor,
-        neighbor.is_face_sturdy_at(neighbor_pos, opposite),
+        world.is_face_sturdy(neighbor, neighbor_pos, opposite),
         opposite,
     );
 

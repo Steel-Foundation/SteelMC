@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
 use crate::chunk::{
-    chunk_access::ChunkAccess,
+    Chunk,
     chunk_generation_task::StaticCache2D,
     chunk_holder::ChunkHolder,
     chunk_pyramid::ChunkStep,
-    proto_chunk::ProtoChunk,
     section::{ChunkSection, Sections},
 };
-use crate::worldgen::context::WorldGenContext;
+use crate::worldgen::generator::context::WorldGenContext;
 
 pub(crate) fn generate(
     context: Arc<WorldGenContext>,
@@ -21,7 +20,7 @@ pub(crate) fn generate(
         .collect::<Vec<_>>()
         .into_boxed_slice();
 
-    let proto_chunk = ProtoChunk::new(
+    let proto_chunk = Chunk::new(
         Sections::from_owned(sections),
         holder.get_pos(),
         context.min_y(),
@@ -30,5 +29,5 @@ pub(crate) fn generate(
     );
 
     // Use no_notify variant so apply_step can notify through the completion channel.
-    holder.insert_chunk_no_notify(ChunkAccess::Proto(proto_chunk));
+    holder.insert_chunk_no_notify(proto_chunk);
 }

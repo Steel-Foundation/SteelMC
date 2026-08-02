@@ -1,54 +1,219 @@
 //! This module contains the `Sections` and `ChunkSection` structs.
-use std::{fmt::Debug, io::Cursor, sync::LazyLock};
+use std::{
+    fmt::Debug,
+    io::Cursor,
+    ops::{Deref, DerefMut},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
+use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_biomes;
 use steel_registry::{REGISTRY, RegistryEntry};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, locks::SyncRwLock, serial::WriteTo};
 
-use crate::behavior::{BLOCK_BEHAVIORS, BlockBehaviorRegistry};
 use crate::chunk::paletted_container::{BiomePalette, BlockPalette};
+
+/// Lock-free index of sections containing randomly-ticking blocks or fluids.
+///
+/// Section writers update their bit while still holding the section lock. Readers
+/// use relaxed loads because this metadata only decides whether to attempt work;
+/// section contents remain protected by the section lock and brief staleness is
+/// acceptable in the same way as Vanilla's unsynchronized derived counters.
+#[derive(Debug)]
+pub(crate) struct RandomTickSectionBits {
+    words: Box<[AtomicU64]>,
+    section_count: usize,
+}
+
+impl RandomTickSectionBits {
+    fn new(section_count: usize) -> Self {
+        let word_count = section_count.div_ceil(u64::BITS as usize);
+        let words = (0..word_count)
+            .map(|_| AtomicU64::new(0))
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        Self {
+            words,
+            section_count,
+        }
+    }
+
+    fn set(&self, section_index: usize, randomly_ticking: bool) {
+        debug_assert!(section_index < self.section_count);
+        let word_index = section_index / u64::BITS as usize;
+        let mask = 1_u64 << (section_index % u64::BITS as usize);
+        if randomly_ticking {
+            self.words[word_index].fetch_or(mask, Ordering::Relaxed);
+        } else {
+            self.words[word_index].fetch_and(!mask, Ordering::Relaxed);
+        }
+    }
+
+    fn contains(&self, section_index: usize) -> bool {
+        debug_assert!(section_index < self.section_count);
+        let word_index = section_index / u64::BITS as usize;
+        let mask = 1_u64 << (section_index % u64::BITS as usize);
+        self.words[word_index].load(Ordering::Relaxed) & mask != 0
+    }
+
+    /// Returns the next eligible section at or above `start`.
+    ///
+    /// Each call reloads the current word, so a random-tick callback changing a
+    /// later section can affect that later section in the same chunk pass.
+    #[must_use]
+    pub(crate) fn next(&self, start: usize) -> Option<usize> {
+        if start >= self.section_count {
+            return None;
+        }
+
+        let mut word_index = start / u64::BITS as usize;
+        let bit_index = start % u64::BITS as usize;
+        let mut bits = self.words[word_index].load(Ordering::Relaxed) & (u64::MAX << bit_index);
+        loop {
+            if bits != 0 {
+                let section_index =
+                    word_index * u64::BITS as usize + bits.trailing_zeros() as usize;
+                return (section_index < self.section_count).then_some(section_index);
+            }
+            word_index += 1;
+            let word = self.words.get(word_index)?;
+            bits = word.load(Ordering::Relaxed);
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.next(0).is_none()
+    }
+}
 
 /// A wrapper around a chunk section.
 #[derive(Debug)]
 pub struct SectionHolder {
     /// The chunk section data (requires lock to access).
-    pub section: SyncRwLock<ChunkSection>,
+    section: SyncRwLock<ChunkSection>,
+    /// Shared lock-free random-tick section index.
+    randomly_ticking_sections: Arc<RandomTickSectionBits>,
+    section_index: usize,
 }
 
 impl SectionHolder {
     /// Creates a new section holder.
     #[must_use]
-    pub const fn new(section: ChunkSection) -> Self {
-        Self {
-            section: SyncRwLock::new(section),
-        }
+    pub fn new(section: ChunkSection) -> Self {
+        let randomly_ticking_sections = Arc::new(RandomTickSectionBits::new(1));
+        Self::with_random_tick_index(section, randomly_ticking_sections, 0)
     }
 
-    /// Returns true if this section contains any randomly-ticking blocks.
+    fn with_random_tick_index(
+        section: ChunkSection,
+        randomly_ticking_sections: Arc<RandomTickSectionBits>,
+        section_index: usize,
+    ) -> Self {
+        let randomly_ticking = section.is_randomly_ticking();
+        let result = Self {
+            section: SyncRwLock::new(section),
+            randomly_ticking_sections,
+            section_index,
+        };
+        if randomly_ticking {
+            result.randomly_ticking_sections.set(section_index, true);
+        }
+        result
+    }
+
+    /// Returns true if this section contains any randomly-ticking blocks or fluids.
     ///
-    /// Performs an unsynchronized read of the ticking block count to avoid
-    /// lock overhead on every section during random ticks. A stale read is
-    /// acceptable: worst case we acquire an unnecessary lock.
+    /// The mirror may briefly be stale relative to a concurrent section writer.
+    /// Section contents and the authoritative counter remain protected by the
+    /// section lock.
     #[inline]
     #[must_use]
     pub fn is_randomly_ticking(&self) -> bool {
-        // SAFETY: `ticking_block_count` is a `u16` — reads are atomic on all
-        // supported platforms. A torn/stale value only causes a harmless
-        // false-positive (we take the lock when we didn't need to).
-        unsafe { (*self.section.data_ptr()).ticking_block_count > 0 }
+        self.randomly_ticking_sections.contains(self.section_index)
     }
 
     /// Acquires a read lock on the section.
     #[inline]
-    pub fn read(&self) -> parking_lot::RwLockReadGuard<'_, ChunkSection> {
+    pub fn read(&self) -> RwLockReadGuard<'_, ChunkSection> {
         self.section.read()
+    }
+
+    /// Attempts to acquire a read lock on the section.
+    #[inline]
+    pub fn try_read(&self) -> Option<RwLockReadGuard<'_, ChunkSection>> {
+        self.section.try_read()
     }
 
     /// Acquires a write lock on the section.
     #[inline]
-    pub fn write(&self) -> parking_lot::RwLockWriteGuard<'_, ChunkSection> {
-        self.section.write()
+    pub fn write(&self) -> SectionWriteGuard<'_> {
+        SectionWriteGuard::new(
+            self.section.write(),
+            &self.randomly_ticking_sections,
+            self.section_index,
+        )
+    }
+
+    /// Attempts to acquire a write lock on the section.
+    #[inline]
+    pub fn try_write(&self) -> Option<SectionWriteGuard<'_>> {
+        self.section.try_write().map(|guard| {
+            SectionWriteGuard::new(guard, &self.randomly_ticking_sections, self.section_index)
+        })
+    }
+}
+
+/// A chunk-section write guard that republishes derived lock-free metadata.
+pub struct SectionWriteGuard<'a> {
+    guard: RwLockWriteGuard<'a, ChunkSection>,
+    randomly_ticking_sections: &'a RandomTickSectionBits,
+    section_index: usize,
+    was_randomly_ticking: bool,
+}
+
+impl<'a> SectionWriteGuard<'a> {
+    fn new(
+        guard: RwLockWriteGuard<'a, ChunkSection>,
+        randomly_ticking_sections: &'a RandomTickSectionBits,
+        section_index: usize,
+    ) -> Self {
+        let was_randomly_ticking = guard.is_randomly_ticking();
+        Self {
+            guard,
+            randomly_ticking_sections,
+            section_index,
+            was_randomly_ticking,
+        }
+    }
+}
+
+impl Deref for SectionWriteGuard<'_> {
+    type Target = ChunkSection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl DerefMut for SectionWriteGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.guard
+    }
+}
+
+impl Drop for SectionWriteGuard<'_> {
+    fn drop(&mut self) {
+        let is_randomly_ticking = self.guard.is_randomly_ticking();
+        if is_randomly_ticking != self.was_randomly_ticking {
+            self.randomly_ticking_sections
+                .set(self.section_index, is_randomly_ticking);
+        }
     }
 }
 
@@ -57,6 +222,7 @@ impl SectionHolder {
 pub struct Sections {
     /// The sections in the collection.
     pub sections: Box<[SectionHolder]>,
+    randomly_ticking_sections: Arc<RandomTickSectionBits>,
 }
 
 /// Cached section counter traits for one block state.
@@ -64,35 +230,39 @@ pub struct Sections {
 pub(crate) struct BlockStateSectionCounts {
     is_air: bool,
     has_fluid: bool,
-    randomly_ticking: bool,
+    randomly_ticking_block: bool,
+    randomly_ticking_fluid: bool,
 }
 
 const BLOCKS_PER_SECTION: u16 = 16 * 16 * 16;
-
-static BLOCK_STATE_SECTION_COUNTS: LazyLock<Box<[BlockStateSectionCounts]>> = LazyLock::new(|| {
-    let mut counts = Vec::with_capacity(REGISTRY.blocks.state_to_block_lookup.len());
-    for state_index in 0..REGISTRY.blocks.state_to_block_lookup.len() {
-        let Ok(raw_state_id) = u16::try_from(state_index) else {
-            panic!("block state registry exceeded BlockStateId range");
-        };
-        counts.push(ChunkSection::block_state_section_counts_with(
-            BlockStateId(raw_state_id),
-            &BLOCK_BEHAVIORS,
-        ));
-    }
-    counts.into_boxed_slice()
-});
 
 impl Sections {
     /// Creates a new `Sections` from a box of owned `ChunkSection`s.
     #[must_use]
     pub fn from_owned(sections: Box<[ChunkSection]>) -> Self {
+        let randomly_ticking_sections = Arc::new(RandomTickSectionBits::new(sections.len()));
         let holders: Box<[SectionHolder]> = sections
             .into_vec()
             .into_iter()
-            .map(SectionHolder::new)
+            .enumerate()
+            .map(|(section_index, section)| {
+                SectionHolder::with_random_tick_index(
+                    section,
+                    Arc::clone(&randomly_ticking_sections),
+                    section_index,
+                )
+            })
             .collect();
-        Self { sections: holders }
+        Self {
+            sections: holders,
+            randomly_ticking_sections,
+        }
+    }
+
+    /// Returns the shared lock-free random-tick section index.
+    #[must_use]
+    pub(crate) const fn random_tick_sections(&self) -> &Arc<RandomTickSectionBits> {
+        &self.randomly_ticking_sections
     }
 
     /// Gets a block at a relative position in the chunk.
@@ -237,7 +407,7 @@ impl Sections {
     /// Each touched section enters worldgen Building mode (raw cube, no palette
     /// tracking) so writes are O(1) stores. Per-write goes through a flat
     /// `&mut [V]` view of the cube — bypasses the 3-arm `set` match and the
-    /// unused old-value load. `recalculate_counts_with` finalizes.
+    /// unused old-value load. `recalculate_counts` finalizes.
     pub fn write_block_batch(&self, blocks: &[(usize, usize, usize, BlockStateId)]) {
         const DIM: usize = BlockPalette::SIZE;
         let mut i = 0;
@@ -253,6 +423,24 @@ impl Sections {
                 let (x, rel_y, z, value) = blocks[i];
                 let local_y = rel_y % DIM;
                 cube[local_y * DIM * DIM + z * DIM + x] = value;
+                i += 1;
+            }
+        }
+    }
+
+    /// Writes a batch of blocks while maintaining section counters and palette state.
+    ///
+    /// Blocks should be grouped by section index so each touched section only needs
+    /// one write guard.
+    pub(crate) fn write_tracked_block_batch(&self, blocks: &[(usize, usize, usize, BlockStateId)]) {
+        const DIM: usize = BlockPalette::SIZE;
+        let mut i = 0;
+        while i < blocks.len() {
+            let section_idx = blocks[i].1 / DIM;
+            let mut guard = self.sections[section_idx].write();
+            while i < blocks.len() && blocks[i].1 / DIM == section_idx {
+                let (x, relative_y, z, value) = blocks[i];
+                guard.set_block_state(x, relative_y % DIM, z, value);
                 i += 1;
             }
         }
@@ -315,6 +503,8 @@ pub struct ChunkSection {
     fluid_count: u16,
     /// Number of randomly-ticking blocks in this section (0-4096).
     pub ticking_block_count: u16,
+    /// Number of randomly-ticking fluids in this section (0-4096).
+    ticking_fluid_count: u16,
 }
 
 impl ChunkSection {
@@ -330,6 +520,7 @@ impl ChunkSection {
             non_empty_block_count: 0,
             fluid_count: 0,
             ticking_block_count: 0,
+            ticking_fluid_count: 0,
         }
     }
 
@@ -343,6 +534,7 @@ impl ChunkSection {
             non_empty_block_count: 0,
             fluid_count: 0,
             ticking_block_count: 0,
+            ticking_fluid_count: 0,
         }
     }
 
@@ -352,10 +544,22 @@ impl ChunkSection {
         self.non_empty_block_count == 0
     }
 
-    /// Returns true if this section contains any randomly-ticking blocks.
+    /// Returns true if this section contains any randomly-ticking blocks or fluids.
     #[must_use]
     pub const fn is_randomly_ticking(&self) -> bool {
+        self.is_randomly_ticking_blocks() || self.is_randomly_ticking_fluids()
+    }
+
+    /// Returns true if this section contains any randomly-ticking blocks.
+    #[must_use]
+    pub const fn is_randomly_ticking_blocks(&self) -> bool {
         self.ticking_block_count > 0
+    }
+
+    /// Returns true if this section contains any randomly-ticking fluids.
+    #[must_use]
+    pub const fn is_randomly_ticking_fluids(&self) -> bool {
+        self.ticking_fluid_count > 0
     }
 
     /// Returns true if this section's palette may contain block-light sources.
@@ -417,18 +621,13 @@ impl ChunkSection {
         self.ticking_block_count
     }
 
-    /// Recalculates cached counters from the global per-state counter table.
-    ///
-    /// This should be called after chunk loading or generation to initialize
-    /// the counters. It requires the block behavior registry to be initialized.
-    ///
-    /// # Panics
-    /// Panics if the block behavior registry has not been initialized.
-    pub fn recalculate_counts(&mut self) {
-        self.recalculate_counts_from_palette(Self::block_state_section_counts);
+    /// Returns the number of randomly-ticking fluids in this section.
+    #[must_use]
+    pub const fn ticking_fluid_count(&self) -> u16 {
+        self.ticking_fluid_count
     }
 
-    /// Recalculates all cached counters using the provided behavior registry.
+    /// Recalculates cached counters from extracted per-state metadata.
     ///
     /// Iterates the palette (`O(palette_size)`) rather than every cube cell
     /// (`O(4096)`): each block-state appears at most once in the palette and
@@ -436,10 +635,8 @@ impl ChunkSection {
     /// and multiply by its count. Mirrors Moonrise's `BlockCountingBitStorage`.
     /// For a `Homogeneous` section that's a single classify; for typical
     /// `Heterogeneous` sections palette is well under 16 entries.
-    pub fn recalculate_counts_with(&mut self, block_behaviors: &BlockBehaviorRegistry) {
-        self.recalculate_counts_from_palette(|state| {
-            Self::block_state_section_counts_with(state, block_behaviors)
-        });
+    pub fn recalculate_counts(&mut self) {
+        self.recalculate_counts_from_palette(Self::block_state_section_counts);
     }
 
     fn recalculate_counts_from_palette(
@@ -450,7 +647,8 @@ impl ChunkSection {
 
         let mut non_empty: u16 = 0;
         let mut fluid: u16 = 0;
-        let mut ticking: u16 = 0;
+        let mut ticking_blocks: u16 = 0;
+        let mut ticking_fluids: u16 = 0;
 
         match &self.states {
             BlockPalette::Homogeneous(state) => {
@@ -458,7 +656,8 @@ impl ChunkSection {
                 Self::accumulate_counter_traits(
                     &mut non_empty,
                     &mut fluid,
-                    &mut ticking,
+                    &mut ticking_blocks,
+                    &mut ticking_fluids,
                     counts,
                     BLOCKS_PER_SECTION,
                 );
@@ -469,7 +668,8 @@ impl ChunkSection {
                     Self::accumulate_counter_traits(
                         &mut non_empty,
                         &mut fluid,
-                        &mut ticking,
+                        &mut ticking_blocks,
+                        &mut ticking_fluids,
                         counts,
                         count,
                     );
@@ -480,13 +680,15 @@ impl ChunkSection {
 
         self.non_empty_block_count = non_empty;
         self.fluid_count = fluid;
-        self.ticking_block_count = ticking;
+        self.ticking_block_count = ticking_blocks;
+        self.ticking_fluid_count = ticking_fluids;
     }
 
     const fn accumulate_counter_traits(
         non_empty: &mut u16,
         fluid: &mut u16,
-        ticking: &mut u16,
+        ticking_blocks: &mut u16,
+        ticking_fluids: &mut u16,
         counts: BlockStateSectionCounts,
         block_count: u16,
     ) {
@@ -496,8 +698,11 @@ impl ChunkSection {
         if counts.has_fluid {
             *fluid += block_count;
         }
-        if counts.randomly_ticking {
-            *ticking += block_count;
+        if counts.randomly_ticking_block {
+            *ticking_blocks += block_count;
+        }
+        if counts.randomly_ticking_fluid {
+            *ticking_fluids += block_count;
         }
     }
 
@@ -526,8 +731,6 @@ impl ChunkSection {
     ///
     /// Returns the old block state.
     ///
-    /// # Panics
-    /// Panics if the block behavior registry has not been initialized.
     pub fn set_block_state(
         &mut self,
         x: usize,
@@ -535,26 +738,12 @@ impl ChunkSection {
         z: usize,
         new_state: BlockStateId,
     ) -> BlockStateId {
-        self.set_block_state_with(x, y, z, new_state, &BLOCK_BEHAVIORS)
-    }
-
-    /// Sets a block state and updates the cached counters using the provided behavior registry.
-    ///
-    /// Returns the old block state.
-    pub fn set_block_state_with(
-        &mut self,
-        x: usize,
-        y: usize,
-        z: usize,
-        new_state: BlockStateId,
-        block_behaviors: &BlockBehaviorRegistry,
-    ) -> BlockStateId {
-        self.ensure_counter_ready_for_delta_with(block_behaviors);
+        self.ensure_counter_ready_for_delta();
         let old_state = self.states.set(x, y, z, new_state);
 
         if old_state != new_state {
-            let old_counts = Self::block_state_section_counts_with(old_state, block_behaviors);
-            let new_counts = Self::block_state_section_counts_with(new_state, block_behaviors);
+            let old_counts = Self::block_state_section_counts(old_state);
+            let new_counts = Self::block_state_section_counts(new_state);
             self.apply_count_change(old_counts, new_counts);
         }
 
@@ -577,13 +766,15 @@ impl ChunkSection {
         self.states.set(x, y, z, new_state)
     }
 
-    /// Returns the cached-counter traits for a block state using the global
-    /// behavior registry.
+    /// Returns the cached-counter traits for a block state.
     pub(crate) fn block_state_section_counts(state: BlockStateId) -> BlockStateSectionCounts {
-        let Some(&counts) = BLOCK_STATE_SECTION_COUNTS.get(state.0 as usize) else {
-            panic!("invalid block state id {}", state.0);
-        };
-        counts
+        let metadata = state.get_ticking_metadata();
+        BlockStateSectionCounts {
+            is_air: metadata.is_air(),
+            has_fluid: metadata.has_fluid(),
+            randomly_ticking_block: metadata.randomly_ticking_block(),
+            randomly_ticking_fluid: metadata.randomly_ticking_fluid(),
+        }
     }
 
     pub(crate) fn finalize_generation_counts_if_needed(&mut self) {
@@ -592,25 +783,13 @@ impl ChunkSection {
         }
     }
 
-    fn ensure_counter_ready_for_delta_with(&mut self, block_behaviors: &BlockBehaviorRegistry) {
+    fn ensure_counter_ready_for_delta(&mut self) {
         if matches!(&self.states, BlockPalette::Building(_)) {
             log::debug!(
                 "finalizing worldgen Building palette before applying a counter-aware \
                  block-state delta"
             );
-            self.recalculate_counts_with(block_behaviors);
-        }
-    }
-
-    fn block_state_section_counts_with(
-        state: BlockStateId,
-        block_behaviors: &BlockBehaviorRegistry,
-    ) -> BlockStateSectionCounts {
-        let behavior = block_behaviors.get_behavior(state.get_block());
-        BlockStateSectionCounts {
-            is_air: state.is_air(),
-            has_fluid: !behavior.get_fluid_state(state).is_empty(),
-            randomly_ticking: behavior.is_randomly_ticking(state),
+            self.recalculate_counts();
         }
     }
 
@@ -631,10 +810,16 @@ impl ChunkSection {
             self.fluid_count += 1;
         }
 
-        if old_counts.randomly_ticking && !new_counts.randomly_ticking {
+        if old_counts.randomly_ticking_block && !new_counts.randomly_ticking_block {
             self.ticking_block_count -= 1;
-        } else if !old_counts.randomly_ticking && new_counts.randomly_ticking {
+        } else if !old_counts.randomly_ticking_block && new_counts.randomly_ticking_block {
             self.ticking_block_count += 1;
+        }
+
+        if old_counts.randomly_ticking_fluid && !new_counts.randomly_ticking_fluid {
+            self.ticking_fluid_count -= 1;
+        } else if !old_counts.randomly_ticking_fluid && new_counts.randomly_ticking_fluid {
+            self.ticking_fluid_count += 1;
         }
     }
 
@@ -689,6 +874,7 @@ mod tests {
         assert_eq!(section.non_empty_block_count(), BLOCKS_PER_SECTION);
         assert_eq!(section.fluid_count(), BLOCKS_PER_SECTION);
         assert_eq!(section.ticking_block_count(), BLOCKS_PER_SECTION);
+        assert_eq!(section.ticking_fluid_count(), BLOCKS_PER_SECTION);
     }
 
     #[test]
@@ -716,6 +902,96 @@ mod tests {
         assert_eq!(section.non_empty_block_count(), 6);
         assert_eq!(section.fluid_count(), 4);
         assert_eq!(section.ticking_block_count(), 1);
+        assert_eq!(section.ticking_fluid_count(), 1);
+    }
+
+    #[test]
+    fn holder_keeps_random_tick_eligibility_in_sync() {
+        init_test_behaviors();
+
+        let mut loaded_section = ChunkSection::new_with_biomes(
+            BlockPalette::Homogeneous(vanilla_blocks::LAVA.default_state()),
+            plains_biomes(),
+        );
+        loaded_section.recalculate_counts();
+        let loaded_holder = SectionHolder::new(loaded_section);
+        assert!(loaded_holder.is_randomly_ticking());
+
+        let holder = SectionHolder::new(ChunkSection::new_empty());
+        {
+            let mut section = holder.write();
+            section.set_block_state(0, 0, 0, vanilla_blocks::LAVA.default_state());
+            assert_eq!(section.ticking_block_count(), 1);
+            assert_eq!(section.ticking_fluid_count(), 1);
+        }
+        assert!(holder.is_randomly_ticking());
+
+        {
+            let Some(mut section) = holder.try_write() else {
+                panic!("uncontended section write lock was unavailable");
+            };
+            section.set_block_state(0, 0, 0, vanilla_blocks::AIR.default_state());
+            assert_eq!(section.ticking_block_count(), 0);
+            assert_eq!(section.ticking_fluid_count(), 0);
+        }
+        assert!(!holder.is_randomly_ticking());
+    }
+
+    #[test]
+    fn shared_random_tick_section_bits_follow_cross_word_updates() {
+        init_test_behaviors();
+        let sections = Sections::from_owned(
+            (0..65)
+                .map(|_| ChunkSection::new_empty())
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        );
+        let bits = Arc::clone(sections.random_tick_sections());
+        assert!(bits.is_empty());
+
+        {
+            let mut section = sections.sections[64].write();
+            section.set_block_state(0, 0, 0, vanilla_blocks::LAVA.default_state());
+        }
+        assert_eq!(bits.next(0), Some(64));
+
+        {
+            let mut section = sections.sections[1].write();
+            section.set_block_state(0, 0, 0, vanilla_blocks::LAVA.default_state());
+        }
+        assert_eq!(bits.next(0), Some(1));
+        assert_eq!(bits.next(2), Some(64));
+
+        {
+            let mut section = sections.sections[1].write();
+            section.set_block_state(0, 0, 0, vanilla_blocks::AIR.default_state());
+        }
+        assert_eq!(bits.next(0), Some(64));
+
+        {
+            let mut section = sections.sections[64].write();
+            section.set_block_state(0, 0, 0, vanilla_blocks::AIR.default_state());
+        }
+        assert!(bits.is_empty());
+    }
+
+    #[test]
+    fn generation_recount_publishes_random_tick_section_bit() {
+        init_test_behaviors();
+        let sections = Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice());
+        let bits = Arc::clone(sections.random_tick_sections());
+
+        {
+            let mut section = sections.sections[0].write();
+            section.set_block_state_for_generation(0, 0, 0, vanilla_blocks::LAVA.default_state());
+        }
+        assert!(bits.is_empty());
+
+        {
+            let mut section = sections.sections[0].write();
+            section.finalize_generation_counts_if_needed();
+        }
+        assert_eq!(bits.next(0), Some(0));
     }
 
     #[test]

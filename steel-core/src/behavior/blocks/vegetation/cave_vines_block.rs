@@ -20,7 +20,7 @@ use crate::behavior::{InteractionResult, InventoryAccess};
 use crate::behavior::{block::BlockBehavior, blocks::vegetation::bonemealable::Bonemealable};
 use crate::entity::{Entity, entity_loot_ref};
 use crate::player::Player;
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::BlockRef;
@@ -118,9 +118,7 @@ impl BlockBehavior for CaveVinesBlock {
         self.growing_plant_head_block()
             .can_survive(state, world, pos)
     }
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        self.growing_plant_head_block().is_randomly_ticking(state)
-    }
+
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.growing_plant_head_block()
             .random_tick(state, world, pos);

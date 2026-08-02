@@ -14,7 +14,7 @@ use std::{
 use crossbeam::atomic::AtomicCell;
 use steel_core::player::{
     ClientInformation, GameProfile, PlayerConnection,
-    networking::{JavaNetworkWriter, OutboundPacket},
+    connection::{JavaNetworkWriter, OutboundPacket},
 };
 use steel_core::server::Server;
 use steel_protocol::{
@@ -253,22 +253,6 @@ impl JavaTcpClient {
 
     async fn release_network_writer(network_writer: &JavaNetworkWriter) {
         network_writer.lock().await.take();
-    }
-
-    /// Encodes and queues a packet to be sent.
-    pub fn send_bare_packet<P: ClientPacket>(&self, packet: P) -> Result<(), PacketError> {
-        let compression = self.compression.load();
-        let protocol = self.protocol.load();
-        let packet = EncodedPacket::from_bare(packet, compression, protocol)?;
-        self.outgoing_queue
-            .send(OutboundPacket::Packet(packet))
-            .map_err(|e| {
-                PacketError::SendError(format!(
-                    "Failed to send packet to client {}: {}",
-                    self.id, e
-                ))
-            })?;
-        Ok(())
     }
 
     /// Queues an already encoded packet to be sent.

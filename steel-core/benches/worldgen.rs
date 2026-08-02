@@ -14,18 +14,19 @@ use std::sync::{
 use std::time::{Duration, Instant};
 use steel_core::behavior::init_behaviors;
 use steel_core::block_entity::init_block_entities;
-use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use steel_core::chunk::Chunk;
 use steel_core::chunk::chunk_generation_task::StaticCache2D;
 use steel_core::chunk::chunk_holder::ChunkHolder;
 use steel_core::chunk::chunk_map::ChunkMap;
 use steel_core::chunk::chunk_pyramid::{ChunkDependencies, ChunkStep, GENERATION_PYRAMID};
 use steel_core::chunk::chunk_status_tasks::ChunkStatusTasks;
 use steel_core::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
+use steel_core::chunk::status::ChunkStatus;
 use steel_core::entity::init_entities;
 use steel_core::level_data::WorldGenerationSettings;
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
+use steel_core::worldgen::generator::generation_benchmark_support;
 use steel_core::worldgen::{
     ChunkGenerator, ChunkGeneratorType, EndGenerator, GeneratorOutput, NetherGenerator,
     OverworldGenerator, WorldGenContext, WorldGeneratorRegistry,
@@ -36,6 +37,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
 use steel_worldgen::biomes::{BiomeSourceKind, ChunkBiomeSampler};
+use steel_worldgen::noise::Beardifier;
 use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use toml::map::Map;
 
@@ -72,6 +74,22 @@ static BENCH_GENERATION_POOL: LazyLock<Arc<rayon::ThreadPool>> = LazyLock::new(|
 });
 const BENCH_HOLDER_LOAD_LEVEL: ChunkTicketLevel = ChunkTicketLevel::STRONGEST;
 
+trait BenchmarkChunkGeneratorExt: ChunkGenerator {
+    fn benchmark_fill_from_noise(&self, chunk: &Chunk, beardifier: Option<&Beardifier>) {
+        generation_benchmark_support::fill_from_noise(self, chunk, beardifier);
+    }
+
+    fn benchmark_build_surface(&self, chunk: &Chunk, neighbor_biomes: &dyn Fn(IVec3) -> u16) {
+        generation_benchmark_support::build_surface(self, chunk, neighbor_biomes);
+    }
+
+    fn benchmark_apply_carvers(&self, chunk: &Chunk) {
+        generation_benchmark_support::apply_carvers(self, chunk);
+    }
+}
+
+impl<G: ChunkGenerator> BenchmarkChunkGeneratorExt for G {}
+
 fn ensure_registry() {
     INIT.call_once(|| {
         let mut registry = Registry::new_vanilla();
@@ -99,28 +117,21 @@ fn create_benchmark_generator(
         .expect(context)
 }
 
-fn make_proto_chunk(chunk_x: i32, chunk_z: i32, dim: &DimensionType) -> ChunkAccess {
+fn make_proto_chunk(chunk_x: i32, chunk_z: i32, dim: &DimensionType) -> Chunk {
     let section_count = (dim.height / 16) as usize;
     let sections: Box<[ChunkSection]> = (0..section_count)
         .map(|_| ChunkSection::new_empty())
         .collect();
     let sections = Sections::from_owned(sections);
     let pos = ChunkPos::new(chunk_x, chunk_z);
-    ChunkAccess::Proto(ProtoChunk::new(
-        sections,
-        pos,
-        dim.min_y,
-        dim.height,
-        Weak::new(),
-    ))
+    Chunk::new(sections, pos, dim.min_y, dim.height, Weak::new())
 }
 
-/// Build a `neighbor_biomes` closure that reads from the chunk's own sections.
+/// Builds a neighbor-biome lookup from the benchmark chunk itself.
 ///
-/// In a real pipeline this reads from a neighbor cache, but for a single-chunk
-/// benchmark the chunk is its own neighbor (biome lookups near edges will
-/// wrap but that's fine for timing).
-fn self_neighbor_biomes(chunk: &ChunkAccess) -> impl Fn(IVec3) -> u16 + '_ {
+/// Real generation reads a neighbor cache. Single-chunk benchmarks wrap edge
+/// lookups into the center chunk because only the stage timing matters here.
+fn self_neighbor_biomes(chunk: &Chunk) -> impl Fn(IVec3) -> u16 + '_ {
     let sections = chunk.sections();
     let min_qy = chunk.min_y() >> 2;
     let total_quarts_y = (sections.sections.len() * 4) as i32;
@@ -228,7 +239,7 @@ fn bench_overworld_noise(c: &mut Criterion) {
     c.bench_function("overworld_fill_from_noise", |b| {
         b.iter(|| {
             let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
-            generator.fill_from_noise(&chunk, None);
+            generator.benchmark_fill_from_noise(&chunk, None);
         });
     });
 }
@@ -242,7 +253,7 @@ fn bench_nether_noise(c: &mut Criterion) {
     c.bench_function("nether_fill_from_noise", |b| {
         b.iter(|| {
             let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
-            generator.fill_from_noise(&chunk, None);
+            generator.benchmark_fill_from_noise(&chunk, None);
         });
     });
 }
@@ -256,7 +267,7 @@ fn bench_end_noise(c: &mut Criterion) {
     c.bench_function("end_fill_from_noise", |b| {
         b.iter(|| {
             let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
-            generator.fill_from_noise(&chunk, None);
+            generator.benchmark_fill_from_noise(&chunk, None);
         });
     });
 }
@@ -274,12 +285,12 @@ fn bench_overworld_surface(c: &mut Criterion) {
             || {
                 let chunk = make_proto_chunk(0, 0, dim);
                 generator.create_biomes(&chunk);
-                generator.fill_from_noise(&chunk, None);
+                generator.benchmark_fill_from_noise(&chunk, None);
                 chunk
             },
             |chunk| {
                 let neighbor_biomes = self_neighbor_biomes(&chunk);
-                generator.build_surface(black_box(&chunk), &neighbor_biomes);
+                generator.benchmark_build_surface(black_box(&chunk), &neighbor_biomes);
             },
             criterion::BatchSize::SmallInput,
         );
@@ -297,12 +308,12 @@ fn bench_nether_surface(c: &mut Criterion) {
             || {
                 let chunk = make_proto_chunk(0, 0, dim);
                 generator.create_biomes(&chunk);
-                generator.fill_from_noise(&chunk, None);
+                generator.benchmark_fill_from_noise(&chunk, None);
                 chunk
             },
             |chunk| {
                 let neighbor_biomes = self_neighbor_biomes(&chunk);
-                generator.build_surface(black_box(&chunk), &neighbor_biomes);
+                generator.benchmark_build_surface(black_box(&chunk), &neighbor_biomes);
             },
             criterion::BatchSize::SmallInput,
         );
@@ -320,12 +331,12 @@ fn bench_end_surface(c: &mut Criterion) {
             || {
                 let chunk = make_proto_chunk(0, 0, dim);
                 generator.create_biomes(&chunk);
-                generator.fill_from_noise(&chunk, None);
+                generator.benchmark_fill_from_noise(&chunk, None);
                 chunk
             },
             |chunk| {
                 let neighbor_biomes = self_neighbor_biomes(&chunk);
-                generator.build_surface(black_box(&chunk), &neighbor_biomes);
+                generator.benchmark_build_surface(black_box(&chunk), &neighbor_biomes);
             },
             criterion::BatchSize::SmallInput,
         );
@@ -348,7 +359,7 @@ fn bench_overworld_recalculate_counts(c: &mut Criterion) {
             || {
                 let chunk = make_proto_chunk(0, 0, dim);
                 generator.create_biomes(&chunk);
-                generator.fill_from_noise(&chunk, None);
+                generator.benchmark_fill_from_noise(&chunk, None);
                 chunk
             },
             |chunk| {
@@ -374,15 +385,15 @@ fn bench_overworld_carvers(c: &mut Criterion) {
             || {
                 let chunk = make_proto_chunk(0, 0, dim);
                 generator.create_biomes(&chunk);
-                generator.fill_from_noise(&chunk, None);
+                generator.benchmark_fill_from_noise(&chunk, None);
                 {
                     let neighbor_biomes = self_neighbor_biomes(&chunk);
-                    generator.build_surface(&chunk, &neighbor_biomes);
+                    generator.benchmark_build_surface(&chunk, &neighbor_biomes);
                 }
                 chunk
             },
             |chunk| {
-                generator.apply_carvers(black_box(&chunk));
+                generator.benchmark_apply_carvers(black_box(&chunk));
             },
             criterion::BatchSize::SmallInput,
         );
@@ -400,15 +411,15 @@ fn bench_nether_carvers(c: &mut Criterion) {
             || {
                 let chunk = make_proto_chunk(0, 0, dim);
                 generator.create_biomes(&chunk);
-                generator.fill_from_noise(&chunk, None);
+                generator.benchmark_fill_from_noise(&chunk, None);
                 {
                     let neighbor_biomes = self_neighbor_biomes(&chunk);
-                    generator.build_surface(&chunk, &neighbor_biomes);
+                    generator.benchmark_build_surface(&chunk, &neighbor_biomes);
                 }
                 chunk
             },
             |chunk| {
-                generator.apply_carvers(black_box(&chunk));
+                generator.benchmark_apply_carvers(black_box(&chunk));
             },
             criterion::BatchSize::SmallInput,
         );
@@ -426,15 +437,15 @@ fn bench_end_carvers(c: &mut Criterion) {
             || {
                 let chunk = make_proto_chunk(0, 0, dim);
                 generator.create_biomes(&chunk);
-                generator.fill_from_noise(&chunk, None);
+                generator.benchmark_fill_from_noise(&chunk, None);
                 {
                     let neighbor_biomes = self_neighbor_biomes(&chunk);
-                    generator.build_surface(&chunk, &neighbor_biomes);
+                    generator.benchmark_build_surface(&chunk, &neighbor_biomes);
                 }
                 chunk
             },
             |chunk| {
-                generator.apply_carvers(black_box(&chunk));
+                generator.benchmark_apply_carvers(black_box(&chunk));
             },
             criterion::BatchSize::SmallInput,
         );
@@ -448,16 +459,16 @@ fn make_chunk_through_carvers(
     chunk_z: i32,
     dim: &DimensionType,
     generator: &ChunkGeneratorType,
-) -> ChunkAccess {
+) -> Chunk {
     let chunk = make_proto_chunk(chunk_x, chunk_z, dim);
     generator.create_structures(&chunk);
     generator.create_biomes(&chunk);
-    generator.fill_from_noise(&chunk, None);
+    generator.benchmark_fill_from_noise(&chunk, None);
     {
         let neighbor_biomes = self_neighbor_biomes(&chunk);
-        generator.build_surface(&chunk, &neighbor_biomes);
+        generator.benchmark_build_surface(&chunk, &neighbor_biomes);
     }
-    generator.apply_carvers(&chunk);
+    generator.benchmark_apply_carvers(&chunk);
     chunk
 }
 
@@ -577,6 +588,7 @@ fn build_feature_fixture_at(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -846,6 +858,7 @@ fn build_concurrent_feature_fixture(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -935,6 +948,7 @@ fn build_concurrent_full_pipeline_fixture(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -968,9 +982,7 @@ fn build_concurrent_full_pipeline_fixture(
             dim.min_y,
             dim.height,
         ));
-        let _ = chunk_map_for_factory
-            .chunks
-            .insert_sync(pos, holder.clone());
+        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, holder.clone());
         holder
     }));
     let stages = full_pipeline_stages(&cache, &centers);
@@ -1030,6 +1042,7 @@ fn build_concurrent_light_fixture(
         generation_settings,
         view_distance: 10,
         simulation_distance: 10,
+        max_chained_neighbor_updates: 1_000_000,
         compression: None,
         is_flat: false,
         sea_level: output.sea_level,
@@ -1060,9 +1073,7 @@ fn build_concurrent_light_fixture(
             dim.min_y,
             dim.height,
         ));
-        let _ = chunk_map_for_factory
-            .chunks
-            .insert_sync(pos, holder.clone());
+        chunk_map_for_factory.insert_benchmark_chunk_holder(pos, holder.clone());
         holder
     }));
     let setup_stages =
@@ -1514,13 +1525,13 @@ fn bench_end_features(c: &mut Criterion) {
 /// full-placement, and jigsaw paths.
 const STRUCTURE_GRID_SIDE: i32 = 20;
 
-fn structure_grid_chunks(dim: &'static DimensionType) -> Vec<ChunkAccess> {
+fn structure_grid_chunks(dim: &'static DimensionType) -> Vec<Chunk> {
     (0..STRUCTURE_GRID_SIDE)
         .flat_map(|x| (0..STRUCTURE_GRID_SIDE).map(move |z| make_proto_chunk(x, z, dim)))
         .collect()
 }
 
-fn run_grid<G: ChunkGenerator>(generator: &G, chunks: &[ChunkAccess]) {
+fn run_grid<G: ChunkGenerator>(generator: &G, chunks: &[Chunk]) {
     for chunk in chunks {
         generator.create_structures(black_box(chunk));
     }
@@ -1749,12 +1760,12 @@ fn bench_overworld_full(c: &mut Criterion) {
         b.iter(|| {
             let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
             generator.create_biomes(&chunk);
-            generator.fill_from_noise(&chunk, None);
+            generator.benchmark_fill_from_noise(&chunk, None);
             {
                 let neighbor_biomes = self_neighbor_biomes(&chunk);
-                generator.build_surface(&chunk, &neighbor_biomes);
+                generator.benchmark_build_surface(&chunk, &neighbor_biomes);
             }
-            generator.apply_carvers(&chunk);
+            generator.benchmark_apply_carvers(&chunk);
         });
     });
 }
@@ -1769,12 +1780,12 @@ fn bench_nether_full(c: &mut Criterion) {
         b.iter(|| {
             let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
             generator.create_biomes(&chunk);
-            generator.fill_from_noise(&chunk, None);
+            generator.benchmark_fill_from_noise(&chunk, None);
             {
                 let neighbor_biomes = self_neighbor_biomes(&chunk);
-                generator.build_surface(&chunk, &neighbor_biomes);
+                generator.benchmark_build_surface(&chunk, &neighbor_biomes);
             }
-            generator.apply_carvers(&chunk);
+            generator.benchmark_apply_carvers(&chunk);
         });
     });
 }
@@ -1789,12 +1800,12 @@ fn bench_end_full(c: &mut Criterion) {
         b.iter(|| {
             let chunk = make_proto_chunk(black_box(0), black_box(0), dim);
             generator.create_biomes(&chunk);
-            generator.fill_from_noise(&chunk, None);
+            generator.benchmark_fill_from_noise(&chunk, None);
             {
                 let neighbor_biomes = self_neighbor_biomes(&chunk);
-                generator.build_surface(&chunk, &neighbor_biomes);
+                generator.benchmark_build_surface(&chunk, &neighbor_biomes);
             }
-            generator.apply_carvers(&chunk);
+            generator.benchmark_apply_carvers(&chunk);
         });
     });
 }

@@ -3,11 +3,11 @@ use std::sync::Arc;
 use glam::IVec3;
 
 use crate::chunk::{
-    chunk_access::ChunkStatus, chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder,
-    chunk_pyramid::ChunkStep,
+    chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder, chunk_pyramid::ChunkStep,
+    status::ChunkStatus,
 };
-use crate::worldgen::context::WorldGenContext;
-use crate::worldgen::generator::ChunkGenerator;
+use crate::worldgen::generator::context::WorldGenContext;
+use crate::worldgen::generator::{ChunkGenerator, GenerationChunk, SurfacePhase};
 
 #[expect(
     clippy::similar_names,
@@ -19,12 +19,10 @@ pub(crate) fn generate(
     cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
     holder: Arc<ChunkHolder>,
 ) {
-    let chunk = holder
-        .try_chunk(ChunkStatus::Noise)
-        .expect("Chunk not found at status Noise");
+    let chunk = GenerationChunk::<SurfacePhase>::acquire(&holder);
 
     let min_qy = chunk.min_y() >> 2;
-    let total_quarts_y = (chunk.sections().sections.len() * 4) as i32;
+    let total_quarts_y = (chunk.section_count() * 4) as i32;
 
     let neighbor_biomes = |q: IVec3| -> u16 {
         let chunk_x = q.x >> 2;
@@ -45,5 +43,5 @@ pub(crate) fn generate(
             .get(local_qx, local_qy, local_qz)
     };
 
-    context.generator.build_surface(&chunk, &neighbor_biomes);
+    context.generator.build_surface(chunk, &neighbor_biomes);
 }

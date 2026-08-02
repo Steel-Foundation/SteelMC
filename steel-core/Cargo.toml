@@ -11,6 +11,7 @@ build = "build/build.rs"
 stand-alone = []
 slow_chunk_gen = []
 flint = []
+benchmark-support = []
 
 [dependencies]
 # Internal crates
@@ -83,7 +84,7 @@ proc-macro2.workspace = true
 quote.workspace = true
 heck.workspace = true
 syn = { workspace = true, features = ["full"] }
-glob = "0.3"
+glob = "0.3.4"
 
 [dev-dependencies]
 criterion.workspace = true
@@ -92,6 +93,7 @@ steel-registry = { workspace = true, features = ["test-utils"] }
 [[bench]]
 name = "worldgen"
 harness = false
+required-features = ["benchmark-support"]
 
 [lints]
 workspace = true

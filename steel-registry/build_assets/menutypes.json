@@ -1,27 +1,102 @@
 [
-  "generic_9x1",
-  "generic_9x2",
-  "generic_9x3",
-  "generic_9x4",
-  "generic_9x5",
-  "generic_9x6",
-  "generic_3x3",
-  "crafter_3x3",
-  "anvil",
-  "beacon",
-  "blast_furnace",
-  "brewing_stand",
-  "crafting",
-  "enchantment",
-  "furnace",
-  "grindstone",
-  "hopper",
-  "lectern",
-  "loom",
-  "merchant",
-  "shulker_box",
-  "smithing",
-  "smoker",
-  "cartography_table",
-  "stonecutter"
+  {
+    "name": "generic_9x1",
+    "slot_count": 45
+  },
+  {
+    "name": "generic_9x2",
+    "slot_count": 54
+  },
+  {
+    "name": "generic_9x3",
+    "slot_count": 63
+  },
+  {
+    "name": "generic_9x4",
+    "slot_count": 72
+  },
+  {
+    "name": "generic_9x5",
+    "slot_count": 81
+  },
+  {
+    "name": "generic_9x6",
+    "slot_count": 90
+  },
+  {
+    "name": "generic_3x3",
+    "slot_count": 45
+  },
+  {
+    "name": "crafter_3x3",
+    "slot_count": 46
+  },
+  {
+    "name": "anvil",
+    "slot_count": 39
+  },
+  {
+    "name": "beacon",
+    "slot_count": 37
+  },
+  {
+    "name": "blast_furnace",
+    "slot_count": 39
+  },
+  {
+    "name": "brewing_stand",
+    "slot_count": 41
+  },
+  {
+    "name": "crafting",
+    "slot_count": 46
+  },
+  {
+    "name": "enchantment",
+    "slot_count": 38
+  },
+  {
+    "name": "furnace",
+    "slot_count": 39
+  },
+  {
+    "name": "grindstone",
+    "slot_count": 39
+  },
+  {
+    "name": "hopper",
+    "slot_count": 41
+  },
+  {
+    "name": "lectern",
+    "slot_count": 1
+  },
+  {
+    "name": "loom",
+    "slot_count": 40
+  },
+  {
+    "name": "merchant",
+    "slot_count": 39
+  },
+  {
+    "name": "shulker_box",
+    "slot_count": 63
+  },
+  {
+    "name": "smithing",
+    "slot_count": 40
+  },
+  {
+    "name": "smoker",
+    "slot_count": 39
+  },
+  {
+    "name": "cartography_table",
+    "slot_count": 39
+  },
+  {
+    "name": "stonecutter",
+    "slot_count": 38
+  }
 ]

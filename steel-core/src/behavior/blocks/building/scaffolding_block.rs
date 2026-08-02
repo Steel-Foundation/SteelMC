@@ -1,11 +1,17 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::{
-    BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties, shapes::VoxelShape,
+    BlockRef,
+    block_state_ext::BlockStateExt,
+    properties::{BlockStateProperties, Direction},
+    shapes::VoxelShape,
 };
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
 
-use crate::behavior::{BlockBehavior, BlockCollisionContext, BlockPlaceContext};
-use crate::world::LevelReader;
+use crate::behavior::{
+    BlockBehavior, BlockCollisionContext, BlockPlaceContext,
+    block::schedule_water_tick_if_waterlogged,
+};
+use crate::world::{LevelReader, ScheduledTickAccess};
 
 const SHAPE_STABLE_BOXES: &[BlockLocalAabb] = &[
     BlockLocalAabb::new(0.0, 0.875, 0.0, 1.0, 1.0, 1.0),
@@ -40,8 +46,22 @@ impl ScaffoldingBlock {
 }
 
 impl BlockBehavior for ScaffoldingBlock {
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        schedule_water_tick_if_waterlogged(state, world, pos);
+        world.schedule_block_tick_default(pos, self.block, 1);
+        state
+    }
+
     // TODO: Mirror vanilla scaffolding placement here, including WATERLOGGED,
-    // STABILITY_DISTANCE, BOTTOM, on_place, and update_shape tick scheduling.
+    // STABILITY_DISTANCE, BOTTOM, and on_place.
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
@@ -74,7 +94,7 @@ impl BlockBehavior for ScaffoldingBlock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use steel_registry::{test_support, vanilla_blocks};
+    use steel_registry::{test_support, vanilla_blocks, vanilla_fluids};
 
     use crate::test_support::TestLevel;
 
@@ -137,5 +157,46 @@ mod tests {
         );
 
         assert_eq!(shape, VoxelShape::EMPTY);
+    }
+
+    #[test]
+    fn shape_update_schedules_stability_and_water_ticks() {
+        test_support::init_test_registry();
+        let behavior = ScaffoldingBlock::new(&vanilla_blocks::SCAFFOLDING);
+        let state = vanilla_blocks::SCAFFOLDING
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+        let pos = BlockPos::new(0, 64, 0);
+        let level = TestLevel::default();
+
+        assert_eq!(
+            behavior.update_shape(
+                state,
+                &level,
+                pos,
+                Direction::North,
+                pos.north(),
+                vanilla_blocks::AIR.default_state(),
+            ),
+            state
+        );
+        assert_eq!(
+            level
+                .scheduled_block_ticks
+                .borrow()
+                .iter()
+                .map(|tick| (tick.pos, tick.block, tick.delay))
+                .collect::<Vec<_>>(),
+            vec![(pos, &vanilla_blocks::SCAFFOLDING, 1)]
+        );
+        assert_eq!(
+            level
+                .scheduled_fluid_ticks
+                .borrow()
+                .iter()
+                .map(|tick| (tick.pos, tick.fluid, tick.delay))
+                .collect::<Vec<_>>(),
+            vec![(pos, &vanilla_fluids::WATER, 5)]
+        );
     }
 }

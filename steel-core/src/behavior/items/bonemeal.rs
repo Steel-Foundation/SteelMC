@@ -9,10 +9,8 @@ use steel_registry::{
 use steel_utils::{BlockPos, Direction, types::UpdateFlags};
 
 use crate::{
-    behavior::{
-        BLOCK_BEHAVIORS, BlockStateBehaviorExt, InteractionResult, ItemBehavior, UseOnContext,
-    },
-    world::World,
+    behavior::{BLOCK_BEHAVIORS, InteractionResult, ItemBehavior, UseOnContext},
+    world::{LevelReader as _, World},
 };
 
 /// Behavior for the Bonemeal item.
@@ -113,8 +111,11 @@ impl ItemBehavior for BoneMealItem {
             return InteractionResult::Success;
         }
         let state = context.world.get_block_state(context.hit_result.block_pos);
-        let is_clicked_face_sturdy =
-            state.is_face_sturdy_at(context.hit_result.block_pos, context.hit_result.direction);
+        let is_clicked_face_sturdy = context.world.is_face_sturdy(
+            state,
+            context.hit_result.block_pos,
+            context.hit_result.direction,
+        );
         if is_clicked_face_sturdy
             && Self::grow_water_plant(
                 context.world,

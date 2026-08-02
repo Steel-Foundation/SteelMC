@@ -8,7 +8,9 @@ use steel_utils::Identifier;
 use super::clock::WorldClockManager;
 
 const SKY_LIGHT_LEVEL_ATTRIBUTE: &str = "minecraft:gameplay/sky_light_level";
+const SUN_ANGLE_ATTRIBUTE: &str = "minecraft:visual/sun_angle";
 const DEFAULT_SKY_LIGHT_LEVEL: f32 = 15.0;
+const DEFAULT_SUN_ANGLE: f32 = 0.0;
 const MIN_SKY_LIGHT_LEVEL: f32 = 0.0;
 const MAX_SKY_LIGHT_LEVEL: f32 = 15.0;
 const RAIN_SKY_LIGHT_TARGET: f32 = 4.0;
@@ -27,7 +29,12 @@ pub(super) fn sky_light_level(
     let mut value = dimension_type
         .sky_light_level
         .unwrap_or(DEFAULT_SKY_LIGHT_LEVEL);
-    value = apply_timeline_sky_light_level(value, dimension_type, clock_manager);
+    value = apply_timeline_float_attribute(
+        value,
+        dimension_type,
+        clock_manager,
+        SKY_LIGHT_LEVEL_ATTRIBUTE,
+    );
     if can_have_weather {
         value = apply_weather_sky_light_level(value, rain_level, thunder_level);
     }
@@ -35,14 +42,28 @@ pub(super) fn sky_light_level(
 }
 
 #[must_use]
+pub(super) fn sun_angle_degrees(
+    dimension_type: DimensionTypeRef,
+    clock_manager: &WorldClockManager,
+) -> f32 {
+    apply_timeline_float_attribute(
+        DEFAULT_SUN_ANGLE,
+        dimension_type,
+        clock_manager,
+        SUN_ANGLE_ATTRIBUTE,
+    )
+}
+
+#[must_use]
 pub(super) fn sky_darkening(sky_light_level: f32) -> u8 {
     (MAX_SKY_LIGHT_LEVEL - sky_light_level.clamp(MIN_SKY_LIGHT_LEVEL, MAX_SKY_LIGHT_LEVEL)) as u8
 }
 
-fn apply_timeline_sky_light_level(
+fn apply_timeline_float_attribute(
     mut value: f32,
     dimension_type: DimensionTypeRef,
     clock_manager: &WorldClockManager,
+    attribute: &str,
 ) -> f32 {
     let Some(timelines) = dimension_type.timelines else {
         return value;
@@ -52,7 +73,7 @@ fn apply_timeline_sky_light_level(
             return value;
         };
         for timeline in REGISTRY.timelines.iter_tag(&tag) {
-            value = apply_timeline_sky_light_level_track(value, timeline, clock_manager);
+            value = apply_timeline_float_track(value, timeline, clock_manager, attribute);
         }
         return value;
     }
@@ -61,20 +82,17 @@ fn apply_timeline_sky_light_level(
         return value;
     };
     REGISTRY.timelines.by_key(&key).map_or(value, |timeline| {
-        apply_timeline_sky_light_level_track(value, timeline, clock_manager)
+        apply_timeline_float_track(value, timeline, clock_manager, attribute)
     })
 }
 
-fn apply_timeline_sky_light_level_track(
+fn apply_timeline_float_track(
     value: f32,
     timeline: TimelineRef,
     clock_manager: &WorldClockManager,
+    attribute: &str,
 ) -> f32 {
-    let Some(track) = timeline
-        .tracks
-        .iter()
-        .find(|track| track.name == SKY_LIGHT_LEVEL_ATTRIBUTE)
-    else {
+    let Some(track) = timeline.tracks.iter().find(|track| track.name == attribute) else {
         return value;
     };
     let Some(total_ticks) = clock_manager.total_ticks(timeline.clock) else {
@@ -163,12 +181,89 @@ fn interpolate_float_segment(
     }
 
     let alpha = (sample_ticks - from_ticks) as f32 / (to_ticks - from_ticks) as f32;
-    let eased_alpha = if matches!(track.ease, Some(Ease::Named("constant"))) {
-        0.0
-    } else {
-        alpha
-    };
+    let eased_alpha = apply_easing(track.ease.as_ref(), alpha)?;
     Some(from + eased_alpha * (to - from))
+}
+
+fn apply_easing(ease: Option<&Ease>, alpha: f32) -> Option<f32> {
+    match ease {
+        None | Some(Ease::Named("linear")) => Some(alpha),
+        Some(Ease::Named("constant")) => Some(0.0),
+        Some(Ease::CubicBezier([x1, y1, x2, y2])) => Some(cubic_bezier(alpha, *x1, *y1, *x2, *y2)),
+        Some(Ease::Named(_)) => None,
+    }
+}
+
+fn cubic_bezier(x: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
+    let x_curve = CubicCurve::from_controls(x1, x2);
+    let y_curve = CubicCurve::from_controls(y1, y2);
+    y_curve.sample(x_curve.solve_t(x))
+}
+
+#[derive(Clone, Copy)]
+struct CubicCurve {
+    a: f32,
+    b: f32,
+    c: f32,
+}
+
+impl CubicCurve {
+    const ERROR_EPSILON: f32 = 1.0E-5;
+
+    fn from_controls(first: f32, second: f32) -> Self {
+        Self {
+            a: (3.0 * first - 3.0 * second) + 1.0,
+            b: -6.0 * first + 3.0 * second,
+            c: 3.0 * first,
+        }
+    }
+
+    fn sample(self, t: f32) -> f32 {
+        ((self.a * t + self.b) * t + self.c) * t
+    }
+
+    fn sample_gradient(self, t: f32) -> f32 {
+        (3.0 * self.a * t + 2.0 * self.b) * t + self.c
+    }
+
+    fn solve_t(self, x: f32) -> f32 {
+        let mut t = x;
+        for _ in 0..4 {
+            let error = self.sample(t) - x;
+            if error.abs() < Self::ERROR_EPSILON {
+                return t;
+            }
+            let gradient = self.sample_gradient(t);
+            if gradient < Self::ERROR_EPSILON {
+                break;
+            }
+            t -= (error / gradient).clamp(-0.25, 0.25);
+        }
+        self.solve_t_bisect(x, t)
+    }
+
+    #[expect(
+        clippy::manual_midpoint,
+        reason = "evaluation order mirrors vanilla CubicBezier.solveTBisect float arithmetic"
+    )]
+    fn solve_t_bisect(self, x: f32, initial_t: f32) -> f32 {
+        let mut lower = 0.0;
+        let mut upper = 1.0;
+        let mut t = initial_t;
+        while lower < upper {
+            let error = self.sample(t) - x;
+            if error.abs() < Self::ERROR_EPSILON {
+                return t;
+            }
+            if error < 0.0 {
+                lower = t;
+            } else {
+                upper = t;
+            }
+            t = (upper + lower) / 2.0;
+        }
+        t
+    }
 }
 
 const fn keyframe_float_value(value: &KeyframeValue) -> Option<f32> {
@@ -241,6 +336,24 @@ mod tests {
         assert_f32_close(
             sky_light_level(&OVERWORLD, &clock_manager_at(12_768), 0.0, 0.0, true),
             9.503_051,
+        );
+    }
+
+    #[test]
+    fn overworld_sun_angle_uses_vanilla_cubic_bezier_easing() {
+        init_test_registry();
+
+        assert_f32_close(
+            sun_angle_degrees(&OVERWORLD, &clock_manager_at(0)),
+            282.374_33,
+        );
+        assert_f32_close(
+            sun_angle_degrees(&OVERWORLD, &clock_manager_at(12_000)),
+            77.625_66,
+        );
+        assert_f32_close(
+            sun_angle_degrees(&OVERWORLD, &clock_manager_at(18_000)),
+            180.0,
         );
     }
 
