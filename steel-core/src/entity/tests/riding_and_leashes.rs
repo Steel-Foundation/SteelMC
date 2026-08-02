@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn living_ride_tick_resets_fall_distance() {
+    init_test_registry();
+
+    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    entity.set_fall_distance(7.0);
+    let entity_ref: &dyn Entity = &entity;
+
+    entity_ref.ride_tick();
+
+    assert_f64_close(entity.fall_distance(), 0.0);
+}
+
+#[test]
 fn default_below_world_hook_discards_entity() {
     let entity = PushableTestEntity::shared(1, DVec3::ZERO);
 

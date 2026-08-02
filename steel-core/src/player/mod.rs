@@ -46,9 +46,8 @@ pub use profile::{
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use std::sync::{Arc, Weak};
 use steel_protocol::packets::game::{
-    AttributeSnapshot, CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn,
-    CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
-    EquipmentSlotItem, LookAtAnchor, RelativeMovement, SoundSource,
+    CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn, CSetDefaultSpawnPosition, CSetHealth,
+    CSetHeldSlot, CSetPassengers, ClientCommandAction, LookAtAnchor, RelativeMovement, SoundSource,
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -1193,10 +1192,6 @@ impl Entity for Player {
         }
     }
 
-    fn tick(&self) {
-        Player::tick(self);
-    }
-
     fn fall_sounds(&self) -> (SoundEventRef, SoundEventRef) {
         (
             &sound_events::ENTITY_PLAYER_SMALL_FALL,
@@ -1334,26 +1329,6 @@ impl Entity for Player {
         self.update_dirty_mob_effect_entity_data();
     }
 
-    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        self.attributes().lock().syncable_snapshots()
-    }
-
-    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        self.attributes().lock().drain_dirty_sync()
-    }
-
-    fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
-        self.living_base.drain_dirty_mob_effects()
-    }
-
-    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
-        self.pack_living_equipment()
-    }
-
-    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
-        self.drain_dirty_living_equipment()
-    }
-
     fn max_up_step(&self) -> f32 {
         self.attributes()
             .lock()
@@ -1371,10 +1346,6 @@ impl Entity for Player {
 
     fn is_crouching(&self) -> bool {
         Player::is_crouching(self)
-    }
-
-    fn can_walk_on_powder_snow(&self) -> bool {
-        self.default_living_can_walk_on_powder_snow()
     }
 
     fn may_interact(&self, world: &World, pos: BlockPos) -> bool {
@@ -1457,6 +1428,10 @@ const fn protocol_look_at_anchor(anchor: EntityAnchor) -> LookAtAnchor {
 }
 
 impl LivingEntity for Player {
+    fn tick_living_entity(&self) {
+        Player::tick(self);
+    }
+
     fn get_health(&self) -> f32 {
         *self.entity_data.lock().living_entity().health.get()
     }

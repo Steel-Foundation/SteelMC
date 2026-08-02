@@ -333,31 +333,6 @@ impl Heightmap {
         result
     }
 
-    /// Sets the raw data from a slice of i64 values (network format).
-    pub fn set_raw_data(&mut self, data: &[i64]) {
-        let bits_per_value = Self::calculate_bits_per_value(self.height);
-        let values_per_long = 64 / bits_per_value;
-        let expected_longs = 256_usize.div_ceil(values_per_long);
-
-        if data.len() != expected_longs {
-            log::warn!(
-                "Heightmap data size mismatch: expected {}, got {}. Ignoring.",
-                expected_longs,
-                data.len()
-            );
-            return;
-        }
-
-        let mask = (1u64 << bits_per_value) - 1;
-
-        for i in 0..256 {
-            let long_index = i / values_per_long;
-            let bit_offset = (i % values_per_long) * bits_per_value;
-            let value = ((data[long_index] as u64) >> bit_offset) & mask;
-            self.data[i] = value as u16;
-        }
-    }
-
     /// Calculates the number of bits required to store heights for a given world height.
     #[inline]
     const fn calculate_bits_per_value(height: i32) -> usize {
