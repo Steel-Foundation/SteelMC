@@ -1183,16 +1183,25 @@ fn parse_structured_component(
     reader: &mut StringReader<'_>,
 ) -> Result<TextComponent, CommandSyntaxError> {
     let start = reader.checkpoint();
+
     let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
         reader.advance_bytes(error.cursor());
         component_snbt_error(reader, error.component())
     })?;
+
     if !reader.advance_bytes(consumed) {
         return Err(component_snbt_error(
             reader,
             "Invalid text component cursor",
         ));
     }
+
+    validate_component_syntax(&tag).map_err(|error| {
+        reader.restore(start);
+        invalid_component(reader, error.to_string())
+    })?;
+
+    // 4. Transformar NBT a TextComponent
     TextComponent::try_from_nbt(&tag).map_err(|error| {
         reader.restore(start);
         invalid_component(reader, error.to_string())
