@@ -16,6 +16,7 @@ use steel_registry::attribute::AttributeRef;
 use steel_registry::entity_data::ParticleList;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::ItemRef;
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
@@ -570,10 +571,10 @@ impl Default for LivingSwingState {
 }
 
 /// Vanilla active item-use state stored on `LivingEntity`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ActiveItemUseState {
     hand: InteractionHand,
-    item: ItemStack,
+    item: ItemRef,
     duration: i32,
     remaining_ticks: i32,
 }
@@ -581,7 +582,7 @@ pub struct ActiveItemUseState {
 impl ActiveItemUseState {
     /// Creates active item-use state from the hand, stack snapshot, and duration.
     #[must_use]
-    pub const fn new(hand: InteractionHand, item: ItemStack, duration: i32) -> Self {
+    pub const fn new(hand: InteractionHand, item: ItemRef, duration: i32) -> Self {
         Self {
             hand,
             item,
@@ -598,8 +599,8 @@ impl ActiveItemUseState {
 
     /// Returns the item snapshot captured when use started.
     #[must_use]
-    pub const fn item(&self) -> &ItemStack {
-        &self.item
+    pub const fn item(&self) -> ItemRef {
+        self.item
     }
 
     /// Returns the original use duration.
@@ -843,7 +844,7 @@ impl LivingEntityBase {
     /// Returns a snapshot of vanilla active item-use state.
     #[must_use]
     pub fn active_item_use(&self) -> Option<ActiveItemUseState> {
-        self.state.lock().active_item_use.clone()
+        self.state.lock().active_item_use
     }
 
     /// Returns whether this living entity is actively using an item.
@@ -853,7 +854,7 @@ impl LivingEntityBase {
     }
 
     /// Starts vanilla active item use.
-    pub fn start_using_item(&self, hand: InteractionHand, item: ItemStack, duration: i32) -> bool {
+    pub fn start_using_item(&self, hand: InteractionHand, item: &ItemStack, duration: i32) -> bool {
         if item.is_empty() || duration <= 0 {
             return false;
         }
@@ -862,7 +863,7 @@ impl LivingEntityBase {
         if state.active_item_use.is_some() {
             return false;
         }
-        state.active_item_use = Some(ActiveItemUseState::new(hand, item, duration));
+        state.active_item_use = Some(ActiveItemUseState::new(hand, item.item(), duration));
         true
     }
 
@@ -876,7 +877,7 @@ impl LivingEntityBase {
         let mut state = self.state.lock();
         let active = state.active_item_use.as_mut()?;
         active.remaining_ticks -= 1;
-        Some(active.clone())
+        Some(*active)
     }
 
     /// Returns vanilla `yBodyRot`.

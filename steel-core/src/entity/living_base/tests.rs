@@ -619,12 +619,12 @@ fn starting_item_use_does_not_replace_active_use() {
 
     assert!(base.start_using_item(
         InteractionHand::MainHand,
-        ItemStack::new(&vanilla_items::BRUSH),
+        &ItemStack::new(&vanilla_items::BRUSH),
         200,
     ));
     assert!(!base.start_using_item(
         InteractionHand::OffHand,
-        ItemStack::new(&vanilla_items::BOW),
+        &ItemStack::new(&vanilla_items::BOW),
         72_000,
     ));
 
@@ -632,7 +632,7 @@ fn starting_item_use_does_not_replace_active_use() {
         panic!("first active item use should remain present");
     };
     assert_eq!(active.hand(), InteractionHand::MainHand);
-    assert!(active.item().is(&vanilla_items::BRUSH));
+    assert_eq!(active.item(), &*vanilla_items::BRUSH);
     assert_eq!(active.duration(), 200);
     assert_eq!(active.remaining_ticks(), 200);
 }

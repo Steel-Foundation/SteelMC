@@ -298,11 +298,15 @@ impl Player {
 
     /// Starts using the item currently held in `hand`.
     pub fn start_using_item(&self, hand: InteractionHand) {
-        let item = self.inventory.lock().get_item_in_hand(hand).clone();
+        let item = {
+            let inventory = self.inventory.lock();
+            let item = inventory.get_item_in_hand(hand);
+            item.copy_with_count(item.count())
+        };
         let duration = ITEM_BEHAVIORS
             .get_behavior(item.item())
             .get_use_duration(&item, self);
-        let _ = self.living_base.start_using_item(hand, item, duration);
+        let _ = self.living_base.start_using_item(hand, &item, duration);
     }
 
     /// Releases the currently used item and invokes its release hook.
@@ -313,7 +317,7 @@ impl Player {
         let hand = active.hand();
         let item_matches = {
             let inventory = self.inventory.lock();
-            ItemStack::is_same_item(inventory.get_item_in_hand(hand), active.item())
+            inventory.get_item_in_hand(hand).item() == active.item()
         };
         if !item_matches {
             self.living_base.stop_using_item();
@@ -344,7 +348,7 @@ impl Player {
         let hand = active.hand();
         let item_matches = {
             let inventory = self.inventory.lock();
-            ItemStack::is_same_item(inventory.get_item_in_hand(hand), active.item())
+            inventory.get_item_in_hand(hand).item() == active.item()
         };
         if !item_matches {
             self.living_base.stop_using_item();
