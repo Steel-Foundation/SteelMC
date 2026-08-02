@@ -255,22 +255,6 @@ impl JavaTcpClient {
         network_writer.lock().await.take();
     }
 
-    /// Encodes and queues a packet to be sent.
-    pub fn send_bare_packet<P: ClientPacket>(&self, packet: P) -> Result<(), PacketError> {
-        let compression = self.compression.load();
-        let protocol = self.protocol.load();
-        let packet = EncodedPacket::from_bare(packet, compression, protocol)?;
-        self.outgoing_queue
-            .send(OutboundPacket::Packet(packet))
-            .map_err(|e| {
-                PacketError::SendError(format!(
-                    "Failed to send packet to client {}: {}",
-                    self.id, e
-                ))
-            })?;
-        Ok(())
-    }
-
     /// Queues an already encoded packet to be sent.
     pub fn send_packet(&self, packet: EncodedPacket) -> Result<(), PacketError> {
         self.outgoing_queue

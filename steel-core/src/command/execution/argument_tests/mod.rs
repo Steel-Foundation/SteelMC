@@ -34,8 +34,9 @@ use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier, types::GameType};
 use text_components::{TextComponent, content::Content};
 
-use crate::entity::{EntityAnchor, init_test_entities};
+use crate::entity::EntityAnchor;
 use crate::permission::{PermissionExpr, PermissionState};
+use crate::test_support::init_test_core;
 
 use super::argument::SteelArgumentParser;
 

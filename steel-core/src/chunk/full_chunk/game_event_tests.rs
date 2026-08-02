@@ -17,15 +17,14 @@ use steel_utils::{
     types::UpdateFlags,
 };
 
-use super::*;
 use crate::behavior::init_behaviors;
 use crate::block_entity::{BlockEntity, BlockEntityBase, SharedBlockEntity};
 use crate::chunk::{
-    chunk_access::{ChunkAccess, ChunkStatus},
+    Chunk,
     chunk_holder::ChunkHolder,
     chunk_ticket_manager::ChunkTicketLevel,
-    proto_chunk::ProtoChunk,
     section::{ChunkSection, Sections},
+    status::ChunkStatus,
 };
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 use crate::world::World;
@@ -128,10 +127,7 @@ fn active_block_entity_listener_uses_stored_selection_for_removal() {
     let block_entity = listener_block_entity(&world, pos, state, 1, &events, &selections);
 
     {
-        let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
-            panic!("test holder should remain full");
-        };
-        let Some(chunk) = chunk.as_full() else {
+        let Some(chunk) = holder.try_full_chunk() else {
             panic!("test holder should contain a level chunk");
         };
         assert!(
@@ -151,10 +147,7 @@ fn active_block_entity_listener_uses_stored_selection_for_removal() {
     assert_eq!(*events.lock(), [1]);
 
     {
-        let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
-            panic!("test holder should remain full");
-        };
-        let Some(chunk) = chunk.as_full() else {
+        let Some(chunk) = holder.try_full_chunk() else {
             panic!("test holder should contain a level chunk");
         };
         assert!(chunk.remove_block_entity(pos));
@@ -182,23 +175,22 @@ fn full_activation_registers_listener_without_block_ticking_readiness() {
         .map(|_| ChunkSection::new_empty())
         .collect::<Vec<_>>()
         .into_boxed_slice();
-    let proto = ProtoChunk::new(
+    let proto = Chunk::new(
         Sections::from_owned(sections),
         chunk_pos,
         min_y,
         height,
         Arc::downgrade(&world),
     );
-    let chunk = LevelChunk::from_proto(proto, min_y, height, Arc::downgrade(&world)).chunk;
+    let full = proto.promote_to_full().chunk;
     let state = vanilla_blocks::CHEST.default_state();
     let events = Arc::new(SyncMutex::new(Vec::new()));
     let selections = Arc::new(AtomicUsize::new(0));
     assert!(
-        chunk
-            .set_block_state(pos, state, UpdateFlags::UPDATE_NONE)
+        full.set_block_state(pos, state, UpdateFlags::UPDATE_NONE)
             .is_some()
     );
-    assert!(chunk.add_and_register_block_entity(listener_block_entity(
+    assert!(full.add_and_register_block_entity(listener_block_entity(
         &world,
         pos,
         state,
@@ -215,7 +207,7 @@ fn full_activation_registers_listener_without_block_ticking_readiness() {
         min_y,
         height,
     ));
-    holder.insert_chunk(ChunkAccess::Full(chunk), ChunkStatus::Full);
+    holder.insert_chunk(proto, ChunkStatus::Full);
     let _ = world
         .chunk_map
         .chunks
@@ -249,10 +241,7 @@ fn full_demotion_hides_listener_without_reordering_on_revival() {
     let second_selections = Arc::new(AtomicUsize::new(0));
 
     {
-        let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
-            panic!("test holder should remain full");
-        };
-        let Some(chunk) = chunk.as_full() else {
+        let Some(chunk) = holder.try_full_chunk() else {
             panic!("test holder should contain a level chunk");
         };
         for (pos, id, selections) in [
@@ -299,10 +288,7 @@ fn full_demotion_hides_listener_without_reordering_on_revival() {
     assert_eq!(*events.lock(), [1, 2, 1, 2]);
 
     {
-        let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
-            panic!("test holder should remain full");
-        };
-        let Some(chunk) = chunk.as_full() else {
+        let Some(chunk) = holder.try_full_chunk() else {
             panic!("test holder should contain a level chunk");
         };
         chunk.suspend_block_entities(&holder);
@@ -349,10 +335,7 @@ fn retained_block_entity_state_does_not_reselect_listener() {
     let selections = Arc::new(AtomicUsize::new(0));
 
     {
-        let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
-            panic!("test holder should remain full");
-        };
-        let Some(chunk) = chunk.as_full() else {
+        let Some(chunk) = holder.try_full_chunk() else {
             panic!("test holder should contain a level chunk");
         };
         assert!(

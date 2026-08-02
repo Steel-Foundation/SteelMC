@@ -119,8 +119,11 @@ fn pig_item_steerable_boost_updates_synced_total_once() {
     let boost_time_total = pig.boost_time_total();
 
     assert!((140..=980).contains(&boost_time_total));
-    assert!(pig.is_boosting());
-    assert_eq!(pig.elapsed_boost_time(), 0);
+    {
+        let steering = pig.item_based_steering().lock();
+        assert!(steering.is_boosting());
+        assert_eq!(steering.boost_time(), 0);
+    }
     assert!(!ItemSteerable::boost(&pig));
     assert_eq!(pig.boost_time_total(), boost_time_total);
 }
@@ -129,15 +132,25 @@ fn pig_item_steerable_boost_updates_synced_total_once() {
 fn pig_ridden_speed_uses_item_steering_boost_factor() {
     init_test_registry();
 
-    let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+    let world = fresh_test_world("pig_ridden_speed");
+    let pig = PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::ZERO,
+        Arc::downgrade(&world),
+    );
+    let controller = TestPlayerBuilder::new(world, Uuid::from_u128(2), "Controller", 2).build();
     let base_ridden_speed = 0.25_f32 * 0.225;
 
-    assert_eq!(pig.ridden_speed().to_bits(), base_ridden_speed.to_bits());
+    assert_eq!(
+        LivingEntity::ridden_speed(&pig, &controller).to_bits(),
+        base_ridden_speed.to_bits()
+    );
 
     assert!(ItemSteerable::boost(&pig));
     pig.tick_boost();
 
-    assert!(pig.ridden_speed() > base_ridden_speed);
+    assert!(LivingEntity::ridden_speed(&pig, &controller) > base_ridden_speed);
 }
 
 #[test]
@@ -270,6 +283,12 @@ fn pig_saddled_state_reads_saddle_equipment() {
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
+    assert!(!pig.is_saddled());
+
+    pig.living_base.equipment().lock().set(
+        EquipmentSlot::Saddle,
+        ItemStack::new(&vanilla_items::CARROT),
+    );
     assert!(!pig.is_saddled());
 
     pig.living_base.equipment().lock().set(
