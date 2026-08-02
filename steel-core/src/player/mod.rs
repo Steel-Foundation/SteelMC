@@ -288,6 +288,9 @@ impl PlayerResidenceState {
 }
 
 impl Player {
+    const USING_ITEM_FLAG: i8 = 1;
+    const OFF_HAND_ACTIVE_ITEM_FLAG: i8 = 1 << 1;
+
     /// Returns the hand currently driving active item use.
     #[must_use]
     pub fn active_item_use_hand(&self) -> Option<InteractionHand> {
@@ -306,7 +309,30 @@ impl Player {
         let duration = ITEM_BEHAVIORS
             .get_behavior(item.item())
             .get_use_duration(&item, self);
-        let _ = self.living_base.start_using_item(hand, &item, duration);
+        if self.living_base.start_using_item(hand, &item, duration) {
+            let mut entity_data = self.entity_data.lock();
+            let flags = entity_data.living_entity().living_entity_flags.get();
+            let mut flags = *flags | Self::USING_ITEM_FLAG;
+            if hand == InteractionHand::OffHand {
+                flags |= Self::OFF_HAND_ACTIVE_ITEM_FLAG;
+            } else {
+                flags &= !Self::OFF_HAND_ACTIVE_ITEM_FLAG;
+            }
+            entity_data
+                .living_entity_mut()
+                .living_entity_flags
+                .set(flags);
+        }
+    }
+
+    fn stop_using_item(&self) {
+        self.living_base.stop_using_item();
+        let mut entity_data = self.entity_data.lock();
+        let flags = *entity_data.living_entity().living_entity_flags.get();
+        entity_data
+            .living_entity_mut()
+            .living_entity_flags
+            .set(flags & !Self::USING_ITEM_FLAG);
     }
 
     /// Releases the currently used item and invokes its release hook.
@@ -320,7 +346,7 @@ impl Player {
             inventory.get_item_in_hand(hand).item() == active.item()
         };
         if !item_matches {
-            self.living_base.stop_using_item();
+            self.stop_using_item();
             return;
         }
         let mut item = {
@@ -338,7 +364,7 @@ impl Player {
         if use_on_release {
             self.tick_active_item_use();
         }
-        self.living_base.stop_using_item();
+        self.stop_using_item();
     }
 
     fn tick_active_item_use(&self) {
@@ -351,7 +377,7 @@ impl Player {
             inventory.get_item_in_hand(hand).item() == active.item()
         };
         if !item_matches {
-            self.living_base.stop_using_item();
+            self.stop_using_item();
             return;
         }
         let mut item = {
@@ -372,7 +398,7 @@ impl Player {
         };
         if active.remaining_ticks() <= 0 {
             item = behavior.finish_using(&mut item, &world, self);
-            self.living_base.stop_using_item();
+            self.stop_using_item();
         }
 
         self.inventory.lock().set_item_in_hand(hand, item);
@@ -1546,6 +1572,10 @@ impl LivingEntity for Player {
 
     fn living_base(&self) -> &LivingEntityBase {
         &self.living_base
+    }
+
+    fn is_using_item(&self) -> bool {
+        self.living_base.is_using_item()
     }
 
     fn get_luck(&self) -> f32 {

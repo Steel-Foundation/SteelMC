@@ -1066,6 +1066,43 @@ fn effect_visibility_refresh_preserves_spectator_invisibility() {
 }
 
 #[test]
+fn active_item_use_updates_synced_living_flags() {
+    init_test_registry();
+    init_behaviors();
+    let player = test_player(Arc::clone(test_world()));
+    player.inventory.lock().set_item_in_hand(
+        InteractionHand::OffHand,
+        ItemStack::new(&vanilla_items::BRUSH),
+    );
+
+    player.start_using_item(InteractionHand::OffHand);
+
+    assert!(LivingEntity::is_using_item(player.as_ref()));
+    assert_eq!(
+        *player
+            .entity_data
+            .lock()
+            .living_entity()
+            .living_entity_flags
+            .get(),
+        Player::USING_ITEM_FLAG | Player::OFF_HAND_ACTIVE_ITEM_FLAG
+    );
+
+    player.stop_using_item();
+
+    assert!(!LivingEntity::is_using_item(player.as_ref()));
+    assert_eq!(
+        *player
+            .entity_data
+            .lock()
+            .living_entity()
+            .living_entity_flags
+            .get(),
+        Player::OFF_HAND_ACTIVE_ITEM_FLAG
+    );
+}
+
+#[test]
 fn block_action_restriction_precedes_redstone_ore_attack() {
     init_test_registry();
     init_behaviors();
