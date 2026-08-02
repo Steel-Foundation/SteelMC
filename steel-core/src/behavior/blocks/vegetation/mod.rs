@@ -169,12 +169,12 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 use crate::behavior::block::push_entities_up;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _,
+    BLOCK_BEHAVIORS, BlockCollisionContext,
     block::{BlockBehavior, schedule_water_tick_if_waterlogged},
 };
 use crate::entity::Entity;
-use crate::world::{LevelReader, ScheduledTickAccess};
-use crate::world::{World, game_event_context::GameEventContext};
+use crate::world::game_event::GameEventContext;
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 pub(super) type BlockTagRef<'a> = &'a steel_utils::Identifier;
 

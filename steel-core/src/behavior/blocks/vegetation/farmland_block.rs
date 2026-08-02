@@ -14,7 +14,6 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
 use super::turn_to_dirt;
-use crate::world::game_event::GameEventContext;
 
 /// Maximum moisture level for farmland.
 const MAX_MOISTURE: u8 = 7;
