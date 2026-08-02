@@ -41,7 +41,7 @@ impl SleepStatus {
         }
     }
 
-    pub(super) fn update(&mut self, updated: Self) -> bool {
+    pub(super) const fn update(&mut self, updated: Self) -> bool {
         let old_active_players = self.active_players;
         let old_sleeping_players = self.sleeping_players;
         *self = updated;
