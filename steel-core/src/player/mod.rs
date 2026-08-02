@@ -307,7 +307,7 @@ impl Player {
 
     /// Releases the currently used item and invokes its release hook.
     pub fn release_using_item(&self) {
-        let Some(active) = self.living_base.stop_using_item() else {
+        let Some(active) = self.living_base.active_item_use() else {
             return;
         };
         let hand = active.hand();
@@ -316,6 +316,7 @@ impl Player {
             ItemStack::is_same_item(inventory.get_item_in_hand(hand), active.item())
         };
         if !item_matches {
+            self.living_base.stop_using_item();
             return;
         }
         let mut item = {
@@ -323,13 +324,17 @@ impl Player {
             replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
         };
         let world = self.get_world();
-        ITEM_BEHAVIORS.get_behavior(item.item()).release_using(
+        let use_on_release = ITEM_BEHAVIORS.get_behavior(item.item()).release_using(
             &mut item,
             &world,
             self,
             active.remaining_ticks(),
         );
         self.inventory.lock().set_item_in_hand(hand, item);
+        if use_on_release {
+            self.tick_active_item_use();
+        }
+        self.living_base.stop_using_item();
     }
 
     fn tick_active_item_use(&self) {

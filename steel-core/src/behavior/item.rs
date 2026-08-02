@@ -117,13 +117,16 @@ pub trait ItemBehavior: Send + Sync {
     }
 
     /// Called when active use is released before completion.
+    ///
+    /// Returns whether vanilla should update active use once more before stopping it.
     fn release_using(
         &self,
         _stack: &mut ItemStack,
         _world: &Arc<World>,
         _user: &dyn LivingEntity,
         _time_left: i32,
-    ) {
+    ) -> bool {
+        false
     }
 
     /// Called when active use reaches its full duration.
