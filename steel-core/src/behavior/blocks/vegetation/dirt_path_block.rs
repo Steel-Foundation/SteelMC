@@ -12,7 +12,7 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::entity::ai::path::PathComputationType;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
-use super::FarmlandBlock;
+use super::turn_to_dirt;
 
 /// Behavior for dirt path blocks.
 #[block_behavior]
@@ -65,7 +65,7 @@ impl BlockBehavior for DirtPathBlock {
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        FarmlandBlock::turn_to_dirt(state, world, pos, None);
+        turn_to_dirt(state, world, pos, None);
     }
 
     fn is_pathfindable(
