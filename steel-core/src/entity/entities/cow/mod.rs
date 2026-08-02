@@ -7,7 +7,7 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
-use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem, SoundSource};
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::cow_sound_variant::CowSoundVariantRef;
 use steel_registry::cow_variant::CowVariantRef;
 use steel_registry::entity_type::{
@@ -18,8 +18,8 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::CowEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
-    REGISTRY, RegistryExt, TaggedRegistryExt, sound_events, vanilla_attributes,
-    vanilla_cow_sound_variants, vanilla_cow_variants, vanilla_items,
+    REGISTRY, RegistryExt, RegistryReference, TaggedRegistryExt, sound_events,
+    vanilla_attributes, vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -35,8 +35,9 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad,
     EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob,
-    MobBase, MobEffectSyncChange, PathfinderMob, SpawnGroupData,
+    MobBase, PathfinderMob, SpawnGroupData,
 };
+use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
 
@@ -178,89 +179,45 @@ impl CowEntity {
         AgeableMob::set_age_locked(self, age_locked);
     }
 
-    /// Returns the synced registry id of the current cow variant.
-    #[must_use]
-    pub fn variant_id(&self) -> i32 {
-        *self.entity_data.lock().variant.get()
-    }
-
     /// Sets the active cow variant by registry entry.
     pub fn set_variant(&self, variant: CowVariantRef) {
-        let Some(id) = REGISTRY.cow_variants.id_from_key(&variant.key) else {
-            log::error!("cow variant {} is not registered", variant.key);
-            return;
-        };
-        self.set_variant_id_from_usize(id);
+        self.entity_data
+            .lock()
+            .variant
+            .set(RegistryReference::new(variant));
     }
 
     /// Returns the active cow variant, falling back to temperate when invalid.
     #[must_use]
     pub fn variant(&self) -> CowVariantRef {
-        let id = self.variant_id();
-        if let Ok(id) = usize::try_from(id)
-            && let Some(variant) = REGISTRY.cow_variants.by_id(id)
-        {
-            return variant;
-        }
-
-        &vanilla_cow_variants::TEMPERATE
-    }
-
-    /// Returns the synced registry id of the current cow sound variant.
-    #[must_use]
-    pub fn sound_variant_id(&self) -> i32 {
-        *self.entity_data.lock().sound_variant.get()
+        self.entity_data.lock().variant.get().value()
     }
 
     /// Sets the active cow sound variant by registry entry.
     pub fn set_sound_variant(&self, sound_variant: CowSoundVariantRef) {
-        let Some(id) = REGISTRY.cow_sound_variants.id_from_key(&sound_variant.key) else {
-            log::error!("cow sound variant {} is not registered", sound_variant.key);
-            return;
-        };
-        self.set_sound_variant_id_from_usize(id);
+        self.entity_data
+            .lock()
+            .sound_variant
+            .set(RegistryReference::new(sound_variant));
     }
 
     /// Returns the active cow sound variant, falling back to classic when invalid.
     #[must_use]
     pub fn sound_variant(&self) -> CowSoundVariantRef {
-        let id = self.sound_variant_id();
-        if let Ok(id) = usize::try_from(id)
-            && let Some(sound_variant) = REGISTRY.cow_sound_variants.by_id(id)
-        {
-            return sound_variant;
-        }
-
-        &vanilla_cow_sound_variants::CLASSIC
-    }
-
-    fn set_variant_id_from_usize(&self, id: usize) {
-        let Ok(id) = i32::try_from(id) else {
-            log::error!("cow variant id {id} does not fit synced-data i32");
-            return;
-        };
-        self.entity_data.lock().variant.set(id);
-    }
-
-    fn set_sound_variant_id_from_usize(&self, id: usize) {
-        let Ok(id) = i32::try_from(id) else {
-            log::error!("cow sound variant id {id} does not fit synced-data i32");
-            return;
-        };
-        self.entity_data.lock().sound_variant.set(id);
+        self.entity_data.lock().sound_variant.get().value()
     }
 
     fn set_variant_by_key(&self, key: &Identifier) -> bool {
-        let Some(id) = REGISTRY.cow_variants.id_from_key(key) else {
+        let Some(variant) = REGISTRY.cow_variants.by_key(key) else {
             return false;
         };
-        self.set_variant_id_from_usize(id);
+        self.set_variant(variant);
         true
     }
 
     fn set_sound_variant_by_key(&self, key: &Identifier) {
-        if let Some(id) = REGISTRY.cow_sound_variants.id_from_key(key) {
-            self.set_sound_variant_id_from_usize(id);
+        if let Some(sound_variant) = REGISTRY.cow_sound_variants.by_key(key) {
+            self.set_sound_variant(sound_variant);
         }
     }
 
@@ -400,36 +357,12 @@ impl Entity for CowEntity {
         self.default_living_can_freeze()
     }
 
-    fn can_walk_on_powder_snow(&self) -> bool {
-        self.default_living_can_walk_on_powder_snow()
-    }
-
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
     }
 
     fn update_data_before_sync(&self) {
         self.update_dirty_mob_effect_entity_data();
-    }
-
-    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        self.attributes().lock().syncable_snapshots()
-    }
-
-    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        self.attributes().lock().drain_dirty_sync()
-    }
-
-    fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
-        self.living_base.drain_dirty_mob_effects()
-    }
-
-    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
-        self.pack_living_equipment()
-    }
-
-    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
-        self.drain_dirty_living_equipment()
     }
 
     fn max_up_step(&self) -> f32 {
@@ -529,7 +462,7 @@ impl LivingEntity for CowEntity {
         Animal::reset_love(self);
     }
 
-    fn ai_step(&self) -> Option<crate::physics::MoveResult> {
+    fn ai_step(&self) -> Option<MoveResult> {
         let result = self.default_ai_step();
 
         AgeableMob::tick_ageable_mob(self);
