@@ -1,13 +1,12 @@
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
-use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use crate::chunk::full_chunk::FullChunkRef;
 use crate::chunk::heightmap::{ChunkHeightmaps, Heightmap, HeightmapType};
-use crate::chunk::level_chunk::LevelChunk;
 use crate::chunk::light::{
     ChunkLightData, ChunkLightLayerStorage, DATA_LAYER_SIZE, LightSection, LightSectionData,
 };
 use crate::chunk::paletted_container::PalettedContainer;
-use crate::chunk::proto_chunk::ProtoChunk;
 use crate::chunk::section::{ChunkSection, SectionHolder, Sections};
+use crate::chunk::{Chunk, status::ChunkStatus};
 use crate::chunk_saver::bit_pack::{bits_for_palette_len, pack_indices, unpack_indices};
 use crate::entity::{
     ENTITIES, Entity, EntityBase, EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest,
@@ -33,10 +32,9 @@ use steel_registry::structure::{
 };
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
 use steel_registry::{
-    REGISTRY, Registry, RegistryEntry, RegistryExt,
+    REGISTRY, Registry, RegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt as _},
     fluid::FluidRef,
-    vanilla_biomes,
 };
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Identifier, PackedChunkPos, Rotation,
@@ -462,7 +460,7 @@ pub enum ChunkStorage {
 /// Runtime chunk data loaded from persistence.
 pub struct LoadedChunk {
     /// The deserialized chunk.
-    pub chunk: ChunkAccess,
+    pub chunk: Chunk,
     /// The highest persisted status for the chunk.
     pub status: ChunkStatus,
     /// Full-chunk entities waiting for lifecycle-approved world registration.
@@ -495,12 +493,11 @@ impl ChunkStorage {
     pub async fn save_chunk_data(
         &self,
         prepared: PreparedChunkSave,
-        status: ChunkStatus,
         thread_pool: &rayon::ThreadPool,
     ) -> io::Result<bool> {
         match self {
-            Self::Disk(rm) => rm.save_chunk_data(prepared, status, thread_pool).await,
-            Self::RamOnly(ram) => ram.save_chunk_data(prepared, status).await,
+            Self::Disk(rm) => rm.save_chunk_data(prepared, thread_pool).await,
+            Self::RamOnly(ram) => ram.save_chunk_data(prepared).await,
         }
     }
 
@@ -555,8 +552,13 @@ impl ChunkStorage {
     ///
     /// If the chunk is not dirty and `force` is false, this is a no-op.
     /// Returns `Ok(true)` if the chunk was saved.
-    /// Prepares chunk data for saving. Call this while holding the chunk lock,
-    /// then pass the result to `save_chunk_data` after releasing the lock.
+    /// Prepares chunk data and its authoritative persisted status for saving.
+    /// Call this during the holder's snapshot-preparation phase, then pass the result to
+    /// `save_chunk_data` after ending that phase.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `status` does not match whether Full runtime state is initialized.
     #[must_use]
     #[expect(
         clippy::similar_names,
@@ -566,17 +568,23 @@ impl ChunkStorage {
         clippy::too_many_lines,
         reason = "chunk save preparation keeps related serialization setup in one pass"
     )]
-    pub fn prepare_chunk_save(
-        chunk: &ChunkAccess,
+    pub(crate) fn prepare_chunk_save(
+        chunk: &Chunk,
+        status: ChunkStatus,
         runtime_entities: &[SharedEntity],
         force: bool,
     ) -> Option<PreparedChunkSave> {
+        assert_eq!(
+            status == ChunkStatus::Full,
+            chunk.full_runtime().is_some(),
+            "persisted chunk status must match its Full runtime state"
+        );
         if !force && !chunk.is_dirty() {
             return None;
         }
 
         // Finalize any sections still in worldgen Building mode. Proto chunks
-        // can be saved before being upgraded to `LevelChunk::from_proto`
+        // can be saved before being upgraded by `Chunk::promote_to_full`
         // (which is where `recalculate_counts` normally runs and implicitly
         // finalizes). Without this, `section_to_persistent` would panic on
         // the Building variant.
@@ -589,12 +597,23 @@ impl ChunkStorage {
 
         let pos = chunk.pos();
 
-        let (block_entities, pending_block_entities) = chunk.block_entity_save_snapshot();
+        let full = (status == ChunkStatus::Full).then(|| FullChunkRef::from_full_context(chunk));
+        let (block_entities, pending_block_entities) = if full.is_some() {
+            chunk.block_entities.save_snapshot()
+        } else {
+            chunk
+                .block_entities
+                .save_snapshot_without_lifecycle_filter()
+        };
 
         let mut seen_entity_ids = FxHashSet::default();
         let mut seen_entity_uuids = FxHashSet::default();
         let mut entities = Vec::new();
-        for entity in chunk.get_saveable_entities() {
+        for entity in if full.is_some() {
+            Vec::new()
+        } else {
+            chunk.get_saveable_entities()
+        } {
             if !Self::entity_position_is_finite(entity.as_ref()) {
                 Self::warn_skipping_non_finite_entity(entity.as_ref());
                 continue;
@@ -628,34 +647,32 @@ impl ChunkStorage {
         }
 
         // Serialize scheduled ticks
-        let (block_ticks, fluid_ticks) = match chunk {
-            ChunkAccess::Full(c) => {
-                let snapshot = c.scheduled_tick_snapshot();
-                let bt = Self::block_ticks_to_persistent(snapshot.block, pos);
-                let ft = Self::fluid_ticks_to_persistent(snapshot.fluid, pos);
-                (bt, ft)
-            }
-            ChunkAccess::Proto(c) => {
-                // Proto ticks are pending, so Vanilla ignores the current game
-                // time when serializing their already-relative delays.
-                let bt = Self::block_ticks_to_persistent(c.block_ticks.lock().pack(0), pos);
-                let ft = Self::fluid_ticks_to_persistent(c.fluid_ticks.lock().pack(0), pos);
-                (bt, ft)
-            }
-            ChunkAccess::Unloaded => unreachable!(),
+        let (block_ticks, fluid_ticks) = if let Some(full) = full {
+            let snapshot = full.scheduled_tick_snapshot();
+            let bt = Self::block_ticks_to_persistent(snapshot.block, pos);
+            let ft = Self::fluid_ticks_to_persistent(snapshot.fluid, pos);
+            (bt, ft)
+        } else {
+            // Proto ticks are pending, so Vanilla ignores the current game
+            // time when serializing their already-relative delays.
+            let Some(snapshot) = chunk.scheduled_ticks.snapshot(0) else {
+                panic!("Proto chunk scheduled-tick container was finalized before saving");
+            };
+            let bt = Self::block_ticks_to_persistent(snapshot.block, pos);
+            let ft = Self::fluid_ticks_to_persistent(snapshot.fluid, pos);
+            (bt, ft)
         };
 
-        // Serialize heightmaps
-        let heightmaps = chunk
-            .as_full()
-            .map(|c| Self::heightmaps_to_persistent(&c.heightmaps.read()))
-            .unwrap_or_default();
+        // Serialize the heightmaps required by the persisted generation status.
+        let heightmaps = chunk.heightmaps.read();
+        if full.is_some() {
+            for &heightmap_type in HeightmapType::final_types() {
+                let _ = heightmaps.get_final(heightmap_type);
+            }
+        }
+        let heightmaps = Self::heightmaps_to_persistent(&heightmaps, status);
 
-        let light = match chunk {
-            ChunkAccess::Full(c) => Self::light_to_persistent(&c.light.read()),
-            ChunkAccess::Proto(c) => Self::light_to_persistent(&c.light.read()),
-            ChunkAccess::Unloaded => unreachable!(),
-        };
+        let light = Self::light_to_persistent(&chunk.light.read());
 
         // Serialize structure data (works for both proto and full chunks)
         let structure_starts = Self::structure_starts_to_persistent(&chunk.structure_starts());
@@ -663,27 +680,24 @@ impl ChunkStorage {
             Self::structure_references_to_persistent(&chunk.structure_references());
 
         // Collect POI occupancy data from world storage
-        let pois = chunk
-            .as_full()
-            .map(|c| Self::pois_to_persistent(c, pos))
+        let pois = full
+            .map(|full| Self::pois_to_persistent(full, pos))
             .unwrap_or_default();
 
-        let carving_mask = match chunk {
-            ChunkAccess::Proto(proto) => proto
+        let carving_mask = if full.is_some() {
+            None
+        } else {
+            chunk
                 .carving_mask
                 .read()
                 .as_ref()
-                .map(CarvingMask::to_packed_u64s),
-            ChunkAccess::Full(_) => None,
-            ChunkAccess::Unloaded => unreachable!(),
+                .map(CarvingMask::to_packed_u64s)
         };
 
-        let postprocessing = match chunk {
-            ChunkAccess::Proto(proto) => {
-                proto.postprocessing.read().iter().map(Vec::clone).collect()
-            }
-            ChunkAccess::Full(full) => full.postprocessing_for_serialization(),
-            ChunkAccess::Unloaded => unreachable!(),
+        let postprocessing = if let Some(full) = full {
+            full.postprocessing_for_serialization()
+        } else {
+            chunk.postprocessing.lock().iter().map(Vec::clone).collect()
         };
 
         let persistent = Self::to_persistent(
@@ -705,6 +719,7 @@ impl ChunkStorage {
 
         Some(PreparedChunkSave {
             pos,
+            status,
             persistent,
             handled_runtime_entity_ids,
         })

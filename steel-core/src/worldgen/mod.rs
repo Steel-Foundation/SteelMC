@@ -5,6 +5,8 @@
 
 /// World-carving: runtime context + carver implementations.
 pub mod carver;
+#[cfg(test)]
+mod chunk_stage_hashes;
 pub(crate) mod feature;
 pub mod generator;
 pub mod region;

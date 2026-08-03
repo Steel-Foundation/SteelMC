@@ -2,7 +2,7 @@
 //!
 //! Scopes may only cover intervals where active-map membership is stable. The
 //! cache retains holder identity (including map absence), but never generation
-//! permission, published status, or chunk guards; those remain live per lookup.
+//! permission or published status; those remain live per lookup.
 
 use std::{cell::RefCell, marker::PhantomData, ptr, rc::Rc, sync::Arc};
 
@@ -11,7 +11,7 @@ use steel_utils::ChunkPos;
 use super::{chunk_holder::ChunkHolder, chunk_map::ChunkMap};
 
 // Vanilla's ServerChunkCache also keeps four recent synchronous lookups. Steel
-// caches holders instead of ChunkAccess so concurrent status publication stays visible.
+// caches holders rather than a status-specific chunk view so concurrent publication stays visible.
 // Unlike Vanilla's insertion-only ordering, hits are promoted here because one
 // holder entry serves every requested status; the cache telemetry validates that choice.
 const CACHE_ENTRY_COUNT: usize = 4;
