@@ -160,3 +160,106 @@ impl Player {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::player::stats_counter::StatsCounter;
+    use steel_registry::stat::{Stat, vanilla_stat_types};
+    use steel_registry::test_support::init_test_registry;
+    use steel_registry::vanilla_custom_stats;
+
+    fn deterministic_dirty_and_clear(counter: &mut StatsCounter) -> Vec<(Stat, i32)> {
+        let mut dirty = counter.get_dirty_and_clear();
+        dirty.sort_by_key(|(stat, _)| stat.stat_value_key().clone());
+
+        dirty
+    }
+
+    #[test]
+    fn stat_counter_query_dirty_and_modifications() {
+        init_test_registry();
+
+        let mut stats_counter = StatsCounter::new();
+
+        let jump_stat = vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::JUMP);
+        let deaths_stat = vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::DEATHS);
+
+        stats_counter.increment(jump_stat, 9);
+        stats_counter.increment(jump_stat, 4);
+
+        assert_eq!(stats_counter.get(&jump_stat), 13);
+        assert_eq!(stats_counter.get(&deaths_stat), 0);
+
+        stats_counter.increment(deaths_stat, 1);
+        assert_eq!(
+            deterministic_dirty_and_clear(&mut stats_counter),
+            vec![(deaths_stat, 1), (jump_stat, 13)]
+        );
+
+        stats_counter.increment(deaths_stat, 1);
+        assert_eq!(
+            deterministic_dirty_and_clear(&mut stats_counter),
+            vec![(deaths_stat, 2)]
+        );
+
+        stats_counter.mark_all_dirty();
+        assert_eq!(
+            deterministic_dirty_and_clear(&mut stats_counter),
+            vec![(deaths_stat, 2), (jump_stat, 13)]
+        );
+
+        assert_eq!(deterministic_dirty_and_clear(&mut stats_counter), vec![]);
+
+        stats_counter.set(deaths_stat, 7);
+        assert_eq!(
+            deterministic_dirty_and_clear(&mut stats_counter),
+            vec![(deaths_stat, 7)]
+        );
+
+        assert_eq!(stats_counter.get(&jump_stat), 13);
+    }
+
+    #[test]
+    fn overflow_cap() {
+        init_test_registry();
+
+        let mut stats_counter = StatsCounter::new();
+        let jump_stat = vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::JUMP);
+
+        stats_counter.set(jump_stat, i32::MAX - 1);
+
+        stats_counter.increment(jump_stat, 1);
+        assert_eq!(stats_counter.get(&jump_stat), i32::MAX);
+
+        stats_counter.increment(jump_stat, 1);
+        assert_eq!(stats_counter.get(&jump_stat), i32::MAX);
+
+        stats_counter.increment(jump_stat, 1000);
+        assert_eq!(stats_counter.get(&jump_stat), i32::MAX);
+
+        stats_counter.increment(jump_stat, i32::MAX);
+        assert_eq!(stats_counter.get(&jump_stat), i32::MAX);
+
+        stats_counter.increment(jump_stat, i32::MIN + 1);
+        assert_eq!(stats_counter.get(&jump_stat), 0);
+    }
+
+    #[test]
+    fn no_underflow_cap() {
+        init_test_registry();
+
+        let mut stats_counter = StatsCounter::new();
+        let jump_stat = vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::JUMP);
+
+        stats_counter.set(jump_stat, i32::MIN + 1);
+
+        stats_counter.increment(jump_stat, -1);
+        assert_eq!(stats_counter.get(&jump_stat), i32::MIN);
+
+        stats_counter.increment(jump_stat, -1);
+        assert_eq!(stats_counter.get(&jump_stat), i32::MAX);
+
+        stats_counter.increment(jump_stat, i32::MAX);
+        assert_eq!(stats_counter.get(&jump_stat), i32::MAX);
+    }
+}
