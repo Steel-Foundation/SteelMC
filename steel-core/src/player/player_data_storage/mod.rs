@@ -2,6 +2,7 @@
 
 mod known_players;
 mod permissions;
+mod stats;
 
 use std::{
     io::Cursor,
@@ -27,7 +28,7 @@ use self::{
 use super::PlayerRespawnConfig;
 use super::player_data::{
     PLAYER_DATA_VERSION, PersistentAbilities, PersistentEnderPearl, PersistentPlayerData,
-    PersistentRootVehicle, PersistentSlot,
+    PersistentRootVehicle, PersistentSlot, PersistentStat,
 };
 use crate::chunk_saver::PersistentEntity;
 use crate::config::StorageSelection;
@@ -37,6 +38,7 @@ use crate::permission::PermissionSubjectIndex;
 use crate::permission::PermissionSubjectState;
 use crate::player::KnownPlayers;
 use crate::player::Player;
+use crate::player::player_data_storage::stats::{PlayerStatsFile, serialize_player_stats_file};
 use steel_registry::item_stack::ItemStack;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
 use steel_utils::{BlockPos, Identifier};
@@ -281,11 +283,43 @@ impl FilePlayerDataStorage {
         uuid: Uuid,
         data: &PersistentPlayerData,
     ) -> io::Result<()> {
+        self.save_domain_player_data(domain, uuid, data).await?;
+        self.save_domain_player_stats(domain, uuid, data).await?;
+        Ok(())
+    }
+
+    async fn save_domain_player_data(
+        &self,
+        domain: &str,
+        uuid: Uuid,
+        data: &PersistentPlayerData,
+    ) -> io::Result<()> {
         let file = PlayerDataFile::from_persistent(data)?;
         let bytes = encode_player_file(&file)?;
-        self.write_atomic(&self.domain_players_dir(domain), uuid, bytes)
+        self.write_atomic_player_data(&self.domain_players_dir(domain), uuid, &bytes)
             .await?;
         log::debug!("Saved player data for {uuid} in domain {domain}");
+
+        Ok(())
+    }
+
+    async fn save_domain_player_stats(
+        &self,
+        domain: &str,
+        uuid: Uuid,
+        data: &PersistentPlayerData,
+    ) -> io::Result<()> {
+        let player_stats_file = PlayerStatsFile::from_persistent_stats(&data.stats);
+        if let Some(toml_string) = serialize_player_stats_file(&player_stats_file) {
+            let final_path = Self::player_stats_file(&self.domain_players_dir(domain), uuid);
+            let lock = self.file_lock(&final_path);
+            let _guard = lock.lock().await;
+            Self::write_atomic_path_locked(&final_path, toml_string.as_bytes()).await?;
+            log::debug!("Saved player stats for {uuid} in domain {domain}");
+        } else {
+            log::debug!("Did not save empty player stats for {uuid} in domain {domain}");
+        }
+
         Ok(())
     }
 
@@ -294,7 +328,32 @@ impl FilePlayerDataStorage {
         domain: &str,
         uuid: Uuid,
     ) -> io::Result<Option<PersistentPlayerData>> {
-        let path = Self::player_file(&self.domain_players_dir(domain), uuid);
+        let Some(mut data) = self.load_domain_player_data(domain, uuid).await? else {
+            return Ok(None);
+        };
+
+        data.stats = match self.load_domain_player_stats(domain, uuid).await {
+            Ok(Some(stats)) => stats,
+            Ok(None) => {
+                log::debug!("Using empty stats for {uuid} in domain {domain}");
+                Vec::new()
+            }
+            Err(e) => {
+                log::error!("Could not load stats for {uuid} in domain {domain}: {e}");
+                Vec::new()
+            }
+        };
+
+        Ok(Some(data))
+    }
+
+    async fn load_domain_player_data(
+        &self,
+        domain: &str,
+        uuid: Uuid,
+    ) -> io::Result<Option<PersistentPlayerData>> {
+        let domain_dir = self.domain_players_dir(domain);
+        let path = Self::player_data_file(&domain_dir, uuid);
         let lock = self.file_lock(&path);
         let _guard = lock.lock().await;
         if !Self::recover_missing_atomic_path_locked(&path).await? {
@@ -304,11 +363,38 @@ impl FilePlayerDataStorage {
         let file = decode_player_file(&bytes)?;
         let data = file.into_persistent()?;
         log::debug!("Loaded player data for {uuid} in domain {domain}");
+
         Ok(Some(data))
     }
 
+    async fn load_domain_player_stats(
+        &self,
+        domain: &str,
+        uuid: Uuid,
+    ) -> io::Result<Option<Vec<PersistentStat>>> {
+        let domain_dir = self.domain_players_dir(domain);
+        let path = Self::player_stats_file(&domain_dir, uuid);
+        let lock = self.file_lock(&path);
+        let _guard = lock.lock().await;
+        if !Self::recover_missing_atomic_path_locked(&path).await? {
+            return Ok(None);
+        }
+
+        let string = fs::read_to_string(&path).await?;
+        let stats_file: PlayerStatsFile = toml::from_str(&string).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid player stats for {uuid} in domain {domain}: {e}"),
+            )
+        })?;
+        let persistent_stats = stats_file.into_persistent_stats()?;
+        log::debug!("Loaded player stats for {uuid} in domain {domain}");
+
+        Ok(Some(persistent_stats))
+    }
+
     async fn load_global(&self, uuid: Uuid) -> io::Result<Option<GlobalPlayerData>> {
-        let path = Self::player_file(&self.global_players_dir(), uuid);
+        let path = Self::player_data_file(&self.global_players_dir(), uuid);
         let lock = self.file_lock(&path);
         let _guard = lock.lock().await;
         if !Self::recover_missing_atomic_path_locked(&path).await? {
@@ -363,7 +449,7 @@ impl FilePlayerDataStorage {
             return Ok(false);
         }
         let bytes = encode_known_players_file(&KnownPlayersFile::from_known_players(players))?;
-        Self::write_atomic_path_locked(&path, bytes).await?;
+        Self::write_atomic_path_locked(&path, &bytes).await?;
         Ok(true)
     }
 
@@ -373,7 +459,7 @@ impl FilePlayerDataStorage {
             last_active_domain: data.last_active_domain.clone(),
         };
         let bytes = encode_global_file(&file)?;
-        self.write_atomic(&self.global_players_dir(), uuid, bytes)
+        self.write_atomic_player_data(&self.global_players_dir(), uuid, &bytes)
             .await
     }
 
@@ -425,7 +511,7 @@ impl FilePlayerDataStorage {
                 format!("failed to serialize player permissions TOML: {error}"),
             )
         })?;
-        Self::write_atomic_path_locked(path, contents.into_bytes()).await
+        Self::write_atomic_path_locked(path, contents.as_bytes()).await
     }
 
     fn global_dir(&self) -> PathBuf {
@@ -448,8 +534,12 @@ impl FilePlayerDataStorage {
         self.save_root.join(domain).join("players")
     }
 
-    fn player_file(players_dir: &Path, uuid: Uuid) -> PathBuf {
-        players_dir.join(format!("{uuid}.dat"))
+    fn player_data_file(players_dir: &Path, uuid: Uuid) -> PathBuf {
+        players_dir.join(format!("data/{uuid}"))
+    }
+
+    fn player_stats_file(players_dir: &Path, uuid: Uuid) -> PathBuf {
+        players_dir.join(format!("stats/{uuid}.toml"))
     }
 
     fn file_lock(&self, path: &Path) -> Arc<AsyncMutex<()>> {
@@ -460,14 +550,19 @@ impl FilePlayerDataStorage {
             .clone()
     }
 
-    async fn write_atomic(&self, players_dir: &Path, uuid: Uuid, bytes: Vec<u8>) -> io::Result<()> {
-        let final_path = Self::player_file(players_dir, uuid);
+    async fn write_atomic_player_data(
+        &self,
+        players_dir: &Path,
+        uuid: Uuid,
+        bytes: &[u8],
+    ) -> io::Result<()> {
+        let final_path = Self::player_data_file(players_dir, uuid);
         let lock = self.file_lock(&final_path);
         let _guard = lock.lock().await;
         Self::write_atomic_path_locked(&final_path, bytes).await
     }
 
-    async fn write_atomic_path_locked(final_path: &Path, bytes: Vec<u8>) -> io::Result<()> {
+    async fn write_atomic_path_locked(final_path: &Path, bytes: &[u8]) -> io::Result<()> {
         let Some(parent) = final_path.parent() else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -479,7 +574,7 @@ impl FilePlayerDataStorage {
         let backup_path = Self::atomic_backup_path(final_path);
         let backup_temp_path = Self::atomic_temp_path(&backup_path);
 
-        Self::write_synced_file(&temp_path, &bytes).await?;
+        Self::write_synced_file(&temp_path, bytes).await?;
         if fs::try_exists(final_path).await? {
             Self::copy_synced_file(final_path, &backup_temp_path).await?;
             fs::rename(&backup_temp_path, &backup_path).await?;
@@ -725,6 +820,7 @@ impl PlayerDataFile {
                     entity: pearl.entity,
                 })
                 .collect(),
+            stats: Vec::new(),
         })
     }
 }
@@ -949,10 +1045,10 @@ mod tests {
         let root = temp_storage_root("atomic-replacement");
         let path = root.join("state.dat");
 
-        FilePlayerDataStorage::write_atomic_path_locked(&path, b"first".to_vec())
+        FilePlayerDataStorage::write_atomic_path_locked(&path, b"first".as_slice())
             .await
             .expect("first generation should publish");
-        FilePlayerDataStorage::write_atomic_path_locked(&path, b"second".to_vec())
+        FilePlayerDataStorage::write_atomic_path_locked(&path, b"second".as_slice())
             .await
             .expect("second generation should publish");
 

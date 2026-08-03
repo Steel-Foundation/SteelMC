@@ -4,6 +4,7 @@
 
 use rustc_hash::FxHashSet;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::stat::Stat;
 use steel_utils::types::GameType;
 
 use crate::{
@@ -116,6 +117,9 @@ pub struct PersistentPlayerData {
 
     /// Vanilla in-flight ender pearls stored with the player (`ServerPlayer.enderPearls`).
     pub ender_pearls: Vec<PersistentEnderPearl>,
+
+    /// The tracked statistics of the player with their counters.
+    pub stats: Vec<PersistentStat>,
 }
 
 /// A vanilla `RootVehicle` tree persisted with player data.
@@ -167,6 +171,15 @@ pub struct PersistentSlot {
     pub item: ItemStack,
 }
 
+/// Represents a tracked stat with its counter.
+#[derive(Debug, Clone)]
+pub struct PersistentStat {
+    /// The stat being tracked.
+    pub stat: Stat,
+    /// The current count of this stat.
+    pub count: i32,
+}
+
 impl PersistentPlayerData {
     /// Extracts persistent data from a live player.
     #[must_use]
@@ -202,6 +215,7 @@ impl PersistentPlayerData {
         let root_vehicle = Self::root_vehicle_from_player(player)
             .or_else(|| player.pending_root_vehicle_for_current_world());
         let ender_pearls = Self::ender_pearls_from_player(player);
+        let stats = Self::stats_from_player(player);
 
         Self {
             pos: [pos.x, pos.y, pos.z],
@@ -245,6 +259,7 @@ impl PersistentPlayerData {
             respawn_config: player.respawn_config(),
 
             ender_pearls,
+            stats,
         }
     }
 
@@ -268,6 +283,17 @@ impl PersistentPlayerData {
                 .filter(|pearl| seen.insert(pearl.entity.uuid)),
         );
         pearls
+    }
+
+    /// Snapshots the player's tracked stats and their counters for persistence.
+    fn stats_from_player(player: &Player) -> Vec<PersistentStat> {
+        player
+            .stats
+            .lock()
+            .stats
+            .iter()
+            .map(|(&stat, &count)| PersistentStat { stat, count })
+            .collect()
     }
 
     fn root_vehicle_from_player(player: &Player) -> Option<PersistentRootVehicle> {
@@ -450,5 +476,20 @@ impl PersistentPlayerData {
         }
         player.set_score(self.score);
         player.set_seen_credits(self.seen_credits);
+
+        // Statistics
+        {
+            let mut stats = player.stats.lock();
+            stats.stats.clear();
+            stats.dirty.clear();
+
+            stats.stats.reserve(self.stats.len());
+            stats.dirty.reserve(self.stats.len());
+
+            for PersistentStat { stat, count } in &self.stats {
+                stats.stats.insert(*stat, *count);
+                stats.dirty.insert(*stat);
+            }
+        }
     }
 }

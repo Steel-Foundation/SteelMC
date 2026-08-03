@@ -2,14 +2,18 @@ pub mod custom;
 mod registry;
 pub mod vanilla_stat_types;
 
+// Re-export some core types
+pub use registry::{
+    StatType, StatTypeEntry, StatTypeEntryRef, StatTypeRef, StatTypeRegistry, StatValueRegistry,
+    StatValueRegistryData, StatValueRegistryEntry,
+};
+
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
-// Re-export some core types
-pub use registry::{StatType, StatTypeEntry, StatTypeEntryRef, StatTypeRef, StatTypeRegistry};
 
-use crate::stat::registry::StatValueRegistryEntry;
 use crate::{REGISTRY, RegistryEntry, RegistryExt};
 use std::io::{Cursor, Write};
+use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 use steel_utils::serial::{ReadFrom, WriteTo};
 
@@ -36,6 +40,53 @@ impl Stat {
             stat_type_entry,
             value,
         }
+    }
+
+    /// Creates a new erased stat from its erased type and value.
+    pub const fn from_erased(
+        stat_type_entry: StatTypeEntryRef,
+        value: &'static dyn StatValueRegistryEntry,
+    ) -> Self {
+        Self {
+            stat_type_entry,
+            value,
+        }
+    }
+
+    /// Gets the type-erased stat type of this stat.
+    #[must_use]
+    pub const fn stat_type(&self) -> StatTypeEntryRef {
+        self.stat_type_entry
+    }
+
+    /// Gets the type-erased stat value of this stat.
+    #[must_use]
+    pub const fn stat_value(&self) -> &'static dyn StatValueRegistryEntry {
+        self.value
+    }
+
+    /// Gets the key of the stat type of this stat.
+    #[must_use]
+    pub const fn stat_type_key(&self) -> &Identifier {
+        &self.stat_type_entry.key
+    }
+
+    /// Gets the key of the stat value of this stat.
+    #[must_use]
+    pub fn stat_value_key(&self) -> &Identifier {
+        self.value.stat_value_key()
+    }
+
+    /// Gets the registry ID of the stat type of this stat.
+    #[must_use]
+    pub fn stat_type_id(&self) -> usize {
+        self.stat_type_entry.id()
+    }
+
+    /// Gets the registry ID of the stat value of this stat.
+    #[must_use]
+    pub fn stat_value_id(&self) -> usize {
+        self.value.stat_value_id()
     }
 }
 

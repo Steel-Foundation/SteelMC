@@ -8,10 +8,20 @@ use steel_utils::{Downcast, DowncastType, DowncastTypeKey, ErasedType, Identifie
 
 /// Behavior required for a registry so that the values stored in that registry
 /// can be used for identifying a particular stat.
+#[expect(clippy::len_without_is_empty)]
 pub trait StatValueRegistry: ErasedType + Send + Sync + 'static {
     fn len(&self) -> usize;
-    fn key_from_id(&self, id: usize) -> Option<&'static Identifier>;
     fn value_from_id(&self, id: usize) -> Option<&'static dyn StatValueRegistryEntry>;
+    fn value_from_key(&self, key: &Identifier) -> Option<&'static dyn StatValueRegistryEntry>;
+
+    fn key_from_id(&self, id: usize) -> Option<&'static Identifier> {
+        self.value_from_id(id)
+            .map(StatValueRegistryEntry::stat_value_key)
+    }
+    fn id_from_key(&self, key: &Identifier) -> Option<usize> {
+        self.value_from_key(key)
+            .map(StatValueRegistryEntry::stat_value_id)
+    }
 }
 
 impl<R> StatValueRegistry for R
@@ -23,12 +33,13 @@ where
         self.len()
     }
 
-    fn key_from_id(&self, id: usize) -> Option<&'static Identifier> {
-        self.by_id(id).map(StatValueRegistryEntry::stat_value_key)
-    }
-
     fn value_from_id(&self, id: usize) -> Option<&'static dyn StatValueRegistryEntry> {
         self.by_id(id)
+            .map(|value| value as &dyn StatValueRegistryEntry)
+    }
+
+    fn value_from_key(&self, key: &Identifier) -> Option<&'static dyn StatValueRegistryEntry> {
+        self.by_key(key)
             .map(|value| value as &dyn StatValueRegistryEntry)
     }
 }
@@ -149,19 +160,29 @@ pub struct StatTypeEntry {
 }
 
 impl StatTypeEntry {
-    /// Gets the number of entries in the registry that this stat type is associated with.
+    /// Gets the number of entries in this registry that this stat type is associated with.
     pub fn registry_len(&self) -> usize {
         self.registry.value.len()
     }
 
-    /// Gets the key of an item by its registry ID.
+    /// Gets the key of an item in this registry by its registry ID.
     pub fn key_from_id(&self, id: usize) -> Option<&Identifier> {
         self.registry.value.key_from_id(id)
     }
 
-    /// Gets the erased value of an item by its registry ID.
-    pub fn value_from_id(&self, id: usize) -> Option<&dyn StatValueRegistryEntry> {
+    /// Gets the registry ID of an item in this registry by its key.
+    pub fn id_from_key(&self, key: &Identifier) -> Option<usize> {
+        self.registry.value.id_from_key(key)
+    }
+
+    /// Gets the erased value of an item in this registry by its registry ID.
+    pub fn value_from_id(&self, id: usize) -> Option<&'static dyn StatValueRegistryEntry> {
         self.registry.value.value_from_id(id)
+    }
+
+    /// Gets the erased value of an item in this registry by its key.
+    pub fn value_from_key(&self, key: &Identifier) -> Option<&'static dyn StatValueRegistryEntry> {
+        self.registry.value.value_from_key(key)
     }
 }
 

@@ -148,4 +148,15 @@ impl Player {
         let stats = self.stats.lock().get_dirty_and_clear();
         self.send_packet(CAwardStats { stats });
     }
+
+    /// Returns the player's currently tracked stats and their counters.
+    #[must_use]
+    pub fn stats(&self) -> Vec<(Stat, i32)> {
+        self.stats
+            .lock()
+            .stats
+            .iter()
+            .map(|(&stat, &count)| (stat, count))
+            .collect()
+    }
 }
