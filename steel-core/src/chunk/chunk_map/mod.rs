@@ -59,10 +59,11 @@ use crate::chunk::light::{
 };
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::chunk::{
-    chunk_access::{ChunkAccess, ChunkStatus},
+    Chunk,
     chunk_generation_task::ChunkGenerationTask,
-    level_chunk::BlockRandomPositionGenerator,
+    full_chunk::{BlockRandomPositionGenerator, FullChunkRef},
     section::RandomTickSectionBits,
+    status::ChunkStatus,
 };
 use crate::chunk_saver::ChunkStorage;
 use crate::player::connection::NetworkConnection;
@@ -199,6 +200,12 @@ struct TickingReadinessCandidate {
     target: TickingReadiness,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct DeferredChunkRevival {
+    load_level: ChunkTicketLevel,
+    simulation_level: Option<ChunkTicketLevel>,
+}
+
 #[derive(Default)]
 struct ReadinessReconcileResult {
     snapshot_changed: bool,
@@ -214,6 +221,8 @@ pub struct ChunkMap {
     pub(crate) chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
     /// Map of chunks currently being unloaded.
     pub(crate) unloading_chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
+    /// Ticket states waiting for an unloading holder's save preparation to finish.
+    deferred_revivals: SyncMutex<FxHashMap<ChunkPos, DeferredChunkRevival>>,
     /// Queue of pending generation tasks.
     pub pending_generation_tasks: SyncMutex<Vec<Arc<ChunkGenerationTask>>>,
     /// Tracker for background scheduling, generation, save, and unload tasks.
@@ -234,6 +243,8 @@ pub struct ChunkMap {
     pub world_gen_context: Arc<WorldGenContext>,
     /// The thread pool to use for chunk generation (throughput-oriented).
     pub generation_pool: Arc<ThreadPool>,
+    /// The thread pool to use for CPU-heavy chunk persistence work.
+    chunk_encoding_pool: Arc<ThreadPool>,
     /// The thread pool to use for chunk ticking (latency-oriented).
     //pub tick_pool: Arc<ThreadPool>,
     /// The runtime to use for chunk tasks.
@@ -317,6 +328,7 @@ impl ChunkMap {
         generator: Arc<ChunkGeneratorType>,
         generation_pool: Arc<ThreadPool>,
     ) -> Self {
+        let chunk_encoding_pool = Arc::clone(&generation_pool);
         Self::new_with_storage_and_timed_tickets(
             chunk_runtime,
             world,
@@ -325,6 +337,7 @@ impl ChunkMap {
             storage,
             generator,
             generation_pool,
+            chunk_encoding_pool,
             TimedChunkTickets::default(),
         )
     }
@@ -342,6 +355,7 @@ impl ChunkMap {
         storage: Arc<ChunkStorage>,
         generator: Arc<ChunkGeneratorType>,
         generation_pool: Arc<ThreadPool>,
+        chunk_encoding_pool: Arc<ThreadPool>,
         timed_chunk_tickets: TimedChunkTickets,
     ) -> Self {
         let mut chunk_tickets = ChunkTicketManager::new();
@@ -351,6 +365,7 @@ impl ChunkMap {
         Self {
             chunks: scc::HashMap::default(),
             unloading_chunks: scc::HashMap::default(),
+            deferred_revivals: SyncMutex::new(FxHashMap::default()),
             pending_generation_tasks: SyncMutex::new(Vec::new()),
             task_tracker: TaskTracker::new(),
             scheduling: ChunkSchedulingCoordinator::new(chunk_tickets),
@@ -367,6 +382,7 @@ impl ChunkMap {
                 sea_level,
             )),
             generation_pool,
+            chunk_encoding_pool,
             chunk_runtime,
             storage,
             chunks_to_broadcast: SyncMutex::new(Vec::new()),
@@ -432,9 +448,24 @@ impl ChunkMap {
     /// Returns `None` if the chunk is not loaded or not at Full status.
     pub fn with_full_chunk<F, R>(&self, pos: ChunkPos, f: F) -> Option<R>
     where
-        F: FnOnce(&ChunkAccess) -> R,
+        F: FnOnce(FullChunkRef<'_>) -> R,
     {
-        self.with_chunk_at_status(pos, ChunkStatus::Full, f)
+        let holder = self.lookup_active_holder(pos)?;
+        if holder.is_status_disallowed(ChunkStatus::Full) {
+            return None;
+        }
+        holder.try_full_chunk().map(f)
+    }
+
+    /// Returns the active holder for a fully loaded chunk.
+    pub(crate) fn active_full_chunk_holder(&self, pos: ChunkPos) -> Option<Arc<ChunkHolder>> {
+        let holder = self.lookup_active_holder(pos)?;
+        if holder.is_status_disallowed(ChunkStatus::Full)
+            || holder.try_chunk(ChunkStatus::Full).is_none()
+        {
+            return None;
+        }
+        Some(holder)
     }
 
     /// Inserts a non-simulated holder into an empty gameplay view for worldgen benchmarks.
@@ -483,7 +514,7 @@ impl ChunkMap {
         f: F,
     ) -> Option<R>
     where
-        F: FnOnce(&ChunkAccess) -> R,
+        F: FnOnce(&Chunk) -> R,
     {
         let chunk_holder = self.lookup_active_holder(pos)?;
         // Holders retain completed higher-status data for saving and quick revival. Gameplay
@@ -491,8 +522,8 @@ impl ChunkMap {
         if chunk_holder.is_status_disallowed(status) {
             return None;
         }
-        let guard = chunk_holder.try_chunk(status)?;
-        Some(f(&guard))
+        let chunk = chunk_holder.try_chunk(status)?;
+        Some(f(chunk))
     }
 
     pub(crate) fn add_chunk_ticket(
@@ -898,10 +929,8 @@ impl ChunkMap {
                         if tickable_chunk.randomly_ticking_sections.is_empty() {
                             continue;
                         }
-                        if let Some(chunk_guard) =
-                            tickable_chunk.holder.try_chunk(ChunkStatus::Full)
-                        {
-                            chunk_guard.tick_random_blocks(
+                        if let Some(chunk) = tickable_chunk.holder.try_full_chunk() {
+                            chunk.tick_random_blocks(
                                 world,
                                 random_tick_speed,
                                 &mut random_positions,
@@ -956,6 +985,8 @@ impl ChunkMap {
             timings,
         } = epoch;
         let mut timings = timings.into_scheduling_timings();
+
+        self.merge_deferred_revivals(&mut changes);
 
         {
             let _span = tracing::trace_span!("block_entity_unloads").entered();
@@ -1129,6 +1160,7 @@ impl ChunkMap {
                     change.new_level.is_some() && self.unloading_chunks.contains_sync(&change.pos)
                 })
                 .map(|change| change.pos)
+                .chain(self.deferred_revivals.lock().keys().copied())
                 .collect::<FxHashSet<_>>();
             self.process_unloads(&staged_revivals);
             timings.process_unloads = start.elapsed();
@@ -1161,7 +1193,7 @@ impl ChunkMap {
 
     /// Captures the live state for an exact block-entity owner in an eligible holder.
     ///
-    /// Holder data remains the outermost guard; `LevelChunk` then acquires section
+    /// Holder data remains the outermost guard; the Full chunk view then acquires section
     /// and storage reads in the same order as block-state writers.
     pub(crate) fn block_entity_tick_state_if_owned(
         &self,
@@ -1181,13 +1213,12 @@ impl ChunkMap {
             return None;
         }
 
-        let chunk = holder.try_chunk(ChunkStatus::Full)?;
-        chunk
-            .as_full()?
+        holder
+            .try_full_chunk()?
             .block_entity_tick_state_if_owned(pos, expected)
     }
 
-    /// Re-selects one ticker from the live state without retaining a chunk guard
+    /// Re-selects one ticker from the live state without retaining a component lock
     /// across behavior selection or manager registration.
     pub(crate) fn reconcile_block_entity_ticker(&self, holder: &Arc<ChunkHolder>, pos: BlockPos) {
         let world = self.world_gen_context.world();
@@ -1202,13 +1233,11 @@ impl ChunkMap {
         }
 
         let target = {
-            let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
+            let Some(chunk) = holder.try_full_chunk() else {
                 world.block_entity_tickers().remove(holder, pos);
                 return;
             };
-            chunk
-                .as_full()
-                .and_then(|chunk| chunk.block_entity_tick_target(pos))
+            chunk.block_entity_tick_target(pos)
         };
         let Some((state, block_entity)) = target else {
             world.block_entity_tickers().remove(holder, pos);
@@ -1249,17 +1278,15 @@ impl ChunkMap {
                     .read_sync(&holder.get_pos(), |_, active| Arc::ptr_eq(active, holder))
                     .unwrap_or(false)
                 || !holder.is_full_status_initialized()
-                || holder.persisted_status() != Some(ChunkStatus::Full)
+                || holder.published_status() != Some(ChunkStatus::Full)
             {
                 continue;
             }
             let batch = {
-                let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
+                let Some(chunk) = holder.try_full_chunk() else {
                     continue;
                 };
-                chunk
-                    .as_full()
-                    .and_then(|chunk| chunk.prepare_block_entity_activation(holder))
+                chunk.prepare_block_entity_activation(holder)
             };
             let Some(batch) = batch else {
                 continue;
@@ -1269,10 +1296,7 @@ impl ChunkMap {
             }
             for pos in batch.positions {
                 {
-                    let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
-                        break;
-                    };
-                    let Some(chunk) = chunk.as_full() else {
+                    let Some(chunk) = holder.try_full_chunk() else {
                         break;
                     };
                     chunk.reconcile_block_entity_game_event_listener(pos);
@@ -1292,12 +1316,8 @@ impl ChunkMap {
         for mut unload in finalized {
             let mut lifecycle_dispatchers = unload
                 .holder
-                .try_chunk(ChunkStatus::Empty)
-                .and_then(|chunk| {
-                    chunk
-                        .as_full()
-                        .map(|chunk| chunk.deactivate_block_entities(&unload.holder))
-                })
+                .try_full_chunk()
+                .map(|chunk| chunk.deactivate_block_entities(&unload.holder))
                 .unwrap_or_default();
             world
                 .block_entity_tickers()

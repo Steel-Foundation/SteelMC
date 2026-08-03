@@ -6,11 +6,11 @@ use rustc_hash::FxHashSet;
 use steel_utils::ChunkPos;
 
 use crate::chunk::{
-    chunk_access::ChunkStatus,
     chunk_holder::ChunkHolder,
     chunk_map::ChunkMap,
     chunk_scheduler::ChunkTicketRevision,
     chunk_ticket_manager::{ChunkTicket, ticket_level_for_status},
+    status::ChunkStatus,
 };
 
 /// Why a chunk request is holding tickets.

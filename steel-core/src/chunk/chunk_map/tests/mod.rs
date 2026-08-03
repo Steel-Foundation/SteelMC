@@ -4,17 +4,15 @@ use crate::block_entity::{
     SharedBlockEntity,
     entities::{ComparatorBlockEntity, SignBlockEntity},
 };
+use crate::chunk::Chunk;
+use crate::chunk::full_chunk::FullChunkRef;
 use crate::chunk::heightmap::ChunkHeightmaps;
-use crate::chunk::level_chunk::LevelChunk;
 use crate::chunk::light::ChunkLightData;
-use crate::chunk::proto_chunk::ProtoChunk;
 use crate::chunk::section::{ChunkSection, Sections};
 use crate::chunk_saver::RamOnlyStorage;
-use crate::config::RuntimeConfig;
 use crate::player::connection::NetworkConnection;
-use crate::player::{ClientInformation, GameProfile, PlayerConnection, ResetReason};
-use crate::server::Server;
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::player::{PlayerConnection, ResetReason};
+use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, SavedTick, TickPriority};
 use crate::worldgen::EmptyChunkGenerator;
 use std::io::Cursor;
@@ -71,45 +69,9 @@ fn recording_player(world: &Arc<World>) -> (Arc<Player>, Arc<SyncMutex<Vec<Encod
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
         packets: Arc::clone(&packets),
     })));
-    let config = Arc::new(RuntimeConfig {
-        max_players: 1,
-        view_distance: 2,
-        simulation_distance: 2,
-        max_chained_neighbor_updates: 1_000_000,
-        online_mode: false,
-        auth_server: None,
-        profile_server: None,
-        encryption: false,
-        allow_flight: false,
-        motd: String::new(),
-        use_favicon: false,
-        favicon: String::new(),
-        enforce_secure_chat: false,
-        chat_spam_threshold_seconds: 10,
-        command_spam_threshold_seconds: 10,
-        compression: None,
-        server_links: None,
-        packet_workers: Some(1),
-        chunk_generation_threads: Some(1),
-        chunk_encoding_threads: Some(1),
-    });
-    let player = Arc::new_cyclic(|weak_player| {
-        Player::new(
-            GameProfile {
-                id: Uuid::from_u128(1),
-                name: "TestPlayer".to_owned(),
-                properties: Vec::new(),
-                profile_actions: None,
-            },
-            Arc::clone(&connection),
-            Arc::clone(world),
-            Weak::<Server>::new(),
-            config,
-            1,
-            weak_player,
-            ClientInformation::default(),
-        )
-    });
+    let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(1), "TestPlayer", 1)
+        .connection(connection)
+        .build();
     (player, packets)
 }
 
@@ -136,15 +98,12 @@ fn advance_until_revision(chunk_map: &Arc<ChunkMap>, revision: ChunkTicketRevisi
     panic!("chunk ticket revision did not commit");
 }
 
-fn add_test_comparator(chunk: &ChunkAccess, pos: BlockPos) -> SharedBlockEntity {
-    let Some(full) = chunk.as_full() else {
-        panic!("test comparator requires a full chunk");
-    };
+fn add_test_comparator(full: FullChunkRef<'_>, pos: BlockPos) -> SharedBlockEntity {
     let Ok(relative_y) = usize::try_from(pos.y() - full.min_y()) else {
         panic!("test comparator position must be inside the chunk height");
     };
     let state = vanilla_blocks::COMPARATOR.default_state();
-    full.sections.set_relative_block(
+    full.common().sections.set_relative_block(
         (pos.x() & 15) as usize,
         relative_y,
         (pos.z() & 15) as usize,
@@ -156,15 +115,12 @@ fn add_test_comparator(chunk: &ChunkAccess, pos: BlockPos) -> SharedBlockEntity 
     block_entity
 }
 
-fn add_test_sign(chunk: &ChunkAccess, pos: BlockPos) -> SharedBlockEntity {
-    let Some(full) = chunk.as_full() else {
-        panic!("test sign requires a full chunk");
-    };
+fn add_test_sign(full: FullChunkRef<'_>, pos: BlockPos) -> SharedBlockEntity {
     let Ok(relative_y) = usize::try_from(pos.y() - full.min_y()) else {
         panic!("test sign position must be inside the chunk height");
     };
     let state = vanilla_blocks::OAK_SIGN.default_state();
-    full.sections.set_relative_block(
+    full.common().sections.set_relative_block(
         (pos.x() & 15) as usize,
         relative_y,
         (pos.z() & 15) as usize,
@@ -204,7 +160,7 @@ fn insert_active_full_holder_with_ticks(
         .map(|_| ChunkSection::new_empty())
         .collect::<Vec<_>>()
         .into_boxed_slice();
-    let chunk = LevelChunk::from_disk(
+    let chunk = Chunk::from_full_disk(
         Sections::from_owned(sections),
         pos,
         min_y,
@@ -227,18 +183,15 @@ fn insert_active_full_holder_with_ticks(
         height,
         Arc::downgrade(&world.chunk_map.full_publications),
     ));
-    holder.insert_chunk(ChunkAccess::Full(chunk), ChunkStatus::Full);
+    holder.insert_chunk(chunk, ChunkStatus::Full);
     let _ = world.chunk_map.chunks.insert_sync(pos, Arc::clone(&holder));
     holder
 }
 
 fn assert_postprocessing_drained(holder: &ChunkHolder) {
     let chunk = holder
-        .try_chunk(ChunkStatus::Full)
+        .try_full_chunk()
         .expect("the center should remain Full");
-    let ChunkAccess::Full(chunk) = &*chunk else {
-        panic!("the center should remain a LevelChunk");
-    };
     assert!(
         chunk
             .postprocessing_for_serialization()
@@ -268,12 +221,13 @@ fn test_chunk_map() -> Arc<ChunkMap> {
 }
 
 fn unloaded_light_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
-    let proto = ProtoChunk::from_disk(
+    let proto = Chunk::from_disk(
         Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
         pos,
         ChunkStatus::Light,
         0,
         16,
+        ChunkHeightmaps::new(0, 16),
         StructureStartMap::default(),
         StructureReferenceMap::default(),
         None,
@@ -290,12 +244,12 @@ fn unloaded_light_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
         0,
         16,
     ));
-    holder.insert_chunk(ChunkAccess::Proto(proto), ChunkStatus::Light);
+    holder.insert_chunk(proto, ChunkStatus::Light);
     holder
 }
 
 fn unloaded_full_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
-    let chunk = LevelChunk::from_disk(
+    let chunk = Chunk::from_full_disk(
         Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
         pos,
         0,
@@ -316,7 +270,7 @@ fn unloaded_full_holder(pos: ChunkPos) -> Arc<ChunkHolder> {
         0,
         16,
     ));
-    holder.insert_chunk(ChunkAccess::Full(chunk), ChunkStatus::Full);
+    holder.insert_chunk(chunk, ChunkStatus::Full);
     holder
 }
 

@@ -347,19 +347,6 @@ impl EntityBaseState {
         };
         self
     }
-
-    /// Sets pose and dimensions on this state snapshot.
-    #[must_use]
-    pub fn with_pose_and_dimensions(
-        mut self,
-        pose: EntityPose,
-        dimensions: EntityDimensions,
-    ) -> Self {
-        self.pose = pose;
-        self.dimensions = dimensions;
-        self.bounding_box = Self::make_bounding_box(self.position, dimensions);
-        self
-    }
 }
 
 /// Common fields and methods shared by all entities.
@@ -887,7 +874,24 @@ impl EntityBase {
 
     /// Resets state that vanilla gets from constructing a fresh player entity for death respawn.
     pub fn reset_for_player_respawn(&self, dimensions: EntityDimensions) {
-        {
+        self.reset_for_player_respawn_inner(dimensions, None);
+    }
+
+    /// Resets death-respawn state while retaining the relocation that owns admission.
+    pub(crate) fn reset_for_player_respawn_during_world_change(
+        &self,
+        dimensions: EntityDimensions,
+        pending_token: PendingWorldChangeToken,
+    ) {
+        self.reset_for_player_respawn_inner(dimensions, Some(pending_token));
+    }
+
+    fn reset_for_player_respawn_inner(
+        &self,
+        dimensions: EntityDimensions,
+        pending_world_change: Option<PendingWorldChangeToken>,
+    ) {
+        let bounding_box = {
             let mut state = self.state.lock();
             let position = state.position;
             state.old_position = position;
@@ -911,11 +915,13 @@ impl EntityBase {
             state.no_physics = false;
             state.needs_velocity_sync = false;
             state.hurt_marked = false;
-        }
+            state.bounding_box
+        };
+        self.notify_bounding_box_changed(bounding_box);
 
         self.movement_trace.lock().reset();
         *self.portal_process.lock() = None;
-        self.lifecycle.lock().pending_world_change = None;
+        self.lifecycle.lock().pending_world_change = pending_world_change;
 
         let mut save_data = self.save_data.lock();
         let tags = mem::take(&mut save_data.tags);
@@ -932,6 +938,22 @@ impl EntityBase {
     pub fn begin_pending_world_change(&self) -> Option<PendingWorldChangeToken> {
         let mut lifecycle = self.lifecycle.lock();
         if lifecycle.removal_reason.is_some() || lifecycle.pending_world_change.is_some() {
+            return None;
+        }
+        let token = lifecycle.next_world_change_token();
+        lifecycle.pending_world_change = Some(token);
+        Some(token)
+    }
+
+    /// Marks a live or killed player as waiting for respawn preparation.
+    ///
+    /// Killed players remain eligible because their async spawn search may need
+    /// to be retried after the death animation removes their live entity.
+    pub(crate) fn begin_pending_player_respawn(&self) -> Option<PendingWorldChangeToken> {
+        let mut lifecycle = self.lifecycle.lock();
+        if !matches!(lifecycle.removal_reason, None | Some(RemovalReason::Killed))
+            || lifecycle.pending_world_change.is_some()
+        {
             return None;
         }
         let token = lifecycle.next_world_change_token();
@@ -1188,14 +1210,24 @@ impl EntityBase {
     /// on the entity position.
     pub fn set_bounding_box(&self, bounding_box: WorldAabb) {
         self.state.lock().bounding_box = bounding_box;
+        self.notify_bounding_box_changed(bounding_box);
     }
 
     /// Sets pose and dimensions, then rebuilds the default position-centered box.
     pub fn set_pose_and_dimensions(&self, pose: EntityPose, dimensions: EntityDimensions) {
-        let mut state = self.state.lock();
-        state.pose = pose;
-        state.dimensions = dimensions;
-        state.bounding_box = EntityBaseState::make_bounding_box(state.position, dimensions);
+        let bounding_box = {
+            let mut state = self.state.lock();
+            state.pose = pose;
+            state.dimensions = dimensions;
+            state.bounding_box = EntityBaseState::make_bounding_box(state.position, dimensions);
+            state.bounding_box
+        };
+        self.notify_bounding_box_changed(bounding_box);
+    }
+
+    fn notify_bounding_box_changed(&self, bounding_box: WorldAabb) {
+        let callback = Arc::clone(&self.level_callback.lock());
+        callback.on_bounding_box_changed(bounding_box);
     }
 
     /// Sets the entity's velocity in blocks per tick.

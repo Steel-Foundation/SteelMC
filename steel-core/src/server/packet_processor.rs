@@ -115,15 +115,29 @@ impl PacketProcessor {
             let Some(pending) = work.take() else {
                 continue;
             };
-            if pending.player.connection.closed()
-                || server.cancel_token.is_cancelled()
-                || pending.player.is_domain_switching()
-            {
+            if !Self::packet_is_runnable(
+                &pending.player,
+                &pending.packet,
+                server.cancel_token.is_cancelled(),
+            ) {
                 continue;
             }
 
             pending.packet.handle(pending.player, server);
         }
+    }
+
+    fn packet_is_runnable(
+        player: &Player,
+        packet: &ScheduledPlayPacket,
+        server_cancelled: bool,
+    ) -> bool {
+        !player.connection.closed()
+            && !server_cancelled
+            && player.gate_domain_switch_packet(
+                packet.is_domain_handshake_packet(),
+                packet.is_perform_respawn(),
+            )
     }
 
     /// Opens the inter-tick packet phase and wakes the worker.
@@ -846,9 +860,15 @@ mod tests {
     use tokio::time::timeout;
     use uuid::Uuid;
 
+    use crate::{
+        entity::{Entity as _, LivingEntity as _},
+        player::connection::ScheduledPlayPacket,
+        test_support::{TestPlayerBuilder, fresh_test_world},
+    };
+
     use super::{
-        PACKET_ADMISSION_OVERHEAD, PacketAdmissionError, PacketAdmissionLimits, PacketQueue,
-        PlayerPacketLaneKey, ScheduledPacketExecution,
+        PACKET_ADMISSION_OVERHEAD, PacketAdmissionError, PacketAdmissionLimits, PacketProcessor,
+        PacketQueue, PlayerPacketLaneKey, ScheduledPacketExecution,
     };
 
     const fn limits(per_player_packets: usize, per_player_bytes: usize) -> PacketAdmissionLimits {
@@ -879,6 +899,26 @@ mod tests {
             queue.try_submit(2, ScheduledPacketExecution::PlayerLocal, 1, "other player"),
             Ok(())
         );
+    }
+
+    #[test]
+    fn scheduled_respawn_is_retained_if_domain_switch_queues_before_worker_gate() {
+        let world = fresh_test_world("scheduled_domain_switch_respawn_packet");
+        let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "RespawnTester", 1).build();
+        let packet = ScheduledPlayPacket::perform_respawn_for_test();
+        let Some(token) = player.begin_pending_world_change() else {
+            panic!("test player should acquire a world-change token");
+        };
+        assert!(player.begin_domain_switch(token));
+        player.set_health(0.0);
+
+        assert!(!PacketProcessor::packet_is_runnable(
+            &player, &packet, false
+        ));
+        assert!(player.has_deferred_death_respawn_for_test());
+
+        assert!(player.finish_domain_switch(token));
+        assert!(player.finish_pending_world_change(token));
     }
 
     #[test]

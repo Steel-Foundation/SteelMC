@@ -315,7 +315,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla `Entity.isPickable`. Base entities are not pickable unless
     /// a concrete entity type opts in.
     fn is_pickable(&self) -> bool {
-        false
+        self.as_living_entity()
+            .is_some_and(|living| !living.is_removed())
     }
 
     /// Returns whether this entity can be attacked.
@@ -338,7 +339,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla `Entity.isPushable`. Base entities are not pushable unless
     /// a concrete entity type opts in.
     fn is_pushable(&self) -> bool {
-        false
+        let Some(living) = self.as_living_entity() else {
+            return false;
+        };
+        Entity::is_alive(living) && !living.is_spectator() && !living.on_climbable()
     }
 
     /// Returns whether vanilla fluid currents can push this entity.
@@ -846,9 +850,14 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Use `self.level()` to access the world for physics, block queries, etc.
     /// The caller handles post-tick dirty data sync.
     ///
-    /// Steel keeps the fallback empty because many vanilla subclasses override
-    /// tick without calling `super.tick()`.
-    fn tick(&self) {}
+    /// The default dispatches vanilla living behavior without requiring every
+    /// living implementation to repeat an `Entity::tick` forwarding method.
+    /// Non-living entities with custom tick behavior override this directly.
+    fn tick(&self) {
+        if let Some(living) = self.as_living_entity() {
+            living.tick_living_entity();
+        }
+    }
 
     /// Called every game tick while this entity is riding another entity.
     ///
@@ -858,6 +867,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.tick();
         if let Some(vehicle) = self.vehicle() {
             vehicle.position_rider(self.as_entity_event_source());
+        }
+        if let Some(living) = self.as_living_entity() {
+            living.reset_fall_distance();
         }
     }
 
@@ -968,7 +980,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Runs vanilla pre-tick despawn checks.
-    fn check_despawn(&self) {}
+    fn check_despawn(&self) {
+        if let Some(mob) = self.as_mob() {
+            mob.check_mob_despawn();
+        }
+    }
 
     /// Applies an inside-block effect queued by vanilla's step-based collector.
     fn apply_inside_block_effect(&self, effect_type: InsideBlockEffectType) {
@@ -1022,37 +1038,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla `Entity.updateDataBeforeSync`.
     fn update_data_before_sync(&self) {}
 
-    /// Packs syncable attributes for initial spawn pairing.
-    ///
-    /// Mirrors vanilla `ServerEntity.sendPairingData`, which sends all syncable
-    /// living attributes after the add-entity and metadata packets.
-    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        Vec::new()
-    }
-
-    /// Drains syncable dirty attributes for per-tick tracking updates.
-    ///
-    /// Mirrors vanilla `ServerEntity.sendDirtyEntityData`, which sends dirty
-    /// living attributes after dirty entity data.
-    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        Vec::new()
-    }
-
-    /// Drains dirty mob-effect packet changes for vanilla recipients.
-    fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
-        Vec::new()
-    }
-
-    /// Packs non-empty equipment slots for initial spawn pairing.
-    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
-        Vec::new()
-    }
-
-    /// Drains equipment slots that changed since the last tracker sync.
-    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
-        Vec::new()
-    }
-
     /// Returns true if the entity has been marked for removal.
     fn is_removed(&self) -> bool {
         self.base().is_removed()
@@ -1060,7 +1045,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns whether this entity is alive for vanilla generic entity checks.
     fn is_alive(&self) -> bool {
-        !self.is_removed()
+        let Some(living) = self.as_living_entity() else {
+            return !self.is_removed();
+        };
+        !living.is_removed() && living.get_health() > 0.0
     }
 
     /// Marks this entity as waiting for a prepared world change.
@@ -1308,7 +1296,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 .inventory
                 .lock()
                 .hurt_item_in_hand(hand, 1, has_infinite_materials);
-            mob.refresh_equipment_attribute_modifiers(slot);
             mob.set_guaranteed_drop(slot);
             mob.set_persistence_required();
 
@@ -1342,6 +1329,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         hand: InteractionHand,
         location: DVec3,
     ) -> InteractionResult {
+        if let Some(mob) = self.as_mob() {
+            return mob.interact_mob(player, hand, location);
+        }
         self.interact_entity(player, hand, location)
     }
 
@@ -1524,6 +1514,18 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn Animal>(self)
     }
 
+    /// Returns true for entities that implement vanilla ageable-mob behavior.
+    fn is_ageable_mob(&self) -> bool {
+        self.as_ageable_mob().is_some()
+    }
+
+    /// Returns this entity as an ageable mob when it has ageable behavior.
+    ///
+    /// Mirrors vanilla's frequent `instanceof AgeableMob` branches.
+    fn as_ageable_mob(&self) -> Option<&dyn AgeableMob> {
+        try_as_dyn::<Self, dyn AgeableMob>(self)
+    }
+
     /// Returns true for entities that implement vanilla item-steered boosts.
     fn is_item_steerable(&self) -> bool {
         self.as_item_steerable().is_some()
@@ -1566,7 +1568,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns true when vanilla allows this side to run entity AI/travel logic.
     fn is_effective_ai(&self) -> bool {
-        self.is_server_driven_movement()
+        let Some(mob) = self.as_mob() else {
+            return self.is_server_driven_movement();
+        };
+        mob.is_server_driven_movement() && !mob.is_no_ai()
     }
 
     /// Returns true when vanilla landing bounce should be suppressed.
@@ -1641,19 +1646,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         if let Some(synced_data) = self.synced_data() {
             synced_data.set_fall_flying(fall_flying);
         }
-    }
-
-    /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow`.
-    fn default_can_walk_on_powder_snow(&self) -> bool {
-        REGISTRY.entity_types.is_in_tag(
-            self.entity_type(),
-            &EntityTypeTag::POWDER_SNOW_WALKABLE_MOBS,
-        )
-    }
-
-    /// Returns whether this entity can walk on powder snow.
-    fn can_walk_on_powder_snow(&self) -> bool {
-        self.default_can_walk_on_powder_snow()
     }
 
     /// Returns whether vanilla excludes this vehicle from floating kicks.
@@ -2020,7 +2012,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns whether this entity may accumulate frozen ticks.
     fn can_freeze(&self) -> bool {
-        self.default_can_freeze()
+        self.as_living_entity().map_or_else(
+            || self.default_can_freeze(),
+            LivingEntity::default_living_can_freeze,
+        )
     }
 
     /// Returns vanilla `getTicksRequiredToFreeze`.
@@ -3036,7 +3031,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Maximum height this entity can step up during normal movement.
     fn max_up_step(&self) -> f32 {
-        0.0
+        self.as_living_entity().map_or(0.0, |living| {
+            living
+                .attributes()
+                .lock()
+                .get_value(vanilla_attributes::STEP_HEIGHT)
+                .unwrap_or(0.6) as f32
+        })
     }
 
     /// Whether movement should apply player-style sneak edge prevention.
@@ -3051,7 +3052,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Override this to specify entity-specific gravity.
     /// Vanilla values: `ItemEntity` = 0.04, `LivingEntity` = 0.08
     fn get_default_gravity(&self) -> f64 {
-        0.0
+        self.as_living_entity()
+            .map_or(0.0, LivingEntity::get_attribute_gravity)
     }
 
     /// Returns true if gravity is disabled for this entity.
@@ -3460,18 +3462,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn load_additional(&self, _nbt: BorrowedNbtCompoundView<'_, '_>) {}
 
     /// Applies damage to this entity.
-    ///
-    /// Vanilla: `Entity.hurtServer()` — overridden by `LivingEntity` (complex
-    /// armor/effects/invulnerability logic) and `ItemEntity` (health decrement
-    /// and discard). `world` must preserve vanilla's explicit `ServerLevel`
-    /// argument rather than being inferred from the target. Default returns
-    /// `false` (entity ignores damage).
-    #[expect(
-        unused_variables,
-        reason = "default trait impl; parameters used by overrides"
-    )]
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        false
+        let Some(living) = self.as_living_entity() else {
+            return false;
+        };
+        living.hurt_server(world, source, amount)
     }
 }
 

@@ -847,22 +847,22 @@ mod tests {
             Some(&none)
         );
         assert_eq!(
-            registry.cat_variants.by_id(0).map(|entry| &entry.key),
+            registry.cat_variants.by_id(9).map(|entry| &entry.key),
             Some(&tabby)
         );
         assert_eq!(
             registry
                 .wolf_sound_variants
-                .by_id(3)
+                .by_id(0)
                 .map(|entry| &entry.key),
             Some(&angry)
         );
         assert_eq!(
-            registry.pig_sound_variants.by_id(1).map(|entry| &entry.key),
+            registry.pig_sound_variants.by_id(0).map(|entry| &entry.key),
             Some(&big)
         );
         assert_eq!(
-            registry.painting_variants.by_id(25).map(|entry| &entry.key),
+            registry.painting_variants.by_id(16).map(|entry| &entry.key),
             Some(&earth)
         );
     }

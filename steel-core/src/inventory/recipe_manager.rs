@@ -9,8 +9,9 @@ use steel_registry::{
     recipe::{CraftingRecipe, PositionedCraftingInput},
 };
 
+use crate::inventory::container::CraftingContainer;
+
 use super::container::Container;
-use super::crafting::CraftingContainer;
 
 /// Called when a slot changes in the crafting grid.
 /// Updates the result container with the matching recipe result.

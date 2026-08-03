@@ -1,11 +1,14 @@
-use std::sync::{Arc, Weak};
+use std::sync::{
+    Arc, Barrier, Weak,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_entities;
 use steel_utils::locks::SyncMutex;
 use uuid::Uuid;
 
-use crate::entity::{Entity, EntityBase};
+use crate::entity::{Entity, EntityBase, EntityLevelCallback, InactiveEntityCallback};
 
 use super::*;
 
@@ -13,6 +16,34 @@ struct ManagerTestEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     always_ticking: bool,
+}
+
+struct DelayedFirstBoundsCallback {
+    entity_id: i32,
+    manager: Arc<WorldEntityManager>,
+    first_callback_entered: Arc<Barrier>,
+    release_first_callback: Arc<Barrier>,
+    callback_count: AtomicUsize,
+}
+
+impl EntityLevelCallback for DelayedFirstBoundsCallback {
+    fn validate_move(&self, _old_pos: DVec3, _new_pos: DVec3) -> Result<(), EntityMoveError> {
+        Ok(())
+    }
+
+    fn on_move_committed(&self, _old_pos: DVec3, _new_pos: DVec3) -> Result<(), EntityMoveError> {
+        Ok(())
+    }
+
+    fn on_bounding_box_changed(&self, _bounding_box: WorldAabb) {
+        if self.callback_count.fetch_add(1, Ordering::SeqCst) == 0 {
+            self.first_callback_entered.wait();
+            self.release_first_callback.wait();
+        }
+        self.manager.commit_bounding_box_change(self.entity_id);
+    }
+
+    fn on_remove(&self, _reason: RemovalReason) {}
 }
 
 impl ManagerTestEntity {

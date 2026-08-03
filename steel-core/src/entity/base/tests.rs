@@ -8,7 +8,8 @@ use std::sync::{Arc, Weak};
 
 use glam::DVec3;
 use steel_registry::{
-    entity_type::EntityDimensions, entity_type::EntityTypeRef, test_support::init_test_registry,
+    entity_data::EntityPose, entity_type::EntityDimensions, entity_type::EntityTypeRef,
+    test_support::init_test_registry,
 };
 use steel_registry::{vanilla_damage_types, vanilla_entities};
 use steel_utils::locks::SyncMutex;
@@ -111,6 +112,7 @@ impl Entity for FallDamageTestEntity {
 #[derive(Default)]
 struct CountingCallback {
     removals: SyncMutex<Vec<RemovalReason>>,
+    bounding_boxes: SyncMutex<Vec<WorldAabb>>,
 }
 
 impl EntityLevelCallback for CountingCallback {
@@ -120,6 +122,10 @@ impl EntityLevelCallback for CountingCallback {
 
     fn on_move_committed(&self, _old_pos: DVec3, _new_pos: DVec3) -> Result<(), EntityMoveError> {
         Ok(())
+    }
+
+    fn on_bounding_box_changed(&self, bounding_box: WorldAabb) {
+        self.bounding_boxes.lock().push(bounding_box);
     }
 
     fn on_remove(&self, reason: RemovalReason) {
@@ -322,6 +328,23 @@ fn lifecycle_state_tracks_pending_world_change_tokens() {
 }
 
 #[test]
+fn killed_player_respawn_can_retain_admission_ownership() {
+    let dimensions = EntityDimensions::new(0.6, 1.8, 1.62);
+    let base = EntityBase::new(1, DVec3::ZERO, dimensions, Weak::<World>::new());
+    base.set_removed(RemovalReason::Killed);
+
+    assert_eq!(base.begin_pending_world_change(), None);
+    let Some(pending_token) = base.begin_pending_player_respawn() else {
+        panic!("a killed player should be able to reserve respawn preparation");
+    };
+    assert!(base.clear_removed());
+    base.reset_for_player_respawn_during_world_change(dimensions, pending_token);
+
+    assert!(base.is_world_change_token_pending(pending_token));
+    assert!(base.finish_pending_world_change(pending_token));
+}
+
+#[test]
 fn try_set_position_rolls_back_when_commit_fails() {
     let base = EntityBase::new(
         1,
@@ -352,6 +375,22 @@ fn set_position_local_panics_when_callback_requires_manager_commit() {
     base.set_level_callback(Arc::new(CountingCallback::default()));
 
     base.set_position_local(DVec3::new(4.0, 5.0, 6.0));
+}
+
+#[test]
+fn dimension_change_notifies_the_level_callback_of_new_bounds() {
+    let base = EntityBase::new(
+        1,
+        DVec3::new(1.0, 2.0, 3.0),
+        EntityDimensions::new(0.25, 0.25, 0.125),
+        Weak::<World>::new(),
+    );
+    let callback = Arc::new(CountingCallback::default());
+    base.set_level_callback(callback.clone());
+
+    base.set_pose_and_dimensions(EntityPose::Standing, EntityDimensions::new(2.0, 3.0, 2.5));
+
+    assert_eq!(*callback.bounding_boxes.lock(), vec![base.bounding_box()]);
 }
 
 #[test]
