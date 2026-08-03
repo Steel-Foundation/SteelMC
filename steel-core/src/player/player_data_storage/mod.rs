@@ -309,7 +309,7 @@ impl FilePlayerDataStorage {
         uuid: Uuid,
         data: &PersistentPlayerData,
     ) -> io::Result<()> {
-        let player_stats_file = PlayerStatsFile::from_persistent_stats(&data.stats);
+        let player_stats_file = PlayerStatsFile::from_persistent_stats(&data.stats)?;
         if let Some(toml_string) = serialize_player_stats_file(&player_stats_file) {
             let final_path = Self::player_stats_file(&self.domain_players_dir(domain), uuid);
             let lock = self.file_lock(&final_path);
@@ -955,10 +955,14 @@ mod tests {
     use crate::entity::DEFAULT_MAX_AIR_SUPPLY;
     use crate::permission::PermissionSet;
     use crate::player::KnownPlayer;
+    use std::collections::BTreeMap;
     use std::{
         env,
         time::{SystemTime, UNIX_EPOCH},
     };
+    use steel_registry::stat::vanilla_stat_types;
+    use steel_registry::test_support::init_test_registry;
+    use steel_registry::{vanilla_blocks, vanilla_custom_stats, vanilla_items};
 
     fn temp_storage_root(name: &str) -> PathBuf {
         let suffix = SystemTime::now()
@@ -1038,6 +1042,23 @@ mod tests {
             nbt_data: Vec::new(),
             passengers: Vec::new(),
         }
+    }
+
+    fn sample_player_stats_file() -> PlayerStatsFile {
+        let mut custom_stats = BTreeMap::new();
+        custom_stats.insert(vanilla_custom_stats::JUMP.key.clone(), 14);
+        custom_stats.insert(vanilla_custom_stats::WALK_ONE_CM.key.clone(), 3);
+        custom_stats.insert(vanilla_custom_stats::TOTAL_WORLD_TIME.key.clone(), 5555);
+
+        let mut broken_stats = BTreeMap::new();
+        broken_stats.insert(vanilla_blocks::DIAMOND_BLOCK.key.clone(), 5);
+        broken_stats.insert(vanilla_blocks::REINFORCED_DEEPSLATE.key.clone(), 1);
+
+        let mut stats = BTreeMap::new();
+        stats.insert(vanilla_stat_types::CUSTOM.key.clone(), custom_stats);
+        stats.insert(vanilla_stat_types::BLOCK_MINED.key.clone(), broken_stats);
+
+        PlayerStatsFile { stats }
     }
 
     #[tokio::test]
@@ -1568,5 +1589,62 @@ mod tests {
             .expect_err("stale payload should fail");
 
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn player_stats_file_roundtrips() {
+        init_test_registry();
+
+        let file = sample_player_stats_file();
+
+        let mut stats = file
+            .into_persistent_stats()
+            .expect("conversion should not have failed");
+
+        assert_eq!(stats.len(), 5);
+
+        stats.push(PersistentStat {
+            stat: vanilla_stat_types::ITEM_PICKED_UP.get(&vanilla_items::DIAMOND),
+            count: 934,
+        });
+        stats.push(PersistentStat {
+            stat: vanilla_stat_types::BLOCK_MINED.get(&vanilla_blocks::EMERALD_BLOCK),
+            count: 111,
+        });
+
+        let file = PlayerStatsFile::from_persistent_stats(&stats)
+            .expect("conversion should not have failed");
+        assert_eq!(file.stats.len(), 3); // We added a new stat type to serialize
+
+        let block_stats = &file.stats[&Identifier::vanilla_static("mined")];
+        let expected = [
+            ("minecraft:diamond_block", 5),
+            ("minecraft:emerald_block", 111),
+            ("minecraft:reinforced_deepslate", 1),
+        ];
+
+        for (i, (block, &count)) in block_stats.iter().enumerate() {
+            assert_eq!(block.to_string(), expected[i].0);
+            assert_eq!(count, expected[i].1);
+        }
+    }
+
+    #[test]
+    fn duplicate_stat_fails_conversion() {
+        init_test_registry();
+
+        let stats = vec![
+            PersistentStat {
+                stat: vanilla_stat_types::ITEM_PICKED_UP.get(&vanilla_items::DIAMOND),
+                count: 123,
+            },
+            PersistentStat {
+                stat: vanilla_stat_types::ITEM_PICKED_UP.get(&vanilla_items::DIAMOND),
+                count: 456,
+            },
+        ];
+
+        PlayerStatsFile::from_persistent_stats(&stats)
+            .expect_err("conversion should have failed with duplicate stat");
     }
 }

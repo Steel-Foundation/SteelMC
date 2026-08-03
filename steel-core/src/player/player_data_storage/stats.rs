@@ -13,17 +13,24 @@ pub(super) struct PlayerStatsFile {
 }
 
 impl PlayerStatsFile {
-    pub(super) fn from_persistent_stats(persistent_stats: &[PersistentStat]) -> Self {
+    pub(super) fn from_persistent_stats(persistent_stats: &[PersistentStat]) -> io::Result<Self> {
         let mut stats = BTreeMap::new();
 
         for PersistentStat { stat, count } in persistent_stats {
-            stats
+            if stats
                 .entry(stat.stat_type_key().clone())
                 .or_insert_with(BTreeMap::new)
-                .insert(stat.stat_value_key().clone(), *count);
+                .insert(stat.stat_value_key().clone(), *count)
+                .is_some()
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("duplicate stat {stat} found in slice"),
+                ));
+            }
         }
 
-        Self { stats }
+        Ok(Self { stats })
     }
 
     pub(super) fn into_persistent_stats(self) -> io::Result<Vec<PersistentStat>> {
