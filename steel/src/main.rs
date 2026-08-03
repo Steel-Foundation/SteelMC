@@ -422,7 +422,7 @@ async fn shutdown_worlds(server: &Arc<Server>) {
     }
 
     log::info!("Saving world data...");
-    save_command_data(server).await;
+    server.save_command_data().await;
     let mut total_saved = 0;
     for world in server.worlds.values() {
         world.cleanup(&mut total_saved).await;
