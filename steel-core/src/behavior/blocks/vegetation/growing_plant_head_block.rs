@@ -255,3 +255,36 @@ impl Bonemealable for GrowingPlantHeadBlock {
         BonemealAction::Grower
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rand::{SeedableRng as _, rngs::StdRng};
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+
+    use super::*;
+    use crate::{behavior::blocks::CaveVinesBlock, test_support::TestLevel};
+
+    #[test]
+    fn connected_placement_uses_body_state() {
+        init_test_registry();
+
+        let behavior = GrowingPlantHeadBlock::new(
+            &vanilla_blocks::CAVE_VINES,
+            Direction::Down,
+            false,
+            0.1,
+            &vanilla_blocks::CAVE_VINES_PLANT,
+            None,
+            CaveVinesBlock::can_grow_into,
+        );
+        let level = TestLevel::default().with_block(
+            BlockPos::ZERO.below(),
+            vanilla_blocks::CAVE_VINES.default_state(),
+        );
+        let mut rng = StdRng::seed_from_u64(1);
+
+        let state = behavior.state_for_placement(&level, BlockPos::ZERO, &mut rng);
+
+        assert_eq!(state, vanilla_blocks::CAVE_VINES_PLANT.default_state());
+    }
+}

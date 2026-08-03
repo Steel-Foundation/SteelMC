@@ -195,3 +195,70 @@ impl Bonemealable for GrowingPlantBodyBlock {
         BonemealAction::Grower
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use glam::DVec3;
+    use steel_registry::{
+        item_stack::ItemStack, test_support::init_test_registry, vanilla_blocks, vanilla_items,
+    };
+    use steel_utils::{BlockPos, types::InteractionHand};
+
+    use super::*;
+    use crate::{
+        behavior::{
+            BlockHitResult, PlacementOrientation, PlacementSource, blocks::CaveVinesBlock,
+            init_behaviors,
+        },
+        test_support::test_world,
+    };
+
+    fn place_context(item_in_hand: &mut ItemStack) -> BlockPlaceContext<'_> {
+        let hit_result = BlockHitResult {
+            location: DVec3::ZERO,
+            direction: Direction::Down,
+            block_pos: BlockPos::ZERO,
+            miss: false,
+            inside: false,
+            world_border_hit: false,
+        };
+        let source = PlacementSource::direct(
+            None,
+            InteractionHand::MainHand,
+            item_in_hand,
+            PlacementOrientation::Player {
+                rotation: 0.0,
+                pitch: 0.0,
+            },
+            false,
+        );
+        BlockPlaceContext::new(test_world(), source, &hit_result)
+    }
+
+    #[test]
+    fn replacement_rejects_head_item_and_preserves_default_result() {
+        init_test_registry();
+        init_behaviors();
+
+        let behavior = GrowingPlantBodyBlock::new(
+            &vanilla_blocks::CAVE_VINES_PLANT,
+            Direction::Down,
+            false,
+            &vanilla_blocks::CAVE_VINES,
+            CaveVinesBlock::can_grow_into,
+        );
+        let mut glow_berries = ItemStack::new(&vanilla_items::GLOW_BERRIES);
+        let context = place_context(&mut glow_berries);
+        let replaceable_state = vanilla_blocks::SHORT_GRASS.default_state();
+        assert!(default_can_be_replaced(replaceable_state, &context));
+        assert!(!behavior.can_be_replaced(replaceable_state, &context));
+
+        let mut stone = ItemStack::new(&vanilla_items::STONE);
+        let context = place_context(&mut stone);
+        let body_state = vanilla_blocks::CAVE_VINES_PLANT.default_state();
+        assert_eq!(
+            behavior.can_be_replaced(body_state, &context),
+            default_can_be_replaced(body_state, &context)
+        );
+    }
+}

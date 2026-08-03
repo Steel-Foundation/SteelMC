@@ -29,12 +29,15 @@ impl KelpBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
     fn can_grow_into(state: BlockStateId) -> bool {
         state.get_block() == &vanilla_blocks::WATER
     }
+
     fn get_blocks_to_grow_when_bonemealed(_rng: &mut dyn Rng) -> i32 {
         1
     }
+
     const fn growing_plant_head_block(&self) -> GrowingPlantHeadBlock {
         GrowingPlantHeadBlock::new(
             self.block,
@@ -52,6 +55,7 @@ impl BlockBehavior for KelpBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         kelp_can_survive(world, pos)
     }
+
     fn get_clone_item_stack(
         &self,
         _block: BlockRef,
@@ -60,10 +64,12 @@ impl BlockBehavior for KelpBlock {
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::KELP))
     }
+
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.growing_plant_head_block()
             .random_tick(state, world, pos);
     }
+
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -107,6 +113,7 @@ impl BlockBehavior for KelpBlock {
     fn can_place_liquid(&self, _state: BlockStateId, _fluid: FluidRef) -> bool {
         false
     }
+
     fn as_bonemealable(&self) -> Option<&dyn super::bonemealable::Bonemealable> {
         Some(self)
     }

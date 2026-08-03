@@ -29,12 +29,14 @@ impl KelpPlantBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
     const fn update_head_after_converted_from_body(
         _body_state: BlockStateId,
         head_state: BlockStateId,
     ) -> BlockStateId {
         head_state
     }
+
     fn can_grow_into(state: BlockStateId) -> bool {
         state.get_block() == &vanilla_blocks::WATER
     }
@@ -55,6 +57,7 @@ impl BlockBehavior for KelpPlantBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         kelp_can_survive(world, pos)
     }
+
     fn get_clone_item_stack(
         &self,
         _block: BlockRef,
@@ -99,6 +102,7 @@ impl BlockBehavior for KelpPlantBlock {
     fn can_place_liquid(&self, _state: BlockStateId, _fluid: FluidRef) -> bool {
         false
     }
+
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }

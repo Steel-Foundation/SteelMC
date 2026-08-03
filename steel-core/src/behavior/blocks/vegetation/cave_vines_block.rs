@@ -39,7 +39,10 @@ impl CaveVinesBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
-    fn can_grow_into(state: BlockStateId) -> bool {
+
+    /// Cave Vines `canGrowInto()`
+    #[must_use]
+    pub fn can_grow_into(state: BlockStateId) -> bool {
         state.is_air()
     }
 
