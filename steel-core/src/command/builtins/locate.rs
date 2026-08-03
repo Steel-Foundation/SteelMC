@@ -19,8 +19,8 @@ use super::super::{
 };
 use crate::{
     chunk::{
-        chunk_access::ChunkStatus,
         chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
+        status::ChunkStatus,
     },
     world::World,
     worldgen::{

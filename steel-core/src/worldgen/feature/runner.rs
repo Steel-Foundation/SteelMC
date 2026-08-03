@@ -278,7 +278,6 @@ impl FeatureDecorationRunner {
             .map(|positions| positions.iter().copied().collect::<Vec<_>>())
             .unwrap_or_default();
         drop(references);
-        drop(center_chunk);
         source_positions
     }
 
