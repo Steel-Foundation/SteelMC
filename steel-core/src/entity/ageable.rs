@@ -132,7 +132,9 @@ pub trait AgeableMob: Mob {
     fn set_synced_baby(&self, baby: bool);
 
     /// Hook called after the baby/adult boundary changes.
-    fn age_boundary_changed(&self, _baby: bool) {}
+    fn age_boundary_changed(&self, _baby: bool) {
+        self.refresh_dimensions();
+    }
 
     /// Returns vanilla `AgeableMob.getBabyStartAge`.
     fn get_baby_start_age(&self) -> i32 {

@@ -87,16 +87,4 @@ pub(crate) use suggestion::Suggestion;
 pub(crate) use suggestion::{SuggestionError, Suggestions, SuggestionsBuilder};
 
 #[cfg(test)]
-mod argument_tests;
-#[cfg(test)]
-mod context_chain_tests;
-#[cfg(test)]
-mod parsing_tests;
-#[cfg(test)]
-mod registration_tests;
-#[cfg(test)]
-mod runtime_model_tests;
-#[cfg(test)]
-mod suggestion_tests;
-#[cfg(test)]
 mod tests;

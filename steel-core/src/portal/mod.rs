@@ -306,21 +306,6 @@ impl TeleportTransition {
         }
     }
 
-    /// Marks this transition as the recursive passenger variant.
-    #[must_use]
-    pub fn transition_as_passenger(&self) -> Self {
-        Self {
-            target_world: self.target_world.clone(),
-            position: self.position,
-            rotation: self.rotation,
-            velocity: self.velocity,
-            relatives: self.relatives,
-            portal_cooldown: self.portal_cooldown,
-            as_passenger: true,
-            post_transition: self.post_transition.clone(),
-        }
-    }
-
     /// Resolves this transition's position against the entity's current position.
     #[must_use]
     pub fn resolved_position(&self, current_position: DVec3) -> DVec3 {
@@ -454,10 +439,12 @@ fn rotate_y(vec: DVec3, radians: f32) -> DVec3 {
 pub enum WorldChangeRequest {
     /// Pre-computed transition (players after chunk pre-warming).
     Computed(TeleportTransition),
-    /// Command-driven world change to the target world's spawn.
+    /// Token-owned player selection of a loaded world's spawn.
     WorldSpawn {
         /// The target world to teleport into.
         target_world: Arc<World>,
+        /// Runtime token proving this request still owns the player's relocation.
+        pending_token: PendingWorldChangeToken,
     },
     /// Portal position — server computes portal-specific destination after chunk pre-warming.
     Portal {

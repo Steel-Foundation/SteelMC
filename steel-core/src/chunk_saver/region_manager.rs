@@ -5,6 +5,7 @@
 //! format, avoiding memory duplication.
 
 use std::{
+    fmt,
     io::{self},
     path::PathBuf,
     sync::Weak,
@@ -15,18 +16,28 @@ use steel_utils::{ChunkPos, locks::AsyncRwLock};
 use tokio::{
     fs::{self, File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
+    sync::oneshot,
 };
 
-use crate::chunk::chunk_access::ChunkStatus;
+use crate::chunk::status::ChunkStatus;
 use crate::world::World;
 
 use super::{
     ChunkStorage, LoadedChunk, PersistentChunk,
     format::{
-        CHUNK_TABLE_SIZE, FILE_HEADER_SIZE, FIRST_DATA_SECTOR, FORMAT_VERSION, MAX_CHUNK_SIZE,
-        REGION_MAGIC, RegionHeader, RegionPos, SECTOR_SIZE,
+        CHUNK_TABLE_SIZE, ChunkEntry, FILE_HEADER_SIZE, FIRST_DATA_SECTOR, FORMAT_VERSION,
+        MAX_CHUNK_SIZE, REGION_MAGIC, RegionHeader, RegionPos, SECTOR_SIZE,
     },
 };
+
+#[derive(Debug)]
+struct CorruptChunkData(String);
+
+impl fmt::Display for CorruptChunkData {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
 
 /// Manages region files with seek-based chunk access.
 ///
@@ -40,12 +51,14 @@ pub struct RegionManager {
 }
 
 /// Prepared chunk data ready to be saved asynchronously.
-/// Created by `prepare_chunk_save` while holding the chunk lock.
+/// Created by `prepare_chunk_save` during the holder's snapshot-preparation phase.
 pub struct PreparedChunkSave {
     /// The chunk position.
     pub pos: ChunkPos,
+    /// The highest persisted status captured with the chunk data.
+    pub status: ChunkStatus,
     /// The serialized chunk data.
-    pub persistent: PersistentChunk,
+    pub persistent: PersistentChunk<'static>,
     /// Runtime manager entity IDs that were either serialized or explicitly skipped.
     pub handled_runtime_entity_ids: Vec<i32>,
 }
@@ -126,11 +139,17 @@ impl RegionManager {
         // Read chunk table
         let mut table_bytes = vec![0u8; CHUNK_TABLE_SIZE];
         file.read_exact(&mut table_bytes).await?;
-        let header = RegionHeader::from_bytes(&table_bytes);
+        let header = RegionHeader::from_bytes(&table_bytes).map_err(|index| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("region chunk table entry {index} has an invalid status byte"),
+            )
+        })?;
 
         // Calculate file size in sectors
         let file_size = file.seek(io::SeekFrom::End(0)).await?;
         let file_sectors = file_size.div_ceil(SECTOR_SIZE as u64) as u32;
+        Self::validate_region_entries(&header, file_sectors)?;
 
         Ok(RegionHandle {
             file,
@@ -197,6 +216,87 @@ impl RegionManager {
         Ok(compressed)
     }
 
+    fn validate_chunk_entry(entry: ChunkEntry, file_sectors: u32) -> io::Result<()> {
+        if entry.sector_offset < FIRST_DATA_SECTOR {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "chunk table entry points into the region header at sector {}",
+                    entry.sector_offset
+                ),
+            ));
+        }
+        if entry.size_bytes == 0 || entry.size_bytes as usize > MAX_CHUNK_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid chunk table entry size {}", entry.size_bytes),
+            ));
+        }
+        let Some(end_sector) = entry.sector_offset.checked_add(entry.sector_count()) else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "chunk table entry sector range overflowed",
+            ));
+        };
+        if end_sector > file_sectors {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "chunk table entry ends at sector {end_sector}, past region end {file_sectors}"
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_region_entries(header: &RegionHeader, file_sectors: u32) -> io::Result<()> {
+        let mut occupied = vec![false; file_sectors as usize];
+        for sector in occupied.iter_mut().take(FIRST_DATA_SECTOR as usize) {
+            *sector = true;
+        }
+        for (index, &entry) in header.entries.iter().enumerate() {
+            if !entry.exists() {
+                continue;
+            }
+            Self::validate_chunk_entry(entry, file_sectors)?;
+            let start = entry.sector_offset as usize;
+            let end = start + entry.sector_count() as usize;
+            if occupied[start..end].iter().any(|is_occupied| *is_occupied) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("chunk table entry {index} overlaps another region allocation"),
+                ));
+            }
+            occupied[start..end].fill(true);
+        }
+        Ok(())
+    }
+
+    async fn clear_corrupt_chunk_if_unchanged(
+        &self,
+        region_pos: RegionPos,
+        index: usize,
+        expected_entry: ChunkEntry,
+    ) -> io::Result<bool> {
+        let mut regions = self.regions.write().await;
+        let Some(handle) = regions.get_mut(&region_pos) else {
+            return Err(io::Error::other(
+                "region was released while clearing corrupt chunk data",
+            ));
+        };
+        if handle.header.entries[index] != expected_entry {
+            return Ok(false);
+        }
+
+        handle.header.entries[index] = ChunkEntry::empty();
+        if let Err(error) = Self::write_header(&mut handle.file, &handle.header).await {
+            handle.header.entries[index] = expected_entry;
+            return Err(error);
+        }
+        handle.header_dirty = false;
+        Ok(true)
+    }
+
     /// Writes chunk data to disk at the specified sector offset.
     async fn write_chunk_data(
         file: &mut File,
@@ -225,8 +325,7 @@ impl RegionManager {
         Ok(())
     }
 
-    /// Saves prepared chunk data to disk. This is the async part that doesn't
-    /// need to hold the chunk lock.
+    /// Saves prepared chunk data to disk after the snapshot-preparation phase has ended.
     #[expect(
         clippy::missing_panics_doc,
         reason = "panic on `just inserted` is unreachable"
@@ -234,30 +333,27 @@ impl RegionManager {
     pub async fn save_chunk_data(
         &self,
         prepared: PreparedChunkSave,
-        status: ChunkStatus,
+        thread_pool: &rayon::ThreadPool,
     ) -> io::Result<bool> {
         let pos = prepared.pos;
+        let status = prepared.status;
         let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
         let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
         let index = RegionHeader::chunk_index(local_x, local_z);
 
-        // Serialize the prepared data
-        let data = wincode::serialize(&prepared.persistent)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-
-        // Compress with zstd
-        let compressed = zstd::encode_all(&data[..], 3)?;
-
-        if compressed.len() > MAX_CHUNK_SIZE {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Chunk too large: {} bytes (max {})",
-                    compressed.len(),
-                    MAX_CHUNK_SIZE
-                ),
-            ));
-        }
+        let (sender, receiver) = oneshot::channel();
+        thread_pool.spawn(move || {
+            let result = Self::encode_chunk(prepared);
+            if sender.send(result).is_err() {
+                tracing::trace!(
+                    chunk = ?pos,
+                    "Discarding encoded chunk after its save task was canceled"
+                );
+            }
+        });
+        let compressed = receiver.await.map_err(|_| {
+            io::Error::other("chunk encode task ended without returning a result")
+        })??;
 
         let mut regions = self.regions.write().await;
 
@@ -311,6 +407,25 @@ impl RegionManager {
         Ok(true)
     }
 
+    fn encode_chunk(prepared: PreparedChunkSave) -> io::Result<Vec<u8>> {
+        let data = wincode::serialize(&prepared.persistent)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        let compressed = zstd::encode_all(&data[..], 3)?;
+
+        if compressed.len() > MAX_CHUNK_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Chunk too large: {} bytes (max {})",
+                    compressed.len(),
+                    MAX_CHUNK_SIZE
+                ),
+            ));
+        }
+
+        Ok(compressed)
+    }
+
     /// Loads a chunk from the appropriate region.
     ///
     /// Automatically opens the region if not already open. The region's reference
@@ -322,7 +437,7 @@ impl RegionManager {
     /// * `pos` - The chunk position
     /// * `min_y` - The minimum Y coordinate of the world
     /// * `height` - The total height of the world
-    /// * `level` - Weak reference to the world for `LevelChunk`
+    /// * `level` - Weak reference to the world for Full chunk runtime access
     ///
     /// The region must already be acquired via `acquire_chunk` before calling this.
     pub async fn load_chunk(
@@ -331,12 +446,21 @@ impl RegionManager {
         min_y: i32,
         height: i32,
         level: Weak<World>,
+        thread_pool: &rayon::ThreadPool,
     ) -> io::Result<Option<LoadedChunk>> {
+        if height <= 0 || height % 16 != 0 || min_y % 16 != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "chunk world range must be section-aligned, got min_y={min_y}, height={height}"
+                ),
+            ));
+        }
         let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
         let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
         let index = RegionHeader::chunk_index(local_x, local_z);
 
-        let (compressed, status) = {
+        let (compressed, entry) = {
             let mut regions = self.regions.write().await;
 
             // Get the region (should already be open via acquire_chunk)
@@ -351,29 +475,71 @@ impl RegionManager {
                 return Ok(None);
             }
 
+            // Invalid offsets and sizes indicate damage to the region's location
+            // table, not a self-contained chunk payload. Do not discard the slot.
+            Self::validate_chunk_entry(entry, handle.file_sectors)?;
+
             // Read chunk data from disk
             let compressed =
                 Self::read_chunk_data(&mut handle.file, entry.sector_offset, entry.size_bytes)
                     .await?;
-            (compressed, entry.status)
+            (compressed, entry)
         };
 
-        // Decompress
-        let data = zstd::decode_all(&compressed[..])?;
+        // Keep CPU-heavy decoding off the async runtime. Awaiting the Rayon
+        // handoff also lets the region-lock waiter woken above make progress.
+        let (sender, receiver) = oneshot::channel();
+        thread_pool.spawn(move || {
+            let result = Self::decode_chunk(compressed, pos, entry.status, min_y, height, level);
+            if sender.send(result).is_err() {
+                tracing::trace!(
+                    chunk = ?pos,
+                    "Discarding decoded chunk after its load task was canceled"
+                );
+            }
+        });
 
-        // Deserialize
-        let persistent: PersistentChunk = wincode::deserialize(&data)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        let decoded = receiver
+            .await
+            .map_err(|_| io::Error::other("chunk decode task ended without returning a result"))?;
+        match decoded {
+            Ok(loaded) => Ok(Some(loaded)),
+            Err(error) => {
+                if !self
+                    .clear_corrupt_chunk_if_unchanged(region_pos, index, entry)
+                    .await?
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "corrupt chunk payload was superseded before it could be removed: {error}"
+                        ),
+                    ));
+                }
+                tracing::error!(
+                    chunk = ?pos,
+                    "Discarded corrupt chunk payload and will regenerate it: {error}",
+                );
+                Ok(None)
+            }
+        }
+    }
 
-        // Convert to runtime format (persistent is dropped after this - no duplication!)
-        Ok(Some(ChunkStorage::persistent_to_chunk(
-            &persistent,
-            pos,
-            status,
-            min_y,
-            height,
-            level,
-        )))
+    fn decode_chunk(
+        compressed: Vec<u8>,
+        pos: ChunkPos,
+        status: ChunkStatus,
+        min_y: i32,
+        height: i32,
+        level: Weak<World>,
+    ) -> Result<LoadedChunk, CorruptChunkData> {
+        let data = zstd::decode_all(&compressed[..])
+            .map_err(|error| CorruptChunkData(format!("zstd decode failed: {error}")))?;
+        let persistent: PersistentChunk<'_> = wincode::deserialize(&data)
+            .map_err(|error| CorruptChunkData(format!("chunk decode failed: {error}")))?;
+
+        ChunkStorage::try_persistent_to_chunk(&persistent, pos, status, min_y, height, level)
+            .map_err(|error| CorruptChunkData(format!("chunk materialization failed: {error}")))
     }
 
     /// Acquires a chunk, incrementing the region's reference count.
@@ -472,7 +638,12 @@ impl RegionManager {
         let mut entry_bytes = [0u8; 8];
         file.read_exact(&mut entry_bytes).await?;
 
-        let entry = super::format::ChunkEntry::from_bytes(entry_bytes);
+        let Some(entry) = super::format::ChunkEntry::from_bytes(entry_bytes) else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "chunk table entry has an invalid status byte",
+            ));
+        };
         Ok(entry.exists())
     }
 
@@ -505,5 +676,300 @@ impl RegionManager {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        env,
+        path::Path,
+        process,
+        sync::{
+            Weak,
+            atomic::{AtomicU64, Ordering},
+        },
+    };
+
+    use super::*;
+    use crate::chunk_saver::{PersistentChunk, PersistentLightData};
+
+    static NEXT_TEST_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+    fn test_directory(name: &str) -> PathBuf {
+        let sequence = NEXT_TEST_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+        env::temp_dir().join(format!(
+            "steel-region-manager-{name}-{}-{sequence}",
+            process::id()
+        ))
+    }
+
+    async fn write_test_region(
+        directory: &Path,
+        pos: ChunkPos,
+        payload: &[u8],
+        declared_size: u32,
+    ) -> io::Result<()> {
+        fs::create_dir_all(directory).await?;
+        let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
+        let path = directory.join(region_pos.filename());
+        let mut file = File::create(path).await?;
+        let mut file_header = [0u8; FILE_HEADER_SIZE];
+        file_header[0..4].copy_from_slice(&REGION_MAGIC);
+        file_header[4..6].copy_from_slice(&FORMAT_VERSION.to_le_bytes());
+        file.write_all(&file_header).await?;
+
+        let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
+        let index = RegionHeader::chunk_index(local_x, local_z);
+        let mut header = RegionHeader::new();
+        header.entries[index] =
+            ChunkEntry::new(FIRST_DATA_SECTOR, declared_size, ChunkStatus::Empty);
+        file.write_all(&header.to_bytes()).await?;
+        file.seek(io::SeekFrom::Start(
+            u64::from(FIRST_DATA_SECTOR) * SECTOR_SIZE as u64,
+        ))
+        .await?;
+        file.write_all(payload).await?;
+        file.flush().await
+    }
+
+    fn test_thread_pool() -> rayon::ThreadPool {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("test thread pool should build")
+    }
+
+    async fn assert_slot_exists_on_disk(directory: &Path, pos: ChunkPos) {
+        let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
+        let path = directory.join(region_pos.filename());
+        let mut file = File::open(path)
+            .await
+            .expect("test region should remain readable");
+        let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
+        let index = RegionHeader::chunk_index(local_x, local_z);
+        file.seek(io::SeekFrom::Start(
+            FILE_HEADER_SIZE as u64 + (index * 8) as u64,
+        ))
+        .await
+        .expect("chunk table entry should be seekable");
+        let mut bytes = [0; 8];
+        file.read_exact(&mut bytes)
+            .await
+            .expect("chunk table entry should be readable");
+        assert!(ChunkEntry::from_bytes(bytes).is_some_and(|entry| entry.exists()));
+    }
+
+    #[tokio::test]
+    async fn invalid_zstd_payload_is_removed_for_regeneration() {
+        let directory = test_directory("zstd");
+        let pos = ChunkPos::new(0, 0);
+        let payload = b"this is not a zstd frame";
+        write_test_region(&directory, pos, payload, payload.len() as u32)
+            .await
+            .expect("test region should be written");
+
+        let manager = RegionManager::new(&directory);
+        assert!(
+            manager
+                .acquire_chunk(pos)
+                .await
+                .expect("region should open")
+        );
+        let loaded = manager
+            .load_chunk(pos, 0, 16, Weak::new(), &test_thread_pool())
+            .await
+            .expect("corrupt payload should be handled");
+        assert!(loaded.is_none());
+        assert!(
+            !manager
+                .chunk_exists(pos)
+                .await
+                .expect("header should be readable")
+        );
+        manager
+            .release_chunk(pos)
+            .await
+            .expect("region should release");
+
+        let reopened = RegionManager::new(&directory);
+        assert!(
+            !reopened
+                .chunk_exists(pos)
+                .await
+                .expect("header should be flushed")
+        );
+        fs::remove_dir_all(directory)
+            .await
+            .expect("test directory should be removable");
+    }
+
+    #[tokio::test]
+    async fn semantically_invalid_complete_payload_is_removed_for_regeneration() {
+        let directory = test_directory("semantic");
+        let pos = ChunkPos::new(0, 0);
+        let persistent = PersistentChunk {
+            last_modified: 0,
+            block_states: Vec::new(),
+            biomes: Vec::new(),
+            sections: Vec::new(),
+            block_entities: Vec::new(),
+            entities: Vec::new(),
+            block_ticks: Vec::new(),
+            fluid_ticks: Vec::new(),
+            heightmaps: Vec::new(),
+            light: PersistentLightData::default(),
+            carving_mask: None,
+            postprocessing: Vec::new(),
+            structure_starts: Vec::new(),
+            structure_references: Vec::new(),
+            pois: Vec::new(),
+        };
+        let encoded = wincode::serialize(&persistent).expect("test chunk should encode");
+        let payload = zstd::encode_all(encoded.as_slice(), 1).expect("test chunk should compress");
+        write_test_region(&directory, pos, &payload, payload.len() as u32)
+            .await
+            .expect("test region should be written");
+
+        let manager = RegionManager::new(&directory);
+        assert!(
+            manager
+                .acquire_chunk(pos)
+                .await
+                .expect("region should open")
+        );
+        let loaded = manager
+            .load_chunk(pos, 0, 16, Weak::new(), &test_thread_pool())
+            .await
+            .expect("semantic corruption should be handled");
+        assert!(loaded.is_none());
+        assert!(
+            !manager
+                .chunk_exists(pos)
+                .await
+                .expect("slot should be cleared")
+        );
+        manager
+            .release_chunk(pos)
+            .await
+            .expect("region should release");
+        fs::remove_dir_all(directory)
+            .await
+            .expect("test directory should be removable");
+    }
+
+    #[tokio::test]
+    async fn incomplete_payload_read_is_an_error_and_keeps_slot() {
+        let directory = test_directory("short-read");
+        let pos = ChunkPos::new(0, 0);
+        write_test_region(&directory, pos, &[1, 2, 3], 128)
+            .await
+            .expect("test region should be written");
+
+        let manager = RegionManager::new(&directory);
+        assert!(
+            manager
+                .acquire_chunk(pos)
+                .await
+                .expect("region should open")
+        );
+        let Err(error) = manager
+            .load_chunk(pos, 0, 16, Weak::new(), &test_thread_pool())
+            .await
+        else {
+            panic!("short filesystem read must not be treated as payload corruption");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+        assert!(manager.chunk_exists(pos).await.expect("slot should remain"));
+        manager
+            .release_chunk(pos)
+            .await
+            .expect("region should release");
+        assert_slot_exists_on_disk(&directory, pos).await;
+        fs::remove_dir_all(directory)
+            .await
+            .expect("test directory should be removable");
+    }
+
+    #[tokio::test]
+    async fn invalid_world_geometry_is_not_classified_as_chunk_corruption() {
+        let directory = test_directory("invalid-world-range");
+        let pos = ChunkPos::new(0, 0);
+        let payload = b"payload must not be decoded";
+        write_test_region(&directory, pos, payload, payload.len() as u32)
+            .await
+            .expect("test region should be written");
+
+        let manager = RegionManager::new(&directory);
+        assert!(
+            manager
+                .acquire_chunk(pos)
+                .await
+                .expect("region should open")
+        );
+        let Err(error) = manager
+            .load_chunk(pos, 1, 16, Weak::new(), &test_thread_pool())
+            .await
+        else {
+            panic!("invalid world geometry must fail before decoding the chunk");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(manager.chunk_exists(pos).await.expect("slot should remain"));
+        manager
+            .release_chunk(pos)
+            .await
+            .expect("region should release");
+        assert_slot_exists_on_disk(&directory, pos).await;
+        fs::remove_dir_all(directory)
+            .await
+            .expect("test directory should be removable");
+    }
+
+    #[tokio::test]
+    async fn invalid_chunk_status_byte_is_a_structural_error_and_is_preserved() {
+        let directory = test_directory("invalid-status");
+        let pos = ChunkPos::new(0, 0);
+        let payload = b"payload must not be decoded";
+        write_test_region(&directory, pos, payload, payload.len() as u32)
+            .await
+            .expect("test region should be written");
+
+        let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
+        let path = directory.join(region_pos.filename());
+        let mut file = OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .await
+            .expect("test region should reopen for corruption");
+        file.seek(io::SeekFrom::Start(FILE_HEADER_SIZE as u64 + 7))
+            .await
+            .expect("status byte should be seekable");
+        file.write_all(&[u8::MAX])
+            .await
+            .expect("status byte should be writable");
+        file.flush().await.expect("status byte should be flushed");
+        drop(file);
+
+        let manager = RegionManager::new(&directory);
+        let Err(error) = manager.acquire_chunk(pos).await else {
+            panic!("invalid status byte must reject the region header");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+
+        let mut file = File::open(path)
+            .await
+            .expect("rejected region should remain readable");
+        file.seek(io::SeekFrom::Start(FILE_HEADER_SIZE as u64 + 7))
+            .await
+            .expect("status byte should remain seekable");
+        let mut status = [0];
+        file.read_exact(&mut status)
+            .await
+            .expect("status byte should remain readable");
+        assert_eq!(status[0], u8::MAX);
+
+        fs::remove_dir_all(directory)
+            .await
+            .expect("test directory should be removable");
     }
 }

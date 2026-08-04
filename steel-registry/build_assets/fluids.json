@@ -7,6 +7,7 @@
     "behavior_properties": {
       "is_empty": true,
       "is_source": false,
+      "is_randomly_ticking": false,
       "explosion_resistance": 0.0,
       "is_flowing_fluid": false
     },
@@ -21,6 +22,7 @@
     "behavior_properties": {
       "is_empty": false,
       "is_source": false,
+      "is_randomly_ticking": false,
       "explosion_resistance": 100.0,
       "is_flowing_fluid": true,
       "source_fluid": "water",
@@ -46,6 +48,7 @@
     "behavior_properties": {
       "is_empty": false,
       "is_source": true,
+      "is_randomly_ticking": false,
       "explosion_resistance": 100.0,
       "is_flowing_fluid": true,
       "source_fluid": "water",
@@ -69,6 +72,7 @@
     "behavior_properties": {
       "is_empty": false,
       "is_source": false,
+      "is_randomly_ticking": true,
       "explosion_resistance": 100.0,
       "is_flowing_fluid": true,
       "source_fluid": "lava",
@@ -94,6 +98,7 @@
     "behavior_properties": {
       "is_empty": false,
       "is_source": true,
+      "is_randomly_ticking": true,
       "explosion_resistance": 100.0,
       "is_flowing_fluid": true,
       "source_fluid": "lava",

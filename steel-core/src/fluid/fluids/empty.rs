@@ -8,7 +8,7 @@ use std::sync::Arc;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::FluidRef;
 use steel_registry::vanilla_fluids;
-use steel_utils::types::BlockPos;
+use steel_utils::types::{BlockPos, BlockStateId};
 
 use crate::fluid::FluidBehavior;
 use crate::fluid::FluidState;
@@ -22,11 +22,23 @@ impl FluidBehavior for EmptyFluid {
         &vanilla_fluids::EMPTY
     }
 
-    fn tick(&self, _world: &Arc<World>, _pos: BlockPos) {
+    fn tick(
+        &self,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _block_state: BlockStateId,
+        _fluid_state: FluidState,
+    ) {
         // Vanilla: nothing
     }
 
-    fn spread(&self, _world: &Arc<World>, _pos: BlockPos, _fluid_state: FluidState) {
+    fn spread(
+        &self,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _block_state: BlockStateId,
+        _fluid_state: FluidState,
+    ) {
         // Vanilla: nothing
     }
 

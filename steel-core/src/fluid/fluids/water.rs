@@ -83,12 +83,24 @@ impl FluidBehavior for WaterFluid {
         effect_collector.apply(InsideBlockEffectType::Extinguish);
     }
 
-    fn tick(&self, world: &Arc<World>, pos: BlockPos) {
-        self.base_tick(world, pos);
+    fn tick(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        block_state: BlockStateId,
+        fluid_state: FluidState,
+    ) {
+        self.base_tick(world, pos, block_state, fluid_state);
     }
 
-    fn spread(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState) {
-        self.base_spread(world, pos, fluid_state);
+    fn spread(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        block_state: BlockStateId,
+        fluid_state: FluidState,
+    ) {
+        self.base_spread(world, pos, block_state, fluid_state);
     }
 }
 

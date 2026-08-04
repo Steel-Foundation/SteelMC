@@ -4,22 +4,24 @@
 
 use std::sync::Arc;
 
-use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::FLUID_BEHAVIORS;
 use crate::fluid::can_pass_through_wall;
-use crate::fluid::collision::{can_hold_fluid, can_hold_specific_fluid, can_pass_horizontally};
+use crate::fluid::collision::{
+    can_hold_fluid, can_hold_specific_fluid, can_pass_horizontally_internal,
+};
 use crate::fluid::spread_context::SpreadContext;
 use crate::world::World;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::fluid::{FluidRef, FluidState};
-use steel_utils::BlockPos;
+use steel_utils::{BlockPos, BlockStateId};
 
 /// Calculates the new fluid state at a position based on neighbors.
 #[must_use]
 pub fn get_new_liquid(
     world: &Arc<World>,
     pos: BlockPos,
+    state: BlockStateId,
     fluid_id: FluidRef,
     drop_off: u8,
 ) -> FluidState {
@@ -34,13 +36,14 @@ pub fn get_new_liquid(
         Direction::West,
     ] {
         let neighbor_pos = direction.relative(pos);
-        let neighbor_fluid = world.get_block_state(neighbor_pos).get_fluid_state();
+        let neighbor_state = world.get_block_state(neighbor_pos);
+        let neighbor_fluid = neighbor_state.get_fluid_state();
 
         if !behavior.is_same(neighbor_fluid.fluid_id) {
             continue;
         }
 
-        if !can_pass_through_wall(world, pos, neighbor_pos, direction) {
+        if !can_pass_through_wall(world, pos, state, neighbor_pos, neighbor_state, direction) {
             continue;
         }
 
@@ -68,9 +71,10 @@ pub fn get_new_liquid(
 
     // Check above for falling fluid
     let above_pos = pos.above();
-    let above_fluid = world.get_block_state(above_pos).get_fluid_state();
+    let above_state = world.get_block_state(above_pos);
+    let above_fluid = above_state.get_fluid_state();
     if behavior.is_same(above_fluid.fluid_id)
-        && can_pass_through_wall(world, pos, above_pos, Direction::Up)
+        && can_pass_through_wall(world, pos, state, above_pos, above_state, Direction::Up)
     {
         return FluidState::flowing(fluid_id.flowing_variant(), 8, true);
     }
@@ -87,21 +91,30 @@ pub fn get_new_liquid(
 /// Vanilla equivalent: `FlowingFluid.isWaterHole()`.
 /// Checks wall passability, then either same-fluid presence or `canHoldFluid`.
 #[must_use]
-pub fn is_hole(world: &Arc<World>, pos: BlockPos, fluid_id: FluidRef) -> bool {
-    let below = pos.below();
-
-    if !world.is_in_valid_bounds(below) {
+pub fn is_hole(
+    world: &Arc<World>,
+    top_pos: BlockPos,
+    top_state: BlockStateId,
+    bottom_pos: BlockPos,
+    bottom_state: BlockStateId,
+    fluid_id: FluidRef,
+) -> bool {
+    if !world.is_in_valid_bounds(bottom_pos) {
         return false;
     }
 
-    if !can_pass_through_wall(world, pos, below, Direction::Down) {
+    if !can_pass_through_wall(
+        world,
+        top_pos,
+        top_state,
+        bottom_pos,
+        bottom_state,
+        Direction::Down,
+    ) {
         return false;
     }
 
-    let below_state = world.get_block_state(below);
-    let below_fluid = below_state.get_fluid_state();
-
-    can_flow_down_into(below_state, below_fluid, fluid_id)
+    can_flow_down_into(bottom_state, bottom_state.get_fluid_state(), fluid_id)
 }
 
 fn can_flow_down_into(
@@ -130,6 +143,7 @@ fn can_flow_down_into(
 fn get_slope_distance(
     ctx: &mut SpreadContext,
     pos: BlockPos,
+    state: BlockStateId,
     depth: u8,
     from_direction: Option<Direction>,
     fluid_id: FluidRef,
@@ -152,19 +166,19 @@ fn get_slope_distance(
         }
 
         let neighbor = direction.relative(pos);
+        let neighbor_state = ctx.get_block_state(neighbor);
 
         // Vanilla: canPassThrough = canMaybePassThrough + canHoldSpecificFluid
-        if !ctx.can_pass_horizontally(neighbor, fluid_id) {
+        if !can_pass_horizontally_internal(neighbor_state, fluid_id) {
             continue;
         }
 
-        if !can_pass_through_wall(ctx.world(), pos, neighbor, direction) {
+        if !can_pass_through_wall(ctx.world(), pos, state, neighbor, neighbor_state, direction) {
             continue;
         }
 
         // canHoldSpecificFluid check (part of vanilla's canPassThrough).
         // getSlopeDistance passes getFlowing() to canPassThrough.
-        let neighbor_state = ctx.get_block_state(neighbor);
         if !can_hold_specific_fluid(neighbor_state, fluid_id.flowing_variant()) {
             continue;
         }
@@ -178,6 +192,7 @@ fn get_slope_distance(
             let distance = get_slope_distance(
                 ctx,
                 neighbor,
+                neighbor_state,
                 depth + 1,
                 Some(direction),
                 fluid_id,
@@ -204,11 +219,12 @@ fn get_slope_distance(
 pub fn get_spread(
     world: &Arc<World>,
     pos: BlockPos,
+    state: BlockStateId,
     fluid_id: FluidRef,
     drop_off: u8,
     slope_find_distance: u8,
 ) -> Vec<(Direction, FluidState)> {
-    let mut candidates: Vec<(Direction, FluidState, u16)> = Vec::new();
+    let mut candidates: Vec<(Direction, FluidState, FluidState, u16)> = Vec::new();
     // Lazily initialized on first use, matching vanilla's SpreadContext init.
     // Shared across all directions so cached block states and hole checks are
     // reused, matching vanilla's single-context-per-getSpread() behavior.
@@ -221,21 +237,24 @@ pub fn get_spread(
         Direction::West,
     ] {
         let neighbor = direction.relative(pos);
-        let neighbor_state = world.get_block_state(neighbor);
+        let neighbor_state = match &mut ctx {
+            Some(ctx) => ctx.get_block_state(neighbor),
+            None => world.get_block_state(neighbor),
+        };
+        let neighbor_fluid = neighbor_state.get_fluid_state();
 
         // Vanilla: canMaybePassThrough (source check + canHoldAnyFluid + wall check)
-        if !can_pass_horizontally(world, neighbor, fluid_id) {
+        if !can_pass_horizontally_internal(neighbor_state, fluid_id) {
             continue;
         }
-        if !can_pass_through_wall(world, pos, neighbor, direction) {
+        if !can_pass_through_wall(world, pos, state, neighbor, neighbor_state, direction) {
             continue;
         }
 
         // Calculate what fluid should exist at the neighbor position.
-        let new_fluid = get_new_liquid(world, neighbor, fluid_id, drop_off);
+        let new_fluid = get_new_liquid(world, neighbor, neighbor_state, fluid_id, drop_off);
 
-        // Vanilla: canHoldSpecificFluid check (after canMaybePassThrough, before getNewLiquid
-        // in vanilla, but ordering doesn't matter since none have side effects)
+        // Vanilla: canHoldSpecificFluid check after getNewLiquid.
         if !can_hold_specific_fluid(neighbor_state, new_fluid.fluid_id) {
             continue;
         }
@@ -257,13 +276,15 @@ pub fn get_spread(
         }
 
         // Calculate slope distance.
-        let distance = if is_hole(world, neighbor, fluid_id) {
+        let ctx = ctx.get_or_insert_with(|| SpreadContext::new(world, pos));
+        ctx.cache_block_state(neighbor, neighbor_state);
+        let distance = if ctx.is_hole(neighbor, fluid_id) {
             0
         } else if slope_find_distance > 0 {
-            let ctx = ctx.get_or_insert_with(|| SpreadContext::new(world, pos));
             get_slope_distance(
                 ctx,
                 neighbor,
+                neighbor_state,
                 1,
                 Some(direction),
                 fluid_id,
@@ -274,7 +295,7 @@ pub fn get_spread(
         };
 
         // Vanilla inline: if (distance < lowest) result.clear(); if (distance <= lowest) ...
-        candidates.push((direction, new_fluid, distance));
+        candidates.push((direction, new_fluid, neighbor_fluid, distance));
     }
 
     if candidates.is_empty() {
@@ -282,37 +303,43 @@ pub fn get_spread(
     }
 
     // Find the minimum slope distance
-    let min_distance = candidates.iter().map(|(_, _, d)| *d).min().unwrap_or(1000);
+    let min_distance = candidates
+        .iter()
+        .map(|(_, _, _, distance)| *distance)
+        .min()
+        .unwrap_or(1000);
 
     // Return only directions with the minimum distance AND where the existing
     // fluid at the target allows replacement.
     candidates
         .into_iter()
-        .filter(|(dir, new_fluid, d)| {
-            if *d != min_distance {
+        .filter(|(direction, new_fluid, existing_fluid, distance)| {
+            if *distance != min_distance {
                 return false;
             }
-            let neighbor = dir.relative(pos);
-            let existing = world.get_block_state(neighbor).get_fluid_state();
+            let neighbor = direction.relative(pos);
 
-            let existing_behavior = FLUID_BEHAVIORS.get_behavior(existing.fluid_id);
+            let existing_behavior = FLUID_BEHAVIORS.get_behavior(existing_fluid.fluid_id);
             existing_behavior.can_be_replaced_with(
-                existing,
+                *existing_fluid,
                 world,
                 neighbor,
                 new_fluid.fluid_id,
-                *dir,
+                *direction,
             )
         })
-        .map(|(dir, fluid, _)| (dir, fluid))
+        .map(|(direction, fluid, _, _)| (direction, fluid))
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use crate::behavior::init_behaviors;
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
     use steel_registry::blocks::properties::BlockStateProperties;
     use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
+    use steel_utils::ChunkPos;
+    use steel_utils::types::UpdateFlags;
 
     use super::*;
 
@@ -346,5 +373,49 @@ mod tests {
             flowing_water.get_fluid_state(),
             &vanilla_fluids::WATER
         ));
+    }
+
+    #[test]
+    fn spread_keeps_the_closest_slope_even_when_its_target_rejects_replacement() {
+        init_test_registry();
+        init_behaviors();
+
+        let world = fresh_test_world("fluid_spread_closest_slope");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let origin = BlockPos::new(8, 64, 8);
+        let source_water = vanilla_blocks::WATER.default_state();
+        let thin_lava = vanilla_blocks::LAVA
+            .default_state()
+            .set_value(&BlockStateProperties::LEVEL, 7);
+        let stone = vanilla_blocks::STONE.default_state();
+        let flags = UpdateFlags::UPDATE_NONE | UpdateFlags::UPDATE_SKIP_ON_PLACE;
+
+        for (pos, state) in [
+            (origin, source_water),
+            (origin.north(), thin_lava),
+            (origin.south().below(), stone),
+            (origin.east(), stone),
+            (origin.west(), stone),
+        ] {
+            assert!(world.set_block_with_limit(pos, state, flags, 0));
+        }
+
+        let blocked = get_spread(&world, origin, source_water, &vanilla_fluids::WATER, 1, 4);
+        assert!(blocked.is_empty());
+
+        assert!(world.set_block_with_limit(
+            origin.north(),
+            vanilla_blocks::AIR.default_state(),
+            flags,
+            0,
+        ));
+        let open = get_spread(&world, origin, source_water, &vanilla_fluids::WATER, 1, 4);
+        assert_eq!(
+            open,
+            vec![(
+                Direction::North,
+                FluidState::flowing(&vanilla_fluids::FLOWING_WATER, 7, false),
+            )]
+        );
     }
 }

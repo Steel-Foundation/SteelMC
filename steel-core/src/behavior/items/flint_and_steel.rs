@@ -14,7 +14,7 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::entity::Entity;
-use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event::GameEventContext;
 
 /// Behavior for flint and steel items.
 #[item_behavior]

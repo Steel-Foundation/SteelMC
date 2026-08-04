@@ -1,13 +1,13 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::context::BlockPlaceContext;
-use crate::world::LevelReader;
+use crate::world::{LevelReader, ScheduledTickAccess};
 
 use super::{BlockRef, default_surviving_state};
 
@@ -16,7 +16,7 @@ use super::{BlockRef, default_surviving_state};
 /// - Hanging: block above must be in `SUPPORTS_HANGING_MANGROVE_PROPAGULE`.
 /// - Planted: block below must be in `SUPPORTS_MANGROVE_PROPAGULE` (vanilla's
 ///   `mayPlaceOn` override applied to the `VegetationBlock` survival rule).
-// TODO: Implement growth ticking, bonemeal advance, and shape updates.
+// TODO: Implement growth ticking and bonemeal advance.
 #[block_behavior]
 pub struct MangrovePropaguleBlock {
     block: BlockRef,
@@ -39,6 +39,23 @@ impl MangrovePropaguleBlock {
 }
 
 impl BlockBehavior for MangrovePropaguleBlock {
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        schedule_water_tick_if_waterlogged(state, world, pos);
+        if self.can_survive(state, world, pos) {
+            state
+        } else {
+            vanilla_blocks::AIR.default_state()
+        }
+    }
+
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         if state.get_value(&BlockStateProperties::HANGING) {
             let above = world.get_block_state(pos.above());
@@ -63,6 +80,7 @@ mod tests {
     use steel_registry::test_support::init_test_registry;
 
     use super::*;
+    use crate::test_support::TestLevel;
 
     #[test]
     fn new_hanging_propagule_starts_at_age_zero() {
@@ -73,5 +91,29 @@ mod tests {
         assert_eq!(state.get_block(), &vanilla_blocks::MANGROVE_PROPAGULE);
         assert!(state.get_value(&BlockStateProperties::HANGING));
         assert_eq!(state.get_value(&BlockStateProperties::AGE_4), 0);
+    }
+
+    #[test]
+    fn unsupported_waterlogged_propagule_schedules_water_before_breaking() {
+        init_test_registry();
+        let behavior = MangrovePropaguleBlock::new(&vanilla_blocks::MANGROVE_PROPAGULE);
+        let state = vanilla_blocks::MANGROVE_PROPAGULE
+            .default_state()
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+        let level = TestLevel::default();
+
+        assert!(
+            behavior
+                .update_shape(
+                    state,
+                    &level,
+                    BlockPos::ZERO,
+                    Direction::Down,
+                    BlockPos::ZERO.below(),
+                    vanilla_blocks::AIR.default_state(),
+                )
+                .is_air()
+        );
+        assert!(level.scheduled_water_tick());
     }
 }

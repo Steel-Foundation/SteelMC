@@ -9,11 +9,11 @@ use steel_utils::{ChunkPos, SectionPos};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
-use crate::chunk::chunk_access::ChunkStatus;
 use crate::chunk::chunk_pyramid::GENERATION_PYRAMID;
 use crate::chunk::chunk_request::{
     ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind,
 };
+use crate::chunk::status::ChunkStatus;
 use crate::server::Server;
 use crate::world::World;
 
@@ -23,8 +23,9 @@ use crate::chunk::chunk_holder::SLOW_CHUNK_GEN;
 use std::sync::atomic::Ordering;
 
 const PREGEN_SIZE_ENV: &str = "PREGEN_SIZE";
+const PREGEN_WINDOW_SIZE_ENV: &str = "PREGEN_WINDOW_SIZE";
 const VANILLA_PLAYER_SPAWN_SIZE_CHUNKS: i32 = 7;
-const PREGEN_WINDOW_SIZE: i32 = 32;
+const DEFAULT_PREGEN_WINDOW_SIZE: i32 = 32;
 const PREGEN_ACTIVE_WINDOWS: usize = 2;
 const PREGEN_UNLOAD_BACKPRESSURE_HIGH: usize = 8192;
 const PREGEN_UNLOAD_BACKPRESSURE_LOW: usize = 4096;
@@ -171,6 +172,8 @@ impl Server {
     /// Generates the startup spawn area for the server default world.
     ///
     /// Set `PREGEN_SIZE` to an odd chunk side length, or `0` to skip custom pregen.
+    /// Set `PREGEN_WINDOW_SIZE` to override the default 32-chunk window side length.
+    /// The configured size must fit the active-window unload-backpressure budget.
     pub async fn prepare_spawn_area(&self) -> bool {
         let overworld = self.overworld();
         let pregen_size = match get_pregen_size() {
@@ -184,7 +187,13 @@ impl Server {
                 return false;
             }
         };
-
+        let window_size = match get_pregen_window_size() {
+            Ok(window_size) => window_size,
+            Err(error) => {
+                log::error!("{error}");
+                return false;
+            }
+        };
         let center_chunk = if pregen_size.side_length > VANILLA_PLAYER_SPAWN_SIZE_CHUNKS {
             ChunkPos::new(0, 0)
         } else {
@@ -195,7 +204,14 @@ impl Server {
             )
         };
 
-        pregen_overworld(overworld, center_chunk, pregen_size, &self.cancel_token).await
+        pregen_overworld(
+            overworld,
+            center_chunk,
+            pregen_size,
+            window_size,
+            &self.cancel_token,
+        )
+        .await
     }
 }
 
@@ -213,10 +229,49 @@ fn get_pregen_size() -> Result<Option<PregenSize>, String> {
     PregenSize::from_side_length(side_length)
 }
 
+fn get_pregen_window_size() -> Result<i32, String> {
+    match env::var(PREGEN_WINDOW_SIZE_ENV) {
+        Ok(value) => parse_pregen_window_size(&value),
+        Err(env::VarError::NotPresent) => Ok(DEFAULT_PREGEN_WINDOW_SIZE),
+        Err(env::VarError::NotUnicode(_)) => {
+            Err(format!("{PREGEN_WINDOW_SIZE_ENV} must be valid unicode"))
+        }
+    }
+}
+
+fn parse_pregen_window_size(value: &str) -> Result<i32, String> {
+    let window_size = value
+        .parse::<i32>()
+        .map_err(|error| format!("{PREGEN_WINDOW_SIZE_ENV} must be a positive integer: {error}"))?;
+    if window_size <= 0 {
+        return Err(format!(
+            "{PREGEN_WINDOW_SIZE_ENV} must be a positive integer"
+        ));
+    }
+
+    let window_size_as_usize = window_size as usize;
+    let Some(active_target_chunks) = window_size_as_usize
+        .checked_mul(window_size_as_usize)
+        .and_then(|chunk_count| chunk_count.checked_mul(PREGEN_ACTIVE_WINDOWS))
+    else {
+        return Err(format!(
+            "{PREGEN_WINDOW_SIZE_ENV} is too large for the pregeneration window budget"
+        ));
+    };
+    if active_target_chunks > PREGEN_UNLOAD_BACKPRESSURE_HIGH {
+        return Err(format!(
+            "{PREGEN_WINDOW_SIZE_ENV} must keep {PREGEN_ACTIVE_WINDOWS} active windows within the {PREGEN_UNLOAD_BACKPRESSURE_HIGH}-chunk unload-backpressure budget"
+        ));
+    }
+
+    Ok(window_size)
+}
+
 async fn pregen_overworld(
     world: &Arc<World>,
     center_chunk: ChunkPos,
     pregen_size: PregenSize,
+    window_size: i32,
     cancel_token: &CancellationToken,
 ) -> bool {
     let total_chunks = total_chunks(pregen_size.side_length);
@@ -235,7 +290,8 @@ async fn pregen_overworld(
 
     let elapsed = {
         let start = Instant::now();
-        let completed = generate_pregen(world, center_chunk, pregen_size, cancel_token).await;
+        let completed =
+            generate_pregen(world, center_chunk, pregen_size, window_size, cancel_token).await;
         (start.elapsed(), completed)
     };
 
@@ -258,50 +314,77 @@ async fn pregen_overworld(
     elapsed.1
 }
 
-fn build_pregen_windows(center_chunk: ChunkPos, radius: i32) -> VecDeque<PregenWindow> {
+fn build_pregen_windows(
+    center_chunk: ChunkPos,
+    radius: i32,
+    window_size: i32,
+) -> VecDeque<PregenWindow> {
     let min_x = center_chunk.0.x - radius;
     let max_x = center_chunk.0.x + radius;
     let min_z = center_chunk.0.y - radius;
     let max_z = center_chunk.0.y + radius;
+    let x_ranges = pregen_window_ranges(min_x, max_x, window_size);
+    let z_ranges = pregen_window_ranges(min_z, max_z, window_size);
     let mut windows = VecDeque::new();
 
-    let mut z = min_z;
-    while z <= max_z {
-        let window_max_z = (z + PREGEN_WINDOW_SIZE - 1).min(max_z);
-        let mut x = min_x;
-        while x <= max_x {
-            let window_max_x = (x + PREGEN_WINDOW_SIZE - 1).min(max_x);
-            windows.push_back(PregenWindow {
-                min_x: x,
-                max_x: window_max_x,
-                min_z: z,
-                max_z: window_max_z,
-            });
-            x = window_max_x + 1;
+    // A two-row serpentine keeps the bounded active set spatially local while
+    // reusing one of every two dependency boundaries between window rows.
+    for (strip_index, z_pair) in z_ranges.chunks(2).enumerate() {
+        let mut push_column = |&(window_min_x, window_max_x): &(i32, i32)| {
+            for &(window_min_z, window_max_z) in z_pair {
+                windows.push_back(PregenWindow {
+                    min_x: window_min_x,
+                    max_x: window_max_x,
+                    min_z: window_min_z,
+                    max_z: window_max_z,
+                });
+            }
+        };
+
+        if strip_index % 2 == 0 {
+            for x_range in &x_ranges {
+                push_column(x_range);
+            }
+        } else {
+            for x_range in x_ranges.iter().rev() {
+                push_column(x_range);
+            }
         }
-        z = window_max_z + 1;
     }
 
     windows
+}
+
+fn pregen_window_ranges(min: i32, max: i32, window_size: i32) -> Vec<(i32, i32)> {
+    let mut ranges = Vec::new();
+    let mut start = min;
+    while start <= max {
+        let end = start.saturating_add(window_size - 1).min(max);
+        ranges.push((start, end));
+        start = end + 1;
+    }
+    ranges
 }
 
 async fn generate_pregen(
     world: &Arc<World>,
     center_chunk: ChunkPos,
     pregen_size: PregenSize,
+    window_size: i32,
     cancel_token: &CancellationToken,
 ) -> bool {
     let total_chunks = total_chunks(pregen_size.side_length);
-    let mut pending_windows = build_pregen_windows(center_chunk, pregen_size.radius);
+    let mut pending_windows = build_pregen_windows(center_chunk, pregen_size.radius, window_size);
     let mut active_windows = Vec::with_capacity(PREGEN_ACTIVE_WINDOWS + 1);
     let mut last_report = Instant::now();
     let mut last_completed = 0usize;
     let mut completed = 0usize;
     let mut unload_backpressure = false;
+    let mut peak_unloading_chunks = 0usize;
     let start = Instant::now();
 
     log::info!(
-        "Pregeneration windowing: {PREGEN_WINDOW_SIZE}x{PREGEN_WINDOW_SIZE} target chunks, {PREGEN_ACTIVE_WINDOWS} active windows, dependency halo {FULL_DEPENDENCY_RADIUS} chunks",
+        "Pregeneration windowing: {window_size}x{window_size} target chunks, {PREGEN_ACTIVE_WINDOWS} active windows, dependency halo {FULL_DEPENDENCY_RADIUS} chunks",
     );
 
     fill_active_windows(world, &mut pending_windows, &mut active_windows);
@@ -314,6 +397,7 @@ async fn generate_pregen(
 
         drain_pregen_broadcasts(world);
         world.chunk_map.advance_scheduling();
+        peak_unloading_chunks = peak_unloading_chunks.max(world.chunk_map.unloading_chunks.len());
         update_unload_backpressure(world, &mut unload_backpressure);
 
         for active in &mut active_windows {
@@ -341,8 +425,9 @@ async fn generate_pregen(
         }
         drain_pregen_broadcasts(world);
         world.chunk_map.advance_scheduling();
-        update_unload_backpressure(world, &mut unload_backpressure);
         release_unneeded_completed_windows(world, &mut active_windows);
+        peak_unloading_chunks = peak_unloading_chunks.max(world.chunk_map.unloading_chunks.len());
+        update_unload_backpressure(world, &mut unload_backpressure);
 
         if completed == total_chunks {
             break;
@@ -388,6 +473,8 @@ async fn generate_pregen(
     }
 
     release_all_windows(world, &mut active_windows);
+    peak_unloading_chunks = peak_unloading_chunks.max(world.chunk_map.unloading_chunks.len());
+    log::info!("Pregeneration peak unload backlog: {peak_unloading_chunks} chunks");
     true
 }
 
@@ -503,5 +590,41 @@ mod tests {
     #[test]
     fn pregen_size_rejects_negative_side_lengths() {
         assert!(PregenSize::from_side_length(-1).is_err());
+    }
+
+    #[test]
+    fn pregen_window_order_keeps_consecutive_dependency_areas_local() {
+        let radius = DEFAULT_PREGEN_WINDOW_SIZE * 2;
+        let windows = build_pregen_windows(ChunkPos::new(0, 0), radius, DEFAULT_PREGEN_WINDOW_SIZE);
+
+        assert_eq!(windows.len(), 25);
+        assert_eq!(
+            windows
+                .iter()
+                .map(|window| window.chunk_count())
+                .sum::<usize>(),
+            total_chunks(radius * 2 + 1)
+        );
+        assert!(
+            windows
+                .iter()
+                .zip(windows.iter().skip(1))
+                .all(|(current, next)| current.protected_rect().overlaps(next.protected_rect()))
+        );
+    }
+
+    #[test]
+    fn pregen_window_size_requires_a_positive_integer() {
+        assert_eq!(parse_pregen_window_size("1"), Ok(1));
+        assert_eq!(parse_pregen_window_size("64"), Ok(64));
+        assert!(parse_pregen_window_size("0").is_err());
+        assert!(parse_pregen_window_size("-1").is_err());
+        assert!(parse_pregen_window_size("wide").is_err());
+    }
+
+    #[test]
+    fn pregen_window_size_must_fit_unload_backpressure_budget() {
+        assert!(parse_pregen_window_size("65").is_err());
+        assert!(parse_pregen_window_size(&i32::MAX.to_string()).is_err());
     }
 }

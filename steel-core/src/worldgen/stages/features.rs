@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use crate::chunk::{
-    chunk_access::ChunkStatus, chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder,
-    chunk_pyramid::ChunkStep,
+    chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder, chunk_pyramid::ChunkStep,
+    status::ChunkStatus,
 };
-use crate::worldgen::context::WorldGenContext;
 use crate::worldgen::generator::ChunkGenerator;
+use crate::worldgen::generator::context::WorldGenContext;
 use crate::worldgen::region::WorldGenRegion;
 
 pub(crate) fn generate(
@@ -20,7 +20,6 @@ pub(crate) fn generate(
         panic!("Chunk not found at status Carvers");
     };
     chunk.prime_final_heightmaps();
-    drop(chunk);
 
     let world_seed = context.world().seed();
     let region_random = context

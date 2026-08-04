@@ -1,5 +1,7 @@
 //! Block behavior implementations for crops and feature-placed vegetation.
 
+use std::sync::Arc;
+
 mod azalea_block;
 mod bamboo;
 mod bamboo_sapling;
@@ -25,6 +27,7 @@ mod coral_fan_block;
 mod coral_plant_block;
 mod coral_wall_fan_block;
 mod crop_block;
+mod dirt_path_block;
 mod double_plant_block;
 mod dry_vegetation_block;
 mod eyeblossom_block;
@@ -101,6 +104,7 @@ pub use coral_fan_block::CoralFanBlock;
 pub use coral_plant_block::CoralPlantBlock;
 pub use coral_wall_fan_block::CoralWallFanBlock;
 pub use crop_block::CropBlock;
+pub use dirt_path_block::DirtPathBlock;
 pub use double_plant_block::DoublePlantBlock;
 pub use dry_vegetation_block::DryVegetationBlock;
 pub use eyeblossom_block::{EyeblossomBlock, EyeblossomType};
@@ -154,19 +158,42 @@ pub use weeping_vines_plant_block::WeepingVinesPlantBlock;
 pub use wither_rose_block::WitherRoseBlock;
 
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
-use steel_registry::blocks::shapes;
+use steel_registry::blocks::shapes::{self, SupportType, is_block_local_face_sturdy};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
 use steel_registry::fluid::{FluidState, FluidStateExt as _};
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_registry::{vanilla_blocks, vanilla_game_events};
+use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
+use crate::behavior::block::push_entities_up;
 use crate::behavior::context::BlockPlaceContext;
-use crate::behavior::{BlockStateBehaviorExt as _, block::BlockBehavior};
-use crate::world::{LevelReader, ScheduledTickAccess};
+use crate::behavior::{
+    BLOCK_BEHAVIORS, BlockCollisionContext,
+    block::{BlockBehavior, schedule_water_tick_if_waterlogged},
+};
+use crate::entity::Entity;
+use crate::world::game_event::GameEventContext;
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 pub(super) type BlockTagRef<'a> = &'a steel_utils::Identifier;
+
+/// Turns farmland or a dirt path into dirt.
+pub(crate) fn turn_to_dirt(
+    state: BlockStateId,
+    world: &Arc<World>,
+    pos: BlockPos,
+    source_entity: Option<&dyn Entity>,
+) {
+    let dirt_state = push_entities_up(state, vanilla_blocks::DIRT.default_state(), world, pos);
+    if world.set_block(pos, dirt_state, UpdateFlags::UPDATE_ALL) {
+        world.game_event(
+            &vanilla_game_events::BLOCK_CHANGE,
+            pos,
+            &GameEventContext::new(source_entity, Some(dirt_state)),
+        );
+    }
+}
 
 pub(super) fn survives_on_tag(
     world: &dyn LevelReader,
@@ -203,7 +230,34 @@ pub(super) fn can_attach_to_multiface(
     direction_to_neighbor: Direction,
 ) -> bool {
     let neighbor_state = world.get_block_state(neighbor_pos);
+    can_attach_to_multiface_state(world, neighbor_state, neighbor_pos, direction_to_neighbor)
+}
+
+fn can_attach_to_multiface_state(
+    world: &dyn LevelReader,
+    neighbor_state: BlockStateId,
+    neighbor_pos: BlockPos,
+    direction_to_neighbor: Direction,
+) -> bool {
     let support_direction = direction_to_neighbor.opposite();
+    if neighbor_state.get_block().config.dynamic_shape {
+        let behavior = BLOCK_BEHAVIORS.get_behavior(neighbor_state.get_block());
+        return is_block_local_face_sturdy(
+            &behavior.get_block_support_boxes(neighbor_state, world, neighbor_pos),
+            support_direction,
+            SupportType::Full,
+        ) || is_block_local_face_sturdy(
+            &behavior.get_collision_boxes(
+                neighbor_state,
+                world,
+                neighbor_pos,
+                BlockCollisionContext::empty(),
+            ),
+            support_direction,
+            SupportType::Full,
+        );
+    }
+
     shapes::is_offset_face_full(
         neighbor_state.get_support_shape_at(neighbor_pos),
         support_direction,
@@ -211,6 +265,43 @@ pub(super) fn can_attach_to_multiface(
         neighbor_state.get_collision_shape_at(neighbor_pos),
         support_direction,
     )
+}
+
+fn multiface_has_any_face(state: BlockStateId) -> bool {
+    Direction::ALL.iter().any(|direction| {
+        state
+            .try_get_value(multiface_face_property(*direction))
+            .unwrap_or(false)
+    })
+}
+
+pub(super) fn update_multiface_shape(
+    state: BlockStateId,
+    world: &dyn ScheduledTickAccess,
+    pos: BlockPos,
+    direction: Direction,
+    neighbor_pos: BlockPos,
+    neighbor_state: BlockStateId,
+) -> BlockStateId {
+    schedule_water_tick_if_waterlogged(state, world, pos);
+
+    if !multiface_has_any_face(state) {
+        return vanilla_blocks::AIR.default_state();
+    }
+
+    let face_property = multiface_face_property(direction);
+    if state.try_get_value(face_property) != Some(true)
+        || can_attach_to_multiface_state(world, neighbor_state, neighbor_pos, direction)
+    {
+        return state;
+    }
+
+    let state_without_face = state.set_value(face_property, false);
+    if multiface_has_any_face(state_without_face) {
+        state_without_face
+    } else {
+        vanilla_blocks::AIR.default_state()
+    }
 }
 
 /// Vanilla `MultifaceBlock.getFaceProperty(faceDirection)`.
@@ -293,7 +384,7 @@ pub(super) fn multiface_can_survive(
 pub(super) fn coral_plant_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
     let below_pos = pos.below();
     let below = world.get_block_state(below_pos);
-    below.is_face_sturdy_at(below_pos, Direction::Up)
+    world.is_face_sturdy(below, below_pos, Direction::Up)
 }
 
 /// Vanilla `BaseCoralWallFanBlock.canSurvive`.
@@ -307,7 +398,7 @@ pub(super) fn coral_wall_fan_can_survive(
 ) -> bool {
     let relative_pos = pos.relative(facing.opposite());
     let relative_state = world.get_block_state(relative_pos);
-    relative_state.is_face_sturdy_at(relative_pos, facing)
+    world.is_face_sturdy(relative_state, relative_pos, facing)
 }
 
 /// Vanilla `BaseCoralPlantTypeBlock.scanForWater`.
@@ -360,7 +451,7 @@ pub(super) fn growing_plant_can_survive(
     let attached_block = attached_state.get_block();
     attached_block == head
         || attached_block == body
-        || attached_state.is_face_sturdy_at(attached_pos, growth_direction)
+        || world.is_face_sturdy(attached_state, attached_pos, growth_direction)
 }
 
 pub(super) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
@@ -375,5 +466,39 @@ pub(super) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
 
     attached_state.get_block() == &vanilla_blocks::KELP
         || attached_state.get_block() == &vanilla_blocks::KELP_PLANT
-        || attached_state.is_face_sturdy_at(attached_pos, Direction::Up)
+        || world.is_face_sturdy(attached_state, attached_pos, Direction::Up)
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::test_support::init_test_registry;
+
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::test_support::TestLevel;
+
+    #[test]
+    fn multiface_update_uses_supplied_neighbor_state_and_schedules_water_first() {
+        init_test_registry();
+        init_behaviors();
+        let pos = BlockPos::new(0, 64, 0);
+        let state = vanilla_blocks::GLOW_LICHEN
+            .default_state()
+            .set_value(&BlockStateProperties::NORTH, true)
+            .set_value(&BlockStateProperties::WATERLOGGED, true);
+        let level =
+            TestLevel::default().with_block(pos.north(), vanilla_blocks::STONE.default_state());
+
+        let updated = update_multiface_shape(
+            state,
+            &level,
+            pos,
+            Direction::North,
+            pos.north(),
+            vanilla_blocks::AIR.default_state(),
+        );
+
+        assert!(updated.is_air());
+        assert!(level.scheduled_water_tick());
+    }
 }

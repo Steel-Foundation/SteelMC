@@ -3,13 +3,13 @@ use std::sync::Arc;
 use crate::chunk::{
     chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder, chunk_pyramid::ChunkStep,
 };
-use crate::worldgen::context::WorldGenContext;
+use crate::worldgen::generator::context::WorldGenContext;
 
 pub(crate) fn generate(
-    context: Arc<WorldGenContext>,
+    _context: Arc<WorldGenContext>,
     _step: &ChunkStep,
     _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
     holder: Arc<ChunkHolder>,
 ) {
-    holder.upgrade_to_full(context.weak_world());
+    holder.upgrade_to_full();
 }

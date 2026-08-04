@@ -35,9 +35,24 @@ pub trait FluidBehavior: Send + Sync {
     fn slope_find_distance(&self, world: &Arc<World>) -> u8;
 
     /// Called every tick for fluid blocks.
-    fn tick(&self, world: &Arc<World>, pos: BlockPos);
+    ///
+    /// The block and fluid states are the live states validated by the tick caller,
+    /// matching Vanilla's `Fluid.tick` callback contract.
+    fn tick(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        block_state: BlockStateId,
+        fluid_state: FluidState,
+    );
     /// Called to calculate fluid spreading each tick.
-    fn spread(&self, world: &Arc<World>, pos: BlockPos, fluid_state: FluidState);
+    fn spread(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        block_state: BlockStateId,
+        fluid_state: FluidState,
+    );
 
     /// Checks if this fluid can be replaced by another fluid.
     /// This is used to determine if a fluid can flow into a block occupied by another fluid.
@@ -82,12 +97,6 @@ pub trait FluidBehavior: Send + Sync {
     /// Gets the explosion resistance of this fluid.
     fn explosion_resistance(&self) -> f32 {
         0.0
-    }
-
-    /// Returns whether this fluid should receive random ticks.
-    /// Vanilla: only lava returns true (for fire spread).
-    fn is_randomly_ticking(&self) -> bool {
-        false
     }
 
     /// Called on random tick for this fluid's block.
