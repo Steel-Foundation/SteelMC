@@ -8,8 +8,8 @@ use steel_utils::{BlockPos, ChunkPos, SectionPos, WorldAabb, types::GameType};
 use tokio::time::sleep;
 
 use crate::behavior::BlockCollisionContext;
-use crate::chunk::chunk_access::ChunkStatus;
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState, ChunkTicketKind};
+use crate::chunk::status::ChunkStatus;
 use crate::fluid::get_fluid_state;
 use crate::physics::{CollisionWorld as _, WorldCollisionProvider};
 use crate::world::World;

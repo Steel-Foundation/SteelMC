@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::chunk::{
-    chunk_access::ChunkStatus, chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder,
-    chunk_pyramid::ChunkStep,
+    chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder, chunk_pyramid::ChunkStep,
+    status::ChunkStatus,
 };
 use crate::worldgen::generator::ChunkGenerator;
 use crate::worldgen::generator::context::WorldGenContext;
@@ -17,5 +17,5 @@ pub(crate) fn generate(
         .try_chunk(ChunkStatus::StructureReferences)
         .expect("Chunk not found at status StructureReferences");
 
-    context.generator.create_biomes(&chunk);
+    context.generator.create_biomes(chunk);
 }

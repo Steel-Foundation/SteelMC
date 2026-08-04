@@ -38,6 +38,7 @@ pub mod rotation;
 pub mod saved_data;
 pub mod serial;
 pub mod text;
+pub mod threading;
 /// A module for common types.
 pub mod types;
 /// UUID extension trait for Minecraft NBT serialization.

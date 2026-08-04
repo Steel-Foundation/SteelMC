@@ -96,23 +96,6 @@ impl BlockEntityRegistry {
         }
     }
 
-    /// Creates a new block entity and loads NBT data into it.
-    ///
-    /// Returns `None` if no factory is registered for the given type.
-    #[must_use]
-    pub fn create_and_load(
-        &self,
-        block_entity_type: BlockEntityTypeRef,
-        level: Weak<World>,
-        pos: BlockPos,
-        state: BlockStateId,
-        nbt: &BorrowedNbtCompound<'_>,
-    ) -> Option<SharedBlockEntity> {
-        let entity = self.create(block_entity_type, level, pos, state)?;
-        entity.load_additional(nbt);
-        Some(entity)
-    }
-
     /// Creates a block entity and loads borrowed NBT, falling back to raw preservation.
     #[must_use]
     pub fn create_and_load_or_raw(
