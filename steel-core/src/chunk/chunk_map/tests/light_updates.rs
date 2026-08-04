@@ -23,7 +23,6 @@ fn light_changed_marks_unloading_chunk_dirty() {
         .try_chunk(ChunkStatus::Light)
         .expect("test holder should contain a light-status chunk");
     chunk.clear_dirty();
-    drop(chunk);
 
     chunk_map.light_changed(LightLayer::Block, SectionPos::new(pos.0.x, 0, pos.0.y));
 

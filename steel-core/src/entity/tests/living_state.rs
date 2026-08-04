@@ -1,6 +1,18 @@
 use super::*;
 
 #[test]
+fn default_entity_tick_dispatches_living_tick() {
+    init_test_registry();
+
+    let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0);
+    let entity_ref: &dyn Entity = &entity;
+
+    entity_ref.tick();
+
+    assert_eq!(entity.living_base().death_time(), 1);
+}
+
+#[test]
 fn living_tick_state_decrements_last_hurt_by_player_memory() {
     init_test_registry();
 

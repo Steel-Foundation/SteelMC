@@ -7,7 +7,7 @@ use steel_registry::entity_type::{EntityAttachmentPoint, EntityAttachments, Enti
 use steel_utils::WorldAabb;
 use steel_utils::types::GameType;
 
-use crate::behavior::BlockCollisionContext;
+use crate::behavior::{BlockCollisionContext, blocks::PowderSnowBlock};
 use crate::entity::{Entity, EntitySyncedData, LivingEntity};
 use crate::physics::{CollisionWorld, WorldCollisionProvider};
 use crate::player::Player;
@@ -103,7 +103,9 @@ impl Player {
                 .bounding_box_for_pose(pose)
                 .deflate(POSE_COLLISION_EPSILON),
             BlockCollisionContext::entity(self.position().y, self.is_descending())
-                .with_can_walk_on_powder_snow(self.can_walk_on_powder_snow()),
+                .with_can_walk_on_powder_snow(PowderSnowBlock::can_entity_walk_on_powder_snow(
+                    self,
+                )),
         )
     }
 

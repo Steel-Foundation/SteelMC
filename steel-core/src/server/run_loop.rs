@@ -1,3 +1,4 @@
+use super::world_tick_workers::{WorldTickWorkerError, WorldTickWorkers};
 use super::{
     Arc, CCommandSuggestions, CHUNK_SENDING_TPS, COMMAND_DATA_AUTOSAVE_INTERVAL,
     COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CancellationToken, ChunkPos,
@@ -6,8 +7,8 @@ use super::{
     ExecutionCommandSource, ExecutionStop, GameTickTaskGuard, Instant, JoinSet, NetworkConnection,
     PendingCommandExecutionQueue, Player, SEND_PLAYER_INFO_INTERVAL, SLOW_CHUNK_TICK_THRESHOLD,
     Server, StringReader, SuggestionError, Suggestions, TAB_LIST_UPDATE_INTERVAL, TabListTickStats,
-    ThreadPool, World, WorldGameTickTimings, command_suggestions_packet, configured_packet_workers,
-    sleep, spawn_blocking,
+    ThreadPool, World, command_suggestions_packet, configured_packet_workers, sleep,
+    spawn_blocking,
 };
 
 impl Server {
@@ -68,6 +69,14 @@ impl Server {
         reason = "the ordered tick phases and their shutdown joins remain easier to audit together"
     )]
     async fn run_game_tick(self: Arc<Self>, cancel_token: CancellationToken) {
+        let world_tick_workers = match WorldTickWorkers::spawn(self.worlds.values()) {
+            Ok(workers) => workers,
+            Err(error) => {
+                log::error!("Failed to start world tick workers: {error}");
+                cancel_token.cancel();
+                return;
+            }
+        };
         let mut next_tick_time = Instant::now();
         let mut next_command_data_autosave = Instant::now() + COMMAND_DATA_AUTOSAVE_INTERVAL;
         let mut player_info_ticks = 0_u64;
@@ -126,7 +135,14 @@ impl Server {
 
             self.tick_pending_command_executions(&mut pending_command_executions);
             self.tick_command_requests(&mut pending_command_executions);
-            self.tick_worlds_game(tick_count, runs_normally).await;
+            if let Err(error) = self
+                .tick_worlds_game(&world_tick_workers, tick_count, runs_normally)
+                .await
+            {
+                log::error!("World game tick failed: {error}");
+                cancel_token.cancel();
+                break;
+            }
             player_info_ticks += 1;
             if player_info_ticks > SEND_PLAYER_INFO_INTERVAL {
                 let _span = tracing::trace_span!("broadcast_latency").entered();
@@ -512,24 +528,14 @@ impl Server {
         }
     }
 
-    #[tracing::instrument(level = "trace", skip(self), name = "tick_worlds")]
-    async fn tick_worlds_game(&self, tick_count: u64, runs_normally: bool) {
-        let mut tasks = Vec::with_capacity(self.worlds.len());
-        for world in self.worlds.values() {
-            let world_clone = world.clone();
-            tasks.push(spawn_blocking(move || {
-                if runs_normally {
-                    world_clone.chunk_map.tick_timed_tickets();
-                }
-                world_clone.tick_game(tick_count, runs_normally)
-            }));
-        }
-        let mut all_timings: Vec<WorldGameTickTimings> = Vec::with_capacity(tasks.len());
-        for task in tasks {
-            if let Ok(timings) = task.await {
-                all_timings.push(timings);
-            }
-        }
+    #[tracing::instrument(level = "trace", skip(self, workers), name = "tick_worlds")]
+    async fn tick_worlds_game(
+        &self,
+        workers: &WorldTickWorkers,
+        tick_count: u64,
+        runs_normally: bool,
+    ) -> Result<(), WorldTickWorkerError> {
+        let all_timings = workers.tick_all(tick_count, runs_normally).await?;
         for (i, timings) in all_timings.iter().enumerate() {
             if timings.elapsed.as_millis() < 50 {
                 continue;
@@ -554,6 +560,7 @@ impl Server {
                 "Game tick slow"
             );
         }
+        Ok(())
     }
 
     pub(super) fn tick_jobs(self: &Arc<Self>, tick_count: u64, runs_normally: bool) {

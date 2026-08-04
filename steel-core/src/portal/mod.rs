@@ -306,21 +306,6 @@ impl TeleportTransition {
         }
     }
 
-    /// Marks this transition as the recursive passenger variant.
-    #[must_use]
-    pub fn transition_as_passenger(&self) -> Self {
-        Self {
-            target_world: self.target_world.clone(),
-            position: self.position,
-            rotation: self.rotation,
-            velocity: self.velocity,
-            relatives: self.relatives,
-            portal_cooldown: self.portal_cooldown,
-            as_passenger: true,
-            post_transition: self.post_transition.clone(),
-        }
-    }
-
     /// Resolves this transition's position against the entity's current position.
     #[must_use]
     pub fn resolved_position(&self, current_position: DVec3) -> DVec3 {
