@@ -404,6 +404,12 @@ mod tests {
     }
 
     #[test]
+    fn from_yaw_preserves_vanilla_double_precision_for_large_angles() {
+        // Vanilla widens yaw to double; calculating the remainder in f32 selects South here.
+        assert_eq!(Direction::from_yaw(193_273_528_320.0), Direction::East);
+    }
+
+    #[test]
     fn positive_for_axis_matches_vanilla_axis_direction_positive() {
         assert_eq!(Direction::positive_for_axis(Axis::X), Direction::East);
         assert_eq!(Direction::positive_for_axis(Axis::Y), Direction::Up);
