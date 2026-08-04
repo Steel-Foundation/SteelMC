@@ -118,7 +118,7 @@ Generated documentation for SteelMC's Rust crates is available in the
 AI may be used as a tool, but contributors must understand and be able to explain
 every line they submit. Fully autonomous pull requests are not accepted.
 
-For an easy entry into SteelMC as a new contributor, you can check out issues with the tag `good first issue`, or our [tracker](https://steelmc.dev/tracker/) of missing blocks/items,
+For an easy entry into SteelMC as a new contributor, you can check out issues with the tag `good first issue`, or our [tracker](https://steelmc.dev/tracker/) of unimplemented content,
 which is always a good first start.
 
 ## Community
