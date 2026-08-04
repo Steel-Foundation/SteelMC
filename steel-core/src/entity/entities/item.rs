@@ -227,11 +227,6 @@ impl ItemEntity {
         self.item_state.lock().age = age;
     }
 
-    /// Sets the entity to never despawn.
-    pub fn set_unlimited_lifetime(&self) {
-        self.item_state.lock().age = INFINITE_LIFETIME;
-    }
-
     /// Makes this a one-tick visual pickup item that cannot be collected.
     pub fn make_fake_item(&self) {
         let mut state = self.item_state.lock();
@@ -253,11 +248,6 @@ impl ItemEntity {
     /// Sets the pickup delay to zero (immediately pickupable).
     pub fn set_no_pickup_delay(&self) {
         self.item_state.lock().pickup_delay = 0;
-    }
-
-    /// Sets the item to never be pickupable.
-    pub fn set_never_pickup(&self) {
-        self.item_state.lock().pickup_delay = INFINITE_PICKUP_DELAY;
     }
 
     /// Sets a custom pickup delay in ticks.
