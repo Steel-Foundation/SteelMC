@@ -92,6 +92,20 @@ pub struct EntityRegistry {
 }
 
 impl EntityRegistry {
+    /// Completes the registered-entity portion of vanilla `Entity.load` after
+    /// the load factory has reconstructed the entity's base state.
+    fn finish_registered_load(entity: &SharedEntity, nbt: &BorrowedNbtCompound<'_>) {
+        let yaw = entity.rotation().0;
+        if let Some(living) = entity.as_living_entity() {
+            living.set_y_head_rot(yaw);
+            living.set_y_body_rot(yaw);
+        }
+
+        let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
+        entity.load_additional(nbt);
+        entity.sync_base_entity_data();
+    }
+
     /// Creates a new empty registry with entries for all entity types.
     #[must_use]
     pub fn new() -> Self {
@@ -156,26 +170,6 @@ impl EntityRegistry {
             .map(|f| f(entity_type, entity_id, pos, world))
     }
 
-    /// Creates an entity from persisted data and loads its type-specific NBT.
-    ///
-    /// Returns `None` if no load factory is registered for the entity type.
-    #[must_use]
-    pub fn create_and_load(
-        &self,
-        request: EntityLoadRequest,
-        nbt: &BorrowedNbtCompound<'_>,
-    ) -> Option<SharedEntity> {
-        let (entity_type, load) = request.into_base_load();
-        let id = entity_type.id();
-        let load_factory = self.entries.get(id)?.load_factory?;
-
-        let entity = load_factory(entity_type, load);
-        let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
-        entity.load_additional(nbt);
-        entity.sync_base_entity_data();
-        Some(entity)
-    }
-
     /// Creates an entity from persisted data, falling back to raw NBT preservation.
     #[must_use]
     pub fn create_and_load_or_raw(
@@ -187,9 +181,7 @@ impl EntityRegistry {
         let id = entity_type.id();
         if let Some(load_factory) = self.entries.get(id).and_then(|entry| entry.load_factory) {
             let entity = load_factory(entity_type, load);
-            let nbt: BorrowedNbtCompoundView<'_, '_> = nbt.into();
-            entity.load_additional(nbt);
-            entity.sync_base_entity_data();
+            Self::finish_registered_load(&entity, nbt);
             return entity;
         }
 
@@ -204,15 +196,6 @@ impl EntityRegistry {
     pub fn has_factory(&self, entity_type: EntityTypeRef) -> bool {
         let id = entity_type.id();
         self.entries.get(id).is_some_and(|e| e.factory.is_some())
-    }
-
-    /// Returns whether a load factory is registered for the given type.
-    #[must_use]
-    pub fn has_load_factory(&self, entity_type: EntityTypeRef) -> bool {
-        let id = entity_type.id();
-        self.entries
-            .get(id)
-            .is_some_and(|e| e.load_factory.is_some())
     }
 }
 
@@ -293,6 +276,44 @@ mod tests {
     use steel_registry::vanilla_entities;
 
     use super::*;
+
+    #[test]
+    fn registered_living_load_restores_current_head_and_body_yaw() {
+        init_test_registry();
+        let mut registry = EntityRegistry::new();
+        register_entity_factories(&mut registry);
+        let mut bytes = Vec::new();
+        NbtCompound::new().write(&mut bytes);
+        let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
+            .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
+
+        let entity = registry.create_and_load_or_raw(
+            EntityLoadRequest {
+                entity_type: &vanilla_entities::PIG,
+                position: DVec3::ZERO,
+                uuid: Uuid::from_u128(1),
+                velocity: DVec3::ZERO,
+                rotation: (135.0, -20.0),
+                fall_distance: 0.0,
+                fire_freeze: EntityFireFreezeState::new(),
+                on_ground: false,
+                save_data: EntityBaseSaveData::new(),
+                world: Weak::new(),
+            },
+            &borrowed,
+        );
+
+        assert_eq!(entity.rotation(), (135.0, -20.0));
+        assert_eq!(entity.base().old_rotation(), (135.0, -20.0));
+        let Some(living) = entity.as_living_entity() else {
+            panic!("registered pig should expose living behavior");
+        };
+        let living_rotation = living.living_rotation_state();
+        assert_eq!(living_rotation.y_head_rot().to_bits(), 135.0_f32.to_bits());
+        assert_eq!(living_rotation.y_body_rot().to_bits(), 135.0_f32.to_bits());
+        assert_eq!(living_rotation.y_head_rot_o().to_bits(), 0.0_f32.to_bits());
+        assert_eq!(living_rotation.y_body_rot_o().to_bits(), 0.0_f32.to_bits());
+    }
 
     #[test]
     fn create_and_load_or_raw_preserves_unregistered_entity_data() {

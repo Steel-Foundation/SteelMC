@@ -54,7 +54,7 @@ impl BlockBehavior for StainedGlassPaneBlock {
             let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
             world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
         }
-        update_shape(state, neighbor_state, neighbor_pos, direction)
+        update_shape(world, state, neighbor_state, neighbor_pos, direction)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

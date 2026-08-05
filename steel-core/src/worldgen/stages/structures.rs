@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use crate::chunk::{
-    chunk_access::ChunkStatus, chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder,
-    chunk_pyramid::ChunkStep,
+    chunk_generation_task::StaticCache2D, chunk_holder::ChunkHolder, chunk_pyramid::ChunkStep,
+    status::ChunkStatus,
 };
-use crate::worldgen::context::WorldGenContext;
 use crate::worldgen::generator::ChunkGenerator;
+use crate::worldgen::generator::context::WorldGenContext;
 use steel_worldgen::structure::StructureReferenceMap;
 
 /// Generates structure starts.
@@ -22,7 +22,7 @@ pub(crate) fn generate_starts(
         .try_chunk(ChunkStatus::Empty)
         .expect("Chunk not found at status Empty");
 
-    context.generator.create_structures(&chunk);
+    context.generator.create_structures(chunk);
 }
 
 /// Collects structure references from surrounding chunks' starts.
@@ -35,16 +35,14 @@ pub(crate) fn generate_references(
     cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
     holder: Arc<ChunkHolder>,
 ) {
-    let chunk = holder
-        .try_chunk(ChunkStatus::StructureStarts)
-        .expect("Chunk not found at status StructureStarts");
+    let Some(chunk) = holder.try_chunk(ChunkStatus::StructureStarts) else {
+        panic!("Chunk not found at status StructureStarts");
+    };
     let target_pos = chunk.pos();
     let target_x = target_pos.0.x;
     let target_z = target_pos.0.y;
     let target_block_x = target_x * 16;
     let target_block_z = target_z * 16;
-    drop(chunk);
-
     let mut references = StructureReferenceMap::default();
 
     // Radius-8 scan for starts whose BB intersects this chunk.

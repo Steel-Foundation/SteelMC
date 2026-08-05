@@ -173,10 +173,6 @@ impl PositionSourceTypeRegistry {
         }
     }
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "network dispatch requires exact registered position source type identity"
-    )]
     fn registered_entry_with_id(
         &self,
         entry: PositionSourceTypeRef,

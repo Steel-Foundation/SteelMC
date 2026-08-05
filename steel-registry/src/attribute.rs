@@ -5,6 +5,8 @@ use steel_utils::{
     serial::{ReadFrom, WriteTo},
 };
 
+use crate::RegistryTags;
+
 /// The operation type for an attribute modifier.
 ///
 /// Matches vanilla `AttributeModifier.Operation`:
@@ -94,7 +96,7 @@ pub type AttributeRef = &'static Attribute;
 pub struct AttributeRegistry {
     attributes_by_id: Vec<AttributeRef>,
     attributes_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -110,7 +112,7 @@ impl AttributeRegistry {
         Self {
             attributes_by_id: Vec::new(),
             attributes_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }

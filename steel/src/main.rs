@@ -16,8 +16,10 @@ use steel::logger::CommandLogger;
 use steel::{SERVER, SteelServer, logger::LoggerLayer};
 use steel_core::player::player_data::PersistentPlayerData;
 use steel_core::player::player_data_storage::GlobalPlayerData;
+use steel_core::player::player_inventory::MenuRemovalStatus;
 use steel_core::server::Server;
 use steel_utils::text::DisplayResolutor;
+use steel_utils::threading::worker_threads_for_available;
 use text_components::fmt::set_display_resolutor;
 use tokio::runtime::{Builder, Runtime};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -112,9 +114,26 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-/// Main entry point for the Steel Minecraft server.
-///
-///
+// Windows defaults to a 1 MB main thread stack, which overflows in debug
+// builds due to deeply nested generated density functions.
+fn main() {
+    #[cfg(all(windows, debug_assertions))]
+    {
+        thread::Builder::new()
+            .name("steel-main".to_owned())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(steel_main)
+            .expect("failed to spawn steel-main bootstrap thread")
+            .join()
+            .expect("steel-main thread panicked");
+    }
+
+    #[cfg(not(all(windows, debug_assertions)))]
+    {
+        steel_main();
+    }
+}
+
 /// Why 2 runtimes?
 ///
 /// The chunk runtime is very task heavy as it sometimes spawns thousands of tasks at once. It is also very await heavy in the part where it awaits its current layer.
@@ -126,7 +145,7 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
     clippy::unwrap_used,
     reason = "runtime build failures are fatal and unrecoverable at startup"
 )]
-fn main() {
+fn steel_main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
@@ -170,18 +189,6 @@ fn configured_worker_threads(configured_threads: Option<usize>) -> usize {
 
 fn available_worker_threads() -> usize {
     thread::available_parallelism().map_or(4, NonZero::get)
-}
-
-fn worker_threads_for_available(
-    configured_threads: Option<usize>,
-    available_threads: usize,
-) -> usize {
-    let available_threads = available_threads.max(1);
-    if let Some(configured_threads) = configured_threads.filter(|&threads| threads > 0) {
-        return configured_threads.min(available_threads);
-    }
-
-    ((available_threads / 2).max(2)).min(available_threads)
 }
 
 async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConfig) {
@@ -378,6 +385,16 @@ async fn shutdown_worlds(server: &Arc<Server>) {
         log::error!("Failed to flush known player cache during shutdown: {error}");
     }
 
+    let players = server.get_players();
+    for player in &players {
+        player.close_connection();
+        assert_eq!(
+            player.remove_all_menus(),
+            MenuRemovalStatus::Complete,
+            "shutdown menu removal must run after packet processing stops"
+        );
+    }
+
     for world in server.worlds.values() {
         world.chunk_map.stop_generation_refill_loop();
         world.chunk_map.task_tracker.close();
@@ -385,14 +402,11 @@ async fn shutdown_worlds(server: &Arc<Server>) {
     }
 
     let mut players_to_save = Vec::new();
-    for world in server.worlds.values() {
-        world.players.iter_players(|_, player| {
-            let domain = player.get_world().domain().to_owned();
-            let data = PersistentPlayerData::from_player(player);
-            player.store_ender_pearls_with_player();
-            players_to_save.push((player.clone(), domain, data));
-            true
-        });
+    for player in players {
+        let domain = player.get_world().domain().to_owned();
+        let data = PersistentPlayerData::from_player(&player);
+        player.store_ender_pearls_with_player();
+        players_to_save.push((player, domain, data));
     }
 
     // Save all dirty chunks before shutdown
@@ -443,22 +457,4 @@ async fn shutdown_worlds(server: &Arc<Server>) {
         }
     }
     log::info!("Saved {saved} players");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::worker_threads_for_available;
-
-    #[test]
-    fn configured_worker_threads_are_capped_to_available_threads() {
-        assert_eq!(worker_threads_for_available(Some(16), 8), 8);
-        assert_eq!(worker_threads_for_available(Some(4), 8), 4);
-    }
-
-    #[test]
-    fn zero_worker_threads_uses_auto_default() {
-        assert_eq!(worker_threads_for_available(Some(0), 8), 4);
-        assert_eq!(worker_threads_for_available(None, 8), 4);
-        assert_eq!(worker_threads_for_available(None, 1), 1);
-    }
 }

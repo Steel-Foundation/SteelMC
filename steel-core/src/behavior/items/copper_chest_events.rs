@@ -8,7 +8,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::{
     entity::Entity,
     player::Player,
-    world::{World, game_event_context::GameEventContext},
+    world::{World, game_event::GameEventContext},
 };
 
 /// Emits the extra vanilla block-change notification for the other half of a double copper chest.

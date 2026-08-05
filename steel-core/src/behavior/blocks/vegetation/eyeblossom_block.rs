@@ -49,10 +49,6 @@ impl BlockBehavior for EyeblossomBlock {
         default_surviving_state(self.block, self, context)
     }
 
-    fn is_randomly_ticking(&self, _state: BlockStateId) -> bool {
-        true
-    }
-
     fn random_tick(&self, _state: BlockStateId, _world: &Arc<World>, _pos: BlockPos) {
         let _ = self.eyeblossom_type;
     }

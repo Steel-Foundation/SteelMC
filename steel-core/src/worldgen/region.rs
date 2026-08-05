@@ -6,10 +6,7 @@
 
 use std::{
     cell::RefCell,
-    sync::{
-        Arc, Weak,
-        atomic::{AtomicI64, Ordering},
-    },
+    sync::{Arc, Weak},
     time::Instant,
 };
 
@@ -17,28 +14,32 @@ use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use simdnbt::owned::NbtCompound;
 use steel_registry::{
     REGISTRY, block_entity_type::BlockEntityTypeRef, blocks::BlockRef,
-    blocks::block_state_ext::BlockStateExt as _, fluid::FluidRef, vanilla_blocks,
+    blocks::block_state_ext::BlockStateExt as _, blocks::properties::Direction,
+    blocks::shapes::SupportType, fluid::FluidRef, vanilla_blocks,
 };
 use steel_utils::random::RandomSource;
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, PackedSectionBlockPos, SectionPos, types::UpdateFlags,
 };
+use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
-use crate::behavior::FLUID_BEHAVIORS;
+use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
 use crate::chunk::{
-    chunk_access::{ChunkAccess, ChunkStatus},
+    Chunk,
     chunk_generation_task::StaticCache2D,
     chunk_holder::ChunkHolder,
     chunk_pyramid::ChunkStep,
+    full_chunk::FullChunkRef,
     heightmap::{Heightmap, HeightmapType},
-    section::{ChunkSection, SectionHolder},
+    section::{ChunkSection, SectionHolder, SectionWriteGuard, Sections},
+    status::ChunkStatus,
 };
 use crate::entity::SharedEntity;
 use crate::world::tick_scheduler::TickPriority;
 use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
-use crate::worldgen::context::WorldGenContext;
 use crate::worldgen::feature::instrumentation::OreFeatureStats;
+use crate::worldgen::generator::context::WorldGenContext;
 
 /// Chunk-cache backed worldgen view for the current generation step.
 ///
@@ -55,13 +56,12 @@ pub struct WorldGenRegion<'a> {
     chunks: RefCell<Box<[Option<CachedWorldGenChunk<'a>>]>>,
     worldgen_heightmaps: RefCell<Box<[CachedWorldgenHeightmaps]>>,
     random: RandomSource,
-    sub_tick_count: AtomicI64,
 }
 
 /// Cached section-level access for feature code that mirrors vanilla `BulkSectionAccess`.
 ///
 /// Vanilla exposes acquired `LevelChunkSection`s and lets some features mutate section-local
-/// block states directly. Steel keeps chunk guards cached instead of section references because
+/// block states directly. Steel keeps chunk views cached instead of section references because
 /// sections live behind Rust locks; callers still get the same direct section semantics without
 /// bypassing the worldgen dependency and write-radius checks.
 pub(crate) struct WorldGenBulkSectionAccess<'region, 'world, 'profile> {
@@ -73,8 +73,84 @@ pub(crate) struct WorldGenBulkSectionAccess<'region, 'world, 'profile> {
 }
 
 struct CachedWorldGenChunk<'region> {
-    guard: RwLockReadGuard<'region, ChunkAccess>,
+    holder: &'region ChunkHolder,
+    chunk: &'region Chunk,
     verified_status: ChunkStatus,
+    access_mode: WorldGenAccessMode,
+}
+
+/// A generation dependency with access semantics captured when it was acquired.
+///
+/// The underlying chunk has stable storage, while this view preserves vanilla's
+/// stale-reference behavior across promotion: a view acquired before Full remains
+/// writable, and a newly acquired Full view behaves like `ImposterProtoChunk(false)`.
+#[derive(Clone, Copy)]
+pub(crate) struct WorldGenChunkRef<'a> {
+    holder: &'a ChunkHolder,
+    chunk: &'a Chunk,
+    access_mode: WorldGenAccessMode,
+}
+
+impl WorldGenChunkRef<'_> {
+    fn published_status(self) -> ChunkStatus {
+        let Some(status) = self.holder.published_status() else {
+            panic!("worldgen chunk data cannot lose its published status");
+        };
+        status
+    }
+
+    #[must_use]
+    pub(crate) const fn sections(&self) -> &Sections {
+        self.chunk.sections()
+    }
+
+    pub(crate) fn structure_starts_mut(&self) -> RwLockWriteGuard<'_, StructureStartMap> {
+        self.chunk.structure_starts_mut()
+    }
+
+    pub(crate) fn structure_references(&self) -> RwLockReadGuard<'_, StructureReferenceMap> {
+        self.chunk.structure_references()
+    }
+
+    fn full_imposter_height_at(
+        self,
+        heightmap_type: HeightmapType,
+        local_x: usize,
+        local_z: usize,
+    ) -> i32 {
+        let mapped_type = match heightmap_type {
+            HeightmapType::WorldSurfaceWg => HeightmapType::WorldSurface,
+            HeightmapType::OceanFloorWg => HeightmapType::OceanFloor,
+            other => other,
+        };
+        FullChunkRef::from_full_context(self.chunk).get_height(mapped_type, local_x, local_z)
+    }
+}
+
+/// The access mode is captured when a generation dependency is acquired.
+///
+/// This mirrors vanilla's distinction between a writable `ProtoChunk` and a
+/// read-only `ImposterProtoChunk(false)`. It must not be recomputed after
+/// acquisition: later holder publication will replace the holder view, but an
+/// in-flight generation region keeps the semantics it originally acquired.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WorldGenAccessMode {
+    WritableProto,
+    ReadOnlyFull,
+}
+
+impl WorldGenAccessMode {
+    const fn capture(status: ChunkStatus) -> Self {
+        if matches!(status, ChunkStatus::Full) {
+            Self::ReadOnlyFull
+        } else {
+            Self::WritableProto
+        }
+    }
+
+    const fn allows_writes(self) -> bool {
+        matches!(self, Self::WritableProto)
+    }
 }
 
 #[derive(Default)]
@@ -145,7 +221,6 @@ impl<'a> WorldGenRegion<'a> {
             chunks: RefCell::new(chunks),
             worldgen_heightmaps: RefCell::new(worldgen_heightmaps),
             random,
-            sub_tick_count: AtomicI64::new(0),
         }
     }
 
@@ -247,18 +322,25 @@ impl<'a> WorldGenRegion<'a> {
 
     /// Gets a chunk if the step declares enough direct dependency status for it.
     #[must_use]
-    pub fn try_chunk(
+    pub(crate) fn try_chunk(
         &self,
         chunk_x: i32,
         chunk_z: i32,
         status: ChunkStatus,
-    ) -> Option<RwLockReadGuard<'a, ChunkAccess>> {
+    ) -> Option<WorldGenChunkRef<'a>> {
         let available_status = self.required_status_at(chunk_x, chunk_z)?;
         if status > available_status {
             return None;
         }
 
-        self.cache.get(chunk_x, chunk_z).try_chunk(available_status)
+        let holder = self.cache.get(chunk_x, chunk_z);
+        let chunk = holder.try_chunk(available_status)?;
+        let published_status = holder.published_status()?;
+        Some(WorldGenChunkRef {
+            holder,
+            chunk,
+            access_mode: WorldGenAccessMode::capture(published_status),
+        })
     }
 
     /// Gets a chunk or panics if generation requested an undeclared dependency.
@@ -267,12 +349,12 @@ impl<'a> WorldGenRegion<'a> {
     /// Panics if the chunk is outside this step's direct dependencies, if the requested
     /// status is higher than the dependency contract, or if the holder has not reached
     /// the declared status. Those cases indicate a chunk-pyramid or scheduler bug.
-    pub fn chunk(
+    pub(crate) fn chunk(
         &self,
         chunk_x: i32,
         chunk_z: i32,
         status: ChunkStatus,
-    ) -> RwLockReadGuard<'a, ChunkAccess> {
+    ) -> WorldGenChunkRef<'a> {
         let Some(chunk) = self.try_chunk(chunk_x, chunk_z, status) else {
             let available = self.required_status_at(chunk_x, chunk_z);
             panic!(
@@ -290,11 +372,11 @@ impl<'a> WorldGenRegion<'a> {
         chunk_x: i32,
         chunk_z: i32,
         status: ChunkStatus,
-        f: impl FnOnce(&ChunkAccess) -> R,
+        f: impl FnOnce(WorldGenChunkRef<'_>) -> R,
     ) -> R {
         let Some(cache_index) = self.chunk_cache_index(chunk_x, chunk_z) else {
             let chunk = self.chunk(chunk_x, chunk_z, status);
-            return f(&chunk);
+            return f(chunk);
         };
 
         let cache_needs_update = self.chunks.borrow().get(cache_index).is_none_or(|cached| {
@@ -304,17 +386,18 @@ impl<'a> WorldGenRegion<'a> {
         });
 
         if cache_needs_update {
-            let guard = self.chunk(chunk_x, chunk_z, status);
+            let chunk = self.chunk(chunk_x, chunk_z, status);
             let mut chunks = self.chunks.borrow_mut();
             let Some(slot) = chunks.get_mut(cache_index) else {
                 panic!("Worldgen region cache index {cache_index} escaped its storage");
             };
             if let Some(cached) = slot {
                 cached.verified_status = status;
-                drop(guard);
             } else {
                 *slot = Some(CachedWorldGenChunk {
-                    guard,
+                    access_mode: chunk.access_mode,
+                    holder: chunk.holder,
+                    chunk: chunk.chunk,
                     verified_status: status,
                 });
             }
@@ -324,7 +407,11 @@ impl<'a> WorldGenRegion<'a> {
         let Some(Some(cached)) = chunks.get(cache_index) else {
             panic!("Worldgen region cache failed to store chunk ({chunk_x}, {chunk_z})");
         };
-        f(&cached.guard)
+        f(WorldGenChunkRef {
+            holder: cached.holder,
+            chunk: cached.chunk,
+            access_mode: cached.access_mode,
+        })
     }
 
     fn chunk_cache_index(&self, chunk_x: i32, chunk_z: i32) -> Option<usize> {
@@ -348,7 +435,7 @@ impl<'a> WorldGenRegion<'a> {
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
         self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
-            chunk.get_block_state(pos)
+            chunk.chunk.get_block_state(pos)
         })
     }
 
@@ -361,7 +448,19 @@ impl<'a> WorldGenRegion<'a> {
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
         self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
-            chunk.get_block_entity(pos)
+            let block_entity = match chunk.access_mode {
+                WorldGenAccessMode::ReadOnlyFull => {
+                    FullChunkRef::from_full_context(chunk.chunk).get_block_entity(pos)
+                }
+                WorldGenAccessMode::WritableProto => chunk
+                    .chunk
+                    .get_block_entity(pos)
+                    .or_else(|| chunk.chunk.promote_pending_block_entity(pos)),
+            };
+            if block_entity.is_none() && chunk.chunk.get_block_state(pos).has_block_entity() {
+                log::warn!("Tried to access a block entity before it was created at {pos:?}");
+            }
+            block_entity
         })
     }
 
@@ -380,7 +479,7 @@ impl<'a> WorldGenRegion<'a> {
         let local_quart_z = (quart_z & 3) as usize;
 
         self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Biomes, |chunk| {
-            let sections = chunk.sections();
+            let sections = chunk.chunk.sections();
             let (section_index, local_quart_y) =
                 Self::biome_quart_y_indices(self.min_y(), sections.sections.len(), quart_y);
             let section = &sections.sections[section_index];
@@ -407,10 +506,28 @@ impl<'a> WorldGenRegion<'a> {
         else {
             return false;
         };
-
-        self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
-            chunk.set_block_state(pos, state, flags);
+        let changed_proto = self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
+            if !chunk.access_mode.allows_writes() {
+                // Vanilla exposes an already-Full dependency through
+                // `ImposterProtoChunk(false)`, whose block writes are no-ops.
+                return false;
+            }
+            let old_state = chunk.chunk.set_block_state_for_generation(
+                chunk.published_status(),
+                pos,
+                state,
+                flags,
+            );
+            if state.has_block_entity() {
+                chunk.chunk.set_pending_block_entity_if_state(pos, state);
+            } else if old_state.is_some_and(|old_state| old_state.has_block_entity()) {
+                chunk.chunk.remove_block_entity_if_state(pos, state);
+            }
+            old_state.is_some()
         });
+        if changed_proto {
+            self.invalidate_cached_worldgen_heightmaps(chunk_x, chunk_z);
+        }
         if !flags.contains(UpdateFlags::UPDATE_KNOWN_SHAPE)
             && let Some(postprocess_pos) = Self::postprocess_pos_for_state(state, pos)
         {
@@ -452,18 +569,28 @@ impl<'a> WorldGenRegion<'a> {
         else {
             return false;
         };
+        if !block_entity_type.is_valid(state.get_block()) {
+            log::warn!(
+                "Worldgen block entity {} at {pos:?} does not accept block {}",
+                block_entity_type.key,
+                state.get_block().key,
+            );
+            return false;
+        }
 
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
+            if !chunk.access_mode.allows_writes() {
+                return false;
+            }
             let entity = BLOCK_ENTITIES.create_and_load_owned_or_raw(
                 block_entity_type,
-                chunk.level_weak(),
+                chunk.chunk.level_weak(),
                 pos,
                 state,
                 nbt,
             );
-            chunk.add_and_register_block_entity(entity);
-        });
-        true
+            chunk.chunk.set_block_entity(entity)
+        })
     }
 
     /// Removes block entity data at a writable worldgen position.
@@ -476,7 +603,9 @@ impl<'a> WorldGenRegion<'a> {
         };
 
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
-            chunk.remove_block_entity(pos);
+            if chunk.access_mode.allows_writes() {
+                chunk.chunk.remove_block_entity(pos);
+            }
         });
         true
     }
@@ -490,7 +619,14 @@ impl<'a> WorldGenRegion<'a> {
         let pos = BlockPos::from(entity.position());
         let (chunk_x, chunk_z, status) = self.dependency_chunk_for_pos(pos, "add entity");
 
-        self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| chunk.add_entity(entity))
+        self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
+            if chunk.access_mode.allows_writes() {
+                chunk.chunk.add_entity(entity)
+            } else {
+                drop(entity);
+                true
+            }
+        })
     }
 
     /// Schedules a block tick in the chunk that owns the target position.
@@ -503,13 +639,14 @@ impl<'a> WorldGenRegion<'a> {
         &self,
         pos: BlockPos,
         block: BlockRef,
-        delay: i32,
+        _delay: i32,
         priority: TickPriority,
     ) -> bool {
         let (chunk_x, chunk_z, status) = self.dependency_chunk_for_pos(pos, "schedule block tick");
-        let sub_tick_order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
-            chunk.schedule_block_tick(pos, block, delay, priority, sub_tick_order);
+            if chunk.access_mode.allows_writes() {
+                chunk.chunk.schedule_block_tick(pos, block, priority);
+            }
         });
         true
     }
@@ -528,13 +665,14 @@ impl<'a> WorldGenRegion<'a> {
         &self,
         pos: BlockPos,
         fluid: FluidRef,
-        delay: i32,
+        _delay: i32,
         priority: TickPriority,
     ) -> bool {
         let (chunk_x, chunk_z, status) = self.dependency_chunk_for_pos(pos, "schedule fluid tick");
-        let sub_tick_order = self.sub_tick_count.fetch_add(1, Ordering::Relaxed);
         self.with_cached_chunk(chunk_x, chunk_z, status, |chunk| {
-            chunk.schedule_fluid_tick(pos, fluid, delay, priority, sub_tick_order);
+            if chunk.access_mode.allows_writes() {
+                chunk.chunk.schedule_fluid_tick(pos, fluid, priority);
+            }
         });
         true
     }
@@ -553,7 +691,9 @@ impl<'a> WorldGenRegion<'a> {
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
         self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
-            chunk.mark_pos_for_postprocessing(pos);
+            if chunk.access_mode.allows_writes() {
+                chunk.chunk.mark_pos_for_postprocessing(pos);
+            }
         });
     }
 
@@ -568,30 +708,47 @@ impl<'a> WorldGenRegion<'a> {
         let chunk_z = SectionPos::block_to_section_coord(z);
         let local_x = (x & 15) as usize;
         let local_z = (z & 15) as usize;
-        let column_index = local_x + local_z * 16;
-
-        if let Some(height) =
-            self.cached_worldgen_height_at(heightmap_type, chunk_x, chunk_z, column_index)
-        {
-            return height;
-        }
-
         self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
-            chunk.height_at(heightmap_type, local_x, local_z)
+            match chunk.access_mode {
+                // Never copy a Full heightmap into the region cache. Runtime
+                // block changes update the canonical final maps, and vanilla's
+                // read-only imposter delegates each query to the wrapped chunk.
+                WorldGenAccessMode::ReadOnlyFull => {
+                    chunk.full_imposter_height_at(heightmap_type, local_x, local_z)
+                }
+                WorldGenAccessMode::WritableProto => self.cached_proto_height_at(
+                    chunk.chunk,
+                    heightmap_type,
+                    chunk_x,
+                    chunk_z,
+                    local_x + local_z * 16,
+                ),
+            }
         })
     }
 
-    fn cached_worldgen_height_at(
+    fn cached_proto_height_at(
         &self,
+        proto: &Chunk,
         heightmap_type: HeightmapType,
         chunk_x: i32,
         chunk_z: i32,
         column_index: usize,
-    ) -> Option<i32> {
+    ) -> i32 {
         if !CachedWorldgenHeightmaps::supports(heightmap_type) {
-            return None;
+            return proto.generation_height_at(
+                heightmap_type,
+                column_index % 16,
+                column_index / 16,
+            );
         }
-        let cache_index = self.chunk_cache_index(chunk_x, chunk_z)?;
+        let Some(cache_index) = self.chunk_cache_index(chunk_x, chunk_z) else {
+            return proto.generation_height_at(
+                heightmap_type,
+                column_index % 16,
+                column_index / 16,
+            );
+        };
 
         {
             let heightmaps = self.worldgen_heightmaps.borrow();
@@ -599,46 +756,21 @@ impl<'a> WorldGenRegion<'a> {
                 panic!("Worldgen heightmap cache index {cache_index} escaped its storage");
             };
             if let Some(columns) = cached.get(heightmap_type) {
-                return Some(columns[column_index]);
+                return columns[column_index];
             }
         }
 
-        let columns = self.load_worldgen_heightmap_columns(chunk_x, chunk_z, heightmap_type);
+        let columns = Self::proto_heightmap_columns(proto, heightmap_type);
         let height = columns[column_index];
         let mut heightmaps = self.worldgen_heightmaps.borrow_mut();
         let Some(cached) = heightmaps.get_mut(cache_index) else {
             panic!("Worldgen heightmap cache index {cache_index} escaped its storage");
         };
         cached.set(heightmap_type, columns);
-        Some(height)
+        height
     }
 
-    fn load_worldgen_heightmap_columns(
-        &self,
-        chunk_x: i32,
-        chunk_z: i32,
-        heightmap_type: HeightmapType,
-    ) -> Box<[i32; 256]> {
-        self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
-            Self::worldgen_heightmap_columns_from_chunk(chunk, heightmap_type)
-        })
-    }
-
-    fn worldgen_heightmap_columns_from_chunk(
-        chunk: &ChunkAccess,
-        heightmap_type: HeightmapType,
-    ) -> Box<[i32; 256]> {
-        let ChunkAccess::Proto(proto) = chunk else {
-            let mut columns = Box::new([0; 256]);
-            for local_z in 0..16 {
-                for local_x in 0..16 {
-                    columns[local_x + local_z * 16] =
-                        chunk.height_at(heightmap_type, local_x, local_z);
-                }
-            }
-            return columns;
-        };
-
+    fn proto_heightmap_columns(proto: &Chunk, heightmap_type: HeightmapType) -> Box<[i32; 256]> {
         {
             let heightmaps = proto.heightmaps.read();
             if let Some(heightmap) = heightmaps.get(heightmap_type) {
@@ -658,6 +790,17 @@ impl<'a> WorldGenRegion<'a> {
         };
 
         Self::copy_heightmap_columns(heightmap, proto.min_y())
+    }
+
+    fn invalidate_cached_worldgen_heightmaps(&self, chunk_x: i32, chunk_z: i32) {
+        let Some(cache_index) = self.chunk_cache_index(chunk_x, chunk_z) else {
+            return;
+        };
+        let mut heightmaps = self.worldgen_heightmaps.borrow_mut();
+        let Some(cached) = heightmaps.get_mut(cache_index) else {
+            panic!("Worldgen heightmap cache index {cache_index} escaped its storage");
+        };
+        *cached = CachedWorldgenHeightmaps::default();
     }
 
     fn copy_heightmap_columns(heightmap: &Heightmap, min_y: i32) -> Box<[i32; 256]> {
@@ -818,7 +961,11 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         };
 
         let chunk = self.chunk(key.chunk_x, key.chunk_z, key.status);
-        let Some(section) = chunk.guard.sections().sections.get(key.section_index) else {
+        if !chunk.access_mode.allows_writes() {
+            Self::record_ore_write_time(ore_profile, started_at);
+            return false;
+        }
+        let Some(section) = chunk.chunk.sections().sections.get(key.section_index) else {
             panic!(
                 "Worldgen bulk section write at ({}, {}, {}) resolved missing section index {}",
                 pos.x(),
@@ -840,7 +987,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         };
 
         let old_state = Self::set_bulk_block_state(
-            &chunk.guard,
+            chunk.holder,
             &mut section_guard,
             local_x,
             local_y,
@@ -849,7 +996,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         );
         Self::with_ore_profile_ref(ore_profile, OreFeatureStats::record_write);
         if old_state != state {
-            chunk.guard.mark_dirty();
+            chunk.chunk.mark_dirty();
         }
 
         Self::record_ore_write_time(ore_profile, started_at);
@@ -888,7 +1035,11 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             section_index,
         };
         let chunk = self.chunk(chunk_x, chunk_z, status);
-        let Some(section) = chunk.guard.sections().sections.get(section_index) else {
+        if !chunk.access_mode.allows_writes() {
+            Self::record_ore_write_time(ore_profile, started_at);
+            return 0;
+        }
+        let Some(section) = chunk.chunk.sections().sections.get(section_index) else {
             panic!(
                 "Worldgen bulk section write in chunk ({chunk_x}, {chunk_z}) resolved missing section index {section_index}",
             );
@@ -907,7 +1058,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let old_state = section_guard.states.get(local_x, local_y, local_z);
                 if let Some(state) = replacement(old_state) {
                     let old_state = Self::set_bulk_block_state(
-                        &chunk.guard,
+                        chunk.holder,
                         &mut section_guard,
                         local_x,
                         local_y,
@@ -927,7 +1078,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let old_state = section_guard.states.get(local_x, local_y, local_z);
                 if let Some(state) = replacement(old_state) {
                     let old_state = Self::set_bulk_block_state(
-                        &chunk.guard,
+                        chunk.holder,
                         &mut section_guard,
                         local_x,
                         local_y,
@@ -942,7 +1093,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
 
         drop(section_guard);
         if dirty {
-            chunk.guard.mark_dirty();
+            chunk.chunk.mark_dirty();
         }
 
         Self::record_ore_write_time(ore_profile, started_at);
@@ -967,7 +1118,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         let chunk_x = SectionPos::block_to_section_coord(pos.x());
         let chunk_z = SectionPos::block_to_section_coord(pos.z());
         let chunk = self.chunk(chunk_x, chunk_z, ChunkStatus::Empty);
-        let Some(section) = chunk.guard.sections().sections.get(section_index) else {
+        let Some(section) = Self::section_for_read(chunk, section_index) else {
             Self::record_ore_read_time(ore_profile, started_at);
             return air;
         };
@@ -976,7 +1127,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             profile.record_section_read_attempt(chunk_x, chunk_z, section_index);
         });
         let section_guard = if let Some(profile) = ore_profile {
-            if let Some(guard) = section.section.try_read() {
+            if let Some(guard) = section.try_read() {
                 guard
             } else {
                 if let Ok(mut profile) = profile.try_borrow_mut() {
@@ -1006,6 +1157,20 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         state
     }
 
+    /// Resolves the section exposed by vanilla `BulkSectionAccess`.
+    ///
+    /// A read-only `ImposterProtoChunk` exposes its own empty proto sections through
+    /// `getSection`, even though ordinary chunk reads delegate to the wrapped Full chunk.
+    fn section_for_read<'chunk>(
+        chunk: &'chunk CachedWorldGenChunk<'_>,
+        section_index: usize,
+    ) -> Option<&'chunk SectionHolder> {
+        if !chunk.access_mode.allows_writes() {
+            return None;
+        }
+        chunk.chunk.sections().sections.get(section_index)
+    }
+
     /// Writes a block state directly to the containing section.
     ///
     /// This mirrors vanilla `BulkSectionAccess` by skipping heightmaps, neighbor updates,
@@ -1022,7 +1187,11 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         };
 
         let chunk = self.chunk(key.chunk_x, key.chunk_z, key.status);
-        let Some(section) = chunk.guard.sections().sections.get(key.section_index) else {
+        if !chunk.access_mode.allows_writes() {
+            Self::record_ore_write_time(ore_profile, started_at);
+            return true;
+        }
+        let Some(section) = chunk.chunk.sections().sections.get(key.section_index) else {
             panic!(
                 "Worldgen bulk section write at ({}, {}, {}) resolved missing section index {}",
                 pos.x(),
@@ -1034,7 +1203,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
 
         let mut section_guard = Self::ore_section_write_guard(ore_profile, section, key);
         let old_state = Self::set_bulk_block_state(
-            &chunk.guard,
+            chunk.holder,
             &mut section_guard,
             Self::local_coord(pos.x()),
             Self::local_coord(pos.y()),
@@ -1043,7 +1212,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         );
         Self::with_ore_profile_ref(ore_profile, OreFeatureStats::record_write);
         if old_state != state {
-            chunk.guard.mark_dirty();
+            chunk.chunk.mark_dirty();
         }
 
         Self::record_ore_write_time(ore_profile, started_at);
@@ -1065,15 +1234,17 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
     }
 
     fn set_bulk_block_state(
-        chunk: &ChunkAccess,
+        holder: &ChunkHolder,
         section: &mut ChunkSection,
         local_x: usize,
         local_y: usize,
         local_z: usize,
         state: BlockStateId,
     ) -> BlockStateId {
-        if matches!(chunk, ChunkAccess::Proto(proto) if proto.status() < ChunkStatus::InitializeLight)
-        {
+        let Some(status) = holder.published_status() else {
+            panic!("worldgen chunk data cannot lose its published status");
+        };
+        if status < ChunkStatus::InitializeLight {
             return section.set_block_state_for_generation(local_x, local_y, local_z, state);
         }
 
@@ -1085,12 +1256,12 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         ore_profile: Option<&RefCell<OreFeatureStats>>,
         section: &'section SectionHolder,
         key: WritableSectionKey,
-    ) -> RwLockWriteGuard<'section, ChunkSection> {
+    ) -> SectionWriteGuard<'section> {
         Self::with_ore_profile_ref(ore_profile, |profile| {
             profile.record_section_write_attempt(key.chunk_x, key.chunk_z, key.section_index);
         });
         if let Some(profile) = ore_profile {
-            if let Some(guard) = section.section.try_write() {
+            if let Some(guard) = section.try_write() {
                 guard
             } else {
                 if let Ok(mut profile) = profile.try_borrow_mut() {
@@ -1133,12 +1304,14 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         let cache_needs_insert = self.chunks.get(cache_index).is_none_or(Option::is_none);
         if cache_needs_insert {
             self.with_ore_profile(OreFeatureStats::record_chunk_cache_miss);
-            let guard = self.region.chunk(chunk_x, chunk_z, status);
+            let chunk = self.region.chunk(chunk_x, chunk_z, status);
             let Some(slot) = self.chunks.get_mut(cache_index) else {
                 panic!("Worldgen bulk section cache index {cache_index} escaped its storage");
             };
             *slot = Some(CachedWorldGenChunk {
-                guard,
+                access_mode: chunk.access_mode,
+                holder: chunk.holder,
+                chunk: chunk.chunk,
                 verified_status: status,
             });
         } else if self.chunks.get(cache_index).is_some_and(|cached| {
@@ -1147,7 +1320,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 .is_some_and(|cached| status > cached.verified_status)
         }) {
             self.with_ore_profile(OreFeatureStats::record_chunk_status_upgrade);
-            drop(self.region.chunk(chunk_x, chunk_z, status));
+            let _ = self.region.chunk(chunk_x, chunk_z, status);
             let Some(Some(cached)) = self.chunks.get_mut(cache_index) else {
                 panic!("Worldgen bulk section cache lost verified chunk ({chunk_x}, {chunk_z})");
             };
@@ -1245,6 +1418,22 @@ impl LevelReader for WorldGenRegion<'_> {
         self.block_state(pos)
     }
 
+    fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        self.block_entity(pos)
+    }
+
+    fn is_face_sturdy_for(
+        &self,
+        state: BlockStateId,
+        pos: BlockPos,
+        direction: Direction,
+        support_type: SupportType,
+    ) -> bool {
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .is_face_sturdy(state, self, pos, direction, support_type)
+    }
+
     fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
         let sky_light = if self.context.world().dimension_type.has_skylight {
             15_u8.saturating_sub(sky_darkening)
@@ -1300,19 +1489,83 @@ impl LevelAccessor for WorldGenRegion<'_> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use steel_registry::{test_support::init_test_registry, vanilla_blocks};
-    use steel_utils::ChunkPos;
+    use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
 
     use crate::behavior::init_behaviors;
     use crate::chunk::{
-        chunk_access::{ChunkAccess, ChunkStatus},
-        proto_chunk::ProtoChunk,
+        Chunk,
+        chunk_holder::ChunkHolder,
+        chunk_ticket_manager::ChunkTicketLevel,
+        heightmap::{Heightmap, HeightmapType},
         section::{ChunkSection, Sections},
+        status::ChunkStatus,
     };
 
-    use super::{WorldGenBulkSectionAccess, WorldGenRegion};
+    use super::{
+        CachedWorldGenChunk, WorldGenAccessMode, WorldGenBulkSectionAccess, WorldGenChunkRef,
+        WorldGenRegion,
+    };
+
+    fn test_holder() -> ChunkHolder {
+        ChunkHolder::new(
+            ChunkPos::new(0, 0),
+            ChunkTicketLevel::FULL_CHUNK,
+            Some(ChunkTicketLevel::FULL_CHUNK),
+            0,
+            16,
+        )
+    }
+
+    fn published_holder(status: ChunkStatus) -> Arc<ChunkHolder> {
+        let holder = Arc::new(test_holder());
+        holder.insert_chunk(
+            Chunk::new(
+                Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+                ChunkPos::new(0, 0),
+                0,
+                16,
+                Weak::new(),
+            ),
+            status,
+        );
+        holder
+    }
+
+    #[test]
+    fn full_imposter_maps_worldgen_height_queries_to_final_heightmaps() {
+        init_test_registry();
+        let chunk = Chunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let mut worldgen = Heightmap::new(HeightmapType::WorldSurfaceWg, 0, 16);
+        worldgen.set_height(3, 7, 4);
+        let mut final_map = Heightmap::new(HeightmapType::WorldSurface, 0, 16);
+        final_map.set_height(3, 7, 11);
+        {
+            let mut heightmaps = chunk.heightmaps.write();
+            heightmaps.replace(worldgen);
+            heightmaps.replace(final_map);
+        }
+        let _ = chunk.promote_to_full();
+        let holder = test_holder();
+        let view = WorldGenChunkRef {
+            holder: &holder,
+            chunk: &chunk,
+            access_mode: WorldGenAccessMode::ReadOnlyFull,
+        };
+
+        assert_eq!(
+            view.full_imposter_height_at(HeightmapType::WorldSurfaceWg, 3, 7),
+            11
+        );
+    }
 
     #[test]
     fn chessboard_distance_matches_chunk_dependency_radius() {
@@ -1372,24 +1625,46 @@ mod tests {
     }
 
     #[test]
-    fn bulk_write_defers_counts_only_for_pre_light_proto_chunks() {
+    fn bulk_section_reads_use_empty_proto_sections_for_full_imposters() {
         init_test_registry();
-        init_behaviors();
-        let stone = vanilla_blocks::STONE.default_state();
-        let air = vanilla_blocks::AIR.default_state();
-
-        let pre_light_proto = ProtoChunk::new(
+        let chunk = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
             0,
             16,
             Weak::new(),
         );
-        let pre_light_chunk = ChunkAccess::Proto(pre_light_proto);
+        let holder = test_holder();
+
+        let writable = CachedWorldGenChunk {
+            holder: &holder,
+            chunk: &chunk,
+            verified_status: ChunkStatus::Empty,
+            access_mode: WorldGenAccessMode::WritableProto,
+        };
+        let full_imposter = CachedWorldGenChunk {
+            holder: &holder,
+            chunk: &chunk,
+            verified_status: ChunkStatus::Full,
+            access_mode: WorldGenAccessMode::ReadOnlyFull,
+        };
+
+        assert!(WorldGenBulkSectionAccess::section_for_read(&writable, 0).is_some());
+        assert!(WorldGenBulkSectionAccess::section_for_read(&full_imposter, 0).is_none());
+    }
+
+    #[test]
+    fn bulk_write_defers_counts_only_for_pre_light_proto_chunks() {
+        init_test_registry();
+        init_behaviors();
+        let stone = vanilla_blocks::STONE.default_state();
+        let air = vanilla_blocks::AIR.default_state();
+
         let mut pre_light_section = ChunkSection::new_empty();
+        let pre_light_holder = published_holder(ChunkStatus::Empty);
 
         WorldGenBulkSectionAccess::set_bulk_block_state(
-            &pre_light_chunk,
+            &pre_light_holder,
             &mut pre_light_section,
             1,
             2,
@@ -1399,19 +1674,11 @@ mod tests {
 
         assert_eq!(pre_light_section.non_empty_block_count(), 0);
 
-        let initialized_proto = ProtoChunk::new(
-            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
-            ChunkPos::new(0, 0),
-            0,
-            16,
-            Weak::new(),
-        );
-        initialized_proto.set_status(ChunkStatus::InitializeLight);
-        let initialized_chunk = ChunkAccess::Proto(initialized_proto);
         let mut initialized_section = ChunkSection::new_empty();
+        let initialized_holder = published_holder(ChunkStatus::InitializeLight);
 
         WorldGenBulkSectionAccess::set_bulk_block_state(
-            &initialized_chunk,
+            &initialized_holder,
             &mut initialized_section,
             1,
             2,
@@ -1425,7 +1692,7 @@ mod tests {
         initialized_building_section.set_block_state_for_generation(1, 2, 3, stone);
 
         let old_state = WorldGenBulkSectionAccess::set_bulk_block_state(
-            &initialized_chunk,
+            &initialized_holder,
             &mut initialized_building_section,
             4,
             5,
@@ -1435,5 +1702,39 @@ mod tests {
 
         assert_eq!(old_state, air);
         assert_eq!(initialized_building_section.non_empty_block_count(), 2);
+    }
+
+    #[test]
+    fn cached_worldgen_view_observes_holder_status_advancement() {
+        init_test_registry();
+        init_behaviors();
+        let holder = published_holder(ChunkStatus::Features);
+        let Some(chunk) = holder.try_chunk(ChunkStatus::Features) else {
+            panic!("test chunk was not published");
+        };
+        let view = WorldGenChunkRef {
+            holder: &holder,
+            chunk,
+            access_mode: WorldGenAccessMode::WritableProto,
+        };
+
+        holder.finish_generation_status_for_test(ChunkStatus::InitializeLight);
+
+        let stone = vanilla_blocks::STONE.default_state();
+        let old_state = view.chunk.set_block_state_for_generation(
+            view.published_status(),
+            BlockPos::new(1, 2, 3),
+            stone,
+            UpdateFlags::UPDATE_NONE,
+        );
+        assert!(old_state.is_some());
+        assert_eq!(
+            chunk.sections().sections[0].read().non_empty_block_count(),
+            1
+        );
+
+        let mut section = chunk.sections().sections[0].write();
+        WorldGenBulkSectionAccess::set_bulk_block_state(&holder, &mut section, 4, 5, 6, stone);
+        assert_eq!(section.non_empty_block_count(), 2);
     }
 }

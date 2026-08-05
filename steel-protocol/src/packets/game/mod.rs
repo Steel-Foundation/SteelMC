@@ -7,8 +7,6 @@ mod c_block_event;
 mod c_block_update;
 mod c_bundle_delimiter;
 mod c_change_difficulty;
-mod c_chunk_batch_finished;
-mod c_chunk_batch_start;
 mod c_command_suggestions;
 mod c_commands;
 mod c_container_close;
@@ -17,24 +15,18 @@ mod c_container_set_data;
 mod c_container_set_slot;
 mod c_cooldown;
 mod c_damage_event;
-mod c_disguised_chat;
 mod c_entity_event;
 mod c_entity_position_sync;
-mod c_forget_level_chunk;
 mod c_game_event;
 mod c_hurt_animation;
-mod c_initialize_border;
-mod c_level_chunk_with_light;
 mod c_level_event;
 mod c_level_particles;
-mod c_light_update;
 mod c_login;
 mod c_move_entity;
 mod c_move_vehicle;
 mod c_open_screen;
 mod c_open_sign_editor;
 mod c_player_abilities;
-mod c_player_chat;
 mod c_player_combat_kill;
 mod c_player_info_update;
 mod c_player_look_at;
@@ -45,14 +37,7 @@ mod c_remove_player_info;
 mod c_respawn;
 mod c_rotate_head;
 mod c_section_blocks_update;
-mod c_set_border_center;
-mod c_set_border_lerp_size;
-mod c_set_border_size;
-mod c_set_border_warning_delay;
-mod c_set_border_warning_distance;
 mod c_set_camera;
-mod c_set_chunk_cache_radius;
-mod c_set_chunk_center;
 mod c_set_cursor_item;
 mod c_set_default_spawn_position;
 mod c_set_entity_data;
@@ -63,10 +48,9 @@ mod c_set_experience;
 mod c_set_health;
 mod c_set_held_slot;
 mod c_set_passengers;
+mod c_set_player_inventory;
 mod c_set_time;
 mod c_sound;
-mod c_system_chat;
-mod c_system_chat_message;
 mod c_tab_list;
 mod c_take_item_entity;
 mod c_teleport_entity;
@@ -74,17 +58,12 @@ mod c_ticking_state;
 mod c_ticking_step;
 mod c_update_attributes;
 mod c_update_mob_effect;
-mod chat_session_data;
+mod chat;
+mod chunk;
 mod s_accept_teleportation;
 mod s_attack;
 mod s_change_difficulty;
 mod s_change_game_mode;
-mod s_chat;
-mod s_chat_ack;
-mod s_chat_command;
-mod s_chat_command_signed;
-mod s_chat_session_update;
-mod s_chunk_batch_received;
 mod s_client_command;
 mod s_client_tick_end;
 mod s_command_suggestion;
@@ -101,6 +80,7 @@ mod s_player_action;
 mod s_player_command;
 mod s_player_input;
 mod s_player_load;
+mod s_rename_item;
 mod s_set_carried_item;
 mod s_set_creative_mode_slot;
 mod s_set_held_item;
@@ -109,6 +89,7 @@ mod s_spectator_action;
 mod s_swing;
 mod s_use_item;
 mod s_use_item_on;
+mod world_border;
 
 pub use c_add_entity::{CAddEntity, write_lp_vec3};
 pub use c_animate::{AnimateAction, CAnimate};
@@ -119,8 +100,6 @@ pub use c_block_event::CBlockEvent;
 pub use c_block_update::CBlockUpdate;
 pub use c_bundle_delimiter::CBundleDelimiter;
 pub use c_change_difficulty::CChangeDifficulty;
-pub use c_chunk_batch_finished::CChunkBatchFinished;
-pub use c_chunk_batch_start::CChunkBatchStart;
 pub use c_command_suggestions::{CCommandSuggestions, SuggestionEntry};
 pub use c_commands::{
     ArgumentStringTypeBehavior, ArgumentType, CCommands, CommandNode, CommandNodeInfo,
@@ -132,21 +111,13 @@ pub use c_container_set_data::CContainerSetData;
 pub use c_container_set_slot::CContainerSetSlot;
 pub use c_cooldown::CCooldown;
 pub use c_damage_event::CDamageEvent;
-pub use c_disguised_chat::CDisguisedChat;
 pub use c_entity_event::CEntityEvent;
 pub use c_entity_position_sync::CEntityPositionSync;
-pub use c_forget_level_chunk::CForgetLevelChunk;
 pub use c_game_event::CGameEvent;
 pub use c_game_event::GameEventType;
 pub use c_hurt_animation::CHurtAnimation;
-pub use c_initialize_border::CInitializeBorder;
-pub use c_level_chunk_with_light::{
-    BlockEntityInfo, CLevelChunkWithLight, ChunkPacketData, HeightmapType, Heightmaps,
-    LightUpdatePacketData,
-};
 pub use c_level_event::CLevelEvent;
 pub use c_level_particles::CLevelParticles;
-pub use c_light_update::CLightUpdate;
 pub use c_login::CLogin;
 pub use c_login::CommonPlayerSpawnInfo;
 pub use c_move_entity::{
@@ -156,7 +127,6 @@ pub use c_move_vehicle::CMoveVehicle;
 pub use c_open_screen::COpenScreen;
 pub use c_open_sign_editor::COpenSignEditor;
 pub use c_player_abilities::{CPlayerAbilities, ability_flags};
-pub use c_player_chat::{CPlayerChat, ChatTypeBound, FilterType, PreviousMessage};
 pub use c_player_combat_kill::CPlayerCombatKill;
 pub use c_player_info_update::{
     CPlayerInfoUpdate, PLAYER_INFO_INIT_ACTIONS, PlayerInfoAction, PlayerInfoEntry,
@@ -169,14 +139,7 @@ pub use c_remove_player_info::CRemovePlayerInfo;
 pub use c_respawn::CRespawn;
 pub use c_rotate_head::CRotateHead;
 pub use c_section_blocks_update::{BlockChange, CSectionBlocksUpdate};
-pub use c_set_border_center::CSetBorderCenter;
-pub use c_set_border_lerp_size::CSetBorderLerpSize;
-pub use c_set_border_size::CSetBorderSize;
-pub use c_set_border_warning_delay::CSetBorderWarningDelay;
-pub use c_set_border_warning_distance::CSetBorderWarningDistance;
 pub use c_set_camera::CSetCamera;
-pub use c_set_chunk_cache_radius::CSetChunkCacheRadius;
-pub use c_set_chunk_center::CSetChunkCenter;
 pub use c_set_cursor_item::CSetCursorItem;
 pub use c_set_default_spawn_position::CSetDefaultSpawnPosition;
 pub use c_set_entity_data::CSetEntityData;
@@ -187,10 +150,9 @@ pub use c_set_experience::CSetExperience;
 pub use c_set_health::CSetHealth;
 pub use c_set_held_slot::CSetHeldSlot;
 pub use c_set_passengers::CSetPassengers;
+pub use c_set_player_inventory::CSetPlayerInventory;
 pub use c_set_time::CSetTime;
 pub use c_sound::{CSound, SoundSource};
-pub use c_system_chat::CSystemChat;
-pub use c_system_chat_message::CSystemChatMessage;
 pub use c_tab_list::CTabList;
 pub use c_take_item_entity::CTakeItemEntity;
 pub use c_teleport_entity::CTeleportEntity;
@@ -200,17 +162,20 @@ pub use c_update_attributes::{
     AttributeModifierData, AttributeModifierOperation, AttributeSnapshot, CUpdateAttributes,
 };
 pub use c_update_mob_effect::{CUpdateMobEffect, MobEffectPacketFlags};
-pub use chat_session_data::ProtocolRemoteChatSessionData;
+pub use chat::{
+    ArgumentSignature, CDisguisedChat, CPlayerChat, CSystemChat, ChatTypeBound, FilterType,
+    LastSeenMessagesUpdate, PreviousMessage, ProtocolRemoteChatSessionData, SChat, SChatAck,
+    SChatCommand, SChatCommandSigned, SChatSessionUpdate,
+};
+pub use chunk::{
+    BlockEntityInfo, CChunkBatchFinished, CChunkBatchStart, CForgetLevelChunk,
+    CLevelChunkWithLight, CLightUpdate, CSetChunkCacheRadius, CSetChunkCenter, ChunkPacketData,
+    HeightmapType, Heightmaps, LightUpdatePacketData, SChunkBatchReceived,
+};
 pub use s_accept_teleportation::SAcceptTeleportation;
 pub use s_attack::SAttack;
 pub use s_change_difficulty::SChangeDifficulty;
 pub use s_change_game_mode::SChangeGameMode;
-pub use s_chat::SChat;
-pub use s_chat_ack::SChatAck;
-pub use s_chat_command::SChatCommand;
-pub use s_chat_command_signed::{ArgumentSignature, LastSeenMessagesUpdate, SChatCommandSigned};
-pub use s_chat_session_update::SChatSessionUpdate;
-pub use s_chunk_batch_received::SChunkBatchReceived;
 pub use s_client_command::{ClientCommandAction, SClientCommand};
 pub use s_client_tick_end::SClientTickEnd;
 pub use s_command_suggestion::SCommandSuggestion;
@@ -229,6 +194,7 @@ pub use s_player_action::{PlayerAction, SPlayerAction};
 pub use s_player_command::{PlayerCommandAction, SPlayerCommand};
 pub use s_player_input::SPlayerInput;
 pub use s_player_load::SPlayerLoad;
+pub use s_rename_item::SRenameItem;
 pub use s_set_carried_item::SSetCarriedItem;
 pub use s_set_creative_mode_slot::SSetCreativeModeSlot;
 pub use s_set_held_item::SSetHeldItem;
@@ -237,3 +203,7 @@ pub use s_spectator_action::SSpectatorAction;
 pub use s_swing::SSwing;
 pub use s_use_item::SUseItem;
 pub use s_use_item_on::SUseItemOn;
+pub use world_border::{
+    CInitializeBorder, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize,
+    CSetBorderWarningDelay, CSetBorderWarningDistance,
+};

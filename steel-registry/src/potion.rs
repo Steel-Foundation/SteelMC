@@ -3,6 +3,7 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
+use crate::RegistryTags;
 use crate::mob_effect::MobEffectRef;
 
 /// One base effect supplied by a registered potion.
@@ -17,13 +18,19 @@ pub struct PotionEffect {
 #[derive(Debug)]
 pub struct Potion {
     pub key: Identifier,
+    /// Translation-key suffix used for item names.
+    pub name: &'static str,
     pub effects: &'static [PotionEffect],
 }
 
 impl Potion {
     #[must_use]
-    pub const fn new(key: Identifier, effects: &'static [PotionEffect]) -> Self {
-        Self { key, effects }
+    pub const fn new(
+        key: Identifier,
+        name: &'static str,
+        effects: &'static [PotionEffect],
+    ) -> Self {
+        Self { key, name, effects }
     }
 }
 
@@ -32,7 +39,7 @@ pub type PotionRef = &'static Potion;
 pub struct PotionRegistry {
     potions_by_id: Vec<PotionRef>,
     potions_by_key: FxHashMap<Identifier, usize>,
-    tags: FxHashMap<Identifier, Vec<Identifier>>,
+    tags: RegistryTags,
     allows_registering: bool,
 }
 
@@ -42,7 +49,7 @@ impl PotionRegistry {
         Self {
             potions_by_id: Vec::new(),
             potions_by_key: FxHashMap::default(),
-            tags: FxHashMap::default(),
+            tags: RegistryTags::default(),
             allows_registering: true,
         }
     }
@@ -70,7 +77,12 @@ mod tests {
     use steel_utils::Identifier;
 
     use crate::test_support::init_test_registry;
-    use crate::{REGISTRY, RegistryExt, TaggedRegistryExt};
+    use crate::{REGISTRY, RegistryExt, TaggedRegistryExt, potion::Potion};
+
+    static FIRST_DUPLICATE: Potion =
+        Potion::new(Identifier::vanilla_static("duplicate"), "duplicate", &[]);
+    static SECOND_DUPLICATE: Potion =
+        Potion::new(Identifier::vanilla_static("duplicate"), "duplicate", &[]);
 
     #[test]
     fn extracted_potions_follow_vanilla_ids_and_effects() {
@@ -80,6 +92,11 @@ mod tests {
             REGISTRY.potions.by_id(0).map(|potion| &potion.key),
             Some(&Identifier::vanilla_static("water"))
         );
+        let long_swiftness = REGISTRY
+            .potions
+            .by_key(&Identifier::vanilla_static("long_swiftness"))
+            .expect("long swiftness should be registered");
+        assert_eq!(long_swiftness.name, "swiftness");
         let turtle_master = REGISTRY
             .potions
             .by_key(&Identifier::vanilla_static("turtle_master"))
@@ -100,5 +117,23 @@ mod tests {
         init_test_registry();
         let tradeable = Identifier::vanilla_static("tradeable");
         assert!(REGISTRY.potions.get_tag(&tradeable).is_some());
+    }
+
+    #[test]
+    fn tag_membership_and_iteration_follow_duplicate_key_replacement() {
+        let mut registry = super::PotionRegistry::new();
+        let tag = Identifier::vanilla_static("test_tag");
+        registry.register(&FIRST_DUPLICATE);
+        registry.register_tag(tag.clone(), &["duplicate"]);
+        registry.register(&SECOND_DUPLICATE);
+
+        assert!(registry.is_in_tag(&FIRST_DUPLICATE, &tag));
+        assert!(registry.is_in_tag(&SECOND_DUPLICATE, &tag));
+        assert!(
+            registry
+                .iter_tag(&tag)
+                .next()
+                .is_some_and(|entry| std::ptr::eq(entry, &raw const SECOND_DUPLICATE))
+        );
     }
 }

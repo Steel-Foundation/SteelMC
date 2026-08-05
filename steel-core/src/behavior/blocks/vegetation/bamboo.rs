@@ -14,10 +14,7 @@ use steel_registry::{
 use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::{
-    behavior::{
-        BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt,
-        blocks::vegetation::bonemealable::Bonemealable,
-    },
+    behavior::{BlockBehavior, BlockPlaceContext, blocks::vegetation::bonemealable::Bonemealable},
     world::{LevelReader, ScheduledTickAccess, World},
 };
 
@@ -224,10 +221,6 @@ impl BlockBehavior for BambooStalkBlock {
 
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         Self::can_survive(world, pos)
-    }
-
-    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
-        state.get_value(&BlockStateProperties::STAGE) == 0
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

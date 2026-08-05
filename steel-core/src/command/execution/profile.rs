@@ -40,7 +40,7 @@ impl GameProfileArgument {
     ) -> Result<Vec<ResolvedGameProfile>, CommandSyntaxError> {
         match self {
             Self::Selector(selector) => {
-                let players = selector.find_players(source)?;
+                let players = selector.find_online_profile_players(source)?;
                 if players.is_empty() {
                     return Err(CommandSyntaxError::dynamic(TextComponent::from(
                         &translations::ARGUMENT_ENTITY_NOTFOUND_PLAYER,

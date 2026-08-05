@@ -4,4 +4,4 @@
 //! for play-state packet handling. This module provides re-exports and
 //! helper utilities for the connection upgrade process.
 
-pub use steel_core::player::networking::JavaConnection;
+pub use steel_core::player::connection::JavaConnection;

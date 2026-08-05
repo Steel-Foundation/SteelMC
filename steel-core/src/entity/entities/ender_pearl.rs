@@ -15,7 +15,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_macros::{entity_behavior, entity_impl};
+use steel_macros::entity_behavior;
 use steel_protocol::packets::game::{RelativeMovement, SoundSource};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
@@ -210,7 +210,6 @@ impl EnderPearlEntity {
     }
 }
 
-#[entity_impl(class(projectile))]
 impl Entity for EnderPearlEntity {
     fn base(&self) -> &EntityBase {
         &self.base

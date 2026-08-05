@@ -5,12 +5,13 @@ use std::sync::Arc;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::BlockPos;
+use steel_utils::locks::Shared;
 use steel_utils::types::InteractionHand;
 
 use crate::behavior::BlockStateBehaviorExt;
 use crate::entity::Entity;
 use crate::fluid::FluidStateExt;
-use crate::inventory::lock::{ContainerLockGuard, ContainerRef, SyncPlayerInv};
+use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;
 use crate::world::World;
@@ -304,10 +305,12 @@ impl<'a> BlockPlaceContext<'a> {
     /// This considers both yaw and pitch to determine the nearest direction
     /// among all 6 directions (UP, DOWN, NORTH, SOUTH, EAST, WEST).
     ///
-    /// Based on Java's `Direction.orderedByNearest(Entity)[0]`.
+    /// Based on Java's `Direction.orderedByNearest(Entity)[0]`. Unlike
+    /// [`Self::get_nearest_looking_directions`], this does not reorder around
+    /// the clicked face when placing beside a non-replaceable block.
     #[must_use]
     pub fn get_nearest_looking_direction(&self) -> Direction {
-        self.get_nearest_looking_directions()[0]
+        self.source.orientation.nearest_looking_direction()
     }
 
     /// Returns the vertical direction the player is looking toward.
@@ -381,6 +384,13 @@ pub enum PlacementOrientation {
 }
 
 impl PlacementOrientation {
+    fn nearest_looking_direction(self) -> Direction {
+        match self {
+            Self::Player { rotation, pitch } => Direction::ordered_by_nearest(rotation, pitch)[0],
+            Self::Directional { .. } => Direction::Down,
+        }
+    }
+
     fn horizontal_direction(self) -> Direction {
         match self {
             Self::Player { rotation, .. } => Direction::from_yaw(rotation),
@@ -495,13 +505,16 @@ pub struct PlacementSource<'a> {
 impl<'a> PlacementSource<'a> {
     /// Creates a placement source backed by a player's live hand.
     #[must_use]
-    pub fn player_hand(player: &'a Player, inv: InventoryAccess) -> Self {
+    pub fn player_hand(player: &'a Player, inv: &InventoryAccess) -> Self {
         let (rotation, pitch) = player.rotation();
         let hand = inv.hand;
         Self {
             player: Some(player),
             hand,
-            item: PlacementItemSource::PlayerHand(inv),
+            item: PlacementItemSource::PlayerHand(InventoryAccess::new(
+                Arc::clone(&inv.inventory),
+                hand,
+            )),
             orientation: PlacementOrientation::Player { rotation, pitch },
             is_secondary_use_active: player.is_secondary_use_active(),
         }
@@ -561,20 +574,20 @@ impl<'a> PlacementSource<'a> {
 /// through block behavior, world mutation, or menu opening.
 #[derive(Clone)]
 pub struct InventoryAccess {
-    inventory: SyncPlayerInv,
+    inventory: Shared<PlayerInventory>,
     hand: InteractionHand,
 }
 
 impl InventoryAccess {
     /// Creates a new `InventoryAccess` instance.
-    pub const fn new(inventory: SyncPlayerInv, hand: InteractionHand) -> Self {
+    pub const fn new(inventory: Shared<PlayerInventory>, hand: InteractionHand) -> Self {
         Self { inventory, hand }
     }
 
     /// Runs `f` with mutable access to the item in the player's hand.
     pub fn with_item<R>(&self, f: impl FnOnce(&mut ItemStack) -> R) -> R {
         let mut inventory = self.inventory.lock();
-        f(inventory.get_item_in_hand_mut(self.hand))
+        inventory.mutate_item_in_hand(self.hand, f)
     }
 
     /// Runs `f` with mutable access to the player's inventory.
@@ -620,7 +633,7 @@ impl<'a> UseOnContext<'a> {
         hand: InteractionHand,
         hit_result: BlockHitResult,
         world: &'a Arc<World>,
-        inventory: SyncPlayerInv,
+        inventory: Shared<PlayerInventory>,
     ) -> Self {
         Self {
             player,
@@ -636,7 +649,7 @@ impl<'a> UseOnContext<'a> {
     pub fn build_place_context(&self) -> BlockPlaceContext<'a> {
         BlockPlaceContext::new(
             self.world,
-            PlacementSource::player_hand(self.player, self.inv.clone()),
+            PlacementSource::player_hand(self.player, &self.inv),
             &self.hit_result,
         )
     }
@@ -664,7 +677,7 @@ impl<'a> UseItemContext<'a> {
         player: &'a Player,
         hand: InteractionHand,
         world: &'a Arc<World>,
-        inventory: SyncPlayerInv,
+        inventory: Shared<PlayerInventory>,
     ) -> Self {
         Self {
             player,
@@ -677,7 +690,7 @@ impl<'a> UseItemContext<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::sync::Arc;
 
     use steel_registry::data_components::vanilla_components::BLOCK_STATE;
     use steel_registry::test_support::init_test_registry;
@@ -704,7 +717,7 @@ mod tests {
     fn player_hand_source_reads_current_components_and_mutates_the_hand() {
         init_test_registry();
 
-        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new(Weak::new())));
+        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
         inventory
             .lock()
             .set_item(0, ItemStack::with_count(&vanilla_items::LIGHT, 2));
@@ -736,7 +749,7 @@ mod tests {
         init_test_registry();
         init_behaviors();
 
-        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new(Weak::new())));
+        let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
         inventory
             .lock()
             .set_item(0, ItemStack::new(&vanilla_items::STONE));
@@ -855,5 +868,36 @@ mod tests {
                 Direction::East,
             ]
         );
+    }
+
+    #[test]
+    fn singular_look_direction_is_not_reordered_around_clicked_face() {
+        init_test_registry();
+        init_behaviors();
+
+        let mut stack = ItemStack::new(&vanilla_items::PISTON);
+        let source = PlacementSource::direct(
+            None,
+            InteractionHand::MainHand,
+            &mut stack,
+            PlacementOrientation::Player {
+                rotation: 0.0,
+                pitch: 80.0,
+            },
+            false,
+        );
+        let hit_result = BlockHitResult {
+            location: DVec3::ZERO,
+            direction: Direction::East,
+            block_pos: BlockPos::new(10, 80, 10),
+            miss: false,
+            inside: false,
+            world_border_hit: false,
+        };
+        let mut context = BlockPlaceContext::new(test_world(), source, &hit_result);
+        context.replaces_clicked_block = false;
+
+        assert_eq!(context.get_nearest_looking_direction(), Direction::Down);
+        assert_eq!(context.get_nearest_looking_directions()[0], Direction::West);
     }
 }

@@ -1,10 +1,9 @@
 //! This module contains the implementation of the world's entity-related methods.
-use std::sync::Arc;
+use std::{ptr, sync::Arc};
 
 use steel_protocol::packets::game::{CGameEvent, GameEventType};
 use steel_registry::vanilla_entities;
 use steel_utils::ChunkPos;
-use tokio::time::Instant;
 
 use crate::{
     entity::{
@@ -13,11 +12,70 @@ use crate::{
     },
     player::connection::NetworkConnection,
     player::player_data::PersistentPlayerData,
-    player::{Player, ResetReason},
+    player::player_inventory::MenuRemovalStatus,
+    player::{DomainResidenceToken, Player, ResetReason},
     world::World,
 };
 
 impl World {
+    /// Returns whether this exact player is registered in this world.
+    #[must_use]
+    pub(crate) fn contains_player(&self, player: &Player) -> bool {
+        self.players
+            .get_by_entity_id(player.id())
+            .is_some_and(|registered| ptr::eq(registered.as_ref(), player))
+    }
+
+    fn loaded_world_memberships(player: &Arc<Player>) -> Vec<Arc<World>> {
+        player.server.upgrade().map_or_else(Vec::new, |server| {
+            server
+                .worlds
+                .values()
+                .filter(|world| world.contains_player(player))
+                .cloned()
+                .collect()
+        })
+    }
+
+    fn reject_duplicate_player_membership(
+        player: &Arc<Player>,
+        target_world: &Arc<World>,
+        operation: &str,
+    ) -> bool {
+        let mut memberships = Self::loaded_world_memberships(player);
+        if target_world.contains_player(player)
+            && !memberships
+                .iter()
+                .any(|world| Arc::ptr_eq(world, target_world))
+        {
+            memberships.push(Arc::clone(target_world));
+        }
+        if memberships.is_empty() {
+            return false;
+        }
+
+        tracing::error!(
+            player = %player.gameprofile.name,
+            target_world = %target_world.key,
+            membership_count = memberships.len(),
+            operation,
+            "Refusing to register a player that already belongs to a loaded world"
+        );
+        player.connection.close();
+        for world in memberships {
+            world.remove_player_for_world_change(player);
+        }
+        true
+    }
+
+    fn take_player_for_removal(&self, player: &Arc<Player>) -> Option<Arc<Player>> {
+        if !self.contains_player(player) {
+            return None;
+        }
+        self.chunk_map.remove_player(player);
+        self.players.remove_player_sync(player)
+    }
+
     fn attach_player_entity_callback(self: &Arc<Self>, player: &Arc<Player>) {
         let callback = Arc::new(PlayerEntityCallback::new(player.id(), Arc::downgrade(self)));
         player.set_level_callback(callback);
@@ -85,6 +143,9 @@ impl World {
     }
 
     pub(crate) fn add_respawned_player(self: &Arc<Self>, player: Arc<Player>) -> bool {
+        if Self::reject_duplicate_player_membership(&player, self, "respawn") {
+            return false;
+        }
         if !self.players.insert(player.clone()) {
             player.connection.close();
             return false;
@@ -98,13 +159,26 @@ impl World {
         true
     }
 
-    /// Removes a player from the world.
-    pub async fn remove_player(self: &Arc<Self>, player: Arc<Player>) {
-        let Some(player) = self.players.remove_player(&player).await else {
-            if player.has_won_game() {
-                self.remove_detached_end_credits_player(player).await;
-            }
-            return;
+    /// Detaches a disconnecting player from live world state and snapshots it.
+    ///
+    /// Persistence happens asynchronously after the server's pre-tick phase completes.
+    pub(crate) fn detach_player_for_disconnect(
+        self: &Arc<Self>,
+        player: Arc<Player>,
+    ) -> (Arc<Player>, String, PersistentPlayerData) {
+        assert_eq!(
+            player.remove_all_menus(),
+            MenuRemovalStatus::Complete,
+            "disconnect menu removal must run at the packet-processing safe point"
+        );
+
+        let Some(player) = self.take_player_for_removal(&player) else {
+            // End credits and failed target admission deliberately have no live
+            // world membership but still need one authoritative disconnect save.
+            let domain = self.domain().to_owned();
+            let player_data = PersistentPlayerData::from_player(&player);
+            player.store_ender_pearls_with_player();
+            return (player, domain, player_data);
         };
         let entity_id = player.id();
         let domain = self.domain().to_owned();
@@ -118,39 +192,8 @@ impl World {
         self.entity_tracker().on_player_leave(entity_id);
 
         self.player_area_map.on_player_leave(&player);
-        self.chunk_map.remove_player(&player);
 
-        let start = Instant::now();
-
-        // Save after world indexes are cleared so a fast reconnect cannot collide
-        // with this player's stale entity ID/UUID cache entries.
-        player
-            .server()
-            .remove_online_player_after_disconnect(player.clone(), domain, player_data)
-            .await;
-        log::info!(
-            "Player {} removed in {:?}",
-            player.gameprofile.id,
-            start.elapsed()
-        );
-    }
-
-    async fn remove_detached_end_credits_player(self: &Arc<Self>, player: Arc<Player>) {
-        let domain = self.domain().to_owned();
-        let player_data = PersistentPlayerData::from_player(&player);
-        let start = Instant::now();
-
-        player.store_ender_pearls_with_player();
-
-        player
-            .server()
-            .remove_online_player_after_disconnect(player.clone(), domain, player_data)
-            .await;
-        log::info!(
-            "Detached End credits player {} removed in {:?}",
-            player.gameprofile.id,
-            start.elapsed()
-        );
+        (player, domain, player_data)
     }
 
     /// Removes a player from the world during a world change.
@@ -158,7 +201,7 @@ impl World {
     /// Unlike `remove_player`, this is synchronous and skips player data saving and tab list
     /// removal — the player stays in the global tab list since they are only switching worlds.
     pub(crate) fn remove_player_for_world_change(self: &Arc<Self>, player: &Arc<Player>) {
-        let Some(player) = self.players.remove_player_sync(player) else {
+        let Some(player) = self.take_player_for_removal(player) else {
             return;
         };
         let entity_id = player.id();
@@ -168,23 +211,24 @@ impl World {
         self.entity_tracker().on_player_leave(entity_id);
         self.player_area_map.on_player_leave(&player);
         // Note: no CRemovePlayerInfo — player stays in the global tab list
-        self.chunk_map.remove_player(&player);
     }
 
-    /// Removes a player during a domain switch after the caller has saved
-    /// the player's current-domain data.
-    pub(crate) fn remove_player_for_domain_switch(self: &Arc<Self>, player: &Arc<Player>) {
-        let Some(player) = self.players.remove_player_sync(player) else {
-            return;
-        };
+    /// Detaches a player for a domain switch and returns its persistence snapshot.
+    pub(crate) fn detach_player_for_domain_switch(
+        self: &Arc<Self>,
+        player: &Arc<Player>,
+    ) -> Option<(PersistentPlayerData, DomainResidenceToken)> {
+        let player = self.take_player_for_removal(player)?;
         let entity_id = player.id();
+        let player_data = PersistentPlayerData::from_player(&player);
 
         self.unride_player_for_removal(&player, true);
         player.store_ender_pearls_with_player();
         self.unregister_player_entity(&player);
         self.entity_tracker().on_player_leave(entity_id);
         self.player_area_map.on_player_leave(&player);
-        self.chunk_map.remove_player(&player);
+        let residence_token = player.advance_domain_residence();
+        Some((player_data, residence_token))
     }
 
     /// Adds a player to the world.
@@ -194,6 +238,9 @@ impl World {
     /// clients' tab lists and the entity tracker handles spawning as chunks load.
     #[must_use]
     pub(crate) fn add_player(self: &Arc<Self>, player: Arc<Player>, _reason: ResetReason) -> bool {
+        if Self::reject_duplicate_player_membership(&player, self, "world change") {
+            return false;
+        }
         if !self.players.insert(player.clone()) {
             player.connection.close();
             return false;

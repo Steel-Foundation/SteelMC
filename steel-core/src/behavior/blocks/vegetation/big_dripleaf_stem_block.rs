@@ -8,9 +8,9 @@ use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
-use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::blocks::BigDripleafBlock;
 use crate::behavior::blocks::vegetation::bonemealable::BonemealAction;
+use crate::behavior::blocks::vegetation::get_top_connected_block;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{block::BlockBehavior, blocks::vegetation::bonemealable::Bonemealable};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
@@ -24,7 +24,6 @@ const FACING: EnumProperty<Direction> = BlockStateProperties::FACING;
 ///
 /// Below must be stem or in `SUPPORTS_BIG_DRIPLEAF`; above must be stem or big
 /// dripleaf head.
-// TODO: Implement scheduled break on shape update and tick.
 #[block_behavior]
 pub struct BigDripleafStemBlock {
     block: BlockRef,
@@ -51,31 +50,6 @@ impl BigDripleafStemBlock {
             )
             .set_value(&FACING, facing);
         world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL)
-    }
-    fn get_top_connected_block(
-        world: &dyn LevelReader,
-        pos: BlockPos,
-        body_block: BlockRef,
-        growth_direction: Direction,
-        head_block: BlockRef,
-    ) -> Option<BlockPos> {
-        let mut forward_pos = pos;
-        let mut forward_state;
-
-        loop {
-            forward_pos = forward_pos.relative(growth_direction);
-            forward_state = world.get_block_state(forward_pos);
-
-            if forward_state.get_block() != body_block {
-                break;
-            }
-        }
-
-        if forward_state.get_block() == head_block {
-            Some(forward_pos)
-        } else {
-            None
-        }
     }
 }
 
@@ -137,7 +111,7 @@ impl Bonemealable for BigDripleafStemBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        let head_pos = Self::get_top_connected_block(
+        let head_pos = get_top_connected_block(
             world,
             pos,
             self.block,
@@ -150,16 +124,6 @@ impl Bonemealable for BigDripleafStemBlock {
         }
     }
 
-    fn is_bonemeal_success(
-        &self,
-        _state: BlockStateId,
-        _world: &Arc<World>,
-        _rng: &mut dyn Rng,
-        _pos: BlockPos,
-    ) -> bool {
-        true
-    }
-
     fn perform_bonemeal(
         &self,
         state: BlockStateId,
@@ -167,7 +131,7 @@ impl Bonemealable for BigDripleafStemBlock {
         _rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        let forward_pos = Self::get_top_connected_block(
+        let forward_pos = get_top_connected_block(
             world,
             pos,
             self.block,
