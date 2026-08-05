@@ -63,7 +63,6 @@ mod seagrass_block;
 mod segmentable_block;
 mod short_dry_grass_block;
 mod small_dripleaf_block;
-mod snow_layer_block;
 mod spore_blossom_block;
 mod sugar_cane;
 mod sweet_berry_bush;
@@ -140,7 +139,6 @@ pub use sea_pickle_block::SeaPickleBlock;
 pub use seagrass_block::SeagrassBlock;
 pub use short_dry_grass_block::ShortDryGrassBlock;
 pub use small_dripleaf_block::SmallDripleafBlock;
-pub use snow_layer_block::SnowLayerBlock;
 pub use spore_blossom_block::SporeBlossomBlock;
 pub use sugar_cane::SugarCaneBlock;
 pub use sweet_berry_bush::SweetBerryBushBlock;
@@ -463,10 +461,13 @@ pub(super) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
     {
         return false;
     }
-
-    attached_state.get_block() == &vanilla_blocks::KELP
-        || attached_state.get_block() == &vanilla_blocks::KELP_PLANT
-        || world.is_face_sturdy(attached_state, attached_pos, Direction::Up)
+    growing_plant_can_survive(
+        world,
+        pos,
+        Direction::Up,
+        &vanilla_blocks::KELP,
+        &vanilla_blocks::KELP_PLANT,
+    )
 }
 
 #[cfg(test)]
