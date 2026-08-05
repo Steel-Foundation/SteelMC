@@ -141,8 +141,7 @@ impl BlockBehavior for FenceGateBlock {
         if new_state.get_value(&OPEN) {
             new_state = new_state.set_value(&OPEN, false);
         } else {
-            let (yaw, _) = player.rotation();
-            let player_direction = Direction::from_yaw(yaw);
+            let player_direction = player.direction_yaw();
             // Re-face the gate toward the player if they opened it from behind.
             if new_state.get_value(&FACING) == player_direction.opposite() {
                 new_state = new_state.set_value(&FACING, player_direction);

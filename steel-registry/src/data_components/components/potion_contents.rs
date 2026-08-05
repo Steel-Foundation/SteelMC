@@ -70,6 +70,11 @@ impl PotionContents {
         self.custom_name.as_deref()
     }
 
+    #[must_use]
+    pub fn is(&self, potion: &Potion) -> bool {
+        self.potion.is_some_and(|p| p.value().key == potion.key) && self.custom_effects.is_empty()
+    }
+
     fn to_nbt_tag_ref(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
         if let Some(potion) = self.potion {
