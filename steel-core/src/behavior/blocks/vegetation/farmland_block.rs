@@ -6,16 +6,14 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::{vanilla_blocks, vanilla_game_events, vanilla_game_rules};
+use steel_registry::{vanilla_blocks, vanilla_game_rules};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::behavior::block::{
-    BlockBehavior, EntityFallDamage, EntityFallOnContext, push_entities_up,
-};
+use crate::behavior::block::{BlockBehavior, EntityFallDamage, EntityFallOnContext};
 use crate::behavior::context::BlockPlaceContext;
-use crate::entity::Entity;
 use crate::world::World;
-use crate::world::game_event::GameEventContext;
+
+use super::turn_to_dirt;
 
 /// Maximum moisture level for farmland.
 const MAX_MOISTURE: u8 = 7;
@@ -100,23 +98,6 @@ impl FarmlandBlock {
             && (context.entity.is_player() || mob_griefing)
             && context.entity.bounding_box_width_squared_height() > TRAMPLE_VOLUME_THRESHOLD
     }
-
-    /// Turns the farmland into dirt.
-    fn turn_to_dirt(
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        source_entity: Option<&dyn Entity>,
-    ) {
-        let dirt_state = push_entities_up(state, vanilla_blocks::DIRT.default_state(), world, pos);
-        if world.set_block(pos, dirt_state, UpdateFlags::UPDATE_ALL) {
-            world.game_event(
-                &vanilla_game_events::BLOCK_CHANGE,
-                pos,
-                &GameEventContext::new(source_entity, Some(dirt_state)),
-            );
-        }
-    }
 }
 
 impl BlockBehavior for FarmlandBlock {
@@ -143,7 +124,7 @@ impl BlockBehavior for FarmlandBlock {
                 world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
             } else if !Self::should_maintain_farmland(world, pos) {
                 // No moisture and no crop - turn to dirt
-                Self::turn_to_dirt(state, world, pos, None);
+                turn_to_dirt(state, world, pos, None);
             }
         } else if moisture < MAX_MOISTURE {
             // Near water - hydrate to max
@@ -162,7 +143,7 @@ impl BlockBehavior for FarmlandBlock {
         let mob_griefing = world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING);
         let random_float = rand::random::<f32>();
         if Self::should_turn_to_dirt_on_fall(context, mob_griefing, random_float) {
-            Self::turn_to_dirt(state, world, pos, context.source_entity());
+            turn_to_dirt(state, world, pos, context.source_entity());
         }
 
         self.default_fall_on(state, world, pos, context)
