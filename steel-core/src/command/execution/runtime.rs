@@ -27,8 +27,8 @@ use super::{
     SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
         ComponentValue, CoordinateAxes, DomainValue, EnchantmentValue, EntityTypeValue,
-        GameModeValue, IdentifierValue, ItemStackValue, NbtPathValue, ObjectiveValue,
-        SteelArgumentValue, TimeValue, TimelineValue, WorldClockValue,
+        GameModeValue, IdentifierValue, ItemStackValue, MessageValue, NbtPathValue,
+        ObjectiveValue, SteelArgumentValue, TimeValue, TimelineValue, WorldClockValue,
     },
     selector::EntitySelector,
 };
@@ -314,6 +314,11 @@ where
 
     pub(crate) fn text_component(&self, name: &str) -> Option<&TextComponent> {
         self.typed_argument::<ComponentValue>(name)
+            .map(|value| &value.0)
+    }
+
+    pub(crate) fn message(&self, name: &str) -> Option<&TextComponent> {
+        self.typed_argument::<MessageValue>(name)
             .map(|value| &value.0)
     }
 

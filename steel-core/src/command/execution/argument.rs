@@ -319,6 +319,10 @@ impl SteelArgumentType {
         Self::new(ComponentParser)
     }
 
+    pub(crate) fn message() -> Self {
+        Self::new(MessageParser)
+    }
+
     pub(crate) fn nbt_path() -> Self {
         Self::new(NbtPathParser)
     }
@@ -507,6 +511,7 @@ argument_value_wrapper!(
     ComponentValue(TextComponent),
     "steel:command/value/component"
 );
+argument_value_wrapper!(MessageValue(TextComponent), "steel:command/value/message");
 argument_value_wrapper!(NbtPathValue(NbtPath), "steel:command/value/nbt_path");
 argument_value_wrapper!(
     IdentifierValue(Identifier),
@@ -1001,6 +1006,16 @@ unit_argument_parser!(
     protocol(ProtocolArgumentType::Component, None)
 );
 unit_argument_parser!(
+    MessageParser,
+    "steel:command/parser/message",
+    MessageValue,
+    parse | reader,
+    _source | { parse_message(reader).map(MessageValue) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::Message, None)
+);
+unit_argument_parser!(
     NbtPathParser,
     "steel:command/parser/nbt_path",
     NbtPathValue,
@@ -1176,6 +1191,20 @@ fn parse_component(reader: &mut StringReader<'_>) -> Result<TextComponent, Comma
         invalid_component(reader, error)
     })?;
     Ok(component)
+}
+
+/// Parses a vanilla message argument: the entire remaining input as plain text.
+///
+/// Mirrors `MessageArgument.parseText`, including the 256-character length limit.
+fn parse_message(reader: &mut StringReader<'_>) -> Result<TextComponent, CommandSyntaxError> {
+    let length = reader.remaining().len();
+    if length > 256 {
+        let message = translations::ARGUMENT_MESSAGE_TOO_LONG
+            .message([length.to_string(), "256".to_owned()])
+            .component();
+        return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))));
+    }
+    Ok(TextComponent::plain(reader.read_remaining().to_owned()))
 }
 
 /// Parses a single structured SNBT component (`{...}`, `[...]`, or a quoted string).

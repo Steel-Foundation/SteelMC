@@ -47,17 +47,17 @@ pub(super) fn msg_registration() -> CommandRegistration<CommandSource> {
 }
 
 fn say_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("say").then(argument("message", SteelArgumentType::component()).executes(say))
+    literal("say").then(argument("message", SteelArgumentType::message()).executes(say))
 }
 
 fn me_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("me").then(argument("message", SteelArgumentType::component()).executes(me))
+    literal("me").then(argument("message", SteelArgumentType::message()).executes(me))
 }
 
 fn msg_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("msg").then(
         argument("targets", SteelArgumentType::players())
-            .then(argument("message", SteelArgumentType::component()).executes(msg)),
+            .then(argument("message", SteelArgumentType::message()).executes(msg)),
     )
 }
 
@@ -176,9 +176,9 @@ fn source_display_name(source: &CommandSource) -> TextComponent {
 fn resolve_message(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<TextComponent, CommandSyntaxError> {
-    let Some(message) = context.text_component("message") else {
+    let Some(message) = context.message("message") else {
         return Err(CommandSyntaxError::dynamic(
-            "Parsed text component is missing from the command context",
+            "Parsed message argument is missing from the command context",
         ));
     };
     message.try_resolve(&CommandTextResolver::for_source(context.source()))
@@ -235,7 +235,7 @@ mod tests {
             panic!("say message node should exist");
         };
         // Expect the message argument (vanilla message argument)
-        assert_eq!(message.argument_type(), Some(&SteelArgumentType::component()));
+        assert_eq!(message.argument_type(), Some(&SteelArgumentType::message()));
         assert!(message.is_executable());
     }
 
@@ -264,7 +264,7 @@ mod tests {
             panic!("me message node should exist");
         };
         // Expect the message argument (vanilla message argument)
-        assert_eq!(message.argument_type(), Some(&SteelArgumentType::component()));
+        assert_eq!(message.argument_type(), Some(&SteelArgumentType::message()));
         assert!(message.is_executable());
     }
 
@@ -311,7 +311,7 @@ mod tests {
             panic!("msg message node should exist");
         };
         // Expect the message argument (vanilla message argument)
-        assert_eq!(message.argument_type(), Some(&SteelArgumentType::component()));
+        assert_eq!(message.argument_type(), Some(&SteelArgumentType::message()));
         assert!(message.is_executable());
     }
 }
