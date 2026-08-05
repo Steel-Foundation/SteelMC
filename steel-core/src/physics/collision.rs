@@ -1,19 +1,24 @@
 //! World collision queries for physics simulation.
 
-use std::sync::Arc;
+use std::{ops::ControlFlow, sync::Arc};
 
 use glam::DVec3;
+use smallvec::SmallVec;
 use steel_registry::{blocks::block_state_ext::BlockStateExt, vanilla_blocks, vanilla_entities};
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, WorldAabb};
 
-use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionBoxes, BlockCollisionContext};
+use crate::behavior::{
+    BLOCK_BEHAVIORS, BlockCollisionBoxes, BlockCollisionContext, blocks::PowderSnowBlock,
+};
 use crate::entity::Entity;
 use crate::physics::COLLISION_EPSILON;
 use crate::physics::shapes::join_is_not_empty;
-use crate::world::World;
+use crate::world::{BlockRegionBounds, World};
 
 const BLOCK_COLLISION_EPSILON: f64 = 1.0e-7;
 const ENTITY_COLLISION_EPSILON: f64 = 1.0e-7;
+// Bound the temporary snapshot to at most one full chunk section.
+const MAX_PREFETCHED_COLLISION_BLOCKS: usize = 4096;
 
 /// Trait for querying collision shapes from the world.
 ///
@@ -166,6 +171,38 @@ impl BlockCollisionSearchBounds {
             _ => CollisionCursorType::Corner,
         }
     }
+
+    const fn region_bounds(self) -> BlockRegionBounds {
+        BlockRegionBounds::from_corners(
+            BlockPos::new(self.min_x, self.min_y, self.min_z),
+            BlockPos::new(self.max_x, self.max_y, self.max_z),
+        )
+    }
+
+    fn block_count(self) -> Option<usize> {
+        let width = usize::try_from(i64::from(self.max_x) - i64::from(self.min_x) + 1).ok()?;
+        let height = usize::try_from(i64::from(self.max_y) - i64::from(self.min_y) + 1).ok()?;
+        let depth = usize::try_from(i64::from(self.max_z) - i64::from(self.min_z) + 1).ok()?;
+        width.checked_mul(height)?.checked_mul(depth)
+    }
+
+    fn try_for_each_candidate<R>(
+        self,
+        mut visit: impl FnMut(BlockPos, CollisionCursorType) -> ControlFlow<R>,
+    ) -> ControlFlow<R> {
+        for y in self.min_y..=self.max_y {
+            for z in self.min_z..=self.max_z {
+                for x in self.min_x..=self.max_x {
+                    let cursor_type = self.cursor_type(x, y, z);
+                    if cursor_type == CollisionCursorType::Corner {
+                        continue;
+                    }
+                    visit(BlockPos::new(x, y, z), cursor_type)?;
+                }
+            }
+        }
+        ControlFlow::Continue(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,6 +212,8 @@ enum CollisionCursorType {
     Edge,
     Corner,
 }
+
+type BlockCollisionCandidate = (BlockPos, BlockStateId, CollisionCursorType);
 
 struct CollisionShape {
     boxes: BlockCollisionBoxes,
@@ -241,6 +280,54 @@ impl<'a> WorldCollisionProvider<'a> {
         }
     }
 
+    fn prefetched_block_collision_candidates(
+        &self,
+        bounds: BlockCollisionSearchBounds,
+    ) -> Option<SmallVec<[BlockCollisionCandidate; 64]>> {
+        if bounds
+            .block_count()
+            .is_none_or(|count| count > MAX_PREFETCHED_COLLISION_BLOCKS)
+        {
+            return None;
+        }
+
+        self.world
+            .try_with_block_region(bounds.region_bounds(), |region| {
+                let mut candidates = SmallVec::new();
+                let _ = bounds.try_for_each_candidate(|block_pos, cursor_type| {
+                    let Some(block_state) = region.get_block_state(block_pos) else {
+                        return ControlFlow::<()>::Continue(());
+                    };
+                    if !block_state.is_air() {
+                        candidates.push((block_pos, block_state, cursor_type));
+                    }
+                    ControlFlow::<()>::Continue(())
+                });
+                candidates
+            })
+    }
+
+    fn visit_block_collision_candidates<R>(
+        &self,
+        bounds: BlockCollisionSearchBounds,
+        mut visit: impl FnMut(BlockPos, BlockStateId, CollisionCursorType) -> ControlFlow<R>,
+    ) -> ControlFlow<R> {
+        if let Some(candidates) = self.prefetched_block_collision_candidates(bounds) {
+            for (block_pos, block_state, cursor_type) in candidates {
+                visit(block_pos, block_state, cursor_type)?;
+            }
+            return ControlFlow::Continue(());
+        }
+
+        bounds.try_for_each_candidate(|block_pos, cursor_type| {
+            let block_state = self.world.get_block_state(block_pos);
+            if block_state.is_air() {
+                return ControlFlow::Continue(());
+            }
+            visit(block_pos, block_state, cursor_type)
+        })
+    }
+
     fn get_collision_shape(
         &self,
         block_state: BlockStateId,
@@ -269,7 +356,9 @@ impl<'a> WorldCollisionProvider<'a> {
         if let Some(source) = self.source {
             context
                 .with_fall_distance(source.fall_distance())
-                .with_can_walk_on_powder_snow(source.can_walk_on_powder_snow())
+                .with_can_walk_on_powder_snow(PowderSnowBlock::can_entity_walk_on_powder_snow(
+                    source,
+                ))
                 .with_falling_block(source.entity_type() == &vanilla_entities::FALLING_BLOCK)
         } else {
             context
@@ -314,51 +403,31 @@ impl<'a> WorldCollisionProvider<'a> {
 
         let mut main_support = None;
         let mut main_support_distance = f64::MAX;
-
-        for y in bounds.min_y..=bounds.max_y {
-            for z in bounds.min_z..=bounds.max_z {
-                for x in bounds.min_x..=bounds.max_x {
-                    let cursor_type = bounds.cursor_type(x, y, z);
-                    if cursor_type == CollisionCursorType::Corner {
-                        continue;
-                    }
-
-                    let block_pos = BlockPos::new(x, y, z);
-                    let block_state = self.world.get_block_state(block_pos);
-                    if block_state.is_air() {
-                        continue;
-                    }
-
-                    let collision_shape = self.get_collision_shape(block_state, block_pos, context);
-                    if collision_shape.boxes.is_empty() {
-                        continue;
-                    }
-                    if !should_query_collision_shape(block_state, &collision_shape, cursor_type) {
-                        continue;
-                    }
-
-                    let supports_entity = collision_shape
+        let _ =
+            self.visit_block_collision_candidates(bounds, |block_pos, block_state, cursor_type| {
+                let collision_shape = self.get_collision_shape(block_state, block_pos, context);
+                if collision_shape.boxes.is_empty()
+                    || !should_query_collision_shape(block_state, &collision_shape, cursor_type)
+                    || !collision_shape
                         .boxes
                         .iter()
                         .map(|shape_aabb| translate_collision_shape(shape_aabb, block_pos))
-                        .any(|world_aabb| aabb.intersects(world_aabb));
-                    if !supports_entity {
-                        continue;
-                    }
-
-                    let distance = block_pos_center_distance_sq(block_pos, entity_position);
-                    let should_replace = distance < main_support_distance
-                        || distance == main_support_distance
-                            && main_support
-                                .is_none_or(|support| vanilla_block_pos_less(support, block_pos));
-
-                    if should_replace {
-                        main_support = Some(block_pos);
-                        main_support_distance = distance;
-                    }
+                        .any(|world_aabb| aabb.intersects(world_aabb))
+                {
+                    return ControlFlow::<()>::Continue(());
                 }
-            }
-        }
+
+                let distance = block_pos_center_distance_sq(block_pos, entity_position);
+                let should_replace = distance < main_support_distance
+                    || distance == main_support_distance
+                        && main_support
+                            .is_none_or(|support| vanilla_block_pos_less(support, block_pos));
+                if should_replace {
+                    main_support = Some(block_pos);
+                    main_support_distance = distance;
+                }
+                ControlFlow::<()>::Continue(())
+            });
 
         main_support
     }
@@ -593,45 +662,26 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
         aabb: &WorldAabb,
         context: BlockCollisionContext,
     ) -> Vec<WorldAabb> {
-        let mut collisions = Vec::new();
-
         let bounds = BlockCollisionSearchBounds::from_aabb(aabb);
-
-        for y in bounds.min_y..=bounds.max_y {
-            for z in bounds.min_z..=bounds.max_z {
-                for x in bounds.min_x..=bounds.max_x {
-                    let cursor_type = bounds.cursor_type(x, y, z);
-                    if cursor_type == CollisionCursorType::Corner {
-                        continue;
-                    }
-
-                    let block_pos = BlockPos::new(x, y, z);
-                    let block_state = self.world.get_block_state(block_pos);
-
-                    if block_state.is_air() {
-                        continue;
-                    }
-
-                    let collision_shape = self.get_collision_shape(block_state, block_pos, context);
-
-                    if collision_shape.boxes.is_empty() {
-                        continue;
-                    }
-                    if !should_query_collision_shape(block_state, &collision_shape, cursor_type) {
-                        continue;
-                    }
-
-                    for shape_aabb in &collision_shape.boxes {
-                        let world_aabb = translate_collision_shape(shape_aabb, block_pos);
-
-                        if aabb.intersects(world_aabb) {
-                            collisions.push(world_aabb);
-                        }
-                    }
+        let mut collisions = Vec::new();
+        let _ =
+            self.visit_block_collision_candidates(bounds, |block_pos, block_state, cursor_type| {
+                let collision_shape = self.get_collision_shape(block_state, block_pos, context);
+                if collision_shape.boxes.is_empty()
+                    || !should_query_collision_shape(block_state, &collision_shape, cursor_type)
+                {
+                    return ControlFlow::<()>::Continue(());
                 }
-            }
-        }
 
+                collisions.extend(
+                    collision_shape
+                        .boxes
+                        .iter()
+                        .map(|shape| translate_collision_shape(shape, block_pos))
+                        .filter(|shape| aabb.intersects(*shape)),
+                );
+                ControlFlow::<()>::Continue(())
+            });
         collisions
     }
 
@@ -641,43 +691,26 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
         context: BlockCollisionContext,
     ) -> bool {
         let bounds = BlockCollisionSearchBounds::from_aabb(aabb);
-
-        for y in bounds.min_y..=bounds.max_y {
-            for z in bounds.min_z..=bounds.max_z {
-                for x in bounds.min_x..=bounds.max_x {
-                    let cursor_type = bounds.cursor_type(x, y, z);
-                    if cursor_type == CollisionCursorType::Corner {
-                        continue;
-                    }
-
-                    let block_pos = BlockPos::new(x, y, z);
-                    let block_state = self.world.get_block_state(block_pos);
-
-                    if block_state.is_air() {
-                        continue;
-                    }
-
-                    let collision_shape = self.get_collision_shape(block_state, block_pos, context);
-
-                    if collision_shape.boxes.is_empty() {
-                        continue;
-                    }
-                    if !should_query_collision_shape(block_state, &collision_shape, cursor_type) {
-                        continue;
-                    }
-
-                    for shape_aabb in &collision_shape.boxes {
-                        let world_aabb = translate_collision_shape(shape_aabb, block_pos);
-
-                        if aabb.intersects(world_aabb) {
-                            return true;
-                        }
-                    }
-                }
+        self.visit_block_collision_candidates(bounds, |block_pos, block_state, cursor_type| {
+            let collision_shape = self.get_collision_shape(block_state, block_pos, context);
+            if collision_shape.boxes.is_empty()
+                || !should_query_collision_shape(block_state, &collision_shape, cursor_type)
+            {
+                return ControlFlow::Continue(());
             }
-        }
 
-        false
+            if collision_shape
+                .boxes
+                .iter()
+                .map(|shape| translate_collision_shape(shape, block_pos))
+                .any(|shape| aabb.intersects(shape))
+            {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        })
+        .is_break()
     }
 
     fn get_pre_move_collisions(
@@ -777,7 +810,12 @@ mod tests {
     use super::*;
     use steel_registry::blocks::shapes::VoxelShape;
     use steel_registry::test_support;
-    use steel_utils::BlockLocalAabb;
+    use steel_utils::{BlockLocalAabb, ChunkPos, types::UpdateFlags};
+
+    use crate::{
+        behavior::init_behaviors,
+        test_support::{fresh_test_world, insert_ready_full_chunk},
+    };
 
     const LARGE_COLLISION_SHAPE: &[BlockLocalAabb] =
         &[BlockLocalAabb::new(-0.25, 0.0, 0.0, 1.0, 1.0, 1.0)];
@@ -911,6 +949,25 @@ mod tests {
             &world,
             WorldAabb::new(2.0, 2.0, 2.0, 3.0, 3.0, 3.0)
         ));
+    }
+
+    #[test]
+    fn live_block_collisions_use_bounded_region_reads() {
+        test_support::init_test_registry();
+        init_behaviors();
+        let world = fresh_test_world("bounded_collision_reads");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let block_pos = BlockPos::new(0, 64, 0);
+        assert!(world.set_block(
+            block_pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+
+        let collisions = WorldCollisionProvider::new(&world)
+            .get_block_collisions(&WorldAabb::new(0.25, 64.0, 0.25, 0.75, 65.0, 0.75));
+
+        assert!(collisions.contains(&WorldAabb::new(0.0, 64.0, 0.0, 1.0, 65.0, 1.0)));
     }
 
     #[test]

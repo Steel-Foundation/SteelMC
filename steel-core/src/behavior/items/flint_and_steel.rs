@@ -11,7 +11,7 @@ use steel_registry::{
     sound_events, vanilla_game_events,
 };
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId, Direction};
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::entity::Entity;
 use crate::world::game_event::GameEventContext;
@@ -39,8 +39,7 @@ impl ItemBehavior for FlintAndSteelItem {
         }
 
         let fire_pos = click_pos.relative(context.hit_result.direction);
-        let (yaw, _) = context.player.rotation();
-        let forward_dir = Direction::from_yaw(yaw);
+        let forward_dir = context.player.direction_yaw();
 
         if !FireBlock::can_be_placed_at(context.world, fire_pos, forward_dir) {
             return InteractionResult::Fail;
@@ -94,8 +93,7 @@ impl ItemBehavior for FireChargeItem {
         }
 
         let fire_pos = click_pos.relative(context.hit_result.direction);
-        let (yaw, _) = context.player.rotation();
-        let forward_dir = Direction::from_yaw(yaw);
+        let forward_dir = context.player.direction_yaw();
 
         if !FireBlock::can_be_placed_at(context.world, fire_pos, forward_dir) {
             return InteractionResult::Fail;
