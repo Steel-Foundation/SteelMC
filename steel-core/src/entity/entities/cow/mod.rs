@@ -135,50 +135,6 @@ impl CowEntity {
         }
     }
 
-    /// Returns vanilla age ticks; negative values indicate a baby.
-    #[must_use]
-    pub fn get_age(&self) -> i32 {
-        AgeableMob::get_age(self)
-    }
-
-    /// Sets vanilla age ticks and updates synced baby state.
-    pub fn set_age(&self, age: i32) {
-        AgeableMob::set_age(self, age);
-    }
-
-    /// Returns whether this cow is currently a baby.
-    #[must_use]
-    pub fn is_baby(&self) -> bool {
-        AgeableMob::is_baby(self)
-    }
-
-    /// Sets the baby state using vanilla age semantics.
-    pub fn set_baby(&self, baby: bool) {
-        AgeableMob::set_baby(self, baby);
-    }
-
-    /// Returns vanilla forced age used by growth acceleration.
-    #[must_use]
-    pub fn forced_age(&self) -> i32 {
-        AgeableMob::forced_age(self)
-    }
-
-    /// Sets vanilla forced age used by growth acceleration.
-    pub fn set_forced_age(&self, forced_age: i32) {
-        AgeableMob::set_forced_age(self, forced_age);
-    }
-
-    /// Returns whether age changes are locked.
-    #[must_use]
-    pub fn is_age_locked(&self) -> bool {
-        AgeableMob::is_age_locked(self)
-    }
-
-    /// Sets whether age changes are locked.
-    pub fn set_age_locked(&self, age_locked: bool) {
-        AgeableMob::set_age_locked(self, age_locked);
-    }
-
     /// Sets the active cow variant by registry entry.
     pub fn set_variant(&self, variant: CowVariantRef) {
         self.entity_data
@@ -221,10 +177,6 @@ impl CowEntity {
         }
     }
 
-    fn current_sound_set(&self) -> CowSoundVariantRef {
-        self.sound_variant()
-    }
-
     fn update_dirty_mob_effect_entity_data(&self) {
         if !self.living_base.take_effects_dirty() {
             return;
@@ -254,7 +206,7 @@ impl CowEntity {
     }
 
     fn try_milk(&self, player: &Player, hand: InteractionHand) -> bool {
-        if self.is_baby() {
+        if AgeableMob::is_baby(self) {
             return false;
         }
 
@@ -301,60 +253,13 @@ impl Entity for CowEntity {
 
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
         let scale = LivingEntity::get_scale(self);
-        if self.is_baby() {
+        if AgeableMob::is_baby(self) {
             COW_BABY_DIMENSIONS.scale(scale)
         } else if self.entity_type.fixed {
             self.entity_type.dimensions
         } else {
             self.entity_type.dimensions.scale(scale)
         }
-    }
-
-    fn tick(&self) {
-        self.default_tick();
-        self.living_base.decrement_invulnerable_time();
-        self.tick_mob_effects();
-        self.detect_equipment_updates();
-
-        if self.is_dead_or_dying() {
-            LivingEntity::tick_death(self);
-            self.tick_living_state();
-            return;
-        }
-
-        if !self.is_removed() {
-            self.ai_step();
-        }
-
-        self.tick_living_state();
-    }
-
-    fn check_despawn(&self) {
-        Mob::check_mob_despawn(self);
-    }
-
-    fn is_alive(&self) -> bool {
-        !self.is_removed() && self.get_health() > 0.0
-    }
-
-    fn is_pickable(&self) -> bool {
-        !self.is_removed()
-    }
-
-    fn is_pushable(&self) -> bool {
-        Entity::is_alive(self) && !self.is_spectator() && !self.on_climbable()
-    }
-
-    fn is_effective_ai(&self) -> bool {
-        self.is_server_driven_movement() && !self.is_no_ai()
-    }
-
-    fn get_default_gravity(&self) -> f64 {
-        LivingEntity::get_attribute_gravity(self)
-    }
-
-    fn can_freeze(&self) -> bool {
-        self.default_living_can_freeze()
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
@@ -377,20 +282,7 @@ impl Entity for CowEntity {
     }
 
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {
-        self.play_sound(self.current_sound_set().step_sound, 0.15, 1.0);
-    }
-
-    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        LivingEntity::hurt_server(self, world, source, amount)
-    }
-
-    fn interact(
-        &self,
-        player: &Player,
-        hand: InteractionHand,
-        location: DVec3,
-    ) -> InteractionResult {
-        Mob::interact_mob(self, player, hand, location)
+        self.play_sound(self.sound_variant().step_sound, 0.15, 1.0);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -438,28 +330,20 @@ impl LivingEntity for CowEntity {
             .set(clamped);
     }
 
-    fn is_baby(&self) -> bool {
-        AgeableMob::is_baby(self)
-    }
-
     fn sound_volume(&self) -> f32 {
         0.4
     }
 
     fn hurt_sound(&self, _source: &DamageSource) -> Option<SoundEventRef> {
-        Some(self.current_sound_set().hurt_sound)
+        Some(self.sound_variant().hurt_sound)
     }
 
     fn death_sound(&self) -> Option<SoundEventRef> {
-        Some(self.current_sound_set().death_sound)
+        Some(self.sound_variant().death_sound)
     }
 
     fn server_ai_step(&self) {
         Mob::mob_server_ai_step(self);
-    }
-
-    fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {
-        Animal::reset_love(self);
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
@@ -549,11 +433,7 @@ impl Mob for CowEntity {
     }
 
     fn ambient_sound(&self) -> Option<SoundEventRef> {
-        Some(self.current_sound_set().ambient_sound)
-    }
-
-    fn remove_when_far_away(&self, dist_sqr: f64) -> bool {
-        Animal::remove_when_far_away_animal(self, dist_sqr)
+        Some(self.sound_variant().ambient_sound)
     }
 
     fn finalize_spawn(
