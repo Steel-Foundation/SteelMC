@@ -529,7 +529,7 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{sound_events, test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, sound_events, vanilla_blocks};
     use steel_utils::BlockPos;
 
     use crate::test_support::TestLevel;
@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn lower_half_copies_transformed_upper_half_state() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = DoorBlock::new(
             &vanilla_blocks::SPRUCE_DOOR,
             true,
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn door_wooden_query_uses_can_open_by_hand_like_vanilla() {
-        init_test_registry();
+        init_vanilla_registry();
         let oak = DoorBlock::new(
             &vanilla_blocks::OAK_DOOR,
             true,

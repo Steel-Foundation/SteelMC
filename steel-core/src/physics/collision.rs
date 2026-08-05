@@ -809,7 +809,7 @@ mod tests {
 
     use super::*;
     use steel_registry::blocks::shapes::VoxelShape;
-    use steel_registry::test_support;
+    use steel_registry::init_vanilla_registry;
     use steel_utils::{BlockLocalAabb, ChunkPos, types::UpdateFlags};
 
     use crate::{
@@ -953,7 +953,7 @@ mod tests {
 
     #[test]
     fn live_block_collisions_use_bounded_region_reads() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("bounded_collision_reads");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
@@ -1101,7 +1101,7 @@ mod tests {
 
     #[test]
     fn collision_shape_filter_matches_vanilla_cursor_rules() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
 
         let stone = vanilla_blocks::STONE.default_state();
         let moving_piston = vanilla_blocks::MOVING_PISTON.default_state();
@@ -1144,7 +1144,7 @@ mod tests {
 
     #[test]
     fn collision_shape_filter_uses_position_resolved_offset_bounds() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
 
         let stone = vanilla_blocks::STONE.default_state();
         let shifted_full_block = CollisionShape {

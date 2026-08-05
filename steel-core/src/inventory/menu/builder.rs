@@ -1029,7 +1029,7 @@ impl MenuBuilder {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_items, vanilla_menu_types};
+    use steel_registry::{init_vanilla_registry, vanilla_items, vanilla_menu_types};
     use steel_utils::{Downcast as _, locks::IntoShared};
 
     use super::*;
@@ -1230,7 +1230,7 @@ mod tests {
 
     #[test]
     fn display_kind_rejects_placement() {
-        init_test_registry();
+        init_vanilla_registry();
         let container = ContainerRef::from(SimpleContainer::new(1).into_shared());
         let mut b = MenuBuilder::new(None, 0);
         let _ = b.section_at(container, [0], SectionKind::Display);

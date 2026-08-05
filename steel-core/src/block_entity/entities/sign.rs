@@ -326,7 +326,7 @@ mod tests {
 
     use simdnbt::borrow::read_tag;
     use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::BlockPos;
     use text_components::{Modifier as _, TextComponent};
     use uuid::Uuid;
@@ -386,7 +386,7 @@ mod tests {
 
     #[test]
     fn sign_tick_releases_state_before_player_lookup_and_editor_clear() {
-        init_test_registry();
+        init_vanilla_registry();
         let world = fresh_test_world("sign_editor_clear");
         let sign = SignBlockEntity::new(
             Arc::downgrade(&world),

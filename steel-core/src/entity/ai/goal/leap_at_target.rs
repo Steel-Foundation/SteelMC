@@ -83,7 +83,7 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::{Entity, Mob, entities::PigEntity};
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn leap_at_target_goal_requires_target() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = LeapAtTargetGoal::new(0.4);
         let mob = pig(1, DVec3::ZERO);
         mob.base().set_on_ground(true);
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn leap_at_target_goal_uses_vanilla_distance_window() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = LeapAtTargetGoal::new(0.4);
         let mob = pig(1, DVec3::ZERO);
         mob.base().set_on_ground(true);
@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn leap_at_target_goal_requires_ground() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = LeapAtTargetGoal::new(0.4);
         let mob = pig(1, DVec3::ZERO);
         let target = shared_pig(2, DVec3::new(2.0, 0.0, 0.0));
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn leap_at_target_goal_applies_vanilla_leap_velocity() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = LeapAtTargetGoal::new(0.42);
         let mob = pig(1, DVec3::ZERO);
         mob.base().set_on_ground(true);
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn leap_at_target_goal_continues_until_grounded() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = LeapAtTargetGoal::new(0.4);
         let mob = pig(1, DVec3::ZERO);
 

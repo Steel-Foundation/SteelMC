@@ -795,7 +795,7 @@ fn parse_difficulty(value: &str) -> Result<Difficulty, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     #[test]
     fn online_mode_requires_the_authenticated_encryption_flow() {
@@ -809,7 +809,7 @@ mod tests {
     }
 
     fn registries() -> (WorldGeneratorRegistry, WorldStorageRegistry) {
-        init_test_registry();
+        init_vanilla_registry();
         let generators = WorldGeneratorRegistry::new_with_builtins()
             .expect("built-in generator registry should initialize");
         let storage = WorldStorageRegistry::new_with_builtins()

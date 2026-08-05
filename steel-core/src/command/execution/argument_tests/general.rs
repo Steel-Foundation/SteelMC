@@ -107,7 +107,7 @@ fn objective_and_integer_range_arguments_retain_vanilla_values() {
 
 #[test]
 fn block_predicate_argument_parses_blocks_tags_properties_and_nbt() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::block_predicate());
 
     let parse = dispatcher.parse(
@@ -156,7 +156,7 @@ fn block_predicate_argument_parses_blocks_tags_properties_and_nbt() {
 
 #[test]
 fn block_predicate_argument_validates_concrete_properties_but_defers_tag_properties() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::block_predicate());
 
     for input in [

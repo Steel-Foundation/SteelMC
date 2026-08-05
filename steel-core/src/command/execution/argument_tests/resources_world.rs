@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn biome_or_tag_argument_resolves_registry_entries_and_tags() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::biome_or_tag());
 
     let parse = dispatcher.parse("resource plains", TestSource::new());
@@ -46,7 +46,7 @@ fn biome_or_tag_argument_resolves_registry_entries_and_tags() {
 
 #[test]
 fn structure_or_tag_key_argument_defers_registry_resolution_until_execution() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::structure_or_tag_key());
 
     let parse = dispatcher.parse("resource village_plains", TestSource::new());
@@ -359,7 +359,7 @@ fn summonable_entity_argument_suggests_only_registered_factories() {
 
 #[test]
 fn enchantment_argument_resolves_and_suggests_registered_entries() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::enchantment());
 
     for input in ["resource sharpness", "resource minecraft:sharpness"] {

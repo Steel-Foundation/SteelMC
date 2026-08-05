@@ -297,7 +297,7 @@ mod tests {
     use steel_utils::Identifier;
     use steel_utils::serial::WriteTo;
 
-    use crate::{test_support::init_test_registry, vanilla_position_source_types};
+    use crate::{init_vanilla_registry, vanilla_position_source_types};
 
     use super::{
         EntityPositionSource, PositionSource, PositionSourceType, PositionSourceTypeRegistry,
@@ -308,7 +308,7 @@ mod tests {
 
     #[test]
     fn position_source_write_rejects_noncanonical_same_key_codec() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let source =
             PositionSource::new(&FORGED_BLOCK_SOURCE, EntityPositionSource::new(1234, 1.5));

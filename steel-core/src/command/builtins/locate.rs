@@ -400,7 +400,7 @@ mod tests {
         brigadier::{CommandDispatcher, NodeId},
         execution::SteelCommandRuntime,
     };
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn locate_graph_exposes_only_the_supported_typed_structure_branch() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

@@ -109,13 +109,13 @@ impl BlockBehavior for CoralWallFanBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
 
     #[test]
     fn dead_wall_fan_state_preserves_facing() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = CoralWallFanBlock::new(
             &vanilla_blocks::TUBE_CORAL_WALL_FAN,
             &vanilla_blocks::DEAD_TUBE_CORAL_WALL_FAN,

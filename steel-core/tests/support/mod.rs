@@ -1,27 +1,26 @@
 use std::cell::{Cell, RefCell};
 use std::slice;
-use std::sync::{Arc, Once, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{
-    test_support::init_test_registry, vanilla_blocks, vanilla_dimension_types, vanilla_fluids,
+    init_vanilla_registry, vanilla_blocks, vanilla_dimension_types, vanilla_fluids,
 };
 use steel_utils::types::{Difficulty, GameType, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, Identifier};
 use tokio::runtime::{Builder, Runtime};
 use toml::map::Map;
 
-use crate::behavior::init_behaviors;
-use crate::block_entity::init_block_entities;
+use crate::bootstrap::init_globals_once;
 use crate::chunk::Chunk;
 use crate::chunk::chunk_holder::{ChunkHolder, TickingReadiness};
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use crate::chunk::section::{ChunkSection, Sections};
 use crate::chunk::status::ChunkStatus;
-use crate::entity::{Entity, init_test_entities};
+use crate::entity::Entity;
 use crate::level_data::WorldGenerationSettings;
 use crate::world::game_event::GameEventContext;
 use crate::world::{
@@ -37,14 +36,7 @@ pub(crate) use connection::TestConnection;
 pub(crate) use player::{TestPlayerBuilder, test_runtime_config};
 
 pub(crate) fn init_test_core() {
-    static INIT: Once = Once::new();
-
-    INIT.call_once(|| {
-        init_test_registry();
-        init_behaviors();
-        init_block_entities();
-        init_test_entities();
-    });
+    init_globals_once();
 }
 
 pub(crate) fn test_world() -> &'static Arc<World> {
@@ -158,7 +150,7 @@ fn create_test_world_with_difficulty(key: &'static str, difficulty: Difficulty) 
 }
 
 fn create_test_world_with_key(key: Identifier, difficulty: Difficulty) -> Arc<World> {
-    init_test_registry();
+    init_vanilla_registry();
     let resources = test_world_resources();
     let generator = Arc::new(ChunkGeneratorType::Empty(EmptyChunkGenerator::new()));
     let generator_config = toml::Value::Table(Map::new());

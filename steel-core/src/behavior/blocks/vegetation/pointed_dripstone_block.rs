@@ -892,8 +892,7 @@ mod tests {
     use steel_utils::ChunkPos;
 
     use steel_registry::{
-        entity_type::EntityTypeRef, test_support::init_test_registry, vanilla_blocks,
-        vanilla_damage_types,
+        entity_type::EntityTypeRef, init_vanilla_registry, vanilla_blocks, vanilla_damage_types,
     };
 
     use crate::{
@@ -942,7 +941,7 @@ mod tests {
         direction: Direction,
         thickness: SpeleothemThickness,
     ) -> BlockStateId {
-        init_test_registry();
+        init_vanilla_registry();
         vanilla_blocks::POINTED_DRIPSTONE
             .default_state()
             .set_value(&BlockStateProperties::VERTICAL_DIRECTION, direction)
@@ -979,7 +978,7 @@ mod tests {
 
     #[test]
     fn only_fast_tridents_break_speleothems() {
-        init_test_registry();
+        init_vanilla_registry();
         let pos = BlockPos::ZERO;
         let fast_trident = TestProjectile::new(&vanilla_entities::TRIDENT, DVec3::X * 0.61);
         let threshold_trident = TestProjectile::new(&vanilla_entities::TRIDENT, DVec3::X * 0.6);

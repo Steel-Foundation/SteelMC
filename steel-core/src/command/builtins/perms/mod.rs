@@ -1420,7 +1420,7 @@ impl CommandResultSuspension for PermsCommandSuspension {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::{GROUP_ALL_PERMISSION, MANAGE_ALL_PERMISSION, METADATA_PERMISSION};
     use crate::command::{
@@ -1448,7 +1448,7 @@ mod tests {
 
     #[test]
     fn perms_exposes_the_management_surface_without_old_aliases() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in dispatcher should build");
         };
@@ -1484,7 +1484,7 @@ mod tests {
 
     #[test]
     fn perms_discovery_contains_static_admin_and_granular_command_permissions() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(registered) = create_registered_dispatcher(CommandRegistry::new()) else {
             panic!("built-in dispatcher should build");
         };
