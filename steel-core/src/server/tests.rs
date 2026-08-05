@@ -24,7 +24,12 @@ use steel_registry::{
 use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
 use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
 use text_components::TextComponent;
-use tokio::{fs, runtime::Builder, task::JoinSet, time::sleep};
+use tokio::{
+    fs,
+    runtime::Builder,
+    task::{JoinSet, yield_now},
+    time::sleep,
+};
 use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
@@ -1246,6 +1251,30 @@ fn assert_default_domain_data(player: &Player) {
     assert!(!target_data.seen_credits);
 }
 
+/// Advances chunk scheduling and polls server jobs until the queue empties.
+///
+/// The spawned domain-switch storage tasks run on the test's current-thread
+/// runtime, so the loop yields to the runtime each tick to drive their async
+/// I/O. A periodic sleep lets the runtime process I/O completions; without it,
+/// slow disk writes under parallel test load could exhaust the tick budget.
+async fn tick_until_jobs_finish(server: &Arc<Server>, worlds: &[Arc<World>]) {
+    for tick in 1..=1_000_000u64 {
+        for world in worlds {
+            world.chunk_map.advance_scheduling();
+        }
+        server.tick_jobs(tick, true);
+        if server.jobs.is_empty() {
+            return;
+        }
+        if tick.is_multiple_of(100) {
+            sleep(Duration::from_millis(1)).await;
+        } else {
+            yield_now().await;
+        }
+    }
+    panic!("server jobs did not finish within 1_000_000 ticks");
+}
+
 #[test]
 fn first_domain_visit_resets_domain_scoped_player_data() {
     let source_world = fresh_test_world_in_domain("source", "spawn");
@@ -1296,15 +1325,11 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
         assert!(queued.is_ok());
         server.process_domain_switches();
 
-        for tick in 1..=10_000 {
-            source_world.chunk_map.advance_scheduling();
-            target_world.chunk_map.advance_scheduling();
-            server.tick_jobs(tick, true);
-            if server.jobs.is_empty() {
-                break;
-            }
-            sleep(Duration::from_millis(1)).await;
-        }
+        tick_until_jobs_finish(
+            &server,
+            &[Arc::clone(&source_world), Arc::clone(&target_world)],
+        )
+        .await;
 
         assert!(server.jobs.is_empty(), "domain switch job should finish");
         assert!(Arc::ptr_eq(&player.get_world(), &target_world));
