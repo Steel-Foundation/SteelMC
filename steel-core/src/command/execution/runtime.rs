@@ -27,8 +27,8 @@ use super::{
     SteelArgumentType, StructureOrTagKey, WorldArgument,
     argument::{
         ComponentValue, CoordinateAxes, DomainValue, EnchantmentValue, EntityTypeValue,
-        GameModeValue, IdentifierValue, ItemStackValue, MessageValue, NbtPathValue,
-        ObjectiveValue, SteelArgumentValue, TimeValue, TimelineValue, WorldClockValue,
+        GameModeValue, IdentifierValue, ItemStackValue, MessageValue, NbtPathValue, ObjectiveValue,
+        SteelArgumentValue, TimeValue, TimelineValue, WorldClockValue,
     },
     selector::EntitySelector,
 };
