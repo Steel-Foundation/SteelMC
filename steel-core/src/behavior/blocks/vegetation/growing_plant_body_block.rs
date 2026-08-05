@@ -27,6 +27,7 @@ pub struct GrowingPlantBodyBlock {
     schedule_fluid_ticks: bool,
     head_block: BlockRef,
     update_head_after_converted_from_body: fn(BlockStateId, BlockStateId) -> BlockStateId,
+    can_grow_into: fn(BlockStateId) -> bool,
 }
 
 impl GrowingPlantBodyBlock {
@@ -37,6 +38,7 @@ impl GrowingPlantBodyBlock {
         growth_direction: Direction,
         schedule_fluid_ticks: bool,
         head_block: BlockRef,
+        can_grow_into: fn(BlockStateId) -> bool,
     ) -> Self {
         Self {
             block,
@@ -44,6 +46,7 @@ impl GrowingPlantBodyBlock {
             schedule_fluid_ticks,
             head_block,
             update_head_after_converted_from_body: Self::unchanged_converted_state,
+            can_grow_into,
         }
     }
 
@@ -62,9 +65,6 @@ impl GrowingPlantBodyBlock {
         head_state: BlockStateId,
     ) -> BlockStateId {
         head_state
-    }
-    fn can_grow_into(state: BlockStateId) -> bool {
-        state.is_air()
     }
     fn get_head_pos(
         &self,
@@ -157,7 +157,7 @@ impl Bonemealable for GrowingPlantBodyBlock {
             return false;
         };
         let growth_pos = head_pos.relative(self.growth_direction);
-        Self::can_grow_into(world.get_block_state(growth_pos))
+        (self.can_grow_into)(world.get_block_state(growth_pos))
             && !world.is_outside_build_height(growth_pos.y())
     }
 
@@ -206,7 +206,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        behavior::{BlockHitResult, PlacementOrientation, PlacementSource, init_behaviors},
+        behavior::{
+            BlockHitResult, PlacementOrientation, PlacementSource, blocks::CaveVinesBlock,
+            init_behaviors,
+        },
         test_support::test_world,
     };
 
@@ -242,6 +245,7 @@ mod tests {
             Direction::Down,
             false,
             &vanilla_blocks::CAVE_VINES,
+            CaveVinesBlock::can_grow_into,
         );
         let mut glow_berries = ItemStack::new(&vanilla_items::GLOW_BERRIES);
         let context = place_context(&mut glow_berries);
