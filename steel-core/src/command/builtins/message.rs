@@ -235,10 +235,7 @@ mod tests {
             panic!("say message node should exist");
         };
         // Expect the message argument (vanilla message argument)
-        assert_eq!(
-            message.argument_type(),
-            Some(&SteelArgumentType::message())
-        );
+        assert_eq!(message.argument_type(), Some(&SteelArgumentType::message()));
         assert!(message.is_executable());
     }
 
@@ -267,10 +264,7 @@ mod tests {
             panic!("me message node should exist");
         };
         // Expect the message argument (vanilla message argument)
-        assert_eq!(
-            message.argument_type(),
-            Some(&SteelArgumentType::message())
-        );
+        assert_eq!(message.argument_type(), Some(&SteelArgumentType::message()));
         assert!(message.is_executable());
     }
 
@@ -317,10 +311,7 @@ mod tests {
             panic!("msg message node should exist");
         };
         // Expect the message argument (vanilla message argument)
-        assert_eq!(
-            message.argument_type(),
-            Some(&SteelArgumentType::message())
-        );
+        assert_eq!(message.argument_type(), Some(&SteelArgumentType::message()));
         assert!(message.is_executable());
     }
 }
