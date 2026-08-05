@@ -215,6 +215,42 @@ impl Server {
     }
 }
 
+/// Runs one pregeneration pass with every parameter supplied explicitly.
+///
+/// The server path takes its parameters from the `PREGEN_*` environment
+/// variables and needs a fully built [`Server`], which binds a listener as soon
+/// as it starts. This entry point takes a bare world instead, so a benchmark can
+/// drive the real scheduler -- tickets, epochs, generation, unload and save --
+/// without a network port to contend for or a shared save directory to collide
+/// over. Everything below it is the production path, unchanged.
+///
+/// `window_size` defaults to the server's value when `None`. Returns the wall
+/// time of the pass, or `None` if it was cancelled.
+///
+/// # Errors
+/// Returns an error if `side_length` is not a positive odd integer, or if the
+/// window size exceeds the unload-backpressure budget.
+#[cfg(feature = "benchmark-support")]
+pub async fn pregen_area_for_benchmark(
+    world: &Arc<World>,
+    center_chunk: ChunkPos,
+    side_length: i32,
+    window_size: Option<i32>,
+    cancel_token: &CancellationToken,
+) -> Result<Option<Duration>, String> {
+    let Some(pregen_size) = PregenSize::from_side_length(side_length)? else {
+        return Ok(Some(Duration::ZERO));
+    };
+    let window_size =
+        check_pregen_window_budget(window_size.unwrap_or(DEFAULT_PREGEN_WINDOW_SIZE))?;
+
+    let start = Instant::now();
+    let completed =
+        generate_pregen(world, center_chunk, pregen_size, window_size, cancel_token).await;
+
+    Ok(completed.then(|| start.elapsed()))
+}
+
 fn get_pregen_size() -> Result<Option<PregenSize>, String> {
     let side_length = match env::var(PREGEN_SIZE_ENV) {
         Ok(value) => value
@@ -243,6 +279,14 @@ fn parse_pregen_window_size(value: &str) -> Result<i32, String> {
     let window_size = value
         .parse::<i32>()
         .map_err(|error| format!("{PREGEN_WINDOW_SIZE_ENV} must be a positive integer: {error}"))?;
+    check_pregen_window_budget(window_size)
+}
+
+/// Checks a window size against the unload-backpressure budget.
+///
+/// Shared by the environment-variable path and by
+/// [`pregen_area_for_benchmark`], which supplies the size directly.
+fn check_pregen_window_budget(window_size: i32) -> Result<i32, String> {
     if window_size <= 0 {
         return Err(format!(
             "{PREGEN_WINDOW_SIZE_ENV} must be a positive integer"

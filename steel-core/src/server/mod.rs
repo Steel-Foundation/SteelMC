@@ -3,7 +3,10 @@ mod broadcasting;
 /// Tick-polled server jobs.
 pub mod jobs;
 mod packet_processor;
+#[cfg(not(feature = "benchmark-support"))]
 mod pregen;
+#[cfg(feature = "benchmark-support")]
+pub mod pregen;
 /// The registry cache for the server.
 pub mod registry_cache;
 mod run_loop;

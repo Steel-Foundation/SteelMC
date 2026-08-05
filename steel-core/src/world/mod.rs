@@ -333,7 +333,55 @@ impl World {
         .await
     }
 
+    /// Creates a world with an explicit chunk-encoding pool.
+    ///
+    /// Public under `benchmark-support` so the pregeneration benchmark can build
+    /// a world with the same pool split the server uses, without a `Server`.
+    #[cfg(feature = "benchmark-support")]
+    pub async fn new_with_config_and_encoding_pool(
+        chunk_runtime: Arc<Runtime>,
+        key: Identifier,
+        dimension_type: DimensionTypeRef,
+        seed: i64,
+        config: WorldConfig,
+        generation_pool: Arc<rayon::ThreadPool>,
+        chunk_encoding_pool: Arc<rayon::ThreadPool>,
+    ) -> io::Result<Arc<Self>> {
+        Self::new_with_config_and_encoding_pool_impl(
+            chunk_runtime,
+            key,
+            dimension_type,
+            seed,
+            config,
+            generation_pool,
+            chunk_encoding_pool,
+        )
+        .await
+    }
+
+    #[cfg(not(feature = "benchmark-support"))]
     pub(crate) async fn new_with_config_and_encoding_pool(
+        chunk_runtime: Arc<Runtime>,
+        key: Identifier,
+        dimension_type: DimensionTypeRef,
+        seed: i64,
+        config: WorldConfig,
+        generation_pool: Arc<rayon::ThreadPool>,
+        chunk_encoding_pool: Arc<rayon::ThreadPool>,
+    ) -> io::Result<Arc<Self>> {
+        Self::new_with_config_and_encoding_pool_impl(
+            chunk_runtime,
+            key,
+            dimension_type,
+            seed,
+            config,
+            generation_pool,
+            chunk_encoding_pool,
+        )
+        .await
+    }
+
+    async fn new_with_config_and_encoding_pool_impl(
         chunk_runtime: Arc<Runtime>,
         key: Identifier,
         dimension_type: DimensionTypeRef,
