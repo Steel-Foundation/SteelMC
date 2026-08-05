@@ -47,17 +47,17 @@ pub(super) fn msg_registration() -> CommandRegistration<CommandSource> {
 }
 
 fn say_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("say").then(argument("message", SteelArgumentType::component()).executes(say))
+    literal("say").then(argument("message", SteelArgumentType::message()).executes(say))
 }
 
 fn me_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("me").then(argument("message", SteelArgumentType::component()).executes(me))
+    literal("me").then(argument("message", SteelArgumentType::message()).executes(me))
 }
 
 fn msg_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("msg").then(
         argument("targets", SteelArgumentType::players())
-            .then(argument("message", SteelArgumentType::component()).executes(msg)),
+            .then(argument("message", SteelArgumentType::message()).executes(msg)),
     )
 }
 
@@ -234,9 +234,10 @@ mod tests {
         let Some(message) = dispatcher.node(message) else {
             panic!("say message node should exist");
         };
+        // Expect the message argument (vanilla message argument)
         assert_eq!(
             message.argument_type(),
-            Some(&SteelArgumentType::component())
+            Some(&SteelArgumentType::message())
         );
         assert!(message.is_executable());
     }
@@ -265,9 +266,10 @@ mod tests {
         let Some(message) = dispatcher.node(message) else {
             panic!("me message node should exist");
         };
+        // Expect the message argument (vanilla message argument)
         assert_eq!(
             message.argument_type(),
-            Some(&SteelArgumentType::component())
+            Some(&SteelArgumentType::message())
         );
         assert!(message.is_executable());
     }
@@ -314,9 +316,10 @@ mod tests {
         let Some(message) = dispatcher.node(message) else {
             panic!("msg message node should exist");
         };
+        // Expect the message argument (vanilla message argument)
         assert_eq!(
             message.argument_type(),
-            Some(&SteelArgumentType::component())
+            Some(&SteelArgumentType::message())
         );
         assert!(message.is_executable());
     }
