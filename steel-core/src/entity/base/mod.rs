@@ -891,7 +891,7 @@ impl EntityBase {
         dimensions: EntityDimensions,
         pending_world_change: Option<PendingWorldChangeToken>,
     ) {
-        {
+        let bounding_box = {
             let mut state = self.state.lock();
             let position = state.position;
             state.old_position = position;
@@ -915,7 +915,9 @@ impl EntityBase {
             state.no_physics = false;
             state.needs_velocity_sync = false;
             state.hurt_marked = false;
-        }
+            state.bounding_box
+        };
+        self.notify_bounding_box_changed(bounding_box);
 
         self.movement_trace.lock().reset();
         *self.portal_process.lock() = None;
@@ -1208,14 +1210,24 @@ impl EntityBase {
     /// on the entity position.
     pub fn set_bounding_box(&self, bounding_box: WorldAabb) {
         self.state.lock().bounding_box = bounding_box;
+        self.notify_bounding_box_changed(bounding_box);
     }
 
     /// Sets pose and dimensions, then rebuilds the default position-centered box.
     pub fn set_pose_and_dimensions(&self, pose: EntityPose, dimensions: EntityDimensions) {
-        let mut state = self.state.lock();
-        state.pose = pose;
-        state.dimensions = dimensions;
-        state.bounding_box = EntityBaseState::make_bounding_box(state.position, dimensions);
+        let bounding_box = {
+            let mut state = self.state.lock();
+            state.pose = pose;
+            state.dimensions = dimensions;
+            state.bounding_box = EntityBaseState::make_bounding_box(state.position, dimensions);
+            state.bounding_box
+        };
+        self.notify_bounding_box_changed(bounding_box);
+    }
+
+    fn notify_bounding_box_changed(&self, bounding_box: WorldAabb) {
+        let callback = Arc::clone(&self.level_callback.lock());
+        callback.on_bounding_box_changed(bounding_box);
     }
 
     /// Sets the entity's velocity in blocks per tick.

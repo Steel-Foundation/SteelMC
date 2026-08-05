@@ -1056,12 +1056,12 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::chunk::{
-        chunk_access::{ChunkAccess, ChunkStatus},
+        Chunk,
         chunk_holder::ChunkHolder,
         chunk_ticket_manager::ChunkTicketLevel,
         light::{LightCacheSetupRadius, LightSection, LightSectionData, LightSectionRange},
-        proto_chunk::ProtoChunk,
         section::{ChunkSection, Sections},
+        status::ChunkStatus,
     };
 
     fn init_tests() {
@@ -1078,7 +1078,7 @@ mod tests {
 
     fn holder_with_section(pos: ChunkPos, section: ChunkSection) -> Arc<ChunkHolder> {
         let sections = Sections::from_owned(vec![section].into_boxed_slice());
-        let proto = ProtoChunk::new(sections, pos, 0, 16, Weak::new());
+        let proto = Chunk::new(sections, pos, 0, 16, Weak::new());
         let holder = Arc::new(ChunkHolder::new(
             pos,
             ChunkTicketLevel::FULL_CHUNK,
@@ -1086,7 +1086,7 @@ mod tests {
             0,
             16,
         ));
-        holder.insert_chunk(ChunkAccess::Proto(proto), ChunkStatus::Light);
+        holder.insert_chunk(proto, ChunkStatus::Light);
         holder
     }
 
@@ -1234,14 +1234,14 @@ mod tests {
             panic!("center chunk should be available");
         };
         assert_eq!(
-            chunk.set_block_state(
+            chunk.set_block_state_for_generation(
+                ChunkStatus::Light,
                 removed_pos,
                 vanilla_blocks::AIR.default_state(),
                 UpdateFlags::UPDATE_NONE,
             ),
             Some(vanilla_blocks::STONE.default_state())
         );
-        drop(chunk);
 
         let layout = LightCacheLayout::new(center, range());
         let Ok(workset) = LightWorkset::setup(

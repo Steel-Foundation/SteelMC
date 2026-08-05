@@ -98,7 +98,7 @@ fn registered_full_chunks_use_active_order_for_equal_explicit_tick_heads() {
     let second = insert_ready_full_chunk(&world, second_chunk_pos);
 
     for (holder, tick_pos) in [(&first, first_tick_pos), (&second, second_tick_pos)] {
-        let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
+        let Some(chunk) = holder.try_full_chunk() else {
             panic!("inserted test chunk must remain Full");
         };
         chunk.schedule_block_tick(tick_pos, &vanilla_blocks::STONE, 1, TickPriority::Normal, 0);

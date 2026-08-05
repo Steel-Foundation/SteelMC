@@ -813,7 +813,7 @@ pub use projectile::{
 pub(crate) use registry::init_test_entities;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, SpawnGroupData};
-pub(crate) use storage::EntityStorage;
+pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::EntitySyncedData;
 pub(crate) use ticking::{
     snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_with_ticked_if,
