@@ -1,6 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::slice;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Once, OnceLock};
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::fluid::FluidRef;
@@ -14,13 +14,14 @@ use steel_utils::{BlockPos, BlockStateId, Identifier};
 use tokio::runtime::{Builder, Runtime};
 use toml::map::Map;
 
-use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use crate::behavior::init_behaviors;
+use crate::block_entity::init_block_entities;
+use crate::chunk::Chunk;
 use crate::chunk::chunk_holder::{ChunkHolder, TickingReadiness};
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use crate::chunk::level_chunk::LevelChunk;
-use crate::chunk::proto_chunk::ProtoChunk;
 use crate::chunk::section::{ChunkSection, Sections};
-use crate::entity::Entity;
+use crate::chunk::status::ChunkStatus;
+use crate::entity::{Entity, init_test_entities};
 use crate::level_data::WorldGenerationSettings;
 use crate::world::game_event::GameEventContext;
 use crate::world::{
@@ -34,6 +35,17 @@ mod player;
 
 pub(crate) use connection::TestConnection;
 pub(crate) use player::{TestPlayerBuilder, test_runtime_config};
+
+pub(crate) fn init_test_core() {
+    static INIT: Once = Once::new();
+
+    INIT.call_once(|| {
+        init_test_registry();
+        init_behaviors();
+        init_block_entities();
+        init_test_entities();
+    });
+}
 
 pub(crate) fn test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();
@@ -55,14 +67,14 @@ pub(crate) fn insert_ready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<
         .map(|_| ChunkSection::new_empty())
         .collect::<Vec<_>>()
         .into_boxed_slice();
-    let proto = ProtoChunk::new(
+    let proto = Chunk::new(
         Sections::from_owned(sections),
         pos,
         min_y,
         height,
         Arc::downgrade(world),
     );
-    let chunk = LevelChunk::from_proto(proto, min_y, height, Arc::downgrade(world)).chunk;
+    let _ = proto.promote_to_full();
     let holder = Arc::new(ChunkHolder::new(
         pos,
         ChunkTicketLevel::BLOCK_TICKING_CHUNK,
@@ -70,7 +82,7 @@ pub(crate) fn insert_ready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<
         min_y,
         height,
     ));
-    holder.insert_chunk(ChunkAccess::Full(chunk), ChunkStatus::Full);
+    holder.insert_chunk(proto, ChunkStatus::Full);
     assert_eq!(
         holder.transition_ticking_readiness(TickingReadiness::BlockTicking),
         Some(TickingReadiness::Unready)

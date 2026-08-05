@@ -65,6 +65,7 @@ impl World {
     pub(super) fn attach_managed_entity_callback(self: &Arc<Self>, entity: &SharedEntity) {
         let callback = Arc::new(EntityChunkCallback::new(entity.id(), Arc::downgrade(self)));
         entity.set_level_callback(callback);
+        self.entity_manager.commit_bounding_box_change(entity.id());
     }
 
     pub(crate) fn add_entity_to_tracker(self: &Arc<Self>, entity: &SharedEntity) {
@@ -229,7 +230,7 @@ impl World {
 
     pub(crate) fn has_full_chunk(&self, chunk_pos: ChunkPos) -> bool {
         self.chunk_map
-            .with_full_chunk(chunk_pos, |chunk| chunk.as_full().is_some())
+            .with_full_chunk(chunk_pos, |_| true)
             .unwrap_or(false)
     }
 
@@ -652,13 +653,9 @@ impl World {
         &self,
         chunk_pos: ChunkPos,
     ) -> Option<Arc<GameEventListenerStorage>> {
-        self.chunk_map
-            .with_full_chunk(chunk_pos, |chunk| {
-                chunk
-                    .as_full()
-                    .map(|chunk| Arc::clone(&chunk.game_event_listeners.registry))
-            })
-            .flatten()
+        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
+            Arc::clone(&chunk.game_event_listeners().registry)
+        })
     }
 
     /// Dispatches a game event to all listeners in range.
