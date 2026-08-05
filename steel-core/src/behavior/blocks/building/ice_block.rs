@@ -21,7 +21,7 @@ pub struct IceBlock {
     block: BlockRef,
 }
 
-const BASE_MELT_LIGHT_LEVEL: u8 = 11;
+pub const BASE_MELT_LIGHT_LEVEL: u8 = 11;
 
 impl IceBlock {
     /// Creates an ice block behavior.
