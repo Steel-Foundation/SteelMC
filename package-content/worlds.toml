@@ -1,0 +1,32 @@
+#:schema https://raw.githubusercontent.com/Steel-Foundation/SteelMC/refs/heads/master/package-content/worlds.schema.json
+# Documentation: https://steelmc.dev/configuration/world-configuration/
+
+# Root defaults inherited by domains and worlds unless overridden.
+save_path = "saves"
+seed = ""
+default_gamemode = "survival"
+difficulty = "normal"
+
+[storage]
+type = "steel:disk"
+
+[player_storage]
+type = "steel:file"
+
+[domains.minecraft]
+default = true
+
+# Worlds may optionally set same-domain `nether_portal_target` and
+# `end_portal_target` fields to override the vanilla conventional names.
+[[domains.minecraft.worlds]]
+name = "overworld"
+generator = "minecraft:overworld"
+default = true
+
+[[domains.minecraft.worlds]]
+name = "the_nether"
+generator = "minecraft:the_nether"
+
+[[domains.minecraft.worlds]]
+name = "the_end"
+generator = "minecraft:the_end"

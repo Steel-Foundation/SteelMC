@@ -1,0 +1,33 @@
+name: Lint
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Nightly
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-07-23
+          components: rustfmt, clippy
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Spell Check
+        uses: crate-ci/typos@v1.48.0
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy -r --all-targets --all-features

@@ -1,0 +1,99 @@
+[package]
+name = "steel-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+build = "build/build.rs"
+
+[features]
+#default = ["stand-alone"]
+stand-alone = []
+slow_chunk_gen = []
+flint = []
+benchmark-support = []
+
+[dependencies]
+# Internal crates
+steel-crypto.workspace = true
+steel-macros.workspace = true
+steel-protocol.workspace = true
+steel-registry.workspace = true
+steel-utils.workspace = true
+steel-worldgen.workspace = true
+steel-math.workspace = true
+
+# Async runtime
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+wincode.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# Concurrency
+arc-swap.workspace = true
+crossbeam.workspace = true
+parking_lot.workspace = true
+rayon.workspace = true
+scc.workspace = true
+
+# Data structures
+bitflags.workspace = true
+glam.workspace = true
+rustc-hash.workspace = true
+smallvec.workspace = true
+small-map.workspace = true
+chrono.workspace = true
+
+# UUID
+uuid.workspace = true
+
+# Networking
+reqwest.workspace = true
+
+# Logging
+log.workspace = true
+
+# Cryptography
+rsa.workspace = true
+rand.workspace = true
+sha2.workspace = true
+md5.workspace = true
+
+# Compression
+zstd.workspace = true
+flate2.workspace = true
+
+# Utilities
+enum_dispatch.workspace = true
+text_components.workspace = true
+simdnbt.workspace = true
+tracing.workspace = true
+
+[build-dependencies]
+serde.workspace = true
+serde_json.workspace = true
+proc-macro2.workspace = true
+quote.workspace = true
+heck.workspace = true
+syn = { workspace = true, features = ["full"] }
+glob = "0.3.4"
+
+[dev-dependencies]
+criterion.workspace = true
+steel-registry = { workspace = true, features = ["test-utils"] }
+
+[[bench]]
+name = "worldgen"
+harness = false
+required-features = ["benchmark-support"]
+
+[lints]
+workspace = true

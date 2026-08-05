@@ -1,0 +1,117 @@
+[
+  {
+    "id": 0,
+    "name": "empty",
+    "block": "air",
+    "bucket_item": "air",
+    "behavior_properties": {
+      "is_empty": true,
+      "is_source": false,
+      "is_randomly_ticking": false,
+      "explosion_resistance": 0.0,
+      "is_flowing_fluid": false
+    },
+    "properties": [],
+    "default_properties": []
+  },
+  {
+    "id": 1,
+    "name": "flowing_water",
+    "block": "water",
+    "bucket_item": "water_bucket",
+    "behavior_properties": {
+      "is_empty": false,
+      "is_source": false,
+      "is_randomly_ticking": false,
+      "explosion_resistance": 100.0,
+      "is_flowing_fluid": true,
+      "source_fluid": "water",
+      "flowing_fluid": "flowing_water",
+      "tick_delay": 5,
+      "drop_off": 1,
+      "slope_find_distance": 4
+    },
+    "properties": [
+      "FALLING",
+      "LEVEL_FLOWING"
+    ],
+    "default_properties": [
+      "bool_true",
+      "int_1"
+    ]
+  },
+  {
+    "id": 2,
+    "name": "water",
+    "block": "water",
+    "bucket_item": "water_bucket",
+    "behavior_properties": {
+      "is_empty": false,
+      "is_source": true,
+      "is_randomly_ticking": false,
+      "explosion_resistance": 100.0,
+      "is_flowing_fluid": true,
+      "source_fluid": "water",
+      "flowing_fluid": "flowing_water",
+      "tick_delay": 5,
+      "drop_off": 1,
+      "slope_find_distance": 4
+    },
+    "properties": [
+      "FALLING"
+    ],
+    "default_properties": [
+      "bool_true"
+    ]
+  },
+  {
+    "id": 3,
+    "name": "flowing_lava",
+    "block": "lava",
+    "bucket_item": "lava_bucket",
+    "behavior_properties": {
+      "is_empty": false,
+      "is_source": false,
+      "is_randomly_ticking": true,
+      "explosion_resistance": 100.0,
+      "is_flowing_fluid": true,
+      "source_fluid": "lava",
+      "flowing_fluid": "flowing_lava",
+      "tick_delay": 30,
+      "drop_off": 2,
+      "slope_find_distance": 2
+    },
+    "properties": [
+      "FALLING",
+      "LEVEL_FLOWING"
+    ],
+    "default_properties": [
+      "bool_true",
+      "int_1"
+    ]
+  },
+  {
+    "id": 4,
+    "name": "lava",
+    "block": "lava",
+    "bucket_item": "lava_bucket",
+    "behavior_properties": {
+      "is_empty": false,
+      "is_source": true,
+      "is_randomly_ticking": true,
+      "explosion_resistance": 100.0,
+      "is_flowing_fluid": true,
+      "source_fluid": "lava",
+      "flowing_fluid": "flowing_lava",
+      "tick_delay": 30,
+      "drop_off": 2,
+      "slope_find_distance": 2
+    },
+    "properties": [
+      "FALLING"
+    ],
+    "default_properties": [
+      "bool_true"
+    ]
+  }
+]

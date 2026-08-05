@@ -1,0 +1,210 @@
+cargo-features = ["codegen-backend"]
+[workspace]
+resolver = "2"
+members = [
+    "steel",
+    "steel-login",
+    "steel-macros",
+    "steel-protocol",
+    "steel-registry",
+    "steel-worldgen",
+    "steel-utils",
+    "steel-core",
+    "steel-crypto",
+    "steel-math",
+]
+
+[workspace.package]
+version = "0.15.2+mc26.2"
+edition = "2024"
+authors = ["Alve Jeansson"]
+license = "AGPL-3.0-or-later"
+
+[workspace.dependencies]
+# Internal crates
+steel-core = { path = "steel-core" }
+steel-crypto = { path = "steel-crypto" }
+steel-login = { path = "steel-login" }
+steel-macros = { path = "steel-macros" }
+steel-protocol = { path = "steel-protocol" }
+steel-registry = { path = "steel-registry" }
+steel-utils = { path = "steel-utils" }
+steel-worldgen = { path = "steel-worldgen" }
+steel-math = { path = "steel-math" }
+
+# Async runtime
+tokio = { version = "1.53.1", features = [
+    "macros",
+    "net",
+    "rt-multi-thread",
+    "sync",
+    "io-std",
+    "fs",
+    "io-util",
+    "time",
+    "signal",
+] }
+tokio-util = { version = "0.7.19", features = ["rt"] }
+futures = "0.3.33"
+
+# Serialization
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+toml = "1.1.3"
+simdnbt = "0.10.0"
+unicode_names2 = "3.1.0"
+wincode = { version = "0.6.0", features = ["derive"] }
+
+# Error handling
+thiserror = "2.0.19"
+anyhow = "1.0.104"
+
+# Proc macros
+proc-macro2 = "1.0.107"
+quote = "1.0.47"
+syn = "3.0.3"
+
+# Concurrency
+crossbeam = "0.8.4"
+parking_lot = { version = "0.12.5", features = ["nightly", "arc_lock"] }
+rayon = "1.12.0"
+scc = "3.8.5"
+arc-swap = "1.9.2"
+
+# Data structures
+glam = { version = "0.33.2", features = ["serde"] }
+rustc-hash = "2.1.3"
+small-map = "0.1.5"
+smallvec = "1.15.2"
+bitflags = "2.13.1"
+phf = { version = "0.14.0", features = ["macros"] }
+chrono = "0.4.45"
+
+# UUID
+uuid = { version = "1.24.0", features = ["serde", "v4"] }
+
+# Logging
+log = "0.4.33"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = [
+    "env-filter",
+    "fmt",
+    "ansi",
+    "std",
+    "tracing-log",
+] }
+tracing-log = "0.2.0"
+opentelemetry = "0.32.0"
+opentelemetry_sdk = { version = "0.32.1", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic"] }
+tracing-opentelemetry = "0.33.0"
+
+# Networking
+reqwest = { version = "0.13.4", features = [
+    "json",
+    "rustls",
+], default-features = false }
+
+# Cryptography
+rsa = { version = "0.10.0-rc.18", features = ["sha2"] }
+rand = "0.10.2"
+aes = "0.9.1"
+cfb8 = "0.9.1"
+sha1 = "0.11.0"
+sha2 = "0.11.0"
+md5 = "0.8.1"
+base64 = "0.23.0"
+hex = "0.4.3"
+text_components = {
+    git = "https://github.com/Steel-Foundation/TextComponents.git",
+    rev = "04d60d0d9c65ab1cb05154105e184d5904e8990b",
+    features = [
+        "custom",
+        "nbt",
+        "serde",
+    ]
+}
+
+# Compression
+flate2 = "1.1.9"
+zstd = "0.13.3"
+
+# Utilities
+enum_dispatch = "0.3.13"
+num-traits = "0.2.19"
+replace_with = { version = "0.1.8", features = ["nightly"] }
+
+heck = "0.5.0"
+
+# Build dependencies
+phf_codegen = "0.14.0"
+
+# Dev/Bench dependencies
+criterion = "0.8.2"
+
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+
+[profile.flint]
+inherits = "dev"
+debug = true
+
+[profile.bench]
+debug = true
+
+[profile.dev]
+debug = 0
+#codegen-backend = "cranelift"
+
+
+[profile.dev.package.steel-worldgen]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev.package.steel-math]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[workspace.lints.rust]
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+single_call_fn = "allow"
+multiple_inherent_impl = "allow"
+shadow_unrelated = "allow"
+missing_errors_doc = "allow"
+struct_excessive_bools = "allow"
+needless_pass_by_value = "allow"
+cargo_common_metadata = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+"struct_field_names" = "allow"
+absolute_paths = "warn"
+missing_const_for_fn = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+undocumented_unsafe_blocks = "warn"
+
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -2 }
+#cargo = { level = "warn", priority = 2 }
+unwrap_used = { level = "warn", priority = -3 }
+
+[profile.samply]
+inherits = "release"
+debug = true
+
+[profile.samplydev]
+inherits = "dev"
+debug = true

@@ -1,0 +1,84 @@
+use crate::generator_functions::{
+    generate_identifier, generate_spawn_condition_entry, read_variants_from_dir,
+};
+use crate::shared_structs::SpawnConditionEntry;
+use heck::ToShoutySnakeCase;
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::quote;
+use serde::Deserialize;
+use steel_utils::Identifier;
+
+#[derive(Deserialize, Debug)]
+pub struct ChickenVariantJson {
+    asset_id: Identifier,
+    baby_asset_id: Identifier,
+    #[serde(default)]
+    model: String,
+    spawn_conditions: Vec<SpawnConditionEntry>,
+}
+
+fn generate_chicken_model_type(model: &str) -> TokenStream {
+    if model == "cold" {
+        quote! { ChickenModelType::Cold }
+    } else {
+        quote! { ChickenModelType::Normal }
+    }
+}
+
+pub(crate) fn build() -> TokenStream {
+    let chicken_variants: Vec<(String, ChickenVariantJson)> =
+        read_variants_from_dir("chicken_variant");
+
+    let mut stream = TokenStream::new();
+
+    stream.extend(quote! {
+        use crate::chicken_variant::{
+            ChickenVariant, ChickenVariantRegistry, ChickenModelType,
+        };
+        use steel_utils::Identifier;
+        use std::borrow::Cow;
+        use crate::shared_structs::{SpawnConditionEntry , BiomeCondition};
+    });
+
+    // Generate static chicken variant definitions
+    let mut register_stream = TokenStream::new();
+    for (chicken_variant_name, chicken_variant) in &chicken_variants {
+        let chicken_variant_ident = Ident::new(
+            &chicken_variant_name.to_shouty_snake_case(),
+            Span::call_site(),
+        );
+        let chicken_variant_name_str = chicken_variant_name.clone();
+
+        let key = quote! { Identifier::vanilla_static(#chicken_variant_name_str) };
+        let asset_id = generate_identifier(&chicken_variant.asset_id);
+        let baby_asset_id = generate_identifier(&chicken_variant.baby_asset_id);
+        let model = generate_chicken_model_type(&chicken_variant.model);
+
+        let spawn_conditions: Vec<_> = chicken_variant
+            .spawn_conditions
+            .iter()
+            .map(generate_spawn_condition_entry)
+            .collect();
+
+        stream.extend(quote! {
+            pub static #chicken_variant_ident: ChickenVariant = ChickenVariant {
+                key: #key,
+                asset_id: #asset_id,
+                baby_asset_id: #baby_asset_id,
+                model: #model,
+                spawn_conditions: &[#(#spawn_conditions),*],
+            };
+        });
+        register_stream.extend(quote! {
+            registry.register(&#chicken_variant_ident);
+        });
+    }
+
+    stream.extend(quote! {
+        pub fn register_chicken_variants(registry: &mut ChickenVariantRegistry) {
+            #register_stream
+        }
+    });
+
+    stream
+}

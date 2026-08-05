@@ -1,0 +1,71 @@
+[package]
+name = "steel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Internal crates
+steel-core.workspace = true
+steel-login.workspace = true
+steel-utils.workspace = true
+
+# Async runtime
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+
+# Serialization
+serde.workspace = true
+toml.workspace = true
+
+# Concurrency
+parking_lot = { workspace = true, features = [
+    "deadlock_detection",
+], optional = true }
+
+
+# Logging
+log.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
+crossterm = { version = "0.29.0", features = ["osc52"] }
+chrono.workspace = true
+
+# Cryptography
+text_components.workspace = true
+
+# Networking
+reqwest.workspace = true
+
+# Memory
+mimalloc = { version = "0.1.52", optional = true }
+
+# Profiling
+dhat = { version = "0.3.3", optional = true }
+strip-ansi-escapes = "0.2.1"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[features]
+default = ["mimalloc"]
+stand-alone = []
+deadlock_detection = ["dep:parking_lot"]
+dhat-heap = ["dhat"]
+mimalloc = ["dep:mimalloc"]
+slow_chunk_gen = ["steel-core/slow_chunk_gen"]
+jaeger = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:tracing-opentelemetry",
+]

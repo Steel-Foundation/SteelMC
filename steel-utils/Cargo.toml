@@ -1,0 +1,83 @@
+[package]
+name = "steel-utils"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+build = "build/build.rs"
+
+[dependencies]
+steel-macros.workspace = true
+
+# Async runtime
+tokio.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+simdnbt.workspace = true
+wincode.workspace = true
+
+# Concurrency
+parking_lot.workspace = true
+rayon.workspace = true
+
+# Data structures
+bitflags.workspace = true
+phf.workspace = true
+rustc-hash.workspace = true
+glam.workspace = true
+
+# UUID
+uuid.workspace = true
+
+# Logging
+tracing.workspace = true
+
+
+# Cryptography
+crc32c = "0.6.8"
+
+# Utilities
+enum_dispatch.workspace = true
+rand.workspace = true
+text_components.workspace = true
+toml.workspace = true
+unicode_names2.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+md5.workspace = true
+
+[build-dependencies]
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Proc macros
+proc-macro2.workspace = true
+quote.workspace = true
+
+# Data structures
+phf_codegen.workspace = true
+
+# Utilities
+heck.workspace = true
+text_components = { workspace = true, features = ["build"] }
+reqwest = { workspace = true, features = ["blocking"] }
+sha1.workspace = true
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+
+[[bench]]
+name = "xoroshiro"
+harness = false
+
+[[bench]]
+name = "legacy_random"
+harness = false
+
+[lints]
+workspace = true
+
+[features]
+fmt = []

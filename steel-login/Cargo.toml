@@ -1,0 +1,48 @@
+[package]
+name = "steel-login"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Internal crates
+steel-core.workspace = true
+steel-protocol.workspace = true
+steel-registry.workspace = true
+steel-utils.workspace = true
+
+# Async runtime
+tokio.workspace = true
+tokio-util.workspace = true
+
+# Serialization
+base64.workspace = true
+
+# Concurrency
+crossbeam.workspace = true
+
+# UUID
+uuid.workspace = true
+
+# Logging
+log.workspace = true
+
+# Networking
+reqwest.workspace = true
+
+# Cryptography
+rsa.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+rand.workspace = true
+hex.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# Texts components
+text_components.workspace = true
+
+[lints]
+workspace = true

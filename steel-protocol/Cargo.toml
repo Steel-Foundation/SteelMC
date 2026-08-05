@@ -1,0 +1,47 @@
+[package]
+name = "steel-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Internal crates
+steel-macros.workspace = true
+steel-registry.workspace = true
+steel-utils.workspace = true
+
+# Async runtime
+tokio.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+simdnbt.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# Data structures
+glam.workspace = true
+rustc-hash.workspace = true
+
+# UUID
+uuid.workspace = true
+
+# Logging
+log.workspace = true
+
+# Cryptography
+aes.workspace = true
+cfb8.workspace = true
+
+# Compression
+flate2.workspace = true
+
+# Utilities
+replace_with.workspace = true
+text_components.workspace = true
+
+[lints]
+workspace = true

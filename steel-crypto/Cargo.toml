@@ -1,0 +1,20 @@
+[package]
+name = "steel-crypto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Error handling
+thiserror.workspace = true
+
+# Logging
+log.workspace = true
+
+# Cryptography
+rsa.workspace = true
+rand.workspace = true
+
+[lints]
+workspace = true
