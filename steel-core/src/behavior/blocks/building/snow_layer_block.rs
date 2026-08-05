@@ -10,6 +10,7 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::building::ice_block::BASE_MELT_LIGHT_LEVEL;
 use crate::behavior::context::BlockPlaceContext;
 use crate::chunk::light::LightLayer;
 use crate::entity::ai::path::PathComputationType;
@@ -76,7 +77,7 @@ impl BlockBehavior for SnowLayerBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if world.light_value_at(LightLayer::Block, pos) > 11 {
+        if world.light_value_at(LightLayer::Block, pos) > BASE_MELT_LIGHT_LEVEL {
             world.drop_resources(state, pos);
             world.set_block(
                 pos,
