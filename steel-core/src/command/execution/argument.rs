@@ -1195,7 +1195,7 @@ fn parse_structured_component(
             "Invalid text component cursor",
         ));
     }
-    // is necesary??  already exist on parse_component
+    
     //validate_component_syntax(&tag).map_err(|error| {
     //    reader.restore(start);
     //    invalid_component(reader, error.to_string())
