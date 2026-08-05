@@ -121,6 +121,41 @@ impl BigDripleafBlock {
             .set_value(&FACING, facing);
         world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL)
     }
+    /// Used for bonemeal functionality on small dripleaf
+    pub fn place_with_random_height(
+        world: &Arc<World>,
+        rng: &mut dyn Rng,
+        stem_bottom_pos: BlockPos,
+        facing: Direction,
+    ) {
+        let desired_height = rng.random_range(2..5);
+        let mut pos = stem_bottom_pos;
+        let mut height = 0;
+
+        while height < desired_height && Self::can_grow_into(world, pos) {
+            height += 1;
+            pos = pos.relative(Direction::Up);
+        }
+
+        let leaf_y = stem_bottom_pos.y() + height - 1;
+        pos = pos.at_y(stem_bottom_pos.y());
+
+        while pos.y() < leaf_y {
+            BigDripleafStemBlock::place(
+                world,
+                pos,
+                world.get_block_state(pos).get_fluid_state(),
+                facing,
+            );
+            pos = pos.relative(Direction::Up);
+        }
+        Self::place(
+            world,
+            pos,
+            world.get_block_state(pos).get_fluid_state(),
+            facing,
+        );
+    }
 }
 
 impl BlockBehavior for BigDripleafBlock {

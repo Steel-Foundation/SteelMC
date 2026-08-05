@@ -1,10 +1,14 @@
 //! Fluid registry for Minecraft fluids.
 
 use crate::{
-    RegistryExt, RegistryTags, TaggedRegistryExt, vanilla_fluid_tags::FluidTag, vanilla_fluids,
+    RegistryExt, RegistryTags, TaggedRegistryExt,
+    blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
+    vanilla_blocks,
+    vanilla_fluid_tags::FluidTag,
+    vanilla_fluids,
 };
 use rustc_hash::FxHashMap;
-use steel_utils::Identifier;
+use steel_utils::{BlockStateId, Identifier};
 
 /// A fluid type definition (e.g., water, lava, empty).
 #[derive(Debug)]
@@ -199,6 +203,18 @@ impl FluidState {
             // amount 7 -> level 1, amount 1 -> level 7
             8 - self.amount
         }
+    }
+    pub fn create_legacy_block(self) -> BlockStateId {
+        vanilla_blocks::WATER
+            .default_state()
+            .set_value(&BlockStateProperties::LEVEL, Self::get_legacy_level(self))
+    }
+    const fn get_legacy_level(self) -> u8 {
+        if self.is_source() {
+            return 0;
+        }
+        let falling_addition = if self.falling { 8 } else { 0 };
+        8 - self.amount.min(8) + falling_addition
     }
 }
 
