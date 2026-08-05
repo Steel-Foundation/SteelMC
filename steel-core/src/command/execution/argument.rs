@@ -1195,11 +1195,6 @@ fn parse_structured_component(
             "Invalid text component cursor",
         ));
     }
-    
-    //validate_component_syntax(&tag).map_err(|error| {
-    //    reader.restore(start);
-    //    invalid_component(reader, error.to_string())
-    //})?;
 
     TextComponent::try_from_nbt(&tag).map_err(|error| {
         reader.restore(start);
