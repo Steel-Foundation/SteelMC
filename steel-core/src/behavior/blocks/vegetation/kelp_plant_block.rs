@@ -107,6 +107,7 @@ impl BlockBehavior for KelpPlantBlock {
         Some(self)
     }
 }
+
 impl Bonemealable for KelpPlantBlock {
     fn is_valid_bonemeal_target(
         &self,

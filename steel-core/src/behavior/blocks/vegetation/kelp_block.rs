@@ -23,6 +23,8 @@ pub struct KelpBlock {
     block: BlockRef,
 }
 
+const GROW_PER_TICK_PROBABILITY: f64 = 0.14;
+
 impl KelpBlock {
     /// Creates a new kelp block behavior.
     #[must_use]
@@ -43,7 +45,7 @@ impl KelpBlock {
             self.block,
             Direction::Up,
             true,
-            0.14,
+            GROW_PER_TICK_PROBABILITY,
             &vanilla_blocks::KELP_PLANT,
             Some(Self::get_blocks_to_grow_when_bonemealed),
             Self::can_grow_into,
@@ -114,10 +116,11 @@ impl BlockBehavior for KelpBlock {
         false
     }
 
-    fn as_bonemealable(&self) -> Option<&dyn super::bonemealable::Bonemealable> {
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }
 }
+
 impl Bonemealable for KelpBlock {
     fn is_valid_bonemeal_target(
         &self,
