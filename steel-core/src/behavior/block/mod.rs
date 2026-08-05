@@ -3,6 +3,7 @@
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
+use rand::rngs::ThreadRng;
 use smallvec::SmallVec;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
@@ -15,6 +16,7 @@ use steel_registry::blocks::shapes::{
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
+use steel_registry::loot_table::{LootContext, LootTableRef};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entities;
@@ -30,7 +32,7 @@ use crate::behavior::{InventoryAccess, PlacementSource};
 use crate::block_entity::{BlockEntity, BlockEntityTicker, SharedBlockEntity};
 use crate::entity::ai::path::PathComputationType;
 use crate::entity::projectile::Projectile;
-use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource};
+use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, entity_loot_ref};
 use crate::fluid::is_water_fluid;
 use crate::physics::collide;
 use crate::player::Player;
@@ -50,6 +52,32 @@ pub(crate) fn default_can_be_replaced(
         && context.with_item(|item| {
             item.is_empty() || item.item() != REGISTRY.items.by_block(state.get_block())
         })
+}
+
+/// Gets random loot from a given loot table reference and other factors, and returns
+/// each item from it in a [`Vec`].
+#[must_use]
+pub(crate) fn drop_from_block_interact_loot_table(
+    key: LootTableRef,
+    interacted_block_state: BlockStateId,
+    _interacted_block_entity: Option<SharedBlockEntity>,
+    tool: Option<&ItemStack>,
+    interacting_entity: Option<&dyn Entity>,
+    rng: &mut ThreadRng,
+) -> Vec<ItemStack> {
+    let mut ctx = LootContext::new(rng).with_block_state(interacted_block_state);
+
+    // TODO: Add the block entity to the context when it can be done.
+
+    if let Some(interacting_entity) = interacting_entity {
+        ctx = ctx.with_interacting_entity(entity_loot_ref(interacting_entity));
+    }
+
+    if let Some(tool) = tool {
+        ctx = ctx.with_tool(tool);
+    }
+
+    key.get_random_items(&mut ctx)
 }
 
 mod context;
