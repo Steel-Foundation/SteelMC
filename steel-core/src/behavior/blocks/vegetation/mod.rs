@@ -130,7 +130,10 @@ pub use nether_roots_block::NetherRootsBlock;
 pub use nether_sprouts::NetherSproutsBlock;
 pub use nether_wart::NetherWartBlock;
 pub use pitcher_crop::PitcherCropBlock;
-pub use pointed_dripstone_block::{PointedDripstoneBlock, SulfurSpikeBlock};
+pub use pointed_dripstone_block::{
+    PointedDripstoneBlock, SulfurSpikeBlock, find_stalactite_tip_above_cauldron,
+    get_cauldron_fill_fluid_type,
+};
 pub use potato::PotatoBlock;
 pub use pumpkin_block::PumpkinBlock;
 pub use rooted_dirt_block::RootedDirtBlock;
