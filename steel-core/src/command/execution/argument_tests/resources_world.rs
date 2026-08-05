@@ -320,7 +320,7 @@ fn entity_anchor_argument_parses_and_suggests_vanilla_names() {
 
 #[test]
 fn summonable_entity_argument_resolves_only_registered_factories() {
-    init_test_core();
+    init_globals_once();
     let dispatcher = resource_dispatcher(SteelArgumentType::summonable_entity());
 
     for input in ["resource pig", "resource minecraft:pig"] {
@@ -342,7 +342,7 @@ fn summonable_entity_argument_resolves_only_registered_factories() {
 
 #[test]
 fn summonable_entity_argument_suggests_only_registered_factories() {
-    init_test_core();
+    init_globals_once();
     let dispatcher = resource_dispatcher(SteelArgumentType::summonable_entity());
     let parse = dispatcher.parse("resource minecraft:pi", TestSource::new());
     let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {

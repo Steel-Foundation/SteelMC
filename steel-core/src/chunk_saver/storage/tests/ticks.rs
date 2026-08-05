@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn persisted_proto_ticks_deduplicate_while_full_ticks_retain_saved_entries() {
-    init_test_core();
+    init_globals_once();
     let pos = ChunkPos::new(0, 0);
     let duplicate_ticks = vec![
         PersistentTick {
@@ -137,7 +137,7 @@ fn forced_prepare_preserves_dirty_set_after_save_decision() {
 
 #[test]
 fn full_chunk_save_snapshots_chunk_owned_scheduled_ticks() {
-    init_test_core();
+    init_globals_once();
     let world = fresh_test_world("chunk_owned_tick_save");
     let chunk_pos = ChunkPos::new(0, 0);
     let holder = insert_ready_full_chunk(&world, chunk_pos);
