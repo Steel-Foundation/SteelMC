@@ -47,17 +47,17 @@ pub(super) fn msg_registration() -> CommandRegistration<CommandSource> {
 }
 
 fn say_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("say").then(argument("message", SteelArgumentType::message()).executes(say))
+    literal("say").then(argument("message", SteelArgumentType::component()).executes(say))
 }
 
 fn me_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("me").then(argument("message", SteelArgumentType::message()).executes(me))
+    literal("me").then(argument("message", SteelArgumentType::component()).executes(me))
 }
 
 fn msg_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("msg").then(
         argument("targets", SteelArgumentType::players())
-            .then(argument("message", SteelArgumentType::message()).executes(msg)),
+            .then(argument("message", SteelArgumentType::component()).executes(msg)),
     )
 }
 
@@ -235,7 +235,7 @@ mod tests {
             panic!("say message node should exist");
         };
         // Expect the message argument (vanilla message argument)
-        assert_eq!(message.argument_type(), Some(&SteelArgumentType::message()));
+        assert_eq!(message.argument_type(), Some(&SteelArgumentType::component()));
         assert!(message.is_executable());
     }
 
@@ -264,7 +264,7 @@ mod tests {
             panic!("me message node should exist");
         };
         // Expect the message argument (vanilla message argument)
-        assert_eq!(message.argument_type(), Some(&SteelArgumentType::message()));
+        assert_eq!(message.argument_type(), Some(&SteelArgumentType::component()));
         assert!(message.is_executable());
     }
 
@@ -311,7 +311,7 @@ mod tests {
             panic!("msg message node should exist");
         };
         // Expect the message argument (vanilla message argument)
-        assert_eq!(message.argument_type(), Some(&SteelArgumentType::message()));
+        assert_eq!(message.argument_type(), Some(&SteelArgumentType::component()));
         assert!(message.is_executable());
     }
 }
