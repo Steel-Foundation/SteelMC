@@ -13,7 +13,6 @@ fn light_changed_does_not_broadcast_unloading_full_chunk() {
         .try_chunk(ChunkStatus::Full)
         .expect("test holder should contain a full chunk");
     chunk.clear_dirty();
-    drop(chunk);
 
     chunk_map.light_changed(LightLayer::Block, SectionPos::new(pos.0.x, 0, pos.0.y));
 
@@ -21,7 +20,6 @@ fn light_changed_does_not_broadcast_unloading_full_chunk() {
         .try_chunk(ChunkStatus::Full)
         .expect("test holder should still contain a full chunk");
     assert!(chunk.is_dirty());
-    drop(chunk);
 
     assert!(chunk_map.chunks_to_broadcast.lock().is_empty());
     assert!(!holder.has_changes_to_broadcast());
