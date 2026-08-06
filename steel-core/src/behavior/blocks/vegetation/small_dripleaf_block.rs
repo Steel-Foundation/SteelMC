@@ -36,6 +36,7 @@ impl SmallDripleafBlock {
             base: DoublePlantBlock::new(block),
         }
     }
+
     fn may_place_on(state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let fluid = get_fluid_state_from_block(world.get_block_state(pos.above()));
         state
@@ -101,6 +102,7 @@ impl BlockBehavior for SmallDripleafBlock {
         );
         world.set_block(above_pos, block_state, UpdateFlags::UPDATE_ALL);
     }
+
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }
@@ -114,6 +116,7 @@ impl Bonemealable for SmallDripleafBlock {
     ) -> bool {
         true
     }
+
     fn perform_bonemeal(
         &self,
         state: BlockStateId,
@@ -144,13 +147,17 @@ impl Bonemealable for SmallDripleafBlock {
         );
     }
 }
+
 #[cfg(test)]
 mod tests {
+    use steel_registry::blocks::properties::BoolProperty;
     use steel_registry::{test_support::init_test_registry, vanilla_blocks};
 
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::test_support::TestLevel;
+
+    const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
 
     #[test]
     fn small_dripleaf_schedules_water_before_double_plant_survival() {
@@ -159,11 +166,8 @@ mod tests {
         let behavior = SmallDripleafBlock::new(&vanilla_blocks::SMALL_DRIPLEAF);
         let state = vanilla_blocks::SMALL_DRIPLEAF
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, true)
-            .set_value(
-                &BlockStateProperties::DOUBLE_BLOCK_HALF,
-                DoubleBlockHalf::Lower,
-            );
+            .set_value(&WATERLOGGED, true)
+            .set_value(&HALF, DoubleBlockHalf::Lower);
         let level = TestLevel::default();
 
         assert!(
