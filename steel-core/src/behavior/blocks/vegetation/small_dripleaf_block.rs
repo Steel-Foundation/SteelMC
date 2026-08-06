@@ -11,6 +11,7 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::blocks::BigDripleafBlock;
+use crate::behavior::blocks::vegetation::Vegetation;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockPlaceContext, PlacementSource};
 use crate::fluid::{FluidStateExt, get_fluid_state_from_block};
@@ -37,15 +38,18 @@ impl SmallDripleafBlock {
         }
     }
 
-    fn may_place_on(state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+    fn may_place_on(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let fluid = get_fluid_state_from_block(world.get_block_state(pos.above()));
         state
             .get_block()
             .has_tag(&BlockTag::SUPPORTS_SMALL_DRIPLEAF)
-            || (fluid.is_full() && fluid.is_water())
-                && state.get_block().has_tag(&BlockTag::SUPPORTS_VEGETATION)
+            || (fluid.is_full()
+                && fluid.is_water()
+                && <Self as Vegetation>::may_place_on(self, state, world, pos))
     }
 }
+
+impl Vegetation for SmallDripleafBlock {}
 
 impl BlockBehavior for SmallDripleafBlock {
     fn update_shape(
@@ -69,7 +73,7 @@ impl BlockBehavior for SmallDripleafBlock {
 
         let below_pos = pos.below();
         let below_state = world.get_block_state(below_pos);
-        Self::may_place_on(below_state, world, below_pos)
+        self.may_place_on(below_state, world, below_pos)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
