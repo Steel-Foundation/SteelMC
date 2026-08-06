@@ -39,6 +39,16 @@ pub struct CampfireBlock {
     fire_damage: i32,
 }
 
+/// Outcome of attempting to place a held item onto a campfire.
+enum CampfirePlaceOutcome {
+    /// The item was placed onto a free slot and consumed from the hand.
+    Placed,
+    /// The item is cookable but all slots are occupied.
+    NoSlot,
+    /// The held item is not a campfire cooking ingredient.
+    NotCookable,
+}
+
 impl CampfireBlock {
     /// Creates a campfire block behavior.
     #[must_use]
@@ -220,34 +230,30 @@ impl BlockBehavior for CampfireBlock {
             return InteractionResult::TryEmptyHandInteraction;
         };
 
-        // Check whether the held item is campfire-cookable and, if so, attempt to
-        // place it onto the campfire.
-        let recipe_time = inv.with_item(|stack| {
-            REGISTRY
-                .recipes
-                .find_campfire_recipe(stack)
-                .map(|recipe| recipe.cooking_time)
-        });
-        let Some(cooking_time) = recipe_time else {
-            return InteractionResult::TryEmptyHandInteraction;
-        };
-
-        let placed = inv.with_item(|stack| {
-            let placed = campfire.place_food(stack.clone(), cooking_time);
-            if placed {
+        // Look up the campfire recipe for the held item and, if cookable, place
+        // a single item onto the campfire and consume it from the hand.
+        let outcome = inv.with_item(|stack| {
+            let Some(recipe) = REGISTRY.recipes.find_campfire_recipe(stack) else {
+                return CampfirePlaceOutcome::NotCookable;
+            };
+            if campfire.place_food(stack.clone(), recipe.cooking_time) {
                 stack.shrink(1);
+                CampfirePlaceOutcome::Placed
+            } else {
+                CampfirePlaceOutcome::NoSlot
             }
-            placed
         });
 
-        if placed {
-            world.send_block_updated(pos);
-            let context = GameEventContext::new(Some(player), Some(state));
-            world.game_event(&vanilla_game_events::BLOCK_CHANGE, pos, &context);
-            // The INTERACT_WITH_CAMPFIRE stat awaits Steel's statistics foundation.
-            InteractionResult::SuccessServer
-        } else {
-            InteractionResult::Consume
+        match outcome {
+            CampfirePlaceOutcome::Placed => {
+                world.send_block_updated(pos);
+                let context = GameEventContext::new(Some(player), Some(state));
+                world.game_event(&vanilla_game_events::BLOCK_CHANGE, pos, &context);
+                // The INTERACT_WITH_CAMPFIRE stat awaits Steel's statistics foundation.
+                InteractionResult::SuccessServer
+            }
+            CampfirePlaceOutcome::NoSlot => InteractionResult::Consume,
+            CampfirePlaceOutcome::NotCookable => InteractionResult::TryEmptyHandInteraction,
         }
     }
 

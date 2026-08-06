@@ -310,6 +310,77 @@ fn generate_ingredient_tokens(ingredient: &ParsedIngredient) -> TokenStream {
     }
 }
 
+/// Generates the creator functions, struct fields, field initializers and
+/// registration calls shared by every cooking recipe group (furnace smelting
+/// and campfire). They differ only in the member name used for identifiers.
+fn generate_cooking_group(
+    recipes: &[CookingRecipeData],
+    member: &str,
+) -> (
+    Vec<TokenStream>,
+    Vec<TokenStream>,
+    Vec<TokenStream>,
+    Vec<TokenStream>,
+) {
+    let creator_fns: Vec<TokenStream> = recipes
+        .iter()
+        .map(|r| {
+            let fn_ident = Ident::new(&format!("create_{member}_{}", r.ident), Span::call_site());
+            let name = &r.name;
+            let ingredient = generate_ingredient_tokens(&r.ingredient);
+            let result_item_ident = &r.result_item_ident;
+            let result_count = r.result_count;
+            let experience = r.experience;
+            let cooking_time = r.cooking_time;
+
+            quote! {
+                #[inline(never)]
+                fn #fn_ident() -> CookingRecipe {
+                    CookingRecipe {
+                        id: Identifier::vanilla_static(#name),
+                        ingredient: #ingredient,
+                        result: RecipeResult {
+                            item: &*vanilla_items::#result_item_ident,
+                            count: #result_count,
+                        },
+                        experience: #experience,
+                        cooking_time: #cooking_time,
+                    }
+                }
+            }
+        })
+        .collect();
+
+    let fields: Vec<TokenStream> = recipes
+        .iter()
+        .map(|r| {
+            let ident = &r.ident;
+            quote! { pub #ident: CookingRecipe, }
+        })
+        .collect();
+
+    let field_inits: Vec<TokenStream> = recipes
+        .iter()
+        .map(|r| {
+            let ident = &r.ident;
+            let fn_ident = Ident::new(&format!("create_{member}_{}", r.ident), Span::call_site());
+            quote! { #ident: #fn_ident(), }
+        })
+        .collect();
+
+    let register_method = Ident::new(&format!("register_{member}"), Span::call_site());
+    let member_ident = Ident::new(member, Span::call_site());
+    let registers: Vec<TokenStream> = recipes
+        .iter()
+        .map(|r| {
+            let ident = &r.ident;
+            quote! { registry.#register_method(&RECIPES.#member_ident.#ident); }
+        })
+        .collect();
+
+    (creator_fns, fields, field_inits, registers)
+}
+
 pub(crate) fn build() -> TokenStream {
     let recipe_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/recipe";
     println!("cargo:rerun-if-changed={recipe_dir}");
@@ -472,63 +543,12 @@ pub(crate) fn build() -> TokenStream {
         })
         .collect();
 
-    let smelting_creator_fns: Vec<TokenStream> = smelting_recipes
-        .iter()
-        .map(|r| {
-            let fn_ident = Ident::new(&format!("create_smelting_{}", r.ident), Span::call_site());
-            let name = &r.name;
-            let ingredient = generate_ingredient_tokens(&r.ingredient);
-            let result_item_ident = &r.result_item_ident;
-            let result_count = r.result_count;
-            let experience = r.experience;
-            let cooking_time = r.cooking_time;
-
-            quote! {
-                #[inline(never)]
-                fn #fn_ident() -> CookingRecipe {
-                    CookingRecipe {
-                        id: Identifier::vanilla_static(#name),
-                        ingredient: #ingredient,
-                        result: RecipeResult {
-                            item: &*vanilla_items::#result_item_ident,
-                            count: #result_count,
-                        },
-                        experience: #experience,
-                        cooking_time: #cooking_time,
-                    }
-                }
-            }
-        })
-        .collect();
-
-    let campfire_creator_fns: Vec<TokenStream> = campfire_recipes
-        .iter()
-        .map(|r| {
-            let fn_ident = Ident::new(&format!("create_campfire_{}", r.ident), Span::call_site());
-            let name = &r.name;
-            let ingredient = generate_ingredient_tokens(&r.ingredient);
-            let result_item_ident = &r.result_item_ident;
-            let result_count = r.result_count;
-            let experience = r.experience;
-            let cooking_time = r.cooking_time;
-
-            quote! {
-                #[inline(never)]
-                fn #fn_ident() -> CookingRecipe {
-                    CookingRecipe {
-                        id: Identifier::vanilla_static(#name),
-                        ingredient: #ingredient,
-                        result: RecipeResult {
-                            item: &*vanilla_items::#result_item_ident,
-                            count: #result_count,
-                        },
-                        experience: #experience,
-                        cooking_time: #cooking_time,
-                    }
-                }
-            }
-        })
-        .collect();
+    // Both cooking recipe groups (furnace smelting and campfire) share the same
+    // structure, so we use a helper
+    let (smelting_creator_fns, smelting_fields, smelting_field_inits, smelting_registers) =
+        generate_cooking_group(&smelting_recipes, "smelting");
+    let (campfire_creator_fns, campfire_fields, campfire_field_inits, campfire_registers) =
+        generate_cooking_group(&campfire_recipes, "campfire");
 
     // Generate struct fields
     let shaped_fields: Vec<TokenStream> = shaped_recipes
@@ -544,22 +564,6 @@ pub(crate) fn build() -> TokenStream {
         .map(|r| {
             let ident = &r.ident;
             quote! { pub #ident: ShapelessRecipe, }
-        })
-        .collect();
-
-    let smelting_fields: Vec<TokenStream> = smelting_recipes
-        .iter()
-        .map(|r| {
-            let ident = &r.ident;
-            quote! { pub #ident: CookingRecipe, }
-        })
-        .collect();
-
-    let campfire_fields: Vec<TokenStream> = campfire_recipes
-        .iter()
-        .map(|r| {
-            let ident = &r.ident;
-            quote! { pub #ident: CookingRecipe, }
         })
         .collect();
 
@@ -582,24 +586,6 @@ pub(crate) fn build() -> TokenStream {
         })
         .collect();
 
-    let smelting_field_inits: Vec<TokenStream> = smelting_recipes
-        .iter()
-        .map(|r| {
-            let ident = &r.ident;
-            let fn_ident = Ident::new(&format!("create_smelting_{}", r.ident), Span::call_site());
-            quote! { #ident: #fn_ident(), }
-        })
-        .collect();
-
-    let cooking_field_inits: Vec<TokenStream> = campfire_recipes
-        .iter()
-        .map(|r| {
-            let ident = &r.ident;
-            let fn_ident = Ident::new(&format!("create_campfire_{}", r.ident), Span::call_site());
-            quote! { #ident: #fn_ident(), }
-        })
-        .collect();
-
     // Generate registration calls
     let shaped_registers: Vec<TokenStream> = shaped_recipes
         .iter()
@@ -614,22 +600,6 @@ pub(crate) fn build() -> TokenStream {
         .map(|r| {
             let ident = &r.ident;
             quote! { registry.register_shapeless(&RECIPES.shapeless.#ident); }
-        })
-        .collect();
-
-    let smelting_registers: Vec<TokenStream> = smelting_recipes
-        .iter()
-        .map(|r| {
-            let ident = &r.ident;
-            quote! { registry.register_smelting(&RECIPES.smelting.#ident); }
-        })
-        .collect();
-
-    let campfire_registers: Vec<TokenStream> = campfire_recipes
-        .iter()
-        .map(|r| {
-            let ident = &r.ident;
-            quote! { registry.register_campfire(&RECIPES.campfire.#ident); }
         })
         .collect();
 
@@ -703,7 +673,7 @@ pub(crate) fn build() -> TokenStream {
                         #(#smelting_field_inits)*
                     },
                     campfire: CampfireRecipes {
-                        #(#cooking_field_inits)*
+                        #(#campfire_field_inits)*
                     },
                 }
             }

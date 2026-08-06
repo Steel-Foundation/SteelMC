@@ -166,12 +166,6 @@ impl RecipeRegistry {
             .find(|recipe| recipe.matches(input))
     }
 
-    /// Returns whether any campfire recipe accepts `input` as an ingredient.
-    #[must_use]
-    pub fn is_campfire_input(&self, input: &ItemStack) -> bool {
-        self.find_campfire_recipe(input).is_some()
-    }
-
     /// Returns the number of shaped recipes.
     #[must_use]
     pub const fn shaped_count(&self) -> usize {
