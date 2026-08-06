@@ -1,6 +1,7 @@
 use rand::Rng;
 use std::sync::Arc;
 use steel_macros::block_behavior;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::{item_stack::ItemStack, vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -25,12 +26,18 @@ impl TwistingVinesPlantBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
+    fn can_grow_into(state: BlockStateId) -> bool {
+        state.is_air()
+    }
+
     const fn growing_plant_body_block(&self) -> GrowingPlantBodyBlock {
         GrowingPlantBodyBlock::new(
             self.block,
             Direction::Up,
             false,
             &vanilla_blocks::TWISTING_VINES,
+            Self::can_grow_into,
         )
     }
 }
@@ -39,6 +46,7 @@ impl BlockBehavior for TwistingVinesPlantBlock {
         self.growing_plant_body_block()
             .can_survive(state, world, pos)
     }
+
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.growing_plant_body_block()
             .random_tick(state, world, pos);
@@ -62,6 +70,7 @@ impl BlockBehavior for TwistingVinesPlantBlock {
             neighbor_state,
         )
     }
+
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.growing_plant_body_block().tick(state, world, pos);
     }
@@ -70,6 +79,7 @@ impl BlockBehavior for TwistingVinesPlantBlock {
         self.growing_plant_body_block()
             .get_state_for_placement(context)
     }
+
     fn get_clone_item_stack(
         &self,
         _block: BlockRef,
@@ -78,6 +88,7 @@ impl BlockBehavior for TwistingVinesPlantBlock {
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::TWISTING_VINES))
     }
+
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }

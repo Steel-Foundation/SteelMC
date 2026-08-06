@@ -29,10 +29,12 @@ use glam::DVec3;
 use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
+use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
-    ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _, TIMELINE_REGISTRY,
-    WORLD_CLOCK_REGISTRY, enchantment::EnchantmentRef, entity_type::EntityTypeRef,
-    item_stack::ItemStack, timeline::TimelineRef, world_clock::WorldClockRef,
+    DAMAGE_TYPE_REGISTRY, ENCHANTMENT_REGISTRY, ENTITY_TYPE_REGISTRY, REGISTRY, RegistryExt as _,
+    TIMELINE_REGISTRY, WORLD_CLOCK_REGISTRY, enchantment::EnchantmentRef,
+    entity_type::EntityTypeRef, item_stack::ItemStack, timeline::TimelineRef,
+    world_clock::WorldClockRef,
 };
 use steel_utils::{
     Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
@@ -309,6 +311,10 @@ impl SteelArgumentType {
         Self::new(EnchantmentParser)
     }
 
+    pub(crate) fn damage_type() -> Self {
+        Self::new(DamageTypeParser)
+    }
+
     pub(crate) fn item_stack() -> Self {
         Self::new(ItemStackParser)
     }
@@ -503,6 +509,10 @@ argument_value_wrapper!(
 argument_value_wrapper!(
     EnchantmentValue(EnchantmentRef),
     "steel:command/value/enchantment"
+);
+argument_value_wrapper!(
+    DamageTypeValue(DamageTypeRef),
+    "steel:command/value/damage_type"
 );
 argument_value_wrapper!(ItemStackValue(ItemStack), "steel:command/value/item_stack");
 argument_value_wrapper!(
@@ -968,6 +978,35 @@ unit_argument_parser!(
     protocol(
         ProtocolArgumentType::Resource {
             identifier: "minecraft:enchantment",
+        },
+        None,
+    )
+);
+unit_argument_parser!(
+    DamageTypeParser,
+    "steel:command/parser/damage_type",
+    DamageTypeValue,
+    parse | reader,
+    _source | {
+        let key = parse_identifier(reader)?;
+        REGISTRY.damage_types.by_key(&key).map_or_else(
+            || Err(unknown_resource(reader, &key, &DAMAGE_TYPE_REGISTRY)),
+            |damage_type| Ok(DamageTypeValue(damage_type)),
+        )
+    },
+    suggest | _context,
+    builder | {
+        suggest_resources(
+            REGISTRY
+                .damage_types
+                .iter()
+                .map(|(_, damage_type)| &damage_type.key),
+            builder,
+        );
+    },
+    protocol(
+        ProtocolArgumentType::Resource {
+            identifier: "minecraft:damage_type",
         },
         None,
     )
