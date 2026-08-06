@@ -56,7 +56,7 @@ fn damage(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSy
 
     // The base damage type for this command is generic
     let damage_type = context
-        .damage_type("amount")
+        .damage_type("damageType")
         .unwrap_or(&vanilla_damage_types::GENERIC);
 
     // Create the DamageSource to apply modifiers after
