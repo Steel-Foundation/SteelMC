@@ -7,7 +7,6 @@ use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties},
     item_stack::ItemStack,
     items::item::BlockHitResult,
-    loot_table::LootContext,
     sound_events, vanilla_damage_types, vanilla_entities, vanilla_items,
     vanilla_loot_tables::{self},
 };
@@ -16,6 +15,7 @@ use steel_utils::{
     types::{InteractionHand, UpdateFlags},
 };
 
+use crate::behavior::block::drop_from_block_interact_loot_table;
 use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
@@ -140,12 +140,20 @@ impl BlockBehavior for SweetBerryBushBlock {
         if age <= 1 {
             return InteractionResult::Pass;
         }
-        let mut rng = rand::rng();
-        let mut ctx = LootContext::new(&mut rng).with_block_state(state);
 
-        let items = vanilla_loot_tables::HARVEST_SWEET_BERRY_BUSH.get_random_items(&mut ctx);
+        let mut rng = rand::rng();
+
+        let items = drop_from_block_interact_loot_table(
+            &vanilla_loot_tables::HARVEST_SWEET_BERRY_BUSH,
+            state,
+            world.get_block_entity(pos),
+            None,
+            Some(player),
+            &mut rng,
+        );
+
         for item in items {
-            world.drop_item_stack(pos, item);
+            world.pop_resource(pos, item);
         }
 
         world.play_block_sound(
