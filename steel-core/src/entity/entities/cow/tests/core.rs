@@ -17,7 +17,7 @@ fn cow_initializes_vanilla_living_attributes_and_health() {
     assert!(
         (attributes.required_value(steel_registry::vanilla_attributes::MOVEMENT_SPEED)
             - f64::from(0.2_f32))
-            .abs()
+        .abs()
             < 1e-12
     );
 }
@@ -37,7 +37,10 @@ fn cow_sound_methods_follow_selected_sound_variant() {
     let cow = CowEntity::new(&vanilla_entities::COW, 1, DVec3::ZERO, Weak::new());
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
-    assert_eq!(LivingEntity::sound_volume(&cow).to_bits(), 0.4_f32.to_bits());
+    assert_eq!(
+        LivingEntity::sound_volume(&cow).to_bits(),
+        0.4_f32.to_bits()
+    );
     assert_eq!(
         Mob::ambient_sound(&cow).map(|sound| &sound.key),
         Some(&sound_events::ENTITY_COW_AMBIENT.key)
@@ -103,7 +106,13 @@ fn cow_does_not_milk_when_baby() {
         Mob::mob_interact(&cow, player.as_ref(), InteractionHand::MainHand),
         InteractionResult::Pass
     );
-    assert!(player.inventory.lock().get_selected_item().is(&vanilla_items::BUCKET));
+    assert!(
+        player
+            .inventory
+            .lock()
+            .get_selected_item()
+            .is(&vanilla_items::BUCKET)
+    );
 }
 
 #[test]
@@ -193,7 +202,12 @@ fn cow_finalize_spawn_assigns_registered_variant_and_sound_variant() {
         Arc::downgrade(&world),
     );
 
-    assert!(REGISTRY.cow_variants.id_from_key(&cow.variant().key).is_some());
+    assert!(
+        REGISTRY
+            .cow_variants
+            .id_from_key(&cow.variant().key)
+            .is_some()
+    );
     assert!(
         REGISTRY
             .cow_sound_variants
@@ -203,7 +217,12 @@ fn cow_finalize_spawn_assigns_registered_variant_and_sound_variant() {
 
     let _ = Mob::finalize_spawn(&cow, &world, EntitySpawnReason::Natural, None);
 
-    assert!(REGISTRY.cow_variants.id_from_key(&cow.variant().key).is_some());
+    assert!(
+        REGISTRY
+            .cow_variants
+            .id_from_key(&cow.variant().key)
+            .is_some()
+    );
     assert!(
         REGISTRY
             .cow_sound_variants

@@ -18,8 +18,8 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::CowEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
-    REGISTRY, RegistryExt, RegistryReference, TaggedRegistryExt, sound_events,
-    vanilla_attributes, vanilla_items,
+    REGISTRY, RegistryExt, RegistryReference, TaggedRegistryExt, sound_events, vanilla_attributes,
+    vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -33,9 +33,9 @@ use crate::entity::ai::goal::{
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad,
-    EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob,
-    MobBase, PathfinderMob, SpawnGroupData,
+    AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
+    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
+    PathfinderMob, SpawnGroupData,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -226,7 +226,7 @@ impl CowEntity {
                 hand,
                 ItemStack::new(&vanilla_items::MILK_BUCKET),
                 player.has_infinite_materials(),
-                false,
+                true,
             )
         };
 

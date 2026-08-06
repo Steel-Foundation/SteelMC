@@ -50,5 +50,8 @@ fn cow_loads_vanilla_age_and_variant_data() {
     assert_eq!(cow.forced_age(), 12);
     assert!(cow.is_age_locked());
     assert_eq!(cow.variant().key, vanilla_cow_variants::COLD.key);
-    assert_eq!(cow.sound_variant().key, vanilla_cow_sound_variants::MOODY.key);
+    assert_eq!(
+        cow.sound_variant().key,
+        vanilla_cow_sound_variants::MOODY.key
+    );
 }
