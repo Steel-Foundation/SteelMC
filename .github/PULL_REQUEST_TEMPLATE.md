@@ -1,5 +1,5 @@
 <!--
-Basic PR template w/ all common sections. Trim what you don't need.
+PR template
 -->
 
 ## Description
@@ -8,6 +8,10 @@ Basic PR template w/ all common sections. Trim what you don't need.
 
 ## Type of change
 
+- [ ] Block implementation
+- [ ] Item implementation
+- [ ] Command implementation
+- [ ] Entity implementation
 - [ ] Bug fix
 - [ ] New feature
 - [ ] Breaking change
@@ -29,6 +33,7 @@ Basic PR template w/ all common sections. Trim what you don't need.
 ## How this was tested
 
 <!-- Steps to reproduce/verify. Include env (MC version, OS) if relevant. -->
+<!-- For commands please provide example commands -->
 
 ## Screenshots / logs
 
