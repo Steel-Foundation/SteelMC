@@ -10,12 +10,12 @@ fn cow_initializes_vanilla_living_attributes_and_health() {
     let attributes = cow.attributes().lock();
     assert_eq!(
         attributes
-            .required_value(steel_registry::vanilla_attributes::MAX_HEALTH)
+            .required_value(vanilla_attributes::MAX_HEALTH)
             .to_bits(),
         10.0_f64.to_bits()
     );
     assert!(
-        (attributes.required_value(steel_registry::vanilla_attributes::MOVEMENT_SPEED)
+        (attributes.required_value(vanilla_attributes::MOVEMENT_SPEED)
             - f64::from(0.2_f32))
         .abs()
             < 1e-12
