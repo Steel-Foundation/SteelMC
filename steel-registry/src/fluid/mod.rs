@@ -94,6 +94,10 @@ pub struct FluidState {
     pub falling: bool,
 }
 
+const LEGACY_SOURCE_LEVEL: u8 = 0;
+const LEGACY_MAX_LEVEL: u8 = 8;
+const LEGACY_FALLING_OFFSET: u8 = 8;
+
 impl FluidState {
     /// The empty fluid state.
     pub const EMPTY: Self = Self {
@@ -204,17 +208,25 @@ impl FluidState {
             8 - self.amount
         }
     }
+
     pub fn create_legacy_block(self) -> BlockStateId {
         vanilla_blocks::WATER
             .default_state()
             .set_value(&BlockStateProperties::LEVEL, Self::get_legacy_level(self))
     }
+
     const fn get_legacy_level(self) -> u8 {
         if self.is_source() {
-            return 0;
+            return LEGACY_SOURCE_LEVEL;
         }
-        let falling_addition = if self.falling { 8 } else { 0 };
-        8 - self.amount.min(8) + falling_addition
+
+        let falling_offset = if self.falling {
+            LEGACY_FALLING_OFFSET
+        } else {
+            0
+        };
+
+        LEGACY_MAX_LEVEL - self.amount.min(LEGACY_MAX_LEVEL) + falling_offset
     }
 }
 
