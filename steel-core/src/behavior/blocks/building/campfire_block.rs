@@ -5,12 +5,17 @@ use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
 use steel_registry::fluid::FluidState;
+use steel_registry::items::item::BlockHitResult;
 use steel_registry::vanilla_damage_types;
 use steel_registry::{
-    sound_events, vanilla_block_entity_types, vanilla_blocks, vanilla_fluids, vanilla_game_events,
+    REGISTRY, sound_events, vanilla_block_entity_types, vanilla_blocks, vanilla_fluids,
+    vanilla_game_events,
 };
-use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
+use steel_utils::types::InteractionHand;
+use steel_utils::{BlockPos, BlockStateId, Downcast as _, types::UpdateFlags};
 
+use crate::behavior::{InteractionResult, InventoryAccess};
+use crate::player::Player;
 use crate::{
     behavior::{
         BlockBehavior, BlockEntityCreation, BlockPlaceContext, block::schedule_placed_liquid_tick,
@@ -196,6 +201,54 @@ impl BlockBehavior for CampfireBlock {
         );
         schedule_placed_liquid_tick(level, pos, fluid_state);
         true
+    }
+
+    fn use_item_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let Some(block_entity) = world.get_block_entity(pos) else {
+            return InteractionResult::TryEmptyHandInteraction;
+        };
+        let Some(campfire) = block_entity.downcast_ref::<CampfireBlockEntity>() else {
+            return InteractionResult::TryEmptyHandInteraction;
+        };
+
+        // Check whether the held item is campfire-cookable and, if so, attempt to
+        // place it onto the campfire.
+        let recipe_time = inv.with_item(|stack| {
+            REGISTRY
+                .recipes
+                .find_campfire_recipe(stack)
+                .map(|recipe| recipe.cooking_time)
+        });
+        let Some(cooking_time) = recipe_time else {
+            return InteractionResult::TryEmptyHandInteraction;
+        };
+
+        let placed = inv.with_item(|stack| {
+            let placed = campfire.place_food(stack.clone(), cooking_time);
+            if placed {
+                stack.shrink(1);
+            }
+            placed
+        });
+
+        if placed {
+            world.send_block_updated(pos);
+            let context = GameEventContext::new(Some(player), Some(state));
+            world.game_event(&vanilla_game_events::BLOCK_CHANGE, pos, &context);
+            // The INTERACT_WITH_CAMPFIRE stat awaits Steel's statistics foundation.
+            InteractionResult::SuccessServer
+        } else {
+            InteractionResult::Consume
+        }
     }
 
     fn new_block_entity(

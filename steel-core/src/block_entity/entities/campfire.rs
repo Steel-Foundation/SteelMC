@@ -67,9 +67,6 @@ impl CampfireBlockEntity {
     ///
     /// Mirrors `CampfireBlockEntity.placeFood`. The caller supplies `recipe_time`
     /// (the recipe's cooking time) after a cookable lookup succeeds.
-    ///
-    /// # Returns
-    /// `true` if the item was placed, `false` if all slots are occupied.
     #[must_use]
     pub fn place_food(&self, mut stack: ItemStack, recipe_time: i32) -> bool {
         stack.set_count(1);
