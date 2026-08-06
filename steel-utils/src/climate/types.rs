@@ -143,21 +143,6 @@ impl Parameter {
         }
     }
 
-    /// Calculate the distance between two parameter ranges.
-    #[inline]
-    #[must_use]
-    pub const fn distance_param(&self, target: &Parameter) -> i64 {
-        let above = target.min - self.max;
-        let below = self.min - target.max;
-        if above > 0 {
-            above
-        } else if below > 0 {
-            below
-        } else {
-            0
-        }
-    }
-
     /// Expand this parameter to include another parameter.
     #[must_use]
     pub const fn span_with(&self, other: Option<&Parameter>) -> Self {

@@ -294,50 +294,6 @@ impl PointOfInterestStorage {
         results
     }
 
-    /// Returns all matching POIs within a spherical region.
-    #[must_use]
-    pub fn get_in_circle(
-        &self,
-        type_predicate: &impl Fn(usize) -> bool,
-        center: BlockPos,
-        radius: i32,
-        status: OccupationStatus,
-    ) -> Vec<(BlockPos, usize)> {
-        let radius_sq = i64::from(radius) * i64::from(radius);
-        self.get_in_square(type_predicate, center, radius, status)
-            .into_iter()
-            .filter(|(pos, _)| distance_sq(*pos, center) <= radius_sq)
-            .collect()
-    }
-
-    /// Returns the closest matching POI within radius, if any.
-    #[must_use]
-    pub fn get_nearest(
-        &self,
-        type_predicate: &impl Fn(usize) -> bool,
-        pos: BlockPos,
-        radius: i32,
-        status: OccupationStatus,
-    ) -> Option<(BlockPos, usize)> {
-        self.get_in_circle(type_predicate, pos, radius, status)
-            .into_iter()
-            .min_by_key(|(candidate, _)| distance_sq(*candidate, pos))
-    }
-
-    /// Returns all matching POIs within radius, sorted by distance (nearest first).
-    #[must_use]
-    pub fn get_sorted_by_distance(
-        &self,
-        type_predicate: &impl Fn(usize) -> bool,
-        pos: BlockPos,
-        radius: i32,
-        status: OccupationStatus,
-    ) -> Vec<(BlockPos, usize)> {
-        let mut results = self.get_in_circle(type_predicate, pos, radius, status);
-        results.sort_by_key(|(candidate, _)| distance_sq(*candidate, pos));
-        results
-    }
-
     /// Counts matching POIs within a spherical region.
     #[must_use]
     pub fn count(

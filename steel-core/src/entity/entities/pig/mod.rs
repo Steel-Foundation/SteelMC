@@ -9,7 +9,6 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
-use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem, SoundSource};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
@@ -20,8 +19,8 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::PigEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
-    REGISTRY, RegistryExt, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_items,
-    vanilla_pig_sound_variants, vanilla_pig_variants,
+    REGISTRY, RegistryExt, RegistryReference, TaggedRegistryExt, sound_events, vanilla_attributes,
+    vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::legacy_random::LegacyRandom;
@@ -37,11 +36,9 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, ItemBasedSteering, ItemSteerable, LivingEntity,
-    LivingEntityBase, Mob, MobBase, MobEffectSyncChange, PathfinderMob, SharedEntity,
-    SpawnGroupData,
+    LivingEntityBase, Mob, MobBase, MoveResult, PathfinderMob, SharedEntity, SpawnGroupData,
 };
 use crate::inventory::equipment::EquipmentSlot;
-use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
 
@@ -143,188 +140,55 @@ impl PigEntity {
         }
     }
 
-    /// Returns the vanilla age counter. Negative values are babies.
-    #[must_use]
-    pub fn get_age(&self) -> i32 {
-        AgeableMob::get_age(self)
-    }
-
-    /// Sets the vanilla age counter and updates the synchronized baby flag.
-    pub fn set_age(&self, age: i32) {
-        AgeableMob::set_age(self, age);
-    }
-
-    /// Returns whether this pig is a baby.
-    #[must_use]
-    pub fn is_baby(&self) -> bool {
-        AgeableMob::is_baby(self)
-    }
-
-    /// Sets the vanilla baby state using the `AgeableMob` start age.
-    pub fn set_baby(&self, baby: bool) {
-        AgeableMob::set_baby(self, baby);
-    }
-
-    /// Returns vanilla `AgeableMob.forcedAge`.
-    #[must_use]
-    pub fn forced_age(&self) -> i32 {
-        AgeableMob::forced_age(self)
-    }
-
-    /// Sets vanilla `AgeableMob.forcedAge`.
-    pub fn set_forced_age(&self, forced_age: i32) {
-        AgeableMob::set_forced_age(self, forced_age);
-    }
-
-    /// Returns the synchronized vanilla age-lock flag.
-    #[must_use]
-    pub fn is_age_locked(&self) -> bool {
-        AgeableMob::is_age_locked(self)
-    }
-
-    /// Sets the synchronized vanilla age-lock flag.
-    pub fn set_age_locked(&self, age_locked: bool) {
-        AgeableMob::set_age_locked(self, age_locked);
-    }
-
-    /// Returns the current pig variant registry ID stored in synced data.
-    #[must_use]
-    pub fn variant_id(&self) -> i32 {
-        *self.entity_data.lock().variant.get()
-    }
-
     /// Sets the current pig variant by registry entry.
     pub fn set_variant(&self, variant: PigVariantRef) {
-        let Some(id) = REGISTRY.pig_variants.id_from_key(&variant.key) else {
-            log::error!("pig variant {} is not registered", variant.key);
-            return;
-        };
-        self.set_variant_id_from_usize(id);
+        self.entity_data
+            .lock()
+            .variant
+            .set(RegistryReference::new(variant));
     }
 
-    /// Returns the current pig variant, falling back to vanilla's default holder.
+    /// Returns the current pig variant.
     #[must_use]
     pub fn variant(&self) -> PigVariantRef {
-        let id = self.variant_id();
-        if let Ok(id) = usize::try_from(id)
-            && let Some(variant) = REGISTRY.pig_variants.by_id(id)
-        {
-            return variant;
-        }
-
-        &vanilla_pig_variants::TEMPERATE
-    }
-
-    /// Returns the current pig sound variant registry ID stored in synced data.
-    #[must_use]
-    pub fn sound_variant_id(&self) -> i32 {
-        *self.entity_data.lock().sound_variant.get()
+        self.entity_data.lock().variant.get().value()
     }
 
     /// Sets the current pig sound variant by registry entry.
     pub fn set_sound_variant(&self, sound_variant: PigSoundVariantRef) {
-        let Some(id) = REGISTRY.pig_sound_variants.id_from_key(&sound_variant.key) else {
-            log::error!("pig sound variant {} is not registered", sound_variant.key);
-            return;
-        };
-        self.set_sound_variant_id_from_usize(id);
+        self.entity_data
+            .lock()
+            .sound_variant
+            .set(RegistryReference::new(sound_variant));
     }
 
-    /// Returns the current pig sound variant, falling back to vanilla classic.
+    /// Returns the current pig sound variant.
     #[must_use]
     pub fn sound_variant(&self) -> PigSoundVariantRef {
-        let id = self.sound_variant_id();
-        if let Ok(id) = usize::try_from(id)
-            && let Some(sound_variant) = REGISTRY.pig_sound_variants.by_id(id)
-        {
-            return sound_variant;
-        }
-
-        &vanilla_pig_sound_variants::CLASSIC
-    }
-
-    fn set_variant_id_from_usize(&self, id: usize) {
-        let Ok(id) = i32::try_from(id) else {
-            log::error!("pig variant id {id} does not fit synced-data i32");
-            return;
-        };
-        self.entity_data.lock().variant.set(id);
-    }
-
-    fn set_sound_variant_id_from_usize(&self, id: usize) {
-        let Ok(id) = i32::try_from(id) else {
-            log::error!("pig sound variant id {id} does not fit synced-data i32");
-            return;
-        };
-        self.entity_data.lock().sound_variant.set(id);
+        self.entity_data.lock().sound_variant.get().value()
     }
 
     fn set_variant_by_key(&self, key: &Identifier) -> bool {
-        let Some(id) = REGISTRY.pig_variants.id_from_key(key) else {
+        let Some(variant) = REGISTRY.pig_variants.by_key(key) else {
             return false;
         };
-        self.set_variant_id_from_usize(id);
+        self.set_variant(variant);
         true
     }
 
     fn set_sound_variant_by_key(&self, key: &Identifier) {
-        if let Some(id) = REGISTRY.pig_sound_variants.id_from_key(key) {
-            self.set_sound_variant_id_from_usize(id);
+        if let Some(sound_variant) = REGISTRY.pig_sound_variants.by_key(key) {
+            self.set_sound_variant(sound_variant);
         }
     }
 
     fn current_sound_set(&self) -> &'static PigAge {
         let sound_variant = self.sound_variant();
-        if self.is_baby() {
+        if AgeableMob::is_baby(self) {
             &sound_variant.baby_sounds
         } else {
             &sound_variant.adult_sounds
         }
-    }
-
-    /// Returns whether this pig has a saddle equipped.
-    #[must_use]
-    pub fn is_saddled(&self) -> bool {
-        LivingEntity::has_item_in_slot(self, EquipmentSlot::Saddle)
-    }
-
-    /// Returns whether this pig can currently use the saddle equipment slot.
-    #[must_use]
-    pub fn can_use_saddle_slot(&self) -> bool {
-        Entity::is_alive(self) && !self.is_baby()
-    }
-
-    /// Returns the synced vanilla `DATA_BOOST_TIME` value.
-    #[must_use]
-    pub fn boost_time_total(&self) -> i32 {
-        ItemSteerable::boost_time_total(self)
-    }
-
-    /// Returns whether item-based steering is currently boosting.
-    #[must_use]
-    pub fn is_boosting(&self) -> bool {
-        self.steering.lock().is_boosting()
-    }
-
-    /// Returns the current elapsed boost time.
-    #[must_use]
-    pub fn elapsed_boost_time(&self) -> i32 {
-        self.steering.lock().boost_time()
-    }
-
-    /// Advances the active item-based steering boost.
-    pub fn tick_boost(&self) {
-        ItemSteerable::tick_boost(self);
-    }
-
-    /// Returns vanilla pig ridden speed.
-    #[must_use]
-    pub fn ridden_speed(&self) -> f32 {
-        let movement_speed = self
-            .attributes()
-            .lock()
-            .required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
-        movement_speed * 0.225 * ItemSteerable::boost_factor(self)
     }
 
     fn set_ridden_rotation(&self, controller_yaw: f32, controller_pitch: f32) {
@@ -378,48 +242,13 @@ impl Entity for PigEntity {
 
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
         let scale = LivingEntity::get_scale(self);
-        if self.is_baby() {
+        if AgeableMob::is_baby(self) {
             PIG_BABY_DIMENSIONS.scale(scale)
         } else if self.entity_type.fixed {
             self.entity_type.dimensions
         } else {
             self.entity_type.dimensions.scale(scale)
         }
-    }
-
-    fn tick(&self) {
-        self.default_tick();
-        self.living_base.decrement_invulnerable_time();
-        self.tick_mob_effects();
-        self.detect_equipment_updates();
-
-        if self.is_dead_or_dying() {
-            LivingEntity::tick_death(self);
-            self.tick_living_state();
-            return;
-        }
-
-        if !self.is_removed() {
-            self.ai_step();
-        }
-
-        self.tick_living_state();
-    }
-
-    fn check_despawn(&self) {
-        Mob::check_mob_despawn(self);
-    }
-
-    fn is_alive(&self) -> bool {
-        !self.is_removed() && self.get_health() > 0.0
-    }
-
-    fn is_pickable(&self) -> bool {
-        !self.is_removed()
-    }
-
-    fn is_pushable(&self) -> bool {
-        Entity::is_alive(self) && !self.is_spectator() && !self.on_climbable()
     }
 
     fn controlling_passenger(&self) -> Option<SharedEntity> {
@@ -437,22 +266,6 @@ impl Entity for PigEntity {
         self.controlling_passenger_mob()
     }
 
-    fn is_effective_ai(&self) -> bool {
-        self.is_server_driven_movement() && !self.is_no_ai()
-    }
-
-    fn get_default_gravity(&self) -> f64 {
-        LivingEntity::get_attribute_gravity(self)
-    }
-
-    fn can_freeze(&self) -> bool {
-        self.default_living_can_freeze()
-    }
-
-    fn can_walk_on_powder_snow(&self) -> bool {
-        self.default_living_can_walk_on_powder_snow()
-    }
-
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
         Some(&self.entity_data)
     }
@@ -461,52 +274,8 @@ impl Entity for PigEntity {
         self.update_dirty_mob_effect_entity_data();
     }
 
-    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        self.attributes().lock().syncable_snapshots()
-    }
-
-    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        self.attributes().lock().drain_dirty_sync()
-    }
-
-    fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
-        self.living_base.drain_dirty_mob_effects()
-    }
-
-    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
-        self.pack_living_equipment()
-    }
-
-    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
-        self.drain_dirty_living_equipment()
-    }
-
-    fn max_up_step(&self) -> f32 {
-        self.attributes()
-            .lock()
-            .get_value(vanilla_attributes::STEP_HEIGHT)
-            .unwrap_or(0.6) as f32
-    }
-
-    fn sound_source(&self) -> SoundSource {
-        SoundSource::Neutral
-    }
-
     fn play_step_sound(&self, _pos: BlockPos, _block_state: BlockStateId) {
         self.play_sound(self.current_sound_set().step_sound, 0.15, 1.0);
-    }
-
-    fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        LivingEntity::hurt_server(self, world, source, amount)
-    }
-
-    fn interact(
-        &self,
-        player: &Player,
-        hand: InteractionHand,
-        location: DVec3,
-    ) -> InteractionResult {
-        Mob::interact_mob(self, player, hand, location)
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -554,10 +323,6 @@ impl LivingEntity for PigEntity {
             .set(clamped);
     }
 
-    fn is_baby(&self) -> bool {
-        AgeableMob::is_baby(self)
-    }
-
     fn hurt_sound(&self, _source: &DamageSource) -> Option<SoundEventRef> {
         Some(self.current_sound_set().hurt_sound)
     }
@@ -567,7 +332,7 @@ impl LivingEntity for PigEntity {
     }
 
     fn can_use_slot(&self, slot: EquipmentSlot) -> bool {
-        slot != EquipmentSlot::Saddle || self.can_use_saddle_slot()
+        slot != EquipmentSlot::Saddle || (Entity::is_alive(self) && !AgeableMob::is_baby(self))
     }
 
     fn can_dispenser_equip_into_slot(&self, slot: EquipmentSlot) -> bool {
@@ -585,7 +350,7 @@ impl LivingEntity for PigEntity {
     fn tick_ridden(&self, controller: &Player, _ridden_input: DVec3) {
         let (yaw, pitch) = controller.rotation();
         self.set_ridden_rotation(yaw, pitch);
-        self.tick_boost();
+        ItemSteerable::tick_boost(self);
     }
 
     fn ridden_input(&self, _controller: &Player, _self_input: DVec3) -> DVec3 {
@@ -593,16 +358,15 @@ impl LivingEntity for PigEntity {
     }
 
     fn ridden_speed(&self, _controller: &Player) -> f32 {
-        PigEntity::ridden_speed(self)
-    }
-
-    fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {
-        Animal::reset_love(self);
+        let movement_speed = self
+            .attributes()
+            .lock()
+            .required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
+        movement_speed * 0.225 * ItemSteerable::boost_factor(self)
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
         let result = self.default_ai_step();
-
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
         result
@@ -628,10 +392,6 @@ impl AgeableMob for PigEntity {
 
     fn set_synced_baby(&self, baby: bool) {
         self.entity_data.lock().ageable_mob_mut().baby.set(baby);
-    }
-
-    fn age_boundary_changed(&self, _baby: bool) {
-        self.refresh_dimensions();
     }
 }
 
@@ -706,10 +466,6 @@ impl Mob for PigEntity {
 
     fn ambient_sound(&self) -> Option<SoundEventRef> {
         Some(self.current_sound_set().ambient_sound)
-    }
-
-    fn remove_when_far_away(&self, dist_sqr: f64) -> bool {
-        Animal::remove_when_far_away_animal(self, dist_sqr)
     }
 
     fn finalize_spawn(

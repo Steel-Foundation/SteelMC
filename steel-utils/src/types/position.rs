@@ -226,22 +226,10 @@ impl BlockPos {
         self.offset(0, 0, -1)
     }
 
-    /// Returns the position `n` blocks to the north (Z - n).
-    #[must_use]
-    pub const fn north_n(&self, n: i32) -> Self {
-        self.offset(0, 0, -n)
-    }
-
     /// Returns the position one block to the south (Z + 1).
     #[must_use]
     pub const fn south(&self) -> Self {
         self.offset(0, 0, 1)
-    }
-
-    /// Returns the position `n` blocks to the south (Z + n).
-    #[must_use]
-    pub const fn south_n(&self, n: i32) -> Self {
-        self.offset(0, 0, n)
     }
 
     /// Returns the position one block to the west (X - 1).
@@ -250,22 +238,10 @@ impl BlockPos {
         self.offset(-1, 0, 0)
     }
 
-    /// Returns the position `n` blocks to the west (X - n).
-    #[must_use]
-    pub const fn west_n(&self, n: i32) -> Self {
-        self.offset(-n, 0, 0)
-    }
-
     /// Returns the position one block to the east (X + 1).
     #[must_use]
     pub const fn east(&self) -> Self {
         self.offset(1, 0, 0)
-    }
-
-    /// Returns the position `n` blocks to the east (X + n).
-    #[must_use]
-    pub const fn east_n(&self, n: i32) -> Self {
-        self.offset(n, 0, 0)
     }
 
     /// Returns the position offset by one block in the given direction.
