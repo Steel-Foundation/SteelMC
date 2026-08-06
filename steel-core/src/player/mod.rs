@@ -74,6 +74,8 @@ use steel_registry::{
     vanilla_game_events,
 };
 use steel_utils::{entity_events::EntityStatus, locks::Shared, translations};
+use steel_registry::{level_events, sound_events, vanilla_attributes, vanilla_custom_stats, vanilla_damage_type_tags, vanilla_entities, vanilla_game_events};
+use steel_utils::{entity_events::EntityStatus, locks::Shared};
 use tick_state::PlayerTickState;
 use uuid::Uuid;
 
@@ -128,6 +130,7 @@ use steel_protocol::packets::{
 };
 use steel_registry::RegistryEntry;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::stat::vanilla_stat_types;
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, Identifier, UuidExt as _,
 };
@@ -630,6 +633,8 @@ impl Player {
         self.living_base.decrement_invulnerable_time();
         self.tick_mob_effects();
         self.tick_active_item_use();
+        // TODO: Tick stats even when the player has been dead for more than 20 ticks.
+        self.tick_stats();
 
         if self.get_health() <= 0.0 {
             self.tick_death();
@@ -737,6 +742,32 @@ impl Player {
                 MenuRemovalStatus::Complete,
                 "death removal menu cleanup must run outside a menu callback"
             );
+        }
+    }
+
+    /// Ticks to award stats that are awarded based on ticks.
+    fn tick_stats(&self) {
+        // These stats are expressed in ticks.
+        // We batch the stats so that the mutex for stats is only
+        // locked once.
+        let mut stats_to_award = Vec::with_capacity(5);
+
+        stats_to_award.push(&vanilla_custom_stats::PLAY_TIME);
+        stats_to_award.push(&vanilla_custom_stats::TOTAL_WORLD_TIME);
+
+        if Entity::is_alive(self) {
+            stats_to_award.push(&vanilla_custom_stats::TIME_SINCE_DEATH);
+        }
+        if self.is_discrete() {
+            stats_to_award.push(&vanilla_custom_stats::SNEAK_TIME);
+        }
+        if !self.is_sleeping() {
+            stats_to_award.push(&vanilla_custom_stats::TIME_SINCE_REST);
+        }
+
+        let mut stats = self.stats.lock();
+        for stat in stats_to_award {
+            stats.increment(vanilla_stat_types::CUSTOM.get(stat), 1);
         }
     }
 
@@ -936,6 +967,10 @@ impl Player {
                 ExperienceOrbEntity::award(&world, self.position(), reward);
             }
         }
+
+        self.award_custom_stat(&vanilla_custom_stats::DEATHS);
+        self.reset_custom_stat(&vanilla_custom_stats::TIME_SINCE_DEATH);
+        self.reset_custom_stat(&vanilla_custom_stats::TIME_SINCE_REST);
 
         self.clear_fire();
         self.set_ticks_frozen(0);

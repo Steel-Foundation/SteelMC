@@ -176,6 +176,11 @@ impl Player {
         // TODO: Reset score of the objectives having the criterion of this stat for the player.
     }
 
+    /// Resets the counter of a custom stat from this player to zero.
+    pub fn reset_custom_stat(&self, stat: CustomStatRef) {
+        self.reset_stat(vanilla_stat_types::CUSTOM.get(stat));
+    }
+
     /// Marks all the stat counters of this player to be dirty. This means that the next time
     /// statistics are requested, all tracked stat counters will be sent to the client.
     pub fn mark_all_stats_dirty(&self) {
