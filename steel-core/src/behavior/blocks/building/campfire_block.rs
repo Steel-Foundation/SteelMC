@@ -28,8 +28,6 @@ use crate::{
 };
 
 /// Behavior for campfires and soul campfires.
-///
-/// TODO: Add campfire cooking, smoke particles, and dowse item ejection.
 #[block_behavior]
 pub struct CampfireBlock {
     block: BlockRef,

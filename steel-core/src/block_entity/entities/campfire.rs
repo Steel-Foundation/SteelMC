@@ -117,9 +117,11 @@ impl CampfireBlockEntity {
         if changed {
             self.set_changed();
         }
+
         for result in finished {
             world.pop_resource(pos, result);
         }
+
         if has_finished {
             world.send_block_updated(pos);
             let context = GameEventContext::new(None, Some(state));
