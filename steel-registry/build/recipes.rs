@@ -263,7 +263,7 @@ fn parse_shapeless_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<Shap
 }
 
 /// Parses a furnace smelting recipe from JSON.
-fn parse_smelting_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<CookingRecipeData> {
+fn parse_cooking_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<CookingRecipeData> {
     let ingredient = recipe.ingredient.as_ref()?;
     let result = recipe.result.as_ref()?;
 
@@ -317,6 +317,7 @@ pub(crate) fn build() -> TokenStream {
     let mut shaped_recipes: Vec<ShapedRecipeData> = Vec::new();
     let mut shapeless_recipes: Vec<ShapelessRecipeData> = Vec::new();
     let mut smelting_recipes: Vec<CookingRecipeData> = Vec::new();
+    let mut campfire_recipes: Vec<CookingRecipeData> = Vec::new();
 
     // Read all recipe files
     fn read_recipes(
@@ -324,13 +325,14 @@ pub(crate) fn build() -> TokenStream {
         shaped: &mut Vec<ShapedRecipeData>,
         shapeless: &mut Vec<ShapelessRecipeData>,
         smelting: &mut Vec<CookingRecipeData>,
+        campfire: &mut Vec<CookingRecipeData>,
     ) {
         for entry in fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
 
             if path.is_dir() {
-                read_recipes(&path, shaped, shapeless, smelting);
+                read_recipes(&path, shaped, shapeless, smelting, campfire);
             } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
                 let recipe_name = path
                     .file_stem()
@@ -359,8 +361,13 @@ pub(crate) fn build() -> TokenStream {
                         }
                     }
                     "minecraft:smelting" => {
-                        if let Some(r) = parse_smelting_recipe(recipe_name, &recipe) {
+                        if let Some(r) = parse_cooking_recipe(recipe_name, &recipe) {
                             smelting.push(r);
+                        }
+                    }
+                    "minecraft:campfire_cooking" => {
+                        if let Some(r) = parse_cooking_recipe(recipe_name, &recipe) {
+                            campfire.push(r);
                         }
                     }
                     // Skip other recipe types for now (stonecutting, smithing, etc.)
@@ -375,6 +382,7 @@ pub(crate) fn build() -> TokenStream {
         &mut shaped_recipes,
         &mut shapeless_recipes,
         &mut smelting_recipes,
+        &mut campfire_recipes,
     );
 
     // Generate individual creator functions for each shaped recipe.
@@ -493,6 +501,35 @@ pub(crate) fn build() -> TokenStream {
         })
         .collect();
 
+    let campfire_creator_fns: Vec<TokenStream> = campfire_recipes
+        .iter()
+        .map(|r| {
+            let fn_ident = Ident::new(&format!("create_campfire_{}", r.ident), Span::call_site());
+            let name = &r.name;
+            let ingredient = generate_ingredient_tokens(&r.ingredient);
+            let result_item_ident = &r.result_item_ident;
+            let result_count = r.result_count;
+            let experience = r.experience;
+            let cooking_time = r.cooking_time;
+
+            quote! {
+                #[inline(never)]
+                fn #fn_ident() -> CookingRecipe {
+                    CookingRecipe {
+                        id: Identifier::vanilla_static(#name),
+                        ingredient: #ingredient,
+                        result: RecipeResult {
+                            item: &*vanilla_items::#result_item_ident,
+                            count: #result_count,
+                        },
+                        experience: #experience,
+                        cooking_time: #cooking_time,
+                    }
+                }
+            }
+        })
+        .collect();
+
     // Generate struct fields
     let shaped_fields: Vec<TokenStream> = shaped_recipes
         .iter()
@@ -511,6 +548,14 @@ pub(crate) fn build() -> TokenStream {
         .collect();
 
     let smelting_fields: Vec<TokenStream> = smelting_recipes
+        .iter()
+        .map(|r| {
+            let ident = &r.ident;
+            quote! { pub #ident: CookingRecipe, }
+        })
+        .collect();
+
+    let campfire_fields: Vec<TokenStream> = campfire_recipes
         .iter()
         .map(|r| {
             let ident = &r.ident;
@@ -546,6 +591,15 @@ pub(crate) fn build() -> TokenStream {
         })
         .collect();
 
+    let cooking_field_inits: Vec<TokenStream> = campfire_recipes
+        .iter()
+        .map(|r| {
+            let ident = &r.ident;
+            let fn_ident = Ident::new(&format!("create_campfire_{}", r.ident), Span::call_site());
+            quote! { #ident: #fn_ident(), }
+        })
+        .collect();
+
     // Generate registration calls
     let shaped_registers: Vec<TokenStream> = shaped_recipes
         .iter()
@@ -568,6 +622,14 @@ pub(crate) fn build() -> TokenStream {
         .map(|r| {
             let ident = &r.ident;
             quote! { registry.register_smelting(&RECIPES.smelting.#ident); }
+        })
+        .collect();
+
+    let campfire_registers: Vec<TokenStream> = campfire_recipes
+        .iter()
+        .map(|r| {
+            let ident = &r.ident;
+            quote! { registry.register_campfire(&RECIPES.campfire.#ident); }
         })
         .collect();
 
@@ -597,14 +659,19 @@ pub(crate) fn build() -> TokenStream {
             #(#shapeless_fields)*
         }
 
-        pub struct CookingRecipes {
+        pub struct SmeltingRecipes {
             #(#smelting_fields)*
+        }
+
+        pub struct CampfireRecipes {
+            #(#campfire_fields)*
         }
 
         pub struct Recipes {
             pub shaped: ShapedRecipes,
             pub shapeless: ShapelessRecipes,
-            pub smelting: CookingRecipes,
+            pub smelting: SmeltingRecipes,
+            pub campfire: CampfireRecipes,
         }
 
         // Individual recipe creator functions.
@@ -621,6 +688,7 @@ pub(crate) fn build() -> TokenStream {
         #(#shaped_creator_fns)*
         #(#shapeless_creator_fns)*
         #(#smelting_creator_fns)*
+        #(#campfire_creator_fns)*
 
         impl Recipes {
             fn init() -> Self {
@@ -631,8 +699,11 @@ pub(crate) fn build() -> TokenStream {
                     shapeless: ShapelessRecipes {
                         #(#shapeless_field_inits)*
                     },
-                    smelting: CookingRecipes {
+                    smelting: SmeltingRecipes {
                         #(#smelting_field_inits)*
+                    },
+                    campfire: CampfireRecipes {
+                        #(#cooking_field_inits)*
                     },
                 }
             }
@@ -645,6 +716,7 @@ pub(crate) fn build() -> TokenStream {
             #(#shaped_registers)*
             #(#shapeless_registers)*
             #(#smelting_registers)*
+            #(#campfire_registers)*
         }
     }
 }
