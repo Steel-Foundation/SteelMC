@@ -157,17 +157,19 @@ impl RecipeRegistry {
             .map(|recipe| recipe.assemble_result(input.count(), use_input_count))
     }
 
-    /// Finds the first campfire cooking result stack for `input`.
+    /// Finds the first campfire cooking recipe matching `input`.
     #[must_use]
-    pub fn find_campfire_result(
-        &self,
-        input: &ItemStack,
-        use_input_count: bool,
-    ) -> Option<ItemStack> {
+    pub fn find_campfire_recipe(&self, input: &ItemStack) -> Option<&'static CookingRecipe> {
         self.campfire_recipes
             .iter()
+            .copied()
             .find(|recipe| recipe.matches(input))
-            .map(|recipe| recipe.assemble_result(input.count(), use_input_count))
+    }
+
+    /// Returns whether any campfire recipe accepts `input` as an ingredient.
+    #[must_use]
+    pub fn is_campfire_input(&self, input: &ItemStack) -> bool {
+        self.find_campfire_recipe(input).is_some()
     }
 
     /// Returns the number of shaped recipes.
