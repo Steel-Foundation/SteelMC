@@ -326,6 +326,7 @@ impl Player {
         *self.abilities.lock() = Abilities::default();
         *self.inventory.lock() = PlayerInventory::new();
         *self.food_data.lock() = FoodData::new();
+        self.stats.lock().clear();
 
         let mut experience = Experience::default();
         experience.dirty = true;
@@ -480,11 +481,9 @@ impl PersistentPlayerData {
         // Statistics
         {
             let mut stats = player.stats.lock();
-            stats.stats.clear();
-            stats.dirty.clear();
 
+            stats.clear();
             stats.stats.reserve(self.stats.len());
-            stats.dirty.reserve(self.stats.len());
 
             for PersistentStat { stat, count } in &self.stats {
                 stats.stats.insert(*stat, *count);

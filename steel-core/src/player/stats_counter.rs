@@ -69,6 +69,16 @@ impl StatsCounter {
         dirty
     }
 
+    /// Clears all the stats in this counter, resetting it into an empty state.
+    /// This will also make all stats that used to be in this counter dirty before
+    /// clearing them so that the client can be updated of the new stat counters.
+    pub fn clear(&mut self) {
+        for stat in self.stats.keys() {
+            self.dirty.insert(*stat);
+        }
+        self.stats.clear();
+    }
+
     /// Returns the number of stats currently being tracked for this player.
     #[must_use]
     pub fn len(&self) -> usize {

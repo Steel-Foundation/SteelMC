@@ -2682,6 +2682,7 @@ dependencies = [
  "serde_json",
  "steel-core",
  "steel-login",
+ "steel-registry",
  "steel-utils",
  "strip-ansi-escapes",
  "text_components",
