@@ -1,15 +1,21 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
+use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
 use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_damage_types;
-use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids, vanilla_game_events};
+use steel_registry::{
+    sound_events, vanilla_block_entity_types, vanilla_blocks, vanilla_fluids, vanilla_game_events,
+};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, block::schedule_placed_liquid_tick},
+    behavior::{
+        BlockBehavior, BlockEntityCreation, BlockPlaceContext, block::schedule_placed_liquid_tick,
+    },
+    block_entity::{BlockEntityTicker, entities::CampfireBlockEntity},
     entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, projectile::Projectile},
     world::{
         ClipHitResult, LevelAccessor, ScheduledTickAccess, World, game_event::GameEventContext,
@@ -190,6 +196,27 @@ impl BlockBehavior for CampfireBlock {
         );
         schedule_placed_liquid_tick(level, pos, fluid_state);
         true
+    }
+
+    fn new_block_entity(
+        &self,
+        level: Weak<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> BlockEntityCreation {
+        BlockEntityCreation::Created(Arc::new(CampfireBlockEntity::new(level, pos, state)))
+    }
+
+    fn get_block_entity_ticker(
+        &self,
+        _world: &Arc<World>,
+        _state: BlockStateId,
+        block_entity_type: BlockEntityTypeRef,
+    ) -> Option<BlockEntityTicker> {
+        BlockEntityTicker::for_matching_entity_tick(
+            block_entity_type,
+            &vanilla_block_entity_types::CAMPFIRE,
+        )
     }
 }
 
