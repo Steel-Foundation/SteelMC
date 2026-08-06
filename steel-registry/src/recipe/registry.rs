@@ -3,7 +3,7 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use super::cooking::SmeltingRecipe;
+use super::cooking::CookingRecipe;
 use super::crafting::{CraftingInput, CraftingRecipe, ShapedRecipe, ShapelessRecipe};
 use crate::item_stack::ItemStack;
 
@@ -18,7 +18,7 @@ pub struct RecipeRegistry {
     /// All shapeless crafting recipes (for type-specific iteration).
     shapeless_recipes: Vec<&'static ShapelessRecipe>,
     /// All furnace smelting recipes.
-    smelting_recipes: Vec<&'static SmeltingRecipe>,
+    smelting_recipes: Vec<&'static CookingRecipe>,
     /// Whether registration is still allowed.
     allows_registering: bool,
 }
@@ -70,7 +70,7 @@ impl RecipeRegistry {
     }
 
     /// Registers a furnace smelting recipe.
-    pub fn register_smelting(&mut self, recipe: &'static SmeltingRecipe) {
+    pub fn register_smelting(&mut self, recipe: &'static CookingRecipe) {
         assert!(
             self.allows_registering,
             "Cannot register recipes after the registry has been frozen"
@@ -174,7 +174,7 @@ impl RecipeRegistry {
     }
 
     /// Iterates over all furnace smelting recipes.
-    pub fn iter_smelting(&self) -> impl Iterator<Item = &'static SmeltingRecipe> + '_ {
+    pub fn iter_smelting(&self) -> impl Iterator<Item = &'static CookingRecipe> + '_ {
         self.smelting_recipes.iter().copied()
     }
 }

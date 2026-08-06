@@ -8,7 +8,7 @@ mod crafting;
 mod ingredient;
 mod registry;
 
-pub use cooking::SmeltingRecipe;
+pub use cooking::CookingRecipe;
 pub use crafting::{
     CraftingCategory, CraftingInput, CraftingRecipe, PositionedCraftingInput, RecipeResult,
     ShapedRecipe, ShapelessRecipe,

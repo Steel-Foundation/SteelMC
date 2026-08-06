@@ -130,7 +130,7 @@ struct ShapelessRecipeData {
     result_count: i32,
 }
 
-struct SmeltingRecipeData {
+struct CookingRecipeData {
     name: String,
     ident: Ident,
     ingredient: ParsedIngredient,
@@ -263,7 +263,7 @@ fn parse_shapeless_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<Shap
 }
 
 /// Parses a furnace smelting recipe from JSON.
-fn parse_smelting_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<SmeltingRecipeData> {
+fn parse_smelting_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<CookingRecipeData> {
     let ingredient = recipe.ingredient.as_ref()?;
     let result = recipe.result.as_ref()?;
 
@@ -271,7 +271,7 @@ fn parse_smelting_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<Smelt
     let result_item_ident = Ident::new(&result_item_id.to_shouty_snake_case(), Span::call_site());
     let snake_name = recipe_name.to_snake_case();
 
-    Some(SmeltingRecipeData {
+    Some(CookingRecipeData {
         name: recipe_name.to_string(),
         ident: Ident::new(&snake_name, Span::call_site()),
         ingredient: parse_ingredient(ingredient),
@@ -316,14 +316,14 @@ pub(crate) fn build() -> TokenStream {
 
     let mut shaped_recipes: Vec<ShapedRecipeData> = Vec::new();
     let mut shapeless_recipes: Vec<ShapelessRecipeData> = Vec::new();
-    let mut smelting_recipes: Vec<SmeltingRecipeData> = Vec::new();
+    let mut smelting_recipes: Vec<CookingRecipeData> = Vec::new();
 
     // Read all recipe files
     fn read_recipes(
         dir: &Path,
         shaped: &mut Vec<ShapedRecipeData>,
         shapeless: &mut Vec<ShapelessRecipeData>,
-        smelting: &mut Vec<SmeltingRecipeData>,
+        smelting: &mut Vec<CookingRecipeData>,
     ) {
         for entry in fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();
@@ -477,8 +477,8 @@ pub(crate) fn build() -> TokenStream {
 
             quote! {
                 #[inline(never)]
-                fn #fn_ident() -> SmeltingRecipe {
-                    SmeltingRecipe {
+                fn #fn_ident() -> CookingRecipe {
+                    CookingRecipe {
                         id: Identifier::vanilla_static(#name),
                         ingredient: #ingredient,
                         result: RecipeResult {
@@ -514,7 +514,7 @@ pub(crate) fn build() -> TokenStream {
         .iter()
         .map(|r| {
             let ident = &r.ident;
-            quote! { pub #ident: SmeltingRecipe, }
+            quote! { pub #ident: CookingRecipe, }
         })
         .collect();
 
@@ -575,7 +575,7 @@ pub(crate) fn build() -> TokenStream {
         use crate::{
             recipe::{
                 CraftingCategory, Ingredient, RecipeRegistry, RecipeResult,
-                ShapedRecipe, ShapelessRecipe, SmeltingRecipe,
+                ShapedRecipe, ShapelessRecipe, CookingRecipe,
             },
             vanilla_items,
         };
@@ -597,14 +597,14 @@ pub(crate) fn build() -> TokenStream {
             #(#shapeless_fields)*
         }
 
-        pub struct SmeltingRecipes {
+        pub struct CookingRecipes {
             #(#smelting_fields)*
         }
 
         pub struct Recipes {
             pub shaped: ShapedRecipes,
             pub shapeless: ShapelessRecipes,
-            pub smelting: SmeltingRecipes,
+            pub smelting: CookingRecipes,
         }
 
         // Individual recipe creator functions.
@@ -631,7 +631,7 @@ pub(crate) fn build() -> TokenStream {
                     shapeless: ShapelessRecipes {
                         #(#shapeless_field_inits)*
                     },
-                    smelting: SmeltingRecipes {
+                    smelting: CookingRecipes {
                         #(#smelting_field_inits)*
                     },
                 }
