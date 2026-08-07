@@ -97,7 +97,7 @@ fn can_attach_to(world: &dyn LevelReader, pos: BlockPos, direction: Direction) -
 mod tests {
     use super::*;
     use steel_registry::fluid::FluidRef;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     struct EmptyLevel;
 
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn support_neighbor_update_breaks_unsupported_ladder() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = LadderBlock::new(&vanilla_blocks::LADDER);
         let state = vanilla_blocks::LADDER
             .default_state()
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn waterlogged_ladder_contains_non_falling_source_water() {
-        init_test_registry();
+        init_vanilla_registry();
         let state = vanilla_blocks::LADDER
             .default_state()
             .set_value(&WATERLOGGED, true);

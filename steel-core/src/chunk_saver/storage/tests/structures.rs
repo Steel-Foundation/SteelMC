@@ -81,7 +81,7 @@ fn structure_persistence_filters_empty_starts_and_sorts_entries() {
     reason = "single fixture verifies every persisted jigsaw field roundtrips together"
 )]
 fn structure_start_roundtrip_preserves_typed_jigsaw_state() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let structure_id = Identifier::from_steel("test_jigsaw_structure");
     let piece_type = Identifier::new_static("minecraft", "jigsaw");
@@ -202,7 +202,7 @@ fn structure_start_roundtrip_preserves_typed_jigsaw_state() {
     reason = "single roundtrip fixture covers every structure piece payload variant together"
 )]
 fn structure_start_roundtrip_preserves_template_and_procedural_payloads() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let structure_id = Identifier::from_steel("test_payload_variants");
     let template_id = Identifier::new_static("minecraft", "shipwreck/with_mast");

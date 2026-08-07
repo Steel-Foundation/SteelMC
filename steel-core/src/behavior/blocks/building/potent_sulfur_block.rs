@@ -192,7 +192,7 @@ impl BlockBehavior for PotentSulfurBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
 
     use super::*;
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn potent_sulfur_ticker_selection_matches_live_geyser_state() {
-        init_test_registry();
+        init_vanilla_registry();
         let world = fresh_test_world("potent_sulfur_ticker");
         let behavior = PotentSulfurBlock::new(&vanilla_blocks::POTENT_SULFUR);
         let base = vanilla_blocks::POTENT_SULFUR.default_state();

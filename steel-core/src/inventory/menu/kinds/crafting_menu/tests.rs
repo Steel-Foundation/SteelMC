@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::{
-    item_stack::ItemStack, test_support::init_test_registry, vanilla_blocks, vanilla_entities,
-    vanilla_items,
+    init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_entities, vanilla_items,
 };
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, ChunkPos, Downcast as _, WorldAabb};
@@ -22,7 +21,7 @@ use crate::{
 
 #[test]
 fn partial_result_overflow_uses_the_default_drop_policy() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("crafting_menu_partial_result_overflow");
     let pos = BlockPos::new(0, 64, 0);

@@ -1491,7 +1491,7 @@ impl LevelAccessor for WorldGenRegion<'_> {
 mod tests {
     use std::sync::{Arc, Weak};
 
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
 
     use crate::behavior::init_behaviors;
@@ -1536,7 +1536,7 @@ mod tests {
 
     #[test]
     fn full_imposter_maps_worldgen_height_queries_to_final_heightmaps() {
-        init_test_registry();
+        init_vanilla_registry();
         let chunk = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -1626,7 +1626,7 @@ mod tests {
 
     #[test]
     fn bulk_section_reads_use_empty_proto_sections_for_full_imposters() {
-        init_test_registry();
+        init_vanilla_registry();
         let chunk = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -1655,7 +1655,7 @@ mod tests {
 
     #[test]
     fn bulk_write_defers_counts_only_for_pre_light_proto_chunks() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let stone = vanilla_blocks::STONE.default_state();
         let air = vanilla_blocks::AIR.default_state();
@@ -1706,7 +1706,7 @@ mod tests {
 
     #[test]
     fn cached_worldgen_view_observes_holder_status_advancement() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let holder = published_holder(ChunkStatus::Features);
         let Some(chunk) = holder.try_chunk(ChunkStatus::Features) else {

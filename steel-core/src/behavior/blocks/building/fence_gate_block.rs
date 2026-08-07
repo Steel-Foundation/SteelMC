@@ -223,7 +223,7 @@ impl BlockBehavior for FenceGateBlock {
 #[cfg(test)]
 mod tests {
     use steel_registry::{
-        blocks::properties::BlockStateProperties, test_support::init_test_registry, vanilla_blocks,
+        blocks::properties::BlockStateProperties, init_vanilla_registry, vanilla_blocks,
     };
     use steel_utils::{ChunkPos, types::UpdateFlags};
 
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn redstone_power_opens_and_closes_fence_gate() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("fence_gate_redstone");
         let pos = BlockPos::new(8, 64, 8);
