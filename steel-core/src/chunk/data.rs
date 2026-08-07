@@ -1,11 +1,11 @@
-//! A proto chunk is a chunk that is still being generated.
+//! Chunk data retained from generation through Full runtime use.
+use std::fmt::{self, Formatter};
 use std::sync::{
-    Weak,
+    Arc, OnceLock, Weak,
     atomic::{AtomicBool, Ordering},
 };
 
-use crossbeam::atomic::AtomicCell;
-use parking_lot::{MappedRwLockWriteGuard, RwLockWriteGuard};
+use parking_lot::{MappedRwLockWriteGuard, RwLockReadGuard, RwLockWriteGuard};
 use rustc_hash::FxHashMap;
 use steel_registry::{
     REGISTRY,
@@ -14,7 +14,7 @@ use steel_registry::{
     vanilla_blocks,
 };
 use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos, SectionPos,
+    BlockPos, BlockStateId, ChunkPos, Downcast as _, DowncastType, ErasedType, SectionPos,
     locks::{SyncMutex, SyncRwLock},
     types::UpdateFlags,
 };
@@ -22,21 +22,24 @@ use steel_utils::{
 use crate::behavior::{BLOCK_BEHAVIORS, BlockEntityCreation};
 use crate::block_entity::{BlockEntityLookup, BlockEntityStorage, SharedBlockEntity};
 use crate::chunk::{
-    chunk_access::ChunkStatus,
-    heightmap::{HeightmapType, ProtoHeightmaps},
+    full_chunk::FullChunkRuntime,
+    heightmap::{ChunkHeightmaps, HeightmapType},
     light::{
         ChunkLightData, ChunkSkyLightSources, LightSectionEmptinessChange,
         has_different_light_properties,
     },
     section::Sections,
+    status::ChunkStatus,
 };
-use crate::entity::{EntityStorage, SharedEntity};
+use crate::entity::{EntityStorage, EntityStorageAddResult, SharedEntity};
 use crate::world::World;
-use crate::world::tick_scheduler::{BlockTickList, FluidTickList, TickPriority};
+use crate::world::tick_scheduler::{
+    BlockTickList, ChunkTickContainer, ChunkTickLists, FluidTickList, TickPriority,
+};
 use crate::worldgen::carving_mask::CarvingMask;
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
-fn empty_postprocessing(height: i32) -> Box<[Vec<u16>]> {
+pub(crate) fn empty_postprocessing(height: i32) -> Box<[Vec<u16>]> {
     let section_count = (height / 16) as usize;
     (0..section_count).map(|_| Vec::new()).collect()
 }
@@ -51,30 +54,44 @@ pub(crate) fn postprocessing_from_disk(
     postprocessing.into_boxed_slice()
 }
 
-/// A chunk that is still being generated.
+#[derive(Default)]
+struct TransientGenerationState {
+    value: Option<Box<dyn ErasedType + Send + Sync>>,
+}
+
+impl fmt::Debug for TransientGenerationState {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TransientGenerationState")
+            .field(
+                "type_key",
+                &self.value.as_deref().map(ErasedType::downcast_type_key),
+            )
+            .finish()
+    }
+}
+
+/// Canonical chunk storage retained across generation and Full runtime phases.
 #[derive(Debug)]
-pub struct ProtoChunk {
+pub struct Chunk {
     /// The sections of the chunk.
     pub sections: Sections,
     /// The position of the chunk.
     pub pos: ChunkPos,
     /// Whether the chunk has been modified since last save.
-    /// Proto chunks start dirty since they're being generated.
+    /// Newly generated chunks start dirty.
     pub dirty: AtomicBool,
-    /// Current generation status of this chunk. Every time a chunk is loaded it goes thru all stages.
-    /// If you want the real status use the chunkholder status
-    status: AtomicCell<ChunkStatus>,
-    /// Heightmaps (lazily initialized based on generation status).
-    pub heightmaps: SyncRwLock<ProtoHeightmaps>,
+    /// Heightmaps retained across every generation phase.
+    pub(crate) heightmaps: SyncRwLock<ChunkHeightmaps>,
     /// The minimum Y coordinate of the world this chunk belongs to.
     min_y: i32,
     /// The total height of the world.
     height: i32,
-    /// Weak reference to the world for block entity dirty callbacks while the chunk is proto.
+    /// Weak reference to the owning world.
     level: Weak<World>,
-    /// Block entities created during generation before promotion to a full chunk.
+    /// Stable block-entity storage retained through Full promotion.
     pub(crate) block_entities: BlockEntityStorage,
-    /// Entities created during generation before promotion to a full chunk.
+    /// Entity staging storage closed and drained at Full promotion.
     pub(crate) entities: EntityStorage,
     /// Structure starts originating in this chunk.
     pub structure_starts: SyncRwLock<StructureStartMap>,
@@ -83,23 +100,17 @@ pub struct ProtoChunk {
     /// Bitset of positions visited by carvers (lazily initialized).
     pub carving_mask: SyncRwLock<Option<CarvingMask>>,
     /// Section-indexed packed offsets that need vanilla postprocessing after promotion.
-    pub postprocessing: SyncRwLock<Box<[Vec<u16>]>>,
-    /// Scheduled block ticks queued while this chunk is still a proto chunk.
-    pub block_ticks: SyncMutex<BlockTickList>,
-    /// Scheduled fluid ticks queued while this chunk is still a proto chunk.
-    pub fluid_ticks: SyncMutex<FluidTickList>,
+    pub postprocessing: SyncMutex<Box<[Vec<u16>]>>,
+    /// Stable block and fluid scheduled-tick storage retained through Full promotion.
+    pub(crate) scheduled_ticks: Arc<ChunkTickContainer>,
     /// Vanilla skylight source edge cache for this chunk.
     pub sky_light_sources: SyncRwLock<ChunkSkyLightSources>,
     /// Chunk-owned light sections and section emptiness maps.
     pub light: SyncRwLock<ChunkLightData>,
-    // TODO: research persisting NoiseChunk/Aquifer across stages like vanilla
-    // does. Vanilla caches `NoiseChunk` on `ChunkAccess` so noise, surface,
-    // and carvers share one instance; we currently rebuild per stage. Blocked
-    // by the storage boundary: `NoiseChunk<N: DimensionNoises>` is generic,
-    // while `ProtoChunk` is not.
-    // Options to evaluate: (1) object-safe trait returning carver-needed
-    // values, (2) generic `ProtoChunk<N>` (big ripple), (3) stay as-is if
-    // rebuild cost stays negligible.
+    /// Full-only runtime state, installed once before Full publication.
+    full_runtime: OnceLock<Box<FullChunkRuntime>>,
+    /// Generator-owned state retained only between generation stages.
+    transient_generation_state: SyncMutex<TransientGenerationState>,
 }
 
 enum PendingPromotionCommit {
@@ -107,7 +118,7 @@ enum PendingPromotionCommit {
     Complete(Option<SharedBlockEntity>),
 }
 
-impl ProtoChunk {
+impl Chunk {
     /// Creates a new proto chunk at the given position with empty sections.
     #[must_use]
     pub fn new(
@@ -121,8 +132,7 @@ impl ProtoChunk {
             sections,
             pos,
             dirty: AtomicBool::new(true), // New chunks are always dirty
-            status: AtomicCell::new(ChunkStatus::Empty),
-            heightmaps: SyncRwLock::new(ProtoHeightmaps::new()),
+            heightmaps: SyncRwLock::new(ChunkHeightmaps::empty()),
             min_y,
             height,
             level,
@@ -131,17 +141,21 @@ impl ProtoChunk {
             structure_starts: SyncRwLock::new(FxHashMap::default()),
             structure_references: SyncRwLock::new(FxHashMap::default()),
             carving_mask: SyncRwLock::new(None),
-            postprocessing: SyncRwLock::new(empty_postprocessing(height)),
-            block_ticks: SyncMutex::new(BlockTickList::new_pending()),
-            fluid_ticks: SyncMutex::new(FluidTickList::new_pending()),
+            postprocessing: SyncMutex::new(empty_postprocessing(height)),
+            scheduled_ticks: Arc::new(ChunkTickContainer::new_proto(ChunkTickLists::new(
+                BlockTickList::new_pending(),
+                FluidTickList::new_pending(),
+            ))),
             sky_light_sources: SyncRwLock::new(ChunkSkyLightSources::for_valid_world_height(
                 min_y, height,
             )),
             light: SyncRwLock::new(ChunkLightData::for_valid_world_height(min_y, height)),
+            full_runtime: OnceLock::new(),
+            transient_generation_state: SyncMutex::new(TransientGenerationState::default()),
         }
     }
 
-    /// Creates a proto chunk that was loaded from disk.
+    /// Creates a chunk that was loaded from disk.
     ///
     /// # Panics
     ///
@@ -151,12 +165,13 @@ impl ProtoChunk {
         reason = "disk rehydration mirrors the persisted proto chunk fields"
     )]
     #[must_use]
-    pub fn from_disk(
+    pub(crate) fn from_disk(
         sections: Sections,
         pos: ChunkPos,
         status: ChunkStatus,
         min_y: i32,
         height: i32,
+        heightmaps: ChunkHeightmaps,
         structure_starts: StructureStartMap,
         structure_references: StructureReferenceMap,
         carving_mask: Option<CarvingMask>,
@@ -174,24 +189,31 @@ impl ProtoChunk {
             sections,
             pos,
             dirty: AtomicBool::new(false),
-            status: AtomicCell::new(status),
-            // Proto heightmaps will be re-primed during generation on the first set_block_state call
-            heightmaps: SyncRwLock::new(ProtoHeightmaps::new()),
+            heightmaps: SyncRwLock::new(heightmaps),
             min_y,
             height,
             level,
             block_entities: BlockEntityStorage::new(),
-            entities: EntityStorage::new(),
+            entities: if status == ChunkStatus::Full {
+                EntityStorage::new_closed()
+            } else {
+                EntityStorage::new()
+            },
             structure_starts: SyncRwLock::new(structure_starts),
             structure_references: SyncRwLock::new(structure_references),
             carving_mask: SyncRwLock::new(carving_mask),
-            postprocessing: SyncRwLock::new(postprocessing_from_disk(height, postprocessing)),
-            block_ticks: SyncMutex::new(block_ticks),
-            fluid_ticks: SyncMutex::new(fluid_ticks),
+            postprocessing: SyncMutex::new(postprocessing_from_disk(height, postprocessing)),
+            scheduled_ticks: Arc::new(if status == ChunkStatus::Full {
+                ChunkTickContainer::new(ChunkTickLists::new(block_ticks, fluid_ticks))
+            } else {
+                ChunkTickContainer::new_proto(ChunkTickLists::new(block_ticks, fluid_ticks))
+            }),
             sky_light_sources: SyncRwLock::new(ChunkSkyLightSources::for_valid_world_height(
                 min_y, height,
             )),
             light: SyncRwLock::new(light),
+            full_runtime: OnceLock::new(),
+            transient_generation_state: SyncMutex::new(TransientGenerationState::default()),
         };
 
         if status >= ChunkStatus::InitializeLight {
@@ -213,15 +235,317 @@ impl ProtoChunk {
         self.height
     }
 
-    /// Gets the current generation status of this chunk.
+    /// Returns the chunk position.
     #[must_use]
-    pub fn status(&self) -> ChunkStatus {
-        self.status.load()
+    pub const fn pos(&self) -> ChunkPos {
+        self.pos
     }
 
-    /// Sets the generation status of this chunk.
-    pub fn set_status(&self, status: ChunkStatus) {
-        self.status.store(status);
+    /// Returns the stable section storage.
+    #[must_use]
+    pub const fn sections(&self) -> &Sections {
+        &self.sections
+    }
+
+    /// Returns whether this chunk has unsaved changes.
+    #[must_use]
+    pub fn is_dirty(&self) -> bool {
+        self.dirty.load(Ordering::Acquire)
+    }
+
+    /// Marks this chunk as needing persistence.
+    pub fn mark_dirty(&self) {
+        self.dirty.store(true, Ordering::Release);
+    }
+
+    /// Clears the dirty flag and returns its previous value.
+    pub fn take_dirty(&self) -> bool {
+        self.dirty.swap(false, Ordering::AcqRel)
+    }
+
+    /// Clears the dirty flag.
+    pub fn clear_dirty(&self) {
+        self.dirty.store(false, Ordering::Release);
+    }
+
+    /// Reads a block using coordinates relative to the chunk's minimum Y.
+    #[must_use]
+    pub fn get_relative_block(
+        &self,
+        relative_x: usize,
+        relative_y: usize,
+        relative_z: usize,
+    ) -> Option<BlockStateId> {
+        self.sections
+            .get_relative_block(relative_x, relative_y, relative_z)
+    }
+
+    /// Writes one generation block while preserving the current stage's side effects.
+    pub(crate) fn set_relative_block_for_generation(
+        &self,
+        status: ChunkStatus,
+        relative_x: usize,
+        relative_y: usize,
+        relative_z: usize,
+        value: BlockStateId,
+    ) {
+        if status >= ChunkStatus::InitializeLight {
+            self.sections
+                .set_relative_block(relative_x, relative_y, relative_z, value);
+            self.refresh_light_emptiness_maps();
+        } else {
+            self.sections
+                .set_relative_block_for_generation(relative_x, relative_y, relative_z, value);
+        }
+        self.mark_dirty();
+        self.update_status_heightmaps_after_block_change(
+            status,
+            relative_x,
+            self.min_y + relative_y as i32,
+            relative_z,
+            value,
+        );
+    }
+
+    /// Writes a batch of generation blocks.
+    pub(crate) fn write_block_batch_for_generation(
+        &self,
+        status: ChunkStatus,
+        blocks: &[(usize, usize, usize, BlockStateId)],
+    ) {
+        if blocks.is_empty() {
+            return;
+        }
+        if status < ChunkStatus::InitializeLight {
+            self.sections.write_block_batch(blocks);
+        } else {
+            self.sections.write_tracked_block_batch(blocks);
+            self.refresh_light_emptiness_maps();
+        }
+        self.mark_dirty();
+    }
+
+    /// Writes one column of generation blocks.
+    pub(crate) fn write_column_blocks_for_generation(
+        &self,
+        status: ChunkStatus,
+        x: usize,
+        z: usize,
+        blocks: &[(usize, BlockStateId)],
+    ) {
+        if blocks.is_empty() {
+            return;
+        }
+        if status < ChunkStatus::InitializeLight {
+            self.sections.write_column_blocks(x, z, blocks);
+        } else {
+            for &(relative_y, value) in blocks {
+                self.sections.set_relative_block(x, relative_y, z, value);
+            }
+            self.refresh_light_emptiness_maps();
+        }
+        self.mark_dirty();
+    }
+
+    /// Ensures the requested generation heightmaps exist.
+    pub(crate) fn prime_heightmaps(&self, heightmap_types: &[HeightmapType]) {
+        self.heightmaps.write().prime_from_sections(
+            heightmap_types,
+            self.min_y,
+            self.height,
+            &self.sections.sections,
+        );
+    }
+
+    /// Ensures every final heightmap exists before feature generation or promotion.
+    pub fn prime_final_heightmaps(&self) {
+        self.prime_heightmaps(HeightmapType::final_types());
+    }
+
+    /// Reads a generation heightmap, priming it lazily when needed.
+    #[must_use]
+    pub(crate) fn generation_height_at(
+        &self,
+        heightmap_type: HeightmapType,
+        local_x: usize,
+        local_z: usize,
+    ) -> i32 {
+        {
+            let heightmaps = self.heightmaps.read();
+            if let Some(heightmap) = heightmaps.get(heightmap_type) {
+                return heightmap.get_first_available(local_x, local_z);
+            }
+        }
+        self.prime_heightmaps(&[heightmap_type]);
+        let heightmaps = self.heightmaps.read();
+        let Some(heightmap) = heightmaps.get(heightmap_type) else {
+            panic!("heightmap {heightmap_type:?} missing after priming");
+        };
+        heightmap.get_first_available(local_x, local_z)
+    }
+
+    /// Returns the generation heightmaps retained by this chunk.
+    pub(crate) fn generation_heightmaps(&self) -> RwLockReadGuard<'_, ChunkHeightmaps> {
+        self.heightmaps.read()
+    }
+
+    /// Applies generation heightmap maintenance after direct writes in one column.
+    pub(crate) fn update_heightmaps_after_direct_column_writes(
+        &self,
+        status: ChunkStatus,
+        local_x: usize,
+        local_z: usize,
+        relative_writes: &[(usize, BlockStateId)],
+    ) {
+        if relative_writes.is_empty() {
+            return;
+        }
+        self.update_status_heightmaps_after_column_block_changes(
+            status,
+            local_x,
+            local_z,
+            relative_writes,
+        );
+    }
+
+    /// Returns a read guard for the skylight-source cache.
+    pub fn sky_light_sources(&self) -> RwLockReadGuard<'_, ChunkSkyLightSources> {
+        self.sky_light_sources.read()
+    }
+
+    /// Returns every block position that emits light in this chunk.
+    #[must_use]
+    pub fn block_light_sources(&self) -> Vec<BlockPos> {
+        self.sections.block_light_sources(self.pos, self.min_y)
+    }
+
+    /// Returns committed chunk light data.
+    pub fn light(&self) -> RwLockReadGuard<'_, ChunkLightData> {
+        self.light.read()
+    }
+
+    /// Returns mutable committed chunk light data.
+    pub(crate) fn light_mut(&self) -> RwLockWriteGuard<'_, ChunkLightData> {
+        self.light.write()
+    }
+
+    /// Returns structure starts originating in this chunk.
+    pub fn structure_starts(&self) -> RwLockReadGuard<'_, StructureStartMap> {
+        self.structure_starts.read()
+    }
+
+    /// Returns mutable structure starts originating in this chunk.
+    pub fn structure_starts_mut(&self) -> RwLockWriteGuard<'_, StructureStartMap> {
+        self.structure_starts.write()
+    }
+
+    /// Returns references to nearby structures.
+    pub fn structure_references(&self) -> RwLockReadGuard<'_, StructureReferenceMap> {
+        self.structure_references.read()
+    }
+
+    /// Returns mutable references to nearby structures.
+    pub fn structure_references_mut(&self) -> RwLockWriteGuard<'_, StructureReferenceMap> {
+        self.structure_references.write()
+    }
+
+    /// Installs Full-only runtime state before this chunk is published as Full.
+    pub(crate) fn initialize_full_runtime(
+        &self,
+        runtime: FullChunkRuntime,
+    ) -> Result<(), FullChunkRuntime> {
+        self.full_runtime
+            .set(Box::new(runtime))
+            .map_err(|runtime| *runtime)
+    }
+
+    /// Returns the Full-only runtime state after promotion or Full disk construction.
+    #[must_use]
+    pub(crate) fn full_runtime(&self) -> Option<&FullChunkRuntime> {
+        self.full_runtime.get().map(Box::as_ref)
+    }
+
+    /// Installs generator-owned state for reuse by later generation stages.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the current generator has already installed transient state.
+    pub(crate) fn install_transient_generation_state<T>(&self, state: T)
+    where
+        T: DowncastType + Send + Sync,
+    {
+        let mut slot = self.transient_generation_state.lock();
+        if let Some(current) = slot.value.as_deref() {
+            panic!(
+                "chunk transient generation state {} was not consumed before installing {}",
+                current.downcast_type_key(),
+                T::TYPE_KEY
+            );
+        }
+        slot.value = Some(Box::new(state));
+    }
+
+    /// Borrows generator-owned state without extending its lifetime beyond the callback.
+    ///
+    /// Returns `None` when no state was installed, such as after reloading a partially
+    /// generated chunk from disk.
+    ///
+    /// # Panics
+    ///
+    /// Panics if another generator's state occupies this chunk.
+    pub(crate) fn with_transient_generation_state_mut<T, R>(
+        &self,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> Option<R>
+    where
+        T: DowncastType + Send + Sync,
+    {
+        let mut slot = self.transient_generation_state.lock();
+        let state = slot.value.as_deref_mut()?;
+        let actual_key = state.downcast_type_key();
+        let Some(state) = state.downcast_mut::<T>() else {
+            panic!(
+                "chunk transient generation state type mismatch: expected {}, found {}",
+                T::TYPE_KEY,
+                actual_key
+            );
+        };
+        Some(f(state))
+    }
+
+    /// Removes generator-owned state and passes it to `f` before dropping it.
+    ///
+    /// The erased allocation is moved out before the callback, so it is also dropped if
+    /// the callback unwinds. `None` represents a cold continuation loaded from disk.
+    ///
+    /// # Panics
+    ///
+    /// Panics if another generator's state occupies this chunk.
+    pub(crate) fn consume_transient_generation_state<T, R>(
+        &self,
+        f: impl FnOnce(Option<&mut T>) -> R,
+    ) -> R
+    where
+        T: DowncastType + Send + Sync,
+    {
+        let state = self.transient_generation_state.lock().value.take();
+        let Some(mut state) = state else {
+            return f(None);
+        };
+        let actual_key = state.downcast_type_key();
+        let Some(state) = state.downcast_mut::<T>() else {
+            panic!(
+                "chunk transient generation state type mismatch: expected {}, found {}",
+                T::TYPE_KEY,
+                actual_key
+            );
+        };
+        f(Some(state))
+    }
+
+    /// Drops any generator-owned state that is no longer needed by the pipeline.
+    pub(crate) fn clear_transient_generation_state(&self) {
+        self.transient_generation_state.lock().value = None;
     }
 
     /// Returns a write guard to this chunk's carving mask, initializing it on
@@ -229,7 +553,7 @@ impl ProtoChunk {
     ///
     /// # Panics
     /// Never — the mask is populated immediately before projecting the guard.
-    pub fn get_or_create_carving_mask(&self) -> MappedRwLockWriteGuard<'_, CarvingMask> {
+    pub(crate) fn get_or_create_carving_mask(&self) -> MappedRwLockWriteGuard<'_, CarvingMask> {
         let mut guard = self.carving_mask.write();
         if guard.is_none() {
             *guard = Some(CarvingMask::new(self.height, self.min_y));
@@ -263,7 +587,7 @@ impl ProtoChunk {
     }
 
     /// Marks a block position for postprocessing after proto-to-full promotion.
-    pub fn mark_pos_for_postprocessing(&self, pos: BlockPos) {
+    pub(crate) fn mark_pos_for_postprocessing(&self, pos: BlockPos) {
         let y = pos.0.y;
         if y < self.min_y || y >= self.min_y + self.height {
             return;
@@ -271,7 +595,7 @@ impl ProtoChunk {
 
         let section_index = self.get_section_index(y);
         let packed = Self::pack_postprocessing_offset(pos);
-        self.postprocessing.write()[section_index].push(packed);
+        self.postprocessing.lock()[section_index].push(packed);
         self.mark_unsaved();
     }
 
@@ -288,8 +612,26 @@ impl ProtoChunk {
 
     /// Returns the weak reference to the world.
     #[must_use]
-    pub fn level_weak(&self) -> Weak<World> {
+    pub(crate) fn level_weak(&self) -> Weak<World> {
         self.level.clone()
+    }
+
+    /// Returns a reference to the world if it is still alive.
+    #[must_use]
+    pub(crate) fn get_level(&self) -> Option<Arc<World>> {
+        self.level.upgrade()
+    }
+
+    /// Returns this chunk's block-entity storage.
+    #[must_use]
+    pub(crate) const fn block_entity_storage(&self) -> &BlockEntityStorage {
+        &self.block_entities
+    }
+
+    /// Returns this chunk's stable scheduled-tick container.
+    #[must_use]
+    pub(crate) const fn scheduled_tick_container(&self) -> &Arc<ChunkTickContainer> {
+        &self.scheduled_ticks
     }
 
     /// Fills the vanilla skylight-source cache from current section contents.
@@ -305,13 +647,13 @@ impl ProtoChunk {
 
     /// Gets a block entity at the given position.
     #[must_use]
-    pub fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+    pub(crate) fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
         self.block_entities.get(pos)
     }
 
     /// Stores a concrete proto block entity if its type accepts the live block state.
     #[must_use]
-    pub fn set_block_entity(&self, block_entity: SharedBlockEntity) -> bool {
+    pub(crate) fn set_block_entity(&self, block_entity: SharedBlockEntity) -> bool {
         let pos = block_entity.get_block_pos();
         if ChunkPos::from_block_pos(pos) != self.pos {
             log::warn!(
@@ -355,7 +697,7 @@ impl ProtoChunk {
     }
 
     /// Stores Vanilla's pending `DUMMY` marker for a worldgen-placed entity block.
-    pub fn set_pending_block_entity(&self, pos: BlockPos) {
+    pub(crate) fn set_pending_block_entity(&self, pos: BlockPos) {
         if ChunkPos::from_block_pos(pos) != self.pos {
             log::warn!(
                 "Trying to set a pending block entity at {pos:?} in proto chunk {:?}",
@@ -458,7 +800,7 @@ impl ProtoChunk {
     }
 
     /// Removes a block entity at the given position.
-    pub fn remove_block_entity(&self, pos: BlockPos) {
+    pub(crate) fn remove_block_entity(&self, pos: BlockPos) {
         self.block_entities.remove_without_lifecycle(pos);
         self.mark_unsaved();
     }
@@ -481,7 +823,7 @@ impl ProtoChunk {
         removed
     }
 
-    /// Drops every `ProtoChunk` block entity without `LevelChunk` lifecycle callbacks or dirtying.
+    /// Drops every block entity without Full-chunk lifecycle callbacks or dirtying.
     pub(crate) fn clear_all_block_entities(&self) {
         self.block_entities.clear_without_lifecycle();
     }
@@ -493,9 +835,21 @@ impl ProtoChunk {
     }
 
     /// Adds an entity to proto storage.
-    pub fn add_entity(&self, entity: SharedEntity) {
-        self.entities.add(entity);
-        self.mark_unsaved();
+    pub(crate) fn add_entity(&self, entity: SharedEntity) -> bool {
+        match self.entities.add(entity) {
+            EntityStorageAddResult::Staged => {
+                self.mark_unsaved();
+                true
+            }
+            EntityStorageAddResult::Closed(entity) => {
+                // A retained worldgen reference becomes Vanilla's false-write
+                // ImposterProtoChunk after promotion. Its addEntity call drops
+                // the entity, while WorldGenRegion.addFreshEntity still reports
+                // success.
+                drop(entity);
+                true
+            }
+        }
     }
 
     /// Returns all entities in this proto chunk.
@@ -506,7 +860,7 @@ impl ProtoChunk {
 
     /// Returns entities that should be persisted from this proto chunk.
     #[must_use]
-    pub fn get_saveable_entities(&self) -> Vec<SharedEntity> {
+    pub(crate) fn get_saveable_entities(&self) -> Vec<SharedEntity> {
         self.entities.get_saveable_entities()
     }
 
@@ -515,11 +869,16 @@ impl ProtoChunk {
     /// Vanilla `ProtoChunkTicks.schedule(ScheduledTick)` stores a saved tick with delay `0`,
     /// so worldgen-scheduled proto ticks run after promotion instead of preserving the
     /// requested delay from generation time.
-    pub fn schedule_block_tick(&self, pos: BlockPos, block: BlockRef, priority: TickPriority) {
+    pub(crate) fn schedule_block_tick(
+        &self,
+        pos: BlockPos,
+        block: BlockRef,
+        priority: TickPriority,
+    ) {
         if self
-            .block_ticks
-            .lock()
-            .schedule_pending(block, pos, priority)
+            .scheduled_ticks
+            .schedule_pending_block(block, pos, priority)
+            == Some(true)
         {
             self.mark_unsaved();
         }
@@ -528,11 +887,16 @@ impl ProtoChunk {
     /// Schedules a fluid tick in proto storage.
     ///
     /// See [`Self::schedule_block_tick`] for why proto ticks use delay `0`.
-    pub fn schedule_fluid_tick(&self, pos: BlockPos, fluid: FluidRef, priority: TickPriority) {
+    pub(crate) fn schedule_fluid_tick(
+        &self,
+        pos: BlockPos,
+        fluid: FluidRef,
+        priority: TickPriority,
+    ) {
         if self
-            .fluid_ticks
-            .lock()
-            .schedule_pending(fluid, pos, priority)
+            .scheduled_ticks
+            .schedule_pending_fluid(fluid, pos, priority)
+            == Some(true)
         {
             self.mark_unsaved();
         }
@@ -541,8 +905,9 @@ impl ProtoChunk {
     /// Sets a block state at the given position.
     ///
     /// Returns the old block state at the position, or `VOID_AIR` if out of bounds.
-    pub fn set_block_state(
+    pub(crate) fn set_block_state_for_generation(
         &self,
+        status: ChunkStatus,
         pos: BlockPos,
         state: BlockStateId,
         _flags: UpdateFlags,
@@ -563,7 +928,6 @@ impl ProtoChunk {
 
         let section_index = self.get_section_index(y);
         let section = &self.sections.sections[section_index];
-        let status = self.status();
         let (old_state, empty_section_changed_to) = {
             let mut section_guard = section.write();
             if status >= ChunkStatus::InitializeLight {
@@ -614,7 +978,7 @@ impl ProtoChunk {
             }
         }
 
-        self.update_status_heightmaps_after_block_change(local_x, y, local_z, state);
+        self.update_status_heightmaps_after_block_change(status, local_x, y, local_z, state);
 
         self.mark_unsaved();
         Some(old_state)
@@ -655,13 +1019,14 @@ impl ProtoChunk {
     /// [`Self::set_block_state`] but still need vanilla heightmap maintenance.
     pub(crate) fn update_status_heightmaps_after_block_change(
         &self,
+        status: ChunkStatus,
         local_x: usize,
         y: i32,
         local_z: usize,
         state: BlockStateId,
     ) {
         self.update_heightmaps_after_block_change(
-            self.status().heightmaps_after(),
+            status.heightmaps_after(),
             local_x,
             y,
             local_z,
@@ -671,12 +1036,13 @@ impl ProtoChunk {
 
     pub(crate) fn update_status_heightmaps_after_column_block_changes(
         &self,
+        status: ChunkStatus,
         local_x: usize,
         local_z: usize,
         relative_writes: &[(usize, BlockStateId)],
     ) {
         self.update_heightmaps_after_column_block_changes(
-            self.status().heightmaps_after(),
+            status.heightmaps_after(),
             local_x,
             local_z,
             relative_writes,
@@ -708,9 +1074,10 @@ impl ProtoChunk {
         heightmaps.prime_from_sections(heightmap_types, min_y, height, &sections.sections);
 
         for &hm_type in heightmap_types {
-            if let Some(heightmap) = heightmaps.get_mut(hm_type) {
-                heightmap.update(local_x, y, local_z, state, get_block);
-            }
+            let Some(heightmap) = heightmaps.get_mut(hm_type) else {
+                panic!("heightmap {hm_type:?} missing after priming");
+            };
+            heightmap.update(local_x, y, local_z, state, get_block);
         }
     }
 
@@ -744,9 +1111,10 @@ impl ProtoChunk {
         for &(relative_y, state) in relative_writes {
             let y = min_y + relative_y as i32;
             for &hm_type in heightmap_types {
-                if let Some(heightmap) = heightmaps.get_mut(hm_type) {
-                    heightmap.update(local_x, y, local_z, state, get_block);
-                }
+                let Some(heightmap) = heightmaps.get_mut(hm_type) else {
+                    panic!("heightmap {hm_type:?} missing after priming");
+                };
+                heightmap.update(local_x, y, local_z, state, get_block);
             }
         }
     }
@@ -791,22 +1159,89 @@ impl ProtoChunk {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::sync::{
+        Arc, Weak,
+        atomic::{AtomicUsize, Ordering},
+    };
 
-    use super::{PendingPromotionCommit, ProtoChunk};
+    use super::{Chunk, PendingPromotionCommit};
     use crate::behavior::{BlockEntityCreation, init_behaviors};
     use crate::block_entity::{
         BlockEntityLifecycleExt as _, SharedBlockEntity,
         entities::{RawBlockEntity, SignBlockEntity},
         init_block_entities,
     };
-    use crate::chunk::level_chunk::LevelChunk;
-    use crate::chunk::section::{ChunkSection, Sections};
-    use crate::world::tick_scheduler::TickPriority;
-    use steel_registry::{
-        test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
+    use crate::chunk::{
+        section::{ChunkSection, Sections},
+        status::ChunkStatus,
     };
-    use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
+    use crate::world::tick_scheduler::TickPriority;
+    use steel_registry::{init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks};
+    use steel_utils::{BlockPos, ChunkPos, DowncastType, DowncastTypeKey, types::UpdateFlags};
+
+    struct DropSentinel(Arc<AtomicUsize>);
+
+    // SAFETY: This key uniquely identifies the test-only sentinel type.
+    unsafe impl DowncastType for DropSentinel {
+        const TYPE_KEY: DowncastTypeKey =
+            DowncastTypeKey::new("steel:test/chunk/transient_generation_state");
+    }
+
+    impl Drop for DropSentinel {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn transient_generation_state_survives_borrow_and_is_consumed_once() {
+        init_vanilla_registry();
+        let chunk = Chunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let drops = Arc::new(AtomicUsize::new(0));
+        chunk.install_transient_generation_state(DropSentinel(Arc::clone(&drops)));
+
+        assert!(
+            chunk
+                .with_transient_generation_state_mut::<DropSentinel, _>(|_| ())
+                .is_some()
+        );
+        assert_eq!(drops.load(Ordering::Relaxed), 0);
+
+        let present =
+            chunk.consume_transient_generation_state::<DropSentinel, _>(|state| state.is_some());
+        assert!(present);
+        assert_eq!(drops.load(Ordering::Relaxed), 1);
+        assert!(
+            !chunk
+                .consume_transient_generation_state::<DropSentinel, _>(|state| { state.is_some() })
+        );
+        assert_eq!(drops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn full_promotion_drops_leftover_transient_generation_state() {
+        init_vanilla_registry();
+        init_behaviors();
+        let chunk = Chunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let drops = Arc::new(AtomicUsize::new(0));
+        chunk.install_transient_generation_state(DropSentinel(Arc::clone(&drops)));
+
+        let _ = chunk.promote_to_full();
+
+        assert_eq!(drops.load(Ordering::Relaxed), 1);
+    }
 
     #[test]
     fn postprocessing_offset_pack_unpack_matches_vanilla_layout() {
@@ -814,19 +1249,19 @@ mod tests {
         let section_y = -4;
         let pos = BlockPos::new(-17, -63, 31);
 
-        let packed = ProtoChunk::pack_postprocessing_offset(pos);
+        let packed = Chunk::pack_postprocessing_offset(pos);
 
         assert_eq!(packed, 15 | (1 << 4) | (15 << 8));
         assert_eq!(
-            ProtoChunk::unpack_postprocessing_offset(packed, section_y, chunk_pos),
+            Chunk::unpack_postprocessing_offset(packed, section_y, chunk_pos),
             pos
         );
     }
 
     #[test]
     fn proto_scheduled_block_ticks_use_vanilla_zero_delay() {
-        init_test_registry();
-        let proto = ProtoChunk::new(
+        init_vanilla_registry();
+        let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
             0,
@@ -837,8 +1272,10 @@ mod tests {
 
         proto.schedule_block_tick(pos, &vanilla_blocks::DIRT, TickPriority::Normal);
 
-        let ticks = proto.block_ticks.lock().pack(0);
-        let Some(tick) = ticks.first() else {
+        let Some(snapshot) = proto.scheduled_ticks.snapshot(0) else {
+            panic!("proto chunk scheduled ticks should remain available");
+        };
+        let Some(tick) = snapshot.block.first() else {
             panic!("proto chunk should store scheduled block tick");
         };
 
@@ -849,10 +1286,43 @@ mod tests {
     }
 
     #[test]
+    fn full_promotion_retains_and_closes_proto_scheduled_tick_container() {
+        init_vanilla_registry();
+        let proto = Chunk::new(
+            Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
+            ChunkPos::new(0, 0),
+            0,
+            16,
+            Weak::new(),
+        );
+        let scheduled_ticks = Arc::clone(&proto.scheduled_ticks);
+        let pos = BlockPos::new(3, 4, 5);
+        proto.schedule_block_tick(pos, &vanilla_blocks::DIRT, TickPriority::Normal);
+
+        let full = proto.promote_to_full().chunk;
+
+        assert_eq!(
+            scheduled_ticks.schedule_pending_block(
+                &vanilla_blocks::DIRT,
+                BlockPos::new(6, 7, 8),
+                TickPriority::Normal,
+            ),
+            None
+        );
+        assert!(Arc::ptr_eq(
+            &scheduled_ticks,
+            full.scheduled_tick_container()
+        ));
+        let snapshot = full.scheduled_tick_snapshot();
+        assert_eq!(snapshot.block.len(), 1);
+        assert_eq!(snapshot.block[0].pos, pos);
+    }
+
+    #[test]
     fn proto_chunk_preserves_distinct_air_states_in_empty_sections() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
-        let proto = ProtoChunk::new(
+        let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
             0,
@@ -862,16 +1332,21 @@ mod tests {
         let pos = BlockPos::new(3, 4, 5);
         let cave_air = vanilla_blocks::CAVE_AIR.default_state();
 
-        proto.set_block_state(pos, cave_air, UpdateFlags::UPDATE_CLIENTS);
+        proto.set_block_state_for_generation(
+            ChunkStatus::Empty,
+            pos,
+            cave_air,
+            UpdateFlags::UPDATE_CLIENTS,
+        );
 
         assert_eq!(proto.get_block_state(pos), cave_air);
     }
 
     #[test]
     fn pre_light_block_writes_defer_counts_until_light_initialization() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
-        let proto = ProtoChunk::new(
+        let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
             0,
@@ -888,13 +1363,23 @@ mod tests {
         assert_eq!(proto.sections.sections[0].read().non_empty_block_count(), 0);
 
         assert_eq!(
-            proto.set_block_state(pos, air, UpdateFlags::UPDATE_CLIENTS),
+            proto.set_block_state_for_generation(
+                ChunkStatus::Empty,
+                pos,
+                air,
+                UpdateFlags::UPDATE_CLIENTS,
+            ),
             Some(stone)
         );
         assert_eq!(proto.get_block_state(pos), air);
 
         assert_eq!(
-            proto.set_block_state(pos, stone, UpdateFlags::UPDATE_CLIENTS),
+            proto.set_block_state_for_generation(
+                ChunkStatus::Empty,
+                pos,
+                stone,
+                UpdateFlags::UPDATE_CLIENTS,
+            ),
             Some(air)
         );
         assert_eq!(proto.sections.sections[0].read().non_empty_block_count(), 0);
@@ -905,9 +1390,9 @@ mod tests {
 
     #[test]
     fn proto_mutation_defers_lifecycle_and_promotion_revalidates_concrete_entities() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
-        let proto = ProtoChunk::new(
+        let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
             0,
@@ -918,14 +1403,20 @@ mod tests {
         let sign = vanilla_blocks::OAK_SIGN.default_state();
         assert!(
             proto
-                .set_block_state(pos, sign, UpdateFlags::UPDATE_NONE)
+                .set_block_state_for_generation(
+                    ChunkStatus::Empty,
+                    pos,
+                    sign,
+                    UpdateFlags::UPDATE_NONE,
+                )
                 .is_some()
         );
         let entity: SharedBlockEntity = Arc::new(SignBlockEntity::new(Weak::new(), pos, sign));
         assert!(proto.set_block_entity(Arc::clone(&entity)));
 
         assert_eq!(
-            proto.set_block_state(
+            proto.set_block_state_for_generation(
+                ChunkStatus::Empty,
                 pos,
                 vanilla_blocks::STONE.default_state(),
                 UpdateFlags::UPDATE_NONE,
@@ -934,16 +1425,16 @@ mod tests {
         );
         assert!(proto.get_block_entity(pos).is_some());
 
-        let full = LevelChunk::from_proto(proto, 0, 16, Weak::new()).chunk;
+        let full = proto.promote_to_full().chunk;
         assert!(!entity.is_removed());
         assert!(full.get_block_entity(pos).is_none());
     }
 
     #[test]
     fn proto_storage_preserves_removed_entries_until_full_promotion() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
-        let proto = ProtoChunk::new(
+        let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
             0,
@@ -954,7 +1445,12 @@ mod tests {
         let sign = vanilla_blocks::OAK_SIGN.default_state();
         assert!(
             proto
-                .set_block_state(pos, sign, UpdateFlags::UPDATE_NONE)
+                .set_block_state_for_generation(
+                    ChunkStatus::Empty,
+                    pos,
+                    sign,
+                    UpdateFlags::UPDATE_NONE,
+                )
                 .is_some()
         );
         let entity: SharedBlockEntity = Arc::new(SignBlockEntity::new(Weak::new(), pos, sign));
@@ -971,17 +1467,18 @@ mod tests {
             1
         );
 
-        let promotion = LevelChunk::from_proto(proto, 0, 16, Weak::new());
+        let promotion = proto.promote_to_full();
+        let full = promotion.chunk;
         assert!(!entity.is_removed());
-        assert!(promotion.chunk.get_block_entity(pos).is_some());
+        assert!(full.get_block_entity(pos).is_some());
     }
 
     #[test]
     fn pending_proto_entity_promotes_without_running_live_lifecycle() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         init_block_entities();
-        let proto = ProtoChunk::new(
+        let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
             0,
@@ -992,7 +1489,12 @@ mod tests {
         let sign = vanilla_blocks::OAK_SIGN.default_state();
         assert!(
             proto
-                .set_block_state(pos, sign, UpdateFlags::UPDATE_NONE)
+                .set_block_state_for_generation(
+                    ChunkStatus::Empty,
+                    pos,
+                    sign,
+                    UpdateFlags::UPDATE_NONE,
+                )
                 .is_some()
         );
         proto.set_pending_block_entity(pos);
@@ -1003,9 +1505,9 @@ mod tests {
 
     #[test]
     fn conditional_proto_marker_mutation_rejects_stale_worldgen_state() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
-        let proto = ProtoChunk::new(
+        let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
             0,
@@ -1017,7 +1519,12 @@ mod tests {
         let exposed = vanilla_blocks::EXPOSED_COPPER_CHEST.default_state();
         assert!(
             proto
-                .set_block_state(pos, exposed, UpdateFlags::UPDATE_NONE)
+                .set_block_state_for_generation(
+                    ChunkStatus::Empty,
+                    pos,
+                    exposed,
+                    UpdateFlags::UPDATE_NONE,
+                )
                 .is_some()
         );
 
@@ -1027,7 +1534,12 @@ mod tests {
 
         let stone = vanilla_blocks::STONE.default_state();
         assert_eq!(
-            proto.set_block_state(pos, stone, UpdateFlags::UPDATE_NONE),
+            proto.set_block_state_for_generation(
+                ChunkStatus::Empty,
+                pos,
+                stone,
+                UpdateFlags::UPDATE_NONE,
+            ),
             Some(exposed)
         );
         assert!(!proto.remove_block_entity_if_state(pos, exposed));
@@ -1038,9 +1550,9 @@ mod tests {
 
     #[test]
     fn dummy_factory_outcomes_keep_proto_and_full_stage_semantics() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
-        let proto = ProtoChunk::new(
+        let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
             0,
@@ -1051,7 +1563,8 @@ mod tests {
         let chest_pos = BlockPos::new(3, 4, 5);
         assert!(
             proto
-                .set_block_state(
+                .set_block_state_for_generation(
+                    ChunkStatus::Empty,
                     moving_pos,
                     vanilla_blocks::MOVING_PISTON.default_state(),
                     UpdateFlags::UPDATE_NONE,
@@ -1060,7 +1573,8 @@ mod tests {
         );
         assert!(
             proto
-                .set_block_state(
+                .set_block_state_for_generation(
+                    ChunkStatus::Empty,
                     chest_pos,
                     vanilla_blocks::CHEST.default_state(),
                     UpdateFlags::UPDATE_NONE,
@@ -1076,7 +1590,7 @@ mod tests {
         assert!(pending.contains(&moving_pos));
         assert!(pending.contains(&chest_pos));
 
-        let full = LevelChunk::from_proto(proto, 0, 16, Weak::new()).chunk;
+        let full = proto.promote_to_full().chunk;
         assert!(full.get_block_entity(moving_pos).is_none());
         assert!(!full.pending_block_entity_positions().contains(&moving_pos));
         assert!(full.get_block_entity(chest_pos).is_none());
@@ -1085,9 +1599,9 @@ mod tests {
 
     #[test]
     fn stale_proto_factory_cannot_consume_a_replacement_marker() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
-        let proto = ProtoChunk::new(
+        let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
             0,
@@ -1099,7 +1613,12 @@ mod tests {
         let exposed = vanilla_blocks::EXPOSED_COPPER_CHEST.default_state();
         assert!(
             proto
-                .set_block_state(pos, copper, UpdateFlags::UPDATE_NONE)
+                .set_block_state_for_generation(
+                    ChunkStatus::Empty,
+                    pos,
+                    copper,
+                    UpdateFlags::UPDATE_NONE,
+                )
                 .is_some()
         );
         proto.set_pending_block_entity(pos);
@@ -1111,7 +1630,12 @@ mod tests {
         ));
 
         assert_eq!(
-            proto.set_block_state(pos, exposed, UpdateFlags::UPDATE_NONE),
+            proto.set_block_state_for_generation(
+                ChunkStatus::Empty,
+                pos,
+                exposed,
+                UpdateFlags::UPDATE_NONE,
+            ),
             Some(copper)
         );
         assert!(matches!(

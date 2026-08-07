@@ -92,14 +92,14 @@ impl CustomModifierExecutor<CommandSource> for ReturnRun {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::super::create_dispatcher;
     use crate::command::{brigadier::ArgumentType, execution::SteelArgumentType};
 
     #[test]
     fn return_graph_matches_vanillas_three_forms() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in dispatcher should build");
         };

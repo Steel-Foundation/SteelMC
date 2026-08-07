@@ -177,7 +177,7 @@ fn missing_argument(name: &str) -> CommandSyntaxError {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::super::create_dispatcher;
     use super::*;
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn clear_graph_matches_vanilla_argument_shape() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

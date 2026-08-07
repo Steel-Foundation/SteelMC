@@ -223,8 +223,8 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::{
-        entity_type::EntityTypeRef, equipment::EquipmentSlot, item_stack::ItemStack,
-        test_support::init_test_registry, vanilla_enchantments, vanilla_entities, vanilla_items,
+        entity_type::EntityTypeRef, equipment::EquipmentSlot, init_vanilla_registry,
+        item_stack::ItemStack, vanilla_enchantments, vanilla_entities, vanilla_items,
     };
     use steel_utils::locks::SyncMutex;
 
@@ -256,7 +256,7 @@ mod tests {
 
     #[test]
     fn enchant_graph_uses_all_entities_and_an_enchantment_resource() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn enchant_main_hand_applies_once_and_then_rejects_the_same_enchantment() {
-        init_test_registry();
+        init_vanilla_registry();
         let target = TestLivingEntity::new(&vanilla_entities::ZOMBIE);
         target.equip(ItemStack::new(&vanilla_items::DIAMOND_SWORD));
 

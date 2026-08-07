@@ -158,7 +158,7 @@ mod tests {
 
     use super::DebugStickState;
     use crate::data_components::vanilla_components::DEBUG_STICK_STATE;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt, vanilla_blocks};
 
     fn parse(tag: NbtTag) -> Option<DebugStickState> {
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn block_property_map_validates_properties_and_uses_codec_derived_network() {
-        init_test_registry();
+        init_vanilla_registry();
         let value = DebugStickState::new([(&vanilla_blocks::REDSTONE_WIRE, "power".to_owned())])
             .expect("redstone wire has a power property");
         let mut compound = NbtCompound::new();
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn extracted_debug_stick_has_an_empty_state() {
-        init_test_registry();
+        init_vanilla_registry();
         let item = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("debug_stick"))

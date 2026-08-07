@@ -338,15 +338,6 @@ impl PermissionContext {
         Self::default()
     }
 
-    /// Creates a context for one domain.
-    pub fn for_domain(domain: impl Into<String>) -> Result<Self, PermissionRuleContextError> {
-        Ok(Self {
-            domain: Some(PermissionDomain::parse(domain)?),
-            world: None,
-            custom_contexts: Vec::new(),
-        })
-    }
-
     /// Creates a context for a loaded world and its owning domain.
     #[must_use]
     pub fn for_world(world: Identifier) -> Self {

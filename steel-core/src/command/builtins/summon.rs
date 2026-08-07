@@ -107,12 +107,10 @@ fn missing_argument(name: &str) -> CommandSyntaxError {
 #[cfg(test)]
 mod tests {
     use super::super::create_dispatcher;
-    use crate::{
-        command::{
-            brigadier::{CommandDispatcher, NodeId},
-            execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
-        },
-        entity::init_test_entities,
+    use crate::bootstrap::init_globals_once;
+    use crate::command::{
+        brigadier::{CommandDispatcher, NodeId},
+        execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
     };
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
@@ -133,7 +131,7 @@ mod tests {
 
     #[test]
     fn summon_graph_uses_typed_entity_and_deferred_position_arguments() {
-        init_test_entities();
+        init_globals_once();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

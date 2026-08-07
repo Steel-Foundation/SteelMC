@@ -528,7 +528,7 @@ mod tests {
     };
     use glam::DVec3;
     use steel_protocol::packets::game::RelativeMovement;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn teleport_graph_matches_vanilla_target_and_facing_shapes() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

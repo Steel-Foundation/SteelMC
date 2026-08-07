@@ -14,25 +14,26 @@ use std::io::{BufReader, Cursor, Read as IoRead};
 use std::mem;
 use std::sync::{Arc, Weak};
 
-use flate2::read::GzDecoder;
-use glam::IVec3;
-use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
-use serde::Deserialize;
-use steel_core::chunk::chunk_access::{ChunkAccess, ChunkStatus};
-use steel_core::chunk::chunk_generation_task::StaticCache2D;
-use steel_core::chunk::chunk_holder::ChunkHolder;
-use steel_core::chunk::chunk_pyramid::{ChunkStep, GENERATION_PYRAMID};
-use steel_core::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use steel_core::chunk::light::{
+use crate::chunk::Chunk;
+use crate::chunk::chunk_generation_task::StaticCache2D;
+use crate::chunk::chunk_holder::ChunkHolder;
+use crate::chunk::chunk_pyramid::{ChunkStep, GENERATION_PYRAMID};
+use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
+use crate::chunk::light::{
     BlockLightChunkEdgeChecks, DATA_LAYER_SIZE, LightCacheLayout, LightCacheSetupRadius,
     LightLayer, LightSection, LightSectionRange, LightWorkset, SkyLightChunkEdgeChecks,
     propagate_block_light_chunk, propagate_sky_light_chunk,
 };
-use steel_core::chunk::proto_chunk::ProtoChunk;
-use steel_core::chunk::section::{ChunkSection, Sections};
-use steel_core::level_data::WorldGenerationSettings;
-use steel_core::world::{World, WorldConfig, WorldStorageConfig};
-use steel_core::worldgen::{ChunkGenerator, ChunkGeneratorType, WorldGenContext};
+use crate::chunk::section::{ChunkSection, Sections};
+use crate::chunk::status::ChunkStatus;
+use crate::level_data::WorldGenerationSettings;
+use crate::world::{World, WorldConfig, WorldStorageConfig};
+use crate::worldgen::generator::{CarversPhase, GenerationChunk, NoisePhase, SurfacePhase};
+use crate::worldgen::{ChunkGenerator, ChunkGeneratorType, WorldGenContext};
+use flate2::read::GzDecoder;
+use glam::IVec3;
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use serde::Deserialize;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::structure::TerrainAdjustment;
 use steel_registry::{dimension_type::DimensionTypeRef, vanilla_dimension_types};
@@ -130,7 +131,7 @@ const LIGHT_HASH_FORMAT: &str = "packet_data_layers_v1";
 const LIGHT_FEATURE_DEPENDENCY_RADIUS: i32 = 1;
 
 fn load_expected_hashes() -> ChunkStageHashesJson {
-    let json_str = include_str!("../test_assets/chunk_stage_hashes.json");
+    let json_str = include_str!("../../test_assets/chunk_stage_hashes.json");
     serde_json::from_str(json_str).expect("Failed to parse chunk_stage_hashes.json")
 }
 
@@ -202,27 +203,21 @@ fn debug_stage_filter() -> Option<String> {
         .filter(|stage| !stage.is_empty())
 }
 
-fn empty_proto_chunk(
-    pos: (i32, i32),
-    section_count: usize,
-    min_y: i32,
-    height: i32,
-) -> ChunkAccess {
+fn empty_proto_chunk(pos: (i32, i32), section_count: usize, min_y: i32, height: i32) -> Chunk {
     let sections: Box<[ChunkSection]> = (0..section_count)
         .map(|_| ChunkSection::new_empty())
         .collect::<Vec<_>>()
         .into_boxed_slice();
-    let proto = ProtoChunk::new(
+    Chunk::new(
         Sections::from_owned(sections),
         ChunkPos::new(pos.0, pos.1),
         min_y,
         height,
         Weak::new(),
-    );
-    ChunkAccess::Proto(proto)
+    )
 }
 
-fn chunk_or_panic(chunks: &FxHashMap<(i32, i32), ChunkAccess>, pos: (i32, i32)) -> &ChunkAccess {
+fn chunk_or_panic(chunks: &FxHashMap<(i32, i32), Chunk>, pos: (i32, i32)) -> &Chunk {
     match chunks.get(&pos) {
         Some(chunk) => chunk,
         None => panic!("Missing test chunk ({}, {})", pos.0, pos.1),
@@ -278,7 +273,7 @@ fn create_test_world(
 }
 
 fn build_feature_holders(
-    chunks: FxHashMap<(i32, i32), ChunkAccess>,
+    chunks: FxHashMap<(i32, i32), Chunk>,
     carver_positions: &FxHashSet<(i32, i32)>,
     min_y: i32,
     height: i32,
@@ -297,9 +292,6 @@ fn build_feature_holders(
         } else {
             ChunkStatus::StructureStarts
         };
-        if let ChunkAccess::Proto(proto) = &chunk {
-            proto.set_status(status);
-        }
         holder.insert_chunk(chunk, status);
         holders.insert(pos, holder);
     }
@@ -348,8 +340,8 @@ fn compute_block_hash(sections: &Sections) -> String {
     format!("{:x}", ctx.finalize())
 }
 
-fn recalculate_section_counts(chunk: &ChunkAccess) {
-    for section in &chunk.sections().sections {
+fn recalculate_section_counts(chunk: &Chunk) {
+    for section in &chunk.sections.sections {
         section.write().recalculate_counts();
     }
 }
@@ -704,7 +696,7 @@ fn light_section_state(section: &LightSection) -> (u8, Option<Box<[u8; DATA_LAYE
     }
 }
 
-fn compute_light_hash(chunk: &ChunkAccess) -> String {
+fn compute_light_hash(chunk: &Chunk) -> String {
     let light = chunk.light();
     let range = light.sky.range();
     let mut ctx = md5::Context::new();
@@ -809,7 +801,7 @@ fn diff_light_layer(
     }
 }
 
-fn diff_light_chunk(chunk: &ChunkAccess, reference: &ReferenceLightChunk) -> LightDiffs {
+fn diff_light_chunk(chunk: &Chunk, reference: &ReferenceLightChunk) -> LightDiffs {
     let mut diffs = LightDiffs {
         total: 0,
         lines: Vec::new(),
@@ -920,10 +912,10 @@ const DIMENSION_ORDER: &[&str] = &[
 /// production logic in `worldgen::stages::noise` but reads from a `HashMap` instead
 /// of a chunk cache.
 fn build_test_beardifier(
-    chunk: &ChunkAccess,
-    chunks: &FxHashMap<(i32, i32), ChunkAccess>,
+    chunk: &Chunk,
+    chunks: &FxHashMap<(i32, i32), Chunk>,
 ) -> Option<Beardifier> {
-    let pos = chunk.pos();
+    let pos = chunk.pos;
     let chunk_x = pos.0.x;
     let chunk_z = pos.0.y;
 
@@ -937,14 +929,14 @@ fn build_test_beardifier(
         return None;
     }
 
-    let source_chunk_refs: Vec<&ChunkAccess> = source_positions
+    let source_chunk_refs: Vec<&Chunk> = source_positions
         .iter()
         .filter_map(|p| chunks.get(&(p.0.x, p.0.y)))
         .collect();
     let mut source_indices: FxHashMap<ChunkPos, usize> = FxHashMap::default();
     let mut starts_guards = Vec::with_capacity(source_chunk_refs.len());
     for source_chunk in &source_chunk_refs {
-        let source_pos = source_chunk.pos();
+        let source_pos = source_chunk.pos;
         source_indices.insert(source_pos, starts_guards.len());
         starts_guards.push(source_chunk.structure_starts());
     }
@@ -1006,7 +998,7 @@ fn generate_features_for_positions(
         let region_random = inputs
             .generator
             .create_worldgen_region_random(inputs.seed as i64, center);
-        let mut region = steel_core::worldgen::WorldGenRegion::new(
+        let mut region = crate::worldgen::WorldGenRegion::new(
             inputs.context,
             inputs.feature_step,
             &cache,
@@ -1083,19 +1075,11 @@ fn propagate_light_for_positions(
     reason = "large test with many hash assertions"
 )]
 fn chunk_stage_hashes_inner() {
-    use steel_core::behavior::init_behaviors;
-    use steel_core::block_entity::init_block_entities;
-    use steel_core::entity::init_entities;
-    use steel_core::worldgen::{EndGenerator, NetherGenerator, OverworldGenerator};
-    use steel_registry::{REGISTRY, Registry};
+    use crate::bootstrap::init_globals_once;
+    use crate::worldgen::{EndGenerator, NetherGenerator, OverworldGenerator};
     use steel_worldgen::biomes::BiomeSourceKind;
 
-    let mut registry = Registry::new_vanilla();
-    registry.freeze();
-    let _ = REGISTRY.init(registry);
-    init_behaviors();
-    init_block_entities();
-    init_entities();
+    init_globals_once();
 
     let expected = load_expected_hashes();
     let seed = expected.seed;
@@ -1329,7 +1313,7 @@ fn chunk_stage_hashes_inner() {
             starts_positions.extend(biome_positions.iter().copied());
         }
 
-        let mut chunks: FxHashMap<(i32, i32), ChunkAccess> =
+        let mut chunks: FxHashMap<(i32, i32), Chunk> =
             FxHashMap::with_capacity_and_hasher(starts_positions.len(), FxBuildHasher);
         for &pos in &starts_positions {
             chunks.insert(pos, empty_proto_chunk(pos, section_count, min_y, height));
@@ -1406,7 +1390,10 @@ fn chunk_stage_hashes_inner() {
             } else {
                 None
             };
-            generator.fill_from_noise(chunk, beardifier.as_ref());
+            generator.fill_from_noise(
+                GenerationChunk::<NoisePhase>::for_test(chunk),
+                beardifier.as_ref(),
+            );
         }
 
         let mut feature_holders: Option<FeatureHolderMap> = None;
@@ -1456,7 +1443,7 @@ fn chunk_stage_hashes_inner() {
                             let cx = q.x >> 2;
                             let cz = q.z >> 2;
                             let neighbor = chunk_or_panic(&chunks, (cx, cz));
-                            let sections = neighbor.sections();
+                            let sections = &neighbor.sections;
                             let local_qx = (q.x - cx * 4) as usize;
                             let local_qz = (q.z - cz * 4) as usize;
                             let qy_clamped = (q.y - min_qy).clamp(0, total_quarts_y - 1) as usize;
@@ -1467,7 +1454,10 @@ fn chunk_stage_hashes_inner() {
                                 .biomes
                                 .get(local_qx, local_qy, local_qz)
                         };
-                        generator.build_surface(chunk, &neighbor_biomes);
+                        generator.build_surface(
+                            GenerationChunk::<SurfacePhase>::for_test(chunk),
+                            &neighbor_biomes,
+                        );
                     }
                     for &pos in &dependency_positions {
                         if tracked_block_stages_already_ran && tracked_positions.contains(&pos) {
@@ -1475,7 +1465,7 @@ fn chunk_stage_hashes_inner() {
                         }
                         let chunk = chunk_or_panic(&chunks, pos);
                         recalculate_section_counts(chunk);
-                        generator.apply_carvers(chunk);
+                        generator.apply_carvers(GenerationChunk::<CarversPhase>::for_test(chunk));
                     }
                     feature_dependencies_prepared = true;
                 }
@@ -1577,7 +1567,7 @@ fn chunk_stage_hashes_inner() {
                     let Some(chunk) = holder.try_chunk(ChunkStatus::Carvers) else {
                         panic!("Feature center chunk ({chunk_x}, {chunk_z}) missing");
                     };
-                    compute_block_hash(chunk.sections())
+                    compute_block_hash(&chunk.sections)
                 } else if stage == LIGHT_STAGE {
                     let Some(holders) = &feature_holders else {
                         panic!("light stage missing chunk holders");
@@ -1588,7 +1578,7 @@ fn chunk_stage_hashes_inner() {
                     let Some(chunk) = holder.try_chunk(ChunkStatus::Empty) else {
                         panic!("Light center chunk ({chunk_x}, {chunk_z}) missing");
                     };
-                    compute_light_hash(&chunk)
+                    compute_light_hash(chunk)
                 } else {
                     let chunk = chunk_or_panic(&chunks, (chunk_x, chunk_z));
 
@@ -1599,7 +1589,7 @@ fn chunk_stage_hashes_inner() {
                             let cx = q.x >> 2;
                             let cz = q.z >> 2;
                             let neighbor = chunk_or_panic(&chunks, (cx, cz));
-                            let sections = neighbor.sections();
+                            let sections = &neighbor.sections;
                             let local_qx = (q.x - cx * 4) as usize;
                             let local_qz = (q.z - cz * 4) as usize;
                             let qy_clamped = (q.y - min_qy).clamp(0, total_quarts_y - 1) as usize;
@@ -1612,16 +1602,21 @@ fn chunk_stage_hashes_inner() {
                         };
 
                         match stage {
-                            "minecraft:surface" => generator.build_surface(chunk, &neighbor_biomes),
+                            "minecraft:surface" => generator.build_surface(
+                                GenerationChunk::<SurfacePhase>::for_test(chunk),
+                                &neighbor_biomes,
+                            ),
                             "minecraft:carvers" => {
                                 recalculate_section_counts(chunk);
-                                generator.apply_carvers(chunk);
+                                generator.apply_carvers(GenerationChunk::<CarversPhase>::for_test(
+                                    chunk,
+                                ));
                             }
                             _ => panic!("Stage {stage} not yet implemented in test harness"),
                         }
                     }
 
-                    compute_block_hash(chunk.sections())
+                    compute_block_hash(&chunk.sections)
                 };
 
                 let ok = actual_hash == expected_hash;
@@ -1648,7 +1643,7 @@ fn chunk_stage_hashes_inner() {
                                 let Some(chunk) = holder.try_chunk(ChunkStatus::Empty) else {
                                     panic!("Light center chunk ({chunk_x}, {chunk_z}) missing");
                                 };
-                                ChunkDiff::Light(diff_light_chunk(&chunk, ref_data))
+                                ChunkDiff::Light(diff_light_chunk(chunk, ref_data))
                             })
                     } else {
                         reference_blocks
@@ -1669,10 +1664,10 @@ fn chunk_stage_hashes_inner() {
                                             "Feature center chunk ({chunk_x}, {chunk_z}) missing"
                                         );
                                     };
-                                    ChunkDiff::Blocks(diff_chunk(chunk.sections(), ref_data, min_y))
+                                    ChunkDiff::Blocks(diff_chunk(&chunk.sections, ref_data, min_y))
                                 } else {
                                     let chunk = chunk_or_panic(&chunks, (chunk_x, chunk_z));
-                                    ChunkDiff::Blocks(diff_chunk(chunk.sections(), ref_data, min_y))
+                                    ChunkDiff::Blocks(diff_chunk(&chunk.sections, ref_data, min_y))
                                 }
                             })
                     };

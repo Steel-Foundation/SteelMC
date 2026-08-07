@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn living_ride_tick_resets_fall_distance() {
+    init_vanilla_registry();
+
+    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    entity.set_fall_distance(7.0);
+    let entity_ref: &dyn Entity = &entity;
+
+    entity_ref.ride_tick();
+
+    assert_f64_close(entity.fall_distance(), 0.0);
+}
+
+#[test]
 fn default_below_world_hook_discards_entity() {
     let entity = PushableTestEntity::shared(1, DVec3::ZERO);
 
@@ -19,7 +32,7 @@ fn base_entity_has_no_controlling_passenger() {
 
 #[test]
 fn start_riding_entities_links_passenger_and_vehicle() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let passenger = PushableTestEntity::shared(1, DVec3::ZERO);
     let vehicle = PushableTestEntity::shared(2, DVec3::ZERO);
@@ -35,7 +48,7 @@ fn start_riding_entities_links_passenger_and_vehicle() {
 
 #[test]
 fn transfer_leashables_to_holder_moves_valid_mobs() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let old_holder: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
@@ -73,7 +86,7 @@ fn transfer_leashables_to_holder_moves_valid_mobs() {
 
 #[test]
 fn transfer_leashables_to_holder_skips_mobs_outside_snap_distance() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let old_holder: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
@@ -111,7 +124,7 @@ fn transfer_leashables_to_holder_skips_mobs_outside_snap_distance() {
 
 #[test]
 fn set_leashed_to_notifies_replaced_holder() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let old_holder_typed = LeashNotificationTestEntity::new(1);
     let old_holder: SharedEntity = old_holder_typed.clone();
@@ -136,7 +149,7 @@ fn set_leashed_to_notifies_replaced_holder() {
 
 #[test]
 fn tick_leash_notifies_live_holder() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let holder_typed = LeashNotificationTestEntity::new(1);
     let holder: SharedEntity = holder_typed.clone();
@@ -160,7 +173,7 @@ fn tick_leash_notifies_live_holder() {
 
 #[test]
 fn tick_leash_snaps_live_holder_past_snap_distance() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let holder_typed = LeashNotificationTestEntity::with_position(1, DVec3::new(13.0, 0.0, 0.0));
     let holder: SharedEntity = holder_typed.clone();
@@ -184,7 +197,7 @@ fn tick_leash_snaps_live_holder_past_snap_distance() {
 
 #[test]
 fn start_riding_entities_respects_boarding_cooldown() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let passenger = PushableTestEntity::shared(1, DVec3::ZERO);
     let vehicle = PushableTestEntity::shared(2, DVec3::ZERO);
@@ -197,7 +210,7 @@ fn start_riding_entities_respects_boarding_cooldown() {
 
 #[test]
 fn start_riding_entities_rejects_vehicle_cycles() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let root = PushableTestEntity::shared(1, DVec3::ZERO);
     let child = PushableTestEntity::shared(2, DVec3::ZERO);
@@ -210,7 +223,7 @@ fn start_riding_entities_rejects_vehicle_cycles() {
 
 #[test]
 fn start_riding_entities_inserts_player_passenger_first() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let vehicle = MultiPassengerTestEntity::shared(1);
     let mob_passenger = PushableTestEntity::shared(2, DVec3::ZERO);
@@ -262,7 +275,7 @@ fn controlled_vehicle_uses_player_known_movement_and_speed() {
 
 #[test]
 fn controlled_vehicle_returns_direct_controlled_vehicle_not_root_vehicle() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let passenger =
         KnownMovementTestEntity::shared(1, &vanilla_entities::PLAYER, DVec3::ZERO, DVec3::ZERO);

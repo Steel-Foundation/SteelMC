@@ -149,8 +149,8 @@ mod tests {
     use crate::data_components::vanilla_components::{
         DAMAGE_RESISTANT, PROVIDES_BANNER_PATTERNS, REPAIRABLE,
     };
+    use crate::init_vanilla_registry;
     use crate::item_stack::ItemStack;
-    use crate::test_support::init_test_registry;
     use crate::vanilla_banner_pattern_tags::BannerPatternTag;
     use crate::vanilla_banner_patterns;
     use crate::vanilla_damage_type_tags::DamageTypeTag;
@@ -167,7 +167,7 @@ mod tests {
 
     #[test]
     fn damage_resistant_uses_the_vanilla_record_and_holder_set_codecs() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let component = DamageResistant::new(RegistryHolderSet::Tag(DamageTypeTag::IS_FIRE));
         assert!(component.is_resistant_to(&vanilla_damage_types::IN_FIRE));
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn repairable_accepts_tagged_and_direct_repair_items() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let wooden = Repairable::new(RegistryHolderSet::Tag(ItemTag::WOODEN_TOOL_MATERIALS));
         assert!(wooden.is_valid_repair_item(&ItemStack::new(&vanilla_items::OAK_PLANKS)));
@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn provides_banner_patterns_uses_fixed_registry_holder_sets() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let component = ProvidesBannerPatterns::Tag(BannerPatternTag::PATTERN_ITEM_FLOWER);
         assert!(component.contains(&vanilla_banner_patterns::FLOWER));
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn extracted_item_prototypes_include_all_holder_set_components() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let damage_resistant_count = REGISTRY
             .items

@@ -1,6 +1,7 @@
 use rand::Rng;
 use std::sync::Arc;
 use steel_macros::block_behavior;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::{item_stack::ItemStack, vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -24,12 +25,18 @@ impl WeepingVinesPlantBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
+    fn can_grow_into(state: BlockStateId) -> bool {
+        state.is_air()
+    }
+
     const fn growing_plant_body_block(&self) -> GrowingPlantBodyBlock {
         GrowingPlantBodyBlock::new(
             self.block,
             Direction::Down,
             false,
             &vanilla_blocks::WEEPING_VINES,
+            Self::can_grow_into,
         )
     }
 }
@@ -39,6 +46,7 @@ impl BlockBehavior for WeepingVinesPlantBlock {
         self.growing_plant_body_block()
             .can_survive(state, world, pos)
     }
+
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.growing_plant_body_block()
             .random_tick(state, world, pos);
@@ -70,6 +78,7 @@ impl BlockBehavior for WeepingVinesPlantBlock {
         self.growing_plant_body_block()
             .get_state_for_placement(context)
     }
+
     fn get_clone_item_stack(
         &self,
         _block: BlockRef,
@@ -78,6 +87,7 @@ impl BlockBehavior for WeepingVinesPlantBlock {
     ) -> Option<ItemStack> {
         Some(ItemStack::new(&vanilla_items::WEEPING_VINES))
     }
+
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }
@@ -111,14 +121,14 @@ impl Bonemealable for WeepingVinesPlantBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::test_support::TestLevel;
 
     #[test]
     fn bonemeal_target_follows_connected_head() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = WeepingVinesPlantBlock::new(&vanilla_blocks::WEEPING_VINES_PLANT);
         let state = vanilla_blocks::WEEPING_VINES_PLANT.default_state();

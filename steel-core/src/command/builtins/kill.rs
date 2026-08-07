@@ -97,14 +97,14 @@ fn kill(
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::super::create_dispatcher;
     use crate::command::execution::SteelArgumentType;
 
     #[test]
     fn kill_graph_supports_self_and_multiple_entity_targets() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

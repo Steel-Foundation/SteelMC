@@ -337,13 +337,13 @@ fn filled_bucket_primary_pos(
 #[cfg(test)]
 mod tests {
     use crate::behavior::init_behaviors;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
 
     #[test]
     fn filled_water_bucket_targets_non_waterlogged_liquid_container_in_place() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let kelp = vanilla_blocks::KELP.default_state();

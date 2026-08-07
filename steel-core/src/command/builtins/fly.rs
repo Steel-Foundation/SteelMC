@@ -214,7 +214,7 @@ mod tests {
         },
         player::{Abilities, DEFAULT_FLYING_SPEED},
     };
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn fly_graph_uses_explicit_target_and_bounded_speed_branches() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

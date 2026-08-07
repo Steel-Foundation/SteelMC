@@ -35,12 +35,17 @@ impl CaveVinesPlantBlock {
         Self { block }
     }
 
+    fn can_grow_into(state: BlockStateId) -> bool {
+        state.is_air()
+    }
+
     const fn growing_plant_body_block(&self) -> GrowingPlantBodyBlock {
         GrowingPlantBodyBlock::new(
             self.block,
             Direction::Down,
             false,
             &vanilla_blocks::CAVE_VINES,
+            Self::can_grow_into,
         )
         .with_update_head_after_converted_from_body(Self::update_head_after_converted_from_body)
     }
@@ -145,14 +150,14 @@ impl Bonemealable for CaveVinesPlantBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::test_support::TestLevel;
 
     #[test]
     fn body_conversion_preserves_berries() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = CaveVinesPlantBlock::new(&vanilla_blocks::CAVE_VINES_PLANT);
         let state = vanilla_blocks::CAVE_VINES_PLANT
@@ -175,7 +180,7 @@ mod tests {
 
     #[test]
     fn clone_item_is_glow_berries() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = CaveVinesPlantBlock::new(&vanilla_blocks::CAVE_VINES_PLANT);
         let item = behavior

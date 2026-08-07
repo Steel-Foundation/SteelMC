@@ -208,7 +208,7 @@ mod tests {
     use super::{BannerPatternLayer, BannerPatternLayers};
     use crate::banner_pattern::BannerPatternValue;
     use crate::data_components::vanilla_components::BANNER_PATTERNS;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{DyeColor, REGISTRY, RegistryHolder, vanilla_banner_patterns};
 
     fn parse(tag: simdnbt::owned::NbtTag) -> Option<BannerPatternLayers> {
@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn layer_references_round_trip_both_codecs_and_hash_the_list() {
-        init_test_registry();
+        init_vanilla_registry();
         let layers = BannerPatternLayers::new(vec![BannerPatternLayer::new(
             RegistryHolder::reference(&vanilla_banner_patterns::CREEPER),
             DyeColor::Lime,
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn inline_patterns_round_trip_both_holder_codecs() {
-        init_test_registry();
+        init_vanilla_registry();
         let direct = BannerPatternValue::new(
             Identifier::new_static("steel", "wave"),
             Cow::Borrowed("block.steel.banner.wave"),
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn extracted_banners_and_shield_keep_empty_layers() {
-        init_test_registry();
+        init_vanilla_registry();
         let items = REGISTRY
             .items
             .iter()

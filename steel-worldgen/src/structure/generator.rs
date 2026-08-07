@@ -1,6 +1,6 @@
 //! Shared structure placement/selection engine.
 
-use std::{iter, path::Path, slice};
+use std::{iter, path::Path};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use steel_registry::REGISTRY;
@@ -809,12 +809,6 @@ impl StructureGenerator {
         &self.templates
     }
 
-    /// Builds a detached locate plan for one structure id.
-    #[must_use]
-    pub fn locate_plan_for_structure(&self, structure: &Identifier) -> Option<StructureLocatePlan> {
-        self.locate_plan_for_structures(slice::from_ref(structure))
-    }
-
     /// Builds a detached locate plan for one or more structure ids.
     #[must_use]
     pub fn locate_plan_for_structures(
@@ -1050,7 +1044,7 @@ mod tests {
     };
 
     use glam::IVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_biomes};
+    use steel_registry::{init_vanilla_registry, vanilla_biomes};
 
     use crate::structure::placement::{
         ExclusionZone, FrequencyReductionMethod, PlacementKind, SpreadType,
@@ -1144,7 +1138,7 @@ mod tests {
 
     #[test]
     fn vanilla_assets_cover_vanilla_structure_sets() {
-        init_test_registry();
+        init_vanilla_registry();
         let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
         let thread_pool = rayon::ThreadPoolBuilder::default()
             .build()
@@ -1160,7 +1154,7 @@ mod tests {
 
     #[test]
     fn ring_cache_keys_entries_by_placement_inputs() {
-        init_test_registry();
+        init_vanilla_registry();
         let world_dir = temp_world_dir("placement-inputs");
         let biome_provider = FixedStructureBiomeProvider::new(&vanilla_biomes::PLAINS);
         let thread_pool = rayon::ThreadPoolBuilder::new()
