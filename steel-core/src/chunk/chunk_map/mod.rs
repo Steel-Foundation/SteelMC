@@ -468,6 +468,16 @@ impl ChunkMap {
         Some(holder)
     }
 
+    /// Drives one scheduling step (ticket propagation, holder creation, and
+    /// generation-epoch commit).
+    ///
+    /// Exposed for Flint's synchronous chunk-loading test harness, which has
+    /// no server run loop to drive scheduling on its behalf.
+    #[cfg(feature = "flint")]
+    pub fn drive_scheduling_for_flint(self: &Arc<Self>) {
+        let _ = self.advance_scheduling();
+    }
+
     /// Inserts a non-simulated holder into an empty gameplay view for worldgen benchmarks.
     ///
     /// Runtime lifecycle code must use ticket-driven insertion. Benchmark holders
