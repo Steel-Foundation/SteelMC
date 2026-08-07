@@ -1,5 +1,5 @@
-use steel_registry::init_vanilla_registry;
 use super::*;
+use steel_registry::init_vanilla_registry;
 
 #[test]
 fn cow_initializes_vanilla_living_attributes_and_health() {

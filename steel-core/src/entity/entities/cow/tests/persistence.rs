@@ -1,5 +1,5 @@
-use steel_registry::init_vanilla_registry;
 use super::*;
+use steel_registry::init_vanilla_registry;
 
 #[test]
 fn cow_saves_vanilla_age_and_variant_data() {
