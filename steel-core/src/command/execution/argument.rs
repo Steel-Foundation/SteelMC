@@ -287,6 +287,9 @@ impl SteelArgumentType {
     pub(crate) fn block_predicate() -> Self {
         Self::new(BlockPredicateParser)
     }
+    pub(crate) fn block_state() -> Self {
+        Self::new(BlockStateParser)
+    }
 
     pub(crate) fn game_mode() -> Self {
         Self::new(GameModeParser)
@@ -865,6 +868,16 @@ unit_argument_parser!(
         suggest_blocks(builder);
     },
     protocol(ProtocolArgumentType::BlockPredicate, None)
+);
+unit_argument_parser!(
+    BlockStateParser,
+    "steel:command/parser/block_state",
+    BlockPredicate,
+    parse | reader,
+    _source | { parse_block_predicate(reader) },
+    suggest | _context,
+    _builder | {},
+    protocol(ProtocolArgumentType::BlockState, None)
 );
 unit_argument_parser!(
     GameModeParser,
