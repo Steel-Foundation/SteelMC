@@ -9,7 +9,7 @@ use steel_registry::data_component_predicate::DataComponentMatchers;
 use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
 use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
 use steel_registry::{
-    RegistryHolderSet, item_stack::ItemStack, test_support::init_test_registry, vanilla_attributes,
+    RegistryHolderSet, init_vanilla_registry, item_stack::ItemStack, vanilla_attributes,
     vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_rules, vanilla_items,
     vanilla_menu_types,
 };
@@ -253,7 +253,7 @@ fn respawn_request_is_allowed_after_dead_reconnect() {
 
 #[test]
 fn ai_step_copies_player_yaw_to_head_yaw() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let player = test_player(Arc::clone(test_world()));
     player.set_rotation((90.0, 15.0));
@@ -299,7 +299,7 @@ fn end_credits_respawn_keeps_vanilla_attribute_data_only() {
     reason = "the full death-to-removal flow must verify every menu item disposition together"
 )]
 fn death_keeps_menu_items_until_entity_removal() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("death_menu_cleanup");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     assert!(world.set_game_rule(&vanilla_game_rules::KEEP_INVENTORY, true));
@@ -411,7 +411,7 @@ fn death_keeps_menu_items_until_entity_removal() {
 
 #[test]
 fn death_respawn_drops_menu_items_exactly_once() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("death_respawn_menu_cleanup");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(&world));
@@ -481,7 +481,7 @@ fn death_respawn_drops_menu_items_exactly_once() {
 
 #[test]
 fn end_credits_removes_all_menus_before_detaching() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("end_credits_menu_removal");
     let player = test_player(Arc::clone(&world));
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
@@ -525,7 +525,7 @@ fn end_credits_removes_all_menus_before_detaching() {
 
 #[test]
 fn admitted_world_change_prevents_end_credits_detach() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("end_credits_pending_world_change");
     let player = test_player(Arc::clone(&world));
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
@@ -548,7 +548,7 @@ fn admitted_world_change_prevents_end_credits_detach() {
 
 #[test]
 fn duplicate_exact_player_admission_cleans_existing_membership() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("duplicate_player_admission");
     let player = test_player(Arc::clone(&world));
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
@@ -561,7 +561,7 @@ fn duplicate_exact_player_admission_cleans_existing_membership() {
 
 #[test]
 fn disabled_damage_game_rule_matches_vanilla_player_damage_gates() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let cases = [
         (
@@ -591,7 +591,7 @@ fn disabled_damage_game_rule_matches_vanilla_player_damage_gates() {
 
 #[test]
 fn disabled_damage_game_rule_ignores_unrelated_damage() {
-    init_test_registry();
+    init_vanilla_registry();
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
 
     assert!(Player::disabled_damage_game_rule(&source).is_none());
@@ -628,7 +628,7 @@ fn conditional_damage_does_not_scale_for_player_or_unresolved_causes() {
 
 #[test]
 fn player_damage_applies_armor_and_absorption() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = Arc::clone(test_world());
     let player = test_player(Arc::clone(&world));
     {
@@ -663,7 +663,7 @@ fn player_absorption_amount_clamps_to_attribute_range() {
 
 #[test]
 fn player_damage_hurts_armor_equipment() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = Arc::clone(test_world());
     let player = test_player(Arc::clone(&world));
     player.inventory.lock().set(
@@ -683,7 +683,7 @@ fn player_damage_hurts_armor_equipment() {
 
 #[test]
 fn equipping_player_target_uses_inventory_equipment_storage() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = Arc::clone(test_world());
     let source = test_player(Arc::clone(&world));
     let target =
@@ -729,7 +729,7 @@ fn equipping_player_target_uses_inventory_equipment_storage() {
 
 #[test]
 fn living_tick_detects_raw_inventory_equipment_mutation() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let (base_armor, base_toughness) = {
         let attributes = player.attributes().lock();
@@ -774,7 +774,7 @@ fn living_tick_detects_raw_inventory_equipment_mutation() {
 
 #[test]
 fn death_respawn_redetects_unchanged_kept_equipment() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let (base_armor, base_toughness) = {
         let attributes = player.attributes().lock();
@@ -844,7 +844,7 @@ fn death_respawn_redetects_unchanged_kept_equipment() {
 
 #[test]
 fn death_respawn_discards_stale_pending_equipment_change() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     player.inventory.lock().set(
         EquipmentSlot::Head,
@@ -867,7 +867,7 @@ fn death_respawn_discards_stale_pending_equipment_change() {
 
 #[test]
 fn equipment_detection_tracks_selected_main_hand() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     {
         let mut inventory = player.inventory.lock();
@@ -897,7 +897,7 @@ fn equipment_detection_tracks_selected_main_hand() {
 
 #[test]
 fn equipment_detection_suppresses_exact_hand_swap_packet() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     {
         let mut inventory = player.inventory.lock();
@@ -916,7 +916,7 @@ fn equipment_detection_suppresses_exact_hand_swap_packet() {
 
 #[test]
 fn equipment_detection_coalesces_before_tracker_drain() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     player.inventory.lock().set(
         EquipmentSlot::Head,
@@ -947,7 +947,7 @@ fn nullable_game_mode_id_matches_vanilla_encoding() {
 
 #[test]
 fn clear_matching_items_uses_inventory_crafting_then_carried_order() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     player
         .inventory
@@ -1007,7 +1007,7 @@ fn point_grants_update_entity_score_with_java_wrapping() {
 
 #[test]
 fn persistent_player_data_restores_independent_experience_fields_and_score() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     *player.experience.lock() = Experience::from_parts(7, 0.5, 32);
     player.set_score(19);
@@ -1027,7 +1027,7 @@ fn persistent_player_data_restores_independent_experience_fields_and_score() {
 
 #[test]
 fn persistent_player_data_restores_equipment_inventory_slots() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
     let saddle = ItemStack::new(&vanilla_items::SADDLE);
@@ -1051,7 +1051,7 @@ fn persistent_player_data_restores_equipment_inventory_slots() {
 
 #[test]
 fn effect_visibility_refresh_preserves_spectator_invisibility() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
 
     player.restore_game_modes(GameType::Spectator, Some(GameType::Survival));
@@ -1067,7 +1067,7 @@ fn effect_visibility_refresh_preserves_spectator_invisibility() {
 
 #[test]
 fn block_action_restriction_precedes_redstone_ore_attack() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("redstone_ore_block_action_restriction");
     let pos = BlockPos::new(1, 64, 0);

@@ -1,7 +1,7 @@
 use crate::data_components::vanilla_components::INSTRUMENT;
 use crate::vanilla_instrument_tags::InstrumentTag;
 use crate::vanilla_items;
-use crate::{test_support::init_test_registry, vanilla_loot_tables};
+use crate::{init_vanilla_registry, vanilla_loot_tables};
 
 use super::*;
 use rand::SeedableRng;
@@ -11,7 +11,7 @@ fn test_rng() -> rand::rngs::StdRng {
 }
 
 fn init_test_registries() {
-    init_test_registry();
+    init_vanilla_registry();
 }
 
 #[test]

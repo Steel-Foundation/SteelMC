@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn pig_uses_vanilla_animal_fire_path_malus() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
@@ -19,7 +19,7 @@ fn pig_uses_vanilla_animal_fire_path_malus() {
 
 #[test]
 fn pig_uses_mob_passenger_as_controller_when_not_player_controlled() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let vehicle_pig = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
@@ -61,7 +61,7 @@ fn pig_uses_mob_passenger_as_controller_when_not_player_controlled() {
 
 #[test]
 fn pig_uses_vanilla_pig_food_tag() {
-    init_test_registry();
+    init_vanilla_registry();
 
     assert!(PigEntity::is_food(&ItemStack::new(&vanilla_items::CARROT)));
     assert!(!PigEntity::is_food(&ItemStack::new(&vanilla_items::STONE)));
@@ -69,7 +69,7 @@ fn pig_uses_vanilla_pig_food_tag() {
 
 #[test]
 fn pig_saves_vanilla_animal_love_data() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let love_cause = Uuid::from_u128(42);
@@ -88,7 +88,7 @@ fn pig_saves_vanilla_animal_love_data() {
 
 #[test]
 fn pig_loads_vanilla_animal_love_data() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let love_cause = Uuid::from_u128(42);
     let mut nbt = NbtCompound::new();
@@ -112,7 +112,7 @@ fn pig_loads_vanilla_animal_love_data() {
 
 #[test]
 fn pig_animal_love_ticks_only_for_adults() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     pig.set_in_love_time(2);
@@ -127,7 +127,7 @@ fn pig_animal_love_ticks_only_for_adults() {
 
 #[test]
 fn pig_damage_resets_vanilla_animal_love_time() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
@@ -140,7 +140,7 @@ fn pig_damage_resets_vanilla_animal_love_time() {
 
 #[test]
 fn pig_death_tick_removes_after_vanilla_death_duration() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     pig.set_health(0.0);

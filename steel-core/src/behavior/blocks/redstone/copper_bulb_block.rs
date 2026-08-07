@@ -184,7 +184,7 @@ impl BlockBehavior for WeatheringCopperBulbBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
     use steel_utils::ChunkPos;
 
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn bulb_toggles_lit_only_on_rising_edges() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("copper_bulb_edges");
         let pos = BlockPos::new(8, 64, 8);

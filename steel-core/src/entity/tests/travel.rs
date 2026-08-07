@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn jump_from_ground_uses_jump_strength_and_marks_velocity_sync() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let jump_strength = f64::from(vanilla_attributes::JUMP_STRENGTH.default_value as f32);
 
@@ -14,7 +14,7 @@ fn jump_from_ground_uses_jump_strength_and_marks_velocity_sync() {
 
 #[test]
 fn sprint_jump_from_ground_adds_vanilla_horizontal_impulse() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let jump_strength = f64::from(vanilla_attributes::JUMP_STRENGTH.default_value as f32);
     entity.set_sprinting(true);
@@ -30,7 +30,7 @@ fn sprint_jump_from_ground_adds_vanilla_horizontal_impulse() {
 
 #[test]
 fn living_jump_in_water_uses_fluid_jump_impulse_without_cooldown() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.5, 0.0, true);
     entity.set_jumping(true);
 
@@ -42,7 +42,7 @@ fn living_jump_in_water_uses_fluid_jump_impulse_without_cooldown() {
 
 #[test]
 fn living_jump_without_input_resets_jump_delay_like_vanilla() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_no_jump_delay(4);
 
@@ -53,7 +53,7 @@ fn living_jump_without_input_resets_jump_delay_like_vanilla() {
 
 #[test]
 fn living_ai_step_zeroes_tiny_player_velocity_like_vanilla() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_velocity(DVec3::new(0.002, 0.002, 0.002));
 
@@ -64,7 +64,7 @@ fn living_ai_step_zeroes_tiny_player_velocity_like_vanilla() {
 
 #[test]
 fn living_ai_step_keeps_player_horizontal_velocity_above_combined_threshold() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let velocity = DVec3::new(0.002, 0.003, 0.0025);
     entity.set_velocity(velocity);
@@ -76,7 +76,7 @@ fn living_ai_step_keeps_player_horizontal_velocity_above_combined_threshold() {
 
 #[test]
 fn default_ai_step_resets_idle_jump_delay_and_dampens_input_before_travel() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_no_jump_delay(2);
     entity.set_travel_input(LivingTravelInput::new(1.0, 0.5, -1.0));
@@ -92,7 +92,7 @@ fn default_ai_step_resets_idle_jump_delay_and_dampens_input_before_travel() {
 
 #[test]
 fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let slow_falling = LivingFluidTestEntity::new(0.0, 0.0, true);
     slow_falling.set_fall_distance(7.0);
@@ -111,7 +111,7 @@ fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
 
 #[test]
 fn default_ai_step_jumps_from_ground_and_sets_vanilla_cooldown() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let jump_strength = f64::from(vanilla_attributes::JUMP_STRENGTH.default_value as f32);
     entity.set_on_ground(true);
@@ -126,7 +126,7 @@ fn default_ai_step_jumps_from_ground_and_sets_vanilla_cooldown() {
 
 #[test]
 fn living_travel_fluid_predicate_matches_vanilla_hooks() {
-    init_test_registry();
+    init_vanilla_registry();
     let water = FluidState::source(&vanilla_fluids::WATER);
 
     assert!(LivingFluidTestEntity::new(0.4, 0.0, true).should_travel_in_fluid(water));
@@ -142,7 +142,7 @@ fn living_travel_fluid_predicate_matches_vanilla_hooks() {
 
 #[test]
 fn open_trapdoor_matches_ladder_facing_for_climbable() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let trapdoor = vanilla_blocks::OAK_TRAPDOOR
         .default_state()
@@ -157,7 +157,7 @@ fn open_trapdoor_matches_ladder_facing_for_climbable() {
 
 #[test]
 fn closed_trapdoor_is_not_usable_as_ladder() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let trapdoor = vanilla_blocks::OAK_TRAPDOOR
         .default_state()
@@ -172,7 +172,7 @@ fn closed_trapdoor_is_not_usable_as_ladder() {
 
 #[test]
 fn trapdoor_ladder_facing_must_match() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let trapdoor = vanilla_blocks::OAK_TRAPDOOR
         .default_state()

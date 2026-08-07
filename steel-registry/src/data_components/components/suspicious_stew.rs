@@ -222,12 +222,12 @@ mod tests {
 
     use super::{SuspiciousStewEffect, SuspiciousStewEffects};
     use crate::data_components::vanilla_components::SUSPICIOUS_STEW_EFFECTS;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     #[test]
     fn stew_effects_round_trip_and_malformed_duration_uses_lenient_default() {
-        init_test_registry();
+        init_vanilla_registry();
         let night_vision = REGISTRY
             .mob_effects
             .by_key(&steel_utils::Identifier::vanilla_static("night_vision"))
@@ -256,7 +256,7 @@ mod tests {
 
     #[test]
     fn extracted_suspicious_stew_has_an_empty_effect_list() {
-        init_test_registry();
+        init_vanilla_registry();
         let stew = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("suspicious_stew"))

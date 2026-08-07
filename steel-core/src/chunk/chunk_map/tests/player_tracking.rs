@@ -27,7 +27,7 @@ fn light_changed_does_not_broadcast_unloading_full_chunk() {
 
 #[test]
 fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("blocked_light_block_publication");
     let center = ChunkPos::new(0, 0);
@@ -96,7 +96,7 @@ fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() 
 
 #[test]
 fn frozen_tick_broadcasts_block_changes_before_acknowledging_them() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("frozen_block_change_publication");
     let chunk_pos = ChunkPos::new(0, 0);

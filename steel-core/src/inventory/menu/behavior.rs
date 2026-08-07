@@ -1006,7 +1006,7 @@ mod tests {
     use std::slice;
     use std::sync::Arc;
 
-    use steel_registry::{item_stack::ItemStack, test_support::init_test_registry, vanilla_items};
+    use steel_registry::{init_vanilla_registry, item_stack::ItemStack, vanilla_items};
     use steel_utils::{
         DowncastType, DowncastTypeKey,
         locks::{IntoShared, SyncMutex},
@@ -1055,7 +1055,7 @@ mod tests {
     }
 
     fn recording_menu() -> (Menu, ContainerRef) {
-        init_test_registry();
+        init_vanilla_registry();
         let container = Arc::new(SyncMutex::new(RecordingContainer {
             item: ItemStack::with_count(&vanilla_items::STONE, 5),
             set_item_calls: 0,
@@ -1118,7 +1118,7 @@ mod tests {
 
     #[test]
     fn quick_move_skips_aliases_of_the_source_slot() {
-        init_test_registry();
+        init_vanilla_registry();
         let container = SimpleContainer::new(2).into_shared();
         container
             .lock()

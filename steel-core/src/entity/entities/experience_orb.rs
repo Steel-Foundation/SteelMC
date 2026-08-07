@@ -539,7 +539,7 @@ mod tests {
     use std::io::Cursor;
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
-    use steel_registry::{test_support::init_test_registry, vanilla_damage_types};
+    use steel_registry::{init_vanilla_registry, vanilla_damage_types};
 
     use crate::test_support::test_world;
 
@@ -562,7 +562,7 @@ mod tests {
 
     #[test]
     fn merge_id_uses_vanilla_grouping_and_value() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let orb = ExperienceOrbEntity::new(
             &vanilla_entities::EXPERIENCE_ORB,
@@ -579,7 +579,7 @@ mod tests {
 
     #[test]
     fn experience_orb_merge_absorbs_existing_group() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let target = ExperienceOrbEntity::new(
             &vanilla_entities::EXPERIENCE_ORB,
@@ -610,7 +610,7 @@ mod tests {
 
     #[test]
     fn orb_damage_truncates_after_fractional_subtraction() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let orb = ExperienceOrbEntity::new(
             &vanilla_entities::EXPERIENCE_ORB,
@@ -630,7 +630,7 @@ mod tests {
 
     #[test]
     fn orb_saves_and_loads_vanilla_state() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let orb = ExperienceOrbEntity::new(
             &vanilla_entities::EXPERIENCE_ORB,

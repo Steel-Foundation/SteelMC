@@ -49,23 +49,39 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - name: steel-linux
+            os: ubuntu-latest
             artifact: steel
-          - os: windows-latest
+            target: ""
+          - name: steel-linux-musl
+            os: ubuntu-latest
+            artifact: steel
+            target: x86_64-unknown-linux-musl
+          - name: steel-windows
+            os: windows-latest
             artifact: steel.exe
-          - os: macos-latest
+            target: ""
+          - name: steel-macos
+            os: macos-latest
             artifact: steel
+            target: ""
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+      - name: Install musl toolchain
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add ${{ matrix.target }}
       - name: Build portable release binary
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-        run: cargo build --release --features stand-alone,deadlock_detection --verbose
+        run: cargo build --release ${{ matrix.target && format('--target {0}', matrix.target) || '' }} --features stand-alone,deadlock_detection --verbose
       - uses: actions/upload-artifact@v4
         with:
-          name: steel-${{ matrix.os }}
-          path: target/release/${{ matrix.artifact }}
+          name: ${{ matrix.name }}
+          path: ${{ matrix.target && format('target/{0}/release/{1}', matrix.target, matrix.artifact) || format('target/release/{0}', matrix.artifact) }}
 
   release:
     needs:
@@ -84,9 +100,10 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release
-          mv artifacts/steel-ubuntu-latest/steel release/steel-linux
-          mv artifacts/steel-windows-latest/steel.exe release/steel-windows.exe
-          mv artifacts/steel-macos-latest/steel release/steel-macos
+          mv artifacts/steel-linux/steel release/steel-linux
+          mv artifacts/steel-linux-musl/steel release/steel-linux-musl
+          mv artifacts/steel-windows/steel.exe release/steel-windows.exe
+          mv artifacts/steel-macos/steel release/steel-macos
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

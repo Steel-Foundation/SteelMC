@@ -238,7 +238,7 @@ fn java_hash_set_update_order(pos: BlockPos) -> [BlockPos; 7] {
 mod tests {
     use std::cell::Cell;
 
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
     use steel_utils::ChunkPos;
 
@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn incoming_wire_power_does_not_feed_back_through_signal_queries() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let pos = BlockPos::new(0, 64, 0);
         let powered_neighbor = vanilla_blocks::REDSTONE_WIRE

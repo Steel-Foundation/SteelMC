@@ -9,7 +9,7 @@ use std::{
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_registry::packets::play::C_SET_PLAYER_INVENTORY;
 use steel_registry::{
-    item_stack::ItemStack, test_support::init_test_registry, vanilla_items, vanilla_menu_types,
+    init_vanilla_registry, item_stack::ItemStack, vanilla_items, vanilla_menu_types,
 };
 use steel_utils::codec::VarInt;
 use steel_utils::locks::{IntoShared as _, Shared, SyncMutex};
@@ -88,7 +88,7 @@ struct RecordingPlayer {
 }
 
 fn recording_player(uuid: u128, name: &str, entity_id: i32) -> RecordingPlayer {
-    init_test_registry();
+    init_vanilla_registry();
     let packets = Arc::new(SyncMutex::new(Vec::new()));
     let inventories = Arc::new(SyncMutex::new(Vec::new()));
     let callbacks_saw_unlocked_inventories = Arc::new(AtomicBool::new(true));
@@ -143,7 +143,7 @@ fn player_inventory_updates(packets: &SyncMutex<Vec<EncodedPacket>>) -> Vec<(i32
 }
 
 fn test_player(uuid: u128, name: &str, entity_id: i32) -> Arc<Player> {
-    init_test_registry();
+    init_vanilla_registry();
     TestPlayerBuilder::new(
         Arc::clone(test_world()),
         Uuid::from_u128(uuid),
