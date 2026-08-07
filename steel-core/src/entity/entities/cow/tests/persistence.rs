@@ -1,8 +1,9 @@
+use steel_registry::init_vanilla_registry;
 use super::*;
 
 #[test]
 fn cow_saves_vanilla_age_and_variant_data() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let cow = CowEntity::new(&vanilla_entities::COW, 1, DVec3::ZERO, Weak::new());
     cow.set_age(-24_000);
@@ -29,7 +30,7 @@ fn cow_saves_vanilla_age_and_variant_data() {
 
 #[test]
 fn cow_loads_vanilla_age_and_variant_data() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut nbt = NbtCompound::new();
     nbt.insert("Age", -24_000_i32);

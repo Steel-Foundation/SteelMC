@@ -3,7 +3,6 @@ use std::sync::Weak;
 
 use glam::DVec3;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
-use steel_registry::test_support::init_test_registry;
 use steel_registry::{
     sound_events, vanilla_cow_sound_variants, vanilla_cow_variants, vanilla_damage_types,
     vanilla_entities, vanilla_items,
