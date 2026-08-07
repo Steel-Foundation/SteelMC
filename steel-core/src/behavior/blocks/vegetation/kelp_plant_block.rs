@@ -141,12 +141,12 @@ mod tests {
     use crate::test_support::TestLevel;
     use steel_registry::blocks::block_state_ext::BlockStateExt;
     use steel_registry::blocks::properties::BlockStateProperties;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
 
     #[test]
     fn kelp_plant_update_shape_schedules_water_tick() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let kelp = KelpPlantBlock::new(&vanilla_blocks::KELP_PLANT);
         let level =
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn kelp_plant_update_shape_schedules_break_tick_when_unsupported() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let kelp = KelpPlantBlock::new(&vanilla_blocks::KELP_PLANT);
         let level =
@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn kelp_plant_converts_to_random_aged_head_when_open_above() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let kelp = KelpPlantBlock::new(&vanilla_blocks::KELP_PLANT);
         let level =

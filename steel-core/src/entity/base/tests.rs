@@ -9,7 +9,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use steel_registry::{
     entity_data::EntityPose, entity_type::EntityDimensions, entity_type::EntityTypeRef,
-    test_support::init_test_registry,
+    init_vanilla_registry,
 };
 use steel_registry::{vanilla_damage_types, vanilla_entities};
 use steel_utils::locks::SyncMutex;
@@ -772,7 +772,7 @@ fn removal_cleans_up_relationship_state() {
 
 #[test]
 fn base_fall_damage_propagates_to_passengers() {
-    init_test_registry();
+    init_vanilla_registry();
     let vehicle = raw_entity(1);
     let passenger = FallDamageTestEntity::new(2);
     let passenger_entity: SharedEntity = passenger.clone();

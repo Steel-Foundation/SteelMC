@@ -1,16 +1,15 @@
 //! Block-state and block-entity predicates used by commands.
 
+use super::argument::{matches_substring, parse_identifier, unknown_resource};
+use crate::command::brigadier::{
+    CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder,
+};
 use simdnbt::owned::NbtCompound;
 use steel_registry::{
     BLOCKS_REGISTRY, REGISTRY, RegistryExt as _, TaggedRegistryExt as _, blocks::BlockRef,
 };
 use steel_utils::{BlockStateId, Identifier, nbt::parse_snbt_compound_argument};
 use text_components::TextComponent;
-
-use super::argument::{matches_substring, parse_identifier, unknown_resource};
-use crate::command::brigadier::{
-    CommandSyntaxError, CommandSyntaxErrorKind, StringReader, SuggestionsBuilder,
-};
 
 type BlockProperties = Vec<(Box<str>, Box<str>)>;
 

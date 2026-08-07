@@ -1,6 +1,6 @@
 use std::sync::{Arc, Weak};
 
-use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+use steel_registry::{init_vanilla_registry, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
 
 use super::*;
@@ -15,7 +15,7 @@ use crate::chunk::{
 };
 
 fn init_tests() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 }
 

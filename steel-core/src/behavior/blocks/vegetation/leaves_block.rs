@@ -289,7 +289,7 @@ impl Bonemealable for MangroveLeavesBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use crate::{
         behavior::{BLOCK_BEHAVIORS, init_behaviors},
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn waterlogged_leaves_decay_into_water() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let state = vanilla_blocks::OAK_LEAVES
             .default_state()
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn distance_updates_from_decay_preventing_blocks() {
-        init_test_registry();
+        init_vanilla_registry();
         let level = TestLevel::default().with_block(
             BlockPos::ZERO.relative(Direction::East),
             vanilla_blocks::OAK_LOG.default_state(),
@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn mangrove_leaves_register_bonemeal_behavior() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::MANGROVE_LEAVES);
 
@@ -339,7 +339,7 @@ mod tests {
 
     #[test]
     fn mangrove_leaves_require_air_below_for_bonemeal() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = MangroveLeavesBlock::new(&vanilla_blocks::MANGROVE_LEAVES);
         let state = vanilla_blocks::MANGROVE_LEAVES.default_state();
         let empty_level = TestLevel::default();

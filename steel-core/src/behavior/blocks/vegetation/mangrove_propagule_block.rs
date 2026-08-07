@@ -77,14 +77,14 @@ impl BlockBehavior for MangrovePropaguleBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::test_support::TestLevel;
 
     #[test]
     fn new_hanging_propagule_starts_at_age_zero() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let state = MangrovePropaguleBlock::create_new_hanging_propagule();
 
@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn unsupported_waterlogged_propagule_schedules_water_before_breaking() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = MangrovePropaguleBlock::new(&vanilla_blocks::MANGROVE_PROPAGULE);
         let state = vanilla_blocks::MANGROVE_PROPAGULE
             .default_state()

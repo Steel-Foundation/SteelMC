@@ -361,7 +361,7 @@ mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
 
     use crate::entity::{Entity, Projectile, ThrowableItemProjectile};
     use crate::world::World;
@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn shoot_aligns_velocity_with_direction() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let pearl = EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,
@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn owner_round_trips() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let pearl = EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,
@@ -406,7 +406,7 @@ mod tests {
 
     #[test]
     fn default_item_is_ender_pearl() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let pearl = EnderPearlEntity::new(
             &vanilla_entities::ENDER_PEARL,

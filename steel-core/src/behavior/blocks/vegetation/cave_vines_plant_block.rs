@@ -150,14 +150,14 @@ impl Bonemealable for CaveVinesPlantBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::test_support::TestLevel;
 
     #[test]
     fn body_conversion_preserves_berries() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = CaveVinesPlantBlock::new(&vanilla_blocks::CAVE_VINES_PLANT);
         let state = vanilla_blocks::CAVE_VINES_PLANT
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn clone_item_is_glow_berries() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = CaveVinesPlantBlock::new(&vanilla_blocks::CAVE_VINES_PLANT);
         let item = behavior

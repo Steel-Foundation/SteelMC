@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn pig_saves_vanilla_mob_age_and_variant_data() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     pig.set_can_pick_up_loot(true);
@@ -70,7 +70,7 @@ fn pig_saves_vanilla_mob_age_and_variant_data() {
 
 #[test]
 fn pig_loads_vanilla_mob_age_and_variant_data() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut nbt = NbtCompound::new();
     nbt.insert("CanPickUpLoot", 1_i8);
@@ -142,7 +142,7 @@ fn pig_loads_vanilla_mob_age_and_variant_data() {
 
 #[test]
 fn pig_saves_delayed_fence_knot_leash_as_vanilla_block_pos_int_array() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     pig.set_delayed_leash_attachment(LeashAttachment::FenceKnot(BlockPos::new(4, 65, -9)));
@@ -158,7 +158,7 @@ fn pig_saves_delayed_fence_knot_leash_as_vanilla_block_pos_int_array() {
 
 #[test]
 fn pig_saves_live_fence_knot_leash_as_vanilla_block_pos_int_array() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let knot: SharedEntity = Arc::new(LeashFenceKnotEntity::new_attached(
@@ -180,7 +180,7 @@ fn pig_saves_live_fence_knot_leash_as_vanilla_block_pos_int_array() {
 
 #[test]
 fn pig_loads_delayed_fence_knot_leash_from_vanilla_block_pos_int_array() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut nbt = NbtCompound::new();
     nbt.insert("leash", NbtTag::IntArray(vec![4, 65, -9]));
@@ -203,7 +203,7 @@ fn pig_loads_delayed_fence_knot_leash_from_vanilla_block_pos_int_array() {
 
 #[test]
 fn pig_drop_leash_clears_live_leash_state() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let holder: SharedEntity = Arc::new(PigEntity::new(
@@ -222,7 +222,7 @@ fn pig_drop_leash_clears_live_leash_state() {
 
 #[test]
 fn pig_remove_leash_clears_live_leash_state() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let holder: SharedEntity = Arc::new(PigEntity::new(
@@ -241,7 +241,7 @@ fn pig_remove_leash_clears_live_leash_state() {
 
 #[test]
 fn pig_drop_all_leash_connections_clears_own_live_leash() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let holder: SharedEntity = Arc::new(PigEntity::new(

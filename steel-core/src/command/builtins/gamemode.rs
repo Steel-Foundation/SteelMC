@@ -230,7 +230,7 @@ const fn game_mode_translation(game_mode: GameType) -> &'static Translation<0> {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::super::create_dispatcher;
     use super::*;
@@ -311,7 +311,7 @@ mod tests {
 
     #[test]
     fn gamemode_graph_matches_vanilla_shape() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

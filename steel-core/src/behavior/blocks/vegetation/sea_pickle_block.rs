@@ -66,7 +66,7 @@ impl BlockBehavior for SeaPickleBlock {
 #[cfg(test)]
 mod tests {
     use steel_registry::blocks::properties::BlockStateProperties;
-    use steel_registry::{test_support::init_test_registry, vanilla_fluids};
+    use steel_registry::{init_vanilla_registry, vanilla_fluids};
 
     use super::*;
     use crate::behavior::init_behaviors;
@@ -74,7 +74,7 @@ mod tests {
 
     #[test]
     fn sea_pickle_checks_survival_before_scheduling_water() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let behavior = SeaPickleBlock::new(&vanilla_blocks::SEA_PICKLE);
         let state = vanilla_blocks::SEA_PICKLE

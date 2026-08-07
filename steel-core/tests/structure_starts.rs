@@ -224,12 +224,11 @@ fn structure_starts_inner() {
     use steel_core::worldgen::{
         ChunkGenerator, ChunkGeneratorType, EndGenerator, NetherGenerator, OverworldGenerator,
     };
-    use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
+    use steel_registry::init_vanilla_registry;
+    use steel_registry::vanilla_dimension_types;
     use steel_worldgen::biomes::BiomeSourceKind;
 
-    let mut registry = Registry::new_vanilla();
-    registry.freeze();
-    let _ = REGISTRY.init(registry);
+    init_vanilla_registry();
 
     let expected = load_expected();
     let seed = expected.seed;
