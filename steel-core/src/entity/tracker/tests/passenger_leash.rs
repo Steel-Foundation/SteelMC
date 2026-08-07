@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn spawn_pairing_omits_untracked_passenger_for_vehicle() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let vehicle_typed = PairingTestEntity::new(1, Vec::new());
@@ -18,7 +18,7 @@ fn spawn_pairing_omits_untracked_passenger_for_vehicle() {
 
 #[test]
 fn spawn_pairing_includes_tracked_passenger_packet_for_vehicle() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let vehicle_typed = PairingTestEntity::new(1, Vec::new());
@@ -37,7 +37,7 @@ fn spawn_pairing_includes_tracked_passenger_packet_for_vehicle() {
 
 #[test]
 fn spawn_pairing_for_passenger_omits_untracked_vehicle_packet() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let vehicle_typed = PairingTestEntity::new(1, Vec::new());
@@ -54,7 +54,7 @@ fn spawn_pairing_for_passenger_omits_untracked_vehicle_packet() {
 
 #[test]
 fn spawn_pairing_for_passenger_includes_tracked_vehicle_passenger_packet() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let vehicle_typed = PairingTestEntity::new(1, Vec::new());
@@ -75,7 +75,7 @@ fn spawn_pairing_for_passenger_includes_tracked_vehicle_passenger_packet() {
 
 #[test]
 fn spawn_pairing_includes_live_mob_leash_link_packet() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let pig_typed = Arc::new(PigEntity::new(
@@ -95,7 +95,7 @@ fn spawn_pairing_includes_live_mob_leash_link_packet() {
 
 #[test]
 fn send_changes_broadcasts_leash_link_changes_once() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let pig: SharedEntity = Arc::new(PigEntity::new(
@@ -181,7 +181,7 @@ fn send_changes_broadcasts_leash_link_changes_once() {
 
 #[test]
 fn send_changes_broadcasts_passenger_changes_once() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let vehicle_typed = PairingTestEntity::new(1, Vec::new());
@@ -277,7 +277,7 @@ fn send_changes_broadcasts_passenger_changes_once() {
 
 #[test]
 fn send_changes_removes_untracked_passenger_from_vehicle_packet() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let vehicle_typed = PairingTestEntity::new(1, Vec::new());

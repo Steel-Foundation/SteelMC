@@ -353,7 +353,7 @@ mod tests {
     use std::sync::Arc;
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_entities};
     use steel_utils::{ChunkPos, types::UpdateFlags};
 
     use super::*;
@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn redstone_holds_big_dripleaf_upright() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("big_dripleaf_redstone");
         let pos = BlockPos::new(8, 64, 8);

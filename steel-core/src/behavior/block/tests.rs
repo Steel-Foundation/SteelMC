@@ -4,13 +4,13 @@ use super::*;
 
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, SlabType};
+use steel_registry::init_vanilla_registry;
 use steel_registry::sound_events;
-use steel_registry::test_support::init_test_registry;
 use steel_registry::vanilla_blocks;
 
 #[test]
 fn drained_waterlogged_state_clears_waterlogged_property() {
-    init_test_registry();
+    init_vanilla_registry();
     let state = vanilla_blocks::OAK_SLAB
         .default_state()
         .set_value(&BlockStateProperties::WATERLOGGED, true);
@@ -25,7 +25,7 @@ fn drained_waterlogged_state_clears_waterlogged_property() {
 
 #[test]
 fn drained_waterlogged_state_ignores_dry_or_non_waterloggable_blocks() {
-    init_test_registry();
+    init_vanilla_registry();
     let dry_slab = vanilla_blocks::OAK_SLAB
         .default_state()
         .set_value(&BlockStateProperties::WATERLOGGED, false);
@@ -37,7 +37,7 @@ fn drained_waterlogged_state_ignores_dry_or_non_waterloggable_blocks() {
 
 #[test]
 fn waterlogged_barrier_pickup_requires_player_context() {
-    init_test_registry();
+    init_vanilla_registry();
     let waterlogged_slab = vanilla_blocks::OAK_SLAB
         .default_state()
         .set_value(&BlockStateProperties::WATERLOGGED, true);
@@ -57,7 +57,7 @@ fn waterlogged_barrier_pickup_requires_player_context() {
 
 #[test]
 fn default_fluid_replacement_does_not_use_waterloggable_property_alone() {
-    init_test_registry();
+    init_vanilla_registry();
     let double_slab = vanilla_blocks::OAK_SLAB
         .default_state()
         .set_value(&BlockStateProperties::SLAB_TYPE, SlabType::Double)
@@ -69,7 +69,7 @@ fn default_fluid_replacement_does_not_use_waterloggable_property_alone() {
 
 #[test]
 fn default_behavior_preserves_unported_simple_waterlogged_blocks() {
-    init_test_registry();
+    init_vanilla_registry();
     let dry_ladder = vanilla_blocks::LADDER
         .default_state()
         .set_value(&BlockStateProperties::WATERLOGGED, false);
@@ -95,7 +95,7 @@ fn default_behavior_preserves_unported_simple_waterlogged_blocks() {
 
 #[test]
 fn default_behavior_schedules_shape_ticks_only_for_waterlogged_states() {
-    init_test_registry();
+    init_vanilla_registry();
     let behavior = DefaultBlockBehavior::new(&vanilla_blocks::OAK_SLAB);
     let level = TestLevel::default();
     let pos = BlockPos::new(3, 64, 5);

@@ -314,13 +314,13 @@ impl FluidStateExt for FluidState {
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_support::init_test_registry, vanilla_fluids};
+    use crate::{init_vanilla_registry, vanilla_fluids};
 
     use super::*;
 
     #[test]
     fn from_block_level_uses_source_variant_for_level_zero() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let water = FluidState::from_block_level(&vanilla_fluids::WATER, 0);
         let lava = FluidState::from_block_level(&vanilla_fluids::LAVA, 0);
@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn from_block_level_uses_flowing_variant_for_non_source_levels() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let water = FluidState::from_block_level(&vanilla_fluids::WATER, 1);
         let lava = FluidState::from_block_level(&vanilla_fluids::LAVA, 8);
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn from_block_level_clamps_all_falling_liquid_levels_to_full_amount() {
-        init_test_registry();
+        init_vanilla_registry();
 
         for level in 8..=15 {
             let water = FluidState::from_block_level(&vanilla_fluids::WATER, level);
@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn source_fluid_type_is_source_even_when_falling() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let falling_source = FluidState::new(&vanilla_fluids::WATER, 8, true);
 

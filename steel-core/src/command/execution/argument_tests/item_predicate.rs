@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn item_predicate_argument_matches_targets_boolean_terms_and_count_ranges() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
     let parse = dispatcher.parse(
         "resource #logs[count={min:2,max:3},!damage|enchantment_glint_override]",
@@ -22,7 +22,7 @@ fn item_predicate_argument_matches_targets_boolean_terms_and_count_ranges() {
 
 #[test]
 fn item_predicate_argument_decodes_exact_components_before_matching() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
     let parse = dispatcher.parse("resource stone[max_stack_size=64b]", TestSource::new());
     let Ok(chain) = dispatcher.context_chain(parse) else {
@@ -37,7 +37,7 @@ fn item_predicate_argument_decodes_exact_components_before_matching() {
 
 #[test]
 fn item_predicate_argument_supports_damage_and_enchantment_predicates() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
     let input = "resource diamond_sword[damage~{damage:7,durability:{min:1}},enchantments~[{enchantments:'minecraft:sharpness',levels:{min:2}}]]";
     let parse = dispatcher.parse(input, TestSource::new());
@@ -58,7 +58,7 @@ fn item_predicate_argument_supports_damage_and_enchantment_predicates() {
 
 #[test]
 fn item_predicate_argument_supports_partial_custom_data_matching() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
     let parse = dispatcher.parse(
         "resource stone[custom_data~{nested:{value:2}}]",
@@ -90,7 +90,7 @@ fn item_predicate_argument_supports_partial_custom_data_matching() {
 
 #[test]
 fn item_predicate_argument_decodes_every_registered_vanilla_partial_predicate() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
     for expression in [
         "potion_contents~'minecraft:water'",
@@ -115,7 +115,7 @@ fn item_predicate_argument_decodes_every_registered_vanilla_partial_predicate() 
 
 #[test]
 fn item_predicate_argument_matches_registered_firework_explosion_predicate() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
     let parse = dispatcher.parse(
         "resource firework_star[firework_explosion~{shape:'star',has_twinkle:true}]",
@@ -146,7 +146,7 @@ fn item_predicate_argument_matches_registered_firework_explosion_predicate() {
 
 #[test]
 fn item_predicate_argument_matches_stream_only_nested_template_without_materializing_a_stack() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
     let parse = dispatcher.parse(
         "resource chest[container~{items:{contains:[{items:'minecraft:stick',count:100}]}}]",
@@ -186,7 +186,7 @@ fn item_predicate_argument_matches_stream_only_nested_template_without_materiali
 
 #[test]
 fn item_predicate_argument_supports_attribute_modifier_collection_predicates() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
     let input = "resource stone[attribute_modifiers~{modifiers:{contains:[{attribute:'minecraft:attack_damage',id:'minecraft:test',amount:{min:2.5,max:3.5},operation:'add_value',slot:'mainhand'}],count:[{test:{attribute:'minecraft:attack_damage'},count:1}],size:1}}]";
     let parse = dispatcher.parse(input, TestSource::new());
@@ -221,7 +221,7 @@ fn item_predicate_argument_supports_attribute_modifier_collection_predicates() {
 
 #[test]
 fn item_predicate_argument_rejects_noncanonical_holder_and_slot_values() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
 
     for input in [
@@ -238,7 +238,7 @@ fn item_predicate_argument_rejects_noncanonical_holder_and_slot_values() {
 
 #[test]
 fn item_predicate_argument_uses_map_codec_for_component_existence_predicates() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
 
     for path in [
@@ -265,7 +265,7 @@ fn item_predicate_argument_uses_map_codec_for_component_existence_predicates() {
 
 #[test]
 fn item_predicate_argument_rejects_malformed_potion_predicate() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
     let parse = dispatcher.parse(
         "resource potion[potion_contents~{potion:'minecraft:water'}]",
@@ -277,7 +277,7 @@ fn item_predicate_argument_rejects_malformed_potion_predicate() {
 
 #[test]
 fn item_predicate_argument_rejects_transient_components_as_component_tests() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
 
     for input in [
@@ -298,7 +298,7 @@ fn item_predicate_argument_rejects_transient_components_as_component_tests() {
 
 #[test]
 fn item_predicate_argument_suggests_items_tags_and_condition_types() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
 
     for (input, expected) in [

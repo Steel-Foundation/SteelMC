@@ -204,7 +204,7 @@ mod tests {
     use steel_protocol::packets::game::{
         ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
     };
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::{OperatorAction, update_groups};
     use crate::command::builtins::create_dispatcher;
@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn operator_targets_use_vanillas_game_profile_argument() {
-        init_test_registry();
+        init_vanilla_registry();
         let dispatcher = create_dispatcher();
         let Ok(dispatcher) = dispatcher else {
             panic!("built-in dispatcher should build");

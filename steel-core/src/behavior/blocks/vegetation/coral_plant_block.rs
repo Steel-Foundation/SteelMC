@@ -93,7 +93,7 @@ impl BlockBehavior for CoralPlantBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use crate::behavior::init_behaviors;
     use crate::test_support::TestLevel;
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn dry_coral_plant_update_shape_schedules_die_tick() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let behavior = CoralPlantBlock::new(
             &vanilla_blocks::TUBE_CORAL,
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn waterlogged_coral_plant_update_shape_schedules_water_not_die_tick() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let behavior = CoralPlantBlock::new(
             &vanilla_blocks::TUBE_CORAL,

@@ -101,7 +101,7 @@ mod tests {
         literal as extension_literal,
     };
     use crate::permission::PermissionKey;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_utils::Identifier;
 
     #[expect(
@@ -110,7 +110,7 @@ mod tests {
     )]
     #[test]
     fn first_builtin_slice_has_the_expected_graph_shape() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };
@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn startup_extensions_merge_after_builtins_with_namespaced_collision_fallbacks() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut extensions = CommandRegistry::new();
         let registration =
             ExtensionCommandRegistration::new(Identifier::new("steel_test", "stop"), || {
@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn invsee_discovers_only_steel_namespaced_permissions() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(registered) = create_registered_dispatcher(CommandRegistry::new()) else {
             panic!("built-in commands should register");
         };
@@ -276,7 +276,7 @@ mod tests {
         reason = "one graph-shape test keeps execute paths and redirects directly comparable"
     )]
     fn execute_graph_uses_expected_redirects_and_argument_types() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

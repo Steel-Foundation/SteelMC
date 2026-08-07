@@ -1,8 +1,9 @@
 use super::*;
+use steel_registry::init_vanilla_registry;
 
 #[test]
 fn cow_initializes_vanilla_living_attributes_and_health() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let cow = CowEntity::new(&vanilla_entities::COW, 1, DVec3::ZERO, Weak::new());
 
@@ -22,7 +23,7 @@ fn cow_initializes_vanilla_living_attributes_and_health() {
 
 #[test]
 fn cow_uses_vanilla_cow_food_tag() {
-    init_test_registry();
+    init_vanilla_registry();
 
     assert!(CowEntity::is_food(&ItemStack::new(&vanilla_items::WHEAT)));
     assert!(!CowEntity::is_food(&ItemStack::new(&vanilla_items::STONE)));
@@ -30,7 +31,7 @@ fn cow_uses_vanilla_cow_food_tag() {
 
 #[test]
 fn cow_sound_methods_follow_selected_sound_variant() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let cow = CowEntity::new(&vanilla_entities::COW, 1, DVec3::ZERO, Weak::new());
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
@@ -62,7 +63,7 @@ fn cow_sound_methods_follow_selected_sound_variant() {
 
 #[test]
 fn cow_milks_bucket_into_milk_bucket_for_adults() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let world = fresh_test_world("cow_milking");
     let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "Milker", 10).build();
@@ -88,7 +89,7 @@ fn cow_milks_bucket_into_milk_bucket_for_adults() {
 
 #[test]
 fn cow_does_not_milk_when_baby() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let world = fresh_test_world("baby_cow_milking");
     let player = TestPlayerBuilder::new(world, Uuid::from_u128(2), "Milker", 11).build();
@@ -115,7 +116,7 @@ fn cow_does_not_milk_when_baby() {
 
 #[test]
 fn cow_breeding_offspring_inherits_parent_variant() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let cow = CowEntity::new(&vanilla_entities::COW, 1, DVec3::ZERO, Weak::new());
     let partner = CowEntity::new(&vanilla_entities::COW, 2, DVec3::ZERO, Weak::new());
@@ -136,7 +137,7 @@ fn cow_breeding_offspring_inherits_parent_variant() {
 
 #[test]
 fn try_as_dyn_exposes_cow_living_entity_behavior() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let cow = CowEntity::new(&vanilla_entities::COW, 1, DVec3::ZERO, Weak::new());
     let entity = &cow as &dyn Entity;
@@ -150,7 +151,7 @@ fn try_as_dyn_exposes_cow_living_entity_behavior() {
 
 #[test]
 fn try_as_dyn_exposes_cow_pathfinder_mob_behavior() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let cow = CowEntity::new(&vanilla_entities::COW, 1, DVec3::ZERO, Weak::new());
     let entity = &cow as &dyn Entity;
@@ -164,7 +165,7 @@ fn try_as_dyn_exposes_cow_pathfinder_mob_behavior() {
 
 #[test]
 fn try_as_dyn_exposes_cow_animal_behavior() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let cow = CowEntity::new(&vanilla_entities::COW, 1, DVec3::ZERO, Weak::new());
     let entity = &cow as &dyn Entity;
@@ -180,7 +181,7 @@ fn try_as_dyn_exposes_cow_animal_behavior() {
 
 #[test]
 fn cow_ambient_interval_and_source_match_vanilla_animal_defaults() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let cow = CowEntity::new(&vanilla_entities::COW, 1, DVec3::ZERO, Weak::new());
 
@@ -190,7 +191,7 @@ fn cow_ambient_interval_and_source_match_vanilla_animal_defaults() {
 
 #[test]
 fn cow_finalize_spawn_assigns_registered_variant_and_sound_variant() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let world = fresh_test_world("cow_finalize_spawn");
     let cow = CowEntity::new(
