@@ -20,7 +20,7 @@ fn save_retry_marks_same_unloading_holder_dirty() {
 
 #[test]
 fn revival_during_save_preparation_is_retried_at_the_next_lifecycle_boundary() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("save_preparation_revival");
     let chunk_pos = ChunkPos::new(0, 0);
@@ -66,7 +66,7 @@ fn revival_during_save_preparation_is_retried_at_the_next_lifecycle_boundary() {
 
 #[test]
 fn newer_ticket_change_replaces_a_deferred_revival() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("save_preparation_revival_override");
     let chunk_pos = ChunkPos::new(0, 0);
@@ -102,7 +102,7 @@ fn newer_ticket_change_replaces_a_deferred_revival() {
 
 #[test]
 fn final_full_chunk_unload_finalizes_chunk_owned_tick_queues() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("chunk_owned_tick_unload");
     let chunk_pos = ChunkPos::new(0, 0);
@@ -145,7 +145,7 @@ fn final_full_chunk_unload_finalizes_chunk_owned_tick_queues() {
 
 #[test]
 fn unloading_full_chunk_revival_keeps_chunk_owned_tick_queues() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("chunk_owned_tick_revival");
     let chunk_pos = ChunkPos::new(0, 0);
@@ -184,7 +184,7 @@ fn unloading_full_chunk_revival_keeps_chunk_owned_tick_queues() {
 
 #[test]
 fn weak_revival_stays_dormant_until_the_same_holder_returns_to_full() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("weak_full_chunk_revival");
     let chunk_pos = ChunkPos::new(0, 0);

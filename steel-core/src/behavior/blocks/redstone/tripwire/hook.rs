@@ -327,7 +327,7 @@ impl BlockBehavior for TripWireHookBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_utils::ChunkPos;
 
     use super::*;
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn line_attachment_power_and_disarming_match_vanilla() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("tripwire_line");
         let left = BlockPos::new(5, 64, 8);

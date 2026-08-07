@@ -2,11 +2,11 @@ use std::slice;
 
 use super::*;
 use steel_registry::blocks::properties::{DoorHingeSide, SlabType};
-use steel_registry::test_support::init_test_registry;
+use steel_registry::init_vanilla_registry;
 use steel_registry::vanilla_entities;
 
 fn test_registry() -> Registry {
-    init_test_registry();
+    init_vanilla_registry();
     Registry::new_vanilla()
 }
 

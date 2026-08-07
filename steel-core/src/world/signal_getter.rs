@@ -248,7 +248,7 @@ pub(crate) fn get_best_neighbor_signal(
 #[cfg(test)]
 mod tests {
     use steel_registry::blocks::properties::{AttachFace, BlockStateProperties};
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
     use crate::behavior::init_behaviors;
@@ -286,7 +286,7 @@ mod tests {
 
     #[test]
     fn powered_button_directly_powers_its_support_block() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let target = BlockPos::new(4, 64, -3);
         let button = vanilla_blocks::STONE_BUTTON
@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn non_conductor_does_not_relay_direct_signal() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let target = BlockPos::new(4, 64, -3);
         let button = vanilla_blocks::STONE_BUTTON
@@ -322,7 +322,7 @@ mod tests {
 
     #[test]
     fn control_input_special_cases_redstone_block_and_wire() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let redstone_block_pos = BlockPos::new(0, 64, 0);
         let wire_pos = redstone_block_pos.east();

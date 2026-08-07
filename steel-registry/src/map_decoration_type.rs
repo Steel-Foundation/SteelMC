@@ -81,12 +81,12 @@ crate::impl_registry!(
 mod tests {
     use steel_utils::Identifier;
 
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     #[test]
     fn extracted_types_follow_vanilla_registry_order_and_fields() {
-        init_test_registry();
+        init_vanilla_registry();
         assert_eq!(REGISTRY.map_decoration_types.len(), 35);
 
         let player = REGISTRY

@@ -355,9 +355,7 @@ mod tests {
         brigadier::{ArgumentType, CommandDispatcher, NodeId},
         execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
     };
-    use steel_registry::{
-        test_support::init_test_registry, vanilla_timelines, vanilla_world_clocks,
-    };
+    use steel_registry::{init_vanilla_registry, vanilla_timelines, vanilla_world_clocks};
     use steel_utils::{Identifier, translations};
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
@@ -378,7 +376,7 @@ mod tests {
 
     #[test]
     fn time_graph_matches_the_26_2_clock_shape() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

@@ -729,7 +729,7 @@ impl Default for PathNavigation {
 #[cfg(test)]
 mod tests {
     use glam::DVec3;
-    use steel_registry::{REGISTRY, test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
     use steel_utils::{BlockPos, BlockStateId, WorldAabb};
 
     use super::{NavigationPathRequest, NavigationTickContext, PathNavigation};
@@ -819,7 +819,7 @@ mod tests {
     }
 
     fn empty_level() -> GridLevel {
-        init_test_registry();
+        init_vanilla_registry();
         GridLevel::new(REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR))
     }
 
@@ -930,7 +930,7 @@ mod tests {
 
     #[test]
     fn move_to_trims_path_over_cauldrons() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         let cauldron = REGISTRY
@@ -1457,7 +1457,7 @@ mod tests {
 
     #[test]
     fn create_path_finds_walkable_target_with_cached_navigation_state() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);

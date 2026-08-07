@@ -1,11 +1,10 @@
 #![expect(missing_docs, reason = "benchmarks")]
 
 use std::hint::black_box;
-use std::sync::Once;
 
 use criterion::{Criterion, criterion_group, criterion_main};
+use steel_registry::init_vanilla_registry;
 use steel_registry::template_pool::{TemplateData, TemplatePoolData};
-use steel_registry::test_support::init_test_registry;
 use steel_registry::vanilla_template_pools::{vanilla_template_pools, vanilla_templates};
 use steel_registry::{
     REGISTRY, RegistryExt,
@@ -15,12 +14,6 @@ use steel_utils::Identifier;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{PositionalRandom, Random};
 use steel_worldgen::structure::jigsaw::{assemble, resolve_aliases};
-
-static INIT: Once = Once::new();
-
-fn ensure_registry() {
-    INIT.call_once(init_test_registry);
-}
 
 struct JigsawBenchCase {
     name: &'static str,
@@ -126,7 +119,7 @@ fn run_assembly(
 }
 
 fn bench_jigsaw_assembly(c: &mut Criterion) {
-    ensure_registry();
+    init_vanilla_registry();
     let (pools, templates) = jigsaw_assets();
 
     let mut group = c.benchmark_group("jigsaw_assemble");

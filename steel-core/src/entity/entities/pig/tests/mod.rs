@@ -4,7 +4,7 @@ use std::string::ToString;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtTag;
 use steel_registry::entity_type::EntityAttachment;
-use steel_registry::test_support::init_test_registry;
+use steel_registry::init_vanilla_registry;
 use steel_registry::{
     vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_items,
     vanilla_pig_sound_variants, vanilla_pig_variants,

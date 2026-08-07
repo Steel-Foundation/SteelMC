@@ -568,9 +568,7 @@ mod tests {
     };
 
     use simdnbt::{borrow::BaseNbtCompound as BorrowedNbtCompound, owned::NbtCompound};
-    use steel_registry::{
-        test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
-    };
+    use steel_registry::{init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks};
     use steel_utils::{DowncastType, DowncastTypeKey, locks::SyncMutex};
 
     use super::*;
@@ -615,7 +613,7 @@ mod tests {
 
     #[test]
     fn readding_the_same_entity_preserves_ownership_and_clears_the_marker() {
-        init_test_registry();
+        init_vanilla_registry();
         let storage = BlockEntityStorage::new();
         let entity: SharedBlockEntity = Arc::new(SignBlockEntity::new(
             Weak::new(),
@@ -640,7 +638,7 @@ mod tests {
 
     #[test]
     fn stale_removed_cleanup_cannot_delete_a_same_arc_revival() {
-        init_test_registry();
+        init_vanilla_registry();
         let storage = BlockEntityStorage::new();
         let entity: SharedBlockEntity = Arc::new(SignBlockEntity::new(
             Weak::new(),
@@ -661,7 +659,7 @@ mod tests {
 
     #[test]
     fn insert_if_absent_preserves_the_concurrent_owner() {
-        init_test_registry();
+        init_vanilla_registry();
         let storage = BlockEntityStorage::new();
         let pos = BlockPos::new(1, 2, 3);
         let state = vanilla_blocks::OAK_SIGN.default_state();
@@ -682,7 +680,7 @@ mod tests {
 
     #[test]
     fn lifecycle_callbacks_are_reentrant_and_keep_transition_order() {
-        init_test_registry();
+        init_vanilla_registry();
         let concrete = Arc::new(ReentrantLifecycleBlockEntity {
             base: BlockEntityBase::new(
                 &vanilla_block_entity_types::BARREL,
@@ -704,7 +702,7 @@ mod tests {
 
     #[test]
     fn repeated_set_removed_calls_remain_observable() {
-        init_test_registry();
+        init_vanilla_registry();
         let concrete = Arc::new(ReentrantLifecycleBlockEntity {
             base: BlockEntityBase::new(
                 &vanilla_block_entity_types::BARREL,
@@ -725,7 +723,7 @@ mod tests {
 
     #[test]
     fn detached_dispatcher_preserves_same_arc_revival_order() {
-        init_test_registry();
+        init_vanilla_registry();
         let concrete = Arc::new(ReentrantLifecycleBlockEntity {
             base: BlockEntityBase::new(
                 &vanilla_block_entity_types::BARREL,
@@ -765,7 +763,7 @@ mod tests {
 
     #[test]
     fn cached_state_callback_is_staged_after_storage_commit() {
-        init_test_registry();
+        init_vanilla_registry();
         let copper = vanilla_blocks::COPPER_CHEST.default_state();
         let exposed = vanilla_blocks::EXPOSED_COPPER_CHEST.default_state();
         let concrete = Arc::new(ReentrantLifecycleBlockEntity {

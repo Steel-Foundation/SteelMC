@@ -281,11 +281,11 @@ mod tests {
     use simdnbt::ToNbtTag;
     use simdnbt::owned::NbtTag;
 
-    use crate::{test_support::init_test_registry, vanilla_instruments};
+    use crate::{init_vanilla_registry, vanilla_instruments};
 
     #[test]
     fn nbt_uses_sound_event_registry_key() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let NbtTag::Compound(compound) = (&vanilla_instruments::PONDER_GOAT_HORN).to_nbt_tag()
         else {

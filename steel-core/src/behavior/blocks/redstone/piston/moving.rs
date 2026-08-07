@@ -142,14 +142,14 @@ impl BlockBehavior for MovingPistonBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::test_support::fresh_test_world;
 
     #[test]
     fn moving_piston_selects_only_the_piston_block_entity_ticker() {
-        init_test_registry();
+        init_vanilla_registry();
         let world = fresh_test_world("moving_piston_ticker");
         let behavior = MovingPistonBlock::new(&vanilla_blocks::MOVING_PISTON);
         let state = vanilla_blocks::MOVING_PISTON.default_state();
