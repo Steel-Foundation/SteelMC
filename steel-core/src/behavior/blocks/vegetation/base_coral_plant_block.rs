@@ -66,11 +66,11 @@ impl BlockBehavior for BaseCoralPlantBlock {
 mod tests {
     use super::*;
     use crate::test_support::TestLevel;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     #[test]
     fn waterlogged_base_coral_plant_update_shape_schedules_water_tick() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = BaseCoralPlantBlock::new(&vanilla_blocks::DEAD_TUBE_CORAL);
         let state = vanilla_blocks::DEAD_TUBE_CORAL

@@ -156,7 +156,7 @@ impl BlockBehavior for LeverBlock {
 #[cfg(test)]
 mod tests {
     use steel_registry::blocks::properties::AttachFace;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events};
 
     use super::*;
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn wall_lever_survives_only_with_its_backing_face() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = LeverBlock::new(&vanilla_blocks::LEVER);
         let pos = BlockPos::new(0, 64, 0);
         let state = lever_state(Direction::East, AttachFace::Wall, false);
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn powered_lever_strongly_powers_only_away_from_support() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = LeverBlock::new(&vanilla_blocks::LEVER);
         let state = lever_state(Direction::East, AttachFace::Wall, true);
         let level = TestLevel::default();
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn redstone_transition_side_effects_match_vanilla_for_lever() {
-        init_test_registry();
+        init_vanilla_registry();
         let level = TestLevel::default();
         let pos = BlockPos::new(3, 64, -2);
 

@@ -372,9 +372,7 @@ mod tests {
     use crate::attribute::AttributeModifierOperation;
     use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
     use crate::item_stack::ItemStack;
-    use crate::{
-        RegistryEntry, test_support::init_test_registry, vanilla_attributes, vanilla_items,
-    };
+    use crate::{RegistryEntry, init_vanilla_registry, vanilla_attributes, vanilla_items};
 
     use super::{ItemAttributeModifierDisplay, ItemAttributeModifierEntry, ItemAttributeModifiers};
 
@@ -397,7 +395,7 @@ mod tests {
 
     #[test]
     fn generated_diamond_sword_has_main_hand_attack_modifiers() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let stack = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
         let modifiers = stack
@@ -425,7 +423,7 @@ mod tests {
 
     #[test]
     fn generated_carved_pumpkin_has_hidden_head_modifier() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let stack = ItemStack::new(&vanilla_items::CARVED_PUMPKIN);
         let modifiers = stack
@@ -452,7 +450,7 @@ mod tests {
 
     #[test]
     fn unknown_attribute_modifier_slot_group_id_falls_back_to_any() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut bytes = Vec::new();
         let Some(attribute_id) = vanilla_attributes::ARMOR.try_id() else {
@@ -487,7 +485,7 @@ mod tests {
 
     #[test]
     fn attribute_modifier_nbt_coerces_amount_and_rejects_invalid_optional_fields() {
-        init_test_registry();
+        init_vanilla_registry();
         let parsed = with_borrowed_tag(
             NbtTag::List(NbtList::Compound(vec![modifier_nbt()])),
             ItemAttributeModifiers::from_nbt_tag,

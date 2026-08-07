@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::{
-    item_stack::ItemStack, test_support::init_test_registry, vanilla_entities, vanilla_items,
+    init_vanilla_registry, item_stack::ItemStack, vanilla_entities, vanilla_items,
 };
 use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
 use uuid::Uuid;
@@ -20,7 +20,7 @@ use crate::{
 
 #[test]
 fn partial_result_overflow_has_no_thrower() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("inventory_menu_partial_result_overflow");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));

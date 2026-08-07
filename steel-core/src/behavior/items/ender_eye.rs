@@ -179,7 +179,7 @@ fn spawn_end_portal(world: &Arc<World>, portal_origin: BlockPos) {
 mod tests {
     use steel_registry::blocks::block_state_ext::BlockStateExt;
     use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::{BlockPos, BlockStateId};
 
     use crate::test_support::TestLevel;
@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn end_portal_pattern_matches_player_built_inward_layout() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let level = TestLevel::default();
         let origin = BlockPos::new(4, 64, 9);
@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn end_portal_pattern_rejects_wrong_side_facing() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let level = TestLevel::default();
         let origin = BlockPos::new(4, 64, 9);
@@ -242,7 +242,7 @@ mod tests {
 
     #[test]
     fn end_portal_pattern_uses_vanilla_front_top_left_offset() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let level = TestLevel::default();
         let origin = BlockPos::new(4, 64, 9);

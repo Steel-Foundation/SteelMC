@@ -1,7 +1,7 @@
 use crate::data_components::vanilla_components::INSTRUMENT;
 use crate::vanilla_instrument_tags::InstrumentTag;
 use crate::vanilla_items;
-use crate::{test_support::init_test_registry, vanilla_loot_tables};
+use crate::{init_vanilla_registry, vanilla_loot_tables};
 
 use super::*;
 use rand::SeedableRng;
@@ -11,7 +11,7 @@ fn test_rng() -> rand::rngs::StdRng {
 }
 
 fn init_test_registries() {
-    init_test_registry();
+    init_vanilla_registry();
 }
 
 #[test]
@@ -139,6 +139,23 @@ fn test_pig_loot_smelt_condition_uses_entity_fire_flag() {
         Identifier::vanilla_static("cooked_porkchop")
     );
     assert!((1..=3).contains(&items[0].count));
+}
+
+#[test]
+fn test_uniform_get_int_reaches_inclusive_max() {
+    // Vanilla UniformGenerator.getInt uses Mth.nextInt(rand, min, max), which
+    // samples the integer range inclusively; a uniform 1..3 count must yield 3.
+    let provider = NumberProvider::Uniform { min: 1.0, max: 3.0 };
+    let mut seen = [false; 4];
+    for seed in 0u64..1000 {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let value = provider.get_int(&mut rng);
+        seen[value as usize] = true;
+    }
+    assert!(
+        seen[1] && seen[2] && seen[3],
+        "uniform 1..=3 must produce 1, 2 and 3, saw {seen:?}"
+    );
 }
 
 #[test]
