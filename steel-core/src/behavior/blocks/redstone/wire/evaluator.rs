@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn target_strength_matches_vanilla() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let pos = BlockPos::new(0, 64, 0);
         let stone = vanilla_blocks::STONE.default_state();
@@ -437,7 +437,7 @@ mod tests {
 
     #[test]
     fn target_strength_uses_fewer_block_state_reads() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let pos = BlockPos::new(0, 64, 0);
         let level = TestLevel::default()
@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn live_world_wire_line_settles_after_source_toggle() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("wire_evaluator_source_toggle");
         let wire_start = BlockPos::new(8, 64, 8);
