@@ -165,13 +165,13 @@ impl BlockBehavior for WeatheringCopperSlabBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
 
     #[test]
     fn double_slabs_cannot_be_waterlogged() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = SlabBlock::new(&vanilla_blocks::SMOOTH_STONE_SLAB);
         let double_slab = vanilla_blocks::SMOOTH_STONE_SLAB
             .default_state()
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn single_slabs_accept_source_water_for_container_admission() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = SlabBlock::new(&vanilla_blocks::SMOOTH_STONE_SLAB);
         let bottom_slab = vanilla_blocks::SMOOTH_STONE_SLAB
             .default_state()
@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn single_slabs_reject_flowing_water_for_container_admission() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = SlabBlock::new(&vanilla_blocks::SMOOTH_STONE_SLAB);
         let bottom_slab = vanilla_blocks::SMOOTH_STONE_SLAB
             .default_state()

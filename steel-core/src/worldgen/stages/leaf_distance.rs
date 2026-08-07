@@ -23,11 +23,7 @@ use steel_registry::{
 };
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction};
 
-use crate::chunk::{
-    chunk_access::{ChunkAccess, ChunkStatus},
-    chunk_holder::ChunkHolder,
-    light::LightWorkset,
-};
+use crate::chunk::{chunk_holder::ChunkHolder, light::LightWorkset, status::ChunkStatus};
 
 const LEAF_DISTANCE_LIMIT: u8 = 7;
 const MAX_PROPAGATED_DISTANCE: u8 = LEAF_DISTANCE_LIMIT - 1;
@@ -124,9 +120,7 @@ pub(super) fn resolve_generated_leaf_distances(workset: &LightWorkset, holder: &
     let Some(chunk) = holder.try_chunk(ChunkStatus::InitializeLight) else {
         panic!("center chunk disappeared during generated leaf-distance resolution");
     };
-    let ChunkAccess::Proto(proto) = &*chunk else {
-        panic!("generated leaf-distance resolution requires a proto chunk");
-    };
+    let proto = chunk;
 
     let mut writes = Vec::with_capacity(updates.len());
     for update in updates {
@@ -146,11 +140,13 @@ pub(super) fn resolve_generated_leaf_distances(workset: &LightWorkset, holder: &
     // The tracked batch still updates palette and random-tick section metadata,
     // while intentionally omitting neighbor-shape and observer callbacks so the
     // converged generation wave is not scheduled again.
-    chunk.write_block_batch_for_generation(&writes);
-    let removed_ticks = proto
-        .block_ticks
-        .lock()
-        .remove_pending_matching(|tick| is_leaf_distance_block(tick.tick_type));
+    chunk.write_block_batch_for_generation(ChunkStatus::InitializeLight, &writes);
+    let Some(removed_ticks) = proto
+        .scheduled_ticks
+        .remove_pending_blocks_matching(|tick| is_leaf_distance_block(tick.tick_type))
+    else {
+        panic!("generated leaf-distance resolution requires pending chunk ticks");
+    };
     if !writes.is_empty() || removed_ticks != 0 {
         chunk.mark_dirty();
     }
@@ -160,12 +156,11 @@ fn pending_leaf_tick_positions(holder: &ChunkHolder) -> Vec<BlockPos> {
     let Some(chunk) = holder.try_chunk(ChunkStatus::InitializeLight) else {
         panic!("generated leaf-distance resolution requires InitializeLight");
     };
-    let ChunkAccess::Proto(proto) = &*chunk else {
-        panic!("generated leaf-distance resolution requires a proto chunk");
+    let proto = chunk;
+    let Some(ticks) = proto.scheduled_ticks.pending_block_snapshot() else {
+        panic!("generated leaf-distance resolution requires pending chunk ticks");
     };
-    let ticks = proto.block_ticks.lock();
     ticks
-        .pending_entries()
         .iter()
         .filter(|tick| is_leaf_distance_block(tick.tick_type))
         .map(|tick| tick.pos)
@@ -343,8 +338,7 @@ fn has_leaf_distance_property(block: BlockRef) -> bool {
 #[cfg(test)]
 mod tests {
     use steel_registry::{
-        blocks::block_state_ext::BlockStateExt as _, test_support::init_test_registry,
-        vanilla_blocks,
+        blocks::block_state_ext::BlockStateExt as _, init_vanilla_registry, vanilla_blocks,
     };
 
     use super::*;
@@ -358,7 +352,7 @@ mod tests {
 
     #[test]
     fn resolves_center_leaves_from_sources_across_chunk_boundaries() {
-        init_test_registry();
+        init_vanilla_registry();
         let center = ChunkPos::new(0, 0);
         let center_leaf = BlockPos::new(15, 8, 8);
         let neighbor_leaf = BlockPos::new(16, 8, 8);
@@ -401,7 +395,7 @@ mod tests {
 
     #[test]
     fn stale_leaf_distances_without_a_source_converge_to_seven() {
-        init_test_registry();
+        init_vanilla_registry();
         let first = BlockPos::new(8, 8, 8);
         let second = BlockPos::new(9, 8, 8);
         let leaves = vanilla_blocks::OAK_LEAVES.default_state();
@@ -431,7 +425,7 @@ mod tests {
 
     #[test]
     fn six_block_halo_preserves_the_distance_seven_boundary() {
-        init_test_registry();
+        init_vanilla_registry();
         let seed = BlockPos::new(15, 8, 8);
         let leaves = vanilla_blocks::OAK_LEAVES.default_state();
         let mut distance_six_states = FxHashMap::default();
@@ -487,7 +481,7 @@ mod tests {
 
     #[test]
     fn scaffolding_distance_is_not_leaf_distance() {
-        init_test_registry();
+        init_vanilla_registry();
         let scaffolding = vanilla_blocks::SCAFFOLDING
             .default_state()
             .set_value(&BlockStateProperties::STABILITY_DISTANCE, 1);

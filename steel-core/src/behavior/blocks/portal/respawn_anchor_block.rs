@@ -59,7 +59,7 @@ impl BlockBehavior for RespawnAnchorBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
     use crate::{
@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn registered_respawn_anchor_scales_all_charge_levels_like_vanilla() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let level = TestLevel::default();
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::RESPAWN_ANCHOR);

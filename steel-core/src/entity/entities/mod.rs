@@ -1,20 +1,13 @@
 //! Concrete entity implementations.
 
-pub mod boss;
-pub mod decoration;
-pub mod hostile;
-pub mod item;
-pub mod neutral;
-pub mod npc;
-pub mod passive;
-pub mod projectile;
+pub mod mobs;
+pub mod objects;
 mod raw;
-pub mod vehicle;
 
-pub use boss::EndCrystalEntity;
-pub use decoration::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity};
-pub use item::{ExperienceOrbEntity, ItemEntity};
-pub use passive::PigEntity;
-pub use projectile::{EnderPearlEntity, FireworkRocketEntity};
+pub use mobs::passive::{CowEntity, PigEntity};
+pub use objects::display_ui::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity};
+pub use objects::explosives::EndCrystalEntity;
+pub use objects::items::{ExperienceOrbEntity, ItemEntity};
+pub use objects::projectiles::{EnderPearlEntity, FireworkRocketEntity};
+pub use objects::vehicles::ChestMinecartEntity;
 pub use raw::RawEntity;
-pub use vehicle::ChestMinecartEntity;

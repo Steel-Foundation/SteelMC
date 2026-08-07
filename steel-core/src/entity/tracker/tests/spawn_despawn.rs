@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn spawn_pairing_includes_syncable_attributes() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let entity = PairingTestEntity::shared(vec![AttributeSnapshot {
         attribute_id: 7,
@@ -22,7 +22,7 @@ fn spawn_pairing_includes_syncable_attributes() {
 
 #[test]
 fn spawn_pairing_includes_non_empty_equipment() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let entity_typed = PairingTestEntity::new(1, Vec::new());
     let stack = ItemStack::new(&vanilla_items::ELYTRA);
@@ -41,7 +41,7 @@ fn spawn_pairing_includes_non_empty_equipment() {
 
 #[test]
 fn spawn_pairing_uses_entity_spawn_packet_position() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let entity: SharedEntity = Arc::new(LeashFenceKnotEntity::new_attached(
         &vanilla_entities::LEASH_KNOT,

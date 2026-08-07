@@ -4,11 +4,7 @@ use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::{BlockStateId, ChunkPos, SectionPos};
 
-use crate::chunk::{
-    chunk_access::{ChunkAccess, ChunkStatus},
-    chunk_holder::ChunkHolder,
-    section::ChunkSection,
-};
+use crate::chunk::{Chunk, chunk_holder::ChunkHolder, section::ChunkSection, status::ChunkStatus};
 
 use super::{
     CachedLightBlock, CachedLightChunk, ChunkLightData, ChunkLightLayerStorage,
@@ -50,7 +46,7 @@ impl LightWorkset {
         radius: LightCacheSetupRadius,
         relaxed: bool,
         mut chunk_for_lighting: impl FnMut(ChunkPos) -> Option<Arc<ChunkHolder>>,
-        mut can_use_chunk: impl FnMut(&ChunkAccess) -> bool,
+        mut can_use_chunk: impl FnMut(&Chunk) -> bool,
     ) -> Result<Self, LightWorksetSetupError> {
         Self::setup_with_scopes(
             layout,
@@ -70,7 +66,7 @@ impl LightWorkset {
         radius: LightCacheSetupRadius,
         relaxed: bool,
         mut chunk_for_lighting: impl FnMut(ChunkPos) -> Option<Arc<ChunkHolder>>,
-        mut can_use_chunk: impl FnMut(CachedLightChunk, &ChunkHolder, &ChunkAccess) -> (bool, bool),
+        mut can_use_chunk: impl FnMut(CachedLightChunk, &ChunkHolder, &Chunk) -> (bool, bool),
     ) -> Result<Self, LightWorksetSetupError> {
         let mut chunks = LightChunkSlotArray::new();
 
@@ -84,12 +80,10 @@ impl LightWorkset {
             let Some(chunk) = holder.try_chunk(ChunkStatus::Empty) else {
                 continue;
             };
-            let (section_readable, light_writable) = can_use_chunk(cached_chunk, &holder, &chunk);
+            let (section_readable, light_writable) = can_use_chunk(cached_chunk, &holder, chunk);
             if !section_readable && !light_writable {
                 continue;
             }
-            drop(chunk);
-
             chunks.insert(
                 cached_chunk,
                 LightWorksetChunk {
@@ -133,9 +127,8 @@ impl LightWorkset {
 
     /// Builds a chunk-read cache for the duration of `f`.
     ///
-    /// Chunk locks are acquired in cache-slot order and released before this
-    /// method returns. The workset keeps holder `Arc`s alive, while this cache
-    /// keeps guarded chunk data stable during the scoped operation.
+    /// The workset keeps holder `Arc`s alive, while this cache borrows the chunks
+    /// installed in their stable `OnceLock` storage for the scoped operation.
     pub fn with_chunk_read_cache<R>(&self, f: impl FnOnce(&LightChunkReadCache<'_>) -> R) -> R {
         let mut chunks = LightChunkSlotArray::new();
         let mut light_chunks = LightChunkSlotArray::new();
@@ -186,8 +179,8 @@ impl LightWorkset {
 /// Flat cached chunk reads for one scoped lighting operation.
 pub struct LightChunkReadCache<'a> {
     layout: LightCacheLayout,
-    chunks: LightChunkSlotArray<RwLockReadGuard<'a, ChunkAccess>>,
-    light_chunks: LightChunkSlotArray<RwLockReadGuard<'a, ChunkAccess>>,
+    chunks: LightChunkSlotArray<&'a Chunk>,
+    light_chunks: LightChunkSlotArray<&'a Chunk>,
 }
 
 impl LightChunkReadCache<'_> {
@@ -199,8 +192,8 @@ impl LightChunkReadCache<'_> {
 
     /// Returns the cached chunk for a chunk slot.
     #[must_use]
-    pub fn chunk(&self, cached_chunk: CachedLightChunk) -> Option<&ChunkAccess> {
-        self.chunks.get(cached_chunk).map(|chunk| &**chunk)
+    pub fn chunk(&self, cached_chunk: CachedLightChunk) -> Option<&Chunk> {
+        self.chunks.get(cached_chunk).copied()
     }
 
     /// Builds a section-read cache for the duration of `f`.
@@ -963,20 +956,19 @@ fn extrude_lower_row(section: &mut LightSection, row: Option<&[u8; 16 * 16]>) {
 mod tests {
     use std::sync::{Arc, Weak};
 
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::{BlockPos, SectionPos};
 
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::chunk::{
-        chunk_access::ChunkAccess,
+        Chunk,
         chunk_ticket_manager::ChunkTicketLevel,
-        proto_chunk::ProtoChunk,
         section::{ChunkSection, Sections},
     };
 
     fn init_tests() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
     }
 
@@ -989,7 +981,7 @@ mod tests {
 
     fn holder_with_section(pos: ChunkPos, section: ChunkSection) -> Arc<ChunkHolder> {
         let sections = Sections::from_owned(vec![section].into_boxed_slice());
-        let proto = ProtoChunk::new(sections, pos, 0, 16, Weak::new());
+        let proto = Chunk::new(sections, pos, 0, 16, Weak::new());
         let holder = Arc::new(ChunkHolder::new(
             pos,
             ChunkTicketLevel::FULL_CHUNK,
@@ -997,7 +989,7 @@ mod tests {
             0,
             16,
         ));
-        holder.insert_chunk(ChunkAccess::Proto(proto), ChunkStatus::Light);
+        holder.insert_chunk(proto, ChunkStatus::Light);
         holder
     }
 

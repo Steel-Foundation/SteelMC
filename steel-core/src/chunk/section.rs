@@ -844,7 +844,7 @@ impl ChunkSection {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
 
     use crate::behavior::init_behaviors;
@@ -856,7 +856,7 @@ mod tests {
     }
 
     fn init_test_behaviors() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
     }
 

@@ -6,9 +6,9 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction, Double
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, axis::Axis, types::UpdateFlags};
 
+use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::Vegetation;
-use crate::behavior::blocks::vegetation::default_surviving_state;
 use crate::behavior::blocks::vegetation::vegetation_block::double_plant_can_survive;
 use crate::behavior::context::{BlockPlaceContext, PlacementSource};
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
@@ -125,10 +125,10 @@ impl BlockBehavior for DoublePlantBlock {
         if !context
             .world
             .get_block_state(context.place_pos().above())
-            .is_replaceable()
+            .can_be_replaced(context)
         {
             return None;
         }
-        default_surviving_state(self.block, self, context)
+        Some(self.block.default_state())
     }
 }

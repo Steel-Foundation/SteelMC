@@ -7,19 +7,18 @@ use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{
-    test_support::init_test_registry, vanilla_blocks, vanilla_dimension_types, vanilla_fluids,
+    init_vanilla_registry, vanilla_blocks, vanilla_dimension_types, vanilla_fluids,
 };
 use steel_utils::types::{Difficulty, GameType, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, Identifier};
 use tokio::runtime::{Builder, Runtime};
 use toml::map::Map;
 
-use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
+use crate::chunk::Chunk;
 use crate::chunk::chunk_holder::{ChunkHolder, TickingReadiness};
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
-use crate::chunk::level_chunk::LevelChunk;
-use crate::chunk::proto_chunk::ProtoChunk;
 use crate::chunk::section::{ChunkSection, Sections};
+use crate::chunk::status::ChunkStatus;
 use crate::entity::Entity;
 use crate::level_data::WorldGenerationSettings;
 use crate::world::game_event::GameEventContext;
@@ -55,14 +54,14 @@ pub(crate) fn insert_ready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<
         .map(|_| ChunkSection::new_empty())
         .collect::<Vec<_>>()
         .into_boxed_slice();
-    let proto = ProtoChunk::new(
+    let proto = Chunk::new(
         Sections::from_owned(sections),
         pos,
         min_y,
         height,
         Arc::downgrade(world),
     );
-    let chunk = LevelChunk::from_proto(proto, min_y, height, Arc::downgrade(world)).chunk;
+    let _ = proto.promote_to_full();
     let holder = Arc::new(ChunkHolder::new(
         pos,
         ChunkTicketLevel::BLOCK_TICKING_CHUNK,
@@ -70,7 +69,7 @@ pub(crate) fn insert_ready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<
         min_y,
         height,
     ));
-    holder.insert_chunk(ChunkAccess::Full(chunk), ChunkStatus::Full);
+    holder.insert_chunk(proto, ChunkStatus::Full);
     assert_eq!(
         holder.transition_ticking_readiness(TickingReadiness::BlockTicking),
         Some(TickingReadiness::Unready)
@@ -146,7 +145,7 @@ fn create_test_world_with_difficulty(key: &'static str, difficulty: Difficulty) 
 }
 
 fn create_test_world_with_key(key: Identifier, difficulty: Difficulty) -> Arc<World> {
-    init_test_registry();
+    init_vanilla_registry();
     let resources = test_world_resources();
     let generator = Arc::new(ChunkGeneratorType::Empty(EmptyChunkGenerator::new()));
     let generator_config = toml::Value::Table(Map::new());

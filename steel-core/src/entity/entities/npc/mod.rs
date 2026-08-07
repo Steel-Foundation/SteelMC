@@ -1,1 +1,0 @@
-//! NPC entity implementations.

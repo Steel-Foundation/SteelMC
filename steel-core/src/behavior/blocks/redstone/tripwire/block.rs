@@ -257,7 +257,7 @@ mod tests {
     use std::sync::Arc;
 
     use glam::DVec3;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::{vanilla_blocks, vanilla_entities};
     use steel_utils::ChunkPos;
 
@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn entity_inside_powers_wire_and_attached_hooks() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("tripwire_entity_inside");
         let left = BlockPos::new(5, 64, 8);

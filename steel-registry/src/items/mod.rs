@@ -198,8 +198,7 @@ mod tests {
     use crate::{
         REGISTRY,
         data_components::vanilla_components::{ITEM_MODEL, ITEM_NAME},
-        test_support::init_test_registry,
-        vanilla_blocks, vanilla_items,
+        init_vanilla_registry, vanilla_blocks, vanilla_items,
     };
 
     #[test]
@@ -214,7 +213,7 @@ mod tests {
 
     #[test]
     fn extracted_block_item_associations_match_vanilla() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_eq!(
             REGISTRY.items.by_block(&vanilla_blocks::LEAF_LITTER),
@@ -240,7 +239,7 @@ mod tests {
 
     #[test]
     fn block_item_capability_includes_extracted_vanilla_subclasses() {
-        init_test_registry();
+        init_vanilla_registry();
 
         for item in [
             &*vanilla_items::STONE,

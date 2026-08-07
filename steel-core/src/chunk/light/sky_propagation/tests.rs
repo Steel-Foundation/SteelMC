@@ -1,21 +1,21 @@
 use std::sync::{Arc, Weak};
 
-use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+use steel_registry::{init_vanilla_registry, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
 
 use super::*;
 use crate::behavior::init_behaviors;
 use crate::chunk::{
-    chunk_access::{ChunkAccess, ChunkStatus},
+    Chunk,
     chunk_holder::ChunkHolder,
     chunk_ticket_manager::ChunkTicketLevel,
     light::{LightCacheSetupRadius, LightSection, LightSectionData, LightSectionRange},
-    proto_chunk::ProtoChunk,
     section::{ChunkSection, Sections},
+    status::ChunkStatus,
 };
 
 fn init_tests() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 }
 
@@ -32,7 +32,7 @@ fn holder_with_section(pos: ChunkPos, section: ChunkSection) -> Arc<ChunkHolder>
 
 fn holder_with_sections(pos: ChunkPos, sections: Vec<ChunkSection>) -> Arc<ChunkHolder> {
     let height = (sections.len() * 16) as i32;
-    let proto = ProtoChunk::new(
+    let proto = Chunk::new(
         Sections::from_owned(sections.into_boxed_slice()),
         pos,
         0,
@@ -47,7 +47,7 @@ fn holder_with_sections(pos: ChunkPos, sections: Vec<ChunkSection>) -> Arc<Chunk
         0,
         height,
     ));
-    holder.insert_chunk(ChunkAccess::Proto(proto), ChunkStatus::Light);
+    holder.insert_chunk(proto, ChunkStatus::Light);
     holder
 }
 
@@ -278,14 +278,14 @@ fn sky_light_changes_add_and_remove_air_column_shadow() {
     };
     assert!(
         chunk
-            .set_block_state(
+            .set_block_state_for_generation(
+                ChunkStatus::Light,
                 changed_pos,
                 vanilla_blocks::STONE.default_state(),
                 UpdateFlags::UPDATE_CLIENTS,
             )
             .is_some()
     );
-    drop(chunk);
 
     let Ok(workset) = LightWorkset::setup(
         layout,
@@ -318,14 +318,14 @@ fn sky_light_changes_add_and_remove_air_column_shadow() {
     };
     assert!(
         chunk
-            .set_block_state(
+            .set_block_state_for_generation(
+                ChunkStatus::Light,
                 changed_pos,
                 vanilla_blocks::AIR.default_state(),
                 UpdateFlags::UPDATE_CLIENTS,
             )
             .is_some()
     );
-    drop(chunk);
 
     let Ok(workset) = LightWorkset::setup(
         layout,

@@ -6,8 +6,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_items;
 use steel_registry::{
-    REGISTRY, test_support::init_test_registry, vanilla_attributes, vanilla_blocks,
-    vanilla_damage_types,
+    REGISTRY, init_vanilla_registry, vanilla_attributes, vanilla_blocks, vanilla_damage_types,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId};
@@ -120,7 +119,7 @@ impl DespawnTestMob {
         nearest_player_distance_sqr: Option<f64>,
         remove_when_far_away: bool,
     ) -> Self {
-        init_test_registry();
+        init_vanilla_registry();
 
         Self {
             base: EntityBase::new(id, position, entity_type.dimensions, Weak::new()),
@@ -548,7 +547,7 @@ fn mob_hurt_sound_resets_ambient_sound_time() {
 
 #[test]
 fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let mob =
@@ -575,7 +574,7 @@ fn mob_do_hurt_target_applies_attack_damage_and_records_target() {
 
 #[test]
 fn mob_do_hurt_target_applies_vanilla_extra_knockback() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let mob =
@@ -722,7 +721,7 @@ fn mob_home_restriction_uses_vanilla_radius() {
 
 #[test]
 fn ground_path_target_air_rewrites_to_surface_above_ground() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
     let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
@@ -736,7 +735,7 @@ fn ground_path_target_air_rewrites_to_surface_above_ground() {
 
 #[test]
 fn ground_path_target_solid_rewrites_to_first_open_block_above() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
     let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
