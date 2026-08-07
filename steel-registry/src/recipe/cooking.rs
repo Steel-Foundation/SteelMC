@@ -6,9 +6,9 @@ use crate::item_stack::ItemStack;
 
 use super::{Ingredient, RecipeResult};
 
-/// A furnace smelting recipe.
+/// A recipe for cooking/smelting items.
 #[derive(Debug)]
-pub struct SmeltingRecipe {
+pub struct CookingRecipe {
     pub id: Identifier,
     pub ingredient: Ingredient,
     pub result: RecipeResult,
@@ -16,7 +16,7 @@ pub struct SmeltingRecipe {
     pub cooking_time: i32,
 }
 
-impl SmeltingRecipe {
+impl CookingRecipe {
     /// Returns whether this smelting recipe accepts `input`.
     #[must_use]
     pub fn matches(&self, input: &ItemStack) -> bool {
@@ -49,7 +49,7 @@ mod tests {
     #[test]
     fn smelting_result_uses_input_count_when_requested() {
         init_test_registry();
-        let recipe = SmeltingRecipe {
+        let recipe = CookingRecipe {
             id: Identifier::vanilla_static("test"),
             ingredient: Ingredient::Item(&vanilla_items::RAW_IRON),
             result: RecipeResult {
@@ -69,7 +69,7 @@ mod tests {
     #[test]
     fn smelting_result_can_ignore_input_count() {
         init_test_registry();
-        let recipe = SmeltingRecipe {
+        let recipe = CookingRecipe {
             id: Identifier::vanilla_static("test"),
             ingredient: Ingredient::Item(&vanilla_items::RAW_IRON),
             result: RecipeResult {
