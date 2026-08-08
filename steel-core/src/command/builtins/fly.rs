@@ -1,8 +1,8 @@
 //! Steel player-flight command.
 
-use std::{slice, sync::Arc};
+use std::sync::Arc;
 
-use steel_utils::{Identifier, translations};
+use steel_utils::Identifier;
 use text_components::TextComponent;
 
 use super::super::{
@@ -23,28 +23,25 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("fly")
-        .executes(|context| toggle_flight_command(context, FlyTargets::Source))
+        .executes(|context| toggle_flight_command(context, None))
         .then_all([
             literal("target").then(
                 argument("targets", SteelArgumentType::players())
-                    .executes(|context| toggle_flight_command(context, FlyTargets::Argument))
+                    .executes(|context| toggle_flight_command(context, Some("targets")))
                     .then_all([
                         argument("value", ArgumentType::bool()).executes(set_target_flight),
                         literal("speed")
                             .executes(|context| {
-                                query_flying_speed_command(context, FlyTargets::Argument)
+                                query_flying_speed_command(context, Some("targets"))
                             })
                             .then(speed_argument().executes(|context| {
-                                set_flying_speed_command(context, FlyTargets::Argument)
+                                set_flying_speed_command(context, Some("targets"))
                             })),
                     ]),
             ),
             literal("speed")
-                .executes(|context| query_flying_speed_command(context, FlyTargets::Source))
-                .then(
-                    speed_argument()
-                        .executes(|context| set_flying_speed_command(context, FlyTargets::Source)),
-                ),
+                .executes(|context| query_flying_speed_command(context, None))
+                .then(speed_argument().executes(|context| set_flying_speed_command(context, None))),
         ])
 }
 
@@ -52,51 +49,12 @@ fn speed_argument() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     argument("speed", ArgumentType::float(0.0, MAX_FLY_SPEED_MULTIPLIER))
 }
 
-#[derive(Clone, Copy)]
-enum FlyTargets {
-    Source,
-    Argument,
-}
-
-enum ResolvedFlyTargets<'context> {
-    Source(&'context Arc<Player>),
-    Argument(Vec<Arc<Player>>),
-}
-
-impl ResolvedFlyTargets<'_> {
-    fn as_slice(&self) -> &[Arc<Player>] {
-        match self {
-            Self::Source(player) => slice::from_ref(player),
-            Self::Argument(players) => players,
-        }
-    }
-}
-
-impl FlyTargets {
-    fn resolve(
-        self,
-        context: &SteelCommandContext<CommandSource>,
-    ) -> Result<ResolvedFlyTargets<'_>, CommandSyntaxError> {
-        match self {
-            Self::Source => {
-                let Some(player) = context.source().player() else {
-                    return Err(CommandSyntaxError::dynamic(TextComponent::from(
-                        &translations::PERMISSIONS_REQUIRES_PLAYER,
-                    )));
-                };
-                Ok(ResolvedFlyTargets::Source(player))
-            }
-            Self::Argument => Ok(ResolvedFlyTargets::Argument(context.players("targets")?)),
-        }
-    }
-}
-
 fn toggle_flight_command(
     context: &SteelCommandContext<CommandSource>,
-    target_selection: FlyTargets,
+    targets_argument: Option<&str>,
 ) -> Result<i32, CommandSyntaxError> {
-    let targets = target_selection.resolve(context)?;
-    toggle_flight(targets.as_slice());
+    let targets = context.players_or_source(targets_argument)?;
+    toggle_flight(&targets);
     Ok(1)
 }
 
@@ -113,20 +71,20 @@ fn set_target_flight(
 
 fn query_flying_speed_command(
     context: &SteelCommandContext<CommandSource>,
-    target_selection: FlyTargets,
+    targets_argument: Option<&str>,
 ) -> Result<i32, CommandSyntaxError> {
-    let targets = target_selection.resolve(context)?;
-    query_flying_speed(context.source(), targets.as_slice());
+    let targets = context.players_or_source(targets_argument)?;
+    query_flying_speed(context.source(), &targets);
     Ok(1)
 }
 
 fn set_flying_speed_command(
     context: &SteelCommandContext<CommandSource>,
-    target_selection: FlyTargets,
+    targets_argument: Option<&str>,
 ) -> Result<i32, CommandSyntaxError> {
-    let targets = target_selection.resolve(context)?;
+    let targets = context.players_or_source(targets_argument)?;
     let multiplier = required_speed(context)?;
-    set_flying_speed(context.source(), targets.as_slice(), multiplier);
+    set_flying_speed(context.source(), &targets, multiplier);
     Ok(1)
 }
 

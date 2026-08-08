@@ -1,6 +1,6 @@
 //! Vanilla entity teleport command.
 
-use std::{slice, sync::Arc};
+use std::sync::Arc;
 
 use glam::DVec3;
 use steel_protocol::packets::game::{AnimateAction, CAnimate, CSetCamera, RelativeMovement};
@@ -74,22 +74,8 @@ enum TeleportTargets {
     Argument,
 }
 
-enum ResolvedTeleportTargets<'context> {
-    Source(&'context SharedEntity),
-    Argument(Vec<SharedEntity>),
-}
-
-impl ResolvedTeleportTargets<'_> {
-    fn as_slice(&self) -> &[SharedEntity] {
-        match self {
-            Self::Source(target) => slice::from_ref(target),
-            Self::Argument(targets) => targets,
-        }
-    }
-}
-
 struct ResolvedEntityTeleport<'context> {
-    targets: ResolvedTeleportTargets<'context>,
+    targets: std::borrow::Cow<'context, [SharedEntity]>,
     destination: SharedEntity,
 }
 
@@ -97,20 +83,11 @@ impl TeleportTargets {
     fn resolve(
         self,
         context: &SteelCommandContext<CommandSource>,
-    ) -> Result<ResolvedTeleportTargets<'_>, CommandSyntaxError> {
-        match self {
-            Self::Source => {
-                let Some(entity) = context.source().entity() else {
-                    return Err(CommandSyntaxError::dynamic(TextComponent::from(
-                        &translations::PERMISSIONS_REQUIRES_ENTITY,
-                    )));
-                };
-                Ok(ResolvedTeleportTargets::Source(entity))
-            }
-            Self::Argument => Ok(ResolvedTeleportTargets::Argument(
-                context.entities("targets")?,
-            )),
-        }
+    ) -> Result<std::borrow::Cow<'_, [SharedEntity]>, CommandSyntaxError> {
+        context.entities_or_source(match self {
+            Self::Source => None,
+            Self::Argument => Some("targets"),
+        })
     }
 
     fn resolve_entity(
@@ -138,7 +115,7 @@ fn teleport_to_entity(
     target_selection: TeleportTargets,
 ) -> Result<i32, CommandSyntaxError> {
     let resolved = target_selection.resolve_entity(context)?;
-    let targets = resolved.targets.as_slice();
+    let targets = resolved.targets.as_ref();
     let destination = resolved.destination;
     let Some(target_world) = destination.level() else {
         return Err(CommandSyntaxError::dynamic(
@@ -242,7 +219,7 @@ fn teleport_to_position(
     let destination = required_coordinates(context, "location")?;
     let resolved = variant.resolve(context)?;
     let targets = resolved.targets.resolve(context)?;
-    let targets = targets.as_slice();
+    let targets = targets.as_ref();
     let position = destination.position(source);
     ensure_spawnable_position(position)?;
     let resolved_rotation = resolved.rotation.map(|rotation| rotation.rotation(source));

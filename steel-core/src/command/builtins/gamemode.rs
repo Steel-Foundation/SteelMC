@@ -47,61 +47,20 @@ pub(super) fn registration() -> Result<CommandRegistration<CommandSource>, Comma
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("gamemode").then_chain([
         argument("gamemode", SteelArgumentType::game_mode())
-            .executes(|context| change_game_mode(context, GameModeTargets::Source)),
+            .executes(|context| change_game_mode(context, None)),
         argument("target", SteelArgumentType::players())
-            .executes(|context| change_game_mode(context, GameModeTargets::Argument)),
+            .executes(|context| change_game_mode(context, Some("target"))),
     ])
-}
-
-#[derive(Clone, Copy)]
-enum GameModeTargets {
-    Source,
-    Argument,
-}
-
-enum ResolvedGameModeTargets<'context> {
-    Source(&'context Arc<Player>),
-    Argument(Vec<Arc<Player>>),
-}
-
-impl ResolvedGameModeTargets<'_> {
-    fn as_slice(&self) -> &[Arc<Player>] {
-        match self {
-            Self::Source(player) => slice::from_ref(player),
-            Self::Argument(players) => players,
-        }
-    }
-}
-
-impl GameModeTargets {
-    fn resolve(
-        self,
-        context: &SteelCommandContext<CommandSource>,
-    ) -> Result<ResolvedGameModeTargets<'_>, CommandSyntaxError> {
-        match self {
-            Self::Source => {
-                let Some(player) = context.source().player() else {
-                    return Err(CommandSyntaxError::dynamic(TextComponent::from(
-                        &translations::PERMISSIONS_REQUIRES_PLAYER,
-                    )));
-                };
-                Ok(ResolvedGameModeTargets::Source(player))
-            }
-            Self::Argument => Ok(ResolvedGameModeTargets::Argument(
-                context.players("target")?,
-            )),
-        }
-    }
 }
 
 fn change_game_mode(
     context: &SteelCommandContext<CommandSource>,
-    target_selection: GameModeTargets,
+    targets_argument: Option<&str>,
 ) -> Result<i32, CommandSyntaxError> {
     let game_mode = required_game_mode(context)?;
     require_game_mode_permission(context.source(), game_mode)?;
-    let targets = target_selection.resolve(context)?;
-    set_game_mode(context.source(), targets.as_slice(), game_mode)
+    let targets = context.players_or_source(targets_argument)?;
+    set_game_mode(context.source(), &targets, game_mode)
 }
 
 fn required_game_mode(

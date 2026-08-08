@@ -1,7 +1,5 @@
 //! Entity killing command.
 
-use std::slice;
-
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
 
@@ -13,66 +11,25 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::entity::SharedEntity;
-
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("kill"), |_| command())
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("kill")
-        .executes(|context| kill(context, KillTargets::Source))
+        .executes(|context| kill(context, None))
         .then(
             argument("targets", SteelArgumentType::entities())
-                .executes(|context| kill(context, KillTargets::Argument)),
+                .executes(|context| kill(context, Some("targets"))),
         )
-}
-
-#[derive(Clone, Copy)]
-enum KillTargets {
-    Source,
-    Argument,
-}
-
-enum ResolvedKillTargets<'context> {
-    Source(&'context SharedEntity),
-    Argument(Vec<SharedEntity>),
-}
-
-impl ResolvedKillTargets<'_> {
-    fn as_slice(&self) -> &[SharedEntity] {
-        match self {
-            Self::Source(entity) => slice::from_ref(entity),
-            Self::Argument(entities) => entities,
-        }
-    }
-}
-
-impl KillTargets {
-    fn resolve(
-        self,
-        context: &SteelCommandContext<CommandSource>,
-    ) -> Result<ResolvedKillTargets<'_>, CommandSyntaxError> {
-        match self {
-            Self::Source => {
-                let Some(entity) = context.source().entity() else {
-                    return Err(CommandSyntaxError::dynamic(TextComponent::from(
-                        &translations::PERMISSIONS_REQUIRES_ENTITY,
-                    )));
-                };
-                Ok(ResolvedKillTargets::Source(entity))
-            }
-            Self::Argument => Ok(ResolvedKillTargets::Argument(context.entities("targets")?)),
-        }
-    }
 }
 
 fn kill(
     context: &SteelCommandContext<CommandSource>,
-    target_selection: KillTargets,
+    targets_argument: Option<&str>,
 ) -> Result<i32, CommandSyntaxError> {
-    let targets = target_selection.resolve(context)?;
-    let targets = targets.as_slice();
+    let targets = context.entities_or_source(targets_argument)?;
+    let targets = targets.as_ref();
     let Ok(result) = i32::try_from(targets.len()) else {
         return Err(CommandSyntaxError::dynamic(
             "Target count exceeds the command result range",

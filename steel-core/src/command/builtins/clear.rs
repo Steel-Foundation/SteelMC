@@ -1,6 +1,6 @@
 //! Vanilla player inventory clearing command.
 
-use std::{slice, sync::Arc};
+use std::sync::Arc;
 
 use steel_registry::item_stack::ItemStack;
 use steel_utils::{Identifier, translations};
@@ -22,10 +22,10 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("clear")
-        .executes(|context| clear_default(context, ClearTargets::Source))
+        .executes(|context| clear_default(context, None))
         .then_chain([
             argument("targets", SteelArgumentType::players())
-                .executes(|context| clear_default(context, ClearTargets::Argument)),
+                .executes(|context| clear_default(context, Some("targets"))),
             argument("item", SteelArgumentType::item_predicate())
                 .executes(|context| clear_matching(context, -1)),
             argument("maxCount", ArgumentType::integer(0, i32::MAX))
@@ -33,51 +33,12 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
         ])
 }
 
-#[derive(Clone, Copy)]
-enum ClearTargets {
-    Source,
-    Argument,
-}
-
-enum ResolvedClearTargets<'context> {
-    Source(&'context Arc<Player>),
-    Argument(Vec<Arc<Player>>),
-}
-
-impl ResolvedClearTargets<'_> {
-    fn as_slice(&self) -> &[Arc<Player>] {
-        match self {
-            Self::Source(player) => slice::from_ref(player),
-            Self::Argument(players) => players,
-        }
-    }
-}
-
-impl ClearTargets {
-    fn resolve(
-        self,
-        context: &SteelCommandContext<CommandSource>,
-    ) -> Result<ResolvedClearTargets<'_>, CommandSyntaxError> {
-        match self {
-            Self::Source => {
-                let Some(player) = context.source().player() else {
-                    return Err(CommandSyntaxError::dynamic(TextComponent::from(
-                        &translations::PERMISSIONS_REQUIRES_PLAYER,
-                    )));
-                };
-                Ok(ResolvedClearTargets::Source(player))
-            }
-            Self::Argument => Ok(ResolvedClearTargets::Argument(context.players("targets")?)),
-        }
-    }
-}
-
 fn clear_default(
     context: &SteelCommandContext<CommandSource>,
-    target_selection: ClearTargets,
+    targets_argument: Option<&str>,
 ) -> Result<i32, CommandSyntaxError> {
-    let targets = target_selection.resolve(context)?;
-    clear_players(context, targets.as_slice(), &matches_any_item, -1)
+    let targets = context.players_or_source(targets_argument)?;
+    clear_players(context, &targets, &matches_any_item, -1)
 }
 
 fn clear_matching_with_limit(

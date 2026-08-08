@@ -6,7 +6,7 @@
     )
 )]
 
-use std::sync::Arc;
+use std::{borrow::Cow, slice, sync::Arc};
 
 use crate::command::brigadier::{
     CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
@@ -371,6 +371,36 @@ where
 }
 
 impl SteelCommandContext<CommandSource> {
+    pub(crate) fn entities_or_source(
+        &self,
+        name: Option<&str>,
+    ) -> Result<Cow<'_, [SharedEntity]>, CommandSyntaxError> {
+        let Some(name) = name else {
+            let Some(entity) = self.source().entity() else {
+                return Err(CommandSyntaxError::dynamic(TextComponent::from(
+                    &translations::PERMISSIONS_REQUIRES_ENTITY,
+                )));
+            };
+            return Ok(Cow::Borrowed(slice::from_ref(entity)));
+        };
+        Ok(Cow::Owned(self.entities(name)?))
+    }
+
+    pub(crate) fn players_or_source(
+        &self,
+        name: Option<&str>,
+    ) -> Result<Cow<'_, [Arc<Player>]>, CommandSyntaxError> {
+        let Some(name) = name else {
+            let Some(player) = self.source().player() else {
+                return Err(CommandSyntaxError::dynamic(TextComponent::from(
+                    &translations::PERMISSIONS_REQUIRES_PLAYER,
+                )));
+            };
+            return Ok(Cow::Borrowed(slice::from_ref(player)));
+        };
+        Ok(Cow::Owned(self.players(name)?))
+    }
+
     pub(crate) fn score_holders(
         &self,
         name: &str,
