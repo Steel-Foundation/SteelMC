@@ -7,7 +7,7 @@ use crate::behavior::blocks::MultifaceBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
-use super::{BlockRef, default_surviving_state};
+use super::BlockRef;
 
 /// Vanilla `SculkVeinBlock` survival.
 ///
@@ -16,7 +16,7 @@ use super::{BlockRef, default_surviving_state};
 // TODO: Implement sculk spread, charge handling, and rotation/mirror overrides.
 #[block_behavior]
 pub struct SculkVeinBlock {
-    block: BlockRef,
+    _block: BlockRef,
     multiface: MultifaceBlock,
 }
 
@@ -25,7 +25,7 @@ impl SculkVeinBlock {
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self {
-            block,
+            _block: block,
             multiface: MultifaceBlock::new(block),
         }
     }
@@ -50,6 +50,10 @@ impl BlockBehavior for SculkVeinBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        default_surviving_state(self.block, self, context)
+        self.multiface.get_state_for_placement(context)
+    }
+
+    fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
+        self.multiface.can_be_replaced(state, context)
     }
 }
