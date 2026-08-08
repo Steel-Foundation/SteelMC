@@ -52,4 +52,8 @@ impl BlockBehavior for GlowLichenBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         self.multiface.get_state_for_placement(context)
     }
+
+    fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
+        self.multiface.can_be_replaced(state, context)
+    }
 }

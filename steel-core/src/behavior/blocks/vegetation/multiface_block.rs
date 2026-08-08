@@ -30,6 +30,7 @@ impl MultifaceBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
     /// Vanilla `MultifaceBlock.canAttachTo(level, directionTowardsNeighbor, neighborPos, neighborState)`.
     ///
     /// Returns whether the block at `neighbor_pos` has a full face on the side
@@ -44,6 +45,7 @@ impl MultifaceBlock {
         let block_state = world.get_block_state(neighbor_pos);
         Self::can_attach_to_state(world, direction_to_neighbor, neighbor_pos, block_state)
     }
+
     pub(super) fn can_attach_to_state(
         world: &dyn LevelReader,
         direction_to_neighbor: Direction,
@@ -77,6 +79,7 @@ impl MultifaceBlock {
             support_direction,
         )
     }
+
     /// Vanilla `MultifaceBlock.getFaceProperty(faceDirection)`.
     pub(super) const fn face_property(direction: Direction) -> &'static BoolProperty {
         match direction {
@@ -88,7 +91,8 @@ impl MultifaceBlock {
             Direction::West => &BlockStateProperties::WEST,
         }
     }
-    fn is_face_supported(_face_direction: Direction) -> bool {
+
+    const fn is_face_supported(_face_direction: Direction) -> bool {
         true
     }
 
@@ -100,7 +104,6 @@ impl MultifaceBlock {
         placement_pos: BlockPos,
         placement_direction: Direction,
     ) -> Option<BlockStateId> {
-        println!("2");
         if !Self::is_valid_state_for_placement(
             block,
             world,
@@ -108,7 +111,6 @@ impl MultifaceBlock {
             placement_pos,
             placement_direction,
         ) {
-            println!("3");
             return None;
         }
 
@@ -125,6 +127,7 @@ impl MultifaceBlock {
         new_state = new_state.set_value(Self::face_property(placement_direction), true);
         Some(new_state)
     }
+
     fn is_valid_state_for_placement(
         block: BlockRef,
         world: &Arc<World>,
@@ -135,7 +138,6 @@ impl MultifaceBlock {
         if Self::is_face_supported(placement_direction)
             && (old_state.get_block() != block || !Self::has_face(old_state, placement_direction))
         {
-            println!("zdd");
             let neighbor_pos = placement_pos.relative(placement_direction);
             return Self::can_attach_to_state(
                 world,
@@ -144,9 +146,9 @@ impl MultifaceBlock {
                 world.get_block_state(neighbor_pos),
             );
         }
-        println!("xddd");
         false
     }
+
     fn has_face(state: BlockStateId, direction: Direction) -> bool {
         state
             .try_get_value(Self::face_property(direction))
@@ -164,6 +166,7 @@ impl MultifaceBlock {
             .iter()
             .any(|direction| !Self::has_face(state, *direction))
     }
+
     fn remove_face(state: BlockStateId, property: &BoolProperty) -> BlockStateId {
         let new_state = state.set_value(property, false);
         if Self::has_any_face(new_state) {
@@ -175,11 +178,6 @@ impl MultifaceBlock {
 
 impl BlockBehavior for MultifaceBlock {
     /// Vanilla `MultifaceBlock.canSurvive`.
-    ///
-    /// Every direction whose face property is `true` must have a neighbor that
-    /// allows attachment, and at least one face must be set. Subclasses without a
-    /// face property for a given direction (vanilla's `isFaceSupported`) treat that
-    /// face as not set, hence `try_get_value(...).unwrap_or(false)`.
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let mut has_at_least_one_face = false;
         for direction in Direction::ALL {
@@ -192,14 +190,13 @@ impl BlockBehavior for MultifaceBlock {
         }
         has_at_least_one_face
     }
+
     ///Vanilla `MultifaceBlock.getStateForPlacement`
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let level = context.world;
         let place_pos = if context.replaces_clicked_block() {
-            println!("111111111111");
             context.hit_pos()
         } else {
-            println!("222222222222");
             context.place_pos()
         };
         let old_state = level.get_block_state(place_pos);
@@ -207,13 +204,14 @@ impl BlockBehavior for MultifaceBlock {
         context
             .get_nearest_looking_directions()
             .iter()
-            .filter_map(|direction| {
+            .find_map(|direction| {
                 MultifaceBlock::get_state_for_placement_with_dir(
                     self.block, old_state, level, place_pos, *direction,
                 )
             })
-            .next()
     }
+
+    ///Vanilla `MultifaceBlock.updateShape`
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -223,7 +221,6 @@ impl BlockBehavior for MultifaceBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        println!("xdddddddddddddd");
         schedule_water_tick_if_waterlogged(state, world, pos);
 
         if !MultifaceBlock::has_any_face(state) {
@@ -237,11 +234,10 @@ impl BlockBehavior for MultifaceBlock {
         }
         state
     }
+
+    ///Vanilla `MultifaceBlock.canBeReplaced`
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
-        let result = !context
-            .with_item(|item| item.item() == REGISTRY.items.by_block(state.get_block()))
-            || Self::has_any_vacant_face(state);
-        print!("zddd {result}");
-        result
+        !context.with_item(|item| item.item() == REGISTRY.items.by_block(state.get_block()))
+            || Self::has_any_vacant_face(state)
     }
 }
