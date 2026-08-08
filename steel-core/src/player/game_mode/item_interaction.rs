@@ -193,18 +193,19 @@ impl Player {
 
         let current_rotation = self.rotation();
         // Vanilla entity setters discard each non-finite rotation component independently.
-        let target_yaw = if packet.y_rot.is_finite() {
-            wrap_degrees(packet.y_rot)
-        } else {
-            current_rotation.0
+        let target_component = |value: f32, current: f32| {
+            if value.is_finite() {
+                wrap_degrees(value)
+            } else {
+                current
+            }
         };
-        let target_pitch = if packet.x_rot.is_finite() {
-            wrap_degrees(packet.x_rot)
-        } else {
-            current_rotation.1
-        };
-        if current_rotation != (target_yaw, target_pitch) {
-            self.set_rotation((target_yaw, target_pitch));
+        let target_rotation = (
+            target_component(packet.y_rot, current_rotation.0),
+            target_component(packet.x_rot, current_rotation.1),
+        );
+        if target_rotation != current_rotation {
+            self.set_rotation(target_rotation);
         }
 
         let world = self.get_world();
@@ -242,29 +243,19 @@ mod tests {
             .set_selected_item(ItemStack::new(&vanilla_items::STICK));
         player.set_rotation((10.0, 20.0));
 
-        player.handle_use_item(SUseItem {
-            hand: InteractionHand::MainHand,
-            sequence: 1,
-            y_rot: f32::NAN,
-            x_rot: 30.0,
-        });
-        assert_eq!(player.rotation(), (10.0, 30.0));
-
-        player.handle_use_item(SUseItem {
-            hand: InteractionHand::MainHand,
-            sequence: 2,
-            y_rot: 40.0,
-            x_rot: f32::INFINITY,
-        });
-        assert_eq!(player.rotation(), (40.0, 30.0));
-
-        player.handle_use_item(SUseItem {
-            hand: InteractionHand::MainHand,
-            sequence: 3,
-            y_rot: f32::NEG_INFINITY,
-            x_rot: f32::NAN,
-        });
-        assert_eq!(player.rotation(), (40.0, 30.0));
+        for (sequence, y_rot, x_rot, expected) in [
+            (1, f32::NAN, 30.0, (10.0, 30.0)),
+            (2, 40.0, f32::INFINITY, (40.0, 30.0)),
+            (3, f32::NEG_INFINITY, f32::NAN, (40.0, 30.0)),
+        ] {
+            player.handle_use_item(SUseItem {
+                hand: InteractionHand::MainHand,
+                sequence,
+                y_rot,
+                x_rot,
+            });
+            assert_eq!(player.rotation(), expected);
+        }
         assert!(!player.connection.closed());
     }
 }
