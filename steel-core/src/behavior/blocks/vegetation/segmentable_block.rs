@@ -55,7 +55,7 @@ fn segmentable_placement_state(
 mod tests {
     use glam::DVec3;
     use steel_registry::item_stack::ItemStack;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
     use steel_utils::{BlockPos, types::InteractionHand};
 
     use super::*;
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn placement_uses_horizontal_direction_and_preserves_existing_facing() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let placed = segmentable_placement_state(
             &vanilla_blocks::LEAF_LITTER,
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn replacement_matches_vanilla_segmentable_and_default_rules() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let leaf_litter = vanilla_blocks::LEAF_LITTER.default_state();
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn only_flower_beds_are_bonemealable() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         assert!(

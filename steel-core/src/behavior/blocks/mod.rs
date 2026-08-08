@@ -18,8 +18,8 @@ pub use building::{
     CampfireBlock, CauldronBlock, ComposterBlock, DoorBlock, FenceBlock, FenceGateBlock,
     GlazedTerracottaBlock, HayBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock,
     LavaCauldronBlock, LayeredCauldronBlock, MagmaBlock, MudBlock, PotentSulfurBlock,
-    PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SpongeBlock,
-    StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState,
+    PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock,
+    SpongeBlock, StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState,
     WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
     WeatheringCopperFullBlock, WeatheringCopperGrateBlock, WeatheringCopperSlabBlock,
     WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
@@ -48,7 +48,7 @@ pub use vegetation::{
     AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock,
     CactusFlowerBlock, CarrotBlock, CocoaBlock, CoralBlock, CropBlock, DoublePlantBlock,
     FlowerBlock, MangroveLeavesBlock, NetherSproutsBlock, NetherWartBlock, PitcherCropBlock,
-    PotatoBlock, RootedDirtBlock, SeagrassBlock, SugarCaneBlock, SweetBerryBushBlock,
+    PotatoBlock, PumpkinBlock, RootedDirtBlock, SeagrassBlock, SugarCaneBlock, SweetBerryBushBlock,
     TallFlowerBlock, TallGrassBlock, TallSeagrassBlock, TintedParticleLeavesBlock,
     TorchflowerCropBlock, UntintedParticleLeavesBlock,
 };
@@ -61,6 +61,7 @@ pub use vegetation::{
     KelpBlock, KelpPlantBlock, LeafLitterBlock, LilyPadBlock, MangrovePropaguleBlock,
     MossyCarpetBlock, MushroomBlock, NetherFungusBlock, NetherRootsBlock, PointedDripstoneBlock,
     SaplingBlock, SculkVeinBlock, SeaPickleBlock, ShortDryGrassBlock, SmallDripleafBlock,
-    SnowLayerBlock, SporeBlossomBlock, SulfurSpikeBlock, TallDryGrassBlock, TwistingVinesBlock,
+    SporeBlossomBlock, SulfurSpikeBlock, TallDryGrassBlock, TwistingVinesBlock,
     TwistingVinesPlantBlock, VineBlock, WeepingVinesBlock, WeepingVinesPlantBlock, WitherRoseBlock,
+    WoolCarpetBlock,
 };

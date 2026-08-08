@@ -19,8 +19,8 @@ use std::io::Cursor;
 use std::thread;
 use steel_protocol::packet_traits::CompressionInfo;
 use steel_registry::{
+    init_vanilla_registry,
     packets::play::{C_BLOCK_CHANGED_ACK, C_BLOCK_UPDATE},
-    test_support::init_test_registry,
     vanilla_blocks,
     vanilla_dimension_types::OVERWORLD,
     vanilla_fluids,
@@ -202,7 +202,7 @@ fn assert_postprocessing_drained(holder: &ChunkHolder) {
 }
 
 fn test_chunk_map() -> Arc<ChunkMap> {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     Arc::new(ChunkMap::new_with_storage(
         Arc::new(Runtime::new().expect("test runtime should initialize")),

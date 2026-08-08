@@ -258,7 +258,7 @@ mod tests {
 
     use super::{MapDecorationEntry, MapDecorations};
     use crate::data_components::vanilla_components::MAP_DECORATIONS;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt, RegistryReference, vanilla_items};
 
     fn parse(tag: NbtTag) -> Option<MapDecorations> {
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn decoration_maps_round_trip_codec_derived_network_and_hash() {
-        init_test_registry();
+        init_vanilla_registry();
         let player = REGISTRY
             .map_decoration_types
             .by_key(&steel_utils::Identifier::vanilla_static("player"))
@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn extracted_filled_map_has_empty_decorations() {
-        init_test_registry();
+        init_vanilla_registry();
         let filled_map = REGISTRY
             .items
             .by_key(&vanilla_items::FILLED_MAP.key)
@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     fn entry_equality_matches_java_record_float_semantics() {
-        init_test_registry();
+        init_vanilla_registry();
         let player = REGISTRY
             .map_decoration_types
             .by_key(&steel_utils::Identifier::vanilla_static("player"))

@@ -204,14 +204,14 @@ impl Bonemealable for CaveVinesBlock {
 #[cfg(test)]
 mod tests {
     use rand::{SeedableRng as _, rngs::StdRng};
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::test_support::TestLevel;
 
     #[test]
     fn head_conversion_preserves_berries() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = CaveVinesBlock::new(&vanilla_blocks::CAVE_VINES);
         let state = vanilla_blocks::CAVE_VINES
@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn grown_head_rolls_berries_independently() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let state = vanilla_blocks::CAVE_VINES.default_state();
         let mut rng = StdRng::seed_from_u64(1);
@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn clone_item_is_glow_berries() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = CaveVinesBlock::new(&vanilla_blocks::CAVE_VINES);
         let item = behavior

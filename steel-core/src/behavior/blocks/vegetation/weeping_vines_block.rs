@@ -116,14 +116,14 @@ impl Bonemealable for WeepingVinesBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::test_support::TestLevel;
 
     #[test]
     fn bonemeal_target_requires_open_growth_position() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = WeepingVinesBlock::new(&vanilla_blocks::WEEPING_VINES);
         let state = vanilla_blocks::WEEPING_VINES.default_state();
@@ -139,7 +139,7 @@ mod tests {
 
     #[test]
     fn connected_head_converts_to_body() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = WeepingVinesBlock::new(&vanilla_blocks::WEEPING_VINES);
         let state = vanilla_blocks::WEEPING_VINES.default_state();

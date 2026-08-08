@@ -162,7 +162,7 @@ impl BlockBehavior for SugarCaneBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use crate::test_support::TestLevel;
 
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn sugar_cane_update_shape_schedules_break_tick_when_unsupported() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = SugarCaneBlock::new(&vanilla_blocks::SUGAR_CANE);
         let level = TestLevel::default();
         let state = vanilla_blocks::SUGAR_CANE.default_state();

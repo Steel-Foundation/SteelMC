@@ -7,8 +7,8 @@ use steel_registry::{
         components::PotionContents,
         vanilla_components::{CUSTOM_NAME, POTION_CONTENTS, REPAIR_COST},
     },
+    init_vanilla_registry,
     item_stack::ItemStack,
-    test_support::init_test_registry,
     vanilla_blocks, vanilla_enchantments, vanilla_entities, vanilla_items,
 };
 use steel_utils::Downcast as _;
@@ -37,7 +37,7 @@ fn test_player(world: Arc<World>) -> Arc<Player> {
 }
 
 fn test_anvil(key: &'static str) -> (Arc<World>, Arc<Player>, BlockPos, Menu) {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world(key);
     let pos = BlockPos::new(0, 64, 0);

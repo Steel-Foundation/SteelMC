@@ -1,4 +1,5 @@
 use steel_macros::block_behavior;
+use steel_registry::DyeColor;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -34,6 +35,49 @@ impl BlockBehavior for CarpetBlock {
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
         // Vanilla `CarpetBlock.updateShape`: break when support is removed.
+        survival_update_shape(self, state, world, pos)
+    }
+
+    fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        !world.get_block_state(pos.below()).is_air()
+    }
+
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        default_surviving_state(self.block, self, context)
+    }
+}
+
+/// Vanilla `WoolCarpetBlock` behavior for dyed wool carpets.
+#[block_behavior]
+pub struct WoolCarpetBlock {
+    block: BlockRef,
+    #[json_arg(
+        r#enum = "DyeColor",
+        json = "color",
+        module = "steel_registry::dye_color"
+    )]
+    #[expect(unused, reason = "Stored for dye color reference")]
+    color: DyeColor,
+}
+
+impl WoolCarpetBlock {
+    /// Creates a new wool carpet block behavior.
+    #[must_use]
+    pub const fn new(block: BlockRef, color: DyeColor) -> Self {
+        Self { block, color }
+    }
+}
+
+impl BlockBehavior for WoolCarpetBlock {
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        _direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
         survival_update_shape(self, state, world, pos)
     }
 

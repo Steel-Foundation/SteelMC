@@ -197,8 +197,7 @@ mod tests {
 
     use steel_registry::{
         blocks::{block_state_ext::BlockStateExt as _, properties::BlockStateProperties},
-        test_support::init_test_registry,
-        vanilla_blocks, vanilla_fluids,
+        init_vanilla_registry, vanilla_blocks, vanilla_fluids,
     };
     use steel_utils::{BlockPos, ChunkPos};
 
@@ -214,7 +213,7 @@ mod tests {
     use crate::world::tick_scheduler::TickPriority;
 
     fn init_tests() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
     }
 

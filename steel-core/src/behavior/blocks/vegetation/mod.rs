@@ -55,6 +55,7 @@ mod nether_wart;
 mod pitcher_crop;
 mod pointed_dripstone_block;
 mod potato;
+mod pumpkin_block;
 mod rooted_dirt_block;
 mod sapling_block;
 mod sculk_vein_block;
@@ -63,7 +64,6 @@ mod seagrass_block;
 mod segmentable_block;
 mod short_dry_grass_block;
 mod small_dripleaf_block;
-mod snow_layer_block;
 mod spore_blossom_block;
 mod sugar_cane;
 mod sweet_berry_bush;
@@ -92,7 +92,7 @@ pub use big_dripleaf_stem_block::BigDripleafStemBlock;
 pub use bush_block::BushBlock;
 pub use cactus_block::CactusBlock;
 pub use cactus_flower_block::CactusFlowerBlock;
-pub use carpet_block::CarpetBlock;
+pub use carpet_block::{CarpetBlock, WoolCarpetBlock};
 pub use carrot::CarrotBlock;
 pub use cave_vines_block::CaveVinesBlock;
 pub use cave_vines_plant_block::CaveVinesPlantBlock;
@@ -130,9 +130,12 @@ pub use nether_roots_block::NetherRootsBlock;
 pub use nether_sprouts::NetherSproutsBlock;
 pub use nether_wart::NetherWartBlock;
 pub use pitcher_crop::PitcherCropBlock;
-pub use pointed_dripstone_block::{PointedDripstoneBlock, SulfurSpikeBlock};
+pub use pointed_dripstone_block::{
+    PointedDripstoneBlock, SulfurSpikeBlock, find_stalactite_tip_above_cauldron,
+    get_cauldron_fill_fluid_type,
+};
 pub use potato::PotatoBlock;
-use rand::{Rng, RngExt};
+pub use pumpkin_block::PumpkinBlock;
 pub use rooted_dirt_block::RootedDirtBlock;
 pub use sapling_block::SaplingBlock;
 pub use sculk_vein_block::SculkVeinBlock;
@@ -140,7 +143,6 @@ pub use sea_pickle_block::SeaPickleBlock;
 pub use seagrass_block::SeagrassBlock;
 pub use short_dry_grass_block::ShortDryGrassBlock;
 pub use small_dripleaf_block::SmallDripleafBlock;
-pub use snow_layer_block::SnowLayerBlock;
 pub use spore_blossom_block::SporeBlossomBlock;
 pub use sugar_cane::SugarCaneBlock;
 pub use sweet_berry_bush::SweetBerryBushBlock;
@@ -157,6 +159,7 @@ pub use weeping_vines_block::WeepingVinesBlock;
 pub use weeping_vines_plant_block::WeepingVinesPlantBlock;
 pub use wither_rose_block::WitherRoseBlock;
 
+use rand::{Rng, RngExt};
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::blocks::shapes::{self, SupportType, is_block_local_face_sturdy};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
@@ -474,7 +477,7 @@ pub(super) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::behavior::init_behaviors;
@@ -482,7 +485,7 @@ mod tests {
 
     #[test]
     fn multiface_update_uses_supplied_neighbor_state_and_schedules_water_first() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let pos = BlockPos::new(0, 64, 0);
         let state = vanilla_blocks::GLOW_LICHEN
