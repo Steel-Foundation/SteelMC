@@ -71,7 +71,7 @@ fn downstream_commands_can_register_primitive_keyed_and_suspended_nodes() {
 
     let command = CommandRegistration::new(Identifier::new("steel_test", "extension"), || {
         literal("extension")
-            .then(
+            .then_children([
                 argument("value", CommandArgument::custom(NegatedBooleanParser)).executes(
                     |context| {
                         let Some(value) = context.value::<NegatedBoolean>("value") else {
@@ -84,8 +84,9 @@ fn downstream_commands_can_register_primitive_keyed_and_suspended_nodes() {
                         Ok(i32::from(value.0))
                     },
                 ),
-            )
-            .then(literal("wait").executes_suspended(|_| Ok(ReadySuspension)))
+                literal("wait").executes_suspended(|_| Ok(ReadySuspension)),
+            ])
+            .then_path([literal("nested"), literal("leaf").executes(|_| Ok(1))])
     })
     .alias("extension_alias")
     .subcommand_permission(["wait"]);

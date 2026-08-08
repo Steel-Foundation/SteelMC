@@ -179,6 +179,24 @@ impl CommandNode {
         self
     }
 
+    /// Adds a linear descendant path in declaration order.
+    #[must_use]
+    pub fn then_path(mut self, descendants: impl IntoIterator<Item = Self>) -> Self {
+        self.inner = self
+            .inner
+            .then_path(descendants.into_iter().map(|node| node.inner));
+        self
+    }
+
+    /// Adds sibling children while preserving declaration order.
+    #[must_use]
+    pub fn then_children(mut self, children: impl IntoIterator<Item = Self>) -> Self {
+        self.inner = self
+            .inner
+            .then_children(children.into_iter().map(|node| node.inner));
+        self
+    }
+
     /// Attaches a synchronous terminal executor.
     #[must_use]
     pub fn executes(
