@@ -21,9 +21,165 @@ use super::TranspilerInput;
 use super::bounds::compute_bounds;
 use super::context::TranspileContext;
 use super::fingerprint::{collect_expensive_subexprs, fingerprint, is_cse_candidate};
-use super::naming::{named_fn_field_ident, named_fn_ident, named_fn_ident_4x, noise_field_ident};
+use super::naming::{
+    named_fn_field_ident, named_fn_ident, named_fn_ident_4x, named_fn_ident_xz, noise_field_ident,
+};
 
 impl TranspileContext {
+    /// Generate a flat density expression for all 25 quart positions in a
+    /// chunk at once. `xs` and `zs` are lane-varying; there is deliberately no
+    /// Y coordinate in this path.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "keeping density variants together makes the generated SIMD behavior auditable"
+    )]
+    pub(super) fn gen_expr_xz(
+        &mut self,
+        df: &DensityFunction,
+        input: &TranspilerInput,
+    ) -> TokenStream {
+        match df {
+            DensityFunction::Constant(c) => {
+                let value = Literal::f64_unsuffixed(c.value);
+                quote! { Simd::splat(#value) }
+            }
+            DensityFunction::Noise(n) if n.y_scale == 0.0 => {
+                let field = noise_field_ident(&n.noise_id);
+                let scale = Literal::f64_unsuffixed(n.xz_scale);
+                quote! {
+                    noises.#field.get_value_simd(
+                        xs * Simd::splat(#scale),
+                        Simd::splat(0.0),
+                        zs * Simd::splat(#scale),
+                    )
+                }
+            }
+            DensityFunction::ShiftA(s) => {
+                let field = noise_field_ident(&s.noise_id);
+                quote! {
+                    noises.#field.get_value_simd(
+                        xs * Simd::splat(0.25), Simd::splat(0.0),
+                        zs * Simd::splat(0.25),
+                    ) * Simd::splat(4.0)
+                }
+            }
+            DensityFunction::ShiftB(s) => {
+                let field = noise_field_ident(&s.noise_id);
+                quote! {
+                    noises.#field.get_value_simd(
+                        zs * Simd::splat(0.25), xs * Simd::splat(0.25),
+                        Simd::splat(0.0),
+                    ) * Simd::splat(4.0)
+                }
+            }
+            DensityFunction::ShiftedNoise(sn) if sn.y_scale == 0.0 => {
+                let dx = self.gen_expr_xz(&sn.shift_x, input);
+                let dz = self.gen_expr_xz(&sn.shift_z, input);
+                let field = noise_field_ident(&sn.noise_id);
+                let scale = Literal::f64_unsuffixed(sn.xz_scale);
+                quote! {
+                    noises.#field.get_value_simd(
+                        xs * Simd::splat(#scale) + (#dx),
+                        Simd::splat(0.0),
+                        zs * Simd::splat(#scale) + (#dz),
+                    )
+                }
+            }
+            DensityFunction::Mapped(m) => {
+                let value = self.gen_expr_xz(&m.input, input);
+                match m.op {
+                    MappedType::Abs => quote! { (#value).abs() },
+                    MappedType::Square => quote! {{ let v = #value; v * v }},
+                    MappedType::Cube => quote! {{ let v = #value; v * v * v }},
+                    MappedType::HalfNegative => quote! {{
+                        let v = #value;
+                        v.simd_gt(Simd::splat(0.0)).select(v, v * Simd::splat(0.5))
+                    }},
+                    MappedType::QuarterNegative => quote! {{
+                        let v = #value;
+                        v.simd_gt(Simd::splat(0.0)).select(v, v * Simd::splat(0.25))
+                    }},
+                    MappedType::Invert => quote! { Simd::splat(1.0) / (#value) },
+                    MappedType::Squeeze => quote! {{
+                        let v = (#value).simd_max(Simd::splat(-1.0)).simd_min(Simd::splat(1.0));
+                        v / Simd::splat(2.0) - v * v * v / Simd::splat(24.0)
+                    }},
+                }
+            }
+            DensityFunction::Clamp(c) => {
+                let value = self.gen_expr_xz(&c.input, input);
+                let min = Literal::f64_unsuffixed(c.min);
+                let max = Literal::f64_unsuffixed(c.max);
+                quote! { (#value).simd_max(Simd::splat(#min)).simd_min(Simd::splat(#max)) }
+            }
+            DensityFunction::TwoArgumentSimple(t) => {
+                let a = self.gen_expr_xz(&t.argument1, input);
+                let b = self.gen_expr_xz(&t.argument2, input);
+                match t.op {
+                    TwoArgType::Add => quote! { (#a) + (#b) },
+                    TwoArgType::Mul => quote! { (#a) * (#b) },
+                    TwoArgType::Min => quote! { (#a).simd_min(#b) },
+                    TwoArgType::Max => quote! { (#a).simd_max(#b) },
+                }
+            }
+            DensityFunction::Reference(r) if self.flat_cached.contains(&r.id) => {
+                let field = named_fn_field_ident(&r.id);
+                quote! { xz_cache.#field }
+            }
+            DensityFunction::Reference(r) => {
+                let function = named_fn_ident_xz(&r.id);
+                quote! { #function(noises, cache, xz_cache, xs, zs) }
+            }
+            DensityFunction::Marker(m) => self.gen_expr_xz(&m.wrapped, input),
+            DensityFunction::BlendDensity(b) => self.gen_expr_xz(&b.input, input),
+            DensityFunction::BlendAlpha(_) => quote! { Simd::splat(1.0) },
+            DensityFunction::BlendOffset(_) => quote! { Simd::splat(0.0) },
+            DensityFunction::RangeChoice(r) => {
+                let value = self.gen_expr_xz(&r.input, input);
+                let in_range = self.gen_expr_xz(&r.when_in_range, input);
+                let out_of_range = self.gen_expr_xz(&r.when_out_of_range, input);
+                let min = Literal::f64_unsuffixed(r.min_inclusive);
+                let max = Literal::f64_unsuffixed(r.max_exclusive);
+                quote! {{
+                    let v = #value;
+                    (v.simd_ge(Simd::splat(#min)) & v.simd_lt(Simd::splat(#max)))
+                        .select(#in_range, #out_of_range)
+                }}
+            }
+            _ => self.gen_expr_xz_scalar_fallback(df, input),
+        }
+    }
+
+    fn gen_expr_xz_scalar_fallback(
+        &mut self,
+        df: &DensityFunction,
+        input: &TranspilerInput,
+    ) -> TokenStream {
+        let scalar = self.gen_expr(df, input, true);
+        let active_fields: Vec<_> = self
+            .topo_order
+            .iter()
+            .filter(|name| self.flat_cached.contains(*name))
+            .map(|name| {
+                let field = named_fn_field_ident(name);
+                quote! { cache.#field = xz_cache.#field[lane]; }
+            })
+            .collect();
+        let lanes: Vec<_> = (0_usize..25)
+            .map(|lane| {
+                let lane = Literal::usize_unsuffixed(lane);
+                quote! {{
+                    let lane = #lane;
+                    #(#active_fields)*
+                    let x = xs[lane];
+                    let z = zs[lane];
+                    #scalar
+                }}
+            })
+            .collect();
+        quote! { Simd::from_array([#(#lanes),*]) }
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "one match arm per DensityFunction variant; splitting the dispatch would obscure the per-variant codegen"

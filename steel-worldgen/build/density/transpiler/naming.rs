@@ -22,6 +22,10 @@ pub(super) fn named_fn_ident_4x(name: &str) -> Ident {
     format_ident!("compute_{}_4x", sanitize_name(name))
 }
 
+pub(super) fn named_fn_ident_xz(name: &str) -> Ident {
+    format_ident!("compute_{}_xz", sanitize_name(name))
+}
+
 pub(super) fn grid_field_ident(name: &str) -> Ident {
     format_ident!("grid_df_{}", sanitize_name(name))
 }
@@ -36,6 +40,10 @@ pub(super) fn router_grid_field_ident(name: &str) -> Ident {
 
 pub(super) fn router_compute_fn_ident(name: &str) -> Ident {
     format_ident!("compute_router_{}", sanitize_name(name))
+}
+
+pub(super) fn router_compute_fn_ident_xz(name: &str) -> Ident {
+    format_ident!("compute_router_{}_xz", sanitize_name(name))
 }
 
 /// Converts a namespaced ID to a valid Rust identifier.

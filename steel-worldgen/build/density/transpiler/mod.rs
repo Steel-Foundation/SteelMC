@@ -92,6 +92,7 @@ pub fn transpile(input: &TranspilerInput) -> TokenStream {
     // when wrapped in a module by the caller.
     quote! {
         use std::simd::f64x4;
+        use std::simd::Simd;
         use std::simd::Select;
         use std::simd::cmp::SimdPartialOrd;
         use std::simd::num::SimdFloat;

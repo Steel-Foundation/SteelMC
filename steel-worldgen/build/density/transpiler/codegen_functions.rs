@@ -16,8 +16,8 @@ use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::graph::{collect_interpolated_inners, is_flat_cached, unwrap_markers};
 use super::naming::{
-    named_fn_ident, named_fn_ident_4x, router_cache_field_ident, router_compute_fn_ident,
-    sanitize_name,
+    named_fn_ident, named_fn_ident_4x, named_fn_ident_xz, router_cache_field_ident,
+    router_compute_fn_ident, router_compute_fn_ident_xz, sanitize_name,
 };
 
 impl TranspileContext {
@@ -41,6 +41,27 @@ impl TranspileContext {
                 #[doc = #doc]
                 #[inline]
                 fn #fn_name(#params) -> f64 {
+                    #body
+                }
+            });
+        }
+
+        // Flat functions also get a 25-lane X/Z form used to initialize the
+        // complete 5x5 quart grid in one call.
+        let mut fns_xz = Vec::new();
+        for name in self.topo_order.clone() {
+            if !self.flat_cached.contains(&name) {
+                continue;
+            }
+            let Some(df) = input.registry.get(&name) else {
+                continue;
+            };
+            let body = self.gen_expr_xz(unwrap_markers(df), input);
+            let fn_name = named_fn_ident_xz(&name);
+            let params = self.fn_params_xz();
+            fns_xz.push(quote! {
+                #[inline]
+                fn #fn_name(#params) -> Simd<f64, 25> {
                     #body
                 }
             });
@@ -84,6 +105,7 @@ impl TranspileContext {
         quote! {
             #(#fns)*
             #(#spline_fns)*
+            #(#fns_xz)*
             #(#fns_4x)*
             #(#spline_fns_4x)*
         }
@@ -113,6 +135,16 @@ impl TranspileContext {
                     #[inline]
                     fn #compute_fn_name(#compute_params) -> f64 {
                         #compute_body
+                    }
+                });
+
+                let compute_fn_name_xz = router_compute_fn_ident_xz(name);
+                let compute_body_xz = self.gen_expr_xz(inner, input);
+                let compute_params_xz = self.fn_params_xz();
+                fns.push(quote! {
+                    #[inline]
+                    fn #compute_fn_name_xz(#compute_params_xz) -> Simd<f64, 25> {
+                        #compute_body_xz
                     }
                 });
 

@@ -5,12 +5,14 @@
 
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
+use std::iter::repeat_n;
 
 use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::naming::{
-    grid_field_ident, named_fn_field_ident, named_fn_ident, noise_field_ident,
-    router_cache_field_ident, router_compute_fn_ident, router_grid_field_ident,
+    grid_field_ident, named_fn_field_ident, named_fn_ident, named_fn_ident_xz, noise_field_ident,
+    router_cache_field_ident, router_compute_fn_ident, router_compute_fn_ident_xz,
+    router_grid_field_ident,
 };
 
 impl TranspileContext {
@@ -166,6 +168,11 @@ impl TranspileContext {
         let grid_total = (grid_side * grid_side) as usize;
         let grid_side_lit = Literal::i32_unsuffixed(grid_side);
         let grid_total_lit = Literal::usize_unsuffixed(grid_total);
+        assert!(
+            grid_total <= 25,
+            "flat-cache X/Z SIMD supports grids up to 5x5"
+        );
+        let grid_lane_indices: Vec<_> = (0..grid_total).map(Literal::usize_unsuffixed).collect();
 
         let flat_names: Vec<&String> = self
             .topo_order
@@ -179,6 +186,13 @@ impl TranspileContext {
             .map(|name| {
                 let field = named_fn_field_ident(name);
                 quote! { pub #field: f64 }
+            })
+            .collect();
+        let xz_cache_fields: Vec<TokenStream> = flat_names
+            .iter()
+            .map(|name| {
+                let field = named_fn_field_ident(name);
+                quote! { #field: Simd<f64, 25> }
             })
             .collect();
 
@@ -215,7 +229,7 @@ impl TranspileContext {
             .collect();
 
         // Grid store statements: copy active field into grid[idx]
-        let grid_store_stmts: Vec<TokenStream> = flat_names
+        let _grid_store_stmts: Vec<TokenStream> = flat_names
             .iter()
             .map(|name| {
                 let active = named_fn_field_ident(name);
@@ -247,6 +261,14 @@ impl TranspileContext {
             .map(|name| {
                 let field = router_cache_field_ident(name);
                 quote! { pub #field: f64 }
+            })
+            .collect();
+        let xz_router_fields: Vec<TokenStream> = self
+            .flat_routers
+            .iter()
+            .map(|name| {
+                let field = router_cache_field_ident(name);
+                quote! { #field: Simd<f64, 25> }
             })
             .collect();
 
@@ -282,7 +304,7 @@ impl TranspileContext {
             })
             .collect();
 
-        let router_grid_store_stmts: Vec<TokenStream> = self
+        let _router_grid_store_stmts: Vec<TokenStream> = self
             .flat_routers
             .iter()
             .map(|name| {
@@ -319,6 +341,94 @@ impl TranspileContext {
                 quote! { pub #field: f64 }
             })
             .collect();
+        let xz_inline_noise_fields: Vec<TokenStream> = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, _, _)| {
+                let field = format_ident!("inline_noise_{}", idx);
+                quote! { #field: Simd<f64, 25> }
+            })
+            .collect();
+
+        let xz_cache_defaults: Vec<TokenStream> = flat_names
+            .iter()
+            .map(|name| {
+                let field = named_fn_field_ident(name);
+                quote! { #field: Simd::splat(0.0) }
+            })
+            .collect();
+        let xz_router_defaults: Vec<TokenStream> = self
+            .flat_routers
+            .iter()
+            .map(|name| {
+                let field = router_cache_field_ident(name);
+                quote! { #field: Simd::splat(0.0) }
+            })
+            .collect();
+        let xz_inline_defaults: Vec<TokenStream> = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, _, _)| {
+                let field = format_ident!("inline_noise_{}", idx);
+                quote! { #field: Simd::splat(0.0) }
+            })
+            .collect();
+
+        let xz_compute_stmts: Vec<TokenStream> = flat_names
+            .iter()
+            .map(|name| {
+                let field = named_fn_field_ident(name);
+                let function = named_fn_ident_xz(name);
+                let grid = grid_field_ident(name);
+                quote! {
+                    xz_cache.#field = #function(noises, self, &xz_cache, xs, zs);
+                    self.#grid = [#(xz_cache.#field[#grid_lane_indices]),*];
+                }
+            })
+            .collect();
+        let xz_router_compute_stmts: Vec<TokenStream> = self
+            .flat_routers
+            .iter()
+            .map(|name| {
+                let field = router_cache_field_ident(name);
+                let function = router_compute_fn_ident_xz(name);
+                let grid = router_grid_field_ident(name);
+                quote! {
+                    xz_cache.#field = #function(noises, self, &xz_cache, xs, zs);
+                    self.#grid = [#(xz_cache.#field[#grid_lane_indices]),*];
+                }
+            })
+            .collect();
+        let xz_inline_compute_stmts: Vec<TokenStream> = self
+            .inline_flat_noises
+            .values()
+            .map(|(idx, noise_id, xz_scale)| {
+                let field = format_ident!("inline_noise_{}", idx);
+                let noise = noise_field_ident(noise_id);
+                let scale = Literal::f64_unsuffixed(*xz_scale);
+                let grid = format_ident!("grid_inline_noise_{}", idx);
+                quote! {
+                    xz_cache.#field = noises.#noise.get_value_simd(
+                        xs * Simd::splat(#scale), Simd::splat(0.0),
+                        zs * Simd::splat(#scale),
+                    );
+                    self.#grid = [#(xz_cache.#field[#grid_lane_indices]),*];
+                }
+            })
+            .collect();
+
+        let mut xs: Vec<_> = (0..grid_side)
+            .flat_map(|_| 0..grid_side)
+            .map(|rel_x| quote! { ((self.grid_first_quart_x + #rel_x) << 2) as f64 })
+            .collect();
+        let mut zs: Vec<_> = (0..grid_side)
+            .flat_map(|rel_z| repeat_n(rel_z, grid_side as usize))
+            .map(|rel_z| quote! { ((self.grid_first_quart_z + #rel_z) << 2) as f64 })
+            .collect();
+        while xs.len() < 25 {
+            xs.push(quote! { 0.0 });
+            zs.push(quote! { 0.0 });
+        }
 
         let inline_noise_grid_fields: Vec<TokenStream> = self
             .inline_flat_noises
@@ -354,7 +464,7 @@ impl TranspileContext {
             })
             .collect();
 
-        let inline_noise_grid_store_stmts: Vec<TokenStream> = self
+        let _inline_noise_grid_store_stmts: Vec<TokenStream> = self
             .inline_flat_noises
             .values()
             .map(|(idx, _, _)| {
@@ -384,7 +494,14 @@ impl TranspileContext {
 
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
+        let xz_cache = &self.xz_cache_ident;
         quote! {
+            struct #xz_cache {
+                #(#xz_cache_fields,)*
+                #(#xz_router_fields,)*
+                #(#xz_inline_noise_fields,)*
+            }
+
             /// Column-level cache for flat-cached (xz-only) density function results.
             ///
             /// Supports two modes matching vanilla's `NoiseChunk.FlatCache`:
@@ -455,24 +572,16 @@ impl TranspileContext {
                     self.has_grid = true;
                     self.valid = false;
 
-                    // Pre-compute all grid positions in topological order.
-                    // For each position, write to active fields first (so
-                    // dependent compute functions can read them), then copy
-                    // into the grid arrays.
-                    for rel_z in 0..Self::GRID_SIDE {
-                        for rel_x in 0..Self::GRID_SIDE {
-                            let x = ((self.grid_first_quart_x + rel_x) << 2) as f64;
-                            let z = ((self.grid_first_quart_z + rel_z) << 2) as f64;
-                            let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
-
-                            #(#ensure_stmts)*
-                            #(#grid_store_stmts)*
-                            #(#router_ensure_stmts)*
-                            #(#router_grid_store_stmts)*
-                            #(#inline_noise_ensure_stmts)*
-                            #(#inline_noise_grid_store_stmts)*
-                        }
-                    }
+                    let xs = Simd::from_array([#(#xs),*]);
+                    let zs = Simd::from_array([#(#zs),*]);
+                    let mut xz_cache = #xz_cache {
+                        #(#xz_cache_defaults,)*
+                        #(#xz_router_defaults,)*
+                        #(#xz_inline_defaults,)*
+                    };
+                    #(#xz_compute_stmts)*
+                    #(#xz_router_compute_stmts)*
+                    #(#xz_inline_compute_stmts)*
                 }
 
                 /// Ensure the cache is populated for the given `(x, z)` block coordinates.
@@ -560,6 +669,16 @@ impl TranspileContext {
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
         quote! { noises: &#noises, cache: &#cache, x: f64, ys: f64x4, z: f64 }
+    }
+
+    pub(super) fn fn_params_xz(&self) -> TokenStream {
+        let noises = &self.noises_ident;
+        let cache = &self.cache_ident;
+        let xz_cache = &self.xz_cache_ident;
+        quote! {
+            noises: &#noises, cache: &mut #cache, xz_cache: &#xz_cache,
+            xs: Simd<f64, 25>, zs: Simd<f64, 25>
+        }
     }
 
     /// Generate the function parameter list for a router entry point.
