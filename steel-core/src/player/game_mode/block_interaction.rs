@@ -136,8 +136,7 @@ impl Player {
                 self.drop_from_selected(false);
             }
             PlayerAction::ReleaseUseItem => {
-                // TODO: Implement release use item (releasing bow, etc.)
-                log::debug!("Player {} released use item", self.gameprofile.name);
+                self.release_using_item();
             }
             PlayerAction::SwapItemWithOffhand => {
                 if self.game_mode() == GameType::Spectator {
