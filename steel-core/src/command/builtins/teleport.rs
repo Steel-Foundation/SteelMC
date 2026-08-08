@@ -155,8 +155,9 @@ enum PositionTeleport {
     TargetsFacingPosition,
 }
 
-struct ResolvedPositionTeleport {
-    targets: TeleportTargets,
+struct ResolvedPositionTeleport<'context> {
+    targets: std::borrow::Cow<'context, [SharedEntity]>,
+    destination: Coordinates,
     rotation: Option<Coordinates>,
     facing: Option<TeleportFacing>,
 }
@@ -165,17 +166,21 @@ impl PositionTeleport {
     fn resolve(
         self,
         context: &SteelCommandContext<CommandSource>,
-    ) -> Result<ResolvedPositionTeleport, CommandSyntaxError> {
-        let (targets, rotation, facing) = match self {
-            Self::Source => (TeleportTargets::Source, None, None),
-            Self::Targets => (TeleportTargets::Argument, None, None),
-            Self::TargetsWithRotation => (
-                TeleportTargets::Argument,
-                Some(required_coordinates(context, "rotation")?),
-                None,
-            ),
+    ) -> Result<ResolvedPositionTeleport<'_>, CommandSyntaxError> {
+        let targets = match self {
+            Self::Source => TeleportTargets::Source,
+            Self::Targets
+            | Self::TargetsWithRotation
+            | Self::TargetsFacingEntityFeet
+            | Self::TargetsFacingEntityAnchor
+            | Self::TargetsFacingPosition => TeleportTargets::Argument,
+        }
+        .resolve(context)?;
+        let destination = required_coordinates(context, "location")?;
+        let (rotation, facing) = match self {
+            Self::Source | Self::Targets => (None, None),
+            Self::TargetsWithRotation => (Some(required_coordinates(context, "rotation")?), None),
             Self::TargetsFacingEntityFeet => (
-                TeleportTargets::Argument,
                 None,
                 Some(TeleportFacing::Entity {
                     target: context.entity("facingEntity")?,
@@ -183,20 +188,13 @@ impl PositionTeleport {
                 }),
             ),
             Self::TargetsFacingEntityAnchor => {
+                let target = context.entity("facingEntity")?;
                 let Some(anchor) = context.entity_anchor("facingAnchor") else {
                     return Err(missing_argument("facingAnchor"));
                 };
-                (
-                    TeleportTargets::Argument,
-                    None,
-                    Some(TeleportFacing::Entity {
-                        target: context.entity("facingEntity")?,
-                        anchor,
-                    }),
-                )
+                (None, Some(TeleportFacing::Entity { target, anchor }))
             }
             Self::TargetsFacingPosition => (
-                TeleportTargets::Argument,
                 None,
                 Some(TeleportFacing::Position(
                     required_coordinates(context, "facingLocation")?.position(context.source()),
@@ -205,6 +203,7 @@ impl PositionTeleport {
         };
         Ok(ResolvedPositionTeleport {
             targets,
+            destination,
             rotation,
             facing,
         })
@@ -216,10 +215,9 @@ fn teleport_to_position(
     variant: PositionTeleport,
 ) -> Result<i32, CommandSyntaxError> {
     let source = context.source();
-    let destination = required_coordinates(context, "location")?;
     let resolved = variant.resolve(context)?;
-    let targets = resolved.targets.resolve(context)?;
-    let targets = targets.as_ref();
+    let targets = resolved.targets.as_ref();
+    let destination = resolved.destination;
     let position = destination.position(source);
     ensure_spawnable_position(position)?;
     let resolved_rotation = resolved.rotation.map(|rotation| rotation.rotation(source));
