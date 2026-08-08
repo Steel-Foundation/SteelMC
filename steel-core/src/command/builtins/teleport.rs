@@ -1,5 +1,6 @@
 //! Vanilla entity teleport command.
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -75,7 +76,7 @@ enum TeleportTargets {
 }
 
 struct ResolvedEntityTeleport<'context> {
-    targets: std::borrow::Cow<'context, [SharedEntity]>,
+    targets: Cow<'context, [SharedEntity]>,
     destination: SharedEntity,
 }
 
@@ -83,7 +84,7 @@ impl TeleportTargets {
     fn resolve(
         self,
         context: &SteelCommandContext<CommandSource>,
-    ) -> Result<std::borrow::Cow<'_, [SharedEntity]>, CommandSyntaxError> {
+    ) -> Result<Cow<'_, [SharedEntity]>, CommandSyntaxError> {
         context.entities_or_source(match self {
             Self::Source => None,
             Self::Argument => Some("targets"),
@@ -156,7 +157,7 @@ enum PositionTeleport {
 }
 
 struct ResolvedPositionTeleport<'context> {
-    targets: std::borrow::Cow<'context, [SharedEntity]>,
+    targets: Cow<'context, [SharedEntity]>,
     destination: Coordinates,
     rotation: Option<Coordinates>,
     facing: Option<TeleportFacing>,
