@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::MultifaceBlock;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::LevelReader;
@@ -12,7 +13,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
-use super::{BlockRef, can_attach_to_multiface, default_surviving_state};
+use super::{BlockRef, default_surviving_state};
 
 const TIP: BoolProperty = BlockStateProperties::TIP;
 
@@ -55,7 +56,7 @@ impl BlockBehavior for HangingMossBlock {
         // multiface rule (support OR collision face full) or is more hanging
         // moss of the same kind.
         let above_pos = pos.above();
-        if can_attach_to_multiface(world, above_pos, Direction::Up) {
+        if MultifaceBlock::can_attach_to(world, above_pos, Direction::Up) {
             return true;
         }
         world.get_block_state(above_pos).get_block() == self.block

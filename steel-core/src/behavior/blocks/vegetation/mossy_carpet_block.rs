@@ -5,10 +5,11 @@ use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::MultifaceBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
-use super::{BlockRef, can_attach_to_multiface};
+use super::BlockRef;
 
 /// Vanilla `MossyCarpetBlock` survival and side state updates.
 // TODO: Implement spreading, bonemeal, and the rest of vanilla behavior.
@@ -67,7 +68,7 @@ impl MossyCarpetBlock {
         direction: Direction,
     ) -> bool {
         direction != Direction::Up
-            && can_attach_to_multiface(world, pos.relative(direction), direction)
+            && MultifaceBlock::can_attach_to(world, pos.relative(direction), direction)
     }
 
     /// Vanilla `MossyCarpetBlock.getUpdatedState`.

@@ -47,10 +47,10 @@ pub use redstone::{
 pub use vegetation::{
     AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock, CactusBlock,
     CactusFlowerBlock, CarrotBlock, CocoaBlock, CoralBlock, CropBlock, DoublePlantBlock,
-    FlowerBlock, MangroveLeavesBlock, NetherSproutsBlock, NetherWartBlock, PitcherCropBlock,
-    PotatoBlock, PumpkinBlock, RootedDirtBlock, SeagrassBlock, SugarCaneBlock, SweetBerryBushBlock,
-    TallFlowerBlock, TallGrassBlock, TallSeagrassBlock, TintedParticleLeavesBlock,
-    TorchflowerCropBlock, UntintedParticleLeavesBlock,
+    FlowerBlock, MangroveLeavesBlock, MultifaceBlock, NetherSproutsBlock, NetherWartBlock,
+    PitcherCropBlock, PotatoBlock, PumpkinBlock, RootedDirtBlock, SeagrassBlock, SugarCaneBlock,
+    SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock, TallSeagrassBlock,
+    TintedParticleLeavesBlock, TorchflowerCropBlock, UntintedParticleLeavesBlock,
 };
 pub use vegetation::{
     BaseCoralFanBlock, BaseCoralPlantBlock, BaseCoralWallFanBlock, BigDripleafBlock,

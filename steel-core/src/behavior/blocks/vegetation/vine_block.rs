@@ -8,10 +8,11 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::{BlockBehavior, default_can_be_replaced};
+use crate::behavior::blocks::MultifaceBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
-use super::{BlockRef, can_attach_to_multiface};
+use super::BlockRef;
 
 /// Vanilla `VineBlock` survival and neighbor shape updates.
 #[block_behavior]
@@ -47,7 +48,7 @@ impl VineBlock {
             return false;
         }
 
-        if can_attach_to_multiface(world, pos.relative(direction), direction) {
+        if MultifaceBlock::can_attach_to(world, pos.relative(direction), direction) {
             return true;
         }
 
@@ -64,7 +65,7 @@ impl VineBlock {
         neighbour_pos: BlockPos,
         direction_to_neighbour: Direction,
     ) -> bool {
-        can_attach_to_multiface(level, neighbour_pos, direction_to_neighbour)
+        MultifaceBlock::can_attach_to(level, neighbour_pos, direction_to_neighbour)
     }
     fn can_spread(&self, world: &Arc<World>, pos: BlockPos) -> bool {
         let mut max = 5;
