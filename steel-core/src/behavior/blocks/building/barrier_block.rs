@@ -73,11 +73,11 @@ mod tests {
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
     use crate::test_support::TestLevel;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     #[test]
     fn registered_barrier_rejects_no_user_liquid_placement() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::BARRIER);
         let dry_barrier = vanilla_blocks::BARRIER
@@ -90,7 +90,7 @@ mod tests {
 
     #[test]
     fn waterlogged_barrier_update_shape_schedules_water_tick() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = BarrierBlock::new(&vanilla_blocks::BARRIER);
         let state = vanilla_blocks::BARRIER

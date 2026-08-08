@@ -80,12 +80,12 @@ mod tests {
     use steel_utils::serial::{ReadFrom, WriteTo};
 
     use super::JukeboxPlayable;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::vanilla_jukebox_songs;
 
     #[test]
     fn registry_reference_round_trips_both_codecs() {
-        init_test_registry();
+        init_vanilla_registry();
         let component = JukeboxPlayable::new(&vanilla_jukebox_songs::CAT);
 
         let mut network = Vec::new();
@@ -111,7 +111,7 @@ mod tests {
         use steel_utils::Identifier;
         use text_components::TextComponent;
 
-        init_test_registry();
+        init_vanilla_registry();
         let component = JukeboxPlayable::direct(JukeboxSongValue {
             sound_event: SoundEventHolder::Direct {
                 sound_id: Identifier::vanilla_static("custom_song"),

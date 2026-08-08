@@ -248,7 +248,7 @@ impl BlockBehavior for NoteBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
     use steel_utils::ChunkPos;
 
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn vertical_blocks_select_instruments_with_vanilla_priority() {
-        init_test_registry();
+        init_vanilla_registry();
         let pos = BlockPos::new(2, 64, 3);
         let note_state = vanilla_blocks::NOTE_BLOCK.default_state();
         let level = TestLevel::default()
@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn tuning_wraps_after_the_top_note() {
-        init_test_registry();
+        init_vanilla_registry();
         let highest = vanilla_blocks::NOTE_BLOCK
             .default_state()
             .set_value(&BlockStateProperties::NOTE, BlockStateProperties::NOTE.max);
@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn redstone_updates_powered_state_on_both_edges() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("note_block_redstone_edges");
         let pos = BlockPos::new(8, 64, 8);

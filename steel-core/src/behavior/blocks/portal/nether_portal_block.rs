@@ -83,7 +83,7 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::EntityBase;
@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn nether_portal_marks_entity_inside_portal() {
-        init_test_registry();
+        init_vanilla_registry();
         let entity = TestEntity::new();
         let pos = BlockPos::new(3, 70, 3);
 

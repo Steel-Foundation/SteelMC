@@ -3,7 +3,7 @@ use crate::behavior::blocks::PowderSnowBlock;
 
 #[test]
 fn can_glide_using_matches_vanilla_component_gate() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let mut elytra = ItemStack::new(&vanilla_items::ELYTRA);
 
@@ -19,7 +19,7 @@ fn can_glide_using_matches_vanilla_component_gate() {
 
 #[test]
 fn living_armor_cover_counts_non_empty_humanoid_armor_slots() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
     assert_f32_close(entity.get_armor_cover_percentage(), 0.0);
@@ -32,7 +32,7 @@ fn living_armor_cover_counts_non_empty_humanoid_armor_slots() {
 
 #[test]
 fn living_visibility_percent_uses_discrete_and_invisible_scaling() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
     assert_f64_close(entity.get_visibility_percent(None), 1.0);
@@ -52,7 +52,7 @@ fn living_visibility_percent_uses_discrete_and_invisible_scaling() {
 
 #[test]
 fn living_visibility_percent_uses_matching_mob_head_disguise() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let skeleton =
         LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::SKELETON);
@@ -67,7 +67,7 @@ fn living_visibility_percent_uses_matching_mob_head_disguise() {
 
 #[test]
 fn living_freeze_immunity_uses_armor_equipment() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
     assert!(entity.default_living_can_freeze());
@@ -82,7 +82,7 @@ fn living_freeze_immunity_uses_armor_equipment() {
 
 #[test]
 fn living_freeze_immunity_uses_body_armor_equipment() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
     entity.equip(
@@ -95,7 +95,7 @@ fn living_freeze_immunity_uses_body_armor_equipment() {
 
 #[test]
 fn living_freeze_immunity_ignores_non_armor_equipment() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.equip(
         EquipmentSlot::MainHand,
@@ -107,7 +107,7 @@ fn living_freeze_immunity_ignores_non_armor_equipment() {
 
 #[test]
 fn living_freezing_decays_when_not_in_powder_snow() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_ticks_frozen(10);
 
@@ -118,7 +118,7 @@ fn living_freezing_decays_when_not_in_powder_snow() {
 
 #[test]
 fn living_freezing_keeps_ticks_while_in_powder_snow() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_ticks_frozen(10);
     entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
@@ -130,7 +130,7 @@ fn living_freezing_keeps_ticks_while_in_powder_snow() {
 
 #[test]
 fn living_freezing_adds_powder_snow_speed_modifier() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_non_air_frost_block();
     entity.set_ticks_frozen(DEFAULT_TICKS_REQUIRED_TO_FREEZE / 2);
     entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
@@ -154,7 +154,7 @@ fn living_freezing_adds_powder_snow_speed_modifier() {
 
 #[test]
 fn living_freezing_removes_stale_powder_snow_speed_modifier() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.attributes().lock().add_modifier(
         vanilla_attributes::MOVEMENT_SPEED,
@@ -176,7 +176,7 @@ fn living_freezing_removes_stale_powder_snow_speed_modifier() {
 
 #[test]
 fn living_freezing_damages_fully_frozen_entities_on_frequency() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     entity.set_ticks_frozen(DEFAULT_TICKS_REQUIRED_TO_FREEZE);
     entity.apply_inside_block_effect(InsideBlockEffectType::Freeze);
@@ -191,7 +191,7 @@ fn living_freezing_damages_fully_frozen_entities_on_frequency() {
 
 #[test]
 fn default_ai_step_ticks_freezing_after_travel() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, test_world());
     entity.set_ticks_frozen(DEFAULT_TICKS_REQUIRED_TO_FREEZE);
@@ -220,7 +220,7 @@ fn entity_cramming_damage_threshold_matches_vanilla_push_entities() {
 
 #[test]
 fn freezing_damage_hurts_extra_tagged_entity_types() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity =
         LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::BLAZE);
 
@@ -235,7 +235,7 @@ fn freezing_damage_hurts_extra_tagged_entity_types() {
 
 #[test]
 fn living_powder_snow_walkability_uses_feet_equipment() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
     assert!(!PowderSnowBlock::can_entity_walk_on_powder_snow(&entity));
@@ -250,7 +250,7 @@ fn living_powder_snow_walkability_uses_feet_equipment() {
 
 #[test]
 fn living_powder_snow_walkability_ignores_non_feet_equipment() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.equip(
         EquipmentSlot::MainHand,
@@ -262,7 +262,7 @@ fn living_powder_snow_walkability_ignores_non_feet_equipment() {
 
 #[test]
 fn default_can_glide_uses_living_equipment() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_on_ground(false);
 
@@ -275,7 +275,7 @@ fn default_can_glide_uses_living_equipment() {
 
 #[test]
 fn try_to_start_fall_flying_uses_vanilla_glider_gate() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.equip(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
     entity.set_on_ground(false);
@@ -286,7 +286,7 @@ fn try_to_start_fall_flying_uses_vanilla_glider_gate() {
 
 #[test]
 fn try_to_start_fall_flying_rejects_levitation() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.equip(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
     entity.set_on_ground(false);
@@ -298,7 +298,7 @@ fn try_to_start_fall_flying_rejects_levitation() {
 
 #[test]
 fn update_fall_flying_damages_glider_every_second_event_interval() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.equip(EquipmentSlot::Chest, ItemStack::new(&vanilla_items::ELYTRA));
     entity.set_on_ground(false);
@@ -321,7 +321,7 @@ fn update_fall_flying_damages_glider_every_second_event_interval() {
 
 #[test]
 fn update_fall_flying_stops_when_glider_gate_fails() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_fall_flying(true);
 

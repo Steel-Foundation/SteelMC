@@ -93,13 +93,13 @@ impl Bonemealable for TorchflowerCropBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
 
     #[test]
     fn torchflower_age_two_becomes_flower_block() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = TorchflowerCropBlock::new(&vanilla_blocks::TORCHFLOWER_CROP);
 
         let age_one = behavior.get_state_for_age(1);

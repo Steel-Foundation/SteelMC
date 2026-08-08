@@ -73,24 +73,15 @@ const fn mob_effect_flags(packet_flags: MobEffectPacketFlags) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Once;
 
-    use steel_registry::{REGISTRY, Registry, vanilla_mob_effects};
+    use steel_registry::init_vanilla_registry;
+    use steel_registry::vanilla_mob_effects;
 
     use super::*;
 
-    fn init_test_registry() {
-        static INIT_REGISTRY: Once = Once::new();
-        INIT_REGISTRY.call_once(|| {
-            let mut registry = Registry::new_vanilla();
-            registry.freeze();
-            let _ = REGISTRY.init(registry);
-        });
-    }
-
     #[test]
     fn update_mob_effect_uses_raw_holder_registry_id() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let packet = CUpdateMobEffect::new(
             42,

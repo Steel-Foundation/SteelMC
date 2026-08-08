@@ -136,7 +136,7 @@ mod tests {
         brigadier::{ArgumentType, CommandDispatcher, NodeId},
         execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
     };
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn vanilla_rules_have_short_and_qualified_literals() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn integer_rule_bounds_are_retained_in_the_graph() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

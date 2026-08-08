@@ -129,7 +129,7 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::{vanilla_blocks, vanilla_entities, vanilla_items};
     use steel_utils::{ChunkPos, Identifier, WorldAabb};
 
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn both_ore_variants_light_from_steps_and_extinguish_on_random_ticks() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("redstone_ore_steps");
         let first_pos = BlockPos::new(8, 64, 8);
@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn world_drop_resources_dispatches_redstone_ore_experience() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("redstone_ore_post_break");
         let pos = BlockPos::new(8, 64, 8);
@@ -239,7 +239,7 @@ mod tests {
 
     #[test]
     fn silk_touch_suppresses_redstone_ore_experience() {
-        init_test_registry();
+        init_vanilla_registry();
         let plain_tool = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
         assert_eq!(
             RedStoneOreBlock::process_block_experience(&plain_tool, 5),

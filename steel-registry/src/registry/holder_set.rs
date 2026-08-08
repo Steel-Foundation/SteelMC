@@ -282,8 +282,8 @@ mod tests {
     use steel_utils::serial::{ReadFrom, WriteTo};
 
     use super::RegistryHolderSet;
+    use crate::init_vanilla_registry;
     use crate::items::Item;
-    use crate::test_support::init_test_registry;
     use crate::vanilla_item_tags::ItemTag;
     use crate::vanilla_items;
 
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn persistent_codec_matches_vanilla_holder_set_shapes() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let tag = RegistryHolderSet::<Item>::Tag(ItemTag::WOOL);
         assert_eq!(
@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn network_codec_round_trips_tag_direct_and_empty_sets() {
-        init_test_registry();
+        init_vanilla_registry();
 
         for holder_set in [
             RegistryHolderSet::<Item>::Tag(ItemTag::WOOL),
@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn codecs_reject_unknown_registry_values() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let unknown_tag = NbtTag::String("#steel:missing".into());
         assert_eq!(
@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn contains_resolves_tags_and_direct_entries() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let tag = RegistryHolderSet::<Item>::Tag(ItemTag::WOOL);
         assert!(tag.contains(&vanilla_items::WHITE_WOOL));
@@ -425,7 +425,7 @@ mod tests {
 
     #[test]
     fn string_codec_rejects_malformed_identifiers() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let malformed = NbtTag::String("not an identifier".into());
         assert_eq!(

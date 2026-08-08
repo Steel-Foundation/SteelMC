@@ -3,7 +3,7 @@ use super::*;
 #[test]
 #[should_panic(expected = "persisted chunk status must match its Full runtime state")]
 fn chunk_save_rejects_full_status_for_proto_data() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let chunk = Chunk::new(
         single_empty_section(),
@@ -17,7 +17,7 @@ fn chunk_save_rejects_full_status_for_proto_data() {
 
 #[test]
 fn unknown_referenced_block_state_is_corruption_instead_of_air_recovery() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(0, 0);
     let chunk = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -46,7 +46,7 @@ fn unknown_referenced_block_state_is_corruption_instead_of_air_recovery() {
 
 #[test]
 fn unknown_referenced_biome_is_corruption_instead_of_plains_recovery() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(0, 0);
     let chunk = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -75,7 +75,7 @@ fn unknown_referenced_biome_is_corruption_instead_of_plains_recovery() {
 
 #[test]
 fn proto_heightmap_save_preserves_existing_maps_and_load_primes_missing_maps() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(3, -4);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -113,7 +113,7 @@ fn proto_heightmap_save_preserves_existing_maps_and_load_primes_missing_maps() {
 
 #[test]
 fn carvers_heightmap_save_excludes_stale_worldgen_maps() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let proto = Chunk::new(
         single_empty_section(),
@@ -142,7 +142,7 @@ fn carvers_heightmap_save_excludes_stale_worldgen_maps() {
 
 #[test]
 fn proto_carving_mask_presence_roundtrips_when_empty() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(3, -4);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -170,7 +170,7 @@ fn proto_carving_mask_presence_roundtrips_when_empty() {
 
 #[tokio::test]
 async fn ram_only_storage_restores_the_status_bundled_with_the_prepared_save() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(3, -4);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -193,7 +193,7 @@ async fn ram_only_storage_restores_the_status_bundled_with_the_prepared_save() {
 
 #[test]
 fn proto_carving_mask_bits_roundtrip_through_persistent_chunk() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(3, -4);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -235,7 +235,7 @@ fn proto_carving_mask_bits_roundtrip_through_persistent_chunk() {
 
 #[test]
 fn proto_postprocessing_roundtrips_through_persistent_chunk() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pos = ChunkPos::new(-2, 1);
     let marked = BlockPos::new(-17, -63, 31);
@@ -266,7 +266,7 @@ fn proto_postprocessing_roundtrips_through_persistent_chunk() {
 
 #[test]
 fn full_chunk_postprocessing_roundtrips_through_persistent_chunk() {
-    init_test_core();
+    init_globals_once();
 
     let pos = ChunkPos::new(-2, 1);
     let marked = BlockPos::new(-17, -63, 31);

@@ -152,11 +152,11 @@ impl Bonemealable for KelpBlock {
 mod tests {
     use super::*;
     use crate::test_support::TestLevel;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     #[test]
     fn kelp_update_shape_schedules_water_tick() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let kelp = KelpBlock::new(&vanilla_blocks::KELP);
         let level =
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn kelp_head_update_shape_schedules_break_tick_when_unsupported() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let kelp = KelpBlock::new(&vanilla_blocks::KELP);
         let level =
@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn kelp_head_converts_to_body_when_connected_above() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let kelp = KelpBlock::new(&vanilla_blocks::KELP);
         let level =
