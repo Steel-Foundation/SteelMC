@@ -2,10 +2,6 @@
 PR template
 -->
 
-## Description
-
-<!-- What this PR does, why. -->
-
 ## Type of change
 
 - [ ] Block implementation
@@ -20,15 +16,9 @@ PR template
 - [ ] Documentation
 - [ ] Chore / tooling
 
-## Related issues
+## Description
 
-<!-- Closes #123, Relates to #456 -->
-
-## Changes
-
-<!-- Bullet list of key changes -->
-
--
+<!-- What this PR does, why. -->
 
 ## How this was tested
 
@@ -43,13 +33,8 @@ PR template
 
 - [ ] Code builds w/o errors or warnings
 - [ ] Self-reviewed the diff
-- [ ] Tests added/updated (if applicable)
 - [ ] Docs updated (if applicable)
 - [ ] No leftover debug code / comments
-
-## Breaking changes
-
-<!-- Config/API/behavior changes consumers must know about. "None" if N/A -->
 
 ## Additional notes
 
