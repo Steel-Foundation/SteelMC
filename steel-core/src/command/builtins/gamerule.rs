@@ -24,7 +24,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
         }
         rules.push(rule_literal(rule.key().to_string(), rule));
     }
-    literal("gamerule").then_all(rules)
+    literal("gamerule").then_children(rules)
 }
 
 fn rule_literal(

@@ -53,7 +53,7 @@ pub(super) fn at_operation() -> Builder {
 }
 
 pub(super) fn positioned_operation() -> Builder {
-    literal("positioned").then_all([
+    literal("positioned").then_children([
         argument("pos", SteelArgumentType::vec3(true)).redirects_with(
             EXECUTE_ROOT,
             |context: &SteelCommandContext<CommandSource>| {
@@ -100,7 +100,7 @@ pub(super) fn positioned_operation() -> Builder {
 }
 
 pub(super) fn rotated_operation() -> Builder {
-    literal("rotated").then_all([
+    literal("rotated").then_children([
         argument("rot", SteelArgumentType::rotation()).redirects_with(EXECUTE_ROOT, |context| {
             let rotation = required_coordinates(context, "rot")?.rotation(context.source());
             Ok(context.source().with_rotation(rotation))
@@ -119,8 +119,8 @@ pub(super) fn rotated_operation() -> Builder {
 }
 
 pub(super) fn facing_operation() -> Builder {
-    literal("facing").then_all([
-        literal("entity").then_chain([
+    literal("facing").then_children([
+        literal("entity").then_path([
             argument("targets", SteelArgumentType::entities()),
             argument("anchor", SteelArgumentType::entity_anchor()).forks(EXECUTE_ROOT, |context| {
                 let anchor = context
@@ -206,7 +206,7 @@ pub(super) fn summon_operation() -> Builder {
 }
 
 pub(super) fn on_relations() -> Builder {
-    literal("on").then_all([
+    literal("on").then_children([
         literal("vehicle").forks(EXECUTE_ROOT, |context| {
             Ok(one_relation_sources(context.source(), |entity| {
                 entity.vehicle()

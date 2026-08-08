@@ -20,13 +20,13 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command(dispatcher_root: NodeId) -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("execute").then_all([
+    literal("execute").then_children([
         literal("run").redirects(dispatcher_root),
         condition::conditionals("if", true),
         condition::conditionals("unless", false),
         source::as_operation(),
         source::at_operation(),
-        literal("store").then_all([
+        literal("store").then_children([
             store::target("result", true),
             store::target("success", false),
         ]),

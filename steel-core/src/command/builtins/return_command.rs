@@ -19,7 +19,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command(dispatcher_root: NodeId) -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("return").then_all([
+    literal("return").then_children([
         argument("value", ArgumentType::integer(i32::MIN, i32::MAX)).executes_custom(ReturnValue),
         literal("fail").executes_custom(ReturnFail),
         literal("run").redirects_custom(dispatcher_root, ReturnRun, false),

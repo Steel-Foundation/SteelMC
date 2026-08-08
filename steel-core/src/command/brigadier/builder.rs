@@ -152,8 +152,12 @@ where
 
     /// Adds a linear descendant path in declaration order.
     #[must_use]
-    pub(crate) fn then_chain(self, descendants: impl IntoIterator<Item = Self>) -> Self {
+    pub(crate) fn then_path(self, descendants: impl IntoIterator<Item = Self>) -> Self {
         let mut descendants = descendants.into_iter().collect::<Vec<_>>();
+        debug_assert!(
+            !descendants.is_empty(),
+            "then_path requires at least one descendant"
+        );
         let Some(mut chain) = descendants.pop() else {
             return self;
         };
@@ -165,7 +169,7 @@ where
 
     /// Adds sibling children while preserving registration order.
     #[must_use]
-    pub(crate) fn then_all(mut self, children: impl IntoIterator<Item = Self>) -> Self {
+    pub(crate) fn then_children(mut self, children: impl IntoIterator<Item = Self>) -> Self {
         self.children.extend(children);
         self
     }

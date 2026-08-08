@@ -36,7 +36,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("locate").then_chain([
+    literal("locate").then_path([
         literal("structure"),
         argument("structure", SteelArgumentType::structure_or_tag_key())
             .executes_suspended(start_structure_search),

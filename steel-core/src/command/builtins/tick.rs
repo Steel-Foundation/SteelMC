@@ -20,13 +20,13 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("tick").then_all([
+    literal("tick").then_children([
         literal("query").executes(query_tick),
         literal("rate")
             .then(argument("rate", ArgumentType::float(1.0, 10_000.0)).executes(set_tick_rate)),
         literal("step")
             .executes(|context| step(context, 1))
-            .then_all([
+            .then_children([
                 literal("stop").executes(stop_step),
                 argument("time", SteelArgumentType::time(1)).executes(|context| {
                     let Some(ticks) = context.time("time") else {
@@ -35,7 +35,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                     step(context, ticks)
                 }),
             ]),
-        literal("sprint").then_all([
+        literal("sprint").then_children([
             literal("stop").executes(stop_sprint),
             argument("time", SteelArgumentType::time(1)).executes(|context| {
                 let Some(ticks) = context.time("time") else {

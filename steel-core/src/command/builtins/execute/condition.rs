@@ -31,7 +31,7 @@ pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
     // modeled, including deferred loot-table unpacking.
     // TODO: Add predicate and function after their runtime registries are ported.
     // TODO: Restore Steel stopwatch conditions with the stopwatch command system.
-    literal(name).then_all([
+    literal(name).then_children([
         biome_condition(expected),
         block_condition(expected),
         blocks_condition(expected),
@@ -44,16 +44,16 @@ pub(super) fn conditionals(name: &'static str, expected: bool) -> Builder {
 }
 
 fn data_condition(expected: bool) -> Builder {
-    literal("data").then_all([
-        literal("block").then_chain([
+    literal("data").then_children([
+        literal("block").then_path([
             argument("sourcePos", SteelArgumentType::block_pos()),
             data_path(DataSource::Block, expected),
         ]),
-        literal("entity").then_chain([
+        literal("entity").then_path([
             argument("source", SteelArgumentType::entity()),
             data_path(DataSource::Entity, expected),
         ]),
-        literal("storage").then_chain([
+        literal("storage").then_path([
             argument("source", SteelArgumentType::storage_key()),
             data_path(DataSource::Storage, expected),
         ]),
@@ -146,10 +146,10 @@ fn dimension_matches(
 }
 
 fn blocks_condition(expected: bool) -> Builder {
-    literal("blocks").then_chain([
+    literal("blocks").then_path([
         argument("start", SteelArgumentType::block_pos()),
         argument("end", SteelArgumentType::block_pos()),
-        argument("destination", SteelArgumentType::block_pos()).then_all([
+        argument("destination", SteelArgumentType::block_pos()).then_children([
             blocks_mode("all", expected, false),
             blocks_mode("masked", expected, true),
         ]),
@@ -317,7 +317,7 @@ fn blocks_too_big(area: i64) -> CommandSyntaxError {
 }
 
 fn block_condition(expected: bool) -> Builder {
-    literal("block").then_chain([
+    literal("block").then_path([
         argument("pos", SteelArgumentType::block_pos()),
         argument("block", SteelArgumentType::block_predicate())
             .forks(EXECUTE_ROOT, move |context| {
@@ -350,7 +350,7 @@ fn block_matches(context: &SteelCommandContext<CommandSource>) -> Result<bool, C
 }
 
 fn biome_condition(expected: bool) -> Builder {
-    literal("biome").then_chain([
+    literal("biome").then_path([
         argument("pos", SteelArgumentType::block_pos()),
         argument("biome", SteelArgumentType::biome_or_tag())
             .forks(EXECUTE_ROOT, move |context| {
@@ -443,9 +443,9 @@ fn loaded_matches(
 }
 
 fn score_condition(expected: bool) -> Builder {
-    literal("score").then_chain([
+    literal("score").then_path([
         argument("target", SteelArgumentType::score_holder()),
-        argument("targetObjective", SteelArgumentType::objective()).then_all([
+        argument("targetObjective", SteelArgumentType::objective()).then_children([
             score_comparison("=", ScoreComparison::Equal, expected),
             score_comparison("<", ScoreComparison::Less, expected),
             score_comparison("<=", ScoreComparison::LessOrEqual, expected),
@@ -466,7 +466,7 @@ fn score_condition(expected: bool) -> Builder {
 }
 
 fn score_comparison(name: &'static str, comparison: ScoreComparison, expected: bool) -> Builder {
-    literal(name).then_chain([
+    literal(name).then_path([
         argument("source", SteelArgumentType::score_holder()),
         argument("sourceObjective", SteelArgumentType::objective())
             .forks(EXECUTE_ROOT, move |context| {

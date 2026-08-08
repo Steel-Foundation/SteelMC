@@ -45,7 +45,7 @@ pub(super) fn registration() -> Result<CommandRegistration<CommandSource>, Comma
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("gamemode").then_chain([
+    literal("gamemode").then_path([
         argument("gamemode", SteelArgumentType::game_mode())
             .executes(|context| change_game_mode(context, None)),
         argument("target", SteelArgumentType::players())

@@ -26,7 +26,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                 (0.0, 0.0),
             )
         })
-        .then_chain([
+        .then_path([
             argument("pos", SteelArgumentType::block_pos()).executes(|context| {
                 let position = spawnable_position(context)?;
                 set_spawn(context, position, (0.0, 0.0))

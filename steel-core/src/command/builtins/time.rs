@@ -26,7 +26,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     let command = add_clock_nodes(literal("time"), ClockSelection::Default, true);
-    command.then_chain([
+    command.then_path([
         literal("of"),
         add_clock_nodes(
             argument(CLOCK_ARGUMENT, SteelArgumentType::world_clock()),
@@ -56,7 +56,7 @@ fn add_clock_nodes(
     selection: ClockSelection,
     include_game_time: bool,
 ) -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    let mut query = literal("query").then_all([
+    let mut query = literal("query").then_children([
         literal("time").executes(move |context| query_time(context, selection)),
         argument(
             "timeline",
@@ -72,8 +72,8 @@ fn add_clock_nodes(
         query = query.then(literal("gametime").executes(query_game_time));
     }
 
-    node.then_all([
-        literal("set").then_all([
+    node.then_children([
+        literal("set").then_children([
             argument("time", SteelArgumentType::time(0))
                 .executes(move |context| set_total_ticks(context, selection)),
             argument(

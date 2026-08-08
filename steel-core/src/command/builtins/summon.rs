@@ -25,7 +25,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("summon").then_chain([
+    literal("summon").then_path([
         argument("entity", SteelArgumentType::summonable_entity())
             .executes(|context| summon_entity(context, context.source().position())),
         argument("pos", SteelArgumentType::vec3(true)).executes(|context| {

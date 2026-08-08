@@ -27,12 +27,12 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("teleport").then_all([
+    literal("teleport").then_children([
         argument("location", SteelArgumentType::vec3(true))
             .executes(|context| teleport_to_position(context, PositionTeleport::Source)),
         argument("destination", SteelArgumentType::entity())
             .executes(|context| teleport_to_entity(context, TeleportTargets::Source)),
-        argument("targets", SteelArgumentType::entities()).then_all([
+        argument("targets", SteelArgumentType::entities()).then_children([
             target_position_branch(),
             argument("destination", SteelArgumentType::entity())
                 .executes(|context| teleport_to_entity(context, TeleportTargets::Argument)),
@@ -43,12 +43,12 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 fn target_position_branch() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     argument("location", SteelArgumentType::vec3(true))
         .executes(|context| teleport_to_position(context, PositionTeleport::Targets))
-        .then_all([
+        .then_children([
             argument("rotation", SteelArgumentType::rotation()).executes(|context| {
                 teleport_to_position(context, PositionTeleport::TargetsWithRotation)
             }),
-            literal("facing").then_all([
-                literal("entity").then_chain([
+            literal("facing").then_children([
+                literal("entity").then_path([
                     argument("facingEntity", SteelArgumentType::entity()).executes(|context| {
                         teleport_to_position(context, PositionTeleport::TargetsFacingEntityFeet)
                     }),

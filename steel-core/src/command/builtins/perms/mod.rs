@@ -57,12 +57,12 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("perms").then_all([user_command(), group_command(), groups_command()])
+    literal("perms").then_children([user_command(), group_command(), groups_command()])
 }
 
 fn user_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("user").then(
-        argument("targets", SteelArgumentType::game_profile()).then_all([
+        argument("targets", SteelArgumentType::game_profile()).then_children([
             literal("info").executes_suspended(user_info),
             literal("allow").then(
                 argument("permission", SteelArgumentType::permission_rule())
@@ -81,7 +81,7 @@ fn user_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                     .executes_suspended(user_check),
             ),
             user_metadata_command(),
-            literal("group").then_all([
+            literal("group").then_children([
                 literal("add").then(
                     argument("group", SteelArgumentType::permission_group(true))
                         .executes_suspended(user_group_add),
@@ -96,7 +96,7 @@ fn user_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 }
 
 fn user_metadata_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("metadata").then_all([
+    literal("metadata").then_children([
         metadata_set_command(user_metadata_set),
         literal("check").then(
             argument("metadata", SteelArgumentType::permission_metadata())
@@ -111,7 +111,7 @@ fn user_metadata_command() -> CommandNodeBuilder<CommandSource, SteelCommandRunt
 
 fn group_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("group").then(
-        argument("group", SteelArgumentType::permission_group(false)).then_all([
+        argument("group", SteelArgumentType::permission_group(false)).then_children([
             literal("create").executes_suspended(group_create),
             literal("info").executes_suspended(group_info),
             literal("delete").executes_suspended(group_delete),
@@ -131,7 +131,7 @@ fn group_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                 argument("priority", ArgumentType::integer(i32::MIN, i32::MAX))
                     .executes_suspended(group_priority),
             ),
-            literal("inherit").then_all([
+            literal("inherit").then_children([
                 literal("list").executes_suspended(group_inherit_list),
                 literal("add").then(
                     argument("parent", SteelArgumentType::permission_group(true))
@@ -142,7 +142,7 @@ fn group_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                         .executes_suspended(group_inherit_remove),
                 ),
             ]),
-            literal("metadata").then_all([
+            literal("metadata").then_children([
                 metadata_set_command(group_metadata_set),
                 literal("unset").then(
                     argument("metadata", SteelArgumentType::group_permission_metadata())
@@ -154,9 +154,9 @@ fn group_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 }
 
 fn groups_command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("groups").then_all([
+    literal("groups").then_children([
         literal("list").executes_suspended(groups_list),
-        literal("default").then_all([
+        literal("default").then_children([
             literal("add").then(
                 argument("group", SteelArgumentType::permission_group(true))
                     .executes_suspended(|context| default_group(context, true)),
@@ -174,18 +174,18 @@ fn metadata_set_command(
         &SteelCommandContext<CommandSource>,
     ) -> Result<PermsCommandSuspension, CommandSyntaxError>,
 ) -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("set").then_all([
-        literal("int").then_chain([
+    literal("set").then_children([
+        literal("int").then_path([
             argument("metadata_int_value", ArgumentType::long(i64::MIN, i64::MAX)),
             argument("metadata", SteelArgumentType::permission_metadata())
                 .executes_suspended(executor),
         ]),
-        literal("bool").then_chain([
+        literal("bool").then_path([
             argument("metadata_bool_value", ArgumentType::bool()),
             argument("metadata", SteelArgumentType::permission_metadata())
                 .executes_suspended(executor),
         ]),
-        literal("string").then_chain([
+        literal("string").then_path([
             argument("metadata_string_value", ArgumentType::string()),
             argument("metadata", SteelArgumentType::permission_metadata())
                 .executes_suspended(executor),

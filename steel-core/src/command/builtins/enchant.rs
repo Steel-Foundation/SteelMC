@@ -26,7 +26,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("enchant").then_chain([
+    literal("enchant").then_path([
         argument("targets", SteelArgumentType::entities()),
         argument("enchantment", SteelArgumentType::enchantment())
             .executes(|context| enchant(context, EnchantLevel::Default)),

@@ -21,13 +21,17 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("experience").then_all([
+    literal("experience").then_children([
         experience_operation("add", i32::MIN, Mutation::Add),
         experience_operation("set", 0, Mutation::Set),
-        literal("query").then(argument("target", SteelArgumentType::player()).then_all([
-            literal("points").executes(|context| query_experience(context, ExperienceType::Points)),
-            literal("levels").executes(|context| query_experience(context, ExperienceType::Levels)),
-        ])),
+        literal("query").then(
+            argument("target", SteelArgumentType::player()).then_children([
+                literal("points")
+                    .executes(|context| query_experience(context, ExperienceType::Points)),
+                literal("levels")
+                    .executes(|context| query_experience(context, ExperienceType::Levels)),
+            ]),
+        ),
         literal("clear")
             .executes(clear_source)
             .then(argument("target", SteelArgumentType::players()).executes(clear_targets)),
@@ -39,11 +43,11 @@ fn experience_operation(
     minimum: i32,
     mutation: Mutation,
 ) -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal(name).then_chain([
+    literal(name).then_path([
         argument("target", SteelArgumentType::players()),
         argument("amount", ArgumentType::integer(minimum, i32::MAX))
             .executes(move |context| mutate_experience(context, mutation, ExperienceType::Points))
-            .then_all([
+            .then_children([
                 literal("points").executes(move |context| {
                     mutate_experience(context, mutation, ExperienceType::Points)
                 }),

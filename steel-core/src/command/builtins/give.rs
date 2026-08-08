@@ -26,7 +26,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("give").then_chain([
+    literal("give").then_path([
         argument("targets", SteelArgumentType::players()),
         argument("item", SteelArgumentType::item_stack())
             .executes(|context| give(context, GiveCount::Default)),

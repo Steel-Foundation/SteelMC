@@ -17,7 +17,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("tellraw").then_chain([
+    literal("tellraw").then_path([
         argument("targets", SteelArgumentType::players()),
         argument("message", SteelArgumentType::component()).executes(send_message),
     ])

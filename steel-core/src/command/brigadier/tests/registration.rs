@@ -66,11 +66,11 @@ fn registration_preserves_child_order_and_returns_stable_ids() {
 }
 
 #[test]
-fn then_chain_nests_descendants_in_declaration_order() {
+fn then_path_nests_descendants_in_declaration_order() {
     let mut dispatcher = CommandDispatcher::<TestSource>::new();
     let base = register(
         &mut dispatcher,
-        literal("base").then_chain([literal("first"), literal("second"), literal("third")]),
+        literal("base").then_path([literal("first"), literal("second"), literal("third")]),
     );
 
     let first = dispatcher
@@ -92,11 +92,11 @@ fn then_chain_nests_descendants_in_declaration_order() {
 }
 
 #[test]
-fn then_all_adds_siblings_in_declaration_order() {
+fn then_children_adds_siblings_in_declaration_order() {
     let mut dispatcher = CommandDispatcher::<TestSource>::new();
     let base = register(
         &mut dispatcher,
-        literal("base").then_all([literal("first"), literal("second"), literal("third")]),
+        literal("base").then_children([literal("first"), literal("second"), literal("third")]),
     );
 
     assert_eq!(node_names(&dispatcher, base), ["first", "second", "third"]);

@@ -23,7 +23,7 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("clear")
         .executes(|context| clear_default(context, None))
-        .then_chain([
+        .then_path([
             argument("targets", SteelArgumentType::players())
                 .executes(|context| clear_default(context, Some("targets"))),
             argument("item", SteelArgumentType::item_predicate())

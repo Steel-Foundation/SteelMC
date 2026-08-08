@@ -24,11 +24,11 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("fly")
         .executes(|context| toggle_flight_command(context, None))
-        .then_all([
+        .then_children([
             literal("target").then(
                 argument("targets", SteelArgumentType::players())
                     .executes(|context| toggle_flight_command(context, Some("targets")))
-                    .then_all([
+                    .then_children([
                         argument("value", ArgumentType::bool()).executes(set_target_flight),
                         literal("speed")
                             .executes(|context| {
