@@ -9,14 +9,14 @@ pub mod registry_cache;
 mod run_loop;
 /// The tick rate manager for the server.
 pub mod tick_rate_manager;
+mod world_tick_workers;
 /// Domain-aware loaded world map.
 pub mod worlds;
 
-use crate::behavior::init_behaviors;
-use crate::block_entity::init_block_entities;
+use crate::bootstrap::init_globals;
 use crate::chunk::{
-    chunk_access::ChunkStatus,
     chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
+    status::ChunkStatus,
 };
 use crate::command::brigadier::{StringReader, SuggestionError, Suggestions};
 use crate::command::execution::{
@@ -34,7 +34,6 @@ use crate::command::{
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_login_security};
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
-    init_entities,
 };
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
@@ -66,7 +65,7 @@ use crate::server::packet_processor::PacketProcessor;
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
-use crate::world::{PlayerMap, World, WorldConfig, WorldGameTickTimings};
+use crate::world::{PlayerMap, World, WorldConfig};
 use crate::worldgen::WorldGeneratorRegistry;
 use crate::worldgen::registry::GeneratorOutput;
 use crossbeam::queue::SegQueue;
@@ -94,8 +93,7 @@ use steel_registry::vanilla_game_rules::{
     ALLOW_ENTERING_NETHER_USING_PORTALS, IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO,
 };
 use steel_registry::{
-    REGISTRY, Registry, RegistryEntry, dimension_type::DimensionTypeRef, vanilla_dimension_types,
-    vanilla_entities,
+    RegistryEntry, dimension_type::DimensionTypeRef, vanilla_dimension_types, vanilla_entities,
 };
 use steel_utils::{
     BlockPos, ChunkPos, Identifier,
@@ -544,20 +542,7 @@ impl Server {
     ) -> Result<Self, String> {
         validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
         let config = Arc::new(config);
-        let start = Instant::now();
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        log::info!("Vanilla registry loaded in {:?}", start.elapsed());
-
-        if REGISTRY.init(registry).is_err() {
-            return Err("global registry has already been initialized".to_owned());
-        }
-
-        // Initialize behavior registries after the main registry is frozen
-        init_behaviors();
-        init_block_entities();
-        init_entities();
-        log::info!("Behavior registries initialized");
+        init_globals()?;
         log::info!(
             "SteelMC is not affiliated with Mojang or Microsoft. Use is subject to the Minecraft EULA: https://aka.ms/MinecraftEULA"
         );

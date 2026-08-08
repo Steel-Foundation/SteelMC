@@ -51,7 +51,7 @@ use steel_utils::{
     locks::{SyncMutex, SyncRwLock},
 };
 
-use crate::chunk::level_chunk::LevelChunk;
+use crate::chunk::full_chunk::FullChunkRef;
 
 mod world;
 
@@ -161,7 +161,7 @@ pub type BlockTickList = TickList<BlockRef>;
 /// Per-chunk storage for scheduled fluid ticks.
 pub type FluidTickList = TickList<FluidRef>;
 
-/// Block and fluid scheduled-tick queues belonging to one Full chunk.
+/// Block and fluid scheduled-tick queues belonging to one chunk.
 #[derive(Debug, Default)]
 pub(crate) struct ChunkTickLists {
     block: BlockTickList,
@@ -200,6 +200,7 @@ impl ChunkTickLists {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChunkTickContainerLifecycle {
+    Proto,
     PrePublication,
     Registered,
     Finalized,
@@ -211,7 +212,7 @@ struct ChunkTickContainerState {
     lists: ChunkTickLists,
 }
 
-/// Stable scheduled-tick storage owned by one `LevelChunk`.
+/// Stable scheduled-tick storage owned by one chunk from creation through unload.
 ///
 /// The world scheduler retains a shared handle only while the chunk is registered and indexes
 /// its current heads. Persistence reads this container directly, so packing one chunk never
@@ -230,6 +231,26 @@ impl ChunkTickContainer {
                 lists,
             }),
         }
+    }
+
+    #[must_use]
+    pub(crate) const fn new_proto(lists: ChunkTickLists) -> Self {
+        Self {
+            state: SyncMutex::new(ChunkTickContainerState {
+                lifecycle: ChunkTickContainerLifecycle::Proto,
+                lists,
+            }),
+        }
+    }
+
+    /// Atomically closes proto-only mutations and opens unpublished Full scheduling.
+    pub(crate) fn promote_to_full(&self) -> bool {
+        let mut state = self.state.lock();
+        if state.lifecycle != ChunkTickContainerLifecycle::Proto {
+            return false;
+        }
+        state.lifecycle = ChunkTickContainerLifecycle::PrePublication;
+        true
     }
 
     pub(crate) fn schedule_unregistered_block(
@@ -264,6 +285,58 @@ impl ChunkTickContainer {
                 .fluid_mut()
                 .schedule(fluid, pos, trigger_tick, priority, sub_tick_order)
         })
+    }
+
+    pub(crate) fn schedule_pending_block(
+        &self,
+        block: BlockRef,
+        pos: BlockPos,
+        priority: TickPriority,
+    ) -> Option<bool> {
+        let mut state = self.state.lock();
+        (state.lifecycle == ChunkTickContainerLifecycle::Proto).then(|| {
+            state
+                .lists
+                .block_mut()
+                .schedule_pending(block, pos, priority)
+        })
+    }
+
+    pub(crate) fn schedule_pending_fluid(
+        &self,
+        fluid: FluidRef,
+        pos: BlockPos,
+        priority: TickPriority,
+    ) -> Option<bool> {
+        let mut state = self.state.lock();
+        (state.lifecycle == ChunkTickContainerLifecycle::Proto).then(|| {
+            state
+                .lists
+                .fluid_mut()
+                .schedule_pending(fluid, pos, priority)
+        })
+    }
+
+    pub(crate) fn pending_block_snapshot(&self) -> Option<Vec<SavedTick<BlockRef>>> {
+        let state = self.state.lock();
+        (state.lifecycle == ChunkTickContainerLifecycle::Proto)
+            .then(|| state.lists.block().pending_entries().to_vec())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_fluid_snapshot(&self) -> Option<Vec<SavedTick<FluidRef>>> {
+        let state = self.state.lock();
+        (state.lifecycle == ChunkTickContainerLifecycle::Proto)
+            .then(|| state.lists.fluid().pending_entries().to_vec())
+    }
+
+    pub(crate) fn remove_pending_blocks_matching(
+        &self,
+        predicate: impl FnMut(&SavedTick<BlockRef>) -> bool,
+    ) -> Option<usize> {
+        let mut state = self.state.lock();
+        (state.lifecycle == ChunkTickContainerLifecycle::Proto)
+            .then(|| state.lists.block_mut().remove_pending_matching(predicate))
     }
 
     pub(crate) fn has_block(&self, pos: BlockPos, block: BlockRef) -> Option<bool> {

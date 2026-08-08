@@ -139,7 +139,7 @@ fn generation_priority_orders_normal_by_load_level() {
 
 #[test]
 fn cached_holder_rechecks_publication_and_generation_permission() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("cached_holder_status_recheck");
     let pos = ChunkPos::new(4, -3);
     let load_level = ChunkTicketLevel::FULL_CHUNK;
@@ -169,13 +169,13 @@ fn cached_holder_rechecks_publication_and_generation_permission() {
         .collect::<Vec<_>>()
         .into_boxed_slice();
     holder.insert_chunk(
-        ChunkAccess::Proto(ProtoChunk::new(
+        Chunk::new(
             Sections::from_owned(sections),
             pos,
             min_y,
             height,
             Arc::downgrade(&world),
-        )),
+        ),
         ChunkStatus::Empty,
     );
     assert!(
@@ -220,7 +220,7 @@ fn cached_holder_rechecks_publication_and_generation_permission() {
     reason = "one lifecycle test documents both readiness radii and their transitions"
 )]
 fn full_publications_drive_block_and_entity_readiness_incrementally() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("full_chunk_readiness_lifecycle");
     let center_pos = ChunkPos::new(0, 0);
@@ -229,7 +229,7 @@ fn full_publications_drive_block_and_entity_readiness_incrementally() {
         world.chunk_map.world_gen_context.min_y(),
         center_pos.0.y * 16,
     );
-    let packed = ProtoChunk::pack_postprocessing_offset(marked_pos);
+    let packed = Chunk::pack_postprocessing_offset(marked_pos);
     let mut center = None;
 
     for z in -1..=1 {
@@ -339,7 +339,7 @@ fn full_publications_drive_block_and_entity_readiness_incrementally() {
 
 #[test]
 fn first_block_readiness_anchors_pending_ticks_once() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("pending_tick_readiness_anchor");
     world.level_data.write().set_game_time(100);
@@ -387,12 +387,9 @@ fn first_block_readiness_anchors_pending_ticks_once() {
         center.ticking_readiness_snapshot().readiness(),
         TickingReadiness::BlockTicking
     );
-    let chunk = center
-        .try_chunk(ChunkStatus::Full)
+    let full = center
+        .try_full_chunk()
         .expect("the center should remain Full");
-    let full = chunk
-        .as_full()
-        .expect("the center should remain a LevelChunk");
     assert_eq!(full.scheduled_tick_snapshot().block[0].delay, 5);
 
     world.level_data.write().set_game_time(200);
@@ -404,7 +401,7 @@ fn first_block_readiness_anchors_pending_ticks_once() {
 
 #[test]
 fn ticking_snapshot_preserves_scc_order_and_distinct_readiness_gates() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("ticking_chunk_snapshot");
     let block_only_pos = ChunkPos::new(0, 0);
@@ -453,7 +450,7 @@ fn ticking_snapshot_preserves_scc_order_and_distinct_readiness_gates() {
 
 #[test]
 fn simulation_changes_rebuild_only_eligible_snapshot_membership() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("simulation_snapshot_membership");
     let pos = ChunkPos::new(0, 0);
@@ -493,7 +490,7 @@ fn simulation_changes_rebuild_only_eligible_snapshot_membership() {
 
 #[test]
 fn full_load_activation_uses_packed_chunk_position_order() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("packed_full_activation_order");
     let first_chunk = ChunkPos::new(0, 0);
@@ -507,11 +504,10 @@ fn full_load_activation_uses_packed_chunk_position_order() {
         ChunkTicketLevel::FULL_CHUNK,
         Vec::new(),
     );
-    let Some(second) = second.try_chunk(ChunkStatus::Full) else {
+    let Some(second) = second.try_full_chunk() else {
         panic!("inserted second chunk should remain Full");
     };
-    add_test_sign(&second, second_sign);
-    drop(second);
+    add_test_sign(second, second_sign);
 
     let first = insert_active_full_holder(
         &world,
@@ -519,11 +515,10 @@ fn full_load_activation_uses_packed_chunk_position_order() {
         ChunkTicketLevel::FULL_CHUNK,
         Vec::new(),
     );
-    let Some(first) = first.try_chunk(ChunkStatus::Full) else {
+    let Some(first) = first.try_full_chunk() else {
         panic!("inserted first chunk should remain Full");
     };
-    add_test_sign(&first, first_sign);
-    drop(first);
+    add_test_sign(first, first_sign);
 
     world
         .chunk_map

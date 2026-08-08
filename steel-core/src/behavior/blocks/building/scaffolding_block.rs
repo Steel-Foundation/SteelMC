@@ -94,7 +94,7 @@ impl BlockBehavior for ScaffoldingBlock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use steel_registry::{test_support, vanilla_blocks, vanilla_fluids};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_fluids};
 
     use crate::test_support::TestLevel;
 
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn placement_context_has_no_scaffolding_collision() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
 
         let shape = collision_shape(
             scaffolding_state(0, false),
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn entity_above_scaffolding_collides_with_stable_shape() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
 
         let shape = collision_shape(
             scaffolding_state(0, false),
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn descending_entity_only_collides_with_unstable_bottom_shape() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
 
         let shape = collision_shape(
             scaffolding_state(1, true),
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn non_bottom_descending_scaffolding_has_empty_collision() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
 
         let shape = collision_shape(
             scaffolding_state(1, false),
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn shape_update_schedules_stability_and_water_ticks() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
         let behavior = ScaffoldingBlock::new(&vanilla_blocks::SCAFFOLDING);
         let state = vanilla_blocks::SCAFFOLDING
             .default_state()

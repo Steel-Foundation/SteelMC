@@ -39,6 +39,13 @@ impl CaveVinesBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
+    /// Cave Vines `canGrowInto()`
+    #[must_use]
+    pub fn can_grow_into(state: BlockStateId) -> bool {
+        state.is_air()
+    }
+
     const fn growing_plant_head_block(&self) -> GrowingPlantHeadBlock {
         GrowingPlantHeadBlock::new(
             self.block,
@@ -47,6 +54,7 @@ impl CaveVinesBlock {
             0.1,
             &vanilla_blocks::CAVE_VINES_PLANT,
             None,
+            Self::can_grow_into,
         )
         .with_update_body_after_converted_from_head(Self::update_body_after_converted_from_head)
         .with_update_grow_into_state(Self::update_grow_into_state)
@@ -196,14 +204,14 @@ impl Bonemealable for CaveVinesBlock {
 #[cfg(test)]
 mod tests {
     use rand::{SeedableRng as _, rngs::StdRng};
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::test_support::TestLevel;
 
     #[test]
     fn head_conversion_preserves_berries() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = CaveVinesBlock::new(&vanilla_blocks::CAVE_VINES);
         let state = vanilla_blocks::CAVE_VINES
@@ -226,7 +234,7 @@ mod tests {
 
     #[test]
     fn grown_head_rolls_berries_independently() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let state = vanilla_blocks::CAVE_VINES.default_state();
         let mut rng = StdRng::seed_from_u64(1);
@@ -240,7 +248,7 @@ mod tests {
 
     #[test]
     fn clone_item_is_glow_berries() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = CaveVinesBlock::new(&vanilla_blocks::CAVE_VINES);
         let item = behavior

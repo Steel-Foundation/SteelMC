@@ -4,7 +4,10 @@ use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _, shapes::VoxelShape};
 use steel_registry::sound_event::SoundEventRef;
-use steel_registry::{vanilla_entities, vanilla_game_rules};
+use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
+use steel_registry::{
+    REGISTRY, TaggedRegistryExt, vanilla_entities, vanilla_game_rules, vanilla_items,
+};
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
 
 use crate::{
@@ -14,6 +17,7 @@ use crate::{
     },
     entity::ai::path::PathComputationType,
     entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType},
+    inventory::equipment::EquipmentSlot,
     world::{LevelReader, World},
 };
 
@@ -40,6 +44,25 @@ impl PowderSnowBlock {
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
+    }
+
+    /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow`.
+    pub(crate) fn can_entity_walk_on_powder_snow<E: Entity + ?Sized>(entity: &E) -> bool {
+        if REGISTRY.entity_types.is_in_tag(
+            entity.entity_type(),
+            &EntityTypeTag::POWDER_SNOW_WALKABLE_MOBS,
+        ) {
+            return true;
+        }
+
+        let Some(living) = entity.as_living_entity() else {
+            return false;
+        };
+        let mut has_leather_boots = false;
+        living.with_equipment_slot(EquipmentSlot::Feet, &mut |item_stack| {
+            has_leather_boots = item_stack.is(&vanilla_items::LEATHER_BOOTS);
+        });
+        has_leather_boots
     }
 
     #[must_use]
@@ -99,7 +122,7 @@ impl BlockBehavior for PowderSnowBlock {
             pos,
             BlockCollisionContext::entity(entity.position().y, entity.is_descending())
                 .with_fall_distance(entity.fall_distance())
-                .with_can_walk_on_powder_snow(entity.can_walk_on_powder_snow())
+                .with_can_walk_on_powder_snow(Self::can_entity_walk_on_powder_snow(entity))
                 .with_falling_block(entity.entity_type() == &vanilla_entities::FALLING_BLOCK),
         );
         if collision_shape.is_empty() {
@@ -171,7 +194,7 @@ impl BlockBehavior for PowderSnowBlock {
 mod tests {
     use super::*;
 
-    use steel_registry::{sound_events, test_support, vanilla_blocks, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, sound_events, vanilla_blocks, vanilla_entities};
 
     use crate::behavior::EntityFallOnFacts;
     use crate::test_support::TestLevel;
@@ -208,7 +231,7 @@ mod tests {
 
     #[test]
     fn powder_snow_fall_sound_uses_vanilla_living_thresholds() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
         assert!(PowderSnowBlock::fall_sound(fall_context(3.99, true)).is_none());
         assert_eq!(
             PowderSnowBlock::fall_sound(fall_context(4.0, true)),
@@ -223,7 +246,7 @@ mod tests {
 
     #[test]
     fn falling_entities_collide_with_lower_powder_snow_shape() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
         let behavior = powder_snow();
         let state = powder_snow_state();
         let pos = BlockPos::new(0, 64, 0);
@@ -241,7 +264,7 @@ mod tests {
 
     #[test]
     fn walkable_entities_use_default_powder_snow_collision_shape_when_above() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
         let behavior = powder_snow();
         let state = powder_snow_state();
         let pos = BlockPos::new(0, 64, 0);
@@ -257,7 +280,7 @@ mod tests {
 
     #[test]
     fn non_walkable_or_descending_entities_have_no_powder_snow_collision() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
         let behavior = powder_snow();
         let state = powder_snow_state();
         let pos = BlockPos::new(0, 64, 0);
@@ -281,7 +304,7 @@ mod tests {
 
     #[test]
     fn falling_blocks_use_default_powder_snow_collision_shape() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
         let behavior = powder_snow();
         let state = powder_snow_state();
         let pos = BlockPos::new(0, 64, 0);
@@ -297,7 +320,7 @@ mod tests {
 
     #[test]
     fn placement_context_has_no_powder_snow_collision() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
         let behavior = powder_snow();
         let state = powder_snow_state();
         let pos = BlockPos::new(0, 64, 0);

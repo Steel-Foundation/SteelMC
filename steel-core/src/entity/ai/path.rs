@@ -456,7 +456,7 @@ const fn fastutil_mix(value: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{REGISTRY, test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
     use steel_utils::{BlockPos, BlockStateId};
 
     use super::{
@@ -579,7 +579,7 @@ mod tests {
 
     #[test]
     fn path_type_cache_invalidates_matching_position() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let level = SingleBlockLevel {
             state: REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR),
@@ -594,7 +594,7 @@ mod tests {
 
     #[test]
     fn pathfinding_context_uses_cache_when_supplied() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let level = SingleBlockLevel {
             state: REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR),

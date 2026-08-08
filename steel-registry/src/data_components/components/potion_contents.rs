@@ -70,6 +70,11 @@ impl PotionContents {
         self.custom_name.as_deref()
     }
 
+    #[must_use]
+    pub fn is(&self, potion: &Potion) -> bool {
+        self.potion.is_some_and(|p| p.value().key == potion.key) && self.custom_effects.is_empty()
+    }
+
     fn to_nbt_tag_ref(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
         if let Some(potion) = self.potion {
@@ -283,7 +288,7 @@ mod tests {
 
     use super::PotionContents;
     use crate::data_components::vanilla_components::POTION_CONTENTS;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt, RegistryReference, vanilla_mob_effects, vanilla_potions};
 
     fn parse(tag: NbtTag) -> Option<PotionContents> {
@@ -295,7 +300,7 @@ mod tests {
 
     #[test]
     fn full_and_alternative_potion_codecs_round_trip() {
-        init_test_registry();
+        init_vanilla_registry();
         let value = PotionContents::new(
             Some(RegistryReference::new(&vanilla_potions::SWIFTNESS)),
             Some(0x12_34_56),
@@ -335,7 +340,7 @@ mod tests {
 
     #[test]
     fn extracted_potion_items_have_empty_contents() {
-        init_test_registry();
+        init_vanilla_registry();
         for name in [
             "potion",
             "splash_potion",

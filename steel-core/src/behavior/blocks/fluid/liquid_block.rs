@@ -269,7 +269,7 @@ impl BlockBehavior for LiquidBlock {
 #[cfg(test)]
 mod tests {
     use crate::behavior::init_behaviors;
-    use steel_registry::{test_support::init_test_registry, vanilla_fluids};
+    use steel_registry::{init_vanilla_registry, vanilla_fluids};
 
     use crate::test_support::TestLevel;
 
@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn update_shape_schedules_actual_flowing_fluid_variant() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let block = LiquidBlock::new(&vanilla_blocks::WATER, &vanilla_fluids::WATER);
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn source_water_above_soul_sand_schedules_bubble_column_tick() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let block = LiquidBlock::new(&vanilla_blocks::WATER, &vanilla_fluids::WATER);
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn flowing_water_does_not_schedule_bubble_column_tick() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let block = LiquidBlock::new(&vanilla_blocks::WATER, &vanilla_fluids::WATER);

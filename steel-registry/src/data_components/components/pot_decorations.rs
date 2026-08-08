@@ -170,7 +170,7 @@ mod tests {
 
     use super::PotDecorations;
     use crate::data_components::vanilla_components::POT_DECORATIONS;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::vanilla_items;
 
     fn parse(tag: simdnbt::owned::NbtTag) -> Option<PotDecorations> {
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn ordered_sides_round_trip_both_codecs_and_hash_as_four_items() {
-        init_test_registry();
+        init_vanilla_registry();
         let decorations = PotDecorations::from_ordered(&[
             &vanilla_items::ANGLER_POTTERY_SHERD,
             &vanilla_items::BRICK,
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn extracted_decorated_pot_uses_four_bricks_as_empty_sides() {
-        init_test_registry();
+        init_vanilla_registry();
         assert_eq!(
             vanilla_items::DECORATED_POT.components.get(POT_DECORATIONS),
             Some(PotDecorations::EMPTY)
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn both_codecs_reject_more_than_four_items() {
-        init_test_registry();
+        init_vanilla_registry();
         let items = [&*vanilla_items::BRICK; 5];
         assert!(PotDecorations::from_ordered(&items).is_err());
 

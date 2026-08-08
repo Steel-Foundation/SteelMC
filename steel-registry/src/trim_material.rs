@@ -388,12 +388,12 @@ mod tests {
     use steel_utils::Identifier;
     use text_components::format::Color;
 
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, vanilla_trim_materials};
 
     #[test]
     fn generated_materials_follow_vanilla_registry_order_and_asset_groups() {
-        init_test_registry();
+        init_vanilla_registry();
         let keys = REGISTRY
             .trim_materials
             .iter()
@@ -438,7 +438,7 @@ mod tests {
 
     #[test]
     fn generated_definition_uses_the_current_flattened_persistent_shape() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let simdnbt::owned::NbtTag::Compound(iron) = (&*vanilla_trim_materials::IRON).to_nbt_tag()
         else {

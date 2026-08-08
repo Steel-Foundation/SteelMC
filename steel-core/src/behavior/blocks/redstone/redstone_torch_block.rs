@@ -404,7 +404,7 @@ impl BlockBehavior for RedstoneWallTorchBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::behavior::init_behaviors;
@@ -412,7 +412,7 @@ mod tests {
 
     #[test]
     fn standing_torch_reads_power_from_its_support() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let pos = BlockPos::new(0, 64, 0);
         let powered = TestLevel::default()
@@ -426,7 +426,7 @@ mod tests {
 
     #[test]
     fn wall_torch_omits_weak_signal_toward_its_support() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let behavior = RedstoneWallTorchBlock::new(&vanilla_blocks::REDSTONE_WALL_TORCH);
         let state = vanilla_blocks::REDSTONE_WALL_TORCH

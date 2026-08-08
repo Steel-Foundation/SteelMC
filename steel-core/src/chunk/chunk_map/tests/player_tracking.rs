@@ -13,7 +13,6 @@ fn light_changed_does_not_broadcast_unloading_full_chunk() {
         .try_chunk(ChunkStatus::Full)
         .expect("test holder should contain a full chunk");
     chunk.clear_dirty();
-    drop(chunk);
 
     chunk_map.light_changed(LightLayer::Block, SectionPos::new(pos.0.x, 0, pos.0.y));
 
@@ -21,7 +20,6 @@ fn light_changed_does_not_broadcast_unloading_full_chunk() {
         .try_chunk(ChunkStatus::Full)
         .expect("test holder should still contain a full chunk");
     assert!(chunk.is_dirty());
-    drop(chunk);
 
     assert!(chunk_map.chunks_to_broadcast.lock().is_empty());
     assert!(!holder.has_changes_to_broadcast());
@@ -29,7 +27,7 @@ fn light_changed_does_not_broadcast_unloading_full_chunk() {
 
 #[test]
 fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("blocked_light_block_publication");
     let center = ChunkPos::new(0, 0);
@@ -98,7 +96,7 @@ fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() 
 
 #[test]
 fn frozen_tick_broadcasts_block_changes_before_acknowledging_them() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("frozen_block_change_publication");
     let chunk_pos = ChunkPos::new(0, 0);

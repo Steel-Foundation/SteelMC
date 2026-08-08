@@ -518,7 +518,7 @@ mod tests {
     use steel_registry::data_components::components::Fireworks;
     use steel_registry::data_components::vanilla_components::FIREWORKS;
     use steel_registry::item_stack::ItemStack;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
 
     use crate::{
         entity::{Entity, Projectile, entities::PigEntity},
@@ -529,7 +529,7 @@ mod tests {
 
     #[test]
     fn launched_rocket_uses_fireworks_flight_duration_for_lifetime() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut item = ItemStack::new(&vanilla_items::FIREWORK_ROCKET);
         item.set(
             FIREWORKS,
@@ -555,7 +555,7 @@ mod tests {
 
     #[test]
     fn firework_uses_vanilla_neutral_sound_source() {
-        init_test_registry();
+        init_vanilla_registry();
         let rocket = FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             1,
@@ -568,7 +568,7 @@ mod tests {
 
     #[test]
     fn hurt_marks_rocket_unless_base_invulnerable_and_always_returns_false() {
-        init_test_registry();
+        init_vanilla_registry();
         let rocket = FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             1,
@@ -588,7 +588,7 @@ mod tests {
 
     #[test]
     fn firework_metadata_carries_item_attachment_and_angle() {
-        init_test_registry();
+        init_vanilla_registry();
         let target: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             19,
@@ -620,7 +620,7 @@ mod tests {
 
     #[test]
     fn firework_state_persists_with_vanilla_keys() {
-        init_test_registry();
+        init_vanilla_registry();
         let rocket = FireworkRocketEntity::launched(
             &vanilla_entities::FIREWORK_ROCKET,
             1,
@@ -662,7 +662,7 @@ mod tests {
 
     #[test]
     fn firework_knockback_direction_points_from_rocket_to_target() {
-        init_test_registry();
+        init_vanilla_registry();
         let rocket = FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             1,
@@ -686,7 +686,7 @@ mod tests {
 
     #[test]
     fn firework_damage_source_has_no_raw_position() {
-        init_test_registry();
+        init_vanilla_registry();
         let rocket = FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
             23,
