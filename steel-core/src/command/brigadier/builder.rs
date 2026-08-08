@@ -169,9 +169,8 @@ where
 
     /// Adds sibling children while preserving registration order.
     #[must_use]
-    pub(crate) fn then_children(mut self, children: impl IntoIterator<Item = Self>) -> Self {
-        self.children.extend(children);
-        self
+    pub(crate) fn then_children(self, children: impl IntoIterator<Item = Self>) -> Self {
+        children.into_iter().fold(self, Self::then)
     }
 
     /// Attaches an executor payload without interpreting it.
