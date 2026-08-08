@@ -144,10 +144,10 @@ impl Player {
                 }
 
                 let changed = self.inventory.lock().swap_hands();
+                self.stop_using_item();
                 if changed {
                     self.broadcast_inventory_changes();
                 }
-                // TODO: Stop active item use once the using-item foundation exists.
             }
             PlayerAction::Stab => {
                 if self.game_mode() == GameType::Spectator {
