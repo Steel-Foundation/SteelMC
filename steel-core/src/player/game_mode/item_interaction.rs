@@ -191,9 +191,19 @@ impl Player {
             return;
         }
 
-        let target_yaw = wrap_degrees(packet.y_rot);
-        let target_pitch = wrap_degrees(packet.x_rot);
-        if self.rotation() != (target_yaw, target_pitch) {
+        let current_rotation = self.rotation();
+        // Vanilla entity setters discard each non-finite rotation component independently.
+        let target_yaw = if packet.y_rot.is_finite() {
+            wrap_degrees(packet.y_rot)
+        } else {
+            current_rotation.0
+        };
+        let target_pitch = if packet.x_rot.is_finite() {
+            wrap_degrees(packet.x_rot)
+        } else {
+            current_rotation.1
+        };
+        if current_rotation != (target_yaw, target_pitch) {
             self.set_rotation((target_yaw, target_pitch));
         }
 
@@ -205,5 +215,56 @@ impl Player {
         }
 
         self.broadcast_inventory_changes();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_protocol::packets::game::SUseItem;
+    use steel_registry::{item_stack::ItemStack, vanilla_items};
+    use steel_utils::types::InteractionHand;
+    use uuid::Uuid;
+
+    use crate::behavior::init_behaviors;
+    use crate::entity::Entity as _;
+    use crate::player::connection::NetworkConnection as _;
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world};
+
+    #[test]
+    fn use_item_discards_non_finite_rotation_components() {
+        let world = fresh_test_world("use_item_non_finite_rotation");
+        init_behaviors();
+        let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "TestPlayer", 1).build();
+        player.set_client_loaded(true);
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::STICK));
+        player.set_rotation((10.0, 20.0));
+
+        player.handle_use_item(SUseItem {
+            hand: InteractionHand::MainHand,
+            sequence: 1,
+            y_rot: f32::NAN,
+            x_rot: 30.0,
+        });
+        assert_eq!(player.rotation(), (10.0, 30.0));
+
+        player.handle_use_item(SUseItem {
+            hand: InteractionHand::MainHand,
+            sequence: 2,
+            y_rot: 40.0,
+            x_rot: f32::INFINITY,
+        });
+        assert_eq!(player.rotation(), (40.0, 30.0));
+
+        player.handle_use_item(SUseItem {
+            hand: InteractionHand::MainHand,
+            sequence: 3,
+            y_rot: f32::NEG_INFINITY,
+            x_rot: f32::NAN,
+        });
+        assert_eq!(player.rotation(), (40.0, 30.0));
+        assert!(!player.connection.closed());
     }
 }
