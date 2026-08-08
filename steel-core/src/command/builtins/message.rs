@@ -192,7 +192,7 @@ fn command_count(recipients: usize) -> Result<i32, CommandSyntaxError> {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::super::create_dispatcher;
     use crate::command::brigadier::{CommandDispatcher, NodeId};
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn say_is_restricted_and_takes_a_component_message() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };
@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn me_is_available_to_everyone_and_takes_a_component_message() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn msg_targets_players_and_exposes_tell_and_w_aliases() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

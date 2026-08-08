@@ -48,9 +48,10 @@ impl<'a> CommandTextResolver<'a, CommandSource> {
     }
 
     /// Resolves selectors and scores relative to the command source itself.
-    ///
-    /// Used by commands such as `/say` and `/msg` that resolve their message
-    /// once against the source rather than per recipient.
+    #[allow(
+        dead_code,
+        reason = "API kept for command sources that resolve once against the sender"
+    )]
     pub(crate) const fn for_source(source: &'a CommandSource) -> Self {
         Self {
             source,
