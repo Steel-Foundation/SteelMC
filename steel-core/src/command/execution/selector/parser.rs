@@ -1033,6 +1033,6 @@ where
 }
 
 /// Returns `true` for selector errors that should be treated as literal `@` in messages.
-fn is_skippable_selector_error(error: &SelectorParseError) -> bool {
+const fn is_skippable_selector_error(error: &SelectorParseError) -> bool {
     matches!(error.kind, SelectorParseErrorKind::Invalid(_)) && error.cursor == 1
 }

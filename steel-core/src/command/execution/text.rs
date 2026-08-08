@@ -48,7 +48,7 @@ impl<'a> CommandTextResolver<'a, CommandSource> {
     }
 
     /// Resolves selectors and scores relative to the command source itself.
-    #[allow(
+    #[expect(
         dead_code,
         reason = "API kept for command sources that resolve once against the sender"
     )]

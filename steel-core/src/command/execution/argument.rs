@@ -1370,17 +1370,12 @@ fn parse_message(
                         start: part_start,
                         end: scan_reader.cursor(),
                     });
-                    continue;
                 }
-                Err(MessageSelectorError::Skip) => {
-                    scan_reader.skip();
-                    continue;
-                }
+                Err(MessageSelectorError::Skip) => {}
                 Err(MessageSelectorError::Propagate(error)) => return Err(error),
             }
-        } else {
-            scan_reader.skip();
         }
+        scan_reader.skip();
     }
 
     Ok(MessageValue { text, parts })
