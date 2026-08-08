@@ -19,8 +19,8 @@ use text_components::TextComponent;
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
     execution::{
-        CommandSource, SteelArgumentType, SteelCommandContext,
-        SteelCommandRuntime, argument, literal,
+        CommandSource, SteelArgumentType, SteelCommandContext, SteelCommandRuntime, argument,
+        literal,
     },
     registration::CommandRegistration,
     sender::CommandSender,

@@ -13,11 +13,11 @@ use super::{
     profile::{GameProfileParser, GameProfileSuggestionMode},
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{
-        EntitySelector, parse_entity_selector, suggest_entity_selector, try_parse_message_selector,
-        MessageSelectorError, allow_selectors,
+        EntitySelector, MessageSelectorError, allow_selectors, parse_entity_selector,
+        suggest_entity_selector, try_parse_message_selector,
     },
     structure::{parse_structure_or_tag_key, suggest_structures},
-    text::{validate_component_syntax, CommandTextResolutionSource},
+    text::{CommandTextResolutionSource, validate_component_syntax},
     world::{parse_world_argument, suggest_worlds},
 };
 use crate::chunk::heightmap::HeightmapType;
@@ -568,7 +568,9 @@ impl MessageValue {
         for part in &self.parts {
             let before = &self.text[read_to..part.start];
             if !before.is_empty() {
-                result.children.push(TextComponent::plain(before.to_owned()));
+                result
+                    .children
+                    .push(TextComponent::plain(before.to_owned()));
             }
 
             let mut names = source
@@ -586,7 +588,9 @@ impl MessageValue {
 
         let remaining = &self.text[read_to..];
         if !remaining.is_empty() {
-            result.children.push(TextComponent::plain(remaining.to_owned()));
+            result
+                .children
+                .push(TextComponent::plain(remaining.to_owned()));
         }
 
         Ok(result)

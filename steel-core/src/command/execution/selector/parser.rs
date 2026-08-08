@@ -1020,11 +1020,9 @@ where
             reader.restore(start);
             Err(MessageSelectorError::Skip)
         }
-        Err(error) => {
-            Err(MessageSelectorError::Propagate(selector_syntax_error(
-                reader, start, &raw, error,
-            )))
-        }
+        Err(error) => Err(MessageSelectorError::Propagate(selector_syntax_error(
+            reader, start, &raw, error,
+        ))),
         Ok(selector) => match selector.validate_for_argument(false, false) {
             Ok(()) => Ok(()),
             Err(error) => Err(MessageSelectorError::Propagate(selector_syntax_error(
@@ -1036,6 +1034,5 @@ where
 
 /// Returns `true` for selector errors that should be treated as literal `@` in messages.
 fn is_skippable_selector_error(error: &SelectorParseError) -> bool {
-    matches!(error.kind, SelectorParseErrorKind::Invalid(_))
-        && error.cursor == 1
+    matches!(error.kind, SelectorParseErrorKind::Invalid(_)) && error.cursor == 1
 }
