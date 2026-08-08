@@ -24,6 +24,7 @@ PR template
 
 <!-- Steps to reproduce/verify. Include env (MC version, OS) if relevant. -->
 <!-- For commands please provide example commands -->
+<!-- Also if possible link here flint tests, this will help us to review your PR quicker -->
 
 ## Screenshots / logs
 
