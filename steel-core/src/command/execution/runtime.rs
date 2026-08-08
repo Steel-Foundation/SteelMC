@@ -323,9 +323,8 @@ where
             .map(|value| &value.0)
     }
 
-    pub(crate) fn message(&self, name: &str) -> Option<&TextComponent> {
+    pub(crate) fn message(&self, name: &str) -> Option<&MessageValue> {
         self.typed_argument::<MessageValue>(name)
-            .map(|value| &value.0)
     }
 
     pub(crate) fn nbt_path(&self, name: &str) -> Option<&NbtPath> {

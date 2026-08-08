@@ -61,7 +61,7 @@ fn selector_syntax_error(
     reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(error.message())))
 }
 
-pub(super) fn allow_selectors<S>(source: &S) -> bool
+pub(crate) fn allow_selectors<S>(source: &S) -> bool
 where
     S: CommandArgumentSource + ?Sized,
 {

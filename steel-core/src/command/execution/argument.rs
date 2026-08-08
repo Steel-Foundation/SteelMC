@@ -12,7 +12,10 @@ use super::{
     permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
     profile::{GameProfileParser, GameProfileSuggestionMode},
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
-    selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
+    selector::{
+        EntitySelector, parse_entity_selector, suggest_entity_selector, try_parse_message_selector,
+        MessageSelectorError, allow_selectors,
+    },
     structure::{parse_structure_or_tag_key, suggest_structures},
     text::{validate_component_syntax, CommandTextResolutionSource},
     world::{parse_world_argument, suggest_worlds},
@@ -569,11 +572,15 @@ impl MessageValue {
                 result.children.push(TextComponent::plain(before.to_owned()));
             }
 
-            let names = source
+            let mut names = source
                 .selector_display_names(&self.text[part.start..part.end])?
                 .into_iter();
-            for name in names {
-                result.children.push(name);
+            if let Some(first) = names.next() {
+                result.children.push(first);
+                for name in names {
+                    result.children.push(separator.clone());
+                    result.children.push(name);
+                }
             }
             read_to = part.end;
         }
@@ -1118,16 +1125,33 @@ unit_argument_parser!(
     _builder | {},
     protocol(ProtocolArgumentType::Component, None)
 );
-unit_argument_parser!(
-    MessageParser,
-    "steel:command/parser/message",
-    MessageValue,
-    parse | reader,
-    _source | { parse_message(reader).map(MessageValue) },
-    suggest | _context,
-    _builder | {},
-    protocol(ProtocolArgumentType::Message, None)
-);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MessageParser;
+
+impl_downcast_type!(MessageParser, "steel:command/parser/message");
+
+impl SteelArgumentParser for MessageParser {
+    type Value = MessageValue;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        parse_message(reader, source)
+    }
+
+    fn list_suggestions(
+        &self,
+        _context: &dyn SteelArgumentSuggestionContext,
+        _builder: &mut SuggestionsBuilder<'_>,
+    ) {
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (ProtocolArgumentType::Message, None)
+    }
+}
 unit_argument_parser!(
     NbtPathParser,
     "steel:command/parser/nbt_path",
@@ -1306,18 +1330,58 @@ fn parse_component(reader: &mut StringReader<'_>) -> Result<TextComponent, Comma
     Ok(component)
 }
 
-/// Parses a vanilla message argument: the entire remaining input as plain text.
+/// Parses a vanilla message argument: the entire remaining input, scanning for
+/// entity selectors (`@a`, `@p`, `@r`, `@s`, `@e`) when the source allows them.
 ///
-/// Mirrors `MessageArgument.parseText`, including the 256-character length limit.
-fn parse_message(reader: &mut StringReader<'_>) -> Result<TextComponent, CommandSyntaxError> {
-    let length = reader.remaining().len();
-    if length > 256 {
+/// Mirrors `MessageArgument.parseText`: selectors are parsed at argument-parse time
+/// but resolved to entity names only when the message is delivered. The 256-character
+/// length limit applies to the raw text.
+fn parse_message(
+    reader: &mut StringReader<'_>,
+    source: &dyn CommandArgumentSource,
+) -> Result<MessageValue, CommandSyntaxError> {
+    let text = reader.read_remaining().to_owned();
+    if text.len() > 256 {
         let message = translations::ARGUMENT_MESSAGE_TOO_LONG
-            .message([length.to_string(), "256".to_owned()])
+            .message([text.len().to_string(), "256".to_owned()])
             .component();
         return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))));
     }
-    Ok(TextComponent::plain(reader.read_remaining().to_owned()))
+
+    if !allow_selectors(source) {
+        return Ok(MessageValue {
+            text,
+            parts: Vec::new(),
+        });
+    }
+
+    let mut scan_reader = StringReader::new(&text);
+    let mut parts = Vec::new();
+
+    while scan_reader.can_read() {
+        if scan_reader.peek() == Some('@') {
+            let part_start = scan_reader.cursor();
+            match try_parse_message_selector(&mut scan_reader, source) {
+                Ok(selector) => {
+                    parts.push(MessagePart {
+                        start: part_start,
+                        end: scan_reader.cursor(),
+                        selector,
+                    });
+                    continue;
+                }
+                Err(MessageSelectorError::Skip) => {
+                    scan_reader.skip();
+                    continue;
+                }
+                Err(MessageSelectorError::Propagate(error)) => return Err(error),
+            }
+        } else {
+            scan_reader.skip();
+        }
+    }
+
+    Ok(MessageValue { text, parts })
 }
 
 /// Parses a single structured SNBT component (`{...}`, `[...]`, or a quoted string).

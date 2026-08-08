@@ -19,7 +19,7 @@ use text_components::TextComponent;
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
     execution::{
-        CommandSource, CommandTextResolver, SteelArgumentType, SteelCommandContext,
+        CommandSource, SteelArgumentType, SteelCommandContext,
         SteelCommandRuntime, argument, literal,
     },
     registration::CommandRegistration,
@@ -181,7 +181,7 @@ fn resolve_message(
             "Parsed message argument is missing from the command context",
         ));
     };
-    message.try_resolve(&CommandTextResolver::for_source(context.source()))
+    message.resolve(context.source())
 }
 
 fn command_count(recipients: usize) -> Result<i32, CommandSyntaxError> {
