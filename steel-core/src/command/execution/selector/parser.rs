@@ -989,3 +989,53 @@ fn is_range_number_char(ch: char, next: Option<char>) -> bool {
 const fn is_quoted_string_start(ch: char) -> bool {
     matches!(ch, '"' | '\'')
 }
+
+/// Why `try_parse_message_selector` did not produce a valid selector.
+pub(crate) enum MessageSelectorError {
+    /// The `@` was not a selector (missing/unknown type). Skip it as literal text.
+    Skip,
+    /// A real selector syntax error. Propagate it.
+    Propagate(CommandSyntaxError),
+}
+
+/// Tries to parse a selector at the reader's current position for message arguments.
+///
+/// Vanilla's message argument scans for `@` and attempts to parse a selector at each one.
+/// Missing or unknown selector types are treated as literal `@` characters; all other
+/// selector syntax errors are fatal to the command.
+pub(crate) fn try_parse_message_selector<S>(
+    reader: &mut StringReader<'_>,
+    source: &S,
+) -> Result<EntitySelector, MessageSelectorError>
+where
+    S: CommandArgumentSource + ?Sized,
+{
+    let start = reader.checkpoint();
+    let raw = read_selector_argument(reader).map_err(MessageSelectorError::Propagate)?;
+    let allow_selectors = allow_selectors(source);
+    let allow_advanced = allow_advanced_selectors(source);
+
+    match parse_selector_plan_with_permissions(&raw, allow_selectors, allow_advanced) {
+        Err(error) if is_skippable_selector_error(&error) => {
+            reader.restore(start);
+            Err(MessageSelectorError::Skip)
+        }
+        Err(error) => {
+            Err(MessageSelectorError::Propagate(selector_syntax_error(
+                reader, start, &raw, error,
+            )))
+        }
+        Ok(selector) => match selector.validate_for_argument(false, false) {
+            Ok(()) => Ok(selector),
+            Err(error) => Err(MessageSelectorError::Propagate(selector_syntax_error(
+                reader, start, &raw, error,
+            ))),
+        },
+    }
+}
+
+/// Returns `true` for selector errors that should be treated as literal `@` in messages.
+fn is_skippable_selector_error(error: &SelectorParseError) -> bool {
+    matches!(error.kind, SelectorParseErrorKind::Invalid(_))
+        && error.cursor == 1
+}

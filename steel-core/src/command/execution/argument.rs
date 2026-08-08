@@ -14,7 +14,7 @@ use super::{
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
     selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
     structure::{parse_structure_or_tag_key, suggest_structures},
-    text::validate_component_syntax,
+    text::{validate_component_syntax, CommandTextResolutionSource},
     world::{parse_world_argument, suggest_worlds},
 };
 use crate::chunk::heightmap::HeightmapType;
@@ -523,7 +523,69 @@ argument_value_wrapper!(
     ComponentValue(TextComponent),
     "steel:command/value/component"
 );
-argument_value_wrapper!(MessageValue(TextComponent), "steel:command/value/message");
+/// Parsed vanilla message argument: raw text plus the selector parts found
+/// during parsing.
+///
+/// Vanilla's `MessageArgument` defers selector resolution to message delivery
+/// time (`MessageArgument.Message.toComponent`), so selectors are only resolved
+/// against the sender when the message is actually built.
+#[derive(Debug)]
+pub(super) struct MessageValue {
+    text: String,
+    parts: Vec<MessagePart>,
+}
+
+/// A selector reference found within a message argument's text.
+///
+/// `start`/`end` are byte offsets into the raw message text. If parsing
+/// produced no selector parts, the message is delivered as plain text.
+#[derive(Debug)]
+pub(super) struct MessagePart {
+    start: usize,
+    end: usize,
+    selector: EntitySelector,
+}
+
+impl_downcast_type!(MessageValue, "steel:command/value/message");
+
+impl MessageValue {
+    /// Resolves the message into a component, substituting each selector part
+    /// with the comma-separated display names of the entities it matches.
+    pub(super) fn resolve(
+        &self,
+        source: &dyn CommandTextResolutionSource,
+    ) -> Result<TextComponent, CommandSyntaxError> {
+        if self.parts.is_empty() {
+            return Ok(TextComponent::plain(self.text.clone()));
+        }
+
+        let separator = TextComponent::plain(", ".to_owned());
+        let mut result = TextComponent::new();
+        let mut read_to = 0;
+
+        for part in &self.parts {
+            let before = &self.text[read_to..part.start];
+            if !before.is_empty() {
+                result.children.push(TextComponent::plain(before.to_owned()));
+            }
+
+            let names = source
+                .selector_display_names(&self.text[part.start..part.end])?
+                .into_iter();
+            for name in names {
+                result.children.push(name);
+            }
+            read_to = part.end;
+        }
+
+        let remaining = &self.text[read_to..];
+        if !remaining.is_empty() {
+            result.children.push(TextComponent::plain(remaining.to_owned()));
+        }
+
+        Ok(result)
+    }
+}
 argument_value_wrapper!(NbtPathValue(NbtPath), "steel:command/value/nbt_path");
 argument_value_wrapper!(
     IdentifierValue(Identifier),
