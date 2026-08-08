@@ -737,8 +737,7 @@ mod tests {
     use steel_registry::{
         blocks::properties::{BlockStateProperties, Tilt},
         entity_type::EntityTypeRef,
-        test_support::init_test_registry,
-        vanilla_blocks, vanilla_entities,
+        init_vanilla_registry, vanilla_blocks, vanilla_entities,
     };
     use steel_utils::{BlockPos, ChunkPos, Direction, types::UpdateFlags};
 
@@ -851,7 +850,7 @@ mod tests {
 
     #[test]
     fn may_break_requires_impact_projectile_tag() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let firework = FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
@@ -867,7 +866,7 @@ mod tests {
 
     #[test]
     fn move_vector_synthesizes_world_border_block_hit() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let world = Arc::clone(world_border_projectile_test_world());
@@ -894,7 +893,7 @@ mod tests {
 
     #[test]
     fn firework_deflects_without_exploding_on_deflecting_entity() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let world = Arc::clone(test_world());
         let firework = FireworkRocketEntity::new(
@@ -925,7 +924,7 @@ mod tests {
 
     #[test]
     fn base_block_hit_dispatches_vanilla_block_callbacks() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let world = Arc::clone(test_world());
@@ -1026,7 +1025,7 @@ mod tests {
 
     #[test]
     fn owner_collision_range_checks_root_vehicle_passengers() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let projectile = OwnerCollisionProjectile::new(1, DVec3::ZERO);
         let owner = OwnerCollisionTestEntity::shared(2, DVec3::new(10.0, 0.0, 0.0), true);
@@ -1042,7 +1041,7 @@ mod tests {
 
     #[test]
     fn owner_collision_range_ignores_non_pickable_root_vehicle_passengers() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let projectile = OwnerCollisionProjectile::new(1, DVec3::ZERO);
         let owner = OwnerCollisionTestEntity::shared(2, DVec3::new(10.0, 0.0, 0.0), true);

@@ -769,8 +769,8 @@ mod tests {
     use glam::DVec3;
 
     use steel_registry::{
-        item_stack::ItemStack, test_support::init_test_registry, vanilla_damage_types,
-        vanilla_entities, vanilla_items,
+        init_vanilla_registry, item_stack::ItemStack, vanilla_damage_types, vanilla_entities,
+        vanilla_items,
     };
 
     use crate::entity::{Entity, damage::DamageSource};
@@ -850,7 +850,7 @@ mod tests {
 
     #[test]
     fn item_merge_preserves_vanilla_stack_and_timing() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let source = ItemEntity::with_item(
             &vanilla_entities::ITEM,
@@ -900,7 +900,7 @@ mod tests {
 
     #[test]
     fn damage_resistant_item_ignores_matching_damage() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let item = ItemEntity::with_item(
             &vanilla_entities::ITEM,

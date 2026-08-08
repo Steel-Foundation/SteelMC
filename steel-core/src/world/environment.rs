@@ -293,7 +293,7 @@ fn lerp(alpha: f32, from: f32, to: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_NETHER};
     use steel_registry::vanilla_world_clocks;
 
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn overworld_sky_light_uses_generated_day_timeline() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_f32_close(
             sky_light_level(
@@ -361,7 +361,7 @@ mod tests {
 
     #[test]
     fn overworld_sky_light_interpolates_sunset_from_generated_keyframes() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_f32_close(
             sky_light_level(
@@ -377,7 +377,7 @@ mod tests {
 
     #[test]
     fn overworld_sun_angle_uses_vanilla_cubic_bezier_easing() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_f32_close(
             sun_angle_degrees(&OVERWORLD, &clock_manager_at(OVERWORLD_WAKE_UP_TICKS)),
@@ -395,7 +395,7 @@ mod tests {
 
     #[test]
     fn sky_light_level_applies_vanilla_weather_alpha_layers() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_f32_close(
             sky_light_level(
@@ -421,7 +421,7 @@ mod tests {
 
     #[test]
     fn fixed_nether_sky_light_uses_dimension_attribute() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_f32_close(
             sky_light_level(

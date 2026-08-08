@@ -282,12 +282,12 @@ impl BlockBehavior for RespawnAnchorBlock {
 
 #[cfg(test)]
 mod tests {
-    use super::RespawnAnchorBlock;
+    use super::*;
     use steel_registry::blocks::{
         block_state_ext::BlockStateExt, properties::BlockStateProperties,
     };
     use steel_registry::item_stack::ItemStack;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
     use steel_utils::BlockPos;
 
     #[test]
@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn charge_helpers_match_vanilla_bounds() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let empty = vanilla_blocks::RESPAWN_ANCHOR.default_state();
         let partial = empty.set_value(&BlockStateProperties::RESPAWN_ANCHOR_CHARGES, 1);
@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     fn consuming_respawn_fuel_respects_infinite_materials() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut survival_fuel = ItemStack::with_count(&vanilla_items::GLOWSTONE, 2);
         RespawnAnchorBlock::consume_respawn_fuel(&mut survival_fuel, false);
@@ -377,7 +377,7 @@ mod tests {
 
     #[test]
     fn consumed_charge_state_decrements_exactly_once() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let charged = vanilla_blocks::RESPAWN_ANCHOR
             .default_state()

@@ -58,7 +58,7 @@ mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::entities::PigEntity;
@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn open_door_goal_continue_requires_close_door_flag() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = OpenDoorGoal::new(false);
         goal.forget_time = 1;
 
@@ -86,7 +86,7 @@ mod tests {
 
     #[test]
     fn open_door_goal_uses_vanilla_forget_time() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = OpenDoorGoal::new(true);
         let mob = pig();
 

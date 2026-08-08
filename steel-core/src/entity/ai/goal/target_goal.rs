@@ -150,7 +150,7 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::ai::targeting::TargetingConditions;
@@ -174,7 +174,7 @@ mod tests {
 
     #[test]
     fn target_goal_base_continues_with_existing_mob_target() {
-        init_test_registry();
+        init_vanilla_registry();
         let mob = pig(1, DVec3::ZERO);
         let target: SharedEntity = pig(2, DVec3::new(2.0, 0.0, 0.0));
         assert!(mob.set_target(Some(&target)));
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn target_goal_base_restores_stored_target_while_continuing() {
-        init_test_registry();
+        init_vanilla_registry();
         let mob = pig(1, DVec3::ZERO);
         let target: SharedEntity = pig(2, DVec3::new(2.0, 0.0, 0.0));
         let mut goal = TargetGoalBase::new(false, false);
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn target_goal_base_forgets_unseen_target_after_memory_ticks() {
-        init_test_registry();
+        init_vanilla_registry();
         let mob = pig(1, DVec3::ZERO);
         let target: SharedEntity = pig(2, DVec3::new(2.0, 0.0, 0.0));
         assert!(mob.set_target(Some(&target)));
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn target_goal_base_stop_clears_mob_and_stored_target() {
-        init_test_registry();
+        init_vanilla_registry();
         let mob = pig(1, DVec3::ZERO);
         let target: SharedEntity = pig(2, DVec3::new(2.0, 0.0, 0.0));
         assert!(mob.set_target(Some(&target)));
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn target_goal_base_can_attack_requires_world() {
-        init_test_registry();
+        init_vanilla_registry();
         let mob = pig(1, DVec3::ZERO);
         let target: SharedEntity = pig(2, DVec3::new(2.0, 0.0, 0.0));
         let mut goal = TargetGoalBase::new(false, false);
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn target_goal_base_caches_unreachable_targets() {
-        init_test_registry();
+        init_vanilla_registry();
         let mob = pig(1, DVec3::ZERO);
         let target: SharedEntity = pig(2, DVec3::new(2.0, 0.0, 0.0));
         let mut goal = TargetGoalBase::new(false, true);

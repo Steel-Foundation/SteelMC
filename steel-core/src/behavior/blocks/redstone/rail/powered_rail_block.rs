@@ -252,7 +252,7 @@ impl BlockBehavior for PoweredRailBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
     use steel_utils::ChunkPos;
 
@@ -265,7 +265,7 @@ mod tests {
     }
 
     fn powered_chain_world(key: &'static str, last_x: i32) -> (Arc<World>, BlockPos) {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);
         let start = BlockPos::new(8, 64, 8);
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn powered_propagation_requires_exact_block_identity() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("powered_rail_activator_isolation");
         let start = BlockPos::new(8, 64, 8);

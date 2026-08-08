@@ -135,7 +135,7 @@ impl BlockBehavior for TallSeagrassBlock {
 #[cfg(test)]
 mod tests {
     use crate::behavior::init_behaviors;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use crate::test_support::TestLevel;
 
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn tall_seagrass_lower_breaks_when_upper_half_is_missing() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = TallSeagrassBlock::new(&vanilla_blocks::TALL_SEAGRASS);
         let lower = vanilla_blocks::TALL_SEAGRASS.default_state().set_value(
             &BlockStateProperties::DOUBLE_BLOCK_HALF,
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn tall_seagrass_upper_breaks_when_lower_half_is_missing() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = TallSeagrassBlock::new(&vanilla_blocks::TALL_SEAGRASS);
         let upper = vanilla_blocks::TALL_SEAGRASS.default_state().set_value(
             &BlockStateProperties::DOUBLE_BLOCK_HALF,
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn tall_seagrass_lower_survives_in_falling_full_water() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let behavior = TallSeagrassBlock::new(&vanilla_blocks::TALL_SEAGRASS);
         let lower = vanilla_blocks::TALL_SEAGRASS.default_state().set_value(

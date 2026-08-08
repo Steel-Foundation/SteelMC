@@ -337,7 +337,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
     use steel_registry::blocks::properties::BlockStateProperties;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_fluids};
     use steel_utils::ChunkPos;
     use steel_utils::types::UpdateFlags;
 
@@ -345,7 +345,7 @@ mod tests {
 
     #[test]
     fn hole_check_rejects_dry_waterloggable_for_flowing_water_fallback() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let dry_waterloggable = vanilla_blocks::OAK_LEAVES
@@ -361,7 +361,7 @@ mod tests {
 
     #[test]
     fn hole_check_treats_source_and_flowing_variants_as_same_fluid_below() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let flowing_water = vanilla_blocks::WATER
@@ -377,7 +377,7 @@ mod tests {
 
     #[test]
     fn spread_keeps_the_closest_slope_even_when_its_target_rejects_replacement() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let world = fresh_test_world("fluid_spread_closest_slope");

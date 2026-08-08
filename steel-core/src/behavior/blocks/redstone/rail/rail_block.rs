@@ -117,7 +117,7 @@ impl BlockBehavior for RailBlock {
 #[cfg(test)]
 mod tests {
     use steel_registry::blocks::properties::{BlockStateProperties, RailShape};
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
     use steel_utils::ChunkPos;
     use steel_utils::types::UpdateFlags;
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn powered_three_way_junction_uses_vanilla_curve_priority() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("rail_three_way_switch");
         let center = BlockPos::new(8, 64, 8);

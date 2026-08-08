@@ -710,14 +710,14 @@ impl BlockBehavior for WallHangingSignBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::test_support::{TestLevel, fresh_test_world};
 
     #[test]
     fn standing_sign_only_schedules_water_when_support_survives() {
-        init_test_registry();
+        init_vanilla_registry();
         let pos = BlockPos::new(0, 64, 0);
         let sign = StandingSignBlock::new(&vanilla_blocks::OAK_SIGN);
         let state = vanilla_blocks::OAK_SIGN
@@ -756,7 +756,7 @@ mod tests {
 
     #[test]
     fn sign_variants_select_their_matching_vanilla_tickers() {
-        init_test_registry();
+        init_vanilla_registry();
         let world = fresh_test_world("sign_ticker_selection");
 
         let standing = StandingSignBlock::new(&vanilla_blocks::OAK_SIGN);

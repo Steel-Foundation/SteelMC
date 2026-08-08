@@ -197,7 +197,7 @@ impl BlockBehavior for PressurePlateBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{sound_events, test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, sound_events, vanilla_blocks};
 
     use super::*;
     use crate::test_support::TestLevel;
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn pressure_plate_survives_on_rigid_or_center_support() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = stone_pressure_plate();
         let pos = BlockPos::new(0, 64, 0);
         let state = vanilla_blocks::STONE_PRESSURE_PLATE.default_state();
@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn powered_pressure_plate_strongly_powers_only_upward() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = stone_pressure_plate();
         let state = vanilla_blocks::STONE_PRESSURE_PLATE
             .default_state()
