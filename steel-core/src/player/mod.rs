@@ -968,6 +968,8 @@ impl Player {
             }
         }
 
+        // TODO: Based on kill credit, award stats, score and create a wither rose
+
         self.award_custom_stat(&vanilla_custom_stats::DEATHS);
         self.reset_custom_stat(&vanilla_custom_stats::TIME_SINCE_DEATH);
         self.reset_custom_stat(&vanilla_custom_stats::TIME_SINCE_REST);
