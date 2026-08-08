@@ -1006,7 +1006,7 @@ pub(crate) enum MessageSelectorError {
 pub(crate) fn try_parse_message_selector<S>(
     reader: &mut StringReader<'_>,
     source: &S,
-) -> Result<EntitySelector, MessageSelectorError>
+) -> Result<(), MessageSelectorError>
 where
     S: CommandArgumentSource + ?Sized,
 {
@@ -1026,7 +1026,7 @@ where
             )))
         }
         Ok(selector) => match selector.validate_for_argument(false, false) {
-            Ok(()) => Ok(selector),
+            Ok(()) => Ok(()),
             Err(error) => Err(MessageSelectorError::Propagate(selector_syntax_error(
                 reader, start, &raw, error,
             ))),

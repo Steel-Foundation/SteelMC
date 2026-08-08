@@ -533,7 +533,7 @@ argument_value_wrapper!(
 /// time (`MessageArgument.Message.toComponent`), so selectors are only resolved
 /// against the sender when the message is actually built.
 #[derive(Debug)]
-pub(super) struct MessageValue {
+pub(crate) struct MessageValue {
     text: String,
     parts: Vec<MessagePart>,
 }
@@ -543,10 +543,9 @@ pub(super) struct MessageValue {
 /// `start`/`end` are byte offsets into the raw message text. If parsing
 /// produced no selector parts, the message is delivered as plain text.
 #[derive(Debug)]
-pub(super) struct MessagePart {
+pub(crate) struct MessagePart {
     start: usize,
     end: usize,
-    selector: EntitySelector,
 }
 
 impl_downcast_type!(MessageValue, "steel:command/value/message");
@@ -554,7 +553,7 @@ impl_downcast_type!(MessageValue, "steel:command/value/message");
 impl MessageValue {
     /// Resolves the message into a component, substituting each selector part
     /// with the comma-separated display names of the entities it matches.
-    pub(super) fn resolve(
+    pub(crate) fn resolve(
         &self,
         source: &dyn CommandTextResolutionSource,
     ) -> Result<TextComponent, CommandSyntaxError> {
@@ -1362,11 +1361,10 @@ fn parse_message(
         if scan_reader.peek() == Some('@') {
             let part_start = scan_reader.cursor();
             match try_parse_message_selector(&mut scan_reader, source) {
-                Ok(selector) => {
+                Ok(()) => {
                     parts.push(MessagePart {
                         start: part_start,
                         end: scan_reader.cursor(),
-                        selector,
                     });
                     continue;
                 }
