@@ -121,14 +121,14 @@ impl Bonemealable for WeepingVinesPlantBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::test_support::TestLevel;
 
     #[test]
     fn bonemeal_target_follows_connected_head() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = WeepingVinesPlantBlock::new(&vanilla_blocks::WEEPING_VINES_PLANT);
         let state = vanilla_blocks::WEEPING_VINES_PLANT.default_state();

@@ -236,7 +236,7 @@ impl BlockBehavior for SoulFireBlock {
 #[cfg(test)]
 mod tests {
     use steel_registry::{
-        blocks::block_state_ext::BlockStateExt, test_support::init_test_registry, vanilla_blocks,
+        blocks::block_state_ext::BlockStateExt, init_vanilla_registry, vanilla_blocks,
     };
     use steel_utils::{BlockPos, BlockStateId};
 
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn get_state_selects_soul_fire_on_soul_fire_base_block() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let level = level_with_support(vanilla_blocks::SOUL_SAND.default_state());
 
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn get_state_selects_regular_fire_otherwise() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let level = level_with_support(vanilla_blocks::STONE.default_state());
 

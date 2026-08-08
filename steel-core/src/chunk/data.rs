@@ -1176,9 +1176,7 @@ mod tests {
         status::ChunkStatus,
     };
     use crate::world::tick_scheduler::TickPriority;
-    use steel_registry::{
-        test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
-    };
+    use steel_registry::{init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks};
     use steel_utils::{BlockPos, ChunkPos, DowncastType, DowncastTypeKey, types::UpdateFlags};
 
     struct DropSentinel(Arc<AtomicUsize>);
@@ -1197,7 +1195,7 @@ mod tests {
 
     #[test]
     fn transient_generation_state_survives_borrow_and_is_consumed_once() {
-        init_test_registry();
+        init_vanilla_registry();
         let chunk = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -1228,7 +1226,7 @@ mod tests {
 
     #[test]
     fn full_promotion_drops_leftover_transient_generation_state() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let chunk = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
@@ -1262,7 +1260,7 @@ mod tests {
 
     #[test]
     fn proto_scheduled_block_ticks_use_vanilla_zero_delay() {
-        init_test_registry();
+        init_vanilla_registry();
         let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -1289,7 +1287,7 @@ mod tests {
 
     #[test]
     fn full_promotion_retains_and_closes_proto_scheduled_tick_container() {
-        init_test_registry();
+        init_vanilla_registry();
         let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             ChunkPos::new(0, 0),
@@ -1322,7 +1320,7 @@ mod tests {
 
     #[test]
     fn proto_chunk_preserves_distinct_air_states_in_empty_sections() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
@@ -1346,7 +1344,7 @@ mod tests {
 
     #[test]
     fn pre_light_block_writes_defer_counts_until_light_initialization() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
@@ -1392,7 +1390,7 @@ mod tests {
 
     #[test]
     fn proto_mutation_defers_lifecycle_and_promotion_revalidates_concrete_entities() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
@@ -1434,7 +1432,7 @@ mod tests {
 
     #[test]
     fn proto_storage_preserves_removed_entries_until_full_promotion() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
@@ -1477,7 +1475,7 @@ mod tests {
 
     #[test]
     fn pending_proto_entity_promotes_without_running_live_lifecycle() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         init_block_entities();
         let proto = Chunk::new(
@@ -1507,7 +1505,7 @@ mod tests {
 
     #[test]
     fn conditional_proto_marker_mutation_rejects_stale_worldgen_state() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
@@ -1552,7 +1550,7 @@ mod tests {
 
     #[test]
     fn dummy_factory_outcomes_keep_proto_and_full_stage_semantics() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
@@ -1601,7 +1599,7 @@ mod tests {
 
     #[test]
     fn stale_proto_factory_cannot_consume_a_replacement_marker() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let proto = Chunk::new(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),

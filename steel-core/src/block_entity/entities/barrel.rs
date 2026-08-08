@@ -171,12 +171,12 @@ impl Container for BarrelContainer {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
 
     use super::*;
 
     fn test_barrel() -> BarrelBlockEntity {
-        init_test_registry();
+        init_vanilla_registry();
         BarrelBlockEntity::new(
             Weak::new(),
             BlockPos::new(1, 2, 3),

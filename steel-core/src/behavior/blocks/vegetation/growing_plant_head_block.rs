@@ -259,14 +259,14 @@ impl Bonemealable for GrowingPlantHeadBlock {
 #[cfg(test)]
 mod tests {
     use rand::{SeedableRng as _, rngs::StdRng};
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
     use crate::{behavior::blocks::CaveVinesBlock, test_support::TestLevel};
 
     #[test]
     fn connected_placement_uses_body_state() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = GrowingPlantHeadBlock::new(
             &vanilla_blocks::CAVE_VINES,

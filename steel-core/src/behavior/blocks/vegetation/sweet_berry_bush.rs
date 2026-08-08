@@ -251,8 +251,7 @@ mod tests {
 
     use steel_registry::{
         entity_type::{EntityDimensions, EntityTypeRef},
-        test_support::init_test_registry,
-        vanilla_blocks,
+        init_vanilla_registry, vanilla_blocks,
     };
     use steel_utils::locks::SyncMutex;
 
@@ -344,7 +343,7 @@ mod tests {
     }
 
     fn state_with_age(age: u8) -> BlockStateId {
-        init_test_registry();
+        init_vanilla_registry();
         vanilla_blocks::SWEET_BERRY_BUSH
             .default_state()
             .set_value(&BlockStateProperties::AGE_3, age)

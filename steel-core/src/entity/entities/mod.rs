@@ -2,6 +2,7 @@
 
 mod block_display;
 mod chest_minecart;
+mod cow;
 mod end_crystal;
 mod ender_pearl;
 mod experience_orb;
@@ -14,6 +15,7 @@ mod raw;
 
 pub use block_display::BlockDisplayEntity;
 pub use chest_minecart::ChestMinecartEntity;
+pub use cow::CowEntity;
 pub use end_crystal::EndCrystalEntity;
 pub use ender_pearl::EnderPearlEntity;
 pub use experience_orb::ExperienceOrbEntity;

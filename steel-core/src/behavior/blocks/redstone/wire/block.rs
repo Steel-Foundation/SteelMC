@@ -535,14 +535,14 @@ impl BlockBehavior for RedStoneWireBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::test_support::TestLevel;
 
     fn wire() -> RedStoneWireBlock {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         RedStoneWireBlock::new(&vanilla_blocks::REDSTONE_WIRE)
     }

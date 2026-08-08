@@ -1048,8 +1048,7 @@ mod tests {
 
     use steel_registry::{
         blocks::properties::{BlockStateProperties, SlabType},
-        test_support::init_test_registry,
-        vanilla_blocks,
+        init_vanilla_registry, vanilla_blocks,
     };
     use steel_utils::{ChunkPos, types::UpdateFlags};
 
@@ -1065,7 +1064,7 @@ mod tests {
     };
 
     fn init_tests() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
     }
 

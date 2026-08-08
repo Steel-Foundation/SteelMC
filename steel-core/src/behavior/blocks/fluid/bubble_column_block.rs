@@ -242,7 +242,7 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_entities;
     use steel_utils::locks::SyncMutex;
 
@@ -312,7 +312,7 @@ mod tests {
 
     #[test]
     fn bubble_column_update_shape_schedules_water_and_column_tick() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = BubbleColumnBlock::new(&vanilla_blocks::BUBBLE_COLUMN);
         let level = TestLevel::default();
         let state = vanilla_blocks::BUBBLE_COLUMN.default_state();
@@ -339,7 +339,7 @@ mod tests {
 
     #[test]
     fn bubble_column_update_column_uses_push_up_and_drag_down_blocks() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let level = TestLevel::default()
             .with_block(BlockPos::ZERO, vanilla_blocks::WATER.default_state())
@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn precise_entity_with_open_block_above_uses_above_bubble_column_hook() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let level = TestLevel::default();
         let entity = RecordingEntity::new();
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn precise_entity_with_fluid_above_stays_inside_bubble_column() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let level = TestLevel::default().with_block(
             BlockPos::ZERO.above(),
@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn imprecise_entity_does_not_apply_bubble_column_effect() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let level = TestLevel::default();
         let entity = RecordingEntity::new();

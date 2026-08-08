@@ -200,7 +200,7 @@ impl Bonemealable for GrowingPlantBodyBlock {
 mod tests {
     use glam::DVec3;
     use steel_registry::{
-        item_stack::ItemStack, test_support::init_test_registry, vanilla_blocks, vanilla_items,
+        init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_items,
     };
     use steel_utils::{BlockPos, types::InteractionHand};
 
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn replacement_rejects_head_item_and_preserves_default_result() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let behavior = GrowingPlantBodyBlock::new(

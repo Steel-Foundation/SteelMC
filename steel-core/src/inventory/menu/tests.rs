@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::{
-    item_stack::ItemStack, test_support::init_test_registry, vanilla_blocks, vanilla_entities,
-    vanilla_items, vanilla_menu_types,
+    init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_entities, vanilla_items,
+    vanilla_menu_types,
 };
 use steel_utils::locks::{IntoShared as _, Shared};
 use steel_utils::types::{GameType, UpdateFlags};
@@ -73,7 +73,7 @@ struct PartialSwapFixture {
 }
 
 fn perform_partial_swap(world_name: &'static str, game_mode: GameType) -> PartialSwapFixture {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world(world_name);
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     let player =
@@ -115,7 +115,7 @@ fn perform_partial_swap(world_name: &'static str, game_mode: GameType) -> Partia
 
 #[test]
 fn swap_locks_player_inventory_when_menu_has_no_inventory_slots() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("menu_swap_without_inventory_slots");
     let player =
         TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(1), "SwapTester", 1).build();
@@ -148,7 +148,7 @@ fn swap_locks_player_inventory_when_menu_has_no_inventory_slots() {
 
 #[test]
 fn draining_a_block_entity_slot_marks_its_chunk_dirty() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     init_block_entities();
     let world = fresh_test_world("persistent_menu_drain");
@@ -197,7 +197,7 @@ fn draining_a_block_entity_slot_marks_its_chunk_dirty() {
 
 #[test]
 fn one_slot_creative_clone_drag_is_a_vanilla_noop() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("one_slot_clone_drag");
     let player =
         TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(1), "CloneTester", 1).build();
