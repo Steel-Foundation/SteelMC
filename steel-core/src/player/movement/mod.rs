@@ -905,16 +905,7 @@ impl Player {
             }
             PlayerCommandAction::LeaveBed => {
                 if self.is_sleeping() {
-                    self.stop_sleeping();
-                    // TODO: Full bed wake-up logic:
-                    //   - set bed block OCCUPIED property to false
-                    //   - compute stand-up position via BedBlock::findStandUpPosition
-                    //   - teleport player + set rotation toward bed
-                    //   - set pose to Standing, clear sleeping pos entity data
-                    //   - update server sleeping player list (for sleep-skip)
-                    //   - set sleepCounter = 100
-                    //   - set awaiting_position_from_client
-                    // Blocked on: bed block properties, sleeping pos entity data
+                    self.stop_sleep_in_bed(false, true);
                 }
             }
             PlayerCommandAction::StartRidingJump

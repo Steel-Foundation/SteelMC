@@ -91,6 +91,10 @@ impl WeightedPressurePlateBlock {
 }
 
 impl BlockBehavior for WeightedPressurePlateBlock {
+    fn is_possible_to_respawn_in_this(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         BasePressurePlateBlock::can_survive(world, pos)
     }
