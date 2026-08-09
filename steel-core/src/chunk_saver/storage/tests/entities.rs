@@ -32,7 +32,7 @@ fn test_persistent_end_crystal(pos: DVec3) -> PersistentEntity {
 
 #[test]
 fn persistent_entity_load_clamps_position_like_vanilla() {
-    init_test_core();
+    init_globals_once();
 
     let persistent =
         test_persistent_end_crystal(DVec3::new(100_000_000.0, -100_000_000.0, -100_000_000.0));
@@ -54,7 +54,7 @@ fn persistent_entity_load_clamps_position_like_vanilla() {
 
 #[test]
 fn persistent_entity_load_rejects_non_finite_rotation_like_vanilla() {
-    init_test_core();
+    init_globals_once();
 
     let mut persistent = test_persistent_end_crystal(DVec3::new(1.0, 2.0, 3.0));
     persistent.rotation = [f32::NAN, 0.0];
@@ -71,7 +71,7 @@ fn persistent_entity_load_rejects_non_finite_rotation_like_vanilla() {
 
 #[test]
 fn proto_block_entities_roundtrip_and_promote_to_full_chunk() {
-    init_test_core();
+    init_globals_once();
 
     let pos = ChunkPos::new(0, 0);
     let block_pos = BlockPos::new(3, 4, 5);
@@ -140,7 +140,7 @@ fn proto_block_entities_roundtrip_and_promote_to_full_chunk() {
 
 #[test]
 fn persistent_block_entity_with_invalid_live_state_is_rejected_before_construction() {
-    init_test_core();
+    init_globals_once();
     let persistent = PersistentBlockEntity {
         x: 1,
         y: 2,
@@ -162,7 +162,7 @@ fn persistent_block_entity_with_invalid_live_state_is_rejected_before_constructi
 
 #[test]
 fn persistent_block_entity_with_malformed_nbt_is_dropped() {
-    init_test_core();
+    init_globals_once();
     let persistent = PersistentBlockEntity {
         x: 1,
         y: 2,
@@ -184,7 +184,7 @@ fn persistent_block_entity_with_malformed_nbt_is_dropped() {
 
 #[test]
 fn proto_entities_roundtrip_and_promote_to_full_chunk() {
-    init_test_core();
+    init_globals_once();
 
     let pos = ChunkPos::new(0, 0);
     let entity_pos = DVec3::new(5.5, 6.0, 7.5);
@@ -284,7 +284,7 @@ fn proto_entities_roundtrip_and_promote_to_full_chunk() {
 
 #[test]
 fn prepared_save_reports_handled_runtime_entity_ids() {
-    init_test_core();
+    init_globals_once();
 
     let pos = ChunkPos::new(0, 0);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -311,7 +311,7 @@ fn prepared_save_reports_handled_runtime_entity_ids() {
 
 #[test]
 fn full_chunk_load_defers_entities_to_world_registration() {
-    init_test_core();
+    init_globals_once();
 
     let pos = ChunkPos::new(0, 0);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -348,7 +348,7 @@ fn full_chunk_load_defers_entities_to_world_registration() {
 
 #[test]
 fn runtime_entity_passengers_save_nested_and_load_flattened_for_registration() {
-    init_test_core();
+    init_globals_once();
 
     let pos = ChunkPos::new(0, 0);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -414,7 +414,7 @@ fn runtime_entity_passengers_save_nested_and_load_flattened_for_registration() {
 
 #[test]
 fn runtime_entity_passengers_skip_non_serializable_entities_like_vanilla() {
-    init_test_core();
+    init_globals_once();
 
     let pos = ChunkPos::new(0, 0);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
@@ -466,7 +466,7 @@ fn runtime_entity_passengers_skip_non_serializable_entities_like_vanilla() {
 
 #[test]
 fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
-    init_test_core();
+    init_globals_once();
 
     let pos = ChunkPos::new(0, 0);
     let block_pos = BlockPos::new(4, 4, 6);

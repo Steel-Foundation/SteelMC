@@ -5,8 +5,8 @@ use std::{
 
 use simdnbt::{borrow::BaseNbtCompound as BorrowedNbtCompound, owned::NbtCompound};
 use steel_registry::{
-    blocks::properties::BlockStateProperties, test_support::init_test_registry,
-    vanilla_block_entity_types, vanilla_blocks, vanilla_fluids,
+    blocks::properties::BlockStateProperties, init_vanilla_registry, vanilla_block_entity_types,
+    vanilla_blocks, vanilla_fluids,
 };
 use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
@@ -39,7 +39,7 @@ fn test_chunk() -> Arc<Chunk> {
 
 #[test]
 fn promotion_installs_full_runtime_once() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let proto = Chunk::new(
         Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
@@ -59,7 +59,7 @@ fn promotion_installs_full_runtime_once() {
 
 #[test]
 fn full_disk_construction_returns_initialized_runtime() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let full = Chunk::from_full_disk(
         Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
@@ -82,7 +82,7 @@ fn full_disk_construction_returns_initialized_runtime() {
 
 #[test]
 fn lava_random_tick_classification_includes_block_and_fluid_hooks() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let Some((tick_block, tick_fluid)) = random_tick_kinds(vanilla_blocks::LAVA.default_state())
     else {
@@ -132,7 +132,7 @@ impl BlockEntity for ActivationRecordingBlockEntity {
 
 #[test]
 fn inactive_chunk_stages_lifecycle_callbacks_until_activation() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let proto = Chunk::new(
         Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
@@ -181,7 +181,7 @@ fn inactive_chunk_stages_lifecycle_callbacks_until_activation() {
 
 #[test]
 fn extract_light_data_uses_chunk_owned_light_and_skylight_flag() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let proto = Chunk::new(
         Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
@@ -223,7 +223,7 @@ fn extract_light_data_uses_chunk_owned_light_and_skylight_flag() {
 
 #[test]
 fn empty_and_out_of_range_sections_return_air() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let proto = Chunk::new(
         Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
@@ -246,7 +246,7 @@ fn empty_and_out_of_range_sections_return_air() {
 
 #[test]
 fn draining_postprocessing_marks_full_chunk_dirty() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let proto = Chunk::new(
         Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
@@ -266,7 +266,7 @@ fn draining_postprocessing_marks_full_chunk_dirty() {
 
 #[test]
 fn conditional_block_set_rejects_a_stale_state() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
     let chunk = FullChunkRef::from_full_context(&chunk_owner);
@@ -296,7 +296,7 @@ fn conditional_block_set_rejects_a_stale_state() {
 
 #[test]
 fn concurrent_consumers_cannot_both_claim_the_same_block_state() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
     let chunk = FullChunkRef::from_full_context(&chunk_owner);
@@ -356,7 +356,7 @@ fn concurrent_consumers_cannot_both_claim_the_same_block_state() {
 
 #[test]
 fn block_change_replaces_a_structurally_valid_raw_entity_with_the_new_factory() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
     let chunk = FullChunkRef::from_full_context(&chunk_owner);
@@ -393,7 +393,7 @@ fn block_change_replaces_a_structurally_valid_raw_entity_with_the_new_factory() 
 
 #[test]
 fn breaking_an_unimplemented_entity_block_removes_its_raw_entity() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
     let chunk = FullChunkRef::from_full_context(&chunk_owner);
@@ -426,7 +426,7 @@ fn breaking_an_unimplemented_entity_block_removes_its_raw_entity() {
 
 #[test]
 fn copper_chest_transformation_preserves_entity_identity() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
     let chunk = FullChunkRef::from_full_context(&chunk_owner);
@@ -466,7 +466,7 @@ fn copper_chest_transformation_preserves_entity_identity() {
 
 #[test]
 fn same_block_property_change_preserves_entity_data_and_updates_cached_state() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
     let chunk = FullChunkRef::from_full_context(&chunk_owner);
@@ -500,7 +500,7 @@ fn same_block_property_change_preserves_entity_data_and_updates_cached_state() {
 
 #[test]
 fn shared_entity_type_does_not_imply_cross_block_preservation() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
     let chunk = FullChunkRef::from_full_context(&chunk_owner);
@@ -534,7 +534,7 @@ fn shared_entity_type_does_not_imply_cross_block_preservation() {
 
 #[test]
 fn insertion_rejects_an_entity_owned_by_another_chunk() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
     let chunk = FullChunkRef::from_full_context(&chunk_owner);
@@ -560,7 +560,7 @@ fn insertion_rejects_an_entity_owned_by_another_chunk() {
 
 #[test]
 fn insertion_below_world_does_not_alias_the_bottom_section() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
     let chunk = FullChunkRef::from_full_context(&chunk_owner);
@@ -585,7 +585,7 @@ fn insertion_below_world_does_not_alias_the_bottom_section() {
 
 #[test]
 fn stale_no_entity_promotion_cannot_consume_a_replacement_marker() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
     let chunk = FullChunkRef::from_full_context(&chunk_owner);
@@ -614,7 +614,7 @@ fn stale_no_entity_promotion_cannot_consume_a_replacement_marker() {
 
 #[test]
 fn immediate_lookup_recovers_a_missing_implemented_entity() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
     let chunk = FullChunkRef::from_full_context(&chunk_owner);

@@ -391,7 +391,7 @@ impl BlockBehavior for ComparatorBlock {
 mod tests {
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::{vanilla_blocks, vanilla_entities};
     use steel_utils::ChunkPos;
 
@@ -468,7 +468,7 @@ mod tests {
 
     #[test]
     fn comparator_creates_typed_output_storage() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = ComparatorBlock::new(&vanilla_blocks::COMPARATOR);
         let entity = behavior
             .new_block_entity(
@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn item_frame_signal_uses_item_frame_capability() {
-        init_test_registry();
+        init_vanilla_registry();
         let world = fresh_test_world("comparator_item_frame_capability");
         let pos = BlockPos::new(8, 64, 8);
         insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));

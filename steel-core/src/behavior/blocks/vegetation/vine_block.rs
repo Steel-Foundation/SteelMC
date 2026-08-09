@@ -389,11 +389,11 @@ impl BlockBehavior for VineBlock {
 mod tests {
     use super::*;
     use crate::test_support::TestLevel;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     #[test]
     fn face_count_matches_vanilla_replacement_limit() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut state = vanilla_blocks::VINE.default_state();
         assert_eq!(VineBlock::count_faces(state), 0);
@@ -406,7 +406,7 @@ mod tests {
 
     #[test]
     fn shape_update_removes_faceless_vine() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let vine = VineBlock::new(&vanilla_blocks::VINE);
         let state = vanilla_blocks::VINE.default_state();

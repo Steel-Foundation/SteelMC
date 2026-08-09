@@ -14,7 +14,7 @@ use steel_protocol::{
     packets::game::{ClickType, HashedStack, SContainerClick, SSetCreativeModeSlot},
 };
 use steel_registry::{
-    item_stack::ItemStack, test_support::init_test_registry, vanilla_entities, vanilla_items,
+    init_vanilla_registry, item_stack::ItemStack, vanilla_entities, vanilla_items,
     vanilla_menu_types,
 };
 use steel_utils::{
@@ -45,7 +45,7 @@ use super::{
 
 #[test]
 fn vanilla_inventory_nbt_contains_main_slots_only() {
-    init_test_registry();
+    init_vanilla_registry();
     let mut inventory = PlayerInventory::new();
     inventory.items[2] = ItemStack::new(&vanilla_items::STONE);
     inventory.set(
@@ -67,7 +67,7 @@ fn vanilla_inventory_nbt_contains_main_slots_only() {
 
 #[test]
 fn add_marks_changed_when_stack_fills_existing_slot() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.items[0] = ItemStack::with_count(&vanilla_items::OAK_LOG, 63);
@@ -83,7 +83,7 @@ fn add_marks_changed_when_stack_fills_existing_slot() {
 
 #[test]
 fn add_to_selected_existing_slot_marks_inventory_changed() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.items[0] = ItemStack::with_count(&vanilla_items::OAK_LOG, 63);
@@ -98,7 +98,7 @@ fn add_to_selected_existing_slot_marks_inventory_changed() {
 
 #[test]
 fn add_to_empty_selected_slot_marks_inventory_changed() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     let before = inventory.get_times_changed();
@@ -112,7 +112,7 @@ fn add_to_empty_selected_slot_marks_inventory_changed() {
 
 #[test]
 fn add_merges_into_existing_offhand_stack_before_main_inventory() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set(
@@ -130,7 +130,7 @@ fn add_merges_into_existing_offhand_stack_before_main_inventory() {
 
 #[test]
 fn contains_stack_compares_components() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     let mut damaged_in_inventory = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
@@ -147,7 +147,7 @@ fn contains_stack_compares_components() {
 
 #[test]
 fn filled_result_replaces_single_survival_hand_stack() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::new(&vanilla_items::WATER_BUCKET));
@@ -168,7 +168,7 @@ fn filled_result_replaces_single_survival_hand_stack() {
 
 #[test]
 fn filled_result_adds_result_for_stacked_survival_hand_stack() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::with_count(&vanilla_items::BUCKET, 2));
@@ -193,7 +193,7 @@ fn filled_result_adds_result_for_stacked_survival_hand_stack() {
 
 #[test]
 fn filled_result_creative_limited_keeps_matching_held_stack() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::new(&vanilla_items::WATER_BUCKET));
@@ -220,7 +220,7 @@ fn filled_result_creative_limited_keeps_matching_held_stack() {
 
 #[test]
 fn filled_result_creative_limited_adds_missing_result_without_consuming_hand() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::with_count(&vanilla_items::BUCKET, 16));
@@ -245,7 +245,7 @@ fn filled_result_creative_limited_adds_missing_result_without_consuming_hand() {
 
 #[test]
 fn filled_result_empty_result_still_consumes_survival_hand_stack() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::new(&vanilla_items::BUCKET));
@@ -259,7 +259,7 @@ fn filled_result_empty_result_still_consumes_survival_hand_stack() {
 
 #[test]
 fn filled_result_creative_unlimited_discards_unadded_result() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::new(&vanilla_items::LAVA_BUCKET));
@@ -283,7 +283,7 @@ fn filled_result_creative_unlimited_discards_unadded_result() {
 
 #[test]
 fn clear_content_counts_equipment_items() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.items[0] = ItemStack::with_count(&vanilla_items::OAK_LOG, 3);
@@ -298,7 +298,7 @@ fn clear_content_counts_equipment_items() {
 
 #[test]
 fn container_traversal_matches_visible_slot_indices() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     let size = inventory.get_container_size();
@@ -365,7 +365,7 @@ fn equipment_trait_aliases_vanilla_container_indices() {
 
 #[test]
 fn mutable_container_slice_exposes_all_logical_slots() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     {
@@ -389,7 +389,7 @@ fn mutable_container_slice_exposes_all_logical_slots() {
 
 #[test]
 fn main_inventory_search_does_not_use_equipment_slots() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     for slot in 0..PlayerInventory::INVENTORY_SIZE {
@@ -406,7 +406,7 @@ fn main_inventory_search_does_not_use_equipment_slots() {
 
 #[test]
 fn equipment_main_hand_follows_selected_slot() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.items[0] = ItemStack::new(&vanilla_items::STICK);
@@ -428,7 +428,7 @@ fn equipment_main_hand_follows_selected_slot() {
 
 #[test]
 fn non_empty_equipment_items_uses_selected_item_as_main_hand() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     let main_hand = ItemStack::with_count(&vanilla_items::OAK_LOG, 2);
@@ -471,7 +471,7 @@ fn packet_selected_slot_rejects_invalid_values_without_wrapping() {
 
 #[test]
 fn shrink_item_in_hand_marks_inventory_changed() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::with_count(&vanilla_items::OAK_LOG, 3));
@@ -492,7 +492,7 @@ fn shrink_item_in_hand_marks_inventory_changed() {
 
 #[test]
 fn split_item_in_hand_marks_inventory_changed() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::with_count(&vanilla_items::OAK_LOG, 3));
@@ -507,7 +507,7 @@ fn split_item_in_hand_marks_inventory_changed() {
 
 #[test]
 fn mutating_only_held_item_components_marks_inventory_changed() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_SWORD));
@@ -528,7 +528,7 @@ fn mutating_only_held_item_components_marks_inventory_changed() {
 
 #[test]
 fn hurt_item_in_hand_marks_inventory_changed() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::new(&vanilla_items::SHEARS));
@@ -544,7 +544,7 @@ fn hurt_item_in_hand_marks_inventory_changed() {
 
 #[test]
 fn hurt_and_convert_item_in_hand_damages_without_breaking() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_offhand_item(ItemStack::new(&vanilla_items::CARROT_ON_A_STICK));
@@ -565,7 +565,7 @@ fn hurt_and_convert_item_in_hand_damages_without_breaking() {
 
 #[test]
 fn hurt_and_convert_item_in_hand_replaces_broken_item() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::new(&vanilla_items::CARROT_ON_A_STICK));
@@ -591,7 +591,7 @@ fn hurt_and_convert_item_in_hand_replaces_broken_item() {
 
 #[test]
 fn swap_hands_swaps_selected_and_offhand() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     let main_hand = ItemStack::with_count(&vanilla_items::OAK_LOG, 3);
@@ -607,7 +607,7 @@ fn swap_hands_swaps_selected_and_offhand() {
 
 #[test]
 fn equippable_single_item_moves_to_empty_armor_slot() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_HELMET));
@@ -628,7 +628,7 @@ fn equippable_single_item_moves_to_empty_armor_slot() {
 
 #[test]
 fn equippable_swap_respects_prevent_armor_change_effect() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     let mut bound_helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
@@ -652,7 +652,7 @@ fn equippable_swap_respects_prevent_armor_change_effect() {
 
 #[test]
 fn repair_with_xp_repairs_damaged_mending_item() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     let mut pickaxe = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
@@ -670,7 +670,7 @@ fn repair_with_xp_repairs_damaged_mending_item() {
 
 #[test]
 fn repair_with_xp_returns_leftover_when_item_is_fully_repaired() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     let mut pickaxe = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
@@ -686,7 +686,7 @@ fn repair_with_xp_returns_leftover_when_item_is_fully_repaired() {
 
 #[test]
 fn equippable_stack_moves_one_item_and_returns_old_equipment_to_inventory() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut inventory = PlayerInventory::new();
     inventory.set_selected_item(ItemStack::with_count(&vanilla_items::CARVED_PUMPKIN, 2));
@@ -1098,7 +1098,7 @@ fn empty_test_menu(player: &Player, container_id: u8, kind: impl MenuKind + 'sta
 }
 #[test]
 fn disconnected_menu_removal_drops_transient_items() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("disconnected_menu_close");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(&world));
@@ -1178,7 +1178,7 @@ fn disconnected_menu_removal_drops_transient_items() {
 
 #[test]
 fn drained_items_return_without_player_inventory_slots() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let transient = SimpleContainer::new(1).into_shared();
     transient
@@ -1197,7 +1197,7 @@ fn drained_items_return_without_player_inventory_slots() {
 
 #[test]
 fn menu_item_return_policy_preserves_world_changes_only() {
-    init_test_registry();
+    init_vanilla_registry();
     let connected = test_player(Arc::clone(test_world()));
     assert!(connected.returns_menu_items_to_inventory());
 
@@ -1212,7 +1212,7 @@ fn menu_item_return_policy_preserves_world_changes_only() {
 
 #[test]
 fn menu_tick_hook_can_close_the_current_menu() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     player.open_menu("Close on tick", |context| {
         empty_test_menu(context.player, context.container_id, CloseOnTick)
@@ -1225,7 +1225,7 @@ fn menu_tick_hook_can_close_the_current_menu() {
 
 #[test]
 fn menu_click_hook_can_close_the_current_menu() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let opened_container_id = Arc::new(AtomicU8::new(0));
     let factory_container_id = Arc::clone(&opened_container_id);
@@ -1249,7 +1249,7 @@ fn menu_click_hook_can_close_the_current_menu() {
 
 #[test]
 fn dead_player_container_click_only_resynchronizes() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     player
         .inventory
@@ -1279,7 +1279,7 @@ fn dead_player_container_click_only_resynchronizes() {
 
 #[test]
 fn malformed_quickcraft_encoding_resets_active_drag() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     {
         let mut menu = player.inventory_menu.lock();
@@ -1308,7 +1308,7 @@ fn malformed_quickcraft_encoding_resets_active_drag() {
 
 #[test]
 fn malformed_non_quickcraft_click_resets_active_drag() {
-    init_test_registry();
+    init_vanilla_registry();
     let probe_state = Arc::new(LockProbeState {
         armed: AtomicBool::new(false),
         saw_packet: AtomicBool::new(false),
@@ -1386,7 +1386,7 @@ fn malformed_non_quickcraft_click_resets_active_drag() {
 
 #[test]
 fn closing_menu_while_dead_does_not_return_items_to_inventory() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("dead_menu_close");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(&world));
@@ -1420,7 +1420,7 @@ fn closing_menu_while_dead_does_not_return_items_to_inventory() {
 
 #[test]
 fn programmatic_out_of_range_menu_click_is_ignored() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let mut menu = empty_test_menu(&player, 1, BasicKind {});
     let invalid_slot = menu.behavior().slot_count();
@@ -1438,7 +1438,7 @@ fn programmatic_out_of_range_menu_click_is_ignored() {
 
 #[test]
 fn menu_open_hook_can_close_the_new_menu() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     player.open_menu("Close on open", |context| {
         empty_test_menu(context.player, context.container_id, CloseOnOpen)
@@ -1449,7 +1449,7 @@ fn menu_open_hook_can_close_the_new_menu() {
 
 #[test]
 fn menu_open_hook_can_replace_the_new_menu() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let own_removals = Arc::new(AtomicUsize::new(0));
     let replacement_removals = Arc::new(AtomicUsize::new(0));
@@ -1477,7 +1477,7 @@ fn menu_open_hook_can_replace_the_new_menu() {
 
 #[test]
 fn menu_hook_defers_a_factory_that_reuses_its_locked_container() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let container = SimpleContainer::new(9).into_shared();
     let factory_saw_unlocked = Arc::new(AtomicBool::new(false));
@@ -1502,7 +1502,7 @@ fn menu_hook_defers_a_factory_that_reuses_its_locked_container() {
 #[test]
 #[should_panic(expected = "open_menu factory returned container id")]
 fn open_menu_rejects_a_factory_with_the_wrong_container_id() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
 
     player.open_menu("Wrong id", |context| {
@@ -1516,7 +1516,7 @@ fn open_menu_rejects_a_factory_with_the_wrong_container_id() {
 
 #[test]
 fn menu_removed_hook_can_open_a_replacement() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let replacement_removals = Arc::new(AtomicUsize::new(0));
     let factory_replacement_removals = Arc::clone(&replacement_removals);
@@ -1538,7 +1538,7 @@ fn menu_removed_hook_can_open_a_replacement() {
 
 #[test]
 fn terminal_menu_removal_returns_carried_item_and_rejects_replacement() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     player
         .inventory
@@ -1586,7 +1586,7 @@ fn terminal_menu_removal_returns_carried_item_and_rejects_replacement() {
 
 #[test]
 fn terminal_menu_removal_skips_queued_factory_and_drains_base_menu() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let crafting = player.crafting_container();
     crafting
@@ -1635,7 +1635,7 @@ fn terminal_menu_removal_skips_queued_factory_and_drains_base_menu() {
 
 #[test]
 fn pending_terminal_removal_preserves_drop_disposition() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("pending_terminal_menu_drop");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(&world));
@@ -1669,7 +1669,7 @@ fn pending_terminal_removal_preserves_drop_disposition() {
 
 #[test]
 fn menu_open_stops_when_predecessor_removal_turns_terminal() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     player.open_menu("Terminal on removal", |context| {
         empty_test_menu(context.player, context.container_id, RemoveAllOnRemoved)
@@ -1688,7 +1688,7 @@ fn menu_open_stops_when_predecessor_removal_turns_terminal() {
 
 #[test]
 fn prepared_menu_is_cleaned_when_replacement_removal_turns_terminal() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("prepared_menu_terminal_cleanup");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(&world));
@@ -1742,7 +1742,7 @@ fn prepared_menu_is_cleaned_when_replacement_removal_turns_terminal() {
 
 #[test]
 fn deferred_factory_is_not_run_when_earlier_close_turns_terminal() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("deferred_open_terminal_cleanup");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     let player = test_player(Arc::clone(&world));
@@ -1781,7 +1781,7 @@ fn deferred_factory_is_not_run_when_earlier_close_turns_terminal() {
 
 #[test]
 fn terminal_removal_stays_active_while_pending_menu_cleanup_runs() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let factory_entered = Arc::new(Barrier::new(2));
     let factory_release = Arc::new(Barrier::new(2));
@@ -1835,7 +1835,7 @@ fn terminal_removal_stays_active_while_pending_menu_cleanup_runs() {
 
 #[test]
 fn opening_a_menu_closes_a_replacement_created_during_removal() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     let replacement_removals = Arc::new(AtomicUsize::new(0));
     let factory_replacement_removals = Arc::clone(&replacement_removals);
@@ -1859,7 +1859,7 @@ fn opening_a_menu_closes_a_replacement_created_during_removal() {
 
 #[test]
 fn creative_crafting_grid_updates_the_result_slot() {
-    init_test_registry();
+    init_vanilla_registry();
     let player = test_player(Arc::clone(test_world()));
     assert!(player.change_game_mode_state(GameType::Creative));
     let crafting = player.inventory_crafting_handler();

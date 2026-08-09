@@ -61,7 +61,7 @@ impl BlockBehavior for ComposterBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
     use crate::{
@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn registered_composter_outputs_its_full_state_level() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let state = vanilla_blocks::COMPOSTER
             .default_state()

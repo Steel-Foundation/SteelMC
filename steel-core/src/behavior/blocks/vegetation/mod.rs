@@ -477,7 +477,7 @@ pub(super) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::behavior::init_behaviors;
@@ -485,7 +485,7 @@ mod tests {
 
     #[test]
     fn multiface_update_uses_supplied_neighbor_state_and_schedules_water_first() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let pos = BlockPos::new(0, 64, 0);
         let state = vanilla_blocks::GLOW_LICHEN

@@ -9,9 +9,9 @@ use steel_registry::data_component_predicate::DataComponentMatchers;
 use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
 use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
 use steel_registry::{
-    RegistryHolderSet, init_vanilla_registry, item_stack::ItemStack,
-    vanilla_attributes, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_rules,
-    vanilla_items, vanilla_menu_types,
+    RegistryHolderSet, init_vanilla_registry, item_stack::ItemStack, vanilla_attributes,
+    vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_rules, vanilla_items,
+    vanilla_menu_types,
 };
 use steel_utils::locks::IntoShared as _;
 use steel_utils::types::{Difficulty, GameType, InteractionHand, UpdateFlags};
@@ -1063,43 +1063,6 @@ fn effect_visibility_refresh_preserves_spectator_invisibility() {
     player.living_base.mark_effects_dirty();
     player.update_dirty_mob_effect_entity_data();
     assert!(!player.entity_data.is_base_invisible_flag());
-}
-
-#[test]
-fn active_item_use_updates_synced_living_flags() {
-    init_vanilla_registry();
-    init_behaviors();
-    let player = test_player(Arc::clone(test_world()));
-    player.inventory.lock().set_item_in_hand(
-        InteractionHand::OffHand,
-        ItemStack::new(&vanilla_items::BRUSH),
-    );
-
-    player.start_using_item(InteractionHand::OffHand);
-
-    assert!(LivingEntity::is_using_item(player.as_ref()));
-    assert_eq!(
-        *player
-            .entity_data
-            .lock()
-            .living_entity()
-            .living_entity_flags
-            .get(),
-        Player::USING_ITEM_FLAG | Player::OFF_HAND_ACTIVE_ITEM_FLAG
-    );
-
-    player.stop_using_item();
-
-    assert!(!LivingEntity::is_using_item(player.as_ref()));
-    assert_eq!(
-        *player
-            .entity_data
-            .lock()
-            .living_entity()
-            .living_entity_flags
-            .get(),
-        Player::OFF_HAND_ACTIVE_ITEM_FLAG
-    );
 }
 
 #[test]

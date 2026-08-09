@@ -505,7 +505,7 @@ mod tests {
         RemoveStatusEffectsConsumeEffect, TeleportRandomlyConsumeEffect,
     };
     use crate::data_components::vanilla_components::{CONSUMABLE, DEATH_PROTECTION};
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse<T: simdnbt::FromNbtTag>(tag: simdnbt::owned::NbtTag) -> Option<T> {
@@ -536,7 +536,7 @@ mod tests {
 
     #[test]
     fn extracted_consumables_keep_typed_effects_and_round_trip() {
-        init_test_registry();
+        init_vanilla_registry();
         let golden_apple = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("golden_apple"))
@@ -588,7 +588,7 @@ mod tests {
 
     #[test]
     fn extracted_totem_death_protection_round_trips() {
-        init_test_registry();
+        init_vanilla_registry();
         let totem = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("totem_of_undying"))

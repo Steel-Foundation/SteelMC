@@ -410,8 +410,8 @@ mod tests {
     use steel_registry::blocks::block_state_ext::BlockStateExt as _;
     use steel_registry::blocks::properties::{BlockStateProperties, Direction};
     use steel_registry::{
-        item_stack::ItemStack, test_support::init_test_registry, vanilla_block_entity_types,
-        vanilla_blocks, vanilla_items,
+        init_vanilla_registry, item_stack::ItemStack, vanilla_block_entity_types, vanilla_blocks,
+        vanilla_items,
     };
     use steel_utils::types::UpdateFlags;
     use steel_utils::{BlockPos, ChunkPos, locks::SyncMutex};
@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn block_entity_container_capability_is_independently_lockable() {
-        init_test_registry();
+        init_vanilla_registry();
         let barrel = Arc::new(BarrelBlockEntity::new(
             Weak::new(),
             BlockPos::new(1, 2, 3),
@@ -464,7 +464,7 @@ mod tests {
 
     #[test]
     fn non_container_block_entity_ref_is_rejected() {
-        init_test_registry();
+        init_vanilla_registry();
         let block_entity: SharedBlockEntity = Arc::new(RawBlockEntity::new(
             &vanilla_block_entity_types::END_PORTAL,
             Weak::new(),
@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn barrel_change_reenters_analog_read_without_holding_container_lock() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         init_block_entities();
         let world = fresh_test_world("barrel_comparator_reentry");

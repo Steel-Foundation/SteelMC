@@ -221,7 +221,7 @@ impl BlockBehavior for RepeaterBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::behavior::init_behaviors;
@@ -229,7 +229,7 @@ mod tests {
     use crate::world::tick_scheduler::TickPriority;
 
     fn repeater() -> RepeaterBlock {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         RepeaterBlock::new(&vanilla_blocks::REPEATER)
     }

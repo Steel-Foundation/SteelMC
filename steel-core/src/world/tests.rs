@@ -6,7 +6,7 @@ use std::{
 
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{
-    sound_events, test_support::init_test_registry, vanilla_entities, vanilla_fluids, vanilla_items,
+    init_vanilla_registry, sound_events, vanilla_entities, vanilla_fluids, vanilla_items,
 };
 use uuid::Uuid;
 
@@ -32,7 +32,7 @@ fn advance_scheduling_until(world: &Arc<World>, mut ready: impl FnMut() -> bool)
 
 #[test]
 fn sound_range_uses_event_range_and_strict_vanilla_boundary() {
-    init_test_registry();
+    init_vanilla_registry();
     let sound = &sound_events::ENTITY_PLAYER_LEVELUP;
 
     assert!(sound_is_within_range(sound, 0.75, 255.0));
@@ -41,7 +41,7 @@ fn sound_range_uses_event_range_and_strict_vanilla_boundary() {
 
 #[test]
 fn generic_shape_update_does_not_schedule_non_source_fluid() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("shape_update_fluid_ownership");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
@@ -144,7 +144,7 @@ impl Entity for TrackerTestEntity {
 
 #[test]
 fn entity_breaker_is_available_to_chorus_flower_loot() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let state = vanilla_blocks::CHORUS_FLOWER.default_state();
@@ -260,7 +260,7 @@ fn spawnable_bounds_match_vanilla_teleport_command_bounds() {
 
 #[test]
 fn block_state_outside_world_bounds_is_void_air() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = test_world();
 
     assert_eq!(
@@ -279,7 +279,7 @@ fn block_state_outside_world_bounds_is_void_air() {
     reason = "one state sequence documents the Vanilla client-publication gates"
 )]
 fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let world = Arc::clone(test_world());
@@ -449,7 +449,7 @@ fn light_packet_tracking_border_matches_vanilla_pending_chunk_rule() {
 
 #[test]
 fn navigating_mob_tracker_tracks_only_pathfinder_mobs() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let tracker = NavigatingMobTracker::new();
     let non_pathfinder = TrackerTestEntity::shared(1);
@@ -521,7 +521,7 @@ fn clip_local_aabb_supports_runtime_fluid_heights() {
 
 #[test]
 fn fluid_clip_height_treats_source_and_flowing_variants_as_same_fluid_above() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let height = World::fluid_clip_height_from_above(

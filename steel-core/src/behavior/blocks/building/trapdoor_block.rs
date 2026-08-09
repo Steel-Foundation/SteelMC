@@ -307,7 +307,7 @@ impl BlockBehavior for WeatheringCopperTrapDoorBlock {
 mod tests {
     use super::*;
     use steel_registry::{
-        blocks::properties::BlockStateProperties, sound_events, test_support::init_test_registry,
+        blocks::properties::BlockStateProperties, init_vanilla_registry, sound_events,
         vanilla_blocks,
     };
     use steel_utils::ChunkPos;
@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     fn closed_trapdoor_is_not_land_or_air_pathfindable() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = TrapDoorBlock::new(
             &vanilla_blocks::OAK_TRAPDOOR,
             true,
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn open_waterlogged_trapdoor_matches_vanilla_pathfinding() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = TrapDoorBlock::new(
             &vanilla_blocks::OAK_TRAPDOOR,
             true,
@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn redundant_redstone_notification_does_not_schedule_water_tick() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("trapdoor_redundant_redstone");
         let pos = BlockPos::new(8, 64, 8);

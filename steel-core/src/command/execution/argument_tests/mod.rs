@@ -23,8 +23,8 @@ use steel_registry::{
     MooshroomVariant, ParrotVariant, RabbitVariant, RegistryEntry as _, SalmonVariant,
     TropicalFishPattern,
     data_components::{ComponentPatchEntry, vanilla_components},
+    init_vanilla_registry,
     item_stack::ItemStack,
-    test_support::init_test_registry,
     vanilla_attributes, vanilla_biomes, vanilla_blocks, vanilla_damage_types, vanilla_enchantments,
     vanilla_entities, vanilla_items, vanilla_world_clocks,
     world_clock::WorldClockRef,
@@ -34,9 +34,9 @@ use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier, types::GameType};
 use text_components::{TextComponent, content::Content};
 
+use crate::bootstrap::init_globals_once;
 use crate::entity::EntityAnchor;
 use crate::permission::{PermissionExpr, PermissionState};
-use crate::test_support::init_test_core;
 
 use super::argument::SteelArgumentParser;
 

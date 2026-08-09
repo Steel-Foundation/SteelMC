@@ -175,7 +175,7 @@ impl BlockBehavior for ObserverBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
 
     use super::*;
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn observed_face_update_schedules_one_two_tick_pulse() {
-        init_test_registry();
+        init_vanilla_registry();
         let observer = ObserverBlock::new(&vanilla_blocks::OBSERVER);
         let pos = BlockPos::new(0, 64, 0);
         let state = observer_state(Direction::East, false);
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn observer_output_is_powered_and_directional() {
-        init_test_registry();
+        init_vanilla_registry();
         let observer = ObserverBlock::new(&vanilla_blocks::OBSERVER);
         let state = observer_state(Direction::Down, true);
         let level = TestLevel::default();

@@ -193,7 +193,7 @@ impl BlockBehavior for CandleBlock {
 mod tests {
     use super::*;
     use crate::test_support::TestLevel;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     fn supporting_level() -> TestLevel {
         TestLevel::default().with_block(
@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn waterlogged_candle_update_shape_schedules_water_tick() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let candle = CandleBlock::new(&vanilla_blocks::CANDLE);
         let state = vanilla_blocks::CANDLE
@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn burning_projectile_lights_only_unlit_candles() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let unlit = vanilla_blocks::CANDLE
             .default_state()
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn water_placement_on_lit_candle_emits_block_change_event() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let candle = CandleBlock::new(&vanilla_blocks::CANDLE);
         let state = vanilla_blocks::CANDLE

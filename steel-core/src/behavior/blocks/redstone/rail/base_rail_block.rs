@@ -176,7 +176,7 @@ impl BaseRailBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
 
     use super::*;
@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn rail_capability_requires_both_tag_and_behavior() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         assert!(BaseRailBlock::is_rail_state(
