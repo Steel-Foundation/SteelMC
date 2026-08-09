@@ -37,59 +37,52 @@ pub struct CropBlock {
 /// Stems use the same farmland and neighboring-crop calculation as crops, but
 /// have different survival and mature-growth behavior.
 pub(super) fn crop_growth_speed(block: BlockRef, world: &dyn LevelReader, pos: BlockPos) -> f32 {
-    let mut speed: f32 = 1.0;
+    let mut speed = 1.0_f32;
     let below = pos.below();
 
     for dx in -1..=1 {
         for dz in -1..=1 {
-            let check_pos = below.offset(dx, 0, dz);
-            let block_state = world.get_block_state(check_pos);
-            let mut block_speed = 0.0;
-
-            if block_state.get_block().has_tag(&BlockTag::GROWS_CROPS) {
-                block_speed = 1.0;
-                let moisture = block_state
-                    .try_get_value(&BlockStateProperties::MOISTURE)
-                    .unwrap_or(0);
-                if moisture > 0 {
-                    block_speed = 3.0;
-                }
+            let state = world.get_block_state(below.offset(dx, 0, dz));
+            if !state.get_block().has_tag(&BlockTag::GROWS_CROPS) {
+                continue;
             }
 
-            if dx != 0 || dz != 0 {
-                block_speed /= 4.0;
-            }
+            let block_speed = if state
+                .try_get_value(&BlockStateProperties::MOISTURE)
+                .unwrap_or(0)
+                > 0
+            {
+                3.0
+            } else {
+                1.0
+            };
 
-            speed += block_speed;
+            speed += if dx == 0 && dz == 0 {
+                block_speed
+            } else {
+                block_speed / 4.0
+            };
         }
     }
 
-    let north = world.get_block_state(pos.north());
-    let south = world.get_block_state(pos.south());
-    let west = world.get_block_state(pos.west());
-    let east = world.get_block_state(pos.east());
+    let north = pos.north();
+    let south = pos.south();
+    let west = pos.west();
+    let east = pos.east();
+    let same_block_at = |neighbor: BlockPos| block == world.get_block_state(neighbor).get_block();
 
-    let horizontal_row = block == west.get_block() || block == east.get_block();
-    let vertical_row = block == north.get_block() || block == south.get_block();
+    let east_west = [west, east]
+        .into_iter()
+        .any(|neighbor| same_block_at(neighbor));
+    let north_south = [north, south]
+        .into_iter()
+        .any(|neighbor| same_block_at(neighbor));
+    let crowded = (east_west && north_south)
+        || [west.north(), east.north(), east.south(), west.south()]
+            .into_iter()
+            .any(same_block_at);
 
-    if horizontal_row && vertical_row {
-        speed /= 2.0;
-    } else {
-        let nw = world.get_block_state(pos.north().west());
-        let ne = world.get_block_state(pos.north().east());
-        let sw = world.get_block_state(pos.south().west());
-        let se = world.get_block_state(pos.south().east());
-
-        if block == nw.get_block()
-            || block == ne.get_block()
-            || block == sw.get_block()
-            || block == se.get_block()
-        {
-            speed /= 2.0;
-        }
-    }
-
-    speed
+    if crowded { speed / 2.0 } else { speed }
 }
 
 pub trait CropLike {
