@@ -129,16 +129,6 @@ impl Deref for RegistryLock {
 
 pub static REGISTRY: RegistryLock = RegistryLock(OnceLock::new());
 
-#[cfg(any(test, feature = "test-utils"))]
-pub mod test_support {
-    use crate::init_vanilla_registry;
-
-    /// Initializes the global registry with frozen vanilla data for tests.
-    pub fn init_test_registry() {
-        init_vanilla_registry();
-    }
-}
-
 /// Trait for types stored in a registry, allowing self-lookup of their numeric ID.
 pub trait RegistryEntry: PartialEq + 'static {
     fn key(&self) -> &Identifier;
