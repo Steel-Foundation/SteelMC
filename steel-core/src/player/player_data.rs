@@ -13,13 +13,13 @@ use crate::{
 };
 
 use super::{
-    Player, abilities::Abilities, experience::Experience, food_data::FoodData,
+    Player, PlayerRespawnConfig, abilities::Abilities, experience::Experience, food_data::FoodData,
     player_inventory::PlayerInventory,
 };
 
 /// Current data version for player saves.
 /// Increment when making breaking changes to the format.
-pub const PLAYER_DATA_VERSION: i32 = 5;
+pub const PLAYER_DATA_VERSION: i32 = 6;
 
 /// Persistent player data saved by Steel's storage backend.
 ///
@@ -110,6 +110,9 @@ pub struct PersistentPlayerData {
 
     /// Vanilla one-player root vehicle tree stored with the player instead of chunk data.
     pub root_vehicle: Option<PersistentRootVehicle>,
+
+    /// Vanilla per-player respawn configuration set by beds and respawn anchors.
+    pub respawn_config: Option<PlayerRespawnConfig>,
 
     /// Vanilla in-flight ender pearls stored with the player (`ServerPlayer.enderPearls`).
     pub ender_pearls: Vec<PersistentEnderPearl>,
@@ -239,6 +242,8 @@ impl PersistentPlayerData {
             score,
             seen_credits: player.has_seen_credits(),
             root_vehicle,
+            respawn_config: player.respawn_config(),
+
             ender_pearls,
         }
     }
@@ -393,6 +398,7 @@ impl PersistentPlayerData {
                 self.has_visual_fire,
             ));
         player.sync_base_fire_freeze_entity_data();
+        player.set_respawn_position(self.respawn_config.clone(), false);
 
         // Health
         player.set_health(self.health);
