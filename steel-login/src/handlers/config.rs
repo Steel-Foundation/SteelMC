@@ -71,7 +71,14 @@ impl JavaTcpClient {
     }
 
     /// Handles the select known packs packet during the configuration state.
-    pub async fn handle_select_known_packs(&self, packet: SSelectKnownPacks) {
+    pub(crate) async fn handle_select_known_packs(
+        &self,
+        packet: SSelectKnownPacks,
+    ) -> ConnectionAction {
+        let sequence_result = self.pre_play_state.lock().select_known_packs();
+        if let Err(error) = sequence_result {
+            return self.reject_unexpected_packet(error).await;
+        }
         log::debug!("Select known packs packet: {packet:?}");
 
         let registry_cache = self.server.registry_cache.registry_packets.clone();
@@ -85,21 +92,17 @@ impl JavaTcpClient {
 
         // Finish configuration with CFinishConfigurationPacket
         self.send_bare_packet_now(CFinishConfiguration {}).await;
+        ConnectionAction::none()
     }
 
     /// Finishes the configuration process and transitions to the play state.
-    ///
-    /// # Panics
-    /// This function will panic if the game profile is empty, should be impossible at this point.
     pub(crate) async fn finish_configuration(&self) -> ConnectionAction {
+        let sequence_result = self.pre_play_state.lock().finish_configuration();
+        let gameprofile = match sequence_result {
+            Ok(gameprofile) => gameprofile,
+            Err(error) => return self.reject_unexpected_packet(error).await,
+        };
         self.protocol.store(ConnectionProtocol::Play);
-
-        let gameprofile = self
-            .gameprofile
-            .lock()
-            .await
-            .clone()
-            .expect("Game profile is empty");
 
         let client_info = self.client_information.lock().await.clone();
 
