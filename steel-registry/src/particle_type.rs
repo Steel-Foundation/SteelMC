@@ -778,7 +778,7 @@ mod tests {
     use crate::item_stack_template::ItemStackTemplate;
     use crate::position_source::{BlockPositionSource, EntityPositionSource, PositionSource};
     use crate::{
-        REGISTRY, test_support::init_test_registry, vanilla_items, vanilla_particle_types,
+        REGISTRY, init_vanilla_registry, vanilla_items, vanilla_particle_types,
         vanilla_position_source_types,
     };
 
@@ -810,7 +810,7 @@ mod tests {
 
     #[test]
     fn every_vanilla_particle_payload_family_round_trips() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_round_trip(ParticleData::simple(&vanilla_particle_types::FLAME));
         assert_round_trip(ParticleData::new(
@@ -885,7 +885,7 @@ mod tests {
 
     #[test]
     fn particle_write_rejects_noncanonical_same_key_codec() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let particle = ParticleData::new(
             &FORGED_FLAME,
@@ -908,7 +908,7 @@ mod tests {
 
     #[test]
     fn block_particle_network_codec_rejects_invalid_state_ids() {
-        init_test_registry();
+        init_vanilla_registry();
 
         for id in [-1, i32::from(u16::MAX) + 1, i32::from(u16::MAX)] {
             let mut encoded = Vec::new();

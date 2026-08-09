@@ -532,13 +532,13 @@ impl AttributeMap {
 #[cfg(test)]
 mod tests {
     use simdnbt::owned::NbtTag;
-    use steel_registry::{REGISTRY, test_support, vanilla_attributes, vanilla_entities};
+    use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_attributes, vanilla_entities};
 
     use super::*;
 
     #[test]
     fn all_generated_entity_default_attributes_resolve() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
 
         for (_, entity_type) in REGISTRY.entity_types.iter() {
             let _ = AttributeMap::new_for_entity(entity_type);
@@ -547,7 +547,7 @@ mod tests {
 
     #[test]
     fn player_gravity_is_initialized_from_default_attributes() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
 
         let attributes = AttributeMap::new_for_entity(&vanilla_entities::PLAYER);
 
@@ -561,7 +561,7 @@ mod tests {
 
     #[test]
     fn vanilla_nbt_only_contains_permanent_modifiers() {
-        test_support::init_test_registry();
+        init_vanilla_registry();
         let mut attributes = AttributeMap::new_for_entity(&vanilla_entities::PLAYER);
         attributes.add_modifier(
             vanilla_attributes::MAX_HEALTH,

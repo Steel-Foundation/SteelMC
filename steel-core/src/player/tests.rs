@@ -9,9 +9,9 @@ use steel_registry::data_component_predicate::DataComponentMatchers;
 use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
 use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
 use steel_registry::{
-    RegistryHolderSet, init_vanilla_registry, item_stack::ItemStack,
-    vanilla_attributes, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_rules,
-    vanilla_items, vanilla_menu_types,
+    RegistryHolderSet, init_vanilla_registry, item_stack::ItemStack, vanilla_attributes,
+    vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_rules, vanilla_items,
+    vanilla_menu_types,
 };
 use steel_utils::locks::IntoShared as _;
 use steel_utils::types::{Difficulty, GameType, InteractionHand, UpdateFlags};

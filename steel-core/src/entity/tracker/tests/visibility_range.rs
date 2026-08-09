@@ -60,7 +60,7 @@ fn tracking_distance_is_capped_by_player_view_distance() {
 
 #[test]
 fn vehicle_effective_tracking_range_uses_widest_passenger_range() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let vehicle_typed = PairingTestEntity::new_with_type(1, &vanilla_entities::ITEM, Vec::new());
     let passenger_typed =

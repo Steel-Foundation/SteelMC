@@ -239,7 +239,7 @@ mod tests {
     use std::sync::Arc;
 
     use glam::DVec3;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::{vanilla_blocks, vanilla_entities};
     use steel_utils::ChunkPos;
 
@@ -251,7 +251,7 @@ mod tests {
 
     #[test]
     fn minecart_powers_detector_and_schedules_relative_tick() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("detector_rail_minecart");
         let pos = BlockPos::new(8, 64, 8);

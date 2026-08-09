@@ -810,8 +810,6 @@ pub use projectile::{
     ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
     compute_margin, get_hit_result_on_view_vector,
 };
-#[cfg(test)]
-pub(crate) use registry::init_test_entities;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, SpawnGroupData};
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};

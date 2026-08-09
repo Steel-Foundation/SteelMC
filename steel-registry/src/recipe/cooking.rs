@@ -42,13 +42,13 @@ mod tests {
     use steel_utils::Identifier;
 
     use crate::recipe::{Ingredient, RecipeResult};
-    use crate::{test_support::init_test_registry, vanilla_items};
+    use crate::{init_vanilla_registry, vanilla_items};
 
     use super::*;
 
     #[test]
     fn smelting_result_uses_input_count_when_requested() {
-        init_test_registry();
+        init_vanilla_registry();
         let recipe = SmeltingRecipe {
             id: Identifier::vanilla_static("test"),
             ingredient: Ingredient::Item(&vanilla_items::RAW_IRON),
@@ -68,7 +68,7 @@ mod tests {
 
     #[test]
     fn smelting_result_can_ignore_input_count() {
-        init_test_registry();
+        init_vanilla_registry();
         let recipe = SmeltingRecipe {
             id: Identifier::vanilla_static("test"),
             ingredient: Ingredient::Item(&vanilla_items::RAW_IRON),

@@ -892,8 +892,7 @@ mod tests {
     use steel_utils::ChunkPos;
 
     use steel_registry::{
-        entity_type::EntityTypeRef, test_support::init_test_registry, vanilla_blocks,
-        vanilla_damage_types,
+        entity_type::EntityTypeRef, init_vanilla_registry, vanilla_blocks, vanilla_damage_types,
     };
 
     use crate::{
@@ -942,7 +941,7 @@ mod tests {
         direction: Direction,
         thickness: SpeleothemThickness,
     ) -> BlockStateId {
-        init_test_registry();
+        init_vanilla_registry();
         vanilla_blocks::POINTED_DRIPSTONE
             .default_state()
             .set_value(&BlockStateProperties::VERTICAL_DIRECTION, direction)
@@ -979,7 +978,7 @@ mod tests {
 
     #[test]
     fn only_fast_tridents_break_speleothems() {
-        init_test_registry();
+        init_vanilla_registry();
         let pos = BlockPos::ZERO;
         let fast_trident = TestProjectile::new(&vanilla_entities::TRIDENT, DVec3::X * 0.61);
         let threshold_trident = TestProjectile::new(&vanilla_entities::TRIDENT, DVec3::X * 0.6);
@@ -1025,7 +1024,7 @@ mod tests {
 
     #[test]
     fn stalactite_drip_converts_mud_to_clay() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("mud_to_clay");
         let pos = BlockPos::new(8, 64, 8);
@@ -1045,7 +1044,7 @@ mod tests {
 
     #[test]
     fn stalactite_drip_fills_empty_cauldron_with_water() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("water_cauldron_fill");
         let pos = BlockPos::new(8, 64, 8);
@@ -1075,7 +1074,7 @@ mod tests {
 
     #[test]
     fn stalactite_drip_increments_layered_water_cauldron() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("water_cauldron_inc");
         let pos = BlockPos::new(8, 64, 8);
@@ -1104,7 +1103,7 @@ mod tests {
 
     #[test]
     fn stalactite_drip_does_not_overflow_full_water_cauldron() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("water_cauldron_full");
         let pos = BlockPos::new(8, 64, 8);
@@ -1130,7 +1129,7 @@ mod tests {
 
     #[test]
     fn stalactite_drip_fills_empty_cauldron_with_lava() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("lava_cauldron_fill");
         let pos = BlockPos::new(8, 64, 8);
@@ -1158,7 +1157,7 @@ mod tests {
 
     #[test]
     fn stalactite_drip_does_not_fill_lava_cauldron() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("lava_cauldron_skip");
         let pos = BlockPos::new(8, 64, 8);
@@ -1183,7 +1182,7 @@ mod tests {
 
     #[test]
     fn stalactite_drip_skips_drip_when_random_value_exceeds_water_probability() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("high_random_water");
         let pos = BlockPos::new(8, 64, 8);
@@ -1213,7 +1212,7 @@ mod tests {
 
     #[test]
     fn stalactite_drip_skips_drip_when_random_value_exceeds_lava_probability() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("high_random_lava");
         let pos = BlockPos::new(8, 64, 8);

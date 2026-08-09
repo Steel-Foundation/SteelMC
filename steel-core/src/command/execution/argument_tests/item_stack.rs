@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn item_stack_argument_parses_supported_components_and_registered_removals() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
         "resource stone[max_stack_size=16,enchantment_glint_override=true,!lore]",
@@ -29,7 +29,7 @@ fn item_stack_argument_parses_supported_components_and_registered_removals() {
 
 #[test]
 fn item_stack_argument_parses_identifier_components() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
         "resource stone[item_model='stone',tooltip_style='steel:tooltip',note_block_sound='minecraft:block.note_block.harp']",
@@ -58,7 +58,7 @@ fn item_stack_argument_parses_identifier_components() {
 
 #[test]
 fn item_stack_argument_parses_custom_data_codecs() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
         "resource stone[custom_data={value:7,nested:{name:'steel'}},bucket_entity_data='{Health:4.0f}']",
@@ -93,7 +93,7 @@ fn item_stack_argument_parses_custom_data_codecs() {
 
 #[test]
 fn item_stack_argument_parses_custom_model_data_and_enchantability() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
         "resource golden_sword[custom_model_data={floats:[1.5f],flags:[1b,0b],strings:['steel'],colors:[[1f,0.5f,0f]]},enchantable={value:5}]",
@@ -124,7 +124,7 @@ fn item_stack_argument_parses_custom_model_data_and_enchantability() {
 
 #[test]
 fn item_stack_argument_parses_color_map_and_amplifier_components() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
         "resource stone[dye='red',dyed_color=[1f,0.5f,0f],map_color=4603950,map_id=7,ominous_bottle_amplifier=4,base_color='blue',wolf/collar='green']",
@@ -172,7 +172,7 @@ fn item_stack_argument_parses_color_map_and_amplifier_components() {
 
 #[test]
 fn item_stack_argument_parses_direct_entity_variant_components() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
         "resource stone[fox/variant='snow',salmon/size='large',parrot/variant='gray',tropical_fish/pattern='clayfish',mooshroom/variant='brown',rabbit/variant='evil',horse/variant='dark_brown',llama/variant='gray',axolotl/variant='blue']",
@@ -225,7 +225,7 @@ fn item_stack_argument_parses_direct_entity_variant_components() {
 
 #[test]
 fn item_stack_argument_parses_registry_holder_set_components() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
         "resource stone[damage_resistant={types:'#minecraft:is_fire'},repairable={items:'minecraft:phantom_membrane'}]",
@@ -246,7 +246,7 @@ fn item_stack_argument_parses_registry_holder_set_components() {
 
 #[test]
 fn item_stack_argument_uses_vanilla_numeric_codec_coercions() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
         "resource stone[max_stack_size=16.9d,enchantment_glint_override=2,potion_duration_scale=1]",
@@ -272,7 +272,7 @@ fn item_stack_argument_uses_vanilla_numeric_codec_coercions() {
 
 #[test]
 fn item_stack_argument_parses_compound_component_values() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
         "resource stone[use_cooldown={seconds:5.5,cooldown_group:'minecraft:test'},lore=[],max_stack_size=16]",
@@ -303,7 +303,7 @@ fn item_stack_argument_parses_compound_component_values() {
 
 #[test]
 fn item_stack_argument_rejects_unsupported_transient_and_invalid_components() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
 
     for input in [
@@ -334,7 +334,7 @@ fn item_stack_argument_rejects_unsupported_transient_and_invalid_components() {
 
 #[test]
 fn item_stack_argument_rejects_invalid_recursive_contents() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
         r"resource stone[bundle_contents=[{id:'minecraft:stone',count:2,components:{'minecraft:max_stack_size':1}}]]",
@@ -346,7 +346,7 @@ fn item_stack_argument_rejects_invalid_recursive_contents() {
 
 #[test]
 fn item_stack_argument_sanitizes_redundant_component_changes() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse(
         "resource stone[max_stack_size=64,!custom_data]",
@@ -364,7 +364,7 @@ fn item_stack_argument_sanitizes_redundant_component_changes() {
 
 #[test]
 fn item_arguments_propagate_translatable_snbt_errors() {
-    init_test_registry();
+    init_vanilla_registry();
     for argument in [
         SteelArgumentType::item_stack(),
         SteelArgumentType::item_predicate(),
@@ -388,7 +388,7 @@ fn item_arguments_propagate_translatable_snbt_errors() {
 
 #[test]
 fn removing_max_stack_size_uses_vanillas_fallback_of_one() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
     let parse = dispatcher.parse("resource stone[!max_stack_size]", TestSource::new());
     let Ok(chain) = dispatcher.context_chain(parse) else {
@@ -403,7 +403,7 @@ fn removing_max_stack_size_uses_vanillas_fallback_of_one() {
 
 #[test]
 fn item_stack_argument_suggests_items_and_supported_component_operations() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
 
     let parse = dispatcher.parse("resource minecraft:diamond_sw", TestSource::new());

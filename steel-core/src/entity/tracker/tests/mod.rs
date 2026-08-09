@@ -5,7 +5,9 @@ use std::{
 
 use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::{entity_type::EntityTypeRef, test_support, vanilla_entities, vanilla_items};
+use steel_registry::{
+    entity_type::EntityTypeRef, init_vanilla_registry, vanilla_entities, vanilla_items,
+};
 use steel_utils::BlockPos;
 
 use super::*;

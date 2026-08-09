@@ -152,7 +152,7 @@ mod tests {
     use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
     use crate::inventory::slots::Slot as _;
     use steel_registry::data_components::vanilla_components::MAX_STACK_SIZE;
-    use steel_registry::{item_stack::ItemStack, test_support::init_test_registry, vanilla_items};
+    use steel_registry::{init_vanilla_registry, item_stack::ItemStack, vanilla_items};
     use steel_utils::locks::{IntoShared as _, SyncMutex};
     use steel_utils::{DowncastType, DowncastTypeKey};
 
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn max_stack_size_delegates_to_the_container_and_item() {
-        init_test_registry();
+        init_vanilla_registry();
         let capped = Arc::new(SyncMutex::new(SingleItemContainer {
             item: ItemStack::empty(),
             max_stack_size: 1,

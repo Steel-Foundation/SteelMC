@@ -1,8 +1,7 @@
 use glam::DVec3;
 use steel_registry::{
-    init_vanilla_registry, item_stack::ItemStack, vanilla_attributes,
-    vanilla_damage_types, vanilla_entities, vanilla_entity_data::PlayerEntityData, vanilla_items,
-    vanilla_mob_effects,
+    init_vanilla_registry, item_stack::ItemStack, vanilla_attributes, vanilla_damage_types,
+    vanilla_entities, vanilla_entity_data::PlayerEntityData, vanilla_items, vanilla_mob_effects,
 };
 use steel_utils::{BlockPos, types::InteractionHand};
 

@@ -555,6 +555,29 @@ impl World {
         }
     }
 
+    /// Called when a block changed with a command (setblock, fill, ...)
+    ///
+    /// This is the Rust equivalent of vanilla's `ServerLevel.updateNeighborsOnBlockSet()`.
+    pub(crate) fn update_neighbour_on_block_set(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        old_state: BlockStateId,
+    ) {
+        let block_state = self.get_block_state(pos);
+        // For block behaviors
+        let behavior = BLOCK_BEHAVIORS.get_behavior(old_state.get_block());
+
+        if old_state != block_state {
+            behavior.affect_neighbors_after_removal(old_state, self, pos, false);
+        }
+
+        self.update_neighbors_at(pos, block_state.get_block());
+
+        if behavior.has_analog_output_signal(block_state) {
+            self.update_neighbor_for_output_signal(pos, block_state.get_block());
+        }
+    }
+
     /// Notifies a block that one of its neighbors changed.
     ///
     /// This is the Rust equivalent of vanilla's `Level.neighborChanged()`.

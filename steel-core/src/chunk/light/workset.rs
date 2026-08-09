@@ -956,7 +956,7 @@ fn extrude_lower_row(section: &mut LightSection, row: Option<&[u8; 16 * 16]>) {
 mod tests {
     use std::sync::{Arc, Weak};
 
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::{BlockPos, SectionPos};
 
     use super::*;
@@ -968,7 +968,7 @@ mod tests {
     };
 
     fn init_tests() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
     }
 
