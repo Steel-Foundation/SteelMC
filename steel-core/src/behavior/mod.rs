@@ -77,8 +77,8 @@ pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
 pub use item::{ItemBehavior, ItemBehaviorRegistry, ItemUseAnimation};
 use item_behaviors::register_item_behaviors;
 pub use items::{
-    BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem, HangingSignItem,
-    ShovelItem, SignItem, StandingAndWallBlockItem,
+    BedItem, BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem,
+    HangingSignItem, ShovelItem, SignItem, StandingAndWallBlockItem,
 };
 use std::ops::Deref;
 use std::sync::OnceLock;
@@ -128,6 +128,12 @@ pub trait BlockStateBehaviorExt {
 
     /// Returns whether this block state is pathfindable for the supplied vanilla computation type.
     fn is_pathfindable(&self, computation_type: PathComputationType) -> bool;
+
+    /// Returns whether this block state extends `BedBlock`
+    fn is_bed(&self) -> bool;
+
+    /// Returns whether this block state can be occupied by a forced respawn position
+    fn is_possible_to_respawn_in_this(&self) -> bool;
 }
 
 impl BlockStateBehaviorExt for BlockStateId {
@@ -153,6 +159,17 @@ impl BlockStateBehaviorExt for BlockStateId {
         let block = self.get_block();
         let behavior = BLOCK_BEHAVIORS.get_behavior(block);
         behavior.is_pathfindable(*self, computation_type)
+    }
+
+    fn is_bed(&self) -> bool {
+        let block = self.get_block();
+        BLOCK_BEHAVIORS.get_behavior(block).is_bed()
+    }
+
+    fn is_possible_to_respawn_in_this(&self) -> bool {
+        let block = self.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        behavior.is_possible_to_respawn_in_this(*self)
     }
 }
 

@@ -48,10 +48,11 @@ use steel_registry::{RegistryEntry, RegistryExt};
 use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vanilla_mob_effects};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
-use steel_utils::types::{Difficulty, InteractionHand};
+use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Downcast as _, ErasedType, Identifier,
     UuidExt as _, WorldAabb, axis::Axis, block_util::FoundRectangle, text::DisplayResolutor,
+    wrap_degrees,
 };
 use text_components::{
     Modifier as _, TextComponent, interactivity::HoverEvent, translation::TranslatedMessage,
@@ -59,8 +60,9 @@ use text_components::{
 use uuid::Uuid;
 
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockCollisionContext, EntityFallOnContext, EntityLandingContext,
-    FLUID_BEHAVIORS, InteractionResult, blocks::PowderSnowBlock,
+    BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, EntityFallOnContext,
+    EntityLandingContext, FLUID_BEHAVIORS, InteractionResult,
+    blocks::{BedBlock, PowderSnowBlock},
 };
 use crate::chunk_saver::ChunkStorage;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
@@ -733,6 +735,7 @@ mod block_effects;
 mod callback;
 mod combat_rules;
 pub mod damage;
+pub(crate) mod dismount_helper;
 pub mod entities;
 #[expect(
     clippy::module_inception,
@@ -813,7 +816,7 @@ pub use projectile::{
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, SpawnGroupData};
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
-pub use synced_data::EntitySyncedData;
+pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
 pub(crate) use ticking::{
     snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_with_ticked_if,
 };
