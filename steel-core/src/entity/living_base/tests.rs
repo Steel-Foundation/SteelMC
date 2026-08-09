@@ -1,6 +1,6 @@
 use glam::DVec3;
 use steel_registry::{
-    item_stack::ItemStack, test_support::init_test_registry, vanilla_attributes,
+    init_vanilla_registry as init_test_registry, item_stack::ItemStack, vanilla_attributes,
     vanilla_damage_types, vanilla_entities, vanilla_entity_data::PlayerEntityData, vanilla_items,
     vanilla_mob_effects,
 };

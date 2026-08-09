@@ -90,7 +90,11 @@ use crate::{
     wolf_variant::WolfVariantRegistry,
     zombie_nautilus_variant::ZombieNautilusVariantRegistry,
 };
-use std::{fmt::Debug, ops::Deref, sync::OnceLock};
+use std::{
+    fmt::Debug,
+    ops::Deref,
+    sync::{Once, OnceLock},
+};
 use steel_utils::Identifier;
 
 pub struct RegistryLock(OnceLock<Registry>);
@@ -100,6 +104,19 @@ impl RegistryLock {
     pub fn init(&self, value: Registry) -> Result<(), Registry> {
         self.0.set(value)
     }
+}
+
+/// Returns `false` if the registry was already published.
+pub fn init_vanilla_registry() -> bool {
+    static INIT: Once = Once::new();
+
+    let mut published = false;
+    INIT.call_once(|| {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        published = REGISTRY.init(registry).is_ok();
+    });
+    published
 }
 
 impl Deref for RegistryLock {
@@ -114,19 +131,11 @@ pub static REGISTRY: RegistryLock = RegistryLock(OnceLock::new());
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_support {
-    use std::sync::Once;
-
-    use crate::{REGISTRY, Registry};
-
-    static INIT_REGISTRY: Once = Once::new();
+    use crate::init_vanilla_registry;
 
     /// Initializes the global registry with frozen vanilla data for tests.
     pub fn init_test_registry() {
-        INIT_REGISTRY.call_once(|| {
-            let mut registry = Registry::new_vanilla();
-            registry.freeze();
-            let _ = REGISTRY.init(registry);
-        });
+        init_vanilla_registry();
     }
 }
 

@@ -373,7 +373,7 @@ mod tests {
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use steel_registry::vanilla_items;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
 
@@ -386,7 +386,7 @@ mod tests {
     }
 
     fn brushable() -> BrushableBlockEntity {
-        init_test_registry();
+        init_vanilla_registry();
         BrushableBlockEntity::new(
             Weak::new(),
             BlockPos::new(1, 64, 2),
