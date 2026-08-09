@@ -2,6 +2,7 @@
 
 mod barrel;
 mod beehive;
+mod chiseled_bookshelf;
 mod comparator;
 mod daylight_detector;
 mod end_gateway;
@@ -15,6 +16,7 @@ pub use barrel::{BARREL_SLOTS, BarrelBlockEntity};
 pub use beehive::{
     BEEHIVE_MAX_OCCUPANTS, BEEHIVE_MIN_OCCUPATION_TICKS_NECTARLESS, BeehiveBlockEntity,
 };
+pub use chiseled_bookshelf::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEntity};
 pub use comparator::ComparatorBlockEntity;
 pub use daylight_detector::DaylightDetectorBlockEntity;
 pub use end_gateway::EndGatewayBlockEntity;

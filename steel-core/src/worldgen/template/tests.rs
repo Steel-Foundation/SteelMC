@@ -293,6 +293,68 @@ fn mirrored_door_transform_toggles_hinge() {
 }
 
 #[test]
+fn chiseled_bookshelf_rotation_and_mirror_preserve_occupied_slots() {
+    let registry = test_registry();
+    let bookshelf = registry
+        .blocks
+        .get_default_state_id(&vanilla_blocks::CHISELED_BOOKSHELF);
+    let bookshelf = registry.blocks.set_property(
+        bookshelf,
+        &BlockStateProperties::HORIZONTAL_FACING,
+        Direction::North,
+    );
+    let bookshelf =
+        registry
+            .blocks
+            .set_property(bookshelf, &BlockStateProperties::SLOT_0_OCCUPIED, true);
+    let bookshelf =
+        registry
+            .blocks
+            .set_property(bookshelf, &BlockStateProperties::SLOT_4_OCCUPIED, true);
+
+    let rotated = StructureTemplate::transform_state(
+        &registry,
+        bookshelf,
+        StructureMirror::None,
+        Rotation::Clockwise90,
+    );
+    assert_eq!(
+        registry
+            .blocks
+            .try_get_property(rotated, &BlockStateProperties::HORIZONTAL_FACING),
+        Some(Direction::East),
+    );
+
+    let mirrored = StructureTemplate::transform_state(
+        &registry,
+        bookshelf,
+        StructureMirror::LeftRight,
+        Rotation::None,
+    );
+    assert_eq!(
+        registry
+            .blocks
+            .try_get_property(mirrored, &BlockStateProperties::HORIZONTAL_FACING),
+        Some(Direction::South),
+    );
+
+    for transformed in [rotated, mirrored] {
+        assert_eq!(
+            registry
+                .blocks
+                .try_get_property(transformed, &BlockStateProperties::SLOT_0_OCCUPIED),
+            Some(true),
+        );
+        assert_eq!(
+            registry
+                .blocks
+                .try_get_property(transformed, &BlockStateProperties::SLOT_4_OCCUPIED),
+            Some(true),
+        );
+    }
+}
+
+#[test]
 fn jigsaw_replacement_uses_final_state_and_removes_nbt() {
     let registry = test_registry();
     let mut nbt = NbtCompound::new();
