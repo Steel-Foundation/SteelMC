@@ -195,8 +195,8 @@ fn generate_monster_spawn_light_level(level: &MonsterSpawnLightLevelJson) -> Tok
 }
 
 fn generate_bed_rule(bed_rule: &BedRuleJson) -> TokenStream {
-    let can_set_spawn = bed_rule.can_set_spawn.as_str();
-    let can_sleep = bed_rule.can_sleep.as_str();
+    let can_set_spawn = generate_bed_rule_value(&bed_rule.can_set_spawn);
+    let can_sleep = generate_bed_rule_value(&bed_rule.can_sleep);
     let explodes = bed_rule.explodes;
     let error_message_key = generate_option(
         &bed_rule.error_message.as_ref().map(|m| m.translate.clone()),
@@ -212,6 +212,15 @@ fn generate_bed_rule(bed_rule: &BedRuleJson) -> TokenStream {
             explodes: #explodes,
             error_message_key: #error_message_key,
         }
+    }
+}
+
+fn generate_bed_rule_value(value: &str) -> TokenStream {
+    match value {
+        "always" => quote! { BedRuleValue::Always },
+        "when_dark" => quote! { BedRuleValue::WhenDark },
+        "never" => quote! { BedRuleValue::Never },
+        _ => panic!("Invalid bed rule value '{value}'"),
     }
 }
 
@@ -302,7 +311,7 @@ pub(crate) fn build() -> TokenStream {
     stream.extend(quote! {
         use crate::dimension_type::{
             DimensionType, DimensionTypeRegistry, MonsterSpawnLightLevel,
-            BedRule, MoodSound, MusicEntry, BackgroundMusic,
+            BedRule, BedRuleValue, MoodSound, MusicEntry, BackgroundMusic,
         };
         use steel_utils::Identifier;
         use std::borrow::Cow;
