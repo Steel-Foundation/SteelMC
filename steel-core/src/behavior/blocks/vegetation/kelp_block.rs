@@ -20,7 +20,7 @@ use super::{BlockRef, kelp_can_survive};
 /// Vanilla `KelpBlock` survival and fluid state.
 #[block_behavior]
 pub struct KelpBlock {
-    block: BlockRef,
+    base: GrowingPlantHeadBlock,
 }
 
 const GROW_PER_TICK_PROBABILITY: f64 = 0.14;
@@ -29,7 +29,17 @@ impl KelpBlock {
     /// Creates a new kelp block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
-        Self { block }
+        Self {
+            base: GrowingPlantHeadBlock::new(
+                block,
+                Direction::Up,
+                true,
+                GROW_PER_TICK_PROBABILITY,
+                &vanilla_blocks::KELP_PLANT,
+                Some(Self::get_blocks_to_grow_when_bonemealed),
+                Self::can_grow_into,
+            ),
+        }
     }
 
     fn can_grow_into(state: BlockStateId) -> bool {
@@ -38,18 +48,6 @@ impl KelpBlock {
 
     fn get_blocks_to_grow_when_bonemealed(_rng: &mut dyn Rng) -> i32 {
         1
-    }
-
-    const fn growing_plant_head_block(&self) -> GrowingPlantHeadBlock {
-        GrowingPlantHeadBlock::new(
-            self.block,
-            Direction::Up,
-            true,
-            GROW_PER_TICK_PROBABILITY,
-            &vanilla_blocks::KELP_PLANT,
-            Some(Self::get_blocks_to_grow_when_bonemealed),
-            Self::can_grow_into,
-        )
     }
 }
 
@@ -68,8 +66,7 @@ impl BlockBehavior for KelpBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_head_block()
-            .random_tick(state, world, pos);
+        self.base.random_tick(state, world, pos);
     }
 
     fn update_shape(
@@ -81,14 +78,8 @@ impl BlockBehavior for KelpBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        self.growing_plant_head_block().update_shape(
-            state,
-            world,
-            pos,
-            direction,
-            neighbor_pos,
-            neighbor_state,
-        )
+        self.base
+            .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -97,15 +88,13 @@ impl BlockBehavior for KelpBlock {
             .get_block_state(context.place_pos())
             .get_fluid_state();
         if fluid_state.is_water() && fluid_state.is_full() {
-            return self
-                .growing_plant_head_block()
-                .get_state_for_placement(context);
+            return self.base.get_state_for_placement(context);
         }
         None
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_head_block().tick(state, world, pos);
+        self.base.tick(state, world, pos);
     }
 
     fn is_liquid_container(&self, _state: BlockStateId) -> bool {
@@ -128,8 +117,7 @@ impl Bonemealable for KelpBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        self.growing_plant_head_block()
-            .is_valid_bonemeal_target(state, world, pos)
+        self.base.is_valid_bonemeal_target(state, world, pos)
     }
 
     fn perform_bonemeal(
@@ -139,8 +127,7 @@ impl Bonemealable for KelpBlock {
         rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        self.growing_plant_head_block()
-            .perform_bonemeal(state, world, rng, pos);
+        self.base.perform_bonemeal(state, world, rng, pos);
     }
 
     fn bonemeal_action_type(&self) -> BonemealAction {

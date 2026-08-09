@@ -16,7 +16,6 @@ use super::BlockRef;
 // TODO: Implement sculk spread, charge handling, and rotation/mirror overrides.
 #[block_behavior]
 pub struct SculkVeinBlock {
-    _block: BlockRef,
     multiface: MultifaceBlock,
 }
 
@@ -25,7 +24,6 @@ impl SculkVeinBlock {
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self {
-            _block: block,
             multiface: MultifaceBlock::new(block),
         }
     }

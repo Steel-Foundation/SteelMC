@@ -19,7 +19,7 @@ use super::BlockRef;
 /// Behavior for vanilla two-block-tall plants.
 #[block_behavior]
 pub struct DoublePlantBlock {
-    block: BlockRef,
+    pub(super) block: BlockRef,
 }
 
 impl DoublePlantBlock {

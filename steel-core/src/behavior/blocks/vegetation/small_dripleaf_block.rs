@@ -22,7 +22,6 @@ use super::{BlockRef, DoublePlantBlock};
 /// Vanilla `SmallDripleafBlock` survival.
 #[block_behavior]
 pub struct SmallDripleafBlock {
-    block: BlockRef,
     base: DoublePlantBlock,
 }
 const HALF: EnumProperty<DoubleBlockHalf> = BlockStateProperties::DOUBLE_BLOCK_HALF;
@@ -33,7 +32,6 @@ impl SmallDripleafBlock {
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self {
-            block,
             base: DoublePlantBlock::new(block),
         }
     }
@@ -99,7 +97,8 @@ impl BlockBehavior for SmallDripleafBlock {
         let block_state = DoublePlantBlock::copy_waterlogged_from(
             world,
             above_pos,
-            self.block
+            self.base
+                .block
                 .default_state()
                 .set_value(&HALF, DoubleBlockHalf::Upper)
                 .set_value(&FACING, state.get_value(&FACING)),

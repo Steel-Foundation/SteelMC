@@ -28,7 +28,7 @@ use super::BlockRef;
 /// Vanilla `CaveVinesBlock` (head) survival.
 #[block_behavior]
 pub struct CaveVinesBlock {
-    block: BlockRef,
+    base: GrowingPlantHeadBlock,
 }
 
 const BERRIES: BoolProperty = BlockStateProperties::BERRIES;
@@ -37,27 +37,25 @@ impl CaveVinesBlock {
     /// Creates a new cave vines (head) block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
-        Self { block }
+        Self {
+            base: GrowingPlantHeadBlock::new(
+                block,
+                Direction::Down,
+                false,
+                0.1,
+                &vanilla_blocks::CAVE_VINES_PLANT,
+                None,
+                Self::can_grow_into,
+            )
+            .with_update_body_after_converted_from_head(Self::update_body_after_converted_from_head)
+            .with_update_grow_into_state(Self::update_grow_into_state),
+        }
     }
 
     /// Cave Vines `canGrowInto()`
     #[must_use]
     pub fn can_grow_into(state: BlockStateId) -> bool {
         state.is_air()
-    }
-
-    const fn growing_plant_head_block(&self) -> GrowingPlantHeadBlock {
-        GrowingPlantHeadBlock::new(
-            self.block,
-            Direction::Down,
-            false,
-            0.1,
-            &vanilla_blocks::CAVE_VINES_PLANT,
-            None,
-            Self::can_grow_into,
-        )
-        .with_update_body_after_converted_from_head(Self::update_body_after_converted_from_head)
-        .with_update_grow_into_state(Self::update_grow_into_state)
     }
 
     fn update_body_after_converted_from_head(
@@ -123,13 +121,11 @@ impl BlockBehavior for CaveVinesBlock {
         CaveVinesBlock::use_block(player, state, world, pos)
     }
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        self.growing_plant_head_block()
-            .can_survive(state, world, pos)
+        self.base.can_survive(state, world, pos)
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_head_block()
-            .random_tick(state, world, pos);
+        self.base.random_tick(state, world, pos);
     }
 
     fn update_shape(
@@ -141,22 +137,15 @@ impl BlockBehavior for CaveVinesBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        self.growing_plant_head_block().update_shape(
-            state,
-            world,
-            pos,
-            direction,
-            neighbor_pos,
-            neighbor_state,
-        )
+        self.base
+            .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_head_block().tick(state, world, pos);
+        self.base.tick(state, world, pos);
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        self.growing_plant_head_block()
-            .get_state_for_placement(context)
+        self.base.get_state_for_placement(context)
     }
 
     fn get_clone_item_stack(

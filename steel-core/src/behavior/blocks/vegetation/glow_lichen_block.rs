@@ -16,7 +16,6 @@ use super::BlockRef;
 // TODO: Implement spread, bonemeal, and rotation/mirror overrides.
 #[block_behavior]
 pub struct GlowLichenBlock {
-    _block: BlockRef,
     multiface: MultifaceBlock,
 }
 
@@ -25,7 +24,6 @@ impl GlowLichenBlock {
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self {
-            _block: block,
             multiface: MultifaceBlock::new(block),
         }
     }
