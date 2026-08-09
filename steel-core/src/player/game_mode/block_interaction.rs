@@ -48,11 +48,11 @@ impl Player {
         let center_z = f64::from(pos.z()) + 0.5;
         let location = &packet.block_hit.location;
         let limit = 1.000_000_1;
+        let location_is_valid = (location.x - center_x).abs() < limit
+            && (location.y - center_y).abs() < limit
+            && (location.z - center_z).abs() < limit;
 
-        if (location.x - center_x).abs() >= limit
-            || (location.y - center_y).abs() >= limit
-            || (location.z - center_z).abs() >= limit
-        {
+        if !location_is_valid {
             log::warn!(
                 "Rejecting UseItemOnPacket from {}: location {:?} too far from block {:?}",
                 self.gameprofile.name,
@@ -318,4 +318,54 @@ fn strip_formatting_codes(text: &str) -> String {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::vanilla_items;
+    use steel_utils::ChunkPos;
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::player::connection::NetworkConnection as _;
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+
+    #[test]
+    fn use_item_on_rejects_non_finite_hit_locations() {
+        let world = fresh_test_world("use_item_on_non_finite_hit_location");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        init_behaviors();
+        let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "TestPlayer", 1).build();
+        player.set_client_loaded(true);
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::FIREWORK_ROCKET));
+
+        for (sequence, location) in [
+            (1, DVec3::new(f64::NAN, 0.5, 0.5)),
+            (2, DVec3::new(0.5, f64::INFINITY, 0.5)),
+            (3, DVec3::new(0.5, 0.5, f64::NEG_INFINITY)),
+        ] {
+            player.handle_use_item_on(SUseItemOn {
+                hand: InteractionHand::MainHand,
+                block_hit: BlockHitResult {
+                    location,
+                    direction: Direction::Up,
+                    block_pos: BlockPos::ZERO,
+                    miss: false,
+                    inside: false,
+                    world_border_hit: false,
+                },
+                sequence,
+            });
+        }
+
+        let inventory = player.inventory.lock();
+        let held_item = inventory.get_item_in_hand(InteractionHand::MainHand);
+        assert!(held_item.is(&vanilla_items::FIREWORK_ROCKET));
+        assert_eq!(held_item.count(), 1);
+        assert!(!player.connection.closed());
+    }
 }
