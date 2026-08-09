@@ -10,8 +10,8 @@ use steel_registry::blocks::{
     properties::{BlockStateProperties, Direction},
 };
 use steel_registry::item_stack::ItemStack;
-use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
 use steel_registry::items::item::BlockHitResult;
+use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
 use steel_utils::{
     BlockPos, BlockStateId,
     types::{InteractionHand, UpdateFlags},
@@ -19,9 +19,7 @@ use steel_utils::{
 
 use crate::entity::dismount_helper;
 use crate::{
-    behavior::{
-        BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
-    },
+    behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess},
     entity::Entity,
     level_data::RespawnData,
     player::{Player, PlayerRespawnConfig},
@@ -283,9 +281,7 @@ impl BlockBehavior for RespawnAnchorBlock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use steel_registry::blocks::{
-        block_state_ext::BlockStateExt,
-    };
+    use steel_registry::blocks::block_state_ext::BlockStateExt;
     use steel_registry::item_stack::ItemStack;
     use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
     use steel_utils::BlockPos;
