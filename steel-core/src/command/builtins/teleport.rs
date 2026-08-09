@@ -3,8 +3,7 @@
 use std::{slice, sync::Arc};
 
 use glam::DVec3;
-use steel_protocol::packets::game::{AnimateAction, CAnimate, CSetCamera, RelativeMovement};
-use steel_registry::entity_data::EntityPose;
+use steel_protocol::packets::game::{CSetCamera, RelativeMovement};
 use steel_utils::{BlockPos, Identifier, translations};
 use text_components::TextComponent;
 
@@ -275,16 +274,7 @@ fn perform_teleport(
 ) {
     if let Some(player) = target.as_player() {
         if player.is_sleeping() {
-            let world = player.get_world();
-            world.broadcast_to_entity_trackers(
-                player.id(),
-                CAnimate::new(player.id(), AnimateAction::WakeUp),
-                None,
-            );
-            player.send_packet(CAnimate::new(player.id(), AnimateAction::WakeUp));
             player.stop_sleeping();
-            player.set_pose(EntityPose::Standing);
-            // TODO: Complete bed occupancy and sleep aggregation updates with the bed system.
         }
         player.send_packet(CSetCamera {
             camera_id: player.id(),

@@ -2,6 +2,8 @@ mod respawn;
 mod spawn_sync;
 mod world_transition;
 
+pub use respawn::PlayerRespawnConfig;
+
 #[cfg(test)]
 pub(super) use spawn_sync::nullable_game_mode_id;
 

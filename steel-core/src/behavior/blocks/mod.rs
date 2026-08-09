@@ -28,9 +28,9 @@ pub use building::{
 pub use colored::StainedGlassPaneBlock;
 pub use container::{AnvilBlock, BarrelBlock, BeehiveBlock, CraftingTableBlock};
 pub use decoration::{
-    CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
-    StandingSignBlock, TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
-    WeatheringCopperChainBlock,
+    BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
+    EndRodBlock, StandingSignBlock, TorchBlock, WallBannerBlock, WallHangingSignBlock,
+    WallSignBlock, WallTorchBlock, WeatheringCopperChainBlock,
 };
 pub use falling::{ColoredFallingBlock, ConcretePowderBlock, FallingBlock, SandBlock};
 pub use fluid::{BubbleColumnBlock, LiquidBlock};
