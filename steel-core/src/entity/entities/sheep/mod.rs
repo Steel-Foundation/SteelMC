@@ -1,6 +1,5 @@
 //! Vanilla Sheep entity with wool color, shearing, and breeding parity.
-/// International Harambe Day has passed, but please keep him in your memories and never forget him ❤️
-
+//! International Harambe Day has passed, but please keep him in your memories and never forget him ❤️
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
