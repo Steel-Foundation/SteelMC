@@ -291,6 +291,10 @@ impl StandingSignBlock {
 }
 
 impl BlockBehavior for StandingSignBlock {
+    fn is_possible_to_respawn_in_this(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -374,6 +378,10 @@ impl WallSignBlock {
 }
 
 impl BlockBehavior for WallSignBlock {
+    fn is_possible_to_respawn_in_this(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -466,6 +474,10 @@ impl CeilingHangingSignBlock {
 }
 
 impl BlockBehavior for CeilingHangingSignBlock {
+    fn is_possible_to_respawn_in_this(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -608,6 +620,10 @@ impl WallHangingSignBlock {
 }
 
 impl BlockBehavior for WallHangingSignBlock {
+    fn is_possible_to_respawn_in_this(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,
