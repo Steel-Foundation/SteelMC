@@ -23,6 +23,8 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
+const MOISTURE: IntProperty = BlockStateProperties::MOISTURE;
+
 /// Behavior for crop blocks (wheat, carrots, potatoes).
 ///
 /// Crops grow through random ticks when placed on farmland with sufficient light.
@@ -47,11 +49,7 @@ pub(super) fn crop_growth_speed(block: BlockRef, world: &dyn LevelReader, pos: B
                 continue;
             }
 
-            let block_speed = if state
-                .try_get_value(&BlockStateProperties::MOISTURE)
-                .unwrap_or(0)
-                > 0
-            {
+            let block_speed = if state.try_get_value(&MOISTURE).unwrap_or(0) > 0 {
                 3.0
             } else {
                 1.0

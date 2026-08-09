@@ -1,6 +1,10 @@
 use steel_macros::block_behavior;
 use steel_registry::{
-    blocks::{BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties},
+    blocks::{
+        BlockRef,
+        block_state_ext::BlockStateExt,
+        properties::{BlockStateProperties, EnumProperty, IntProperty},
+    },
     item_stack::ItemStack,
     items::ItemRef,
 };
@@ -16,6 +20,9 @@ use crate::{
     },
     world::{LevelReader, ScheduledTickAccess},
 };
+
+const AGE: IntProperty = BlockStateProperties::AGE_7;
+const FACING: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
 
 /// Vanilla attached pumpkin and melon stem behavior.
 #[block_behavior]
@@ -69,13 +76,8 @@ impl BlockBehavior for AttachedStemBlock {
         _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if direction == state.get_value(&BlockStateProperties::HORIZONTAL_FACING)
-            && neighbor_state.get_block() != self.fruit
-        {
-            return self
-                .stem
-                .default_state()
-                .set_value(&BlockStateProperties::AGE_7, 7);
+        if direction == state.get_value(&FACING) && neighbor_state.get_block() != self.fruit {
+            return self.stem.default_state().set_value(&AGE, 7);
         }
 
         survival_update_shape(self, state, world, pos)
@@ -152,7 +154,7 @@ mod tests {
             vanilla_blocks::AIR.default_state(),
         );
         assert_eq!(reverted.get_block(), &vanilla_blocks::PUMPKIN_STEM);
-        assert_eq!(reverted.get_value(&BlockStateProperties::AGE_7), 7);
+        assert_eq!(reverted.get_value(&AGE), 7);
     }
 
     #[test]
@@ -223,7 +225,7 @@ mod tests {
                 wrong_fruit.default_state(),
             );
             assert_eq!(reverted.get_block(), stem);
-            assert_eq!(reverted.get_value(&BlockStateProperties::AGE_7), 7);
+            assert_eq!(reverted.get_value(&AGE), 7);
 
             let clone = behavior
                 .get_clone_item_stack(attached_block, attached, false)
