@@ -5,6 +5,7 @@
 
 mod air;
 mod axe;
+mod bed_item;
 mod block_item;
 mod bonemeal;
 mod bucket;
@@ -32,6 +33,7 @@ mod flint_and_steel;
 
 pub use air::AirItem;
 pub use axe::AxeItem;
+pub use bed_item::BedItem;
 pub use block_item::{BlockItem, DoubleHighBlockItem};
 pub use bonemeal::BoneMealItem;
 pub use bucket::BucketItem;

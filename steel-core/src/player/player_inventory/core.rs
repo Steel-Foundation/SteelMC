@@ -1,7 +1,7 @@
 use std::{array, ops::Range};
 
 use simdnbt::owned::{NbtList, NbtTag};
-use steel_registry::item_stack::ItemStack;
+use steel_registry::{enchantment_effect::EnchantmentEffectComponent, item_stack::ItemStack};
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::inventory::{
@@ -36,6 +36,20 @@ unsafe impl DowncastType for PlayerInventory {
 }
 
 impl PlayerInventory {
+    pub(crate) fn take_death_drops(&mut self) -> Vec<ItemStack> {
+        (0..self.get_container_size())
+            .filter_map(|slot| {
+                let item = self.get_item(slot).clone();
+                if item.is_empty() {
+                    return None;
+                }
+                self.set_item(slot, ItemStack::empty());
+                (!item.has_enchantment_effect(EnchantmentEffectComponent::PreventEquipmentDrop))
+                    .then_some(item)
+            })
+            .collect()
+    }
+
     /// Number of main inventory slots.
     pub const INVENTORY_SIZE: usize = 36;
     /// Number of logical container slots, including equipment.
