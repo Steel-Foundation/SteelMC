@@ -3,6 +3,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_protocol::packets::game::SoundSource;
+use steel_registry::blocks::properties::IntProperty;
 use steel_registry::blocks::{
     BlockRef,
     block_state_ext::BlockStateExt,
@@ -10,7 +11,6 @@ use steel_registry::blocks::{
 };
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events, vanilla_items};
-use steel_registry::blocks::properties::IntProperty;
 use steel_utils::{
     BlockPos, BlockStateId,
     types::{InteractionHand, UpdateFlags},
@@ -87,8 +87,7 @@ impl RespawnAnchorBlock {
             return None;
         }
         let charges = state.get_value(&CHARGES);
-        (charges > 0)
-            .then(|| state.set_value(&CHARGES, charges - 1))
+        (charges > 0).then(|| state.set_value(&CHARGES, charges - 1))
     }
 
     #[must_use]
@@ -169,8 +168,7 @@ impl RespawnAnchorBlock {
 
     fn charge(source: Option<&dyn Entity>, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
         let charges = state.get_value(&CHARGES);
-        let charged_state =
-            state.set_value(&CHARGES, charges + 1);
+        let charged_state = state.set_value(&CHARGES, charges + 1);
         world.set_block(pos, charged_state, UpdateFlags::UPDATE_ALL);
         world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
@@ -334,10 +332,7 @@ mod tests {
 
         let empty = vanilla_blocks::RESPAWN_ANCHOR.default_state();
         let partial = empty.set_value(&CHARGES, 1);
-        let full = empty.set_value(
-            &CHARGES,
-            RespawnAnchorBlock::MAX_CHARGES,
-        );
+        let full = empty.set_value(&CHARGES, RespawnAnchorBlock::MAX_CHARGES);
 
         assert!(!RespawnAnchorBlock::has_charge(empty));
         assert!(RespawnAnchorBlock::can_be_charged(empty));
@@ -387,10 +382,7 @@ mod tests {
             panic!("charged respawn anchor should produce a depleted state");
         };
 
-        assert_eq!(
-            depleted.get_value(&CHARGES),
-            1
-        );
+        assert_eq!(depleted.get_value(&CHARGES), 1);
         assert!(
             RespawnAnchorBlock::state_after_charge_consumed(
                 vanilla_blocks::RESPAWN_ANCHOR.default_state()

@@ -105,10 +105,10 @@ impl BlockBehavior for WallBannerBlock {
                 continue;
             }
 
-            let state = self.block.default_state().set_value(
-                &FACING,
-                direction.opposite(),
-            );
+            let state = self
+                .block
+                .default_state()
+                .set_value(&FACING, direction.opposite());
             if self.can_survive(state, context.world.as_ref(), context.place_pos()) {
                 return Some(state);
             }

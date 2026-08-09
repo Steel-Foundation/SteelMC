@@ -1,15 +1,5 @@
 use std::sync::Arc;
 
-use glam::DVec3;
-use steel_macros::block_behavior;
-use steel_registry::blocks::{
-    BlockRef, block_state_ext::BlockStateExt, properties::BedPart, properties::BlockStateProperties,
-};
-use steel_registry::vanilla_blocks;
-use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
-use text_components::TextComponent;
-use text_components::translation::TranslatedMessage;
-use steel_registry::blocks::properties::{BoolProperty, EnumProperty};
 use crate::{
     behavior::{
         BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt as _,
@@ -20,6 +10,16 @@ use crate::{
     player::Player,
     world::{ScheduledTickAccess, World},
 };
+use glam::DVec3;
+use steel_macros::block_behavior;
+use steel_registry::blocks::properties::{BoolProperty, EnumProperty};
+use steel_registry::blocks::{
+    BlockRef, block_state_ext::BlockStateExt, properties::BedPart, properties::BlockStateProperties,
+};
+use steel_registry::vanilla_blocks;
+use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
+use text_components::TextComponent;
+use text_components::translation::TranslatedMessage;
 
 const BED_BOUNCE_SCALE: f64 = 0.660_000_026_226_043_7;
 const BED_PART: EnumProperty<BedPart> = BlockStateProperties::BED_PART;
@@ -73,9 +73,7 @@ impl BedBlock {
             return Some((state, pos));
         }
 
-        let head_pos = state
-            .get_value(&FACING)
-            .relative(pos);
+        let head_pos = state.get_value(&FACING).relative(pos);
         let head_state = world.get_block_state(head_pos);
         (head_state.get_block() == self.block).then_some((head_state, head_pos))
     }
@@ -243,11 +241,7 @@ impl BlockBehavior for BedBlock {
             return None;
         }
 
-        Some(
-            self.block
-                .default_state()
-                .set_value(&FACING, facing),
-        )
+        Some(self.block.default_state().set_value(&FACING, facing))
     }
 
     fn fall_on(
@@ -293,17 +287,14 @@ impl BlockBehavior for BedBlock {
         pos: BlockPos,
         player: &Player,
     ) -> BlockStateId {
-        if !player.has_infinite_materials()
-            || state.get_value(&BED_PART) != BedPart::Foot
-        {
+        if !player.has_infinite_materials() || state.get_value(&BED_PART) != BedPart::Foot {
             return state;
         }
 
         let facing = state.get_value(&FACING);
         let head_pos = Self::neighbor_direction(&BedPart::Foot, facing).relative(pos);
         let head_state = world.get_block_state(head_pos);
-        if head_state.get_block() != self.block
-            || head_state.get_value(&BED_PART) != BedPart::Head
+        if head_state.get_block() != self.block || head_state.get_value(&BED_PART) != BedPart::Head
         {
             return state;
         }
@@ -332,13 +323,8 @@ impl BlockBehavior for BedBlock {
             return state;
         }
 
-        if neighbor_state.get_block() == self.block
-            && neighbor_state.get_value(&BED_PART) != part
-        {
-            return state.set_value(
-                &OCCUPIED,
-                neighbor_state.get_value(&OCCUPIED),
-            );
+        if neighbor_state.get_block() == self.block && neighbor_state.get_value(&BED_PART) != part {
+            return state.set_value(&OCCUPIED, neighbor_state.get_value(&OCCUPIED));
         }
 
         vanilla_blocks::AIR.default_state()
