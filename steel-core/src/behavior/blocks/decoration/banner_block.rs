@@ -1,6 +1,6 @@
 use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
 use steel_registry::vanilla_blocks;
 use steel_utils::angle::convert_to_rotation_segment;
@@ -8,6 +8,8 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::world::{LevelReader, ScheduledTickAccess};
+
+const FACING: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
 
 /// Shared behavior for standing banner blocks
 #[block_behavior]
@@ -75,7 +77,7 @@ impl BlockBehavior for WallBannerBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let facing = state.get_value(&FACING);
         world
             .get_block_state(facing.opposite().relative(pos))
             .is_solid()
@@ -90,7 +92,7 @@ impl BlockBehavior for WallBannerBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let facing = state.get_value(&FACING);
         if direction == facing.opposite() && !self.can_survive(state, world, pos) {
             return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
@@ -104,7 +106,7 @@ impl BlockBehavior for WallBannerBlock {
             }
 
             let state = self.block.default_state().set_value(
-                &BlockStateProperties::HORIZONTAL_FACING,
+                &FACING,
                 direction.opposite(),
             );
             if self.can_survive(state, context.world.as_ref(), context.place_pos()) {
