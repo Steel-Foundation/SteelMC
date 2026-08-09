@@ -396,9 +396,7 @@ async fn shutdown_worlds(server: &Arc<Server>) {
     }
 
     for world in server.worlds.values() {
-        world.chunk_map.stop_generation_refill_loop();
-        world.chunk_map.task_tracker.close();
-        world.chunk_map.task_tracker.wait().await;
+        world.chunk_map.quiesce().await;
     }
 
     let mut players_to_save = Vec::new();

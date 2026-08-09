@@ -23,6 +23,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use steel_core::bootstrap::init_globals_once;
 use steel_core::config::WorldStorageConfig;
 use steel_core::level_data::WorldGenerationSettings;
+use steel_core::server::pools::{build_chunk_encoding_pool, build_generation_pool};
 use steel_core::server::pregen::pregen_area_for_benchmark;
 use steel_core::world::{World, WorldConfig};
 use steel_core::worldgen::WorldGeneratorRegistry;
@@ -187,20 +188,8 @@ fn build_harness(options: &Options, rep: usize) -> Result<Harness, String> {
         .build()
         .map_err(|error| format!("main runtime should start: {error}"))?;
 
-    let generation_pool = Arc::new(
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(options.generation_threads)
-            .thread_name(|index| format!("rayon-gen-{index}"))
-            .build()
-            .map_err(|error| format!("generation pool should start: {error}"))?,
-    );
-    let encoding_pool = Arc::new(
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(options.encoding_threads)
-            .thread_name(|index| format!("rayon-chunk-enc-{index}"))
-            .build()
-            .map_err(|error| format!("encoding pool should start: {error}"))?,
-    );
+    let generation_pool = build_generation_pool(Some(options.generation_threads))?;
+    let encoding_pool = build_chunk_encoding_pool(Some(options.encoding_threads))?;
 
     let generator_key = Identifier::vanilla_static("overworld");
     let generator_registry = WorldGeneratorRegistry::new_with_builtins()
@@ -227,13 +216,8 @@ fn build_harness(options: &Options, rep: usize) -> Result<Harness, String> {
         (Some(root), WorldStorageConfig::Disk { path })
     };
 
-    let generation_settings = WorldGenerationSettings::from_generator_config(
-        generator_key,
-        &generator_output.config,
-        generator_output.dimension_type.key.clone(),
-        generator_output.dimension_type.min_y,
-        generator_output.dimension_type.height,
-    );
+    let generation_settings =
+        WorldGenerationSettings::from_generator_output(generator_key, &generator_output);
     let is_flat = generator_output.is_flat;
     let sea_level = generator_output.sea_level;
     let dimension_type = generator_output.dimension_type;
@@ -295,9 +279,7 @@ impl Harness {
             storage,
         } = self;
         main_runtime.block_on(async {
-            world.chunk_map.stop_generation_refill_loop();
-            world.chunk_map.task_tracker.close();
-            world.chunk_map.task_tracker.wait().await;
+            world.chunk_map.quiesce().await;
         });
         drop(world);
         match storage {

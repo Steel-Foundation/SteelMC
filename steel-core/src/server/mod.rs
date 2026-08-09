@@ -4,6 +4,10 @@ mod broadcasting;
 pub mod jobs;
 mod packet_processor;
 #[cfg(not(feature = "benchmark-support"))]
+mod pools;
+#[cfg(feature = "benchmark-support")]
+pub mod pools;
+#[cfg(not(feature = "benchmark-support"))]
 mod pregen;
 #[cfg(feature = "benchmark-support")]
 pub mod pregen;
@@ -38,6 +42,7 @@ use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_l
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
+use crate::server::pools::{build_chunk_encoding_pool, build_generation_pool};
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
@@ -73,7 +78,7 @@ use crate::worldgen::WorldGeneratorRegistry;
 use crate::worldgen::registry::GeneratorOutput;
 use crossbeam::queue::SegQueue;
 use glam::DVec3;
-use rayon::{ThreadPool, ThreadPoolBuilder};
+use rayon::ThreadPool;
 use rustc_hash::FxHashMap;
 use std::{
     collections::BTreeSet,
@@ -161,23 +166,15 @@ const CHUNK_SENDING_TPS: u64 = 20;
 /// Work duration at which background chunk work is considered slow.
 const SLOW_CHUNK_TICK_THRESHOLD: Duration = Duration::from_millis(50);
 
-fn configured_chunk_generation_threads(configured_threads: Option<usize>) -> Option<usize> {
-    cap_positive_thread_count(configured_threads, available_worker_threads())
-}
-
-fn configured_chunk_encoding_threads(configured_threads: Option<usize>) -> Option<usize> {
-    cap_positive_thread_count(configured_threads, available_worker_threads())
-}
-
 fn configured_packet_workers(configured_workers: Option<usize>) -> usize {
     packet_workers_for_available(configured_workers, available_worker_threads())
 }
 
-fn available_worker_threads() -> usize {
+pub(crate) fn available_worker_threads() -> usize {
     thread::available_parallelism().map_or(4, NonZero::get)
 }
 
-fn cap_positive_thread_count(
+pub(crate) fn cap_positive_thread_count(
     configured_threads: Option<usize>,
     available_threads: usize,
 ) -> Option<usize> {
@@ -302,12 +299,9 @@ fn generation_settings_for_world(
     world_entry: &ResolvedWorldConfig,
     generator_output: &GeneratorOutput,
 ) -> WorldGenerationSettings {
-    WorldGenerationSettings::from_generator_config(
+    WorldGenerationSettings::from_generator_output(
         world_entry.generator_config.generator().clone(),
-        &generator_output.config,
-        generator_output.dimension_type.key.clone(),
-        generator_output.dimension_type.min_y,
-        generator_output.dimension_type.height,
+        generator_output,
     )
 }
 
@@ -557,33 +551,8 @@ impl Server {
             .validate_and_resolve(&generator_registry, &storage_registry)
             .map_err(|e| format!("failed to validate worlds.toml: {e}"))?;
 
-        let generation_pool: Arc<ThreadPool> = Arc::new({
-            let mut builder = ThreadPoolBuilder::new().thread_name(|i| format!("rayon-gen-{i}"));
-            if let Some(chunk_generation_threads) =
-                configured_chunk_generation_threads(config.chunk_generation_threads)
-            {
-                builder = builder.num_threads(chunk_generation_threads);
-            }
-            // Debug builds have deep call chains in density functions that overflow the default 2 MB stack
-            if cfg!(debug_assertions) {
-                builder = builder.stack_size(8 * 1024 * 1024);
-            }
-            builder
-                .build()
-                .map_err(|e| format!("failed to create generation thread pool: {e}"))?
-        });
-        let chunk_encoding_pool = Arc::new({
-            let mut builder =
-                ThreadPoolBuilder::new().thread_name(|i| format!("rayon-chunk-encode-{i}"));
-            if let Some(chunk_encoding_threads) =
-                configured_chunk_encoding_threads(config.chunk_encoding_threads)
-            {
-                builder = builder.num_threads(chunk_encoding_threads);
-            }
-            builder
-                .build()
-                .map_err(|e| format!("failed to create chunk encoding thread pool: {e}"))?
-        });
+        let generation_pool = build_generation_pool(config.chunk_generation_threads)?;
+        let chunk_encoding_pool = build_chunk_encoding_pool(config.chunk_encoding_threads)?;
 
         let player_data_storage = PlayerDataStorage::new(
             resolved_worlds.save_path.clone(),
