@@ -71,12 +71,8 @@ pub(super) fn crop_growth_speed(block: BlockRef, world: &dyn LevelReader, pos: B
     let east = pos.east();
     let same_block_at = |neighbor: BlockPos| block == world.get_block_state(neighbor).get_block();
 
-    let east_west = [west, east]
-        .into_iter()
-        .any(|neighbor| same_block_at(neighbor));
-    let north_south = [north, south]
-        .into_iter()
-        .any(|neighbor| same_block_at(neighbor));
+    let east_west = [west, east].into_iter().any(&same_block_at);
+    let north_south = [north, south].into_iter().any(&same_block_at);
     let crowded = (east_west && north_south)
         || [west.north(), east.north(), east.south(), west.south()]
             .into_iter()
