@@ -8,7 +8,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_utils::value_providers::IntProvider;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::{BlockBehavior, BlockPlaceContext};
+use crate::behavior::{BlockBehavior, BlockPlaceContext, try_drop_experience};
 use crate::world::World;
 
 /// Vanilla `DropExperienceBlock` behavior.
@@ -41,7 +41,7 @@ impl BlockBehavior for DropExperienceBlock {
         drop_experience: bool,
     ) {
         if drop_experience {
-            self.try_drop_experience(world, pos, tool, &self.experience);
+            try_drop_experience(world, pos, tool, &self.experience);
         }
     }
 }

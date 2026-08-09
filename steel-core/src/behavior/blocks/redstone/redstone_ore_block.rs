@@ -14,7 +14,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::{
     BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
-    PlacementSource,
+    PlacementSource, try_drop_experience,
 };
 use crate::entity::Entity;
 use crate::player::Player;
@@ -107,7 +107,7 @@ impl BlockBehavior for RedStoneOreBlock {
             return;
         }
 
-        self.try_drop_experience(
+        try_drop_experience(
             world,
             pos,
             tool,

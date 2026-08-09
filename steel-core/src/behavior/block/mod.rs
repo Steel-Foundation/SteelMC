@@ -83,6 +83,27 @@ pub(crate) fn drop_from_block_interact_loot_table(
     key.get_random_items(&mut ctx)
 }
 
+/// Samples and applies enchantment effects to a block experience drop.
+///
+/// Mirrors vanilla `Block.tryDropExperience`. Mining experience is incidental
+/// live-gameplay randomness, so Steel samples it from an unseeded runtime source.
+pub(crate) fn try_drop_experience(
+    world: &Arc<World>,
+    pos: BlockPos,
+    tool: &ItemStack,
+    experience: &IntProvider,
+) {
+    let mut random = LegacyRandom::from_seed(rand::random());
+    let base_experience = experience.sample(&mut random);
+    let experience = tool.apply_unconditional_enchantment_value_effects(
+        EnchantmentEffectComponent::BlockExperience,
+        base_experience as f32,
+    ) as i32;
+    if experience > 0 {
+        world.pop_experience(pos, experience);
+    }
+}
+
 mod context;
 
 pub use context::{
@@ -339,29 +360,6 @@ pub trait BlockBehavior: Send + Sync {
         tool: &ItemStack,
         drop_experience: bool,
     ) {
-    }
-
-    /// Samples and applies enchantment effects to a block experience drop.
-    ///
-    /// Mirrors vanilla `Block.tryDropExperience`. Mining experience is
-    /// incidental live-gameplay randomness, so Steel samples it from an
-    /// unseeded runtime source.
-    fn try_drop_experience(
-        &self,
-        world: &Arc<World>,
-        pos: BlockPos,
-        tool: &ItemStack,
-        experience: &IntProvider,
-    ) {
-        let mut random = LegacyRandom::from_seed(rand::random());
-        let base_experience = experience.sample(&mut random);
-        let experience = tool.apply_unconditional_enchantment_value_effects(
-            EnchantmentEffectComponent::BlockExperience,
-            base_experience as f32,
-        ) as i32;
-        if experience > 0 {
-            world.pop_experience(pos, experience);
-        }
     }
 
     /// Called after this block is removed from the world, to affect neighbors.
