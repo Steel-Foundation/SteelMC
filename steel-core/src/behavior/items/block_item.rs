@@ -3,6 +3,7 @@
 use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt},
+    data_components::vanilla_components::BLOCK_STATE,
     vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::{BlockStateId, types::UpdateFlags};
@@ -23,6 +24,14 @@ pub struct BlockItem {
 
 impl BlockItem {
     const PLACE_BLOCK_FLAGS: UpdateFlags = UpdateFlags::UPDATE_ALL_IMMEDIATE;
+
+    #[expect(
+        clippy::manual_midpoint,
+        reason = "Vanilla performs this exact float addition and division"
+    )]
+    fn place_sound_volume(volume: f32) -> f32 {
+        (volume + 1.0) / 2.0
+    }
 
     /// Creates a new block item behavior for the given block.
     #[must_use]
@@ -58,8 +67,19 @@ impl BlockItem {
             return InteractionResult::Fail;
         }
 
-        let placed_state = context.world.get_block_state(place_pos);
+        let mut placed_state = context.world.get_block_state(place_pos);
         if placed_state.get_block() == self.block {
+            let component_state = context.source().with_item(|stack| {
+                stack
+                    .get(BLOCK_STATE)
+                    .map_or(placed_state, |properties| properties.apply(placed_state))
+            });
+            if component_state != placed_state {
+                context
+                    .world
+                    .set_block(place_pos, component_state, UpdateFlags::UPDATE_CLIENTS);
+                placed_state = context.world.get_block_state(place_pos);
+            }
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
             placed_behavior.set_placed_by(placed_state, context.world, place_pos, context.source());
         }
@@ -69,8 +89,8 @@ impl BlockItem {
         context.world.play_block_sound(
             sound_type.place_sound,
             place_pos,
-            sound_type.volume,
-            sound_type.pitch,
+            Self::place_sound_volume(sound_type.volume),
+            sound_type.pitch * 0.8,
             context.player().map(Entity::id),
         );
         context.world.game_event(

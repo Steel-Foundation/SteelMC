@@ -646,6 +646,48 @@ impl BlockRegistry {
         ))
     }
 
+    /// Applies serialized properties over an existing state.
+    ///
+    /// Unknown property names and invalid values are ignored, matching Vanilla's
+    /// `BlockItemStateProperties.apply` placement behavior.
+    #[must_use]
+    pub fn apply_serialized_properties<'a>(
+        &self,
+        state: BlockStateId,
+        properties: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> BlockStateId {
+        let Some(block) = self.by_state_id(state) else {
+            return state;
+        };
+        let Some(&block_id) = self.state_to_block_id.get(usize::from(state.0)) else {
+            return state;
+        };
+        let Some(&base_state_id) = self.block_to_base_state.get(block_id) else {
+            return state;
+        };
+        let mut property_indices =
+            Self::decode_property_indices(block, state.0.saturating_sub(base_state_id));
+
+        for (property_name, property_value) in properties {
+            let Some(property_index) = block
+                .properties
+                .iter()
+                .position(|property| property.get_name() == property_name)
+            else {
+                continue;
+            };
+            let property = block.properties[property_index];
+            let Some(value_index) = (0..property.value_count())
+                .find(|&index| property.value_name_from_index(index) == property_value)
+            else {
+                continue;
+            };
+            property_indices[property_index] = value_index;
+        }
+
+        BlockStateId(base_state_id + Self::encode_property_indices(block, &property_indices))
+    }
+
     /// Returns every state id of `block` whose properties match all `(name, value)` pairs
     /// in `filter`. An empty filter yields all states of the block (vanilla's
     /// `getStatesOfBlock`); a non-empty filter keeps only matching states (vanilla's
@@ -1232,6 +1274,39 @@ mod tests {
                 .expect("Property should exist");
             assert_eq!(found.1, *value, "Property {name} mismatch");
         }
+    }
+
+    #[test]
+    fn serialized_properties_overlay_current_state_and_ignore_invalid_entries() {
+        let registry = create_test_registry();
+        let key = Identifier::vanilla_static("redstone_wire");
+        let Some(current) = registry.state_id_from_properties(
+            &key,
+            &[
+                ("east", "side"),
+                ("north", "up"),
+                ("south", "none"),
+                ("west", "side"),
+                ("power", "10"),
+            ],
+        ) else {
+            panic!("redstone wire test state should exist");
+        };
+
+        let applied = registry.apply_serialized_properties(
+            current,
+            [
+                ("power", "7"),
+                ("east", "not_a_side"),
+                ("not_a_property", "ignored"),
+            ],
+        );
+        let properties = registry.get_properties(applied);
+
+        assert!(properties.contains(&("power", "7")));
+        assert!(properties.contains(&("east", "side")));
+        assert!(properties.contains(&("north", "up")));
+        assert!(properties.contains(&("west", "side")));
     }
 
     #[test]

@@ -5,9 +5,12 @@ use std::io::{Cursor, Error, Result, Write};
 
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
+use steel_utils::BlockStateId;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::serial::{PrefixedRead, PrefixedWrite, ReadFrom, WriteTo};
+
+use crate::REGISTRY;
 
 /// String-valued block properties applied when a block item is placed.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -41,6 +44,17 @@ impl BlockItemStateProperties {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.properties.is_empty()
+    }
+
+    /// Applies these serialized properties over `state`.
+    #[must_use]
+    pub fn apply(&self, state: BlockStateId) -> BlockStateId {
+        REGISTRY.blocks.apply_serialized_properties(
+            state,
+            self.properties
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_str())),
+        )
     }
 }
 
