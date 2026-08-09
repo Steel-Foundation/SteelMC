@@ -96,7 +96,7 @@ impl MultifaceBlock {
         true
     }
 
-    ///Vanilla `MultifaceBlock.get_state_for_placement()`
+    /// Vanilla `MultifaceBlock.get_state_for_placement()`
     fn get_state_for_placement_with_dir(
         block: BlockRef,
         old_state: BlockStateId,
@@ -191,7 +191,7 @@ impl BlockBehavior for MultifaceBlock {
         has_at_least_one_face
     }
 
-    ///Vanilla `MultifaceBlock.getStateForPlacement`
+    /// Vanilla `MultifaceBlock.getStateForPlacement`
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let level = context.world;
         let place_pos = if context.replaces_clicked_block() {
@@ -211,7 +211,7 @@ impl BlockBehavior for MultifaceBlock {
             })
     }
 
-    ///Vanilla `MultifaceBlock.updateShape`
+    /// Vanilla `MultifaceBlock.updateShape`
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -235,7 +235,7 @@ impl BlockBehavior for MultifaceBlock {
         state
     }
 
-    ///Vanilla `MultifaceBlock.canBeReplaced`
+    /// Vanilla `MultifaceBlock.canBeReplaced`
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
         !context.with_item(|item| item.item() == REGISTRY.items.by_block(state.get_block()))
             || Self::has_any_vacant_face(state)
