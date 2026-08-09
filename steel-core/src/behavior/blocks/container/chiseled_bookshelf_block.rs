@@ -45,9 +45,9 @@ impl ChiseledBookShelfBlock {
     }
 
     fn section_index(coordinate: f64, section_count: i32) -> usize {
-        let pixel = (coordinate * 16.0).floor() as i32;
-        let section_width = 16 / section_count;
-        (pixel / section_width).clamp(0, section_count - 1) as usize
+        let targeted_pixel = coordinate as f32 * 16.0;
+        let section_size = 16.0 / section_count as f32;
+        ((targeted_pixel / section_size).floor() as i32).clamp(0, section_count - 1) as usize
     }
 
     fn hit_slot(state: BlockStateId, hit_result: &BlockHitResult) -> Option<usize> {
@@ -333,28 +333,28 @@ mod tests {
     fn hit_boundaries_use_vanilla_pixel_sections() {
         init_globals_once();
         let state = state_facing(Direction::South);
-        let epsilon = 1.0e-9;
+        let epsilon = 1.0e-6;
 
         assert_eq!(
             ChiseledBookShelfBlock::hit_slot(
                 state,
-                &hit(Direction::South, 5.0 / 16.0 - epsilon, 0.75),
+                &hit(Direction::South, 1.0 / 3.0 - epsilon, 0.75),
             ),
             Some(0),
         );
         assert_eq!(
-            ChiseledBookShelfBlock::hit_slot(state, &hit(Direction::South, 5.0 / 16.0, 0.75),),
+            ChiseledBookShelfBlock::hit_slot(state, &hit(Direction::South, 1.0 / 3.0, 0.75),),
             Some(1),
         );
         assert_eq!(
             ChiseledBookShelfBlock::hit_slot(
                 state,
-                &hit(Direction::South, 10.0 / 16.0 - epsilon, 0.75),
+                &hit(Direction::South, 2.0 / 3.0 - epsilon, 0.75),
             ),
             Some(1),
         );
         assert_eq!(
-            ChiseledBookShelfBlock::hit_slot(state, &hit(Direction::South, 10.0 / 16.0, 0.75),),
+            ChiseledBookShelfBlock::hit_slot(state, &hit(Direction::South, 2.0 / 3.0, 0.75),),
             Some(2),
         );
         assert_eq!(
