@@ -23,6 +23,11 @@ pub(crate) fn path_ends_with(path: &syn::Path, name: &str) -> bool {
 pub(crate) enum JsonArgKind {
     /// Raw JSON value → token literal (handles numbers, strings, bools)
     Value,
+    /// Flattened extractor fields → a constant or uniform `IntProvider`.
+    ///
+    /// Unsupported provider shapes fail code generation so new vanilla data
+    /// cannot silently receive the wrong distribution.
+    IntProvider,
     /// JSON string → `module::IDENT`. Stores the module name.
     Registry(String),
     /// JSON string → `EnumType::Variant` (`PascalCase`).
@@ -99,6 +104,8 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
         meta.parse_nested_meta(|meta| {
             if meta.path.is_ident("value") {
                 kind = Some(JsonArgKind::Value);
+            } else if meta.path.is_ident("int_provider") {
+                kind = Some(JsonArgKind::IntProvider);
             } else if meta.path.is_ident("r#enum") || meta.path.is_ident("enum") {
                 let value = meta.value()?;
                 let lit: syn::LitStr = value.parse()?;
@@ -125,7 +132,7 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
                 assert!(
                     KNOWN_REGISTRIES.contains(&name.as_str()),
                     "Unknown json_arg attribute '{name}' on field '{field_name}'. \
-                     Expected: value, enum, ref, json, optional, or a registry module ({}).",
+                     Expected: value, int_provider, enum, ref, json, optional, or a registry module ({}).",
                     KNOWN_REGISTRIES.join(", ")
                 );
                 kind = Some(JsonArgKind::Registry(name));
@@ -145,7 +152,7 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
     };
 
     let kind = kind.unwrap_or_else(|| {
-        panic!("json_arg on field '{field_name}' must specify a kind (value, enum, or a registry module name)")
+        panic!("json_arg on field '{field_name}' must specify a kind (value, int_provider, enum, or a registry module name)")
     });
 
     Some(JsonArgField {
@@ -204,6 +211,40 @@ pub(crate) fn json_value_to_tokens(
     }
 }
 
+fn int_provider_to_tokens(
+    extra: &serde_json::Map<String, serde_json::Value>,
+    entry_name: &str,
+    key: &str,
+) -> TokenStream {
+    let value_key = format!("{key}_value");
+    let min_key = format!("{key}_min_inclusive");
+    let max_key = format!("{key}_max_inclusive");
+    let value = extra.get(&value_key);
+    let min = extra.get(&min_key);
+    let max = extra.get(&max_key);
+
+    match (value, min, max) {
+        (Some(value), None, None) => {
+            let value = json_value_to_tokens(value, entry_name, &value_key);
+            quote! { steel_utils::value_providers::IntProvider::Constant(#value) }
+        }
+        (None, Some(min), Some(max)) => {
+            let min = json_value_to_tokens(min, entry_name, &min_key);
+            let max = json_value_to_tokens(max, entry_name, &max_key);
+            quote! {
+                steel_utils::value_providers::IntProvider::Uniform {
+                    min_inclusive: #min,
+                    max_inclusive: #max,
+                }
+            }
+        }
+        _ => panic!(
+            "Entry '{entry_name}' must define either '{value_key}' or both \
+             '{min_key}' and '{max_key}'"
+        ),
+    }
+}
+
 /// Generates a constructor argument token stream from a `JsonArgField` and JSON data.
 ///
 /// Registry access modes:
@@ -228,6 +269,7 @@ pub(crate) fn generate_arg(
             let value = get_json_value(extra, entry_name, json_key);
             json_value_to_tokens(value, entry_name, json_key)
         }
+        JsonArgKind::IntProvider => int_provider_to_tokens(extra, entry_name, json_key),
         JsonArgKind::Registry(module) => {
             let name = get_json_str(extra, entry_name, json_key);
             if module == "vanilla_items" {

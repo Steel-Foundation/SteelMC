@@ -56,7 +56,7 @@ pub fn build(blocks: &[BlockClass]) -> String {
                 JsonArgKind::Registry(module) => {
                     registry_modules_used.insert(module.clone());
                 }
-                JsonArgKind::Value => {}
+                JsonArgKind::Value | JsonArgKind::IntProvider => {}
             }
         }
 

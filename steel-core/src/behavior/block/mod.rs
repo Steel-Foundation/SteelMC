@@ -13,6 +13,7 @@ use steel_registry::blocks::shapes::{
     BooleanOp, ShapeChannel, SupportType, VoxelShape, is_block_local_face_sturdy,
     is_shape_full_block, join_unoptimized_boxes,
 };
+use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
@@ -22,7 +23,9 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entities;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_blocks};
 use steel_registry::{vanilla_damage_types, vanilla_items};
+use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
+use steel_utils::value_providers::IntProvider;
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Identifier, WorldAabb, axis::Axis};
 
 use crate::behavior::BLOCK_BEHAVIORS;
@@ -336,6 +339,29 @@ pub trait BlockBehavior: Send + Sync {
         tool: &ItemStack,
         drop_experience: bool,
     ) {
+    }
+
+    /// Samples and applies enchantment effects to a block experience drop.
+    ///
+    /// Mirrors vanilla `Block.tryDropExperience`. Mining experience is
+    /// incidental live-gameplay randomness, so Steel samples it from an
+    /// unseeded runtime source.
+    fn try_drop_experience(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        tool: &ItemStack,
+        experience: &IntProvider,
+    ) {
+        let mut random = LegacyRandom::from_seed(rand::random());
+        let base_experience = experience.sample(&mut random);
+        let experience = tool.apply_unconditional_enchantment_value_effects(
+            EnchantmentEffectComponent::BlockExperience,
+            base_experience as f32,
+        ) as i32;
+        if experience > 0 {
+            world.pop_experience(pos, experience);
+        }
     }
 
     /// Called after this block is removed from the world, to affect neighbors.
