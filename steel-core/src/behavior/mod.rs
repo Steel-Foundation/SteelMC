@@ -66,7 +66,7 @@ pub(crate) use block::pickup_waterlogged_block;
 pub use block::{
     BlockBehavior, BlockBehaviorRegistry, BlockCollisionBoxes, BlockCollisionContext,
     BlockEntityCreation, BlockLootContext, DefaultBlockBehavior, EntityFallDamage,
-    EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, RailBehavior,
+    EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, Fallable, RailBehavior,
 };
 use block_behaviors::register_block_behaviors;
 pub use context::{
