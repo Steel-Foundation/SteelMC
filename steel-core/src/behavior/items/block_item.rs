@@ -30,7 +30,7 @@ impl BlockItem {
         Self { block }
     }
 
-    fn place_with(
+    pub(super) fn place_with(
         &self,
         mut context: BlockPlaceContext<'_>,
         place_block: impl FnOnce(&BlockPlaceContext<'_>, BlockStateId) -> bool,

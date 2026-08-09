@@ -1,8 +1,9 @@
 use bitflags::bitflags;
 use steel_registry::{
     entity_data::{DataValue, EntityPose},
-    vanilla_entity_data::VanillaEntityData,
+    vanilla_entity_data::{VanillaEntityData, VanillaLivingEntityData},
 };
+use steel_utils::BlockPos;
 use steel_utils::locks::SyncMutex;
 use text_components::TextComponent;
 
@@ -93,6 +94,31 @@ pub trait EntitySyncedData: Send + Sync {
 
     /// Sets synchronized vanilla frozen ticks.
     fn set_base_ticks_frozen(&self, ticks_frozen: i32);
+}
+
+/// Thread-safe access to synchronized data declared by vanilla `LivingEntity`.
+pub trait LivingEntitySyncedData: EntitySyncedData {
+    /// Sets synchronized vanilla sleeping position.
+    fn set_sleeping_pos(&self, sleeping_pos: BlockPos);
+
+    /// Clears synchronized vanilla sleeping position.
+    fn clear_sleeping_pos(&self);
+}
+
+impl<T> LivingEntitySyncedData for SyncMutex<T>
+where
+    T: VanillaLivingEntityData + Send + Sync,
+{
+    fn set_sleeping_pos(&self, sleeping_pos: BlockPos) {
+        self.lock()
+            .living_entity_mut()
+            .sleeping_pos
+            .set(Some(sleeping_pos));
+    }
+
+    fn clear_sleeping_pos(&self) {
+        self.lock().living_entity_mut().sleeping_pos.set(None);
+    }
 }
 
 impl<T> EntitySyncedData for SyncMutex<T>
@@ -222,7 +248,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{entity_data::EntityData, vanilla_entity_data::ItemEntityData};
+    use steel_registry::{
+        entity_data::EntityData,
+        vanilla_entity_data::{ItemEntityData, PlayerEntityData},
+    };
     use text_components::TextComponent;
 
     use super::*;
@@ -353,5 +382,34 @@ mod tests {
         assert!(matches!(values[3].value, EntityData::Boolean(true)));
         assert_eq!(values[4].index, 4);
         assert!(matches!(values[4].value, EntityData::Boolean(true)));
+    }
+
+    #[test]
+    fn living_synced_data_writes_sleeping_pos_layer() {
+        let data = SyncMutex::new(PlayerEntityData::new());
+        let bed_pos = BlockPos::new(1, 64, 2);
+
+        LivingEntitySyncedData::set_sleeping_pos(&data, bed_pos);
+
+        let values = EntitySyncedData::pack_dirty(&data)
+            .expect("expected dirty living sleeping-pos metadata");
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0].index, 14);
+        assert_eq!(values[0].serializer_id, 11);
+        assert!(matches!(
+            values[0].value,
+            EntityData::OptionalBlockPos(Some(pos)) if pos == bed_pos
+        ));
+
+        LivingEntitySyncedData::clear_sleeping_pos(&data);
+
+        let values = EntitySyncedData::pack_dirty(&data)
+            .expect("expected dirty cleared sleeping-pos metadata");
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0].index, 14);
+        assert!(matches!(
+            values[0].value,
+            EntityData::OptionalBlockPos(None)
+        ));
     }
 }

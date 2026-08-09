@@ -44,6 +44,21 @@ use super::{
 };
 
 #[test]
+fn death_drops_destroy_vanishing_items() {
+    init_vanilla_registry();
+    let mut inventory = PlayerInventory::new();
+    let mut vanishing = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
+    vanishing.set_enchantments(&[(Identifier::vanilla_static("vanishing_curse"), 1)], false);
+    inventory.set_item(0, ItemStack::new(&vanilla_items::STONE));
+    inventory.set_item(1, vanishing);
+
+    let drops = inventory.take_death_drops();
+
+    assert!(inventory.is_empty());
+    assert_eq!(drops, [ItemStack::new(&vanilla_items::STONE)]);
+}
+
+#[test]
 fn vanilla_inventory_nbt_contains_main_slots_only() {
     init_vanilla_registry();
     let mut inventory = PlayerInventory::new();

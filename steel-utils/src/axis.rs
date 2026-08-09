@@ -1,3 +1,5 @@
+//! Axis types
+
 /// An axis in 3D space.
 #[derive(Copy, Clone, Debug, Eq)]
 #[derive_const(PartialEq)]
