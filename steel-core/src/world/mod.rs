@@ -123,6 +123,8 @@ mod properties;
 mod raycast;
 mod redstone;
 mod signal_getter;
+mod sleep;
+mod sleep_status;
 mod spawn;
 pub mod tick_scheduler;
 mod weather;
@@ -247,6 +249,8 @@ pub struct World {
     pub(crate) saved_data: SavedDataManager,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
+    /// Vanilla sleeping player counts for night-skip checks.
+    sleep_status: SyncMutex<sleep_status::SleepStatus>,
     /// Server view distance (maximum chunk radius).
     pub view_distance: u8,
     /// Server simulation distance.
@@ -412,6 +416,7 @@ impl World {
                 level_data: SyncRwLock::new(level_data),
                 saved_data,
                 world_border: SyncMutex::new(world_border),
+                sleep_status: SyncMutex::new(sleep_status::SleepStatus::default()),
                 view_distance,
                 simulation_distance,
                 compression,
@@ -497,6 +502,9 @@ impl World {
         if runs_normally {
             self.tick_world_border();
             self.tick_weather();
+        }
+        self.tick_sleeping_players();
+        if runs_normally {
             self.tick_time();
         }
 
