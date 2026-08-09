@@ -46,8 +46,8 @@ pub use profile::{
     GameProfile, GameProfileAction, KnownPlayer, KnownPlayers, ProfileLookupError,
     is_valid_player_name, offline_uuid,
 };
-use sleep_state::PlayerSleepState;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use sleep_state::PlayerSleepState;
 use std::mem::replace;
 use std::sync::{Arc, Weak};
 use steel_protocol::packets::game::{
