@@ -2683,11 +2683,17 @@ pub trait LivingEntity: Entity {
     /// Sets the vanilla living-entity sleeping position.
     fn set_sleeping_pos(&self, bed_position: BlockPos) {
         self.living_base().set_sleeping_pos(bed_position);
+        if let Some(entity_data) = self.living_synced_data() {
+            entity_data.set_sleeping_pos(bed_position);
+        }
     }
 
     /// Clears the vanilla living-entity sleeping position.
     fn clear_sleeping_pos(&self) {
         self.living_base().clear_sleeping_pos();
+        if let Some(entity_data) = self.living_synced_data() {
+            entity_data.clear_sleeping_pos();
+        }
     }
 
     /// Checks if the entity is sleeping.
@@ -2695,9 +2701,96 @@ pub trait LivingEntity: Entity {
         self.sleeping_pos().is_some()
     }
 
+    /// Returns synchronized data declared by vanilla `LivingEntity`.
+    fn living_synced_data(&self) -> Option<&dyn LivingEntitySyncedData> {
+        None
+    }
+
+    /// Starts sleeping at the given bed position.
+    fn start_sleeping(&self, bed_position: BlockPos) -> Result<(), EntityMoveError> {
+        if self.is_passenger() {
+            self.stop_riding();
+        }
+
+        let Some(world) = self.level() else {
+            return Err(EntityMoveError::NotLive {
+                entity_id: self.id(),
+            });
+        };
+        self.try_set_position(DVec3::new(
+            f64::from(bed_position.x()) + 0.5,
+            f64::from(bed_position.y()) + 0.6875,
+            f64::from(bed_position.z()) + 0.5,
+        ))?;
+
+        let block_state = world.get_block_state(bed_position);
+        if block_state.is_bed() {
+            world.set_block(
+                bed_position,
+                block_state.set_value(&BlockStateProperties::OCCUPIED, true),
+                UpdateFlags::UPDATE_ALL,
+            );
+        }
+
+        self.set_pose(EntityPose::Sleeping);
+        self.set_sleeping_pos(bed_position);
+        self.set_velocity(DVec3::ZERO);
+        Ok(())
+    }
+
+    /// Shared body for overrides that need vanilla `super.stopSleeping()`.
+    fn default_stop_sleeping(&self) {
+        if let Some(bed_position) = self.sleeping_pos()
+            && let Some(world) = self.level()
+        {
+            let state = world.get_block_state(bed_position);
+            if state.is_bed() {
+                let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+                world.set_block(
+                    bed_position,
+                    state.set_value(&BlockStateProperties::OCCUPIED, false),
+                    UpdateFlags::UPDATE_ALL,
+                );
+                let stand_up = BedBlock::find_standup_position(
+                    &world,
+                    self.as_entity_event_source(),
+                    facing,
+                    bed_position,
+                )
+                .unwrap_or_else(|| {
+                    let above = bed_position.above();
+                    DVec3::new(
+                        f64::from(above.x()) + 0.5,
+                        f64::from(above.y()) + 0.1,
+                        f64::from(above.z()) + 0.5,
+                    )
+                });
+                let bed_center = DVec3::new(
+                    f64::from(bed_position.x()) + 0.5,
+                    f64::from(bed_position.y()),
+                    f64::from(bed_position.z()) + 0.5,
+                );
+                let look_direction = (bed_center - stand_up).normalize_or_zero();
+                let yaw = wrap_degrees(
+                    (look_direction.z.atan2(look_direction.x).to_degrees() - 90.0) as f32,
+                );
+                if let Err(error) = self.try_set_position(stand_up) {
+                    log::warn!(
+                        "failed to move entity {} to bed stand-up position: {error}",
+                        self.id()
+                    );
+                }
+                self.set_rotation((yaw, 0.0));
+            }
+        }
+
+        self.set_pose(EntityPose::Standing);
+        self.clear_sleeping_pos();
+    }
+
     /// Stops the entity from sleeping.
     fn stop_sleeping(&self) {
-        self.clear_sleeping_pos();
+        self.default_stop_sleeping();
     }
 
     /// Checks if the entity is sprinting.
