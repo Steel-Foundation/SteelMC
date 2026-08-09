@@ -32,6 +32,66 @@ pub struct CropBlock {
     block: BlockRef,
 }
 
+/// Calculates Vanilla crop growth speed for the supplied crop block.
+///
+/// Stems use the same farmland and neighboring-crop calculation as crops, but
+/// have different survival and mature-growth behavior.
+pub(super) fn crop_growth_speed(block: BlockRef, world: &dyn LevelReader, pos: BlockPos) -> f32 {
+    let mut speed: f32 = 1.0;
+    let below = pos.below();
+
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            let check_pos = below.offset(dx, 0, dz);
+            let block_state = world.get_block_state(check_pos);
+            let mut block_speed = 0.0;
+
+            if block_state.get_block().has_tag(&BlockTag::GROWS_CROPS) {
+                block_speed = 1.0;
+                let moisture = block_state
+                    .try_get_value(&BlockStateProperties::MOISTURE)
+                    .unwrap_or(0);
+                if moisture > 0 {
+                    block_speed = 3.0;
+                }
+            }
+
+            if dx != 0 || dz != 0 {
+                block_speed /= 4.0;
+            }
+
+            speed += block_speed;
+        }
+    }
+
+    let north = world.get_block_state(pos.north());
+    let south = world.get_block_state(pos.south());
+    let west = world.get_block_state(pos.west());
+    let east = world.get_block_state(pos.east());
+
+    let horizontal_row = block == west.get_block() || block == east.get_block();
+    let vertical_row = block == north.get_block() || block == south.get_block();
+
+    if horizontal_row && vertical_row {
+        speed /= 2.0;
+    } else {
+        let nw = world.get_block_state(pos.north().west());
+        let ne = world.get_block_state(pos.north().east());
+        let sw = world.get_block_state(pos.south().west());
+        let se = world.get_block_state(pos.south().east());
+
+        if block == nw.get_block()
+            || block == ne.get_block()
+            || block == sw.get_block()
+            || block == se.get_block()
+        {
+            speed /= 2.0;
+        }
+    }
+
+    speed
+}
+
 pub trait CropLike {
     fn block(&self) -> BlockRef;
     fn age_property(&self) -> &IntProperty;
@@ -72,68 +132,7 @@ pub trait CropLike {
     /// - Adjacent farmland: +0.25 (dry) or +0.75 (hydrated)
     /// - Same crop in row: /2.0 speed penalty
     fn get_growth_speed(&self, world: &Arc<World>, pos: BlockPos) -> f32 {
-        let mut speed: f32 = 1.0;
-        let below = pos.below();
-
-        // Check 3x3 area of farmland below
-        for dx in -1..=1 {
-            for dz in -1..=1 {
-                let check_pos = below.offset(dx, 0, dz);
-                let block_state = world.get_block_state(check_pos);
-                let mut block_speed = 0.0;
-
-                if block_state.get_block().has_tag(&BlockTag::GROWS_CROPS) {
-                    block_speed = 1.0;
-                    // Check moisture level (defaults to 0 for non-farmland blocks)
-                    let moisture = block_state
-                        .try_get_value(&BlockStateProperties::MOISTURE)
-                        .unwrap_or(0);
-                    if moisture > 0 {
-                        block_speed = 3.0;
-                    }
-                }
-
-                // Diagonal/adjacent farmland contributes less
-                if dx != 0 || dz != 0 {
-                    block_speed /= 4.0;
-                }
-
-                speed += block_speed;
-            }
-        }
-
-        // Check for same crop in adjacent positions (reduces growth speed)
-        let north = world.get_block_state(pos.north());
-        let south = world.get_block_state(pos.south());
-        let west = world.get_block_state(pos.west());
-        let east = world.get_block_state(pos.east());
-
-        let block = self.block();
-
-        let horizontal_row = block == west.get_block() || block == east.get_block();
-        let vertical_row = block == north.get_block() || block == south.get_block();
-
-        if horizontal_row && vertical_row {
-            // Crops in both directions - penalty
-            speed /= 2.0;
-        } else {
-            // Check diagonals
-            let nw = world.get_block_state(pos.north().west());
-            let ne = world.get_block_state(pos.north().east());
-            let sw = world.get_block_state(pos.south().west());
-            let se = world.get_block_state(pos.south().east());
-
-            let has_diagonal = block == nw.get_block()
-                || block == ne.get_block()
-                || block == sw.get_block()
-                || block == se.get_block();
-
-            if has_diagonal {
-                speed /= 2.0;
-            }
-        }
-
-        speed
+        crop_growth_speed(self.block(), world.as_ref(), pos)
     }
 
     fn on_random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
