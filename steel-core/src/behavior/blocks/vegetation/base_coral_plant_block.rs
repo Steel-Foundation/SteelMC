@@ -5,10 +5,11 @@ use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::CoralBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
-use super::{BlockRef, coral_plant_can_survive};
+use super::BlockRef;
 
 /// Vanilla `BaseCoralPlantBlock` survival (dead coral plants such as
 /// `dead_tube_coral`).
@@ -29,7 +30,7 @@ impl BaseCoralPlantBlock {
 
 impl BlockBehavior for BaseCoralPlantBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        coral_plant_can_survive(world, pos)
+        CoralBlock::coral_plant_can_survive(world, pos)
     }
 
     fn update_shape(

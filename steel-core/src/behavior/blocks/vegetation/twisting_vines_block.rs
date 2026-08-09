@@ -1,5 +1,5 @@
+use crate::behavior::blocks::vegetation::NetherVines;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
-use crate::behavior::blocks::vegetation::nether_vines_get_blocks_to_grow_when_bonemealed;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{
     block::BlockBehavior, blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock,
@@ -31,7 +31,7 @@ impl TwistingVinesBlock {
                 false,
                 0.1,
                 &vanilla_blocks::TWISTING_VINES_PLANT,
-                Some(nether_vines_get_blocks_to_grow_when_bonemealed),
+                Some(NetherVines::get_blocks_to_grow_when_bonemealed),
                 Self::can_grow_into,
             ),
         }

@@ -8,6 +8,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::{vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::blocks::KelpBlock;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{
@@ -15,7 +16,7 @@ use crate::behavior::{
 };
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
-use super::{BlockRef, kelp_can_survive};
+use super::BlockRef;
 
 /// Vanilla `KelpPlantBlock` survival and fluid state.
 #[block_behavior]
@@ -55,7 +56,7 @@ impl KelpPlantBlock {
 
 impl BlockBehavior for KelpPlantBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        kelp_can_survive(world, pos)
+        KelpBlock::kelp_can_survive(world, pos)
     }
 
     fn get_clone_item_stack(

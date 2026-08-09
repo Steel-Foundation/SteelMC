@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::vegetation::GrowingPlantBlock;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
 use crate::behavior::blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock;
 use crate::behavior::context::BlockPlaceContext;
@@ -12,10 +13,11 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::{FluidRef, FluidStateExt};
 use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId};
 
-use super::{BlockRef, kelp_can_survive};
+use super::BlockRef;
 
 /// Vanilla `KelpBlock` survival and fluid state.
 #[block_behavior]
@@ -49,11 +51,28 @@ impl KelpBlock {
     fn get_blocks_to_grow_when_bonemealed(_rng: &mut dyn Rng) -> i32 {
         1
     }
+    pub(crate) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
+        let attached_pos = pos.below();
+        let attached_state = world.get_block_state(attached_pos);
+        if attached_state
+            .get_block()
+            .has_tag(&BlockTag::CANNOT_SUPPORT_KELP)
+        {
+            return false;
+        }
+        GrowingPlantBlock::can_survive(
+            world,
+            pos,
+            Direction::Up,
+            &vanilla_blocks::KELP,
+            &vanilla_blocks::KELP_PLANT,
+        )
+    }
 }
 
 impl BlockBehavior for KelpBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        kelp_can_survive(world, pos)
+        Self::kelp_can_survive(world, pos)
     }
 
     fn get_clone_item_stack(

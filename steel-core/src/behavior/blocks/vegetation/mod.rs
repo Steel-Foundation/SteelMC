@@ -36,6 +36,7 @@ mod firefly_bush_block;
 mod flower_bed_block;
 mod flower_block;
 mod glow_lichen_block;
+mod growing_plant_block;
 mod growing_plant_body_block;
 mod growing_plant_head_block;
 mod hanging_moss_block;
@@ -52,6 +53,7 @@ mod mushroom_block;
 mod nether_fungus_block;
 mod nether_roots_block;
 mod nether_sprouts;
+mod nether_vines;
 mod nether_wart;
 mod pitcher_crop;
 mod pointed_dripstone_block;
@@ -114,6 +116,7 @@ pub use firefly_bush_block::FireflyBushBlock;
 pub use flower_bed_block::FlowerBedBlock;
 pub use flower_block::FlowerBlock;
 pub use glow_lichen_block::GlowLichenBlock;
+pub use growing_plant_block::GrowingPlantBlock;
 pub use hanging_moss_block::HangingMossBlock;
 pub use hanging_roots_block::HangingRootsBlock;
 pub use kelp_block::KelpBlock;
@@ -130,6 +133,7 @@ pub use mushroom_block::MushroomBlock;
 pub use nether_fungus_block::NetherFungusBlock;
 pub use nether_roots_block::NetherRootsBlock;
 pub use nether_sprouts::NetherSproutsBlock;
+pub use nether_vines::NetherVines;
 pub use nether_wart::NetherWartBlock;
 pub use pitcher_crop::PitcherCropBlock;
 pub use pointed_dripstone_block::{
@@ -161,11 +165,9 @@ pub use weeping_vines_block::WeepingVinesBlock;
 pub use weeping_vines_plant_block::WeepingVinesPlantBlock;
 pub use wither_rose_block::WitherRoseBlock;
 
-use rand::{Rng, RngExt};
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
-use steel_registry::fluid::{FluidState, FluidStateExt as _};
-use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_fluids;
 use steel_registry::{vanilla_blocks, vanilla_game_events};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
@@ -175,7 +177,7 @@ use crate::behavior::block::push_entities_up;
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::world::game_event::GameEventContext;
-use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::world::{LevelReader, World};
 
 pub(super) type BlockTagRef<'a> = &'a steel_utils::Identifier;
 
@@ -220,18 +222,6 @@ pub(super) fn water_source_fluid_state() -> FluidState {
     FluidState::source(&vanilla_fluids::WATER)
 }
 
-/// Vanilla `getBlocksToGrowWhenBonemealed()`
-pub fn nether_vines_get_blocks_to_grow_when_bonemealed(rng: &mut dyn Rng) -> i32 {
-    let mut grow_probability = 1.0;
-
-    let mut count = 0;
-
-    while rng.random::<f64>() < grow_probability {
-        grow_probability *= 0.826;
-        count += 1;
-    }
-    count
-}
 /// Vanilla equal `getTopConnectedBlock()`
 pub fn get_top_connected_block(
     world: &dyn LevelReader,
@@ -259,103 +249,9 @@ pub fn get_top_connected_block(
     }
 }
 
-/// Vanilla `BaseCoralPlantTypeBlock.canSurvive` (also `BaseCoralFanBlock`,
-/// `CoralPlantBlock`, `CoralFanBlock`).
-///
-/// The block below must be face-sturdy on its UP face.
-pub(super) fn coral_plant_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
-    let below_pos = pos.below();
-    let below = world.get_block_state(below_pos);
-    world.is_face_sturdy(below, below_pos, Direction::Up)
-}
-
-/// Vanilla `BaseCoralWallFanBlock.canSurvive`.
-///
-/// The block behind the wall fan (`pos.relative(facing.opposite())`) must be
-/// face-sturdy on the face pointing toward us (i.e. `facing`).
-pub(super) fn coral_wall_fan_can_survive(
-    world: &dyn LevelReader,
-    pos: BlockPos,
-    facing: Direction,
-) -> bool {
-    let relative_pos = pos.relative(facing.opposite());
-    let relative_state = world.get_block_state(relative_pos);
-    world.is_face_sturdy(relative_state, relative_pos, facing)
-}
-
-/// Vanilla `BaseCoralPlantTypeBlock.scanForWater`.
-pub(super) fn coral_scan_for_water(
-    state: BlockStateId,
-    world: &dyn LevelReader,
-    pos: BlockPos,
-) -> bool {
-    if state.try_get_value(&BlockStateProperties::WATERLOGGED) == Some(true) {
-        return true;
-    }
-
-    Direction::ALL.iter().any(|direction| {
-        world
-            .get_block_state(pos.relative(*direction))
-            .get_fluid_state()
-            .is_water()
-    })
-}
-
-/// Vanilla `BaseCoralPlantTypeBlock.tryScheduleDieTick`.
-pub(super) fn schedule_coral_die_tick(
-    state: BlockStateId,
-    world: &dyn ScheduledTickAccess,
-    pos: BlockPos,
-    block: BlockRef,
-) {
-    if coral_scan_for_water(state, world, pos) {
-        return;
-    }
-
-    // Intentional Steel divergence: incidental runtime timing does not use world RNG.
-    let delay = 60 + rand::random_range(0..40);
-    let _ = world.schedule_block_tick_default(pos, block, delay);
-}
-
-/// Vanilla `GrowingPlantBlock.canSurvive`.
-///
-/// The block opposite the growth direction must be the head, the body, or
-/// face-sturdy on the face pointing toward us (i.e. `growth_direction`).
-pub(super) fn growing_plant_can_survive(
-    world: &dyn LevelReader,
-    pos: BlockPos,
-    growth_direction: Direction,
-    head: BlockRef,
-    body: BlockRef,
-) -> bool {
-    let attached_pos = pos.relative(growth_direction.opposite());
-    let attached_state = world.get_block_state(attached_pos);
-    let attached_block = attached_state.get_block();
-    attached_block == head
-        || attached_block == body
-        || world.is_face_sturdy(attached_state, attached_pos, growth_direction)
-}
-
-pub(super) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
-    let attached_pos = pos.below();
-    let attached_state = world.get_block_state(attached_pos);
-    if attached_state
-        .get_block()
-        .has_tag(&BlockTag::CANNOT_SUPPORT_KELP)
-    {
-        return false;
-    }
-    growing_plant_can_survive(
-        world,
-        pos,
-        Direction::Up,
-        &vanilla_blocks::KELP,
-        &vanilla_blocks::KELP_PLANT,
-    )
-}
-
 #[cfg(test)]
 mod tests {
+    use steel_registry::blocks::properties::BlockStateProperties;
     use steel_registry::init_vanilla_registry;
 
     use super::*;

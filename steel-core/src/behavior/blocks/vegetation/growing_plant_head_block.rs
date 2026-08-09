@@ -14,8 +14,8 @@ use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
+            GrowingPlantBlock,
             bonemealable::{BonemealAction, Bonemealable},
-            growing_plant_can_survive,
         },
     },
     world::{LevelAccessor, LevelReader, ScheduledTickAccess, World},
@@ -128,7 +128,7 @@ impl GrowingPlantHeadBlock {
 
 impl BlockBehavior for GrowingPlantHeadBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        growing_plant_can_survive(
+        GrowingPlantBlock::can_survive(
             world,
             pos,
             self.growth_direction,

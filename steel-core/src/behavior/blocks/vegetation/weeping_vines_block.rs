@@ -5,9 +5,9 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
+use crate::behavior::blocks::vegetation::NetherVines;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
 use crate::behavior::blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock;
-use crate::behavior::blocks::vegetation::nether_vines_get_blocks_to_grow_when_bonemealed;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, World};
 use crate::{behavior::block::BlockBehavior, world::ScheduledTickAccess};
@@ -31,7 +31,7 @@ impl WeepingVinesBlock {
                 false,
                 0.1,
                 &vanilla_blocks::WEEPING_VINES_PLANT,
-                Some(nether_vines_get_blocks_to_grow_when_bonemealed),
+                Some(NetherVines::get_blocks_to_grow_when_bonemealed),
                 Self::can_grow_into,
             ),
         }

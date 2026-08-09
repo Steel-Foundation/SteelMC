@@ -16,11 +16,11 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext,
-        blocks::vegetation::{
-            Vegetation,
-            bonemealable::Bonemealable,
-            crop_block::destroy_crop_on_ravager_contact,
-            vegetation_block::{double_plant_can_survive, double_plant_update_shape},
+        blocks::{
+            DoublePlantBlock,
+            vegetation::{
+                Vegetation, bonemealable::Bonemealable, crop_block::destroy_crop_on_ravager_contact,
+            },
         },
     },
     entity::{Entity, InsideBlockEffectCollector},
@@ -33,14 +33,16 @@ const AGE_PROPERTY: IntProperty = BlockStateProperties::AGE_4;
 /// Behavior for Pitcher Crops
 #[block_behavior]
 pub struct PitcherCropBlock {
-    block: BlockRef,
+    base: DoublePlantBlock,
 }
 
 impl PitcherCropBlock {
     /// Creates a new Pitcher Crop Block Behavior
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
-        Self { block }
+        Self {
+            base: DoublePlantBlock::new(block),
+        }
     }
 
     fn is_lower(state: BlockStateId) -> bool {
@@ -85,8 +87,10 @@ impl PitcherCropBlock {
         let west = world.get_block_state(pos.west());
         let east = world.get_block_state(pos.east());
 
-        let horizontal_row = self.block == west.get_block() || self.block == east.get_block();
-        let vertical_row = self.block == north.get_block() || self.block == south.get_block();
+        let horizontal_row =
+            self.base.block == west.get_block() || self.base.block == east.get_block();
+        let vertical_row =
+            self.base.block == north.get_block() || self.base.block == south.get_block();
 
         if horizontal_row && vertical_row {
             // Crops in both directions - penalty
@@ -98,10 +102,10 @@ impl PitcherCropBlock {
             let sw = world.get_block_state(pos.south().west());
             let se = world.get_block_state(pos.south().east());
 
-            let has_diagonal = self.block == nw.get_block()
-                || self.block == ne.get_block()
-                || self.block == sw.get_block()
-                || self.block == se.get_block();
+            let has_diagonal = self.base.block == nw.get_block()
+                || self.base.block == ne.get_block()
+                || self.base.block == sw.get_block()
+                || self.base.block == se.get_block();
 
             if has_diagonal {
                 speed /= 2.0;
@@ -164,7 +168,7 @@ impl BlockBehavior for PitcherCropBlock {
             context.world,
             context.place_pos().below(),
         ) {
-            Some(self.block.default_state())
+            Some(self.base.block.default_state())
         } else {
             None
         }
@@ -175,7 +179,7 @@ impl BlockBehavior for PitcherCropBlock {
             return false;
         }
 
-        double_plant_can_survive(self, state, world, pos)
+        self.base.can_survive(state, world, pos)
     }
 
     fn update_shape(
@@ -184,11 +188,12 @@ impl BlockBehavior for PitcherCropBlock {
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: steel_utils::Direction,
-        _neighbor_pos: BlockPos,
+        neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
         if state.get_value(&AGE_PROPERTY) >= 3 {
-            double_plant_update_shape(self, state, world, pos, direction, neighbor_state)
+            self.base
+                .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
         } else if self.can_survive(state, world, pos) {
             state
         } else {

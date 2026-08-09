@@ -8,7 +8,7 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
-use super::{BlockRef, coral_wall_fan_can_survive};
+use super::BlockRef;
 
 /// Vanilla `BaseCoralWallFanBlock` survival (dead coral wall fans).
 #[block_behavior]
@@ -22,12 +22,25 @@ impl BaseCoralWallFanBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+    /// Vanilla `BaseCoralWallFanBlock.canSurvive`.
+    ///
+    /// The block behind the wall fan (`pos.relative(facing.opposite())`) must be
+    /// face-sturdy on the face pointing toward us (i.e. `facing`).
+    pub(super) fn coral_wall_fan_can_survive(
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        facing: Direction,
+    ) -> bool {
+        let relative_pos = pos.relative(facing.opposite());
+        let relative_state = world.get_block_state(relative_pos);
+        world.is_face_sturdy(relative_state, relative_pos, facing)
+    }
 }
 
 impl BlockBehavior for BaseCoralWallFanBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
-        coral_wall_fan_can_survive(world, pos, facing)
+        Self::coral_wall_fan_can_survive(world, pos, facing)
     }
 
     fn update_shape(
