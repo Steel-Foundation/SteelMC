@@ -28,8 +28,8 @@ pub use colored::StainedGlassPaneBlock;
 pub use container::{AnvilBlock, BarrelBlock, BeehiveBlock, CraftingTableBlock};
 pub use decoration::{
     BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
-    StandingSignBlock, TorchBlock, WallBannerBlock, WallHangingSignBlock, WallSignBlock,
-    WallTorchBlock, WeatheringCopperChainBlock,
+    EndRodBlock, StandingSignBlock, TorchBlock, WallBannerBlock, WallHangingSignBlock,
+    WallSignBlock, WallTorchBlock, WeatheringCopperChainBlock,
 };
 pub use fluid::{BubbleColumnBlock, LiquidBlock};
 pub use portal::{
