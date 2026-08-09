@@ -12,6 +12,7 @@ mod item_frame;
 mod leash_fence_knot;
 mod pig;
 mod raw;
+mod sheep;
 
 pub use block_display::BlockDisplayEntity;
 pub use chest_minecart::ChestMinecartEntity;
@@ -25,3 +26,4 @@ pub use item_frame::ItemFrameEntity;
 pub use leash_fence_knot::LeashFenceKnotEntity;
 pub use pig::PigEntity;
 pub use raw::RawEntity;
+pub use sheep::SheepEntity;
