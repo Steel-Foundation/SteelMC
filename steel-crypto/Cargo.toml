@@ -15,6 +15,7 @@ log.workspace = true
 # Cryptography
 rsa.workspace = true
 rand.workspace = true
+sha1.workspace = true
 
 [lints]
 workspace = true
