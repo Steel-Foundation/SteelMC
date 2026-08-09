@@ -198,8 +198,7 @@ impl Player {
             return;
         }
 
-        // TODO: If include_data, add block entity NBT data to the item stack
-        // This requires block entity support which isn't implemented yet
+        // TODO: If include_data, copy the block entity data into the picked item stack.
 
         let mut inventory = self.inventory.lock();
 
