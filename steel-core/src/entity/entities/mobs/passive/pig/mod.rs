@@ -545,4 +545,3 @@ impl PathfinderMob for PigEntity {}
 
 #[cfg(test)]
 mod tests;
-
