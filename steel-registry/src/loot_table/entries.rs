@@ -188,6 +188,9 @@ pub struct LootTable {
 
 impl LootTable {
     /// Generate random items from this loot table.
+    // TODO: Add a world-aware entry point that selects the vanilla RNG before evaluation:
+    // nonzero loot seed -> LegacyRandom, table random_sequence -> RandomSequences (including
+    // world seed 0), otherwise the level random source.
     ///
     /// # Arguments
     /// * `ctx` - The loot context containing RNG, luck, block state, tool, etc.

@@ -15,10 +15,10 @@ mod utils;
 pub mod vegetation;
 
 pub use building::{
-    AmethystBlock, AmethystClusterBlock, BarrierBlock, BedBlock, BuddingAmethystBlock,
-    CampfireBlock, CauldronBlock, ComposterBlock, DoorBlock, FenceBlock, FenceGateBlock,
-    GlazedTerracottaBlock, HayBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock,
-    LavaCauldronBlock, LayeredCauldronBlock, MagmaBlock, MudBlock, PotentSulfurBlock,
+    AmethystBlock, AmethystClusterBlock, BarrierBlock, BedBlock, BrushableBlock,
+    BuddingAmethystBlock, CampfireBlock, CauldronBlock, ComposterBlock, DoorBlock, FenceBlock,
+    FenceGateBlock, GlazedTerracottaBlock, HayBlock, HoneyBlock, IceBlock, IronBarsBlock,
+    LadderBlock, LavaCauldronBlock, LayeredCauldronBlock, MagmaBlock, MudBlock, PotentSulfurBlock,
     PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock,
     SpongeBlock, StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState,
     WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,

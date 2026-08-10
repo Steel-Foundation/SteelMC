@@ -65,7 +65,7 @@ pub mod weathering;
 pub(crate) use block::pickup_waterlogged_block;
 pub use block::{
     BlockBehavior, BlockBehaviorRegistry, BlockCollisionBoxes, BlockCollisionContext,
-    BlockEntityCreation, BlockLootContext, DefaultBlockBehavior, EntityFallDamage,
+    BlockEntityCreation, BlockLootContext, BrushableData, DefaultBlockBehavior, EntityFallDamage,
     EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, Fallable, RailBehavior,
 };
 use block_behaviors::register_block_behaviors;
@@ -74,7 +74,7 @@ pub use context::{
     PlacementSource, UseItemContext, UseOnContext,
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
-pub use item::{ItemBehavior, ItemBehaviorRegistry};
+pub use item::{ItemBehavior, ItemBehaviorRegistry, ItemUseAnimation};
 use item_behaviors::register_item_behaviors;
 pub use items::{
     BedItem, BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem,
