@@ -185,8 +185,8 @@ impl ScheduledPlayPacket {
                 | PlayerAction::StopDestroyBlock
                 | PlayerAction::DropAllItems
                 | PlayerAction::DropItem => ScheduledPacketExecution::Serialized,
-                // Release-use is not implemented, while stab spans independently locked targets;
-                // neither can yet overlap player-local work safely.
+                // Active-use release may invoke item behavior and mutate inventory, while stab
+                // spans independently locked targets; neither can overlap player-local work.
                 PlayerAction::ReleaseUseItem | PlayerAction::Stab => {
                     ScheduledPacketExecution::Exclusive
                 }
