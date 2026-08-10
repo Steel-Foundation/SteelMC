@@ -88,7 +88,7 @@ impl ServiceKeyStore {
         let (ready_tx, ready_rx) = oneshot::channel();
         let store = Arc::clone(self);
         drop(tokio::spawn(async move {
-            let mut has_snapshot = match store.refresh().await {
+            let mut has_successful_snapshot = match store.refresh().await {
                 Ok(()) => true,
                 Err(error) => {
                     log::warn!("Failed to load Minecraft services public keys: {error}");
@@ -99,7 +99,7 @@ impl ServiceKeyStore {
 
             let mut failure_count = 0;
             loop {
-                let delay = if has_snapshot {
+                let delay = if has_successful_snapshot {
                     DAILY_REFRESH_INTERVAL
                 } else {
                     failure_delay(failure_count)
@@ -111,12 +111,12 @@ impl ServiceKeyStore {
 
                 match store.refresh().await {
                     Ok(()) => {
-                        has_snapshot = true;
+                        has_successful_snapshot = true;
                         failure_count = 0;
                     }
                     Err(error) => {
                         log::warn!("Failed to refresh Minecraft services public keys: {error}");
-                        if !has_snapshot {
+                        if !has_successful_snapshot {
                             failure_count = failure_count.saturating_add(1);
                         }
                     }
