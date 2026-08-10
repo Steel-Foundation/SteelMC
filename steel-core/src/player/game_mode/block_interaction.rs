@@ -136,8 +136,7 @@ impl Player {
                 self.drop_from_selected(false);
             }
             PlayerAction::ReleaseUseItem => {
-                // TODO: Implement release use item (releasing bow, etc.)
-                log::debug!("Player {} released use item", self.gameprofile.name);
+                self.release_using_item();
             }
             PlayerAction::SwapItemWithOffhand => {
                 if self.game_mode() == GameType::Spectator {
@@ -145,10 +144,10 @@ impl Player {
                 }
 
                 let changed = self.inventory.lock().swap_hands();
+                self.stop_using_item();
                 if changed {
                     self.broadcast_inventory_changes();
                 }
-                // TODO: Stop active item use once the using-item foundation exists.
             }
             PlayerAction::Stab => {
                 if self.game_mode() == GameType::Spectator {
@@ -199,8 +198,7 @@ impl Player {
             return;
         }
 
-        // TODO: If include_data, add block entity NBT data to the item stack
-        // This requires block entity support which isn't implemented yet
+        // TODO: If include_data, copy the block entity data into the picked item stack.
 
         let mut inventory = self.inventory.lock();
 
