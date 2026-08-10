@@ -16,9 +16,9 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
 use super::entities::{
-    BarrelBlockEntity, BeehiveBlockEntity, ComparatorBlockEntity, DaylightDetectorBlockEntity,
-    EndGatewayBlockEntity, EndPortalBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity,
-    RawBlockEntity, SignBlockEntity,
+    BarrelBlockEntity, BeehiveBlockEntity, BrushableBlockEntity, ComparatorBlockEntity,
+    DaylightDetectorBlockEntity, EndGatewayBlockEntity, EndPortalBlockEntity,
+    PistonMovingBlockEntity, PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity,
 };
 use crate::world::World;
 
@@ -241,6 +241,11 @@ pub fn init_block_entities() {
         registry.register(&vanilla_block_entity_types::PISTON, |level, pos, state| {
             Arc::new(PistonMovingBlockEntity::new(level, pos, state))
         });
+
+        registry.register(
+            &vanilla_block_entity_types::BRUSHABLE_BLOCK,
+            |level, pos, state| Arc::new(BrushableBlockEntity::new(level, pos, state)),
+        );
 
         // Register End gateway block entity factory
         registry.register(

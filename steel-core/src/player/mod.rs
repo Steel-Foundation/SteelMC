@@ -48,6 +48,7 @@ pub use profile::{
 };
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
+use std::mem::replace;
 use std::sync::{Arc, Weak};
 use steel_protocol::packets::game::{
     CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn, CSetDefaultSpawnPosition, CSetHealth,
@@ -55,7 +56,7 @@ use steel_protocol::packets::game::{
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::entity_data::{EntityPose, ParticleList};
+use steel_registry::entity_data::{EntityPose, HumanoidArm, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::game_rules::GameRuleRef;
 use steel_registry::sound_event::SoundEventRef;
@@ -84,8 +85,7 @@ use text_components::{
 };
 use text_components::{content::Resolvable, custom::CustomData};
 
-use crate::behavior::BlockStateBehaviorExt as _;
-use crate::behavior::InteractionResult;
+use crate::behavior::{BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult};
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
@@ -297,6 +297,128 @@ impl PlayerResidenceState {
 }
 
 impl Player {
+    const USING_ITEM_FLAG: i8 = 1;
+    const OFF_HAND_ACTIVE_ITEM_FLAG: i8 = 1 << 1;
+
+    /// Returns the hand currently driving active item use.
+    #[must_use]
+    pub fn active_item_use_hand(&self) -> Option<InteractionHand> {
+        self.living_base
+            .active_item_use()
+            .map(|active| active.hand())
+    }
+
+    /// Starts using the item currently held in `hand`.
+    pub fn start_using_item(&self, hand: InteractionHand) {
+        let item = {
+            let inventory = self.inventory.lock();
+            let item = inventory.get_item_in_hand(hand);
+            item.copy_with_count(item.count())
+        };
+        let duration = ITEM_BEHAVIORS
+            .get_behavior(item.item())
+            .get_use_duration(&item, self);
+        if self.living_base.start_using_item(hand, &item, duration) {
+            let mut entity_data = self.entity_data.lock();
+            let flags = entity_data.living_entity().living_entity_flags.get();
+            let mut flags = *flags | Self::USING_ITEM_FLAG;
+            if hand == InteractionHand::OffHand {
+                flags |= Self::OFF_HAND_ACTIVE_ITEM_FLAG;
+            } else {
+                flags &= !Self::OFF_HAND_ACTIVE_ITEM_FLAG;
+            }
+            entity_data
+                .living_entity_mut()
+                .living_entity_flags
+                .set(flags);
+        }
+    }
+
+    fn stop_using_item(&self) {
+        self.living_base.stop_using_item();
+        let mut entity_data = self.entity_data.lock();
+        let flags = *entity_data.living_entity().living_entity_flags.get();
+        entity_data
+            .living_entity_mut()
+            .living_entity_flags
+            .set(flags & !Self::USING_ITEM_FLAG);
+    }
+
+    /// Releases the currently used item and invokes its release hook.
+    pub fn release_using_item(&self) {
+        let Some(active) = self.living_base.active_item_use() else {
+            return;
+        };
+        let hand = active.hand();
+        let item_matches = {
+            let inventory = self.inventory.lock();
+            inventory.get_item_in_hand(hand).item() == active.item()
+        };
+        if !item_matches {
+            self.stop_using_item();
+            return;
+        }
+        let mut item = {
+            let mut inventory = self.inventory.lock();
+            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+        };
+        let world = self.get_world();
+        let use_on_release = ITEM_BEHAVIORS.get_behavior(item.item()).release_using(
+            &mut item,
+            &world,
+            self,
+            active.remaining_ticks(),
+        );
+        self.inventory.lock().set_item_in_hand(hand, item);
+        if use_on_release {
+            self.tick_active_item_use();
+        }
+        self.stop_using_item();
+    }
+
+    fn tick_active_item_use(&self) {
+        let Some(active) = self.living_base.active_item_use() else {
+            return;
+        };
+        let hand = active.hand();
+        let item_matches = {
+            let inventory = self.inventory.lock();
+            inventory.get_item_in_hand(hand).item() == active.item()
+        };
+        if !item_matches {
+            self.stop_using_item();
+            return;
+        }
+        let mut item = {
+            let mut inventory = self.inventory.lock();
+            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+        };
+        let world = self.get_world();
+        let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
+        behavior.on_use_tick(&world, self, &mut item, active.remaining_ticks());
+
+        if self.active_item_use_hand() != Some(hand) {
+            self.inventory.lock().set_item_in_hand(hand, item);
+            return;
+        }
+        let Some(active) = self.living_base.decrement_active_item_use() else {
+            self.inventory.lock().set_item_in_hand(hand, item);
+            return;
+        };
+        if active.remaining_ticks() <= 0 {
+            item = behavior.finish_using(&mut item, &world, self);
+            self.stop_using_item();
+        }
+
+        self.inventory.lock().set_item_in_hand(hand, item);
+    }
+
+    /// Returns the player's configured main arm.
+    #[must_use]
+    pub fn main_arm(&self) -> HumanoidArm {
+        self.client_information.lock().main_hand
+    }
+
     /// Computes the start (eye position) and end positions for a raytrace.
     pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
         let pos = self.position();
@@ -471,6 +593,7 @@ impl Player {
 
         self.living_base.decrement_invulnerable_time();
         self.tick_mob_effects();
+        self.tick_active_item_use();
 
         if self.get_health() <= 0.0 {
             self.tick_death();
@@ -1469,6 +1592,16 @@ impl LivingEntity for Player {
 
     fn living_base(&self) -> &LivingEntityBase {
         &self.living_base
+    }
+
+    fn is_using_item(&self) -> bool {
+        self.living_base.is_using_item()
+    }
+
+    fn get_luck(&self) -> f32 {
+        self.attributes()
+            .lock()
+            .required_value(vanilla_attributes::LUCK) as f32
     }
 
     fn can_be_seen_as_enemy(&self) -> bool {
