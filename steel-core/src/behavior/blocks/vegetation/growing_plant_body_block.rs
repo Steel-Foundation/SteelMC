@@ -83,6 +83,8 @@ impl GrowingPlantBodyBlock {
     }
 }
 
+impl GrowingPlantBlock for GrowingPlantBodyBlock {}
+
 impl BlockBehavior for GrowingPlantBodyBlock {
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
         let default_result = default_can_be_replaced(state, context);
@@ -94,7 +96,7 @@ impl BlockBehavior for GrowingPlantBodyBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        GrowingPlantBlock::can_survive(
+        <Self as GrowingPlantBlock>::can_survive(
             world,
             pos,
             self.growth_direction,

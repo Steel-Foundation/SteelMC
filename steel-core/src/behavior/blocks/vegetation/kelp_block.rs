@@ -27,6 +27,8 @@ pub struct KelpBlock {
 
 const GROW_PER_TICK_PROBABILITY: f64 = 0.14;
 
+impl GrowingPlantBlock for KelpBlock {}
+
 impl KelpBlock {
     /// Creates a new kelp block behavior.
     #[must_use]
@@ -60,7 +62,7 @@ impl KelpBlock {
         {
             return false;
         }
-        GrowingPlantBlock::can_survive(
+        <Self as GrowingPlantBlock>::can_survive(
             world,
             pos,
             Direction::Up,

@@ -21,6 +21,7 @@ pub struct CoralBlock {
 }
 
 const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+const MIN_WATER_CHECK_DELAY: i32 = 60;
 
 impl CoralBlock {
     /// Creates a new live coral block behavior.
@@ -72,7 +73,7 @@ impl CoralBlock {
         }
 
         // Intentional Steel divergence: incidental runtime timing does not use world RNG.
-        let delay = 60 + rand::random_range(0..40);
+        let delay = MIN_WATER_CHECK_DELAY + rand::random_range(0..40);
         let _ = world.schedule_block_tick_default(pos, block, delay);
     }
 }

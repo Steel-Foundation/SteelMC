@@ -20,6 +20,8 @@ pub struct WeepingVinesBlock {
     base: GrowingPlantHeadBlock,
 }
 
+impl NetherVines for WeepingVinesBlock {}
+
 impl WeepingVinesBlock {
     /// Creates a new weeping vines (head) block behavior.
     #[must_use]
@@ -31,7 +33,7 @@ impl WeepingVinesBlock {
                 false,
                 0.1,
                 &vanilla_blocks::WEEPING_VINES_PLANT,
-                Some(NetherVines::get_blocks_to_grow_when_bonemealed),
+                Some(<Self as NetherVines>::get_blocks_to_grow_when_bonemealed),
                 Self::can_grow_into,
             ),
         }

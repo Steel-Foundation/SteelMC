@@ -5,14 +5,12 @@ use crate::world::LevelReader;
 
 /// Vanilla `GrowingPlantBlock`
 /// Used for shared behavior for GrowingPlant(Body|Head) blocks.
-pub struct GrowingPlantBlock {}
-
-impl GrowingPlantBlock {
+pub trait GrowingPlantBlock {
     /// Vanilla `GrowingPlantBlock.canSurvive`.
     ///
     /// The block opposite the growth direction must be the head, the body, or
     /// face-sturdy on the face pointing toward us (i.e. `growth_direction`).
-    pub(super) fn can_survive(
+    fn can_survive(
         world: &dyn LevelReader,
         pos: BlockPos,
         growth_direction: Direction,

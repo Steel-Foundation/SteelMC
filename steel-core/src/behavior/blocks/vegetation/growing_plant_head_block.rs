@@ -126,9 +126,11 @@ impl GrowingPlantHeadBlock {
     }
 }
 
+impl GrowingPlantBlock for GrowingPlantHeadBlock {}
+
 impl BlockBehavior for GrowingPlantHeadBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        GrowingPlantBlock::can_survive(
+        <Self as GrowingPlantBlock>::can_survive(
             world,
             pos,
             self.growth_direction,
