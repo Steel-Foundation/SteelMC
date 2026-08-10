@@ -24,13 +24,13 @@ pub struct Version {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Status {
     pub description: String,
     pub players: Option<Players>,
     pub version: Option<Version>,
     pub favicon: Option<String>,
-    #[serde(rename = "enforcesSecureChat")]
-    pub enforce_secure_chat: bool,
+    pub enforces_secure_chat: bool,
 }
 
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
@@ -58,7 +58,7 @@ mod tests {
             players: None,
             version: None,
             favicon: None,
-            enforce_secure_chat: true,
+            enforces_secure_chat: true,
         };
         let json = serde_json::to_value(status).expect("status should serialize");
 
