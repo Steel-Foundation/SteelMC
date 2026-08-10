@@ -220,7 +220,7 @@ mod tests {
         init_vanilla_registry, vanilla_block_tags::BlockTag, vanilla_blocks, vanilla_items,
     };
 
-    use crate::test_support::TestLevel;
+    use crate::{chunk::light::MAX_LIGHT_LEVEL, test_support::TestLevel};
 
     use super::super::bonemealable::Bonemealable;
     use super::*;
@@ -280,7 +280,7 @@ mod tests {
             .with_raw_brightness(0);
         let dirt = TestLevel::default()
             .with_block(BlockPos::ZERO.below(), vanilla_blocks::DIRT.default_state())
-            .with_raw_brightness(15);
+            .with_raw_brightness(MAX_LIGHT_LEVEL);
 
         assert!(stem.can_survive(state, &farmland, BlockPos::ZERO));
         assert!(!stem.can_survive(state, &dirt, BlockPos::ZERO));
