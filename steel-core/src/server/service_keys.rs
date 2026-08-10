@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 const DEFAULT_SERVICES_SERVER: &str = "https://api.minecraftservices.com/publickeys";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
-const REFRESH_INTERVAL: Duration = Duration::from_hours(24);
+const DAILY_REFRESH_INTERVAL: Duration = Duration::from_hours(24);
 const BASE_FAILURE_INTERVAL: Duration = Duration::from_mins(5);
 const MAX_BACKOFF_EXPONENT: u32 = 6;
 
@@ -100,7 +100,7 @@ impl ServiceKeyStore {
             let mut failure_count = 0;
             loop {
                 let delay = if has_snapshot {
-                    REFRESH_INTERVAL
+                    DAILY_REFRESH_INTERVAL
                 } else {
                     failure_delay(failure_count)
                 };
