@@ -791,9 +791,9 @@ pub use inside_block_effects::{
 pub(crate) use item_based_steering::{ItemBasedSteering, ItemSteerable};
 pub use item_frame::ItemFrame;
 pub use living_base::{
-    ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase, LivingRotationState,
-    LivingSwingState, LivingTravelInput, MobEffectInstance, MobEffectSyncChange,
-    MobEffectSyncPacket,
+    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase,
+    LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
+    MobEffectSyncChange, MobEffectSyncPacket,
 };
 pub use living_entity::LivingEntity;
 pub use manager::{
@@ -810,7 +810,8 @@ pub use movement_sync::{
 };
 pub use projectile::{
     EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
-    ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, compute_margin,
+    ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
+    compute_margin, get_hit_result_on_view_vector,
 };
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, SpawnGroupData};
