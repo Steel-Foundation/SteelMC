@@ -18,13 +18,15 @@ impl ItemBehavior for NameTagItem {
         target: &dyn LivingEntity,
         _hand: InteractionHand,
     ) -> InteractionResult {
-        if target.entity_type().can_serialize && let Some(component) = stack.get(CUSTOM_NAME) {
+        if target.entity_type().can_serialize
+            && let Some(component) = stack.get(CUSTOM_NAME)
+        {
             if LivingEntity::is_alive(target) {
                 target.set_custom_name(Some(component.clone()));
                 if let Some(mob) = target.as_mob() {
                     mob.set_persistence_required();
                 }
-                stack.shrink(1)
+                stack.shrink(1);
             }
             InteractionResult::Success
         } else {
