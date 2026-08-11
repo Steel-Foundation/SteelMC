@@ -8,9 +8,9 @@ use steel_registry::{
 use steel_utils::types::InteractionHand;
 use uuid::Uuid;
 
-use crate::entity::SharedEntity;
 use crate::entity::damage::DamageSource;
 use crate::entity::init_entities;
+use crate::entity::{SharedEntity, next_entity_id};
 use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 use steel_utils::ChunkPos;
 

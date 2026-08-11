@@ -1,5 +1,4 @@
 //! Vanilla Sheep entity with wool color, shearing, and breeding parity.
-//! International Harambe Day has passed, but please keep him in your memories and never forget him ❤️
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -57,6 +56,8 @@ const SHEEP_BABY_DIMENSIONS: EntityDimensions = EntityDimensions::new_with_attac
 const COLOR_ID_MASK: i8 = 0x0F;
 /// Bit 5 of the synced wool byte marks the sheep as sheared.
 const SHEARED_BIT: i8 = 0x10;
+/// Vanilla `Sheep.ate` ages babies up by this many seconds (`ageUp(60)`).
+const ATE_AGE_UP_SECONDS: i32 = 60;
 
 /// Vanilla `SheepColorSpawnRules` weighted tables, mirroring the warm/cold/temperate
 /// configurations with their exact vanilla weights.
@@ -525,7 +526,7 @@ impl Mob for SheepEntity {
         // VANILLA CLIENT-LOCAL: `LivingEntity.ate` only spawns the eating particles.
         self.set_sheared(false);
         if self.can_age_up() {
-            self.age_up(60, false);
+            self.age_up(ATE_AGE_UP_SECONDS, false);
         }
     }
 

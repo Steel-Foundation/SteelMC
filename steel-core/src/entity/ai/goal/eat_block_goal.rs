@@ -19,6 +19,10 @@ use crate::world::LevelAccessor;
 const EAT_ANIMATION_TICKS: i32 = 40;
 /// Constant mirroring vanilla `EatBlockGoal`'s check point (`adjustedTickDelay(4)`).
 const EAT_BLOCK_TICK: i32 = 4;
+/// Vanilla `EatBlockGoal.canUse` rolls `nextInt(adjustedTickDelay(baby ? 50 : 1000))`;
+/// babies check far more often so they regrow wool quickly.
+const BABY_EAT_CHECK_TICKS: i32 = 50;
+const ADULT_EAT_CHECK_TICKS: i32 = 1000;
 
 /// A goal where a mob stands still and chews before eating an edible block.
 ///
@@ -50,12 +54,10 @@ impl Goal for EatBlockGoal {
     }
 
     fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
-        // Vanilla rolls `nextInt(adjustedTickDelay(baby ? 50 : 1000))`; babies check
-        // far more often so they regrow wool quickly.
         let interval = if mob.as_animal().is_some_and(AgeableMob::is_baby) {
-            50
+            BABY_EAT_CHECK_TICKS
         } else {
-            1000
+            ADULT_EAT_CHECK_TICKS
         };
         let adjusted = reduced_tick_delay(interval);
         if rand::random_range(0..adjusted) != 0 {
@@ -134,6 +136,7 @@ mod tests {
     use steel_utils::types::UpdateFlags;
 
     use super::*;
+    use crate::behavior::init_behaviors;
     use crate::entity::SharedEntity;
     use crate::entity::entities::{PigEntity, SheepEntity};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
@@ -157,6 +160,7 @@ mod tests {
         use steel_registry::vanilla_entities;
         use steel_utils::ChunkPos;
 
+        init_behaviors();
         let world = fresh_test_world(name);
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
         let sheep = SheepEntity::new(

@@ -11,7 +11,7 @@ fn sheep_saves_vanilla_wool_color_and_sheared_state() {
     let mut nbt = NbtCompound::new();
     sheep.save_additional(&mut nbt);
 
-    assert_eq!(nbt.byte("Color"), Some(6));
+    assert_eq!(nbt.byte("Color"), Some(DyeColor::Pink.id() as i8));
     assert_eq!(nbt.byte("Sheared"), Some(1));
 }
 
@@ -20,7 +20,7 @@ fn sheep_loads_vanilla_wool_color_and_sheared_state() {
     init_vanilla_registry();
 
     let mut nbt = NbtCompound::new();
-    nbt.insert("Color", 6_i8);
+    nbt.insert("Color", DyeColor::Pink.id() as i8);
     nbt.insert("Sheared", 1_i8);
 
     let mut bytes = Vec::new();

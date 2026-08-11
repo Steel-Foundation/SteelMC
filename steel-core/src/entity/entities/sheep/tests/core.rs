@@ -1,12 +1,22 @@
 use super::*;
 
+/// Trials for the random breeding-color fallback assertion.
+const COLOR_FALLBACK_TRIALS: u32 = 32;
+/// Trials for the weighted spawn-color sampling assertions.
+const SPAWN_COLOR_TRIALS: u32 = 64;
+/// Vanilla tick rate, converting `AgeableMob.ageUp` seconds into ticks.
+const TICKS_PER_SECOND: i32 = 20;
+
 #[test]
 fn sheep_initializes_vanilla_living_attributes_and_health() {
     init_vanilla_registry();
 
     let sheep = SheepEntity::new(&vanilla_entities::SHEEP, 1, DVec3::ZERO, Weak::new());
 
-    assert_eq!(sheep.get_health().to_bits(), 8.0_f32.to_bits());
+    assert_eq!(
+        sheep.get_health().to_bits(),
+        sheep.get_max_health().to_bits()
+    );
     let attributes = sheep.attributes().lock();
     assert_eq!(
         attributes
@@ -109,7 +119,8 @@ fn sheep_shear_drops_wool_and_damages_shears() {
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
 
-    let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "Shearer", 10).build();
+    let player =
+        TestPlayerBuilder::new(world, Uuid::from_u128(1), "Shearer", next_entity_id()).build();
     player
         .inventory
         .lock()
@@ -229,7 +240,7 @@ fn sheep_breeding_falls_back_to_a_parent_color_without_a_mix_recipe() {
         .expect("shared entity should be a sheep");
     sheep.set_color(DyeColor::Green);
 
-    for _ in 0..32 {
+    for _ in 0..COLOR_FALLBACK_TRIALS {
         let offspring = Animal::get_breed_offspring(sheep, &world, partner)
             .expect("sheep breeding should create an offspring");
         let offspring = offspring
@@ -302,7 +313,8 @@ fn dye_item_dyes_an_unsheared_sheep_and_consumes_the_dye() {
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
 
-    let player = TestPlayerBuilder::new(world, Uuid::from_u128(3), "Dyer", 12).build();
+    let player =
+        TestPlayerBuilder::new(world, Uuid::from_u128(3), "Dyer", next_entity_id()).build();
     let mut dye = ItemStack::with_count(&vanilla_items::RED_DYE, 2);
     let behavior = ITEM_BEHAVIORS.get_behavior(dye.item());
 
@@ -340,7 +352,8 @@ fn dye_item_passes_for_sheared_or_matching_color_sheep() {
     let sheep = shared
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
-    let player = TestPlayerBuilder::new(world, Uuid::from_u128(4), "Dyer", 13).build();
+    let player =
+        TestPlayerBuilder::new(world, Uuid::from_u128(4), "Dyer", next_entity_id()).build();
     let mut dye = ItemStack::new(&vanilla_items::RED_DYE);
     let behavior = ITEM_BEHAVIORS.get_behavior(dye.item());
 
@@ -381,7 +394,10 @@ fn sheep_ate_regrows_wool_and_speeds_up_baby_ageing() {
     Mob::ate(&sheep);
 
     assert!(!sheep.is_sheared());
-    assert_eq!(sheep.get_age(), age_before + 60 * 20);
+    assert_eq!(
+        sheep.get_age(),
+        age_before + ATE_AGE_UP_SECONDS * TICKS_PER_SECOND
+    );
 }
 
 #[test]
@@ -418,7 +434,7 @@ fn sheep_spawn_color_uses_vanilla_biome_configurations() {
     let cold_colors: Vec<DyeColor> = COLD_SPAWN_COLORS.iter().map(|(c, _)| *c).collect();
     let temperate_colors: Vec<DyeColor> = TEMPERATE_SPAWN_COLORS.iter().map(|(c, _)| *c).collect();
 
-    for _ in 0..64 {
+    for _ in 0..SPAWN_COLOR_TRIALS {
         let mut random = LegacyRandom::from_seed(rand::random());
         let warm = SheepEntity::random_sheep_color(desert, &mut random);
         let cold = SheepEntity::random_sheep_color(snowy_plains, &mut random);
