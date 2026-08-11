@@ -8,17 +8,17 @@
 
 use std::sync::Arc;
 
+use crate::command::brigadier::{
+    CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
+    ContextChain,
+};
+use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
     enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
     timeline::TimelineRef, world_clock::WorldClockRef,
 };
 use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::GameType};
 use text_components::TextComponent;
-
-use crate::command::brigadier::{
-    CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
-    ContextChain,
-};
 
 use super::{
     BiomeOrTag, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
@@ -32,6 +32,7 @@ use super::{
     },
     selector::EntitySelector,
 };
+use crate::command::execution::argument::DamageTypeValue;
 use crate::{
     chunk::heightmap::HeightmapType,
     entity::{EntityAnchor, SharedEntity},
@@ -300,6 +301,11 @@ where
 
     pub(crate) fn enchantment(&self, name: &str) -> Option<EnchantmentRef> {
         self.typed_argument::<EnchantmentValue>(name)
+            .map(|value| value.0)
+    }
+
+    pub(crate) fn damage_type(&self, name: &str) -> Option<DamageTypeRef> {
+        self.typed_argument::<DamageTypeValue>(name)
             .map(|value| value.0)
     }
 

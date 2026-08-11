@@ -97,12 +97,12 @@ impl BlockBehavior for WeatheringCopperGrateBlock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
 
     #[test]
     fn waterlogged_transparent_block_returns_falling_source_water() {
-        init_test_registry();
+        init_vanilla_registry();
         let state = vanilla_blocks::WAXED_COPPER_GRATE
             .default_state()
             .set_value(&BlockStateProperties::WATERLOGGED, true);

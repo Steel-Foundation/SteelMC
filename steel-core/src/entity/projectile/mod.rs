@@ -453,9 +453,10 @@ pub trait Projectile: Entity + ProjectileEventSource {
         let search_box = self.bounding_box().expand_towards(delta).inflate(1.0);
         let margin = compute_margin(self.tick_count());
         let self_id = self.id();
-        let entity_hit = get_entity_hit_result(&world, from, entity_end, search_box, margin, |e| {
-            e.id() != self_id && self.can_hit_entity(e)
-        });
+        let entity_hit =
+            get_entity_hit_result(world.as_ref(), from, entity_end, search_box, margin, |e| {
+                e.id() != self_id && self.can_hit_entity(e)
+            });
 
         if let Some(hit) = entity_hit {
             return Some(ProjectileHit::Entity(hit));
@@ -640,10 +641,59 @@ pub fn compute_margin(tick_count: i32) -> f64 {
     (f64::from(tick_count - 2) / 20.0).clamp(0.0, MAX_ENTITY_HIT_MARGIN)
 }
 
+/// Result of vanilla `ProjectileUtil.getHitResultOnViewVector`.
+pub enum ViewVectorHitResult {
+    /// No block or matching entity was hit within range.
+    Miss,
+    /// Nearest hit was a block collider (or world border).
+    Block(ClipHitResult),
+    /// Nearest hit was a matching entity, closer than any block along the ray.
+    Entity(EntityHitResult),
+}
+
+/// Vanilla `ProjectileUtil.getHitResultOnViewVector`.
+///
+/// Casts from the source eye along the look vector for `distance` blocks using
+/// collider shapes, then prefers a matching entity hit over the block hit.
+#[must_use]
+pub fn get_hit_result_on_view_vector(
+    world: &World,
+    source: &dyn Entity,
+    distance: f64,
+    matching: impl Fn(&dyn Entity) -> bool,
+) -> ViewVectorHitResult {
+    let position = source.position();
+    let from = DVec3::new(position.x, source.get_eye_y(), position.z);
+    let delta = source.look_angle() * distance;
+    let to = from + delta;
+
+    let block_hit =
+        world.clip_including_border(from, to, ClipBlockShape::Collider, ClipFluid::None);
+    let entity_end = if block_hit.is_miss() {
+        to
+    } else {
+        block_hit.location
+    };
+
+    let search_box = source.bounding_box().expand_towards(delta).inflate(1.0);
+    let source_id = source.id();
+    let entity_hit = get_entity_hit_result(world, from, entity_end, search_box, 0.0, |entity| {
+        entity.id() != source_id && matching(entity)
+    });
+
+    if let Some(hit) = entity_hit {
+        return ViewVectorHitResult::Entity(hit);
+    }
+    if !block_hit.is_miss() {
+        return ViewVectorHitResult::Block(block_hit);
+    }
+    ViewVectorHitResult::Miss
+}
+
 /// Vanilla `ProjectileUtil.getEntityHitResult` (entity-margin overload): returns
 /// the nearest entity whose inflated box the segment `from -> to` enters.
 fn get_entity_hit_result(
-    world: &Arc<World>,
+    world: &World,
     from: DVec3,
     to: DVec3,
     search_box: WorldAabb,
@@ -737,8 +787,7 @@ mod tests {
     use steel_registry::{
         blocks::properties::{BlockStateProperties, Tilt},
         entity_type::EntityTypeRef,
-        test_support::init_test_registry,
-        vanilla_blocks, vanilla_entities,
+        init_vanilla_registry, vanilla_blocks, vanilla_entities,
     };
     use steel_utils::{BlockPos, ChunkPos, Direction, types::UpdateFlags};
 
@@ -851,7 +900,7 @@ mod tests {
 
     #[test]
     fn may_break_requires_impact_projectile_tag() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let firework = FireworkRocketEntity::new(
             &vanilla_entities::FIREWORK_ROCKET,
@@ -867,7 +916,7 @@ mod tests {
 
     #[test]
     fn move_vector_synthesizes_world_border_block_hit() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let world = Arc::clone(world_border_projectile_test_world());
@@ -894,7 +943,7 @@ mod tests {
 
     #[test]
     fn firework_deflects_without_exploding_on_deflecting_entity() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let world = Arc::clone(test_world());
         let firework = FireworkRocketEntity::new(
@@ -925,7 +974,7 @@ mod tests {
 
     #[test]
     fn base_block_hit_dispatches_vanilla_block_callbacks() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let world = Arc::clone(test_world());
@@ -1026,7 +1075,7 @@ mod tests {
 
     #[test]
     fn owner_collision_range_checks_root_vehicle_passengers() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let projectile = OwnerCollisionProjectile::new(1, DVec3::ZERO);
         let owner = OwnerCollisionTestEntity::shared(2, DVec3::new(10.0, 0.0, 0.0), true);
@@ -1042,7 +1091,7 @@ mod tests {
 
     #[test]
     fn owner_collision_range_ignores_non_pickable_root_vehicle_passengers() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let projectile = OwnerCollisionProjectile::new(1, DVec3::ZERO);
         let owner = OwnerCollisionTestEntity::shared(2, DVec3::new(10.0, 0.0, 0.0), true);

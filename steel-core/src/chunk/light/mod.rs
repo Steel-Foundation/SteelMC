@@ -158,8 +158,7 @@ pub use workset::{
 mod tests {
     use steel_registry::{
         blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
-        test_support::init_test_registry,
-        vanilla_blocks,
+        init_vanilla_registry, vanilla_blocks,
     };
     use steel_utils::BlockStateId;
     use steel_utils::{BlockPos, ChunkPos, SectionPos};
@@ -177,7 +176,7 @@ mod tests {
     };
 
     fn init_light_tests() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
     }
 

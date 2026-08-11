@@ -130,7 +130,7 @@ mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::entities::PigEntity;
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn breed_goal_requires_love_mode() {
-        init_test_registry();
+        init_vanilla_registry();
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
         let mut goal = BreedGoal::new(1.0);
 

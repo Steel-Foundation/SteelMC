@@ -8,6 +8,9 @@ pub(in crate::world) use neighbor_updater::{CollectingNeighborUpdater, ShapeUpda
 static LARGE_BLOCK_REGION_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 
 impl World {
+    /// Vanilla block-update recursion limit (`Block.UPDATE_LIMIT`).
+    pub const UPDATE_LIMIT: i32 = 512;
+
     /// Gets the block state at the given position.
     ///
     /// Returns void air out of bounds and air when the containing chunk is not loaded.
@@ -155,7 +158,7 @@ impl World {
         block_state: BlockStateId,
         flags: UpdateFlags,
     ) -> bool {
-        self.set_block_with_limit(pos, block_state, flags, 512)
+        self.set_block_with_limit(pos, block_state, flags, Self::UPDATE_LIMIT)
     }
 
     /// Sets a block at the given position with a custom update limit.
@@ -204,7 +207,13 @@ impl World {
         new_state: BlockStateId,
         flags: UpdateFlags,
     ) -> ConditionalBlockSetResult {
-        self.set_block_if_unchanged_with_limit(pos, expected_state, new_state, flags, 512)
+        self.set_block_if_unchanged_with_limit(
+            pos,
+            expected_state,
+            new_state,
+            flags,
+            Self::UPDATE_LIMIT,
+        )
     }
 
     /// Conditional variant of [`Self::set_block_with_limit`].
@@ -392,6 +401,27 @@ impl World {
             .update_neighbors_at_except_from_facing(self, pos, source_block, Some(skip_direction));
     }
 
+    /// Updates all neighboring shapes around `pos`.
+    pub fn update_neighbor_shapes_at(
+        self: &Arc<Self>,
+        state: BlockStateId,
+        pos: BlockPos,
+        flags: UpdateFlags,
+        update_limit: i32,
+    ) {
+        for direction in Direction::UPDATE_SHAPE_ORDER {
+            let neighbor_pos = pos.relative(direction);
+            self.neighbor_shape_changed(
+                direction.opposite(),
+                neighbor_pos,
+                pos,
+                state,
+                flags,
+                update_limit,
+            );
+        }
+    }
+
     /// Updates comparators that can read analog output from `pos`.
     ///
     /// Mirrors vanilla `Level.updateNeighbourForOutputSignal`.
@@ -552,6 +582,29 @@ impl World {
                 flags & !UpdateFlags::UPDATE_SUPPRESS_DROPS,
                 recursion_left,
             );
+        }
+    }
+
+    /// Called when a block changed with a command (setblock, fill, ...)
+    ///
+    /// This is the Rust equivalent of vanilla's `ServerLevel.updateNeighborsOnBlockSet()`.
+    pub(crate) fn update_neighbour_on_block_set(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        old_state: BlockStateId,
+    ) {
+        let block_state = self.get_block_state(pos);
+        // For block behaviors
+        let behavior = BLOCK_BEHAVIORS.get_behavior(old_state.get_block());
+
+        if old_state != block_state {
+            behavior.affect_neighbors_after_removal(old_state, self, pos, false);
+        }
+
+        self.update_neighbors_at(pos, block_state.get_block());
+
+        if behavior.has_analog_output_signal(block_state) {
+            self.update_neighbor_for_output_signal(pos, block_state.get_block());
         }
     }
 

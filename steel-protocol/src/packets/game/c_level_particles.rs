@@ -24,26 +24,16 @@ pub struct CLevelParticles {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Once;
 
-    use steel_registry::{REGISTRY, Registry, RegistryEntry, vanilla_particle_types};
+    use steel_registry::init_vanilla_registry;
+    use steel_registry::{RegistryEntry, vanilla_particle_types};
     use steel_utils::{codec::VarInt, serial::WriteTo};
 
     use super::CLevelParticles;
 
-    static INIT_REGISTRY: Once = Once::new();
-
-    fn init_registry() {
-        INIT_REGISTRY.call_once(|| {
-            let mut registry = Registry::new_vanilla();
-            registry.freeze();
-            let _ = REGISTRY.init(registry);
-        });
-    }
-
     #[test]
     fn writes_fields_in_vanilla_wire_order() {
-        init_registry();
+        init_vanilla_registry();
 
         let packet = CLevelParticles {
             override_limiter: true,

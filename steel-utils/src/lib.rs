@@ -5,6 +5,7 @@
 #![feature(const_trait_impl, const_cmp, derive_const, array_try_from_fn)]
 
 /// axis
+pub mod angle;
 pub mod axis;
 /// Vanilla `BlockUtil` helpers.
 pub mod block_util;
@@ -82,6 +83,7 @@ pub const SIMD_REGISTER_F64_SIZE: usize = if cfg!(target_feature = "avx512f") {
     1
 };
 
+pub use angle::wrap_degrees;
 pub use color::{ArgbColor, RgbColor};
 pub use direction::Direction;
 pub use downcast::{Downcast, DowncastType, DowncastTypeKey, ErasedType};

@@ -5,8 +5,10 @@
 
 mod air;
 mod axe;
+mod bed_item;
 mod block_item;
 mod bonemeal;
+mod brush;
 mod bucket;
 mod compass;
 mod copper_chest_events;
@@ -32,8 +34,10 @@ mod flint_and_steel;
 
 pub use air::AirItem;
 pub use axe::AxeItem;
+pub use bed_item::BedItem;
 pub use block_item::{BlockItem, DoubleHighBlockItem};
 pub use bonemeal::BoneMealItem;
+pub use brush::BrushItem;
 pub use bucket::BucketItem;
 pub use compass::CompassItem;
 pub use default::DefaultItemBehavior;
