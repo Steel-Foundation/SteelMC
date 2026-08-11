@@ -100,6 +100,21 @@ const fn client_permission_event_for_capabilities(
     }
 }
 
+/// Creates a [`CommandSyntaxError`] for a missing argument.
+pub(crate) fn missing_argument(name: &str) -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(format!(
+        "Parsed value for {name} is missing from the command context"
+    ))
+}
+
+/// Creates a [`CommandSyntaxError`] for an argument whose parsed value's type
+/// does not match with that of the argument.
+pub(crate) fn incorrectly_typed_argument(name: &str) -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(format!(
+        "Parsed value for {name} does not match the expected type"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::client_permission_event_for_capabilities;
@@ -120,19 +135,4 @@ mod tests {
             EntityStatus::PermissionLevelAll
         );
     }
-}
-
-/// Creates a [`CommandSyntaxError`] for a missing argument.
-pub(crate) fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
-}
-
-/// Creates a [`CommandSyntaxError`] for an argument whose parsed value's type
-/// does not match with that of the argument.
-pub(crate) fn incorrectly_typed_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} does not match the expected type"
-    ))
 }

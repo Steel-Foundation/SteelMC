@@ -470,15 +470,3 @@ impl SteelCommandContext<CommandSource> {
         Ok(players.remove(0))
     }
 }
-
-fn missing_selector_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed selector for {name} is missing from the command context"
-    ))
-}
-
-fn missing_score_holder_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed score holder for {name} is missing from the command context"
-    ))
-}
