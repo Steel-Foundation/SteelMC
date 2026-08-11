@@ -23,7 +23,7 @@ pub(crate) fn path_ends_with(path: &syn::Path, name: &str) -> bool {
 pub(crate) enum JsonArgKind {
     /// Raw JSON value → token literal (handles numbers, strings, bools)
     Value,
-    /// Flattened extractor fields → a constant or uniform `IntProvider`.
+    /// Vanilla codec JSON → a constant or uniform `IntProvider`.
     ///
     /// Unsupported provider shapes fail code generation so new vanilla data
     /// cannot silently receive the wrong distribution.
@@ -195,13 +195,8 @@ pub(crate) fn json_value_to_tokens(
     key: &str,
 ) -> TokenStream {
     match value {
-        serde_json::Value::Number(n) => {
-            let n = n.as_i64().unwrap_or_else(|| {
-                panic!("JSON field '{key}' for entry '{entry_name}' must be an integer")
-            });
-            let n = i32::try_from(n).unwrap_or_else(|_| {
-                panic!("JSON field '{key}' for entry '{entry_name}' overflows i32: {n}")
-            });
+        serde_json::Value::Number(_) => {
+            let n = json_i32(value, entry_name, key);
             let lit = proc_macro2::Literal::i32_suffixed(n);
             quote! { #lit }
         }
@@ -211,37 +206,71 @@ pub(crate) fn json_value_to_tokens(
     }
 }
 
+fn json_i32(value: &serde_json::Value, entry_name: &str, key: &str) -> i32 {
+    let value = value.as_i64().unwrap_or_else(|| {
+        panic!("JSON field '{key}' for entry '{entry_name}' must be an integer")
+    });
+    i32::try_from(value).unwrap_or_else(|_| {
+        panic!("JSON field '{key}' for entry '{entry_name}' overflows i32: {value}")
+    })
+}
+
 fn int_provider_to_tokens(
     extra: &serde_json::Map<String, serde_json::Value>,
     entry_name: &str,
     key: &str,
 ) -> TokenStream {
-    let value_key = format!("{key}_value");
-    let min_key = format!("{key}_min_inclusive");
-    let max_key = format!("{key}_max_inclusive");
-    let value = extra.get(&value_key);
-    let min = extra.get(&min_key);
-    let max = extra.get(&max_key);
+    let provider = get_json_value(extra, entry_name, key);
+    if provider.is_number() {
+        let value = json_i32(provider, entry_name, key);
+        return quote! { steel_utils::value_providers::IntProvider::Constant(#value) };
+    }
 
-    match (value, min, max) {
-        (Some(value), None, None) => {
-            let value = json_value_to_tokens(value, entry_name, &value_key);
-            quote! { steel_utils::value_providers::IntProvider::Constant(#value) }
+    let provider = provider.as_object().unwrap_or_else(|| {
+        panic!(
+            "JSON field '{key}' for entry '{entry_name}' must be an integer or int-provider object"
+        )
+    });
+    let provider_type = provider
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_else(|| {
+            panic!("JSON field '{key}.type' for entry '{entry_name}' must be a string")
+        });
+    assert!(
+        provider_type == "minecraft:uniform",
+        "Unsupported int provider '{provider_type}' in JSON field '{key}' for entry '{entry_name}'"
+    );
+
+    if let Some(unexpected) = provider
+        .keys()
+        .find(|field| !matches!(field.as_str(), "type" | "min_inclusive" | "max_inclusive"))
+    {
+        panic!(
+            "Unsupported JSON field '{key}.{unexpected}' for uniform int provider in entry '{entry_name}'"
+        );
+    }
+
+    let min_key = format!("{key}.min_inclusive");
+    let max_key = format!("{key}.max_inclusive");
+    let min = provider
+        .get("min_inclusive")
+        .unwrap_or_else(|| panic!("Entry '{entry_name}' missing JSON field '{min_key}'"));
+    let max = provider
+        .get("max_inclusive")
+        .unwrap_or_else(|| panic!("Entry '{entry_name}' missing JSON field '{max_key}'"));
+    let min = json_i32(min, entry_name, &min_key);
+    let max = json_i32(max, entry_name, &max_key);
+    assert!(
+        min <= max,
+        "Uniform int provider in entry '{entry_name}' has min_inclusive {min} greater than max_inclusive {max}"
+    );
+
+    quote! {
+        steel_utils::value_providers::IntProvider::Uniform {
+            min_inclusive: #min,
+            max_inclusive: #max,
         }
-        (None, Some(min), Some(max)) => {
-            let min = json_value_to_tokens(min, entry_name, &min_key);
-            let max = json_value_to_tokens(max, entry_name, &max_key);
-            quote! {
-                steel_utils::value_providers::IntProvider::Uniform {
-                    min_inclusive: #min,
-                    max_inclusive: #max,
-                }
-            }
-        }
-        _ => panic!(
-            "Entry '{entry_name}' must define either '{value_key}' or both \
-             '{min_key}' and '{max_key}'"
-        ),
     }
 }
 

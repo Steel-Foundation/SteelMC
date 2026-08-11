@@ -7,7 +7,6 @@ mod building;
 mod colored;
 mod container;
 mod decoration;
-mod drop_experience_block;
 mod fluid;
 mod portal;
 mod redstone;
@@ -16,9 +15,9 @@ pub mod vegetation;
 
 pub use building::{
     AmethystBlock, AmethystClusterBlock, BarrierBlock, BedBlock, BuddingAmethystBlock,
-    CampfireBlock, CauldronBlock, ComposterBlock, DoorBlock, FenceBlock, FenceGateBlock,
-    GlazedTerracottaBlock, HayBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock,
-    LavaCauldronBlock, LayeredCauldronBlock, MagmaBlock, MudBlock, PotentSulfurBlock,
+    CampfireBlock, CauldronBlock, ComposterBlock, DoorBlock, DropExperienceBlock, FenceBlock,
+    FenceGateBlock, GlazedTerracottaBlock, HayBlock, HoneyBlock, IceBlock, IronBarsBlock,
+    LadderBlock, LavaCauldronBlock, LayeredCauldronBlock, MagmaBlock, MudBlock, PotentSulfurBlock,
     PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock,
     SpongeBlock, StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState,
     WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
@@ -32,7 +31,6 @@ pub use decoration::{
     StandingSignBlock, TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
     WeatheringCopperChainBlock,
 };
-pub use drop_experience_block::DropExperienceBlock;
 pub use fluid::{BubbleColumnBlock, LiquidBlock};
 pub use portal::{
     EndGatewayBlock, EndPortalBlock, EndPortalFrameBlock, FireBlock, NetherPortalBlock,
