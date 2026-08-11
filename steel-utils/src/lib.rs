@@ -67,6 +67,21 @@ pub mod version;
 /// The Minecraft version this server supports.
 pub const MC_VERSION: &str = version::MINECRAFT_VERSION;
 
+/// Number of `f64` lanes in the widest SIMD register enabled for this build.
+///
+/// This describes the compilation target, not features detected on the CPU at
+/// runtime. Native builds can therefore expose a wider register than portable
+/// builds running on the same machine.
+pub const SIMD_REGISTER_F64_SIZE: usize = if cfg!(target_feature = "avx512f") {
+    8
+} else if cfg!(target_feature = "avx2") {
+    4
+} else if cfg!(any(target_feature = "sse2", target_feature = "neon")) {
+    2
+} else {
+    1
+};
+
 pub use color::{ArgbColor, RgbColor};
 pub use direction::Direction;
 pub use downcast::{Downcast, DowncastType, DowncastTypeKey, ErasedType};
