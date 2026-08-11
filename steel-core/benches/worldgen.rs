@@ -4,9 +4,11 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use futures::future::join_all;
 use glam::IVec3;
+use std::array;
 use std::cmp::Reverse;
 use std::env;
 use std::hint::black_box;
+use std::simd::Simd;
 use std::sync::{
     Arc, LazyLock, Once, Weak,
     atomic::{AtomicU64, Ordering},
@@ -1878,6 +1880,219 @@ fn bench_noise_kernel(c: &mut Criterion) {
     group.finish();
 }
 
+/// Compares logical SIMD widths for the 25 X/Z positions evaluated by
+/// the real generated overworld `ColumnCache::init_grid` path.
+fn bench_init_grid_xz_simd_lanes(c: &mut Criterion) {
+    use steel_worldgen::biomes::OverworldClimateSampler;
+    use steel_worldgen::density_functions::overworld::OverworldColumnCache;
+
+    let sampler = OverworldClimateSampler::new(0x1A17_6A1D);
+    let grid_origins: Vec<_> = (0..256).map(|grid| (grid * 16, grid * -24)).collect();
+
+    let sample_grid = |lanes: usize| {
+        let mut cache = OverworldColumnCache::new();
+        match lanes {
+            2 => sampler.init_column_grid_simd::<2>(&mut cache, 0, 0),
+            4 => sampler.init_column_grid_simd::<4>(&mut cache, 0, 0),
+            8 => sampler.init_column_grid_simd::<8>(&mut cache, 0, 0),
+            16 => sampler.init_column_grid_simd::<16>(&mut cache, 0, 0),
+            25 => sampler.init_column_grid_simd::<25>(&mut cache, 0, 0),
+            _ => unreachable!(),
+        }
+        array::from_fn::<_, 25, _>(|index| {
+            sampler.sample((index % 5) as i32, 0, (index / 5) as i32, &mut cache)
+        })
+    };
+    let expected = sample_grid(25);
+    for lanes in [2, 4, 8, 16] {
+        assert_eq!(expected, sample_grid(lanes));
+    }
+
+    let mut group = c.benchmark_group("init_grid_xz_simd_lanes");
+    group.throughput(Throughput::Elements((grid_origins.len() * 25) as u64));
+    macro_rules! bench_lanes {
+        ($lanes:literal) => {
+            group.bench_function(concat!("lanes_", stringify!($lanes)), |b| {
+                let mut cache = OverworldColumnCache::new();
+                b.iter(|| {
+                    for &(x, z) in black_box(&grid_origins) {
+                        sampler.init_column_grid_simd::<$lanes>(&mut cache, x, z);
+                    }
+                    black_box(&cache);
+                });
+            });
+        };
+    }
+    bench_lanes!(2);
+    bench_lanes!(4);
+    bench_lanes!(8);
+    bench_lanes!(16);
+    bench_lanes!(25);
+    group.finish();
+}
+
+fn preliminary_density<const N: usize>(
+    ys: Simd<f64, N>,
+    offsets: Simd<f64, N>,
+    factors: Simd<f64, N>,
+) -> Simd<f64, N> {
+    use std::simd::Select;
+    use std::simd::cmp::SimdPartialOrd;
+    use std::simd::num::SimdFloat;
+
+    let splat = Simd::splat;
+    let gradient = |from_y: f64, to_y: f64, from: f64, to: f64| {
+        let t = (ys - splat(from_y)) / splat(to_y - from_y);
+        t.simd_lt(splat(0.0)).select(
+            splat(from),
+            t.simd_gt(splat(1.0))
+                .select(splat(to), splat(from) + t * splat(to - from)),
+        )
+    };
+    let terrain = (gradient(-64.0, 320.0, 1.5, -1.5) + offsets) * factors;
+    let quarter_negative = terrain
+        .simd_gt(splat(0.0))
+        .select(terrain, terrain * splat(0.25));
+    let clamped = (splat(-0.703_125) + splat(4.0) * quarter_negative)
+        .simd_max(splat(-64.0))
+        .simd_min(splat(64.0));
+    splat(-0.390_625)
+        + splat(0.117_187_5)
+        + gradient(-64.0, -40.0, 0.0, 1.0)
+            * (splat(-0.117_187_5)
+                + splat(-0.078_125)
+                + gradient(240.0, 256.0, 1.0, 0.0) * (splat(0.078_125) + clamped))
+}
+
+fn find_top_surface_xz(offsets: [f64; 25], factors: [f64; 25]) -> [f64; 25] {
+    use std::simd::Select;
+    use std::simd::cmp::SimdPartialOrd;
+    use std::simd::num::SimdFloat;
+    use std::simd::{Simd, StdFloat};
+
+    let offsets = Simd::from_array(offsets);
+    let factors = Simd::from_array(factors);
+    let upper = (Simd::splat(128.0)
+        + Simd::splat(-128.0) * (Simd::splat(0.273_437_5) / factors - offsets))
+        .simd_max(Simd::splat(-40.0))
+        .simd_min(Simd::splat(320.0));
+    let lower = Simd::splat(-64.0);
+    let mut ys = (upper / Simd::splat(8.0)).floor() * Simd::splat(8.0);
+    let mut result = lower;
+    let mut active = ys.simd_gt(lower);
+    for _ in 0..32 {
+        let density = preliminary_density(ys, offsets, factors);
+        let found = active & density.simd_gt(Simd::splat(0.0)) & ys.simd_ge(lower);
+        result = found.select(ys, result);
+        ys -= Simd::splat(8.0);
+        active &= !found;
+    }
+    result.to_array()
+}
+
+fn find_top_surface_y<const N: usize>(offsets: [f64; 25], factors: [f64; 25]) -> [f64; 25] {
+    use std::simd::cmp::SimdPartialOrd;
+
+    const Y_BATCH_SIZE: usize = 32;
+
+    let mut result = [-64.0; 25];
+    for lane in 0..25 {
+        let offset = offsets[lane];
+        let factor = factors[lane];
+        let upper = (128.0 - 128.0 * (0.273_437_5 / factor - offset)).clamp(-40.0, 320.0);
+        let y = (upper / 8.0).floor() * 8.0;
+        let mut surface = None;
+        for batch in 0..Y_BATCH_SIZE / N {
+            let batch_y = y - (batch * N) as f64 * 8.0;
+            let ys: Simd<f64, N> =
+                Simd::from_array(array::from_fn(|lane| batch_y - lane as f64 * 8.0));
+            let density = preliminary_density(ys, Simd::splat(offset), Simd::splat(factor));
+            let found = density.simd_gt(Simd::splat(0.0)) & ys.simd_ge(Simd::splat(-64.0));
+            if surface.is_none()
+                && let Some(index) = found.to_array().iter().position(|value| *value)
+            {
+                surface = Some(ys[index]);
+            }
+        }
+        if let Some(surface) = surface {
+            result[lane] = surface;
+        }
+    }
+    result
+}
+
+#[expect(
+    clippy::float_cmp,
+    reason = "both SIMD axis implementations must produce identical block heights"
+)]
+fn assert_same_find_top_surface_results(grids: &[([f64; 25], [f64; 25])]) {
+    for &(offsets, factors) in grids {
+        let expected = find_top_surface_xz(offsets, factors);
+        assert_eq!(expected, find_top_surface_y::<4>(offsets, factors));
+        assert_eq!(expected, find_top_surface_y::<8>(offsets, factors));
+        assert_eq!(expected, find_top_surface_y::<16>(offsets, factors));
+        assert_eq!(expected, find_top_surface_y::<32>(offsets, factors));
+    }
+}
+
+fn bench_find_top_surface_simd_axis(c: &mut Criterion) {
+    let grids: Vec<([f64; 25], [f64; 25])> = (0..256)
+        .map(|grid| {
+            let offsets = array::from_fn(|lane| {
+                (f64::from(grid * 25 + lane as i32) * 0.754_877_666).sin() * 0.7
+            });
+            let factors = array::from_fn(|lane| {
+                1.0 + (f64::from(grid * 25 + lane as i32) * 0.569_840_291)
+                    .cos()
+                    .abs()
+                    * 6.0
+            });
+            (offsets, factors)
+        })
+        .collect();
+
+    assert_same_find_top_surface_results(&grids);
+
+    let mut group = c.benchmark_group("find_top_surface_32x5x5");
+    group.throughput(Throughput::Elements((grids.len() * 32 * 5 * 5) as u64));
+    group.bench_function("xz_25x32", |b| {
+        b.iter(|| {
+            for &(offsets, factors) in black_box(&grids) {
+                black_box(find_top_surface_xz(offsets, factors));
+            }
+        });
+    });
+    group.bench_function("y_4", |b| {
+        b.iter(|| {
+            for &(offsets, factors) in black_box(&grids) {
+                black_box(find_top_surface_y::<4>(offsets, factors));
+            }
+        });
+    });
+    group.bench_function("y_8", |b| {
+        b.iter(|| {
+            for &(offsets, factors) in black_box(&grids) {
+                black_box(find_top_surface_y::<8>(offsets, factors));
+            }
+        });
+    });
+    group.bench_function("y_16", |b| {
+        b.iter(|| {
+            for &(offsets, factors) in black_box(&grids) {
+                black_box(find_top_surface_y::<16>(offsets, factors));
+            }
+        });
+    });
+    group.bench_function("y_32", |b| {
+        b.iter(|| {
+            for &(offsets, factors) in black_box(&grids) {
+                black_box(find_top_surface_y::<32>(offsets, factors));
+            }
+        });
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     // Biome
@@ -1955,6 +2170,14 @@ criterion_group! {
         .measurement_time(Duration::from_secs(5));
     targets = bench_noise_kernel
 }
+criterion_group! {
+    name = find_top_surface_benches;
+    config = Criterion::default()
+        .sample_size(50)
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(5));
+    targets = bench_find_top_surface_simd_axis, bench_init_grid_xz_simd_lanes
+}
 criterion_main!(
     benches,
     feature_distribution_benches,
@@ -1962,4 +2185,5 @@ criterion_main!(
     full_chunk_benches,
     light_benches,
     noise_kernel_benches,
+    find_top_surface_benches,
 );

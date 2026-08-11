@@ -11,7 +11,7 @@ build = "build/build.rs"
 stand-alone = []
 slow_chunk_gen = []
 flint = []
-benchmark-support = []
+benchmark-support = ["steel-worldgen/benchmark-support"]
 
 [dependencies]
 # Internal crates

@@ -18,8 +18,8 @@ pub(super) fn named_fn_ident(name: &str) -> Ident {
     format_ident!("compute_{}", sanitize_name(name))
 }
 
-pub(super) fn named_fn_ident_4x(name: &str) -> Ident {
-    format_ident!("compute_{}_4x", sanitize_name(name))
+pub(super) fn named_fn_ident_y_simd(name: &str) -> Ident {
+    format_ident!("compute_{}_y_simd", sanitize_name(name))
 }
 
 pub(super) fn named_fn_ident_xz(name: &str) -> Ident {

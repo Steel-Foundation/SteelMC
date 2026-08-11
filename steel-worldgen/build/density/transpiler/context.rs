@@ -62,10 +62,10 @@ pub(super) struct TranspileContext {
     /// name instead of recomputing. Covers `Reference`, `Noise`,
     /// `ShiftedNoise`, and other expensive nodes.
     pub(super) cse_bindings: FxHashMap<u64, Ident>,
-    /// CSE bindings for the SIMD (`_4x`) codegen path. Kept separate from
-    /// `cse_bindings` because SIMD bindings hold `f64x4` values: if the scalar
+    /// CSE bindings for the Y-SIMD codegen path. Kept separate from
+    /// `cse_bindings` because SIMD bindings hold vector values: if the scalar
     /// 4×-lane fallback (`gen_simd_scalar_fallback`) looked one up it would emit
-    /// an `f64x4` where an `f64` is expected. Same fingerprint keys, disjoint
+    /// a vector where an `f64` is expected. Same fingerprint keys, disjoint
     /// codegen scopes.
     pub(super) cse_bindings_simd: FxHashMap<u64, Ident>,
     /// Counter for generating unique CSE variable names.
