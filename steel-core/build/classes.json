@@ -34,7 +34,8 @@
     },
     {
       "name": "grass_block",
-      "class": "GrassBlock"
+      "class": "GrassBlock",
+      "base_block": "dirt"
     },
     {
       "name": "dirt",
@@ -766,11 +767,13 @@
     },
     {
       "name": "brown_mushroom",
-      "class": "MushroomBlock"
+      "class": "MushroomBlock",
+      "feature": "huge_brown_mushroom"
     },
     {
       "name": "red_mushroom",
-      "class": "MushroomBlock"
+      "class": "MushroomBlock",
+      "feature": "huge_red_mushroom"
     },
     {
       "name": "gold_block",
@@ -2028,19 +2031,37 @@
     },
     {
       "name": "attached_pumpkin_stem",
-      "class": "AttachedStemBlock"
+      "class": "AttachedStemBlock",
+      "fruit": "pumpkin",
+      "stem": "pumpkin_stem",
+      "seed": "pumpkin_seeds",
+      "support_blocks": "supports_pumpkin_stem"
     },
     {
       "name": "attached_melon_stem",
-      "class": "AttachedStemBlock"
+      "class": "AttachedStemBlock",
+      "fruit": "melon",
+      "stem": "melon_stem",
+      "seed": "melon_seeds",
+      "support_blocks": "supports_melon_stem"
     },
     {
       "name": "pumpkin_stem",
-      "class": "StemBlock"
+      "class": "StemBlock",
+      "fruit": "pumpkin",
+      "attached_stem": "attached_pumpkin_stem",
+      "seed": "pumpkin_seeds",
+      "stem_support_blocks": "supports_pumpkin_stem",
+      "fruit_support_blocks": "supports_pumpkin_stem_fruit"
     },
     {
       "name": "melon_stem",
-      "class": "StemBlock"
+      "class": "StemBlock",
+      "fruit": "melon",
+      "attached_stem": "attached_melon_stem",
+      "seed": "melon_seeds",
+      "stem_support_blocks": "supports_melon_stem",
+      "fruit_support_blocks": "supports_melon_stem_fruit"
     },
     {
       "name": "vine",
@@ -2084,7 +2105,8 @@
     },
     {
       "name": "mycelium",
-      "class": "MyceliumBlock"
+      "class": "MyceliumBlock",
+      "base_block": "dirt"
     },
     {
       "name": "lily_pad",
@@ -4610,7 +4632,9 @@
     {
       "name": "warped_fungus",
       "class": "NetherFungusBlock",
-      "required_block": "warped_nylium"
+      "required_block": "warped_nylium",
+      "feature": "warped_fungus_planted",
+      "support_blocks": "supports_warped_fungus"
     },
     {
       "name": "warped_wart_block",
@@ -4618,7 +4642,8 @@
     },
     {
       "name": "warped_roots",
-      "class": "NetherRootsBlock"
+      "class": "NetherRootsBlock",
+      "support_blocks": "supports_warped_roots"
     },
     {
       "name": "nether_sprouts",
@@ -4647,7 +4672,9 @@
     {
       "name": "crimson_fungus",
       "class": "NetherFungusBlock",
-      "required_block": "crimson_nylium"
+      "required_block": "crimson_nylium",
+      "feature": "crimson_fungus_planted",
+      "support_blocks": "supports_crimson_fungus"
     },
     {
       "name": "shroomlight",
@@ -4681,7 +4708,8 @@
     },
     {
       "name": "crimson_roots",
-      "class": "NetherRootsBlock"
+      "class": "NetherRootsBlock",
+      "support_blocks": "supports_crimson_roots"
     },
     {
       "name": "crimson_planks",
@@ -6223,7 +6251,8 @@
     },
     {
       "name": "moss_block",
-      "class": "BonemealableFeaturePlacerBlock"
+      "class": "BonemealableFeaturePlacerBlock",
+      "feature": "moss_patch_bonemeal"
     },
     {
       "name": "big_dripleaf",
@@ -6406,7 +6435,8 @@
     },
     {
       "name": "pale_moss_block",
-      "class": "BonemealableFeaturePlacerBlock"
+      "class": "BonemealableFeaturePlacerBlock",
+      "feature": "pale_moss_patch_bonemeal"
     },
     {
       "name": "pale_moss_carpet",

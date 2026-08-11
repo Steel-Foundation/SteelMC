@@ -282,7 +282,7 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     init_vanilla_registry();
     init_behaviors();
 
-    let world = Arc::clone(test_world());
+    let world = fresh_test_world("set_block_publication_gates");
     let pos = BlockPos::new(1_504, 64, 1_504);
     let chunk_pos = ChunkPos::from_block_pos(pos);
     let simulation_ticket = ChunkTicket::simulated_full_chunks(1);
@@ -299,6 +299,16 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
                 .is_block_ticking_full_chunk_loaded(chunk_pos)
     });
 
+    // Stop background generation and wait for in-flight setup work before
+    // measuring client-visible revisions. Chunk lighting can publish
+    // independently of the block updates exercised below.
+    world.chunk_map.stop_generation_refill_loop();
+    world.chunk_map.task_tracker.close();
+    world
+        .chunk_map
+        .chunk_runtime
+        .block_on(world.chunk_map.task_tracker.wait());
+
     let holder = world
         .chunk_map
         .chunks
@@ -310,7 +320,7 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
             .is_block_ticking_full_chunk_loaded(chunk_pos)
     );
 
-    let revision = holder.packet_content_revision();
+    let pre_light_revision = holder.packet_content_revision();
     assert!(world.set_block_with_limit(
         pos,
         vanilla_blocks::DIRT.default_state(),
@@ -321,28 +331,33 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
         world.get_block_state(pos),
         vanilla_blocks::DIRT.default_state()
     );
-    assert_eq!(holder.packet_content_revision(), revision);
+    assert_eq!(holder.packet_content_revision(), pre_light_revision);
+
+    // The first non-air block queues lighting independently of client updates.
+    // Settle it before measuring block-publication-only revisions.
+    world.chunk_map.broadcast_changed_chunks();
+    let publication_revision = holder.packet_content_revision();
 
     assert!(world.set_block(
         pos,
         vanilla_blocks::STONE.default_state(),
         UpdateFlags::UPDATE_NONE,
     ));
-    assert_eq!(holder.packet_content_revision(), revision);
+    assert_eq!(holder.packet_content_revision(), publication_revision);
 
     assert!(world.set_block(
         pos,
         vanilla_blocks::DIRT.default_state(),
         UpdateFlags::UPDATE_CLIENTS,
     ));
-    assert_eq!(holder.packet_content_revision(), revision + 1);
+    assert_eq!(holder.packet_content_revision(), publication_revision + 1);
 
     assert!(world.set_block(
         pos,
         vanilla_blocks::STONE.default_state(),
         UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_INVISIBLE,
     ));
-    assert_eq!(holder.packet_content_revision(), revision + 2);
+    assert_eq!(holder.packet_content_revision(), publication_revision + 2);
 
     let unsupported_fire_pos = pos.offset(2, 0, 0);
     assert!(world.get_block_state(unsupported_fire_pos).is_air());
@@ -352,7 +367,7 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
         UpdateFlags::UPDATE_CLIENTS,
     ));
     assert!(world.get_block_state(unsupported_fire_pos).is_air());
-    assert_eq!(holder.packet_content_revision(), revision + 3);
+    assert_eq!(holder.packet_content_revision(), publication_revision + 3);
 
     let loading_ticket = ChunkTicket::loading(ChunkTicketLevel::BLOCK_TICKING_CHUNK);
     let loading_revision = world.chunk_map.add_chunk_ticket(chunk_pos, loading_ticket);
@@ -418,6 +433,10 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
         .chunk_map
         .remove_chunk_ticket(chunk_pos, full_only_ticket);
     world.chunk_map.advance_scheduling();
+    world
+        .chunk_map
+        .chunk_runtime
+        .block_on(world.chunk_map.task_tracker.wait());
 }
 
 #[test]
