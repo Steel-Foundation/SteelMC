@@ -34,6 +34,7 @@ use self::{
     brigadier::CommandDispatcher as BrigadierCommandDispatcher,
     execution::{CommandSource as InternalCommandSource, SteelCommandRuntime},
 };
+use crate::command::brigadier::CommandSyntaxError;
 use crate::{player::Player, world::World};
 
 pub(crate) type CommandDispatcher =
@@ -119,4 +120,19 @@ mod tests {
             EntityStatus::PermissionLevelAll
         );
     }
+}
+
+/// Creates a [`CommandSyntaxError`] for a missing argument.
+pub(crate) fn missing_argument(name: &str) -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(format!(
+        "Parsed value for {name} is missing from the command context"
+    ))
+}
+
+/// Creates a [`CommandSyntaxError`] for an argument whose parsed value's type
+/// does not match with that of the argument.
+pub(crate) fn incorrectly_typed_argument(name: &str) -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(format!(
+        "Parsed value for {name} does not match the expected type"
+    ))
 }
