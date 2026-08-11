@@ -187,7 +187,7 @@ impl FallingBlockEntity {
         state.fall_damage_max = damage_max;
     }
 
-    /// Prevents the carried block from dropping as an item.
+    /// Prevents the carried block from placing or dropping when it lands.
     pub fn disable_drop(&self) {
         self.state.lock().cancel_drop = true;
     }
