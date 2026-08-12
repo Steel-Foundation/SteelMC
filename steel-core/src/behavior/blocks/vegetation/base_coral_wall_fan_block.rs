@@ -31,11 +31,7 @@ impl BaseCoralWallFanBlock {
     ///
     /// The block behind the wall fan (`pos.relative(facing.opposite())`) must be
     /// face-sturdy on the face pointing toward us (i.e. `facing`).
-    pub(super) fn coral_wall_fan_can_survive(
-        world: &dyn LevelReader,
-        pos: BlockPos,
-        facing: Direction,
-    ) -> bool {
+    pub(super) fn can_survive(world: &dyn LevelReader, pos: BlockPos, facing: Direction) -> bool {
         let relative_pos = pos.relative(facing.opposite());
         let relative_state = world.get_block_state(relative_pos);
         world.is_face_sturdy(relative_state, relative_pos, facing)
@@ -45,7 +41,7 @@ impl BaseCoralWallFanBlock {
 impl BlockBehavior for BaseCoralWallFanBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let facing = state.get_value(HORIZONTAL_FACING);
-        Self::coral_wall_fan_can_survive(world, pos, facing)
+        Self::can_survive(world, pos, facing)
     }
 
     fn update_shape(

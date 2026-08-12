@@ -1,4 +1,6 @@
-use rand::RngExt;
+use std::sync::Arc;
+
+use rand::{Rng, RngExt};
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
@@ -18,7 +20,7 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::entity::ai::path::PathComputationType;
 use crate::fluid::get_fluid_state_from_block;
-use crate::world::{LevelReader, ScheduledTickAccess};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::BlockRef;
 
@@ -86,11 +88,11 @@ impl BlockBehavior for SeaPickleBlock {
         }
         let replaced_fluid_state = get_fluid_state_from_block(state);
         let is_water_source = replaced_fluid_state.is_water();
-        return Some(
+        Some(
             self.block
                 .default_state()
                 .set_value(WATERLOGGED, is_water_source),
-        );
+        )
     }
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
         if !context.is_secondary_use_active()
@@ -129,19 +131,15 @@ impl Bonemealable for SeaPickleBlock {
     fn perform_bonemeal(
         &self,
         state: BlockStateId,
-        world: &std::sync::Arc<crate::world::World>,
-        rng: &mut dyn rand::prelude::Rng,
+        world: &Arc<World>,
+        rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        let _span = 5;
         let mut z_span = 1;
-        let _height = 2;
-        let mut count = 0;
-
         let x_start = pos.x() - 2;
         let mut z_offset = 0;
 
-        for x in 0..5 {
+        for (count, x) in (0..5).enumerate() {
             for z in 0..z_span {
                 let end_y = 2 + pos.y() - 1;
 
@@ -172,8 +170,6 @@ impl Bonemealable for SeaPickleBlock {
                 z_span -= 2;
                 z_offset -= 1;
             }
-
-            count += 1;
         }
 
         let final_state = state.set_value(PICKLES, 4);
@@ -184,14 +180,11 @@ impl Bonemealable for SeaPickleBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
     use steel_registry::{init_vanilla_registry, vanilla_fluids};
 
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::test_support::TestLevel;
-
-    const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
     #[test]
     fn sea_pickle_checks_survival_before_scheduling_water() {
