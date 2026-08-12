@@ -23,7 +23,6 @@ use crate::world::{LevelReader, ScheduledTickAccess};
 use super::BlockRef;
 
 /// Vanilla `SeaPickleBlock` survival.
-// TODO: Implement full vanilla behavior beyond can_survive.
 #[block_behavior]
 pub struct SeaPickleBlock {
     block: BlockRef,
