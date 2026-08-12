@@ -23,14 +23,13 @@ use crate::world::{LevelReader, ScheduledTickAccess};
 use super::BlockRef;
 
 /// Vanilla `SeaPickleBlock` survival.
-// TODO: Implement full vanilla behavior beyond can_survive.
 #[block_behavior]
 pub struct SeaPickleBlock {
     block: BlockRef,
 }
 
-const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
-const PICKLES: IntProperty = BlockStateProperties::PICKLES;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+const PICKLES: &IntProperty = &BlockStateProperties::PICKLES;
 
 impl SeaPickleBlock {
     /// Creates a new sea pickle block behavior.
@@ -48,7 +47,7 @@ impl SeaPickleBlock {
             || world.is_face_sturdy(state, pos, Direction::Up)
     }
     fn is_dead(state: BlockStateId) -> bool {
-        !state.get_value(&WATERLOGGED)
+        !state.get_value(WATERLOGGED)
     }
 }
 
@@ -83,20 +82,20 @@ impl BlockBehavior for SeaPickleBlock {
         };
         let state = context.world.get_block_state(clicked_pos);
         if state.get_block() == self.block {
-            return Some(state.set_value(&PICKLES, 4.min(state.get_value(&PICKLES) + 1)));
+            return Some(state.set_value(PICKLES, 4.min(state.get_value(PICKLES) + 1)));
         }
         let replaced_fluid_state = get_fluid_state_from_block(state);
         let is_water_source = replaced_fluid_state.is_water();
         return Some(
             self.block
                 .default_state()
-                .set_value(&WATERLOGGED, is_water_source),
+                .set_value(WATERLOGGED, is_water_source),
         );
     }
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
         if !context.is_secondary_use_active()
             && context.with_item(|item| item.item() == REGISTRY.items.by_block(state.get_block()))
-            && state.get_value(&PICKLES) < 4
+            && state.get_value(PICKLES) < 4
         {
             return true;
         }
@@ -158,7 +157,7 @@ impl Bonemealable for SeaPickleBlock {
                         if below_state.get_block().has_tag(&BlockTag::CORAL_BLOCKS) {
                             let sea_pickle_state = vanilla_blocks::SEA_PICKLE
                                 .default_state()
-                                .set_value(&PICKLES, rng.random_range(0..4) + 1);
+                                .set_value(PICKLES, rng.random_range(0..4) + 1);
 
                             world.set_block(position, sea_pickle_state, UpdateFlags::UPDATE_ALL);
                         }
@@ -177,7 +176,7 @@ impl Bonemealable for SeaPickleBlock {
             count += 1;
         }
 
-        let final_state = state.set_value(&PICKLES, 4);
+        let final_state = state.set_value(PICKLES, 4);
 
         world.set_block(pos, final_state, UpdateFlags::UPDATE_CLIENTS);
     }
