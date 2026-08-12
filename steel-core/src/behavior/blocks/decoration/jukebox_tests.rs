@@ -47,6 +47,13 @@ use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full
 use crate::world::game_event::{GameEventContext, GameEventListener, SharedGameEventListener};
 use crate::world::{SignalGetter as _, World};
 
+const BLOCK_CENTER_OFFSET: f64 = 0.5;
+const JUKEBOX_EJECTION_Y_OFFSET: f64 = 1.01;
+const JUKEBOX_EJECTION_HORIZONTAL_RADIUS: f64 = 0.35;
+const ITEM_EJECTION_HORIZONTAL_SPEED_LIMIT: f64 = 0.1;
+const ITEM_EJECTION_UPWARD_SPEED: f64 = 0.2;
+const DEFAULT_ITEM_PICKUP_DELAY_TICKS: i32 = 10;
+
 struct RecordingConnection {
     packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
 }
@@ -186,6 +193,13 @@ fn song_comparator(stack: &ItemStack) -> i32 {
         panic!("test record should carry a jukebox song");
     };
     playable.song().value().comparator_output
+}
+
+fn assert_within_radius(value: f64, center: f64, radius: f64) {
+    assert!(
+        (center - radius..center + radius).contains(&value),
+        "{value} should be within {radius} of {center}"
+    );
 }
 
 fn dropped_items(world: &World, pos: BlockPos) -> Vec<SharedEntity> {
@@ -381,15 +395,31 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
         panic!("ejected record should be an item entity");
     };
     assert!(item_entity.get_item().is(&vanilla_items::MUSIC_DISC_CAT));
-    assert_eq!(item_entity.get_pickup_delay(), 10);
+    assert_eq!(
+        item_entity.get_pickup_delay(),
+        DEFAULT_ITEM_PICKUP_DELAY_TICKS
+    );
     let item_pos = item_entity.position();
-    assert!((f64::from(pos.x()) + 0.15..f64::from(pos.x()) + 0.85).contains(&item_pos.x));
-    assert!((item_pos.y - (f64::from(pos.y()) + 1.01)).abs() < f64::EPSILON);
-    assert!((f64::from(pos.z()) + 0.15..f64::from(pos.z()) + 0.85).contains(&item_pos.z));
+    let expected_ejection_center = DVec3::new(
+        f64::from(pos.x()) + BLOCK_CENTER_OFFSET,
+        f64::from(pos.y()) + JUKEBOX_EJECTION_Y_OFFSET,
+        f64::from(pos.z()) + BLOCK_CENTER_OFFSET,
+    );
+    assert_within_radius(
+        item_pos.x,
+        expected_ejection_center.x,
+        JUKEBOX_EJECTION_HORIZONTAL_RADIUS,
+    );
+    assert!((item_pos.y - expected_ejection_center.y).abs() < f64::EPSILON);
+    assert_within_radius(
+        item_pos.z,
+        expected_ejection_center.z,
+        JUKEBOX_EJECTION_HORIZONTAL_RADIUS,
+    );
     let velocity = item_entity.velocity();
-    assert!((-0.1..0.1).contains(&velocity.x));
-    assert!((velocity.y - 0.2).abs() < f64::EPSILON);
-    assert!((-0.1..0.1).contains(&velocity.z));
+    assert_within_radius(velocity.x, 0.0, ITEM_EJECTION_HORIZONTAL_SPEED_LIMIT);
+    assert!((velocity.y - ITEM_EJECTION_UPWARD_SPEED).abs() < f64::EPSILON);
+    assert_within_radius(velocity.z, 0.0, ITEM_EJECTION_HORIZONTAL_SPEED_LIMIT);
     jukebox.pop_out_the_item();
     assert_eq!(dropped_items(&world, pos).len(), 1);
 
