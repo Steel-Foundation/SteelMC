@@ -173,13 +173,16 @@ mod payload_tests {
 
     use super::TCPNetworkDecoder;
 
+    const VARINT_DATA_MASK: u8 = 0x7f;
+    const VARINT_CONTINUE_BIT: u8 = 0x80;
+
     fn write_varint(mut value: u32, output: &mut Vec<u8>) {
         loop {
-            if value & !0x7f == 0 {
+            if value <= u32::from(VARINT_DATA_MASK) {
                 output.push(value as u8);
                 return;
             }
-            output.push((value as u8 & 0x7f) | 0x80);
+            output.push((value as u8 & VARINT_DATA_MASK) | VARINT_CONTINUE_BIT);
             value >>= 7;
         }
     }
