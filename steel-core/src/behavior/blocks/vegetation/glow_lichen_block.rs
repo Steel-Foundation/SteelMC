@@ -3,10 +3,11 @@ use steel_registry::blocks::properties::Direction;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::MultifaceBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
-use super::{BlockRef, default_surviving_state, multiface_can_survive, update_multiface_shape};
+use super::BlockRef;
 
 /// Vanilla `GlowLichenBlock` survival.
 ///
@@ -15,14 +16,16 @@ use super::{BlockRef, default_surviving_state, multiface_can_survive, update_mul
 // TODO: Implement spread, bonemeal, and rotation/mirror overrides.
 #[block_behavior]
 pub struct GlowLichenBlock {
-    block: BlockRef,
+    multiface: MultifaceBlock,
 }
 
 impl GlowLichenBlock {
     /// Creates a new glow lichen block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
-        Self { block }
+        Self {
+            multiface: MultifaceBlock::new(block),
+        }
     }
 }
 
@@ -36,16 +39,19 @@ impl BlockBehavior for GlowLichenBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        update_multiface_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
+        self.multiface
+            .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        multiface_can_survive(state, world, pos)
+        self.multiface.can_survive(state, world, pos)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        // TODO: Vanilla picks a face from nearestLookingDirections; placeholder
-        // accepts the default state if it survives at the click position.
-        default_surviving_state(self.block, self, context)
+        self.multiface.get_state_for_placement(context)
+    }
+
+    fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
+        self.multiface.can_be_replaced(state, context)
     }
 }

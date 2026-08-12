@@ -5,7 +5,9 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, Direction, EnumProperty,
+};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -22,6 +24,9 @@ pub struct ObserverBlock {
     block: BlockRef,
 }
 
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
+
 impl ObserverBlock {
     /// Creates observer behavior for `block`.
     #[must_use]
@@ -36,27 +41,24 @@ impl ObserverBlock {
     }
 
     fn update_neighbors_in_front(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
-        let direction = state.get_value(&BlockStateProperties::FACING);
+        let direction = state.get_value(FACING);
         let output_pos = pos.relative(direction.opposite());
         world.neighbor_changed(output_pos, self.block);
         world.update_neighbors_at_except_from_facing(output_pos, self.block, direction);
     }
 
     fn own_signal(state: BlockStateId) -> i32 {
-        if state.get_value(&BlockStateProperties::POWERED) {
-            15
-        } else {
-            0
-        }
+        if state.get_value(POWERED) { 15 } else { 0 }
     }
 }
 
 impl BlockBehavior for ObserverBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(self.block.default_state().set_value(
-            &BlockStateProperties::FACING,
-            context.get_nearest_looking_direction(),
-        ))
+        Some(
+            self.block
+                .default_state()
+                .set_value(FACING, context.get_nearest_looking_direction()),
+        )
     }
 
     fn update_shape(
@@ -68,25 +70,23 @@ impl BlockBehavior for ObserverBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(&BlockStateProperties::FACING) == direction
-            && !state.get_value(&BlockStateProperties::POWERED)
-        {
+        if state.get_value(FACING) == direction && !state.get_value(POWERED) {
             self.start_signal(world, pos);
         }
         state
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if state.get_value(&BlockStateProperties::POWERED) {
+        if state.get_value(POWERED) {
             world.set_block(
                 pos,
-                state.set_value(&BlockStateProperties::POWERED, false),
+                state.set_value(POWERED, false),
                 UpdateFlags::UPDATE_CLIENTS,
             );
         } else {
             world.set_block(
                 pos,
-                state.set_value(&BlockStateProperties::POWERED, true),
+                state.set_value(POWERED, true),
                 UpdateFlags::UPDATE_CLIENTS,
             );
             world.schedule_block_tick_default(pos, self.block, PULSE_DELAY);
@@ -103,13 +103,13 @@ impl BlockBehavior for ObserverBlock {
         _moved_by_piston: bool,
     ) {
         if state.get_block() == old_state.get_block()
-            || !state.get_value(&BlockStateProperties::POWERED)
+            || !state.get_value(POWERED)
             || world.has_scheduled_block_tick(pos, self.block)
         {
             return;
         }
 
-        let reset_state = state.set_value(&BlockStateProperties::POWERED, false);
+        let reset_state = state.set_value(POWERED, false);
         world.set_block(pos, reset_state, PLACEMENT_RESET_FLAGS);
         self.update_neighbors_in_front(world, pos, reset_state);
     }
@@ -121,14 +121,8 @@ impl BlockBehavior for ObserverBlock {
         pos: BlockPos,
         _moved_by_piston: bool,
     ) {
-        if state.get_value(&BlockStateProperties::POWERED)
-            && world.has_scheduled_block_tick(pos, self.block)
-        {
-            self.update_neighbors_in_front(
-                world,
-                pos,
-                state.set_value(&BlockStateProperties::POWERED, false),
-            );
+        if state.get_value(POWERED) && world.has_scheduled_block_tick(pos, self.block) {
+            self.update_neighbors_in_front(world, pos, state.set_value(POWERED, false));
         }
     }
 
@@ -154,7 +148,7 @@ impl BlockBehavior for ObserverBlock {
         direction: Direction,
         _context: SignalQueryContext,
     ) -> i32 {
-        if state.get_value(&BlockStateProperties::FACING) == direction {
+        if state.get_value(FACING) == direction {
             Self::own_signal(state)
         } else {
             0
@@ -184,8 +178,8 @@ mod tests {
     fn observer_state(facing: Direction, powered: bool) -> BlockStateId {
         vanilla_blocks::OBSERVER
             .default_state()
-            .set_value(&BlockStateProperties::FACING, facing)
-            .set_value(&BlockStateProperties::POWERED, powered)
+            .set_value(FACING, facing)
+            .set_value(POWERED, powered)
     }
 
     #[test]
