@@ -1878,6 +1878,7 @@ fn bench_init_grid_xz_simd_lanes(c: &mut Criterion) {
     let sample_grid = |lanes: usize| {
         let mut cache = OverworldColumnCache::new();
         match lanes {
+            1 => sampler.init_column_grid_simd::<1>(&mut cache, 0, 0),
             2 => sampler.init_column_grid_simd::<2>(&mut cache, 0, 0),
             4 => sampler.init_column_grid_simd::<4>(&mut cache, 0, 0),
             8 => sampler.init_column_grid_simd::<8>(&mut cache, 0, 0),
@@ -1890,10 +1891,9 @@ fn bench_init_grid_xz_simd_lanes(c: &mut Criterion) {
         })
     };
     let expected = sample_grid(25);
-    for lanes in [2, 4, 8, 16] {
+    for lanes in [1, 2, 4, 8, 16] {
         assert_eq!(expected, sample_grid(lanes));
     }
-
     let mut group = c.benchmark_group("init_grid_xz_simd_lanes");
     group.throughput(Throughput::Elements((grid_origins.len() * 25) as u64));
     macro_rules! bench_lanes {
@@ -1909,6 +1909,16 @@ fn bench_init_grid_xz_simd_lanes(c: &mut Criterion) {
             });
         };
     }
+    group.bench_function("scalar", |b| {
+        let mut cache = OverworldColumnCache::new();
+        b.iter(|| {
+            for &(x, z) in black_box(&grid_origins) {
+                sampler.init_column_grid(&mut cache, x, z);
+            }
+            black_box(&cache);
+        });
+    });
+    bench_lanes!(1);
     bench_lanes!(2);
     bench_lanes!(4);
     bench_lanes!(8);

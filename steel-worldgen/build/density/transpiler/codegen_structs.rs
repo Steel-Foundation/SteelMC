@@ -226,7 +226,7 @@ impl TranspileContext {
             .collect();
 
         // Grid store statements: copy active field into grid[idx]
-        let _grid_store_stmts: Vec<TokenStream> = flat_names
+        let grid_store_stmts: Vec<TokenStream> = flat_names
             .iter()
             .map(|name| {
                 let active = named_fn_field_ident(name);
@@ -301,7 +301,7 @@ impl TranspileContext {
             })
             .collect();
 
-        let _router_grid_store_stmts: Vec<TokenStream> = self
+        let router_grid_store_stmts: Vec<TokenStream> = self
             .flat_routers
             .iter()
             .map(|name| {
@@ -379,8 +379,8 @@ impl TranspileContext {
                 let grid = grid_field_ident(name);
                 quote! {
                     xz_cache.#field = #function(noises, self, &xz_cache, xs, zs);
-                    self.#grid[batch_start..batch_start + valid_lanes]
-                        .copy_from_slice(&xz_cache.#field.as_array()[..valid_lanes]);
+                    self.#grid[batch_start..batch_start + N]
+                        .copy_from_slice(xz_cache.#field.as_array());
                 }
             })
             .collect();
@@ -393,8 +393,8 @@ impl TranspileContext {
                 let grid = router_grid_field_ident(name);
                 quote! {
                     xz_cache.#field = #function(noises, self, &xz_cache, xs, zs);
-                    self.#grid[batch_start..batch_start + valid_lanes]
-                        .copy_from_slice(&xz_cache.#field.as_array()[..valid_lanes]);
+                    self.#grid[batch_start..batch_start + N]
+                        .copy_from_slice(xz_cache.#field.as_array());
                 }
             })
             .collect();
@@ -411,8 +411,8 @@ impl TranspileContext {
                         xs * Simd::splat(#scale), Simd::splat(0.0),
                         zs * Simd::splat(#scale),
                     );
-                    self.#grid[batch_start..batch_start + valid_lanes]
-                        .copy_from_slice(&xz_cache.#field.as_array()[..valid_lanes]);
+                    self.#grid[batch_start..batch_start + N]
+                        .copy_from_slice(xz_cache.#field.as_array());
                 }
             })
             .collect();
@@ -451,7 +451,7 @@ impl TranspileContext {
             })
             .collect();
 
-        let _inline_noise_grid_store_stmts: Vec<TokenStream> = self
+        let inline_noise_grid_store_stmts: Vec<TokenStream> = self
             .inline_flat_noises
             .values()
             .map(|(idx, _, _)| {
@@ -525,15 +525,6 @@ impl TranspileContext {
             impl #cache {
                 /// Grid side length (quart positions per axis).
                 const GRID_SIDE: i32 = #grid_side_lit;
-                /// Logical SIMD width used to initialize the X/Z grid. We assume that most modern
-                /// hardware have at least AVX (cpu after 2011) and won't cause major slowdown on
-                /// cpu that don't have it.
-                const GRID_SIMD_LANES: usize = if SIMD_REGISTER_F64_SIZE < 4 {
-                    4
-                } else {
-                    SIMD_REGISTER_F64_SIZE
-                };
-
                 /// Create a new column cache without a pre-computed grid.
                 #[must_use]
                 pub fn new() -> Self {
@@ -560,19 +551,53 @@ impl TranspileContext {
                 /// After this call, `ensure()` for in-bounds positions copies from
                 /// the grid (O(1)). Out-of-bounds positions fall back to on-the-fly
                 /// evaluation at raw (non-quantized) coordinates.
-                pub fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32,
-                                 noises: &#noises) {
-                    self.init_grid_simd::<{ Self::GRID_SIMD_LANES }>(
-                        chunk_block_x,
-                        chunk_block_z,
-                        noises,
-                    );
+                pub fn init_grid(
+                    &mut self,
+                    chunk_block_x: i32,
+                    chunk_block_z: i32,
+                    noises: &#noises,
+                ) {
+                    #[cfg(all(
+                        any(target_arch = "x86", target_arch = "x86_64"),
+                        any(
+                            target_feature = "sse4.1",
+                            target_feature = "avx",
+                            target_feature = "avx2",
+                            target_feature = "avx512f",
+                        ),
+                    ))]
+                    {
+                        self.init_grid_simd::<8>(chunk_block_x, chunk_block_z, noises);
+                        return;
+                    }
+
+                    self.grid_first_quart_x = chunk_block_x >> 2;
+                    self.grid_first_quart_z = chunk_block_z >> 2;
+                    self.has_grid = true;
+                    self.valid = false;
+
+                    for rel_z in 0..Self::GRID_SIDE {
+                        for rel_x in 0..Self::GRID_SIDE {
+                            let x = ((self.grid_first_quart_x + rel_x) << 2) as f64;
+                            let z = ((self.grid_first_quart_z + rel_z) << 2) as f64;
+                            let idx = (rel_z * Self::GRID_SIDE + rel_x) as usize;
+
+                            #(#ensure_stmts)*
+                            #(#grid_store_stmts)*
+                            #(#router_ensure_stmts)*
+                            #(#router_grid_store_stmts)*
+                            #(#inline_noise_ensure_stmts)*
+                            #(#inline_noise_grid_store_stmts)*
+                        }
+                    }
                 }
 
                 /// Pre-compute the flat-noise grid with `N` logical SIMD lanes.
                 ///
-                /// [`Self::init_grid`] selects the width appropriate for normal
-                /// use; this form permits explicit-width performance measurement.
+                /// Full batches use SIMD; any remaining positions are evaluated
+                /// scalar so no inactive lanes are computed. This form permits
+                /// explicit-width performance measurement.
+                #[inline(always)]
                 pub fn init_grid_simd<const N: usize>(
                     &mut self,
                     chunk_block_x: i32,
@@ -584,26 +609,41 @@ impl TranspileContext {
                     self.has_grid = true;
                     self.valid = false;
 
-                    for batch_start in (0..#grid_total_lit).step_by(N) {
-                        let valid_lanes = (#grid_total_lit - batch_start).min(N);
+                    assert!(N > 0, "grid SIMD width must be positive");
+                    let simd_end = #grid_total_lit - #grid_total_lit % N;
+                    let mut xz_cache = #xz_cache::<N> {
+                        #(#xz_cache_defaults,)*
+                        #(#xz_router_defaults,)*
+                        #(#xz_inline_defaults,)*
+                    };
+                    for batch_start in (0..simd_end).step_by(N) {
                         let xs: Simd<f64, N> = Simd::from_array(std::array::from_fn(|lane| {
-                            let index = (batch_start + lane).min(#grid_total_lit - 1);
+                            let index = batch_start + lane;
                             let rel_x = index as i32 % Self::GRID_SIDE;
                             ((self.grid_first_quart_x + rel_x) << 2) as f64
                         }));
                         let zs: Simd<f64, N> = Simd::from_array(std::array::from_fn(|lane| {
-                            let index = (batch_start + lane).min(#grid_total_lit - 1);
+                            let index = batch_start + lane;
                             let rel_z = index as i32 / Self::GRID_SIDE;
                             ((self.grid_first_quart_z + rel_z) << 2) as f64
                         }));
-                        let mut xz_cache = #xz_cache::<N> {
-                            #(#xz_cache_defaults,)*
-                            #(#xz_router_defaults,)*
-                            #(#xz_inline_defaults,)*
-                        };
                         #(#xz_compute_stmts)*
                         #(#xz_router_compute_stmts)*
                         #(#xz_inline_compute_stmts)*
+                    }
+
+                    for idx in simd_end..#grid_total_lit {
+                        let rel_x = idx as i32 % Self::GRID_SIDE;
+                        let rel_z = idx as i32 / Self::GRID_SIDE;
+                        let x = ((self.grid_first_quart_x + rel_x) << 2) as f64;
+                        let z = ((self.grid_first_quart_z + rel_z) << 2) as f64;
+
+                        #(#ensure_stmts)*
+                        #(#grid_store_stmts)*
+                        #(#router_ensure_stmts)*
+                        #(#router_grid_store_stmts)*
+                        #(#inline_noise_ensure_stmts)*
+                        #(#inline_noise_grid_store_stmts)*
                     }
                 }
 
