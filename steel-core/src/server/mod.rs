@@ -84,9 +84,9 @@ use std::{
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
-    CCommandSuggestions, CEntityEvent, CGameEvent, CLogin, CPlayerInfoUpdate, CRemovePlayerInfo,
+    CCommandSuggestions, CEntityEvent, CLogin, CPlayerInfoUpdate, CRemovePlayerInfo,
     CSetDefaultSpawnPosition, CSystemChat, CTabList, CTickingState, CTickingStep,
-    CommonPlayerSpawnInfo, GameEventType, RelativeMovement,
+    CommonPlayerSpawnInfo, RelativeMovement,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::vanilla_game_rules::{
