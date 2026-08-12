@@ -24,12 +24,13 @@ pub struct Version {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Status {
     pub description: String,
     pub players: Option<Players>,
     pub version: Option<Version>,
     pub favicon: Option<String>,
-    pub enforce_secure_chat: bool,
+    pub enforces_secure_chat: bool,
 }
 
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
@@ -43,5 +44,28 @@ impl CStatusResponse {
     #[must_use]
     pub const fn new(status: Status) -> Self {
         Self { status }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Status;
+
+    #[test]
+    fn secure_chat_enforcement_uses_vanilla_json_name() {
+        let status = Status {
+            description: String::new(),
+            players: None,
+            version: None,
+            favicon: None,
+            enforces_secure_chat: true,
+        };
+        let json = serde_json::to_value(status).expect("status should serialize");
+
+        assert_eq!(
+            json.get("enforcesSecureChat"),
+            Some(&serde_json::json!(true))
+        );
+        assert!(json.get("enforce_secure_chat").is_none());
     }
 }

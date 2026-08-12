@@ -13,9 +13,8 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
-    BlockStateProperties, BoolProperty, Direction, EnumProperty,
+    Axis, BlockStateProperties, BoolProperty, Direction, EnumProperty,
 };
-use steel_utils::axis::Axis;
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Behavior for chain blocks (iron chain, waxed copper chains).
@@ -28,9 +27,9 @@ pub struct ChainBlock {
 }
 
 /// Axis property for the chain orientation.
-const AXIS: EnumProperty<Axis> = BlockStateProperties::AXIS;
+const AXIS: &EnumProperty<Axis> = &BlockStateProperties::AXIS;
 /// Waterlogged property.
-const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl ChainBlock {
     /// Creates a new chain block behavior for the given block.
@@ -45,8 +44,8 @@ impl BlockBehavior for ChainBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&AXIS, context.clicked_face().get_axis())
-                .set_value(&WATERLOGGED, context.is_water_source()),
+                .set_value(AXIS, context.clicked_face().get_axis())
+                .set_value(WATERLOGGED, context.is_water_source()),
         )
     }
 
@@ -98,8 +97,8 @@ impl BlockBehavior for WeatheringCopperChainBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&AXIS, context.clicked_face().get_axis())
-                .set_value(&WATERLOGGED, context.is_water_source()),
+                .set_value(AXIS, context.clicked_face().get_axis())
+                .set_value(WATERLOGGED, context.is_water_source()),
         )
     }
 
