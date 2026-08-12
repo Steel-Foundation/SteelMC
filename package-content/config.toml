@@ -26,7 +26,6 @@ encryption = true
 allow_flight = false
 # Message of the day displayed in server lists
 motd = "A Steel Server"
-
 # Whether to use a custom favicon for the server
 use_favicon = true
 # Path to the favicon file (PNG format, 64x64 pixels)

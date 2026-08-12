@@ -42,7 +42,7 @@ hooks = [
         entry = "typos",
         types = ["text"],
         pass_filenames = false,
-        priority = 20
+        priority = 10
     },
     {
         id = "cargo-fmt",
@@ -69,6 +69,6 @@ hooks = [
         entry = "cargo test --workspace",
         types = ["rust"],
         pass_filenames = false,
-        priority = 50
+        priority = 40
     },
 ]

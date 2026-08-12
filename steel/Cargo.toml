@@ -19,6 +19,7 @@ futures.workspace = true
 # Serialization
 serde.workspace = true
 toml.workspace = true
+toml_edit.workspace = true
 
 # Concurrency
 parking_lot = { workspace = true, features = [
