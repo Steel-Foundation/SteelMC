@@ -2709,6 +2709,7 @@ dependencies = [
  "heck",
  "log",
  "md5",
+ "mimalloc",
  "parking_lot",
  "proc-macro2",
  "quote",

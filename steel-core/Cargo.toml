@@ -88,10 +88,16 @@ glob = "0.3.4"
 
 [dev-dependencies]
 criterion.workspace = true
+mimalloc = "0.1.52"
 steel-registry.workspace = true
 
 [[bench]]
 name = "worldgen"
+harness = false
+required-features = ["benchmark-support"]
+
+[[bench]]
+name = "pregen"
 harness = false
 required-features = ["benchmark-support"]
 

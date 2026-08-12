@@ -432,6 +432,13 @@ impl ChunkMap {
         self.generation_refill_notify.notify_waiters();
     }
 
+    /// Stops generation and waits for the outstanding chunk work to finish.
+    pub async fn quiesce(&self) {
+        self.stop_generation_refill_loop();
+        self.task_tracker.close();
+        self.task_tracker.wait().await;
+    }
+
     pub(crate) fn notify_generation_refill(&self) {
         self.generation_refill_notify.notify_one();
     }

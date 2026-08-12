@@ -17,6 +17,8 @@ use steel_utils::types::Difficulty;
 use steel_utils::{BlockPos, GlobalPos, Identifier};
 use tokio::fs;
 
+use crate::worldgen::GeneratorOutput;
+
 use crate::world::clock::WorldClockManager;
 
 /// Persistent world border data stored with Steel level data.
@@ -134,6 +136,18 @@ impl WorldGenerationSettings {
             min_y,
             height,
         }
+    }
+
+    /// The same, taking the dimension fields from a built generator.
+    #[must_use]
+    pub fn from_generator_output(generator: Identifier, output: &GeneratorOutput) -> Self {
+        Self::from_generator_config(
+            generator,
+            &output.config,
+            output.dimension_type.key.clone(),
+            output.dimension_type.min_y,
+            output.dimension_type.height,
+        )
     }
 }
 
