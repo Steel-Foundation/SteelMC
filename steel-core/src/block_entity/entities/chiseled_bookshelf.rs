@@ -27,6 +27,10 @@ use crate::world::{LevelReader as _, World, game_event::GameEventContext};
 pub const CHISELED_BOOKSHELF_SLOTS: usize = 6;
 
 const DEFAULT_LAST_INTERACTED_SLOT: i32 = -1;
+const ITEMS_NBT_KEY: &str = "Items";
+const ITEM_SLOT_NBT_KEY: &str = "Slot";
+const LAST_INTERACTED_SLOT_NBT_KEY: &str = "last_interacted_slot";
+const MAX_BOOKS_PER_SLOT: i32 = 1;
 
 const OCCUPIED_PROPERTIES: [&BoolProperty; CHISELED_BOOKSHELF_SLOTS] = [
     &BlockStateProperties::SLOT_0_OCCUPIED,
@@ -40,7 +44,7 @@ const OCCUPIED_PROPERTIES: [&BoolProperty; CHISELED_BOOKSHELF_SLOTS] = [
 struct ChiseledBookShelfContainer {
     items: Vec<ItemStack>,
     last_interacted_slot: i32,
-    pending_state_update: Option<usize>,
+    state_update_pending: bool,
 }
 
 /// Six-slot storage for a chiseled bookshelf.
@@ -78,7 +82,7 @@ impl ChiseledBookShelfBlockEntity {
                 .map(|_| ItemStack::empty())
                 .collect(),
             last_interacted_slot: DEFAULT_LAST_INTERACTED_SLOT,
-            pending_state_update: None,
+            state_update_pending: false,
         }));
         let callback_container = Arc::clone(&container);
         let after_changed = Arc::new(move || {
@@ -104,9 +108,10 @@ impl ChiseledBookShelfBlockEntity {
     ) {
         let occupied = {
             let mut container = container.lock();
-            let Some(_) = container.pending_state_update.take() else {
+            if !container.state_update_pending {
                 return;
-            };
+            }
+            container.state_update_pending = false;
             container
                 .items
                 .iter()
@@ -163,7 +168,7 @@ impl ChiseledBookShelfBlockEntity {
         }
         let mut guard = ContainerLockGuard::lock_all(&[&self.container_ref]);
         guard
-            .remove_item(self.container_ref.container_id(), slot, 1)
+            .remove_item(self.container_ref.container_id(), slot, MAX_BOOKS_PER_SLOT)
             .unwrap_or_else(ItemStack::empty)
     }
 
@@ -188,7 +193,7 @@ impl ChiseledBookShelfBlockEntity {
         for (destination, item) in container.items.iter_mut().zip(items) {
             *destination = item;
         }
-        container.pending_state_update = None;
+        container.state_update_pending = false;
         drop(container);
         BlockEntity::set_changed(self);
     }
@@ -220,7 +225,7 @@ impl BlockEntity for ChiseledBookShelfBlockEntity {
     fn pre_remove_side_effects(&self, pos: BlockPos, _state: BlockStateId) {
         let items = {
             let mut container = self.container.lock();
-            container.pending_state_update = None;
+            container.state_update_pending = false;
             mem::replace(
                 &mut container.items,
                 (0..CHISELED_BOOKSHELF_SLOTS)
@@ -240,13 +245,13 @@ impl BlockEntity for ChiseledBookShelfBlockEntity {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
         let mut container = self.container.lock();
         container.items.fill_with(ItemStack::empty);
-        container.pending_state_update = None;
+        container.state_update_pending = false;
 
-        if let Some(items) = nbt.list("Items")
+        if let Some(items) = nbt.list(ITEMS_NBT_KEY)
             && let Some(compounds) = items.compounds()
         {
             for compound in compounds {
-                let Some(slot) = compound.byte("Slot") else {
+                let Some(slot) = compound.byte(ITEM_SLOT_NBT_KEY) else {
                     continue;
                 };
                 let Ok(slot) = usize::try_from(slot) else {
@@ -260,7 +265,7 @@ impl BlockEntity for ChiseledBookShelfBlockEntity {
             }
         }
         container.last_interacted_slot = nbt
-            .int("last_interacted_slot")
+            .int(LAST_INTERACTED_SLOT_NBT_KEY)
             .unwrap_or(DEFAULT_LAST_INTERACTED_SLOT);
     }
 
@@ -273,12 +278,12 @@ impl BlockEntity for ChiseledBookShelfBlockEntity {
             }
             if let NbtTag::Compound(mut item_nbt) = item.copy_with_count(item.count()).to_nbt_tag()
             {
-                item_nbt.insert("Slot", slot as i8);
+                item_nbt.insert(ITEM_SLOT_NBT_KEY, slot as i8);
                 items.push(item_nbt);
             }
         }
-        nbt.insert("Items", NbtList::Compound(items));
-        nbt.insert("last_interacted_slot", container.last_interacted_slot);
+        nbt.insert(ITEMS_NBT_KEY, NbtList::Compound(items));
+        nbt.insert(LAST_INTERACTED_SLOT_NBT_KEY, container.last_interacted_slot);
     }
 
     fn container_ref(&self) -> Option<ContainerRef> {
@@ -300,7 +305,7 @@ impl Container for ChiseledBookShelfContainer {
             return;
         }
         if stack.is_empty() {
-            let _ = self.remove_item(slot, 1);
+            let _ = self.remove_item(slot, MAX_BOOKS_PER_SLOT);
             return;
         }
         if !stack.item().has_tag(&ItemTag::BOOKSHELF_BOOKS) {
@@ -309,7 +314,7 @@ impl Container for ChiseledBookShelfContainer {
 
         self.items[slot] = stack;
         self.last_interacted_slot = slot as i32;
-        self.pending_state_update = Some(slot);
+        self.state_update_pending = true;
     }
 
     fn remove_item(&mut self, slot: usize, _count: i32) -> ItemStack {
@@ -319,13 +324,13 @@ impl Container for ChiseledBookShelfContainer {
         let removed = mem::take(item);
         if !removed.is_empty() {
             self.last_interacted_slot = slot as i32;
-            self.pending_state_update = Some(slot);
+            self.state_update_pending = true;
         }
         removed
     }
 
     fn get_max_stack_size(&self) -> i32 {
-        1
+        MAX_BOOKS_PER_SLOT
     }
 
     fn set_changed(&mut self) {}
@@ -354,11 +359,23 @@ mod tests {
     use super::*;
     use crate::inventory::container::SimpleContainer;
 
+    const TEST_POS: BlockPos = BlockPos::new(1, 2, 3);
+    const FIRST_SLOT_INDEX: usize = 0;
+    const LAST_SLOT_INDEX: usize = CHISELED_BOOKSHELF_SLOTS - 1;
+    const INTERACTION_TEST_SLOT: usize = 4;
+    const OVERSIZED_TEST_STACK_COUNT: i32 = MAX_BOOKS_PER_SLOT + 1;
+    const DESTINATION_SLOT_COUNT: usize = 1;
+    const DESTINATION_SLOT_INDEX: usize = 0;
+    const WRITABLE_BOOK_COMPONENT_SLOT: usize = 0;
+    const EMPTY_COMPONENT_SLOT: usize = 1;
+    const ENCHANTED_BOOK_COMPONENT_SLOT: usize = 2;
+    const FIRST_UNSPECIFIED_COMPONENT_SLOT: usize = 3;
+
     fn test_bookshelf() -> ChiseledBookShelfBlockEntity {
         init_vanilla_registry();
         ChiseledBookShelfBlockEntity::new(
             Weak::new(),
-            BlockPos::new(1, 2, 3),
+            TEST_POS,
             vanilla_blocks::CHISELED_BOOKSHELF.default_state(),
         )
     }
@@ -377,12 +394,15 @@ mod tests {
         for (slot, item) in valid_items.into_iter().enumerate() {
             assert!(bookshelf.insert_book(slot, ItemStack::new(item)));
         }
-        assert!(!bookshelf.insert_book(5, ItemStack::new(&vanilla_items::STONE)));
+        let invalid_item = ItemStack::new(&vanilla_items::STONE);
+        assert!(!bookshelf.insert_book(LAST_SLOT_INDEX, invalid_item));
 
         let container = bookshelf.container.lock();
-        assert_eq!(container.get_max_stack_size(), 1);
-        assert!(container.can_place_item(0, &ItemStack::new(&vanilla_items::BOOK)));
-        assert!(!container.can_place_item(0, &ItemStack::new(&vanilla_items::STONE)));
+        assert_eq!(container.get_max_stack_size(), MAX_BOOKS_PER_SLOT);
+        let valid_item = ItemStack::new(&vanilla_items::BOOK);
+        let invalid_item = ItemStack::new(&vanilla_items::STONE);
+        assert!(container.can_place_item(FIRST_SLOT_INDEX, &valid_item));
+        assert!(!container.can_place_item(FIRST_SLOT_INDEX, &invalid_item));
     }
 
     #[test]
@@ -393,17 +413,36 @@ mod tests {
             DEFAULT_LAST_INTERACTED_SLOT
         );
 
-        assert!(bookshelf.insert_book(4, ItemStack::with_count(&vanilla_items::WRITTEN_BOOK, 2),));
-        assert_eq!(bookshelf.last_interacted_slot(), 4);
-        assert_eq!(bookshelf.item(4).map(|item| item.count()), Some(2));
-        assert!(!bookshelf.insert_book(4, ItemStack::new(&vanilla_items::BOOK)));
+        assert!(bookshelf.insert_book(
+            INTERACTION_TEST_SLOT,
+            ItemStack::with_count(&vanilla_items::WRITTEN_BOOK, OVERSIZED_TEST_STACK_COUNT),
+        ));
+        assert_eq!(
+            bookshelf.last_interacted_slot(),
+            INTERACTION_TEST_SLOT as i32,
+        );
+        assert_eq!(
+            bookshelf
+                .item(INTERACTION_TEST_SLOT)
+                .map(|item| item.count()),
+            Some(OVERSIZED_TEST_STACK_COUNT),
+        );
+        let replacement = ItemStack::new(&vanilla_items::BOOK);
+        assert!(!bookshelf.insert_book(INTERACTION_TEST_SLOT, replacement));
 
-        let removed = bookshelf.remove_book(4);
+        let removed = bookshelf.remove_book(INTERACTION_TEST_SLOT);
         assert!(removed.is(&vanilla_items::WRITTEN_BOOK));
-        assert_eq!(removed.count(), 2);
-        assert_eq!(bookshelf.last_interacted_slot(), 4);
-        assert!(bookshelf.item(4).is_some_and(|item| item.is_empty()));
-        assert!(bookshelf.remove_book(4).is_empty());
+        assert_eq!(removed.count(), OVERSIZED_TEST_STACK_COUNT);
+        assert_eq!(
+            bookshelf.last_interacted_slot(),
+            INTERACTION_TEST_SLOT as i32,
+        );
+        assert!(
+            bookshelf
+                .item(INTERACTION_TEST_SLOT)
+                .is_some_and(|item| item.is_empty())
+        );
+        assert!(bookshelf.remove_book(INTERACTION_TEST_SLOT).is_empty());
     }
 
     #[test]
@@ -411,37 +450,51 @@ mod tests {
         let bookshelf = test_bookshelf();
         let source = ItemStack::new(&vanilla_items::BOOK);
         let container = bookshelf.container.lock();
-        let mut destination = SimpleContainer::new(1);
+        let mut destination = SimpleContainer::new(DESTINATION_SLOT_COUNT);
+        let full_stack_size = source.max_stack_size();
+        let one_item_short_of_full_stack = full_stack_size - 1;
 
-        assert!(container.can_take_item(&destination, 0, &source));
-        destination.set_item(0, ItemStack::with_count(&vanilla_items::STONE, 99));
-        assert!(!container.can_take_item(&destination, 0, &source));
-        destination.set_item(0, ItemStack::with_count(&vanilla_items::BOOK, 63));
-        assert!(container.can_take_item(&destination, 0, &source));
-        destination.set_item(0, ItemStack::with_count(&vanilla_items::BOOK, 64));
-        assert!(!container.can_take_item(&destination, 0, &source));
+        assert!(container.can_take_item(&destination, DESTINATION_SLOT_INDEX, &source));
+        destination.set_item(
+            DESTINATION_SLOT_INDEX,
+            ItemStack::new(&vanilla_items::STONE),
+        );
+        assert!(!container.can_take_item(&destination, DESTINATION_SLOT_INDEX, &source));
+        destination.set_item(
+            DESTINATION_SLOT_INDEX,
+            ItemStack::with_count(&vanilla_items::BOOK, one_item_short_of_full_stack),
+        );
+        assert!(container.can_take_item(&destination, DESTINATION_SLOT_INDEX, &source));
+        destination.set_item(
+            DESTINATION_SLOT_INDEX,
+            ItemStack::with_count(&vanilla_items::BOOK, full_stack_size),
+        );
+        assert!(!container.can_take_item(&destination, DESTINATION_SLOT_INDEX, &source));
     }
 
     #[test]
     fn persistence_and_container_component_preserve_all_slots_and_last_slot() {
         let bookshelf = test_bookshelf();
-        for slot in 0..5 {
+        for slot in 0..LAST_SLOT_INDEX {
             assert!(bookshelf.insert_book(slot, ItemStack::new(&vanilla_items::BOOK)));
         }
-        assert!(bookshelf.insert_book(5, ItemStack::new(&vanilla_items::ENCHANTED_BOOK),));
+        assert!(bookshelf.insert_book(
+            LAST_SLOT_INDEX,
+            ItemStack::new(&vanilla_items::ENCHANTED_BOOK),
+        ));
 
         let component = bookshelf
             .collect_container_component()
             .expect("valid bookshelf items should form a container component");
         assert_eq!(component.items().len(), CHISELED_BOOKSHELF_SLOTS);
-        for item in &component.items()[..5] {
+        for item in &component.items()[..LAST_SLOT_INDEX] {
             assert!(
                 item.as_ref()
                     .is_some_and(|item| item.item().key == vanilla_items::BOOK.key)
             );
         }
         assert!(
-            component.items()[5]
+            component.items()[LAST_SLOT_INDEX]
                 .as_ref()
                 .is_some_and(|item| item.item().key == vanilla_items::ENCHANTED_BOOK.key)
         );
@@ -455,8 +508,8 @@ mod tests {
 
         let loaded = test_bookshelf();
         loaded.load_additional(&borrowed);
-        assert_eq!(loaded.last_interacted_slot(), 5);
-        for slot in 0..5 {
+        assert_eq!(loaded.last_interacted_slot(), LAST_SLOT_INDEX as i32);
+        for slot in 0..LAST_SLOT_INDEX {
             assert!(
                 loaded
                     .item(slot)
@@ -465,7 +518,7 @@ mod tests {
         }
         assert!(
             loaded
-                .item(5)
+                .item(LAST_SLOT_INDEX)
                 .is_some_and(|item| item.is(&vanilla_items::ENCHANTED_BOOK))
         );
     }
@@ -473,7 +526,8 @@ mod tests {
     #[test]
     fn component_application_replaces_all_six_slots_without_changing_last_slot() {
         let bookshelf = test_bookshelf();
-        assert!(bookshelf.insert_book(4, ItemStack::new(&vanilla_items::BOOK)));
+        let previously_inserted_book = ItemStack::new(&vanilla_items::BOOK);
+        assert!(bookshelf.insert_book(INTERACTION_TEST_SLOT, previously_inserted_book));
 
         bookshelf.apply_container_items(vec![
             ItemStack::new(&vanilla_items::WRITABLE_BOOK),
@@ -481,19 +535,26 @@ mod tests {
             ItemStack::new(&vanilla_items::ENCHANTED_BOOK),
         ]);
 
-        assert_eq!(bookshelf.last_interacted_slot(), 4);
+        assert_eq!(
+            bookshelf.last_interacted_slot(),
+            INTERACTION_TEST_SLOT as i32,
+        );
         assert!(
             bookshelf
-                .item(0)
+                .item(WRITABLE_BOOK_COMPONENT_SLOT)
                 .is_some_and(|item| item.is(&vanilla_items::WRITABLE_BOOK))
         );
-        assert!(bookshelf.item(1).is_some_and(|item| item.is_empty()));
         assert!(
             bookshelf
-                .item(2)
+                .item(EMPTY_COMPONENT_SLOT)
+                .is_some_and(|item| item.is_empty())
+        );
+        assert!(
+            bookshelf
+                .item(ENCHANTED_BOOK_COMPONENT_SLOT)
                 .is_some_and(|item| item.is(&vanilla_items::ENCHANTED_BOOK))
         );
-        for slot in 3..CHISELED_BOOKSHELF_SLOTS {
+        for slot in FIRST_UNSPECIFIED_COMPONENT_SLOT..CHISELED_BOOKSHELF_SLOTS {
             assert!(bookshelf.item(slot).is_some_and(|item| item.is_empty()));
         }
     }

@@ -295,22 +295,21 @@ fn mirrored_door_transform_toggles_hinge() {
 #[test]
 fn chiseled_bookshelf_rotation_and_mirror_preserve_occupied_slots() {
     let registry = test_registry();
-    let bookshelf = registry
+    let occupied_properties = [
+        &BlockStateProperties::SLOT_0_OCCUPIED,
+        &BlockStateProperties::SLOT_4_OCCUPIED,
+    ];
+    let mut bookshelf = registry
         .blocks
         .get_default_state_id(&vanilla_blocks::CHISELED_BOOKSHELF);
-    let bookshelf = registry.blocks.set_property(
+    bookshelf = registry.blocks.set_property(
         bookshelf,
         &BlockStateProperties::HORIZONTAL_FACING,
         Direction::North,
     );
-    let bookshelf =
-        registry
-            .blocks
-            .set_property(bookshelf, &BlockStateProperties::SLOT_0_OCCUPIED, true);
-    let bookshelf =
-        registry
-            .blocks
-            .set_property(bookshelf, &BlockStateProperties::SLOT_4_OCCUPIED, true);
+    for property in occupied_properties {
+        bookshelf = registry.blocks.set_property(bookshelf, property, true);
+    }
 
     let rotated = StructureTemplate::transform_state(
         &registry,
@@ -339,18 +338,12 @@ fn chiseled_bookshelf_rotation_and_mirror_preserve_occupied_slots() {
     );
 
     for transformed in [rotated, mirrored] {
-        assert_eq!(
-            registry
-                .blocks
-                .try_get_property(transformed, &BlockStateProperties::SLOT_0_OCCUPIED),
-            Some(true),
-        );
-        assert_eq!(
-            registry
-                .blocks
-                .try_get_property(transformed, &BlockStateProperties::SLOT_4_OCCUPIED),
-            Some(true),
-        );
+        for property in occupied_properties {
+            assert_eq!(
+                registry.blocks.try_get_property(transformed, property),
+                Some(true),
+            );
+        }
     }
 }
 
