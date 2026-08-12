@@ -33,7 +33,7 @@ pub struct GrowingPlantHeadBlock {
     get_blocks_to_grow_when_bonemealed: Option<fn(&mut dyn Rng) -> i32>,
     can_grow_into: fn(BlockStateId) -> bool,
 }
-const AGE: IntProperty = BlockStateProperties::AGE_25;
+const AGE: &IntProperty = &BlockStateProperties::AGE_25;
 
 impl GrowingPlantHeadBlock {
     /// Creates a new growing plant head behavior.
@@ -82,7 +82,7 @@ impl GrowingPlantHeadBlock {
 
     fn cycle_age(grow_from_state: BlockStateId) -> BlockStateId {
         let values = AGE.get_possible_values();
-        let current = grow_from_state.get_value(&AGE);
+        let current = grow_from_state.get_value(AGE);
 
         let Some(next_age) = values
             .iter()
@@ -91,7 +91,7 @@ impl GrowingPlantHeadBlock {
         else {
             return grow_from_state;
         };
-        grow_from_state.set_value(&AGE, next_age)
+        grow_from_state.set_value(AGE, next_age)
     }
     const fn unchanged_converted_state(
         _head_state: BlockStateId,
@@ -107,7 +107,7 @@ impl GrowingPlantHeadBlock {
     pub fn get_head_state(block: BlockRef, rng: &mut dyn Rng) -> BlockStateId {
         block
             .default_state()
-            .set_value(&AGE, rng.random_range(0..25))
+            .set_value(AGE, rng.random_range(0..25))
     }
 
     fn state_for_placement(
@@ -140,7 +140,7 @@ impl BlockBehavior for GrowingPlantHeadBlock {
     }
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let mut rng = rng();
-        if state.get_value(&AGE) < 25 && rng.random::<f64>() < self.grow_per_tick_probability {
+        if state.get_value(AGE) < 25 && rng.random::<f64>() < self.grow_per_tick_probability {
             let growth_pos = pos.relative(self.growth_direction);
             if (self.can_grow_into)(world.get_block_state(growth_pos)) {
                 let grown_state = (self.update_grow_into_state)(Self::cycle_age(state), &mut rng);
@@ -230,7 +230,7 @@ impl Bonemealable for GrowingPlantHeadBlock {
         pos: BlockPos,
     ) {
         let mut forward_pos = pos.relative(self.growth_direction);
-        let mut next_age = (state.get_value(&AGE) + 1).min(25);
+        let mut next_age = (state.get_value(AGE) + 1).min(25);
         let Some(get_blocks_to_grow) = self.get_blocks_to_grow_when_bonemealed else {
             return;
         };
@@ -245,7 +245,7 @@ impl Bonemealable for GrowingPlantHeadBlock {
 
             world.set_block(
                 forward_pos,
-                state.set_value(&AGE, next_age),
+                state.set_value(AGE, next_age),
                 UpdateFlags::UPDATE_ALL,
             );
             forward_pos = forward_pos.relative(self.growth_direction);

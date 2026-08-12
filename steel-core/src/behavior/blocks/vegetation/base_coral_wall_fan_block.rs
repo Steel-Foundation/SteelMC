@@ -1,6 +1,8 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, Direction, EnumProperty,
+};
 use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -15,6 +17,9 @@ use super::BlockRef;
 pub struct BaseCoralWallFanBlock {
     block: BlockRef,
 }
+
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl BaseCoralWallFanBlock {
     /// Creates a new dead coral wall fan block behavior.
@@ -39,7 +44,7 @@ impl BaseCoralWallFanBlock {
 
 impl BlockBehavior for BaseCoralWallFanBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let facing = state.get_value(HORIZONTAL_FACING);
         Self::coral_wall_fan_can_survive(world, pos, facing)
     }
 
@@ -52,12 +57,12 @@ impl BlockBehavior for BaseCoralWallFanBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
+        if state.get_value(WATERLOGGED) {
             let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
             let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
         }
 
-        if direction.opposite() == state.get_value(&BlockStateProperties::HORIZONTAL_FACING)
+        if direction.opposite() == state.get_value(HORIZONTAL_FACING)
             && !self.can_survive(state, world, pos)
         {
             vanilla_blocks::AIR.default_state()
@@ -70,7 +75,7 @@ impl BlockBehavior for BaseCoralWallFanBlock {
         let state = self
             .block
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, context.is_full_water());
+            .set_value(WATERLOGGED, context.is_full_water());
 
         context
             .get_nearest_looking_directions()
@@ -78,7 +83,7 @@ impl BlockBehavior for BaseCoralWallFanBlock {
             .filter(|direction| direction.is_horizontal())
             .map(|direction| {
                 state.set_value(
-                    &BlockStateProperties::HORIZONTAL_FACING,
+                    HORIZONTAL_FACING,
                     direction.opposite(),
                 )
             })

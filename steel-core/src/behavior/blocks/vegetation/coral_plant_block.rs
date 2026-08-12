@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
@@ -23,6 +23,8 @@ pub struct CoralPlantBlock {
     dead_block: BlockRef,
 }
 
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+
 impl CoralPlantBlock {
     /// Creates a new live coral plant block behavior.
     #[must_use]
@@ -33,7 +35,7 @@ impl CoralPlantBlock {
     fn dead_state(&self) -> BlockStateId {
         self.dead_block
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, false)
+            .set_value(WATERLOGGED, false)
     }
 }
 
@@ -68,7 +70,7 @@ impl BlockBehavior for CoralPlantBlock {
 
         CoralBlock::schedule_die_tick(state, world, pos, self.block);
 
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
+        if state.get_value(WATERLOGGED) {
             let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
             let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
         }
@@ -82,7 +84,7 @@ impl BlockBehavior for CoralPlantBlock {
             return None;
         }
         // Vanilla: WATERLOGGED reflects whether the click position has full water.
-        Some(state.set_value(&BlockStateProperties::WATERLOGGED, context.is_full_water()))
+        Some(state.set_value(WATERLOGGED, context.is_full_water()))
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
@@ -119,7 +121,7 @@ mod tests {
         let level = supported_level();
         let state = vanilla_blocks::TUBE_CORAL
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, false);
+            .set_value(WATERLOGGED, false);
 
         assert_eq!(
             behavior.update_shape(
@@ -150,7 +152,7 @@ mod tests {
         let level = supported_level();
         let state = vanilla_blocks::TUBE_CORAL
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, true);
+            .set_value(WATERLOGGED, true);
 
         assert_eq!(
             behavior.update_shape(

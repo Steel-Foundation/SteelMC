@@ -22,7 +22,13 @@ pub struct MultifaceBlock {
     block: BlockRef,
 }
 
-const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+const DOWN: &BoolProperty = &BlockStateProperties::DOWN;
+const EAST: &BoolProperty = &BlockStateProperties::EAST;
+const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
+const SOUTH: &BoolProperty = &BlockStateProperties::SOUTH;
+const UP: &BoolProperty = &BlockStateProperties::UP;
+const WEST: &BoolProperty = &BlockStateProperties::WEST;
 
 impl MultifaceBlock {
     /// Creates a new multiface block behavior.
@@ -83,12 +89,12 @@ impl MultifaceBlock {
     /// Vanilla `MultifaceBlock.getFaceProperty(faceDirection)`.
     pub(super) const fn face_property(direction: Direction) -> &'static BoolProperty {
         match direction {
-            Direction::Up => &BlockStateProperties::UP,
-            Direction::Down => &BlockStateProperties::DOWN,
-            Direction::North => &BlockStateProperties::NORTH,
-            Direction::South => &BlockStateProperties::SOUTH,
-            Direction::East => &BlockStateProperties::EAST,
-            Direction::West => &BlockStateProperties::WEST,
+            Direction::Up => UP,
+            Direction::Down => DOWN,
+            Direction::North => NORTH,
+            Direction::South => SOUTH,
+            Direction::East => EAST,
+            Direction::West => WEST,
         }
     }
 
@@ -119,7 +125,7 @@ impl MultifaceBlock {
         } else {
             let fluid_state = get_fluid_state_from_block(old_state);
             if fluid_state.is_water() && fluid_state.is_source() {
-                block.default_state().set_value(&WATERLOGGED, true)
+                block.default_state().set_value(WATERLOGGED, true)
             } else {
                 block.default_state()
             }

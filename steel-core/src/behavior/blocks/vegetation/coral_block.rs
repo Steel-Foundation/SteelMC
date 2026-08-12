@@ -20,7 +20,7 @@ pub struct CoralBlock {
     dead_block: BlockRef,
 }
 
-const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 const MIN_WATER_CHECK_DELAY: i32 = 60;
 
 impl CoralBlock {
@@ -49,7 +49,7 @@ impl CoralBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        if state.try_get_value(&WATERLOGGED) == Some(true) {
+        if state.try_get_value(WATERLOGGED) == Some(true) {
             return true;
         }
 

@@ -255,12 +255,15 @@ pub fn get_top_connected_block(
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::blocks::properties::BlockStateProperties;
+    use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
     use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::test_support::TestLevel;
+
+const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
     #[test]
     fn multiface_update_uses_supplied_neighbor_state_and_schedules_water_first() {
@@ -269,8 +272,8 @@ mod tests {
         let pos = BlockPos::new(0, 64, 0);
         let state = vanilla_blocks::GLOW_LICHEN
             .default_state()
-            .set_value(&BlockStateProperties::NORTH, true)
-            .set_value(&BlockStateProperties::WATERLOGGED, true);
+            .set_value(NORTH, true)
+            .set_value(WATERLOGGED, true);
         let level =
             TestLevel::default().with_block(pos.north(), vanilla_blocks::STONE.default_state());
 

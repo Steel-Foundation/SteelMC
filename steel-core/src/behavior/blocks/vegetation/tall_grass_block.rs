@@ -5,7 +5,7 @@ use steel_registry::{
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt,
-        properties::{BlockStateProperties, DoubleBlockHalf},
+        properties::{BlockStateProperties, DoubleBlockHalf, EnumProperty},
     },
     vanilla_blocks,
 };
@@ -32,6 +32,8 @@ use crate::{
 pub struct TallGrassBlock {
     base: DoublePlantBlock,
 }
+
+const DOUBLE_BLOCK_HALF: &EnumProperty<DoubleBlockHalf> = &BlockStateProperties::DOUBLE_BLOCK_HALF;
 
 impl TallGrassBlock {
     /// Creates a new tall grass behavior.
@@ -87,10 +89,9 @@ impl Bonemealable for TallGrassBlock {
         pos: BlockPos,
     ) -> bool {
         let above_pos = pos.above();
-        let lower_state = Self::large_variant(state).default_state().set_value(
-            &BlockStateProperties::DOUBLE_BLOCK_HALF,
-            DoubleBlockHalf::Lower,
-        );
+        let lower_state = Self::large_variant(state)
+            .default_state()
+            .set_value(DOUBLE_BLOCK_HALF, DoubleBlockHalf::Lower);
         !world.is_outside_build_height(above_pos.y())
             && self.base.can_survive(lower_state, world, pos)
             && world.get_block_state(above_pos).is_air()

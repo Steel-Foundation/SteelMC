@@ -5,7 +5,7 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, IntProperty};
 use steel_registry::{vanilla_blocks, vanilla_game_rules};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
@@ -29,6 +29,9 @@ const TRAMPLE_VOLUME_THRESHOLD: f64 = 0.512;
 pub struct FarmlandBlock {
     block: BlockRef,
 }
+
+const MOISTURE: &IntProperty = &BlockStateProperties::MOISTURE;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl FarmlandBlock {
     /// Creates a new farmland block behavior.
@@ -56,7 +59,7 @@ impl FarmlandBlock {
 
                     // Check if block is waterlogged
                     if state
-                        .try_get_value(&BlockStateProperties::WATERLOGGED)
+                        .try_get_value(WATERLOGGED)
                         .unwrap_or(false)
                     {
                         return true;
@@ -106,12 +109,12 @@ impl BlockBehavior for FarmlandBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&BlockStateProperties::MOISTURE, 0u8),
+                .set_value(MOISTURE, 0u8),
         )
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        let moisture: u8 = state.get_value(&BlockStateProperties::MOISTURE);
+        let moisture: u8 = state.get_value(MOISTURE);
 
         let is_near_water = Self::is_near_water(world, pos);
         let is_raining = world.is_raining_at(pos.above());
@@ -120,7 +123,7 @@ impl BlockBehavior for FarmlandBlock {
             // Not near water - decrease moisture or turn to dirt
             if moisture > 0 {
                 // Decrease moisture by 1
-                let new_state = state.set_value(&BlockStateProperties::MOISTURE, moisture - 1);
+                let new_state = state.set_value(MOISTURE, moisture - 1);
                 world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
             } else if !Self::should_maintain_farmland(world, pos) {
                 // No moisture and no crop - turn to dirt
@@ -128,7 +131,7 @@ impl BlockBehavior for FarmlandBlock {
             }
         } else if moisture < MAX_MOISTURE {
             // Near water - hydrate to max
-            let new_state = state.set_value(&BlockStateProperties::MOISTURE, MAX_MOISTURE);
+            let new_state = state.set_value(MOISTURE, MAX_MOISTURE);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         }
     }

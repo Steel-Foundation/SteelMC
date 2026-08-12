@@ -7,7 +7,7 @@ use std::sync::{Arc, Weak};
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
 use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId, translations};
 use text_components::TextComponent;
@@ -31,6 +31,8 @@ pub struct BarrelBlock {
     block: BlockRef,
 }
 
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
+
 impl BarrelBlock {
     /// Creates a new barrel block behavior.
     #[must_use]
@@ -47,7 +49,7 @@ impl BlockBehavior for BarrelBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&BlockStateProperties::FACING, facing),
+                .set_value(FACING, facing),
         )
     }
 

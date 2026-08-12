@@ -7,7 +7,7 @@ use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::types::{InteractionHand, UpdateFlags};
@@ -27,6 +27,8 @@ pub struct RedStoneOreBlock {
     block: BlockRef,
 }
 
+const LIT: &BoolProperty = &BlockStateProperties::LIT;
+
 impl RedStoneOreBlock {
     /// Creates a redstone ore behavior.
     #[must_use]
@@ -35,13 +37,13 @@ impl RedStoneOreBlock {
     }
 
     fn interact(state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if state.get_value(&BlockStateProperties::LIT) {
+        if state.get_value(LIT) {
             return;
         }
 
         world.set_block(
             pos,
-            state.set_value(&BlockStateProperties::LIT, true),
+            state.set_value(LIT, true),
             UpdateFlags::UPDATE_ALL,
         );
     }
@@ -94,10 +96,10 @@ impl BlockBehavior for RedStoneOreBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if state.get_value(&BlockStateProperties::LIT) {
+        if state.get_value(LIT) {
             world.set_block(
                 pos,
-                state.set_value(&BlockStateProperties::LIT, false),
+                state.set_value(LIT, false),
                 UpdateFlags::UPDATE_ALL,
             );
         }
@@ -201,19 +203,19 @@ mod tests {
             assert!(
                 !world
                     .get_block_state(pos)
-                    .get_value(&BlockStateProperties::LIT)
+                    .get_value(LIT)
             );
 
             behavior.step_on(unlit, &world, pos, &ordinary_entity);
             let lit = world.get_block_state(pos);
-            assert!(lit.get_value(&BlockStateProperties::LIT));
+            assert!(lit.get_value(LIT));
             assert!(lit.is_randomly_ticking());
 
             behavior.random_tick(lit, &world, pos);
             assert!(
                 !world
                     .get_block_state(pos)
-                    .get_value(&BlockStateProperties::LIT)
+                    .get_value(LIT)
             );
         }
     }

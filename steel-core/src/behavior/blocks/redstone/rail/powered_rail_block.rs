@@ -3,7 +3,9 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, RailShape};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, EnumProperty, RailShape,
+};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -17,6 +19,9 @@ use super::base_rail_block::BaseRailBlock;
 pub struct PoweredRailBlock {
     base: BaseRailBlock,
 }
+
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
+const RAIL_SHAPE: &EnumProperty<RailShape> = &BlockStateProperties::RAIL_SHAPE;
 
 impl PoweredRailBlock {
     const MAX_SEARCH_DEPTH: i32 = 8;
@@ -45,7 +50,7 @@ impl PoweredRailBlock {
         let mut y = pos.y();
         let mut z = pos.z();
         let mut check_below = true;
-        let expected_shape = match state.get_value(&BlockStateProperties::RAIL_SHAPE) {
+        let expected_shape = match state.get_value(RAIL_SHAPE) {
             RailShape::NorthSouth => {
                 z += if forward { 1 } else { -1 };
                 RailShape::NorthSouth
@@ -125,7 +130,7 @@ impl PoweredRailBlock {
             return false;
         }
 
-        let shape = state.get_value(&BlockStateProperties::RAIL_SHAPE);
+        let shape = state.get_value(RAIL_SHAPE);
         let incompatible = match expected_shape {
             RailShape::EastWest => matches!(
                 shape,
@@ -144,7 +149,7 @@ impl PoweredRailBlock {
             | RailShape::NorthWest
             | RailShape::NorthEast => true,
         };
-        if incompatible || !state.get_value(&BlockStateProperties::POWERED) {
+        if incompatible || !state.get_value(POWERED) {
             return false;
         }
 
@@ -153,7 +158,7 @@ impl PoweredRailBlock {
     }
 
     fn update_powered_state(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        let was_powered = state.get_value(&BlockStateProperties::POWERED);
+        let was_powered = state.get_value(POWERED);
         let should_power = world.has_neighbor_signal(pos)
             || self.find_powered_rail_signal(world, pos, state, true, 0)
             || self.find_powered_rail_signal(world, pos, state, false, 0);
@@ -163,12 +168,12 @@ impl PoweredRailBlock {
 
         world.set_block(
             pos,
-            state.set_value(&BlockStateProperties::POWERED, should_power),
+            state.set_value(POWERED, should_power),
             UpdateFlags::UPDATE_ALL,
         );
         world.update_neighbors_at(pos.below(), self.base.block);
         if state
-            .get_value(&BlockStateProperties::RAIL_SHAPE)
+            .get_value(RAIL_SHAPE)
             .is_slope()
         {
             world.update_neighbors_at(pos.above(), self.base.block);
@@ -283,8 +288,8 @@ mod tests {
             );
             let state = vanilla_blocks::POWERED_RAIL
                 .default_state()
-                .set_value(&BlockStateProperties::RAIL_SHAPE, RailShape::EastWest)
-                .set_value(&BlockStateProperties::POWERED, x != 0);
+                .set_value(RAIL_SHAPE, RailShape::EastWest)
+                .set_value(POWERED, x != 0);
             world.set_block(pos, state, raw_flags());
         }
         world.set_block(
@@ -324,14 +329,14 @@ mod tests {
         }
         let start_state = vanilla_blocks::POWERED_RAIL
             .default_state()
-            .set_value(&BlockStateProperties::RAIL_SHAPE, RailShape::EastWest);
+            .set_value(RAIL_SHAPE, RailShape::EastWest);
         world.set_block(start, start_state, raw_flags());
         world.set_block(
             start.east(),
             vanilla_blocks::ACTIVATOR_RAIL
                 .default_state()
-                .set_value(&BlockStateProperties::RAIL_SHAPE, RailShape::EastWest)
-                .set_value(&BlockStateProperties::POWERED, true),
+                .set_value(RAIL_SHAPE, RailShape::EastWest)
+                .set_value(POWERED, true),
             raw_flags(),
         );
         world.set_block(

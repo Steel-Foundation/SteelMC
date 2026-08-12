@@ -5,7 +5,9 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, Direction, EnumProperty,
+};
 use steel_registry::blocks::shapes::SupportType;
 use steel_registry::{REGISTRY, level_events, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
@@ -47,7 +49,7 @@ fn handle_neighbor_changed(
     pos: BlockPos,
     has_neighbor_signal: bool,
 ) {
-    if state.get_value(&BlockStateProperties::LIT) == has_neighbor_signal
+    if state.get_value(LIT) == has_neighbor_signal
         && !world.will_tick_block_this_tick(pos, block)
     {
         world.schedule_block_tick_default(pos, block, TOGGLE_DELAY);
@@ -57,14 +59,14 @@ fn handle_neighbor_changed(
 fn tick_torch(state: BlockStateId, world: &Arc<World>, pos: BlockPos, has_neighbor_signal: bool) {
     world.prune_recent_redstone_torch_toggles();
 
-    if state.get_value(&BlockStateProperties::LIT) {
+    if state.get_value(LIT) {
         if !has_neighbor_signal {
             return;
         }
 
         world.set_block(
             pos,
-            state.set_value(&BlockStateProperties::LIT, false),
+            state.set_value(LIT, false),
             UpdateFlags::UPDATE_ALL,
         );
         if world.redstone_torch_toggled_too_frequently(pos, true) {
@@ -78,14 +80,14 @@ fn tick_torch(state: BlockStateId, world: &Arc<World>, pos: BlockPos, has_neighb
     if !has_neighbor_signal && !world.redstone_torch_toggled_too_frequently(pos, false) {
         world.set_block(
             pos,
-            state.set_value(&BlockStateProperties::LIT, true),
+            state.set_value(LIT, true),
             UpdateFlags::UPDATE_ALL,
         );
     }
 }
 
 fn own_signal(state: BlockStateId) -> i32 {
-    if state.get_value(&BlockStateProperties::LIT) {
+    if state.get_value(LIT) {
         15
     } else {
         0
@@ -97,6 +99,9 @@ fn own_signal(state: BlockStateId) -> i32 {
 pub struct RedstoneTorchBlock {
     block: BlockRef,
 }
+
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const LIT: &BoolProperty = &BlockStateProperties::LIT;
 
 impl RedstoneTorchBlock {
     /// Creates a standing redstone-torch behavior.
@@ -257,7 +262,7 @@ impl RedstoneWallTorchBlock {
 
     fn has_neighbor_signal(state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let opposite = state
-            .get_value(&BlockStateProperties::HORIZONTAL_FACING)
+            .get_value(HORIZONTAL_FACING)
             .opposite();
         get_redstone_signal(
             world,
@@ -270,7 +275,7 @@ impl RedstoneWallTorchBlock {
 
 impl BlockBehavior for RedstoneWallTorchBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let facing = state.get_value(HORIZONTAL_FACING);
         let support_pos = pos.relative(facing.opposite());
         world.is_face_sturdy(world.get_block_state(support_pos), support_pos, facing)
     }
@@ -284,7 +289,7 @@ impl BlockBehavior for RedstoneWallTorchBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let facing = state.get_value(HORIZONTAL_FACING);
         if direction.opposite() == facing && !self.can_survive(state, world, pos) {
             REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR)
         } else {
@@ -298,7 +303,7 @@ impl BlockBehavior for RedstoneWallTorchBlock {
                 continue;
             }
             let state = self.block.default_state().set_value(
-                &BlockStateProperties::HORIZONTAL_FACING,
+                HORIZONTAL_FACING,
                 direction.opposite(),
             );
             if self.can_survive(state, context.world.as_ref(), context.place_pos()) {
@@ -377,7 +382,7 @@ impl BlockBehavior for RedstoneWallTorchBlock {
         direction: Direction,
         _context: SignalQueryContext,
     ) -> i32 {
-        if state.get_value(&BlockStateProperties::HORIZONTAL_FACING) == direction {
+        if state.get_value(HORIZONTAL_FACING) == direction {
             0
         } else {
             own_signal(state)
@@ -431,8 +436,8 @@ mod tests {
         let behavior = RedstoneWallTorchBlock::new(&vanilla_blocks::REDSTONE_WALL_TORCH);
         let state = vanilla_blocks::REDSTONE_WALL_TORCH
             .default_state()
-            .set_value(&BlockStateProperties::HORIZONTAL_FACING, Direction::East)
-            .set_value(&BlockStateProperties::LIT, true);
+            .set_value(HORIZONTAL_FACING, Direction::East)
+            .set_value(LIT, true);
         let level = TestLevel::default();
         let pos = BlockPos::new(0, 64, 0);
 

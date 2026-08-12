@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
@@ -23,6 +23,8 @@ pub struct CoralFanBlock {
     dead_block: BlockRef,
 }
 
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+
 impl CoralFanBlock {
     /// Creates a new live coral fan block behavior.
     #[must_use]
@@ -33,7 +35,7 @@ impl CoralFanBlock {
     fn dead_state(&self) -> BlockStateId {
         self.dead_block
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, false)
+            .set_value(WATERLOGGED, false)
     }
 }
 
@@ -68,7 +70,7 @@ impl BlockBehavior for CoralFanBlock {
 
         CoralBlock::schedule_die_tick(state, world, pos, self.block);
 
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
+        if state.get_value(WATERLOGGED) {
             let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
             let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
         }
@@ -81,7 +83,7 @@ impl BlockBehavior for CoralFanBlock {
         if !self.can_survive(state, context.world, context.place_pos()) {
             return None;
         }
-        Some(state.set_value(&BlockStateProperties::WATERLOGGED, context.is_full_water()))
+        Some(state.set_value(WATERLOGGED, context.is_full_water()))
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

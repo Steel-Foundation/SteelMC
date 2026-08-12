@@ -26,7 +26,7 @@ pub struct CaveVinesPlantBlock {
     base: GrowingPlantBodyBlock,
 }
 
-const BERRIES: BoolProperty = BlockStateProperties::BERRIES;
+const BERRIES: &BoolProperty = &BlockStateProperties::BERRIES;
 
 impl CaveVinesPlantBlock {
     /// Creates a new cave vines plant (body) block behavior.
@@ -54,7 +54,7 @@ impl CaveVinesPlantBlock {
         body_state: BlockStateId,
         head_state: BlockStateId,
     ) -> BlockStateId {
-        head_state.set_value(&BERRIES, body_state.get_value(&BERRIES))
+        head_state.set_value(BERRIES, body_state.get_value(BERRIES))
     }
 }
 
@@ -117,7 +117,7 @@ impl Bonemealable for CaveVinesPlantBlock {
         _world: &dyn LevelReader,
         _pos: BlockPos,
     ) -> bool {
-        !state.get_value(&BERRIES)
+        !state.get_value(BERRIES)
     }
 
     fn perform_bonemeal(
@@ -129,7 +129,7 @@ impl Bonemealable for CaveVinesPlantBlock {
     ) {
         world.set_block(
             pos,
-            state.set_value(&BERRIES, true),
+            state.set_value(BERRIES, true),
             UpdateFlags::UPDATE_CLIENTS,
         );
     }
@@ -153,7 +153,7 @@ mod tests {
         let behavior = CaveVinesPlantBlock::new(&vanilla_blocks::CAVE_VINES_PLANT);
         let state = vanilla_blocks::CAVE_VINES_PLANT
             .default_state()
-            .set_value(&BERRIES, true);
+            .set_value(BERRIES, true);
         let level = TestLevel::default();
 
         let converted = behavior.update_shape(
@@ -166,7 +166,7 @@ mod tests {
         );
 
         assert_eq!(converted.get_block(), &vanilla_blocks::CAVE_VINES);
-        assert!(converted.get_value(&BERRIES));
+        assert!(converted.get_value(BERRIES));
     }
 
     #[test]

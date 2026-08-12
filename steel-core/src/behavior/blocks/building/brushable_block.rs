@@ -5,7 +5,7 @@ use std::sync::{Arc, Weak};
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, IntProperty};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_entity_types;
 use steel_utils::Downcast as _;
@@ -27,6 +27,8 @@ pub struct BrushableBlock {
     #[json_arg(sound_events, json = "brush_completed_sound")]
     brush_completed_sound: SoundEventRef,
 }
+
+const DUSTED: &IntProperty = &BlockStateProperties::DUSTED;
 
 impl BrushableBlock {
     /// Creates a brushable block behavior from extracted vanilla block arguments.
@@ -51,7 +53,7 @@ impl BlockBehavior for BrushableBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&BlockStateProperties::DUSTED, 0),
+                .set_value(DUSTED, 0),
         )
     }
 

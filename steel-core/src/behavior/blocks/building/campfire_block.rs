@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, Direction, EnumProperty,
+};
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _};
 use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_damage_types;
@@ -28,6 +30,11 @@ pub struct CampfireBlock {
     fire_damage: i32,
 }
 
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const LIT: &BoolProperty = &BlockStateProperties::LIT;
+const SIGNAL_FIRE: &BoolProperty = &BlockStateProperties::SIGNAL_FIRE;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+
 impl CampfireBlock {
     /// Creates a campfire block behavior.
     #[must_use]
@@ -41,7 +48,7 @@ impl CampfireBlock {
 
     #[must_use]
     fn contact_damage_amount(&self, state: BlockStateId, is_living_entity: bool) -> Option<f32> {
-        if state.get_value(&BlockStateProperties::LIT) && is_living_entity {
+        if state.get_value(LIT) && is_living_entity {
             Some(self.fire_damage as f32)
         } else {
             None
@@ -60,13 +67,13 @@ impl CampfireBlock {
     ) -> BlockStateId {
         self.block
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, waterlogged)
+            .set_value(WATERLOGGED, waterlogged)
             .set_value(
-                &BlockStateProperties::SIGNAL_FIRE,
+                SIGNAL_FIRE,
                 Self::is_smoke_source(below_state),
             )
-            .set_value(&BlockStateProperties::LIT, !waterlogged)
-            .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
+            .set_value(LIT, !waterlogged)
+            .set_value(HORIZONTAL_FACING, facing)
     }
 
     fn projectile_lit_state(
@@ -76,9 +83,9 @@ impl CampfireBlock {
     ) -> Option<BlockStateId> {
         (projectile_is_on_fire
             && may_interact
-            && !state.get_value(&BlockStateProperties::LIT)
-            && !state.get_value(&BlockStateProperties::WATERLOGGED))
-        .then(|| state.set_value(&BlockStateProperties::LIT, true))
+            && !state.get_value(LIT)
+            && !state.get_value(WATERLOGGED))
+        .then(|| state.set_value(LIT, true))
     }
 }
 
@@ -98,14 +105,14 @@ impl BlockBehavior for CampfireBlock {
         _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
+        if state.get_value(WATERLOGGED) {
             let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
             let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
         }
 
         if direction == Direction::Down {
             state.set_value(
-                &BlockStateProperties::SIGNAL_FIRE,
+                SIGNAL_FIRE,
                 Self::is_smoke_source(neighbor_state),
             )
         } else {
@@ -157,13 +164,13 @@ impl BlockBehavior for CampfireBlock {
         state: BlockStateId,
         fluid_state: FluidState,
     ) -> bool {
-        if state.try_get_value(&BlockStateProperties::WATERLOGGED) != Some(false)
+        if state.try_get_value(WATERLOGGED) != Some(false)
             || fluid_state.fluid_id != &vanilla_fluids::WATER
         {
             return false;
         }
 
-        if state.get_value(&BlockStateProperties::LIT) {
+        if state.get_value(LIT) {
             level.play_block_sound(
                 &sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE,
                 pos,
@@ -176,7 +183,7 @@ impl BlockBehavior for CampfireBlock {
                 pos,
                 &GameEventContext::new(
                     None,
-                    Some(state.set_value(&BlockStateProperties::LIT, false)),
+                    Some(state.set_value(LIT, false)),
                 ),
             );
         }
@@ -184,8 +191,8 @@ impl BlockBehavior for CampfireBlock {
         level.set_block_state(
             pos,
             state
-                .set_value(&BlockStateProperties::WATERLOGGED, true)
-                .set_value(&BlockStateProperties::LIT, false),
+                .set_value(WATERLOGGED, true)
+                .set_value(LIT, false),
             UpdateFlags::UPDATE_ALL,
         );
         schedule_placed_liquid_tick(level, pos, fluid_state);
@@ -207,7 +214,7 @@ mod tests {
         let campfire = CampfireBlock::new(&vanilla_blocks::CAMPFIRE, true, 1);
         let state = vanilla_blocks::CAMPFIRE
             .default_state()
-            .set_value(&BlockStateProperties::LIT, true);
+            .set_value(LIT, true);
 
         assert_eq!(campfire.contact_damage_amount(state, true), Some(1.0));
     }
@@ -218,7 +225,7 @@ mod tests {
         let campfire = CampfireBlock::new(&vanilla_blocks::CAMPFIRE, true, 1);
         let state = vanilla_blocks::CAMPFIRE
             .default_state()
-            .set_value(&BlockStateProperties::LIT, false);
+            .set_value(LIT, false);
 
         assert_eq!(campfire.contact_damage_amount(state, true), None);
     }
@@ -229,7 +236,7 @@ mod tests {
         let campfire = CampfireBlock::new(&vanilla_blocks::SOUL_CAMPFIRE, false, 2);
         let state = vanilla_blocks::SOUL_CAMPFIRE
             .default_state()
-            .set_value(&BlockStateProperties::LIT, true);
+            .set_value(LIT, true);
 
         assert_eq!(campfire.contact_damage_amount(state, false), None);
     }
@@ -240,10 +247,10 @@ mod tests {
 
         let unlit = vanilla_blocks::CAMPFIRE
             .default_state()
-            .set_value(&BlockStateProperties::LIT, false)
-            .set_value(&BlockStateProperties::WATERLOGGED, false);
-        let lit = unlit.set_value(&BlockStateProperties::LIT, true);
-        let waterlogged = unlit.set_value(&BlockStateProperties::WATERLOGGED, true);
+            .set_value(LIT, false)
+            .set_value(WATERLOGGED, false);
+        let lit = unlit.set_value(LIT, true);
+        let waterlogged = unlit.set_value(WATERLOGGED, true);
 
         assert_eq!(
             CampfireBlock::projectile_lit_state(unlit, true, true),
@@ -276,12 +283,12 @@ mod tests {
         );
 
         assert_eq!(
-            state.get_value(&BlockStateProperties::HORIZONTAL_FACING),
+            state.get_value(HORIZONTAL_FACING),
             Direction::East
         );
-        assert!(state.get_value(&BlockStateProperties::SIGNAL_FIRE));
-        assert!(state.get_value(&BlockStateProperties::LIT));
-        assert!(!state.get_value(&BlockStateProperties::WATERLOGGED));
+        assert!(state.get_value(SIGNAL_FIRE));
+        assert!(state.get_value(LIT));
+        assert!(!state.get_value(WATERLOGGED));
     }
 
     #[test]
@@ -291,8 +298,8 @@ mod tests {
         let level = TestLevel::default();
         let state = vanilla_blocks::CAMPFIRE
             .default_state()
-            .set_value(&BlockStateProperties::SIGNAL_FIRE, false)
-            .set_value(&BlockStateProperties::WATERLOGGED, false);
+            .set_value(SIGNAL_FIRE, false)
+            .set_value(WATERLOGGED, false);
 
         let updated = campfire.update_shape(
             state,
@@ -303,7 +310,7 @@ mod tests {
             vanilla_blocks::HAY_BLOCK.default_state(),
         );
 
-        assert!(updated.get_value(&BlockStateProperties::SIGNAL_FIRE));
+        assert!(updated.get_value(SIGNAL_FIRE));
     }
 
     #[test]
@@ -313,8 +320,8 @@ mod tests {
         let campfire = CampfireBlock::new(&vanilla_blocks::CAMPFIRE, true, 1);
         let state = vanilla_blocks::CAMPFIRE
             .default_state()
-            .set_value(&BlockStateProperties::LIT, true)
-            .set_value(&BlockStateProperties::WATERLOGGED, false);
+            .set_value(LIT, true)
+            .set_value(WATERLOGGED, false);
         let pos = BlockPos::new(1, 2, 3);
 
         assert!(campfire.place_liquid(
@@ -327,8 +334,8 @@ mod tests {
         let placed = level
             .last_placed_state()
             .expect("campfire should be updated");
-        assert!(!placed.get_value(&BlockStateProperties::LIT));
-        assert!(placed.get_value(&BlockStateProperties::WATERLOGGED));
+        assert!(!placed.get_value(LIT));
+        assert!(placed.get_value(WATERLOGGED));
         assert_eq!(
             level
                 .block_sounds

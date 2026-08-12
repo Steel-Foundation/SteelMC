@@ -6,7 +6,9 @@ use steel_macros::block_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction, NoteBlockInstrument};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, Direction, EnumProperty, IntProperty, NoteBlockInstrument,
+};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{sound_events, vanilla_game_events};
@@ -29,6 +31,10 @@ pub struct NoteBlock {
     block: BlockRef,
 }
 
+const NOTE: &IntProperty = &BlockStateProperties::NOTE;
+const NOTEBLOCK_INSTRUMENT: &EnumProperty<NoteBlockInstrument> = &BlockStateProperties::NOTEBLOCK_INSTRUMENT;
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
+
 impl NoteBlock {
     /// Creates note-block behavior for `block`.
     #[must_use]
@@ -44,7 +50,7 @@ impl NoteBlock {
         let instrument_above = Self::block_instrument(level.get_block_state(pos.above()));
         if instrument_above.works_above_note_block() {
             return state.set_value(
-                &BlockStateProperties::NOTEBLOCK_INSTRUMENT,
+                NOTEBLOCK_INSTRUMENT,
                 instrument_above,
             );
         }
@@ -55,17 +61,17 @@ impl NoteBlock {
         } else {
             instrument_below
         };
-        state.set_value(&BlockStateProperties::NOTEBLOCK_INSTRUMENT, instrument)
+        state.set_value(NOTEBLOCK_INSTRUMENT, instrument)
     }
 
     fn cycle_note(state: BlockStateId) -> BlockStateId {
-        let note = state.get_value(&BlockStateProperties::NOTE);
-        let next = if note == BlockStateProperties::NOTE.max {
-            BlockStateProperties::NOTE.min
+        let note = state.get_value(NOTE);
+        let next = if note == NOTE.max {
+            NOTE.min
         } else {
             note + 1
         };
-        state.set_value(&BlockStateProperties::NOTE, next)
+        state.set_value(NOTE, next)
     }
 
     fn play_note(
@@ -75,7 +81,7 @@ impl NoteBlock {
         world: &Arc<World>,
         pos: BlockPos,
     ) {
-        let instrument = state.get_value(&BlockStateProperties::NOTEBLOCK_INSTRUMENT);
+        let instrument = state.get_value(NOTEBLOCK_INSTRUMENT);
         if !instrument.works_above_note_block() && !world.get_block_state(pos.above()).is_air() {
             return;
         }
@@ -167,7 +173,7 @@ impl BlockBehavior for NoteBlock {
         _moved_by_piston: bool,
     ) {
         let signal = world.has_neighbor_signal(pos);
-        if signal == state.get_value(&BlockStateProperties::POWERED) {
+        if signal == state.get_value(POWERED) {
             return;
         }
 
@@ -176,7 +182,7 @@ impl BlockBehavior for NoteBlock {
         }
         world.set_block(
             pos,
-            state.set_value(&BlockStateProperties::POWERED, signal),
+            state.set_value(POWERED, signal),
             UpdateFlags::UPDATE_ALL,
         );
     }
@@ -229,13 +235,13 @@ impl BlockBehavior for NoteBlock {
         _param_a: i32,
         _param_b: i32,
     ) -> bool {
-        let instrument = state.get_value(&BlockStateProperties::NOTEBLOCK_INSTRUMENT);
+        let instrument = state.get_value(NOTEBLOCK_INSTRUMENT);
         let Some(sound) = Self::sound_event(instrument) else {
             // Custom player-head sounds require the skull block entity's note-block sound.
             return false;
         };
         let pitch = if instrument.is_tunable() {
-            Self::pitch_from_note(state.get_value(&BlockStateProperties::NOTE))
+            Self::pitch_from_note(state.get_value(NOTE))
         } else {
             1.0
         };
@@ -267,7 +273,7 @@ mod tests {
 
         let selected = NoteBlock::set_instrument(&level, pos, note_state);
         assert_eq!(
-            selected.get_value(&BlockStateProperties::NOTEBLOCK_INSTRUMENT),
+            selected.get_value(NOTEBLOCK_INSTRUMENT),
             NoteBlockInstrument::Zombie
         );
 
@@ -275,7 +281,7 @@ mod tests {
             .with_block(pos.below(), vanilla_blocks::ZOMBIE_HEAD.default_state());
         let selected = NoteBlock::set_instrument(&below_head, pos, note_state);
         assert_eq!(
-            selected.get_value(&BlockStateProperties::NOTEBLOCK_INSTRUMENT),
+            selected.get_value(NOTEBLOCK_INSTRUMENT),
             NoteBlockInstrument::Harp
         );
     }
@@ -285,11 +291,11 @@ mod tests {
         init_vanilla_registry();
         let highest = vanilla_blocks::NOTE_BLOCK
             .default_state()
-            .set_value(&BlockStateProperties::NOTE, BlockStateProperties::NOTE.max);
+            .set_value(NOTE, NOTE.max);
 
         assert_eq!(
-            NoteBlock::cycle_note(highest).get_value(&BlockStateProperties::NOTE),
-            BlockStateProperties::NOTE.min
+            NoteBlock::cycle_note(highest).get_value(NOTE),
+            NOTE.min
         );
     }
 
@@ -315,7 +321,7 @@ mod tests {
         assert!(
             world
                 .get_block_state(pos)
-                .get_value(&BlockStateProperties::POWERED)
+                .get_value(POWERED)
         );
         world.run_block_events();
 
@@ -323,7 +329,7 @@ mod tests {
         assert!(
             !world
                 .get_block_state(pos)
-                .get_value(&BlockStateProperties::POWERED)
+                .get_value(POWERED)
         );
     }
 }

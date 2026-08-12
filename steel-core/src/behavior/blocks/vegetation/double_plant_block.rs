@@ -24,8 +24,8 @@ pub struct DoublePlantBlock {
     pub(super) block: BlockRef,
 }
 
-const HALF: EnumProperty<DoubleBlockHalf> = BlockStateProperties::DOUBLE_BLOCK_HALF;
-const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+const HALF: &EnumProperty<DoubleBlockHalf> = &BlockStateProperties::DOUBLE_BLOCK_HALF;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl DoublePlantBlock {
     /// Creates a new double plant block behavior.
@@ -39,8 +39,8 @@ impl DoublePlantBlock {
         pos: BlockPos,
         state: BlockStateId,
     ) -> BlockStateId {
-        if state.try_get_value(&WATERLOGGED).is_some() {
-            state.set_value(&WATERLOGGED, get_fluid_state(world, pos).is_water())
+        if state.try_get_value(WATERLOGGED).is_some() {
+            state.set_value(WATERLOGGED, get_fluid_state(world, pos).is_water())
         } else {
             state
         }
@@ -57,9 +57,9 @@ impl DoublePlantBlock {
         direction: Direction,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        let half = state.get_value(&HALF);
+        let half = state.get_value(HALF);
         let neighbor_is_matching_other_half =
-            neighbor_state.get_block() == self.block && neighbor_state.get_value(&HALF) != half;
+            neighbor_state.get_block() == self.block && neighbor_state.get_value(HALF) != half;
 
         if direction.get_axis() == Axis::Y
             && (half == DoubleBlockHalf::Lower) == (direction == Direction::Up)
@@ -89,7 +89,7 @@ impl DoublePlantBlock {
             Self::copy_waterlogged_from(
                 world,
                 lower_pos,
-                state.set_value(&HALF, DoubleBlockHalf::Lower),
+                state.set_value(HALF, DoubleBlockHalf::Lower),
             ),
             update_type,
         );
@@ -98,7 +98,7 @@ impl DoublePlantBlock {
             Self::copy_waterlogged_from(
                 world,
                 upper_pos,
-                state.set_value(&HALF, DoubleBlockHalf::Upper),
+                state.set_value(HALF, DoubleBlockHalf::Upper),
             ),
             update_type,
         );
@@ -121,10 +121,10 @@ impl BlockBehavior for DoublePlantBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        if state.get_value(&HALF) == DoubleBlockHalf::Upper {
+        if state.get_value(HALF) == DoubleBlockHalf::Upper {
             let state_below = world.get_block_state(pos.below());
             state_below.get_block() == state.get_block()
-                && state_below.get_value(&HALF) == DoubleBlockHalf::Lower
+                && state_below.get_value(HALF) == DoubleBlockHalf::Lower
         } else {
             vegetation_can_survive(self, state, world, pos)
         }
@@ -143,7 +143,7 @@ impl BlockBehavior for DoublePlantBlock {
             upper_pos,
             self.block
                 .default_state()
-                .set_value(&HALF, DoubleBlockHalf::Upper),
+                .set_value(HALF, DoubleBlockHalf::Upper),
         );
         world.set_block(upper_pos, upper_state, UpdateFlags::UPDATE_ALL);
     }

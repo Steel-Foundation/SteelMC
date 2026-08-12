@@ -6,7 +6,7 @@ use steel_macros::block_behavior;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction, EnumProperty};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, Downcast as _};
@@ -25,6 +25,9 @@ use crate::world::{LevelReader, World};
 /// Vanilla transient moving-piston block.
 pub struct MovingPistonBlock;
 
+
+const EXTENDED: &BoolProperty = &BlockStateProperties::EXTENDED;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
 impl MovingPistonBlock {
     /// Creates moving-piston behavior.
     #[must_use]
@@ -86,10 +89,10 @@ impl BlockBehavior for MovingPistonBlock {
     }
 
     fn destroy(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        let base_pos = pos.relative(state.get_value(&BlockStateProperties::FACING).opposite());
+        let base_pos = pos.relative(state.get_value(FACING).opposite());
         let base_state = world.get_block_state(base_pos);
         let behavior = BLOCK_BEHAVIORS.get_behavior(base_state.get_block());
-        if behavior.is_piston_base() && base_state.get_value(&BlockStateProperties::EXTENDED) {
+        if behavior.is_piston_base() && base_state.get_value(EXTENDED) {
             world.remove_block(base_pos, false);
         }
     }

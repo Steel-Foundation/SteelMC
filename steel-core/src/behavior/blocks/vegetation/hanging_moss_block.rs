@@ -15,7 +15,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use super::{BlockRef, default_surviving_state};
 
-const TIP: BoolProperty = BlockStateProperties::TIP;
+const TIP: &BoolProperty = &BlockStateProperties::TIP;
 
 /// Vanilla `HangingMossBlock` survival (e.g. `pale_hanging_moss`).
 #[block_behavior]
@@ -74,7 +74,7 @@ impl BlockBehavior for HangingMossBlock {
             world.schedule_block_tick_default(pos, self.block, 1);
         }
         let is_tip = world.get_block_state(pos.below()).get_block() != self.block;
-        state.set_value(&TIP, is_tip)
+        state.set_value(TIP, is_tip)
     }
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if !self.can_survive(state, world, pos) {
@@ -112,7 +112,7 @@ impl Bonemealable for HangingMossBlock {
         if HangingMossBlock::can_grow_into(world.get_block_state(tip_pos)) {
             world.set_block(
                 tip_pos,
-                state.set_value(&TIP, true),
+                state.set_value(TIP, true),
                 UpdateFlags::UPDATE_ALL,
             );
         }

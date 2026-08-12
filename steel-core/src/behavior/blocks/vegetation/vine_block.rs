@@ -20,6 +20,12 @@ pub struct VineBlock {
     block: BlockRef,
 }
 
+const EAST: &BoolProperty = &BlockStateProperties::EAST;
+const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
+const SOUTH: &BoolProperty = &BlockStateProperties::SOUTH;
+const UP: &BoolProperty = &BlockStateProperties::UP;
+const WEST: &BoolProperty = &BlockStateProperties::WEST;
+
 impl VineBlock {
     /// Creates a new vine block behavior.
     #[must_use]
@@ -118,9 +124,9 @@ impl VineBlock {
         pos: BlockPos,
     ) -> BlockStateId {
         let above_pos = pos.above();
-        if state.get_value(&BlockStateProperties::UP) {
+        if state.get_value(UP) {
             state = state.set_value(
-                &BlockStateProperties::UP,
+                UP,
                 Self::is_acceptable_neighbour(world, above_pos, Direction::Down),
             );
         }
@@ -296,11 +302,11 @@ const VINE_FACE_DIRECTIONS: [Direction; 5] = [
 
 fn get_property_for_face(direction: Direction) -> &'static BoolProperty {
     match direction {
-        Direction::Up => &BlockStateProperties::UP,
-        Direction::North => &BlockStateProperties::NORTH,
-        Direction::East => &BlockStateProperties::EAST,
-        Direction::South => &BlockStateProperties::SOUTH,
-        Direction::West => &BlockStateProperties::WEST,
+        Direction::Up => UP,
+        Direction::North => NORTH,
+        Direction::East => EAST,
+        Direction::South => SOUTH,
+        Direction::West => WEST,
         Direction::Down => unreachable!("vine has no DOWN face property"),
     }
 }

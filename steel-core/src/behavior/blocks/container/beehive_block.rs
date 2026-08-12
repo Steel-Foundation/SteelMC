@@ -5,7 +5,9 @@ use std::sync::Weak;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, Direction, EnumProperty, IntProperty,
+};
 use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -21,6 +23,9 @@ pub struct BeehiveBlock {
     block: BlockRef,
 }
 
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const LEVEL_HONEY: &IntProperty = &BlockStateProperties::LEVEL_HONEY;
+
 impl BeehiveBlock {
     /// Creates a new beehive block behavior.
     #[must_use]
@@ -32,7 +37,7 @@ impl BeehiveBlock {
 impl BlockBehavior for BeehiveBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state().set_value(
-            &BlockStateProperties::HORIZONTAL_FACING,
+            HORIZONTAL_FACING,
             context.horizontal_direction().opposite(),
         ))
     }
@@ -62,6 +67,6 @@ impl BlockBehavior for BeehiveBlock {
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
-        state.get_value(&BlockStateProperties::LEVEL_HONEY).into()
+        state.get_value(LEVEL_HONEY).into()
     }
 }

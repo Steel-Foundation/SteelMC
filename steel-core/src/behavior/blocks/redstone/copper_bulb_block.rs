@@ -5,7 +5,7 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::sound_events;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
@@ -20,6 +20,9 @@ pub struct CopperBulbBlock {
     block: BlockRef,
 }
 
+const LIT: &BoolProperty = &BlockStateProperties::LIT;
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
+
 impl CopperBulbBlock {
     /// Creates copper-bulb behavior.
     #[must_use]
@@ -29,15 +32,15 @@ impl CopperBulbBlock {
 
     fn check_and_flip(state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let signal = world.has_neighbor_signal(pos);
-        let powered = state.get_value(&BlockStateProperties::POWERED);
+        let powered = state.get_value(POWERED);
         if signal == powered {
             return;
         }
 
         let mut new_state = state;
         if !powered {
-            let lit = !state.get_value(&BlockStateProperties::LIT);
-            new_state = new_state.set_value(&BlockStateProperties::LIT, lit);
+            let lit = !state.get_value(LIT);
+            new_state = new_state.set_value(LIT, lit);
             world.play_block_sound(
                 if lit {
                     &sound_events::BLOCK_COPPER_BULB_TURN_ON
@@ -52,7 +55,7 @@ impl CopperBulbBlock {
         }
         world.set_block(
             pos,
-            new_state.set_value(&BlockStateProperties::POWERED, signal),
+            new_state.set_value(POWERED, signal),
             UpdateFlags::UPDATE_ALL,
         );
     }
@@ -66,7 +69,7 @@ impl CopperBulbBlock {
     fn analog_output(world: &dyn LevelReader, pos: BlockPos) -> i32 {
         if world
             .get_block_state(pos)
-            .get_value(&BlockStateProperties::LIT)
+            .get_value(LIT)
         {
             15
         } else {
@@ -212,8 +215,8 @@ mod tests {
         ));
 
         let first_rise = world.get_block_state(pos);
-        assert!(first_rise.get_value(&BlockStateProperties::POWERED));
-        assert!(first_rise.get_value(&BlockStateProperties::LIT));
+        assert!(first_rise.get_value(POWERED));
+        assert!(first_rise.get_value(LIT));
         let behavior = BLOCK_BEHAVIORS.get_behavior(first_rise.get_block());
         assert_eq!(
             behavior.get_analog_output_signal(first_rise, &world, pos, Direction::North),
@@ -222,8 +225,8 @@ mod tests {
 
         assert!(world.remove_block(power_pos, false));
         let falling = world.get_block_state(pos);
-        assert!(!falling.get_value(&BlockStateProperties::POWERED));
-        assert!(falling.get_value(&BlockStateProperties::LIT));
+        assert!(!falling.get_value(POWERED));
+        assert!(falling.get_value(LIT));
 
         assert!(world.set_block(
             power_pos,
@@ -231,7 +234,7 @@ mod tests {
             UpdateFlags::UPDATE_ALL,
         ));
         let second_rise = world.get_block_state(pos);
-        assert!(second_rise.get_value(&BlockStateProperties::POWERED));
-        assert!(!second_rise.get_value(&BlockStateProperties::LIT));
+        assert!(second_rise.get_value(POWERED));
+        assert!(!second_rise.get_value(LIT));
     }
 }

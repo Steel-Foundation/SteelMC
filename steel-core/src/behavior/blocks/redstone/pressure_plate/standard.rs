@@ -5,7 +5,7 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::sound_event::SoundEventRef;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -40,6 +40,8 @@ pub struct PressurePlateBlock {
     sound_click_off: SoundEventRef,
 }
 
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
+
 impl PressurePlateBlock {
     /// Creates a binary pressure-plate behavior from extracted block-set data.
     #[must_use]
@@ -58,7 +60,7 @@ impl PressurePlateBlock {
     }
 
     fn signal_for_state(state: BlockStateId) -> i32 {
-        if state.get_value(&BlockStateProperties::POWERED) {
+        if state.get_value(POWERED) {
             15
         } else {
             0
@@ -66,7 +68,7 @@ impl PressurePlateBlock {
     }
 
     fn state_for_signal(state: BlockStateId, signal: i32) -> BlockStateId {
-        state.set_value(&BlockStateProperties::POWERED, signal > 0)
+        state.set_value(POWERED, signal > 0)
     }
 
     fn signal_strength(&self, world: &World, pos: BlockPos) -> i32 {
@@ -233,7 +235,7 @@ mod tests {
         let behavior = stone_pressure_plate();
         let state = vanilla_blocks::STONE_PRESSURE_PLATE
             .default_state()
-            .set_value(&BlockStateProperties::POWERED, true);
+            .set_value(POWERED, true);
         let level = TestLevel::default();
 
         assert_eq!(

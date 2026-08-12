@@ -31,7 +31,7 @@ pub struct CaveVinesBlock {
     base: GrowingPlantHeadBlock,
 }
 
-const BERRIES: BoolProperty = BlockStateProperties::BERRIES;
+const BERRIES: &BoolProperty = &BlockStateProperties::BERRIES;
 
 impl CaveVinesBlock {
     /// Creates a new cave vines (head) block behavior.
@@ -62,11 +62,11 @@ impl CaveVinesBlock {
         head_state: BlockStateId,
         body_state: BlockStateId,
     ) -> BlockStateId {
-        body_state.set_value(&BERRIES, head_state.get_value(&BERRIES))
+        body_state.set_value(BERRIES, head_state.get_value(BERRIES))
     }
 
     fn update_grow_into_state(state: BlockStateId, rng: &mut dyn Rng) -> BlockStateId {
-        state.set_value(&BERRIES, rng.random::<f32>() < 0.11)
+        state.set_value(BERRIES, rng.random::<f32>() < 0.11)
     }
 
     /// Shared behavior use block between cave vine block and plant
@@ -76,7 +76,7 @@ impl CaveVinesBlock {
         world: &Arc<World>,
         pos: BlockPos,
     ) -> InteractionResult {
-        if !state.get_value(&BERRIES) {
+        if !state.get_value(BERRIES) {
             return InteractionResult::Pass;
         }
         let mut rng = rand::rng();
@@ -97,7 +97,7 @@ impl CaveVinesBlock {
             pitch,
             None,
         );
-        let new_state = state.set_value(&BERRIES, false);
+        let new_state = state.set_value(BERRIES, false);
         world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
@@ -168,7 +168,7 @@ impl Bonemealable for CaveVinesBlock {
         _world: &dyn LevelReader,
         _pos: BlockPos,
     ) -> bool {
-        !state.get_value(&BERRIES)
+        !state.get_value(BERRIES)
     }
 
     fn perform_bonemeal(
@@ -180,7 +180,7 @@ impl Bonemealable for CaveVinesBlock {
     ) {
         world.set_block(
             pos,
-            state.set_value(&BERRIES, true),
+            state.set_value(BERRIES, true),
             UpdateFlags::UPDATE_CLIENTS,
         );
     }
@@ -205,7 +205,7 @@ mod tests {
         let behavior = CaveVinesBlock::new(&vanilla_blocks::CAVE_VINES);
         let state = vanilla_blocks::CAVE_VINES
             .default_state()
-            .set_value(&BERRIES, true);
+            .set_value(BERRIES, true);
         let level = TestLevel::default();
 
         let converted = behavior.update_shape(
@@ -218,7 +218,7 @@ mod tests {
         );
 
         assert_eq!(converted.get_block(), &vanilla_blocks::CAVE_VINES_PLANT);
-        assert!(converted.get_value(&BERRIES));
+        assert!(converted.get_value(BERRIES));
     }
 
     #[test]
@@ -228,7 +228,7 @@ mod tests {
         let state = vanilla_blocks::CAVE_VINES.default_state();
         let mut rng = StdRng::seed_from_u64(1);
         let berry_states = (0..256)
-            .filter(|_| CaveVinesBlock::update_grow_into_state(state, &mut rng).get_value(&BERRIES))
+            .filter(|_| CaveVinesBlock::update_grow_into_state(state, &mut rng).get_value(BERRIES))
             .count();
 
         assert!(berry_states > 0);

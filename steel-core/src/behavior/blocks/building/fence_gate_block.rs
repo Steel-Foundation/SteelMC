@@ -38,13 +38,13 @@ pub struct FenceGateBlock {
 }
 
 /// Horizontal facing of the gate.
-const FACING: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 /// Whether the gate is open.
-const OPEN: BoolProperty = BlockStateProperties::OPEN;
+const OPEN: &BoolProperty = &BlockStateProperties::OPEN;
 /// Whether the gate is powered by redstone.
-const POWERED: BoolProperty = BlockStateProperties::POWERED;
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
 /// Whether the gate is lowered to sit flush inside a wall.
-const IN_WALL: BoolProperty = BlockStateProperties::IN_WALL;
+const IN_WALL: &BoolProperty = &BlockStateProperties::IN_WALL;
 
 impl FenceGateBlock {
     /// Creates a new fence gate behavior.
@@ -69,7 +69,7 @@ impl FenceGateBlock {
     /// connecting axis matches the gate's clockwise-rotated facing axis.
     #[must_use]
     pub fn connects_to_direction(state: BlockStateId, direction: Direction) -> bool {
-        state.get_value(&FACING).axis() == direction.rotate_y_clockwise().axis()
+        state.get_value(FACING).axis() == direction.rotate_y_clockwise().axis()
     }
 
     /// Vanilla `FenceGateBlock.isWall`.
@@ -102,10 +102,10 @@ impl BlockBehavior for FenceGateBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&FACING, direction)
-                .set_value(&OPEN, is_open)
-                .set_value(&POWERED, is_open)
-                .set_value(&IN_WALL, in_wall),
+                .set_value(FACING, direction)
+                .set_value(OPEN, is_open)
+                .set_value(POWERED, is_open)
+                .set_value(IN_WALL, in_wall),
         )
     }
 
@@ -120,12 +120,12 @@ impl BlockBehavior for FenceGateBlock {
     ) -> BlockStateId {
         // Only the axis perpendicular to the gate (its clockwise facing axis)
         // can change whether it sits in a wall.
-        if state.get_value(&FACING).rotate_y_clockwise().axis() != direction.axis() {
+        if state.get_value(FACING).rotate_y_clockwise().axis() != direction.axis() {
             return state;
         }
         let opposite_neighbor = world.get_block_state(direction.opposite().relative(pos));
         let in_wall = Self::is_wall(neighbor_state) || Self::is_wall(opposite_neighbor);
-        state.set_value(&IN_WALL, in_wall)
+        state.set_value(IN_WALL, in_wall)
     }
 
     fn use_without_item(
@@ -138,15 +138,15 @@ impl BlockBehavior for FenceGateBlock {
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         let mut new_state = state;
-        if new_state.get_value(&OPEN) {
-            new_state = new_state.set_value(&OPEN, false);
+        if new_state.get_value(OPEN) {
+            new_state = new_state.set_value(OPEN, false);
         } else {
             let player_direction = player.direction_yaw();
             // Re-face the gate toward the player if they opened it from behind.
-            if new_state.get_value(&FACING) == player_direction.opposite() {
-                new_state = new_state.set_value(&FACING, player_direction);
+            if new_state.get_value(FACING) == player_direction.opposite() {
+                new_state = new_state.set_value(FACING, player_direction);
             }
-            new_state = new_state.set_value(&OPEN, true);
+            new_state = new_state.set_value(OPEN, true);
         }
 
         // Vanilla flag 10 = UPDATE_CLIENTS | UPDATE_IMMEDIATE.
@@ -156,7 +156,7 @@ impl BlockBehavior for FenceGateBlock {
             UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_IMMEDIATE,
         );
 
-        let opens = new_state.get_value(&OPEN);
+        let opens = new_state.get_value(OPEN);
         let sound = if opens {
             self.sound_open
         } else {
@@ -182,18 +182,18 @@ impl BlockBehavior for FenceGateBlock {
         _moved_by_piston: bool,
     ) {
         let has_power = world.has_neighbor_signal(pos);
-        if state.get_value(&POWERED) == has_power {
+        if state.get_value(POWERED) == has_power {
             return;
         }
 
         world.set_block(
             pos,
             state
-                .set_value(&POWERED, has_power)
-                .set_value(&OPEN, has_power),
+                .set_value(POWERED, has_power)
+                .set_value(OPEN, has_power),
             UpdateFlags::UPDATE_CLIENTS,
         );
-        if state.get_value(&OPEN) == has_power {
+        if state.get_value(OPEN) == has_power {
             return;
         }
 
@@ -214,7 +214,7 @@ impl BlockBehavior for FenceGateBlock {
 
     fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
         match computation_type {
-            PathComputationType::Land | PathComputationType::Air => state.get_value(&OPEN),
+            PathComputationType::Land | PathComputationType::Air => state.get_value(OPEN),
             PathComputationType::Water => false,
         }
     }
@@ -222,9 +222,7 @@ impl BlockBehavior for FenceGateBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{
-        blocks::properties::BlockStateProperties, init_vanilla_registry, vanilla_blocks,
-    };
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::{ChunkPos, types::UpdateFlags};
 
     use super::*;
@@ -253,12 +251,12 @@ mod tests {
             UpdateFlags::UPDATE_ALL,
         ));
         let powered = world.get_block_state(pos);
-        assert!(powered.get_value(&BlockStateProperties::POWERED));
-        assert!(powered.get_value(&BlockStateProperties::OPEN));
+        assert!(powered.get_value(POWERED));
+        assert!(powered.get_value(OPEN));
 
         assert!(world.remove_block(power_pos, false));
         let unpowered = world.get_block_state(pos);
-        assert!(!unpowered.get_value(&BlockStateProperties::POWERED));
-        assert!(!unpowered.get_value(&BlockStateProperties::OPEN));
+        assert!(!unpowered.get_value(POWERED));
+        assert!(!unpowered.get_value(OPEN));
     }
 }

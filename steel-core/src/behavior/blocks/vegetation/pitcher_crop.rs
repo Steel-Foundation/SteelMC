@@ -27,14 +27,16 @@ use crate::{
     world::{LevelReader, ScheduledTickAccess, World},
 };
 
-const HALF_PROPERTY: EnumProperty<DoubleBlockHalf> = BlockStateProperties::DOUBLE_BLOCK_HALF;
-const AGE_PROPERTY: IntProperty = BlockStateProperties::AGE_4;
+const HALF_PROPERTY: &EnumProperty<DoubleBlockHalf> = &BlockStateProperties::DOUBLE_BLOCK_HALF;
+const AGE_PROPERTY: &IntProperty = &BlockStateProperties::AGE_4;
 
 /// Behavior for Pitcher Crops
 #[block_behavior]
 pub struct PitcherCropBlock {
     base: DoublePlantBlock,
 }
+
+const MOISTURE: &IntProperty = &BlockStateProperties::MOISTURE;
 
 impl PitcherCropBlock {
     /// Creates a new Pitcher Crop Block Behavior
@@ -47,7 +49,7 @@ impl PitcherCropBlock {
 
     fn is_lower(state: BlockStateId) -> bool {
         state.get_block() == &vanilla_blocks::PITCHER_CROP
-            && state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Lower
+            && state.get_value(HALF_PROPERTY) == DoubleBlockHalf::Lower
     }
 
     fn get_growth_speed(&self, world: &Arc<World>, pos: BlockPos) -> f32 {
@@ -65,7 +67,7 @@ impl PitcherCropBlock {
                     block_speed = 1.0;
                     // Check moisture level (defaults to 0 for non-farmland blocks)
                     let moisture = block_state
-                        .try_get_value(&BlockStateProperties::MOISTURE)
+                        .try_get_value(MOISTURE)
                         .unwrap_or(0);
                     if moisture > 0 {
                         block_speed = 3.0;
@@ -133,18 +135,18 @@ impl PitcherCropBlock {
     }
 
     fn grow(world: &Arc<World>, lower_state: BlockStateId, lower_pos: BlockPos, increase: u8) {
-        let new_age = (lower_state.get_value(&AGE_PROPERTY) + increase).min(4);
+        let new_age = (lower_state.get_value(AGE_PROPERTY) + increase).min(4);
         if !Self::can_grow(world, lower_state, lower_pos, new_age) {
             return;
         }
 
-        let new_state = lower_state.set_value(&AGE_PROPERTY, new_age);
+        let new_state = lower_state.set_value(AGE_PROPERTY, new_age);
         world.set_block(lower_pos, new_state, UpdateFlags::UPDATE_CLIENTS);
 
         if new_age >= 3 {
             world.set_block(
                 lower_pos.above(),
-                new_state.set_value(&HALF_PROPERTY, DoubleBlockHalf::Upper),
+                new_state.set_value(HALF_PROPERTY, DoubleBlockHalf::Upper),
                 UpdateFlags::UPDATE_ALL,
             );
         }
@@ -152,7 +154,7 @@ impl PitcherCropBlock {
 
     fn can_grow(world: &dyn LevelReader, state: BlockStateId, pos: BlockPos, new_age: u8) -> bool {
         let state_above = world.get_block_state(pos.above());
-        state.get_value(&AGE_PROPERTY) < 4
+        state.get_value(AGE_PROPERTY) < 4
             && world.raw_brightness(pos, 0) >= 8
             && !world.is_outside_build_height(pos.above().y())
             && (new_age < 3
@@ -191,7 +193,7 @@ impl BlockBehavior for PitcherCropBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(&AGE_PROPERTY) >= 3 {
+        if state.get_value(AGE_PROPERTY) >= 3 {
             self.base
                 .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
         } else if self.can_survive(state, world, pos) {
@@ -247,12 +249,12 @@ impl Bonemealable for PitcherCropBlock {
             return false;
         };
         if lower_state.get_block() != &vanilla_blocks::PITCHER_CROP
-            || lower_state.get_value(&HALF_PROPERTY) != DoubleBlockHalf::Lower
+            || lower_state.get_value(HALF_PROPERTY) != DoubleBlockHalf::Lower
         {
             return false;
         }
 
-        let new_age = lower_state.get_value(&AGE_PROPERTY) + 1;
+        let new_age = lower_state.get_value(AGE_PROPERTY) + 1;
 
         Self::can_grow(world, lower_state, lower_pos, new_age)
     }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -20,6 +20,8 @@ pub struct RedstoneLampBlock {
     block: BlockRef,
 }
 
+const LIT: &BoolProperty = &BlockStateProperties::LIT;
+
 impl RedstoneLampBlock {
     /// Creates redstone-lamp behavior for `block`.
     #[must_use]
@@ -31,7 +33,7 @@ impl RedstoneLampBlock {
 impl BlockBehavior for RedstoneLampBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state().set_value(
-            &BlockStateProperties::LIT,
+            LIT,
             context.world.has_neighbor_signal(context.place_pos()),
         ))
     }
@@ -44,7 +46,7 @@ impl BlockBehavior for RedstoneLampBlock {
         _source_block: BlockRef,
         _moved_by_piston: bool,
     ) {
-        let lit = state.get_value(&BlockStateProperties::LIT);
+        let lit = state.get_value(LIT);
         if lit == world.has_neighbor_signal(pos) {
             return;
         }
@@ -53,17 +55,17 @@ impl BlockBehavior for RedstoneLampBlock {
         } else {
             world.set_block(
                 pos,
-                state.set_value(&BlockStateProperties::LIT, true),
+                state.set_value(LIT, true),
                 UpdateFlags::UPDATE_CLIENTS,
             );
         }
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if state.get_value(&BlockStateProperties::LIT) && !world.has_neighbor_signal(pos) {
+        if state.get_value(LIT) && !world.has_neighbor_signal(pos) {
             world.set_block(
                 pos,
-                state.set_value(&BlockStateProperties::LIT, false),
+                state.set_value(LIT, false),
                 UpdateFlags::UPDATE_CLIENTS,
             );
         }
