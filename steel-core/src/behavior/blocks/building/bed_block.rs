@@ -17,9 +17,7 @@ use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt, properties::BedPart, properties::BlockStateProperties,
 };
 use steel_registry::vanilla_blocks;
-use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
-use text_components::TextComponent;
-use text_components::translation::TranslatedMessage;
+use steel_utils::{BlockPos, BlockStateId, Direction, translations, types::UpdateFlags};
 
 const BED_BOUNCE_SCALE: f64 = 0.660_000_026_226_043_7;
 const BED_PART: EnumProperty<BedPart> = BlockStateProperties::BED_PART;
@@ -368,11 +366,9 @@ impl BlockBehavior for BedBlock {
             // TODO: Mirror vanilla `kickVillagerOutOfBed`: find a sleeping
             // villager in this bed AABB and call `stopSleeping` once villager
             // sleeping exists.
-            player.send_overlay_message(&TextComponent::translated(TranslatedMessage {
-                key: "block.minecraft.bed.occupied".into(),
-                fallback: None,
-                args: None,
-            }));
+            player.send_overlay_message(
+                &translations::BLOCK_MINECRAFT_BED_OCCUPIED.msg().component(),
+            );
             return InteractionResult::SuccessServer;
         }
 

@@ -3,9 +3,9 @@ use super::{
     DamageType, ENTITY_INTERACTION_RANGE_BUFFER, EnchantmentDamageContext,
     EnchantmentPostAttackContext, Entity, EntityTypeRef, GameType, ITEM_BEHAVIORS, InteractionHand,
     InteractionResult, InventoryAccess, ItemStack, LivingEntity, PiercingWeapon, Player, SAttack,
-    SInteract, SharedEntity, SoundEventHolder, SoundEventRef, TextComponent, TranslatedMessage,
-    World, WorldAabb, enchantment_helper, piercing_ray_hit_t, vanilla_attributes,
-    vanilla_damage_types, vanilla_entities,
+    SInteract, SharedEntity, SoundEventHolder, SoundEventRef, TextComponent, World, WorldAabb,
+    enchantment_helper, piercing_ray_hit_t, translations, vanilla_attributes, vanilla_damage_types,
+    vanilla_entities,
 };
 
 const fn sound_holder_ref(holder: &SoundEventHolder) -> Option<SoundEventRef> {
@@ -19,12 +19,9 @@ const fn sound_holder_ref(holder: &SoundEventHolder) -> Option<SoundEventRef> {
 }
 impl Player {
     fn invalid_entity_attacked_message() -> TextComponent {
-        TranslatedMessage {
-            key: "multiplayer.disconnect.invalid_entity_attacked".into(),
-            fallback: None,
-            args: None,
-        }
-        .component()
+        translations::MULTIPLAYER_DISCONNECT_INVALID_ENTITY_ATTACKED
+            .msg()
+            .component()
     }
 
     fn eye_position(&self) -> DVec3 {

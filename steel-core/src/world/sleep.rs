@@ -2,8 +2,7 @@ use steel_protocol::packets::game::CSystemChat;
 use steel_registry::vanilla_game_rules::{
     ADVANCE_TIME, ADVANCE_WEATHER, PLAYERS_SLEEPING_PERCENTAGE,
 };
-use steel_utils::Identifier;
-use text_components::{TextComponent, translation::TranslatedMessage};
+use steel_utils::{Identifier, translations};
 
 use super::{World, sleep_status::SleepStatus};
 use crate::entity::LivingEntity as _;
@@ -47,25 +46,14 @@ impl World {
 
         let percentage = self.players_sleeping_percentage();
         let message = if sleep_status.are_enough_sleeping(percentage) {
-            TranslatedMessage {
-                key: "sleep.skipping_night".into(),
-                fallback: None,
-                args: None,
-            }
-            .component()
+            translations::SLEEP_SKIPPING_NIGHT.msg().component()
         } else {
-            TranslatedMessage {
-                key: "sleep.players_sleeping".into(),
-                fallback: None,
-                args: Some(
-                    vec![
-                        TextComponent::from(sleep_status.amount_sleeping().to_string()),
-                        TextComponent::from(sleep_status.sleepers_needed(percentage).to_string()),
-                    ]
-                    .into(),
-                ),
-            }
-            .component()
+            translations::SLEEP_PLAYERS_SLEEPING
+                .message([
+                    sleep_status.amount_sleeping().to_string(),
+                    sleep_status.sleepers_needed(percentage).to_string(),
+                ])
+                .component()
         };
 
         self.broadcast_to_all_with(|player| CSystemChat::new(&message, true, player));

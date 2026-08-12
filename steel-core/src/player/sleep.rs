@@ -4,7 +4,7 @@ use steel_registry::{
     blocks::{block_state_ext::BlockStateExt as _, properties::BlockStateProperties},
     dimension_type::BedRuleValue,
 };
-use steel_utils::{BlockPos, Direction};
+use steel_utils::{BlockPos, Direction, translations};
 use text_components::{TextComponent, translation::TranslatedMessage};
 
 use super::{Player, PlayerRespawnConfig};
@@ -149,22 +149,16 @@ impl Player {
         }
         if !self.bed_in_range(pos, direction) {
             return Err(BedSleepingProblem::Message(Box::new(
-                TranslatedMessage {
-                    key: "block.minecraft.bed.too_far_away".into(),
-                    fallback: None,
-                    args: None,
-                }
-                .component(),
+                translations::BLOCK_MINECRAFT_BED_TOO_FAR_AWAY
+                    .msg()
+                    .component(),
             )));
         }
         if self.bed_blocked(pos, direction) {
             return Err(BedSleepingProblem::Message(Box::new(
-                TranslatedMessage {
-                    key: "block.minecraft.bed.obstructed".into(),
-                    fallback: None,
-                    args: None,
-                }
-                .component(),
+                translations::BLOCK_MINECRAFT_BED_OBSTRUCTED
+                    .msg()
+                    .component(),
             )));
         }
 
@@ -189,14 +183,7 @@ impl Player {
         }
         self.sync_entity_data();
         if !world.can_sleep_through_nights() {
-            self.send_overlay_message(
-                &TranslatedMessage {
-                    key: "sleep.not_possible".into(),
-                    fallback: None,
-                    args: None,
-                }
-                .component(),
-            );
+            self.send_overlay_message(&translations::SLEEP_NOT_POSSIBLE.msg().component());
         }
         world.update_sleeping_player_list();
         Ok(())
@@ -220,14 +207,7 @@ impl Player {
                 .as_ref()
                 .is_some_and(|config| !config.is_same_position(current.as_ref()))
         {
-            self.send_message(
-                &TranslatedMessage {
-                    key: "block.minecraft.set_spawn".into(),
-                    fallback: None,
-                    args: None,
-                }
-                .component(),
-            );
+            self.send_message(&translations::BLOCK_MINECRAFT_SET_SPAWN.msg().component());
         }
         *current = respawn_config;
     }
