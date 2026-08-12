@@ -6,7 +6,7 @@ use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
 use steel_registry::data_components::vanilla_components::CONTAINER;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
@@ -37,6 +37,8 @@ pub struct ChiseledBookShelfBlock {
     block: BlockRef,
 }
 
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+
 impl ChiseledBookShelfBlock {
     const PIXELS_PER_BLOCK_EDGE: f32 = 16.0;
     const BOOKS_PER_INTERACTION: i32 = 1;
@@ -60,7 +62,7 @@ impl ChiseledBookShelfBlock {
     }
 
     fn hit_slot(state: BlockStateId, hit_result: &BlockHitResult) -> Option<usize> {
-        let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let facing = state.get_value(HORIZONTAL_FACING);
         if hit_result.direction != facing {
             return None;
         }
@@ -101,10 +103,11 @@ impl ChiseledBookShelfBlock {
 
 impl BlockBehavior for ChiseledBookShelfBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(self.block.default_state().set_value(
-            &BlockStateProperties::HORIZONTAL_FACING,
-            context.horizontal_direction().opposite(),
-        ))
+        Some(
+            self.block
+                .default_state()
+                .set_value(HORIZONTAL_FACING, context.horizontal_direction().opposite()),
+        )
     }
 
     fn set_placed_by(
@@ -330,7 +333,7 @@ mod tests {
     fn state_facing(facing: Direction) -> BlockStateId {
         vanilla_blocks::CHISELED_BOOKSHELF
             .default_state()
-            .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
+            .set_value(HORIZONTAL_FACING, facing)
     }
 
     fn bookshelf_hit(
@@ -480,10 +483,7 @@ mod tests {
             let placed = behavior
                 .get_state_for_placement(&context)
                 .expect("chiseled bookshelf always has a placement state");
-            assert_eq!(
-                placed.get_value(&BlockStateProperties::HORIZONTAL_FACING),
-                facing.opposite(),
-            );
+            assert_eq!(placed.get_value(HORIZONTAL_FACING), facing.opposite());
             assert!(is_shape_full_block(placed.get_static_collision_shape()));
         }
     }
@@ -495,7 +495,7 @@ mod tests {
         player: &Player,
         inventory: &mut InventoryAccess,
     ) {
-        let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let facing = state.get_value(HORIZONTAL_FACING);
         player
             .inventory
             .lock()
@@ -528,7 +528,7 @@ mod tests {
         inventory: &mut InventoryAccess,
     ) {
         let state = world.get_block_state(TEST_POS);
-        let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let facing = state.get_value(HORIZONTAL_FACING);
         player
             .inventory
             .lock()
@@ -583,7 +583,7 @@ mod tests {
         assert_invalid_item_is_rejected(&behavior, &world, state, &player, &mut inventory);
 
         let revision = holder.packet_content_revision();
-        let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let facing = state.get_value(HORIZONTAL_FACING);
         player
             .inventory
             .lock()

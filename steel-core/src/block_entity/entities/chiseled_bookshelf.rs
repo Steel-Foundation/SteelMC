@@ -335,8 +335,13 @@ impl Container for ChiseledBookShelfContainer {
 
     fn set_changed(&mut self) {}
 
-    fn can_place_item(&self, _slot: usize, stack: &ItemStack) -> bool {
+    fn can_place_item(&self, slot: usize, stack: &ItemStack) -> bool {
+        let Some(stored_item) = self.items.get(slot) else {
+            return false;
+        };
         stack.item().has_tag(&ItemTag::BOOKSHELF_BOOKS)
+            && (stored_item.is_empty()
+                || stored_item.count() < self.get_max_stack_size_for_item(stack))
     }
 
     fn can_take_item(&self, destination: &dyn Container, _slot: usize, stack: &ItemStack) -> bool {
@@ -381,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn bookshelf_book_tag_controls_insertion_and_container_capability() {
+    fn bookshelf_book_tag_and_slot_capacity_control_container_capability() {
         let bookshelf = test_bookshelf();
         let valid_items = [
             &vanilla_items::BOOK,
@@ -401,8 +406,11 @@ mod tests {
         assert_eq!(container.get_max_stack_size(), MAX_BOOKS_PER_SLOT);
         let valid_item = ItemStack::new(&vanilla_items::BOOK);
         let invalid_item = ItemStack::new(&vanilla_items::STONE);
-        assert!(container.can_place_item(FIRST_SLOT_INDEX, &valid_item));
+        assert!(!container.can_place_item(FIRST_SLOT_INDEX, &valid_item));
         assert!(!container.can_place_item(FIRST_SLOT_INDEX, &invalid_item));
+        assert!(container.can_place_item(LAST_SLOT_INDEX, &valid_item));
+        assert!(!container.can_place_item(LAST_SLOT_INDEX, &invalid_item));
+        assert!(!container.can_place_item(CHISELED_BOOKSHELF_SLOTS, &valid_item));
     }
 
     #[test]
