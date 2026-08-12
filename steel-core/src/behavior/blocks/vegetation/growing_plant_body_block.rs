@@ -12,9 +12,8 @@ use crate::{
         BLOCK_BEHAVIORS, BlockBehavior, BlockPlaceContext,
         block::default_can_be_replaced,
         blocks::vegetation::{
-            GrowingPlantBlock,
             bonemealable::{BonemealAction, Bonemealable},
-            get_top_connected_block,
+            get_top_connected_block, growing_plant_block,
             growing_plant_head_block::GrowingPlantHeadBlock,
         },
     },
@@ -83,8 +82,6 @@ impl GrowingPlantBodyBlock {
     }
 }
 
-impl GrowingPlantBlock for GrowingPlantBodyBlock {}
-
 impl BlockBehavior for GrowingPlantBodyBlock {
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
         let default_result = default_can_be_replaced(state, context);
@@ -96,7 +93,7 @@ impl BlockBehavior for GrowingPlantBodyBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        <Self as GrowingPlantBlock>::can_survive(
+        growing_plant_block::can_survive(
             world,
             pos,
             self.growth_direction,

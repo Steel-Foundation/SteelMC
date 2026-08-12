@@ -119,7 +119,6 @@ pub use firefly_bush_block::FireflyBushBlock;
 pub use flower_bed_block::FlowerBedBlock;
 pub use flower_block::FlowerBlock;
 pub use glow_lichen_block::GlowLichenBlock;
-pub use growing_plant_block::GrowingPlantBlock;
 pub use hanging_moss_block::HangingMossBlock;
 pub use hanging_roots_block::HangingRootsBlock;
 pub use kelp_block::KelpBlock;
@@ -136,7 +135,6 @@ pub use mushroom_block::MushroomBlock;
 pub use nether_fungus_block::NetherFungusBlock;
 pub use nether_roots_block::NetherRootsBlock;
 pub use nether_sprouts::NetherSproutsBlock;
-pub use nether_vines::NetherVines;
 pub use nether_wart::NetherWartBlock;
 pub use pitcher_crop::PitcherCropBlock;
 pub use pointed_dripstone_block::{

@@ -1,5 +1,5 @@
-use crate::behavior::blocks::vegetation::NetherVines;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
+use crate::behavior::blocks::vegetation::nether_vines;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{
     block::BlockBehavior, blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock,
@@ -20,8 +20,6 @@ pub struct TwistingVinesBlock {
     base: GrowingPlantHeadBlock,
 }
 
-impl NetherVines for TwistingVinesBlock {}
-
 impl TwistingVinesBlock {
     /// Creates a new twisting vines (head) block behavior.
     #[must_use]
@@ -33,7 +31,7 @@ impl TwistingVinesBlock {
                 false,
                 0.1,
                 &vanilla_blocks::TWISTING_VINES_PLANT,
-                Some(<Self as NetherVines>::get_blocks_to_grow_when_bonemealed),
+                Some(nether_vines::get_blocks_to_grow_when_bonemealed),
                 Self::can_grow_into,
             ),
         }

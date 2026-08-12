@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::behavior::block::BlockBehavior;
-use crate::behavior::blocks::vegetation::GrowingPlantBlock;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
+use crate::behavior::blocks::vegetation::growing_plant_block;
 use crate::behavior::blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
@@ -26,8 +26,6 @@ pub struct KelpBlock {
 }
 
 const GROW_PER_TICK_PROBABILITY: f64 = 0.14;
-
-impl GrowingPlantBlock for KelpBlock {}
 
 impl KelpBlock {
     /// Creates a new kelp block behavior.
@@ -62,7 +60,7 @@ impl KelpBlock {
         {
             return false;
         }
-        <Self as GrowingPlantBlock>::can_survive(
+        growing_plant_block::can_survive(
             world,
             pos,
             Direction::Up,
