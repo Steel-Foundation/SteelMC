@@ -603,9 +603,9 @@ impl JavaTcpClient {
                 if let Err(error) = self.expect_pre_play_packet(PrePlayPacket::SelectKnownPacks) {
                     return Ok(self.reject_unexpected_packet(error).await);
                 }
-                Ok(self
-                    .handle_select_known_packs(SSelectKnownPacks::read_packet(data)?)
-                    .await)
+                self.handle_select_known_packs(SSelectKnownPacks::read_packet(data)?)
+                    .await;
+                Ok(ConnectionAction::none())
             }
             config::S_FINISH_CONFIGURATION => {
                 if let Err(error) = self.expect_pre_play_packet(PrePlayPacket::FinishConfiguration)

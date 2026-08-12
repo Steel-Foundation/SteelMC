@@ -71,13 +71,11 @@ impl JavaTcpClient {
     }
 
     /// Handles the select known packs packet during the configuration state.
-    pub(crate) async fn handle_select_known_packs(
-        &self,
-        packet: SSelectKnownPacks,
-    ) -> ConnectionAction {
+    pub async fn handle_select_known_packs(&self, packet: SSelectKnownPacks) {
         let sequence_result = self.pre_play_state.lock().select_known_packs();
         if let Err(error) = sequence_result {
-            return self.reject_unexpected_packet(error).await;
+            self.reject_unexpected_packet(error).await;
+            return;
         }
         log::debug!("Select known packs packet: {packet:?}");
 
@@ -92,7 +90,6 @@ impl JavaTcpClient {
 
         // Finish configuration with CFinishConfigurationPacket
         self.send_bare_packet_now(CFinishConfiguration {}).await;
-        ConnectionAction::none()
     }
 
     /// Finishes the configuration process and transitions to the play state.
