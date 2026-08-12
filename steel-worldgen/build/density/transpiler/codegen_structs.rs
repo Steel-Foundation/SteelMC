@@ -560,7 +560,6 @@ impl TranspileContext {
                     #[cfg(all(
                         any(target_arch = "x86", target_arch = "x86_64"),
                         any(
-                            target_feature = "sse4.1",
                             target_feature = "avx",
                             target_feature = "avx2",
                             target_feature = "avx512f",
