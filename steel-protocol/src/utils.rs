@@ -53,7 +53,7 @@ pub struct RawPacket {
     /// The ID of the packet.
     pub id: i32,
     buffer: Box<[u8]>,
-    payload_start: usize,
+    payload_start: u32,
 }
 
 impl RawPacket {
@@ -67,19 +67,24 @@ impl RawPacket {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "packet buffers are limited to MAX_PACKET_DATA_SIZE bytes"
+    )]
     pub(crate) fn from_buffer(id: i32, buffer: Vec<u8>, payload_start: usize) -> Self {
         debug_assert!(payload_start <= buffer.len());
+        debug_assert!(payload_start <= MAX_PACKET_DATA_SIZE);
         Self {
             id,
             buffer: buffer.into_boxed_slice(),
-            payload_start,
+            payload_start: payload_start as u32,
         }
     }
 
     /// Returns the packet payload without its packet ID.
     #[must_use]
     pub fn payload(&self) -> &[u8] {
-        &self.buffer[self.payload_start..]
+        &self.buffer[self.payload_start as usize..]
     }
 }
 
