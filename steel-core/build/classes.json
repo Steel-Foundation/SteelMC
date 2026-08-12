@@ -201,40 +201,49 @@
     {
       "name": "gold_ore",
       "class": "DropExperienceBlock",
-      "xp_range_value": 0
+      "xp_range": 0
     },
     {
       "name": "deepslate_gold_ore",
       "class": "DropExperienceBlock",
-      "xp_range_value": 0
+      "xp_range": 0
     },
     {
       "name": "iron_ore",
       "class": "DropExperienceBlock",
-      "xp_range_value": 0
+      "xp_range": 0
     },
     {
       "name": "deepslate_iron_ore",
       "class": "DropExperienceBlock",
-      "xp_range_value": 0
+      "xp_range": 0
     },
     {
       "name": "coal_ore",
       "class": "DropExperienceBlock",
-      "xp_range_min_inclusive": 0,
-      "xp_range_max_inclusive": 2
+      "xp_range": {
+        "min_inclusive": 0,
+        "max_inclusive": 2,
+        "type": "minecraft:uniform"
+      }
     },
     {
       "name": "deepslate_coal_ore",
       "class": "DropExperienceBlock",
-      "xp_range_min_inclusive": 0,
-      "xp_range_max_inclusive": 2
+      "xp_range": {
+        "min_inclusive": 0,
+        "max_inclusive": 2,
+        "type": "minecraft:uniform"
+      }
     },
     {
       "name": "nether_gold_ore",
       "class": "DropExperienceBlock",
-      "xp_range_min_inclusive": 0,
-      "xp_range_max_inclusive": 1
+      "xp_range": {
+        "min_inclusive": 0,
+        "max_inclusive": 1,
+        "type": "minecraft:uniform"
+      }
     },
     {
       "name": "oak_log",
@@ -464,14 +473,20 @@
     {
       "name": "lapis_ore",
       "class": "DropExperienceBlock",
-      "xp_range_min_inclusive": 2,
-      "xp_range_max_inclusive": 5
+      "xp_range": {
+        "min_inclusive": 2,
+        "max_inclusive": 5,
+        "type": "minecraft:uniform"
+      }
     },
     {
       "name": "deepslate_lapis_ore",
       "class": "DropExperienceBlock",
-      "xp_range_min_inclusive": 2,
-      "xp_range_max_inclusive": 5
+      "xp_range": {
+        "min_inclusive": 2,
+        "max_inclusive": 5,
+        "type": "minecraft:uniform"
+      }
     },
     {
       "name": "lapis_block",
@@ -915,14 +930,20 @@
     {
       "name": "diamond_ore",
       "class": "DropExperienceBlock",
-      "xp_range_min_inclusive": 3,
-      "xp_range_max_inclusive": 7
+      "xp_range": {
+        "min_inclusive": 3,
+        "max_inclusive": 7,
+        "type": "minecraft:uniform"
+      }
     },
     {
       "name": "deepslate_diamond_ore",
       "class": "DropExperienceBlock",
-      "xp_range_min_inclusive": 3,
-      "xp_range_max_inclusive": 7
+      "xp_range": {
+        "min_inclusive": 3,
+        "max_inclusive": 7,
+        "type": "minecraft:uniform"
+      }
     },
     {
       "name": "diamond_block",
@@ -2212,14 +2233,20 @@
     {
       "name": "emerald_ore",
       "class": "DropExperienceBlock",
-      "xp_range_min_inclusive": 3,
-      "xp_range_max_inclusive": 7
+      "xp_range": {
+        "min_inclusive": 3,
+        "max_inclusive": 7,
+        "type": "minecraft:uniform"
+      }
     },
     {
       "name": "deepslate_emerald_ore",
       "class": "DropExperienceBlock",
-      "xp_range_min_inclusive": 3,
-      "xp_range_max_inclusive": 7
+      "xp_range": {
+        "min_inclusive": 3,
+        "max_inclusive": 7,
+        "type": "minecraft:uniform"
+      }
     },
     {
       "name": "ender_chest",
@@ -2747,8 +2774,11 @@
     {
       "name": "nether_quartz_ore",
       "class": "DropExperienceBlock",
-      "xp_range_min_inclusive": 2,
-      "xp_range_max_inclusive": 5
+      "xp_range": {
+        "min_inclusive": 2,
+        "max_inclusive": 5,
+        "type": "minecraft:uniform"
+      }
     },
     {
       "name": "hopper",
@@ -5496,7 +5526,7 @@
     {
       "name": "sculk",
       "class": "SculkBlock",
-      "xp_range_value": 1
+      "xp_range": 1
     },
     {
       "name": "sculk_vein",
@@ -5508,7 +5538,7 @@
     {
       "name": "sculk_catalyst",
       "class": "SculkCatalystBlock",
-      "xp_range_value": 5
+      "xp_range": 5
     },
     {
       "name": "sculk_shrieker",
@@ -5553,12 +5583,12 @@
     {
       "name": "copper_ore",
       "class": "DropExperienceBlock",
-      "xp_range_value": 0
+      "xp_range": 0
     },
     {
       "name": "deepslate_copper_ore",
       "class": "DropExperienceBlock",
-      "xp_range_value": 0
+      "xp_range": 0
     },
     {
       "name": "cut_copper",
