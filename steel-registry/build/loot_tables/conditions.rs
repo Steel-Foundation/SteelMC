@@ -157,6 +157,8 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
                             entity_type: None,
                             flags: None,
                             equipment: None,
+                            sheep_color: None,
+                            sheep_sheared: None,
                         }
                     }
                 }
@@ -166,6 +168,8 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
                         entity_type: None,
                         flags: None,
                         equipment: None,
+                        sheep_color: None,
+                        sheep_sheared: None,
                     }
                 }
             };
