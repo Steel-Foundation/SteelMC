@@ -90,11 +90,7 @@ impl DetectorRailBlock {
     }
 
     fn signal(state: BlockStateId) -> i32 {
-        if state.get_value(POWERED) {
-            15
-        } else {
-            0
-        }
+        if state.get_value(POWERED) { 15 } else { 0 }
     }
 }
 
@@ -310,10 +306,6 @@ mod tests {
 
         minecart.set_removed(RemovalReason::Discarded);
         behavior.tick(powered, &world, pos);
-        assert!(
-            !world
-                .get_block_state(pos)
-                .get_value(POWERED)
-        );
+        assert!(!world.get_block_state(pos).get_value(POWERED));
     }
 }

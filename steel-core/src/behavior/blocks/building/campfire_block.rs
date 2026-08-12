@@ -68,10 +68,7 @@ impl CampfireBlock {
         self.block
             .default_state()
             .set_value(WATERLOGGED, waterlogged)
-            .set_value(
-                SIGNAL_FIRE,
-                Self::is_smoke_source(below_state),
-            )
+            .set_value(SIGNAL_FIRE, Self::is_smoke_source(below_state))
             .set_value(LIT, !waterlogged)
             .set_value(HORIZONTAL_FACING, facing)
     }
@@ -111,10 +108,7 @@ impl BlockBehavior for CampfireBlock {
         }
 
         if direction == Direction::Down {
-            state.set_value(
-                SIGNAL_FIRE,
-                Self::is_smoke_source(neighbor_state),
-            )
+            state.set_value(SIGNAL_FIRE, Self::is_smoke_source(neighbor_state))
         } else {
             state
         }
@@ -181,18 +175,13 @@ impl BlockBehavior for CampfireBlock {
             level.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 pos,
-                &GameEventContext::new(
-                    None,
-                    Some(state.set_value(LIT, false)),
-                ),
+                &GameEventContext::new(None, Some(state.set_value(LIT, false))),
             );
         }
 
         level.set_block_state(
             pos,
-            state
-                .set_value(WATERLOGGED, true)
-                .set_value(LIT, false),
+            state.set_value(WATERLOGGED, true).set_value(LIT, false),
             UpdateFlags::UPDATE_ALL,
         );
         schedule_placed_liquid_tick(level, pos, fluid_state);
@@ -282,10 +271,7 @@ mod tests {
             Direction::East,
         );
 
-        assert_eq!(
-            state.get_value(HORIZONTAL_FACING),
-            Direction::East
-        );
+        assert_eq!(state.get_value(HORIZONTAL_FACING), Direction::East);
         assert!(state.get_value(SIGNAL_FIRE));
         assert!(state.get_value(LIT));
         assert!(!state.get_value(WATERLOGGED));

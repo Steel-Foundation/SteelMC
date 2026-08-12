@@ -46,11 +46,7 @@ impl BlockBehavior for BarrelBlock {
         // Barrel faces opposite to the player's look direction (all 6 directions).
         let facing = context.get_nearest_looking_direction().opposite();
 
-        Some(
-            self.block
-                .default_state()
-                .set_value(FACING, facing),
-        )
+        Some(self.block.default_state().set_value(FACING, facing))
     }
 
     fn use_without_item(

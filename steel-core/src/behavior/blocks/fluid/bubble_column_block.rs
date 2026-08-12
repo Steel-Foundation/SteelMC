@@ -103,17 +103,13 @@ impl BubbleColumnBlock {
             .get_block()
             .has_tag(&BlockTag::ENABLES_BUBBLE_COLUMN_PUSH_UP)
         {
-            return bubble_column
-                .default_state()
-                .set_value(DRAG, false);
+            return bubble_column.default_state().set_value(DRAG, false);
         }
         if below_state
             .get_block()
             .has_tag(&BlockTag::ENABLES_BUBBLE_COLUMN_DRAG_DOWN)
         {
-            return bubble_column
-                .default_state()
-                .set_value(DRAG, true);
+            return bubble_column.default_state().set_value(DRAG, true);
         }
 
         if occupy_state.get_block() == bubble_column {

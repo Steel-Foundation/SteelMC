@@ -32,7 +32,8 @@ pub struct NoteBlock {
 }
 
 const NOTE: &IntProperty = &BlockStateProperties::NOTE;
-const NOTEBLOCK_INSTRUMENT: &EnumProperty<NoteBlockInstrument> = &BlockStateProperties::NOTEBLOCK_INSTRUMENT;
+const NOTEBLOCK_INSTRUMENT: &EnumProperty<NoteBlockInstrument> =
+    &BlockStateProperties::NOTEBLOCK_INSTRUMENT;
 const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
 
 impl NoteBlock {
@@ -49,10 +50,7 @@ impl NoteBlock {
     fn set_instrument(level: &dyn LevelReader, pos: BlockPos, state: BlockStateId) -> BlockStateId {
         let instrument_above = Self::block_instrument(level.get_block_state(pos.above()));
         if instrument_above.works_above_note_block() {
-            return state.set_value(
-                NOTEBLOCK_INSTRUMENT,
-                instrument_above,
-            );
+            return state.set_value(NOTEBLOCK_INSTRUMENT, instrument_above);
         }
 
         let instrument_below = Self::block_instrument(level.get_block_state(pos.below()));
@@ -66,11 +64,7 @@ impl NoteBlock {
 
     fn cycle_note(state: BlockStateId) -> BlockStateId {
         let note = state.get_value(NOTE);
-        let next = if note == NOTE.max {
-            NOTE.min
-        } else {
-            note + 1
-        };
+        let next = if note == NOTE.max { NOTE.min } else { note + 1 };
         state.set_value(NOTE, next)
     }
 
@@ -293,10 +287,7 @@ mod tests {
             .default_state()
             .set_value(NOTE, NOTE.max);
 
-        assert_eq!(
-            NoteBlock::cycle_note(highest).get_value(NOTE),
-            NOTE.min
-        );
+        assert_eq!(NoteBlock::cycle_note(highest).get_value(NOTE), NOTE.min);
     }
 
     #[test]
@@ -318,18 +309,10 @@ mod tests {
             vanilla_blocks::REDSTONE_BLOCK.default_state(),
             UpdateFlags::UPDATE_ALL,
         ));
-        assert!(
-            world
-                .get_block_state(pos)
-                .get_value(POWERED)
-        );
+        assert!(world.get_block_state(pos).get_value(POWERED));
         world.run_block_events();
 
         assert!(world.remove_block(power_pos, false));
-        assert!(
-            !world
-                .get_block_state(pos)
-                .get_value(POWERED)
-        );
+        assert!(!world.get_block_state(pos).get_value(POWERED));
     }
 }

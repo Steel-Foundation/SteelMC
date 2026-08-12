@@ -66,9 +66,7 @@ impl PitcherCropBlock {
                 if block_state.get_block().has_tag(&BlockTag::GROWS_CROPS) {
                     block_speed = 1.0;
                     // Check moisture level (defaults to 0 for non-farmland blocks)
-                    let moisture = block_state
-                        .try_get_value(MOISTURE)
-                        .unwrap_or(0);
+                    let moisture = block_state.try_get_value(MOISTURE).unwrap_or(0);
                     if moisture > 0 {
                         block_speed = 3.0;
                     }

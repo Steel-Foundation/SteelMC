@@ -60,11 +60,7 @@ impl PressurePlateBlock {
     }
 
     fn signal_for_state(state: BlockStateId) -> i32 {
-        if state.get_value(POWERED) {
-            15
-        } else {
-            0
-        }
+        if state.get_value(POWERED) { 15 } else { 0 }
     }
 
     fn state_for_signal(state: BlockStateId, signal: i32) -> BlockStateId {

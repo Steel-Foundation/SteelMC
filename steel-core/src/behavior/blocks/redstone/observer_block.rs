@@ -48,20 +48,17 @@ impl ObserverBlock {
     }
 
     fn own_signal(state: BlockStateId) -> i32 {
-        if state.get_value(POWERED) {
-            15
-        } else {
-            0
-        }
+        if state.get_value(POWERED) { 15 } else { 0 }
     }
 }
 
 impl BlockBehavior for ObserverBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(self.block.default_state().set_value(
-            FACING,
-            context.get_nearest_looking_direction(),
-        ))
+        Some(
+            self.block
+                .default_state()
+                .set_value(FACING, context.get_nearest_looking_direction()),
+        )
     }
 
     fn update_shape(
@@ -73,9 +70,7 @@ impl BlockBehavior for ObserverBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(FACING) == direction
-            && !state.get_value(POWERED)
-        {
+        if state.get_value(FACING) == direction && !state.get_value(POWERED) {
             self.start_signal(world, pos);
         }
         state
@@ -126,14 +121,8 @@ impl BlockBehavior for ObserverBlock {
         pos: BlockPos,
         _moved_by_piston: bool,
     ) {
-        if state.get_value(POWERED)
-            && world.has_scheduled_block_tick(pos, self.block)
-        {
-            self.update_neighbors_in_front(
-                world,
-                pos,
-                state.set_value(POWERED, false),
-            );
+        if state.get_value(POWERED) && world.has_scheduled_block_tick(pos, self.block) {
+            self.update_neighbors_in_front(world, pos, state.set_value(POWERED, false));
         }
     }
 

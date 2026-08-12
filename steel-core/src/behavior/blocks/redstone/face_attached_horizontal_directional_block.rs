@@ -2,7 +2,9 @@
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{AttachFace, BlockStateProperties, Direction, EnumProperty};
+use steel_registry::blocks::properties::{
+    AttachFace, BlockStateProperties, Direction, EnumProperty,
+};
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::axis::Axis;
 use steel_utils::{BlockPos, BlockStateId};
@@ -61,18 +63,12 @@ impl FaceAttachedHorizontalDirectionalBlock {
                             AttachFace::Floor
                         },
                     )
-                    .set_value(
-                        HORIZONTAL_FACING,
-                        context.horizontal_direction(),
-                    )
+                    .set_value(HORIZONTAL_FACING, context.horizontal_direction())
             } else {
                 self.block
                     .default_state()
                     .set_value(ATTACH_FACE, AttachFace::Wall)
-                    .set_value(
-                        HORIZONTAL_FACING,
-                        direction.opposite(),
-                    )
+                    .set_value(HORIZONTAL_FACING, direction.opposite())
             };
 
             if Self::can_survive(state, context.world.as_ref(), context.place_pos()) {

@@ -81,12 +81,7 @@ impl BlockBehavior for BaseCoralWallFanBlock {
             .get_nearest_looking_directions()
             .into_iter()
             .filter(|direction| direction.is_horizontal())
-            .map(|direction| {
-                state.set_value(
-                    HORIZONTAL_FACING,
-                    direction.opposite(),
-                )
-            })
+            .map(|direction| state.set_value(HORIZONTAL_FACING, direction.opposite()))
             .find(|state| self.can_survive(*state, context.world, context.place_pos()))
     }
 }

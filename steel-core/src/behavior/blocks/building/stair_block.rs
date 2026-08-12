@@ -49,8 +49,7 @@ impl StairBlock {
     fn stairs_shape(state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> StairsShape {
         let facing = state.get_value(FACING);
         let behind_state = world.get_block_state(facing.relative(pos));
-        if Self::is_stairs(behind_state) && state.get_value(HALF) == behind_state.get_value(HALF)
-        {
+        if Self::is_stairs(behind_state) && state.get_value(HALF) == behind_state.get_value(HALF) {
             let behind_facing = behind_state.get_value(FACING);
             if behind_facing.get_axis() != facing.get_axis()
                 && Self::can_take_shape(state, world, pos, behind_facing.opposite())

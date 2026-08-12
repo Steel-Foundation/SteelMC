@@ -556,10 +556,7 @@ mod tests {
             upper,
         );
 
-        assert_eq!(
-            updated.get_value(DOUBLE_BLOCK_HALF),
-            DoubleBlockHalf::Lower
-        );
+        assert_eq!(updated.get_value(DOUBLE_BLOCK_HALF), DoubleBlockHalf::Lower);
         assert_eq!(updated.get_value(HORIZONTAL_FACING), Direction::South);
         assert_eq!(updated.get_value(DOOR_HINGE), DoorHingeSide::Left);
     }

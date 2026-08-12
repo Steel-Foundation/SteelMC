@@ -50,11 +50,7 @@ impl BrushableBlock {
 
 impl BlockBehavior for BrushableBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(
-            self.block
-                .default_state()
-                .set_value(DUSTED, 0),
-        )
+        Some(self.block.default_state().set_value(DUSTED, 0))
     }
 
     fn on_place(

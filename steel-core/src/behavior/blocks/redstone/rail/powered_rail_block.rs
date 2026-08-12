@@ -172,10 +172,7 @@ impl PoweredRailBlock {
             UpdateFlags::UPDATE_ALL,
         );
         world.update_neighbors_at(pos.below(), self.base.block);
-        if state
-            .get_value(RAIL_SHAPE)
-            .is_slope()
-        {
+        if state.get_value(RAIL_SHAPE).is_slope() {
             world.update_neighbors_at(pos.above(), self.base.block);
         }
     }

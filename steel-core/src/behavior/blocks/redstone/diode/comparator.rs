@@ -147,11 +147,7 @@ impl ComparatorBlock {
     fn calculate_output(world: &Arc<World>, pos: BlockPos, state: BlockStateId) -> i32 {
         let input = Self::get_input_signal(world, pos, state);
         let alternate = DiodeBlock::get_alternate_signal(world.as_ref(), pos, state, false);
-        Self::calculate_output_signal(
-            input,
-            alternate,
-            state.get_value(MODE_COMPARATOR),
-        )
+        Self::calculate_output_signal(input, alternate, state.get_value(MODE_COMPARATOR))
     }
 
     const fn should_turn_on_from_signals(input: i32, alternate: i32, mode: ComparatorMode) -> bool {
@@ -163,11 +159,7 @@ impl ComparatorBlock {
     fn should_turn_on(world: &Arc<World>, pos: BlockPos, state: BlockStateId) -> bool {
         let input = Self::get_input_signal(world, pos, state);
         let alternate = DiodeBlock::get_alternate_signal(world.as_ref(), pos, state, false);
-        Self::should_turn_on_from_signals(
-            input,
-            alternate,
-            state.get_value(MODE_COMPARATOR),
-        )
+        Self::should_turn_on_from_signals(input, alternate, state.get_value(MODE_COMPARATOR))
     }
 
     fn check_tick_on_neighbor(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
@@ -176,8 +168,7 @@ impl ComparatorBlock {
         }
         let output = Self::calculate_output(world, pos, state);
         if output == Self::output_signal(world.as_ref(), pos)
-            && state.get_value(POWERED)
-                == Self::should_turn_on(world, pos, state)
+            && state.get_value(POWERED) == Self::should_turn_on(world, pos, state)
         {
             return;
         }
@@ -192,9 +183,7 @@ impl ComparatorBlock {
     fn refresh_output_state(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
         let output = Self::calculate_output(world, pos, state);
         let old_output = Self::set_output_signal(world, pos, output);
-        if old_output == output
-            && state.get_value(MODE_COMPARATOR) != ComparatorMode::Compare
-        {
+        if old_output == output && state.get_value(MODE_COMPARATOR) != ComparatorMode::Compare {
             return;
         }
 

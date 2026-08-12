@@ -67,10 +67,7 @@ impl CopperBulbBlock {
     }
 
     fn analog_output(world: &dyn LevelReader, pos: BlockPos) -> i32 {
-        if world
-            .get_block_state(pos)
-            .get_value(LIT)
-        {
+        if world.get_block_state(pos).get_value(LIT) {
             15
         } else {
             0

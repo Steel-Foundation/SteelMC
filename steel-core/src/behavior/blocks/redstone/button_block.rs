@@ -250,11 +250,7 @@ impl BlockBehavior for ButtonBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
-        if state.get_value(POWERED) {
-            15
-        } else {
-            0
-        }
+        if state.get_value(POWERED) { 15 } else { 0 }
     }
 
     fn get_direct_signal(
@@ -325,11 +321,7 @@ mod tests {
             .get_behavior(&vanilla_blocks::OAK_BUTTON)
             .entity_inside(state, &world, pos, arrow.as_ref(), &mut effects, true);
 
-        assert!(
-            world
-                .get_block_state(pos)
-                .get_value(POWERED)
-        );
+        assert!(world.get_block_state(pos).get_value(POWERED));
         assert!(world.has_scheduled_block_tick(pos, &vanilla_blocks::OAK_BUTTON));
     }
 }

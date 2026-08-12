@@ -36,10 +36,11 @@ impl BeehiveBlock {
 
 impl BlockBehavior for BeehiveBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(self.block.default_state().set_value(
-            HORIZONTAL_FACING,
-            context.horizontal_direction().opposite(),
-        ))
+        Some(
+            self.block
+                .default_state()
+                .set_value(HORIZONTAL_FACING, context.horizontal_direction().opposite()),
+        )
     }
 
     fn new_block_entity(

@@ -135,10 +135,7 @@ impl Bonemealable for BambooStalkBlock {
         let below = Self::stalk_segments_below(world, pos);
         let growth_pos = pos.above_n(above + 1);
         (above + below + 1 < 16)
-            && world
-                .get_block_state(pos.above_n(above))
-                .get_value(STAGE)
-                != 1
+            && world.get_block_state(pos.above_n(above)).get_value(STAGE) != 1
             && !world.is_outside_build_height(growth_pos.y())
             && world.get_block_state(growth_pos).is_air()
     }
@@ -196,10 +193,11 @@ impl BlockBehavior for BambooStalkBlock {
                     .set_value(AGE_PROPERTY, 0),
             )
         } else if block_below == &vanilla_blocks::BAMBOO {
-            Some(vanilla_blocks::BAMBOO.default_state().set_value(
-                AGE_PROPERTY,
-                state_below.get_value(AGE_PROPERTY),
-            ))
+            Some(
+                vanilla_blocks::BAMBOO
+                    .default_state()
+                    .set_value(AGE_PROPERTY, state_below.get_value(AGE_PROPERTY)),
+            )
         } else {
             let state_above = context.world.get_block_state(context.place_pos().above());
             if state_above.get_block() == &vanilla_blocks::BAMBOO {

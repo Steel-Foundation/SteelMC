@@ -294,8 +294,7 @@ impl BlockBehavior for BedBlock {
         let facing = state.get_value(FACING);
         let head_pos = Self::neighbor_direction(&BedPart::Foot, facing).relative(pos);
         let head_state = world.get_block_state(head_pos);
-        if head_state.get_block() != self.block || head_state.get_value(BED_PART) != BedPart::Head
-        {
+        if head_state.get_block() != self.block || head_state.get_value(BED_PART) != BedPart::Head {
             return state;
         }
 

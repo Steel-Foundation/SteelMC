@@ -110,9 +110,7 @@ impl TripWireHookBlock {
             let test_pos = pos.relative_n(direction, distance as i32);
             let mut wire_state = world.get_block_state(test_pos);
             if wire_state.get_block() == &vanilla_blocks::TRIPWIRE_HOOK {
-                if wire_state.get_value(HORIZONTAL_FACING)
-                    == direction.opposite()
-                {
+                if wire_state.get_value(HORIZONTAL_FACING) == direction.opposite() {
                     receiver_distance = distance;
                 }
                 break;
@@ -239,10 +237,7 @@ impl BlockBehavior for TripWireHookBlock {
             let state = self
                 .block
                 .default_state()
-                .set_value(
-                    HORIZONTAL_FACING,
-                    direction.opposite(),
-                )
+                .set_value(HORIZONTAL_FACING, direction.opposite())
                 .set_value(POWERED, false)
                 .set_value(ATTACHED, false);
             if self.can_survive(state, context.world.as_ref(), context.place_pos()) {
@@ -307,11 +302,7 @@ impl BlockBehavior for TripWireHookBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
-        if state.get_value(POWERED) {
-            15
-        } else {
-            0
-        }
+        if state.get_value(POWERED) { 15 } else { 0 }
     }
 
     fn get_direct_signal(
@@ -322,9 +313,7 @@ impl BlockBehavior for TripWireHookBlock {
         direction: Direction,
         _context: SignalQueryContext,
     ) -> i32 {
-        if state.get_value(POWERED)
-            && state.get_value(HORIZONTAL_FACING) == direction
-        {
+        if state.get_value(POWERED) && state.get_value(HORIZONTAL_FACING) == direction {
             15
         } else {
             0
@@ -376,16 +365,8 @@ mod tests {
         }
 
         TripWireHookBlock::calculate_state(&world, left, left_state, false, false, -1, None);
-        assert!(
-            world
-                .get_block_state(left)
-                .get_value(ATTACHED)
-        );
-        assert!(
-            world
-                .get_block_state(right)
-                .get_value(ATTACHED)
-        );
+        assert!(world.get_block_state(left).get_value(ATTACHED));
+        assert!(world.get_block_state(right).get_value(ATTACHED));
 
         let powered_wire = world
             .get_block_state(left.relative_n(Direction::East, 2))
@@ -399,16 +380,8 @@ mod tests {
             2,
             Some(powered_wire),
         );
-        assert!(
-            world
-                .get_block_state(left)
-                .get_value(POWERED)
-        );
-        assert!(
-            world
-                .get_block_state(right)
-                .get_value(POWERED)
-        );
+        assert!(world.get_block_state(left).get_value(POWERED));
+        assert!(world.get_block_state(right).get_value(POWERED));
 
         TripWireHookBlock::calculate_state(
             &world,

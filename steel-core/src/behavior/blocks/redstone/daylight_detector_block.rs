@@ -67,11 +67,7 @@ impl DaylightDetectorBlock {
     fn update_signal_strength(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
         let target = Self::signal_strength(world, pos, state);
         if state.get_value(POWER) != target {
-            world.set_block(
-                pos,
-                state.set_value(POWER, target),
-                UpdateFlags::UPDATE_ALL,
-            );
+            world.set_block(pos, state.set_value(POWER, target), UpdateFlags::UPDATE_ALL);
         }
     }
 }

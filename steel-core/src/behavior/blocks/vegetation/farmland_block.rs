@@ -58,10 +58,7 @@ impl FarmlandBlock {
                     }
 
                     // Check if block is waterlogged
-                    if state
-                        .try_get_value(WATERLOGGED)
-                        .unwrap_or(false)
-                    {
+                    if state.try_get_value(WATERLOGGED).unwrap_or(false) {
                         return true;
                     }
                 }
@@ -106,11 +103,7 @@ impl FarmlandBlock {
 impl BlockBehavior for FarmlandBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Farmland is placed with moisture 0
-        Some(
-            self.block
-                .default_state()
-                .set_value(MOISTURE, 0u8),
-        )
+        Some(self.block.default_state().set_value(MOISTURE, 0u8))
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

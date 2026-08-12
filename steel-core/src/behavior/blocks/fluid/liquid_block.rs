@@ -283,9 +283,7 @@ mod tests {
         init_behaviors();
 
         let block = LiquidBlock::new(&vanilla_blocks::WATER, &vanilla_fluids::WATER);
-        let state = vanilla_blocks::WATER
-            .default_state()
-            .set_value(LEVEL, 1);
+        let state = vanilla_blocks::WATER.default_state().set_value(LEVEL, 1);
         let neighbor_state = vanilla_blocks::WATER.default_state();
         let level = TestLevel::default();
 
@@ -344,9 +342,7 @@ mod tests {
         init_behaviors();
 
         let block = LiquidBlock::new(&vanilla_blocks::WATER, &vanilla_fluids::WATER);
-        let state = vanilla_blocks::WATER
-            .default_state()
-            .set_value(LEVEL, 1);
+        let state = vanilla_blocks::WATER.default_state().set_value(LEVEL, 1);
         let level = TestLevel::default();
 
         let updated = block.update_shape(

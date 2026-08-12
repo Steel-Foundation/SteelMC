@@ -32,10 +32,11 @@ impl RedstoneLampBlock {
 
 impl BlockBehavior for RedstoneLampBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(self.block.default_state().set_value(
-            LIT,
-            context.world.has_neighbor_signal(context.place_pos()),
-        ))
+        Some(
+            self.block
+                .default_state()
+                .set_value(LIT, context.world.has_neighbor_signal(context.place_pos())),
+        )
     }
 
     fn handle_neighbor_changed(
@@ -53,11 +54,7 @@ impl BlockBehavior for RedstoneLampBlock {
         if lit {
             world.schedule_block_tick_default(pos, self.block, TURN_OFF_DELAY);
         } else {
-            world.set_block(
-                pos,
-                state.set_value(LIT, true),
-                UpdateFlags::UPDATE_CLIENTS,
-            );
+            world.set_block(pos, state.set_value(LIT, true), UpdateFlags::UPDATE_CLIENTS);
         }
     }
 

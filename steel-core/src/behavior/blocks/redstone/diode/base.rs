@@ -53,10 +53,9 @@ impl DiodeBlock {
     }
 
     pub(super) fn state_for_placement(&self, context: &BlockPlaceContext<'_>) -> BlockStateId {
-        self.block.default_state().set_value(
-            HORIZONTAL_FACING,
-            context.horizontal_direction().opposite(),
-        )
+        self.block
+            .default_state()
+            .set_value(HORIZONTAL_FACING, context.horizontal_direction().opposite())
     }
 
     pub(super) fn get_input_signal(
@@ -108,9 +107,7 @@ impl DiodeBlock {
         pos: BlockPos,
         state: BlockStateId,
     ) -> bool {
-        let direction = state
-            .get_value(HORIZONTAL_FACING)
-            .opposite();
+        let direction = state.get_value(HORIZONTAL_FACING).opposite();
         let opposite_state = level.get_block_state(pos.relative(direction));
         BLOCK_BEHAVIORS
             .get_behavior(opposite_state.get_block())

@@ -104,10 +104,7 @@ mod tests {
             vanilla_blocks::AIR.default_state(),
             Direction::East,
         );
-        assert_eq!(
-            placed.get_value(FACING_PROPERTY),
-            Direction::West
-        );
+        assert_eq!(placed.get_value(FACING_PROPERTY), Direction::West);
 
         let existing = vanilla_blocks::LEAF_LITTER
             .default_state()
@@ -119,10 +116,7 @@ mod tests {
             existing,
             Direction::East,
         );
-        assert_eq!(
-            stacked.get_value(FACING_PROPERTY),
-            Direction::North
-        );
+        assert_eq!(stacked.get_value(FACING_PROPERTY), Direction::North);
         assert_eq!(stacked.get_value(SEGMENT_AMOUNT), 3);
     }
 
@@ -136,8 +130,7 @@ mod tests {
         assert!(leaf_litter.can_be_replaced(&place_context(&mut leaf_litter_item, false)));
         assert!(!leaf_litter.can_be_replaced(&place_context(&mut leaf_litter_item, true)));
 
-        let full_leaf_litter =
-            leaf_litter.set_value(SEGMENT_AMOUNT, MAX_SEGMENT_AMOUNT);
+        let full_leaf_litter = leaf_litter.set_value(SEGMENT_AMOUNT, MAX_SEGMENT_AMOUNT);
         assert!(!full_leaf_litter.can_be_replaced(&place_context(&mut leaf_litter_item, false,)));
         let mut stone = ItemStack::new(&vanilla_items::STONE);
         assert!(leaf_litter.can_be_replaced(&place_context(&mut stone, false)));

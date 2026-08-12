@@ -21,7 +21,6 @@ use crate::world::{LevelReader, ScheduledTickAccess, World};
 /// Vanilla piston-head block.
 pub struct PistonHeadBlock;
 
-
 const EXTENDED: &BoolProperty = &BlockStateProperties::EXTENDED;
 const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
 const PISTON_TYPE: &EnumProperty<PistonType> = &BlockStateProperties::PISTON_TYPE;
@@ -39,8 +38,7 @@ impl PistonHeadBlock {
         };
         potential_base.get_block() == base_block
             && potential_base.get_value(EXTENDED)
-            && potential_base.get_value(FACING)
-                == arm_state.get_value(FACING)
+            && potential_base.get_value(FACING) == arm_state.get_value(FACING)
     }
 }
 
@@ -87,9 +85,7 @@ impl BlockBehavior for PistonHeadBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if direction.opposite() == state.get_value(FACING)
-            && !self.can_survive(state, world, pos)
-        {
+        if direction.opposite() == state.get_value(FACING) && !self.can_survive(state, world, pos) {
             vanilla_blocks::AIR.default_state()
         } else {
             state
@@ -124,12 +120,10 @@ impl BlockBehavior for PistonHeadBlock {
         state: BlockStateId,
         _include_data: bool,
     ) -> Option<ItemStack> {
-        Some(ItemStack::new(
-            match state.get_value(PISTON_TYPE) {
-                PistonType::Normal => &vanilla_items::PISTON,
-                PistonType::Sticky => &vanilla_items::STICKY_PISTON,
-            },
-        ))
+        Some(ItemStack::new(match state.get_value(PISTON_TYPE) {
+            PistonType::Normal => &vanilla_items::PISTON,
+            PistonType::Sticky => &vanilla_items::STICKY_PISTON,
+        }))
     }
 
     fn is_pathfindable(&self, _state: BlockStateId, _type: PathComputationType) -> bool {

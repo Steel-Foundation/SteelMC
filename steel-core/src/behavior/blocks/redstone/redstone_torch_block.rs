@@ -49,9 +49,7 @@ fn handle_neighbor_changed(
     pos: BlockPos,
     has_neighbor_signal: bool,
 ) {
-    if state.get_value(LIT) == has_neighbor_signal
-        && !world.will_tick_block_this_tick(pos, block)
-    {
+    if state.get_value(LIT) == has_neighbor_signal && !world.will_tick_block_this_tick(pos, block) {
         world.schedule_block_tick_default(pos, block, TOGGLE_DELAY);
     }
 }
@@ -64,11 +62,7 @@ fn tick_torch(state: BlockStateId, world: &Arc<World>, pos: BlockPos, has_neighb
             return;
         }
 
-        world.set_block(
-            pos,
-            state.set_value(LIT, false),
-            UpdateFlags::UPDATE_ALL,
-        );
+        world.set_block(pos, state.set_value(LIT, false), UpdateFlags::UPDATE_ALL);
         if world.redstone_torch_toggled_too_frequently(pos, true) {
             world.level_event(level_events::REDSTONE_TORCH_BURNOUT, pos, 0, None);
             let current_block = world.get_block_state(pos).get_block();
@@ -78,20 +72,12 @@ fn tick_torch(state: BlockStateId, world: &Arc<World>, pos: BlockPos, has_neighb
     }
 
     if !has_neighbor_signal && !world.redstone_torch_toggled_too_frequently(pos, false) {
-        world.set_block(
-            pos,
-            state.set_value(LIT, true),
-            UpdateFlags::UPDATE_ALL,
-        );
+        world.set_block(pos, state.set_value(LIT, true), UpdateFlags::UPDATE_ALL);
     }
 }
 
 fn own_signal(state: BlockStateId) -> i32 {
-    if state.get_value(LIT) {
-        15
-    } else {
-        0
-    }
+    if state.get_value(LIT) { 15 } else { 0 }
 }
 
 /// Standing redstone torch (`redstone_torch`).
@@ -261,9 +247,7 @@ impl RedstoneWallTorchBlock {
     }
 
     fn has_neighbor_signal(state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        let opposite = state
-            .get_value(HORIZONTAL_FACING)
-            .opposite();
+        let opposite = state.get_value(HORIZONTAL_FACING).opposite();
         get_redstone_signal(
             world,
             pos.relative(opposite),
@@ -302,10 +286,10 @@ impl BlockBehavior for RedstoneWallTorchBlock {
             if !direction.is_horizontal() {
                 continue;
             }
-            let state = self.block.default_state().set_value(
-                HORIZONTAL_FACING,
-                direction.opposite(),
-            );
+            let state = self
+                .block
+                .default_state()
+                .set_value(HORIZONTAL_FACING, direction.opposite());
             if self.can_survive(state, context.world.as_ref(), context.place_pos()) {
                 return Some(state);
             }

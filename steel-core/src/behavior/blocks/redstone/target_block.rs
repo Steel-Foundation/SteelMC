@@ -99,11 +99,7 @@ impl BlockBehavior for TargetBlock {
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if state.get_value(POWER) != 0 {
-            world.set_block(
-                pos,
-                state.set_value(POWER, 0_u8),
-                UpdateFlags::UPDATE_ALL,
-            );
+            world.set_block(pos, state.set_value(POWER, 0_u8), UpdateFlags::UPDATE_ALL);
         }
     }
 
@@ -119,11 +115,7 @@ impl BlockBehavior for TargetBlock {
             && state.get_value(POWER) > 0
             && !world.has_scheduled_block_tick(pos, self.block)
         {
-            world.set_block(
-                pos,
-                state.set_value(POWER, 0_u8),
-                RESET_ON_PLACE_FLAGS,
-            );
+            world.set_block(pos, state.set_value(POWER, 0_u8), RESET_ON_PLACE_FLAGS);
         }
     }
 

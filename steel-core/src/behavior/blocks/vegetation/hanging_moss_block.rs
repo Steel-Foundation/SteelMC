@@ -110,11 +110,7 @@ impl Bonemealable for HangingMossBlock {
     ) {
         let tip_pos = self.get_tip(world, pos).below();
         if HangingMossBlock::can_grow_into(world.get_block_state(tip_pos)) {
-            world.set_block(
-                tip_pos,
-                state.set_value(TIP, true),
-                UpdateFlags::UPDATE_ALL,
-            );
+            world.set_block(tip_pos, state.set_value(TIP, true), UpdateFlags::UPDATE_ALL);
         }
     }
 

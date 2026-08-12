@@ -35,10 +35,11 @@ impl EndPortalFrameBlock {
 
 impl BlockBehavior for EndPortalFrameBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(self.block.default_state().set_value(
-            HORIZONTAL_FACING,
-            context.horizontal_direction().opposite(),
-        ))
+        Some(
+            self.block
+                .default_state()
+                .set_value(HORIZONTAL_FACING, context.horizontal_direction().opposite()),
+        )
     }
 
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {

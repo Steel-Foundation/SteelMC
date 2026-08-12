@@ -262,8 +262,8 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::test_support::TestLevel;
 
-const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
-const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+    const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
+    const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
     #[test]
     fn multiface_update_uses_supplied_neighbor_state_and_schedules_water_first() {
