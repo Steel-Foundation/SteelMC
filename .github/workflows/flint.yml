@@ -1,0 +1,161 @@
+name: Flint Tests
+
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+  pull_request:
+
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout SteelMC
+        uses: actions/checkout@v4
+        with:
+          path: SteelMC
+
+      - name: Checkout flint-steel
+        uses: actions/checkout@v4
+        with:
+          repository: FlintTestMC/flint-steel
+          ref: v1.1.7
+          path: flint-steel
+
+      - name: Clone FlintBenchmark
+        uses: actions/checkout@v4
+        with:
+          repository: FlintTestMC/FlintBenchmark
+          path: FlintBenchmark
+
+      - name: Setup Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            flint-steel -> target
+          shared-key: "flint-steel"
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/master' || github.event_name == 'pull_request' }}
+
+      - name: Configure SteelMC patch for Flint
+        working-directory: flint-steel
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml << 'EOF'
+          [patch."https://github.com/Steel-Foundation/SteelMC.git"]
+          steel-core     = { path = "../SteelMC/steel-core", features = ["flint"] }
+          steel-protocol = { path = "../SteelMC/steel-protocol" }
+          steel-registry = { path = "../SteelMC/steel-registry" }
+          steel-utils    = { path = "../SteelMC/steel-utils" }
+          EOF
+
+      - name: Configure Flint via toml
+        working-directory: flint-steel
+        run: |
+          cat > flint.toml << 'EOF'
+          [filter]
+          implemented_only = true
+
+          # [filter.tags]
+          # redstone = true
+          # walls = false
+          # fence = true
+
+          EOF
+
+      - name: Run flint-steel tests
+        id: tests
+        working-directory: flint-steel
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          TEST_PATH: ${{ github.workspace }}/FlintBenchmark/tests
+          FLINT_VIZ_URL: "https://flint-viz.jonasbauer.org"
+        run: cargo test --profile cicd --lib test_run_flint_selected -- --nocapture
+
+      - name: Download baseline
+        id: baseline
+        uses: dawidd6/action-download-artifact@v6
+        continue-on-error: true
+        with:
+          name: flint-baseline
+          branch: master
+          workflow: flint.yml
+          path: baseline
+
+      - name: Check for regressions
+        id: regression
+        run: |
+          SUMMARY="flint-steel/log/flint_summary.json"
+          BASELINE="baseline/flint_baseline.json"
+
+          if [ ! -f "$SUMMARY" ]; then
+            echo "::error::No flint_summary.json produced — tests likely failed to compile"
+            exit 1
+          fi
+
+          if [ ! -f "$BASELINE" ]; then
+            echo "No baseline found — skipping regression check"
+            exit 0
+          fi
+
+          # Find tests that passed in baseline but fail now
+          REGRESSIONS=$(jq -n \
+            --slurpfile base "$BASELINE" \
+            --slurpfile curr "$SUMMARY" \
+            '($base[0] | map(select(.success == true)) | map(.name)) as $required |
+              [$curr[0][] | select(.success == false and IN(.name; $required[]))] |
+              map(.name)')
+
+          if [ "$REGRESSIONS" != "[]" ]; then
+            echo "::error::Regressions detected: $REGRESSIONS"
+            echo "$REGRESSIONS" | jq -r '.[]' | while read -r name; do
+              echo "  - $name"
+            done
+            exit 1
+          fi
+
+          echo "No regressions detected"
+
+      - name: Merge and upload baseline
+        if: github.ref == 'refs/heads/master' && steps.regression.outcome == 'success'
+        run: |
+          SUMMARY="flint-steel/log/flint_summary.json"
+          BASELINE="baseline/flint_baseline.json"
+          MERGED="flint_baseline.json"
+
+          if [ -f "$BASELINE" ]; then
+            # Merge: old baseline successes ∪ current successes
+            jq -n \
+              --slurpfile base "$BASELINE" \
+              --slurpfile curr "$SUMMARY" \
+              '($base[0] + $curr[0]) | group_by(.name) | map({
+                name: .[0].name,
+                ids: .[-1].ids,
+                success: (map(.success) | any)
+              })' > "$MERGED"
+          else
+            # First run — current results become the baseline
+            cp "$SUMMARY" "$MERGED"
+          fi
+
+      - name: Upload baseline artifact
+        if: github.ref == 'refs/heads/master' && steps.regression.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flint-baseline
+          path: flint_baseline.json
+
+      - name: Upload Flint summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flint-summary
+          path: flint-steel/log/flint_summary.json
