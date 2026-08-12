@@ -482,8 +482,6 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, UNIX_EPOCH};
-
     use steel_crypto::{
         CryptError, SignatureValidator, generate_key_pair, signature::SignatureUpdater,
     };
@@ -505,12 +503,12 @@ mod tests {
         }
     }
 
-    fn session(expires_at_seconds: u64) -> profile_key::RemoteChatSessionData {
+    fn session(expires_at_millis: i64) -> profile_key::RemoteChatSessionData {
         let (_, public_key) = generate_key_pair().expect("test player key should generate");
         profile_key::RemoteChatSessionData {
             session_id: Uuid::new_v4(),
             profile_public_key: profile_key::ProfilePublicKeyData::new(
-                UNIX_EPOCH + Duration::from_secs(expires_at_seconds),
+                profile_key::system_time_from_millis(expires_at_millis),
                 public_key,
                 vec![1],
             ),
