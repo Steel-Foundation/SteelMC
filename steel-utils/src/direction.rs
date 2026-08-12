@@ -29,19 +29,42 @@ pub enum Direction {
 impl ReadFrom for Direction {
     fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
         let id = VarInt::read(data)?.0;
-        match id {
-            0 => Ok(Direction::Down),
-            1 => Ok(Direction::Up),
-            2 => Ok(Direction::North),
-            3 => Ok(Direction::South),
-            4 => Ok(Direction::West),
-            5 => Ok(Direction::East),
-            _ => Err(io::Error::other("Invalid Direction id")),
+        if (0..6).contains(&id) {
+            Ok(Direction::from_3d_data_value(id))
+        } else {
+            Err(io::Error::other("Invalid Direction id"))
         }
     }
 }
 
 impl Direction {
+    /// Vanilla `Direction.get3DDataValue()` like Down=0,…,East=5.
+    #[must_use]
+    pub const fn get_3d_data_value(self) -> i32 {
+        match self {
+            Direction::Down => 0,
+            Direction::Up => 1,
+            Direction::North => 2,
+            Direction::South => 3,
+            Direction::West => 4,
+            Direction::East => 5,
+        }
+    }
+
+    /// Vanilla `Direction.from3DDataValue(int)`.
+    /// Uses Java remainder semantics (toward zero) then absolute value
+    /// `BY_3D_DATA`[Mth.abs(data % 6)].
+    #[must_use]
+    pub const fn from_3d_data_value(data: i32) -> Direction {
+        let rem = data % 6;
+        let idx = if rem < 0 {
+            (-rem) as usize
+        } else {
+            rem as usize
+        };
+        Direction::ALL[idx]
+    }
+
     /// Returns the block position offset for this direction.
     #[must_use]
     pub const fn offset(self) -> (i32, i32, i32) {
@@ -106,19 +129,12 @@ impl Direction {
     }
 
     /// Returns the horizontal direction from a yaw rotation.
-    ///
-    /// Yaw values follow Minecraft's convention:
-    /// - 0° = South (+Z)
-    /// - 90° = West (-X)
-    /// - 180° = North (-Z)
-    /// - 270° = East (+X)
     #[must_use]
     pub fn from_yaw(yaw: f32) -> Direction {
-        let adjusted = yaw.rem_euclid(360.0);
-        match adjusted {
-            y if !(45.0..315.0).contains(&y) => Direction::South,
-            y if y < 135.0 => Direction::West,
-            y if y < 225.0 => Direction::North,
+        match ((f64::from(yaw) / 90.0 + 0.5).floor() as i32) & 3 {
+            0 => Direction::South,
+            1 => Direction::West,
+            2 => Direction::North,
             _ => Direction::East,
         }
     }
@@ -324,6 +340,18 @@ impl Direction {
         }
     }
 
+    /// Returns whether this direction is facing the given yaw angle
+    #[must_use]
+    pub fn is_facing_yaw(self, yaw: f32) -> bool {
+        let radians = yaw.to_radians();
+        let dx = -radians.sin();
+        let dz = radians.cos();
+
+        let (nx, nz) = self.offset_xz();
+
+        (nx as f32) * dx + (nz as f32) * dz > 0.0
+    }
+
     /// Returns a random direction
     #[must_use]
     pub fn random() -> Self {
@@ -370,6 +398,56 @@ mod tests {
                 Direction::East,
             ]
         );
+    }
+
+    #[test]
+    fn three_d_data_value_round_trips_vanilla_ids() {
+        for direction in Direction::ALL {
+            let id = direction.get_3d_data_value();
+            assert_eq!(Direction::from_3d_data_value(id), direction);
+        }
+    }
+
+    #[test]
+    fn from_yaw_matches_vanilla_from_y_rot_boundaries() {
+        let cases = [
+            (0.0, Direction::South),
+            (44.999, Direction::South),
+            (45.0, Direction::West),
+            (134.999, Direction::West),
+            (135.0, Direction::North),
+            (224.999, Direction::North),
+            (225.0, Direction::East),
+            (314.999, Direction::East),
+            (315.0, Direction::South),
+            (-44.999, Direction::South),
+            (-45.0, Direction::South),
+            (-45.001, Direction::East),
+            (-135.0, Direction::East),
+            (-225.0, Direction::North),
+            (-315.0, Direction::West),
+            (405.0, Direction::West),
+        ];
+
+        for (yaw, direction) in cases {
+            assert_eq!(Direction::from_yaw(yaw), direction, "yaw {yaw}");
+        }
+    }
+
+    #[test]
+    fn from_3d_data_value_matches_java_abs_mod_wrap() {
+        // Vanilla is "BY_3D_DATA[Mth.abs(data % 6)]".
+        assert_eq!(Direction::from_3d_data_value(6), Direction::Down);
+        assert_eq!(Direction::from_3d_data_value(7), Direction::Up);
+        assert_eq!(Direction::from_3d_data_value(-1), Direction::Up);
+        assert_eq!(Direction::from_3d_data_value(-7), Direction::Up);
+        assert_eq!(Direction::from_3d_data_value(-6), Direction::Down);
+    }
+
+    #[test]
+    fn from_yaw_preserves_vanilla_double_precision_for_large_angles() {
+        // Vanilla widens yaw to double; preserving that precision selects East here.
+        assert_eq!(Direction::from_yaw(193_273_528_320.0), Direction::East);
     }
 
     #[test]

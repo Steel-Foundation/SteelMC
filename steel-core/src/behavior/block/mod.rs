@@ -88,6 +88,17 @@ pub use context::{
     RailBehavior,
 };
 
+/// Data exposed by blocks that support vanilla archaeology brushing.
+#[derive(Clone, Copy, Debug)]
+pub struct BrushableData {
+    /// Block produced after brushing completes.
+    pub turns_into: BlockRef,
+    /// Sound played during a successful brush stroke.
+    pub brush_sound: SoundEventRef,
+    /// Sound played when brushing completes.
+    pub brush_completed_sound: SoundEventRef,
+}
+
 mod waterlogging;
 
 #[cfg(test)]
@@ -183,6 +194,11 @@ pub trait BlockBehavior: Send + Sync {
     /// (torches, buttons, candles, cactus, etc.).
     fn can_survive(&self, _state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         true
+    }
+
+    /// Returns whether this block can be occupied by a forced respawn position
+    fn is_possible_to_respawn_in_this(&self, state: BlockStateId) -> bool {
+        !state.is_solid() && !state.get_block().config.liquid
     }
 
     /// Returns whether this block can be replaced by the held item during placement.
@@ -563,6 +579,11 @@ pub trait BlockBehavior: Send + Sync {
             }
             PathComputationType::Water => is_water_fluid(state.get_fluid_state().fluid_id),
         }
+    }
+
+    /// Returns whether this behavior implements `BedBlock`
+    fn is_bed(&self) -> bool {
+        false
     }
 
     /// Mirrors vanilla `DoorBlock.isWoodenDoor`.
@@ -1035,6 +1056,14 @@ pub trait BlockBehavior: Send + Sync {
                 && new_block.has_tag(&BlockTag::COPPER_CHESTS))
                 || (old_block.has_tag(&BlockTag::COPPER_GOLEM_STATUES)
                     && new_block.has_tag(&BlockTag::COPPER_GOLEM_STATUES)))
+    }
+
+    /// Returns brushable-block data for archaeology brushing
+    ///
+    /// Vanilla keeps this on `BrushableBlock`; exposing it through block behavior lets
+    /// `BrushItem` stay generic without matching concrete vanilla blocks
+    fn brushable_data(&self, _state: BlockStateId) -> Option<BrushableData> {
+        None
     }
 
     /// Returns whether this block can provide an analog output signal to comparators.

@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+mod attached_stem_block;
 mod azalea_block;
 mod bamboo;
 mod bamboo_sapling;
@@ -65,6 +66,7 @@ mod segmentable_block;
 mod short_dry_grass_block;
 mod small_dripleaf_block;
 mod spore_blossom_block;
+mod stem_block;
 mod sugar_cane;
 mod sweet_berry_bush;
 mod tall_dry_grass_block;
@@ -80,6 +82,7 @@ mod weeping_vines_block;
 mod weeping_vines_plant_block;
 mod wither_rose_block;
 
+pub use attached_stem_block::AttachedStemBlock;
 pub use azalea_block::AzaleaBlock;
 pub use bamboo::BambooStalkBlock;
 pub use bamboo_sapling::BambooSaplingBlock;
@@ -144,6 +147,7 @@ pub use seagrass_block::SeagrassBlock;
 pub use short_dry_grass_block::ShortDryGrassBlock;
 pub use small_dripleaf_block::SmallDripleafBlock;
 pub use spore_blossom_block::SporeBlossomBlock;
+pub use stem_block::StemBlock;
 pub use sugar_cane::SugarCaneBlock;
 pub use sweet_berry_bush::SweetBerryBushBlock;
 pub use tall_dry_grass_block::TallDryGrassBlock;

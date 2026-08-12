@@ -5,8 +5,10 @@
 
 mod air;
 mod axe;
+mod bed_item;
 mod block_item;
 mod bonemeal;
+mod brush;
 mod bucket;
 mod compass;
 mod copper_chest_events;
@@ -19,6 +21,7 @@ mod food_on_a_stick;
 mod hoe;
 mod honeycomb;
 mod mace;
+mod name_tag;
 mod player_head;
 mod potion;
 mod shield;
@@ -32,8 +35,10 @@ mod flint_and_steel;
 
 pub use air::AirItem;
 pub use axe::AxeItem;
+pub use bed_item::BedItem;
 pub use block_item::{BlockItem, DoubleHighBlockItem};
 pub use bonemeal::BoneMealItem;
+pub use brush::BrushItem;
 pub use bucket::BucketItem;
 pub use compass::CompassItem;
 pub use default::DefaultItemBehavior;
@@ -45,6 +50,7 @@ pub use food_on_a_stick::FoodOnAStickItem;
 pub use hoe::HoeItem;
 pub use honeycomb::HoneycombItem;
 pub use mace::MaceItem;
+pub use name_tag::NameTagItem;
 pub use player_head::PlayerHeadItem;
 pub use potion::PotionItem;
 pub use shield::ShieldItem;
