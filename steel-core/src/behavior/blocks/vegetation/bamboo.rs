@@ -22,8 +22,9 @@ use crate::{
 #[block_behavior]
 pub struct BambooStalkBlock;
 
-const BAMBOO_LEAVES_PROPERTY: EnumProperty<BambooLeaves> = BlockStateProperties::BAMBOO_LEAVES;
-const AGE_PROPERTY: IntProperty = BlockStateProperties::AGE_1;
+const BAMBOO_LEAVES_PROPERTY: &EnumProperty<BambooLeaves> = &BlockStateProperties::BAMBOO_LEAVES;
+const AGE_PROPERTY: &IntProperty = &BlockStateProperties::AGE_1;
+const STAGE: &IntProperty = &BlockStateProperties::STAGE;
 
 impl BambooStalkBlock {
     /// Creates a new Bamboo Stalk Behavior
@@ -78,12 +79,12 @@ impl BambooStalkBlock {
             {
                 world.set_block(
                     pos.below(),
-                    state_below.set_value(&BAMBOO_LEAVES_PROPERTY, BambooLeaves::Small),
+                    state_below.set_value(BAMBOO_LEAVES_PROPERTY, BambooLeaves::Small),
                     UpdateFlags::UPDATE_ALL,
                 );
                 world.set_block(
                     pos.below_n(2),
-                    state_two_below.set_value(&BAMBOO_LEAVES_PROPERTY, BambooLeaves::None),
+                    state_two_below.set_value(BAMBOO_LEAVES_PROPERTY, BambooLeaves::None),
                     UpdateFlags::UPDATE_ALL,
                 );
             }
@@ -91,7 +92,7 @@ impl BambooStalkBlock {
         };
 
         let new_age = u8::from(
-            state.get_value(&AGE_PROPERTY) == 1
+            state.get_value(AGE_PROPERTY) == 1
                 || state_two_below.get_block() == &vanilla_blocks::BAMBOO,
         );
 
@@ -101,16 +102,16 @@ impl BambooStalkBlock {
             pos.above(),
             vanilla_blocks::BAMBOO
                 .default_state()
-                .set_value(&AGE_PROPERTY, new_age)
-                .set_value(&BlockStateProperties::STAGE, new_stage)
-                .set_value(&BlockStateProperties::BAMBOO_LEAVES, leaves),
+                .set_value(AGE_PROPERTY, new_age)
+                .set_value(STAGE, new_stage)
+                .set_value(BAMBOO_LEAVES_PROPERTY, leaves),
             UpdateFlags::UPDATE_ALL,
         );
     }
 
     fn leaves_for_new_segment(state_below: BlockStateId) -> BambooLeaves {
         if state_below.get_block() != &vanilla_blocks::BAMBOO
-            || state_below.get_value(&BAMBOO_LEAVES_PROPERTY) == BambooLeaves::None
+            || state_below.get_value(BAMBOO_LEAVES_PROPERTY) == BambooLeaves::None
         {
             BambooLeaves::Small
         } else {
@@ -134,10 +135,7 @@ impl Bonemealable for BambooStalkBlock {
         let below = Self::stalk_segments_below(world, pos);
         let growth_pos = pos.above_n(above + 1);
         (above + below + 1 < 16)
-            && world
-                .get_block_state(pos.above_n(above))
-                .get_value(&BlockStateProperties::STAGE)
-                != 1
+            && world.get_block_state(pos.above_n(above)).get_value(STAGE) != 1
             && !world.is_outside_build_height(growth_pos.y())
             && world.get_block_state(growth_pos).is_air()
     }
@@ -158,7 +156,7 @@ impl Bonemealable for BambooStalkBlock {
             let state_above = world.get_block_state(pos_above);
             let growth_pos = pos_above.above();
             if total_height + i >= 16
-                || state_above.get_value(&BlockStateProperties::STAGE) == 1
+                || state_above.get_value(STAGE) == 1
                 || !world.is_in_valid_bounds(growth_pos)
                 || !world.get_block_state(growth_pos).is_air()
             {
@@ -192,20 +190,21 @@ impl BlockBehavior for BambooStalkBlock {
             Some(
                 vanilla_blocks::BAMBOO
                     .default_state()
-                    .set_value(&AGE_PROPERTY, 0),
+                    .set_value(AGE_PROPERTY, 0),
             )
         } else if block_below == &vanilla_blocks::BAMBOO {
-            Some(vanilla_blocks::BAMBOO.default_state().set_value(
-                &AGE_PROPERTY,
-                state_below.get_value(&BlockStateProperties::AGE_1),
-            ))
+            Some(
+                vanilla_blocks::BAMBOO
+                    .default_state()
+                    .set_value(AGE_PROPERTY, state_below.get_value(AGE_PROPERTY)),
+            )
         } else {
             let state_above = context.world.get_block_state(context.place_pos().above());
             if state_above.get_block() == &vanilla_blocks::BAMBOO {
                 Some(
                     vanilla_blocks::BAMBOO
                         .default_state()
-                        .set_value(&AGE_PROPERTY, state_above.get_value(&AGE_PROPERTY)),
+                        .set_value(AGE_PROPERTY, state_above.get_value(AGE_PROPERTY)),
                 )
             } else {
                 Some(vanilla_blocks::BAMBOO_SAPLING.default_state())
@@ -224,7 +223,7 @@ impl BlockBehavior for BambooStalkBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if state.get_value(&BlockStateProperties::STAGE) != 0 {
+        if state.get_value(STAGE) != 0 {
             return;
         }
         let mut rng = rand::rng();
@@ -252,13 +251,13 @@ impl BlockBehavior for BambooStalkBlock {
             world.schedule_block_tick_default(pos, state.get_block(), 1);
         }
 
-        let age = state.get_value(&AGE_PROPERTY);
+        let age = state.get_value(AGE_PROPERTY);
 
         if direction == Direction::Up
             && neighbor_state.get_block() == &vanilla_blocks::BAMBOO
-            && neighbor_state.get_value(&AGE_PROPERTY) > age
+            && neighbor_state.get_value(AGE_PROPERTY) > age
         {
-            return state.set_value(&AGE_PROPERTY, age.not() & 1); // 0 => 1; 1 => 0
+            return state.set_value(AGE_PROPERTY, age.not() & 1); // 0 => 1; 1 => 0
         }
         state
     }

@@ -36,17 +36,17 @@ pub struct WallBlock {
 }
 
 /// Post (center column) property.
-const UP: BoolProperty = BlockStateProperties::UP;
+const UP: &BoolProperty = &BlockStateProperties::UP;
 /// North connection property.
-const NORTH: EnumProperty<WallSide> = BlockStateProperties::NORTH_WALL;
+const NORTH: &EnumProperty<WallSide> = &BlockStateProperties::NORTH_WALL;
 /// East connection property.
-const EAST: EnumProperty<WallSide> = BlockStateProperties::EAST_WALL;
+const EAST: &EnumProperty<WallSide> = &BlockStateProperties::EAST_WALL;
 /// South connection property.
-const SOUTH: EnumProperty<WallSide> = BlockStateProperties::SOUTH_WALL;
+const SOUTH: &EnumProperty<WallSide> = &BlockStateProperties::SOUTH_WALL;
 /// West connection property.
-const WEST: EnumProperty<WallSide> = BlockStateProperties::WEST_WALL;
+const WEST: &EnumProperty<WallSide> = &BlockStateProperties::WEST_WALL;
 /// Waterlogged property.
-const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 // Vanilla TEST_SHAPE_POST = Block.column(2.0, 0.0, 16.0), projected onto the DOWN face.
 const POST_X_MIN: f64 = 7.0 / 16.0;
@@ -111,7 +111,7 @@ impl BlockBehavior for WallBlock {
         let state = self
             .block
             .default_state()
-            .set_value(&WATERLOGGED, context.is_water_source());
+            .set_value(WATERLOGGED, context.is_water_source());
 
         Some(update_wall_state(
             state, top_pos, top_state, north, east, south, west,
@@ -127,7 +127,7 @@ impl BlockBehavior for WallBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(&WATERLOGGED) {
+        if state.get_value(WATERLOGGED) {
             let water = &vanilla_fluids::WATER;
             world.schedule_fluid_tick_default(pos, water, world.fluid_tick_delay(&WATER));
         }
@@ -172,10 +172,10 @@ fn connects_to(neighbor_state: BlockStateId, face_solid: bool, direction: Direct
 
 /// Vanilla `WallBlock.topUpdate`.
 fn top_update(state: BlockStateId, top_pos: BlockPos, top_neighbor: BlockStateId) -> BlockStateId {
-    let north = is_connected(state, &NORTH);
-    let east = is_connected(state, &EAST);
-    let south = is_connected(state, &SOUTH);
-    let west = is_connected(state, &WEST);
+    let north = is_connected(state, NORTH);
+    let east = is_connected(state, EAST);
+    let south = is_connected(state, SOUTH);
+    let west = is_connected(state, WEST);
     update_wall_state(state, top_pos, top_neighbor, north, east, south, west)
 }
 
@@ -198,22 +198,22 @@ fn side_update(
     let north = if direction == Direction::North {
         connected
     } else {
-        is_connected(state, &NORTH)
+        is_connected(state, NORTH)
     };
     let east = if direction == Direction::East {
         connected
     } else {
-        is_connected(state, &EAST)
+        is_connected(state, EAST)
     };
     let south = if direction == Direction::South {
         connected
     } else {
-        is_connected(state, &SOUTH)
+        is_connected(state, SOUTH)
     };
     let west = if direction == Direction::West {
         connected
     } else {
-        is_connected(state, &WEST)
+        is_connected(state, WEST)
     };
 
     let above = Direction::Up.relative(pos);
@@ -237,7 +237,7 @@ fn update_wall_state(
 ) -> BlockStateId {
     let above_shape = top_neighbor.get_collision_shape_at(top_pos);
     let sides = update_sides(state, above_shape, north, east, south, west);
-    sides.set_value(&UP, should_raise_post(sides, top_neighbor, above_shape))
+    sides.set_value(UP, should_raise_post(sides, top_neighbor, above_shape))
 }
 
 /// Vanilla `WallBlock.updateSides`.
@@ -255,7 +255,7 @@ fn update_sides(
 ) -> BlockStateId {
     state
         .set_value(
-            &NORTH,
+            NORTH,
             make_wall_state(
                 north,
                 above_shape,
@@ -266,7 +266,7 @@ fn update_sides(
             ),
         )
         .set_value(
-            &EAST,
+            EAST,
             make_wall_state(
                 east,
                 above_shape,
@@ -277,7 +277,7 @@ fn update_sides(
             ),
         )
         .set_value(
-            &SOUTH,
+            SOUTH,
             make_wall_state(
                 south,
                 above_shape,
@@ -288,7 +288,7 @@ fn update_sides(
             ),
         )
         .set_value(
-            &WEST,
+            WEST,
             make_wall_state(
                 west,
                 above_shape,
@@ -326,15 +326,15 @@ fn should_raise_post(
     above_shape: OffsetVoxelShape,
 ) -> bool {
     let top_neighbor_has_post = top_neighbor.get_block().has_tag(&BlockTag::WALLS)
-        && top_neighbor.try_get_value(&UP).unwrap_or(false);
+        && top_neighbor.try_get_value(UP).unwrap_or(false);
     if top_neighbor_has_post {
         return true;
     }
 
-    let north_wall = state.get_value(&NORTH);
-    let south_wall = state.get_value(&SOUTH);
-    let east_wall = state.get_value(&EAST);
-    let west_wall = state.get_value(&WEST);
+    let north_wall = state.get_value(NORTH);
+    let south_wall = state.get_value(SOUTH);
+    let east_wall = state.get_value(EAST);
+    let west_wall = state.get_value(WEST);
 
     let north_none = north_wall == WallSide::None;
     let south_none = south_wall == WallSide::None;

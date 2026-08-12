@@ -134,10 +134,10 @@ impl FeatureDecorationRunner {
 
             for direction in MossyCarpetBlock::HORIZONTAL_DIRECTIONS {
                 let property = MossyCarpetBlock::wall_property(direction);
-                if above_state.get_value(&property) != WallSide::None
+                if above_state.get_value(property) != WallSide::None
                     && !region.random_mut().next_bool()
                 {
-                    above_state = above_state.set_value(&property, WallSide::None);
+                    above_state = above_state.set_value(property, WallSide::None);
                 }
             }
 

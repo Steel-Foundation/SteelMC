@@ -7,7 +7,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::{
     BlockRef,
     block_state_ext::BlockStateExt as _,
-    properties::{BlockStateProperties, Direction},
+    properties::{BlockStateProperties, Direction, IntProperty},
 };
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -22,6 +22,8 @@ use crate::{
 pub struct ComposterBlock {
     block: BlockRef,
 }
+
+const LEVEL_COMPOSTER: &IntProperty = &BlockStateProperties::LEVEL_COMPOSTER;
 
 impl ComposterBlock {
     /// Creates composter behavior.
@@ -47,7 +49,7 @@ impl BlockBehavior for ComposterBlock {
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
-        i32::from(state.get_value(&BlockStateProperties::LEVEL_COMPOSTER))
+        i32::from(state.get_value(LEVEL_COMPOSTER))
     }
 
     fn is_pathfindable(
@@ -75,7 +77,7 @@ mod tests {
         init_behaviors();
         let state = vanilla_blocks::COMPOSTER
             .default_state()
-            .set_value(&BlockStateProperties::LEVEL_COMPOSTER, 8);
+            .set_value(LEVEL_COMPOSTER, 8);
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
 
         assert!(behavior.has_analog_output_signal(state));

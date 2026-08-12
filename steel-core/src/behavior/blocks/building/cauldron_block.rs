@@ -11,7 +11,7 @@ use steel_registry::{
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt as _,
-        properties::{BlockStateProperties, Direction},
+        properties::{BlockStateProperties, Direction, IntProperty},
     },
     level_events, vanilla_blocks, vanilla_fluids, vanilla_game_events,
 };
@@ -28,6 +28,8 @@ use crate::{
 pub struct CauldronBlock {
     block: BlockRef,
 }
+
+const LEVEL_CAULDRON: &IntProperty = &BlockStateProperties::LEVEL_CAULDRON;
 
 impl CauldronBlock {
     /// Creates empty cauldron behavior.
@@ -77,7 +79,7 @@ impl BlockBehavior for CauldronBlock {
         if fluid == &vanilla_fluids::WATER {
             let new_state = vanilla_blocks::WATER_CAULDRON
                 .default_state()
-                .set_value(&BlockStateProperties::LEVEL_CAULDRON, 1);
+                .set_value(LEVEL_CAULDRON, 1);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
             world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
@@ -128,7 +130,7 @@ impl BlockBehavior for LayeredCauldronBlock {
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
-        i32::from(state.get_value(&BlockStateProperties::LEVEL_CAULDRON))
+        i32::from(state.get_value(LEVEL_CAULDRON))
     }
 
     fn is_pathfindable(
@@ -150,9 +152,9 @@ impl BlockBehavior for LayeredCauldronBlock {
         };
 
         if fluid == &vanilla_fluids::WATER {
-            let level = state.get_value(&BlockStateProperties::LEVEL_CAULDRON);
-            if level < BlockStateProperties::LEVEL_CAULDRON.max {
-                let new_state = state.set_value(&BlockStateProperties::LEVEL_CAULDRON, level + 1);
+            let level = state.get_value(LEVEL_CAULDRON);
+            if level < LEVEL_CAULDRON.max {
+                let new_state = state.set_value(LEVEL_CAULDRON, level + 1);
                 world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
                 world.game_event(
                     &vanilla_game_events::BLOCK_CHANGE,
@@ -193,7 +195,7 @@ mod tests {
         for level_value in 1..=3 {
             let state = vanilla_blocks::WATER_CAULDRON
                 .default_state()
-                .set_value(&BlockStateProperties::LEVEL_CAULDRON, level_value);
+                .set_value(LEVEL_CAULDRON, level_value);
             let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
             assert_eq!(
                 behavior.get_analog_output_signal(state, &level, pos, Direction::North),
