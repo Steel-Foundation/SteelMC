@@ -1927,6 +1927,95 @@ fn bench_init_grid_xz_simd_lanes(c: &mut Criterion) {
     group.finish();
 }
 
+/// Compares the real generated overworld density tree when four adjacent Y
+/// corners are evaluated as four scalar calls or one SIMD call.
+fn bench_cell_corner_y_simd(c: &mut Criterion) {
+    use std::simd::f64x4;
+
+    use steel_utils::random::{Random, xoroshiro::Xoroshiro};
+    use steel_worldgen::density::DimensionNoises;
+    use steel_worldgen::density_functions::overworld::{
+        OverworldColumnCache, OverworldNoiseSettings, OverworldNoises,
+    };
+    use steel_worldgen::noise_parameters::get_noise_parameters;
+
+    let seed = u64::MAX;
+    let mut random = Xoroshiro::from_seed(seed);
+    let splitter = random.next_positional();
+    let noises = OverworldNoises::create(seed, &splitter, &get_noise_parameters());
+    let interp_count = OverworldNoises::interpolated_count();
+    let cell_height = OverworldNoiseSettings::CELL_HEIGHT;
+    let block_ys: Vec<_> = (0..=OverworldNoiseSettings::HEIGHT / cell_height)
+        .map(|cell_y| OverworldNoiseSettings::MIN_Y + cell_y * cell_height)
+        .collect();
+    let columns: Vec<_> = (0..5)
+        .flat_map(|cell_z| (0..5).map(move |cell_x| (cell_x * 4, cell_z * 4)))
+        .collect();
+
+    let evaluate_scalar = |cache: &mut OverworldColumnCache| {
+        let mut blended = vec![0.0; block_ys.len()];
+        let mut values = vec![0.0; 4 * interp_count];
+        for &(x, z) in &columns {
+            cache.ensure(x, z, &noises);
+            noises.compute_noise_column(x, &block_ys, z, &mut blended);
+            for batch_start in (0..block_ys.len() - block_ys.len() % 4).step_by(4) {
+                for lane in 0..4 {
+                    noises.fill_cell_corner_densities(
+                        cache,
+                        x,
+                        block_ys[batch_start + lane],
+                        z,
+                        blended[batch_start + lane],
+                        &mut values[lane * interp_count..(lane + 1) * interp_count],
+                    );
+                }
+            }
+        }
+        values
+    };
+    let evaluate_simd = |cache: &mut OverworldColumnCache| {
+        let mut blended = vec![0.0; block_ys.len()];
+        let mut values = vec![0.0; 4 * interp_count];
+        for &(x, z) in &columns {
+            cache.ensure(x, z, &noises);
+            noises.compute_noise_column(x, &block_ys, z, &mut blended);
+            for batch_start in (0..block_ys.len() - block_ys.len() % 4).step_by(4) {
+                let ys = f64x4::from_array(array::from_fn(|lane| {
+                    f64::from(block_ys[batch_start + lane])
+                }));
+                let blended_values =
+                    f64x4::from_array(array::from_fn(|lane| blended[batch_start + lane]));
+                noises.fill_cell_corner_densities_4x(cache, x, ys, z, blended_values, &mut values);
+            }
+        }
+        values
+    };
+
+    let mut scalar_cache = OverworldColumnCache::new();
+    scalar_cache.init_grid(0, 0, &noises);
+    let mut simd_cache = OverworldColumnCache::new();
+    simd_cache.init_grid(0, 0, &noises);
+    assert_eq!(
+        evaluate_scalar(&mut scalar_cache),
+        evaluate_simd(&mut simd_cache)
+    );
+
+    let batches = columns.len() * (block_ys.len() / 4);
+    let mut group = c.benchmark_group("cell_corner_density_y");
+    group.throughput(Throughput::Elements((batches * 4) as u64));
+    group.bench_function("scalar_4x", |b| {
+        let mut cache = OverworldColumnCache::new();
+        cache.init_grid(0, 0, &noises);
+        b.iter(|| black_box(evaluate_scalar(&mut cache)));
+    });
+    group.bench_function("simd_4x", |b| {
+        let mut cache = OverworldColumnCache::new();
+        cache.init_grid(0, 0, &noises);
+        b.iter(|| black_box(evaluate_simd(&mut cache)));
+    });
+    group.finish();
+}
+
 fn preliminary_density<const N: usize>(
     ys: Simd<f64, N>,
     offsets: Simd<f64, N>,
@@ -2172,7 +2261,7 @@ criterion_group! {
         .sample_size(50)
         .warm_up_time(Duration::from_secs(1))
         .measurement_time(Duration::from_secs(5));
-    targets = bench_find_top_surface_simd_axis, bench_init_grid_xz_simd_lanes
+    targets = bench_find_top_surface_simd_axis, bench_init_grid_xz_simd_lanes, bench_cell_corner_y_simd
 }
 criterion_main!(
     benches,
