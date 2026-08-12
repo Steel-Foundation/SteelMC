@@ -77,6 +77,7 @@ pub(crate) fn parse_object_behavior(
 }
 
 const KNOWN_REGISTRIES: &[&str] = &[
+    "vanilla_block_tags",
     "vanilla_blocks",
     "vanilla_entities",
     "vanilla_items",
@@ -233,6 +234,9 @@ pub(crate) fn generate_arg(
             if module == "vanilla_items" {
                 let item_ident = to_item_ident(name);
                 quote! { &*vanilla_items::#item_ident }
+            } else if module == "vanilla_block_tags" {
+                let const_ident = to_block_ident(name);
+                quote! { vanilla_block_tags::BlockTag::#const_ident }
             } else {
                 let module_ident = Ident::new(module, Span::call_site());
                 let const_ident = to_block_ident(name);
