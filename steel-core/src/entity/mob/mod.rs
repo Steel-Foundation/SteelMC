@@ -347,6 +347,9 @@ pub trait Mob: LivingEntity {
 
     fn custom_server_ai_step(&self) {}
 
+    /// Runs vanilla `Mob.ate`, invoked after an eating goal resolves a block.
+    fn ate(&self) {}
+
     fn tick_goal_selectors(&self) {}
 
     fn xp_reward(&self) -> i32 {
