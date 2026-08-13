@@ -30,9 +30,8 @@ pub(crate) fn init_globals() -> Result<(), String> {
     Ok(())
 }
 
-/// Idempotent [`init_globals`] for tests and benchmarks, which bootstrap
-/// repeatedly in one process.
-#[cfg(any(test, feature = "benchmark-support"))]
+/// Idempotent [`init_globals`] for in-process test and benchmark runtimes.
+#[cfg(any(test, feature = "benchmark-support", feature = "test-harness"))]
 pub fn init_globals_once() {
     use std::sync::Once;
 

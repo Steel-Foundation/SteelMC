@@ -58,6 +58,8 @@ use crate::chunk::light::{
     propagate_sky_light_changes_with_empty_sections,
 };
 use crate::chunk::player_chunk_view::PlayerChunkView;
+#[cfg(feature = "test-harness")]
+use crate::chunk::section::{ChunkSection, Sections};
 use crate::chunk::{
     Chunk,
     chunk_generation_task::ChunkGenerationTask,
@@ -213,6 +215,25 @@ struct ReadinessReconcileResult {
     post_process_chunk_count: usize,
     post_process_position_count: usize,
     candidate_count: usize,
+}
+
+/// Failure while synchronously installing Full chunks for the in-memory test harness.
+#[cfg(feature = "test-harness")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TestHarnessChunkError {
+    /// The configured dimension height cannot be represented by chunk sections.
+    InvalidWorldHeight { height: i32 },
+    /// The requested halo extends beyond representable chunk coordinates.
+    HaloCoordinateOverflow { center: ChunkPos, radius: u8 },
+    /// An existing holder has not completed its Full lifecycle.
+    ChunkNotFull {
+        pos: ChunkPos,
+        status: Option<ChunkStatus>,
+    },
+    /// Another lifecycle operation claimed the position during installation.
+    ChunkInsertConflict { pos: ChunkPos },
+    /// An unloading holder could not be revived synchronously.
+    ChunkLifecycleUnavailable { pos: ChunkPos },
 }
 
 /// A map of chunks managing their state, loading, and generation.
@@ -478,6 +499,139 @@ impl ChunkMap {
         assert!(holder.simulation_level().is_none());
         assert!(self.ticking_chunks.load().block.is_empty());
         let _ = self.chunks.insert_sync(pos, holder);
+    }
+
+    /// Installs an empty Full halo through the normal holder publication and readiness paths.
+    ///
+    /// The caller must serialize this with world ticks. Existing Full chunks are reused, newly
+    /// created halo chunks are load-only, and `center` receives the requested simulation level.
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn install_test_harness_full_halo(
+        self: &Arc<Self>,
+        center: ChunkPos,
+        radius: u8,
+        simulation_level: ChunkTicketLevel,
+    ) -> Result<Arc<ChunkHolder>, TestHarnessChunkError> {
+        let min_y = self.world_gen_context.min_y();
+        let height = self.world_gen_context.height();
+        if height <= 0 || height % 16 != 0 {
+            return Err(TestHarnessChunkError::InvalidWorldHeight { height });
+        }
+
+        let positions = Self::test_harness_halo_positions(center, radius)?;
+        for &pos in &positions {
+            if let Some(holder) = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder))
+                && holder.published_status() != Some(ChunkStatus::Full)
+            {
+                return Err(TestHarnessChunkError::ChunkNotFull {
+                    pos,
+                    status: holder.published_status(),
+                });
+            }
+        }
+
+        let mut changed_positions = Vec::with_capacity(positions.len());
+        for pos in positions {
+            let requested_simulation = (pos == center).then_some(simulation_level);
+            let requested_load_level = if pos == center {
+                simulation_level
+            } else {
+                ChunkTicketLevel::FULL_CHUNK
+            };
+            let existing = self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder));
+            let load_level = existing
+                .as_ref()
+                .and_then(|holder| holder.load_level())
+                .map_or(requested_load_level, |current| {
+                    current.min(requested_load_level)
+                });
+            let simulation = match (
+                existing
+                    .as_ref()
+                    .and_then(|holder| holder.simulation_level()),
+                requested_simulation,
+            ) {
+                (Some(current), Some(requested)) => Some(current.min(requested)),
+                (Some(current), None) => Some(current),
+                (None, requested) => requested,
+            };
+            if let Some(holder) = existing
+                && holder.load_level() == Some(load_level)
+                && holder.simulation_level() == simulation
+            {
+                changed_positions.push(pos);
+                continue;
+            }
+            let holder = self
+                .update_chunk_level(pos, Some(load_level), simulation)
+                .ok_or(TestHarnessChunkError::ChunkLifecycleUnavailable { pos })?;
+
+            if holder.published_status() == Some(ChunkStatus::Full) {
+                changed_positions.push(pos);
+                continue;
+            }
+
+            if holder.published_status().is_some() {
+                return Err(TestHarnessChunkError::ChunkInsertConflict { pos });
+            }
+            let sections = (0..height / 16)
+                .map(|_| ChunkSection::new_empty())
+                .collect::<Vec<_>>()
+                .into_boxed_slice();
+            holder.insert_chunk(
+                Chunk::new(
+                    Sections::from_owned(sections),
+                    pos,
+                    min_y,
+                    height,
+                    self.world_gen_context.weak_world(),
+                ),
+                ChunkStatus::Empty,
+            );
+            self.world_gen_context.world().on_entity_chunk_loaded(pos);
+            holder.promote_to_full_for_test_harness();
+            changed_positions.push(pos);
+        }
+
+        match self.reconcile_ticking_readiness_measured(&changed_positions) {
+            Ok(_) => {}
+            Err(error) => {
+                self.recover_ticking_readiness_index(error);
+            }
+        }
+        self.rebuild_ticking_chunk_snapshot();
+
+        self.chunks
+            .read_sync(&center, |_, holder| Arc::clone(holder))
+            .ok_or(TestHarnessChunkError::ChunkLifecycleUnavailable { pos: center })
+    }
+
+    #[cfg(feature = "test-harness")]
+    fn test_harness_halo_positions(
+        center: ChunkPos,
+        radius: u8,
+    ) -> Result<Vec<ChunkPos>, TestHarnessChunkError> {
+        let side = usize::from(radius) * 2 + 1;
+        let mut positions = Vec::with_capacity(side * side);
+        let radius = i32::from(radius);
+        for dz in -radius..=radius {
+            for dx in -radius..=radius {
+                let Some(x) = center.0.x.checked_add(dx) else {
+                    return Err(TestHarnessChunkError::HaloCoordinateOverflow {
+                        center,
+                        radius: radius as u8,
+                    });
+                };
+                let Some(z) = center.0.y.checked_add(dz) else {
+                    return Err(TestHarnessChunkError::HaloCoordinateOverflow {
+                        center,
+                        radius: radius as u8,
+                    });
+                };
+                positions.push(ChunkPos::new(x, z));
+            }
+        }
+        Ok(positions)
     }
 
     #[inline]

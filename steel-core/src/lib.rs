@@ -25,6 +25,8 @@ pub mod poi;
 pub(crate) mod portal;
 pub mod scoreboard;
 pub mod server;
+#[cfg(feature = "test-harness")]
+pub mod test_harness;
 #[cfg(test)]
 #[path = "../tests/support/mod.rs"]
 pub(crate) mod test_support;

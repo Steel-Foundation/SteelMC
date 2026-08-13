@@ -12,6 +12,7 @@ stand-alone = []
 slow_chunk_gen = []
 flint = []
 benchmark-support = []
+test-harness = []
 
 [dependencies]
 # Internal crates

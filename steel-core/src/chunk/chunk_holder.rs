@@ -1193,6 +1193,13 @@ impl ChunkHolder {
         }
     }
 
+    /// Runs the normal generated-chunk Full promotion and publication boundary synchronously.
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn promote_to_full_for_test_harness(self: &Arc<Self>) {
+        self.upgrade_to_full();
+        self.finish_generation_status(ChunkStatus::Full);
+    }
+
     /// Runs Full-load post-processing and returns the number of packed positions attempted.
     pub(crate) fn post_process_generation(&self) -> Result<usize, PostProcessGenerationError> {
         let postprocessing = {
