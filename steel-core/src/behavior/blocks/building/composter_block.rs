@@ -88,7 +88,7 @@ mod tests {
                 BlockPos::ZERO,
                 Direction::North,
             ),
-            LEVEL_COMPOSTER.max,
+            i32::from(LEVEL_COMPOSTER.max),
         );
     }
 }
