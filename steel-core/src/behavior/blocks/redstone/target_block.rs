@@ -50,7 +50,7 @@ impl TargetBlock {
             Axis::X => dist_y.max(dist_z),
         };
         let centered = ((0.5 - distance) / 0.5).clamp(0.0, 1.0);
-        (MAX_REDSTONE_SIGNAL as f64 * centered).ceil().max(1.0) as i32
+        (f64::from(MAX_REDSTONE_SIGNAL) * centered).ceil().max(1.0) as i32
     }
 
     fn update_redstone_output(
