@@ -73,10 +73,13 @@ use crate::physics::{
     WorldCollisionProvider, move_entity as resolve_entity_movement,
 };
 use crate::world::game_event::GameEventContext;
-use crate::world::{ClipBlockShape, ClipFluid, LevelReader, World};
+use crate::world::{ClipBlockShape, ClipFluid, Explosion, LevelReader, World};
 use crate::{enchantment_helper, entity::damage::DamageSource, player::Player};
 
 use entities::ExperienceOrbEntity;
+
+mod reference;
+pub use reference::EntityReference;
 
 fn nbt_bool(value: bool) -> NbtTag {
     NbtTag::Byte(i8::from(value))
@@ -925,7 +928,7 @@ pub(crate) fn change_entity_world(
         return None;
     }
 
-    if entity.as_player().is_some() {
+    let changed = if entity.as_player().is_some() {
         let Some(player) = source_world.players.get_by_entity_id(entity.id()) else {
             tracing::error!(
                 entity_id = entity.id(),
@@ -938,10 +941,12 @@ pub(crate) fn change_entity_world(
         if !player.change_world_within_domain(teleport_transition) {
             return None;
         }
-        return Some(entity);
-    }
-
-    change_non_player_entity_world(entity, teleport_transition)
+        entity
+    } else {
+        change_non_player_entity_world(entity, teleport_transition)?
+    };
+    changed.on_teleported();
+    Some(changed)
 }
 
 fn change_non_player_entity_world(

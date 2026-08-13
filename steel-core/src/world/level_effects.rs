@@ -380,6 +380,9 @@ impl World {
         if let Some(tool) = context.tool() {
             ctx = ctx.with_tool(tool);
         }
+        if let Some(radius) = context.explosion_radius() {
+            ctx = ctx.with_explosion(radius);
+        }
         if let Some(entity) = context.entity() {
             ctx = ctx.with_this_entity(entity_loot_ref(entity));
         }

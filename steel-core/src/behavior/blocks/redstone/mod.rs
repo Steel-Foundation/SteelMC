@@ -15,6 +15,7 @@ mod redstone_lamp_block;
 mod redstone_ore_block;
 mod redstone_torch_block;
 mod target_block;
+mod tnt_block;
 mod tripwire;
 mod wire;
 
@@ -41,5 +42,6 @@ pub use redstone_lamp_block::RedstoneLampBlock;
 pub use redstone_ore_block::RedStoneOreBlock;
 pub use redstone_torch_block::{RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use target_block::TargetBlock;
+pub use tnt_block::TntBlock;
 pub use tripwire::{TripWireBlock, TripWireHookBlock};
 pub use wire::RedStoneWireBlock;

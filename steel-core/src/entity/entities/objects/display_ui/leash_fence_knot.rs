@@ -9,7 +9,7 @@ use crate::entity::{
     next_entity_id,
 };
 use crate::player::Player;
-use crate::world::World;
+use crate::world::{Explosion, World};
 use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -323,6 +323,13 @@ impl Entity for LeashFenceKnotEntity {
         }
 
         true
+    }
+
+    fn ignore_explosion(&self, explosion: &dyn Explosion) -> bool {
+        explosion
+            .direct_source_entity()
+            .is_some_and(Entity::is_in_water)
+            || !explosion.should_affect_blocklike_entities()
     }
 }
 

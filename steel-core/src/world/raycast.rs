@@ -177,6 +177,94 @@ impl World {
         Self::clip_miss(start_pos, end_pos)
     }
 
+    /// Returns whether a collider-only, fluid-free clip misses every block.
+    pub(crate) fn is_block_collision_path_clear(
+        &self,
+        start_pos: DVec3,
+        end_pos: DVec3,
+        collision_context: BlockCollisionContext,
+    ) -> bool {
+        if start_pos == end_pos {
+            return true;
+        }
+
+        let blocks_ray = |pos: BlockPos| {
+            let state = self.get_block_state(pos);
+            let boxes = BLOCK_BEHAVIORS
+                .get_behavior(state.get_block())
+                .get_collision_boxes(state, self, pos, collision_context);
+            boxes
+                .into_iter()
+                .any(|aabb| Self::clip_local_aabb(pos, start_pos, end_pos, aabb).is_some())
+        };
+
+        let adjust = -1.0e-7f64;
+        let to = end_pos.lerp(start_pos, adjust);
+        let from = start_pos.lerp(end_pos, adjust);
+        let mut block = BlockPos::from(from);
+        if blocks_ray(block) {
+            return false;
+        }
+
+        let difference = to - from;
+        let step = difference.signum().as_ivec3();
+        let delta = DVec3::new(
+            if step.x == 0 {
+                f64::MAX
+            } else {
+                f64::from(step.x) / difference.x
+            },
+            if step.y == 0 {
+                f64::MAX
+            } else {
+                f64::from(step.y) / difference.y
+            },
+            if step.z == 0 {
+                f64::MAX
+            } else {
+                f64::from(step.z) / difference.z
+            },
+        );
+        let mut next = DVec3::new(
+            delta.x
+                * if step.x > 0 {
+                    1.0 - (from.x - from.x.floor())
+                } else {
+                    from.x - from.x.floor()
+                },
+            delta.y
+                * if step.y > 0 {
+                    1.0 - (from.y - from.y.floor())
+                } else {
+                    from.y - from.y.floor()
+                },
+            delta.z
+                * if step.z > 0 {
+                    1.0 - (from.z - from.z.floor())
+                } else {
+                    from.z - from.z.floor()
+                },
+        );
+
+        while next.x <= 1.0 || next.y <= 1.0 || next.z <= 1.0 {
+            if next.x < next.y && next.x < next.z {
+                block.0.x += step.x;
+                next.x += delta.x;
+            } else if next.y < next.z {
+                block.0.y += step.y;
+                next.y += delta.y;
+            } else {
+                block.0.z += step.z;
+                next.z += delta.z;
+            }
+            if blocks_ray(block) {
+                return false;
+            }
+        }
+
+        true
+    }
+
     /// Performs vanilla `CollisionGetter.clipIncludingBorder`.
     #[must_use]
     pub fn clip_including_border(
