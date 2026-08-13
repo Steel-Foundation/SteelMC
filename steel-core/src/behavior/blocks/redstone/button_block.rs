@@ -19,6 +19,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use super::face_attached_horizontal_directional_block::FaceAttachedHorizontalDirectionalBlock;
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::entity::{Entity, InsideBlockEffectCollector, SharedEntity};
 use crate::player::Player;
@@ -250,7 +251,11 @@ impl BlockBehavior for ButtonBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
-        if state.get_value(POWERED) { 15 } else { 0 }
+        if state.get_value(POWERED) {
+            MAX_REDSTONE_SIGNAL
+        } else {
+            0
+        }
     }
 
     fn get_direct_signal(
@@ -264,7 +269,7 @@ impl BlockBehavior for ButtonBlock {
         if state.get_value(POWERED)
             && FaceAttachedHorizontalDirectionalBlock::connected_direction(state) == direction
         {
-            15
+            MAX_REDSTONE_SIGNAL
         } else {
             0
         }

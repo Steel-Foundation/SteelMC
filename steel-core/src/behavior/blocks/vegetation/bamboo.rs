@@ -25,6 +25,7 @@ pub struct BambooStalkBlock;
 const BAMBOO_LEAVES_PROPERTY: &EnumProperty<BambooLeaves> = &BlockStateProperties::BAMBOO_LEAVES;
 const AGE_PROPERTY: &IntProperty = &BlockStateProperties::AGE_1;
 const STAGE: &IntProperty = &BlockStateProperties::STAGE;
+const MAX_BAMBOO_HEIGHT: i32 = 16;
 
 impl BambooStalkBlock {
     /// Creates a new Bamboo Stalk Behavior
@@ -41,7 +42,7 @@ impl BambooStalkBlock {
 
     fn stalk_segments_below(world: &dyn LevelReader, pos: BlockPos) -> i32 {
         let mut height = 0;
-        while height < 16
+        while height < MAX_BAMBOO_HEIGHT
             && world.get_block_state(pos.below_n(height + 1)).get_block() == &vanilla_blocks::BAMBOO
         {
             height += 1;
@@ -52,7 +53,7 @@ impl BambooStalkBlock {
 
     fn stalk_segments_above(world: &dyn LevelReader, pos: BlockPos) -> i32 {
         let mut height = 0;
-        while height < 16
+        while height < MAX_BAMBOO_HEIGHT
             && world.get_block_state(pos.above_n(height + 1)).get_block() == &vanilla_blocks::BAMBOO
         {
             height += 1;
@@ -96,7 +97,9 @@ impl BambooStalkBlock {
                 || state_two_below.get_block() == &vanilla_blocks::BAMBOO,
         );
 
-        let new_stage = u8::from(height == 15 || (height >= 11 && rng.random::<f32>() < 0.25));
+        let new_stage = u8::from(
+            height == MAX_BAMBOO_HEIGHT - 1 || (height >= 11 && rng.random::<f32>() < 0.25),
+        );
 
         world.set_block(
             pos.above(),
@@ -134,7 +137,7 @@ impl Bonemealable for BambooStalkBlock {
         let above = Self::stalk_segments_above(world, pos);
         let below = Self::stalk_segments_below(world, pos);
         let growth_pos = pos.above_n(above + 1);
-        (above + below + 1 < 16)
+        (above + below + 1 < MAX_BAMBOO_HEIGHT)
             && world.get_block_state(pos.above_n(above)).get_value(STAGE) != 1
             && !world.is_outside_build_height(growth_pos.y())
             && world.get_block_state(growth_pos).is_air()
@@ -155,7 +158,7 @@ impl Bonemealable for BambooStalkBlock {
             let pos_above = pos.above_n(above + i);
             let state_above = world.get_block_state(pos_above);
             let growth_pos = pos_above.above();
-            if total_height + i >= 16
+            if total_height + i >= MAX_BAMBOO_HEIGHT
                 || state_above.get_value(STAGE) == 1
                 || !world.is_in_valid_bounds(growth_pos)
                 || !world.get_block_state(growth_pos).is_air()

@@ -13,6 +13,7 @@ use steel_registry::{vanilla_block_entity_types, vanilla_game_events};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
 use crate::behavior::{
     BlockBehavior, BlockEntityCreation, BlockHitResult, BlockPlaceContext, InteractionResult,
     InventoryAccess,
@@ -52,7 +53,7 @@ impl DaylightDetectorBlock {
 
     fn calculate_signal_strength(sky_brightness: u8, sun_angle_degrees: f32, inverted: bool) -> u8 {
         if inverted {
-            return 15 - sky_brightness;
+            return MAX_REDSTONE_SIGNAL as u8 - sky_brightness;
         }
         if sky_brightness == 0 {
             return 0;
@@ -61,7 +62,8 @@ impl DaylightDetectorBlock {
         let mut sun_angle = sun_angle_degrees * DEGREES_TO_RADIANS;
         let offset = if sun_angle < PI { 0.0 } else { TAU };
         sun_angle += (offset - sun_angle) * 0.2;
-        java_round(f32::from(sky_brightness) * trig::cos(f64::from(sun_angle))).clamp(0, 15) as u8
+        java_round(f32::from(sky_brightness) * trig::cos(f64::from(sun_angle)))
+            .clamp(0, MAX_REDSTONE_SIGNAL) as u8
     }
 
     fn update_signal_strength(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {

@@ -93,7 +93,7 @@ impl BlockBehavior for SugarCaneBlock {
 
         let age = state.get_value(AGE_15);
 
-        if age == 15 {
+        if age == AGE_15.max {
             world.set_block(
                 above_pos,
                 self.block.default_state(),

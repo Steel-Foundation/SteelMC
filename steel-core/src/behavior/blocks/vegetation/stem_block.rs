@@ -83,7 +83,7 @@ impl StemBlock {
         }
 
         let growth_speed = crop_growth_speed(self.block, world, pos);
-        let growth_chance = (25.0 / growth_speed) as u32 + 1;
+        let growth_chance = (super::crop_block::CROP_GROWTH_CHANCE_BASE / growth_speed) as u32 + 1;
         if rng.random_range(0..growth_chance) != 0 {
             return;
         }

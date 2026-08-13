@@ -12,6 +12,7 @@ use crate::world::{
     LevelReader, SignalQueryContext, World, get_best_neighbor_signal, is_redstone_conductor,
 };
 
+use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
 use crate::behavior::blocks::redstone::java_hash::sort_small_map_positions;
 
 /// Persistent evaluator used by `RedStoneWireBlock` when redstone experiments are disabled.
@@ -53,7 +54,7 @@ impl DefaultRedstoneWireEvaluator {
     fn calculate_target_strength(&self, level: &dyn LevelReader, pos: BlockPos) -> i32 {
         let block_signal =
             get_best_neighbor_signal(level, pos, SignalQueryContext::without_wire_signals());
-        if block_signal == 15 {
+        if block_signal == MAX_REDSTONE_SIGNAL {
             return block_signal;
         }
         block_signal.max(self.get_incoming_wire_signal(level, pos))

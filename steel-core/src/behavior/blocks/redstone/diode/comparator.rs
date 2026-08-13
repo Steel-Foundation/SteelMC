@@ -13,6 +13,7 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, WorldAabb};
 
 use super::base::DiodeBlock;
+use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockBehavior, BlockEntityCreation, BlockHitResult, BlockPlaceContext,
     InteractionResult, InventoryAccess, PlacementSource,
@@ -105,7 +106,9 @@ impl ComparatorBlock {
             );
         }
 
-        if result >= 15 || !is_redstone_conductor(world.as_ref(), target_state, target_pos) {
+        if result >= MAX_REDSTONE_SIGNAL
+            || !is_redstone_conductor(world.as_ref(), target_state, target_pos)
+        {
             return result;
         }
 

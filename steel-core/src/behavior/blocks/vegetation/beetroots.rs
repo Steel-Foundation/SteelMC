@@ -46,7 +46,7 @@ impl CropLike for BeetrootBlock {
     }
 
     fn max_age(&self) -> u8 {
-        3
+        AGE_3.max
     }
 
     fn clone_item_stack(&self) -> ItemStack {

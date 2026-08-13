@@ -13,6 +13,7 @@ use steel_registry::{REGISTRY, level_events, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::world::{
     LevelReader, ScheduledTickAccess, SignalQueryContext, World, get_signal as get_redstone_signal,
@@ -77,7 +78,11 @@ fn tick_torch(state: BlockStateId, world: &Arc<World>, pos: BlockPos, has_neighb
 }
 
 fn own_signal(state: BlockStateId) -> i32 {
-    if state.get_value(LIT) { 15 } else { 0 }
+    if state.get_value(LIT) {
+        MAX_REDSTONE_SIGNAL
+    } else {
+        0
+    }
 }
 
 /// Standing redstone torch (`redstone_torch`).

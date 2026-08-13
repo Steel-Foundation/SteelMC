@@ -27,6 +27,11 @@ use crate::{
     world::{LevelReader, ScheduledTickAccess, World},
 };
 
+use super::crop_block::{
+    ADJACENT_FARMLAND_SPEED_DIVISOR, CROP_GROWTH_CHANCE_BASE, CROWDED_CROP_SPEED_DIVISOR,
+    MIN_CROP_LIGHT_LEVEL,
+};
+
 const HALF_PROPERTY: &EnumProperty<DoubleBlockHalf> = &BlockStateProperties::DOUBLE_BLOCK_HALF;
 const AGE_PROPERTY: &IntProperty = &BlockStateProperties::AGE_4;
 
@@ -74,7 +79,7 @@ impl PitcherCropBlock {
 
                 // Diagonal/adjacent farmland contributes less
                 if dx != 0 || dz != 0 {
-                    block_speed /= 4.0;
+                    block_speed /= ADJACENT_FARMLAND_SPEED_DIVISOR;
                 }
 
                 speed += block_speed;
@@ -94,7 +99,7 @@ impl PitcherCropBlock {
 
         if horizontal_row && vertical_row {
             // Crops in both directions - penalty
-            speed /= 2.0;
+            speed /= CROWDED_CROP_SPEED_DIVISOR;
         } else {
             // Check diagonals
             let nw = world.get_block_state(pos.north().west());
@@ -108,7 +113,7 @@ impl PitcherCropBlock {
                 || self.base.block == se.get_block();
 
             if has_diagonal {
-                speed /= 2.0;
+                speed /= CROWDED_CROP_SPEED_DIVISOR;
             }
         }
 
@@ -133,7 +138,7 @@ impl PitcherCropBlock {
     }
 
     fn grow(world: &Arc<World>, lower_state: BlockStateId, lower_pos: BlockPos, increase: u8) {
-        let new_age = (lower_state.get_value(AGE_PROPERTY) + increase).min(4);
+        let new_age = (lower_state.get_value(AGE_PROPERTY) + increase).min(AGE_PROPERTY.max);
         if !Self::can_grow(world, lower_state, lower_pos, new_age) {
             return;
         }
@@ -152,8 +157,8 @@ impl PitcherCropBlock {
 
     fn can_grow(world: &dyn LevelReader, state: BlockStateId, pos: BlockPos, new_age: u8) -> bool {
         let state_above = world.get_block_state(pos.above());
-        state.get_value(AGE_PROPERTY) < 4
-            && world.raw_brightness(pos, 0) >= 8
+        state.get_value(AGE_PROPERTY) < AGE_PROPERTY.max
+            && world.raw_brightness(pos, 0) >= MIN_CROP_LIGHT_LEVEL
             && !world.is_outside_build_height(pos.above().y())
             && (new_age < 3
                 || state_above.is_air()
@@ -175,7 +180,7 @@ impl BlockBehavior for PitcherCropBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        if Self::is_lower(state) && world.raw_brightness(pos, 0) < 8 {
+        if Self::is_lower(state) && world.raw_brightness(pos, 0) < MIN_CROP_LIGHT_LEVEL {
             return false;
         }
 
@@ -218,8 +223,9 @@ impl BlockBehavior for PitcherCropBlock {
             return;
         };
         let growth_speed = self.get_growth_speed(world, lower_pos);
-        let should_progress_growth =
-            rand::rng().random_range(0_i32..((25.0 / growth_speed) as i32 + 1)) == 0;
+        let should_progress_growth = rand::rng()
+            .random_range(0_i32..((CROP_GROWTH_CHANCE_BASE / growth_speed) as i32 + 1))
+            == 0;
         if should_progress_growth {
             Self::grow(world, lower_state, lower_pos, 1);
         }

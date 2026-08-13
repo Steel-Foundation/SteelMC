@@ -138,7 +138,7 @@ impl BlockBehavior for CactusBlock {
             == &vanilla_blocks::CACTUS
         {
             height += 1;
-            if height == MAX_CACTUS_HEIGHT && age == 15 {
+            if height == MAX_CACTUS_HEIGHT && age == AGE_15.max {
                 return;
             }
         }
@@ -159,7 +159,7 @@ impl BlockBehavior for CactusBlock {
                     UpdateFlags::UPDATE_ALL,
                 );
             }
-        } else if age == 15 && height < MAX_CACTUS_HEIGHT {
+        } else if age == AGE_15.max && height < MAX_CACTUS_HEIGHT {
             world.set_block(
                 above_pos,
                 vanilla_blocks::CACTUS.default_state(),
@@ -170,7 +170,7 @@ impl BlockBehavior for CactusBlock {
             world.neighbor_changed(above_pos, &vanilla_blocks::CACTUS);
         }
 
-        if age < 15 {
+        if age < AGE_15.max {
             let new_state = state.set_value(AGE_15, age + 1);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_NONE);
         }

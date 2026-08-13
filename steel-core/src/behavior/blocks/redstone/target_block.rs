@@ -10,6 +10,7 @@ use steel_utils::axis::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::entity::Entity;
 use crate::entity::projectile::Projectile;
@@ -49,7 +50,7 @@ impl TargetBlock {
             Axis::X => dist_y.max(dist_z),
         };
         let centered = ((0.5 - distance) / 0.5).clamp(0.0, 1.0);
-        (15.0 * centered).ceil().max(1.0) as i32
+        (MAX_REDSTONE_SIGNAL as f64 * centered).ceil().max(1.0) as i32
     }
 
     fn update_redstone_output(

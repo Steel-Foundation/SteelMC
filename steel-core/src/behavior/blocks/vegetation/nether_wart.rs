@@ -71,7 +71,7 @@ impl BlockBehavior for NetherWartBlock {
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let age = state.get_value(AGE_PROPERTY);
-        if age > 2 || rand::random_range(0..10) != 0 {
+        if age >= AGE_PROPERTY.max || rand::random_range(0..10) != 0 {
             return;
         }
 
