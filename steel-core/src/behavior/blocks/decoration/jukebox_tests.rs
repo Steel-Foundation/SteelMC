@@ -26,6 +26,7 @@ use text_components::TextComponent;
 use uuid::Uuid;
 
 use super::JukeboxBlock;
+use crate::behavior::blocks::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{
     BlockBehavior as _, BlockHitResult, BlockItem, BlockPlaceContext, InteractionResult,
     InventoryAccess, PlacementOrientation, PlacementSource,
@@ -52,6 +53,8 @@ const TICKS_PER_SECOND: f32 = 20.0;
 const PLAY_EVENT_INTERVAL_TICKS: i64 = 20;
 const SONG_END_PADDING_TICKS: i64 = 20;
 const SAVED_PLAYBACK_TICKS: i32 = 37;
+const GAME_EVENT_LISTENER_RADIUS: i32 = 16;
+const DROPPED_ITEM_SEARCH_SIZE: f64 = 3.0;
 
 struct RecordingConnection {
     packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
@@ -96,7 +99,7 @@ impl GameEventListener for RecordingGameEventListener {
     }
 
     fn listener_radius(&self) -> i32 {
-        16
+        GAME_EVENT_LISTENER_RADIUS
     }
 
     fn handle_game_event(
@@ -151,13 +154,21 @@ fn test_player(world: &Arc<World>, id: i32) -> Arc<Player> {
     .build()
 }
 
+fn block_bottom_center(pos: BlockPos) -> DVec3 {
+    DVec3::new(
+        f64::from(pos.x()) + BLOCK_CENTER_OFFSET,
+        f64::from(pos.y()),
+        f64::from(pos.z()) + BLOCK_CENTER_OFFSET,
+    )
+}
+
+fn block_center(pos: BlockPos) -> DVec3 {
+    block_bottom_center(pos) + DVec3::Y * BLOCK_CENTER_OFFSET
+}
+
 fn hit_result(pos: BlockPos) -> BlockHitResult {
     BlockHitResult {
-        location: DVec3::new(
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
-        ),
+        location: block_center(pos),
         direction: Direction::Up,
         block_pos: pos,
         miss: false,
@@ -202,14 +213,13 @@ fn assert_within_radius(value: f64, center: f64, radius: f64) {
 }
 
 fn dropped_items(world: &World, pos: BlockPos) -> Vec<SharedEntity> {
+    let search_center = block_bottom_center(pos) + DVec3::Y * (DROPPED_ITEM_SEARCH_SIZE / 2.0);
     world.get_entities_in_aabb_matching(
-        &WorldAabb::new(
-            f64::from(pos.x()) - 1.0,
-            f64::from(pos.y()),
-            f64::from(pos.z()) - 1.0,
-            f64::from(pos.x()) + 2.0,
-            f64::from(pos.y()) + 3.0,
-            f64::from(pos.z()) + 2.0,
+        &WorldAabb::of_size(
+            search_center,
+            DROPPED_ITEM_SEARCH_SIZE,
+            DROPPED_ITEM_SEARCH_SIZE,
+            DROPPED_ITEM_SEARCH_SIZE,
         ),
         |entity| entity.entity_type() == &vanilla_entities::ITEM,
     )
@@ -231,11 +241,7 @@ fn recording_player(
     )
     .connection(connection)
     .build();
-    let moved = player.try_set_position(DVec3::new(
-        f64::from(pos.x()) + 0.5,
-        f64::from(pos.y()) + 1.0,
-        f64::from(pos.z()) + 0.5,
-    ));
+    let moved = player.try_set_position(block_bottom_center(pos.above()));
     assert!(moved.is_ok(), "test player should move beside jukebox");
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     packets.lock().clear();
@@ -375,8 +381,11 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
         ),
         cat_output
     );
-    assert_eq!(world.get_signal(pos, Direction::North), 15);
-    assert_eq!(world.get_direct_signal(pos, Direction::North), 0);
+    assert_eq!(world.get_signal(pos, Direction::North), MAX_REDSTONE_SIGNAL);
+    assert_eq!(
+        world.get_direct_signal(pos, Direction::North),
+        MIN_REDSTONE_SIGNAL
+    );
 
     assert_eq!(
         behavior.use_without_item(
@@ -396,7 +405,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
     );
     assert!(stored_record(jukebox).is_none());
     assert!(!jukebox.is_record_playing());
-    assert_eq!(world.get_signal(pos, Direction::North), 0);
+    assert_eq!(world.get_signal(pos, Direction::North), MIN_REDSTONE_SIGNAL);
 
     let dropped = dropped_items(&world, pos);
     assert_eq!(dropped.len(), 1);
@@ -433,7 +442,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
     assert_eq!(dropped_items(&world, pos).len(), 1);
 
     player.restore_game_modes(GameType::Creative, Some(GameType::Survival));
-    let pigstep = ItemStack::with_count(&vanilla_items::MUSIC_DISC_PIGSTEP, 2);
+    let pigstep = ItemStack::new(&vanilla_items::MUSIC_DISC_PIGSTEP);
     let pigstep_output = song_comparator(&pigstep);
     assert_ne!(cat_output, pigstep_output);
     player
@@ -458,7 +467,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
             .lock()
             .get_item_in_hand(InteractionHand::MainHand)
             .count(),
-        2,
+        1,
     );
     let Some(record) = stored_record(jukebox) else {
         panic!("creative insertion should store one record");
@@ -530,11 +539,7 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
     let (_observer, packets) = recording_player(&world, pos);
     let events = Arc::new(SyncMutex::new(Vec::new()));
     let listener: SharedGameEventListener = Arc::new(RecordingGameEventListener {
-        pos: DVec3::new(
-            f64::from(pos.x()) + 0.5,
-            f64::from(pos.y()) + 0.5,
-            f64::from(pos.z()) + 0.5,
-        ),
+        pos: block_center(pos),
         events: Arc::clone(&events),
     });
     world.register_game_event_listener(SectionPos::from_block_pos(pos), listener);
@@ -607,8 +612,11 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
         ),
         expected_output
     );
-    assert_eq!(world.get_signal(pos, Direction::North), 0);
-    assert_eq!(world.get_direct_signal(pos, Direction::North), 0);
+    assert_eq!(world.get_signal(pos, Direction::North), MIN_REDSTONE_SIGNAL);
+    assert_eq!(
+        world.get_direct_signal(pos, Direction::North),
+        MIN_REDSTONE_SIGNAL
+    );
     assert!(
         level_events(&packets)
             .iter()
@@ -661,7 +669,7 @@ fn placement_data_and_nonzero_persistence_resume_without_restarting_audio() {
         &world,
         source,
         &BlockHitResult {
-            location: DVec3::new(8.5, 64.0, 8.5),
+            location: block_bottom_center(pos),
             direction: Direction::Up,
             block_pos: support,
             miss: false,

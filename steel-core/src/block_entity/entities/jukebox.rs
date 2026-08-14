@@ -34,6 +34,13 @@ const TICKS_PER_SECOND: f32 = 20.0;
 const PLAY_EVENT_INTERVAL_TICKS: i64 = 20;
 const SONG_END_PADDING_TICKS: i32 = 20;
 const UNKNOWN_SONG_REGISTRY_ID: i32 = -1;
+const BLOCK_CENTER_OFFSET: f64 = 0.5;
+const ITEM_EJECTION_Y_OFFSET: f64 = 1.01;
+const ITEM_EJECTION_RANDOM_CENTER: f32 = 0.5;
+const ITEM_EJECTION_HORIZONTAL_SPREAD: f32 = 0.7;
+const NOTE_PARTICLE_Y_OFFSET: f32 = 1.2;
+const NOTE_PARTICLE_COLOR_VARIANTS: u8 = 4;
+const NOTE_PARTICLE_COLOR_DIVISOR: f32 = 24.0;
 
 struct JukeboxPlayback {
     ticks_since_song_started: i64,
@@ -192,12 +199,14 @@ impl JukeboxBlockEntity {
         self.stop_playback(Some(&world));
 
         let pos = self.get_block_pos();
-        let random_x = (rand::random::<f32>() - 0.5) * 0.7;
-        let random_z = (rand::random::<f32>() - 0.5) * 0.7;
+        let random_x =
+            (rand::random::<f32>() - ITEM_EJECTION_RANDOM_CENTER) * ITEM_EJECTION_HORIZONTAL_SPREAD;
+        let random_z =
+            (rand::random::<f32>() - ITEM_EJECTION_RANDOM_CENTER) * ITEM_EJECTION_HORIZONTAL_SPREAD;
         let item_pos = DVec3::new(
-            f64::from(pos.x()) + 0.5 + f64::from(random_x),
-            f64::from(pos.y()) + 1.01,
-            f64::from(pos.z()) + 0.5 + f64::from(random_z),
+            f64::from(pos.x()) + BLOCK_CENTER_OFFSET + f64::from(random_x),
+            f64::from(pos.y()) + ITEM_EJECTION_Y_OFFSET,
+            f64::from(pos.z()) + BLOCK_CENTER_OFFSET + f64::from(random_z),
         );
         if let Some(entity) = world.spawn_item(item_pos, item) {
             entity.set_default_pickup_delay();
@@ -337,13 +346,16 @@ impl BlockEntity for JukeboxBlockEntity {
                     pos,
                     &GameEventContext::new(None, Some(self.get_block_state())),
                 );
-                let random_color = f64::from(rand::random_range(0..4)) / 24.0;
+                let random_color = f64::from(
+                    f32::from(rand::random_range(0..NOTE_PARTICLE_COLOR_VARIANTS))
+                        / NOTE_PARTICLE_COLOR_DIVISOR,
+                );
                 world.send_particles(
                     ParticleData::simple(&vanilla_particle_types::NOTE),
                     DVec3::new(
-                        f64::from(pos.x()) + 0.5,
-                        f64::from(pos.y()) + f64::from(1.2_f32),
-                        f64::from(pos.z()) + 0.5,
+                        f64::from(pos.x()) + BLOCK_CENTER_OFFSET,
+                        f64::from(pos.y()) + f64::from(NOTE_PARTICLE_Y_OFFSET),
+                        f64::from(pos.z()) + BLOCK_CENTER_OFFSET,
                     ),
                     0,
                     DVec3::new(random_color, 0.0, 0.0),

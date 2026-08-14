@@ -13,6 +13,7 @@ use steel_registry::{vanilla_block_entity_types, vanilla_game_events};
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, Downcast as _};
 
+use crate::behavior::blocks::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{
     BlockBehavior, BlockEntityCreation, BlockHitResult, BlockPlaceContext, InteractionResult,
     InventoryAccess, PlacementSource,
@@ -167,12 +168,16 @@ impl BlockBehavior for JukeboxBlock {
         _context: SignalQueryContext,
     ) -> i32 {
         let Some(block_entity) = world.get_block_entity(pos) else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         let Some(jukebox) = block_entity.downcast_ref::<JukeboxBlockEntity>() else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
-        if jukebox.is_record_playing() { 15 } else { 0 }
+        if jukebox.is_record_playing() {
+            MAX_REDSTONE_SIGNAL
+        } else {
+            MIN_REDSTONE_SIGNAL
+        }
     }
 
     fn has_analog_output_signal(&self, _state: BlockStateId) -> bool {
@@ -187,10 +192,10 @@ impl BlockBehavior for JukeboxBlock {
         _direction: Direction,
     ) -> i32 {
         let Some(block_entity) = world.get_block_entity(pos) else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         let Some(jukebox) = block_entity.downcast_ref::<JukeboxBlockEntity>() else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         jukebox.analog_output_signal()
     }
