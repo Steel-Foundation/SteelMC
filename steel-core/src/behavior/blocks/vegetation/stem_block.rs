@@ -18,7 +18,7 @@ use crate::{
         BlockBehavior, BlockPlaceContext,
         blocks::vegetation::{
             Vegetation,
-            crop_block::crop_growth_speed,
+            crop_block::{CROP_GROWTH_CHANCE_BASE, crop_growth_speed},
             default_surviving_state,
             vegetation_block::{survival_update_shape, vegetation_can_survive},
         },
@@ -83,7 +83,7 @@ impl StemBlock {
         }
 
         let growth_speed = crop_growth_speed(self.block, world, pos);
-        let growth_chance = (super::crop_block::CROP_GROWTH_CHANCE_BASE / growth_speed) as u32 + 1;
+        let growth_chance = (CROP_GROWTH_CHANCE_BASE / growth_speed) as u32 + 1;
         if rng.random_range(0..growth_chance) != 0 {
             return;
         }
