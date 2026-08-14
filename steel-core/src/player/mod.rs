@@ -68,8 +68,8 @@ use steel_registry::vanilla_game_rules::{
     SHOW_DEATH_MESSAGES,
 };
 use steel_registry::{
-    level_events, sound_events, vanilla_attributes, vanilla_custom_stats, vanilla_damage_type_tags,
-    vanilla_entities, vanilla_game_events,
+    level_events, sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
+    vanilla_game_events,
 };
 use steel_utils::{entity_events::EntityStatus, locks::Shared};
 use tick_state::PlayerTickState;
@@ -1462,13 +1462,7 @@ impl Entity for Player {
             return false;
         }
 
-        if fall_distance >= 2.0 {
-            self.award_custom_stat_with_count(
-                &vanilla_custom_stats::FALL_ONE_CM,
-                (fall_distance * 100.0).round() as i32,
-            );
-        }
-
+        // TODO: Award `Stats.FALL_ONE_CM` once player statistics are implemented.
         LivingEntity::cause_living_fall_damage(self, fall_distance, damage_modifier, source)
     }
 
@@ -1800,7 +1794,7 @@ impl LivingEntity for Player {
 
     fn jump_from_ground(&self) {
         self.default_jump_from_ground();
-        self.award_custom_stat(&vanilla_custom_stats::JUMP);
+        // TODO: Award Stats.JUMP once player statistics exist.
         if self.is_sprinting() {
             self.cause_food_exhaustion(0.2);
         } else {

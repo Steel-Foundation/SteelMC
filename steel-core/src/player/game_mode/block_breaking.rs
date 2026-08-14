@@ -9,7 +9,6 @@ use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::data_components::AdventureModePredicate;
 use steel_registry::data_components::vanilla_components::CAN_BREAK;
-use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_attributes;
 use steel_registry::{
     REGISTRY, blocks::properties::Direction, item_stack::ItemStack, vanilla_blocks,
@@ -426,14 +425,14 @@ impl BlockBreakingManager {
                 }
             }
 
+            player.cause_food_exhaustion(food_constants::EXHAUSTION_MINE);
+
             // Handle drops (skip for creative/spectator)
             let game_mode = player.game_mode();
             if game_mode != GameType::Spectator
                 && game_mode != GameType::Creative
                 && has_correct_tool
             {
-                player.award_stat(&vanilla_stat_types::BLOCK_MINED, state.get_block());
-                player.cause_food_exhaustion(food_constants::EXHAUSTION_MINE);
                 drop_block_loot(player, world, pos, adjusted_state, &destroyed_with);
                 let block_entity = world.get_block_entity(pos);
                 behavior.player_destroy(
