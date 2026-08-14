@@ -3,6 +3,7 @@ services:
     image: ghcr.io/steel-foundation/steelmc:nightly
     stdin_open: true
     tty: true
+    container_name: steel-mc
     ports:
       - 25565:25565
     volumes:
