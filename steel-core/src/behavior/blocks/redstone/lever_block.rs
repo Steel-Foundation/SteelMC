@@ -11,7 +11,7 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::face_attached_horizontal_directional_block::FaceAttachedHorizontalDirectionalBlock;
-use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{
     BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
 };
@@ -131,7 +131,7 @@ impl BlockBehavior for LeverBlock {
         if state.get_value(POWERED) {
             MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
@@ -148,7 +148,7 @@ impl BlockBehavior for LeverBlock {
         {
             MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 

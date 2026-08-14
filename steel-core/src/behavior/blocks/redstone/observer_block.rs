@@ -11,7 +11,7 @@ use steel_registry::blocks::properties::{
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::world::{LevelReader, ScheduledTickAccess, SignalQueryContext, World};
 
@@ -52,7 +52,7 @@ impl ObserverBlock {
         if state.get_value(POWERED) {
             MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 }

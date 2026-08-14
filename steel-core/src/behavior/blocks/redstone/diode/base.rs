@@ -14,7 +14,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::BlockPlaceContext;
-use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::world::{
     LevelReader, SignalQueryContext, World, get_control_input_signal,
     get_signal as get_redstone_signal, tick_scheduler::TickPriority,
@@ -75,7 +75,7 @@ impl DiodeBlock {
         let wire_power = if target_state.get_block() == &vanilla_blocks::REDSTONE_WIRE {
             i32::from(target_state.get_value(POWER))
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         };
         input.max(wire_power)
     }

@@ -10,7 +10,7 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::base::BasePressurePlateBlock;
-use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, SignalQueryContext, World};
@@ -64,7 +64,7 @@ impl PressurePlateBlock {
         if state.get_value(POWERED) {
             MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
@@ -80,7 +80,11 @@ impl PressurePlateBlock {
                 // entities become eligible when they gain `LivingEntity` behavior.
                 PressurePlateSensitivity::Mobs => entity.is_living_entity(),
             });
-        if count > 0 { MAX_REDSTONE_SIGNAL } else { 0 }
+        if count > 0 {
+            MAX_REDSTONE_SIGNAL
+        } else {
+            MIN_REDSTONE_SIGNAL
+        }
     }
 
     fn check_pressed(

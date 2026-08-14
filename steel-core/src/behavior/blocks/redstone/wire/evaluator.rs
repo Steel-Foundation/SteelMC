@@ -12,8 +12,8 @@ use crate::world::{
     LevelReader, SignalQueryContext, World, get_best_neighbor_signal, is_redstone_conductor,
 };
 
-use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
 use crate::behavior::blocks::redstone::java_hash::sort_small_map_positions;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 
 /// Persistent evaluator used by `RedStoneWireBlock` when redstone experiments are disabled.
 pub(super) struct DefaultRedstoneWireEvaluator {
@@ -61,7 +61,7 @@ impl DefaultRedstoneWireEvaluator {
     }
 
     fn get_incoming_wire_signal(&self, level: &dyn LevelReader, pos: BlockPos) -> i32 {
-        let mut wire_signal = 0;
+        let mut wire_signal = MIN_REDSTONE_SIGNAL;
 
         for direction in Direction::HORIZONTAL {
             let neighbor_pos = pos.relative(direction);
@@ -82,7 +82,7 @@ impl DefaultRedstoneWireEvaluator {
             }
         }
 
-        0.max(wire_signal - 1)
+        MIN_REDSTONE_SIGNAL.max(wire_signal - 1)
     }
 
     fn get_wire_signal(&self, state: BlockStateId) -> i32 {

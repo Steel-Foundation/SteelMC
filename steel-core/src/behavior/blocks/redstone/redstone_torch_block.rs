@@ -13,7 +13,7 @@ use steel_registry::{REGISTRY, level_events, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::world::{
     LevelReader, ScheduledTickAccess, SignalQueryContext, World, get_signal as get_redstone_signal,
@@ -81,7 +81,7 @@ fn own_signal(state: BlockStateId) -> i32 {
     if state.get_value(LIT) {
         MAX_REDSTONE_SIGNAL
     } else {
-        0
+        MIN_REDSTONE_SIGNAL
     }
 }
 
@@ -107,7 +107,7 @@ impl RedstoneTorchBlock {
             pos.below(),
             Direction::Down,
             SignalQueryContext::DEFAULT,
-        ) > 0
+        ) > MIN_REDSTONE_SIGNAL
     }
 }
 
@@ -214,7 +214,7 @@ impl BlockBehavior for RedstoneTorchBlock {
         _context: SignalQueryContext,
     ) -> i32 {
         if direction == Direction::Up {
-            0
+            MIN_REDSTONE_SIGNAL
         } else {
             own_signal(state)
         }
@@ -231,7 +231,7 @@ impl BlockBehavior for RedstoneTorchBlock {
         if direction == Direction::Down {
             self.get_signal(state, world, pos, direction, context)
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
@@ -258,7 +258,7 @@ impl RedstoneWallTorchBlock {
             pos.relative(opposite),
             opposite,
             SignalQueryContext::DEFAULT,
-        ) > 0
+        ) > MIN_REDSTONE_SIGNAL
     }
 }
 
@@ -372,7 +372,7 @@ impl BlockBehavior for RedstoneWallTorchBlock {
         _context: SignalQueryContext,
     ) -> i32 {
         if state.get_value(HORIZONTAL_FACING) == direction {
-            0
+            MIN_REDSTONE_SIGNAL
         } else {
             own_signal(state)
         }
@@ -389,7 +389,7 @@ impl BlockBehavior for RedstoneWallTorchBlock {
         if direction == Direction::Down {
             self.get_signal(state, world, pos, direction, context)
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 

@@ -10,7 +10,7 @@ use steel_utils::axis::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::entity::Entity;
 use crate::entity::projectile::Projectile;
@@ -99,7 +99,7 @@ impl BlockBehavior for TargetBlock {
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if state.get_value(POWER) != 0 {
+        if state.get_value(POWER) != MIN_REDSTONE_SIGNAL as u8 {
             world.set_block(pos, state.set_value(POWER, 0_u8), UpdateFlags::UPDATE_ALL);
         }
     }
@@ -113,7 +113,7 @@ impl BlockBehavior for TargetBlock {
         _moved_by_piston: bool,
     ) {
         if old_state.get_block() != state.get_block()
-            && state.get_value(POWER) > 0
+            && i32::from(state.get_value(POWER)) > MIN_REDSTONE_SIGNAL
             && !world.has_scheduled_block_tick(pos, self.block)
         {
             world.set_block(pos, state.set_value(POWER, 0_u8), RESET_ON_PLACE_FLAGS);

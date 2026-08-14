@@ -13,7 +13,7 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, WorldAabb};
 
 use super::base::DiodeBlock;
-use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockBehavior, BlockEntityCreation, BlockHitResult, BlockPlaceContext,
     InteractionResult, InventoryAccess, PlacementSource,
@@ -49,19 +49,19 @@ impl ComparatorBlock {
 
     fn output_signal(level: &dyn LevelReader, pos: BlockPos) -> i32 {
         let Some(block_entity) = level.get_block_entity(pos) else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         block_entity
             .downcast_ref::<ComparatorBlockEntity>()
-            .map_or(0, ComparatorBlockEntity::output_signal)
+            .map_or(MIN_REDSTONE_SIGNAL, ComparatorBlockEntity::output_signal)
     }
 
     fn set_output_signal(world: &Arc<World>, pos: BlockPos, output_signal: i32) -> i32 {
         let Some(block_entity) = world.get_block_entity(pos) else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         let Some(comparator) = block_entity.downcast_ref::<ComparatorBlockEntity>() else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         let old_output = comparator.output_signal();
         comparator.set_output_signal(output_signal);
@@ -138,8 +138,8 @@ impl ComparatorBlock {
     }
 
     const fn calculate_output_signal(input: i32, alternate: i32, mode: ComparatorMode) -> i32 {
-        if input == 0 || alternate > input {
-            return 0;
+        if input == MIN_REDSTONE_SIGNAL || alternate > input {
+            return MIN_REDSTONE_SIGNAL;
         }
         match mode {
             ComparatorMode::Compare => input,
@@ -154,7 +154,7 @@ impl ComparatorBlock {
     }
 
     const fn should_turn_on_from_signals(input: i32, alternate: i32, mode: ComparatorMode) -> bool {
-        input != 0
+        input != MIN_REDSTONE_SIGNAL
             && (input > alternate
                 || (input == alternate && matches!(mode, ComparatorMode::Compare)))
     }

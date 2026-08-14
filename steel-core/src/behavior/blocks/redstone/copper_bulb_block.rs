@@ -10,7 +10,7 @@ use steel_registry::sound_events;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::blocks::{WeatherState, WeatheringCopper};
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::world::{LevelReader, SignalGetter as _, World};
@@ -71,7 +71,7 @@ impl CopperBulbBlock {
         if world.get_block_state(pos).get_value(LIT) {
             MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 }

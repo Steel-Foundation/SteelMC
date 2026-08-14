@@ -9,7 +9,7 @@ use steel_registry::blocks::properties::{
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
-use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::LevelReader;
 
@@ -30,7 +30,11 @@ impl EndPortalFrameBlock {
     }
 
     const fn analog_output_signal(has_eye: bool) -> i32 {
-        if has_eye { MAX_REDSTONE_SIGNAL } else { 0 }
+        if has_eye {
+            MAX_REDSTONE_SIGNAL
+        } else {
+            MIN_REDSTONE_SIGNAL
+        }
     }
 }
 
