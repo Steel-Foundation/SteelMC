@@ -44,6 +44,8 @@ pub struct ServerConfig {
     pub auth_server: Option<String>,
     /// Optional endpoint for online-mode player name-to-profile lookups.
     pub profile_server: Option<String>,
+    /// Optional endpoint for Mojang-compatible service public keys.
+    pub services_server: Option<String>,
     /// Whether the server should use encryption. Required in online mode.
     pub encryption: bool,
     /// Whether vanilla floating/flying movement checks permit unauthorized flight.
@@ -84,6 +86,7 @@ impl ServerConfig {
             online_mode: self.online_mode,
             auth_server: self.auth_server,
             profile_server: self.profile_server,
+            services_server: self.services_server,
             encryption: self.encryption,
             allow_flight: self.allow_flight,
             motd: self.motd,
@@ -135,6 +138,11 @@ pub(super) fn validate(config: &ServerConfig) -> Result<(), &'static str> {
         config.profile_server.as_deref(),
         "profile_server must be an absolute URL",
         "profile_server must use http or https",
+    )?;
+    validate_server_url(
+        config.services_server.as_deref(),
+        "services_server must be an absolute URL",
+        "services_server must use http or https",
     )?;
     if config.simulation_distance > config.view_distance {
         return Err("Simulation distance must be less than or equal to view distance");

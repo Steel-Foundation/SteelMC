@@ -328,7 +328,9 @@ async fn wait_for_shutdown_signal() -> io::Result<&'static str> {
 
 #[cfg(not(unix))]
 async fn wait_for_shutdown_signal() -> io::Result<&'static str> {
-    tokio::signal::ctrl_c().await?;
+    use tokio::signal::ctrl_c;
+
+    ctrl_c().await?;
     Ok("Ctrl-C")
 }
 

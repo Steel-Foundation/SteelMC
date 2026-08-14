@@ -5,7 +5,7 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, IntProperty};
 use steel_registry::sound_event::SoundEventRef;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -28,6 +28,8 @@ pub struct WeightedPressurePlateBlock {
     sound_click_off: SoundEventRef,
 }
 
+const POWER: &IntProperty = &BlockStateProperties::POWER;
+
 impl WeightedPressurePlateBlock {
     /// Creates a weighted pressure plate from extracted vanilla data.
     #[must_use]
@@ -46,11 +48,11 @@ impl WeightedPressurePlateBlock {
     }
 
     fn signal_for_state(state: BlockStateId) -> i32 {
-        i32::from(state.get_value(&BlockStateProperties::POWER))
+        i32::from(state.get_value(POWER))
     }
 
     fn state_for_signal(state: BlockStateId, signal: i32) -> BlockStateId {
-        state.set_value(&BlockStateProperties::POWER, signal as u8)
+        state.set_value(POWER, signal as u8)
     }
 
     fn signal_for_count(count: i32, max_weight: i32) -> i32 {
@@ -91,6 +93,10 @@ impl WeightedPressurePlateBlock {
 }
 
 impl BlockBehavior for WeightedPressurePlateBlock {
+    fn is_possible_to_respawn_in_this(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         BasePressurePlateBlock::can_survive(world, pos)
     }
