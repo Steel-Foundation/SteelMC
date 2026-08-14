@@ -1320,6 +1320,7 @@ fn remove_after_changing_dimensions(entity: &dyn Entity) {
 
 pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
     let living_entity = entity.as_living_entity();
+    let sheep = living_entity.and_then(LivingEntity::sheep_loot_state);
     EntityRef {
         entity_type: Some(&entity.entity_type().key),
         flags: EntityRefFlags {
@@ -1332,6 +1333,8 @@ pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
         // TODO: Include equipment and custom name once loot contexts can snapshot entity data.
         equipment: None,
         custom_name: None,
+        sheep_color: sheep.map(|(color, _)| color),
+        sheep_sheared: sheep.map(|(_, sheared)| sheared),
     }
 }
 
