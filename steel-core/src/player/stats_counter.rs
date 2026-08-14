@@ -175,8 +175,7 @@ impl Player {
 mod tests {
     use crate::player::stats_counter::StatsCounter;
     use steel_registry::stat::{Stat, vanilla_stat_types};
-    use steel_registry::test_support::init_test_registry;
-    use steel_registry::vanilla_custom_stats;
+    use steel_registry::{init_vanilla_registry, vanilla_custom_stats};
 
     fn deterministic_dirty_and_clear(counter: &mut StatsCounter) -> Vec<(Stat, i32)> {
         let mut dirty = counter.get_dirty_and_clear();
@@ -187,7 +186,7 @@ mod tests {
 
     #[test]
     fn stat_counter_query_dirty_and_modifications() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut stats_counter = StatsCounter::new();
 
@@ -231,7 +230,7 @@ mod tests {
 
     #[test]
     fn overflow_cap() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut stats_counter = StatsCounter::new();
         let jump_stat = vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::JUMP);
@@ -256,7 +255,7 @@ mod tests {
 
     #[test]
     fn no_underflow_cap() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut stats_counter = StatsCounter::new();
         let jump_stat = vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::JUMP);

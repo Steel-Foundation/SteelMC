@@ -173,7 +173,7 @@ mod tests {
     use crate::items::ItemRegistry;
     use crate::stat::registry::StatValueRegistry;
     use crate::stat::{Stat, StatType, vanilla_stat_types};
-    use crate::{REGISTRY, RegistryEntry, vanilla_items, init_vanilla_registry};
+    use crate::{REGISTRY, RegistryEntry, init_vanilla_registry, vanilla_items};
     use std::io::Cursor;
     use steel_utils::Identifier;
     use steel_utils::codec::VarInt;

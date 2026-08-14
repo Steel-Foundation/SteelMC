@@ -961,8 +961,9 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
     use steel_registry::stat::vanilla_stat_types;
-    use steel_registry::test_support::init_test_registry;
-    use steel_registry::{vanilla_blocks, vanilla_custom_stats, vanilla_items};
+    use steel_registry::{
+        init_vanilla_registry, vanilla_blocks, vanilla_custom_stats, vanilla_items,
+    };
 
     fn temp_storage_root(name: &str) -> PathBuf {
         let suffix = SystemTime::now()
@@ -1593,7 +1594,7 @@ mod tests {
 
     #[test]
     fn player_stats_file_roundtrips() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let file = sample_player_stats_file();
 
@@ -1631,7 +1632,7 @@ mod tests {
 
     #[test]
     fn duplicate_stat_fails_conversion() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let stats = vec![
             PersistentStat {
