@@ -173,8 +173,7 @@ mod tests {
     use crate::items::ItemRegistry;
     use crate::stat::registry::StatValueRegistry;
     use crate::stat::{Stat, StatType, vanilla_stat_types};
-    use crate::test_support::init_test_registry;
-    use crate::{REGISTRY, RegistryEntry, vanilla_items};
+    use crate::{REGISTRY, RegistryEntry, vanilla_items, init_vanilla_registry};
     use std::io::Cursor;
     use steel_utils::Identifier;
     use steel_utils::codec::VarInt;
@@ -185,7 +184,7 @@ mod tests {
 
     #[test]
     fn network_encode_and_decode_stat() {
-        init_test_registry();
+        init_vanilla_registry();
 
         // Test if stat creation succeeds or fails appropriately.
         let stat = vanilla_stat_types::ITEM_USED.get(&vanilla_items::DIAMOND);
