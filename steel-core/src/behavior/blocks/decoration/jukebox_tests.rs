@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::io::Cursor;
 use std::sync::{Arc, Weak};
 
@@ -8,12 +7,8 @@ use simdnbt::owned::NbtCompound;
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::data_components::components::{
-    BlockEntityData, BlockItemStateProperties, CustomData, JukeboxPlayable,
-};
-use steel_registry::data_components::vanilla_components::{
-    BLOCK_ENTITY_DATA, BLOCK_STATE, JUKEBOX_PLAYABLE,
-};
+use steel_registry::data_components::components::{BlockEntityData, CustomData, JukeboxPlayable};
+use steel_registry::data_components::vanilla_components::{BLOCK_ENTITY_DATA, JUKEBOX_PLAYABLE};
 use steel_registry::game_events::GameEventRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events::{SOUND_PLAY_JUKEBOX_SONG, SOUND_STOP_JUKEBOX_SONG};
@@ -724,66 +719,6 @@ fn placement_data_and_nonzero_persistence_resume_without_restarting_audio() {
         panic!("resumed jukebox should retain the record");
     };
     assert!(stored.is(&vanilla_items::MUSIC_DISC_CAT));
-}
-
-#[test]
-fn placing_stack_block_state_component_applies_before_the_jukebox_hook() {
-    init_globals_once();
-    let world = fresh_test_world("jukebox_block_state_placement");
-    let support = BlockPos::new(8, 63, 8);
-    let pos = support.above();
-    let _holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
-    assert!(world.set_block(
-        support,
-        vanilla_blocks::STONE.default_state(),
-        UpdateFlags::UPDATE_NONE,
-    ));
-
-    let mut placing_stack = ItemStack::new(&vanilla_items::JUKEBOX);
-    placing_stack.set(
-        BLOCK_STATE,
-        BlockItemStateProperties::new(BTreeMap::from([(
-            BlockStateProperties::HAS_RECORD.name.to_owned(),
-            true.to_string(),
-        )])),
-    );
-    let source = PlacementSource::direct(
-        None,
-        InteractionHand::MainHand,
-        &mut placing_stack,
-        PlacementOrientation::Directional {
-            direction: Direction::North,
-        },
-        false,
-    );
-    let context = BlockPlaceContext::new(
-        &world,
-        source,
-        &BlockHitResult {
-            location: DVec3::new(8.5, 64.0, 8.5),
-            direction: Direction::Up,
-            block_pos: support,
-            miss: false,
-            inside: false,
-            world_border_hit: false,
-        },
-    );
-
-    assert_eq!(
-        BlockItem::new(&vanilla_blocks::JUKEBOX).place(context),
-        InteractionResult::Success,
-    );
-    assert!(
-        world
-            .get_block_state(pos)
-            .get_value(&BlockStateProperties::HAS_RECORD)
-    );
-    let block_entity = jukebox_entity(&world, pos);
-    let Some(jukebox) = block_entity.downcast_ref::<JukeboxBlockEntity>() else {
-        panic!("placed jukebox should retain its concrete entity");
-    };
-    assert!(stored_record(jukebox).is_none());
-    assert!(!jukebox.is_record_playing());
 }
 
 #[test]

@@ -3,7 +3,6 @@
 use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt},
-    data_components::vanilla_components::BLOCK_STATE,
     vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::{BlockStateId, types::UpdateFlags};
@@ -59,19 +58,8 @@ impl BlockItem {
             return InteractionResult::Fail;
         }
 
-        let mut placed_state = context.world.get_block_state(place_pos);
+        let placed_state = context.world.get_block_state(place_pos);
         if placed_state.get_block() == self.block {
-            let component_state = context.source().with_item(|stack| {
-                stack
-                    .get(BLOCK_STATE)
-                    .map_or(placed_state, |properties| properties.apply(placed_state))
-            });
-            if component_state != placed_state {
-                context
-                    .world
-                    .set_block(place_pos, component_state, UpdateFlags::UPDATE_CLIENTS);
-                placed_state = context.world.get_block_state(place_pos);
-            }
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
             placed_behavior.set_placed_by(placed_state, context.world, place_pos, context.source());
         }
