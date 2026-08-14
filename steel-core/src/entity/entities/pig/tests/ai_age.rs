@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn pig_breeding_offspring_inherits_parent_variant() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let partner = PigEntity::new(
@@ -32,7 +32,7 @@ fn pig_breeding_offspring_inherits_parent_variant() {
 
 #[test]
 fn pig_mob_ai_increments_no_action_time() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
@@ -44,7 +44,7 @@ fn pig_mob_ai_increments_no_action_time() {
 
 #[test]
 fn pig_damage_resets_no_action_time() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
@@ -57,7 +57,7 @@ fn pig_damage_resets_no_action_time() {
 
 #[test]
 fn pig_keeps_vanilla_animal_far_away_persistence() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
@@ -66,7 +66,7 @@ fn pig_keeps_vanilla_animal_far_away_persistence() {
 
 #[test]
 fn pig_registers_vanilla_passive_goal_foundations() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
@@ -82,7 +82,7 @@ fn pig_registers_vanilla_passive_goal_foundations() {
 
 #[test]
 fn pig_path_target_feeds_move_control_forward_input() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let path = Path::new(vec![Node::new(1, 0, 0)], BlockPos::new(1, 0, 0), true);
@@ -116,22 +116,22 @@ fn pig_path_target_feeds_move_control_forward_input() {
 
 #[test]
 fn pig_age_updates_synchronized_baby_flag_on_boundary() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
     pig.set_age(-1);
-    assert!(pig.is_baby());
+    assert!(AgeableMob::is_baby(&pig));
     assert!(*pig.entity_data.lock().ageable_mob().baby.get());
 
     pig.set_age(0);
-    assert!(!pig.is_baby());
+    assert!(!AgeableMob::is_baby(&pig));
     assert!(!*pig.entity_data.lock().ageable_mob().baby.get());
 }
 
 #[test]
 fn pig_age_boundary_refreshes_dimensions() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let adult_dimensions = vanilla_entities::PIG.dimensions;
@@ -173,7 +173,7 @@ fn pig_age_boundary_refreshes_dimensions() {
 
 #[test]
 fn pig_scale_attribute_refreshes_dimensions() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let adult_dimensions = vanilla_entities::PIG.dimensions;

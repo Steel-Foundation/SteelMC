@@ -10,13 +10,13 @@ use std::{
     time::Duration,
 };
 
-use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use crate::chunk::chunk_ticket_manager::{PersistentChunkTickets, TimedChunkTickets};
+use crate::chunk::full_chunk::{FullChunkBlockSetResult, FullChunkRef};
 use crate::chunk::gameplay_chunk_lookup_cache::GameplayChunkLookupCacheScope;
-use crate::chunk::level_chunk::{LevelChunk, LevelChunkBlockSetResult};
 use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
+use crate::chunk::status::ChunkStatus;
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
 use crate::world::game_event::{
@@ -104,6 +104,7 @@ use crate::{
 
 mod block_entity_ticker;
 mod block_event;
+mod block_region;
 mod block_updates;
 mod border;
 mod broadcasts;
@@ -122,6 +123,8 @@ mod properties;
 mod raycast;
 mod redstone;
 mod signal_getter;
+mod sleep;
+mod sleep_status;
 mod spawn;
 pub mod tick_scheduler;
 mod weather;
@@ -134,6 +137,7 @@ pub use crate::config::WorldStorageConfig;
 use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
 use block_event::BlockEventQueue;
+pub(crate) use block_region::{BlockRegionBounds, MAX_BLOCK_REGION_WORKSET_SLOTS};
 use block_updates::CollectingNeighborUpdater;
 pub use border::WorldBorderError;
 use border::{WorldBorder, WorldBorderSnapshot};
@@ -245,6 +249,8 @@ pub struct World {
     pub(crate) saved_data: SavedDataManager,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
+    /// Vanilla sleeping player counts for night-skip checks.
+    sleep_status: SyncMutex<sleep_status::SleepStatus>,
     /// Server view distance (maximum chunk radius).
     pub view_distance: u8,
     /// Server simulation distance.
@@ -410,6 +416,7 @@ impl World {
                 level_data: SyncRwLock::new(level_data),
                 saved_data,
                 world_border: SyncMutex::new(world_border),
+                sleep_status: SyncMutex::new(sleep_status::SleepStatus::default()),
                 view_distance,
                 simulation_distance,
                 compression,
@@ -495,6 +502,9 @@ impl World {
         if runs_normally {
             self.tick_world_border();
             self.tick_weather();
+        }
+        self.tick_sleeping_players();
+        if runs_normally {
             self.tick_time();
         }
 

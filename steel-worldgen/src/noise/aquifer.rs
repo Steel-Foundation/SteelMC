@@ -784,6 +784,12 @@ impl<N: DimensionNoises> Aquifer<N> {
         self.should_schedule_fluid_update
     }
 
+    /// Returns the quart-quantized preliminary surface level, reusing this aquifer's
+    /// density-column and result caches.
+    pub fn preliminary_surface_level(&mut self, noises: &N, x: i32, z: i32) -> i32 {
+        cached_preliminary_surface_level(noises, &mut self.cache, &mut self.prelim_cache, x, z)
+    }
+
     /// Get or compute the fluid status for the aquifer cell at the given cache index.
     fn get_aquifer_status(&mut self, index: usize, noises: &N) -> FluidStatus {
         if let Some(status) = self.status_cache[index] {

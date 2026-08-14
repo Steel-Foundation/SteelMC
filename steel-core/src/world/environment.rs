@@ -293,15 +293,23 @@ fn lerp(alpha: f32, from: f32, to: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_NETHER};
     use steel_registry::vanilla_world_clocks;
 
     use super::*;
 
+    const F32_CLOSE_EPSILON: f32 = 0.000_001;
+    const OVERWORLD_WAKE_UP_TICKS: i64 = 0;
+    const OVERWORLD_DAY_TICKS: i64 = 1_000;
+    const OVERWORLD_NOON_TICKS: i64 = 6_000;
+    const OVERWORLD_SUNSET_TICKS: i64 = 12_000;
+    const OVERWORLD_SUNSET_INTERPOLATION_TICKS: i64 = 12_768;
+    const OVERWORLD_MIDNIGHT_TICKS: i64 = 18_000;
+
     fn assert_f32_close(left: f32, right: f32) {
         assert!(
-            (left - right).abs() < 0.000_001,
+            (left - right).abs() < F32_CLOSE_EPSILON,
             "left={left}, right={right}"
         );
     }
@@ -317,66 +325,112 @@ mod tests {
 
     #[test]
     fn overworld_sky_light_uses_generated_day_timeline() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_f32_close(
-            sky_light_level(&OVERWORLD, &clock_manager_at(6000), 0.0, 0.0, true),
+            sky_light_level(
+                &OVERWORLD,
+                &clock_manager_at(OVERWORLD_DAY_TICKS),
+                0.0,
+                0.0,
+                true,
+            ),
             15.0,
         );
         assert_f32_close(
-            sky_light_level(&OVERWORLD, &clock_manager_at(18000), 0.0, 0.0, true),
+            sky_light_level(
+                &OVERWORLD,
+                &clock_manager_at(OVERWORLD_NOON_TICKS),
+                0.0,
+                0.0,
+                true,
+            ),
+            15.0,
+        );
+        assert_f32_close(
+            sky_light_level(
+                &OVERWORLD,
+                &clock_manager_at(OVERWORLD_MIDNIGHT_TICKS),
+                0.0,
+                0.0,
+                true,
+            ),
             4.0,
         );
     }
 
     #[test]
     fn overworld_sky_light_interpolates_sunset_from_generated_keyframes() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_f32_close(
-            sky_light_level(&OVERWORLD, &clock_manager_at(12_768), 0.0, 0.0, true),
+            sky_light_level(
+                &OVERWORLD,
+                &clock_manager_at(OVERWORLD_SUNSET_INTERPOLATION_TICKS),
+                0.0,
+                0.0,
+                true,
+            ),
             9.503_051,
         );
     }
 
     #[test]
     fn overworld_sun_angle_uses_vanilla_cubic_bezier_easing() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_f32_close(
-            sun_angle_degrees(&OVERWORLD, &clock_manager_at(0)),
+            sun_angle_degrees(&OVERWORLD, &clock_manager_at(OVERWORLD_WAKE_UP_TICKS)),
             282.374_33,
         );
         assert_f32_close(
-            sun_angle_degrees(&OVERWORLD, &clock_manager_at(12_000)),
+            sun_angle_degrees(&OVERWORLD, &clock_manager_at(OVERWORLD_SUNSET_TICKS)),
             77.625_66,
         );
         assert_f32_close(
-            sun_angle_degrees(&OVERWORLD, &clock_manager_at(18_000)),
+            sun_angle_degrees(&OVERWORLD, &clock_manager_at(OVERWORLD_MIDNIGHT_TICKS)),
             180.0,
         );
     }
 
     #[test]
     fn sky_light_level_applies_vanilla_weather_alpha_layers() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_f32_close(
-            sky_light_level(&OVERWORLD, &clock_manager_at(6000), 1.0, 0.0, true),
+            sky_light_level(
+                &OVERWORLD,
+                &clock_manager_at(OVERWORLD_NOON_TICKS),
+                1.0,
+                0.0,
+                true,
+            ),
             11.5625,
         );
         assert_f32_close(
-            sky_light_level(&OVERWORLD, &clock_manager_at(6000), 1.0, 1.0, true),
+            sky_light_level(
+                &OVERWORLD,
+                &clock_manager_at(OVERWORLD_NOON_TICKS),
+                1.0,
+                1.0,
+                true,
+            ),
             9.199_219,
         );
     }
 
     #[test]
     fn fixed_nether_sky_light_uses_dimension_attribute() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_f32_close(
-            sky_light_level(&THE_NETHER, &clock_manager_at(6000), 0.0, 0.0, false),
+            sky_light_level(
+                &THE_NETHER,
+                &clock_manager_at(OVERWORLD_NOON_TICKS),
+                0.0,
+                0.0,
+                false,
+            ),
             4.0,
         );
     }

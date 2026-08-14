@@ -227,11 +227,6 @@ impl ItemEntity {
         self.item_state.lock().age = age;
     }
 
-    /// Sets the entity to never despawn.
-    pub fn set_unlimited_lifetime(&self) {
-        self.item_state.lock().age = INFINITE_LIFETIME;
-    }
-
     /// Makes this a one-tick visual pickup item that cannot be collected.
     pub fn make_fake_item(&self) {
         let mut state = self.item_state.lock();
@@ -253,11 +248,6 @@ impl ItemEntity {
     /// Sets the pickup delay to zero (immediately pickupable).
     pub fn set_no_pickup_delay(&self) {
         self.item_state.lock().pickup_delay = 0;
-    }
-
-    /// Sets the item to never be pickupable.
-    pub fn set_never_pickup(&self) {
-        self.item_state.lock().pickup_delay = INFINITE_PICKUP_DELAY;
     }
 
     /// Sets a custom pickup delay in ticks.
@@ -779,8 +769,8 @@ mod tests {
     use glam::DVec3;
 
     use steel_registry::{
-        item_stack::ItemStack, test_support::init_test_registry, vanilla_damage_types,
-        vanilla_entities, vanilla_items,
+        init_vanilla_registry, item_stack::ItemStack, vanilla_damage_types, vanilla_entities,
+        vanilla_items,
     };
 
     use crate::entity::{Entity, damage::DamageSource};
@@ -860,7 +850,7 @@ mod tests {
 
     #[test]
     fn item_merge_preserves_vanilla_stack_and_timing() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let source = ItemEntity::with_item(
             &vanilla_entities::ITEM,
@@ -910,7 +900,7 @@ mod tests {
 
     #[test]
     fn damage_resistant_item_ignores_matching_damage() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let item = ItemEntity::with_item(
             &vanilla_entities::ITEM,

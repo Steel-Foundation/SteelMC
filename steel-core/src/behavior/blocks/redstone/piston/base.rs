@@ -588,8 +588,8 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::blocks::properties::AttachFace;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::item_stack::ItemStack;
-    use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_items;
     use steel_utils::{ChunkPos, types::InteractionHand};
 
@@ -608,7 +608,7 @@ mod tests {
         key: &'static str,
         piston: BlockRef,
     ) -> (Arc<World>, Arc<ChunkHolder>, BlockPos, BlockPos) {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);
         let piston_pos = BlockPos::new(8, 64, 8);
@@ -635,7 +635,7 @@ mod tests {
 
     #[test]
     fn pushability_honors_bounds_reactions_and_block_entities() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let level = TestLevel::default();
         let pos = BlockPos::new(0, 64, 0);
@@ -668,7 +668,7 @@ mod tests {
 
     #[test]
     fn placement_uses_player_look_direction_not_clicked_face() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("piston_look_placement");
         let support_pos = BlockPos::new(8, 64, 8);
@@ -781,7 +781,7 @@ mod tests {
 
     #[test]
     fn retracting_piston_keeps_rear_face_attachments_supported() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("piston_rear_face_support");
         let piston_pos = BlockPos::new(8, 64, 8);

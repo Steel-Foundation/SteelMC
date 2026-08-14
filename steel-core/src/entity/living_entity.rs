@@ -123,6 +123,37 @@ pub trait LivingEntity: Entity {
         self.living_base().attributes()
     }
 
+    /// Packs syncable attributes for initial spawn pairing.
+    ///
+    /// Mirrors vanilla `ServerEntity.sendPairingData`, which sends all syncable
+    /// living attributes after the add-entity and metadata packets.
+    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        self.attributes().lock().syncable_snapshots()
+    }
+
+    /// Drains syncable dirty attributes for per-tick tracking updates.
+    ///
+    /// Mirrors vanilla `ServerEntity.sendDirtyEntityData`, which sends dirty
+    /// living attributes after dirty entity data.
+    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        self.attributes().lock().drain_dirty_sync()
+    }
+
+    /// Drains dirty mob-effect packet changes for vanilla recipients.
+    fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
+        self.living_base().drain_dirty_mob_effects()
+    }
+
+    /// Packs non-empty equipment slots for initial spawn pairing.
+    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
+        self.pack_living_equipment()
+    }
+
+    /// Drains equipment slots that changed since the last tracker sync.
+    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
+        self.drain_dirty_living_equipment()
+    }
+
     /// Appends vanilla-shaped living state used by command NBT predicates.
     fn save_command_nbt(&self, nbt: &mut NbtCompound) {
         nbt.insert("Health", self.get_health());
@@ -243,7 +274,7 @@ pub trait LivingEntity: Entity {
 
     /// Returns vanilla `LivingEntity.isBaby()`.
     fn is_baby(&self) -> bool {
-        false
+        self.as_ageable_mob().is_some_and(AgeableMob::is_baby)
     }
 
     /// Returns vanilla `LivingEntity.getSoundVolume`.
@@ -614,7 +645,11 @@ pub trait LivingEntity: Entity {
     }
 
     /// Hook before applying damage after vanilla reductions.
-    fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {}
+    fn before_actually_hurt(&self, _source: &DamageSource, _amount: f32) {
+        if let Some(animal) = self.as_animal() {
+            animal.reset_love();
+        }
+    }
 
     /// Damages equipment that participates in vanilla armor absorption.
     fn hurt_armor(&self, _source: &DamageSource, _damage: f32) {}
@@ -1714,17 +1749,26 @@ pub trait LivingEntity: Entity {
         }
     }
 
-    /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow()` for living entities.
-    fn default_living_can_walk_on_powder_snow(&self) -> bool {
-        if self.default_can_walk_on_powder_snow() {
-            return true;
+    /// Runs vanilla `LivingEntity.tick`.
+    ///
+    /// The default `Entity::tick` dispatches living entities here.
+    fn tick_living_entity(&self) {
+        self.default_tick();
+        self.living_base().decrement_invulnerable_time();
+        self.tick_mob_effects();
+        self.detect_equipment_updates();
+
+        if self.is_dead_or_dying() {
+            self.tick_death();
+            self.tick_living_state();
+            return;
         }
 
-        let mut has_leather_boots = false;
-        self.with_equipment_slot(EquipmentSlot::Feet, &mut |item_stack| {
-            has_leather_boots = item_stack.is(&vanilla_items::LEATHER_BOOTS);
-        });
-        has_leather_boots
+        if !self.is_removed() {
+            self.ai_step();
+        }
+
+        self.tick_living_state();
     }
 
     /// Ticks living-entity counters after movement.
@@ -2289,7 +2333,9 @@ pub trait LivingEntity: Entity {
         let result = self.move_entity(MoverType::SelfMovement, self.velocity())?;
         let mut movement = self.velocity();
         if (result.horizontal_collision || self.is_jumping())
-            && (self.on_climbable() || self.was_in_powder_snow() && self.can_walk_on_powder_snow())
+            && (self.on_climbable()
+                || self.was_in_powder_snow()
+                    && PowderSnowBlock::can_entity_walk_on_powder_snow(self))
         {
             movement.y = 0.2;
         }
@@ -2626,11 +2672,17 @@ pub trait LivingEntity: Entity {
     /// Sets the vanilla living-entity sleeping position.
     fn set_sleeping_pos(&self, bed_position: BlockPos) {
         self.living_base().set_sleeping_pos(bed_position);
+        if let Some(entity_data) = self.living_synced_data() {
+            entity_data.set_sleeping_pos(bed_position);
+        }
     }
 
     /// Clears the vanilla living-entity sleeping position.
     fn clear_sleeping_pos(&self) {
         self.living_base().clear_sleeping_pos();
+        if let Some(entity_data) = self.living_synced_data() {
+            entity_data.clear_sleeping_pos();
+        }
     }
 
     /// Checks if the entity is sleeping.
@@ -2638,9 +2690,96 @@ pub trait LivingEntity: Entity {
         self.sleeping_pos().is_some()
     }
 
+    /// Returns synchronized data declared by vanilla `LivingEntity`.
+    fn living_synced_data(&self) -> Option<&dyn LivingEntitySyncedData> {
+        None
+    }
+
+    /// Starts sleeping at the given bed position.
+    fn start_sleeping(&self, bed_position: BlockPos) -> Result<(), EntityMoveError> {
+        if self.is_passenger() {
+            self.stop_riding();
+        }
+
+        let Some(world) = self.level() else {
+            return Err(EntityMoveError::NotLive {
+                entity_id: self.id(),
+            });
+        };
+        self.try_set_position(DVec3::new(
+            f64::from(bed_position.x()) + 0.5,
+            f64::from(bed_position.y()) + 0.6875,
+            f64::from(bed_position.z()) + 0.5,
+        ))?;
+
+        let block_state = world.get_block_state(bed_position);
+        if block_state.is_bed() {
+            world.set_block(
+                bed_position,
+                block_state.set_value(&BlockStateProperties::OCCUPIED, true),
+                UpdateFlags::UPDATE_ALL,
+            );
+        }
+
+        self.set_pose(EntityPose::Sleeping);
+        self.set_sleeping_pos(bed_position);
+        self.set_velocity(DVec3::ZERO);
+        Ok(())
+    }
+
+    /// Shared body for overrides that need vanilla `super.stopSleeping()`.
+    fn default_stop_sleeping(&self) {
+        if let Some(bed_position) = self.sleeping_pos()
+            && let Some(world) = self.level()
+        {
+            let state = world.get_block_state(bed_position);
+            if state.is_bed() {
+                let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+                world.set_block(
+                    bed_position,
+                    state.set_value(&BlockStateProperties::OCCUPIED, false),
+                    UpdateFlags::UPDATE_ALL,
+                );
+                let stand_up = BedBlock::find_standup_position(
+                    &world,
+                    self.as_entity_event_source(),
+                    facing,
+                    bed_position,
+                )
+                .unwrap_or_else(|| {
+                    let above = bed_position.above();
+                    DVec3::new(
+                        f64::from(above.x()) + 0.5,
+                        f64::from(above.y()) + 0.1,
+                        f64::from(above.z()) + 0.5,
+                    )
+                });
+                let bed_center = DVec3::new(
+                    f64::from(bed_position.x()) + 0.5,
+                    f64::from(bed_position.y()),
+                    f64::from(bed_position.z()) + 0.5,
+                );
+                let look_direction = (bed_center - stand_up).normalize_or_zero();
+                let yaw = wrap_degrees(
+                    (look_direction.z.atan2(look_direction.x).to_degrees() - 90.0) as f32,
+                );
+                if let Err(error) = self.try_set_position(stand_up) {
+                    log::warn!(
+                        "failed to move entity {} to bed stand-up position: {error}",
+                        self.id()
+                    );
+                }
+                self.set_rotation((yaw, 0.0));
+            }
+        }
+
+        self.set_pose(EntityPose::Standing);
+        self.clear_sleeping_pos();
+    }
+
     /// Stops the entity from sleeping.
     fn stop_sleeping(&self) {
-        self.clear_sleeping_pos();
+        self.default_stop_sleeping();
     }
 
     /// Checks if the entity is sprinting.

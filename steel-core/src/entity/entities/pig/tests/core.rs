@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn pig_initializes_vanilla_living_attributes_and_health() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
@@ -36,7 +36,7 @@ fn pig_initializes_vanilla_living_attributes_and_health() {
 
 #[test]
 fn try_as_dyn_exposes_pig_living_entity_behavior() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let entity = &pig as &dyn Entity;
@@ -50,7 +50,7 @@ fn try_as_dyn_exposes_pig_living_entity_behavior() {
 
 #[test]
 fn try_as_dyn_exposes_pig_pathfinder_mob_behavior() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let entity = &pig as &dyn Entity;
@@ -64,7 +64,7 @@ fn try_as_dyn_exposes_pig_pathfinder_mob_behavior() {
 
 #[test]
 fn try_as_dyn_exposes_pig_mob_behavior() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let entity = &pig as &dyn Entity;
@@ -81,7 +81,7 @@ fn try_as_dyn_exposes_pig_mob_behavior() {
 
 #[test]
 fn try_as_dyn_exposes_pig_animal_behavior() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let entity = &pig as &dyn Entity;
@@ -97,7 +97,7 @@ fn try_as_dyn_exposes_pig_animal_behavior() {
 
 #[test]
 fn try_as_dyn_exposes_pig_item_steerable_behavior() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let entity = &pig as &dyn Entity;
@@ -111,7 +111,7 @@ fn try_as_dyn_exposes_pig_item_steerable_behavior() {
 
 #[test]
 fn pig_item_steerable_boost_updates_synced_total_once() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
@@ -119,30 +119,43 @@ fn pig_item_steerable_boost_updates_synced_total_once() {
     let boost_time_total = pig.boost_time_total();
 
     assert!((140..=980).contains(&boost_time_total));
-    assert!(pig.is_boosting());
-    assert_eq!(pig.elapsed_boost_time(), 0);
+    {
+        let steering = pig.item_based_steering().lock();
+        assert!(steering.is_boosting());
+        assert_eq!(steering.boost_time(), 0);
+    }
     assert!(!ItemSteerable::boost(&pig));
     assert_eq!(pig.boost_time_total(), boost_time_total);
 }
 
 #[test]
 fn pig_ridden_speed_uses_item_steering_boost_factor() {
-    init_test_registry();
+    init_vanilla_registry();
 
-    let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+    let world = fresh_test_world("pig_ridden_speed");
+    let pig = PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::ZERO,
+        Arc::downgrade(&world),
+    );
+    let controller = TestPlayerBuilder::new(world, Uuid::from_u128(2), "Controller", 2).build();
     let base_ridden_speed = 0.25_f32 * 0.225;
 
-    assert_eq!(pig.ridden_speed().to_bits(), base_ridden_speed.to_bits());
+    assert_eq!(
+        LivingEntity::ridden_speed(&pig, &controller).to_bits(),
+        base_ridden_speed.to_bits()
+    );
 
     assert!(ItemSteerable::boost(&pig));
     pig.tick_boost();
 
-    assert!(pig.ridden_speed() > base_ridden_speed);
+    assert!(LivingEntity::ridden_speed(&pig, &controller) > base_ridden_speed);
 }
 
 #[test]
 fn pig_ridden_rotation_matches_controller_head_and_body_yaw() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     pig.base().set_old_rotation((7.0, -12.0));
@@ -157,7 +170,7 @@ fn pig_ridden_rotation_matches_controller_head_and_body_yaw() {
 
 #[test]
 fn pig_can_mate_with_same_type_when_both_in_love() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let partner = PigEntity::new(
@@ -178,7 +191,7 @@ fn pig_can_mate_with_same_type_when_both_in_love() {
 
 #[test]
 fn pig_uses_default_animal_love_mode() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
@@ -193,7 +206,7 @@ fn pig_uses_default_animal_love_mode() {
 
 #[test]
 fn pig_saddle_slot_requires_alive_adult() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let saddle = ItemStack::new(&vanilla_items::SADDLE);
@@ -222,7 +235,7 @@ fn pig_saddle_slot_requires_alive_adult() {
 
 #[test]
 fn pig_dispenser_can_equip_saddle_only_when_alive_adult_and_empty() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let saddle = ItemStack::new(&vanilla_items::SADDLE);
@@ -253,7 +266,7 @@ fn pig_dispenser_can_equip_saddle_only_when_alive_adult_and_empty() {
 
 #[test]
 fn pig_living_is_baby_uses_ageable_state() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
@@ -266,10 +279,16 @@ fn pig_living_is_baby_uses_ageable_state() {
 
 #[test]
 fn pig_saddled_state_reads_saddle_equipment() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
+    assert!(!pig.is_saddled());
+
+    pig.living_base.equipment().lock().set(
+        EquipmentSlot::Saddle,
+        ItemStack::new(&vanilla_items::CARROT),
+    );
     assert!(!pig.is_saddled());
 
     pig.living_base.equipment().lock().set(
@@ -282,7 +301,7 @@ fn pig_saddled_state_reads_saddle_equipment() {
 
 #[test]
 fn pig_saddle_equip_sound_uses_vanilla_sound() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let saddle = ItemStack::new(&vanilla_items::SADDLE);
@@ -297,7 +316,7 @@ fn pig_saddle_equip_sound_uses_vanilla_sound() {
 
 #[test]
 fn pig_hurt_and_death_sounds_use_current_sound_variant() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
@@ -322,7 +341,7 @@ fn pig_hurt_and_death_sounds_use_current_sound_variant() {
 
 #[test]
 fn pig_ambient_sound_uses_current_sound_variant() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     assert_eq!(Mob::ambient_sound_interval(&pig), 120);
@@ -347,7 +366,7 @@ fn pig_ambient_sound_uses_current_sound_variant() {
 
 #[test]
 fn pig_uses_vanilla_animal_experience_reward() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
@@ -359,7 +378,7 @@ fn pig_uses_vanilla_animal_experience_reward() {
 
 #[test]
 fn pig_baby_and_consumed_experience_follow_living_rules() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     assert!(LivingEntity::should_drop_experience(&pig));
@@ -377,7 +396,7 @@ fn pig_baby_and_consumed_experience_follow_living_rules() {
 
 #[test]
 fn mob_guaranteed_drop_marks_slot_preserved() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
@@ -402,7 +421,7 @@ fn mob_guaranteed_drop_marks_slot_preserved() {
 
 #[test]
 fn mob_death_loot_without_world_keeps_preserved_equipment() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     pig.living_base.equipment().lock().set(

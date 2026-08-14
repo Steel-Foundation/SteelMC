@@ -1003,8 +1003,8 @@ mod tests {
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::items::ItemRef;
     use steel_registry::{
-        test_support::init_test_registry, vanilla_damage_types, vanilla_enchantments,
-        vanilla_entities, vanilla_items, vanilla_mob_effects,
+        init_vanilla_registry, vanilla_damage_types, vanilla_enchantments, vanilla_entities,
+        vanilla_items, vanilla_mob_effects,
     };
     use steel_utils::Identifier;
     use steel_utils::locks::SyncMutex;
@@ -1119,7 +1119,7 @@ mod tests {
 
     #[test]
     fn damage_enchantments_match_target_entity_tags() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let stack = enchanted_item(
             &vanilla_items::DIAMOND_SWORD,
@@ -1146,7 +1146,7 @@ mod tests {
 
     #[test]
     fn breach_modifies_armor_effectiveness() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let stack = enchanted_item(
             &vanilla_items::MACE,
@@ -1169,7 +1169,7 @@ mod tests {
 
     #[test]
     fn projectile_knockback_checks_direct_attacker_entity_tag() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let stack = enchanted_item(&vanilla_items::BOW, Identifier::vanilla_static("punch"), 2);
         let damage_source = DamageSource::environment(&vanilla_damage_types::ARROW);
@@ -1192,7 +1192,7 @@ mod tests {
 
     #[test]
     fn damage_source_properties_match_damage_type_tags() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let stack = enchanted_item(
             &vanilla_items::DIAMOND_SWORD,
@@ -1228,7 +1228,7 @@ mod tests {
 
     #[test]
     fn damage_protection_accumulates_across_equipment() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let victim = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
         victim.equip(
@@ -1254,7 +1254,7 @@ mod tests {
 
     #[test]
     fn damage_protection_ignores_enchantment_in_non_matching_slot() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let victim = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
         victim.equip(
@@ -1272,7 +1272,7 @@ mod tests {
 
     #[test]
     fn damage_protection_ignores_broken_equipment() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut broken_chestplate = enchanted_item(
             &vanilla_items::DIAMOND_CHESTPLATE,
@@ -1289,7 +1289,7 @@ mod tests {
 
     #[test]
     fn damage_immunity_matches_equipment_slot_and_requirements() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let boots = enchanted_item(
             &vanilla_items::LEATHER_BOOTS,
@@ -1327,7 +1327,7 @@ mod tests {
 
     #[test]
     fn post_attack_ignite_applies_to_direct_melee_victim() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let attacker = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
         let victim = TestLivingEntity::new(2, &vanilla_entities::ZOMBIE);
@@ -1353,7 +1353,7 @@ mod tests {
 
     #[test]
     fn projectile_spawned_effect_ignites_firework() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let owner = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
         let projectile = FireworkRocketEntity::new(
@@ -1375,7 +1375,7 @@ mod tests {
 
     #[test]
     fn post_attack_effects_match_enchantment_slot() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let attacker = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
         let victim = TestLivingEntity::new(2, &vanilla_entities::ZOMBIE);
@@ -1415,7 +1415,7 @@ mod tests {
 
     #[test]
     fn post_attack_change_item_damage_calls_equipped_break_hook() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let attacker = TestLivingEntity::new(1, &vanilla_entities::ZOMBIE);
         let victim = TestLivingEntity::new(2, &vanilla_entities::PLAYER);
@@ -1450,7 +1450,7 @@ mod tests {
 
     #[test]
     fn lunge_post_piercing_requirements_and_effect_are_supported() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let user = TestLivingEntity::new(1, &vanilla_entities::ZOMBIE);
         let effects = vanilla_enchantments::LUNGE.effects.post_piercing_attack;
@@ -1461,7 +1461,7 @@ mod tests {
 
     #[test]
     fn post_attack_ignite_skips_indirect_damage_source() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let attacker = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
         let direct_entity = TestLivingEntity::new(2, &vanilla_entities::PLAYER);
@@ -1488,7 +1488,7 @@ mod tests {
 
     #[test]
     fn post_attack_mob_effect_matches_victim_predicate() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let attacker = TestLivingEntity::new(1, &vanilla_entities::PLAYER);
         let spider = TestLivingEntity::new(2, &vanilla_entities::SPIDER);

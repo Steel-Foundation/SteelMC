@@ -73,19 +73,6 @@ impl Abilities {
         }
     }
 
-    /// Creates abilities for spectator mode
-    #[must_use]
-    pub fn spectator() -> Self {
-        Self {
-            invulnerable: true,
-            flying: true,
-            may_fly: true,
-            instabuild: false,
-            may_build: false,
-            ..Self::default()
-        }
-    }
-
     /// Updates abilities based on the given game mode.
     /// This mirrors vanilla's `GameType.updatePlayerAbilities()`.
     pub const fn update_for_game_mode(&mut self, game_mode: GameType) {
@@ -148,6 +135,16 @@ impl Abilities {
 }
 
 impl Player {
+    /// Restores the fresh player abilities Vanilla applies after a death respawn
+    pub(super) fn reset_abilities_for_death_respawn(&self) {
+        {
+            let mut abilities = self.abilities.lock();
+            *abilities = Abilities::default();
+            abilities.update_for_game_mode(self.game_mode());
+        }
+        self.send_abilities();
+    }
+
     /// Sends the player abilities packet to the client.
     /// This tells the client about flight, invulnerability, speeds, etc.
     pub fn send_abilities(&self) {

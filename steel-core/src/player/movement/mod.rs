@@ -23,7 +23,6 @@ use steel_utils::types::GameType;
 
 use crate::entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityMoveError, LivingEntity,
-    get_input_vector,
 };
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
@@ -857,16 +856,6 @@ impl Player {
         self.movement.lock().last_client_input()
     }
 
-    /// Returns vanilla `ServerPlayer.getLastClientMoveIntent()`.
-    #[must_use]
-    pub fn last_client_move_intent(&self) -> DVec3 {
-        get_input_vector(
-            self.last_client_input().movement_input(),
-            1.0,
-            self.rotation().0,
-        )
-    }
-
     /// Handles a player input packet (movement keys, sneaking, sprinting).
     pub fn handle_player_input(&self, packet: SPlayerInput) {
         // Vanilla stores the input unconditionally before the guard check.
@@ -916,16 +905,7 @@ impl Player {
             }
             PlayerCommandAction::LeaveBed => {
                 if self.is_sleeping() {
-                    self.stop_sleeping();
-                    // TODO: Full bed wake-up logic:
-                    //   - set bed block OCCUPIED property to false
-                    //   - compute stand-up position via BedBlock::findStandUpPosition
-                    //   - teleport player + set rotation toward bed
-                    //   - set pose to Standing, clear sleeping pos entity data
-                    //   - update server sleeping player list (for sleep-skip)
-                    //   - set sleepCounter = 100
-                    //   - set awaiting_position_from_client
-                    // Blocked on: bed block properties, sleeping pos entity data
+                    self.stop_sleep_in_bed(false, true);
                 }
             }
             PlayerCommandAction::StartRidingJump

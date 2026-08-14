@@ -4,8 +4,11 @@ use std::string::ToString;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use simdnbt::owned::NbtTag;
 use steel_registry::entity_type::EntityAttachment;
-use steel_registry::test_support::init_test_registry;
-use steel_registry::{vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_items};
+use steel_registry::init_vanilla_registry;
+use steel_registry::{
+    vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_items,
+    vanilla_pig_sound_variants, vanilla_pig_variants,
+};
 use steel_utils::UuidExt;
 use uuid::Uuid;
 
@@ -17,7 +20,7 @@ use crate::entity::entities::LeashFenceKnotEntity;
 use crate::entity::mob::LeashAttachment;
 use crate::entity::{Animal, DEATH_DURATION, ItemSteerable, RemovalReason, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
-use crate::test_support::test_world;
+use crate::test_support::{TestPlayerBuilder, fresh_test_world, test_world};
 use crate::world::LevelReader;
 
 use super::*;

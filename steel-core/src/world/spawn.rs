@@ -172,11 +172,9 @@ impl World {
             SectionPos::block_to_section_coord(x),
             SectionPos::block_to_section_coord(z),
         );
-        self.chunk_map.with_full_chunk(chunk_pos, |chunk_access| {
-            chunk_access
-                .as_full()
-                .map(|chunk| chunk.get_height(heightmap_type, (x & 15) as usize, (z & 15) as usize))
-        })?
+        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
+            chunk.get_height(heightmap_type, (x & 15) as usize, (z & 15) as usize)
+        })
     }
 
     pub(super) fn vanilla_chunk_height_at(

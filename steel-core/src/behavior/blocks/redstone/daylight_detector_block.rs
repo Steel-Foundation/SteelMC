@@ -158,7 +158,7 @@ impl BlockBehavior for DaylightDetectorBlock {
 mod tests {
     use std::sync::Arc;
 
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::{vanilla_block_entity_types, vanilla_blocks, vanilla_world_clocks};
 
     use super::*;
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn daylight_detector_selects_vanilla_server_ticker_in_skylight_dimensions() {
-        init_test_registry();
+        init_vanilla_registry();
         let world = fresh_test_world("daylight_detector_block_entity");
         let state = vanilla_blocks::DAYLIGHT_DETECTOR.default_state();
         let behavior = DaylightDetectorBlock::new(&vanilla_blocks::DAYLIGHT_DETECTOR);
@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn vanilla_trig_table_controls_overworld_rounding_boundary() {
-        init_test_registry();
+        init_vanilla_registry();
         let world = fresh_test_world("daylight_detector_trig_boundary");
         assert_eq!(
             world

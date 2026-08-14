@@ -6,6 +6,7 @@ use super::{
     LivingEntity, Player, SSpectatorAction, WorldAabb, WorldCollisionProvider,
     player_can_change_difficulty, shapes, vanilla_attributes,
 };
+use crate::behavior::blocks::PowderSnowBlock;
 
 impl Player {
     /// Sets the player's game mode and notifies the client.
@@ -36,7 +37,7 @@ impl Player {
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
         self.server().broadcast_to_online(update_packet);
 
-        // TODO: Refresh sleeping-player aggregation once world sleep tracking is implemented.
+        self.get_world().update_sleeping_player_list();
 
         if gamemode == GameType::Creative {
             self.reset_current_impulse_context();
@@ -79,7 +80,9 @@ impl Player {
         let collision_context =
             BlockCollisionContext::entity(self.position().y, self.is_descending())
                 .with_fall_distance(self.fall_distance())
-                .with_can_walk_on_powder_snow(self.can_walk_on_powder_snow());
+                .with_can_walk_on_powder_snow(PowderSnowBlock::can_entity_walk_on_powder_snow(
+                    self,
+                ));
 
         if collision_world.has_collision_with_context(&bounding_box, collision_context) {
             return false;

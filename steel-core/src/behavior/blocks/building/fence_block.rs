@@ -184,7 +184,7 @@ impl BlockBehavior for FenceBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::BlockPos;
 
     use crate::test_support::TestLevel;
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn waterlogged_fence_update_shape_schedules_water_tick() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = FenceBlock::new(&vanilla_blocks::OAK_FENCE);
         let state = vanilla_blocks::OAK_FENCE

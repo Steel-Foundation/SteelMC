@@ -631,9 +631,7 @@ mod tests {
     use std::sync::Weak;
 
     use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-    use steel_registry::{
-        test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
-    };
+    use steel_registry::{init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks};
     use steel_utils::nbt::parse_nbt_path;
 
     use super::*;
@@ -684,7 +682,7 @@ mod tests {
 
     #[test]
     fn masked_regions_skip_only_vanilla_air() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert!(!should_compare_block(
             vanilla_blocks::AIR.default_state(),
@@ -706,7 +704,7 @@ mod tests {
 
     #[test]
     fn region_block_entities_compare_type_and_custom_data_only() {
-        init_test_registry();
+        init_vanilla_registry();
         let source = raw_block_entity(7, BlockPos::new(1, 64, 1), false);
         let matching = raw_block_entity(7, BlockPos::new(4, 70, 4), true);
         let different = raw_block_entity(8, BlockPos::new(4, 70, 4), false);

@@ -144,7 +144,7 @@ impl BlockBehavior for TargetBlock {
 mod tests {
     use glam::DVec3;
     use steel_registry::blocks::properties::Direction;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
 
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn hit_strength_uses_the_hit_face_and_floor_based_fraction() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_eq!(
             TargetBlock::redstone_strength(&hit(DVec3::new(-0.5, 64.99, -0.5), Direction::Up,)),

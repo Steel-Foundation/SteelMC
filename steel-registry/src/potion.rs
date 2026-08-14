@@ -76,7 +76,7 @@ crate::impl_tagged_registry!(PotionRegistry, potions_by_key, "potion");
 mod tests {
     use steel_utils::Identifier;
 
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt, TaggedRegistryExt, potion::Potion};
 
     static FIRST_DUPLICATE: Potion =
@@ -86,7 +86,7 @@ mod tests {
 
     #[test]
     fn extracted_potions_follow_vanilla_ids_and_effects() {
-        init_test_registry();
+        init_vanilla_registry();
         assert_eq!(REGISTRY.potions.len(), 46);
         assert_eq!(
             REGISTRY.potions.by_id(0).map(|potion| &potion.key),
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn vanilla_potion_tags_are_generated_from_builtin_data() {
-        init_test_registry();
+        init_vanilla_registry();
         let tradeable = Identifier::vanilla_static("tradeable");
         assert!(REGISTRY.potions.get_tag(&tradeable).is_some());
     }

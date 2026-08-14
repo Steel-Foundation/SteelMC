@@ -20,6 +20,8 @@ pub mod player_data;
 pub mod player_data_storage;
 pub mod player_inventory;
 mod profile;
+mod sleep;
+mod sleep_state;
 mod tick_state;
 
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
@@ -34,6 +36,7 @@ use glam::DVec3;
 use health_sync::HealthSyncState;
 use item_cooldowns::ItemCooldowns;
 use lifecycle::PlayerLifecycleState;
+pub use lifecycle::PlayerRespawnConfig;
 pub(crate) use lifecycle::ResetReason;
 pub use movement::PlayerInput;
 use movement::{MovementState, TeleportState};
@@ -44,11 +47,11 @@ pub use profile::{
     is_valid_player_name, offline_uuid,
 };
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use sleep_state::PlayerSleepState;
 use std::sync::{Arc, Weak};
 use steel_protocol::packets::game::{
-    AttributeSnapshot, CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn,
-    CSetDefaultSpawnPosition, CSetHealth, CSetHeldSlot, CSetPassengers, ClientCommandAction,
-    EquipmentSlotItem, LookAtAnchor, RelativeMovement, SoundSource,
+    CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn, CSetDefaultSpawnPosition, CSetHealth,
+    CSetHeldSlot, CSetPassengers, ClientCommandAction, LookAtAnchor, RelativeMovement, SoundSource,
 };
 use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -81,15 +84,17 @@ use text_components::{
 };
 use text_components::{content::Resolvable, custom::CustomData};
 
+use crate::behavior::BlockStateBehaviorExt as _;
 use crate::behavior::InteractionResult;
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
     DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
-    EntitySyncedData, LivingEntity, LivingEntityBase, MobEffectSyncChange, MobEffectSyncPacket,
-    RemovalReason, SharedEntity, apply_entity_look_at, start_riding_entities,
+    EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange,
+    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -206,6 +211,10 @@ pub struct Player {
 
     /// Local tick and once-per-tick packet state.
     tick_state: SyncMutex<PlayerTickState>,
+    /// Vanilla sleep/wake animation counter.
+    sleep_state: SyncMutex<PlayerSleepState>,
+    /// Persisted personal bed or respawn-anchor target.
+    respawn_config: SyncMutex<Option<PlayerRespawnConfig>>,
 
     /// Player abilities (flight, invulnerability, build permissions, speeds, etc.)
     pub abilities: SyncMutex<Abilities>,
@@ -386,6 +395,8 @@ impl Player {
             teleport_state: SyncMutex::new(TeleportState::new()),
             item_cooldowns: SyncMutex::new(ItemCooldowns::default()),
             tick_state: SyncMutex::new(PlayerTickState::new()),
+            sleep_state: SyncMutex::new(PlayerSleepState::new()),
+            respawn_config: SyncMutex::new(None),
             abilities: SyncMutex::new(Abilities::default()),
             block_breaking: SyncMutex::new(BlockBreakingManager::new()),
             living_base,
@@ -413,6 +424,19 @@ impl Player {
         self.tick_attack_strength();
         self.tick_spam_throttlers();
         self.tick_client_load_timeout();
+        self.tick_sleep_counter();
+        if self.is_sleeping() {
+            let world = self.get_world();
+            if !self.bed_rule_value_allows(world.dimension_type.bed_rule.can_sleep) {
+                self.stop_sleep_in_bed(false, true);
+            } else if !self.can_interact_with_level()
+                || self
+                    .sleeping_pos()
+                    .is_none_or(|pos| !world.get_block_state(pos).is_bed())
+            {
+                self.stop_sleep_in_bed(true, true);
+            }
+        }
 
         self.set_no_physics(self.is_spectator());
         if self.is_spectator() || self.is_passenger() {
@@ -738,23 +762,15 @@ impl Player {
             });
         }
 
-        if !world.get_game_rule(&KEEP_INVENTORY) {
-            let items: Vec<ItemStack> = {
-                let mut inventory = self.inventory.lock();
-                (0..inventory.get_container_size())
-                    .filter_map(|slot| {
-                        let item = inventory.get_item(slot).clone();
-                        if item.is_empty() {
-                            None
-                        } else {
-                            inventory.set_item(slot, ItemStack::empty());
-                            Some(item)
-                        }
-                    })
-                    .collect()
-            };
-            for item in items {
+        if !world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator {
+            let drops = self.inventory.lock().take_death_drops();
+            for item in drops {
                 let _ = self.drop_item(item, true, false);
+            }
+
+            let reward = self.experience.lock().death_xp_reward();
+            if reward > 0 {
+                ExperienceOrbEntity::award(&world, self.position(), reward);
             }
         }
 
@@ -1193,10 +1209,6 @@ impl Entity for Player {
         }
     }
 
-    fn tick(&self) {
-        Player::tick(self);
-    }
-
     fn fall_sounds(&self) -> (SoundEventRef, SoundEventRef) {
         (
             &sound_events::ENTITY_PLAYER_SMALL_FALL,
@@ -1334,26 +1346,6 @@ impl Entity for Player {
         self.update_dirty_mob_effect_entity_data();
     }
 
-    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        self.attributes().lock().syncable_snapshots()
-    }
-
-    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        self.attributes().lock().drain_dirty_sync()
-    }
-
-    fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
-        self.living_base.drain_dirty_mob_effects()
-    }
-
-    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
-        self.pack_living_equipment()
-    }
-
-    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
-        self.drain_dirty_living_equipment()
-    }
-
     fn max_up_step(&self) -> f32 {
         self.attributes()
             .lock()
@@ -1371,10 +1363,6 @@ impl Entity for Player {
 
     fn is_crouching(&self) -> bool {
         Player::is_crouching(self)
-    }
-
-    fn can_walk_on_powder_snow(&self) -> bool {
-        self.default_living_can_walk_on_powder_snow()
     }
 
     fn may_interact(&self, world: &World, pos: BlockPos) -> bool {
@@ -1457,6 +1445,14 @@ const fn protocol_look_at_anchor(anchor: EntityAnchor) -> LookAtAnchor {
 }
 
 impl LivingEntity for Player {
+    fn living_synced_data(&self) -> Option<&dyn LivingEntitySyncedData> {
+        Some(&self.entity_data)
+    }
+
+    fn tick_living_entity(&self) {
+        Player::tick(self);
+    }
+
     fn get_health(&self) -> f32 {
         *self.entity_data.lock().living_entity().health.get()
     }
@@ -1652,6 +1648,10 @@ impl LivingEntity for Player {
 
     fn is_immobile(&self) -> bool {
         self.default_is_immobile() || self.is_sleeping()
+    }
+
+    fn stop_sleeping(&self) {
+        self.stop_sleep_in_bed(true, true);
     }
 
     fn jump_from_ground(&self) {

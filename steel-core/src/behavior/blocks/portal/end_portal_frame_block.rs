@@ -55,13 +55,13 @@ impl BlockBehavior for EndPortalFrameBlock {
 mod tests {
     use steel_registry::blocks::block_state_ext::BlockStateExt;
     use steel_registry::blocks::properties::BlockStateProperties;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::EndPortalFrameBlock;
 
     #[test]
     fn end_portal_frame_analog_output_depends_on_eye() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let empty = vanilla_blocks::END_PORTAL_FRAME.default_state();
         let filled = empty.set_value(&BlockStateProperties::EYE, true);

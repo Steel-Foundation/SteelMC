@@ -9,7 +9,6 @@ fn save_retry_marks_same_unloading_holder_dirty() {
         .try_chunk(ChunkStatus::Light)
         .expect("test holder should contain a light-status chunk");
     chunk.clear_dirty();
-    drop(chunk);
 
     ChunkMap::mark_chunk_dirty_for_save_retry(&holder);
 
@@ -20,19 +19,101 @@ fn save_retry_marks_same_unloading_holder_dirty() {
 }
 
 #[test]
+fn revival_during_save_preparation_is_retried_at_the_next_lifecycle_boundary() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("save_preparation_revival");
+    let chunk_pos = ChunkPos::new(0, 0);
+    let original = insert_ready_full_chunk(&world, chunk_pos);
+
+    world.chunk_map.update_chunk_level(chunk_pos, None, None);
+    let preparation = original
+        .try_begin_save_preparation()
+        .expect("the unloading holder should reserve save preparation");
+
+    assert!(
+        world
+            .chunk_map
+            .update_chunk_level(
+                chunk_pos,
+                Some(ChunkTicketLevel::FULL_CHUNK),
+                Some(ChunkTicketLevel::FULL_CHUNK),
+            )
+            .is_none(),
+        "revival must be staged instead of blocking the lifecycle thread"
+    );
+    assert!(world.chunk_map.unloading_chunks.contains_sync(&chunk_pos));
+    assert!(!world.chunk_map.chunks.contains_sync(&chunk_pos));
+
+    drop(preparation);
+
+    let mut changes = Vec::new();
+    world.chunk_map.merge_deferred_revivals(&mut changes);
+    assert_eq!(changes.len(), 1);
+    let change = changes[0];
+    let Some(revived) = world.chunk_map.update_chunk_level(
+        change.pos,
+        change.new_level,
+        change.new_simulation_level,
+    ) else {
+        panic!("revival should retry after save preparation releases the holder");
+    };
+
+    assert!(Arc::ptr_eq(&original, &revived));
+    assert!(world.chunk_map.chunks.contains_sync(&chunk_pos));
+    assert!(!world.chunk_map.unloading_chunks.contains_sync(&chunk_pos));
+}
+
+#[test]
+fn newer_ticket_change_replaces_a_deferred_revival() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("save_preparation_revival_override");
+    let chunk_pos = ChunkPos::new(0, 0);
+    let holder = insert_ready_full_chunk(&world, chunk_pos);
+
+    world.chunk_map.update_chunk_level(chunk_pos, None, None);
+    let preparation = holder
+        .try_begin_save_preparation()
+        .expect("the unloading holder should reserve save preparation");
+    assert!(
+        world
+            .chunk_map
+            .update_chunk_level(
+                chunk_pos,
+                Some(ChunkTicketLevel::FULL_CHUNK),
+                Some(ChunkTicketLevel::FULL_CHUNK),
+            )
+            .is_none()
+    );
+    drop(preparation);
+
+    let removal = LevelChange {
+        pos: chunk_pos,
+        new_level: None,
+        new_simulation_level: None,
+    };
+    let mut changes = vec![removal];
+    world.chunk_map.merge_deferred_revivals(&mut changes);
+
+    assert_eq!(changes, vec![removal]);
+    assert!(world.chunk_map.unloading_chunks.contains_sync(&chunk_pos));
+}
+
+#[test]
 fn final_full_chunk_unload_finalizes_chunk_owned_tick_queues() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("chunk_owned_tick_unload");
     let chunk_pos = ChunkPos::new(0, 0);
     let holder = insert_ready_full_chunk(&world, chunk_pos);
-    let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
+    let Some(chunk) = holder.try_full_chunk() else {
         panic!("inserted test chunk must remain Full");
     };
     let block_entity_pos = BlockPos::new(1, 64, 1);
-    let block_entity = add_test_comparator(&chunk, block_entity_pos);
+    let block_entity = add_test_comparator(chunk, block_entity_pos);
     let sign_pos = BlockPos::new(2, 64, 1);
-    let sign = add_test_sign(&chunk, sign_pos);
+    let sign = add_test_sign(chunk, sign_pos);
     chunk.schedule_block_tick(
         BlockPos::new(3, 64, 1),
         &vanilla_blocks::STONE,
@@ -40,8 +121,7 @@ fn final_full_chunk_unload_finalizes_chunk_owned_tick_queues() {
         TickPriority::Normal,
         0,
     );
-    chunk.take_dirty();
-    drop(chunk);
+    chunk.common().take_dirty();
     assert!(world.has_registered_full_chunk_ticks(chunk_pos));
     assert!(world.has_indexed_scheduled_tick_head(chunk_pos));
     assert_eq!(world.block_entity_tickers().registered_len(), 1);
@@ -65,7 +145,7 @@ fn final_full_chunk_unload_finalizes_chunk_owned_tick_queues() {
 
 #[test]
 fn unloading_full_chunk_revival_keeps_chunk_owned_tick_queues() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("chunk_owned_tick_revival");
     let chunk_pos = ChunkPos::new(0, 0);
@@ -73,11 +153,10 @@ fn unloading_full_chunk_revival_keeps_chunk_owned_tick_queues() {
     let original = insert_ready_full_chunk(&world, chunk_pos);
     world.schedule_block_tick(block_pos, &vanilla_blocks::STONE, 3, TickPriority::Normal);
     assert!(world.has_indexed_scheduled_tick_head(chunk_pos));
-    let Some(chunk) = original.try_chunk(ChunkStatus::Full) else {
+    let Some(chunk) = original.try_full_chunk() else {
         panic!("inserted test chunk must remain Full");
     };
-    let block_entity = add_test_comparator(&chunk, block_pos);
-    drop(chunk);
+    let block_entity = add_test_comparator(chunk, block_pos);
 
     world.chunk_map.update_chunk_level(chunk_pos, None, None);
     assert!(world.has_registered_full_chunk_ticks(chunk_pos));
@@ -93,7 +172,7 @@ fn unloading_full_chunk_revival_keeps_chunk_owned_tick_queues() {
     assert!(Arc::ptr_eq(&original, &revived));
     assert!(world.has_scheduled_block_tick(block_pos, &vanilla_blocks::STONE));
     assert!(world.has_indexed_scheduled_tick_head(chunk_pos));
-    let Some(revived_chunk) = revived.try_chunk(ChunkStatus::Full) else {
+    let Some(revived_chunk) = revived.try_full_chunk() else {
         panic!("revived chunk must remain Full");
     };
     let Some(revived_block_entity) = revived_chunk.get_block_entity(block_pos) else {
@@ -105,7 +184,7 @@ fn unloading_full_chunk_revival_keeps_chunk_owned_tick_queues() {
 
 #[test]
 fn weak_revival_stays_dormant_until_the_same_holder_returns_to_full() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("weak_full_chunk_revival");
     let chunk_pos = ChunkPos::new(0, 0);
@@ -122,11 +201,10 @@ fn weak_revival_stays_dormant_until_the_same_holder_returns_to_full() {
     };
     assert!(Arc::ptr_eq(&original, &revived));
 
-    let Some(chunk) = revived.try_chunk(ChunkStatus::Full) else {
+    let Some(chunk) = revived.try_full_chunk() else {
         panic!("weak revival should preserve the serialized Full chunk");
     };
-    let _sign = add_test_sign(&chunk, sign_pos);
-    drop(chunk);
+    let _sign = add_test_sign(chunk, sign_pos);
     assert_eq!(world.block_entity_tickers().registered_len(), 0);
 
     insert_active_full_holder(
