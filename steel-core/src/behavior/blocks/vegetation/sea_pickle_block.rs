@@ -65,12 +65,14 @@ impl BlockBehavior for SeaPickleBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::blocks::properties::BlockStateProperties;
+    use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
     use steel_registry::{init_vanilla_registry, vanilla_fluids};
 
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::test_support::TestLevel;
+
+    const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
     #[test]
     fn sea_pickle_checks_survival_before_scheduling_water() {
@@ -79,7 +81,7 @@ mod tests {
         let behavior = SeaPickleBlock::new(&vanilla_blocks::SEA_PICKLE);
         let state = vanilla_blocks::SEA_PICKLE
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, true);
+            .set_value(WATERLOGGED, true);
         let pos = BlockPos::new(0, 64, 0);
         let unsupported = TestLevel::default();
 

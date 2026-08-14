@@ -26,8 +26,8 @@ use crate::{
     world::{LevelAccessor, LevelReader, ScheduledTickAccess, World},
 };
 
-const AGE: IntProperty = BlockStateProperties::AGE_7;
-const FACING: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
+const AGE: &IntProperty = &BlockStateProperties::AGE_7;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 const MAX_AGE: u8 = 7;
 
 /// Vanilla pumpkin and melon stem behavior.
@@ -88,11 +88,11 @@ impl StemBlock {
             return;
         }
 
-        let age = state.get_value(&AGE);
+        let age = state.get_value(AGE);
         if age < MAX_AGE {
             world.set_block_state(
                 pos,
-                state.set_value(&AGE, age + 1),
+                state.set_value(AGE, age + 1),
                 UpdateFlags::UPDATE_CLIENTS,
             );
             return;
@@ -118,7 +118,7 @@ impl StemBlock {
             pos,
             self.attached_stem
                 .default_state()
-                .set_value(&FACING, direction),
+                .set_value(FACING, direction),
             UpdateFlags::UPDATE_ALL,
         );
     }
@@ -130,9 +130,9 @@ impl StemBlock {
         rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        let age = state.get_value(&AGE);
+        let age = state.get_value(AGE);
         let new_age = Self::age_after_bonemeal(age, rng.random_range(2..=5));
-        let new_state = state.set_value(&AGE, new_age);
+        let new_state = state.set_value(AGE, new_age);
         world.set_block_state(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
 
         if new_age == MAX_AGE {
@@ -197,7 +197,7 @@ impl super::bonemealable::Bonemealable for StemBlock {
         _world: &dyn LevelReader,
         _pos: BlockPos,
     ) -> bool {
-        state.get_value(&AGE) != MAX_AGE
+        state.get_value(AGE) != MAX_AGE
     }
 
     fn perform_bonemeal(
@@ -292,7 +292,7 @@ mod tests {
         let stem = pumpkin_stem();
         let state = vanilla_blocks::PUMPKIN_STEM
             .default_state()
-            .set_value(&AGE, 3);
+            .set_value(AGE, 3);
         let dark = TestLevel::default()
             .with_block(
                 BlockPos::ZERO.below(),
@@ -311,7 +311,7 @@ mod tests {
         stem.random_tick_with_rng(state, &bright, BlockPos::ZERO, &mut ZeroRng);
         let placed = bright.placed_blocks.borrow();
         assert_eq!(placed.len(), 1);
-        assert_eq!(placed[0].state.get_value(&AGE), 4);
+        assert_eq!(placed[0].state.get_value(AGE), 4);
         assert_eq!(placed[0].flags, UpdateFlags::UPDATE_CLIENTS);
     }
 
@@ -324,7 +324,7 @@ mod tests {
                 pumpkin_stem(),
                 vanilla_blocks::PUMPKIN_STEM
                     .default_state()
-                    .set_value(&AGE, MAX_AGE),
+                    .set_value(AGE, MAX_AGE),
                 &vanilla_blocks::PUMPKIN,
                 &vanilla_blocks::ATTACHED_PUMPKIN_STEM,
             ),
@@ -332,7 +332,7 @@ mod tests {
                 melon_stem(),
                 vanilla_blocks::MELON_STEM
                     .default_state()
-                    .set_value(&AGE, MAX_AGE),
+                    .set_value(AGE, MAX_AGE),
                 &vanilla_blocks::MELON,
                 &vanilla_blocks::ATTACHED_MELON_STEM,
             ),
@@ -354,7 +354,7 @@ mod tests {
             assert_eq!(placed[0].flags, UpdateFlags::UPDATE_ALL);
             assert_eq!(placed[1].pos, BlockPos::ZERO);
             assert_eq!(placed[1].state.get_block(), attached);
-            assert_eq!(placed[1].state.get_value(&FACING), Direction::North);
+            assert_eq!(placed[1].state.get_value(FACING), Direction::North);
             assert_eq!(placed[1].flags, UpdateFlags::UPDATE_ALL);
         }
     }
@@ -365,7 +365,7 @@ mod tests {
         let stem = pumpkin_stem();
         let mature = vanilla_blocks::PUMPKIN_STEM
             .default_state()
-            .set_value(&AGE, MAX_AGE);
+            .set_value(AGE, MAX_AGE);
 
         let unsupported = TestLevel::default()
             .with_block(
@@ -415,12 +415,12 @@ mod tests {
 
         let mature = vanilla_blocks::PUMPKIN_STEM
             .default_state()
-            .set_value(&AGE, MAX_AGE);
+            .set_value(AGE, MAX_AGE);
         assert!(!stem.is_valid_bonemeal_target(mature, &TestLevel::default(), BlockPos::ZERO));
 
         let state = vanilla_blocks::PUMPKIN_STEM
             .default_state()
-            .set_value(&AGE, 5);
+            .set_value(AGE, 5);
         let fruit_pos = BlockPos::ZERO.north();
         let level = TestLevel::default()
             .with_block(
@@ -433,7 +433,7 @@ mod tests {
 
         let placed = level.placed_blocks.borrow();
         assert_eq!(placed.len(), 3);
-        assert_eq!(placed[0].state.get_value(&AGE), MAX_AGE);
+        assert_eq!(placed[0].state.get_value(AGE), MAX_AGE);
         assert_eq!(placed[0].flags, UpdateFlags::UPDATE_CLIENTS);
         assert_eq!(placed[1].state.get_block(), &vanilla_blocks::PUMPKIN);
         assert_eq!(

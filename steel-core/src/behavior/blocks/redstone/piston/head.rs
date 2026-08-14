@@ -5,7 +5,9 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction, PistonType};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, Direction, EnumProperty, PistonType,
+};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId};
@@ -19,6 +21,9 @@ use crate::world::{LevelReader, ScheduledTickAccess, World};
 /// Vanilla piston-head block.
 pub struct PistonHeadBlock;
 
+const EXTENDED: &BoolProperty = &BlockStateProperties::EXTENDED;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
+const PISTON_TYPE: &EnumProperty<PistonType> = &BlockStateProperties::PISTON_TYPE;
 impl PistonHeadBlock {
     /// Creates piston-head behavior.
     #[must_use]
@@ -27,14 +32,13 @@ impl PistonHeadBlock {
     }
 
     fn is_fitting_base(arm_state: BlockStateId, potential_base: BlockStateId) -> bool {
-        let base_block = match arm_state.get_value(&BlockStateProperties::PISTON_TYPE) {
+        let base_block = match arm_state.get_value(PISTON_TYPE) {
             PistonType::Normal => &vanilla_blocks::PISTON,
             PistonType::Sticky => &vanilla_blocks::STICKY_PISTON,
         };
         potential_base.get_block() == base_block
-            && potential_base.get_value(&BlockStateProperties::EXTENDED)
-            && potential_base.get_value(&BlockStateProperties::FACING)
-                == arm_state.get_value(&BlockStateProperties::FACING)
+            && potential_base.get_value(EXTENDED)
+            && potential_base.get_value(FACING) == arm_state.get_value(FACING)
     }
 }
 
@@ -51,7 +55,7 @@ impl BlockBehavior for PistonHeadBlock {
         player: &Player,
     ) -> BlockStateId {
         if player.has_infinite_materials() {
-            let base_pos = pos.relative(state.get_value(&BlockStateProperties::FACING).opposite());
+            let base_pos = pos.relative(state.get_value(FACING).opposite());
             if Self::is_fitting_base(state, world.get_block_state(base_pos)) {
                 world.destroy_block(base_pos, false);
             }
@@ -66,7 +70,7 @@ impl BlockBehavior for PistonHeadBlock {
         pos: BlockPos,
         _moved_by_piston: bool,
     ) {
-        let base_pos = pos.relative(state.get_value(&BlockStateProperties::FACING).opposite());
+        let base_pos = pos.relative(state.get_value(FACING).opposite());
         if Self::is_fitting_base(state, world.get_block_state(base_pos)) {
             world.destroy_block(base_pos, true);
         }
@@ -81,9 +85,7 @@ impl BlockBehavior for PistonHeadBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if direction.opposite() == state.get_value(&BlockStateProperties::FACING)
-            && !self.can_survive(state, world, pos)
-        {
+        if direction.opposite() == state.get_value(FACING) && !self.can_survive(state, world, pos) {
             vanilla_blocks::AIR.default_state()
         } else {
             state
@@ -91,11 +93,11 @@ impl BlockBehavior for PistonHeadBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        let facing = state.get_value(&BlockStateProperties::FACING);
+        let facing = state.get_value(FACING);
         let base = world.get_block_state(pos.relative(facing.opposite()));
         Self::is_fitting_base(state, base)
             || (base.get_block() == &vanilla_blocks::MOVING_PISTON
-                && base.get_value(&BlockStateProperties::FACING) == facing)
+                && base.get_value(FACING) == facing)
     }
 
     fn handle_neighbor_changed(
@@ -107,7 +109,7 @@ impl BlockBehavior for PistonHeadBlock {
         _moved_by_piston: bool,
     ) {
         if self.can_survive(state, world.as_ref(), pos) {
-            let base_pos = pos.relative(state.get_value(&BlockStateProperties::FACING).opposite());
+            let base_pos = pos.relative(state.get_value(FACING).opposite());
             world.neighbor_changed(base_pos, source_block);
         }
     }
@@ -118,12 +120,10 @@ impl BlockBehavior for PistonHeadBlock {
         state: BlockStateId,
         _include_data: bool,
     ) -> Option<ItemStack> {
-        Some(ItemStack::new(
-            match state.get_value(&BlockStateProperties::PISTON_TYPE) {
-                PistonType::Normal => &vanilla_items::PISTON,
-                PistonType::Sticky => &vanilla_items::STICKY_PISTON,
-            },
-        ))
+        Some(ItemStack::new(match state.get_value(PISTON_TYPE) {
+            PistonType::Normal => &vanilla_items::PISTON,
+            PistonType::Sticky => &vanilla_items::STICKY_PISTON,
+        }))
     }
 
     fn is_pathfindable(&self, _state: BlockStateId, _type: PathComputationType) -> bool {

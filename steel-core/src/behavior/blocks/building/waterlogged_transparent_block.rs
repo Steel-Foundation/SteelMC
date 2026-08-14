@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
-use steel_registry::blocks::properties::Direction;
+use steel_registry::blocks::properties::{BoolProperty, Direction};
 use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
 };
@@ -18,6 +18,8 @@ pub struct WaterloggedTransparentBlock {
     block: BlockRef,
 }
 
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+
 impl WaterloggedTransparentBlock {
     /// Creates a new waterlogged transparent block behavior.
     #[must_use]
@@ -28,10 +30,11 @@ impl WaterloggedTransparentBlock {
 
 impl BlockBehavior for WaterloggedTransparentBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        Some(self.block.default_state().set_value(
-            &BlockStateProperties::WATERLOGGED,
-            context.is_water_source(),
-        ))
+        Some(
+            self.block
+                .default_state()
+                .set_value(WATERLOGGED, context.is_water_source()),
+        )
     }
 
     fn update_shape(
@@ -43,7 +46,7 @@ impl BlockBehavior for WaterloggedTransparentBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
+        if state.get_value(WATERLOGGED) {
             let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
             let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
         }
@@ -105,7 +108,7 @@ mod tests {
         init_vanilla_registry();
         let state = vanilla_blocks::WAXED_COPPER_GRATE
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, true);
+            .set_value(WATERLOGGED, true);
 
         let fluid = state.get_fluid_state();
 
