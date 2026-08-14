@@ -42,7 +42,7 @@ pub struct SweetBerryBushBlock {
     block: BlockRef,
 }
 
-const AGE_3: &IntProperty = &BlockStateProperties::AGE_3;
+const AGE: &IntProperty = &BlockStateProperties::AGE_3;
 
 impl SweetBerryBushBlock {
     /// Creates a new Sweet Berry Bush Block Behavior
@@ -59,7 +59,7 @@ impl BlockBehavior for SweetBerryBushBlock {
             context.world,
             context.place_pos().below(),
         ) {
-            Some(self.block.default_state().set_value(AGE_3, 0))
+            Some(self.block.default_state().set_value(AGE, 0))
         } else {
             None
         }
@@ -82,13 +82,13 @@ impl BlockBehavior for SweetBerryBushBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        let age = state.get_value(AGE_3);
+        let age = state.get_value(AGE);
         if age >= 3 || rand::random_range(0..5) != 0 || world.raw_brightness(pos.above(), 0) < 9 {
             return;
         }
         world.set_block(
             pos,
-            state.set_value(AGE_3, age + 1),
+            state.set_value(AGE, age + 1),
             UpdateFlags::UPDATE_CLIENTS,
         );
     }
@@ -121,7 +121,7 @@ impl BlockBehavior for SweetBerryBushBlock {
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
         let is_bone_meal = inv.with_item(|item_stack| item_stack.is(&vanilla_items::BONE_MEAL));
-        let age = state.get_value(AGE_3);
+        let age = state.get_value(AGE);
         if age != 3 && is_bone_meal {
             InteractionResult::Pass
         } else {
@@ -138,7 +138,7 @@ impl BlockBehavior for SweetBerryBushBlock {
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        let age = state.get_value(AGE_3);
+        let age = state.get_value(AGE);
         if age <= 1 {
             return InteractionResult::Pass;
         }
@@ -166,7 +166,7 @@ impl BlockBehavior for SweetBerryBushBlock {
             Some(player.id()),
         );
 
-        let new_state = state.set_value(AGE_3, 1);
+        let new_state = state.set_value(AGE, 1);
         world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
 
         InteractionResult::Success
@@ -194,7 +194,7 @@ impl SweetBerryBushBlock {
     }
 
     fn apply_contact_damage(world: &World, state: BlockStateId, entity: &dyn Entity) {
-        if state.get_value(AGE_3) == 0 {
+        if state.get_value(AGE) == 0 {
             return;
         }
 
@@ -224,7 +224,7 @@ impl Bonemealable for SweetBerryBushBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        state.get_value(AGE_3) < 3
+        state.get_value(AGE) < 3
             && world.get_block_state(pos.above()).is_air()
             && !world.is_outside_build_height(pos.above().y())
     }
@@ -236,10 +236,10 @@ impl Bonemealable for SweetBerryBushBlock {
         _rng: &mut dyn rand::Rng,
         pos: BlockPos,
     ) {
-        let new_age = (state.get_value(AGE_3) + 1).min(3);
+        let new_age = (state.get_value(AGE) + 1).min(3);
         world.set_block(
             pos,
-            state.set_value(AGE_3, new_age),
+            state.set_value(AGE, new_age),
             UpdateFlags::UPDATE_CLIENTS,
         );
     }
@@ -348,7 +348,7 @@ mod tests {
         init_vanilla_registry();
         vanilla_blocks::SWEET_BERRY_BUSH
             .default_state()
-            .set_value(AGE_3, age)
+            .set_value(AGE, age)
     }
 
     #[test]

@@ -40,7 +40,7 @@ pub struct CropBlock {
     block: BlockRef,
 }
 
-const AGE_7: &IntProperty = &BlockStateProperties::AGE_7;
+const AGE: &IntProperty = &BlockStateProperties::AGE_7;
 
 /// Calculates Vanilla crop growth speed for the supplied crop block.
 ///
@@ -186,7 +186,7 @@ impl CropLike for CropBlock {
     }
 
     fn age_property(&self) -> &IntProperty {
-        AGE_7
+        AGE
     }
 
     fn max_age(&self) -> u8 {

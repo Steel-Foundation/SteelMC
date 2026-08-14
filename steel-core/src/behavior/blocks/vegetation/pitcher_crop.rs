@@ -33,7 +33,7 @@ use super::crop_block::{
 };
 
 const HALF_PROPERTY: &EnumProperty<DoubleBlockHalf> = &BlockStateProperties::DOUBLE_BLOCK_HALF;
-const AGE_PROPERTY: &IntProperty = &BlockStateProperties::AGE_4;
+const AGE: &IntProperty = &BlockStateProperties::AGE_4;
 
 /// Behavior for Pitcher Crops
 #[block_behavior]
@@ -138,12 +138,12 @@ impl PitcherCropBlock {
     }
 
     fn grow(world: &Arc<World>, lower_state: BlockStateId, lower_pos: BlockPos, increase: u8) {
-        let new_age = (lower_state.get_value(AGE_PROPERTY) + increase).min(AGE_PROPERTY.max);
+        let new_age = (lower_state.get_value(AGE) + increase).min(AGE.max);
         if !Self::can_grow(world, lower_state, lower_pos, new_age) {
             return;
         }
 
-        let new_state = lower_state.set_value(AGE_PROPERTY, new_age);
+        let new_state = lower_state.set_value(AGE, new_age);
         world.set_block(lower_pos, new_state, UpdateFlags::UPDATE_CLIENTS);
 
         if new_age >= 3 {
@@ -157,7 +157,7 @@ impl PitcherCropBlock {
 
     fn can_grow(world: &dyn LevelReader, state: BlockStateId, pos: BlockPos, new_age: u8) -> bool {
         let state_above = world.get_block_state(pos.above());
-        state.get_value(AGE_PROPERTY) < AGE_PROPERTY.max
+        state.get_value(AGE) < AGE.max
             && world.raw_brightness(pos, 0) >= MIN_CROP_LIGHT_LEVEL
             && !world.is_outside_build_height(pos.above().y())
             && (new_age < 3
@@ -196,7 +196,7 @@ impl BlockBehavior for PitcherCropBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(AGE_PROPERTY) >= 3 {
+        if state.get_value(AGE) >= 3 {
             self.base
                 .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
         } else if self.can_survive(state, world, pos) {
@@ -258,7 +258,7 @@ impl Bonemealable for PitcherCropBlock {
             return false;
         }
 
-        let new_age = lower_state.get_value(AGE_PROPERTY) + 1;
+        let new_age = lower_state.get_value(AGE) + 1;
 
         Self::can_grow(world, lower_state, lower_pos, new_age)
     }

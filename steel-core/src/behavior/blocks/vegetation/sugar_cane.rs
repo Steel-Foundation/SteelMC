@@ -27,7 +27,7 @@ pub struct SugarCaneBlock {
     block: BlockRef,
 }
 
-const AGE_15: &IntProperty = &BlockStateProperties::AGE_15;
+const AGE: &IntProperty = &BlockStateProperties::AGE_15;
 
 impl SugarCaneBlock {
     /// Creates a new sugar cane block behavior.
@@ -91,18 +91,18 @@ impl BlockBehavior for SugarCaneBlock {
             return;
         }
 
-        let age = state.get_value(AGE_15);
+        let age = state.get_value(AGE);
 
-        if age == AGE_15.max {
+        if age == AGE.max {
             world.set_block(
                 above_pos,
                 self.block.default_state(),
                 UpdateFlags::UPDATE_ALL,
             );
-            let new_state = state.set_value(AGE_15, 0);
+            let new_state = state.set_value(AGE, 0);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         } else {
-            let new_state = state.set_value(AGE_15, age + 1);
+            let new_state = state.set_value(AGE, age + 1);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         }
     }
