@@ -331,7 +331,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
         InteractionResult::Pass,
     );
 
-    let cat = ItemStack::with_count(&vanilla_items::MUSIC_DISC_CAT, 2);
+    let cat = ItemStack::new(&vanilla_items::MUSIC_DISC_CAT);
     let cat_output = song_comparator(&cat);
     player
         .inventory
@@ -349,13 +349,12 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
         ),
         InteractionResult::Success,
     );
-    assert_eq!(
+    assert!(
         player
             .inventory
             .lock()
             .get_item_in_hand(InteractionHand::MainHand)
-            .count(),
-        1,
+            .is_empty()
     );
     let block_entity = jukebox_entity(&world, pos);
     let Some(jukebox) = block_entity.downcast_ref::<JukeboxBlockEntity>() else {
@@ -478,19 +477,19 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
 }
 
 #[test]
-fn insertion_is_driven_by_the_jukebox_playable_component() {
+fn stackable_component_backed_record_consumes_one_item() {
     let (world, _holder, pos, behavior) = jukebox_world("jukebox_component_insertion");
     let player = test_player(&world, 2);
     let mut access = InventoryAccess::new(Arc::clone(&player.inventory), InteractionHand::MainHand);
-    let mut component_record = ItemStack::with_count(&vanilla_items::STONE, 2);
-    component_record.set(
+    let mut stacked_record = ItemStack::with_count(&vanilla_items::STONE, 2);
+    stacked_record.set(
         JUKEBOX_PLAYABLE,
         JukeboxPlayable::new(&vanilla_jukebox_songs::CAT),
     );
     player
         .inventory
         .lock()
-        .set_item_in_hand(InteractionHand::MainHand, component_record);
+        .set_item_in_hand(InteractionHand::MainHand, stacked_record);
 
     assert_eq!(
         behavior.use_item_on(
@@ -697,7 +696,10 @@ fn placement_data_and_nonzero_persistence_resume_without_restarting_audio() {
     );
 
     tick_block_entities(&world, 1);
-    assert_eq!(saved_ticks(jukebox), Some(38));
+    assert_eq!(
+        saved_ticks(jukebox),
+        Some(i64::from(SAVED_PLAYBACK_TICKS + 1))
+    );
     let saved = jukebox.save_custom_only();
     let resumed = JukeboxBlockEntity::new(
         Weak::new(),
@@ -714,7 +716,10 @@ fn placement_data_and_nonzero_persistence_resume_without_restarting_audio() {
     };
     resumed.load_additional(&borrowed);
     assert!(resumed.is_record_playing());
-    assert_eq!(saved_ticks(&resumed), Some(38));
+    assert_eq!(
+        saved_ticks(&resumed),
+        Some(i64::from(SAVED_PLAYBACK_TICKS + 1))
+    );
     let Some(stored) = stored_record(&resumed) else {
         panic!("resumed jukebox should retain the record");
     };

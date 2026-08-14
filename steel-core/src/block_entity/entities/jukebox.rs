@@ -155,8 +155,6 @@ impl JukeboxBlockEntity {
         let world = self.get_level();
         self.state.lock().item = item;
         let Some(world) = world else {
-            // Paper permits this setter on an unplaced block entity and only
-            // stores the item until a level is attached.
             return;
         };
 
