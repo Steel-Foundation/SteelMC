@@ -16,14 +16,15 @@ pub mod vegetation;
 
 pub use building::{
     AmethystBlock, AmethystClusterBlock, BarrierBlock, BedBlock, BrushableBlock,
-    BuddingAmethystBlock, CampfireBlock, CauldronBlock, ComposterBlock, DoorBlock, FenceBlock,
-    FenceGateBlock, GlazedTerracottaBlock, HayBlock, HoneyBlock, IceBlock, IronBarsBlock,
-    LadderBlock, LavaCauldronBlock, LayeredCauldronBlock, MagmaBlock, MudBlock, PotentSulfurBlock,
-    PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock,
-    SpongeBlock, StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState,
-    WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
-    WeatheringCopperFullBlock, WeatheringCopperGrateBlock, WeatheringCopperSlabBlock,
-    WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
+    BuddingAmethystBlock, CampfireBlock, CauldronBlock, ComposterBlock, DoorBlock,
+    DropExperienceBlock, FenceBlock, FenceGateBlock, GlazedTerracottaBlock, HayBlock, HoneyBlock,
+    IceBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock, LayeredCauldronBlock, MagmaBlock,
+    MudBlock, PotentSulfurBlock, PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock,
+    SlimeBlock, SnowLayerBlock, SpongeBlock, StairBlock, TrapDoorBlock, WallBlock,
+    WaterloggedTransparentBlock, WeatherState, WeatheringCopper, WeatheringCopperBarsBlock,
+    WeatheringCopperDoorBlock, WeatheringCopperFullBlock, WeatheringCopperGrateBlock,
+    WeatheringCopperSlabBlock, WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock,
+    WetSpongeBlock,
 };
 pub use colored::StainedGlassPaneBlock;
 pub use container::{AnvilBlock, BarrelBlock, BeehiveBlock, CraftingTableBlock};
@@ -49,10 +50,11 @@ pub use redstone::{
 pub use vegetation::{
     AttachedStemBlock, AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock,
     CactusBlock, CactusFlowerBlock, CarrotBlock, CocoaBlock, CoralBlock, CropBlock,
-    DoublePlantBlock, FlowerBlock, MangroveLeavesBlock, NetherSproutsBlock, NetherWartBlock,
-    PitcherCropBlock, PotatoBlock, PumpkinBlock, RootedDirtBlock, SeagrassBlock, StemBlock,
-    SugarCaneBlock, SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock, TallSeagrassBlock,
-    TintedParticleLeavesBlock, TorchflowerCropBlock, UntintedParticleLeavesBlock,
+    DoublePlantBlock, FlowerBlock, MangroveLeavesBlock, MultifaceBlock, NetherSproutsBlock,
+    NetherWartBlock, PitcherCropBlock, PotatoBlock, PumpkinBlock, RootedDirtBlock, SeagrassBlock,
+    StemBlock, SugarCaneBlock, SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock,
+    TallSeagrassBlock, TintedParticleLeavesBlock, TorchflowerCropBlock,
+    UntintedParticleLeavesBlock,
 };
 pub use vegetation::{
     BaseCoralFanBlock, BaseCoralPlantBlock, BaseCoralWallFanBlock, BigDripleafBlock,

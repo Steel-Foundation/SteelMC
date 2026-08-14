@@ -258,11 +258,6 @@ impl World {
             data: 0.0,
         });
 
-        player.send_packet(CGameEvent {
-            event: GameEventType::ChangeGameMode,
-            data: player.game_mode().into(),
-        });
-
         true
     }
 }

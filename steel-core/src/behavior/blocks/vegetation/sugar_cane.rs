@@ -8,7 +8,7 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, IntProperty};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluid_tags;
@@ -26,6 +26,8 @@ const MAX_SUGAR_CANE_HEIGHT: i32 = 3;
 pub struct SugarCaneBlock {
     block: BlockRef,
 }
+
+const AGE_15: &IntProperty = &BlockStateProperties::AGE_15;
 
 impl SugarCaneBlock {
     /// Creates a new sugar cane block behavior.
@@ -89,7 +91,7 @@ impl BlockBehavior for SugarCaneBlock {
             return;
         }
 
-        let age = state.get_value(&BlockStateProperties::AGE_15);
+        let age = state.get_value(AGE_15);
 
         if age == 15 {
             world.set_block(
@@ -97,10 +99,10 @@ impl BlockBehavior for SugarCaneBlock {
                 self.block.default_state(),
                 UpdateFlags::UPDATE_ALL,
             );
-            let new_state = state.set_value(&BlockStateProperties::AGE_15, 0);
+            let new_state = state.set_value(AGE_15, 0);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         } else {
-            let new_state = state.set_value(&BlockStateProperties::AGE_15, age + 1);
+            let new_state = state.set_value(AGE_15, age + 1);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         }
     }

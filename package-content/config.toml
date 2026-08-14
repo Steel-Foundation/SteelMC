@@ -20,6 +20,8 @@ online_mode = true
 # auth_server = "https://sessionserver.mojang.com/session/minecraft/hasJoined"
 # Optional name-to-profile lookup endpoint used by commands such as /op.
 # profile_server = "https://api.minecraftservices.com/minecraft/profile/lookup/name"
+# Optional service public-key endpoint used to validate signed chat certificates.
+# services_server = "https://api.minecraftservices.com/publickeys"
 # Whether to enable encryption for client-server communication. Required in online mode.
 encryption = true
 # Whether the server allows unauthorized client flight

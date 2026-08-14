@@ -17,6 +17,7 @@ pub(crate) fn test_runtime_config(max_players: u32) -> Arc<RuntimeConfig> {
         online_mode: false,
         auth_server: None,
         profile_server: None,
+        services_server: None,
         encryption: false,
         allow_flight: false,
         motd: String::new(),

@@ -17,39 +17,35 @@ use super::BlockRef;
 /// Vanilla `TwistingVinesPlantBlock` (body) survival.
 #[block_behavior]
 pub struct TwistingVinesPlantBlock {
-    block: BlockRef,
+    base: GrowingPlantBodyBlock,
 }
 
 impl TwistingVinesPlantBlock {
     /// Creates a new twisting vines plant (body) block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
-        Self { block }
+        Self {
+            base: GrowingPlantBodyBlock::new(
+                block,
+                Direction::Up,
+                false,
+                &vanilla_blocks::TWISTING_VINES,
+                Self::can_grow_into,
+            ),
+        }
     }
 
     fn can_grow_into(state: BlockStateId) -> bool {
         state.is_air()
     }
-
-    const fn growing_plant_body_block(&self) -> GrowingPlantBodyBlock {
-        GrowingPlantBodyBlock::new(
-            self.block,
-            Direction::Up,
-            false,
-            &vanilla_blocks::TWISTING_VINES,
-            Self::can_grow_into,
-        )
-    }
 }
 impl BlockBehavior for TwistingVinesPlantBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        self.growing_plant_body_block()
-            .can_survive(state, world, pos)
+        self.base.can_survive(state, world, pos)
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_body_block()
-            .random_tick(state, world, pos);
+        self.base.random_tick(state, world, pos);
     }
 
     fn update_shape(
@@ -61,23 +57,16 @@ impl BlockBehavior for TwistingVinesPlantBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        self.growing_plant_body_block().update_shape(
-            state,
-            world,
-            pos,
-            direction,
-            neighbor_pos,
-            neighbor_state,
-        )
+        self.base
+            .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_body_block().tick(state, world, pos);
+        self.base.tick(state, world, pos);
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        self.growing_plant_body_block()
-            .get_state_for_placement(context)
+        self.base.get_state_for_placement(context)
     }
 
     fn get_clone_item_stack(
@@ -100,8 +89,7 @@ impl Bonemealable for TwistingVinesPlantBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        self.growing_plant_body_block()
-            .is_valid_bonemeal_target(state, world, pos)
+        self.base.is_valid_bonemeal_target(state, world, pos)
     }
 
     fn perform_bonemeal(
@@ -111,8 +99,7 @@ impl Bonemealable for TwistingVinesPlantBlock {
         rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        self.growing_plant_body_block()
-            .perform_bonemeal(state, world, rng, pos);
+        self.base.perform_bonemeal(state, world, rng, pos);
     }
 
     fn bonemeal_action_type(&self) -> BonemealAction {

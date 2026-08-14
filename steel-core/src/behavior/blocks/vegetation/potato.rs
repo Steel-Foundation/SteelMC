@@ -26,6 +26,8 @@ pub struct PotatoBlock {
     block: BlockRef,
 }
 
+const AGE_7: &IntProperty = &BlockStateProperties::AGE_7;
+
 impl PotatoBlock {
     /// Creates a new Potato Block Behavior
     #[must_use]
@@ -40,7 +42,7 @@ impl CropLike for PotatoBlock {
     }
 
     fn age_property(&self) -> &IntProperty {
-        &BlockStateProperties::AGE_7
+        AGE_7
     }
 
     fn max_age(&self) -> u8 {

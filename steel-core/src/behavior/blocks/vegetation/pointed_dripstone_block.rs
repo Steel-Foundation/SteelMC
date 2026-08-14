@@ -3,7 +3,9 @@ use std::sync::Arc;
 use rand::RngExt;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, SpeleothemThickness};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, EnumProperty, IntProperty, SpeleothemThickness,
+};
 use steel_registry::blocks::shapes::{BooleanOp, VoxelShape, join_is_not_empty};
 use steel_registry::{
     fluid::FluidRef, level_events, vanilla_block_tags::BlockTag, vanilla_blocks,
@@ -36,6 +38,12 @@ pub struct PointedDripstoneBlock {
     block: BlockRef,
 }
 
+const LEVEL_CAULDRON: &IntProperty = &BlockStateProperties::LEVEL_CAULDRON;
+const SPELEOTHEM_THICKNESS: &EnumProperty<SpeleothemThickness> =
+    &BlockStateProperties::SPELEOTHEM_THICKNESS;
+const VERTICAL_DIRECTION: &EnumProperty<Direction> = &BlockStateProperties::VERTICAL_DIRECTION;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+
 impl PointedDripstoneBlock {
     /// Creates a new pointed dripstone block behavior.
     #[must_use]
@@ -44,9 +52,8 @@ impl PointedDripstoneBlock {
     }
 
     fn fall_damage_for_state(state: BlockStateId, fall_distance: f64) -> Option<EntityFallDamage> {
-        if state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) != Direction::Up
-            || state.get_value(&BlockStateProperties::SPELEOTHEM_THICKNESS)
-                != SpeleothemThickness::Tip
+        if state.get_value(VERTICAL_DIRECTION) != Direction::Up
+            || state.get_value(SPELEOTHEM_THICKNESS) != SpeleothemThickness::Tip
         {
             return None;
         }
@@ -240,17 +247,14 @@ impl SpeleothemBlockBehavior {
         let state = self
             .block
             .default_state()
-            .set_value(&BlockStateProperties::VERTICAL_DIRECTION, tip_direction)
-            .set_value(
-                &BlockStateProperties::WATERLOGGED,
-                context.is_water_source(),
-            );
+            .set_value(VERTICAL_DIRECTION, tip_direction)
+            .set_value(WATERLOGGED, context.is_water_source());
 
         Some(Self::with_thickness(state, thickness))
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        let tip_direction = state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
+        let tip_direction = state.get_value(VERTICAL_DIRECTION);
         let behind_pos = pos.relative(tip_direction.opposite());
         let behind_state = world.get_block_state(behind_pos);
 
@@ -268,7 +272,7 @@ impl SpeleothemBlockBehavior {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
+        if state.get_value(WATERLOGGED) {
             let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
             let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
         }
@@ -277,7 +281,7 @@ impl SpeleothemBlockBehavior {
             return state;
         }
 
-        let tip_direction = state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
+        let tip_direction = state.get_value(VERTICAL_DIRECTION);
         if tip_direction == Direction::Down && world.has_scheduled_block_tick(pos, self.block) {
             return state;
         }
@@ -309,19 +313,19 @@ impl SpeleothemBlockBehavior {
         pos: BlockPos,
         default_tip_direction: Direction,
     ) -> Option<Direction> {
-        let default_state = self.block.default_state().set_value(
-            &BlockStateProperties::VERTICAL_DIRECTION,
-            default_tip_direction,
-        );
+        let default_state = self
+            .block
+            .default_state()
+            .set_value(VERTICAL_DIRECTION, default_tip_direction);
         if self.can_survive(default_state, world, pos) {
             return Some(default_tip_direction);
         }
 
         let opposite_tip_direction = default_tip_direction.opposite();
-        let opposite_state = self.block.default_state().set_value(
-            &BlockStateProperties::VERTICAL_DIRECTION,
-            opposite_tip_direction,
-        );
+        let opposite_state = self
+            .block
+            .default_state()
+            .set_value(VERTICAL_DIRECTION, opposite_tip_direction);
         self.can_survive(opposite_state, world, pos)
             .then_some(opposite_tip_direction)
     }
@@ -367,7 +371,7 @@ impl SpeleothemBlockBehavior {
 
     fn is_speleothem_with_direction(state: BlockStateId, tip_direction: Direction) -> bool {
         state.get_block().has_tag(&BlockTag::SPELEOTHEMS)
-            && state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) == tip_direction
+            && state.get_value(VERTICAL_DIRECTION) == tip_direction
     }
 
     fn is_stalagmite(state: BlockStateId) -> bool {
@@ -473,8 +477,7 @@ impl SpeleothemBlockBehavior {
             return Some(speleothem_pos);
         }
 
-        let search_direction =
-            speleothem_state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
+        let search_direction = speleothem_state.get_value(VERTICAL_DIRECTION);
         let mut current_pos = speleothem_pos;
         for _ in 1..max_search_length {
             current_pos = current_pos.relative(search_direction);
@@ -485,7 +488,7 @@ impl SpeleothemBlockBehavior {
 
             if world.is_outside_build_height(current_pos.y())
                 || state.get_block() != self.block
-                || state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) != search_direction
+                || state.get_value(VERTICAL_DIRECTION) != search_direction
             {
                 return None;
             }
@@ -507,11 +510,11 @@ impl SpeleothemBlockBehavior {
     fn is_free_hanging_stalactite(state: BlockStateId) -> bool {
         Self::is_stalactite(state)
             && Self::thickness(state) == SpeleothemThickness::Tip
-            && !state.get_value(&BlockStateProperties::WATERLOGGED)
+            && !state.get_value(WATERLOGGED)
     }
 
     fn can_tip_grow(&self, tip_state: BlockStateId, world: &Arc<World>, tip_pos: BlockPos) -> bool {
-        let grow_direction = tip_state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
+        let grow_direction = tip_state.get_value(VERTICAL_DIRECTION);
         let grow_pos = tip_pos.relative(grow_direction);
         let state_at_grow_pos = world.get_block_state(grow_pos);
         if state_at_grow_pos.has_fluid() {
@@ -529,7 +532,7 @@ impl SpeleothemBlockBehavior {
     ) -> bool {
         Self::is_tip(state, false)
             && state.get_block() == self.block
-            && state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) == tip_direction
+            && state.get_value(VERTICAL_DIRECTION) == tip_direction
     }
 
     fn grow(&self, world: &Arc<World>, grow_from_pos: BlockPos, grow_to_direction: Direction) {
@@ -566,15 +569,15 @@ impl SpeleothemBlockBehavior {
         let state = self
             .block
             .default_state()
-            .set_value(&BlockStateProperties::VERTICAL_DIRECTION, direction)
-            .set_value(&BlockStateProperties::SPELEOTHEM_THICKNESS, thickness)
-            .set_value(&BlockStateProperties::WATERLOGGED, waterlogged);
+            .set_value(VERTICAL_DIRECTION, direction)
+            .set_value(SPELEOTHEM_THICKNESS, thickness)
+            .set_value(WATERLOGGED, waterlogged);
         world.set_block(pos, state, UpdateFlags::UPDATE_ALL);
     }
 
     fn create_merged_tips(&self, tip_state: BlockStateId, world: &Arc<World>, tip_pos: BlockPos) {
         let (stalactite_pos, stalagmite_pos) =
-            if tip_state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) == Direction::Up {
+            if tip_state.get_value(VERTICAL_DIRECTION) == Direction::Up {
                 (tip_pos.above(), tip_pos)
             } else {
                 (tip_pos, tip_pos.below())
@@ -613,7 +616,7 @@ impl SpeleothemBlockBehavior {
             let placement_state = self
                 .block
                 .default_state()
-                .set_value(&BlockStateProperties::VERTICAL_DIRECTION, Direction::Up);
+                .set_value(VERTICAL_DIRECTION, Direction::Up);
             if self.can_survive(placement_state, world.as_ref(), pos)
                 && !Self::is_water_at(world, pos.below())
             {
@@ -768,7 +771,7 @@ impl SpeleothemBlockBehavior {
         dripstone_state: BlockStateId,
         max_search_length: i32,
     ) -> Option<BlockPos> {
-        let tip_direction = dripstone_state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
+        let tip_direction = dripstone_state.get_value(VERTICAL_DIRECTION);
         let search_direction = tip_direction.opposite();
         let mut current_pos = pos;
         for _ in 1..max_search_length {
@@ -777,7 +780,7 @@ impl SpeleothemBlockBehavior {
             if state.get_block() != self.block {
                 return Some(current_pos);
             }
-            if state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) != tip_direction {
+            if state.get_value(VERTICAL_DIRECTION) != tip_direction {
                 return None;
             }
             if world.is_outside_build_height(current_pos.y()) {
@@ -817,8 +820,7 @@ impl SpeleothemBlockBehavior {
         if fluid == &vanilla_fluids::WATER {
             block == &vanilla_blocks::CAULDRON
                 || (block == &vanilla_blocks::WATER_CAULDRON
-                    && state.get_value(&BlockStateProperties::LEVEL_CAULDRON)
-                        < BlockStateProperties::LEVEL_CAULDRON.max)
+                    && state.get_value(LEVEL_CAULDRON) < LEVEL_CAULDRON.max)
         } else if fluid == &vanilla_fluids::LAVA {
             block == &vanilla_blocks::CAULDRON
         } else {
@@ -827,11 +829,11 @@ impl SpeleothemBlockBehavior {
     }
 
     fn thickness(state: BlockStateId) -> SpeleothemThickness {
-        state.get_value(&BlockStateProperties::SPELEOTHEM_THICKNESS)
+        state.get_value(SPELEOTHEM_THICKNESS)
     }
 
     fn with_thickness(state: BlockStateId, thickness: SpeleothemThickness) -> BlockStateId {
-        state.set_value(&BlockStateProperties::SPELEOTHEM_THICKNESS, thickness)
+        state.set_value(SPELEOTHEM_THICKNESS, thickness)
     }
 }
 
@@ -944,8 +946,8 @@ mod tests {
         init_vanilla_registry();
         vanilla_blocks::POINTED_DRIPSTONE
             .default_state()
-            .set_value(&BlockStateProperties::VERTICAL_DIRECTION, direction)
-            .set_value(&BlockStateProperties::SPELEOTHEM_THICKNESS, thickness)
+            .set_value(VERTICAL_DIRECTION, direction)
+            .set_value(SPELEOTHEM_THICKNESS, thickness)
     }
 
     #[test]
@@ -1007,11 +1009,8 @@ mod tests {
     ) -> (SpeleothemBlockBehavior, BlockStateId) {
         let dripstone = vanilla_blocks::POINTED_DRIPSTONE
             .default_state()
-            .set_value(&BlockStateProperties::VERTICAL_DIRECTION, Direction::Down)
-            .set_value(
-                &BlockStateProperties::SPELEOTHEM_THICKNESS,
-                SpeleothemThickness::Tip,
-            );
+            .set_value(VERTICAL_DIRECTION, Direction::Down)
+            .set_value(SPELEOTHEM_THICKNESS, SpeleothemThickness::Tip);
         let root = vanilla_blocks::DRIPSTONE_BLOCK.default_state();
         assert!(world.set_block(pos, dripstone, UpdateFlags::UPDATE_NONE));
         assert!(world.set_block(pos.above(), root, UpdateFlags::UPDATE_NONE));
@@ -1066,10 +1065,7 @@ mod tests {
 
         let cauldron_state = world.get_block_state(pos.below());
         assert_eq!(cauldron_state.get_block(), &vanilla_blocks::WATER_CAULDRON);
-        assert_eq!(
-            cauldron_state.get_value(&BlockStateProperties::LEVEL_CAULDRON),
-            1,
-        );
+        assert_eq!(cauldron_state.get_value(LEVEL_CAULDRON), 1,);
     }
 
     #[test]
@@ -1084,7 +1080,7 @@ mod tests {
         assert!(world.set_block(pos.above_n(2), source_water, UpdateFlags::UPDATE_NONE));
         let water_cauldron = vanilla_blocks::WATER_CAULDRON
             .default_state()
-            .set_value(&BlockStateProperties::LEVEL_CAULDRON, 1);
+            .set_value(LEVEL_CAULDRON, 1);
         assert!(world.set_block(pos.below(), water_cauldron, UpdateFlags::UPDATE_NONE));
 
         let (behavior, dripstone) = stalactite_setup(&world, pos);
@@ -1095,10 +1091,7 @@ mod tests {
 
         let cauldron_state = world.get_block_state(pos.below());
         assert_eq!(cauldron_state.get_block(), &vanilla_blocks::WATER_CAULDRON);
-        assert_eq!(
-            cauldron_state.get_value(&BlockStateProperties::LEVEL_CAULDRON),
-            2,
-        );
+        assert_eq!(cauldron_state.get_value(LEVEL_CAULDRON), 2,);
     }
 
     #[test]
@@ -1113,7 +1106,7 @@ mod tests {
         assert!(world.set_block(pos.above_n(2), source_water, UpdateFlags::UPDATE_NONE));
         let full_cauldron = vanilla_blocks::WATER_CAULDRON
             .default_state()
-            .set_value(&BlockStateProperties::LEVEL_CAULDRON, 3);
+            .set_value(LEVEL_CAULDRON, 3);
         assert!(world.set_block(pos.below(), full_cauldron, UpdateFlags::UPDATE_NONE));
 
         let (behavior, dripstone) = stalactite_setup(&world, pos);
@@ -1121,10 +1114,7 @@ mod tests {
 
         let cauldron_state = world.get_block_state(pos.below());
         assert_eq!(cauldron_state.get_block(), &vanilla_blocks::WATER_CAULDRON);
-        assert_eq!(
-            cauldron_state.get_value(&BlockStateProperties::LEVEL_CAULDRON),
-            3,
-        );
+        assert_eq!(cauldron_state.get_value(LEVEL_CAULDRON), 3,);
     }
 
     #[test]
