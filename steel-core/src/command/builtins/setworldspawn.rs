@@ -26,22 +26,19 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                 (0.0, 0.0),
             )
         })
-        .then(
-            argument("pos", SteelArgumentType::block_pos())
-                .executes(|context| {
-                    let position = spawnable_position(context)?;
-                    set_spawn(context, position, (0.0, 0.0))
-                })
-                .then(
-                    argument("rotation", SteelArgumentType::rotation()).executes(|context| {
-                        let position = spawnable_position(context)?;
-                        let Some(rotation) = context.coordinates("rotation") else {
-                            return Err(missing_argument("rotation"));
-                        };
-                        set_spawn(context, position, rotation.rotation(context.source()))
-                    }),
-                ),
-        )
+        .then_path([
+            argument("pos", SteelArgumentType::block_pos()).executes(|context| {
+                let position = spawnable_position(context)?;
+                set_spawn(context, position, (0.0, 0.0))
+            }),
+            argument("rotation", SteelArgumentType::rotation()).executes(|context| {
+                let position = spawnable_position(context)?;
+                let Some(rotation) = context.coordinates("rotation") else {
+                    return Err(missing_argument("rotation"));
+                };
+                set_spawn(context, position, rotation.rotation(context.source()))
+            }),
+        ])
 }
 
 fn spawnable_position(

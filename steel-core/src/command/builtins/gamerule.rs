@@ -16,15 +16,15 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    let mut command = literal("gamerule");
+    let mut rules = Vec::new();
     for (_, rule) in REGISTRY.game_rules.iter() {
         // Vanilla's short identifier only omits the `minecraft` namespace.
         if rule.key().namespace == Identifier::VANILLA_NAMESPACE {
-            command = command.then(rule_literal(rule.key().path.to_string(), rule));
+            rules.push(rule_literal(rule.key().path.to_string(), rule));
         }
-        command = command.then(rule_literal(rule.key().to_string(), rule));
+        rules.push(rule_literal(rule.key().to_string(), rule));
     }
-    command
+    literal("gamerule").then_children(rules)
 }
 
 fn rule_literal(
@@ -36,7 +36,7 @@ fn rule_literal(
             .executes(move |context| query_rule(context, rule))
             .then(
                 argument("value", ArgumentType::bool())
-                    .executes(move |context| set_bool_rule(context, rule)),
+                    .executes(move |context| set_rule_from_context(context, rule)),
             ),
         GameRuleType::Int => {
             let minimum = rule.min_value().unwrap_or(i32::MIN);
@@ -45,7 +45,7 @@ fn rule_literal(
                 .executes(move |context| query_rule(context, rule))
                 .then(
                     argument("value", ArgumentType::integer(minimum, maximum))
-                        .executes(move |context| set_int_rule(context, rule)),
+                        .executes(move |context| set_rule_from_context(context, rule)),
                 )
         }
     }
@@ -70,24 +70,23 @@ fn query_rule(
     Ok(rule.erased_command_result(&value))
 }
 
-fn set_bool_rule(
+fn set_rule_from_context(
     context: &SteelCommandContext<CommandSource>,
     rule: ErasedGameRuleRef,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(value) = context.boolean("value") else {
-        return Err(missing_rule_value(rule));
+    let value = match rule.value_type() {
+        GameRuleType::Bool => GameRuleValue::new(
+            context
+                .boolean("value")
+                .ok_or_else(|| missing_rule_value(rule))?,
+        ),
+        GameRuleType::Int => GameRuleValue::new(
+            context
+                .integer("value")
+                .ok_or_else(|| missing_rule_value(rule))?,
+        ),
     };
-    set_rule(context, rule, GameRuleValue::new(value))
-}
-
-fn set_int_rule(
-    context: &SteelCommandContext<CommandSource>,
-    rule: ErasedGameRuleRef,
-) -> Result<i32, CommandSyntaxError> {
-    let Some(value) = context.integer("value") else {
-        return Err(missing_rule_value(rule));
-    };
-    set_rule(context, rule, GameRuleValue::new(value))
+    set_rule(context, rule, value)
 }
 
 fn set_rule(

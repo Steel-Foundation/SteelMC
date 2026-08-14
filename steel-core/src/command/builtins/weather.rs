@@ -19,10 +19,11 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("weather")
-        .then(weather_literal("clear", WeatherKind::Clear))
-        .then(weather_literal("rain", WeatherKind::Rain))
-        .then(weather_literal("thunder", WeatherKind::Thunder))
+    literal("weather").then_children([
+        weather_literal("clear", WeatherKind::Clear),
+        weather_literal("rain", WeatherKind::Rain),
+        weather_literal("thunder", WeatherKind::Thunder),
+    ])
 }
 
 fn weather_literal(

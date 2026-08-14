@@ -45,32 +45,21 @@ pub(super) fn registration() -> Result<CommandRegistration<CommandSource>, Comma
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("gamemode").then(
+    literal("gamemode").then_path([
         argument("gamemode", SteelArgumentType::game_mode())
-            .executes(set_own_game_mode)
-            .then(argument("target", SteelArgumentType::players()).executes(set_target_game_mode)),
-    )
+            .executes(|context| change_game_mode(context, None)),
+        argument("target", SteelArgumentType::players())
+            .executes(|context| change_game_mode(context, Some("target"))),
+    ])
 }
 
-fn set_own_game_mode(
+fn change_game_mode(
     context: &SteelCommandContext<CommandSource>,
+    targets_argument: Option<&str>,
 ) -> Result<i32, CommandSyntaxError> {
     let game_mode = required_game_mode(context)?;
     require_game_mode_permission(context.source(), game_mode)?;
-    let Some(player) = context.source().player() else {
-        return Err(CommandSyntaxError::dynamic(TextComponent::from(
-            &translations::PERMISSIONS_REQUIRES_PLAYER,
-        )));
-    };
-    set_game_mode(context.source(), slice::from_ref(player), game_mode)
-}
-
-fn set_target_game_mode(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    let game_mode = required_game_mode(context)?;
-    require_game_mode_permission(context.source(), game_mode)?;
-    let targets = context.players("target")?;
+    let targets = context.players_or_source(targets_argument)?;
     set_game_mode(context.source(), &targets, game_mode)
 }
 

@@ -32,54 +32,34 @@ const EXECUTE_ROOT: CommandRedirectTarget = CommandRedirectTarget::CommandRoot;
 pub(super) fn target(name: &'static str, store_result: bool) -> Builder {
     // TODO: Add bossbar after Steel has a persistent custom-bossbar manager.
     // TODO: Add entity after live entity NBT can reload every command-visible field.
-    literal(name)
-        .then(
-            literal("score").then(
-                argument("targets", SteelArgumentType::score_holders()).then(
-                    argument("objective", SteelArgumentType::objective())
-                        .redirects_with(EXECUTE_ROOT, move |context| {
-                            store_score(context, store_result)
-                        }),
-                ),
-            ),
-        )
-        .then(
-            literal("block").then(
-                argument("targetPos", SteelArgumentType::block_pos())
-                    .then(data_path(StoreDataTarget::Block, store_result)),
-            ),
-        )
-        .then(
-            literal("storage").then(
-                argument("target", SteelArgumentType::storage_key())
-                    .then(data_path(StoreDataTarget::Storage, store_result)),
-            ),
-        )
+    literal(name).then_children([
+        literal("score").then_path([
+            argument("targets", SteelArgumentType::score_holders()),
+            argument("objective", SteelArgumentType::objective())
+                .redirects_with(EXECUTE_ROOT, move |context| {
+                    store_score(context, store_result)
+                }),
+        ]),
+        literal("block").then_path([
+            argument("targetPos", SteelArgumentType::block_pos()),
+            data_path(StoreDataTarget::Block, store_result),
+        ]),
+        literal("storage").then_path([
+            argument("target", SteelArgumentType::storage_key()),
+            data_path(StoreDataTarget::Storage, store_result),
+        ]),
+    ])
 }
 
 fn data_path(target: StoreDataTarget, store_result: bool) -> Builder {
-    argument("path", SteelArgumentType::nbt_path())
-        .then(data_type("int", StoreDataType::Int, target, store_result))
-        .then(data_type(
-            "float",
-            StoreDataType::Float,
-            target,
-            store_result,
-        ))
-        .then(data_type(
-            "short",
-            StoreDataType::Short,
-            target,
-            store_result,
-        ))
-        .then(data_type("long", StoreDataType::Long, target, store_result))
-        .then(data_type(
-            "double",
-            StoreDataType::Double,
-            target,
-            store_result,
-        ))
-        .then(data_type("byte", StoreDataType::Byte, target, store_result))
+    argument("path", SteelArgumentType::nbt_path()).then_children([
+        data_type("int", StoreDataType::Int, target, store_result),
+        data_type("float", StoreDataType::Float, target, store_result),
+        data_type("short", StoreDataType::Short, target, store_result),
+        data_type("long", StoreDataType::Long, target, store_result),
+        data_type("double", StoreDataType::Double, target, store_result),
+        data_type("byte", StoreDataType::Byte, target, store_result),
+    ])
 }
 
 fn data_type(

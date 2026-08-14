@@ -26,43 +26,46 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("enchant").then(
-        argument("targets", SteelArgumentType::entities()).then(
-            argument("enchantment", SteelArgumentType::enchantment())
-                .executes(enchant_default_level)
-                .then(
-                    argument("level", ArgumentType::integer(0, i32::MAX))
-                        .executes(enchant_with_level),
-                ),
-        ),
-    )
+    literal("enchant").then_path([
+        argument("targets", SteelArgumentType::entities()),
+        argument("enchantment", SteelArgumentType::enchantment())
+            .executes(|context| enchant(context, EnchantLevel::Default)),
+        argument("level", ArgumentType::integer(0, i32::MAX))
+            .executes(|context| enchant(context, EnchantLevel::Argument)),
+    ])
 }
 
-fn enchant_default_level(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    enchant(context, 1)
+#[derive(Clone, Copy)]
+enum EnchantLevel {
+    Default,
+    Argument,
 }
 
-fn enchant_with_level(
-    context: &SteelCommandContext<CommandSource>,
-) -> Result<i32, CommandSyntaxError> {
-    let Some(level) = context.integer("level") else {
-        return Err(missing_argument("level"));
-    };
-    enchant(context, level)
+impl EnchantLevel {
+    fn resolve(
+        self,
+        context: &SteelCommandContext<CommandSource>,
+    ) -> Result<u32, CommandSyntaxError> {
+        let level = match self {
+            Self::Default => 1,
+            Self::Argument => context
+                .integer("level")
+                .ok_or_else(|| missing_argument("level"))?,
+        };
+        u32::try_from(level)
+            .map_err(|_| CommandSyntaxError::dynamic("Enchantment level cannot be negative"))
+    }
 }
 
 fn enchant(
     context: &SteelCommandContext<CommandSource>,
-    level: i32,
+    level: EnchantLevel,
 ) -> Result<i32, CommandSyntaxError> {
     let targets = context.entities("targets")?;
     let Some(enchantment) = context.enchantment("enchantment") else {
         return Err(missing_argument("enchantment"));
     };
-    let level = u32::try_from(level)
-        .map_err(|_| CommandSyntaxError::dynamic("Enchantment level cannot be negative"))?;
+    let level = level.resolve(context)?;
     if level > enchantment.max_level {
         let message = translations::COMMANDS_ENCHANT_FAILED_LEVEL
             .message([level.to_string(), enchantment.max_level.to_string()])

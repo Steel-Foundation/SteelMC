@@ -26,11 +26,14 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     let command = add_clock_nodes(literal("time"), ClockSelection::Default, true);
-    command.then(literal("of").then(add_clock_nodes(
-        argument(CLOCK_ARGUMENT, SteelArgumentType::world_clock()),
-        ClockSelection::Argument(CLOCK_ARGUMENT),
-        false,
-    )))
+    command.then_path([
+        literal("of"),
+        add_clock_nodes(
+            argument(CLOCK_ARGUMENT, SteelArgumentType::world_clock()),
+            ClockSelection::Argument(CLOCK_ARGUMENT),
+            false,
+        ),
+    ])
 }
 
 #[derive(Clone, Copy)]
@@ -53,52 +56,44 @@ fn add_clock_nodes(
     selection: ClockSelection,
     include_game_time: bool,
 ) -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    let mut query = literal("query")
-        .then(literal("time").executes(move |context| query_time(context, selection)))
+    let mut query = literal("query").then_children([
+        literal("time").executes(move |context| query_time(context, selection)),
+        argument(
+            "timeline",
+            SteelArgumentType::timeline(selection.argument_name()),
+        )
+        .executes(move |context| query_timeline(context, selection))
         .then(
-            argument(
-                "timeline",
-                SteelArgumentType::timeline(selection.argument_name()),
-            )
-            .executes(move |context| query_timeline(context, selection))
-            .then(
-                literal("repetition")
-                    .executes(move |context| query_timeline_repetitions(context, selection)),
-            ),
-        );
+            literal("repetition")
+                .executes(move |context| query_timeline_repetitions(context, selection)),
+        ),
+    ]);
     if include_game_time {
         query = query.then(literal("gametime").executes(query_game_time));
     }
 
-    node.then(
-        literal("set")
-            .then(
-                argument("time", SteelArgumentType::time(0))
-                    .executes(move |context| set_total_ticks(context, selection)),
+    node.then_children([
+        literal("set").then_children([
+            argument("time", SteelArgumentType::time(0))
+                .executes(move |context| set_total_ticks(context, selection)),
+            argument(
+                "timemarker",
+                SteelArgumentType::time_marker(selection.argument_name()),
             )
-            .then(
-                argument(
-                    "timemarker",
-                    SteelArgumentType::time_marker(selection.argument_name()),
-                )
-                .executes(move |context| set_time_marker(context, selection)),
-            ),
-    )
-    .then(
+            .executes(move |context| set_time_marker(context, selection)),
+        ]),
         literal("add").then(
             argument("time", SteelArgumentType::time(i32::MIN))
                 .executes(move |context| add_time(context, selection)),
         ),
-    )
-    .then(literal("pause").executes(move |context| set_paused(context, selection, true)))
-    .then(literal("resume").executes(move |context| set_paused(context, selection, false)))
-    .then(
+        literal("pause").executes(move |context| set_paused(context, selection, true)),
+        literal("resume").executes(move |context| set_paused(context, selection, false)),
         literal("rate").then(
             argument("rate", ArgumentType::float(1.0E-5, 1_000.0))
                 .executes(move |context| set_rate(context, selection)),
         ),
-    )
-    .then(query)
+        query,
+    ])
 }
 
 fn selected_clock(

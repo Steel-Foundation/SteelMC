@@ -66,6 +66,43 @@ fn registration_preserves_child_order_and_returns_stable_ids() {
 }
 
 #[test]
+fn then_path_nests_descendants_in_declaration_order() {
+    let mut dispatcher = CommandDispatcher::<TestSource>::new();
+    let base = register(
+        &mut dispatcher,
+        literal("base").then_path([literal("first"), literal("second"), literal("third")]),
+    );
+
+    let first = dispatcher
+        .children(base)
+        .and_then(|children| children.first());
+    let second = first
+        .and_then(|first| dispatcher.children(*first))
+        .and_then(|children| children.first());
+
+    assert_eq!(node_names(&dispatcher, base), ["first"]);
+    assert_eq!(
+        first.map(|first| node_names(&dispatcher, *first)),
+        Some(vec!["second"])
+    );
+    assert_eq!(
+        second.map(|second| node_names(&dispatcher, *second)),
+        Some(vec!["third"])
+    );
+}
+
+#[test]
+fn then_children_adds_siblings_in_declaration_order() {
+    let mut dispatcher = CommandDispatcher::<TestSource>::new();
+    let base = register(
+        &mut dispatcher,
+        literal("base").then_children([literal("first"), literal("second"), literal("third")]),
+    );
+
+    assert_eq!(node_names(&dispatcher, base), ["first", "second", "third"]);
+}
+
+#[test]
 fn compatible_literal_registration_merges_grandchildren() {
     let mut dispatcher = CommandDispatcher::<TestSource>::new();
     let first_base = register(

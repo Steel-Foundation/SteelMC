@@ -20,25 +20,25 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command(dispatcher_root: NodeId) -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("execute")
-        .then(literal("run").redirects(dispatcher_root))
-        .then(condition::conditionals("if", true))
-        .then(condition::conditionals("unless", false))
-        .then(source::as_operation())
-        .then(source::at_operation())
-        .then(
-            literal("store")
-                .then(store::target("result", true))
-                .then(store::target("success", false)),
-        )
-        .then(source::positioned_operation())
-        .then(source::rotated_operation())
-        .then(source::facing_operation())
-        .then(source::align_operation())
-        .then(source::anchored_operation())
-        .then(source::in_operation())
-        .then(source::summon_operation())
-        .then(source::on_relations())
+    literal("execute").then_children([
+        literal("run").redirects(dispatcher_root),
+        condition::conditionals("if", true),
+        condition::conditionals("unless", false),
+        source::as_operation(),
+        source::at_operation(),
+        literal("store").then_children([
+            store::target("result", true),
+            store::target("success", false),
+        ]),
+        source::positioned_operation(),
+        source::rotated_operation(),
+        source::facing_operation(),
+        source::align_operation(),
+        source::anchored_operation(),
+        source::in_operation(),
+        source::summon_operation(),
+        source::on_relations(),
+    ])
 }
 
 fn source_scoreboard(

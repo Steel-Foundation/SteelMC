@@ -36,12 +36,11 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("locate").then(
-        literal("structure").then(
-            argument("structure", SteelArgumentType::structure_or_tag_key())
-                .executes_suspended(start_structure_search),
-        ),
-    )
+    literal("locate").then_path([
+        literal("structure"),
+        argument("structure", SteelArgumentType::structure_or_tag_key())
+            .executes_suspended(start_structure_search),
+    ])
     // TODO: Add `locate biome` once Steel has an asynchronous closest-biome search.
     // TODO: Add `locate poi` once Steel has a point-of-interest manager.
 }

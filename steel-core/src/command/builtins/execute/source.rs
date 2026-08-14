@@ -53,32 +53,28 @@ pub(super) fn at_operation() -> Builder {
 }
 
 pub(super) fn positioned_operation() -> Builder {
-    literal("positioned")
-        .then(
-            argument("pos", SteelArgumentType::vec3(true)).redirects_with(
-                EXECUTE_ROOT,
-                |context: &SteelCommandContext<CommandSource>| {
-                    let position = required_coordinates(context, "pos")?.position(context.source());
-                    Ok(context
-                        .source()
-                        .with_position(position)
-                        .with_anchor(EntityAnchor::Feet))
-                },
-            ),
-        )
-        .then(
-            literal("as").then(argument("targets", SteelArgumentType::entities()).forks(
-                EXECUTE_ROOT,
-                |context| {
-                    Ok(context
-                        .optional_entities("targets")?
-                        .into_iter()
-                        .map(|entity| context.source().with_position(entity.position()))
-                        .collect())
-                },
-            )),
-        )
-        .then(literal("over").then(
+    literal("positioned").then_children([
+        argument("pos", SteelArgumentType::vec3(true)).redirects_with(
+            EXECUTE_ROOT,
+            |context: &SteelCommandContext<CommandSource>| {
+                let position = required_coordinates(context, "pos")?.position(context.source());
+                Ok(context
+                    .source()
+                    .with_position(position)
+                    .with_anchor(EntityAnchor::Feet))
+            },
+        ),
+        literal("as").then(argument("targets", SteelArgumentType::entities()).forks(
+            EXECUTE_ROOT,
+            |context| {
+                Ok(context
+                    .optional_entities("targets")?
+                    .into_iter()
+                    .map(|entity| context.source().with_position(entity.position()))
+                    .collect())
+            },
+        )),
+        literal("over").then(
             argument("heightmap", SteelArgumentType::heightmap()).redirects_with(
                 EXECUTE_ROOT,
                 |context: &SteelCommandContext<CommandSource>| {
@@ -99,66 +95,53 @@ pub(super) fn positioned_operation() -> Builder {
                     Ok(source.with_position(position.with_y(f64::from(height))))
                 },
             ),
-        ))
+        ),
+    ])
 }
 
 pub(super) fn rotated_operation() -> Builder {
-    literal("rotated")
-        .then(
-            argument("rot", SteelArgumentType::rotation()).redirects_with(
-                EXECUTE_ROOT,
-                |context| {
-                    let rotation = required_coordinates(context, "rot")?.rotation(context.source());
-                    Ok(context.source().with_rotation(rotation))
-                },
-            ),
-        )
-        .then(
-            literal("as").then(argument("targets", SteelArgumentType::entities()).forks(
-                EXECUTE_ROOT,
-                |context| {
-                    Ok(context
-                        .optional_entities("targets")?
-                        .into_iter()
-                        .map(|entity| context.source().with_rotation(entity.rotation()))
-                        .collect())
-                },
-            )),
-        )
+    literal("rotated").then_children([
+        argument("rot", SteelArgumentType::rotation()).redirects_with(EXECUTE_ROOT, |context| {
+            let rotation = required_coordinates(context, "rot")?.rotation(context.source());
+            Ok(context.source().with_rotation(rotation))
+        }),
+        literal("as").then(argument("targets", SteelArgumentType::entities()).forks(
+            EXECUTE_ROOT,
+            |context| {
+                Ok(context
+                    .optional_entities("targets")?
+                    .into_iter()
+                    .map(|entity| context.source().with_rotation(entity.rotation()))
+                    .collect())
+            },
+        )),
+    ])
 }
 
 pub(super) fn facing_operation() -> Builder {
-    literal("facing")
-        .then(
-            literal("entity").then(argument("targets", SteelArgumentType::entities()).then(
-                argument("anchor", SteelArgumentType::entity_anchor()).forks(
-                    EXECUTE_ROOT,
-                    |context| {
-                        let anchor = context
-                            .entity_anchor("anchor")
-                            .ok_or_else(|| missing_argument("anchor"))?;
-                        Ok(context
-                            .optional_entities("targets")?
-                            .into_iter()
-                            .map(|entity| {
-                                context
-                                    .source()
-                                    .facing_position(anchor.position(entity.as_ref()))
-                            })
-                            .collect())
-                    },
-                ),
-            )),
-        )
-        .then(
-            argument("pos", SteelArgumentType::vec3(true)).redirects_with(
-                EXECUTE_ROOT,
-                |context| {
-                    let position = required_coordinates(context, "pos")?.position(context.source());
-                    Ok(context.source().facing_position(position))
-                },
-            ),
-        )
+    literal("facing").then_children([
+        literal("entity").then_path([
+            argument("targets", SteelArgumentType::entities()),
+            argument("anchor", SteelArgumentType::entity_anchor()).forks(EXECUTE_ROOT, |context| {
+                let anchor = context
+                    .entity_anchor("anchor")
+                    .ok_or_else(|| missing_argument("anchor"))?;
+                Ok(context
+                    .optional_entities("targets")?
+                    .into_iter()
+                    .map(|entity| {
+                        context
+                            .source()
+                            .facing_position(anchor.position(entity.as_ref()))
+                    })
+                    .collect())
+            }),
+        ]),
+        argument("pos", SteelArgumentType::vec3(true)).redirects_with(EXECUTE_ROOT, |context| {
+            let position = required_coordinates(context, "pos")?.position(context.source());
+            Ok(context.source().facing_position(position))
+        }),
+    ])
 }
 
 pub(super) fn align_operation() -> Builder {
@@ -223,20 +206,21 @@ pub(super) fn summon_operation() -> Builder {
 }
 
 pub(super) fn on_relations() -> Builder {
-    literal("on")
-        .then(literal("vehicle").forks(EXECUTE_ROOT, |context| {
+    literal("on").then_children([
+        literal("vehicle").forks(EXECUTE_ROOT, |context| {
             Ok(one_relation_sources(context.source(), |entity| {
                 entity.vehicle()
             }))
-        }))
-        .then(literal("controller").forks(EXECUTE_ROOT, |context| {
+        }),
+        literal("controller").forks(EXECUTE_ROOT, |context| {
             Ok(one_relation_sources(context.source(), |entity| {
                 entity.controlling_passenger()
             }))
-        }))
-        .then(literal("passengers").forks(EXECUTE_ROOT, |context| {
+        }),
+        literal("passengers").forks(EXECUTE_ROOT, |context| {
             Ok(passenger_sources(context.source()))
-        }))
+        }),
+    ])
 }
 
 fn one_relation_sources(

@@ -150,6 +150,29 @@ where
         self
     }
 
+    /// Adds a linear descendant path in declaration order.
+    #[must_use]
+    pub(crate) fn then_path(self, descendants: impl IntoIterator<Item = Self>) -> Self {
+        let mut descendants = descendants.into_iter().collect::<Vec<_>>();
+        debug_assert!(
+            !descendants.is_empty(),
+            "then_path requires at least one descendant"
+        );
+        let Some(mut chain) = descendants.pop() else {
+            return self;
+        };
+        while let Some(parent) = descendants.pop() {
+            chain = parent.then(chain);
+        }
+        self.then(chain)
+    }
+
+    /// Adds sibling children while preserving registration order.
+    #[must_use]
+    pub(crate) fn then_children(self, children: impl IntoIterator<Item = Self>) -> Self {
+        children.into_iter().fold(self, Self::then)
+    }
+
     /// Attaches an executor payload without interpreting it.
     #[must_use]
     pub(crate) fn executes_with_executor(mut self, executor: Arc<R::Executor>) -> Self {

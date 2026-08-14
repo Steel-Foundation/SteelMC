@@ -1,6 +1,6 @@
 //! Vanilla player inventory clearing command.
 
-use std::{slice, sync::Arc};
+use std::sync::Arc;
 
 use steel_registry::item_stack::ItemStack;
 use steel_utils::{Identifier, translations};
@@ -21,36 +21,24 @@ pub(super) fn registration() -> CommandRegistration<CommandSource> {
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
-    literal("clear").executes(clear_self).then(
-        argument("targets", SteelArgumentType::players())
-            .executes(clear_targets)
-            .then(
-                argument("item", SteelArgumentType::item_predicate())
-                    .executes(clear_matching)
-                    .then(
-                        argument("maxCount", ArgumentType::integer(0, i32::MAX))
-                            .executes(clear_matching_with_limit),
-                    ),
-            ),
-    )
+    literal("clear")
+        .executes(|context| clear_default(context, None))
+        .then_path([
+            argument("targets", SteelArgumentType::players())
+                .executes(|context| clear_default(context, Some("targets"))),
+            argument("item", SteelArgumentType::item_predicate())
+                .executes(|context| clear_matching(context, -1)),
+            argument("maxCount", ArgumentType::integer(0, i32::MAX))
+                .executes(clear_matching_with_limit),
+        ])
 }
 
-fn clear_self(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    let Some(player) = context.source().player() else {
-        return Err(CommandSyntaxError::dynamic(TextComponent::from(
-            &translations::PERMISSIONS_REQUIRES_PLAYER,
-        )));
-    };
-    clear_players(context, slice::from_ref(player), &matches_any_item, -1)
-}
-
-fn clear_targets(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    let targets = context.players("targets")?;
+fn clear_default(
+    context: &SteelCommandContext<CommandSource>,
+    targets_argument: Option<&str>,
+) -> Result<i32, CommandSyntaxError> {
+    let targets = context.players_or_source(targets_argument)?;
     clear_players(context, &targets, &matches_any_item, -1)
-}
-
-fn clear_matching(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    clear_matching_with_count(context, -1)
 }
 
 fn clear_matching_with_limit(
@@ -59,10 +47,10 @@ fn clear_matching_with_limit(
     let Some(max_count) = context.integer("maxCount") else {
         return Err(missing_argument("maxCount"));
     };
-    clear_matching_with_count(context, max_count)
+    clear_matching(context, max_count)
 }
 
-fn clear_matching_with_count(
+fn clear_matching(
     context: &SteelCommandContext<CommandSource>,
     max_count: i32,
 ) -> Result<i32, CommandSyntaxError> {

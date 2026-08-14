@@ -1,7 +1,5 @@
 //! Entity killing command.
 
-use std::slice;
-
 use steel_utils::{Identifier, translations};
 use text_components::TextComponent;
 
@@ -13,36 +11,25 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::entity::SharedEntity;
-
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("kill"), |_| command())
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("kill")
-        .executes(kill_self)
-        .then(argument("targets", SteelArgumentType::entities()).executes(kill_targets))
+        .executes(|context| kill(context, None))
+        .then(
+            argument("targets", SteelArgumentType::entities())
+                .executes(|context| kill(context, Some("targets"))),
+        )
 }
 
-fn kill_self(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    let Some(entity) = context.source().entity() else {
-        return Err(CommandSyntaxError::dynamic(TextComponent::from(
-            &translations::PERMISSIONS_REQUIRES_ENTITY,
-        )));
-    };
-    kill_entities(context, slice::from_ref(entity))
-}
-
-fn kill_targets(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    let targets = context.entities("targets")?;
-    kill_entities(context, &targets)
-}
-
-fn kill_entities(
+fn kill(
     context: &SteelCommandContext<CommandSource>,
-    targets: &[SharedEntity],
+    targets_argument: Option<&str>,
 ) -> Result<i32, CommandSyntaxError> {
+    let targets = context.entities_or_source(targets_argument)?;
+    let targets = targets.as_ref();
     let Ok(result) = i32::try_from(targets.len()) else {
         return Err(CommandSyntaxError::dynamic(
             "Target count exceeds the command result range",
