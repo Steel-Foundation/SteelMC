@@ -30,6 +30,7 @@ use crate::world::game_event::GameEventContext;
 
 const RECORD_ITEM_TAG: &str = "RecordItem";
 const TICKS_SINCE_SONG_STARTED_TAG: &str = "ticks_since_song_started";
+const TICKS_PER_SECOND: f32 = 20.0;
 const PLAY_EVENT_INTERVAL_TICKS: i64 = 20;
 const SONG_END_PADDING_TICKS: i32 = 20;
 const UNKNOWN_SONG_REGISTRY_ID: i32 = -1;
@@ -85,7 +86,7 @@ impl JukeboxBlockEntity {
     fn song_has_finished(song: &JukeboxSongValue, ticks_elapsed: i64) -> bool {
         // Vanilla multiplies as `float`, applies `Mth.ceil(float)`, and performs
         // the padding addition as a wrapping Java `int` before widening.
-        let length_in_ticks = (song.length_in_seconds * 20.0).ceil() as i32;
+        let length_in_ticks = (song.length_in_seconds * TICKS_PER_SECOND).ceil() as i32;
         ticks_elapsed >= i64::from(length_in_ticks.wrapping_add(SONG_END_PADDING_TICKS))
     }
 
@@ -386,6 +387,8 @@ mod tests {
 
     use super::*;
 
+    const SAVED_PLAYBACK_TICKS: i64 = 37;
+
     fn jukebox() -> JukeboxBlockEntity {
         init_vanilla_registry();
         JukeboxBlockEntity::new(
@@ -417,7 +420,7 @@ mod tests {
         let record = ItemStack::new(&vanilla_items::MUSIC_DISC_CAT);
         let song = JukeboxBlockEntity::song_value(&record)
             .expect("vanilla music disc should carry a jukebox song");
-        let length_in_ticks = (song.length_in_seconds * 20.0).ceil() as i32;
+        let length_in_ticks = (song.length_in_seconds * TICKS_PER_SECOND).ceil() as i32;
         let finish_tick = i64::from(length_in_ticks.wrapping_add(SONG_END_PADDING_TICKS));
 
         let before_finish = jukebox();
@@ -447,7 +450,7 @@ mod tests {
         assert!(!jukebox.is_record_playing());
 
         let mut ticks_only = NbtCompound::new();
-        ticks_only.insert(TICKS_SINCE_SONG_STARTED_TAG, 37_i64);
+        ticks_only.insert(TICKS_SINCE_SONG_STARTED_TAG, SAVED_PLAYBACK_TICKS);
         assert!(jukebox.apply_item_block_entity_data(ticks_only));
         assert!(jukebox.is_record_playing());
         assert_eq!(
@@ -460,10 +463,13 @@ mod tests {
         let mut saved = NbtCompound::new();
         jukebox.save_additional(&mut saved);
         assert!(saved.compound(RECORD_ITEM_TAG).is_some());
-        assert_eq!(saved.long(TICKS_SINCE_SONG_STARTED_TAG), Some(37));
+        assert_eq!(
+            saved.long(TICKS_SINCE_SONG_STARTED_TAG),
+            Some(SAVED_PLAYBACK_TICKS)
+        );
 
         let mut unchanged = NbtCompound::new();
-        unchanged.insert(TICKS_SINCE_SONG_STARTED_TAG, 37_i64);
+        unchanged.insert(TICKS_SINCE_SONG_STARTED_TAG, SAVED_PLAYBACK_TICKS);
         assert!(!jukebox.apply_item_block_entity_data(unchanged));
     }
 

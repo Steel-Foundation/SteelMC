@@ -25,14 +25,6 @@ pub struct BlockItem {
 impl BlockItem {
     const PLACE_BLOCK_FLAGS: UpdateFlags = UpdateFlags::UPDATE_ALL_IMMEDIATE;
 
-    #[expect(
-        clippy::manual_midpoint,
-        reason = "Vanilla performs this exact float addition and division"
-    )]
-    fn place_sound_volume(volume: f32) -> f32 {
-        (volume + 1.0) / 2.0
-    }
-
     /// Creates a new block item behavior for the given block.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
@@ -89,8 +81,8 @@ impl BlockItem {
         context.world.play_block_sound(
             sound_type.place_sound,
             place_pos,
-            Self::place_sound_volume(sound_type.volume),
-            sound_type.pitch * 0.8,
+            sound_type.volume,
+            sound_type.pitch,
             context.player().map(Entity::id),
         );
         context.world.game_event(

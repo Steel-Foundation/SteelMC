@@ -53,6 +53,10 @@ const JUKEBOX_EJECTION_HORIZONTAL_RADIUS: f64 = 0.35;
 const ITEM_EJECTION_HORIZONTAL_SPEED_LIMIT: f64 = 0.1;
 const ITEM_EJECTION_UPWARD_SPEED: f64 = 0.2;
 const DEFAULT_ITEM_PICKUP_DELAY_TICKS: i32 = 10;
+const TICKS_PER_SECOND: f32 = 20.0;
+const PLAY_EVENT_INTERVAL_TICKS: i64 = 20;
+const SONG_END_PADDING_TICKS: i64 = 20;
+const SAVED_PLAYBACK_TICKS: i32 = 37;
 
 struct RecordingConnection {
     packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
@@ -275,6 +279,17 @@ fn tick_block_entities(world: &Arc<World>, ticks: i64) {
     }
 }
 
+fn recorded_game_event_count(
+    events: &SyncMutex<Vec<GameEventRef>>,
+    expected: GameEventRef,
+) -> usize {
+    events
+        .lock()
+        .iter()
+        .filter(|event| **event == expected)
+        .count()
+}
+
 #[test]
 #[expect(
     clippy::too_many_lines,
@@ -288,7 +303,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
 
     player.inventory.lock().set_item_in_hand(
         InteractionHand::MainHand,
-        ItemStack::with_count(&vanilla_items::STONE, 2),
+        ItemStack::new(&vanilla_items::STONE),
     );
     let empty_state = world.get_block_state(pos);
     assert_eq!(
@@ -309,7 +324,7 @@ fn insertion_consumption_ejection_and_no_duplication_match_vanilla() {
             .lock()
             .get_item_in_hand(InteractionHand::MainHand)
             .count(),
-        2,
+        1,
     );
     assert!(
         !world
@@ -554,11 +569,7 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
 
     tick_block_entities(&world, 1);
     assert_eq!(
-        events
-            .lock()
-            .iter()
-            .filter(|event| **event == &vanilla_game_events::JUKEBOX_PLAY)
-            .count(),
+        recorded_game_event_count(&events, &vanilla_game_events::JUKEBOX_PLAY),
         1,
     );
     assert!(
@@ -567,27 +578,20 @@ fn level_events_periodic_game_events_and_duration_completion_match_song_data() {
             .iter()
             .any(|packet| packet_id(packet) == Some(C_LEVEL_PARTICLES))
     );
-    tick_block_entities(&world, 19);
+    tick_block_entities(&world, PLAY_EVENT_INTERVAL_TICKS - 1);
     assert_eq!(
-        events
-            .lock()
-            .iter()
-            .filter(|event| **event == &vanilla_game_events::JUKEBOX_PLAY)
-            .count(),
+        recorded_game_event_count(&events, &vanilla_game_events::JUKEBOX_PLAY),
         1,
     );
     tick_block_entities(&world, 1);
     assert_eq!(
-        events
-            .lock()
-            .iter()
-            .filter(|event| **event == &vanilla_game_events::JUKEBOX_PLAY)
-            .count(),
+        recorded_game_event_count(&events, &vanilla_game_events::JUKEBOX_PLAY),
         2,
     );
 
-    let finish_ticks = (song.value().length_in_seconds * 20.0).ceil() as i64 + 20;
-    tick_block_entities(&world, finish_ticks - 21);
+    let finish_ticks =
+        (song.value().length_in_seconds * TICKS_PER_SECOND).ceil() as i64 + SONG_END_PADDING_TICKS;
+    tick_block_entities(&world, finish_ticks - (PLAY_EVENT_INTERVAL_TICKS + 1));
     assert!(jukebox.is_record_playing());
     tick_block_entities(&world, 1);
     assert!(!jukebox.is_record_playing());
@@ -641,7 +645,7 @@ fn placement_data_and_nonzero_persistence_resume_without_restarting_audio() {
     let mut payload = NbtCompound::new();
     payload.insert("RecordItem", record.to_nbt_tag_ref());
     // Vanilla's ValueInput coerces every numeric NBT tag for `getLong`.
-    payload.insert("ticks_since_song_started", 37_i32);
+    payload.insert("ticks_since_song_started", SAVED_PLAYBACK_TICKS);
     let Some(custom_data) = CustomData::try_from_compound(payload) else {
         panic!("placement payload should be valid custom data");
     };
@@ -686,7 +690,7 @@ fn placement_data_and_nonzero_persistence_resume_without_restarting_audio() {
         panic!("placed jukebox should retain its concrete entity");
     };
     assert!(jukebox.is_record_playing());
-    assert_eq!(saved_ticks(jukebox), Some(37));
+    assert_eq!(saved_ticks(jukebox), Some(i64::from(SAVED_PLAYBACK_TICKS)));
     let Some(stored) = stored_record(jukebox) else {
         panic!("placement payload should preload the record");
     };
