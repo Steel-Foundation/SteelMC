@@ -14,6 +14,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check LF Line Endings
+        shell: bash
+        run: |
+          if files="$(git grep --cached -Il $'\r' -- .)"; then
+            echo "::error::The following text files contain CRLF or CR line endings:"
+            echo "$files"
+            exit 1
+          else
+            status=$?
+            if (( status != 1 )); then
+              echo "::error::Unable to inspect tracked files for non-LF line endings"
+              exit "$status"
+            fi
+          fi
+
       - name: Setup Nightly
         uses: dtolnay/rust-toolchain@master
         with:
