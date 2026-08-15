@@ -317,7 +317,7 @@ pub(crate) fn generate_arg(
                 if module == "vanilla_blocks"
                     || module == "vanilla_entities"
                     || module == "sound_events"
-                    || module == "configured_features"
+                    || module == "vanilla_configured_features"
                 {
                     quote! { &#module_ident::#const_ident }
                 } else {
