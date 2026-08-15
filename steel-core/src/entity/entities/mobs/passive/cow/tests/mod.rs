@@ -1,9 +1,6 @@
 use std::io::Cursor;
 use std::sync::Weak;
 
-use crate::entity::damage::DamageSource;
-use crate::entity::{Animal, Entity, LivingEntity, Mob};
-use crate::test_support::{TestPlayerBuilder, fresh_test_world};
 use glam::DVec3;
 use simdnbt::borrow::read_compound as read_borrowed_compound;
 use steel_registry::{
@@ -11,6 +8,10 @@ use steel_registry::{
     vanilla_entities, vanilla_items,
 };
 use steel_utils::types::InteractionHand;
+
+use crate::entity::damage::DamageSource;
+use crate::entity::{Animal, Entity, LivingEntity, Mob};
+use crate::test_support::{TestPlayerBuilder, fresh_test_world};
 
 use super::*;
 
