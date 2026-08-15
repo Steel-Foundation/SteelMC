@@ -1,7 +1,9 @@
 use super::{
     Arc, Axis, BlockLocalAabb, BlockPos, BlockStateId, DVec3, DamageSource, Entity, EntityTypeRef,
-    ItemStack, SharedBlockEntity, SmallVec, SoundEventRef, VoxelShape, World, vanilla_entities,
+    ItemStack, SharedBlockEntity, SmallVec, SoundEventRef, VoxelShape, World, vanilla_damage_types,
+    vanilla_entities,
 };
+use crate::entity::entities::FallingBlockEntity;
 
 pub struct PickupResult {
     pub filled_bucket: ItemStack,
@@ -47,6 +49,44 @@ impl BlockEntityCreation {
 pub trait RailBehavior: Send + Sync {
     /// Returns whether this rail forbids curved shapes.
     fn is_straight(&self) -> bool;
+}
+
+/// Shared behavior exposed by blocks implementing vanilla's `Fallable` interface.
+///
+/// Falling entities use this capability for landing, failed-placement, and
+/// damage-source callbacks without depending on one concrete Rust block type.
+pub trait Fallable: Send + Sync {
+    /// Called after a falling entity successfully places its carried state.
+    fn on_land(
+        &self,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _state: BlockStateId,
+        _replaced_state: BlockStateId,
+        _entity: &FallingBlockEntity,
+    ) {
+    }
+
+    /// Called when a falling entity breaks instead of placing its carried state.
+    fn on_broken_after_fall(
+        &self,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _entity: &FallingBlockEntity,
+    ) {
+    }
+
+    /// Returns the damage source used when this falling block hurts entities.
+    fn get_fall_damage_source(&self, entity: &FallingBlockEntity) -> DamageSource {
+        DamageSource::environment(&vanilla_damage_types::FALLING_BLOCK)
+            .with_direct_entity(entity.id())
+            .with_causing_entity(entity.id())
+    }
+
+    /// Returns whether this behavior is in vanilla's `ConcretePowderBlock` hierarchy.
+    fn is_concrete_powder(&self) -> bool {
+        false
+    }
 }
 
 /// Resolved block-local collision boxes for a live block state.

@@ -12,9 +12,9 @@ use crate::{
 };
 use glam::DVec3;
 use steel_macros::block_behavior;
-use steel_registry::blocks::properties::{BoolProperty, EnumProperty};
+use steel_registry::blocks::properties::{BedPart, BoolProperty, EnumProperty};
 use steel_registry::blocks::{
-    BlockRef, block_state_ext::BlockStateExt, properties::BedPart, properties::BlockStateProperties,
+    BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties,
 };
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
@@ -22,9 +22,9 @@ use text_components::TextComponent;
 use text_components::translation::TranslatedMessage;
 
 const BED_BOUNCE_SCALE: f64 = 0.660_000_026_226_043_7;
-const BED_PART: EnumProperty<BedPart> = BlockStateProperties::BED_PART;
-const FACING: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
-const OCCUPIED: BoolProperty = BlockStateProperties::OCCUPIED;
+const BED_PART: &EnumProperty<BedPart> = &BlockStateProperties::BED_PART;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const OCCUPIED: &BoolProperty = &BlockStateProperties::OCCUPIED;
 /// Behavior for beds
 ///
 /// TODO: Mirror vanilla `BedBlock.useWithoutItem` invalid-dimension explosion
@@ -69,11 +69,11 @@ impl BedBlock {
         state: BlockStateId,
         pos: BlockPos,
     ) -> Option<(BlockStateId, BlockPos)> {
-        if state.get_value(&BED_PART) == BedPart::Head {
+        if state.get_value(BED_PART) == BedPart::Head {
             return Some((state, pos));
         }
 
-        let head_pos = state.get_value(&FACING).relative(pos);
+        let head_pos = state.get_value(FACING).relative(pos);
         let head_state = world.get_block_state(head_pos);
         (head_state.get_block() == self.block).then_some((head_state, head_pos))
     }
@@ -241,7 +241,7 @@ impl BlockBehavior for BedBlock {
             return None;
         }
 
-        Some(self.block.default_state().set_value(&FACING, facing))
+        Some(self.block.default_state().set_value(FACING, facing))
     }
 
     fn fall_on(
@@ -287,15 +287,14 @@ impl BlockBehavior for BedBlock {
         pos: BlockPos,
         player: &Player,
     ) -> BlockStateId {
-        if !player.has_infinite_materials() || state.get_value(&BED_PART) != BedPart::Foot {
+        if !player.has_infinite_materials() || state.get_value(BED_PART) != BedPart::Foot {
             return state;
         }
 
-        let facing = state.get_value(&FACING);
+        let facing = state.get_value(FACING);
         let head_pos = Self::neighbor_direction(&BedPart::Foot, facing).relative(pos);
         let head_state = world.get_block_state(head_pos);
-        if head_state.get_block() != self.block || head_state.get_value(&BED_PART) != BedPart::Head
-        {
+        if head_state.get_block() != self.block || head_state.get_value(BED_PART) != BedPart::Head {
             return state;
         }
 
@@ -317,14 +316,14 @@ impl BlockBehavior for BedBlock {
         _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        let part = state.get_value(&BED_PART);
-        let facing = state.get_value(&FACING);
+        let part = state.get_value(BED_PART);
+        let facing = state.get_value(FACING);
         if direction != Self::neighbor_direction(&part, facing) {
             return state;
         }
 
-        if neighbor_state.get_block() == self.block && neighbor_state.get_value(&BED_PART) != part {
-            return state.set_value(&OCCUPIED, neighbor_state.get_value(&OCCUPIED));
+        if neighbor_state.get_block() == self.block && neighbor_state.get_value(BED_PART) != part {
+            return state.set_value(OCCUPIED, neighbor_state.get_value(OCCUPIED));
         }
 
         vanilla_blocks::AIR.default_state()
@@ -337,9 +336,9 @@ impl BlockBehavior for BedBlock {
         pos: BlockPos,
         _source: &PlacementSource<'_>,
     ) {
-        let facing = state.get_value(&FACING);
+        let facing = state.get_value(FACING);
         let head_pos = facing.relative(pos);
-        let head_state = state.set_value(&BED_PART, BedPart::Head);
+        let head_state = state.set_value(BED_PART, BedPart::Head);
 
         world.set_block(head_pos, head_state, UpdateFlags::UPDATE_ALL);
         world.update_neighbors_at(pos, &vanilla_blocks::AIR);
@@ -364,7 +363,7 @@ impl BlockBehavior for BedBlock {
             return InteractionResult::SuccessServer;
         }
 
-        if head_state.get_value(&OCCUPIED) {
+        if head_state.get_value(OCCUPIED) {
             // TODO: Mirror vanilla `kickVillagerOutOfBed`: find a sleeping
             // villager in this bed AABB and call `stopSleeping` once villager
             // sleeping exists.

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, IntProperty};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_damage_types;
@@ -45,6 +45,8 @@ const FLOWER_CHANCE_TALL: f64 = 0.25;
 pub struct CactusBlock {
     block: BlockRef,
 }
+
+const AGE_15: &IntProperty = &BlockStateProperties::AGE_15;
 
 impl CactusBlock {
     /// Creates a new cactus block behavior.
@@ -128,7 +130,7 @@ impl BlockBehavior for CactusBlock {
 
         // Count cactus blocks below
         let mut height = 1u32;
-        let age = state.get_value(&BlockStateProperties::AGE_15);
+        let age = state.get_value(AGE_15);
 
         while world
             .get_block_state(pos.offset(0, -(height as i32), 0))
@@ -163,13 +165,13 @@ impl BlockBehavior for CactusBlock {
                 vanilla_blocks::CACTUS.default_state(),
                 UpdateFlags::UPDATE_ALL,
             );
-            let new_state = state.set_value(&BlockStateProperties::AGE_15, 0);
+            let new_state = state.set_value(AGE_15, 0);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_NONE);
             world.neighbor_changed(above_pos, &vanilla_blocks::CACTUS);
         }
 
         if age < 15 {
-            let new_state = state.set_value(&BlockStateProperties::AGE_15, age + 1);
+            let new_state = state.set_value(AGE_15, age + 1);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_NONE);
         }
     }

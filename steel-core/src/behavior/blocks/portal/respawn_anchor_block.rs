@@ -35,7 +35,7 @@ use crate::{
 pub struct RespawnAnchorBlock {
     block: BlockRef,
 }
-const CHARGES: IntProperty = BlockStateProperties::RESPAWN_ANCHOR_CHARGES;
+const CHARGES: &IntProperty = &BlockStateProperties::RESPAWN_ANCHOR_CHARGES;
 impl RespawnAnchorBlock {
     const MAX_CHARGES: u8 = 4;
 
@@ -53,7 +53,7 @@ impl RespawnAnchorBlock {
         forced: bool,
     ) -> bool {
         state.get_block() == &vanilla_blocks::RESPAWN_ANCHOR
-            && (forced || state.get_value(&CHARGES) > 0)
+            && (forced || state.get_value(CHARGES) > 0)
             && Self::can_set_spawn(world, pos)
     }
 
@@ -85,8 +85,8 @@ impl RespawnAnchorBlock {
         if state.get_block() != &vanilla_blocks::RESPAWN_ANCHOR {
             return None;
         }
-        let charges = state.get_value(&CHARGES);
-        (charges > 0).then(|| state.set_value(&CHARGES, charges - 1))
+        let charges = state.get_value(CHARGES);
+        (charges > 0).then(|| state.set_value(CHARGES, charges - 1))
     }
 
     #[must_use]
@@ -136,11 +136,11 @@ impl RespawnAnchorBlock {
     }
 
     fn has_charge(state: BlockStateId) -> bool {
-        state.get_value(&CHARGES) > 0
+        state.get_value(CHARGES) > 0
     }
 
     fn can_be_charged(state: BlockStateId) -> bool {
-        state.get_value(&CHARGES) < Self::MAX_CHARGES
+        state.get_value(CHARGES) < Self::MAX_CHARGES
     }
 
     fn is_respawn_fuel(item_stack: &ItemStack) -> bool {
@@ -166,8 +166,8 @@ impl RespawnAnchorBlock {
     }
 
     fn charge(source: Option<&dyn Entity>, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
-        let charges = state.get_value(&CHARGES);
-        let charged_state = state.set_value(&CHARGES, charges + 1);
+        let charges = state.get_value(CHARGES);
+        let charged_state = state.set_value(CHARGES, charges + 1);
         world.set_block(pos, charged_state, UpdateFlags::UPDATE_ALL);
         world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
@@ -274,7 +274,7 @@ impl BlockBehavior for RespawnAnchorBlock {
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
-        Self::analog_output_signal(state.get_value(&CHARGES))
+        Self::analog_output_signal(state.get_value(CHARGES))
     }
 }
 
@@ -328,8 +328,8 @@ mod tests {
         init_vanilla_registry();
 
         let empty = vanilla_blocks::RESPAWN_ANCHOR.default_state();
-        let partial = empty.set_value(&CHARGES, 1);
-        let full = empty.set_value(&CHARGES, RespawnAnchorBlock::MAX_CHARGES);
+        let partial = empty.set_value(CHARGES, 1);
+        let full = empty.set_value(CHARGES, RespawnAnchorBlock::MAX_CHARGES);
 
         assert!(!RespawnAnchorBlock::has_charge(empty));
         assert!(RespawnAnchorBlock::can_be_charged(empty));
@@ -374,12 +374,12 @@ mod tests {
 
         let charged = vanilla_blocks::RESPAWN_ANCHOR
             .default_state()
-            .set_value(&CHARGES, 2);
+            .set_value(CHARGES, 2);
         let Some(depleted) = RespawnAnchorBlock::state_after_charge_consumed(charged) else {
             panic!("charged respawn anchor should produce a depleted state");
         };
 
-        assert_eq!(depleted.get_value(&CHARGES), 1);
+        assert_eq!(depleted.get_value(CHARGES), 1);
         assert!(
             RespawnAnchorBlock::state_after_charge_consumed(
                 vanilla_blocks::RESPAWN_ANCHOR.default_state()

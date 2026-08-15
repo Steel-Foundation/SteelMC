@@ -415,7 +415,7 @@ impl Server {
                 sea_level: world.sea_level,
             },
             online_mode: self.config.online_mode,
-            enforces_secure_chat: self.config.enforce_secure_chat,
+            enforces_secure_chat: self.enforces_secure_chat(),
         });
     }
 

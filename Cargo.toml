@@ -106,7 +106,7 @@ reqwest = { version = "0.13.4", features = [
 ], default-features = false }
 
 # Cryptography
-rsa = { version = "0.10.0-rc.18", features = ["sha2"] }
+rsa = { version = "0.10.0-rc.18", features = ["sha1", "sha2"] }
 rand = "0.10.2"
 aes = "0.9.1"
 cfb8 = "0.9.1"
