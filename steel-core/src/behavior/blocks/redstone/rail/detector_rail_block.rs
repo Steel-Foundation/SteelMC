@@ -217,7 +217,7 @@ impl BlockBehavior for DetectorRailBlock {
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        _world: &dyn LevelReader,
+        _world: &World,
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {

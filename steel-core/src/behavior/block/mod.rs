@@ -1104,6 +1104,9 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns the analog output signal strength (0-15) for comparators.
     ///
+    /// Vanilla accepts a concrete `Level` here rather than `LevelReader`, so this
+    /// hook is live-world-only.
+    ///
     /// Only called if `has_analog_output_signal()` returns `true`.
     /// For containers, this is typically based on how full they are.
     ///
@@ -1119,7 +1122,7 @@ pub trait BlockBehavior: Send + Sync {
     fn get_analog_output_signal(
         &self,
         state: BlockStateId,
-        world: &dyn LevelReader,
+        world: &World,
         pos: BlockPos,
         direction: Direction,
     ) -> i32 {

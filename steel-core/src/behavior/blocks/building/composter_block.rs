@@ -14,7 +14,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::{
     behavior::{BlockBehavior, BlockPlaceContext},
     entity::ai::path::PathComputationType,
-    world::LevelReader,
+    world::World,
 };
 
 /// Vanilla composter behavior required by analog signal readers.
@@ -45,7 +45,7 @@ impl BlockBehavior for ComposterBlock {
     fn get_analog_output_signal(
         &self,
         state: BlockStateId,
-        _world: &dyn LevelReader,
+        _world: &World,
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
@@ -68,13 +68,14 @@ mod tests {
     use super::*;
     use crate::{
         behavior::{BLOCK_BEHAVIORS, init_behaviors},
-        test_support::TestLevel,
+        test_support::fresh_test_world,
     };
 
     #[test]
     fn registered_composter_outputs_its_full_state_level() {
         init_vanilla_registry();
         init_behaviors();
+        let world = fresh_test_world("composter_analog_output");
         let state = vanilla_blocks::COMPOSTER
             .default_state()
             .set_value(LEVEL_COMPOSTER, 8);
@@ -84,7 +85,7 @@ mod tests {
         assert_eq!(
             behavior.get_analog_output_signal(
                 state,
-                &TestLevel::default(),
+                world.as_ref(),
                 BlockPos::ZERO,
                 Direction::North,
             ),

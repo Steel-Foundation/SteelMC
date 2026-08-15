@@ -188,7 +188,7 @@ pub trait Animal: AgeableMob {
     }
 
     /// Returns vanilla `Animal.isBrightEnoughToSpawn`.
-    fn is_bright_enough_to_spawn(level: &dyn LevelReader, pos: BlockPos) -> bool
+    fn is_bright_enough_to_spawn(level: &impl LevelReader, pos: BlockPos) -> bool
     where
         Self: Sized,
     {
@@ -197,7 +197,7 @@ pub trait Animal: AgeableMob {
 
     /// Returns vanilla `Animal.checkAnimalSpawnRules`.
     fn check_animal_spawn_rules(
-        level: &dyn LevelReader,
+        level: &impl LevelReader,
         spawn_reason: EntitySpawnReason,
         pos: BlockPos,
     ) -> bool

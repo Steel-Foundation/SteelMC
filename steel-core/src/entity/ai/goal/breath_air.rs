@@ -9,7 +9,7 @@ use crate::behavior::BlockStateBehaviorExt as _;
 use crate::entity::PathfinderMob;
 use crate::entity::ai::path::PathComputationType;
 use crate::physics::MoverType;
-use crate::world::LevelReader;
+use crate::world::World;
 
 const BREATH_AIR_THRESHOLD: i32 = 140;
 const AIR_SEARCH_HORIZONTAL_RADIUS: f64 = 1.0;
@@ -80,7 +80,7 @@ fn find_air_position(mob: &dyn PathfinderMob) {
     );
 }
 
-fn first_air_position(level: &dyn LevelReader, position: DVec3) -> Option<BlockPos> {
+fn first_air_position(level: &World, position: DVec3) -> Option<BlockPos> {
     let (min, max) = air_search_bounds(position);
     first_matching_pos_in_closed_box(min, max, |pos| gives_air(level, pos))
 }
@@ -118,7 +118,7 @@ fn first_matching_pos_in_closed_box(
     None
 }
 
-fn gives_air(level: &dyn LevelReader, pos: BlockPos) -> bool {
+fn gives_air(level: &World, pos: BlockPos) -> bool {
     let state = level.get_block_state(pos);
     (!state.has_fluid() || state.get_block() == &vanilla_blocks::BUBBLE_COLUMN)
         && state.is_pathfindable(PathComputationType::Land)
