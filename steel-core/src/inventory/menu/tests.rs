@@ -1,15 +1,5 @@
 use std::sync::Arc;
 
-use glam::DVec3;
-use steel_registry::{
-    init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_entities, vanilla_items,
-    vanilla_menu_types,
-};
-use steel_utils::locks::{IntoShared as _, Shared};
-use steel_utils::types::{GameType, UpdateFlags};
-use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
-use uuid::Uuid;
-
 use super::{MenuBuilder, kinds::BasicKind};
 use crate::{
     behavior::init_behaviors,
@@ -26,6 +16,14 @@ use crate::{
     test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
     world::World,
 };
+use glam::DVec3;
+use steel_registry::{
+    init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_entities, vanilla_items,
+    vanilla_menu_types,
+};
+use steel_utils::locks::{IntoShared as _, Shared};
+use steel_utils::types::{GameType, UpdateFlags};
+use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 
 struct SingleItemSlot {
     base: NormalSlot,
@@ -76,9 +74,7 @@ fn perform_partial_swap(world_name: &'static str, game_mode: GameType) -> Partia
     init_vanilla_registry();
     let world = fresh_test_world(world_name);
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let player =
-        TestPlayerBuilder::with_uuid(Arc::clone(&world), Uuid::from_u128(1), "SwapTester", 1)
-            .build();
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "SwapTester", 1).build();
     player.restore_game_modes(game_mode, None);
     player.base().set_position_local(DVec3::new(0.5, 64.0, 0.5));
     {
@@ -231,7 +227,8 @@ fn one_slot_creative_clone_drag_is_a_vanilla_noop() {
 #[test]
 fn partial_swap_overflow_marks_displaced_item_as_thrown() {
     let fixture = perform_partial_swap("menu_partial_swap_overflow", GameType::Survival);
-    let player_id = Uuid::from_u128(1);
+    // The exact UUID is irrelevant; verify the dropped item records this player.
+    let player_id = fixture.player.gameprofile.id;
 
     assert_eq!(fixture.player.inventory.lock().get_item(0).count(), 1);
     let target_item = fixture.target.lock().get_item(0).clone();
