@@ -77,17 +77,12 @@ impl BlockBehavior for SeaPickleBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        let clicked_pos = if context.replaces_clicked_block() {
-            context.hit_pos()
-        } else {
-            context.place_pos()
-        };
-        let state = context.world.get_block_state(clicked_pos);
+        let state = context.world.get_block_state(context.place_pos());
         if state.get_block() == self.block {
             return Some(state.set_value(PICKLES, 4.min(state.get_value(PICKLES) + 1)));
         }
         let replaced_fluid_state = get_fluid_state_from_block(state);
-        let is_water_source = replaced_fluid_state.is_water();
+        let is_water_source = replaced_fluid_state.is_water() && replaced_fluid_state.is_source();
         Some(
             self.block
                 .default_state()
