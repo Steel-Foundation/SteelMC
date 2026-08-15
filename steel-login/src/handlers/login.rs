@@ -3,7 +3,7 @@
 use rsa::Pkcs1v15Encrypt;
 use sha1::Sha1;
 use sha2::Digest;
-use steel_core::player::GameProfile;
+use steel_core::{player::GameProfile, server::DuplicatePlayerWaitError};
 use steel_protocol::{
     packets::login::{CHello, CLoginCompression, CLoginFinished, SHello, SKey},
     utils::ConnectionProtocol,
@@ -17,6 +17,40 @@ use crate::{
 };
 
 impl JavaTcpClient {
+    async fn disconnect_duplicate_player(&self, profile: &GameProfile) -> bool {
+        match self
+            .server
+            .disconnect_duplicate_player_and_wait(profile.id, &self.cancel_token)
+            .await
+        {
+            Ok(()) => true,
+            Err(DuplicatePlayerWaitError::Cancelled) => {
+                self.close();
+                false
+            }
+        }
+    }
+
+    async fn finish_verified_login(
+        &self,
+        profile: GameProfile,
+        reader_encryption: Option<[u8; 16]>,
+    ) -> ConnectionAction {
+        let action = self.send_login_compression().await;
+        if !self.disconnect_duplicate_player(&profile).await {
+            return ConnectionAction::none();
+        }
+        self.send_login_finished(&profile).await;
+        let sequence_result = self.pre_play_state.lock().complete_login(profile);
+        if let Err(error) = sequence_result {
+            return self.reject_unexpected_packet(error).await;
+        }
+        match reader_encryption {
+            Some(key) => action.with_reader_encryption(key),
+            None => action,
+        }
+    }
+
     /// Handles the hello packet during the login state.
     pub(crate) async fn handle_hello(&self, packet: SHello) -> ConnectionAction {
         // The hello UUID is client supplied; only authentication or offline derivation is trusted.
@@ -51,12 +85,7 @@ impl JavaTcpClient {
             properties: vec![],
             profile_actions: None,
         };
-        let action = self.send_login_finished(&profile).await;
-        let sequence_result = self.pre_play_state.lock().complete_login(profile);
-        if let Err(error) = sequence_result {
-            return self.reject_unexpected_packet(error).await;
-        }
-        action
+        self.finish_verified_login(profile, None).await
     }
 
     /// Handles the key packet during the login state, used for encryption.
@@ -160,24 +189,14 @@ impl JavaTcpClient {
             }
         };
 
-        //TODO: Check for duplicate player UUID or name
-
-        let action = self
-            .send_login_finished(&profile)
-            .await
-            .with_reader_encryption(secret_key);
-        let sequence_result = self.pre_play_state.lock().complete_login(profile);
-        if let Err(error) = sequence_result {
-            return self.reject_unexpected_packet(error).await;
-        }
-        action
+        self.finish_verified_login(profile, Some(secret_key)).await
     }
 
-    /// Sends the successful login response.
+    /// Negotiates packet compression before the successful login response.
     ///
     /// # Panics
     /// This function will panic if the compression threshold cannot be converted to an i32.
-    pub(crate) async fn send_login_finished(&self, profile: &GameProfile) -> ConnectionAction {
+    async fn send_login_compression(&self) -> ConnectionAction {
         let mut action = ConnectionAction::none();
         if let Some(compression) = self.server.config.compression {
             self.send_bare_packet_now(CLoginCompression::new(
@@ -192,13 +211,16 @@ impl JavaTcpClient {
             action = ConnectionAction::reader_compression(compression);
         }
 
+        action
+    }
+
+    /// Sends the successful login response.
+    async fn send_login_finished(&self, profile: &GameProfile) {
         self.send_bare_packet_now(CLoginFinished::new(
             profile.into(),
             self.connection_session.session_id(),
         ))
         .await;
-
-        action
     }
 
     /// Handles the login acknowledged packet and transitions to the configuration state.

@@ -384,6 +384,7 @@ use permissions::validate_player_permission_group_update;
 mod player_admission;
 mod player_lifecycle;
 
+pub use player_admission::{DuplicatePlayerWaitError, PlayerJoinReservation};
 use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQueue};
 
 mod world_changes;
@@ -413,6 +414,8 @@ pub struct Server {
     online_players: PlayerMap,
     /// UUIDs reserved by a join or disconnect/save lifecycle transition.
     player_admissions: SyncMutex<FxHashMap<Uuid, PlayerAdmissionState>>,
+    /// Wakes verified logins waiting for an older session with the same UUID to leave.
+    player_admission_changed: Notify,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Command scoreboards isolated by Steel domain.
@@ -706,6 +709,7 @@ impl Server {
             worlds,
             online_players: PlayerMap::new(),
             player_admissions: SyncMutex::new(FxHashMap::default()),
+            player_admission_changed: Notify::new(),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             scoreboards,
