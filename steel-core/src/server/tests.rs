@@ -2019,7 +2019,7 @@ fn test_player_with_connection(
     entity_id: i32,
     connection: Arc<PlayerConnection>,
 ) -> Arc<Player> {
-    TestPlayerBuilder::new(world, uuid, name, entity_id)
+    TestPlayerBuilder::with_uuid(world, uuid, name, entity_id)
         .connection(connection)
         .server(server)
         .build()

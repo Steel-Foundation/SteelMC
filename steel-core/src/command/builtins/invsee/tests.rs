@@ -97,7 +97,7 @@ fn recording_player(uuid: u128, name: &str, entity_id: i32) -> RecordingPlayer {
         inventories: Arc::clone(&inventories),
         callbacks_saw_unlocked_inventories: Arc::clone(&callbacks_saw_unlocked_inventories),
     })));
-    let player = TestPlayerBuilder::new(
+    let player = TestPlayerBuilder::with_uuid(
         Arc::clone(test_world()),
         Uuid::from_u128(uuid),
         name,
@@ -144,7 +144,7 @@ fn player_inventory_updates(packets: &SyncMutex<Vec<EncodedPacket>>) -> Vec<(i32
 
 fn test_player(uuid: u128, name: &str, entity_id: i32) -> Arc<Player> {
     init_vanilla_registry();
-    TestPlayerBuilder::new(
+    TestPlayerBuilder::with_uuid(
         Arc::clone(test_world()),
         Uuid::from_u128(uuid),
         name,

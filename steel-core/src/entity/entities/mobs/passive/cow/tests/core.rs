@@ -66,7 +66,7 @@ fn cow_milks_bucket_into_milk_bucket_for_adults() {
     init_vanilla_registry();
 
     let world = fresh_test_world("cow_milking");
-    let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "Milker", 10).build();
+    let player = TestPlayerBuilder::new(world, "Milker", 10).build();
     player
         .inventory
         .lock()
@@ -92,7 +92,7 @@ fn cow_does_not_milk_when_baby() {
     init_vanilla_registry();
 
     let world = fresh_test_world("baby_cow_milking");
-    let player = TestPlayerBuilder::new(world, Uuid::from_u128(2), "Milker", 11).build();
+    let player = TestPlayerBuilder::new(world, "Milker", 11).build();
     player
         .inventory
         .lock()

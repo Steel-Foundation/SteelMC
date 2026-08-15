@@ -51,7 +51,11 @@ enum TestPlayerContext {
 }
 
 impl TestPlayerBuilder {
-    pub(crate) fn new(
+    pub(crate) fn new(world: Arc<World>, name: impl Into<String>, entity_id: i32) -> Self {
+        Self::with_uuid(world, Uuid::new_v4(), name, entity_id)
+    }
+
+    pub(crate) fn with_uuid(
         world: Arc<World>,
         uuid: Uuid,
         name: impl Into<String>,
