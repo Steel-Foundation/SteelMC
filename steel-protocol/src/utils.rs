@@ -52,8 +52,40 @@ pub enum ConnectionProtocol {
 pub struct RawPacket {
     /// The ID of the packet.
     pub id: i32,
-    /// Could be a `[Box<[u8]>]` but that requires a realloc `if cap != len`
-    pub payload: Vec<u8>,
+    buffer: Box<[u8]>,
+    payload_start: u32,
+}
+
+impl RawPacket {
+    /// Creates a raw packet from an already-separated payload.
+    #[must_use]
+    pub fn new(id: i32, payload: Vec<u8>) -> Self {
+        Self {
+            id,
+            buffer: payload.into_boxed_slice(),
+            payload_start: 0,
+        }
+    }
+
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "packet buffers are limited to MAX_PACKET_DATA_SIZE bytes"
+    )]
+    pub(crate) fn from_buffer(id: i32, buffer: Vec<u8>, payload_start: usize) -> Self {
+        debug_assert!(payload_start <= buffer.len());
+        debug_assert!(payload_start <= MAX_PACKET_DATA_SIZE);
+        Self {
+            id,
+            buffer: buffer.into_boxed_slice(),
+            payload_start: payload_start as u32,
+        }
+    }
+
+    /// Returns the packet payload without its packet ID.
+    #[must_use]
+    pub fn payload(&self) -> &[u8] {
+        &self.buffer[self.payload_start as usize..]
+    }
 }
 
 /// An error that can occur when handling packets.

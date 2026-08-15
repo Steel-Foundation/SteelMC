@@ -7,6 +7,7 @@ mod building;
 mod colored;
 mod container;
 mod decoration;
+mod falling;
 mod fluid;
 mod portal;
 mod redstone;
@@ -32,6 +33,7 @@ pub use decoration::{
     EndRodBlock, StandingSignBlock, TorchBlock, WallBannerBlock, WallHangingSignBlock,
     WallSignBlock, WallTorchBlock, WeatheringCopperChainBlock,
 };
+pub use falling::{ConcretePowderBlock, FallingBlock, SandBlock};
 pub use fluid::{BubbleColumnBlock, LiquidBlock};
 pub use portal::{
     EndGatewayBlock, EndPortalBlock, EndPortalFrameBlock, FireBlock, NetherPortalBlock,

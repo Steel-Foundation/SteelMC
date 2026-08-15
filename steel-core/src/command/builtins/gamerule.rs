@@ -74,9 +74,7 @@ fn set_bool_rule(
     context: &SteelCommandContext<CommandSource>,
     rule: ErasedGameRuleRef,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(value) = context.boolean("value") else {
-        return Err(missing_rule_value(rule));
-    };
+    let value = context.boolean("value")?;
     set_rule(context, rule, GameRuleValue::new(value))
 }
 
@@ -84,9 +82,7 @@ fn set_int_rule(
     context: &SteelCommandContext<CommandSource>,
     rule: ErasedGameRuleRef,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(value) = context.integer("value") else {
-        return Err(missing_rule_value(rule));
-    };
+    let value = context.boolean("value")?;
     set_rule(context, rule, GameRuleValue::new(value))
 }
 
@@ -112,13 +108,6 @@ fn set_rule(
         .component();
     context.source().send_success(&message, true);
     Ok(result)
-}
-
-fn missing_rule_value(rule: ErasedGameRuleRef) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for game rule {} is missing from the command context",
-        rule.key()
-    ))
 }
 
 fn rule_display_name(rule: ErasedGameRuleRef) -> String {

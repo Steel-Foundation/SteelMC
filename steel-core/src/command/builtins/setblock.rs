@@ -54,15 +54,11 @@ fn set_block(
     mode: SetBlockMode,
 ) -> Result<i32, CommandSyntaxError> {
     // Block pos
-    let Some(coordinates) = context.coordinates("pos") else {
-        return Err(missing_argument("pos"));
-    };
+    let coordinates = context.coordinates("pos")?;
     let block_pos = coordinates.block_pos(context.source());
 
     // Block predicate into block state
-    let Some(block_predicate) = context.block_predicate("block") else {
-        return Err(missing_argument("block"));
-    };
+    let block_predicate = context.block_predicate("block")?;
 
     let (block_state, nbt) = match block_predicate {
         BlockPredicate::Block {
@@ -164,12 +160,6 @@ fn set_block(
     );
 
     Ok(1)
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
 }
 
 fn set_block_failed(source: &CommandSource) -> i32 {
