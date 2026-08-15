@@ -62,19 +62,19 @@ pub mod waxables;
 #[path = "generated/weathering.rs"]
 pub mod weathering;
 
-pub(crate) use block::pickup_waterlogged_block;
 pub use block::{
     BlockBehavior, BlockBehaviorRegistry, BlockCollisionBoxes, BlockCollisionContext,
-    BlockEntityCreation, BlockLootContext, DefaultBlockBehavior, EntityFallDamage,
-    EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, RailBehavior,
+    BlockEntityCreation, BlockLootContext, BrushableData, DefaultBlockBehavior, EntityFallDamage,
+    EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, Fallable, RailBehavior,
 };
+pub(crate) use block::{pickup_waterlogged_block, try_drop_experience};
 use block_behaviors::register_block_behaviors;
 pub use context::{
     BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess, PlacementOrientation,
     PlacementSource, UseItemContext, UseOnContext,
 };
 pub use fluid::{FLUID_BEHAVIORS, FluidBehaviorRegistry};
-pub use item::{ItemBehavior, ItemBehaviorRegistry};
+pub use item::{ItemBehavior, ItemBehaviorRegistry, ItemUseAnimation};
 use item_behaviors::register_item_behaviors;
 pub use items::{
     BedItem, BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem,

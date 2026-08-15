@@ -791,9 +791,9 @@ pub use inside_block_effects::{
 pub(crate) use item_based_steering::{ItemBasedSteering, ItemSteerable};
 pub use item_frame::ItemFrame;
 pub use living_base::{
-    ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase, LivingRotationState,
-    LivingSwingState, LivingTravelInput, MobEffectInstance, MobEffectSyncChange,
-    MobEffectSyncPacket,
+    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase,
+    LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
+    MobEffectSyncChange, MobEffectSyncPacket,
 };
 pub use living_entity::LivingEntity;
 pub use manager::{
@@ -810,7 +810,8 @@ pub use movement_sync::{
 };
 pub use projectile::{
     EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
-    ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, compute_margin,
+    ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
+    compute_margin, get_hit_result_on_view_vector,
 };
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, SpawnGroupData};
@@ -1319,6 +1320,7 @@ fn remove_after_changing_dimensions(entity: &dyn Entity) {
 
 pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
     let living_entity = entity.as_living_entity();
+    let sheep = living_entity.and_then(LivingEntity::sheep_loot_state);
     EntityRef {
         entity_type: Some(&entity.entity_type().key),
         flags: EntityRefFlags {
@@ -1331,6 +1333,8 @@ pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
         // TODO: Include equipment and custom name once loot contexts can snapshot entity data.
         equipment: None,
         custom_name: None,
+        sheep_color: sheep.map(|(color, _)| color),
+        sheep_sheared: sheep.map(|(_, sheared)| sheared),
     }
 }
 

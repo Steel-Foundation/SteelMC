@@ -1,8 +1,8 @@
 use super::{
-    Arc, CEntityEvent, CGameEvent, CSystemChat, CTabList, CTickingState, CTickingStep, Color,
-    CommandSender, CommandSource, DisplayResolutor, Entity, GameEventType, Modifier, Player,
-    Server, SprintReport, TabListTickStats, TextComponent, Uuid, client_permission_event,
-    command_tree_packet, translations,
+    Arc, CEntityEvent, CSystemChat, CTabList, CTickingState, CTickingStep, Color, CommandSender,
+    CommandSource, DisplayResolutor, Entity, Modifier, Player, Server, SprintReport,
+    TabListTickStats, TextComponent, Uuid, client_permission_event, command_tree_packet,
+    translations,
 };
 
 impl Server {
@@ -150,11 +150,6 @@ impl Server {
         self.resend_player_permission_context(player);
 
         self.send_ticking_state_to_player(player);
-
-        player.send_packet(CGameEvent {
-            event: GameEventType::ChangeGameMode,
-            data: player.game_mode().into(),
-        });
     }
 
     /// Resends the command tree and vanilla client permission-level projection.

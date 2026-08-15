@@ -1,3 +1,5 @@
+use steel_registry::DyeColor;
+
 use super::*;
 
 /// A trait for living entities that can take damage, heal, and die.
@@ -121,6 +123,11 @@ pub trait LivingEntity: Entity {
     /// Returns a reference to this entity's attribute map.
     fn attributes(&self) -> &SyncMutex<AttributeMap> {
         self.living_base().attributes()
+    }
+
+    /// Vanilla `LivingEntity.getLuck` - non-players contribute no luck to loot.
+    fn get_luck(&self) -> f32 {
+        0.0
     }
 
     /// Packs syncable attributes for initial spawn pairing.
@@ -275,6 +282,15 @@ pub trait LivingEntity: Entity {
     /// Returns vanilla `LivingEntity.isBaby()`.
     fn is_baby(&self) -> bool {
         self.as_ageable_mob().is_some_and(AgeableMob::is_baby)
+    }
+
+    /// Returns the vanilla sheep loot predicate state (`minecraft:components.sheep/color`
+    /// together with `minecraft:type_specific/sheep.sheared`), when this entity is a sheep.
+    ///
+    /// Mirrors `Sheep.get(DataComponents.SHEEP_COLOR)` + `Sheep.isSheared()` for the
+    /// entity loot context.
+    fn sheep_loot_state(&self) -> Option<(DyeColor, bool)> {
+        None
     }
 
     /// Returns vanilla `LivingEntity.getSoundVolume`.
@@ -2931,6 +2947,7 @@ fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
 }
 
 fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_> {
+    let sheep = entity.sheep_loot_state();
     EntityRef {
         entity_type: Some(&entity.entity_type().key),
         flags: EntityRefFlags {
@@ -2943,5 +2960,26 @@ fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_>
         // TODO: Include equipment and custom name once loot contexts can snapshot entity data.
         equipment: None,
         custom_name: None,
+        sheep_color: sheep.map(|(color, _)| color),
+        sheep_sheared: sheep.map(|(_, sheared)| sheared),
     }
+}
+
+/// Runs vanilla `LivingEntity.dropFromShearingLootTable` for `loot_table`, returning the
+/// drops resolved with the vanilla shearing loot params (origin, entity, tool).
+pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
+    entity: &E,
+    loot_table: LootTableRef,
+    tool: &ItemStack,
+    rng: &mut R,
+) -> Vec<ItemStack> {
+    let position = entity.position();
+    let mut context = LootContext::new(rng)
+        .with_origin(position.x, position.y, position.z)
+        .with_this_entity(living_entity_loot_ref(entity))
+        .with_tool(tool);
+    if let Some(level) = entity.level() {
+        context = context.with_game_time(level.game_time());
+    }
+    loot_table.get_random_items(&mut context)
 }

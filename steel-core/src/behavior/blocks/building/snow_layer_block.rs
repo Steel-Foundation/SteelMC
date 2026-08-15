@@ -28,7 +28,7 @@ pub struct SnowLayerBlock {
     block: BlockRef,
 }
 
-const LAYERS: IntProperty = BlockStateProperties::LAYERS;
+const LAYERS: &IntProperty = &BlockStateProperties::LAYERS;
 const MAX_SNOW_LAYERS: u8 = 8;
 
 impl SnowLayerBlock {
@@ -57,7 +57,7 @@ impl BlockBehavior for SnowLayerBlock {
         }
 
         // Below is another snow layer fully filled (LAYERS == 8).
-        below_block == self.block && below.get_value(&LAYERS) == MAX_SNOW_LAYERS
+        below_block == self.block && below.get_value(LAYERS) == MAX_SNOW_LAYERS
     }
 
     fn update_shape(
@@ -88,7 +88,7 @@ impl BlockBehavior for SnowLayerBlock {
     }
 
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
-        let layers = state.get_value(&LAYERS);
+        let layers = state.get_value(LAYERS);
         if !context.with_item(|item| item.item() == REGISTRY.items.by_block(state.get_block()))
             || layers >= MAX_SNOW_LAYERS
         {
@@ -101,7 +101,7 @@ impl BlockBehavior for SnowLayerBlock {
     }
 
     fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
-        computation_type == PathComputationType::Land && state.get_value(&LAYERS) < 5
+        computation_type == PathComputationType::Land && state.get_value(LAYERS) < 5
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -112,8 +112,8 @@ impl BlockBehavior for SnowLayerBlock {
         };
         let state = context.world.get_block_state(pos);
         if state.get_block() == self.block {
-            let layers = state.get_value(&LAYERS);
-            return Some(state.set_value(&LAYERS, MAX_SNOW_LAYERS.min(layers + 1)));
+            let layers = state.get_value(LAYERS);
+            return Some(state.set_value(LAYERS, MAX_SNOW_LAYERS.min(layers + 1)));
         }
         Some(self.block.default_state())
     }

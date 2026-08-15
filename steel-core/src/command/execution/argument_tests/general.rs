@@ -10,7 +10,7 @@ fn score_holder_argument_retains_deferred_names_uuids_selectors_and_wildcards() 
     };
     assert!(matches!(
         chain.top_context().score_holder_argument("value"),
-        Some(ScoreHolderArgument::Name(name)) if name.as_ref() == "Player"
+        Ok(ScoreHolderArgument::Name(name)) if name.as_ref() == "Player"
     ));
 
     let raw_uuid = "00000000-0000-0000-0000-000000000001";
@@ -21,7 +21,7 @@ fn score_holder_argument_retains_deferred_names_uuids_selectors_and_wildcards() 
     };
     assert!(matches!(
         chain.top_context().score_holder_argument("value"),
-        Some(ScoreHolderArgument::Uuid { raw, .. }) if raw.as_ref() == raw_uuid
+        Ok(ScoreHolderArgument::Uuid { raw, .. }) if raw.as_ref() == raw_uuid
     ));
 
     let parse = single.parse("resource @s", TestSource::new());
@@ -30,7 +30,7 @@ fn score_holder_argument_retains_deferred_names_uuids_selectors_and_wildcards() 
     };
     assert!(matches!(
         chain.top_context().score_holder_argument("value"),
-        Some(ScoreHolderArgument::Selector(_))
+        Ok(ScoreHolderArgument::Selector(_))
     ));
     let parse = single.parse("resource @a", TestSource::new());
     assert!(single.context_chain(parse).is_err());
@@ -42,7 +42,7 @@ fn score_holder_argument_retains_deferred_names_uuids_selectors_and_wildcards() 
     };
     assert!(matches!(
         chain.top_context().score_holder_argument("value"),
-        Some(ScoreHolderArgument::Wildcard)
+        Ok(ScoreHolderArgument::Wildcard)
     ));
 
     let parse = single.parse("resource S", TestSource::new());
@@ -64,7 +64,7 @@ fn objective_and_integer_range_arguments_retain_vanilla_values() {
     let Ok(chain) = objective.context_chain(parse) else {
         panic!("objective names should parse");
     };
-    assert_eq!(chain.top_context().objective_name("value"), Some("kills"));
+    assert_eq!(chain.top_context().objective_name("value"), Ok("kills"));
     let parse = objective.parse("resource k", TestSource::new());
     let Ok(suggestions) = objective.completion_suggestions(&parse) else {
         panic!("objective suggestions should build");
@@ -89,7 +89,7 @@ fn objective_and_integer_range_arguments_retain_vanilla_values() {
         let Ok(chain) = range.context_chain(parse) else {
             panic!("{input} should parse as an integer range");
         };
-        let Some(value) = chain.top_context().int_range("value") else {
+        let Ok(value) = chain.top_context().int_range("value") else {
             panic!("integer range should be retained");
         };
         assert!(value.matches(matches));
@@ -117,7 +117,7 @@ fn block_predicate_argument_parses_blocks_tags_properties_and_nbt() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("concrete block predicate should parse");
     };
-    let Some(predicate) = chain.top_context().block_predicate("value") else {
+    let Ok(predicate) = chain.top_context().block_predicate("value") else {
         panic!("block predicate should be retained");
     };
     let Some(oak_x) = steel_registry::REGISTRY
@@ -144,10 +144,10 @@ fn block_predicate_argument_parses_blocks_tags_properties_and_nbt() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("block tag predicate should parse");
     };
-    let Some(BlockPredicate::Tag { .. }) = chain.top_context().block_predicate("value") else {
+    let Ok(BlockPredicate::Tag { .. }) = chain.top_context().block_predicate("value") else {
         panic!("block tag predicate should be retained");
     };
-    let Some(predicate) = chain.top_context().block_predicate("value") else {
+    let Ok(predicate) = chain.top_context().block_predicate("value") else {
         panic!("block tag predicate should be retained");
     };
     assert!(predicate.matches_state(vanilla_blocks::OAK_LOG.default_state()));
@@ -179,7 +179,7 @@ fn block_predicate_argument_validates_concrete_properties_but_defers_tag_propert
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("vague tag properties should parse");
     };
-    let Some(predicate) = chain.top_context().block_predicate("value") else {
+    let Ok(predicate) = chain.top_context().block_predicate("value") else {
         panic!("block tag predicate should be retained");
     };
     assert!(!predicate.matches_state(vanilla_blocks::OAK_LOG.default_state()));
@@ -195,7 +195,7 @@ fn nbt_path_argument_retains_vanilla_path_nodes() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("NBT path should parse");
     };
-    let Some(path) = chain.top_context().nbt_path("value") else {
+    let Ok(path) = chain.top_context().nbt_path("value") else {
         panic!("NBT path should be retained");
     };
 
@@ -209,7 +209,7 @@ fn swizzle_argument_retains_unique_axes_and_rejects_duplicates() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("unique swizzle axes should parse");
     };
-    let Some(axes) = chain.top_context().swizzle("value") else {
+    let Ok(axes) = chain.top_context().swizzle("value") else {
         panic!("swizzle axes should be retained");
     };
 

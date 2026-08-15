@@ -11,14 +11,14 @@ fn biome_or_tag_argument_resolves_registry_entries_and_tags() {
     };
     assert!(matches!(
         chain.top_context().biome_or_tag("value"),
-        Some(BiomeOrTag::Biome(biome)) if *biome == &*vanilla_biomes::PLAINS
+        Ok(BiomeOrTag::Biome(biome)) if *biome == &*vanilla_biomes::PLAINS
     ));
 
     let parse = dispatcher.parse("resource #is_overworld", TestSource::new());
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("registered biome tag should parse");
     };
-    let Some(tag) = chain.top_context().biome_or_tag("value") else {
+    let Ok(tag) = chain.top_context().biome_or_tag("value") else {
         panic!("biome tag should be retained");
     };
     assert!(tag.matches(&vanilla_biomes::PLAINS));
@@ -53,7 +53,7 @@ fn structure_or_tag_key_argument_defers_registry_resolution_until_execution() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("structure keys should parse");
     };
-    let Some(structure) = chain.top_context().structure_or_tag_key("value") else {
+    let Ok(structure) = chain.top_context().structure_or_tag_key("value") else {
         panic!("structure key should be retained");
     };
     assert!(matches!(
@@ -74,7 +74,7 @@ fn structure_or_tag_key_argument_defers_registry_resolution_until_execution() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("structure tag keys should parse");
     };
-    let Some(tag) = chain.top_context().structure_or_tag_key("value") else {
+    let Ok(tag) = chain.top_context().structure_or_tag_key("value") else {
         panic!("structure tag key should be retained");
     };
     assert!(matches!(
@@ -100,7 +100,7 @@ fn structure_or_tag_key_argument_defers_registry_resolution_until_execution() {
         let Ok(chain) = dispatcher.context_chain(parse) else {
             panic!("{input} should retain an unresolved key");
         };
-        let Some(key) = chain.top_context().structure_or_tag_key("value") else {
+        let Ok(key) = chain.top_context().structure_or_tag_key("value") else {
             panic!("unresolved structure key should be retained");
         };
         assert!(key.resolve().is_none());
@@ -127,7 +127,7 @@ fn heightmap_argument_accepts_vanilla_live_world_names_and_suggests_them() {
     };
     assert_eq!(
         chain.top_context().heightmap("value"),
-        Some(HeightmapType::MotionBlockingNoLeaves)
+        Ok(HeightmapType::MotionBlockingNoLeaves)
     );
 
     let parse = dispatcher.parse("resource motion", TestSource::new());
@@ -173,7 +173,7 @@ fn domain_argument_resolves_and_suggests_only_configured_domains() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("configured domain should parse");
     };
-    assert_eq!(chain.top_context().domain("value"), Some("alpha"));
+    assert_eq!(chain.top_context().domain("value"), Ok("alpha"));
 
     let parse = dispatcher.parse("resource gamma", TestSource::new());
     assert!(dispatcher.context_chain(parse).is_err());
@@ -200,7 +200,7 @@ fn world_argument_retains_relative_and_fully_qualified_names() {
     };
     assert_eq!(
         chain.top_context().world_argument("value"),
-        Some(&WorldArgument::Relative("overworld".into()))
+        Ok(&WorldArgument::Relative("overworld".into()))
     );
 
     let parse = dispatcher.parse("resource beta:lobby", TestSource::new());
@@ -209,7 +209,7 @@ fn world_argument_retains_relative_and_fully_qualified_names() {
     };
     assert_eq!(
         chain.top_context().world_argument("value"),
-        Some(&WorldArgument::Key(Identifier::new_static("beta", "lobby")))
+        Ok(&WorldArgument::Key(Identifier::new_static("beta", "lobby")))
     );
 
     let parse = dispatcher.parse("resource a", TestSource::new());
@@ -233,7 +233,7 @@ fn storage_key_argument_parses_and_suggests_source_domain_keys() {
     };
     assert_eq!(
         chain.top_context().identifier("value"),
-        Some(&Identifier::from_steel("data"))
+        Ok(&Identifier::from_steel("data"))
     );
 
     let parse = dispatcher.parse("resource st", TestSource::new());
@@ -265,7 +265,7 @@ fn game_mode_argument_parses_only_vanilla_names() {
         let Ok(chain) = dispatcher.context_chain(parse) else {
             panic!("vanilla game mode name should parse");
         };
-        assert_eq!(chain.top_context().game_mode("value"), Some(expected));
+        assert_eq!(chain.top_context().game_mode("value"), Ok(expected));
     }
 
     for invalid in ["0", "Creative", "missing"] {
@@ -300,7 +300,7 @@ fn entity_anchor_argument_parses_and_suggests_vanilla_names() {
         let Ok(chain) = dispatcher.context_chain(parse) else {
             panic!("vanilla entity anchor should parse");
         };
-        assert_eq!(chain.top_context().entity_anchor("value"), Some(expected));
+        assert_eq!(chain.top_context().entity_anchor("value"), Ok(expected));
     }
 
     let parse = dispatcher.parse("resource missing", TestSource::new());
@@ -330,7 +330,7 @@ fn summonable_entity_argument_resolves_only_registered_factories() {
         };
         assert_eq!(
             chain.top_context().entity_type("value"),
-            Some(&vanilla_entities::PIG)
+            Ok(&vanilla_entities::PIG)
         );
     }
 
@@ -369,7 +369,7 @@ fn enchantment_argument_resolves_and_suggests_registered_entries() {
         };
         assert_eq!(
             chain.top_context().enchantment("value"),
-            Some(&vanilla_enchantments::SHARPNESS)
+            Ok(&vanilla_enchantments::SHARPNESS)
         );
     }
 

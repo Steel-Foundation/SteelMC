@@ -13,6 +13,7 @@ use steel_registry::blocks::shapes::{
     BooleanOp, ShapeChannel, SupportType, VoxelShape, is_block_local_face_sturdy,
     is_shape_full_block, join_unoptimized_boxes,
 };
+use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::{FluidRef, FluidState};
 use steel_registry::item_stack::ItemStack;
@@ -22,7 +23,9 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entities;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, sound_events, vanilla_blocks};
 use steel_registry::{vanilla_damage_types, vanilla_items};
+use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
+use steel_utils::value_providers::IntProvider;
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Identifier, WorldAabb, axis::Axis};
 
 use crate::behavior::BLOCK_BEHAVIORS;
@@ -80,13 +83,45 @@ pub(crate) fn drop_from_block_interact_loot_table(
     key.get_random_items(&mut ctx)
 }
 
+/// Samples and applies enchantment effects to a block experience drop.
+///
+/// Mirrors vanilla `Block.tryDropExperience`. Mining experience is incidental
+/// live-gameplay randomness, so Steel samples it from an unseeded runtime source.
+pub(crate) fn try_drop_experience(
+    world: &Arc<World>,
+    pos: BlockPos,
+    tool: &ItemStack,
+    experience: &IntProvider,
+) {
+    let mut random = LegacyRandom::from_seed(rand::random());
+    let base_experience = experience.sample(&mut random);
+    let experience = tool.apply_unconditional_enchantment_value_effects(
+        EnchantmentEffectComponent::BlockExperience,
+        base_experience as f32,
+    ) as i32;
+    if experience > 0 {
+        world.pop_experience(pos, experience);
+    }
+}
+
 mod context;
 
 pub use context::{
     BlockCollisionBoxes, BlockCollisionContext, BlockEntityCreation, BlockLootContext,
-    EntityFallDamage, EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, PickupResult,
-    RailBehavior,
+    EntityFallDamage, EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, Fallable,
+    PickupResult, RailBehavior,
 };
+
+/// Data exposed by blocks that support vanilla archaeology brushing.
+#[derive(Clone, Copy, Debug)]
+pub struct BrushableData {
+    /// Block produced after brushing completes.
+    pub turns_into: BlockRef,
+    /// Sound played during a successful brush stroke.
+    pub brush_sound: SoundEventRef,
+    /// Sound played when brushing completes.
+    pub brush_completed_sound: SoundEventRef,
+}
 
 mod waterlogging;
 
@@ -1047,6 +1082,14 @@ pub trait BlockBehavior: Send + Sync {
                     && new_block.has_tag(&BlockTag::COPPER_GOLEM_STATUES)))
     }
 
+    /// Returns brushable-block data for archaeology brushing
+    ///
+    /// Vanilla keeps this on `BrushableBlock`; exposing it through block behavior lets
+    /// `BrushItem` stay generic without matching concrete vanilla blocks
+    fn brushable_data(&self, _state: BlockStateId) -> Option<BrushableData> {
+        None
+    }
+
     /// Returns whether this block can provide an analog output signal to comparators.
     ///
     /// Override to return `true` for containers (chests, barrels, hoppers, etc.)
@@ -1160,6 +1203,11 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns the trait object for Blocks that have the Bonemealable trait implemented.
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        None
+    }
+
+    /// Returns the shared vanilla `Fallable` capability implemented by this block.
+    fn as_fallable(&self) -> Option<&dyn Fallable> {
         None
     }
 

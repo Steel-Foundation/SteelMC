@@ -11,7 +11,7 @@ use rand::RngExt;
 use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
 use steel_registry::items::item::BlockHitResult;
 use steel_registry::{
     sound_events, vanilla_blocks, vanilla_game_events, vanilla_items, vanilla_loot_tables,
@@ -25,6 +25,8 @@ use steel_utils::{BlockPos, BlockStateId};
 pub struct PumpkinBlock {
     block: BlockRef,
 }
+
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 
 impl PumpkinBlock {
     /// Creates a pumpkin block behavior.
@@ -102,7 +104,7 @@ impl BlockBehavior for PumpkinBlock {
             vanilla_blocks::CARVED_PUMPKIN
                 .default_state()
                 // TODO: Once CarvedPumpkinBlock is implemented, replace HORIZONTAL_FACING with FACING of CarvedPumpkinBlock.
-                .set_value(&BlockStateProperties::HORIZONTAL_FACING, direction),
+                .set_value(HORIZONTAL_FACING, direction),
             UpdateFlags::UPDATE_IMMEDIATE
                 | UpdateFlags::UPDATE_CLIENTS
                 | UpdateFlags::UPDATE_NEIGHBORS,

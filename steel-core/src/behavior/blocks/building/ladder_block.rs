@@ -8,10 +8,10 @@ use steel_registry::{vanilla_blocks, vanilla_fluids};
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 /// Whether the ladder is waterlogged or not.
-const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 /// The direction the ladder is facing.
-const FACING: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 
 /// Behavior for ladders.
 #[block_behavior]
@@ -37,13 +37,13 @@ impl BlockBehavior for LadderBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        let facing: Direction = state.get_value(&FACING);
+        let facing: Direction = state.get_value(FACING);
 
         if direction == facing.opposite() && !self.can_survive(state, world, pos) {
             return vanilla_blocks::AIR.default_state();
         }
 
-        if state.get_value(&WATERLOGGED) {
+        if state.get_value(WATERLOGGED) {
             let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
             let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
         }
@@ -52,7 +52,7 @@ impl BlockBehavior for LadderBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        let direction = state.get_value(&FACING);
+        let direction = state.get_value(FACING);
         can_attach_to(world, pos.relative(direction.opposite()), direction)
     }
 
@@ -63,7 +63,7 @@ impl BlockBehavior for LadderBlock {
                     .place_pos()
                     .relative(context.clicked_face().opposite()),
             );
-            if state.get_block() == self.block && state.get_value(&FACING) == context.clicked_face()
+            if state.get_block() == self.block && state.get_value(FACING) == context.clicked_face()
             {
                 return None;
             }
@@ -76,15 +76,14 @@ impl BlockBehavior for LadderBlock {
                 continue;
             }
 
-            state = state.set_value(&FACING, direction.opposite());
+            state = state.set_value(FACING, direction.opposite());
             if self.can_survive(state, context.world, context.place_pos()) {
-                return Some(state.set_value(&WATERLOGGED, context.is_water_source()));
+                return Some(state.set_value(WATERLOGGED, context.is_water_source()));
             }
         }
 
         None
     }
-    // TODO: Implement the mirror and rotate functions
 }
 
 /// Returns whether a ladder can be placed on a particular face of a block located at a certain position.
@@ -149,7 +148,7 @@ mod tests {
         let behavior = LadderBlock::new(&vanilla_blocks::LADDER);
         let state = vanilla_blocks::LADDER
             .default_state()
-            .set_value(&FACING, Direction::East);
+            .set_value(FACING, Direction::East);
 
         let updated = behavior.update_shape(
             state,
@@ -168,7 +167,7 @@ mod tests {
         init_vanilla_registry();
         let state = vanilla_blocks::LADDER
             .default_state()
-            .set_value(&WATERLOGGED, true);
+            .set_value(WATERLOGGED, true);
 
         let fluid = state.get_fluid_state();
 

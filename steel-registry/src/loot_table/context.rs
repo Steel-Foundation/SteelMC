@@ -1,4 +1,4 @@
-use super::{BlockStateId, Identifier, ItemStack, RngExt};
+use super::{BlockStateId, DyeColor, Identifier, ItemStack, RngExt};
 
 /// Entity target for loot context lookups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -289,6 +289,11 @@ pub struct EntityRef<'a> {
     pub equipment: Option<&'a EntityEquipmentRef<'a>>,
     /// Entity name (for `copy_name` function).
     pub custom_name: Option<&'a str>,
+    /// Vanilla `minecraft:components.sheep/color` entity data component.
+    pub sheep_color: Option<DyeColor>,
+    /// Vanilla `minecraft:type_specific/sheep.sheared`. `None` when the entity is
+    /// not a sheep, matching vanilla `SheepPredicate.matches`' non-sheep rejection.
+    pub sheep_sheared: Option<bool>,
 }
 
 /// Entity flags for predicate checking.
