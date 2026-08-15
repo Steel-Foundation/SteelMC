@@ -5,8 +5,9 @@ use rand::{Rng, RngExt};
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
+use steel_registry::feature::ConfiguredFeatureRef;
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_blocks;
+use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -23,13 +24,15 @@ use super::BlockRef;
 #[block_behavior]
 pub struct MushroomBlock {
     block: BlockRef,
+    #[json_arg(vanilla_configured_features, json = "feature")]
+    feature: ConfiguredFeatureRef,
 }
 
 impl MushroomBlock {
     /// Creates a new mushroom block behavior.
     #[must_use]
-    pub const fn new(block: BlockRef) -> Self {
-        Self { block }
+    pub const fn new(block: BlockRef, feature: ConfiguredFeatureRef) -> Self {
+        Self { block, feature: feature }
     }
     fn may_place_on(state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         state.is_solid_render()
@@ -120,7 +123,7 @@ impl Bonemealable for MushroomBlock {
     pos: BlockPos,
 ) -> bool
 {
-    let feature_holder = Registry(())
+    let feature_holder = REGISTRY.configured_features.
 }
     fn is_bonemeal_success(
         &self,
