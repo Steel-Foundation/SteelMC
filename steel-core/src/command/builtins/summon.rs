@@ -30,9 +30,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
             .executes(|context| summon_entity(context, context.source().position()))
             .then(
                 argument("pos", SteelArgumentType::vec3(true)).executes(|context| {
-                    let Some(position) = context.coordinates("pos") else {
-                        return Err(missing_argument("pos"));
-                    };
+                    let position = context.coordinates("pos")?;
                     summon_entity(context, position.position(context.source()))
                 }),
             ),
@@ -45,9 +43,7 @@ fn summon_entity(
     context: &SteelCommandContext<CommandSource>,
     position: DVec3,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(entity_type) = context.entity_type("entity") else {
-        return Err(missing_argument("entity"));
-    };
+    let entity_type = context.entity_type("entity")?;
     let entity = create_entity(context, entity_type, position)?;
     let message = translations::COMMANDS_SUMMON_SUCCESS
         .message([entity.display_name()])
@@ -98,12 +94,6 @@ pub(super) fn create_entity(
 
 fn command_failed(translation: &'static Translation<0>) -> CommandSyntaxError {
     CommandSyntaxError::dynamic(TextComponent::from(translation))
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
 }
 
 #[cfg(test)]
