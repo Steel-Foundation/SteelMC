@@ -33,11 +33,7 @@ fn weather_literal(
         .executes(move |context| set_weather(context, weather, DEFAULT_DURATION))
         .then(
             argument("duration", SteelArgumentType::time(1)).executes(move |context| {
-                let Some(duration) = context.time("duration") else {
-                    return Err(CommandSyntaxError::dynamic(
-                        "Parsed weather duration is missing from the command context",
-                    ));
-                };
+                let duration = context.time("duration")?;
                 set_weather(context, weather, duration)
             }),
         )

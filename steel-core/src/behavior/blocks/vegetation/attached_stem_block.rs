@@ -21,8 +21,8 @@ use crate::{
     world::{LevelReader, ScheduledTickAccess},
 };
 
-const AGE: IntProperty = BlockStateProperties::AGE_7;
-const FACING: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
+const AGE: &IntProperty = &BlockStateProperties::AGE_7;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 const MAX_AGE: u8 = 7;
 
 /// Vanilla attached pumpkin and melon stem behavior.
@@ -77,8 +77,8 @@ impl BlockBehavior for AttachedStemBlock {
         _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if direction == state.get_value(&FACING) && neighbor_state.get_block() != self.fruit {
-            return self.stem.default_state().set_value(&AGE, MAX_AGE);
+        if direction == state.get_value(FACING) && neighbor_state.get_block() != self.fruit {
+            return self.stem.default_state().set_value(AGE, MAX_AGE);
         }
 
         survival_update_shape(self, state, world, pos)
@@ -155,7 +155,7 @@ mod tests {
             vanilla_blocks::AIR.default_state(),
         );
         assert_eq!(reverted.get_block(), &vanilla_blocks::PUMPKIN_STEM);
-        assert_eq!(reverted.get_value(&AGE), MAX_AGE);
+        assert_eq!(reverted.get_value(AGE), MAX_AGE);
     }
 
     #[test]
@@ -226,7 +226,7 @@ mod tests {
                 wrong_fruit.default_state(),
             );
             assert_eq!(reverted.get_block(), stem);
-            assert_eq!(reverted.get_value(&AGE), MAX_AGE);
+            assert_eq!(reverted.get_value(AGE), MAX_AGE);
 
             let clone = behavior
                 .get_clone_item_stack(attached_block, attached, false)

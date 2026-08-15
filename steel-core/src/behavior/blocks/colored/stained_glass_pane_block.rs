@@ -30,7 +30,7 @@ pub struct StainedGlassPaneBlock {
 }
 
 /// Waterlogged property.
-const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl StainedGlassPaneBlock {
     /// Creates a new pane block behavior for the given block.
@@ -50,7 +50,7 @@ impl BlockBehavior for StainedGlassPaneBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(&WATERLOGGED) {
+        if state.get_value(WATERLOGGED) {
             let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
             world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
         }
@@ -60,7 +60,7 @@ impl BlockBehavior for StainedGlassPaneBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(
             get_connection_state(self.block, context.world, &context.place_pos())
-                .set_value(&WATERLOGGED, context.is_water_source()),
+                .set_value(WATERLOGGED, context.is_water_source()),
         )
     }
 

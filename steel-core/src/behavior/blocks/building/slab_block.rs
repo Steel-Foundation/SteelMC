@@ -10,7 +10,7 @@ use steel_registry::{
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt as _,
-        properties::{BlockStateProperties, Direction, SlabType},
+        properties::{BlockStateProperties, BoolProperty, Direction, EnumProperty, SlabType},
     },
     fluid::{FluidRef, FluidState},
     vanilla_fluids,
@@ -28,6 +28,9 @@ use crate::{
 pub struct SlabBlock {
     block: BlockRef,
 }
+
+const SLAB_TYPE: &EnumProperty<SlabType> = &BlockStateProperties::SLAB_TYPE;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl SlabBlock {
     /// Creates a new slab block behavior for the given block.
@@ -54,22 +57,16 @@ impl BlockBehavior for SlabBlock {
         if existing_state.get_block() == self.block {
             return Some(
                 existing_state
-                    .set_value(&BlockStateProperties::SLAB_TYPE, SlabType::Double)
-                    .set_value(&BlockStateProperties::WATERLOGGED, false),
+                    .set_value(SLAB_TYPE, SlabType::Double)
+                    .set_value(WATERLOGGED, false),
             );
         }
 
         Some(
             self.block
                 .default_state()
-                .set_value(
-                    &BlockStateProperties::SLAB_TYPE,
-                    Self::single_slab_type_for_placement(context),
-                )
-                .set_value(
-                    &BlockStateProperties::WATERLOGGED,
-                    context.is_water_source(),
-                ),
+                .set_value(SLAB_TYPE, Self::single_slab_type_for_placement(context))
+                .set_value(WATERLOGGED, context.is_water_source()),
         )
     }
 
@@ -82,7 +79,7 @@ impl BlockBehavior for SlabBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
+        if state.get_value(WATERLOGGED) {
             let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
             let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
         }
@@ -91,8 +88,7 @@ impl BlockBehavior for SlabBlock {
     }
 
     fn can_place_liquid(&self, state: BlockStateId, fluid: FluidRef) -> bool {
-        state.try_get_value(&BlockStateProperties::SLAB_TYPE) != Some(SlabType::Double)
-            && fluid == &vanilla_fluids::WATER
+        state.try_get_value(SLAB_TYPE) != Some(SlabType::Double) && fluid == &vanilla_fluids::WATER
     }
 
     fn place_liquid(
@@ -102,7 +98,7 @@ impl BlockBehavior for SlabBlock {
         state: BlockStateId,
         fluid_state: FluidState,
     ) -> bool {
-        state.try_get_value(&BlockStateProperties::SLAB_TYPE) != Some(SlabType::Double)
+        state.try_get_value(SLAB_TYPE) != Some(SlabType::Double)
             && place_simple_waterlogged_liquid(level, pos, state, fluid_state)
     }
 }
@@ -175,8 +171,8 @@ mod tests {
         let behavior = SlabBlock::new(&vanilla_blocks::SMOOTH_STONE_SLAB);
         let double_slab = vanilla_blocks::SMOOTH_STONE_SLAB
             .default_state()
-            .set_value(&BlockStateProperties::SLAB_TYPE, SlabType::Double)
-            .set_value(&BlockStateProperties::WATERLOGGED, false);
+            .set_value(SLAB_TYPE, SlabType::Double)
+            .set_value(WATERLOGGED, false);
 
         assert!(!behavior.can_place_liquid(double_slab, &vanilla_fluids::WATER));
     }
@@ -187,8 +183,8 @@ mod tests {
         let behavior = SlabBlock::new(&vanilla_blocks::SMOOTH_STONE_SLAB);
         let bottom_slab = vanilla_blocks::SMOOTH_STONE_SLAB
             .default_state()
-            .set_value(&BlockStateProperties::SLAB_TYPE, SlabType::Bottom)
-            .set_value(&BlockStateProperties::WATERLOGGED, false);
+            .set_value(SLAB_TYPE, SlabType::Bottom)
+            .set_value(WATERLOGGED, false);
 
         assert!(behavior.can_place_liquid(bottom_slab, &vanilla_fluids::WATER));
     }
@@ -199,8 +195,8 @@ mod tests {
         let behavior = SlabBlock::new(&vanilla_blocks::SMOOTH_STONE_SLAB);
         let bottom_slab = vanilla_blocks::SMOOTH_STONE_SLAB
             .default_state()
-            .set_value(&BlockStateProperties::SLAB_TYPE, SlabType::Bottom)
-            .set_value(&BlockStateProperties::WATERLOGGED, false);
+            .set_value(SLAB_TYPE, SlabType::Bottom)
+            .set_value(WATERLOGGED, false);
 
         assert!(!behavior.can_place_liquid(bottom_slab, &vanilla_fluids::FLOWING_WATER));
     }

@@ -491,7 +491,7 @@ impl JavaTcpClient {
 
     /// Handles a handshake packet.
     pub async fn handle_handshake(&self, packet: RawPacket) -> Result<(), PacketError> {
-        let data = &mut Cursor::new(packet.payload.as_slice());
+        let data = &mut Cursor::new(packet.payload());
 
         match packet.id {
             handshake::S_INTENTION => {
@@ -527,7 +527,7 @@ impl JavaTcpClient {
 
     /// Handles a status packet.
     pub async fn handle_status(&self, packet: RawPacket) -> Result<(), PacketError> {
-        let data = &mut Cursor::new(packet.payload.as_slice());
+        let data = &mut Cursor::new(packet.payload());
 
         match packet.id {
             status::S_STATUS_REQUEST => {
@@ -547,7 +547,7 @@ impl JavaTcpClient {
         &self,
         packet: RawPacket,
     ) -> Result<ConnectionAction, PacketError> {
-        let data = &mut Cursor::new(packet.payload.as_slice());
+        let data = &mut Cursor::new(packet.payload());
 
         match packet.id {
             login_packets::S_HELLO => Ok(self.handle_hello(SHello::read_packet(data)?).await),
@@ -565,7 +565,7 @@ impl JavaTcpClient {
         &self,
         packet: RawPacket,
     ) -> Result<ConnectionAction, PacketError> {
-        let data = &mut Cursor::new(packet.payload.as_slice());
+        let data = &mut Cursor::new(packet.payload());
 
         match packet.id {
             config::S_CUSTOM_PAYLOAD => {

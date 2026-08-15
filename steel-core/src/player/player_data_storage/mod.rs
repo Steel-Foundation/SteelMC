@@ -577,10 +577,11 @@ impl FilePlayerDataStorage {
     }
 
     async fn sync_parent(parent: &Path) -> io::Result<()> {
-        #[cfg(unix)]
-        fs::File::open(parent).await?.sync_all().await?;
-        #[cfg(not(unix))]
-        let _ = parent;
+        // Runtime check so the `.await`s stay present on all platforms for clippy;
+        // on Windows the branch never runs (directory fsync is unix-only).
+        if cfg!(unix) {
+            fs::File::open(parent).await?.sync_all().await?;
+        }
         Ok(())
     }
 }

@@ -22,9 +22,9 @@ use crate::world::game_event::GameEventContext;
 use crate::world::tick_scheduler::TickPriority;
 use crate::world::{ClipHitResult, LevelReader, ScheduledTickAccess, SignalGetter as _, World};
 
-const TILT: EnumProperty<Tilt> = BlockStateProperties::TILT;
-const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
-const FACING: EnumProperty<Direction> = BlockStateProperties::FACING;
+const TILT: &EnumProperty<Tilt> = &BlockStateProperties::TILT;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
 
 /// Vanilla `BigDripleafBlock` survival.
 ///
@@ -73,8 +73,8 @@ impl BigDripleafBlock {
     }
 
     fn set_tilt(state_id: BlockStateId, world: &Arc<World>, pos: &BlockPos, new_tilt: Tilt) {
-        let previous_tilt = state_id.get_value(&TILT);
-        let new_state = state_id.set_value(&TILT, new_tilt.clone());
+        let previous_tilt = state_id.get_value(TILT);
+        let new_state = state_id.set_value(TILT, new_tilt.clone());
 
         world.set_block(*pos, new_state, UpdateFlags::UPDATE_CLIENTS);
 
@@ -94,7 +94,7 @@ impl BigDripleafBlock {
 
     fn reset_tilt(state_id: BlockStateId, world: &Arc<World>, pos: &BlockPos) {
         Self::set_tilt(state_id, world, pos, Tilt::None);
-        let tilt = state_id.get_value(&TILT);
+        let tilt = state_id.get_value(TILT);
 
         if tilt != Tilt::None {
             Self::play_tilt_sound(world, pos, &BLOCK_BIG_DRIPLEAF_TILT_UP);
@@ -123,10 +123,10 @@ impl BigDripleafBlock {
         let new_state = vanilla_blocks::BIG_DRIPLEAF
             .default_state()
             .set_value(
-                &WATERLOGGED,
+                WATERLOGGED,
                 fluid_state.is_source() && fluid_state.is_water(),
             )
-            .set_value(&FACING, facing);
+            .set_value(FACING, facing);
         world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL)
     }
 
@@ -188,7 +188,7 @@ impl BlockBehavior for BigDripleafBlock {
         if direction == Direction::Down && !self.can_survive(state, world, pos) {
             return vanilla_blocks::AIR.default_state();
         }
-        if state.get_value(&WATERLOGGED) {
+        if state.get_value(WATERLOGGED) {
             world.schedule_fluid_tick_default(
                 pos,
                 &vanilla_fluids::WATER,
@@ -211,7 +211,7 @@ impl BlockBehavior for BigDripleafBlock {
             || below_state.get_block() == &vanilla_blocks::BIG_DRIPLEAF_STEM;
         let facing = {
             if below_is_dripleaf_part {
-                below_state.get_value(&FACING)
+                below_state.get_value(FACING)
             } else {
                 context.horizontal_direction().opposite()
             }
@@ -219,8 +219,8 @@ impl BlockBehavior for BigDripleafBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(&WATERLOGGED, context.is_water_source())
-                .set_value(&FACING, facing),
+                .set_value(WATERLOGGED, context.is_water_source())
+                .set_value(FACING, facing),
         )
     }
 
@@ -233,7 +233,7 @@ impl BlockBehavior for BigDripleafBlock {
         _effect_collector: &mut InsideBlockEffectCollector,
         _is_precise: bool,
     ) {
-        let tilt = state.get_value(&TILT);
+        let tilt = state.get_value(TILT);
         if tilt == Tilt::None
             && BigDripleafBlock::can_entity_tilt(&pos, entity)
             && !world.has_neighbor_signal(pos)
@@ -264,7 +264,7 @@ impl BlockBehavior for BigDripleafBlock {
             return;
         }
 
-        let tilt = state.get_value(&TILT);
+        let tilt = state.get_value(TILT);
 
         if tilt == Tilt::Unstable {
             Self::set_tilt_and_schedule_tick(
@@ -327,7 +327,7 @@ impl Bonemealable for BigDripleafBlock {
     ) {
         let above_pos = pos.above();
         if Self::can_grow_into(world, above_pos) {
-            let facing = state.get_value(&FACING);
+            let facing = state.get_value(FACING);
             BigDripleafStemBlock::place(
                 world,
                 pos,
@@ -378,7 +378,7 @@ mod tests {
         ));
         let tilted = vanilla_blocks::BIG_DRIPLEAF
             .default_state()
-            .set_value(&BlockStateProperties::TILT, Tilt::Partial);
+            .set_value(TILT, Tilt::Partial);
         assert!(world.set_block(pos, tilted, UpdateFlags::UPDATE_NONE));
         let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::BIG_DRIPLEAF);
 
@@ -389,12 +389,7 @@ mod tests {
             &vanilla_blocks::REDSTONE_BLOCK,
             false,
         );
-        assert_eq!(
-            world
-                .get_block_state(pos)
-                .get_value(&BlockStateProperties::TILT),
-            Tilt::None,
-        );
+        assert_eq!(world.get_block_state(pos).get_value(TILT), Tilt::None,);
 
         let entity = Arc::new(RawEntity::new(
             7_003,
@@ -412,12 +407,7 @@ mod tests {
             &mut effects,
             true,
         );
-        assert_eq!(
-            world
-                .get_block_state(pos)
-                .get_value(&BlockStateProperties::TILT),
-            Tilt::None,
-        );
+        assert_eq!(world.get_block_state(pos).get_value(TILT), Tilt::None,);
         assert!(!world.has_scheduled_block_tick(pos, &vanilla_blocks::BIG_DRIPLEAF));
     }
 }
