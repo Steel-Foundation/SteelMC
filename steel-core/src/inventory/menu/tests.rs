@@ -227,7 +227,6 @@ fn one_slot_creative_clone_drag_is_a_vanilla_noop() {
 #[test]
 fn partial_swap_overflow_marks_displaced_item_as_thrown() {
     let fixture = perform_partial_swap("menu_partial_swap_overflow", GameType::Survival);
-    // The exact UUID is irrelevant; verify the dropped item records this player.
     let player_id = fixture.player.gameprofile.id;
 
     assert_eq!(fixture.player.inventory.lock().get_item(0).count(), 1);
