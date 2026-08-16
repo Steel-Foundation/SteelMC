@@ -253,7 +253,9 @@ mod tests {
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
     use crate::entity::Entity;
-    use crate::entity::entities::{FireworkRocketEntity, PigEntity, PrimedTntEntity};
+    use crate::entity::entities::{
+        EnderPearlEntity, FireworkRocketEntity, PigEntity, PrimedTntEntity,
+    };
     use crate::player::ResetReason;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
     use crate::world::{ExplosionInteraction, ExplosionOptions};
@@ -613,6 +615,45 @@ mod tests {
             .get_behavior(&vanilla_blocks::TNT)
             .on_projectile_hit(state, &world, &clip_hit, &projectile);
 
+        assert!(world.get_block_state(pos).is_air());
+        assert_eq!(primed_tnt_entities(&world, pos).len(), 1);
+    }
+
+    #[test]
+    fn ender_pearl_moving_from_lava_primes_tnt_on_hit() {
+        let (world, pos) = setup_world("tnt_burning_ender_pearl");
+        assert!(world.set_block(
+            pos.west(),
+            vanilla_blocks::LAVA.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::TNT.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+
+        let pearl = Arc::new(EnderPearlEntity::new(
+            &vanilla_entities::ENDER_PEARL,
+            next_entity_id(),
+            DVec3::new(
+                f64::from(pos.x()) - 0.5,
+                f64::from(pos.y()) + 0.5,
+                f64::from(pos.z()) + 0.5,
+            ),
+            Arc::downgrade(&world),
+        ));
+        let entity: SharedEntity = pearl.clone();
+        world
+            .try_add_entity(entity)
+            .expect("ender pearl should enter the loaded test chunk");
+        pearl.set_velocity(DVec3::X * 1.5);
+        assert!(!pearl.is_on_fire());
+
+        pearl.tick();
+
+        assert!(pearl.is_removed());
+        assert!(pearl.is_on_fire());
         assert!(world.get_block_state(pos).is_air());
         assert_eq!(primed_tnt_entities(&world, pos).len(), 1);
     }
