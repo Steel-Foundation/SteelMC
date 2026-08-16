@@ -113,9 +113,7 @@ fn teleport_targets_facing_entity_feet(
 fn teleport_targets_facing_entity_anchor(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(anchor) = context.entity_anchor("facingAnchor") else {
-        return Err(missing_argument("facingAnchor"));
-    };
+    let anchor = context.entity_anchor("facingAnchor")?;
     teleport_targets_facing_entity(context, anchor)
 }
 
@@ -175,9 +173,7 @@ fn required_coordinates(
     context: &SteelCommandContext<CommandSource>,
     name: &str,
 ) -> Result<Coordinates, CommandSyntaxError> {
-    context
-        .coordinates(name)
-        .ok_or_else(|| missing_argument(name))
+    context.coordinates(name)
 }
 
 fn teleport_to_entity(
@@ -477,12 +473,6 @@ fn send_position_success(source: &CommandSource, targets: &[SharedEntity], posit
 fn target_count(targets: &[SharedEntity]) -> Result<i32, CommandSyntaxError> {
     i32::try_from(targets.len())
         .map_err(|_| CommandSyntaxError::dynamic("Target count exceeds the command result range"))
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
 }
 
 #[cfg(test)]

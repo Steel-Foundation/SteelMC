@@ -84,7 +84,6 @@ impl BlockBehavior for LadderBlock {
 
         None
     }
-    // TODO: Implement the mirror and rotate functions
 }
 
 /// Returns whether a ladder can be placed on a particular face of a block located at a certain position.
