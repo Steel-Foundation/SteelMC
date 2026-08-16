@@ -103,15 +103,11 @@ fn data_match_count(
             NbtTag::Compound(entity.nbt_for_data_compare())
         }
         DataSource::Storage => {
-            let key = context
-                .identifier("source")
-                .ok_or_else(|| missing_argument("source"))?;
+            let key = context.identifier("source")?;
             NbtTag::Compound(source_command_storage(context)?.get(key))
         }
     };
-    let path = context
-        .nbt_path("path")
-        .ok_or_else(|| missing_argument("path"))?;
+    let path = context.nbt_path("path")?;
     matching_data_count(path, &tag)
 }
 
@@ -143,8 +139,7 @@ fn dimension_matches(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<bool, CommandSyntaxError> {
     let world = context
-        .world_argument("dimension")
-        .ok_or_else(|| missing_argument("dimension"))?
+        .world_argument("dimension")?
         .resolve(context.source())?;
     Ok(Arc::ptr_eq(context.source().world(), &world))
 }
@@ -338,9 +333,7 @@ fn block_condition(expected: bool) -> Builder {
 
 fn block_matches(context: &SteelCommandContext<CommandSource>) -> Result<bool, CommandSyntaxError> {
     let position = loaded_block_position(context, "pos")?;
-    let predicate = context
-        .block_predicate("block")
-        .ok_or_else(|| missing_argument("block"))?;
+    let predicate = context.block_predicate("block")?;
     let world = context.source().world();
     if !predicate.matches_state(world.get_block_state(position)) {
         return Ok(false);
@@ -376,9 +369,7 @@ fn biome_matches(context: &SteelCommandContext<CommandSource>) -> Result<bool, C
     let biome = world.biome_at(position).ok_or_else(|| {
         CommandSyntaxError::dynamic(TextComponent::from(&translations::ARGUMENT_POS_UNLOADED))
     })?;
-    let expected = context
-        .biome_or_tag("biome")
-        .ok_or_else(|| missing_argument("biome"))?;
+    let expected = context.biome_or_tag("biome")?;
     Ok(expected.matches(biome))
 }
 
@@ -386,10 +377,7 @@ pub(super) fn loaded_block_position(
     context: &SteelCommandContext<CommandSource>,
     name: &str,
 ) -> Result<steel_utils::BlockPos, CommandSyntaxError> {
-    let position = context
-        .coordinates(name)
-        .ok_or_else(|| missing_argument(name))?
-        .block_pos(context.source());
+    let position = context.coordinates(name)?.block_pos(context.source());
     let world = context.source().world();
     if !world.is_full_chunk_loaded_at(position) {
         return Err(unloaded_position());
@@ -439,10 +427,7 @@ fn loaded_condition(expected: bool) -> Builder {
 fn loaded_matches(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<bool, CommandSyntaxError> {
-    let position = context
-        .coordinates("pos")
-        .ok_or_else(|| missing_argument("pos"))?
-        .block_pos(context.source());
+    let position = context.coordinates("pos")?.block_pos(context.source());
     Ok(context
         .source()
         .world()
@@ -525,9 +510,7 @@ fn score_range_matches(
     let scoreboard = source_scoreboard(context)?;
     let target = context.score_holder("target")?;
     let target_objective = objective(context, scoreboard, "targetObjective")?;
-    let range = context
-        .int_range("range")
-        .ok_or_else(|| missing_argument("range"))?;
+    let range = context.int_range("range")?;
     Ok(scoreboard
         .score(&target, &target_objective)
         .is_some_and(|score| range.matches(score)))
@@ -618,12 +601,6 @@ fn conditional_failed_count(count: i32) -> CommandSyntaxError {
         .message([TextComponent::from(count.to_string())])
         .component();
     CommandSyntaxError::dynamic(message)
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
 }
 
 #[cfg(test)]

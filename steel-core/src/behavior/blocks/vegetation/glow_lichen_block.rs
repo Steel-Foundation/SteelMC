@@ -13,7 +13,7 @@ use super::BlockRef;
 ///
 /// Inherits `canSurvive` from `MultifaceBlock`. Subclass-specific spread and
 /// bonemeal behavior is left as a TODO.
-// TODO: Implement spread, bonemeal, and rotation/mirror overrides.
+// TODO: Implement spread, and bonemeal.
 #[block_behavior]
 pub struct GlowLichenBlock {
     multiface: MultifaceBlock,

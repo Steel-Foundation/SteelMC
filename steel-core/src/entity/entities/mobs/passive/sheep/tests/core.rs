@@ -264,7 +264,7 @@ fn sheep_shearing_drop_spawns_one_item_entity_per_count_unit() {
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     let sheep = SheepEntity::new(
         &vanilla_entities::SHEEP,
-        1,
+        next_entity_id(),
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(&world),
     );
