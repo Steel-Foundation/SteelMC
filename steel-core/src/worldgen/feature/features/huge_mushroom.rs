@@ -71,14 +71,7 @@ impl FeatureDecorationRunner {
 
         match kind {
             HugeMushroomKind::Brown => {
-                Self::make_brown_mushroom_cap(
-                    level,
-                    registry,
-                    random,
-                    config,
-                    origin,
-                    tree_height,
-                );
+                Self::make_brown_mushroom_cap(level, registry, random, config, origin, tree_height);
             }
             HugeMushroomKind::Red => {
                 Self::make_red_mushroom_cap(level, registry, random, config, origin, tree_height);
@@ -104,8 +97,7 @@ impl FeatureDecorationRunner {
         tree_height: i32,
         kind: HugeMushroomKind,
     ) -> bool {
-        if origin.y() < level.min_y() + 1
-            || origin.y() + tree_height + 2 > level.max_y_exclusive()
+        if origin.y() < level.min_y() + 1 || origin.y() + tree_height + 2 > level.max_y_exclusive()
         {
             return false;
         }
@@ -251,11 +243,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn place_huge_mushroom_block(
-        level: &impl LevelAccessor,
-        pos: BlockPos,
-        state: BlockStateId,
-    ) {
+    fn place_huge_mushroom_block(level: &impl LevelAccessor, pos: BlockPos, state: BlockStateId) {
         let current_state = level.get_block_state(pos);
         if current_state.is_air()
             || current_state

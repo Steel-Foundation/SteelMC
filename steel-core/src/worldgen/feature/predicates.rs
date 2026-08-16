@@ -70,9 +70,9 @@ impl FeatureDecorationRunner {
                 let fluid_state = get_fluid_state_from_block(state);
                 fluids.0.contains(&fluid_state.fluid_id)
             }
-            BlockPredicate::Solid { offset } => {
-                level.get_block_state(Self::offset(origin, offset)).is_solid()
-            }
+            BlockPredicate::Solid { offset } => level
+                .get_block_state(Self::offset(origin, offset))
+                .is_solid(),
             BlockPredicate::WouldSurvive { state, offset } => {
                 let state = Self::block_state_from_data(registry, state);
                 let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());

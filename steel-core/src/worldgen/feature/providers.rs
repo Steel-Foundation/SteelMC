@@ -71,8 +71,7 @@ impl FeatureDecorationRunner {
                 source,
                 values,
             } => {
-                let state =
-                    Self::sample_block_state_provider(level, registry, random, source, pos);
+                let state = Self::sample_block_state_provider(level, registry, random, source, pos);
                 let value = values.sample(random);
                 Self::set_int_property_by_name(registry, state, property, value)
             }
