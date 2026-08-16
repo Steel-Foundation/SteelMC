@@ -7,6 +7,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction, WorldAabb};
 
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{BlockBehavior, BlockPlaceContext, RailBehavior};
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, SignalQueryContext, World};
@@ -90,7 +91,11 @@ impl DetectorRailBlock {
     }
 
     fn signal(state: BlockStateId) -> i32 {
-        if state.get_value(POWERED) { 15 } else { 0 }
+        if state.get_value(POWERED) {
+            MAX_REDSTONE_SIGNAL
+        } else {
+            MIN_REDSTONE_SIGNAL
+        }
     }
 }
 
@@ -206,7 +211,7 @@ impl BlockBehavior for DetectorRailBlock {
         if direction == Direction::Up {
             Self::signal(state)
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
@@ -224,7 +229,7 @@ impl BlockBehavior for DetectorRailBlock {
         // Command success counts and container fullness require concrete
         // minecart capabilities. No currently implemented Steel minecart
         // exposes either, for which vanilla's observable result is zero.
-        0
+        MIN_REDSTONE_SIGNAL
     }
 
     fn as_rail(&self) -> Option<&dyn RailBehavior> {

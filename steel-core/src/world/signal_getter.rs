@@ -7,6 +7,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use super::LevelReader;
 use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::blocks::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 
 /// State carried through one synchronous redstone signal query.
 ///
@@ -98,7 +99,7 @@ impl<T: LevelReader> SignalGetter for T {
     }
 
     fn has_signal(&self, pos: BlockPos, direction: Direction) -> bool {
-        get_signal(self, pos, direction, SignalQueryContext::DEFAULT) > 0
+        get_signal(self, pos, direction, SignalQueryContext::DEFAULT) > MIN_REDSTONE_SIGNAL
     }
 
     fn get_signal(&self, pos: BlockPos, direction: Direction) -> i32 {
@@ -145,7 +146,7 @@ pub(crate) fn get_direct_signal_to(
     pos: BlockPos,
     context: SignalQueryContext,
 ) -> i32 {
-    let mut result = 0;
+    let mut result = MIN_REDSTONE_SIGNAL;
     for direction in Direction::ALL {
         result = result.max(get_direct_signal(
             level,
@@ -153,7 +154,7 @@ pub(crate) fn get_direct_signal_to(
             direction,
             context,
         ));
-        if result >= 15 {
+        if result >= MAX_REDSTONE_SIGNAL {
             return result;
         }
     }
@@ -172,11 +173,11 @@ pub(crate) fn get_control_input_signal(
         return if behavior.is_diode() {
             get_direct_signal(level, pos, direction, SignalQueryContext::DEFAULT)
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         };
     }
     if state.get_block() == &vanilla_blocks::REDSTONE_BLOCK {
-        return 15;
+        return MAX_REDSTONE_SIGNAL;
     }
     if state.get_block() == &vanilla_blocks::REDSTONE_WIRE {
         return i32::from(state.get_value(&BlockStateProperties::POWER));
@@ -184,7 +185,7 @@ pub(crate) fn get_control_input_signal(
     if behavior.is_signal_source(state, SignalQueryContext::DEFAULT) {
         get_direct_signal(level, pos, direction, SignalQueryContext::DEFAULT)
     } else {
-        0
+        MIN_REDSTONE_SIGNAL
     }
 }
 
@@ -214,7 +215,7 @@ pub(crate) fn get_best_own_or_neighbour_signal(
     let own_signal = if behavior.is_signal_source(state, context) {
         behavior.get_own_signal(state, level, pos, context)
     } else {
-        0
+        MIN_REDSTONE_SIGNAL
     };
     get_best_neighbor_signal(level, pos, context).max(own_signal)
 }
@@ -224,9 +225,9 @@ pub(crate) fn has_neighbor_signal(
     pos: BlockPos,
     context: SignalQueryContext,
 ) -> bool {
-    Direction::ALL
-        .into_iter()
-        .any(|direction| get_signal(level, direction.relative(pos), direction, context) > 0)
+    Direction::ALL.into_iter().any(|direction| {
+        get_signal(level, direction.relative(pos), direction, context) > MIN_REDSTONE_SIGNAL
+    })
 }
 
 pub(crate) fn get_best_neighbor_signal(
@@ -234,11 +235,11 @@ pub(crate) fn get_best_neighbor_signal(
     pos: BlockPos,
     context: SignalQueryContext,
 ) -> i32 {
-    let mut best = 0;
+    let mut best = MIN_REDSTONE_SIGNAL;
     for direction in Direction::ALL {
         let signal = get_signal(level, direction.relative(pos), direction, context);
-        if signal >= 15 {
-            return 15;
+        if signal >= MAX_REDSTONE_SIGNAL {
+            return MAX_REDSTONE_SIGNAL;
         }
         best = best.max(signal);
     }

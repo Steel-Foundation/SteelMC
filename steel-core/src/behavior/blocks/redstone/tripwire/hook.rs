@@ -13,6 +13,7 @@ use steel_utils::axis::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{BlockBehavior, BlockPlaceContext, PlacementSource};
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, ScheduledTickAccess, SignalQueryContext, World};
@@ -302,7 +303,11 @@ impl BlockBehavior for TripWireHookBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
-        if state.get_value(POWERED) { 15 } else { 0 }
+        if state.get_value(POWERED) {
+            MAX_REDSTONE_SIGNAL
+        } else {
+            MIN_REDSTONE_SIGNAL
+        }
     }
 
     fn get_direct_signal(
@@ -314,9 +319,9 @@ impl BlockBehavior for TripWireHookBlock {
         _context: SignalQueryContext,
     ) -> i32 {
         if state.get_value(POWERED) && state.get_value(HORIZONTAL_FACING) == direction {
-            15
+            MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 }
