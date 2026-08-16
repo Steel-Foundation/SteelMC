@@ -11,7 +11,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use super::vegetation_block::survival_update_shape;
 
-const SEGMENT_PROPERTY: IntProperty = BlockStateProperties::SEGMENT_AMOUNT;
+const SEGMENT_PROPERTY: &IntProperty = &BlockStateProperties::SEGMENT_AMOUNT;
 
 /// Vanilla `LeafLitterBlock` uses sturdy top-face support, not the vegetation tag.
 #[block_behavior]
@@ -36,13 +36,13 @@ impl BlockBehavior for LeafLitterBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(segmentable_get_state_for_placement(
             self.block,
-            &SEGMENT_PROPERTY,
+            SEGMENT_PROPERTY,
             context,
         ))
     }
 
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
-        segmentable_can_be_replaced(&SEGMENT_PROPERTY, state, context)
+        segmentable_can_be_replaced(SEGMENT_PROPERTY, state, context)
     }
 
     fn update_shape(

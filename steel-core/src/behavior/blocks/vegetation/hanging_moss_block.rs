@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::MultifaceBlock;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::LevelReader;
@@ -12,9 +13,9 @@ use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
-use super::{BlockRef, can_attach_to_multiface, default_surviving_state};
+use super::{BlockRef, default_surviving_state};
 
-const TIP: BoolProperty = BlockStateProperties::TIP;
+const TIP: &BoolProperty = &BlockStateProperties::TIP;
 
 /// Vanilla `HangingMossBlock` survival (e.g. `pale_hanging_moss`).
 #[block_behavior]
@@ -55,7 +56,7 @@ impl BlockBehavior for HangingMossBlock {
         // multiface rule (support OR collision face full) or is more hanging
         // moss of the same kind.
         let above_pos = pos.above();
-        if can_attach_to_multiface(world, above_pos, Direction::Up) {
+        if MultifaceBlock::can_attach_to(world, above_pos, Direction::Up) {
             return true;
         }
         world.get_block_state(above_pos).get_block() == self.block
@@ -73,7 +74,7 @@ impl BlockBehavior for HangingMossBlock {
             world.schedule_block_tick_default(pos, self.block, 1);
         }
         let is_tip = world.get_block_state(pos.below()).get_block() != self.block;
-        state.set_value(&TIP, is_tip)
+        state.set_value(TIP, is_tip)
     }
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if !self.can_survive(state, world, pos) {
@@ -109,11 +110,7 @@ impl Bonemealable for HangingMossBlock {
     ) {
         let tip_pos = self.get_tip(world, pos).below();
         if HangingMossBlock::can_grow_into(world.get_block_state(tip_pos)) {
-            world.set_block(
-                tip_pos,
-                state.set_value(&TIP, true),
-                UpdateFlags::UPDATE_ALL,
-            );
+            world.set_block(tip_pos, state.set_value(TIP, true), UpdateFlags::UPDATE_ALL);
         }
     }
 

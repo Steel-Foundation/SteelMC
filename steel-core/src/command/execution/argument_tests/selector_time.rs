@@ -4,7 +4,7 @@ fn dispatcher(minimum: i32) -> TestDispatcher {
     let mut dispatcher = TestDispatcher::new();
     let command = literal("duration").then(
         argument("value", SteelArgumentType::time(minimum)).executes(|context| {
-            let Some(value) = context.time("value") else {
+            let Ok(value) = context.time("value") else {
                 panic!("time argument should be retained");
             };
             Ok(value)
@@ -17,10 +17,7 @@ fn dispatcher(minimum: i32) -> TestDispatcher {
 fn parsed_time(dispatcher: &TestDispatcher, input: &str) -> Result<i32, CommandSyntaxError> {
     let parse = dispatcher.parse(input, TestSource::new());
     let chain = dispatcher.context_chain(parse)?;
-    chain
-        .top_context()
-        .time("value")
-        .ok_or_else(|| CommandSyntaxError::dynamic("time argument was not retained"))
+    chain.top_context().time("value")
 }
 
 #[test]
@@ -32,7 +29,7 @@ fn entity_selector_argument_is_retained_for_deferred_resolution() {
         panic!("selector should parse");
     };
 
-    assert!(chain.top_context().entity_selector("value").is_some());
+    assert!(chain.top_context().entity_selector("value").is_ok());
 }
 
 #[test]
@@ -115,7 +112,7 @@ fn world_clock_argument_resolves_default_and_explicit_namespaces() {
         };
         assert_eq!(
             chain.top_context().world_clock("value"),
-            Some(&vanilla_world_clocks::OVERWORLD)
+            Ok(&vanilla_world_clocks::OVERWORLD)
         );
     }
 }
@@ -144,7 +141,7 @@ fn time_marker_argument_retains_default_namespace_identifier() {
 
     assert_eq!(
         chain.top_context().identifier("value"),
-        Some(&Identifier::vanilla_static("day"))
+        Ok(&Identifier::vanilla_static("day"))
     );
 }
 

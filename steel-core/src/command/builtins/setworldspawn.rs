@@ -35,9 +35,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                 .then(
                     argument("rotation", SteelArgumentType::rotation()).executes(|context| {
                         let position = spawnable_position(context)?;
-                        let Some(rotation) = context.coordinates("rotation") else {
-                            return Err(missing_argument("rotation"));
-                        };
+                        let rotation = context.coordinates("rotation")?;
                         set_spawn(context, position, rotation.rotation(context.source()))
                     }),
                 ),
@@ -47,9 +45,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 fn spawnable_position(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<BlockPos, CommandSyntaxError> {
-    let Some(coordinates) = context.coordinates("pos") else {
-        return Err(missing_argument("pos"));
-    };
+    let coordinates = context.coordinates("pos")?;
     let position = coordinates.block_pos(context.source());
     if !World::is_in_spawnable_bounds(position) {
         return Err(CommandSyntaxError::dynamic(TextComponent::from(
@@ -85,12 +81,6 @@ fn set_spawn(
         .component();
     source.send_success(&message, true);
     Ok(1)
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
 }
 
 #[cfg(test)]

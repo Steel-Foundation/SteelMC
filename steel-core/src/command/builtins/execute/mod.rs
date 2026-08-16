@@ -78,11 +78,7 @@ fn objective(
     scoreboard: &Scoreboard,
     name: &str,
 ) -> Result<ScoreboardObjective, CommandSyntaxError> {
-    let objective_name = context.objective_name(name).ok_or_else(|| {
-        CommandSyntaxError::dynamic(format!(
-            "Parsed value for {name} is missing from the command context"
-        ))
-    })?;
+    let objective_name = context.objective_name(name)?;
     scoreboard.objective(objective_name).ok_or_else(|| {
         let message = translations::ARGUMENTS_OBJECTIVE_NOT_FOUND
             .message([TextComponent::from(objective_name.to_owned())])

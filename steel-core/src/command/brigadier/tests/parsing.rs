@@ -2,6 +2,7 @@ use super::super::{
     ArgumentType, CommandDispatcher, CommandNodeBuilder, CommandRequirement,
     CommandSyntaxErrorKind, NodeId, StringRange, argument, literal, node::CommandNode,
 };
+use crate::command::missing_argument;
 
 #[derive(Debug)]
 struct TestSource {
@@ -161,12 +162,18 @@ fn parses_boolean_and_bounded_integer_arguments() {
     );
 
     let boolean = dispatcher.parse("set true", TestSource { allowed: true });
-    assert_eq!(boolean.context().boolean("enabled"), Some(true));
-    assert_eq!(boolean.context().integer("count"), None);
+    assert_eq!(boolean.context().boolean("enabled"), Ok(true));
+    assert_eq!(
+        boolean.context().integer("count"),
+        Err(missing_argument("count"))
+    );
 
     let integer = dispatcher.parse("set 7", TestSource { allowed: true });
-    assert_eq!(integer.context().integer("count"), Some(7));
-    assert_eq!(integer.context().boolean("enabled"), None);
+    assert_eq!(integer.context().integer("count"), Ok(7));
+    assert_eq!(
+        integer.context().boolean("enabled"),
+        Err(missing_argument("enabled"))
+    );
 }
 
 #[test]
@@ -243,9 +250,12 @@ fn complete_potential_wins_over_an_incomplete_sibling() {
         parsed_names(&dispatcher, parse.context().nodes()),
         ["test", "first", "second"]
     );
-    assert_eq!(parse.context().integer("short"), None);
-    assert_eq!(parse.context().integer("first"), Some(1));
-    assert_eq!(parse.context().integer("second"), Some(2));
+    assert_eq!(
+        parse.context().integer("short"),
+        Err(missing_argument("short"))
+    );
+    assert_eq!(parse.context().integer("first"), Ok(1));
+    assert_eq!(parse.context().integer("second"), Ok(2));
 }
 
 #[test]
@@ -266,7 +276,10 @@ fn matching_literals_take_priority_over_argument_siblings() {
         parsed_names(&dispatcher, parse.context().nodes()),
         ["choose", "1"]
     );
-    assert_eq!(parse.context().integer("number"), None);
+    assert_eq!(
+        parse.context().integer("number"),
+        Err(missing_argument("number"))
+    );
 }
 
 #[test]

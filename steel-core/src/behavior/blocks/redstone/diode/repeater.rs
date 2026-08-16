@@ -5,7 +5,9 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, Direction, EnumProperty, IntProperty,
+};
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
@@ -24,6 +26,10 @@ pub struct RepeaterBlock {
     diode: DiodeBlock,
 }
 
+const DELAY: &IntProperty = &BlockStateProperties::DELAY;
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const LOCKED: &BoolProperty = &BlockStateProperties::LOCKED;
+
 impl RepeaterBlock {
     /// Creates a repeater behavior.
     #[must_use]
@@ -34,7 +40,7 @@ impl RepeaterBlock {
     }
 
     fn delay(state: BlockStateId) -> i32 {
-        i32::from(state.get_value(&BlockStateProperties::DELAY)) * 2
+        i32::from(state.get_value(DELAY)) * 2
     }
 
     fn is_locked_at(level: &dyn LevelReader, pos: BlockPos, state: BlockStateId) -> bool {
@@ -65,7 +71,7 @@ impl BlockBehavior for RepeaterBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.diode.state_for_placement(context);
         Some(state.set_value(
-            &BlockStateProperties::LOCKED,
+            LOCKED,
             Self::is_locked_at(context.world.as_ref(), context.place_pos(), state),
         ))
     }
@@ -85,14 +91,11 @@ impl BlockBehavior for RepeaterBlock {
             return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
 
-        let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let facing = state.get_value(HORIZONTAL_FACING);
         if direction.get_axis() == facing.get_axis() {
             state
         } else {
-            state.set_value(
-                &BlockStateProperties::LOCKED,
-                Self::is_locked_at(world, pos, state),
-            )
+            state.set_value(LOCKED, Self::is_locked_at(world, pos, state))
         }
     }
 
@@ -109,11 +112,11 @@ impl BlockBehavior for RepeaterBlock {
             return InteractionResult::Pass;
         }
 
-        let delay = state.get_value(&BlockStateProperties::DELAY);
+        let delay = state.get_value(DELAY);
         let next_delay = if delay == 4 { 1 } else { delay + 1 };
         world.set_block(
             pos,
-            state.set_value(&BlockStateProperties::DELAY, next_delay),
+            state.set_value(DELAY, next_delay),
             UpdateFlags::UPDATE_ALL,
         );
         InteractionResult::Success
@@ -228,6 +231,9 @@ mod tests {
     use crate::test_support::TestLevel;
     use crate::world::tick_scheduler::TickPriority;
 
+    const POWER: &IntProperty = &BlockStateProperties::POWER;
+    const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
+
     fn repeater() -> RepeaterBlock {
         init_vanilla_registry();
         init_behaviors();
@@ -237,8 +243,8 @@ mod tests {
     fn repeater_state(facing: Direction, powered: bool) -> BlockStateId {
         vanilla_blocks::REPEATER
             .default_state()
-            .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
-            .set_value(&BlockStateProperties::POWERED, powered)
+            .set_value(HORIZONTAL_FACING, facing)
+            .set_value(POWERED, powered)
     }
 
     #[test]
@@ -248,7 +254,7 @@ mod tests {
         let state = repeater_state(Direction::East, false);
         let wire = vanilla_blocks::REDSTONE_WIRE
             .default_state()
-            .set_value(&BlockStateProperties::POWER, 7);
+            .set_value(POWER, 7);
         let level = TestLevel::default().with_block(pos.east(), wire);
 
         assert_eq!(DiodeBlock::get_input_signal(&level, pos, state), 7);

@@ -7,7 +7,7 @@ use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, IntProperty};
 use steel_registry::fluid::FluidRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -43,6 +43,8 @@ pub struct LiquidBlock {
     #[json_arg(vanilla_fluids, ref)]
     fluid: FluidRef,
 }
+
+const LEVEL: &IntProperty = &BlockStateProperties::LEVEL;
 
 impl LiquidBlock {
     /// Creates a new liquid block behavior.
@@ -236,7 +238,7 @@ impl BlockBehavior for LiquidBlock {
         state: BlockStateId,
         _player: Option<&Player>,
     ) -> Option<PickupResult> {
-        if state.try_get_value(&BlockStateProperties::LEVEL) != Some(0) {
+        if state.try_get_value(LEVEL) != Some(0) {
             return None;
         }
 
@@ -281,9 +283,7 @@ mod tests {
         init_behaviors();
 
         let block = LiquidBlock::new(&vanilla_blocks::WATER, &vanilla_fluids::WATER);
-        let state = vanilla_blocks::WATER
-            .default_state()
-            .set_value(&BlockStateProperties::LEVEL, 1);
+        let state = vanilla_blocks::WATER.default_state().set_value(LEVEL, 1);
         let neighbor_state = vanilla_blocks::WATER.default_state();
         let level = TestLevel::default();
 
@@ -342,9 +342,7 @@ mod tests {
         init_behaviors();
 
         let block = LiquidBlock::new(&vanilla_blocks::WATER, &vanilla_fluids::WATER);
-        let state = vanilla_blocks::WATER
-            .default_state()
-            .set_value(&BlockStateProperties::LEVEL, 1);
+        let state = vanilla_blocks::WATER.default_state().set_value(LEVEL, 1);
         let level = TestLevel::default();
 
         let updated = block.update_shape(
