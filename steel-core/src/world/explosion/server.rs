@@ -191,8 +191,13 @@ impl<'a> ServerExplosion<'a> {
         let indirect_source_entity = source
             .filter(|source| source.as_living_entity().is_some())
             .or(indirect_source.as_deref());
-        let damage_source = damage_source
-            .unwrap_or_else(|| default_explosion_damage_source(source, indirect_source_entity));
+        let damage_source = damage_source.unwrap_or_else(|| {
+            let mut damage_source = default_explosion_damage_source(source, indirect_source_entity);
+            if let Some(indirect_source) = &indirect_source {
+                damage_source = damage_source.with_causing_entity_reference(indirect_source);
+            }
+            damage_source
+        });
         let damage_calculator = match damage_calculator {
             Some(calculator) => SelectedDamageCalculator::Custom(calculator),
             None => source.map_or(
@@ -435,10 +440,6 @@ impl<'a> ServerExplosion<'a> {
             .collect()
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Vanilla entity damage, knockback, redirect, and callback order form one pipeline"
-    )]
     fn hurt_entities(&mut self) {
         if self.radius < MIN_DAMAGE_RADIUS {
             return;
@@ -462,13 +463,7 @@ impl<'a> ServerExplosion<'a> {
         let entities = self.world.get_entities_in_aabb_matching(&bounds, |entity| {
             source_id != Some(entity.id()) && !entity.is_spectator()
         });
-        let redirect_owner = self.damage_source.causing_entity_id.and_then(|owner_id| {
-            self.indirect_source
-                .as_ref()
-                .filter(|owner| owner.id() == owner_id)
-                .cloned()
-                .or_else(|| self.world.get_entity_by_id(owner_id))
-        });
+        let redirect_owner = self.damage_source.causing_entity(self.world);
         let builtin_entity_effects = self.damage_calculator.has_builtin_entity_effects();
         let mut exposure_raycast =
             ExplosionExposureRaycast::new(self.world.as_ref(), BlockCollisionContext::empty());
@@ -1047,10 +1042,23 @@ fn default_explosion_damage_source(
     if let Some(entity) = direct {
         source = source
             .with_direct_entity(entity.id())
-            .with_source_position(entity.position());
+            .with_direct_entity_position(entity.position());
     }
     if let Some(entity) = indirect {
         source = source.with_causing_entity(entity.id());
+    }
+    source
+}
+
+pub(crate) fn default_explosion_damage_source_with_references(
+    direct: &SharedEntity,
+    indirect: Option<&SharedEntity>,
+) -> DamageSource {
+    let indirect_entity = indirect.map(|entity| entity.as_ref() as &dyn Entity);
+    let mut source = default_explosion_damage_source(Some(direct.as_ref()), indirect_entity)
+        .with_direct_entity_reference(direct);
+    if let Some(indirect) = indirect {
+        source = source.with_causing_entity_reference(indirect);
     }
     source
 }

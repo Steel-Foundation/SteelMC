@@ -255,7 +255,7 @@ impl FireworkRocketEntity {
         let mut source = DamageSource::environment(&vanilla_damage_types::FIREWORKS)
             .with_direct_entity(self.id());
         if let Some(owner) = self.get_owner() {
-            source = source.with_causing_entity(owner.id());
+            source = source.with_causing_entity_reference(&owner);
         }
         source
     }
@@ -402,7 +402,7 @@ impl Entity for FireworkRocketEntity {
         self.get_owner().map_or(0, |owner| owner.id())
     }
 
-    fn restore_owner_reference(&self, owner: &SharedEntity) {
+    fn cache_owner_reference(&self, owner: &SharedEntity) {
         self.cache_owner_entity(owner);
     }
 

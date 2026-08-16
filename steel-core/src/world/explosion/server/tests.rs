@@ -353,6 +353,7 @@ fn vanilla_damage_formula_uses_distance_and_exposure() {
 #[test]
 fn default_damage_source_preserves_direct_source_position() {
     init_vanilla_registry();
+    let world = fresh_test_world("explosion_damage_source_position");
     let position = DVec3::new(1.25, 64.0, -3.5);
     let entity = ItemEntity::new(&vanilla_entities::ITEM, 17, position, Weak::new());
 
@@ -360,8 +361,38 @@ fn default_damage_source_preserves_direct_source_position() {
 
     assert_eq!(source.direct_entity_id, Some(entity.id()));
     assert_eq!(source.causing_entity_id, None);
-    assert_eq!(source.source_position, Some(position));
+    assert_eq!(source.effective_source_position(&world), Some(position));
+    assert_eq!(source.source_position_raw(), None);
     assert_eq!(source.damage_type.key, vanilla_damage_types::EXPLOSION.key);
+}
+
+#[test]
+fn explicit_position_explosion_damage_source_retains_raw_position() {
+    init_vanilla_registry();
+    let world = fresh_test_world("explicit_explosion_damage_source_position");
+    let position = DVec3::new(1.25, 64.0, -3.5);
+    let damage_source = DamageSource::environment(&vanilla_damage_types::BAD_RESPAWN_POINT)
+        .with_source_position(position);
+    let explosion = ServerExplosion::new(
+        &world,
+        None,
+        Some(damage_source),
+        None,
+        None,
+        position,
+        4.0,
+        false,
+        BlockInteraction::Keep,
+    );
+
+    assert_eq!(
+        explosion.damage_source.effective_source_position(&world),
+        Some(position),
+    );
+    assert_eq!(
+        explosion.damage_source.source_position_raw(),
+        Some(position),
+    );
 }
 
 #[test]

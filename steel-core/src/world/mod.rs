@@ -109,6 +109,7 @@ mod block_updates;
 mod border;
 mod broadcasts;
 pub(crate) mod clock;
+mod domain_entity_directory;
 mod entity_management;
 mod environment;
 mod events;
@@ -142,6 +143,7 @@ pub(crate) use block_region::{BlockRegionBounds, BlockRegionRead, MAX_BLOCK_REGI
 use block_updates::CollectingNeighborUpdater;
 pub use border::WorldBorderError;
 use border::{WorldBorder, WorldBorderSnapshot};
+pub(crate) use domain_entity_directory::DomainEntityDirectory;
 use entity_management::NavigatingMobTracker;
 #[cfg(test)]
 use entity_management::nearest_player_distance_in_range;
@@ -282,6 +284,8 @@ pub struct World {
     neighbor_updater: CollectingNeighborUpdater,
     /// Central runtime entity ownership and lookup.
     entity_manager: WorldEntityManager,
+    /// Other loaded worlds whose entities are visible to references in this domain.
+    domain_entity_directory: SyncRwLock<Option<Arc<DomainEntityDirectory>>>,
     /// World-global ordered block-entity ticker phase.
     block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers,
     /// Physical entries retained by this world's chunk-owned game-event registries.
@@ -449,6 +453,7 @@ impl World {
                 block_events: SyncMutex::new(BlockEventQueue::default()),
                 neighbor_updater: CollectingNeighborUpdater::new(max_chained_neighbor_updates),
                 entity_manager: WorldEntityManager::new(),
+                domain_entity_directory: SyncRwLock::new(None),
                 block_entity_tickers: block_entity_ticker::WorldBlockEntityTickers::new(),
                 game_event_listener_count: GameEventListenerCount::shared(),
                 entity_tracker: EntityTracker::new(),
@@ -498,6 +503,21 @@ impl World {
     #[must_use]
     pub fn domain(&self) -> &str {
         self.key.namespace.as_ref()
+    }
+
+    pub(crate) fn set_domain_entity_directory(&self, directory: Arc<DomainEntityDirectory>) {
+        *self.domain_entity_directory.write() = Some(directory);
+    }
+
+    /// Gets a live entity by UUID from any loaded world in this Steel domain.
+    #[must_use]
+    pub fn get_entity_in_domain_by_uuid(&self, uuid: &uuid::Uuid) -> Option<SharedEntity> {
+        self.get_entity_by_uuid(uuid).or_else(|| {
+            self.domain_entity_directory
+                .read()
+                .as_ref()
+                .and_then(|directory| directory.get_entity_by_uuid(uuid))
+        })
     }
 
     /// Game tick: weather, time, chunk game tick (broadcasts + random/scheduled ticks),

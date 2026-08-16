@@ -23,6 +23,7 @@ use crate::entity::damage::DamageSource;
 use crate::world::World;
 
 use server::ServerExplosion;
+pub(crate) use server::default_explosion_damage_source_with_references;
 
 mod server;
 

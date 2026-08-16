@@ -43,12 +43,10 @@ impl<'a> EnchantmentDamageContext<'a> {
         damage_source: &'a DamageSource,
     ) -> Self {
         let attacker_entity_type = damage_source
-            .causing_entity_id
-            .and_then(|entity_id| world.get_entity_by_id(entity_id))
+            .causing_entity(world)
             .map(|entity| entity.entity_type());
         let direct_attacker_entity_type = damage_source
-            .direct_entity_id
-            .and_then(|entity_id| world.get_entity_by_id(entity_id))
+            .direct_entity(world)
             .map(|entity| entity.entity_type());
         Self::new(
             this_entity_type,

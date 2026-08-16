@@ -144,7 +144,7 @@ impl ItemBehavior for MaceItem {
             DamageSource::environment(&vanilla_damage_types::MACE_SMASH)
                 .with_causing_entity(attacker.id())
                 .with_direct_entity(attacker.id())
-                .with_source_position(attacker.position())
+                .with_direct_entity_position(attacker.position())
         })
     }
 

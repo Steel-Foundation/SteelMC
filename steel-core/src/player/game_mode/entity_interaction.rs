@@ -36,7 +36,7 @@ impl Player {
         DamageSource::environment(damage_type)
             .with_causing_entity(self.id())
             .with_direct_entity(self.id())
-            .with_source_position(self.position())
+            .with_direct_entity_position(self.position())
     }
 
     fn attack_damage_source(&self, attacking_item: &ItemStack) -> DamageSource {

@@ -1162,9 +1162,7 @@ fn teleport_entity_cross_world(
         );
         return None;
     };
-    if let Some(owner) = &projectile_owner {
-        new_entity.restore_owner_reference(owner);
-    }
+    new_entity.restore_references_from(entity.as_ref());
 
     if let Err(error) = teleport_set_position(
         new_entity.as_ref(),

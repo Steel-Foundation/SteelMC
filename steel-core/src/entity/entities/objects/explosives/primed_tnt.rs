@@ -24,6 +24,7 @@ use crate::entity::{
     RemovalReason, SharedEntity,
 };
 use crate::physics::MoverType;
+use crate::world::explosion::default_explosion_damage_source_with_references;
 use crate::world::{
     DefaultExplosionDamageCalculator, Explosion, ExplosionBlockReader, ExplosionDamageCalculator,
     ExplosionInteraction, ExplosionOptions, ImmutableExplosionBlockCalculator, World,
@@ -242,7 +243,12 @@ impl PrimedTntEntity {
         self.owner_reference()?.get_living_entity(&world)
     }
 
-    fn explode(&self, world: &Arc<World>) {
+    fn explode(
+        &self,
+        world: &Arc<World>,
+        direct_source: Option<&SharedEntity>,
+        owner: Option<&SharedEntity>,
+    ) {
         if !world.get_game_rule(&TNT_EXPLODES) {
             return;
         }
@@ -259,6 +265,12 @@ impl PrimedTntEntity {
         };
         let mut options = ExplosionOptions::new(center, explosion_power, ExplosionInteraction::Tnt);
         options.source = Some(self);
+        if let Some(direct_source) = direct_source {
+            options.damage_source = Some(default_explosion_damage_source_with_references(
+                direct_source,
+                owner,
+            ));
+        }
         options.immutable_block_calculator = Some(if used_portal {
             &USED_PORTAL_DAMAGE_CALCULATOR
         } else {
@@ -293,9 +305,16 @@ impl Entity for PrimedTntEntity {
 
         let fuse = self.decrement_fuse();
         if fuse <= 0 {
+            let world = self.level();
+            let direct_source = world.as_ref().and_then(|world| {
+                world
+                    .get_entity_by_id(self.id())
+                    .filter(|entity| entity.uuid() == self.uuid())
+            });
+            let owner = self.owner();
             self.set_removed(RemovalReason::Discarded);
-            if let Some(world) = self.level() {
-                self.explode(&world);
+            if let Some(world) = world {
+                self.explode(&world, direct_source.as_ref(), owner.as_ref());
             }
         } else {
             self.refresh_fluid_contact_with_currents();
@@ -336,10 +355,18 @@ impl Entity for PrimedTntEntity {
         self.position()
     }
 
-    fn restore_owner_reference(&self, owner: &SharedEntity) {
+    fn cache_owner_reference(&self, owner: &SharedEntity) {
         if let Some(reference) = self.owner_reference() {
             reference.cache_entity(owner);
         }
+    }
+
+    fn restore_additional_references_from(&self, previous: &dyn Entity) {
+        let Some(previous) = steel_utils::Downcast::downcast_ref::<Self>(previous) else {
+            return;
+        };
+        let owner = previous.owner_reference();
+        self.state.lock().owner = owner;
     }
 
     fn on_teleported(&self) {
@@ -385,6 +412,7 @@ mod tests {
     use std::io::Cursor;
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
+    use steel_protocol::packets::game::RelativeMovement;
     use steel_registry::blocks::properties::BlockStateProperties;
     use steel_registry::init_vanilla_registry;
     use steel_registry::{vanilla_damage_types, vanilla_entities};
@@ -395,10 +423,17 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::entity::{EntityFluidContact, next_entity_id};
+    use crate::bootstrap::init_globals_once;
+    use crate::config::ResolvedDomainConfig;
+    use crate::entity::entities::PigEntity;
+    use crate::entity::{EntityFluidContact, LivingEntity, change_entity_world, next_entity_id};
     use crate::physics::{CollisionWorld, WorldCollisionProvider};
     use crate::player::ResetReason;
-    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use crate::portal::{TeleportPostTransition, TeleportTransition};
+    use crate::server::worlds::WorldMap;
+    use crate::test_support::{
+        TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, insert_ready_full_chunk,
+    };
 
     #[test]
     fn priming_applies_vanilla_motion_and_entity_properties() {
@@ -648,6 +683,131 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the cross-world transition, explosion, attribution, and XP assertions form one regression"
+    )]
+    fn cross_world_recreation_preserves_owner_and_explosion_attribution() {
+        init_globals_once();
+        let source = fresh_test_world_in_domain("primed_tnt_recreation", "source");
+        let target = fresh_test_world_in_domain("primed_tnt_recreation", "target");
+        let domain = ResolvedDomainConfig {
+            name: "primed_tnt_recreation".to_owned(),
+            default_world: source.key.clone(),
+            worlds: vec![source.key.clone(), target.key.clone()],
+        };
+        let mut worlds = WorldMap::new(domain.name.clone(), &[domain], &[]);
+        worlds.insert(source.key.clone(), Arc::clone(&source));
+        worlds.insert(target.key.clone(), Arc::clone(&target));
+
+        let position = DVec3::new(8.5, 64.0, 8.5);
+        let chunk = ChunkPos::from_entity_pos(position);
+        insert_ready_full_chunk(&source, chunk);
+        insert_ready_full_chunk(&target, chunk);
+        let player = TestPlayerBuilder::new(
+            Arc::clone(&source),
+            Uuid::from_u128(0x0A13),
+            "Owner",
+            next_entity_id(),
+        )
+        .build();
+        assert!(source.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let owner: SharedEntity = player.clone();
+        let previous = Arc::new(PrimedTntEntity::new(
+            &vanilla_entities::TNT,
+            next_entity_id(),
+            position,
+            Arc::downgrade(&source),
+        ));
+        previous.state.lock().owner = Some(EntityReference::from_entity(&owner));
+        let previous_entity: SharedEntity = previous.clone();
+        source
+            .try_add_entity(Arc::clone(&previous_entity))
+            .expect("source TNT should enter the loaded test chunk");
+        let transition = TeleportTransition {
+            target_world: Arc::clone(&target),
+            position,
+            rotation: previous.rotation(),
+            velocity: previous.velocity(),
+            relatives: RelativeMovement::NONE,
+            portal_cooldown: 0,
+            as_passenger: false,
+            post_transition: TeleportPostTransition::do_nothing(),
+        };
+
+        let Some(recreated) = change_entity_world(previous_entity, &transition) else {
+            panic!("primed TNT should recreate in the loaded target world");
+        };
+        let Some(recreated_tnt) =
+            steel_utils::Downcast::downcast_ref::<PrimedTntEntity>(recreated.as_ref())
+        else {
+            panic!("recreated entity should retain the primed TNT implementation");
+        };
+        let Some(resolved_owner) = recreated_tnt.owner() else {
+            panic!("recreated primed TNT should resolve its live owner");
+        };
+        let Some(indirect_source) = recreated_tnt.explosion_indirect_source() else {
+            panic!("recreated primed TNT should preserve explosion attribution");
+        };
+
+        assert!(Arc::ptr_eq(&resolved_owner, &owner));
+        assert!(Arc::ptr_eq(&indirect_source, &owner));
+        assert!(recreated_tnt.state.lock().used_portal);
+        assert!(previous.is_removed());
+        assert_eq!(previous.removal_reason(), Some(RemovalReason::ChangedWorld));
+
+        let victim = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            next_entity_id(),
+            position + DVec3::X,
+            Arc::downgrade(&target),
+        ));
+        let victim_entity: SharedEntity = victim.clone();
+        target
+            .try_add_entity(victim_entity)
+            .expect("victim should enter the loaded target chunk");
+
+        recreated_tnt.set_fuse(1);
+        recreated_tnt.tick();
+        assert_eq!(
+            recreated_tnt.removal_reason(),
+            Some(RemovalReason::Discarded)
+        );
+
+        let Some(source) = victim.last_damage_source() else {
+            panic!("victim should retain the TNT explosion damage source");
+        };
+        assert_eq!(source.damage_type, &vanilla_damage_types::PLAYER_EXPLOSION);
+        let Some(direct) = source.direct_entity(&target) else {
+            panic!("damage source should retain the discarded primed TNT");
+        };
+        let Some(responsible) = source.causing_entity(&target) else {
+            panic!("damage source should resolve the cross-world owner");
+        };
+        let Some(last_hurt_by_mob) = victim.last_hurt_by_mob() else {
+            panic!("victim should retain the cross-world responsible living entity");
+        };
+        assert!(Arc::ptr_eq(&direct, &recreated));
+        assert!(direct.is_removed());
+        assert_eq!(source.source_position_raw(), None);
+        assert_eq!(
+            source.effective_source_position(&target),
+            Some(direct.position())
+        );
+        assert!(Arc::ptr_eq(&responsible, &owner));
+        assert!(Arc::ptr_eq(&last_hurt_by_mob, &owner));
+        assert_eq!(victim.last_hurt_by_player_uuid(), Some(owner.uuid()));
+        assert_eq!(victim.last_hurt_by_player_memory_time(), 100);
+        assert!(
+            target
+                .get_entities_in_aabb(&WorldAabb::new(7.0, 63.0, 7.0, 11.0, 67.0, 11.0))
+                .iter()
+                .any(|entity| entity.entity_type() == &vanilla_entities::EXPERIENCE_ORB),
+            "player-attributed TNT kill should drop experience"
+        );
+    }
+
+    #[test]
     fn flowing_water_pushes_primed_tnt_trajectory() {
         init_vanilla_registry();
         init_behaviors();
@@ -711,7 +871,7 @@ mod tests {
         );
 
         entity.on_teleported();
-        entity.explode(&world);
+        entity.explode(&world, None, None);
 
         assert_eq!(
             world.get_block_state(portal_pos).get_block(),

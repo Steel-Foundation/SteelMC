@@ -947,7 +947,7 @@ pub trait Mob: LivingEntity + Leashable {
         damage_source
             .with_causing_entity(self.id())
             .with_direct_entity(self.id())
-            .with_source_position(self.position())
+            .with_direct_entity_position(self.position())
     }
 
     /// Returns vanilla `LivingEntity.getKnockback` for mob attacks.

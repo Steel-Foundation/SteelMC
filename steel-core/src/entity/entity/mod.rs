@@ -1237,9 +1237,24 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.game_event(&vanilla_game_events::ENTITY_DIE);
     }
 
-    /// Caches a live owner reference after restoring persisted owner-linked
-    /// entities. Most entities do not store owner references.
-    fn restore_owner_reference(&self, _owner: &SharedEntity) {}
+    /// Caches a known live owner after restoring persisted owner-linked entities.
+    fn cache_owner_reference(&self, _owner: &SharedEntity) {}
+
+    /// Restores live entity references from the pre-transition entity.
+    ///
+    /// Vanilla copies subclass reference fields after recreating an entity in a
+    /// different dimension. Implement additional fields through
+    /// [`Entity::restore_additional_references_from`] so projectile ownership is
+    /// retained automatically.
+    fn restore_references_from(&self, previous: &dyn Entity) {
+        if let (Some(current), Some(previous)) = (self.as_projectile(), previous.as_projectile()) {
+            current.restore_owner_reference_from(previous);
+        }
+        self.restore_additional_references_from(previous);
+    }
+
+    /// Restores concrete entity-reference fields beyond the shared projectile owner.
+    fn restore_additional_references_from(&self, _previous: &dyn Entity) {}
 
     /// Called after a teleport completes successfully.
     fn on_teleported(&self) {}
