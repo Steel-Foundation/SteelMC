@@ -79,6 +79,4 @@ impl BlockBehavior for AmethystClusterBlock {
     ) {
         AmethystBlock::play_projectile_hit_sound(world, hit.block_pos);
     }
-
-    // TODO: Mirror and Rotate functions
 }

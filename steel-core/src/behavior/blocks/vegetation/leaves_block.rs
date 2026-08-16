@@ -39,7 +39,7 @@ impl LeavesBlock {
         Self { block }
     }
     fn decaying(state: BlockStateId) -> bool {
-        !state.get_value(PERSISTENT) && state.get_value(DISTANCE) == 7
+        !state.get_value(PERSISTENT) && state.get_value(DISTANCE) == DISTANCE.max
     }
 
     fn decayed_replacement(state: BlockStateId) -> BlockStateId {
@@ -51,7 +51,7 @@ impl LeavesBlock {
         level: &dyn LevelReader,
         pos: BlockPos,
     ) -> BlockStateId {
-        let mut new_distance = 7;
+        let mut new_distance = DISTANCE.max;
         for direction in Direction::ALL {
             let mut neighbor_pos = pos;
             neighbor_pos = neighbor_pos.relative(direction);
@@ -65,7 +65,7 @@ impl LeavesBlock {
         state.set_value(DISTANCE, new_distance)
     }
     fn get_distance_at(state: BlockStateId) -> u8 {
-        Self::get_optional_distance_at(state).unwrap_or(7)
+        Self::get_optional_distance_at(state).unwrap_or(DISTANCE.max)
     }
     fn get_optional_distance_at(state: BlockStateId) -> Option<u8> {
         if state

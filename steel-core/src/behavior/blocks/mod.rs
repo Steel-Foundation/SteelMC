@@ -7,6 +7,7 @@ mod building;
 mod colored;
 mod container;
 mod decoration;
+mod falling;
 mod fluid;
 mod portal;
 mod redstone;
@@ -26,12 +27,15 @@ pub use building::{
     WetSpongeBlock,
 };
 pub use colored::StainedGlassPaneBlock;
-pub use container::{AnvilBlock, BarrelBlock, BeehiveBlock, CraftingTableBlock};
+pub use container::{
+    AnvilBlock, BarrelBlock, BeehiveBlock, ChiseledBookShelfBlock, CraftingTableBlock,
+};
 pub use decoration::{
     BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
     EndRodBlock, StandingSignBlock, TorchBlock, WallBannerBlock, WallHangingSignBlock,
     WallSignBlock, WallTorchBlock, WeatheringCopperChainBlock,
 };
+pub use falling::{ConcretePowderBlock, FallingBlock, SandBlock};
 pub use fluid::{BubbleColumnBlock, LiquidBlock};
 pub use portal::{
     EndGatewayBlock, EndPortalBlock, EndPortalFrameBlock, FireBlock, NetherPortalBlock,
@@ -45,6 +49,7 @@ pub use redstone::{
     RedstoneWallTorchBlock, RepeaterBlock, TargetBlock, TripWireBlock, TripWireHookBlock,
     WeatheringCopperBulbBlock, WeightedPressurePlateBlock,
 };
+pub(crate) use redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 pub use vegetation::{
     AttachedStemBlock, AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock,
     CactusBlock, CactusFlowerBlock, CarrotBlock, CocoaBlock, CoralBlock, CropBlock,

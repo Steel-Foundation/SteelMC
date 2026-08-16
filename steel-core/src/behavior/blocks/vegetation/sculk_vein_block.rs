@@ -13,7 +13,7 @@ use super::BlockRef;
 ///
 /// Inherits `canSurvive` from `MultifaceBlock`. Sculk-specific spread is left
 /// as a TODO.
-// TODO: Implement sculk spread, charge handling, and rotation/mirror overrides.
+// TODO: Implement sculk spread, and charge handling.
 #[block_behavior]
 pub struct SculkVeinBlock {
     multiface: MultifaceBlock,
