@@ -1,11 +1,10 @@
-use std::ops::Sub;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use rand::{Rng, RngExt};
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
-use steel_registry::feature::ConfiguredFeatureRef;
+use steel_registry::feature::{ConfiguredFeature, ConfiguredFeatureKind};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
@@ -14,28 +13,73 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::BlockPlaceContext;
-use crate::chunk_saver::PersistentProcessorList::Registry;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::BlockRef;
 
-/// Vanilla `MushroomBlock` survival.
-// TODO: Implement full vanilla behavior beyond can_survive.
+use steel_utils::random::worldgen_random::WorldgenRandom;
+
+use crate::worldgen::feature::FeatureDecorationRunner;
+
+/// Vanilla `MushroomBlock` survival and growth.
 #[block_behavior]
 pub struct MushroomBlock {
     block: BlockRef,
     #[json_arg(vanilla_configured_features, json = "feature")]
-    feature: ConfiguredFeatureRef,
+    feature: &'static LazyLock<ConfiguredFeature>,
 }
 
 impl MushroomBlock {
     /// Creates a new mushroom block behavior.
     #[must_use]
-    pub const fn new(block: BlockRef, feature: ConfiguredFeatureRef) -> Self {
-        Self { block, feature: feature }
+    pub const fn new(block: BlockRef, feature: &'static LazyLock<ConfiguredFeature>) -> Self {
+        Self {
+            block,
+            feature,
+        }
     }
     fn may_place_on(state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         state.is_solid_render()
+    }
+    fn grow_mushroom(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+        random: &mut dyn Rng,
+    ) -> bool {
+        let configured_feature = &**self.feature;
+        world.remove_block(pos, false);
+
+        let mut worldgen_random = WorldgenRandom::from_seed(random.random());
+        let placed = match &configured_feature.kind {
+            ConfiguredFeatureKind::HugeBrownMushroom(config) => {
+                FeatureDecorationRunner::place_huge_brown_mushroom_feature(
+                    world,
+                    &REGISTRY,
+                    &mut worldgen_random,
+                    config,
+                    pos,
+                )
+            }
+            ConfiguredFeatureKind::HugeRedMushroom(config) => {
+                FeatureDecorationRunner::place_huge_red_mushroom_feature(
+                    world,
+                    &REGISTRY,
+                    &mut worldgen_random,
+                    config,
+                    pos,
+                )
+            }
+            _ => false,
+        };
+
+        if placed {
+            true
+        } else {
+            world.set_block(pos, state, UpdateFlags::UPDATE_ALL);
+            false
+        }
     }
 }
 
@@ -47,10 +91,8 @@ impl BlockBehavior for MushroomBlock {
 
             for block_pos in BlockPos::between_closed(pos.offset(-4, -1, -4), pos.offset(4, 1, -4))
             {
-                if world.get_block_state(block_pos).get_block() == self.block {
-                    if max - 1 <= 0 {
-                        return;
-                    }
+                if world.get_block_state(block_pos).get_block() == self.block && max - 1 <= 0 {
+                    return;
                 }
             }
 
@@ -117,14 +159,21 @@ impl BlockBehavior for MushroomBlock {
 
 impl Bonemealable for MushroomBlock {
     fn is_valid_bonemeal_target(
-    &self,
-    state: BlockStateId,
-    world: &dyn LevelReader,
-    pos: BlockPos,
-) -> bool
-{
-    let feature_holder = REGISTRY.configured_features.
-}
+        &self,
+        _state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+    ) -> bool {
+        let configured_feature = &**self.feature;
+        let config = match &configured_feature.kind {
+            ConfiguredFeatureKind::HugeBrownMushroom(config)
+            | ConfiguredFeatureKind::HugeRedMushroom(config) => config,
+            _ => return false,
+        };
+        let min_height = 4 + config.foliage_radius;
+
+        !world.is_outside_build_height(pos.above_n(min_height).y())
+    }
     fn is_bonemeal_success(
         &self,
         _state: BlockStateId,
@@ -133,6 +182,15 @@ impl Bonemealable for MushroomBlock {
         _pos: BlockPos,
     ) -> bool {
         rng.random::<f32>() < 0.4
+    }
+    fn perform_bonemeal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        rng: &mut dyn Rng,
+        pos: BlockPos,
+    ) {
+        self.grow_mushroom(world, pos, state, rng);
     }
 }
 
@@ -154,7 +212,10 @@ mod tests {
     fn mushroom_survival_uses_solid_render_support() {
         init_vanilla_registry();
 
-        let mushroom = MushroomBlock::new(&vanilla_blocks::BROWN_MUSHROOM);
+        let mushroom = MushroomBlock::new(
+            &vanilla_blocks::BROWN_MUSHROOM,
+            &steel_registry::vanilla_configured_features::HUGE_BROWN_MUSHROOM,
+        );
         let state = REGISTRY
             .blocks
             .get_default_state_id(&vanilla_blocks::BROWN_MUSHROOM);
@@ -175,5 +236,25 @@ mod tests {
             .blocks
             .get_default_state_id(&vanilla_blocks::PODZOL);
         assert!(mushroom.can_survive(state, &single_support_level(podzol, 15), pos));
+    }
+
+    #[test]
+    fn mushroom_bonemeal_validation_checks_build_height() {
+        init_vanilla_registry();
+
+        let mushroom = MushroomBlock::new(
+            &vanilla_blocks::BROWN_MUSHROOM,
+            &steel_registry::vanilla_configured_features::HUGE_BROWN_MUSHROOM,
+        );
+        let state = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::BROWN_MUSHROOM);
+        let pos = BlockPos::new(0, 0, 0);
+
+        let grass_block = REGISTRY
+            .blocks
+            .get_default_state_id(&vanilla_blocks::GRASS_BLOCK);
+        let level = single_support_level(grass_block, 0);
+        assert!(mushroom.is_valid_bonemeal_target(state, &level, pos));
     }
 }

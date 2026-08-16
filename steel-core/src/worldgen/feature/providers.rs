@@ -5,7 +5,7 @@ use steel_math::map_clamped;
 
 impl FeatureDecorationRunner {
     pub(super) fn sample_block_state_provider_optional(
-        region: &WorldGenRegion<'_>,
+        level: &dyn LevelReader,
         registry: &Registry,
         random: &mut WorldgenRandom,
         provider: &BlockStateProvider,
@@ -14,25 +14,25 @@ impl FeatureDecorationRunner {
         match provider {
             BlockStateProvider::RuleBased { fallback, rules } => {
                 for rule in rules {
-                    if Self::test_block_predicate(region, registry, &rule.if_true, pos) {
+                    if Self::test_block_predicate(level, registry, &rule.if_true, pos) {
                         return Some(Self::sample_block_state_provider(
-                            region, registry, random, &rule.then, pos,
+                            level, registry, random, &rule.then, pos,
                         ));
                     }
                 }
 
                 fallback.as_ref().map(|fallback| {
-                    Self::sample_block_state_provider(region, registry, random, fallback, pos)
+                    Self::sample_block_state_provider(level, registry, random, fallback, pos)
                 })
             }
             _ => Some(Self::sample_block_state_provider(
-                region, registry, random, provider, pos,
+                level, registry, random, provider, pos,
             )),
         }
     }
 
     pub(super) fn sample_block_state_provider(
-        region: &WorldGenRegion<'_>,
+        level: &dyn LevelReader,
         registry: &Registry,
         random: &mut WorldgenRandom,
         provider: &BlockStateProvider,
@@ -72,17 +72,17 @@ impl FeatureDecorationRunner {
                 values,
             } => {
                 let state =
-                    Self::sample_block_state_provider(region, registry, random, source, pos);
+                    Self::sample_block_state_provider(level, registry, random, source, pos);
                 let value = values.sample(random);
                 Self::set_int_property_by_name(registry, state, property, value)
             }
             BlockStateProvider::RuleBased { .. } => {
                 if let Some(state) = Self::sample_block_state_provider_optional(
-                    region, registry, random, provider, pos,
+                    level, registry, random, provider, pos,
                 ) {
                     state
                 } else {
-                    region.block_state(pos)
+                    level.get_block_state(pos)
                 }
             }
             BlockStateProvider::Noise(provider) => {

@@ -15,15 +15,15 @@ enum HugeMushroomKind {
 }
 
 impl FeatureDecorationRunner {
-    pub(in crate::worldgen::feature) fn place_huge_brown_mushroom_feature(
-        region: &mut WorldGenRegion<'_>,
+    pub(crate) fn place_huge_brown_mushroom_feature(
+        level: &impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &HugeMushroomConfiguration,
         origin: BlockPos,
     ) -> bool {
         Self::place_huge_mushroom_feature(
-            region,
+            level,
             registry,
             random,
             config,
@@ -32,15 +32,15 @@ impl FeatureDecorationRunner {
         )
     }
 
-    pub(in crate::worldgen::feature) fn place_huge_red_mushroom_feature(
-        region: &mut WorldGenRegion<'_>,
+    pub(crate) fn place_huge_red_mushroom_feature(
+        level: &impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &HugeMushroomConfiguration,
         origin: BlockPos,
     ) -> bool {
         Self::place_huge_mushroom_feature(
-            region,
+            level,
             registry,
             random,
             config,
@@ -50,7 +50,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_huge_mushroom_feature(
-        region: &mut WorldGenRegion<'_>,
+        level: &impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &HugeMushroomConfiguration,
@@ -59,7 +59,7 @@ impl FeatureDecorationRunner {
     ) -> bool {
         let tree_height = Self::huge_mushroom_tree_height(random);
         if !Self::is_valid_huge_mushroom_position(
-            region,
+            level,
             registry,
             config,
             origin,
@@ -72,7 +72,7 @@ impl FeatureDecorationRunner {
         match kind {
             HugeMushroomKind::Brown => {
                 Self::make_brown_mushroom_cap(
-                    region,
+                    level,
                     registry,
                     random,
                     config,
@@ -81,10 +81,10 @@ impl FeatureDecorationRunner {
                 );
             }
             HugeMushroomKind::Red => {
-                Self::make_red_mushroom_cap(region, registry, random, config, origin, tree_height);
+                Self::make_red_mushroom_cap(level, registry, random, config, origin, tree_height);
             }
         }
-        Self::place_huge_mushroom_trunk(region, registry, random, config, origin, tree_height);
+        Self::place_huge_mushroom_trunk(level, registry, random, config, origin, tree_height);
         true
     }
 
@@ -97,20 +97,20 @@ impl FeatureDecorationRunner {
     }
 
     fn is_valid_huge_mushroom_position(
-        region: &WorldGenRegion<'_>,
+        level: &dyn LevelReader,
         registry: &Registry,
         config: &HugeMushroomConfiguration,
         origin: BlockPos,
         tree_height: i32,
         kind: HugeMushroomKind,
     ) -> bool {
-        if origin.y() < region.min_y() + 1
-            || origin.y() + tree_height + 2 > region.max_y_exclusive()
+        if origin.y() < level.min_y() + 1
+            || origin.y() + tree_height + 2 > level.max_y_exclusive()
         {
             return false;
         }
 
-        if !Self::test_block_predicate(region, registry, &config.can_place_on, origin.below()) {
+        if !Self::test_block_predicate(level, registry, &config.can_place_on, origin.below()) {
             return false;
         }
 
@@ -119,7 +119,7 @@ impl FeatureDecorationRunner {
                 Self::huge_mushroom_tree_radius_for_height(kind, -1, -1, config.foliage_radius, dy);
             for dx in -radius..=radius {
                 for dz in -radius..=radius {
-                    let state = region.block_state(origin.offset(dx, dy, dz));
+                    let state = level.get_block_state(origin.offset(dx, dy, dz));
                     if !state.is_air() && !state.get_block().has_tag(&BlockTag::LEAVES) {
                         return false;
                     }
@@ -131,7 +131,7 @@ impl FeatureDecorationRunner {
     }
 
     fn make_brown_mushroom_cap(
-        region: &mut WorldGenRegion<'_>,
+        level: &impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &HugeMushroomConfiguration,
@@ -157,7 +157,7 @@ impl FeatureDecorationRunner {
                 let north = min_z || x_edge && dz == 1 - radius;
                 let south = max_z || x_edge && dz == radius - 1;
                 let mut state = Self::sample_block_state_provider(
-                    region,
+                    level,
                     registry,
                     random,
                     &config.cap_provider,
@@ -169,13 +169,13 @@ impl FeatureDecorationRunner {
                         Self::set_mushroom_horizontal_properties(state, west, east, north, south);
                 }
 
-                Self::place_huge_mushroom_block(region, pos, state);
+                Self::place_huge_mushroom_block(level, pos, state);
             }
         }
     }
 
     fn make_red_mushroom_cap(
-        region: &mut WorldGenRegion<'_>,
+        level: &impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &HugeMushroomConfiguration,
@@ -204,7 +204,7 @@ impl FeatureDecorationRunner {
 
                     let pos = origin.offset(dx, dy, dz);
                     let mut state = Self::sample_block_state_provider(
-                        region,
+                        level,
                         registry,
                         random,
                         &config.cap_provider,
@@ -224,14 +224,14 @@ impl FeatureDecorationRunner {
                         );
                     }
 
-                    Self::place_huge_mushroom_block(region, pos, state);
+                    Self::place_huge_mushroom_block(level, pos, state);
                 }
             }
         }
     }
 
     fn place_huge_mushroom_trunk(
-        region: &mut WorldGenRegion<'_>,
+        level: &impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &HugeMushroomConfiguration,
@@ -241,28 +241,28 @@ impl FeatureDecorationRunner {
         for dy in 0..tree_height {
             let pos = origin.above_n(dy);
             let state = Self::sample_block_state_provider(
-                region,
+                level,
                 registry,
                 random,
                 &config.stem_provider,
                 origin,
             );
-            Self::place_huge_mushroom_block(region, pos, state);
+            Self::place_huge_mushroom_block(level, pos, state);
         }
     }
 
     fn place_huge_mushroom_block(
-        region: &mut WorldGenRegion<'_>,
+        level: &impl LevelAccessor,
         pos: BlockPos,
         state: BlockStateId,
     ) {
-        let current_state = region.block_state(pos);
+        let current_state = level.get_block_state(pos);
         if current_state.is_air()
             || current_state
                 .get_block()
                 .has_tag(&BlockTag::REPLACEABLE_BY_MUSHROOMS)
         {
-            let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_ALL);
+            let _ = level.set_block_state(pos, state, UpdateFlags::UPDATE_ALL);
         }
     }
 
