@@ -33,10 +33,7 @@ impl MushroomBlock {
     /// Creates a new mushroom block behavior.
     #[must_use]
     pub const fn new(block: BlockRef, feature: &'static LazyLock<ConfiguredFeature>) -> Self {
-        Self {
-            block,
-            feature,
-        }
+        Self { block, feature }
     }
     fn may_place_on(state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         state.is_solid_render()
@@ -165,10 +162,10 @@ impl Bonemealable for MushroomBlock {
         pos: BlockPos,
     ) -> bool {
         let configured_feature = &**self.feature;
-        let config = match &configured_feature.kind {
-            ConfiguredFeatureKind::HugeBrownMushroom(config)
-            | ConfiguredFeatureKind::HugeRedMushroom(config) => config,
-            _ => return false,
+        let (ConfiguredFeatureKind::HugeBrownMushroom(config)
+        | ConfiguredFeatureKind::HugeRedMushroom(config)) = &configured_feature.kind
+        else {
+            return false;
         };
         let min_height = 4 + config.foliage_radius;
 
@@ -196,7 +193,9 @@ impl Bonemealable for MushroomBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
+    use steel_registry::{
+        REGISTRY, init_vanilla_registry, vanilla_blocks, vanilla_configured_features,
+    };
 
     use crate::test_support::TestLevel;
 
@@ -214,7 +213,7 @@ mod tests {
 
         let mushroom = MushroomBlock::new(
             &vanilla_blocks::BROWN_MUSHROOM,
-            &steel_registry::vanilla_configured_features::HUGE_BROWN_MUSHROOM,
+            &vanilla_configured_features::HUGE_BROWN_MUSHROOM,
         );
         let state = REGISTRY
             .blocks
@@ -244,7 +243,7 @@ mod tests {
 
         let mushroom = MushroomBlock::new(
             &vanilla_blocks::BROWN_MUSHROOM,
-            &steel_registry::vanilla_configured_features::HUGE_BROWN_MUSHROOM,
+            &vanilla_configured_features::HUGE_BROWN_MUSHROOM,
         );
         let state = REGISTRY
             .blocks

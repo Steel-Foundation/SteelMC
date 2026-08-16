@@ -475,7 +475,7 @@ impl BlockPos {
     /// Iterates all positions in the closed box spanned by `a` and `b`,
     /// regardless of their relative min/max ordering.
     #[must_use]
-    pub fn between_closed(a: Self, b: Self) -> BetweenClosed {
+    pub const fn between_closed(a: Self, b: Self) -> BetweenClosed {
         Self::between_closed_coords(
             a.0.x.min(b.0.x),
             a.0.y.min(b.0.y),
@@ -490,7 +490,7 @@ impl BlockPos {
     ///
     /// Iterates all positions in `[min_x, max_x] x [min_y, max_y] x [min_z, max_z]`.
     #[must_use]
-    pub fn between_closed_coords(
+    pub const fn between_closed_coords(
         min_x: i32,
         min_y: i32,
         min_z: i32,
