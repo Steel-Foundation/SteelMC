@@ -210,6 +210,12 @@ impl BlockRegionRead<'_> {
         section.get_block_state(pos)
     }
 
+    /// Returns whether every in-height section in this bounded snapshot came from a Full chunk.
+    #[must_use]
+    pub(crate) fn has_complete_data(&self) -> bool {
+        self.sections.iter().all(Option::is_some)
+    }
+
     /// Returns a prelocked section view, or `None` for an unloaded or uncached section.
     #[must_use]
     pub(crate) fn section(&self, section_pos: SectionPos) -> Option<BlockSectionRead<'_>> {
@@ -314,6 +320,7 @@ mod tests {
                     region.get_block_state(missing_chunk),
                     Some(vanilla_blocks::AIR.default_state())
                 );
+                assert!(!region.has_complete_data());
                 assert_eq!(
                     region.get_block_state(below_world),
                     Some(vanilla_blocks::VOID_AIR.default_state())

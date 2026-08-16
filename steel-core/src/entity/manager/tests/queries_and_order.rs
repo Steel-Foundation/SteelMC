@@ -207,6 +207,57 @@ fn accessible_entities_keep_tracking_start_order() {
 }
 
 #[test]
+fn ordered_entity_ids_preserve_logical_insert_positions_after_removals() {
+    let mut ids = OrderedEntityIds::default();
+    for entity_id in [10, 20, 30, 40] {
+        assert!(ids.insert(entity_id));
+    }
+
+    assert!(ids.remove(20));
+    ids.insert_at(1, 25);
+    ids.insert_at(0, 5);
+    ids.insert_at(ids.ids.len(), 50);
+
+    assert_eq!(
+        ids.iter().copied().collect::<Vec<_>>(),
+        vec![5, 10, 25, 30, 40, 50]
+    );
+}
+
+#[test]
+fn indexed_ordered_entity_ids_compaction_preserves_order_across_reinsertion() {
+    let mut ids = IndexedOrderedEntityIds::default();
+    for entity_id in 0..128 {
+        assert!(ids.insert(entity_id));
+    }
+
+    for entity_id in (0..128).step_by(2) {
+        assert!(ids.remove(entity_id));
+    }
+
+    assert_eq!(ids.nodes.len(), 64);
+    assert_eq!(
+        ids.iter().copied().collect::<Vec<_>>(),
+        (0..128)
+            .filter(|entity_id| entity_id % 2 != 0)
+            .collect::<Vec<_>>()
+    );
+
+    for entity_id in (0..128).step_by(2).rev() {
+        assert!(ids.insert(entity_id));
+    }
+
+    assert_eq!(ids.nodes.len(), 128);
+    assert_eq!(
+        ids.iter().copied().collect::<Vec<_>>(),
+        (0..128)
+            .filter(|entity_id| entity_id % 2 != 0)
+            .chain((0..128).step_by(2).rev())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn aabb_queries_use_vanilla_section_order_then_section_insertion_order() {
     let manager = WorldEntityManager::new();
     load_chunk(&manager, ChunkPos::new(0, 0));

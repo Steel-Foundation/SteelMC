@@ -1,4 +1,7 @@
-use std::{sync::Arc, vec::IntoIter};
+use std::{
+    sync::{Arc, LazyLock},
+    vec::IntoIter,
+};
 
 use glam::DVec3;
 #[cfg(test)]
@@ -17,15 +20,16 @@ use steel_registry::{
 };
 use steel_utils::random::Random;
 use steel_utils::types::{GameType, UpdateFlags};
-use steel_utils::{BlockPos, WorldAabb};
+use steel_utils::{BlockPos, BlockStateId, PackedBlockPos, WorldAabb};
 
 use crate::behavior::blocks::{FireBlock, PowderSnowBlock};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ItemEntity;
 use crate::entity::{Entity, SharedEntity};
-use crate::world::World;
 use crate::world::game_event::GameEventContext;
+use crate::world::raycast::ExplosionExposureRaycast;
+use crate::world::{BlockRegionBounds, BlockRegionRead, World};
 
 use super::{
     BlockInteraction, Explosion, ExplosionBlockReader, ExplosionDamageCalculator,
@@ -39,12 +43,83 @@ const RAY_POWER_DECAY: f32 = 0.225_000_01;
 const MIN_DAMAGE_RADIUS: f32 = 1.0e-5;
 const NORMALIZE_EPSILON: f64 = 1.0e-5_f32 as f64;
 const MAX_DROPS_PER_COMBINED_STACK: i32 = 16;
+const BLOCK_CACHE_BITS: u32 = 9;
+const BLOCK_CACHE_SIZE: usize = 1 << BLOCK_CACHE_BITS;
+const BLOCK_CACHE_MASK: usize = BLOCK_CACHE_SIZE - 1;
+const LONG_HASH_PHI: u64 = 0x9e37_79b9_7f4a_7c15;
+const JAVA_HASH_MAP_TREEIFY_THRESHOLD: usize = 8;
+const JAVA_HASH_MAP_MIN_TREEIFY_CAPACITY: usize = 64;
 
 #[derive(Clone, Copy)]
 struct ExplosionRay {
-    direction: DVec3,
+    step: DVec3,
     initial_power: f32,
 }
+
+#[derive(Clone, Copy)]
+struct ExplosionBlockCacheEntry {
+    tag: i64,
+    state: BlockStateId,
+    resistance: Option<f32>,
+    occupied: bool,
+    affected: bool,
+}
+
+impl ExplosionBlockCacheEntry {
+    const EMPTY: Self = Self {
+        tag: 0,
+        state: BlockStateId(0),
+        resistance: None,
+        occupied: false,
+        affected: false,
+    };
+}
+
+struct ExplosionBlockCache {
+    entries: [ExplosionBlockCacheEntry; BLOCK_CACHE_SIZE],
+}
+
+impl Default for ExplosionBlockCache {
+    fn default() -> Self {
+        Self {
+            entries: [ExplosionBlockCacheEntry::EMPTY; BLOCK_CACHE_SIZE],
+        }
+    }
+}
+
+struct RegionExplosionBlockReader<'reader, 'world> {
+    region: &'reader BlockRegionRead<'world>,
+}
+
+impl<'reader, 'world> RegionExplosionBlockReader<'reader, 'world> {
+    const fn new(region: &'reader BlockRegionRead<'world>) -> Self {
+        Self { region }
+    }
+}
+
+impl ExplosionBlockReader for RegionExplosionBlockReader<'_, '_> {
+    #[inline]
+    fn block_state(&self, pos: BlockPos) -> Option<BlockStateId> {
+        self.region.get_block_state(pos)
+    }
+}
+
+static RAY_STEPS: LazyLock<[DVec3; RAY_COUNT]> = LazyLock::new(|| {
+    let mut steps = [DVec3::ZERO; RAY_COUNT];
+    let mut index = 0;
+    for xx in 0..RAY_GRID_SIZE {
+        for yy in 0..RAY_GRID_SIZE {
+            for zz in 0..RAY_GRID_SIZE {
+                if is_boundary_ray(xx, yy, zz) {
+                    steps[index] = ray_direction(xx, yy, zz) * RAY_STEP;
+                    index += 1;
+                }
+            }
+        }
+    }
+    debug_assert_eq!(index, RAY_COUNT);
+    steps
+});
 
 #[derive(Clone, Copy)]
 struct ExplosionRayContext {
@@ -137,8 +212,7 @@ impl<'a> ServerExplosion<'a> {
             self.center,
             &GameEventContext::new(self.source, None),
         );
-        let mut affected =
-            self.calculate_exploded_positions(|| self.world.with_random(Random::next_f32));
+        let mut affected = self.calculate_exploded_positions_from_level_random();
         self.hurt_entities();
         if self.interacts_with_blocks() {
             self.interact_with_blocks(&mut affected);
@@ -149,20 +223,136 @@ impl<'a> ServerExplosion<'a> {
         affected.len()
     }
 
+    fn calculate_exploded_positions_from_level_random(&self) -> Vec<BlockPos> {
+        let Some(calculator) = self.immutable_calculator_for_rays() else {
+            return self.calculate_exploded_positions_sequential(|| {
+                self.world.with_random(Random::next_f32)
+            });
+        };
+
+        let powers = self
+            .world
+            .with_random(|random| self.draw_immutable_ray_powers(|| random.next_f32()));
+        self.calculate_immutable_ray_powers(&powers, calculator)
+    }
+
+    #[cfg(test)]
     fn calculate_exploded_positions(&self, mut next_float: impl FnMut() -> f32) -> Vec<BlockPos> {
-        let Some(calculator) = self.immutable_block_calculator else {
+        let Some(calculator) = self.immutable_calculator_for_rays() else {
             return self.calculate_exploded_positions_sequential(next_float);
         };
+
+        let powers = self.draw_immutable_ray_powers(&mut next_float);
+        self.calculate_immutable_ray_powers(&powers, calculator)
+    }
+
+    fn immutable_calculator_for_rays(&self) -> Option<&dyn ImmutableExplosionBlockCalculator> {
         if !self.radius.is_finite() || self.radius < 0.0 {
-            return self.calculate_exploded_positions_sequential(next_float);
+            return None;
+        }
+        self.immutable_block_calculator
+    }
+
+    fn calculate_immutable_ray_powers(
+        &self,
+        powers: &[f32; RAY_COUNT],
+        calculator: &dyn ImmutableExplosionBlockCalculator,
+    ) -> Vec<BlockPos> {
+        if let Some(read_radius) = calculator.bounded_block_read_radius()
+            && let Some(bounds) = self.immutable_ray_region_bounds(read_radius)
+            && let Some(Some(affected)) = self.world.try_with_block_region(bounds, |region| {
+                if !region.has_complete_data() {
+                    return None;
+                }
+                let reader = RegionExplosionBlockReader::new(region);
+                self.calculate_immutable_ray_powers_with_reader(powers, calculator, &reader)
+            })
+        {
+            return affected;
         }
 
-        let rays = self.draw_immutable_rays(&mut next_float);
+        self.calculate_immutable_ray_powers_uncached_with_reader(
+            powers,
+            calculator,
+            self.world.as_ref(),
+        )
+    }
+
+    fn calculate_immutable_ray_powers_with_reader<R: ExplosionBlockReader>(
+        &self,
+        powers: &[f32; RAY_COUNT],
+        calculator: &dyn ImmutableExplosionBlockCalculator,
+        reader: &R,
+    ) -> Option<Vec<BlockPos>> {
         let context = ExplosionRayContext {
             center: self.center,
             bounds: ExplosionWorldBounds::from_world(self.world),
         };
-        calculate_immutable_rays_sequential(&rays, context, self.world.as_ref(), calculator)
+        let mut affected = JavaBlockPosSet::default();
+        let mut cache = ExplosionBlockCache::default();
+        let cache_resistance = calculator.can_cache_explosion_resistance();
+        for (&step, &initial_power) in RAY_STEPS.iter().zip(powers) {
+            if !visit_immutable_ray_positions_cached(
+                ExplosionRay {
+                    step,
+                    initial_power,
+                },
+                context,
+                reader,
+                calculator,
+                cache_resistance,
+                &mut cache,
+                &mut affected,
+            ) {
+                return None;
+            }
+        }
+        Some(affected.into_iter().collect())
+    }
+
+    fn calculate_immutable_ray_powers_uncached_with_reader<R: ExplosionBlockReader>(
+        &self,
+        powers: &[f32; RAY_COUNT],
+        calculator: &dyn ImmutableExplosionBlockCalculator,
+        reader: &R,
+    ) -> Vec<BlockPos> {
+        let context = ExplosionRayContext {
+            center: self.center,
+            bounds: ExplosionWorldBounds::from_world(self.world),
+        };
+        let mut affected = JavaBlockPosSet::default();
+        for (&step, &initial_power) in RAY_STEPS.iter().zip(powers) {
+            visit_immutable_ray_positions(
+                ExplosionRay {
+                    step,
+                    initial_power,
+                },
+                context,
+                reader,
+                calculator,
+                |pos| {
+                    affected.insert(pos);
+                },
+            );
+        }
+        affected.into_iter().collect()
+    }
+
+    fn immutable_ray_region_bounds(&self, read_radius: u32) -> Option<BlockRegionBounds> {
+        if !self.center.is_finite() {
+            return None;
+        }
+        let maximum_ray_distance =
+            f64::from(self.radius) * f64::from(1.3_f32) / f64::from(RAY_POWER_DECAY) * RAY_STEP;
+        let extent = maximum_ray_distance + f64::from(read_radius) + 1.0;
+        if !extent.is_finite() {
+            return None;
+        }
+        let extent = DVec3::splat(extent);
+        Some(BlockRegionBounds::from_corners(
+            BlockPos::from(self.center - extent),
+            BlockPos::from(self.center + extent),
+        ))
     }
 
     fn calculate_exploded_positions_sequential(
@@ -172,89 +362,64 @@ impl<'a> ServerExplosion<'a> {
         let mut affected = JavaBlockPosSet::default();
         let bounds = ExplosionWorldBounds::from_world(self.world);
 
-        for xx in 0..RAY_GRID_SIZE {
-            for yy in 0..RAY_GRID_SIZE {
-                for zz in 0..RAY_GRID_SIZE {
-                    if xx != 0
-                        && xx != RAY_GRID_SIZE - 1
-                        && yy != 0
-                        && yy != RAY_GRID_SIZE - 1
-                        && zz != 0
-                        && zz != RAY_GRID_SIZE - 1
-                    {
-                        continue;
-                    }
-
-                    let mut xd = f64::from(xx as f32 / 15.0 * 2.0 - 1.0);
-                    let mut yd = f64::from(yy as f32 / 15.0 * 2.0 - 1.0);
-                    let mut zd = f64::from(zz as f32 / 15.0 * 2.0 - 1.0);
-                    let direction_length = (xd * xd + yd * yd + zd * zd).sqrt();
-                    xd /= direction_length;
-                    yd /= direction_length;
-                    zd /= direction_length;
-
-                    let mut remaining_power = self.radius * (0.7 + next_float() * 0.6);
-                    let mut ray_pos = self.center;
-                    while remaining_power > 0.0 {
-                        let pos = BlockPos::from(ray_pos);
-                        let state = self.world.get_block_state(pos);
-                        let fluid = state.get_fluid_state();
-                        if !bounds.contains(pos) {
-                            break;
-                        }
-
-                        if let Some(resistance) = self
-                            .damage_calculator
-                            .block_explosion_resistance(self, self.world, pos, state, fluid)
-                        {
-                            remaining_power -= (resistance + 0.3) * 0.3;
-                        }
-
-                        if remaining_power > 0.0
-                            && self.damage_calculator.should_block_explode(
-                                self,
-                                self.world,
-                                pos,
-                                state,
-                                remaining_power,
-                            )
-                        {
-                            affected.insert(pos);
-                        }
-
-                        ray_pos += DVec3::new(xd, yd, zd) * RAY_STEP;
-                        remaining_power -= RAY_POWER_DECAY;
-                    }
+        for &step in RAY_STEPS.iter() {
+            let mut remaining_power = self.radius * (0.7 + next_float() * 0.6);
+            let mut ray_pos = self.center;
+            while remaining_power > 0.0 {
+                let pos = BlockPos::from(ray_pos);
+                let state = self.world.get_block_state(pos);
+                let fluid = state.get_fluid_state();
+                if !bounds.contains(pos) {
+                    break;
                 }
+
+                if let Some(resistance) = self
+                    .damage_calculator
+                    .block_explosion_resistance(self, self.world, pos, state, fluid)
+                {
+                    remaining_power -= (resistance + 0.3) * 0.3;
+                }
+
+                if remaining_power > 0.0
+                    && self.damage_calculator.should_block_explode(
+                        self,
+                        self.world,
+                        pos,
+                        state,
+                        remaining_power,
+                    )
+                {
+                    affected.insert(pos);
+                }
+
+                ray_pos += step;
+                remaining_power -= RAY_POWER_DECAY;
             }
         }
 
         affected.into_iter().collect()
     }
 
-    fn draw_immutable_rays(&self, mut next_float: impl FnMut() -> f32) -> Vec<ExplosionRay> {
-        let mut rays = Vec::with_capacity(RAY_COUNT);
-        for xx in 0..RAY_GRID_SIZE {
-            for yy in 0..RAY_GRID_SIZE {
-                for zz in 0..RAY_GRID_SIZE {
-                    if xx != 0
-                        && xx != RAY_GRID_SIZE - 1
-                        && yy != 0
-                        && yy != RAY_GRID_SIZE - 1
-                        && zz != 0
-                        && zz != RAY_GRID_SIZE - 1
-                    {
-                        continue;
-                    }
-
-                    rays.push(ExplosionRay {
-                        direction: ray_direction(xx, yy, zz),
-                        initial_power: self.radius * (0.7 + next_float() * 0.6),
-                    });
-                }
-            }
+    fn draw_immutable_ray_powers(&self, mut next_float: impl FnMut() -> f32) -> [f32; RAY_COUNT] {
+        let mut powers = [0.0; RAY_COUNT];
+        for power in &mut powers {
+            *power = self.radius * (0.7 + next_float() * 0.6);
         }
-        rays
+        powers
+    }
+
+    #[cfg(test)]
+    fn draw_immutable_rays(&self, next_float: impl FnMut() -> f32) -> Vec<ExplosionRay> {
+        let powers = self.draw_immutable_ray_powers(next_float);
+        RAY_STEPS
+            .iter()
+            .copied()
+            .zip(powers)
+            .map(|(step, initial_power)| ExplosionRay {
+                step,
+                initial_power,
+            })
+            .collect()
     }
 
     fn hurt_entities(&mut self) {
@@ -413,6 +578,15 @@ fn ray_direction(xx: i32, yy: i32, zz: i32) -> DVec3 {
     DVec3::new(xd, yd, zd)
 }
 
+const fn is_boundary_ray(xx: i32, yy: i32, zz: i32) -> bool {
+    xx == 0
+        || xx == RAY_GRID_SIZE - 1
+        || yy == 0
+        || yy == RAY_GRID_SIZE - 1
+        || zz == 0
+        || zz == RAY_GRID_SIZE - 1
+}
+
 fn vanilla_shuffle<T>(values: &mut [T], mut next_index: impl FnMut(i32) -> i32) {
     let Ok(length) = i32::try_from(values.len()) else {
         return;
@@ -455,6 +629,7 @@ fn calculate_immutable_rays_sharded<R: ExplosionBlockReader>(
     unique_affected_positions(batches)
 }
 
+#[cfg(test)]
 fn calculate_immutable_rays_sequential<R: ExplosionBlockReader>(
     rays: &[ExplosionRay],
     context: ExplosionRayContext,
@@ -462,30 +637,125 @@ fn calculate_immutable_rays_sequential<R: ExplosionBlockReader>(
     calculator: &dyn ImmutableExplosionBlockCalculator,
 ) -> Vec<BlockPos> {
     let mut affected = JavaBlockPosSet::default();
+    let mut cache = ExplosionBlockCache::default();
+    let cache_resistance = calculator.can_cache_explosion_resistance();
     for ray in rays {
-        visit_immutable_ray_positions(*ray, context, reader, calculator, |pos| {
-            affected.insert(pos);
-        });
+        assert!(visit_immutable_ray_positions_cached(
+            *ray,
+            context,
+            reader,
+            calculator,
+            cache_resistance,
+            &mut cache,
+            &mut affected,
+        ));
     }
     affected.into_iter().collect()
 }
 
+fn visit_immutable_ray_positions_cached<R: ExplosionBlockReader>(
+    ray: ExplosionRay,
+    context: ExplosionRayContext,
+    reader: &R,
+    calculator: &dyn ImmutableExplosionBlockCalculator,
+    cache_resistance: bool,
+    cache: &mut ExplosionBlockCache,
+    affected: &mut JavaBlockPosSet,
+) -> bool {
+    let mut remaining_power = ray.initial_power;
+    let mut ray_pos = context.center;
+    let mut previous_cell: Option<(BlockPos, usize)> = None;
+    while remaining_power > 0.0 {
+        let pos = BlockPos::from(ray_pos);
+        let (tag, cache_index) = match previous_cell {
+            Some((previous, cache_index)) if previous == pos => {
+                (cache.entries[cache_index].tag, cache_index)
+            }
+            _ => {
+                let tag = PackedBlockPos::from(pos).as_raw();
+                (tag, explosion_block_cache_index(tag))
+            }
+        };
+        let cached = cache.entries[cache_index];
+        let cache_hit = cached.occupied && cached.tag == tag;
+        let state = if cache_hit {
+            cached.state
+        } else {
+            let Some(state) = reader.block_state(pos) else {
+                return false;
+            };
+            state
+        };
+        let fluid = state.get_fluid_state();
+        if !context.bounds.contains(pos) {
+            break;
+        }
+
+        let resistance = if cache_hit && cache_resistance {
+            cached.resistance
+        } else {
+            calculator.explosion_resistance(reader, pos, state, fluid)
+        };
+        if !cache_hit {
+            cache.entries[cache_index] = ExplosionBlockCacheEntry {
+                tag,
+                state,
+                resistance: if cache_resistance { resistance } else { None },
+                occupied: true,
+                affected: false,
+            };
+        }
+        previous_cell = Some((pos, cache_index));
+
+        if let Some(resistance) = resistance {
+            remaining_power -= (resistance + 0.3) * 0.3;
+        }
+
+        if remaining_power > 0.0
+            && calculator.should_explode(reader, pos, state, remaining_power)
+            && !cache.entries[cache_index].affected
+        {
+            affected.insert(pos);
+            cache.entries[cache_index].affected = true;
+        }
+
+        ray_pos += ray.step;
+        remaining_power -= RAY_POWER_DECAY;
+    }
+    true
+}
+
+#[inline]
+const fn explosion_block_cache_index(tag: i64) -> usize {
+    let mut mixed = (tag as u64).wrapping_mul(LONG_HASH_PHI);
+    mixed ^= mixed >> 32;
+    mixed ^= mixed >> 16;
+    (mixed as usize) & BLOCK_CACHE_MASK
+}
+
 #[derive(Default)]
 struct JavaBlockPosSet {
-    buckets: Vec<Vec<BlockPos>>,
+    buckets: Vec<SmallVec<[BlockPos; 2]>>,
     len: usize,
 }
 
 impl JavaBlockPosSet {
     fn insert(&mut self, pos: BlockPos) -> bool {
         if self.buckets.is_empty() {
-            self.buckets.resize_with(16, Vec::new);
+            self.buckets.resize_with(16, SmallVec::new);
         }
         let index = java_block_pos_bucket(pos, self.buckets.len());
         if self.buckets[index].contains(&pos) {
             return false;
         }
         self.buckets[index].push(pos);
+        // HashMap attempts to treeify after adding a ninth entry to one bin, but grows the
+        // table instead while its capacity is below 64. That split changes iteration order.
+        if self.buckets.len() < JAVA_HASH_MAP_MIN_TREEIFY_CAPACITY
+            && self.buckets[index].len() > JAVA_HASH_MAP_TREEIFY_THRESHOLD
+        {
+            self.resize();
+        }
         self.len += 1;
         if self.len > self.buckets.len() * 3 / 4 {
             self.resize();
@@ -499,7 +769,7 @@ impl JavaBlockPosSet {
             return;
         }
         let mut resized = Vec::with_capacity(new_capacity);
-        resized.resize_with(new_capacity, Vec::new);
+        resized.resize_with(new_capacity, SmallVec::new);
         for bucket in self.buckets.drain(..) {
             for pos in bucket {
                 let index = java_block_pos_bucket(pos, new_capacity);
@@ -544,7 +814,9 @@ fn visit_immutable_ray_positions<R: ExplosionBlockReader>(
     let mut ray_pos = context.center;
     while remaining_power > 0.0 {
         let pos = BlockPos::from(ray_pos);
-        let state = reader.block_state(pos);
+        let Some(state) = reader.block_state(pos) else {
+            return;
+        };
         let fluid = state.get_fluid_state();
         if !context.bounds.contains(pos) {
             break;
@@ -558,7 +830,7 @@ fn visit_immutable_ray_positions<R: ExplosionBlockReader>(
             visit(pos);
         }
 
-        ray_pos += ray.direction * RAY_STEP;
+        ray_pos += ray.step;
         remaining_power -= RAY_POWER_DECAY;
     }
 }
@@ -687,8 +959,8 @@ impl EntityExplosionExposure {
         self.x_step < 0.0 || self.y_step < 0.0 || self.z_step < 0.0
     }
 
-    fn sample_positions(self) -> SmallVec<[DVec3; 32]> {
-        let mut samples = SmallVec::new();
+    fn for_each_sample(self, mut visit: impl FnMut(DVec3)) -> usize {
+        let mut sample_count = 0;
         let mut x = 0.0;
         while x <= 1.0 {
             let mut y = 0.0;
@@ -705,31 +977,28 @@ impl EntityExplosionExposure {
                             + (self.bounding_box.max_z() - self.bounding_box.min_z()) * z
                             + self.z_offset,
                     );
-                    samples.push(from);
+                    visit(from);
+                    sample_count += 1;
                     z += self.z_step;
                 }
                 y += self.y_step;
             }
             x += self.x_step;
         }
+        sample_count
+    }
+
+    #[cfg(test)]
+    fn sample_positions(self) -> SmallVec<[DVec3; 32]> {
+        let mut samples = SmallVec::new();
+        self.for_each_sample(|sample| samples.push(sample));
         samples
     }
 
+    #[cfg(test)]
     #[inline]
     fn sample_is_visible(self, world: &World, center: DVec3, from: DVec3) -> bool {
         world.is_block_collision_path_clear(from, center, self.collision_context)
-    }
-
-    fn visible_sample_count_sequential(
-        self,
-        world: &World,
-        center: DVec3,
-        samples: &[DVec3],
-    ) -> u32 {
-        samples
-            .iter()
-            .filter(|&&from| self.sample_is_visible(world, center, from))
-            .count() as u32
     }
 
     fn exposure(visible_samples: u32, sample_count: usize) -> f32 {
@@ -737,21 +1006,31 @@ impl EntityExplosionExposure {
     }
 
     #[cfg(test)]
-    fn calculate(self, world: &World, center: DVec3) -> f32 {
+    fn calculate_uncached(self, world: &World, center: DVec3) -> f32 {
         if self.has_negative_step() {
             return 0.0;
         }
 
-        let samples = self.sample_positions();
-        Self::exposure(
-            self.visible_sample_count_sequential(world, center, &samples),
-            samples.len(),
-        )
+        self.calculate_with_visibility(|from| self.sample_is_visible(world, center, from))
     }
 
-    fn calculate_samples(self, world: &World, center: DVec3, samples: &[DVec3]) -> f32 {
-        let visible_samples = self.visible_sample_count_sequential(world, center, samples);
-        Self::exposure(visible_samples, samples.len())
+    fn calculate_with_visibility(self, mut is_visible: impl FnMut(DVec3) -> bool) -> f32 {
+        let mut visible_samples = 0;
+        let sample_count = self.for_each_sample(|from| {
+            if is_visible(from) {
+                visible_samples += 1;
+            }
+        });
+        Self::exposure(visible_samples, sample_count)
+    }
+
+    fn calculate_cached(self, world: &World, center: DVec3) -> f32 {
+        if self.has_negative_step() {
+            return 0.0;
+        }
+
+        let mut raycast = ExplosionExposureRaycast::new(world, self.collision_context);
+        self.calculate_with_visibility(|from| raycast.is_path_clear(from, center))
     }
 }
 
@@ -760,9 +1039,7 @@ fn seen_percent(world: &World, center: DVec3, entity: &dyn Entity) -> f32 {
     if exposure.has_negative_step() {
         return 0.0;
     }
-    let samples = exposure.sample_positions();
-
-    exposure.calculate_samples(world, center, &samples)
+    exposure.calculate_cached(world, center)
 }
 
 struct StackCollector {

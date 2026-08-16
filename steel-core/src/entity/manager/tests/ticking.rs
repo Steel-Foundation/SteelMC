@@ -1,6 +1,34 @@
 use super::*;
 
 #[test]
+fn tick_list_removal_and_reinsertion_preserve_tick_order() {
+    let mut tick_list = EntityTickList::default();
+    let first = entity(1, 1, DVec3::ZERO);
+    let second = entity(2, 2, DVec3::ZERO);
+    let third = entity(3, 3, DVec3::ZERO);
+
+    for entity in [&first, &second, &third] {
+        assert!(tick_list.add(entity));
+    }
+    assert!(Arc::ptr_eq(
+        &tick_list
+            .remove(second.id())
+            .expect("second entity should be active"),
+        &second
+    ));
+    assert!(tick_list.add(&second));
+
+    assert_eq!(
+        tick_list
+            .snapshot()
+            .into_iter()
+            .map(|entity| entity.id())
+            .collect::<Vec<_>>(),
+        vec![1, 3, 2]
+    );
+}
+
+#[test]
 fn tick_entities_skips_external_entities() {
     let manager = WorldEntityManager::new();
     let chunk = ChunkPos::new(0, 0);

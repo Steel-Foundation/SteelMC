@@ -23,6 +23,7 @@ use steel_utils::random::{Random, legacy_random::LegacyRandom};
 use steel_utils::types::{GameType, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Downcast as _, DowncastType, DowncastTypeKey,
+    PackedBlockPos,
 };
 use text_components::TextComponent;
 use uuid::Uuid;
@@ -138,9 +139,19 @@ struct VetoCustomCalculator {
 struct CountingImmutableCalculator {
     resistance_calls: AtomicUsize,
     decision_calls: AtomicUsize,
+    cache_resistance: bool,
+    bounded_read_radius: Option<u32>,
 }
 
 impl ImmutableExplosionBlockCalculator for CountingImmutableCalculator {
+    fn bounded_block_read_radius(&self) -> Option<u32> {
+        self.bounded_read_radius
+    }
+
+    fn can_cache_explosion_resistance(&self) -> bool {
+        self.cache_resistance
+    }
+
     fn explosion_resistance(
         &self,
         _reader: &dyn ExplosionBlockReader,
@@ -161,6 +172,18 @@ impl ImmutableExplosionBlockCalculator for CountingImmutableCalculator {
     ) -> bool {
         self.decision_calls.fetch_add(1, Ordering::Relaxed);
         true
+    }
+}
+
+struct CountingBlockReader<'a> {
+    world: &'a World,
+    calls: AtomicUsize,
+}
+
+impl ExplosionBlockReader for CountingBlockReader<'_> {
+    fn block_state(&self, pos: BlockPos) -> Option<BlockStateId> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Some(self.world.get_block_state(pos))
     }
 }
 
@@ -578,7 +601,7 @@ fn source_and_custom_calculator_hooks_run_on_the_sequential_lane() {
 
 fn assert_exposure_matches_seen_percent(world: &World, center: DVec3, entity: &dyn Entity) -> f32 {
     let exposure = EntityExplosionExposure::capture(entity);
-    let live = exposure.calculate(world, center);
+    let live = exposure.calculate_uncached(world, center);
     assert_eq!(
         seen_percent(world, center, entity).to_bits(),
         live.to_bits()
@@ -650,6 +673,101 @@ fn player_exposure_distinguishes_partial_and_full_occlusion() {
 }
 
 #[test]
+fn cached_exposure_raycast_matches_clear_partial_and_blocked_paths() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("cached_explosion_exposure");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let center = DVec3::new(0.5, 64.5, 0.5);
+    let player = TestPlayerBuilder::new(
+        Arc::clone(&world),
+        Uuid::from_u128(0xCA_C4_ED),
+        "Cached",
+        80,
+    )
+    .build();
+    player.base().set_position_local(DVec3::new(2.5, 64.0, 0.5));
+
+    let compare = || {
+        let exposure = EntityExplosionExposure::capture(player.as_ref());
+        let uncached = exposure.calculate_uncached(world.as_ref(), center);
+        let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), exposure.collision_context);
+        let cached = exposure.calculate_with_visibility(|from| raycast.is_path_clear(from, center));
+        assert_eq!(cached.to_bits(), uncached.to_bits());
+        (cached, raycast.stats())
+    };
+
+    let (clear, stats) = compare();
+    assert_eq!(clear.to_bits(), 1.0_f32.to_bits());
+    assert!(stats.cache_hits > 0, "stats={stats:?}");
+    assert!(
+        stats.state_lookups * 2 < stats.block_visits,
+        "stats={stats:?}"
+    );
+    assert!(
+        stats.collision_lookups < stats.block_visits,
+        "stats={stats:?}"
+    );
+
+    assert!(world.set_block(
+        BlockPos::new(1, 64, 0),
+        vanilla_blocks::STONE_SLAB.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    let (partial, _) = compare();
+    assert!(partial > 0.0 && partial < 1.0, "partial exposure={partial}");
+
+    assert!(world.set_block(
+        BlockPos::new(1, 64, 0),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    let (blocked, _) = compare();
+    assert_eq!(blocked.to_bits(), 0.0_f32.to_bits());
+}
+
+#[test]
+fn cached_exposure_matches_across_chunk_and_section_boundaries() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("cached_exposure_boundaries");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    insert_ready_full_chunk(&world, ChunkPos::new(1, 0));
+    assert!(world.set_block(
+        BlockPos::new(15, 79, 0),
+        vanilla_blocks::STONE_SLAB.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    let entity = ItemEntity::new(
+        &vanilla_entities::ITEM,
+        81,
+        DVec3::new(16.5, 80.0, 0.5),
+        Arc::downgrade(&world),
+    );
+
+    assert_exposure_matches_seen_percent(&world, DVec3::new(14.5, 78.5, 0.5), &entity);
+}
+
+#[test]
+fn exposure_cache_does_not_retain_air_from_a_missing_chunk() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("explosion_exposure_missing_chunk");
+    let from = DVec3::new(2.5, 64.5, 0.5);
+    let to = DVec3::new(0.5, 64.5, 0.5);
+    let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), BlockCollisionContext::empty());
+
+    assert!(raycast.is_path_clear(from, to));
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    assert!(world.set_block(
+        BlockPos::new(1, 64, 0),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    assert!(!raycast.is_path_clear(from, to));
+}
+
+#[test]
 fn exposure_clipping_uses_the_entity_collision_context() {
     init_vanilla_registry();
     init_behaviors();
@@ -716,7 +834,7 @@ fn moving_piston_exposure_uses_live_block_entities() {
         Arc::downgrade(&world),
     );
     let exposure = EntityExplosionExposure::capture(&entity);
-    let live = exposure.calculate(world.as_ref(), center);
+    let live = exposure.calculate_uncached(world.as_ref(), center);
     assert!(exposure.sample_positions().into_iter().any(|from| {
         !world.is_block_collision_path_clear(from, center, exposure.collision_context)
     }));
@@ -1194,6 +1312,66 @@ fn deterministic_empty_world_rays_match_the_java_hash_set_fixture() {
 }
 
 #[test]
+fn precomputed_ray_steps_match_vanilla_generation_order() {
+    let mut index = 0;
+    for xx in 0..RAY_GRID_SIZE {
+        for yy in 0..RAY_GRID_SIZE {
+            for zz in 0..RAY_GRID_SIZE {
+                if !is_boundary_ray(xx, yy, zz) {
+                    continue;
+                }
+                let expected = ray_direction(xx, yy, zz) * RAY_STEP;
+                let actual = RAY_STEPS[index];
+                assert_eq!(actual.x.to_bits(), expected.x.to_bits());
+                assert_eq!(actual.y.to_bits(), expected.y.to_bits());
+                assert_eq!(actual.z.to_bits(), expected.z.to_bits());
+                index += 1;
+            }
+        }
+    }
+    assert_eq!(index, RAY_COUNT);
+}
+
+#[test]
+fn precomputed_ray_steps_match_java_bit_digest() {
+    let mut digest = 0xcbf2_9ce4_8422_2325_u64;
+    for step in RAY_STEPS.iter() {
+        for bits in [step.x.to_bits(), step.y.to_bits(), step.z.to_bits()] {
+            for byte in bits.to_le_bytes() {
+                digest ^= u64::from(byte);
+                digest = digest.wrapping_mul(0x100_0000_01b3);
+            }
+        }
+    }
+
+    // Produced by the Minecraft 26.2 ServerExplosion expression under OpenJDK 25.
+    assert_eq!(digest, 0x0f55_998f_8a80_904d);
+}
+
+#[test]
+fn block_cache_index_uses_the_full_fastutil_long_mix() {
+    let fixtures = [
+        (BlockPos::new(0, 64, 0), 94),
+        (BlockPos::new(1, 64, 0), 61),
+        (BlockPos::new(0, 64, 1), 14),
+        (BlockPos::new(50, 200, 53), 464),
+        (BlockPos::new(50, 200, 68), 48),
+        (BlockPos::new(-1, 64, -1), 436),
+    ];
+
+    for (pos, expected) in fixtures {
+        let tag = PackedBlockPos::from(pos).as_raw();
+        assert_eq!(explosion_block_cache_index(tag), expected);
+    }
+
+    // These positions collide under the truncated multiply-high variant.
+    assert_ne!(
+        explosion_block_cache_index(PackedBlockPos::from(BlockPos::new(50, 200, 53)).as_raw()),
+        explosion_block_cache_index(PackedBlockPos::from(BlockPos::new(50, 200, 68)).as_raw()),
+    );
+}
+
+#[test]
 fn ray_sampling_consumes_the_level_random_in_vanilla_order() {
     const SEED: i64 = 0x1E71_0DE5;
 
@@ -1212,6 +1390,30 @@ fn ray_sampling_consumes_the_level_random_in_vanilla_order() {
         -1.0,
         ExplosionInteraction::None,
     ));
+
+    let actual_next = world.with_random(Random::next_i64);
+    assert_eq!(actual_next, expected.next_i64());
+}
+
+#[test]
+fn immutable_ray_sampling_preserves_the_level_random_sequence() {
+    const SEED: i64 = 0x1E71_0DE6;
+
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("immutable_explosion_level_random");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    world.set_random_seed_for_test(SEED);
+    let mut expected = LegacyRandom::from_seed(SEED as u64);
+    for _ in 0..RAY_COUNT {
+        expected.next_f32();
+    }
+
+    let calculator = DefaultExplosionDamageCalculator;
+    let mut options =
+        ExplosionOptions::new(DVec3::new(0.5, 64.5, 0.5), 0.0, ExplosionInteraction::None);
+    options.immutable_block_calculator = Some(&calculator);
+    world.explode(options);
 
     let actual_next = world.with_random(Random::next_i64);
     assert_eq!(actual_next, expected.next_i64());
@@ -1277,6 +1479,46 @@ fn unusual_radii_retain_vanilla_ray_sampling_and_bounds_behavior() {
     });
     assert_eq!(draws, RAY_COUNT);
     assert!(affected.is_empty());
+}
+
+#[test]
+fn immutable_rays_match_compatibility_lane_at_radius_boundaries() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("immutable_explosion_radius_boundaries");
+    let calculator = DefaultExplosionDamageCalculator;
+    let center = DVec3::new(15.999, 79.999, -15.999);
+
+    for radius in [-0.0, f32::MIN_POSITIVE, 4.0, 32.0] {
+        let compatibility = ServerExplosion::new(
+            &world,
+            None,
+            None,
+            None,
+            None,
+            center,
+            radius,
+            false,
+            BlockInteraction::Destroy,
+        );
+        let immutable = ServerExplosion::new(
+            &world,
+            None,
+            None,
+            None,
+            Some(&calculator),
+            center,
+            radius,
+            false,
+            BlockInteraction::Destroy,
+        );
+
+        assert_eq!(
+            immutable.calculate_exploded_positions(|| 0.5),
+            compatibility.calculate_exploded_positions(|| 0.5),
+            "radius={radius:?}"
+        );
+    }
 }
 
 #[test]
@@ -1506,6 +1748,188 @@ fn immutable_parallel_fixture_preserves_calculator_call_counts() {
     assert_eq!(
         parallel.iter().copied().collect::<FxHashSet<_>>(),
         sequential.iter().copied().collect::<FxHashSet<_>>()
+    );
+}
+
+#[test]
+fn immutable_cache_preserves_order_and_extensible_hook_calls() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("immutable_explosion_cache");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let center = DVec3::new(8.5, 64.5, 8.5);
+    let explosion = ServerExplosion::new(
+        &world,
+        None,
+        None,
+        None,
+        None,
+        center,
+        4.0,
+        false,
+        BlockInteraction::Destroy,
+    );
+    let rays = explosion.draw_immutable_rays(|| 0.5);
+    let context = ExplosionRayContext {
+        center,
+        bounds: ExplosionWorldBounds::from_world(&world),
+    };
+
+    let cached_reader = CountingBlockReader {
+        world: world.as_ref(),
+        calls: AtomicUsize::new(0),
+    };
+    let cached_calculator = CountingImmutableCalculator {
+        cache_resistance: true,
+        ..CountingImmutableCalculator::default()
+    };
+    let cached =
+        calculate_immutable_rays_sequential(&rays, context, &cached_reader, &cached_calculator);
+
+    let uncached_reader = CountingBlockReader {
+        world: world.as_ref(),
+        calls: AtomicUsize::new(0),
+    };
+    let uncached_calculator = CountingImmutableCalculator {
+        cache_resistance: true,
+        ..CountingImmutableCalculator::default()
+    };
+    let mut uncached_set = JavaBlockPosSet::default();
+    for &ray in &rays {
+        visit_immutable_ray_positions(
+            ray,
+            context,
+            &uncached_reader,
+            &uncached_calculator,
+            |pos| {
+                uncached_set.insert(pos);
+            },
+        );
+    }
+    let uncached = uncached_set.into_iter().collect::<Vec<_>>();
+
+    assert_eq!(cached, uncached);
+    assert_eq!(
+        cached_calculator.decision_calls.load(Ordering::Relaxed),
+        uncached_calculator.decision_calls.load(Ordering::Relaxed)
+    );
+    assert!(
+        cached_calculator.resistance_calls.load(Ordering::Relaxed)
+            < uncached_calculator.resistance_calls.load(Ordering::Relaxed)
+    );
+    assert!(
+        cached_reader.calls.load(Ordering::Relaxed) < uncached_reader.calls.load(Ordering::Relaxed)
+    );
+}
+
+#[test]
+fn incomplete_bounded_region_falls_back_before_calculator_hooks() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("immutable_explosion_incomplete_region");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let center = DVec3::new(15.5, 64.5, 8.5);
+    let actual_calculator = CountingImmutableCalculator {
+        bounded_read_radius: Some(0),
+        ..CountingImmutableCalculator::default()
+    };
+    let actual_explosion = ServerExplosion::new(
+        &world,
+        None,
+        None,
+        None,
+        Some(&actual_calculator),
+        center,
+        4.0,
+        false,
+        BlockInteraction::Destroy,
+    );
+    let powers = actual_explosion.draw_immutable_ray_powers(|| 0.5);
+
+    let actual = actual_explosion.calculate_immutable_ray_powers(&powers, &actual_calculator);
+
+    let expected_calculator = CountingImmutableCalculator::default();
+    let expected_explosion = ServerExplosion::new(
+        &world,
+        None,
+        None,
+        None,
+        None,
+        center,
+        4.0,
+        false,
+        BlockInteraction::Destroy,
+    );
+    let expected = expected_explosion.calculate_immutable_ray_powers_uncached_with_reader(
+        &powers,
+        &expected_calculator,
+        world.as_ref(),
+    );
+
+    assert_eq!(actual, expected);
+    assert_eq!(
+        actual_calculator.resistance_calls.load(Ordering::Relaxed),
+        expected_calculator.resistance_calls.load(Ordering::Relaxed)
+    );
+    assert_eq!(
+        actual_calculator.decision_calls.load(Ordering::Relaxed),
+        expected_calculator.decision_calls.load(Ordering::Relaxed)
+    );
+}
+
+#[test]
+fn bounded_immutable_reader_covers_maximum_power_rays() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("bounded_explosion_reader_coverage");
+    let calculator = DefaultExplosionDamageCalculator;
+    let powers = [4.0_f32 * 1.3_f32; RAY_COUNT];
+
+    for center in [
+        DVec3::new(0.0, 64.0, 0.0),
+        DVec3::new(15.999, 79.999, 15.999),
+        DVec3::new(-15.999, 48.001, -15.999),
+    ] {
+        let explosion = ServerExplosion::new(
+            &world,
+            None,
+            None,
+            None,
+            Some(&calculator),
+            center,
+            4.0,
+            false,
+            BlockInteraction::Destroy,
+        );
+        let bounds = explosion
+            .immutable_ray_region_bounds(0)
+            .expect("finite radius-four explosion has bounded ray coverage");
+        let affected = world
+            .try_with_block_region(bounds, |region| {
+                let reader = RegionExplosionBlockReader::new(region);
+                explosion.calculate_immutable_ray_powers_with_reader(&powers, &calculator, &reader)
+            })
+            .expect("radius-four ray workset stays within the bounded-reader slot limit")
+            .expect("bounded reader covers every maximum-power ray access");
+
+        assert!(
+            !affected.is_empty(),
+            "maximum-power rays affect blocks at {center:?}"
+        );
+    }
+}
+
+#[test]
+fn java_block_pos_set_matches_jdk_collision_resize_order() {
+    let mut positions = JavaBlockPosSet::default();
+    for x in (0..=128).step_by(16) {
+        assert!(positions.insert(BlockPos::new(x, 0, 0)));
+    }
+
+    assert_eq!(positions.buckets.len(), 32);
+    assert_eq!(
+        positions.into_iter().collect::<Vec<_>>(),
+        [0, 32, 64, 96, 128, 16, 48, 80, 112].map(|x| BlockPos::new(x, 0, 0))
     );
 }
 

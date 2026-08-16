@@ -5,7 +5,7 @@
 //! of chunk load state; chunks are still the persistence boundary, and only
 //! full simulated chunks tick entities.
 
-use std::{collections::BTreeMap, error::Error, fmt, mem, slice, sync::Arc};
+use std::{collections::BTreeMap, error::Error, fmt, iter::FusedIterator, mem, slice, sync::Arc};
 
 use glam::DVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -406,7 +406,7 @@ struct ManagerState {
     chunk_visibility: FxHashMap<ChunkPos, EntityVisibility>,
     live_by_id: FxHashMap<i32, EntityEntry>,
     live_by_uuid: FxHashMap<Uuid, i32>,
-    accessible_order: OrderedEntityIds,
+    accessible_order: IndexedOrderedEntityIds,
     by_section: BTreeMap<PackedSectionPos, OrderedEntityIds>,
     by_spatial_cell: FxHashMap<EntitySpatialCell, OrderedEntityIds>,
     by_chunk: FxHashMap<ChunkPos, FxHashSet<i32>>,
@@ -447,30 +447,187 @@ impl OrderedEntityIds {
         self.ids.is_empty()
     }
 
-    fn iter(&self) -> impl Iterator<Item = &i32> {
+    fn iter(&self) -> slice::Iter<'_, i32> {
         self.ids.iter()
     }
 }
 
+/// Append-ordered IDs with indexed unlinking for large lifecycle lists.
+///
+/// Free nodes are reused, and geometric compaction keeps removals amortized constant-time.
+#[derive(Default)]
+struct IndexedOrderedEntityIds {
+    nodes: Vec<OrderedEntityIdNode>,
+    node_by_id: FxHashMap<i32, usize>,
+    first: Option<usize>,
+    last: Option<usize>,
+    free: Option<usize>,
+}
+
+struct OrderedEntityIdNode {
+    entity_id: i32,
+    previous: Option<usize>,
+    next: Option<usize>,
+}
+
+impl IndexedOrderedEntityIds {
+    const MIN_COMPACTION_SIZE: usize = 64;
+
+    fn insert(&mut self, entity_id: i32) -> bool {
+        if self.node_by_id.contains_key(&entity_id) {
+            return false;
+        }
+        let previous = self.last;
+        let index = if let Some(free) = self.free {
+            self.free = self.nodes[free].next;
+            free
+        } else {
+            let index = self.nodes.len();
+            self.nodes.push(OrderedEntityIdNode {
+                entity_id,
+                previous: None,
+                next: None,
+            });
+            index
+        };
+
+        self.nodes[index] = OrderedEntityIdNode {
+            entity_id,
+            previous,
+            next: None,
+        };
+        let replaced = self.node_by_id.insert(entity_id, index);
+        debug_assert!(replaced.is_none());
+
+        if let Some(previous) = previous {
+            self.nodes[previous].next = Some(index);
+        } else {
+            self.first = Some(index);
+        }
+        self.last = Some(index);
+        true
+    }
+
+    fn remove(&mut self, entity_id: i32) -> bool {
+        let Some(index) = self.node_by_id.remove(&entity_id) else {
+            return false;
+        };
+
+        let previous = self.nodes[index].previous;
+        let next = self.nodes[index].next;
+        if let Some(previous) = previous {
+            self.nodes[previous].next = next;
+        } else {
+            self.first = next;
+        }
+        if let Some(next) = next {
+            self.nodes[next].previous = previous;
+        } else {
+            self.last = previous;
+        }
+
+        self.nodes[index] = OrderedEntityIdNode {
+            entity_id,
+            previous: None,
+            next: self.free,
+        };
+        self.free = Some(index);
+        self.compact_if_sparse();
+        true
+    }
+
+    fn len(&self) -> usize {
+        self.node_by_id.len()
+    }
+
+    fn iter(&self) -> IndexedOrderedEntityIdsIter<'_> {
+        IndexedOrderedEntityIdsIter {
+            nodes: &self.nodes,
+            next: self.first,
+            remaining: self.len(),
+        }
+    }
+
+    fn compact_if_sparse(&mut self) {
+        let live_len = self.len();
+        if self.nodes.len() < Self::MIN_COMPACTION_SIZE || live_len > self.nodes.len() / 2 {
+            return;
+        }
+
+        let mut compacted_nodes: Vec<OrderedEntityIdNode> = Vec::with_capacity(live_len);
+        let mut compacted_node_by_id = FxHashMap::default();
+        compacted_node_by_id.reserve(live_len);
+        let mut current = self.first;
+        while let Some(index) = current {
+            let node = &self.nodes[index];
+            let compacted_index = compacted_nodes.len();
+            let previous = compacted_index.checked_sub(1);
+            if let Some(previous) = previous {
+                compacted_nodes[previous].next = Some(compacted_index);
+            }
+            compacted_nodes.push(OrderedEntityIdNode {
+                entity_id: node.entity_id,
+                previous,
+                next: None,
+            });
+            compacted_node_by_id.insert(node.entity_id, compacted_index);
+            current = node.next;
+        }
+        debug_assert_eq!(compacted_nodes.len(), live_len);
+
+        self.nodes = compacted_nodes;
+        self.node_by_id = compacted_node_by_id;
+        self.first = (!self.nodes.is_empty()).then_some(0);
+        self.last = self.nodes.len().checked_sub(1);
+        self.free = None;
+    }
+}
+
+struct IndexedOrderedEntityIdsIter<'a> {
+    nodes: &'a [OrderedEntityIdNode],
+    next: Option<usize>,
+    remaining: usize,
+}
+
+impl<'a> Iterator for IndexedOrderedEntityIdsIter<'a> {
+    type Item = &'a i32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let index = self.next?;
+        let node = &self.nodes[index];
+        self.next = node.next;
+        self.remaining -= 1;
+        Some(&node.entity_id)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+}
+
+impl ExactSizeIterator for IndexedOrderedEntityIdsIter<'_> {}
+impl FusedIterator for IndexedOrderedEntityIdsIter<'_> {}
+
 #[derive(Default)]
 struct EntityTickList {
     active: FxHashMap<i32, SharedEntity>,
-    order: Vec<i32>,
+    order: IndexedOrderedEntityIds,
 }
 
 impl EntityTickList {
     fn add(&mut self, entity: &SharedEntity) -> bool {
         let entity_id = entity.id();
-        if self.active.insert(entity_id, entity.clone()).is_some() {
+        if self.active.insert(entity_id, Arc::clone(entity)).is_some() {
             return false;
         }
-        self.order.push(entity_id);
+        self.order.insert(entity_id);
         true
     }
 
     fn remove(&mut self, entity_id: i32) -> Option<SharedEntity> {
         let removed = self.active.remove(&entity_id)?;
-        self.order.retain(|id| *id != entity_id);
+        let removed_from_order = self.order.remove(entity_id);
+        debug_assert!(removed_from_order);
         Some(removed)
     }
 
@@ -479,11 +636,13 @@ impl EntityTickList {
     }
 
     fn snapshot(&self) -> Vec<SharedEntity> {
-        self.order
-            .iter()
-            .filter_map(|id| self.active.get(id))
-            .cloned()
-            .collect()
+        let mut snapshot = Vec::with_capacity(self.order.len());
+        for entity_id in self.order.iter() {
+            if let Some(entity) = self.active.get(entity_id) {
+                snapshot.push(Arc::clone(entity));
+            }
+        }
+        snapshot
     }
 }
 

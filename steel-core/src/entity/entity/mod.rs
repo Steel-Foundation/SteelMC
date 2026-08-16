@@ -2194,16 +2194,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Refreshes cached fluid contact from this entity's current bounding box.
     fn refresh_fluid_contact(&self) -> EntityFluidContact {
-        self.scan_and_store_fluid_contact(false)
+        self.scan_and_store_fluid_contact(false, false)
+    }
+
+    /// Refreshes cached fluid contact and applies currents without advancing
+    /// base-tick-only eye-water history.
+    fn refresh_fluid_contact_with_currents(&self) -> EntityFluidContact {
+        self.scan_and_store_fluid_contact(false, true)
     }
 
     /// Refreshes cached fluid contact with vanilla base-tick eye-water history.
     fn refresh_fluid_contact_for_base_tick(&self) -> EntityFluidContact {
-        self.scan_and_store_fluid_contact(true)
+        self.scan_and_store_fluid_contact(true, true)
     }
 
     /// Scans current fluid contact and stores it on the entity base.
-    fn scan_and_store_fluid_contact(&self, advance_eye_water_history: bool) -> EntityFluidContact {
+    fn scan_and_store_fluid_contact(
+        &self,
+        advance_eye_water_history: bool,
+        include_currents: bool,
+    ) -> EntityFluidContact {
         let Some(world) = self.level() else {
             let contact = EntityFluidContact::default();
             if advance_eye_water_history {
@@ -2214,7 +2224,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return contact;
         };
 
-        let contact = if advance_eye_water_history {
+        let contact = if include_currents {
             EntityFluidContact::scan_with_currents(
                 &world,
                 self.position(),
@@ -2232,15 +2242,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         };
         if advance_eye_water_history {
             self.base().set_fluid_contact_for_base_tick(contact);
-            self.apply_fluid_current_for_base_tick(&world, contact);
         } else {
             self.base().set_fluid_contact(contact);
+        }
+        if include_currents {
+            self.apply_fluid_current_impulses(&world, contact);
         }
         contact
     }
 
-    /// Applies vanilla water/lava current impulses from the base-tick fluid scan.
-    fn apply_fluid_current_for_base_tick(&self, world: &Arc<World>, contact: EntityFluidContact) {
+    /// Applies vanilla water/lava current impulses from a fluid interaction update.
+    fn apply_fluid_current_impulses(&self, world: &Arc<World>, contact: EntityFluidContact) {
         if !self.is_pushed_by_fluid() {
             return;
         }
@@ -2468,7 +2480,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
         if let Some(position) = accepted.position {
             self.try_set_position(position)?;
-            self.refresh_fluid_contact();
         }
 
         self.set_rotation(accepted.rotation);
@@ -3201,7 +3212,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return None;
         }
         self.base().clear_collision_flags();
-        self.refresh_fluid_contact();
 
         Some(MoveResult {
             final_position,
@@ -3283,7 +3293,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         };
         self.base()
             .set_movement_flags(movement_flags, ground_contact);
-        self.refresh_fluid_contact();
 
         if self.is_server_driven_movement() && self.apply_fall_damage_after_move(&result, &world) {
             return Some(result);
@@ -3391,6 +3400,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         pos: BlockPos,
         world: &Arc<World>,
     ) {
+        // LivingEntity refreshes fluid interaction after movement, before it evaluates fall state.
+        if self.as_living_entity().is_some() && !self.is_in_water() {
+            self.refresh_fluid_contact_with_currents();
+            self.base().reset_fall_distance_in_water();
+        }
+
         if !self.is_in_water() && vertical_movement < 0.0 {
             self.base().accumulate_fall_distance(vertical_movement);
         }

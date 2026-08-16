@@ -59,6 +59,225 @@ pub struct ClipHitResult {
     pub world_border_hit: bool,
 }
 
+const EXPLOSION_EXPOSURE_CACHE_BITS: u32 = 6;
+const EXPLOSION_EXPOSURE_CACHE_SIZE: usize = 1 << EXPLOSION_EXPOSURE_CACHE_BITS;
+const EXPLOSION_EXPOSURE_CACHE_MASK: usize = EXPLOSION_EXPOSURE_CACHE_SIZE - 1;
+const EXPLOSION_EXPOSURE_HASH_PHI: u64 = 0x9e37_79b9_7f4a_7c15;
+
+#[derive(Clone, Copy)]
+struct ExplosionExposureCacheEntry {
+    pos: BlockPos,
+    collision: OffsetVoxelShape,
+    occupied: bool,
+}
+
+impl ExplosionExposureCacheEntry {
+    const EMPTY: Self = Self {
+        pos: BlockPos::new(0, 0, 0),
+        collision: OffsetVoxelShape::without_offset(VoxelShape::EMPTY),
+        occupied: false,
+    };
+}
+
+/// Per-entity cache for vanilla explosion exposure rays.
+///
+/// The cache must not outlive one `ServerExplosion.getSeenPercent` equivalent.
+/// Missing chunks are never cached, allowing asynchronous Full publication to
+/// become visible while the synchronous gameplay callback is running. Dynamic
+/// collision shapes are resolved on every visit so live block entities retain
+/// their normal query semantics.
+pub(crate) struct ExplosionExposureRaycast<'world> {
+    world: &'world World,
+    collision_context: BlockCollisionContext,
+    entries: [ExplosionExposureCacheEntry; EXPLOSION_EXPOSURE_CACHE_SIZE],
+    #[cfg(test)]
+    stats: ExplosionExposureRaycastStats,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ExplosionExposureRaycastStats {
+    pub(crate) block_visits: usize,
+    pub(crate) cache_hits: usize,
+    pub(crate) state_lookups: usize,
+    pub(crate) collision_lookups: usize,
+}
+
+impl<'world> ExplosionExposureRaycast<'world> {
+    pub(crate) const fn new(
+        world: &'world World,
+        collision_context: BlockCollisionContext,
+    ) -> Self {
+        Self {
+            world,
+            collision_context,
+            entries: [ExplosionExposureCacheEntry::EMPTY; EXPLOSION_EXPOSURE_CACHE_SIZE],
+            #[cfg(test)]
+            stats: ExplosionExposureRaycastStats {
+                block_visits: 0,
+                cache_hits: 0,
+                state_lookups: 0,
+                collision_lookups: 0,
+            },
+        }
+    }
+
+    /// Returns whether a collider-only, fluid-free exposure ray misses every block.
+    pub(crate) fn is_path_clear(&mut self, from: DVec3, to: DVec3) -> bool {
+        is_collision_path_clear(from, to, |pos| self.block_intersects_ray(pos, from, to))
+    }
+
+    fn block_intersects_ray(&mut self, pos: BlockPos, from: DVec3, to: DVec3) -> bool {
+        #[cfg(test)]
+        {
+            self.stats.block_visits += 1;
+        }
+
+        let cache_index = explosion_exposure_cache_index(pos);
+        let entry = self.entries[cache_index];
+        if entry.occupied && entry.pos == pos {
+            #[cfg(test)]
+            {
+                self.stats.cache_hits += 1;
+            }
+            return Self::static_collision_intersects(entry.collision, pos, from, to);
+        }
+
+        #[cfg(test)]
+        {
+            self.stats.state_lookups += 1;
+            self.stats.collision_lookups += 1;
+        }
+        let (state, cacheable) = self.world.explosion_exposure_block_state(pos);
+        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
+        if state.get_block().config.dynamic_shape {
+            return behavior
+                .get_collision_boxes(state, self.world, pos, self.collision_context)
+                .into_iter()
+                .any(|aabb| World::clip_local_aabb(pos, from, to, aabb).is_some());
+        }
+
+        let shape = behavior.get_collision_shape(state, self.world, pos, self.collision_context);
+        let offset = if shape.is_empty() {
+            DVec3::ZERO
+        } else {
+            behavior.get_collision_shape_offset(state, self.world, pos, self.collision_context)
+        };
+        let collision = OffsetVoxelShape::new(shape, offset);
+        let intersects = Self::static_collision_intersects(collision, pos, from, to);
+        if cacheable {
+            self.entries[cache_index] = ExplosionExposureCacheEntry {
+                pos,
+                collision,
+                occupied: true,
+            };
+        }
+        intersects
+    }
+
+    fn static_collision_intersects(
+        collision: OffsetVoxelShape,
+        pos: BlockPos,
+        from: DVec3,
+        to: DVec3,
+    ) -> bool {
+        collision
+            .iter()
+            .any(|aabb| World::clip_local_aabb(pos, from, to, aabb).is_some())
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn stats(&self) -> ExplosionExposureRaycastStats {
+        self.stats
+    }
+}
+
+#[inline]
+fn explosion_exposure_cache_index(pos: BlockPos) -> usize {
+    let tag = PackedBlockPos::from(pos).as_raw() as u64;
+    let mut mixed = tag.wrapping_mul(EXPLOSION_EXPOSURE_HASH_PHI);
+    mixed ^= mixed >> 32;
+    mixed ^= mixed >> 16;
+    (mixed as usize) & EXPLOSION_EXPOSURE_CACHE_MASK
+}
+
+#[inline]
+fn is_collision_path_clear(
+    start_pos: DVec3,
+    end_pos: DVec3,
+    mut blocks_ray: impl FnMut(BlockPos) -> bool,
+) -> bool {
+    if start_pos == end_pos {
+        return true;
+    }
+
+    let adjust = -1.0e-7f64;
+    let to = end_pos.lerp(start_pos, adjust);
+    let from = start_pos.lerp(end_pos, adjust);
+    let mut block = BlockPos::from(from);
+    if blocks_ray(block) {
+        return false;
+    }
+
+    let difference = to - from;
+    let step = difference.signum().as_ivec3();
+    let delta = DVec3::new(
+        if step.x == 0 {
+            f64::MAX
+        } else {
+            f64::from(step.x) / difference.x
+        },
+        if step.y == 0 {
+            f64::MAX
+        } else {
+            f64::from(step.y) / difference.y
+        },
+        if step.z == 0 {
+            f64::MAX
+        } else {
+            f64::from(step.z) / difference.z
+        },
+    );
+    let mut next = DVec3::new(
+        delta.x
+            * if step.x > 0 {
+                1.0 - (from.x - from.x.floor())
+            } else {
+                from.x - from.x.floor()
+            },
+        delta.y
+            * if step.y > 0 {
+                1.0 - (from.y - from.y.floor())
+            } else {
+                from.y - from.y.floor()
+            },
+        delta.z
+            * if step.z > 0 {
+                1.0 - (from.z - from.z.floor())
+            } else {
+                from.z - from.z.floor()
+            },
+    );
+
+    while next.x <= 1.0 || next.y <= 1.0 || next.z <= 1.0 {
+        if next.x < next.y && next.x < next.z {
+            block.0.x += step.x;
+            next.x += delta.x;
+        } else if next.y < next.z {
+            block.0.y += step.y;
+            next.y += delta.y;
+        } else {
+            block.0.z += step.z;
+            next.z += delta.z;
+        }
+        if blocks_ray(block) {
+            return false;
+        }
+    }
+
+    true
+}
+
 impl ClipHitResult {
     /// Returns whether this clip missed all selected block and fluid shapes.
     #[must_use]
@@ -68,6 +287,27 @@ impl ClipHitResult {
 }
 
 impl World {
+    /// Reads exposure state while distinguishing stable Full data from an air
+    /// fallback caused by a chunk that may still publish asynchronously.
+    fn explosion_exposure_block_state(&self, pos: BlockPos) -> (BlockStateId, bool) {
+        if !self.is_in_valid_bounds(pos) {
+            return (
+                REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR),
+                true,
+            );
+        }
+
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        self.chunk_map
+            .with_full_chunk(chunk_pos, |chunk| (chunk.get_block_state(pos), true))
+            .unwrap_or_else(|| {
+                (
+                    REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR),
+                    false,
+                )
+            })
+    }
+
     /// Checks if a ray intersects with a block's selection box.
     pub fn ray_outline_check(
         &self,
@@ -178,17 +418,14 @@ impl World {
     }
 
     /// Returns whether a collider-only, fluid-free clip misses every block.
+    #[cfg(test)]
     pub(crate) fn is_block_collision_path_clear(
         &self,
         start_pos: DVec3,
         end_pos: DVec3,
         collision_context: BlockCollisionContext,
     ) -> bool {
-        if start_pos == end_pos {
-            return true;
-        }
-
-        let blocks_ray = |pos: BlockPos| {
+        is_collision_path_clear(start_pos, end_pos, |pos| {
             let state = self.get_block_state(pos);
             let boxes = BLOCK_BEHAVIORS
                 .get_behavior(state.get_block())
@@ -196,73 +433,7 @@ impl World {
             boxes
                 .into_iter()
                 .any(|aabb| Self::clip_local_aabb(pos, start_pos, end_pos, aabb).is_some())
-        };
-
-        let adjust = -1.0e-7f64;
-        let to = end_pos.lerp(start_pos, adjust);
-        let from = start_pos.lerp(end_pos, adjust);
-        let mut block = BlockPos::from(from);
-        if blocks_ray(block) {
-            return false;
-        }
-
-        let difference = to - from;
-        let step = difference.signum().as_ivec3();
-        let delta = DVec3::new(
-            if step.x == 0 {
-                f64::MAX
-            } else {
-                f64::from(step.x) / difference.x
-            },
-            if step.y == 0 {
-                f64::MAX
-            } else {
-                f64::from(step.y) / difference.y
-            },
-            if step.z == 0 {
-                f64::MAX
-            } else {
-                f64::from(step.z) / difference.z
-            },
-        );
-        let mut next = DVec3::new(
-            delta.x
-                * if step.x > 0 {
-                    1.0 - (from.x - from.x.floor())
-                } else {
-                    from.x - from.x.floor()
-                },
-            delta.y
-                * if step.y > 0 {
-                    1.0 - (from.y - from.y.floor())
-                } else {
-                    from.y - from.y.floor()
-                },
-            delta.z
-                * if step.z > 0 {
-                    1.0 - (from.z - from.z.floor())
-                } else {
-                    from.z - from.z.floor()
-                },
-        );
-
-        while next.x <= 1.0 || next.y <= 1.0 || next.z <= 1.0 {
-            if next.x < next.y && next.x < next.z {
-                block.0.x += step.x;
-                next.x += delta.x;
-            } else if next.y < next.z {
-                block.0.y += step.y;
-                next.y += delta.y;
-            } else {
-                block.0.z += step.z;
-                next.z += delta.z;
-            }
-            if blocks_ray(block) {
-                return false;
-            }
-        }
-
-        true
+        })
     }
 
     /// Performs vanilla `CollisionGetter.clipIncludingBorder`.
@@ -805,5 +976,32 @@ impl World {
         }
 
         (None, None)
+    }
+}
+
+#[cfg(test)]
+mod explosion_exposure_cache_tests {
+    use super::*;
+
+    #[test]
+    fn cache_index_uses_the_full_fastutil_long_mix() {
+        let fixtures = [
+            (BlockPos::new(0, 64, 0), 30),
+            (BlockPos::new(1, 64, 0), 61),
+            (BlockPos::new(0, 64, 1), 14),
+            (BlockPos::new(50, 200, 53), 16),
+            (BlockPos::new(50, 200, 68), 48),
+            (BlockPos::new(-1, 64, -1), 52),
+        ];
+
+        for (pos, expected) in fixtures {
+            assert_eq!(explosion_exposure_cache_index(pos), expected);
+        }
+
+        // These positions collide under the truncated multiply-high variant.
+        assert_ne!(
+            explosion_exposure_cache_index(BlockPos::new(50, 200, 53)),
+            explosion_exposure_cache_index(BlockPos::new(50, 200, 68)),
+        );
     }
 }

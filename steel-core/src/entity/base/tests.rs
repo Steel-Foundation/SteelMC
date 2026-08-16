@@ -665,8 +665,8 @@ fn player_respawn_reset_restores_fresh_base_state_and_preserves_tags() {
     assert_eq!(base.dimensions(), reset_dimensions);
     assert_eq!(base.last_movements_for_block_effects().len(), 0);
     assert_eq!(
-        base.take_movements_for_block_effects(),
-        vec![EntityMovement::new(reset_position, reset_position)]
+        base.take_movements_for_block_effects().as_slice(),
+        &[EntityMovement::new(reset_position, reset_position)]
     );
 }
 
@@ -1105,9 +1105,17 @@ fn movement_trace_falls_back_to_old_position_when_no_moves_were_recorded() {
 
     let movements = base.take_movements_for_block_effects();
 
+    assert!(!movements.spilled());
+    assert!(
+        !base
+            .movement_trace
+            .lock()
+            .final_movements_this_tick
+            .spilled()
+    );
     assert_eq!(
-        movements,
-        vec![EntityMovement::new(
+        movements.as_slice(),
+        &[EntityMovement::new(
             DVec3::new(-1.0, 2.0, -3.0),
             DVec3::new(1.0, 2.0, 3.0)
         )]
@@ -1125,6 +1133,7 @@ fn movement_trace_replays_last_finalized_movements() {
     assert_eq!(base.last_movements_for_block_effects().len(), 0);
 
     base.record_movement_this_tick(EntityMovement::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0)));
+    assert!(!base.movement_trace.lock().movement_this_tick.spilled());
     base.set_position_local(DVec3::new(1.0, 0.0, 0.0));
     let finalized = base.take_movements_for_block_effects();
     assert_eq!(base.last_movements_for_block_effects(), finalized);
@@ -1154,8 +1163,8 @@ fn movement_trace_appends_direct_position_change_after_recorded_moves() {
     let movements = base.take_movements_for_block_effects();
 
     assert_eq!(
-        movements,
-        vec![
+        movements.as_slice(),
+        &[
             EntityMovement::with_axis_dependent_original_movement(
                 DVec3::new(0.0, 64.0, 0.0),
                 DVec3::new(1.0, 64.0, 0.0),
@@ -1186,8 +1195,8 @@ fn movement_trace_removes_latest_movement_recording() {
     let movements = base.take_movements_for_block_effects();
 
     assert_eq!(
-        movements,
-        vec![EntityMovement::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0))]
+        movements.as_slice(),
+        &[EntityMovement::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0))]
     );
 }
 

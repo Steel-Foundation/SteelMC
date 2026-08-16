@@ -147,13 +147,14 @@ pub trait ExplosionDamageCalculator: Send + Sync {
 /// Keeping this surface narrow prevents worker tasks from reaching mutable world,
 /// entity, block-entity, or general [`crate::world::LevelReader`] behavior.
 pub(crate) trait ExplosionBlockReader: Sync {
-    fn block_state(&self, pos: BlockPos) -> BlockStateId;
+    /// Returns `None` when `pos` is outside a bounded reader's stable view.
+    fn block_state(&self, pos: BlockPos) -> Option<BlockStateId>;
 }
 
 impl ExplosionBlockReader for World {
     #[inline]
-    fn block_state(&self, pos: BlockPos) -> BlockStateId {
-        self.get_block_state(pos)
+    fn block_state(&self, pos: BlockPos) -> Option<BlockStateId> {
+        Some(self.get_block_state(pos))
     }
 }
 
@@ -164,7 +165,27 @@ impl ExplosionBlockReader for World {
 /// immutable. Implementations may only inspect block states through
 /// [`ExplosionBlockReader`].
 pub(crate) trait ImmutableExplosionBlockCalculator: Send + Sync {
-    /// Extra block radius that this calculator may inspect around each ray cell.
+    /// Returns the greatest per-axis block offset (Chebyshev radius) this calculator reads from
+    /// each ray position. Implementations opting in must never increase ray power through a
+    /// returned resistance.
+    ///
+    /// Opting in permits one bounded, stable world view for the ray phase. Every reader access
+    /// made by [`Self::explosion_resistance`] and [`Self::should_explode`] must remain within this
+    /// distance. Returning `None` retains the live-world compatibility path.
+    fn bounded_block_read_radius(&self) -> Option<u32> {
+        None
+    }
+
+    /// Whether repeated resistance queries for an unchanged position may reuse one result.
+    ///
+    /// A bounded reader guarantees stable block states during ray traversal. An implementation
+    /// must still opt in because the compatibility contract permits calculators to observe how
+    /// often this method runs. Live-world fallback traversal does not cache reads or resistance.
+    fn can_cache_explosion_resistance(&self) -> bool {
+        false
+    }
+
+    /// Returns the effective resistance at a ray position.
     fn explosion_resistance(
         &self,
         _reader: &dyn ExplosionBlockReader,
@@ -186,7 +207,15 @@ pub(crate) trait ImmutableExplosionBlockCalculator: Send + Sync {
     }
 }
 
-impl ImmutableExplosionBlockCalculator for DefaultExplosionDamageCalculator {}
+impl ImmutableExplosionBlockCalculator for DefaultExplosionDamageCalculator {
+    fn bounded_block_read_radius(&self) -> Option<u32> {
+        Some(0)
+    }
+
+    fn can_cache_explosion_resistance(&self) -> bool {
+        true
+    }
+}
 
 fn default_block_explosion_resistance(state: BlockStateId, fluid: FluidState) -> Option<f32> {
     if state.is_air() && fluid.is_empty() {

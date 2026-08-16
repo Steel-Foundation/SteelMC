@@ -1,4 +1,7 @@
 use super::*;
+use crate::entity::{AcceptedClientMovement, AcceptedClientMovementOutcome, VisitedBlockPositions};
+use crate::physics::MoverType;
+use steel_utils::types::UpdateFlags;
 
 #[test]
 fn resolved_movement_application_matches_vanilla_threshold() {
@@ -26,6 +29,109 @@ fn move_without_physics_returns_none_when_position_commit_rejects() {
 
     assert!(result.is_none());
     assert_vec3_close(entity.position(), DVec3::ZERO);
+}
+
+#[test]
+fn move_preserves_fluid_contact_until_the_entity_fluid_update() {
+    init_vanilla_registry();
+    let world = fresh_test_world("entity_move_fluid_update_boundary");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let entity = LivingFluidTestEntity::new_in_world(1.0, 0.0, true, &world);
+    entity.set_no_physics(true);
+
+    assert!(
+        entity
+            .move_entity(MoverType::SelfMovement, DVec3::X)
+            .is_some()
+    );
+
+    assert_eq!(
+        entity.fluid_contact().water_height().to_bits(),
+        1.0_f64.to_bits()
+    );
+    assert_eq!(
+        entity.refresh_fluid_contact().water_height().to_bits(),
+        0.0_f64.to_bits()
+    );
+}
+
+#[test]
+fn living_move_refreshes_fluid_before_fall_state_is_applied() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("living_move_fluid_fall_boundary");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    assert!(world.set_block(
+        BlockPos::new(8, 64, 8),
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, &world);
+    entity.base.set_position_local(DVec3::new(8.5, 65.1, 8.5));
+    entity.base.set_fall_distance(8.0);
+
+    assert!(
+        entity
+            .move_entity(MoverType::SelfMovement, DVec3::new(0.0, -0.25, 0.0))
+            .is_some()
+    );
+
+    assert!(
+        entity.fluid_contact().water_height() > 0.0,
+        "position={:?}, box={:?}, contact={:?}",
+        entity.position(),
+        entity.bounding_box(),
+        entity.fluid_contact()
+    );
+    assert_eq!(entity.fall_distance().to_bits(), 0.0_f64.to_bits());
+}
+
+#[test]
+fn accepted_living_movement_uses_the_post_move_fluid_interaction() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("accepted_living_move_fluid_boundary");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    assert!(world.set_block(
+        BlockPos::new(8, 64, 8),
+        vanilla_blocks::WATER.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, &world);
+    entity.base.set_position_local(DVec3::new(8.5, 65.1, 8.5));
+    entity.base.set_fall_distance(8.0);
+
+    let result = entity.default_apply_accepted_client_movement(
+        &world,
+        AcceptedClientMovement {
+            position: Some(DVec3::new(8.5, 64.85, 8.5)),
+            rotation: (0.0, 0.0),
+            on_ground: false,
+            horizontal_collision: false,
+            movement: DVec3::new(0.0, -0.25, 0.0),
+            reset_fall_distance: false,
+        },
+    );
+
+    assert!(matches!(result, Ok(AcceptedClientMovementOutcome::Applied)));
+    assert!(entity.fluid_contact().water_height() > 0.0);
+    assert_eq!(entity.fall_distance().to_bits(), 0.0_f64.to_bits());
+}
+
+#[test]
+fn block_effect_visited_positions_stay_inline_for_short_paths_and_spill_exactly() {
+    let mut positions = VisitedBlockPositions::default();
+    for x in 0..8 {
+        assert!(positions.insert(BlockPos::new(x, 0, 0)));
+    }
+    assert!(positions.overflow.is_none());
+    assert!(!positions.insert(BlockPos::new(7, 0, 0)));
+
+    assert!(positions.insert(BlockPos::new(8, 0, 0)));
+    assert!(positions.overflow.is_some());
+    for x in 0..=8 {
+        assert!(!positions.insert(BlockPos::new(x, 0, 0)));
+    }
 }
 
 #[test]

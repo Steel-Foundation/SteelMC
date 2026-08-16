@@ -85,6 +85,14 @@ impl ExplosionDamageCalculator for UsedPortalDamageCalculator {
 }
 
 impl ImmutableExplosionBlockCalculator for UsedPortalDamageCalculator {
+    fn bounded_block_read_radius(&self) -> Option<u32> {
+        Some(0)
+    }
+
+    fn can_cache_explosion_resistance(&self) -> bool {
+        true
+    }
+
     fn explosion_resistance(
         &self,
         reader: &dyn ExplosionBlockReader,
@@ -201,6 +209,13 @@ impl PrimedTntEntity {
         self.entity_data.lock().fuse.set(fuse);
     }
 
+    fn decrement_fuse(&self) -> i32 {
+        let mut entity_data = self.entity_data.lock();
+        let fuse = *entity_data.fuse.get() - 1;
+        entity_data.fuse.set(fuse);
+        fuse
+    }
+
     /// Returns the block state rendered by the client.
     #[must_use]
     pub fn block_state(&self) -> BlockStateId {
@@ -270,25 +285,21 @@ impl Entity for PrimedTntEntity {
         self.apply_gravity();
         self.move_entity(MoverType::SelfMovement, self.velocity());
         self.apply_effects_from_blocks();
-        self.set_velocity(self.velocity() * f64::from(AIR_DRAG));
+        let mut velocity = self.velocity() * f64::from(AIR_DRAG);
         if self.on_ground() {
-            let velocity = self.velocity();
-            self.set_velocity(DVec3::new(
-                velocity.x * 0.7,
-                velocity.y * -0.5,
-                velocity.z * 0.7,
-            ));
+            velocity = DVec3::new(velocity.x * 0.7, velocity.y * -0.5, velocity.z * 0.7);
         }
+        self.set_velocity(velocity);
 
-        let fuse = self.fuse() - 1;
-        self.set_fuse(fuse);
+        let fuse = self.decrement_fuse();
         if fuse <= 0 {
             self.set_removed(RemovalReason::Discarded);
             if let Some(world) = self.level() {
                 self.explode(&world);
             }
         } else {
-            self.refresh_fluid_contact_for_base_tick();
+            self.refresh_fluid_contact_with_currents();
+            self.base.reset_fall_distance_in_water();
             // Vanilla's remaining-fuse smoke particle is client-local.
         }
     }
@@ -380,7 +391,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::entity::next_entity_id;
+    use crate::entity::{EntityFluidContact, next_entity_id};
     use crate::player::ResetReason;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
@@ -506,6 +517,29 @@ mod tests {
     }
 
     #[test]
+    fn surviving_tick_updates_fluid_without_advancing_base_tick_eye_history() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("primed_tnt_direct_fluid_update");
+        let pos = BlockPos::new(8, 64, 8);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        let entity = PrimedTntEntity::new(
+            &vanilla_entities::TNT,
+            1,
+            DVec3::new(8.5, 64.0, 8.5),
+            Arc::downgrade(&world),
+        );
+        entity
+            .base
+            .set_fluid_contact(EntityFluidContact::from_parts(1.0, 0.0, true, false));
+
+        entity.tick();
+
+        assert_eq!(entity.fluid_contact(), EntityFluidContact::default());
+        assert!(!entity.base.was_eye_in_water());
+    }
+
+    #[test]
     fn fuse_zero_discards_tnt_and_disabled_rule_suppresses_the_explosion() {
         init_vanilla_registry();
         init_behaviors();
@@ -525,11 +559,14 @@ mod tests {
             Arc::downgrade(&world),
         );
         entity.set_fuse(1);
+        let cached_contact = EntityFluidContact::from_parts(1.0, 0.0, true, false);
+        entity.base.set_fluid_contact(cached_contact);
 
         entity.tick();
 
         assert!(entity.is_removed());
         assert_eq!(entity.fuse(), 0);
+        assert_eq!(entity.fluid_contact(), cached_contact);
         assert_eq!(
             world.get_block_state(pos).get_block(),
             &vanilla_blocks::GLASS
