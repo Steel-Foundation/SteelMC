@@ -1,4 +1,5 @@
 use std::{
+    mem,
     sync::{Arc, LazyLock},
     vec::IntoIter,
 };
@@ -9,6 +10,7 @@ use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 #[cfg(test)]
 use rustc_hash::{FxBuildHasher, FxHashSet};
+#[cfg(test)]
 use smallvec::SmallVec;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
@@ -296,11 +298,12 @@ impl<'a> ServerExplosion<'a> {
             bounds: ExplosionWorldBounds::from_world(self.world),
         };
         let mut affected = JavaBlockPosSet::default();
-        let mut cache = ExplosionBlockCache::default();
         let cache_policy = ImmutableRayCachePolicy {
             resistance: calculator.can_cache_explosion_resistance(),
             always_allows_block_explosion: calculator.always_allows_block_explosion(),
         };
+
+        let mut cache = ExplosionBlockCache::default();
         for (&step, &initial_power) in RAY_STEPS.iter().zip(powers) {
             if !visit_immutable_ray_positions_cached(
                 ExplosionRay {
@@ -465,6 +468,10 @@ impl<'a> ServerExplosion<'a> {
         let builtin_entity_effects = self.damage_calculator.has_builtin_entity_effects();
         let mut exposure_raycast =
             ExplosionExposureRaycast::new(self.world.as_ref(), BlockCollisionContext::empty());
+        exposure_raycast.configure_clear_grid(
+            BlockPos::from(bounds.min_corner()),
+            BlockPos::from(bounds.max_corner()),
+        );
         // The freshly constructed cache is already safe for the first target.
         let mut reusable_from_previous_tnt = true;
 
@@ -791,29 +798,78 @@ const fn explosion_block_cache_index(tag: i64) -> usize {
 
 #[derive(Default)]
 struct JavaBlockPosSet {
-    buckets: Vec<SmallVec<[BlockPos; 2]>>,
-    len: usize,
+    buckets: Vec<JavaBlockPosBucket>,
+    entries: Vec<JavaBlockPosEntry>,
+}
+
+#[derive(Clone, Copy)]
+struct JavaBlockPosBucket {
+    head: u32,
+    tail: u32,
+}
+
+impl JavaBlockPosBucket {
+    const EMPTY: Self = Self {
+        head: JAVA_BLOCK_POS_SET_EMPTY_INDEX,
+        tail: JAVA_BLOCK_POS_SET_EMPTY_INDEX,
+    };
+}
+
+struct JavaBlockPosEntry {
+    pos: BlockPos,
+    next: u32,
 }
 
 impl JavaBlockPosSet {
     fn insert(&mut self, pos: BlockPos) -> bool {
         if self.buckets.is_empty() {
-            self.buckets.resize_with(16, SmallVec::new);
+            self.buckets.resize(16, JavaBlockPosBucket::EMPTY);
+            self.entries.reserve(16);
         }
         let index = java_block_pos_bucket(pos, self.buckets.len());
-        if self.buckets[index].contains(&pos) {
-            return false;
+        let bucket = self.buckets[index];
+        let mut current = bucket.head;
+        let mut bin_len = 0;
+        while current != JAVA_BLOCK_POS_SET_EMPTY_INDEX {
+            let entry = &self.entries[current as usize];
+            if entry.pos == pos {
+                return false;
+            }
+            current = entry.next;
+            bin_len += 1;
         }
-        self.buckets[index].push(pos);
+
+        let Ok(entry_index) = u32::try_from(self.entries.len()) else {
+            panic!("JavaBlockPosSet entry arena exceeded its u32 index space");
+        };
+        assert_ne!(
+            entry_index, JAVA_BLOCK_POS_SET_EMPTY_INDEX,
+            "JavaBlockPosSet entry arena exhausted its u32 index space"
+        );
+        self.entries.push(JavaBlockPosEntry {
+            pos,
+            next: JAVA_BLOCK_POS_SET_EMPTY_INDEX,
+        });
+        if bucket.tail == JAVA_BLOCK_POS_SET_EMPTY_INDEX {
+            self.buckets[index] = JavaBlockPosBucket {
+                head: entry_index,
+                tail: entry_index,
+            };
+        } else {
+            self.entries[bucket.tail as usize].next = entry_index;
+            self.buckets[index].tail = entry_index;
+        }
+
         // HashMap attempts to treeify after adding a ninth entry to one bin, but grows the
         // table instead while its capacity is below 64. That split changes iteration order.
         if self.buckets.len() < JAVA_HASH_MAP_MIN_TREEIFY_CAPACITY
-            && self.buckets[index].len() > JAVA_HASH_MAP_TREEIFY_THRESHOLD
+            && bin_len >= JAVA_HASH_MAP_TREEIFY_THRESHOLD
         {
             self.resize();
         }
-        self.len += 1;
-        if self.len > self.buckets.len() * 3 / 4 {
+        // Steel intentionally keeps list bins at larger capacities. HashMap tree-bin order can
+        // depend on JVM identity hashes and is not a reproducible Vanilla ordering contract.
+        if self.entries.len() > self.buckets.len() * 3 / 4 {
             self.resize();
         }
         true
@@ -824,15 +880,28 @@ impl JavaBlockPosSet {
         if new_capacity == self.buckets.len() {
             return;
         }
-        let mut resized = Vec::with_capacity(new_capacity);
-        resized.resize_with(new_capacity, SmallVec::new);
-        for bucket in self.buckets.drain(..) {
-            for pos in bucket {
-                let index = java_block_pos_bucket(pos, new_capacity);
-                resized[index].push(pos);
+        let resized = vec![JavaBlockPosBucket::EMPTY; new_capacity];
+        let old_buckets = mem::replace(&mut self.buckets, resized);
+        for bucket in old_buckets {
+            let mut current = bucket.head;
+            while current != JAVA_BLOCK_POS_SET_EMPTY_INDEX {
+                let entry_index = current as usize;
+                let next = self.entries[entry_index].next;
+                let index = java_block_pos_bucket(self.entries[entry_index].pos, new_capacity);
+                let new_bucket = self.buckets[index];
+                self.entries[entry_index].next = JAVA_BLOCK_POS_SET_EMPTY_INDEX;
+                if new_bucket.tail == JAVA_BLOCK_POS_SET_EMPTY_INDEX {
+                    self.buckets[index] = JavaBlockPosBucket {
+                        head: current,
+                        tail: current,
+                    };
+                } else {
+                    self.entries[new_bucket.tail as usize].next = current;
+                    self.buckets[index].tail = current;
+                }
+                current = next;
             }
         }
-        self.buckets = resized;
     }
 }
 
@@ -841,13 +910,20 @@ impl IntoIterator for JavaBlockPosSet {
     type IntoIter = IntoIter<BlockPos>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.buckets
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .into_iter()
+        let mut ordered = Vec::with_capacity(self.entries.len());
+        for bucket in self.buckets {
+            let mut current = bucket.head;
+            while current != JAVA_BLOCK_POS_SET_EMPTY_INDEX {
+                let entry = &self.entries[current as usize];
+                ordered.push(entry.pos);
+                current = entry.next;
+            }
+        }
+        ordered.into_iter()
     }
 }
+
+const JAVA_BLOCK_POS_SET_EMPTY_INDEX: u32 = u32::MAX;
 
 const fn java_block_pos_bucket(pos: BlockPos, capacity: usize) -> usize {
     let hash = pos

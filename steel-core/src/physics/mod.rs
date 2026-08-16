@@ -9,6 +9,12 @@
 //! The implementation closely follows vanilla's `Entity.move()` method to ensure
 //! 1:1 movement validation for anti-cheat purposes.
 
+use steel_registry::{
+    blocks::{BlockRef, block_state_ext::BlockStateExt},
+    vanilla_blocks,
+};
+use steel_utils::{BlockStateId, Identifier};
+
 pub mod collision;
 pub(crate) mod entity_move;
 pub mod movement_validation;
@@ -31,3 +37,20 @@ pub use shapes::{collide, join_is_not_empty, merged_face_occludes, translate_sha
 
 /// Collision epsilon used for AABB deflation (vanilla constant).
 pub const COLLISION_EPSILON: f64 = 1.0e-5;
+
+fn block_may_expand_collision_cursor(block: BlockRef, has_large_static_shape: bool) -> bool {
+    block.key.namespace != Identifier::VANILLA_NAMESPACE
+        || block.config.dynamic_shape
+        || block == &vanilla_blocks::MOVING_PISTON
+        || has_large_static_shape
+}
+
+/// Returns whether a state may require Vanilla's expanded block-collision cursor.
+pub(crate) fn block_state_may_expand_collision_cursor(state: BlockStateId) -> bool {
+    block_may_expand_collision_cursor(
+        state.get_block(),
+        state
+            .get_static_collision_shape()
+            .has_large_collision_shape(),
+    )
+}

@@ -16,6 +16,7 @@ use steel_registry::{REGISTRY, RegistryEntry};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, locks::SyncRwLock, serial::WriteTo};
 
 use crate::chunk::paletted_container::{BiomePalette, BlockPalette};
+use crate::physics::block_state_may_expand_collision_cursor;
 
 /// Lock-free index of sections containing randomly-ticking blocks or fluids.
 ///
@@ -571,6 +572,17 @@ impl ChunkSection {
                 .maybe_has(|state| state.get_light_emission() > 0)
     }
 
+    /// Returns whether this section may need Vanilla's expanded collision cursor boundary.
+    ///
+    /// Dynamic Vanilla states have no cached collision shape, so Vanilla treats all of them as
+    /// potentially large. Plugin-owned states receive the same conservative treatment because
+    /// their behavior may supply a collision shape that is not represented by extracted data.
+    #[must_use]
+    pub(crate) fn maybe_has_special_colliding_blocks(&self) -> bool {
+        self.states
+            .maybe_has(block_state_may_expand_collision_cursor)
+    }
+
     /// Appends block-light source positions in `ScalableLux` local-index order.
     pub fn append_block_light_sources(
         &self,
@@ -1014,5 +1026,35 @@ mod tests {
 
         assert_eq!(old_state, air);
         assert_eq!(section.non_empty_block_count(), 1);
+    }
+
+    #[test]
+    fn special_collision_palette_scan_tracks_static_dynamic_and_building_states() {
+        init_test_behaviors();
+
+        let air = vanilla_blocks::AIR.default_state();
+        let mut section = ChunkSection::new_empty();
+        assert!(!section.maybe_has_special_colliding_blocks());
+
+        section.set_block_state(0, 0, 0, vanilla_blocks::STONE.default_state());
+        assert!(!section.maybe_has_special_colliding_blocks());
+
+        section.set_block_state(1, 0, 0, vanilla_blocks::OAK_FENCE.default_state());
+        assert!(section.maybe_has_special_colliding_blocks());
+        section.set_block_state(1, 0, 0, air);
+        assert!(!section.maybe_has_special_colliding_blocks());
+
+        section.set_block_state(2, 0, 0, vanilla_blocks::SCAFFOLDING.default_state());
+        assert!(section.maybe_has_special_colliding_blocks());
+        section.set_block_state(2, 0, 0, air);
+        assert!(!section.maybe_has_special_colliding_blocks());
+
+        section.set_block_state_for_generation(
+            3,
+            0,
+            0,
+            vanilla_blocks::MOVING_PISTON.default_state(),
+        );
+        assert!(section.maybe_has_special_colliding_blocks());
     }
 }

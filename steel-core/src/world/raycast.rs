@@ -67,6 +67,112 @@ const EXPLOSION_EXPOSURE_CACHE_SIZE: usize = 1 << EXPLOSION_EXPOSURE_CACHE_BITS;
 const EXPLOSION_EXPOSURE_CACHE_MASK: usize = EXPLOSION_EXPOSURE_CACHE_SIZE - 1;
 const EXPLOSION_EXPOSURE_HASH_PHI: u64 = 0x9e37_79b9_7f4a_7c15;
 
+// A normal radius-four explosion queries a 19x19x19 block region. Two bits per position fit in
+// these inline words, avoiding one heap allocation per explosion while unusual radii simply use
+// the compatibility path.
+const EXPLOSION_EXPOSURE_CLEAR_GRID_WORDS: usize = 224;
+const EXPLOSION_EXPOSURE_CLEAR_GRID_POSITIONS: usize =
+    EXPLOSION_EXPOSURE_CLEAR_GRID_WORDS * (u64::BITS as usize / 2);
+
+#[derive(Clone, Copy)]
+struct ExplosionExposureClearGridBounds {
+    min: BlockPos,
+    size_x: usize,
+    size_y: usize,
+    size_z: usize,
+}
+
+struct ExplosionExposureClearGrid {
+    bounds: Option<ExplosionExposureClearGridBounds>,
+    // Packed two-bit values: 0 is unresolved, 1 is a stable static empty shape, and 2 must use
+    // the exact collision path. Each lookup therefore reads one word instead of two bitsets.
+    states: [u64; EXPLOSION_EXPOSURE_CLEAR_GRID_WORDS],
+}
+
+impl ExplosionExposureClearGrid {
+    const fn new() -> Self {
+        Self {
+            bounds: None,
+            states: [0; EXPLOSION_EXPOSURE_CLEAR_GRID_WORDS],
+        }
+    }
+
+    fn configure(&mut self, min: BlockPos, max: BlockPos) {
+        let Some(size_x) = inclusive_axis_size(min.x(), max.x()) else {
+            self.bounds = None;
+            return;
+        };
+        let Some(size_y) = inclusive_axis_size(min.y(), max.y()) else {
+            self.bounds = None;
+            return;
+        };
+        let Some(size_z) = inclusive_axis_size(min.z(), max.z()) else {
+            self.bounds = None;
+            return;
+        };
+        let Some(volume) = size_x
+            .checked_mul(size_y)
+            .and_then(|plane| plane.checked_mul(size_z))
+        else {
+            self.bounds = None;
+            return;
+        };
+        if volume > EXPLOSION_EXPOSURE_CLEAR_GRID_POSITIONS {
+            self.bounds = None;
+            return;
+        }
+
+        self.bounds = Some(ExplosionExposureClearGridBounds {
+            min,
+            size_x,
+            size_y,
+            size_z,
+        });
+        self.states.fill(0);
+    }
+
+    fn clear(&mut self) {
+        self.states.fill(0);
+    }
+
+    fn index(&self, pos: BlockPos) -> Option<usize> {
+        let bounds = self.bounds?;
+        // Wrapping subtraction maps every below-min coordinate to a large unsigned value. Since
+        // the configured grid is tiny, the same range checks safely reject both underflow and
+        // coordinates above the maximum without three checked-subtraction branches.
+        let x = pos.x().wrapping_sub(bounds.min.x()) as u32 as usize;
+        let y = pos.y().wrapping_sub(bounds.min.y()) as u32 as usize;
+        let z = pos.z().wrapping_sub(bounds.min.z()) as u32 as usize;
+        if x >= bounds.size_x || y >= bounds.size_y || z >= bounds.size_z {
+            return None;
+        }
+        Some((y * bounds.size_z + z) * bounds.size_x + x)
+    }
+
+    fn cached(&self, index: usize) -> Option<bool> {
+        let word = index / (u64::BITS as usize / 2);
+        let shift = (index % (u64::BITS as usize / 2)) * 2;
+        match (self.states[word] >> shift) & 0b11 {
+            0 => None,
+            1 => Some(true),
+            _ => Some(false),
+        }
+    }
+
+    fn record(&mut self, index: usize, clear: bool) {
+        let word = index / (u64::BITS as usize / 2);
+        let shift = (index % (u64::BITS as usize / 2)) * 2;
+        let mask = 0b11_u64 << shift;
+        let value = u64::from(if clear { 1_u8 } else { 2_u8 }) << shift;
+        self.states[word] = (self.states[word] & !mask) | value;
+    }
+}
+
+fn inclusive_axis_size(min: i32, max: i32) -> Option<usize> {
+    let size = usize::try_from(max.checked_sub(min)?.checked_add(1)?).ok()?;
+    (size != 0).then_some(size)
+}
+
 #[derive(Clone, Copy)]
 struct ExplosionExposureCacheEntry {
     pos: BlockPos,
@@ -85,15 +191,17 @@ impl ExplosionExposureCacheEntry {
 /// Bounded cache for vanilla explosion exposure rays.
 ///
 /// Missing chunks are never cached, allowing asynchronous Full publication to become visible
-/// while the synchronous gameplay callback is running. Dynamic collision shapes are resolved on
-/// every visit so live block entities retain their normal query semantics. Reuse across entities
-/// is only valid when the caller can prove that the intervening entity callbacks cannot mutate
-/// blocks; callers must clear the cache before invoking any other entity implementation.
+/// while the synchronous gameplay callback is running. Dynamic and non-Vanilla collision shapes
+/// are resolved on every visit so live block entities and plugin callbacks retain their normal
+/// query semantics. Reuse across entities is only valid when the caller can prove that the
+/// intervening entity callbacks cannot mutate blocks; callers must clear the cache before invoking
+/// any other entity implementation.
 pub(crate) struct ExplosionExposureRaycast<'world> {
     world: &'world World,
     collision_context: BlockCollisionContext,
     full_chunks: LocalFullChunkHolderCache,
     entries: [ExplosionExposureCacheEntry; EXPLOSION_EXPOSURE_CACHE_SIZE],
+    clear_grid: ExplosionExposureClearGrid,
     generation: u32,
     #[cfg(test)]
     stats: ExplosionExposureRaycastStats,
@@ -106,6 +214,8 @@ pub(crate) struct ExplosionExposureRaycastStats {
     pub(crate) cache_hits: usize,
     pub(crate) state_lookups: usize,
     pub(crate) collision_lookups: usize,
+    pub(crate) clear_grid_hits: usize,
+    pub(crate) clear_grid_resolutions: usize,
 }
 
 impl<'world> ExplosionExposureRaycast<'world> {
@@ -118,6 +228,7 @@ impl<'world> ExplosionExposureRaycast<'world> {
             collision_context,
             full_chunks: LocalFullChunkHolderCache::new(),
             entries: [ExplosionExposureCacheEntry::EMPTY; EXPLOSION_EXPOSURE_CACHE_SIZE],
+            clear_grid: ExplosionExposureClearGrid::new(),
             generation: 1,
             #[cfg(test)]
             stats: ExplosionExposureRaycastStats {
@@ -125,12 +236,23 @@ impl<'world> ExplosionExposureRaycast<'world> {
                 cache_hits: 0,
                 state_lookups: 0,
                 collision_lookups: 0,
+                clear_grid_hits: 0,
+                clear_grid_resolutions: 0,
             },
         }
     }
 
+    /// Configures a bounded, explosion-local cache of statically clear positions.
+    ///
+    /// Bounds that exceed the inline capacity disable the optimization and retain the exact
+    /// compatibility path.
+    pub(crate) fn configure_clear_grid(&mut self, min: BlockPos, max: BlockPos) {
+        self.clear_grid.configure(min, max);
+    }
+
     /// Drops every retained static collision result.
     pub(crate) fn clear(&mut self) {
+        self.clear_grid.clear();
         if self.generation == u32::MAX {
             self.entries.fill(ExplosionExposureCacheEntry::EMPTY);
             self.generation = 1;
@@ -155,12 +277,44 @@ impl<'world> ExplosionExposureRaycast<'world> {
             self.stats.block_visits += 1;
         }
 
+        let mut unresolved_grid_index = None;
+        if let Some(index) = self.clear_grid.index(pos) {
+            match self.clear_grid.cached(index) {
+                Some(true) => {
+                    #[cfg(test)]
+                    {
+                        self.stats.clear_grid_hits += 1;
+                    }
+                    return false;
+                }
+                Some(false) => {}
+                None => unresolved_grid_index = Some(index),
+            }
+        }
+
+        self.block_intersects_ray_exact(pos, from, to, unresolved_grid_index)
+    }
+
+    fn block_intersects_ray_exact(
+        &mut self,
+        pos: BlockPos,
+        from: DVec3,
+        to: DVec3,
+        unresolved_grid_index: Option<usize>,
+    ) -> bool {
         let cache_index = explosion_exposure_cache_index(pos);
         let entry = self.entries[cache_index];
         if entry.generation == self.generation && entry.pos == pos {
             #[cfg(test)]
             {
                 self.stats.cache_hits += 1;
+            }
+            if let Some(index) = unresolved_grid_index {
+                self.clear_grid.record(index, entry.collision.is_empty());
+                #[cfg(test)]
+                {
+                    self.stats.clear_grid_resolutions += 1;
+                }
             }
             return Self::static_collision_intersects(entry.collision, pos, from, to);
         }
@@ -173,8 +327,9 @@ impl<'world> ExplosionExposureRaycast<'world> {
         let (state, cacheable) = self
             .world
             .explosion_exposure_block_state(pos, &mut self.full_chunks);
-        let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-        if state.get_block().config.dynamic_shape {
+        let block = state.get_block();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(block);
+        if block.config.dynamic_shape {
             return behavior
                 .get_collision_boxes(state, self.world, pos, self.collision_context)
                 .into_iter()
@@ -189,12 +344,26 @@ impl<'world> ExplosionExposureRaycast<'world> {
         };
         let collision = OffsetVoxelShape::new(shape, offset);
         let intersects = Self::static_collision_intersects(collision, pos, from, to);
-        if cacheable {
-            self.entries[cache_index] = ExplosionExposureCacheEntry {
-                pos,
-                collision,
-                generation: self.generation,
-            };
+        if cacheable && block.key.namespace == Identifier::VANILLA_NAMESPACE {
+            let collision_is_empty = collision.is_empty();
+            let mut recorded_in_grid = false;
+            if let Some(index) = unresolved_grid_index {
+                self.clear_grid.record(index, collision_is_empty);
+                recorded_in_grid = true;
+                #[cfg(test)]
+                {
+                    self.stats.clear_grid_resolutions += 1;
+                }
+            }
+            // Dense clear entries no longer need a large direct-cache slot. Retaining only
+            // potentially colliding shapes reduces destructive conflicts on the exact path.
+            if !recorded_in_grid || !collision_is_empty {
+                self.entries[cache_index] = ExplosionExposureCacheEntry {
+                    pos,
+                    collision,
+                    generation: self.generation,
+                };
+            }
         }
         intersects
     }
@@ -244,7 +413,11 @@ fn is_collision_path_clear(
     }
 
     let difference = to - from;
-    let step = difference.signum().as_ivec3();
+    let step = glam::IVec3::new(
+        minecraft_sign(difference.x),
+        minecraft_sign(difference.y),
+        minecraft_sign(difference.z),
+    );
     let delta = DVec3::new(
         if step.x == 0 {
             f64::MAX
@@ -300,6 +473,17 @@ fn is_collision_path_clear(
     }
 
     true
+}
+
+#[inline]
+const fn minecraft_sign(number: f64) -> i32 {
+    if number == 0.0 {
+        0
+    } else if number > 0.0 {
+        1
+    } else {
+        -1
+    }
 }
 
 impl ClipHitResult {
@@ -764,11 +948,11 @@ impl World {
         let local = point - block_vec;
         !aabb.is_empty()
             && local.x >= aabb.min_x()
-            && local.x <= aabb.max_x()
+            && local.x < aabb.max_x()
             && local.y >= aabb.min_y()
-            && local.y <= aabb.max_y()
+            && local.y < aabb.max_y()
             && local.z >= aabb.min_z()
-            && local.z <= aabb.max_z()
+            && local.z < aabb.max_z()
     }
 
     pub(super) fn clip_miss(from: DVec3, to: DVec3) -> ClipHitResult {
@@ -802,79 +986,112 @@ impl World {
         result
     }
 
-    /// Ray-AABB intersection returning the entry t-parameter and the hit face.
-    ///
-    /// Returns `Some((tmin, direction))` where `tmin` is the ray parameter at entry
-    /// and `direction` is the face normal pointing away from the hit surface.
-    /// Returns `None` if the AABB is missed or entirely behind the ray origin.
-    ///
-    /// Used internally by [`ray_outline_check`] to pick the *closest* hit across
-    /// a multi-box voxel shape, matching vanilla's `VoxelShape.clip()` behavior.
+    /// Mirrors Minecraft 26.2 `AABB.getDirection` for one block-local shape box.
     pub(super) fn intersects_aabb_with_t(
         start: DVec3,
         end: DVec3,
         min: DVec3,
         max: DVec3,
     ) -> Option<(f64, Direction)> {
-        let dir = end - start;
+        let delta = end - start;
+        let mut scale = 1.0;
+        let mut direction = None;
 
-        let mut tmin = f64::NEG_INFINITY;
-        let mut tmax = f64::INFINITY;
-        let mut hit_dir = None;
-
-        macro_rules! slab {
-            ($start:expr, $dir:expr, $min:expr, $max:expr, $neg:expr, $pos:expr) => {{
-                if $dir.abs() < 1e-8 {
-                    if $start < $min || $start > $max {
-                        return None;
-                    }
-                } else {
-                    let inv = 1.0 / $dir;
-                    let mut t1 = ($min - $start) * inv;
-                    let mut t2 = ($max - $start) * inv;
-
-                    let dir_hit = if t1 > t2 {
-                        std::mem::swap(&mut t1, &mut t2);
-                        $pos
-                    } else {
-                        $neg
-                    };
-
-                    if t1 > tmin {
-                        tmin = t1;
-                        hit_dir = Some(dir_hit);
-                    }
-
-                    tmax = tmax.min(t2);
-                    if tmin > tmax {
-                        return None;
-                    }
-                }
-            }};
+        if delta.x > 1.0e-7 {
+            Self::clip_aabb_face(
+                &mut scale,
+                &mut direction,
+                delta,
+                start,
+                min.x,
+                [min.y, max.y, min.z, max.z],
+                Direction::West,
+            );
+        } else if delta.x < -1.0e-7 {
+            Self::clip_aabb_face(
+                &mut scale,
+                &mut direction,
+                delta,
+                start,
+                max.x,
+                [min.y, max.y, min.z, max.z],
+                Direction::East,
+            );
         }
 
-        slab!(
-            start.x,
-            dir.x,
-            min.x,
-            max.x,
-            Direction::West,
-            Direction::East
-        );
-        slab!(start.y, dir.y, min.y, max.y, Direction::Down, Direction::Up);
-        slab!(
-            start.z,
-            dir.z,
-            min.z,
-            max.z,
-            Direction::North,
-            Direction::South
-        );
+        let y_delta = DVec3::new(delta.y, delta.z, delta.x);
+        let y_start = DVec3::new(start.y, start.z, start.x);
+        if delta.y > 1.0e-7 {
+            Self::clip_aabb_face(
+                &mut scale,
+                &mut direction,
+                y_delta,
+                y_start,
+                min.y,
+                [min.z, max.z, min.x, max.x],
+                Direction::Down,
+            );
+        } else if delta.y < -1.0e-7 {
+            Self::clip_aabb_face(
+                &mut scale,
+                &mut direction,
+                y_delta,
+                y_start,
+                max.y,
+                [min.z, max.z, min.x, max.x],
+                Direction::Up,
+            );
+        }
 
-        if tmax < 0.0 {
-            None
-        } else {
-            hit_dir.map(|d| (tmin, d))
+        let z_delta = DVec3::new(delta.z, delta.x, delta.y);
+        let z_start = DVec3::new(start.z, start.x, start.y);
+        if delta.z > 1.0e-7 {
+            Self::clip_aabb_face(
+                &mut scale,
+                &mut direction,
+                z_delta,
+                z_start,
+                min.z,
+                [min.x, max.x, min.y, max.y],
+                Direction::North,
+            );
+        } else if delta.z < -1.0e-7 {
+            Self::clip_aabb_face(
+                &mut scale,
+                &mut direction,
+                z_delta,
+                z_start,
+                max.z,
+                [min.x, max.x, min.y, max.y],
+                Direction::South,
+            );
+        }
+
+        direction.map(|direction| (scale, direction))
+    }
+
+    #[inline]
+    fn clip_aabb_face(
+        scale: &mut f64,
+        direction: &mut Option<Direction>,
+        delta: DVec3,
+        start: DVec3,
+        face: f64,
+        side_bounds: [f64; 4],
+        new_direction: Direction,
+    ) {
+        let candidate_scale = (face - start.x) / delta.x;
+        let side_b = start.y + candidate_scale * delta.y;
+        let side_c = start.z + candidate_scale * delta.z;
+        if 0.0 < candidate_scale
+            && candidate_scale < *scale
+            && side_bounds[0] - 1.0e-7 < side_b
+            && side_b < side_bounds[1] + 1.0e-7
+            && side_bounds[2] - 1.0e-7 < side_c
+            && side_c < side_bounds[3] + 1.0e-7
+        {
+            *scale = candidate_scale;
+            *direction = Some(new_direction);
         }
     }
 
@@ -1008,8 +1225,304 @@ impl World {
 }
 
 #[cfg(test)]
+mod voxel_shape_clip_tests {
+    use super::*;
+
+    fn axis_point(axis: usize, primary: f64, side_b: f64, side_c: f64) -> DVec3 {
+        match axis {
+            0 => DVec3::new(primary, side_b, side_c),
+            1 => DVec3::new(side_c, primary, side_b),
+            2 => DVec3::new(side_b, side_c, primary),
+            _ => unreachable!("the fixture only defines the three coordinate axes"),
+        }
+    }
+
+    fn axis_bounds(axis: usize, primary_min: f64, primary_max: f64) -> (DVec3, DVec3) {
+        (
+            axis_point(axis, primary_min, 0.0, 0.0),
+            axis_point(axis, primary_max, 1.0, 1.0),
+        )
+    }
+
+    fn primary_component(vector: DVec3, axis: usize) -> f64 {
+        match axis {
+            0 => vector.x,
+            1 => vector.y,
+            2 => vector.z,
+            _ => unreachable!("the fixture only defines the three coordinate axes"),
+        }
+    }
+
+    #[test]
+    fn voxel_shape_inside_probe_is_lower_inclusive_and_upper_exclusive() {
+        let full_block = BlockLocalAabb::FULL_BLOCK;
+        let block_origin = DVec3::ZERO;
+
+        assert!(World::local_aabb_contains_world_point(
+            full_block,
+            block_origin,
+            DVec3::new(0.0, 0.5, 0.5),
+        ));
+        assert!(!World::local_aabb_contains_world_point(
+            full_block,
+            block_origin,
+            DVec3::new(1.0, 0.5, 0.5),
+        ));
+        assert!(!World::local_aabb_contains_world_point(
+            full_block,
+            block_origin,
+            DVec3::new(0.5, 1.0, 0.5),
+        ));
+        assert!(!World::local_aabb_contains_world_point(
+            full_block,
+            block_origin,
+            DVec3::new(0.5, 0.5, 1.0),
+        ));
+    }
+
+    #[test]
+    fn voxel_shape_clip_matches_java_full_cube_at_exact_opposite_boundaries() {
+        let shape = OffsetVoxelShape::without_offset(VoxelShape::FULL_BLOCK);
+
+        // Minecraft 26.2's VoxelShape.clip probes 0.001 along the segment. For a
+        // CubeVoxelShape the resulting x=1 index is outside, while x=0 is inside.
+        assert!(
+            World::clip_shape(
+                BlockPos::ZERO,
+                DVec3::new(0.0, 0.5, 0.5),
+                DVec3::new(1000.0, 0.5, 0.5),
+                shape,
+            )
+            .is_none()
+        );
+
+        let Some(hit) = World::clip_shape(
+            BlockPos::ZERO,
+            DVec3::new(1.0, 0.5, 0.5),
+            DVec3::new(-999.0, 0.5, 0.5),
+            shape,
+        ) else {
+            panic!("the lower-bound probe should start inside the full cube");
+        };
+        assert!(hit.inside);
+        assert_eq!(hit.location, DVec3::new(0.0, 0.5, 0.5));
+        assert_eq!(hit.direction, Direction::East);
+    }
+
+    #[test]
+    fn aabb_clip_matches_java_faces_in_every_axis_and_direction() {
+        let expected_scale = 1.0_f64 / 3.0;
+        for (axis, positive_direction, negative_direction) in [
+            (0, Direction::West, Direction::East),
+            (1, Direction::Down, Direction::Up),
+            (2, Direction::North, Direction::South),
+        ] {
+            let (min, max) = axis_bounds(axis, 0.0, 1.0);
+            let Some((positive_scale, positive_hit)) = World::intersects_aabb_with_t(
+                axis_point(axis, -1.0, 0.5, 0.5),
+                axis_point(axis, 2.0, 0.5, 0.5),
+                min,
+                max,
+            ) else {
+                panic!("positive Java clip fixture missed axis {axis}");
+            };
+            assert_eq!(positive_hit, positive_direction);
+            assert_eq!(positive_scale.to_bits(), expected_scale.to_bits());
+
+            let Some((negative_scale, negative_hit)) = World::intersects_aabb_with_t(
+                axis_point(axis, 2.0, 0.5, 0.5),
+                axis_point(axis, -1.0, 0.5, 0.5),
+                min,
+                max,
+            ) else {
+                panic!("negative Java clip fixture missed axis {axis}");
+            };
+            assert_eq!(negative_hit, negative_direction);
+            assert_eq!(negative_scale.to_bits(), expected_scale.to_bits());
+        }
+    }
+
+    #[test]
+    fn aabb_clip_matches_java_strict_side_epsilon_in_every_axis() {
+        for (axis, positive_direction) in [
+            (0, Direction::West),
+            (1, Direction::Down),
+            (2, Direction::North),
+        ] {
+            let (min, max) = axis_bounds(axis, 0.0, 1.0);
+            let Some((_, direction)) = World::intersects_aabb_with_t(
+                axis_point(axis, -1.0, 1.0 + 0.5e-7, -0.5e-7),
+                axis_point(axis, 2.0, 1.0 + 0.5e-7, -0.5e-7),
+                min,
+                max,
+            ) else {
+                panic!("Java's side epsilon should accept axis {axis}");
+            };
+            assert_eq!(direction, positive_direction);
+
+            assert!(
+                World::intersects_aabb_with_t(
+                    axis_point(axis, -1.0, 1.0 + 1.0e-7, 0.5),
+                    axis_point(axis, 2.0, 1.0 + 1.0e-7, 0.5),
+                    min,
+                    max,
+                )
+                .is_none(),
+                "Java's upper side epsilon is strict on axis {axis}",
+            );
+            assert!(
+                World::intersects_aabb_with_t(
+                    axis_point(axis, -1.0, 0.5, -1.0e-7),
+                    axis_point(axis, 2.0, 0.5, -1.0e-7),
+                    min,
+                    max,
+                )
+                .is_none(),
+                "Java's lower side epsilon is strict on axis {axis}",
+            );
+        }
+    }
+
+    #[test]
+    fn aabb_clip_matches_java_direction_threshold_in_every_axis() {
+        let threshold = 1.0e-7_f64;
+        let above_threshold = f64::from_bits(threshold.to_bits() + 1);
+        for (axis, positive_direction, negative_direction) in [
+            (0, Direction::West, Direction::East),
+            (1, Direction::Down, Direction::Up),
+            (2, Direction::North, Direction::South),
+        ] {
+            let exact_positive_from = axis_point(axis, -threshold / 2.0, 0.5, 0.5);
+            let exact_positive_to = axis_point(axis, threshold / 2.0, 0.5, 0.5);
+            assert_eq!(
+                primary_component(exact_positive_to - exact_positive_from, axis).to_bits(),
+                threshold.to_bits(),
+            );
+            let (positive_min, positive_max) = axis_bounds(axis, 0.0, 1.0);
+            assert!(
+                World::intersects_aabb_with_t(
+                    exact_positive_from,
+                    exact_positive_to,
+                    positive_min,
+                    positive_max,
+                )
+                .is_none(),
+                "Java does not test a positive face at exactly +1e-7 on axis {axis}",
+            );
+
+            let above_positive_from = axis_point(axis, -above_threshold / 2.0, 0.5, 0.5);
+            let above_positive_to = axis_point(axis, above_threshold / 2.0, 0.5, 0.5);
+            let Some((_, direction)) = World::intersects_aabb_with_t(
+                above_positive_from,
+                above_positive_to,
+                positive_min,
+                positive_max,
+            ) else {
+                panic!("Java tests a positive face above +1e-7 on axis {axis}");
+            };
+            assert_eq!(direction, positive_direction);
+
+            let exact_negative_from = axis_point(axis, threshold / 2.0, 0.5, 0.5);
+            let exact_negative_to = axis_point(axis, -threshold / 2.0, 0.5, 0.5);
+            assert_eq!(
+                primary_component(exact_negative_to - exact_negative_from, axis).to_bits(),
+                (-threshold).to_bits(),
+            );
+            let (negative_min, negative_max) = axis_bounds(axis, -1.0, 0.0);
+            assert!(
+                World::intersects_aabb_with_t(
+                    exact_negative_from,
+                    exact_negative_to,
+                    negative_min,
+                    negative_max,
+                )
+                .is_none(),
+                "Java does not test a negative face at exactly -1e-7 on axis {axis}",
+            );
+
+            let above_negative_from = axis_point(axis, above_threshold / 2.0, 0.5, 0.5);
+            let above_negative_to = axis_point(axis, -above_threshold / 2.0, 0.5, 0.5);
+            let Some((_, direction)) = World::intersects_aabb_with_t(
+                above_negative_from,
+                above_negative_to,
+                negative_min,
+                negative_max,
+            ) else {
+                panic!("Java tests a negative face below -1e-7 on axis {axis}");
+            };
+            assert_eq!(direction, negative_direction);
+        }
+    }
+
+    #[test]
+    fn aabb_clip_preserves_java_axis_order_for_equal_corner_hits() {
+        let Some((_, direction)) = World::intersects_aabb_with_t(
+            DVec3::new(-1.0, -1.0, 0.5),
+            DVec3::new(2.0, 2.0, 0.5),
+            DVec3::ZERO,
+            DVec3::ONE,
+        ) else {
+            panic!("the corner fixture should hit the full cube");
+        };
+        assert_eq!(direction, Direction::West);
+    }
+}
+
+#[cfg(test)]
 mod explosion_exposure_cache_tests {
     use super::*;
+
+    #[test]
+    fn collision_path_clear_preserves_zero_axis_callback_order() {
+        let from = DVec3::new(0.0, 0.25, 0.25);
+        let to = DVec3::new(0.0, 2.25, 0.25);
+        let start = BlockPos::new(0, 0, 0);
+        let expected = [start, start, BlockPos::new(0, 1, 0), BlockPos::new(0, 2, 0)];
+        let mut visited = Vec::new();
+
+        assert!(is_collision_path_clear(from, to, |pos| {
+            visited.push(pos);
+            false
+        }));
+        assert_eq!(visited, expected);
+
+        let mut visited = Vec::new();
+        let mut start_visits = 0;
+        assert!(!is_collision_path_clear(from, to, |pos| {
+            visited.push(pos);
+            if pos != start {
+                return false;
+            }
+            start_visits += 1;
+            start_visits == 2
+        }));
+        assert_eq!(visited, [start, start]);
+    }
+
+    #[test]
+    fn clear_grid_covers_normal_tnt_query_without_heap_storage() {
+        let mut grid = ExplosionExposureClearGrid::new();
+        grid.configure(BlockPos::new(-9, 55, -9), BlockPos::new(9, 73, 9));
+        assert!(grid.bounds.is_some());
+        assert!(grid.index(BlockPos::new(-9, 55, -9)).is_some());
+        assert!(grid.index(BlockPos::new(9, 73, 9)).is_some());
+        assert!(grid.index(BlockPos::new(10, 73, 9)).is_none());
+        let index = grid.index(BlockPos::new(9, 73, 9)).unwrap();
+        grid.record(index, true);
+        assert_eq!(grid.cached(index), Some(true));
+        grid.clear();
+        assert_eq!(grid.cached(index), None);
+        grid.record(index, false);
+        assert_eq!(grid.cached(index), Some(false));
+
+        grid.configure(BlockPos::new(-10, 54, -10), BlockPos::new(10, 74, 10));
+        assert!(grid.bounds.is_none());
+
+        grid.configure(BlockPos::new(1, 1, 1), BlockPos::new(0, 0, 0));
+        assert!(grid.bounds.is_none());
+        grid.configure(BlockPos::new(i32::MIN, 0, 0), BlockPos::new(i32::MAX, 0, 0));
+        assert!(grid.bounds.is_none());
+    }
 
     #[test]
     fn cache_index_uses_the_full_fastutil_long_mix() {

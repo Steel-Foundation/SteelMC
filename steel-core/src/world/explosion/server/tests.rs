@@ -4,6 +4,7 @@ use std::sync::{
 };
 
 use glam::DVec3;
+use sha2::{Digest as _, Sha256};
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_registry::blocks::properties::{
     AttachFace, BlockStateProperties, DoubleBlockHalf, PistonType,
@@ -754,6 +755,7 @@ fn cached_exposure_raycast_matches_clear_partial_and_blocked_paths() {
         let exposure = EntityExplosionExposure::capture(player.as_ref());
         let uncached = exposure.calculate_uncached(world.as_ref(), center);
         let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), exposure.collision_context);
+        raycast.configure_clear_grid(BlockPos::new(0, 63, 0), BlockPos::new(4, 67, 1));
         let cached = exposure.calculate_with_visibility(|from| raycast.is_path_clear(from, center));
         assert_eq!(cached.to_bits(), uncached.to_bits());
         (cached, raycast.stats())
@@ -761,7 +763,10 @@ fn cached_exposure_raycast_matches_clear_partial_and_blocked_paths() {
 
     let (clear, stats) = compare();
     assert_eq!(clear.to_bits(), 1.0_f32.to_bits());
-    assert!(stats.cache_hits > 0, "stats={stats:?}");
+    assert!(
+        stats.cache_hits + stats.clear_grid_hits > 0,
+        "stats={stats:?}"
+    );
     assert!(
         stats.state_lookups * 2 < stats.block_visits,
         "stats={stats:?}"
@@ -820,6 +825,61 @@ fn exposure_cache_reuses_static_shapes_across_identical_entity_samples() {
 }
 
 #[test]
+fn dense_exposure_grid_skips_repeated_static_empty_shape_resolution() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("dense_explosion_exposure");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let center = DVec3::new(0.5, 64.5, 0.5);
+    let entity = ItemEntity::new(
+        &vanilla_entities::ITEM,
+        181,
+        DVec3::new(6.5, 64.0, 0.5),
+        Arc::downgrade(&world),
+    );
+    let exposure = EntityExplosionExposure::capture(&entity);
+    let expected = exposure.calculate_uncached(world.as_ref(), center);
+    let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), exposure.collision_context);
+    raycast.configure_clear_grid(BlockPos::new(0, 63, 0), BlockPos::new(8, 66, 1));
+
+    let first = exposure.calculate_cached_with(&mut raycast, center);
+    let after_first = raycast.stats();
+    let second = exposure.calculate_cached_with(&mut raycast, center);
+    let after_second = raycast.stats();
+
+    assert_eq!(first.to_bits(), expected.to_bits());
+    assert_eq!(second.to_bits(), expected.to_bits());
+    assert!(after_first.clear_grid_hits > 0, "stats={after_first:?}");
+    assert!(
+        after_first.clear_grid_resolutions > 0,
+        "stats={after_first:?}"
+    );
+    assert_eq!(
+        after_second.state_lookups, after_first.state_lookups,
+        "the second exposure should reuse every stable empty classification"
+    );
+    assert_eq!(
+        after_second.collision_lookups, after_first.collision_lookups,
+        "stable empty positions should not re-enter exact shape resolution"
+    );
+
+    assert!(world.set_block(
+        BlockPos::new(3, 64, 0),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    raycast.clear();
+    let expected_blocked = exposure.calculate_uncached(world.as_ref(), center);
+    let blocked = exposure.calculate_cached_with(&mut raycast, center);
+    let after_blocked = raycast.stats();
+    assert_eq!(blocked.to_bits(), expected_blocked.to_bits());
+    assert!(
+        after_blocked.collision_lookups > after_second.collision_lookups,
+        "static non-empty positions must retain exact shape clipping: {after_blocked:?}"
+    );
+}
+
+#[test]
 fn cached_exposure_matches_across_chunk_and_section_boundaries() {
     init_vanilla_registry();
     init_behaviors();
@@ -849,6 +909,7 @@ fn exposure_cache_does_not_retain_air_from_a_missing_chunk() {
     let from = DVec3::new(2.5, 64.5, 0.5);
     let to = DVec3::new(0.5, 64.5, 0.5);
     let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), BlockCollisionContext::empty());
+    raycast.configure_clear_grid(BlockPos::new(0, 64, 0), BlockPos::new(2, 64, 0));
 
     assert!(raycast.is_path_clear(from, to));
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
@@ -883,7 +944,9 @@ fn exposure_clipping_uses_the_entity_collision_context() {
     let walking_exposure = EntityExplosionExposure::capture(&entity);
     let mut shared_raycast =
         ExplosionExposureRaycast::new(world.as_ref(), walking_exposure.collision_context);
+    shared_raycast.configure_clear_grid(BlockPos::new(0, 63, 0), BlockPos::new(3, 66, 1));
     let walking = walking_exposure.calculate_cached_with(&mut shared_raycast, center);
+    let after_walking = shared_raycast.stats();
     assert_eq!(walking.to_bits(), 1.0_f32.to_bits());
     assert_eq!(
         walking.to_bits(),
@@ -897,12 +960,17 @@ fn exposure_clipping_uses_the_entity_collision_context() {
     let falling_exposure = EntityExplosionExposure::capture(&entity);
     assert!(falling_exposure.collision_context.is_descending());
     let falling = falling_exposure.calculate_cached_with(&mut shared_raycast, center);
+    let after_falling = shared_raycast.stats();
     assert_eq!(falling.to_bits(), 0.0_f32.to_bits());
     assert_eq!(
         falling.to_bits(),
         falling_exposure
             .calculate_uncached(world.as_ref(), center)
             .to_bits()
+    );
+    assert!(
+        after_falling.state_lookups > after_walking.state_lookups,
+        "dynamic powder-snow state must remain live: before={after_walking:?}, after={after_falling:?}"
     );
 }
 
@@ -978,8 +1046,12 @@ fn moving_piston_exposure_uses_live_block_entities() {
     assert!(exposure.sample_positions().into_iter().any(|from| {
         !world.is_block_collision_path_clear(from, center, exposure.collision_context)
     }));
+    let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), exposure.collision_context);
+    raycast.configure_clear_grid(BlockPos::new(0, 63, 0), BlockPos::new(3, 66, 1));
     assert_eq!(
-        seen_percent(&world, center, &entity).to_bits(),
+        exposure
+            .calculate_cached_with(&mut raycast, center)
+            .to_bits(),
         live.to_bits()
     );
 }
@@ -1508,6 +1580,60 @@ fn block_cache_index_uses_the_full_fastutil_long_mix() {
     assert_ne!(
         explosion_block_cache_index(PackedBlockPos::from(BlockPos::new(50, 200, 53)).as_raw()),
         explosion_block_cache_index(PackedBlockPos::from(BlockPos::new(50, 200, 68)).as_raw()),
+    );
+}
+
+#[test]
+fn maximum_radius_air_rays_match_the_java_membership_fixture() {
+    struct AirReader(BlockStateId);
+
+    impl ExplosionBlockReader for AirReader {
+        fn block_state(&self, _pos: BlockPos) -> Option<BlockStateId> {
+            Some(self.0)
+        }
+    }
+
+    init_vanilla_registry();
+    let center = DVec3::new(0.5, 64.061_25, 0.5);
+    let initial_power = 128.0_f32 * (0.7_f32 + 0.5_f32 * 0.6_f32);
+    let rays = RAY_STEPS
+        .iter()
+        .copied()
+        .map(|step| ExplosionRay {
+            step,
+            initial_power,
+        })
+        .collect::<Vec<_>>();
+    let mut affected = calculate_immutable_rays_sequential(
+        &rays,
+        ExplosionRayContext {
+            center,
+            bounds: ExplosionWorldBounds {
+                min_y: -64,
+                max_y: 319,
+            },
+        },
+        &AirReader(vanilla_blocks::AIR.default_state()),
+        &DefaultExplosionDamageCalculator,
+    );
+
+    assert_eq!(affected.len(), 280_896);
+    affected.sort_unstable_by_key(|pos| (pos.x(), pos.y(), pos.z()));
+    let mut hasher = Sha256::new();
+    for pos in affected {
+        hasher.update(pos.x().to_be_bytes());
+        hasher.update(pos.y().to_be_bytes());
+        hasher.update(pos.z().to_be_bytes());
+    }
+    let digest = hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .concat();
+    assert_eq!(
+        digest,
+        "157409059963f34bd804ca3dc36d83ed5161b02fbf349ff5b05e2ecdb02c7691",
     );
 }
 
@@ -2090,6 +2216,125 @@ fn java_block_pos_set_matches_jdk_collision_resize_order() {
         positions.into_iter().collect::<Vec<_>>(),
         [0, 32, 64, 96, 128, 16, 48, 80, 112].map(|x| BlockPos::new(x, 0, 0))
     );
+}
+
+#[test]
+fn java_block_pos_set_resizes_on_a_ninth_collision_before_capacity_sixty_four() {
+    let mut positions = JavaBlockPosSet::default();
+    for x in 1..=13 {
+        assert!(positions.insert(BlockPos::new(x, 0, 0)));
+    }
+    assert_eq!(positions.buckets.len(), 32);
+
+    for x in (0..=224).step_by(32) {
+        assert!(positions.insert(BlockPos::new(x, 0, 0)));
+    }
+    assert_eq!(positions.buckets.len(), 32);
+
+    assert!(positions.insert(BlockPos::new(256, 0, 0)));
+    assert_eq!(positions.buckets.len(), 64);
+}
+
+#[test]
+fn java_block_pos_set_load_resize_preserves_low_high_split_order() {
+    let mut positions = JavaBlockPosSet::default();
+    for x in [16, 0, 17, 1, 18, 2, 19, 3, 20, 4, 21, 5, 22] {
+        assert!(positions.insert(BlockPos::new(x, 0, 0)));
+    }
+
+    assert_eq!(positions.buckets.len(), 32);
+    assert_eq!(
+        positions.into_iter().collect::<Vec<_>>(),
+        [0, 1, 2, 3, 4, 5, 16, 17, 18, 19, 20, 21, 22].map(|x| BlockPos::new(x, 0, 0))
+    );
+}
+
+#[derive(Default)]
+struct JavaBlockPosSetListBinOracle {
+    buckets: Vec<SmallVec<[BlockPos; 2]>>,
+    len: usize,
+}
+
+impl JavaBlockPosSetListBinOracle {
+    fn insert(&mut self, pos: BlockPos) -> bool {
+        if self.buckets.is_empty() {
+            self.buckets.resize_with(16, SmallVec::new);
+        }
+        let index = java_block_pos_bucket(pos, self.buckets.len());
+        if self.buckets[index].contains(&pos) {
+            return false;
+        }
+        self.buckets[index].push(pos);
+        if self.buckets.len() < JAVA_HASH_MAP_MIN_TREEIFY_CAPACITY
+            && self.buckets[index].len() > JAVA_HASH_MAP_TREEIFY_THRESHOLD
+        {
+            self.resize();
+        }
+        self.len += 1;
+        if self.len > self.buckets.len() * 3 / 4 {
+            self.resize();
+        }
+        true
+    }
+
+    fn resize(&mut self) {
+        let new_capacity = self.buckets.len().saturating_mul(2);
+        if new_capacity == self.buckets.len() {
+            return;
+        }
+        let mut resized = Vec::with_capacity(new_capacity);
+        resized.resize_with(new_capacity, SmallVec::new);
+        for bucket in self.buckets.drain(..) {
+            for pos in bucket {
+                let index = java_block_pos_bucket(pos, new_capacity);
+                resized[index].push(pos);
+            }
+        }
+        self.buckets = resized;
+    }
+
+    fn into_ordered(self) -> Vec<BlockPos> {
+        self.buckets.into_iter().flatten().collect()
+    }
+}
+
+fn java_block_pos_set_randomized_inputs(seed: u64, count: usize) -> Vec<BlockPos> {
+    let mut state = seed;
+    let mut inputs = Vec::with_capacity(count);
+    for index in 0..count {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        let pos = match index % 7 {
+            0 => BlockPos::new(((state >> 8) & 63) as i32 * 64, 0, 0),
+            1 if !inputs.is_empty() => inputs[(state as usize) % inputs.len()],
+            _ => BlockPos::new(
+                (state & 1_023) as i32 - 512,
+                ((state >> 10) & 255) as i32 - 128,
+                ((state >> 18) & 1_023) as i32 - 512,
+            ),
+        };
+        inputs.push(pos);
+    }
+    inputs
+}
+
+#[test]
+fn java_block_pos_set_matches_current_list_bin_semantics_for_randomized_inputs() {
+    for seed in 1..=32 {
+        let mut actual = JavaBlockPosSet::default();
+        let mut oracle = JavaBlockPosSetListBinOracle::default();
+        for pos in java_block_pos_set_randomized_inputs(seed, 2_048) {
+            assert_eq!(actual.insert(pos), oracle.insert(pos), "seed={seed}");
+            assert_eq!(actual.buckets.len(), oracle.buckets.len(), "seed={seed}");
+        }
+
+        assert_eq!(
+            actual.into_iter().collect::<Vec<_>>(),
+            oracle.into_ordered(),
+            "seed={seed}"
+        );
+    }
 }
 
 #[test]

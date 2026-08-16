@@ -216,6 +216,15 @@ impl BlockRegionRead<'_> {
         self.sections.iter().all(Option::is_some)
     }
 
+    /// Returns whether any retained section may require expanded block-collision boundaries.
+    #[must_use]
+    pub(crate) fn maybe_has_special_colliding_blocks(&self) -> bool {
+        self.sections
+            .iter()
+            .flatten()
+            .any(|section| section.maybe_has_special_colliding_blocks())
+    }
+
     /// Returns a prelocked section view, or `None` for an unloaded or uncached section.
     #[must_use]
     pub(crate) fn section(&self, section_pos: SectionPos) -> Option<BlockSectionRead<'_>> {
@@ -321,6 +330,7 @@ mod tests {
                     Some(vanilla_blocks::AIR.default_state())
                 );
                 assert!(!region.has_complete_data());
+                assert!(!region.maybe_has_special_colliding_blocks());
                 assert_eq!(
                     region.get_block_state(below_world),
                     Some(vanilla_blocks::VOID_AIR.default_state())

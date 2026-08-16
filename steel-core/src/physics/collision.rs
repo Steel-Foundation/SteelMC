@@ -4,7 +4,10 @@ use std::{ops::ControlFlow, sync::Arc};
 
 use glam::DVec3;
 use smallvec::SmallVec;
-use steel_registry::{blocks::block_state_ext::BlockStateExt, vanilla_blocks, vanilla_entities};
+use steel_registry::{
+    blocks::{BlockRef, block_state_ext::BlockStateExt},
+    vanilla_blocks, vanilla_entities,
+};
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, WorldAabb};
 
 use crate::behavior::{
@@ -190,8 +193,11 @@ impl BlockCollisionSearchBounds {
         self,
         mut visit: impl FnMut(BlockPos, CollisionCursorType) -> ControlFlow<R>,
     ) -> ControlFlow<R> {
-        for y in self.min_y..=self.max_y {
-            for z in self.min_z..=self.max_z {
+        // Vanilla's Cursor3D advances X first, then Y, then Z. Collision behavior can be
+        // extensible, so retain that callback order even though the final shape set is usually
+        // insensitive to traversal order.
+        for z in self.min_z..=self.max_z {
+            for y in self.min_y..=self.max_y {
                 for x in self.min_x..=self.max_x {
                     let cursor_type = self.cursor_type(x, y, z);
                     if cursor_type == CollisionCursorType::Corner {
@@ -202,6 +208,54 @@ impl BlockCollisionSearchBounds {
             }
         }
         ControlFlow::Continue(())
+    }
+
+    fn try_for_each_inside_candidate<R>(
+        self,
+        mut visit: impl FnMut(BlockPos, CollisionCursorType) -> ControlFlow<R>,
+    ) -> ControlFlow<R> {
+        let Some(min_x) = self.min_x.checked_add(1) else {
+            return ControlFlow::Continue(());
+        };
+        let Some(min_y) = self.min_y.checked_add(1) else {
+            return ControlFlow::Continue(());
+        };
+        let Some(min_z) = self.min_z.checked_add(1) else {
+            return ControlFlow::Continue(());
+        };
+        let Some(max_x) = self.max_x.checked_sub(1) else {
+            return ControlFlow::Continue(());
+        };
+        let Some(max_y) = self.max_y.checked_sub(1) else {
+            return ControlFlow::Continue(());
+        };
+        let Some(max_z) = self.max_z.checked_sub(1) else {
+            return ControlFlow::Continue(());
+        };
+        if min_x > max_x || min_y > max_y || min_z > max_z {
+            return ControlFlow::Continue(());
+        }
+
+        for z in min_z..=max_z {
+            for y in min_y..=max_y {
+                for x in min_x..=max_x {
+                    visit(BlockPos::new(x, y, z), CollisionCursorType::Inside)?;
+                }
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn try_for_each_region_candidate<R>(
+        self,
+        has_special_colliding_blocks: bool,
+        visit: impl FnMut(BlockPos, CollisionCursorType) -> ControlFlow<R>,
+    ) -> ControlFlow<R> {
+        if has_special_colliding_blocks {
+            self.try_for_each_candidate(visit)
+        } else {
+            self.try_for_each_inside_candidate(visit)
+        }
     }
 }
 
@@ -219,31 +273,30 @@ struct CollisionShape {
     boxes: BlockCollisionBoxes,
 }
 
-impl CollisionShape {
-    fn has_large_collision_shape(&self) -> bool {
-        self.boxes.iter().any(|aabb| {
-            aabb.min_x() < 0.0
-                || aabb.min_y() < 0.0
-                || aabb.min_z() < 0.0
-                || aabb.max_x() > 1.0
-                || aabb.max_y() > 1.0
-                || aabb.max_z() > 1.0
-        })
-    }
+fn should_resolve_collision_shape(
+    block_state: BlockStateId,
+    cursor_type: CollisionCursorType,
+) -> bool {
+    should_resolve_collision_shape_for_block(
+        block_state.get_block(),
+        block_state
+            .get_static_collision_shape()
+            .has_large_collision_shape(),
+        cursor_type,
+    )
 }
 
-fn should_query_collision_shape(
-    block_state: BlockStateId,
-    collision_shape: &CollisionShape,
+fn should_resolve_collision_shape_for_block(
+    block: BlockRef,
+    has_large_static_shape: bool,
     cursor_type: CollisionCursorType,
 ) -> bool {
     match cursor_type {
         CollisionCursorType::Inside => true,
         CollisionCursorType::Face => {
-            block_state.get_block().config.dynamic_shape
-                || collision_shape.has_large_collision_shape()
+            crate::physics::block_may_expand_collision_cursor(block, has_large_static_shape)
         }
-        CollisionCursorType::Edge => block_state.get_block() == &vanilla_blocks::MOVING_PISTON,
+        CollisionCursorType::Edge => block == &vanilla_blocks::MOVING_PISTON,
         CollisionCursorType::Corner => false,
     }
 }
@@ -294,15 +347,19 @@ impl<'a> WorldCollisionProvider<'a> {
         self.world
             .try_with_block_region(bounds.region_bounds(), |region| {
                 let mut candidates = SmallVec::new();
-                let _ = bounds.try_for_each_candidate(|block_pos, cursor_type| {
-                    let Some(block_state) = region.get_block_state(block_pos) else {
-                        return ControlFlow::<()>::Continue(());
-                    };
-                    if !block_state.is_air() {
-                        candidates.push((block_pos, block_state, cursor_type));
-                    }
-                    ControlFlow::<()>::Continue(())
-                });
+                let has_special_colliding_blocks = region.maybe_has_special_colliding_blocks();
+                let _ = bounds.try_for_each_region_candidate(
+                    has_special_colliding_blocks,
+                    |block_pos, cursor_type| {
+                        let Some(block_state) = region.get_block_state(block_pos) else {
+                            return ControlFlow::<()>::Continue(());
+                        };
+                        if !block_state.is_air() {
+                            candidates.push((block_pos, block_state, cursor_type));
+                        }
+                        ControlFlow::<()>::Continue(())
+                    },
+                );
                 candidates
             })
     }
@@ -339,6 +396,26 @@ impl<'a> WorldCollisionProvider<'a> {
             behavior.get_collision_boxes(block_state, self.world.as_ref(), block_pos, context);
 
         CollisionShape { boxes }
+    }
+
+    fn visit_block_collision_shapes<R>(
+        &self,
+        bounds: BlockCollisionSearchBounds,
+        context: BlockCollisionContext,
+        mut visit: impl FnMut(
+            BlockPos,
+            BlockStateId,
+            CollisionCursorType,
+            &CollisionShape,
+        ) -> ControlFlow<R>,
+    ) -> ControlFlow<R> {
+        self.visit_block_collision_candidates(bounds, |block_pos, block_state, cursor_type| {
+            if !should_resolve_collision_shape(block_state, cursor_type) {
+                return ControlFlow::Continue(());
+            }
+            let collision_shape = self.get_collision_shape(block_state, block_pos, context);
+            visit(block_pos, block_state, cursor_type, &collision_shape)
+        })
     }
 
     fn entity_collision_context(
@@ -403,11 +480,11 @@ impl<'a> WorldCollisionProvider<'a> {
 
         let mut main_support = None;
         let mut main_support_distance = f64::MAX;
-        let _ =
-            self.visit_block_collision_candidates(bounds, |block_pos, block_state, cursor_type| {
-                let collision_shape = self.get_collision_shape(block_state, block_pos, context);
+        let _ = self.visit_block_collision_shapes(
+            bounds,
+            context,
+            |block_pos, _block_state, _cursor_type, collision_shape| {
                 if collision_shape.boxes.is_empty()
-                    || !should_query_collision_shape(block_state, &collision_shape, cursor_type)
                     || !collision_shape
                         .boxes
                         .iter()
@@ -427,7 +504,8 @@ impl<'a> WorldCollisionProvider<'a> {
                     main_support_distance = distance;
                 }
                 ControlFlow::<()>::Continue(())
-            });
+            },
+        );
 
         main_support
     }
@@ -664,12 +742,11 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
     ) -> Vec<WorldAabb> {
         let bounds = BlockCollisionSearchBounds::from_aabb(aabb);
         let mut collisions = Vec::new();
-        let _ =
-            self.visit_block_collision_candidates(bounds, |block_pos, block_state, cursor_type| {
-                let collision_shape = self.get_collision_shape(block_state, block_pos, context);
-                if collision_shape.boxes.is_empty()
-                    || !should_query_collision_shape(block_state, &collision_shape, cursor_type)
-                {
+        let _ = self.visit_block_collision_shapes(
+            bounds,
+            context,
+            |block_pos, _block_state, _cursor_type, collision_shape| {
+                if collision_shape.boxes.is_empty() {
                     return ControlFlow::<()>::Continue(());
                 }
 
@@ -681,7 +758,8 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
                         .filter(|shape| aabb.intersects(*shape)),
                 );
                 ControlFlow::<()>::Continue(())
-            });
+            },
+        );
         collisions
     }
 
@@ -691,25 +769,26 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
         context: BlockCollisionContext,
     ) -> bool {
         let bounds = BlockCollisionSearchBounds::from_aabb(aabb);
-        self.visit_block_collision_candidates(bounds, |block_pos, block_state, cursor_type| {
-            let collision_shape = self.get_collision_shape(block_state, block_pos, context);
-            if collision_shape.boxes.is_empty()
-                || !should_query_collision_shape(block_state, &collision_shape, cursor_type)
-            {
-                return ControlFlow::Continue(());
-            }
+        self.visit_block_collision_shapes(
+            bounds,
+            context,
+            |block_pos, _block_state, _cursor_type, collision_shape| {
+                if collision_shape.boxes.is_empty() {
+                    return ControlFlow::Continue(());
+                }
 
-            if collision_shape
-                .boxes
-                .iter()
-                .map(|shape| translate_collision_shape(shape, block_pos))
-                .any(|shape| aabb.intersects(shape))
-            {
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            }
-        })
+                if collision_shape
+                    .boxes
+                    .iter()
+                    .map(|shape| translate_collision_shape(shape, block_pos))
+                    .any(|shape| aabb.intersects(shape))
+                {
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            },
+        )
         .is_break()
     }
 
@@ -814,17 +893,16 @@ mod tests {
     use std::iter;
 
     use super::*;
-    use steel_registry::blocks::shapes::VoxelShape;
-    use steel_registry::init_vanilla_registry;
-    use steel_utils::{BlockLocalAabb, ChunkPos, types::UpdateFlags};
+    use steel_registry::{
+        blocks::{Block, behavior::BlockConfig},
+        init_vanilla_registry,
+    };
+    use steel_utils::{ChunkPos, Identifier, types::UpdateFlags};
 
     use crate::{
         behavior::init_behaviors,
         test_support::{fresh_test_world, insert_ready_full_chunk},
     };
-
-    const LARGE_COLLISION_SHAPE: &[BlockLocalAabb] =
-        &[BlockLocalAabb::new(-0.25, 0.0, 0.0, 1.0, 1.0, 1.0)];
 
     struct TestCollisionWorld {
         block_collisions: Vec<WorldAabb>,
@@ -977,6 +1055,199 @@ mod tests {
     }
 
     #[test]
+    fn prefetched_candidates_use_full_cursor_only_for_special_sections() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("special_collision_section_scan");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let bounds = BlockCollisionSearchBounds {
+            min_x: 1,
+            min_y: 64,
+            min_z: 1,
+            max_x: 3,
+            max_y: 66,
+            max_z: 3,
+        };
+        let face = BlockPos::new(1, 65, 2);
+        let inside = BlockPos::new(2, 65, 2);
+        assert!(world.set_block(
+            face,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        assert!(world.set_block(
+            inside,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let provider = WorldCollisionProvider::new(&world);
+
+        let ordinary = provider
+            .prefetched_block_collision_candidates(bounds)
+            .expect("small loaded collision region should be prefetched");
+        assert_eq!(
+            ordinary
+                .iter()
+                .map(|(pos, _, cursor_type)| (*pos, *cursor_type))
+                .collect::<Vec<_>>(),
+            vec![(inside, CollisionCursorType::Inside)]
+        );
+        let mut ordinary_shape_callbacks = Vec::new();
+        let _ = provider.visit_block_collision_shapes(
+            bounds,
+            BlockCollisionContext::empty(),
+            |pos, _, cursor_type, _| {
+                ordinary_shape_callbacks.push((pos, cursor_type));
+                ControlFlow::<()>::Continue(())
+            },
+        );
+        assert_eq!(
+            ordinary_shape_callbacks,
+            vec![(inside, CollisionCursorType::Inside)]
+        );
+
+        assert!(world.set_block(
+            BlockPos::new(15, 64, 15),
+            vanilla_blocks::OAK_FENCE.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let special = provider
+            .prefetched_block_collision_candidates(bounds)
+            .expect("small loaded collision region should be prefetched");
+        assert_eq!(
+            special
+                .iter()
+                .map(|(pos, _, cursor_type)| (*pos, *cursor_type))
+                .collect::<Vec<_>>(),
+            vec![
+                (face, CollisionCursorType::Face),
+                (inside, CollisionCursorType::Inside),
+            ]
+        );
+        let mut static_shape_callbacks = Vec::new();
+        let _ = provider.visit_block_collision_shapes(
+            bounds,
+            BlockCollisionContext::empty(),
+            |pos, _, cursor_type, _| {
+                static_shape_callbacks.push((pos, cursor_type));
+                ControlFlow::<()>::Continue(())
+            },
+        );
+        assert_eq!(
+            static_shape_callbacks,
+            vec![(inside, CollisionCursorType::Inside)]
+        );
+
+        assert!(world.set_block(
+            BlockPos::new(15, 64, 15),
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        assert!(world.set_block(
+            face,
+            vanilla_blocks::SCAFFOLDING.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let edge = BlockPos::new(1, 64, 2);
+        assert!(world.set_block(
+            edge,
+            vanilla_blocks::MOVING_PISTON.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let dynamic = provider
+            .prefetched_block_collision_candidates(bounds)
+            .expect("small loaded collision region should be prefetched");
+        assert_eq!(dynamic.len(), 3);
+        let mut callback_sequence = Vec::new();
+        let _ = provider.visit_block_collision_shapes(
+            bounds,
+            BlockCollisionContext::empty(),
+            |pos, _, cursor_type, _| {
+                callback_sequence.push((pos, cursor_type));
+                ControlFlow::<()>::Continue(())
+            },
+        );
+        assert_eq!(
+            callback_sequence,
+            vec![
+                (edge, CollisionCursorType::Edge),
+                (face, CollisionCursorType::Face),
+                (inside, CollisionCursorType::Inside),
+            ]
+        );
+    }
+
+    #[test]
+    fn prefetched_callbacks_match_full_cursor_across_chunk_section_and_missing_data() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("cross_boundary_collision_reads");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        insert_ready_full_chunk(&world, ChunkPos::new(1, 0));
+
+        let bounds = BlockCollisionSearchBounds {
+            min_x: 14,
+            min_y: 78,
+            min_z: 0,
+            max_x: 33,
+            max_y: 81,
+            max_z: 2,
+        };
+        for pos in [
+            BlockPos::new(14, 79, 1),
+            BlockPos::new(15, 79, 1),
+            BlockPos::new(16, 80, 1),
+            BlockPos::new(31, 79, 1),
+        ] {
+            assert!(world.set_block(
+                pos,
+                vanilla_blocks::STONE.default_state(),
+                UpdateFlags::UPDATE_NONE,
+            ));
+        }
+        let provider = WorldCollisionProvider::new(&world);
+
+        let compatibility_callbacks = || {
+            let mut callbacks = Vec::new();
+            let _ = bounds.try_for_each_candidate(|pos, cursor_type| {
+                let state = world.get_block_state(pos);
+                if !state.is_air() && should_resolve_collision_shape(state, cursor_type) {
+                    callbacks.push((pos, cursor_type));
+                }
+                ControlFlow::<()>::Continue(())
+            });
+            callbacks
+        };
+        let provider_callbacks = || {
+            let mut callbacks = Vec::new();
+            let _ = provider.visit_block_collision_shapes(
+                bounds,
+                BlockCollisionContext::empty(),
+                |pos, _, cursor_type, _| {
+                    callbacks.push((pos, cursor_type));
+                    ControlFlow::<()>::Continue(())
+                },
+            );
+            callbacks
+        };
+
+        assert!(
+            provider
+                .prefetched_block_collision_candidates(bounds)
+                .is_some(),
+            "missing Full data should remain a safe air-like prefetched region"
+        );
+        assert_eq!(provider_callbacks(), compatibility_callbacks());
+
+        assert!(world.set_block(
+            BlockPos::new(31, 79, 1),
+            vanilla_blocks::OAK_FENCE.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        assert_eq!(provider_callbacks(), compatibility_callbacks());
+    }
+
+    #[test]
     fn collision_helper_reports_intersecting_entity_shape() {
         let world = TestCollisionWorld {
             block_collisions: Vec::new(),
@@ -1106,64 +1377,292 @@ mod tests {
     }
 
     #[test]
-    fn collision_shape_filter_matches_vanilla_cursor_rules() {
-        init_vanilla_registry();
-
-        let stone = vanilla_blocks::STONE.default_state();
-        let moving_piston = vanilla_blocks::MOVING_PISTON.default_state();
-        let large_shape = VoxelShape::from_boxes(LARGE_COLLISION_SHAPE);
-        let shape = |shape: VoxelShape| CollisionShape {
-            boxes: shape.into_iter().copied().collect(),
+    fn collision_cursor_callbacks_match_vanilla_x_y_z_order() {
+        let bounds = BlockCollisionSearchBounds {
+            min_x: 0,
+            min_y: 0,
+            min_z: 0,
+            max_x: 2,
+            max_y: 2,
+            max_z: 2,
         };
+        let mut visited = Vec::new();
+        let _ = bounds.try_for_each_candidate(|pos, _| {
+            visited.push(pos);
+            ControlFlow::<()>::Continue(())
+        });
 
-        assert!(should_query_collision_shape(
-            stone,
-            &shape(VoxelShape::FULL_BLOCK),
-            CollisionCursorType::Inside
-        ));
-        assert!(!should_query_collision_shape(
-            stone,
-            &shape(VoxelShape::FULL_BLOCK),
-            CollisionCursorType::Face
-        ));
-        assert!(should_query_collision_shape(
-            stone,
-            &shape(large_shape),
-            CollisionCursorType::Face
-        ));
-        assert!(!should_query_collision_shape(
-            stone,
-            &shape(large_shape),
-            CollisionCursorType::Edge
-        ));
-        assert!(should_query_collision_shape(
-            moving_piston,
-            &shape(VoxelShape::FULL_BLOCK),
-            CollisionCursorType::Edge
-        ));
-        assert!(!should_query_collision_shape(
-            moving_piston,
-            &shape(large_shape),
-            CollisionCursorType::Corner
-        ));
+        assert_eq!(
+            visited,
+            vec![
+                BlockPos::new(1, 0, 0),
+                BlockPos::new(0, 1, 0),
+                BlockPos::new(1, 1, 0),
+                BlockPos::new(2, 1, 0),
+                BlockPos::new(1, 2, 0),
+                BlockPos::new(0, 0, 1),
+                BlockPos::new(1, 0, 1),
+                BlockPos::new(2, 0, 1),
+                BlockPos::new(0, 1, 1),
+                BlockPos::new(1, 1, 1),
+                BlockPos::new(2, 1, 1),
+                BlockPos::new(0, 2, 1),
+                BlockPos::new(1, 2, 1),
+                BlockPos::new(2, 2, 1),
+                BlockPos::new(1, 0, 2),
+                BlockPos::new(0, 1, 2),
+                BlockPos::new(1, 1, 2),
+                BlockPos::new(2, 1, 2),
+                BlockPos::new(1, 2, 2),
+            ]
+        );
     }
 
     #[test]
-    fn collision_shape_filter_uses_position_resolved_offset_bounds() {
+    fn ordinary_cursor_handles_degenerate_and_extreme_bounds() {
+        let thin = BlockCollisionSearchBounds {
+            min_x: 4,
+            min_y: 8,
+            min_z: 12,
+            max_x: 5,
+            max_y: 10,
+            max_z: 14,
+        };
+        let mut thin_visited = Vec::new();
+        let _ = thin.try_for_each_region_candidate(false, |pos, cursor_type| {
+            thin_visited.push((pos, cursor_type));
+            ControlFlow::<()>::Continue(())
+        });
+        assert!(thin_visited.is_empty());
+
+        for bounds in [
+            BlockCollisionSearchBounds {
+                min_x: i32::MIN,
+                min_y: i32::MIN,
+                min_z: i32::MIN,
+                max_x: i32::MIN + 2,
+                max_y: i32::MIN + 2,
+                max_z: i32::MIN + 2,
+            },
+            BlockCollisionSearchBounds {
+                min_x: i32::MAX - 2,
+                min_y: i32::MAX - 2,
+                min_z: i32::MAX - 2,
+                max_x: i32::MAX,
+                max_y: i32::MAX,
+                max_z: i32::MAX,
+            },
+        ] {
+            let mut compatibility = Vec::new();
+            let _ = bounds.try_for_each_candidate(|pos, cursor_type| {
+                if cursor_type == CollisionCursorType::Inside {
+                    compatibility.push((pos, cursor_type));
+                }
+                ControlFlow::<()>::Continue(())
+            });
+            let mut optimized = Vec::new();
+            let _ = bounds.try_for_each_region_candidate(false, |pos, cursor_type| {
+                optimized.push((pos, cursor_type));
+                ControlFlow::<()>::Continue(())
+            });
+            assert_eq!(optimized, compatibility);
+        }
+    }
+
+    #[test]
+    fn ordinary_section_candidate_and_callback_sequences_match_compatibility_cursor() {
+        init_vanilla_registry();
+
+        for seed in 1_u64..=128 {
+            let mut random = seed;
+            let mut next = || {
+                random = random
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                random
+            };
+            let min_x = (next() & 31) as i32 - 16;
+            let min_y = (next() & 31) as i32 - 16;
+            let min_z = (next() & 31) as i32 - 16;
+            let bounds = BlockCollisionSearchBounds {
+                min_x,
+                min_y,
+                min_z,
+                max_x: min_x + 2 + (next() & 7) as i32,
+                max_y: min_y + 2 + (next() & 7) as i32,
+                max_z: min_z + 2 + (next() & 7) as i32,
+            };
+            let occupancy_seed = next();
+            let is_occupied = |pos: BlockPos| {
+                let mixed = (pos.x() as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                    ^ (pos.y() as u64).rotate_left(21)
+                    ^ (pos.z() as u64).rotate_left(43)
+                    ^ occupancy_seed;
+                mixed.wrapping_mul(0xbf58_476d_1ce4_e5b9) >> 61 != 0
+            };
+
+            let mut compatibility_candidates = Vec::new();
+            let _ = bounds.try_for_each_candidate(|pos, cursor_type| {
+                if cursor_type == CollisionCursorType::Inside && is_occupied(pos) {
+                    compatibility_candidates.push((pos, cursor_type));
+                }
+                ControlFlow::<()>::Continue(())
+            });
+            let mut optimized_candidates = Vec::new();
+            let _ = bounds.try_for_each_region_candidate(false, |pos, cursor_type| {
+                if is_occupied(pos) {
+                    optimized_candidates.push((pos, cursor_type));
+                }
+                ControlFlow::<()>::Continue(())
+            });
+            assert_eq!(
+                optimized_candidates, compatibility_candidates,
+                "seed={seed}"
+            );
+
+            let stone = vanilla_blocks::STONE.default_state();
+            let mut compatibility_callbacks = Vec::new();
+            let _ = bounds.try_for_each_candidate(|pos, cursor_type| {
+                if is_occupied(pos) && should_resolve_collision_shape(stone, cursor_type) {
+                    compatibility_callbacks.push(pos);
+                }
+                ControlFlow::<()>::Continue(())
+            });
+            let optimized_callbacks = optimized_candidates
+                .iter()
+                .map(|(pos, _)| *pos)
+                .collect::<Vec<_>>();
+            assert_eq!(optimized_callbacks, compatibility_callbacks, "seed={seed}");
+        }
+    }
+
+    #[test]
+    fn special_section_candidate_sequence_uses_full_compatibility_cursor() {
+        let bounds = BlockCollisionSearchBounds {
+            min_x: -2,
+            min_y: 4,
+            min_z: 7,
+            max_x: 2,
+            max_y: 8,
+            max_z: 11,
+        };
+        let mut compatibility = Vec::new();
+        let _ = bounds.try_for_each_candidate(|pos, cursor_type| {
+            compatibility.push((pos, cursor_type));
+            ControlFlow::<()>::Continue(())
+        });
+        let mut optimized = Vec::new();
+        let _ = bounds.try_for_each_region_candidate(true, |pos, cursor_type| {
+            optimized.push((pos, cursor_type));
+            ControlFlow::<()>::Continue(())
+        });
+
+        assert_eq!(optimized, compatibility);
+    }
+
+    #[test]
+    fn static_looking_plugin_block_keeps_full_cursor_callback_order() {
+        static PLUGIN_BLOCK: Block = Block::new(
+            Identifier::new_static("collision_test", "static_cube"),
+            BlockConfig::new(),
+            &[],
+        );
+
+        assert!(!PLUGIN_BLOCK.config.dynamic_shape);
+        let has_large_static_shape = false;
+        let has_special_colliding_blocks = crate::physics::block_may_expand_collision_cursor(
+            &PLUGIN_BLOCK,
+            has_large_static_shape,
+        );
+        assert!(has_special_colliding_blocks);
+
+        let bounds = BlockCollisionSearchBounds {
+            min_x: 0,
+            min_y: 0,
+            min_z: 0,
+            max_x: 2,
+            max_y: 2,
+            max_z: 2,
+        };
+        let fixture_positions = [
+            BlockPos::new(1, 1, 0),
+            BlockPos::new(0, 1, 1),
+            BlockPos::new(1, 1, 1),
+            BlockPos::new(2, 1, 1),
+            BlockPos::new(1, 1, 2),
+        ];
+
+        let mut compatibility_callbacks = Vec::new();
+        let _ = bounds.try_for_each_candidate(|pos, cursor_type| {
+            if fixture_positions.contains(&pos)
+                && should_resolve_collision_shape_for_block(
+                    &PLUGIN_BLOCK,
+                    has_large_static_shape,
+                    cursor_type,
+                )
+            {
+                compatibility_callbacks.push(pos);
+            }
+            ControlFlow::<()>::Continue(())
+        });
+
+        let mut optimized_callbacks = Vec::new();
+        let _ = bounds.try_for_each_region_candidate(
+            has_special_colliding_blocks,
+            |pos, cursor_type| {
+                if fixture_positions.contains(&pos)
+                    && should_resolve_collision_shape_for_block(
+                        &PLUGIN_BLOCK,
+                        has_large_static_shape,
+                        cursor_type,
+                    )
+                {
+                    optimized_callbacks.push(pos);
+                }
+                ControlFlow::<()>::Continue(())
+            },
+        );
+
+        assert_eq!(compatibility_callbacks, fixture_positions);
+        assert_eq!(optimized_callbacks, compatibility_callbacks);
+    }
+
+    #[test]
+    fn collision_shape_resolution_filter_matches_vanilla_cursor_rules() {
         init_vanilla_registry();
 
         let stone = vanilla_blocks::STONE.default_state();
-        let shifted_full_block = CollisionShape {
-            boxes: VoxelShape::FULL_BLOCK
-                .into_iter()
-                .map(|aabb| aabb.translate(DVec3::new(0.25, 0.0, 0.0)))
-                .collect(),
-        };
+        let fence = vanilla_blocks::OAK_FENCE.default_state();
+        let scaffolding = vanilla_blocks::SCAFFOLDING.default_state();
+        let moving_piston = vanilla_blocks::MOVING_PISTON.default_state();
 
-        assert!(should_query_collision_shape(
+        assert!(should_resolve_collision_shape(
             stone,
-            &shifted_full_block,
+            CollisionCursorType::Inside
+        ));
+        assert!(!should_resolve_collision_shape(
+            stone,
             CollisionCursorType::Face
+        ));
+        assert!(should_resolve_collision_shape(
+            fence,
+            CollisionCursorType::Face
+        ));
+        assert!(should_resolve_collision_shape(
+            scaffolding,
+            CollisionCursorType::Face
+        ));
+        assert!(!should_resolve_collision_shape(
+            fence,
+            CollisionCursorType::Edge
+        ));
+        assert!(should_resolve_collision_shape(
+            moving_piston,
+            CollisionCursorType::Edge
+        ));
+        assert!(!should_resolve_collision_shape(
+            moving_piston,
+            CollisionCursorType::Corner
         ));
     }
 }
