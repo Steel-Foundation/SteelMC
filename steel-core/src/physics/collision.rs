@@ -10,7 +10,7 @@ use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, WorldAabb};
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionBoxes, BlockCollisionContext, blocks::PowderSnowBlock,
 };
-use crate::entity::Entity;
+use crate::entity::{Entity, EntityCollisionCandidates};
 use crate::physics::COLLISION_EPSILON;
 use crate::physics::shapes::join_is_not_empty;
 use crate::world::{BlockRegionBounds, World};
@@ -736,8 +736,11 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
         }
 
         let query = aabb.inflate(ENTITY_COLLISION_EPSILON);
+        let candidates = EntityCollisionCandidates::for_source(self.source);
         self.world
-            .get_entity_bounding_boxes_in_aabb_matching(&query, |entity| match self.source {
+            .get_movement_collision_boxes_in_aabb_matching(&query, candidates, |entity| match self
+                .source
+            {
                 Some(source) => {
                     entity.id() != source.id()
                         && !entity.is_removed()
@@ -761,18 +764,21 @@ impl CollisionWorld for WorldCollisionProvider<'_> {
         }
 
         let query = aabb.inflate(ENTITY_COLLISION_EPSILON);
+        let candidates = EntityCollisionCandidates::for_source(self.source);
         self.world
-            .has_entity_in_aabb_matching(&query, |entity| match self.source {
-                Some(source) => {
-                    entity.id() != source.id()
-                        && !entity.is_removed()
-                        && !entity.is_spectator()
-                        && source.can_collide_with(entity)
-                }
-                None => {
-                    !entity.is_removed()
-                        && !entity.is_spectator()
-                        && entity.can_be_collided_with(None)
+            .has_movement_collision_in_aabb_matching(&query, candidates, |entity| {
+                match self.source {
+                    Some(source) => {
+                        entity.id() != source.id()
+                            && !entity.is_removed()
+                            && !entity.is_spectator()
+                            && source.can_collide_with(entity)
+                    }
+                    None => {
+                        !entity.is_removed()
+                            && !entity.is_spectator()
+                            && entity.can_be_collided_with(None)
+                    }
                 }
             })
     }

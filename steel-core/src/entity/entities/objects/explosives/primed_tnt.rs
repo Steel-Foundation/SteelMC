@@ -312,6 +312,10 @@ impl Entity for PrimedTntEntity {
         !self.is_removed()
     }
 
+    fn is_hard_collision_relevant(&self) -> bool {
+        false
+    }
+
     fn movement_emission(&self) -> EntityMovementEmission {
         EntityMovementEmission::None
     }
@@ -384,14 +388,15 @@ mod tests {
     use steel_registry::blocks::properties::BlockStateProperties;
     use steel_registry::init_vanilla_registry;
     use steel_registry::{vanilla_damage_types, vanilla_entities};
-    use steel_utils::ChunkPos;
     use steel_utils::random::legacy_random::LegacyRandom;
     use steel_utils::types::UpdateFlags;
+    use steel_utils::{ChunkPos, WorldAabb};
     use uuid::Uuid;
 
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::entity::{EntityFluidContact, next_entity_id};
+    use crate::physics::{CollisionWorld, WorldCollisionProvider};
     use crate::player::ResetReason;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
@@ -423,6 +428,37 @@ mod tests {
         assert!(entity.is_pickable());
         assert_eq!(entity.movement_emission(), EntityMovementEmission::None);
         assert!((entity.get_default_gravity() - GRAVITY).abs() <= f64::EPSILON);
+    }
+
+    #[test]
+    fn primed_tnt_does_not_create_hard_movement_collision_shapes() {
+        init_vanilla_registry();
+        let world = fresh_test_world("primed_tnt_hard_collision_broad_phase");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let first = Arc::new(PrimedTntEntity::new(
+            &vanilla_entities::TNT,
+            1,
+            DVec3::new(8.25, 64.0, 8.5),
+            Arc::downgrade(&world),
+        ));
+        let second = Arc::new(PrimedTntEntity::new(
+            &vanilla_entities::TNT,
+            2,
+            DVec3::new(8.75, 64.0, 8.5),
+            Arc::downgrade(&world),
+        ));
+        for entity in [Arc::clone(&first), Arc::clone(&second)] {
+            let entity: SharedEntity = entity;
+            world
+                .try_add_entity(entity)
+                .expect("primed TNT should enter the loaded test chunk");
+        }
+
+        let query = WorldAabb::new(7.0, 63.0, 7.0, 10.0, 66.0, 10.0);
+        let collision_world = WorldCollisionProvider::for_entity(&world, first.as_ref());
+
+        assert!(collision_world.get_entity_collisions(&query).is_empty());
+        assert!(!collision_world.has_entity_collision(&query));
     }
 
     #[test]

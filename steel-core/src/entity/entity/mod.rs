@@ -527,6 +527,19 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         false
     }
 
+    /// Returns whether this entity must participate in conservative hard-collision queries.
+    ///
+    /// Hard collisions are the entity shapes consulted by vanilla movement collision, not
+    /// ordinary entity pushing. Returning `false` is an immutable capability promise that this
+    /// entity can never return `true` from [`Self::can_be_collided_with`] for any source and that
+    /// its [`Self::can_collide_with`] implementation never broadens the default rule as a source.
+    /// Implementations are conservative by default so plugin-defined collision rules cannot be
+    /// omitted from the movement broad phase. The world entity manager may cache this capability
+    /// for the entity's registered lifetime, including chunk-unload retention.
+    fn is_hard_collision_relevant(&self) -> bool {
+        true
+    }
+
     /// Returns whether projectile collision may interact with this entity.
     ///
     /// Mirrors vanilla `Entity.canBeHitByProjectile`.
@@ -944,10 +957,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Runs vanilla `Entity.handlePortal` behavior currently implemented by Steel.
     fn handle_portal(&self) {
         self.base().process_portal_cooldown();
-        let Some(world) = self.level() else {
+        let Some(process) = self.base().portal_process() else {
             return;
         };
-        let Some(process) = self.base().portal_process() else {
+        let Some(world) = self.level() else {
             return;
         };
 

@@ -185,6 +185,15 @@ pub(crate) trait ImmutableExplosionBlockCalculator: Send + Sync {
         false
     }
 
+    /// Whether [`Self::should_explode`] unconditionally returns `true` without side effects.
+    ///
+    /// This permits the immutable ray lane to omit the virtual callback and repeated affected-set
+    /// probes for positions that have already been accepted. Calculators must retain the default
+    /// unless every state and remaining-power value is allowed.
+    fn always_allows_block_explosion(&self) -> bool {
+        false
+    }
+
     /// Returns the effective resistance at a ray position.
     fn explosion_resistance(
         &self,
@@ -213,6 +222,10 @@ impl ImmutableExplosionBlockCalculator for DefaultExplosionDamageCalculator {
     }
 
     fn can_cache_explosion_resistance(&self) -> bool {
+        true
+    }
+
+    fn always_allows_block_explosion(&self) -> bool {
         true
     }
 }
@@ -282,6 +295,13 @@ enum SelectedDamageCalculator<'a> {
     Default,
     Entity(&'a dyn Entity),
     Custom(&'a dyn ExplosionDamageCalculator),
+}
+
+impl SelectedDamageCalculator<'_> {
+    /// Returns whether entity-effect hooks use Steel's side-effect-free Vanilla defaults.
+    const fn has_builtin_entity_effects(&self) -> bool {
+        matches!(self, Self::Default | Self::Entity(_))
+    }
 }
 
 impl ExplosionDamageCalculator for SelectedDamageCalculator<'_> {

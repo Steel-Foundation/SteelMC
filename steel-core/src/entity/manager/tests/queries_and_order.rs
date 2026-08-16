@@ -1,6 +1,98 @@
-use std::thread;
+use std::{
+    sync::atomic::{AtomicUsize, Ordering},
+    thread,
+};
 
 use super::*;
+
+struct SourceAwareHardCollisionEntity {
+    base: EntityBase,
+    accepted_source_id: i32,
+    callback_count: AtomicUsize,
+}
+
+impl SourceAwareHardCollisionEntity {
+    fn shared(id: i32, uuid: Uuid, position: DVec3, accepted_source_id: i32) -> Arc<Self> {
+        Arc::new(Self {
+            base: EntityBase::with_uuid(
+                id,
+                uuid,
+                position,
+                vanilla_entities::ITEM.dimensions,
+                Weak::new(),
+            ),
+            accepted_source_id,
+            callback_count: AtomicUsize::new(0),
+        })
+    }
+}
+
+crate::entity::impl_test_downcast_type!(SourceAwareHardCollisionEntity);
+
+impl Entity for SourceAwareHardCollisionEntity {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        &vanilla_entities::ITEM
+    }
+
+    fn can_be_collided_with(&self, other: Option<&dyn Entity>) -> bool {
+        self.callback_count.fetch_add(1, Ordering::Relaxed);
+        other.is_some_and(|source| source.id() == self.accepted_source_id)
+    }
+}
+
+struct BroadCollisionSourceEntity {
+    base: EntityBase,
+    accepted_target_id: i32,
+}
+
+impl BroadCollisionSourceEntity {
+    fn shared(id: i32, uuid: Uuid, position: DVec3, accepted_target_id: i32) -> Arc<Self> {
+        Arc::new(Self {
+            base: EntityBase::with_uuid(
+                id,
+                uuid,
+                position,
+                vanilla_entities::ITEM.dimensions,
+                Weak::new(),
+            ),
+            accepted_target_id,
+        })
+    }
+}
+
+crate::entity::impl_test_downcast_type!(BroadCollisionSourceEntity);
+
+impl Entity for BroadCollisionSourceEntity {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        &vanilla_entities::ITEM
+    }
+
+    fn can_collide_with(&self, other: &dyn Entity) -> bool {
+        other.id() == self.accepted_target_id
+    }
+}
+
+fn hard_collision_candidate_ids(manager: &WorldEntityManager, aabb: &WorldAabb) -> Vec<i32> {
+    let mut ids = Vec::new();
+    let boxes = manager.get_movement_collision_boxes_in_aabb_matching(
+        aabb,
+        EntityCollisionCandidates::HardCollisionRelevant,
+        |entity| {
+            ids.push(entity.id());
+            false
+        },
+    );
+    assert!(boxes.is_empty());
+    ids
+}
 
 #[test]
 fn aabb_matching_query_filters_accessible_entities() {
@@ -30,6 +122,250 @@ fn aabb_matching_query_filters_accessible_entities() {
 
     assert_eq!(result.len(), 1);
     assert!(Arc::ptr_eq(&result[0], &second));
+}
+
+#[test]
+fn hard_collision_broad_phase_matches_full_scan_with_source_dependent_targets() {
+    let manager = WorldEntityManager::new();
+    load_chunk(&manager, ChunkPos::new(0, 0));
+    load_chunk(&manager, ChunkPos::new(0, 1));
+
+    let source = ManagerTestEntity::shared_non_hard(
+        10_000,
+        Uuid::from_u128(10_000),
+        DVec3::new(1.0, 64.0, 1.0),
+    );
+    for id in 1..=128 {
+        let position = DVec3::new(f64::from(id % 4), 64.0, f64::from((id / 4) % 4));
+        let entity = ManagerTestEntity::shared_non_hard(id, Uuid::from_u128(id as u128), position);
+        assert!(
+            manager
+                .add_live_entity(entity, EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+    }
+
+    let later_section = SourceAwareHardCollisionEntity::shared(
+        201,
+        Uuid::from_u128(201),
+        DVec3::new(1.0, 64.0, 17.0),
+        source.id(),
+    );
+    let first_same_section = SourceAwareHardCollisionEntity::shared(
+        202,
+        Uuid::from_u128(202),
+        DVec3::new(1.0, 64.0, 1.0),
+        source.id(),
+    );
+    let second_same_section = SourceAwareHardCollisionEntity::shared(
+        203,
+        Uuid::from_u128(203),
+        DVec3::new(2.0, 64.0, 1.0),
+        source.id(),
+    );
+    for entity in [
+        Arc::clone(&later_section),
+        Arc::clone(&first_same_section),
+        Arc::clone(&second_same_section),
+    ] {
+        let entity: SharedEntity = entity;
+        assert!(
+            manager
+                .add_live_entity(entity, EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+    }
+
+    assert!(!later_section.can_be_collided_with(None));
+    assert!(later_section.can_be_collided_with(Some(source.as_ref())));
+    assert_eq!(
+        EntityCollisionCandidates::for_source(Some(source.as_ref())),
+        EntityCollisionCandidates::HardCollisionRelevant
+    );
+
+    let aabb = WorldAabb::new(-1.0, 63.0, -1.0, 4.0, 66.0, 19.0);
+    let full = manager.get_movement_collision_boxes_in_aabb_matching(
+        &aabb,
+        EntityCollisionCandidates::All,
+        |entity| source.can_collide_with(entity),
+    );
+    let optimized = manager.get_movement_collision_boxes_in_aabb_matching(
+        &aabb,
+        EntityCollisionCandidates::for_source(Some(source.as_ref())),
+        |entity| source.can_collide_with(entity),
+    );
+
+    assert_eq!(optimized, full);
+    assert_eq!(
+        optimized,
+        vec![
+            first_same_section.bounding_box(),
+            second_same_section.bounding_box(),
+            later_section.bounding_box(),
+        ]
+    );
+}
+
+#[test]
+fn conservative_custom_source_scans_non_hard_targets() {
+    let manager = WorldEntityManager::new();
+    load_chunk(&manager, ChunkPos::new(0, 0));
+
+    let target =
+        ManagerTestEntity::shared_non_hard(1, Uuid::from_u128(1), DVec3::new(1.0, 64.0, 1.0));
+    assert!(
+        manager
+            .add_live_entity(Arc::clone(&target), EntityOwnership::ManagerOwned)
+            .is_ok()
+    );
+    let source = BroadCollisionSourceEntity::shared(
+        2,
+        Uuid::from_u128(2),
+        DVec3::new(1.0, 64.0, 1.0),
+        target.id(),
+    );
+    assert_eq!(
+        EntityCollisionCandidates::for_source(Some(source.as_ref())),
+        EntityCollisionCandidates::All
+    );
+
+    let optimized = manager.get_movement_collision_boxes_in_aabb_matching(
+        &target.bounding_box(),
+        EntityCollisionCandidates::for_source(Some(source.as_ref())),
+        |entity| source.can_collide_with(entity),
+    );
+    let incorrectly_narrowed = manager.get_movement_collision_boxes_in_aabb_matching(
+        &target.bounding_box(),
+        EntityCollisionCandidates::HardCollisionRelevant,
+        |entity| source.can_collide_with(entity),
+    );
+
+    assert_eq!(optimized, vec![target.bounding_box()]);
+    assert!(incorrectly_narrowed.is_empty());
+}
+
+#[test]
+fn hard_collision_index_tracks_move_bounds_unload_restore_and_remove() {
+    let manager = WorldEntityManager::new();
+    let first_chunk = ChunkPos::new(0, 0);
+    let second_chunk = ChunkPos::new(1, 0);
+    load_chunk(&manager, first_chunk);
+    load_chunk(&manager, second_chunk);
+
+    let hard = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+    let non_hard =
+        ManagerTestEntity::shared_non_hard(2, Uuid::from_u128(2), DVec3::new(1.5, 64.0, 1.0));
+    for entity in [Arc::clone(&hard), non_hard] {
+        assert!(
+            manager
+                .add_live_entity(entity, EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+    }
+
+    let original_bounds = WorldAabb::new(0.0, 63.0, 0.0, 3.0, 66.0, 3.0);
+    assert_eq!(
+        hard_collision_candidate_ids(&manager, &original_bounds),
+        vec![1]
+    );
+
+    let moved_position = DVec3::new(17.0, 80.0, 1.0);
+    hard.base().set_position_local(moved_position);
+    assert!(manager.commit_move(hard.id(), moved_position).is_ok());
+    assert!(hard_collision_candidate_ids(&manager, &original_bounds).is_empty());
+    assert_eq!(
+        hard_collision_candidate_ids(&manager, &hard.bounding_box()),
+        vec![1]
+    );
+
+    let moved_bounds = WorldAabb::new(24.0, 80.0, 0.0, 25.0, 81.0, 1.0);
+    hard.base().set_bounding_box(moved_bounds);
+    manager.commit_bounding_box_change(hard.id());
+    assert_eq!(
+        hard_collision_candidate_ids(&manager, &moved_bounds),
+        vec![1]
+    );
+
+    let unload = manager.begin_chunk_unload(second_chunk);
+    assert_eq!(unload.retained.len(), 1);
+    assert!(hard_collision_candidate_ids(&manager, &moved_bounds).is_empty());
+    let restored = manager.on_chunk_loaded(second_chunk);
+    assert_eq!(restored.restored.len(), 1);
+    let _ = manager.update_chunk_visibility(second_chunk, EntityVisibility::Ticking);
+    assert_eq!(
+        hard_collision_candidate_ids(&manager, &moved_bounds),
+        vec![1]
+    );
+
+    assert!(
+        manager
+            .remove_live_entity(hard.id(), RemovalReason::Discarded)
+            .is_some()
+    );
+    assert!(hard_collision_candidate_ids(&manager, &moved_bounds).is_empty());
+}
+
+#[test]
+fn movement_collision_predicate_runs_after_manager_lock_release() {
+    let manager = Arc::new(WorldEntityManager::new());
+    load_chunk(&manager, ChunkPos::new(0, 0));
+    let target = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+    let target_bounds = target.bounding_box();
+    assert!(
+        manager
+            .add_live_entity(target, EntityOwnership::ManagerOwned)
+            .is_ok()
+    );
+
+    let result = manager.get_movement_collision_boxes_in_aabb_matching(
+        &target_bounds,
+        EntityCollisionCandidates::HardCollisionRelevant,
+        |entity| {
+            manager.commit_bounding_box_change(entity.id());
+            true
+        },
+    );
+
+    assert_eq!(result, vec![target_bounds]);
+    assert!(manager.get_by_id(1).is_some());
+}
+
+#[test]
+fn movement_collision_uses_live_bounds_across_vanilla_query_phases() {
+    let manager = WorldEntityManager::new();
+    load_chunk(&manager, ChunkPos::new(0, 0));
+    let first = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+    let second = entity(2, 2, DVec3::new(2.0, 64.0, 1.0));
+    for entity in [Arc::clone(&first), Arc::clone(&second)] {
+        assert!(
+            manager
+                .add_live_entity(entity, EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+    }
+
+    let query = WorldAabb::new(0.0, 63.0, 0.0, 4.0, 66.0, 3.0);
+    let moved_first = WorldAabb::new(1.25, 64.0, 1.0, 1.75, 64.5, 1.5);
+    let moved_second = WorldAabb::new(20.0, 64.0, 1.0, 20.5, 64.5, 1.5);
+    let mut callback_ids = Vec::new();
+
+    let result = manager.get_movement_collision_boxes_in_aabb_matching(
+        &query,
+        EntityCollisionCandidates::All,
+        |entity| {
+            callback_ids.push(entity.id());
+            if entity.id() == first.id() {
+                first.base().set_bounding_box(moved_first);
+                manager.commit_bounding_box_change(first.id());
+                second.base().set_bounding_box(moved_second);
+                manager.commit_bounding_box_change(second.id());
+            }
+            true
+        },
+    );
+
+    assert_eq!(callback_ids, vec![first.id()]);
+    assert_eq!(result, vec![moved_first]);
 }
 
 #[test]

@@ -2,6 +2,7 @@ use std::mem;
 
 use glam::{DVec3, IVec3};
 use rustc_hash::FxHashSet;
+use smallvec::SmallVec;
 use steel_registry::blocks::shapes::VoxelShape;
 use steel_utils::{BlockPos, WorldAabb, axis::Axis};
 
@@ -9,6 +10,37 @@ const SMALL_MOVEMENT_EPSILON_SQ: f64 = 9.999_999_4e-11;
 const CLIP_EPSILON: f64 = 1.0e-7;
 const CORNER_HIT_EPSILON: f64 = 1.0e-5;
 const ENTITY_INSIDE_SWEEP_INFLATE_EPSILON: f64 = 1.0e-7;
+
+/// Allocation-free visited-position set for ordinary single-tick movement,
+/// with a hashed fallback for unusually large entities or movement segments.
+#[derive(Default)]
+struct MovementVisitedBlocks {
+    inline: SmallVec<[BlockPos; 16]>,
+    overflow: Option<FxHashSet<BlockPos>>,
+}
+
+impl MovementVisitedBlocks {
+    fn insert(&mut self, pos: BlockPos) -> bool {
+        if let Some(overflow) = &mut self.overflow {
+            return overflow.insert(pos);
+        }
+        if self.inline.contains(&pos) {
+            return false;
+        }
+        if self.inline.len() < self.inline.inline_size() {
+            self.inline.push(pos);
+            return true;
+        }
+
+        let mut overflow = FxHashSet::default();
+        overflow.reserve(self.inline.len() + 1);
+        overflow.extend(self.inline.drain(..));
+        let inserted = overflow.insert(pos);
+        debug_assert!(inserted, "inline duplicate check must precede the fallback");
+        self.overflow = Some(overflow);
+        true
+    }
+}
 
 pub(super) fn for_each_block_intersected_between(
     from: DVec3,
@@ -29,14 +61,17 @@ pub(super) fn for_each_block_intersected_between(
         return Some(last_iteration + 1);
     }
 
-    let mut visited = FxHashSet::default();
+    let mut visited = MovementVisitedBlocks::default();
     let aabb_at_start = aabb_at_target.translate(-travel);
-    for pos in between_corners_in_direction(aabb_at_start, travel) {
+    if !for_each_between_corners_in_direction(aabb_at_start, travel, |pos| {
         last_iteration = 0;
         if !visitor(pos, 0) {
-            return None;
+            return false;
         }
         visited.insert(pos);
+        true
+    }) {
+        return None;
     }
 
     let iterations = ({
@@ -47,13 +82,16 @@ pub(super) fn for_each_block_intersected_between(
         add_collisions_along_travel(&mut visited, travel, aabb_at_target, &mut traced_visitor)
     })?;
 
-    for pos in between_corners_in_direction(aabb_at_target, travel) {
+    if !for_each_between_corners_in_direction(aabb_at_target, travel, |pos| {
         if visited.insert(pos) {
             last_iteration = iterations + 1;
             if !visitor(pos, iterations + 1) {
-                return None;
+                return false;
             }
         }
+        true
+    }) {
+        return None;
     }
 
     Some(last_iteration + 1)
@@ -94,7 +132,7 @@ pub(super) fn collided_with_aabb_moving_from(
     reason = "keeps the vanilla BlockGetter.addCollisionsAlongTravel port auditable"
 )]
 fn add_collisions_along_travel(
-    visited: &mut FxHashSet<BlockPos>,
+    visited: &mut MovementVisitedBlocks,
     travel: DVec3,
     aabb_at_target: WorldAabb,
     visitor: &mut impl FnMut(BlockPos, i32) -> bool,
@@ -197,10 +235,18 @@ fn add_collisions_along_travel(
                 (corner_hit_z - box_size.z * f64::from(corner_dir.z)).floor() as i32,
             );
 
-            for pos in between_corners_in_direction_between(corner_block, opposite_corner, travel) {
-                if visited.insert(pos) && !visitor(pos, iterations) {
-                    return None;
-                }
+            if !for_each_between_corners_in_direction_between(
+                corner_block,
+                opposite_corner,
+                travel,
+                |pos| {
+                    if visited.insert(pos) && !visitor(pos, iterations) {
+                        return false;
+                    }
+                    true
+                },
+            ) {
+                return None;
             }
         }
     }
@@ -232,7 +278,11 @@ pub(super) fn for_each_block_in_aabb(
     true
 }
 
-fn between_corners_in_direction(aabb: WorldAabb, direction: DVec3) -> Vec<BlockPos> {
+fn for_each_between_corners_in_direction(
+    aabb: WorldAabb,
+    direction: DVec3,
+    visitor: impl FnMut(BlockPos) -> bool,
+) -> bool {
     let first_corner = IVec3::new(
         aabb.min(Axis::X).floor() as i32,
         aabb.min(Axis::Y).floor() as i32,
@@ -243,14 +293,15 @@ fn between_corners_in_direction(aabb: WorldAabb, direction: DVec3) -> Vec<BlockP
         aabb.max(Axis::Y).floor() as i32,
         aabb.max(Axis::Z).floor() as i32,
     );
-    between_corners_in_direction_between(first_corner, second_corner, direction)
+    for_each_between_corners_in_direction_between(first_corner, second_corner, direction, visitor)
 }
 
-fn between_corners_in_direction_between(
+fn for_each_between_corners_in_direction_between(
     first_corner: IVec3,
     second_corner: IVec3,
     direction: DVec3,
-) -> Vec<BlockPos> {
+    mut visitor: impl FnMut(BlockPos) -> bool,
+) -> bool {
     let min_corner = first_corner.min(second_corner);
     let max_corner = first_corner.max(second_corner);
     let diff = max_corner - min_corner;
@@ -281,8 +332,6 @@ fn between_corners_in_direction_between(
     let first_max = axis_value(diff, first_axis);
     let second_max = axis_value(diff, second_axis);
     let third_max = axis_value(diff, third_axis);
-    let mut positions = Vec::new();
-
     for first_index in 0..=first_max {
         for second_index in 0..=second_max {
             for third_index in 0..=third_max {
@@ -290,12 +339,14 @@ fn between_corners_in_direction_between(
                     + first_step * first_index
                     + second_step * second_index
                     + third_step * third_index;
-                positions.push(BlockPos::new(position.x, position.y, position.z));
+                if !visitor(BlockPos::new(position.x, position.y, position.z)) {
+                    return false;
+                }
             }
         }
     }
 
-    positions
+    true
 }
 
 fn clip_block(pos: BlockPos, from: DVec3, to: DVec3) -> Option<DVec3> {
@@ -561,5 +612,70 @@ mod tests {
 
         assert!(completed.is_none());
         assert_eq!(visited.len(), 1);
+    }
+
+    #[test]
+    fn movement_visited_blocks_spills_without_losing_duplicate_state() {
+        let mut visited = MovementVisitedBlocks::default();
+        for x in 0..24 {
+            assert!(visited.insert(BlockPos::new(x, 64, 0)));
+        }
+
+        assert!(visited.overflow.is_some());
+        for x in 0..24 {
+            assert!(!visited.insert(BlockPos::new(x, 64, 0)));
+        }
+    }
+
+    #[test]
+    fn diagonal_corner_crossing_visits_unique_blocks_in_order() {
+        let positions = visited_positions(
+            DVec3::new(0.5, 64.0, 0.5),
+            DVec3::new(3.5, 67.0, 3.5),
+            WorldAabb::new(3.2, 67.0, 3.2, 3.8, 67.9, 3.8),
+        );
+
+        assert_eq!(
+            positions,
+            vec![
+                BlockPos::new(0, 64, 0),
+                BlockPos::new(0, 64, 1),
+                BlockPos::new(1, 64, 0),
+                BlockPos::new(1, 64, 1),
+                BlockPos::new(0, 65, 0),
+                BlockPos::new(0, 65, 1),
+                BlockPos::new(1, 65, 0),
+                BlockPos::new(1, 65, 1),
+                BlockPos::new(1, 65, 2),
+                BlockPos::new(2, 65, 1),
+                BlockPos::new(2, 65, 2),
+                BlockPos::new(1, 66, 1),
+                BlockPos::new(1, 66, 2),
+                BlockPos::new(2, 66, 1),
+                BlockPos::new(2, 66, 2),
+                BlockPos::new(2, 66, 3),
+                BlockPos::new(3, 66, 2),
+                BlockPos::new(3, 66, 3),
+                BlockPos::new(2, 67, 2),
+                BlockPos::new(2, 67, 3),
+                BlockPos::new(3, 67, 2),
+                BlockPos::new(3, 67, 3),
+            ]
+        );
+    }
+
+    #[test]
+    fn long_trace_uses_spill_path_without_duplicates() {
+        let positions = visited_positions(
+            DVec3::new(0.5, 64.0, 0.5),
+            DVec3::new(24.5, 64.0, 0.5),
+            WorldAabb::new(24.2, 64.0, 0.2, 24.8, 64.9, 0.8),
+        );
+        let expected = (0..=24)
+            .map(|x| BlockPos::new(x, 64, 0))
+            .collect::<Vec<_>>();
+
+        assert!(positions.len() > 16);
+        assert_eq!(positions, expected);
     }
 }

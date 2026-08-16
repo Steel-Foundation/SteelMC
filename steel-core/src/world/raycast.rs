@@ -1,4 +1,5 @@
 use super::*;
+use crate::chunk::gameplay_chunk_lookup_cache::LocalFullChunkHolderCache;
 
 /// Controls how a block position is treated during a raytrace traversal.
 ///
@@ -59,7 +60,9 @@ pub struct ClipHitResult {
     pub world_border_hit: bool,
 }
 
-const EXPLOSION_EXPOSURE_CACHE_BITS: u32 = 6;
+// Radius-four TNT exposure repeatedly visits a few hundred nearby positions. A 256-entry direct
+// cache retains almost all of that working set without heap allocation or cross-explosion lifetime.
+const EXPLOSION_EXPOSURE_CACHE_BITS: u32 = 8;
 const EXPLOSION_EXPOSURE_CACHE_SIZE: usize = 1 << EXPLOSION_EXPOSURE_CACHE_BITS;
 const EXPLOSION_EXPOSURE_CACHE_MASK: usize = EXPLOSION_EXPOSURE_CACHE_SIZE - 1;
 const EXPLOSION_EXPOSURE_HASH_PHI: u64 = 0x9e37_79b9_7f4a_7c15;
@@ -68,28 +71,30 @@ const EXPLOSION_EXPOSURE_HASH_PHI: u64 = 0x9e37_79b9_7f4a_7c15;
 struct ExplosionExposureCacheEntry {
     pos: BlockPos,
     collision: OffsetVoxelShape,
-    occupied: bool,
+    generation: u32,
 }
 
 impl ExplosionExposureCacheEntry {
     const EMPTY: Self = Self {
         pos: BlockPos::new(0, 0, 0),
         collision: OffsetVoxelShape::without_offset(VoxelShape::EMPTY),
-        occupied: false,
+        generation: 0,
     };
 }
 
-/// Per-entity cache for vanilla explosion exposure rays.
+/// Bounded cache for vanilla explosion exposure rays.
 ///
-/// The cache must not outlive one `ServerExplosion.getSeenPercent` equivalent.
-/// Missing chunks are never cached, allowing asynchronous Full publication to
-/// become visible while the synchronous gameplay callback is running. Dynamic
-/// collision shapes are resolved on every visit so live block entities retain
-/// their normal query semantics.
+/// Missing chunks are never cached, allowing asynchronous Full publication to become visible
+/// while the synchronous gameplay callback is running. Dynamic collision shapes are resolved on
+/// every visit so live block entities retain their normal query semantics. Reuse across entities
+/// is only valid when the caller can prove that the intervening entity callbacks cannot mutate
+/// blocks; callers must clear the cache before invoking any other entity implementation.
 pub(crate) struct ExplosionExposureRaycast<'world> {
     world: &'world World,
     collision_context: BlockCollisionContext,
+    full_chunks: LocalFullChunkHolderCache,
     entries: [ExplosionExposureCacheEntry; EXPLOSION_EXPOSURE_CACHE_SIZE],
+    generation: u32,
     #[cfg(test)]
     stats: ExplosionExposureRaycastStats,
 }
@@ -111,7 +116,9 @@ impl<'world> ExplosionExposureRaycast<'world> {
         Self {
             world,
             collision_context,
+            full_chunks: LocalFullChunkHolderCache::new(),
             entries: [ExplosionExposureCacheEntry::EMPTY; EXPLOSION_EXPOSURE_CACHE_SIZE],
+            generation: 1,
             #[cfg(test)]
             stats: ExplosionExposureRaycastStats {
                 block_visits: 0,
@@ -120,6 +127,21 @@ impl<'world> ExplosionExposureRaycast<'world> {
                 collision_lookups: 0,
             },
         }
+    }
+
+    /// Drops every retained static collision result.
+    pub(crate) fn clear(&mut self) {
+        if self.generation == u32::MAX {
+            self.entries.fill(ExplosionExposureCacheEntry::EMPTY);
+            self.generation = 1;
+        } else {
+            self.generation += 1;
+        }
+    }
+
+    /// Selects the entity collision context used by subsequent exposure rays.
+    pub(crate) const fn set_collision_context(&mut self, collision_context: BlockCollisionContext) {
+        self.collision_context = collision_context;
     }
 
     /// Returns whether a collider-only, fluid-free exposure ray misses every block.
@@ -135,7 +157,7 @@ impl<'world> ExplosionExposureRaycast<'world> {
 
         let cache_index = explosion_exposure_cache_index(pos);
         let entry = self.entries[cache_index];
-        if entry.occupied && entry.pos == pos {
+        if entry.generation == self.generation && entry.pos == pos {
             #[cfg(test)]
             {
                 self.stats.cache_hits += 1;
@@ -148,7 +170,9 @@ impl<'world> ExplosionExposureRaycast<'world> {
             self.stats.state_lookups += 1;
             self.stats.collision_lookups += 1;
         }
-        let (state, cacheable) = self.world.explosion_exposure_block_state(pos);
+        let (state, cacheable) = self
+            .world
+            .explosion_exposure_block_state(pos, &mut self.full_chunks);
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         if state.get_block().config.dynamic_shape {
             return behavior
@@ -169,7 +193,7 @@ impl<'world> ExplosionExposureRaycast<'world> {
             self.entries[cache_index] = ExplosionExposureCacheEntry {
                 pos,
                 collision,
-                occupied: true,
+                generation: self.generation,
             };
         }
         intersects
@@ -289,7 +313,11 @@ impl ClipHitResult {
 impl World {
     /// Reads exposure state while distinguishing stable Full data from an air
     /// fallback caused by a chunk that may still publish asynchronously.
-    fn explosion_exposure_block_state(&self, pos: BlockPos) -> (BlockStateId, bool) {
+    fn explosion_exposure_block_state(
+        &self,
+        pos: BlockPos,
+        full_chunks: &mut LocalFullChunkHolderCache,
+    ) -> (BlockStateId, bool) {
         if !self.is_in_valid_bounds(pos) {
             return (
                 REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR),
@@ -297,15 +325,15 @@ impl World {
             );
         }
 
-        let chunk_pos = Self::chunk_pos_for_block(pos);
-        self.chunk_map
-            .with_full_chunk(chunk_pos, |chunk| (chunk.get_block_state(pos), true))
-            .unwrap_or_else(|| {
+        full_chunks.block_state(&self.chunk_map, pos).map_or_else(
+            || {
                 (
                     REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR),
                     false,
                 )
-            })
+            },
+            |state| (state, true),
+        )
     }
 
     /// Checks if a ray intersects with a block's selection box.
@@ -986,12 +1014,12 @@ mod explosion_exposure_cache_tests {
     #[test]
     fn cache_index_uses_the_full_fastutil_long_mix() {
         let fixtures = [
-            (BlockPos::new(0, 64, 0), 30),
+            (BlockPos::new(0, 64, 0), 94),
             (BlockPos::new(1, 64, 0), 61),
             (BlockPos::new(0, 64, 1), 14),
-            (BlockPos::new(50, 200, 53), 16),
+            (BlockPos::new(50, 200, 53), 208),
             (BlockPos::new(50, 200, 68), 48),
-            (BlockPos::new(-1, 64, -1), 52),
+            (BlockPos::new(-1, 64, -1), 180),
         ];
 
         for (pos, expected) in fixtures {

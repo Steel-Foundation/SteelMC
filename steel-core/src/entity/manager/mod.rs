@@ -5,7 +5,10 @@
 //! of chunk load state; chunks are still the persistence boundary, and only
 //! full simulated chunks tick entities.
 
-use std::{collections::BTreeMap, error::Error, fmt, iter::FusedIterator, mem, slice, sync::Arc};
+use std::{
+    collections::BTreeMap, error::Error, fmt, iter::FusedIterator, mem, ops::ControlFlow, slice,
+    sync::Arc,
+};
 
 use glam::DVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -17,7 +20,7 @@ use uuid::Uuid;
 
 use super::{
     Entity, NullEntityCallback, RemovalReason, SharedEntity, snapshot_old_pos_and_rot_for_tick,
-    tick_vehicle_passengers_with_ticked_if,
+    tick_vehicle_passengers_if,
 };
 
 // Vanilla treats four blocks as the largest ordinary entity search extent.
@@ -48,6 +51,27 @@ impl EntitySpatialCell {
 struct EntityQueryOrder {
     section: PackedSectionPos,
     insertion: u64,
+}
+
+/// Candidate set used by vanilla movement's entity-shape collision query.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EntityCollisionCandidates {
+    /// Scan every spatially indexed entity because the source may broaden the default rule.
+    All,
+    /// Scan only entities that may be hard-collision targets.
+    HardCollisionRelevant,
+}
+
+impl EntityCollisionCandidates {
+    /// Selects the exact-safe broad phase for an optional movement source.
+    #[must_use]
+    pub(crate) fn for_source(source: Option<&dyn Entity>) -> Self {
+        if source.is_some_and(Entity::is_hard_collision_relevant) {
+            Self::All
+        } else {
+            Self::HardCollisionRelevant
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -359,6 +383,7 @@ struct EntityEntry {
     chunk: ChunkPos,
     bounding_box: WorldAabb,
     spatial_cells: SmallVec<[EntitySpatialCell; 8]>,
+    hard_collision_relevant: bool,
     section_order: u64,
     ownership: EntityOwnership,
 }
@@ -368,6 +393,7 @@ impl EntityEntry {
         let section = SectionPos::from_entity_pos(entity.position());
         let chunk = ChunkPos::new(section.x(), section.z());
         let bounding_box = entity.bounding_box();
+        let hard_collision_relevant = entity.is_hard_collision_relevant();
         Self {
             uuid: entity.uuid(),
             entity,
@@ -375,6 +401,7 @@ impl EntityEntry {
             chunk,
             bounding_box,
             spatial_cells: EntitySpatialCellBounds::from_aabb(&bounding_box).cells(),
+            hard_collision_relevant,
             section_order: 0,
             ownership,
         }
@@ -409,6 +436,7 @@ struct ManagerState {
     accessible_order: IndexedOrderedEntityIds,
     by_section: BTreeMap<PackedSectionPos, OrderedEntityIds>,
     by_spatial_cell: FxHashMap<EntitySpatialCell, OrderedEntityIds>,
+    by_hard_collision_cell: FxHashMap<EntitySpatialCell, OrderedEntityIds>,
     by_chunk: FxHashMap<ChunkPos, FxHashSet<i32>>,
     unloading_by_chunk: FxHashMap<ChunkPos, Vec<EntityEntry>>,
     save_pending_by_chunk: FxHashMap<ChunkPos, Vec<EntityEntry>>,
@@ -1112,6 +1140,7 @@ impl WorldEntityManager {
         let spatial_cells_changed = current.spatial_cells != new_spatial_cells;
         let section_changed = old_section != new_section;
         let spatial_index_changed = spatial_cells_changed || section_changed;
+        let hard_collision_relevant = current.hard_collision_relevant;
         let current_section_order = current.section_order;
 
         if !section_changed && !spatial_cells_changed {
@@ -1151,13 +1180,34 @@ impl WorldEntityManager {
                 return Err(EntityMoveError::NotLive { entity_id });
             };
             let previous_cells = mem::take(&mut entry.spatial_cells);
-            Self::remove_from_spatial_cells(&mut state, &previous_cells, entity_id);
+            Self::remove_from_spatial_cells(
+                &mut state,
+                &previous_cells,
+                entity_id,
+                EntityCollisionCandidates::All,
+            );
             Self::insert_into_spatial_cells(
                 &mut state,
                 &new_spatial_cells,
                 entity_id,
                 new_query_order,
+                EntityCollisionCandidates::All,
             );
+            if hard_collision_relevant {
+                Self::remove_from_spatial_cells(
+                    &mut state,
+                    &previous_cells,
+                    entity_id,
+                    EntityCollisionCandidates::HardCollisionRelevant,
+                );
+                Self::insert_into_spatial_cells(
+                    &mut state,
+                    &new_spatial_cells,
+                    entity_id,
+                    new_query_order,
+                    EntityCollisionCandidates::HardCollisionRelevant,
+                );
+            }
         }
 
         if let Some(entry) = state.live_by_id.get_mut(&entity_id) {
@@ -1222,6 +1272,7 @@ impl WorldEntityManager {
         let bounding_box = current.entity.bounding_box();
         let new_spatial_cells = EntitySpatialCellBounds::from_aabb(&bounding_box).cells();
         let query_order = current.query_order();
+        let hard_collision_relevant = current.hard_collision_relevant;
 
         if current.spatial_cells == new_spatial_cells {
             if let Some(entry) = state.live_by_id.get_mut(&entity_id) {
@@ -1234,8 +1285,34 @@ impl WorldEntityManager {
             return;
         };
         let previous_cells = mem::take(&mut entry.spatial_cells);
-        Self::remove_from_spatial_cells(&mut state, &previous_cells, entity_id);
-        Self::insert_into_spatial_cells(&mut state, &new_spatial_cells, entity_id, query_order);
+        Self::remove_from_spatial_cells(
+            &mut state,
+            &previous_cells,
+            entity_id,
+            EntityCollisionCandidates::All,
+        );
+        Self::insert_into_spatial_cells(
+            &mut state,
+            &new_spatial_cells,
+            entity_id,
+            query_order,
+            EntityCollisionCandidates::All,
+        );
+        if hard_collision_relevant {
+            Self::remove_from_spatial_cells(
+                &mut state,
+                &previous_cells,
+                entity_id,
+                EntityCollisionCandidates::HardCollisionRelevant,
+            );
+            Self::insert_into_spatial_cells(
+                &mut state,
+                &new_spatial_cells,
+                entity_id,
+                query_order,
+                EntityCollisionCandidates::HardCollisionRelevant,
+            );
+        }
         if let Some(entry) = state.live_by_id.get_mut(&entity_id) {
             entry.bounding_box = bounding_box;
             entry.spatial_cells = new_spatial_cells;
@@ -1386,6 +1463,61 @@ impl WorldEntityManager {
         result
     }
 
+    /// Gets movement-collision bounding boxes from the selected conservative broad phase.
+    ///
+    /// Entity callbacks run after the manager read lock is released. This permits plugin-defined
+    /// collision rules to perform ordinary entity-manager lookups without lock reentrancy.
+    #[must_use]
+    pub(crate) fn get_movement_collision_boxes_in_aabb_matching(
+        &self,
+        aabb: &WorldAabb,
+        candidates: EntityCollisionCandidates,
+        mut predicate: impl FnMut(&dyn Entity) -> bool,
+    ) -> Vec<WorldAabb> {
+        let colliding_entities = self
+            .movement_collision_candidate_snapshot(aabb, candidates)
+            .into_iter()
+            .filter(|entity| entity.bounding_box().intersects(*aabb) && predicate(entity.as_ref()))
+            .collect::<SmallVec<[SharedEntity; 8]>>();
+
+        // Vanilla first completes `getEntities`, including every selector callback, and only then
+        // reads the accepted entities' boxes. Keep those phases separate so a plugin callback that
+        // moves an entity cannot leave a stale collision shape in the result.
+        colliding_entities
+            .into_iter()
+            .map(|entity| entity.bounding_box())
+            .collect()
+    }
+
+    /// Returns whether a movement-collision candidate matches after the broad phase.
+    #[must_use]
+    pub(crate) fn has_movement_collision_in_aabb_matching(
+        &self,
+        aabb: &WorldAabb,
+        candidates: EntityCollisionCandidates,
+        mut predicate: impl FnMut(&dyn Entity) -> bool,
+    ) -> bool {
+        self.movement_collision_candidate_snapshot(aabb, candidates)
+            .into_iter()
+            .any(|entity| entity.bounding_box().intersects(*aabb) && predicate(entity.as_ref()))
+    }
+
+    fn movement_collision_candidate_snapshot(
+        &self,
+        aabb: &WorldAabb,
+        candidates: EntityCollisionCandidates,
+    ) -> SmallVec<[SharedEntity; 8]> {
+        let state = self.state.read();
+        let mut snapshot = SmallVec::new();
+        let _ = Self::visit_entity_query_entries(&state, aabb, candidates, |entry| {
+            if Self::is_accessible(&state, entry) {
+                snapshot.push(Arc::clone(&entry.entity));
+            }
+            ControlFlow::<()>::Continue(())
+        });
+        snapshot
+    }
+
     #[must_use]
     /// Gets the nearest live entity whose bounding box intersects `aabb` and matches `predicate`.
     pub fn nearest_entity_in_aabb_matching(
@@ -1432,23 +1564,44 @@ impl WorldEntityManager {
     }
 
     fn entity_query_entries<'a>(state: &'a ManagerState, aabb: &WorldAabb) -> Vec<&'a EntityEntry> {
+        let mut entries = Vec::new();
+        let _ = Self::visit_entity_query_entries(
+            state,
+            aabb,
+            EntityCollisionCandidates::All,
+            |entry| {
+                entries.push(entry);
+                ControlFlow::<()>::Continue(())
+            },
+        );
+        entries
+    }
+
+    fn visit_entity_query_entries<'a, B>(
+        state: &'a ManagerState,
+        aabb: &WorldAabb,
+        candidates: EntityCollisionCandidates,
+        mut visit: impl FnMut(&'a EntityEntry) -> ControlFlow<B>,
+    ) -> ControlFlow<B> {
         let bounds = EntitySpatialCellBounds::from_aabb(aabb);
         let mut populated_cells = SmallVec::<[&OrderedEntityIds; 8]>::new();
+        let spatial_index = match candidates {
+            EntityCollisionCandidates::All => &state.by_spatial_cell,
+            EntityCollisionCandidates::HardCollisionRelevant => &state.by_hard_collision_cell,
+        };
 
         if bounds.direct_probe_count() <= MAX_DIRECT_SPATIAL_CELL_PROBES {
             for x in bounds.minimum.x..=bounds.maximum.x {
                 for y in bounds.minimum.y..=bounds.maximum.y {
                     for z in bounds.minimum.z..=bounds.maximum.z {
-                        if let Some(cell_ids) =
-                            state.by_spatial_cell.get(&EntitySpatialCell { x, y, z })
-                        {
+                        if let Some(cell_ids) = spatial_index.get(&EntitySpatialCell { x, y, z }) {
                             populated_cells.push(cell_ids);
                         }
                     }
                 }
             }
         } else {
-            for (cell, cell_ids) in &state.by_spatial_cell {
+            for (cell, cell_ids) in spatial_index {
                 if bounds.contains(*cell) {
                     populated_cells.push(cell_ids);
                 }
@@ -1456,10 +1609,12 @@ impl WorldEntityManager {
         }
 
         if let [cell] = populated_cells.as_slice() {
-            return cell
-                .iter()
-                .filter_map(|entity_id| state.live_by_id.get(entity_id))
-                .collect();
+            for entity_id in cell.iter() {
+                if let Some(entry) = state.live_by_id.get(entity_id) {
+                    visit(entry)?;
+                }
+            }
+            return ControlFlow::Continue(());
         }
 
         let mut entity_ids = FxHashSet::default();
@@ -1471,7 +1626,10 @@ impl WorldEntityManager {
             .filter_map(|entity_id| state.live_by_id.get(&entity_id))
             .collect::<Vec<_>>();
         entries.sort_unstable_by_key(|entry| entry.query_order());
-        entries
+        for entry in entries {
+            visit(entry)?;
+        }
+        ControlFlow::Continue(())
     }
 
     fn entity_ids_in_chunk_order(state: &ManagerState, chunk: ChunkPos) -> Vec<i32> {
@@ -1565,7 +1723,6 @@ impl WorldEntityManager {
     /// Ticks live entities currently in the ticking visibility set.
     pub fn tick_entities(&self, _tick_count: i32, runs_normally: bool) -> FxHashSet<ChunkPos> {
         let mut dirty_chunks = FxHashSet::default();
-        let mut ticked_entities = FxHashSet::default();
         let tick_candidates = self.ticking_entities_snapshot();
         for entity in tick_candidates {
             if !self.can_tick_entity_now(entity.id()) {
@@ -1593,11 +1750,9 @@ impl WorldEntityManager {
                 continue;
             }
 
-            if !ticked_entities.insert(entity.id()) {
-                continue;
-            }
-
-            self.tick_non_passenger(&entity, &mut ticked_entities, &mut dirty_chunks);
+            // Vanilla deliberately has no same-tick de-duplication here. A relationship change
+            // may make an entity tick once as a passenger and once from its later root-list slot.
+            self.tick_non_passenger(&entity, &mut dirty_chunks);
         }
         dirty_chunks
     }
@@ -1726,21 +1881,27 @@ impl WorldEntityManager {
             return true;
         }
 
-        let mut visited = FxHashSet::default();
-        visited.insert(entity.id());
-        let mut vehicle = entity.vehicle();
-        while let Some(current) = vehicle {
+        let entity_id = entity.id();
+        let Some(mut current) = entity.vehicle() else {
+            return false;
+        };
+        let mut visited = SmallVec::<[i32; 8]>::new();
+        visited.push(entity_id);
+        loop {
+            let current_id = current.id();
             assert!(
-                visited.insert(current.id()),
-                "cyclic passenger relationship involving entity {}",
-                entity.id()
+                !visited.contains(&current_id),
+                "cyclic passenger relationship involving entity {entity_id}"
             );
+            visited.push(current_id);
             if current.is_world_change_pending() {
                 return true;
             }
-            vehicle = current.vehicle();
+            let Some(vehicle) = current.vehicle() else {
+                return false;
+            };
+            current = vehicle;
         }
-        false
     }
 
     fn is_accessible(state: &ManagerState, entry: &EntityEntry) -> bool {
@@ -1781,34 +1942,25 @@ impl WorldEntityManager {
         }
     }
 
-    fn tick_non_passenger(
-        &self,
-        entity: &SharedEntity,
-        ticked_entities: &mut FxHashSet<i32>,
-        dirty_chunks: &mut FxHashSet<ChunkPos>,
-    ) {
+    fn tick_non_passenger(&self, entity: &SharedEntity, dirty_chunks: &mut FxHashSet<ChunkPos>) {
         snapshot_old_pos_and_rot_for_tick(entity.as_ref());
         entity.advance_tick_count();
         entity.tick();
         self.mark_dirty_after_tick(entity, dirty_chunks);
-        self.tick_vehicle_passengers_with_ticked(entity.as_ref(), ticked_entities, dirty_chunks);
+        self.tick_vehicle_passengers(entity.as_ref(), dirty_chunks);
     }
 
-    fn tick_vehicle_passengers_with_ticked(
+    fn tick_vehicle_passengers(
         &self,
         vehicle: &dyn Entity,
-        ticked_entities: &mut FxHashSet<i32>,
         dirty_chunks: &mut FxHashSet<ChunkPos>,
     ) {
         let mut post_tick = |entity: &SharedEntity| {
             self.mark_dirty_after_tick(entity, dirty_chunks);
         };
-        tick_vehicle_passengers_with_ticked_if(
-            vehicle,
-            ticked_entities,
-            &mut post_tick,
-            &mut |entity| self.can_tick_entity_now(entity.id()),
-        );
+        tick_vehicle_passengers_if(vehicle, &mut post_tick, &mut |entity| {
+            self.can_tick_entity_now(entity.id())
+        });
     }
 
     fn mark_dirty_after_tick(&self, entity: &SharedEntity, dirty_chunks: &mut FxHashSet<ChunkPos>) {
@@ -1860,7 +2012,17 @@ impl WorldEntityManager {
             &entry.spatial_cells,
             entity_id,
             entry.query_order(),
+            EntityCollisionCandidates::All,
         );
+        if entry.hard_collision_relevant {
+            Self::insert_into_spatial_cells(
+                state,
+                &entry.spatial_cells,
+                entity_id,
+                entry.query_order(),
+                EntityCollisionCandidates::HardCollisionRelevant,
+            );
+        }
         state
             .by_chunk
             .entry(entry.chunk)
@@ -1943,7 +2105,20 @@ impl WorldEntityManager {
         state.live_by_uuid.remove(&entry.uuid);
         state.accessible_order.remove(entity_id);
         Self::remove_from_section(state, entry.section, entity_id);
-        Self::remove_from_spatial_cells(state, &entry.spatial_cells, entity_id);
+        Self::remove_from_spatial_cells(
+            state,
+            &entry.spatial_cells,
+            entity_id,
+            EntityCollisionCandidates::All,
+        );
+        if entry.hard_collision_relevant {
+            Self::remove_from_spatial_cells(
+                state,
+                &entry.spatial_cells,
+                entity_id,
+                EntityCollisionCandidates::HardCollisionRelevant,
+            );
+        }
         Self::remove_from_chunk(state, entry.chunk, entity_id);
         Some(entry)
     }
@@ -1963,9 +2138,14 @@ impl WorldEntityManager {
         cells: &[EntitySpatialCell],
         entity_id: i32,
         query_order: EntityQueryOrder,
+        candidates: EntityCollisionCandidates,
     ) {
         for cell in cells {
-            let insertion_index = state.by_spatial_cell.get(cell).map_or(0, |entity_ids| {
+            let spatial_index = match candidates {
+                EntityCollisionCandidates::All => &state.by_spatial_cell,
+                EntityCollisionCandidates::HardCollisionRelevant => &state.by_hard_collision_cell,
+            };
+            let insertion_index = spatial_index.get(cell).map_or(0, |entity_ids| {
                 let append_in_order = entity_ids.ids.last().is_none_or(|existing_id| {
                     state
                         .live_by_id
@@ -1987,8 +2167,13 @@ impl WorldEntityManager {
                     None => entity_ids.ids.len(),
                 }
             });
-            state
-                .by_spatial_cell
+            let spatial_index = match candidates {
+                EntityCollisionCandidates::All => &mut state.by_spatial_cell,
+                EntityCollisionCandidates::HardCollisionRelevant => {
+                    &mut state.by_hard_collision_cell
+                }
+            };
+            spatial_index
                 .entry(*cell)
                 .or_default()
                 .insert_at(insertion_index, entity_id);
@@ -1999,16 +2184,23 @@ impl WorldEntityManager {
         state: &mut ManagerState,
         cells: &[EntitySpatialCell],
         entity_id: i32,
+        candidates: EntityCollisionCandidates,
     ) {
         for cell in cells {
-            let remove_cell = if let Some(entity_ids) = state.by_spatial_cell.get_mut(cell) {
+            let spatial_index = match candidates {
+                EntityCollisionCandidates::All => &mut state.by_spatial_cell,
+                EntityCollisionCandidates::HardCollisionRelevant => {
+                    &mut state.by_hard_collision_cell
+                }
+            };
+            let remove_cell = if let Some(entity_ids) = spatial_index.get_mut(cell) {
                 entity_ids.remove(entity_id);
                 entity_ids.is_empty()
             } else {
                 false
             };
             if remove_cell {
-                state.by_spatial_cell.remove(cell);
+                spatial_index.remove(cell);
             }
         }
     }

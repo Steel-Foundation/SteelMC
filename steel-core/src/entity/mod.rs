@@ -831,6 +831,7 @@ pub use living_base::{
     MobEffectSyncChange, MobEffectSyncPacket,
 };
 pub use living_entity::LivingEntity;
+pub(crate) use manager::EntityCollisionCandidates;
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
@@ -852,9 +853,7 @@ pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, SpawnGroupData};
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
-pub(crate) use ticking::{
-    snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_with_ticked_if,
-};
+pub(crate) use ticking::{snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_if};
 pub use tracker::{EntityChangeSenders, EntityTracker};
 
 #[cfg(test)]

@@ -235,3 +235,48 @@ fn set_as_inside_portal_resets_cooldown_without_starting_process() {
     assert_eq!(entity.portal_cooldown(), 2);
     assert_eq!(entity.base().portal_process(), None);
 }
+
+#[test]
+fn handle_portal_processes_cooldown_without_an_active_process() {
+    let world = fresh_test_world("portal_cooldown_without_process");
+    let entity = TypedTestEntity::new(1, &vanilla_entities::ITEM);
+    entity.base().set_world(Arc::downgrade(&world));
+    entity.set_portal_cooldown(2);
+
+    entity.handle_portal();
+
+    assert_eq!(entity.portal_cooldown(), 1);
+    assert_eq!(entity.base().portal_process(), None);
+}
+
+#[test]
+fn handle_portal_advances_process_with_a_live_world() {
+    let world = fresh_test_world("portal_process_live_world");
+    let entity = TypedTestEntity::new(1, &vanilla_entities::ITEM);
+    entity.base().set_world(Arc::downgrade(&world));
+    entity.set_as_inside_portal(PortalKind::End, BlockPos::new(2, 64, 2));
+
+    entity.handle_portal();
+
+    let process = entity.base().portal_process().expect("portal process");
+    assert_eq!(process.portal_time(), 1);
+    assert!(!process.is_inside_portal_this_tick());
+    assert!(!entity.is_world_change_pending());
+}
+
+#[test]
+fn handle_portal_keeps_process_when_its_world_has_dropped() {
+    let entity = TypedTestEntity::new(1, &vanilla_entities::ITEM);
+    {
+        let world = fresh_test_world("portal_process_dropped_world");
+        entity.base().set_world(Arc::downgrade(&world));
+    }
+    entity.set_as_inside_portal(PortalKind::End, BlockPos::new(2, 64, 2));
+    entity.set_portal_cooldown(2);
+    let process_before = entity.base().portal_process();
+
+    entity.handle_portal();
+
+    assert_eq!(entity.portal_cooldown(), 1);
+    assert_eq!(entity.base().portal_process(), process_before);
+}

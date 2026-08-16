@@ -24,8 +24,9 @@ use steel_utils::{BlockPos, BlockStateId, PackedBlockPos, WorldAabb};
 
 use crate::behavior::blocks::{FireBlock, PowderSnowBlock};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
+use crate::chunk::gameplay_chunk_lookup_cache::LocalFullChunkHolderCache;
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::ItemEntity;
+use crate::entity::entities::{ItemEntity, PrimedTntEntity};
 use crate::entity::{Entity, SharedEntity};
 use crate::world::game_event::GameEventContext;
 use crate::world::raycast::ExplosionExposureRaycast;
@@ -77,6 +78,12 @@ impl ExplosionBlockCacheEntry {
 
 struct ExplosionBlockCache {
     entries: [ExplosionBlockCacheEntry; BLOCK_CACHE_SIZE],
+}
+
+#[derive(Clone, Copy)]
+struct ImmutableRayCachePolicy {
+    resistance: bool,
+    always_allows_block_explosion: bool,
 }
 
 impl Default for ExplosionBlockCache {
@@ -290,7 +297,10 @@ impl<'a> ServerExplosion<'a> {
         };
         let mut affected = JavaBlockPosSet::default();
         let mut cache = ExplosionBlockCache::default();
-        let cache_resistance = calculator.can_cache_explosion_resistance();
+        let cache_policy = ImmutableRayCachePolicy {
+            resistance: calculator.can_cache_explosion_resistance(),
+            always_allows_block_explosion: calculator.always_allows_block_explosion(),
+        };
         for (&step, &initial_power) in RAY_STEPS.iter().zip(powers) {
             if !visit_immutable_ray_positions_cached(
                 ExplosionRay {
@@ -300,7 +310,7 @@ impl<'a> ServerExplosion<'a> {
                 context,
                 reader,
                 calculator,
-                cache_resistance,
+                cache_policy,
                 &mut cache,
                 &mut affected,
             ) {
@@ -452,8 +462,24 @@ impl<'a> ServerExplosion<'a> {
                 .cloned()
                 .or_else(|| self.world.get_entity_by_id(owner_id))
         });
+        let builtin_entity_effects = self.damage_calculator.has_builtin_entity_effects();
+        let mut exposure_raycast =
+            ExplosionExposureRaycast::new(self.world.as_ref(), BlockCollisionContext::empty());
+        // The freshly constructed cache is already safe for the first target.
+        let mut reusable_from_previous_tnt = true;
 
         for entity in entities {
+            // Exact Steel PrimedTNT rejects damage, keeps the base no-op explosion callback, and
+            // only accepts the impulse. With built-in entity effects, no block mutation can occur
+            // between these targets, so their static exposure shapes remain current.
+            let inert_primed_tnt = builtin_entity_effects
+                && steel_utils::Downcast::downcast_ref::<PrimedTntEntity>(entity.as_ref())
+                    .is_some();
+            if !reusable_from_previous_tnt || !inert_primed_tnt {
+                exposure_raycast.clear();
+            }
+            reusable_from_previous_tnt = inert_primed_tnt;
+
             if entity.ignore_explosion(self) {
                 continue;
             }
@@ -476,7 +502,8 @@ impl<'a> ServerExplosion<'a> {
             let exposure = if !should_damage && knockback_multiplier == 0.0 {
                 0.0
             } else {
-                seen_percent(self.world.as_ref(), self.center, entity.as_ref())
+                EntityExplosionExposure::capture(entity.as_ref())
+                    .calculate_cached_with(&mut exposure_raycast, self.center)
             };
 
             if should_damage {
@@ -522,9 +549,12 @@ impl<'a> ServerExplosion<'a> {
             vanilla_shuffle(affected, |bound| random.next_i32_bounded(bound));
         });
         let mut stacks = Vec::new();
+        let mut full_chunks = LocalFullChunkHolderCache::new();
 
         for &pos in affected.iter() {
-            let state = self.world.get_block_state(pos);
+            let state = self
+                .world
+                .get_block_state_with_local_holder_cache(pos, &mut full_chunks);
             BLOCK_BEHAVIORS
                 .get_behavior(state.get_block())
                 .on_explosion_hit(state, self.world, pos, self, &mut |stack, stack_pos| {
@@ -638,14 +668,17 @@ fn calculate_immutable_rays_sequential<R: ExplosionBlockReader>(
 ) -> Vec<BlockPos> {
     let mut affected = JavaBlockPosSet::default();
     let mut cache = ExplosionBlockCache::default();
-    let cache_resistance = calculator.can_cache_explosion_resistance();
+    let cache_policy = ImmutableRayCachePolicy {
+        resistance: calculator.can_cache_explosion_resistance(),
+        always_allows_block_explosion: calculator.always_allows_block_explosion(),
+    };
     for ray in rays {
         assert!(visit_immutable_ray_positions_cached(
             *ray,
             context,
             reader,
             calculator,
-            cache_resistance,
+            cache_policy,
             &mut cache,
             &mut affected,
         ));
@@ -658,7 +691,7 @@ fn visit_immutable_ray_positions_cached<R: ExplosionBlockReader>(
     context: ExplosionRayContext,
     reader: &R,
     calculator: &dyn ImmutableExplosionBlockCalculator,
-    cache_resistance: bool,
+    cache_policy: ImmutableRayCachePolicy,
     cache: &mut ExplosionBlockCache,
     affected: &mut JavaBlockPosSet,
 ) -> bool {
@@ -667,6 +700,20 @@ fn visit_immutable_ray_positions_cached<R: ExplosionBlockReader>(
     let mut previous_cell: Option<(BlockPos, usize)> = None;
     while remaining_power > 0.0 {
         let pos = BlockPos::from(ray_pos);
+        if let Some((previous, cache_index)) = previous_cell
+            && previous == pos
+            && cache_policy.resistance
+            && cache_policy.always_allows_block_explosion
+            && cache.entries[cache_index].affected
+        {
+            if let Some(resistance) = cache.entries[cache_index].resistance {
+                remaining_power -= (resistance + 0.3) * 0.3;
+            }
+            ray_pos += ray.step;
+            remaining_power -= RAY_POWER_DECAY;
+            continue;
+        }
+
         let (tag, cache_index) = match previous_cell {
             Some((previous, cache_index)) if previous == pos => {
                 (cache.entries[cache_index].tag, cache_index)
@@ -686,21 +733,25 @@ fn visit_immutable_ray_positions_cached<R: ExplosionBlockReader>(
             };
             state
         };
-        let fluid = state.get_fluid_state();
         if !context.bounds.contains(pos) {
             break;
         }
 
-        let resistance = if cache_hit && cache_resistance {
+        let resistance = if cache_hit && cache_policy.resistance {
             cached.resistance
         } else {
+            let fluid = state.get_fluid_state();
             calculator.explosion_resistance(reader, pos, state, fluid)
         };
         if !cache_hit {
             cache.entries[cache_index] = ExplosionBlockCacheEntry {
                 tag,
                 state,
-                resistance: if cache_resistance { resistance } else { None },
+                resistance: if cache_policy.resistance {
+                    resistance
+                } else {
+                    None
+                },
                 occupied: true,
                 affected: false,
             };
@@ -711,12 +762,17 @@ fn visit_immutable_ray_positions_cached<R: ExplosionBlockReader>(
             remaining_power -= (resistance + 0.3) * 0.3;
         }
 
-        if remaining_power > 0.0
-            && calculator.should_explode(reader, pos, state, remaining_power)
-            && !cache.entries[cache_index].affected
-        {
-            affected.insert(pos);
-            cache.entries[cache_index].affected = true;
+        if remaining_power > 0.0 {
+            let already_affected = cache.entries[cache_index].affected;
+            let should_explode = if cache_policy.always_allows_block_explosion {
+                !already_affected
+            } else {
+                calculator.should_explode(reader, pos, state, remaining_power)
+            };
+            if should_explode && !already_affected {
+                affected.insert(pos);
+                cache.entries[cache_index].affected = true;
+            }
         }
 
         ray_pos += ray.step;
@@ -1024,16 +1080,30 @@ impl EntityExplosionExposure {
         Self::exposure(visible_samples, sample_count)
     }
 
+    #[cfg(test)]
     fn calculate_cached(self, world: &World, center: DVec3) -> f32 {
         if self.has_negative_step() {
             return 0.0;
         }
 
         let mut raycast = ExplosionExposureRaycast::new(world, self.collision_context);
+        self.calculate_cached_with(&mut raycast, center)
+    }
+
+    fn calculate_cached_with(
+        self,
+        raycast: &mut ExplosionExposureRaycast<'_>,
+        center: DVec3,
+    ) -> f32 {
+        if self.has_negative_step() {
+            return 0.0;
+        }
+        raycast.set_collision_context(self.collision_context);
         self.calculate_with_visibility(|from| raycast.is_path_clear(from, center))
     }
 }
 
+#[cfg(test)]
 fn seen_percent(world: &World, center: DVec3, entity: &dyn Entity) -> f32 {
     let exposure = EntityExplosionExposure::capture(entity);
     if exposure.has_negative_step() {

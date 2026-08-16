@@ -52,6 +52,63 @@ struct VetoExplosionSource {
     decision_calls: AtomicUsize,
 }
 
+struct BlockMutatingExposureEntity {
+    base: EntityBase,
+    wall_pos: BlockPos,
+    place_wall_on_hit: bool,
+}
+
+// SAFETY: This test-only key uniquely identifies `BlockMutatingExposureEntity`.
+unsafe impl DowncastType for BlockMutatingExposureEntity {
+    const TYPE_KEY: DowncastTypeKey =
+        DowncastTypeKey::new("steel:test/block_mutating_exposure_entity");
+}
+
+impl BlockMutatingExposureEntity {
+    fn new(
+        id: i32,
+        position: DVec3,
+        world: &Arc<World>,
+        wall_pos: BlockPos,
+        place_wall_on_hit: bool,
+    ) -> Self {
+        Self {
+            base: EntityBase::new(
+                id,
+                position,
+                vanilla_entities::ITEM.dimensions,
+                Arc::downgrade(world),
+            ),
+            wall_pos,
+            place_wall_on_hit,
+        }
+    }
+}
+
+impl Entity for BlockMutatingExposureEntity {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        &vanilla_entities::ITEM
+    }
+
+    fn on_explosion_hit(&self, _explosion_source: Option<&dyn Entity>) {
+        if !self.place_wall_on_hit {
+            return;
+        }
+        let Some(world) = self.level() else {
+            return;
+        };
+        let _ = world.set_block(
+            self.wall_pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        );
+    }
+}
+
 struct RecordingConnection {
     packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
     closed: AtomicBool,
@@ -140,6 +197,7 @@ struct CountingImmutableCalculator {
     resistance_calls: AtomicUsize,
     decision_calls: AtomicUsize,
     cache_resistance: bool,
+    always_allows_block_explosion: bool,
     bounded_read_radius: Option<u32>,
 }
 
@@ -150,6 +208,10 @@ impl ImmutableExplosionBlockCalculator for CountingImmutableCalculator {
 
     fn can_cache_explosion_resistance(&self) -> bool {
         self.cache_resistance
+    }
+
+    fn always_allows_block_explosion(&self) -> bool {
+        self.always_allows_block_explosion
     }
 
     fn explosion_resistance(
@@ -727,6 +789,37 @@ fn cached_exposure_raycast_matches_clear_partial_and_blocked_paths() {
 }
 
 #[test]
+fn exposure_cache_reuses_static_shapes_across_identical_entity_samples() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("shared_cached_explosion_exposure");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let center = DVec3::new(0.5, 64.5, 0.5);
+    let entity = ItemEntity::new(
+        &vanilla_entities::ITEM,
+        81,
+        DVec3::new(6.5, 64.0, 0.5),
+        Arc::downgrade(&world),
+    );
+    let exposure = EntityExplosionExposure::capture(&entity);
+    let expected = exposure.calculate_uncached(world.as_ref(), center);
+    let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), exposure.collision_context);
+
+    let first = exposure.calculate_cached_with(&mut raycast, center);
+    let after_first = raycast.stats();
+    let second = exposure.calculate_cached_with(&mut raycast, center);
+    let after_second = raycast.stats();
+
+    assert_eq!(first.to_bits(), expected.to_bits());
+    assert_eq!(second.to_bits(), expected.to_bits());
+    assert!(after_first.state_lookups > 0, "stats={after_first:?}");
+    assert_eq!(
+        after_second.state_lookups, after_first.state_lookups,
+        "the second identical exposure should be served entirely by retained static shapes"
+    );
+}
+
+#[test]
 fn cached_exposure_matches_across_chunk_and_section_boundaries() {
     init_vanilla_registry();
     init_behaviors();
@@ -787,16 +880,63 @@ fn exposure_clipping_uses_the_entity_collision_context() {
     );
     let center = DVec3::new(0.5, 64.125, 0.5);
 
+    let walking_exposure = EntityExplosionExposure::capture(&entity);
+    let mut shared_raycast =
+        ExplosionExposureRaycast::new(world.as_ref(), walking_exposure.collision_context);
+    let walking = walking_exposure.calculate_cached_with(&mut shared_raycast, center);
+    assert_eq!(walking.to_bits(), 1.0_f32.to_bits());
     assert_eq!(
-        assert_exposure_matches_seen_percent(&world, center, &entity).to_bits(),
-        1.0_f32.to_bits()
+        walking.to_bits(),
+        walking_exposure
+            .calculate_uncached(world.as_ref(), center)
+            .to_bits()
     );
 
     entity.set_fall_distance(3.0);
+    entity.set_shared_shift_key_down(true);
+    let falling_exposure = EntityExplosionExposure::capture(&entity);
+    assert!(falling_exposure.collision_context.is_descending());
+    let falling = falling_exposure.calculate_cached_with(&mut shared_raycast, center);
+    assert_eq!(falling.to_bits(), 0.0_f32.to_bits());
     assert_eq!(
-        assert_exposure_matches_seen_percent(&world, center, &entity).to_bits(),
-        0.0_f32.to_bits()
+        falling.to_bits(),
+        falling_exposure
+            .calculate_uncached(world.as_ref(), center)
+            .to_bits()
     );
+}
+
+#[test]
+fn exposure_cache_is_cleared_before_block_mutating_entity_callbacks() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("explosion_exposure_callback_mutation");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let wall_pos = BlockPos::new(1, 64, 0);
+    let position = DVec3::new(2.5, 64.0, 0.5);
+    let mutator = Arc::new(BlockMutatingExposureEntity::new(
+        82, position, &world, wall_pos, true,
+    ));
+    let observer = Arc::new(BlockMutatingExposureEntity::new(
+        83, position, &world, wall_pos, false,
+    ));
+    let mutator_entity: SharedEntity = mutator.clone();
+    let observer_entity: SharedEntity = observer.clone();
+    assert!(world.try_add_entity(mutator_entity).is_ok());
+    assert!(world.try_add_entity(observer_entity).is_ok());
+
+    world.explode(ExplosionOptions::new(
+        DVec3::new(0.5, 64.125, 0.5),
+        2.0,
+        ExplosionInteraction::None,
+    ));
+
+    assert_eq!(
+        world.get_block_state(wall_pos),
+        vanilla_blocks::STONE.default_state()
+    );
+    assert!(mutator.velocity().x > 0.0);
+    assert_eq!(observer.velocity(), DVec3::ZERO);
 }
 
 #[test]
@@ -1819,6 +1959,25 @@ fn immutable_cache_preserves_order_and_extensible_hook_calls() {
     );
     assert!(
         cached_reader.calls.load(Ordering::Relaxed) < uncached_reader.calls.load(Ordering::Relaxed)
+    );
+
+    let always_allows_calculator = CountingImmutableCalculator {
+        cache_resistance: true,
+        always_allows_block_explosion: true,
+        ..CountingImmutableCalculator::default()
+    };
+    let always_allows = calculate_immutable_rays_sequential(
+        &rays,
+        context,
+        &cached_reader,
+        &always_allows_calculator,
+    );
+    assert_eq!(always_allows, uncached);
+    assert_eq!(
+        always_allows_calculator
+            .decision_calls
+            .load(Ordering::Relaxed),
+        0
     );
 }
 
