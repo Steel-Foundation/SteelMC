@@ -1,5 +1,7 @@
 use super::*;
 use crate::chunk::gameplay_chunk_lookup_cache::LocalFullChunkHolderCache;
+use crate::physics::block_has_extensible_collision_behavior;
+use steel_registry::blocks::BlockRef;
 
 /// Controls how a block position is treated during a raytrace traversal.
 ///
@@ -149,7 +151,7 @@ impl ExplosionExposureClearGrid {
         Some((y * bounds.size_z + z) * bounds.size_x + x)
     }
 
-    fn cached(&self, index: usize) -> Option<bool> {
+    const fn cached(&self, index: usize) -> Option<bool> {
         let word = index / (u64::BITS as usize / 2);
         let shift = (index % (u64::BITS as usize / 2)) * 2;
         match (self.states[word] >> shift) & 0b11 {
@@ -266,6 +268,18 @@ impl<'world> ExplosionExposureRaycast<'world> {
         self.collision_context = collision_context;
     }
 
+    /// Keeps cached shapes only across Steel-owned Vanilla collision behavior calls.
+    ///
+    /// Plugin behavior may mutate another block while answering a shape query. Clearing after its
+    /// callback makes the next Vanilla DDA visit read the same live state Vanilla would observe.
+    fn retain_cache_after_collision_query(&mut self, block: BlockRef) -> bool {
+        let retain = !block_has_extensible_collision_behavior(block);
+        if !retain {
+            self.clear();
+        }
+        retain
+    }
+
     /// Returns whether a collider-only, fluid-free exposure ray misses every block.
     pub(crate) fn is_path_clear(&mut self, from: DVec3, to: DVec3) -> bool {
         is_collision_path_clear(from, to, |pos| self.block_intersects_ray(pos, from, to))
@@ -330,8 +344,10 @@ impl<'world> ExplosionExposureRaycast<'world> {
         let block = state.get_block();
         let behavior = BLOCK_BEHAVIORS.get_behavior(block);
         if block.config.dynamic_shape {
-            return behavior
-                .get_collision_boxes(state, self.world, pos, self.collision_context)
+            let boxes =
+                behavior.get_collision_boxes(state, self.world, pos, self.collision_context);
+            self.retain_cache_after_collision_query(block);
+            return boxes
                 .into_iter()
                 .any(|aabb| World::clip_local_aabb(pos, from, to, aabb).is_some());
         }
@@ -343,8 +359,9 @@ impl<'world> ExplosionExposureRaycast<'world> {
             behavior.get_collision_shape_offset(state, self.world, pos, self.collision_context)
         };
         let collision = OffsetVoxelShape::new(shape, offset);
+        let retain_cache = self.retain_cache_after_collision_query(block);
         let intersects = Self::static_collision_intersects(collision, pos, from, to);
-        if cacheable && block.key.namespace == Identifier::VANILLA_NAMESPACE {
+        if cacheable && retain_cache {
             let collision_is_empty = collision.is_empty();
             let mut recorded_in_grid = false;
             if let Some(index) = unresolved_grid_index {
@@ -1471,6 +1488,11 @@ mod voxel_shape_clip_tests {
 #[cfg(test)]
 mod explosion_exposure_cache_tests {
     use super::*;
+    use crate::test_support::fresh_test_world;
+    use steel_registry::{
+        blocks::{Block, behavior::BlockConfig},
+        vanilla_blocks,
+    };
 
     #[test]
     fn collision_path_clear_preserves_zero_axis_callback_order() {
@@ -1507,7 +1529,9 @@ mod explosion_exposure_cache_tests {
         assert!(grid.index(BlockPos::new(-9, 55, -9)).is_some());
         assert!(grid.index(BlockPos::new(9, 73, 9)).is_some());
         assert!(grid.index(BlockPos::new(10, 73, 9)).is_none());
-        let index = grid.index(BlockPos::new(9, 73, 9)).unwrap();
+        let Some(index) = grid.index(BlockPos::new(9, 73, 9)) else {
+            panic!("the configured upper corner should be represented in the grid");
+        };
         grid.record(index, true);
         assert_eq!(grid.cached(index), Some(true));
         grid.clear();
@@ -1522,6 +1546,40 @@ mod explosion_exposure_cache_tests {
         assert!(grid.bounds.is_none());
         grid.configure(BlockPos::new(i32::MIN, 0, 0), BlockPos::new(i32::MAX, 0, 0));
         assert!(grid.bounds.is_none());
+    }
+
+    #[test]
+    fn extensible_collision_query_invalidates_every_exposure_cache() {
+        static PLUGIN_BLOCK: Block = Block::new(
+            Identifier::new_static("exposure_test", "mutating_shape"),
+            BlockConfig::new(),
+            &[],
+        );
+
+        let world = fresh_test_world("extensible_exposure_cache_boundary");
+        let mut raycast =
+            ExplosionExposureRaycast::new(world.as_ref(), BlockCollisionContext::empty());
+        let pos = BlockPos::new(0, 64, 0);
+        raycast.configure_clear_grid(pos, pos);
+        let Some(grid_index) = raycast.clear_grid.index(pos) else {
+            panic!("the configured position should be represented in the clear grid");
+        };
+        raycast.clear_grid.record(grid_index, true);
+        let direct_index = explosion_exposure_cache_index(pos);
+        raycast.entries[direct_index] = ExplosionExposureCacheEntry {
+            pos,
+            collision: OffsetVoxelShape::without_offset(VoxelShape::EMPTY),
+            generation: raycast.generation,
+        };
+
+        let initial_generation = raycast.generation;
+        assert!(raycast.retain_cache_after_collision_query(&vanilla_blocks::STONE));
+        assert_eq!(raycast.generation, initial_generation);
+        assert_eq!(raycast.clear_grid.cached(grid_index), Some(true));
+        assert!(!raycast.retain_cache_after_collision_query(&PLUGIN_BLOCK));
+        assert_ne!(raycast.generation, initial_generation);
+        assert_eq!(raycast.clear_grid.cached(grid_index), None);
+        assert_ne!(raycast.entries[direct_index].generation, raycast.generation);
     }
 
     #[test]

@@ -435,6 +435,10 @@ impl<'a> ServerExplosion<'a> {
             .collect()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Vanilla entity damage, knockback, redirect, and callback order form one pipeline"
+    )]
     fn hurt_entities(&mut self) {
         if self.radius < MIN_DAMAGE_RADIUS {
             return;

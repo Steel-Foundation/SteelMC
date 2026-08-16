@@ -38,11 +38,21 @@ pub use shapes::{collide, join_is_not_empty, merged_face_occludes, translate_sha
 /// Collision epsilon used for AABB deflation (vanilla constant).
 pub const COLLISION_EPSILON: f64 = 1.0e-5;
 
-fn block_may_expand_collision_cursor(block: BlockRef, has_large_static_shape: bool) -> bool {
+/// Returns whether this block's collision behavior is owned by an extensible namespace.
+pub(crate) fn block_has_extensible_collision_behavior(block: BlockRef) -> bool {
     block.key.namespace != Identifier::VANILLA_NAMESPACE
+}
+
+fn block_may_expand_collision_cursor(block: BlockRef, has_large_static_shape: bool) -> bool {
+    block_has_extensible_collision_behavior(block)
         || block.config.dynamic_shape
         || block == &vanilla_blocks::MOVING_PISTON
         || has_large_static_shape
+}
+
+/// Returns whether this state's collision behavior requires live reads around callbacks.
+pub(crate) fn block_state_has_extensible_collision_behavior(state: BlockStateId) -> bool {
+    block_has_extensible_collision_behavior(state.get_block())
 }
 
 /// Returns whether a state may require Vanilla's expanded block-collision cursor.

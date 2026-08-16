@@ -225,6 +225,15 @@ impl BlockRegionRead<'_> {
             .any(|section| section.maybe_has_special_colliding_blocks())
     }
 
+    /// Returns whether any retained section requires live collision-state reads around callbacks.
+    #[must_use]
+    pub(crate) fn maybe_has_extensible_collision_behavior(&self) -> bool {
+        self.sections
+            .iter()
+            .flatten()
+            .any(|section| section.maybe_has_extensible_collision_behavior())
+    }
+
     /// Returns a prelocked section view, or `None` for an unloaded or uncached section.
     #[must_use]
     pub(crate) fn section(&self, section_pos: SectionPos) -> Option<BlockSectionRead<'_>> {

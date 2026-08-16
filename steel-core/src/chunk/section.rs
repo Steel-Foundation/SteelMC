@@ -16,7 +16,9 @@ use steel_registry::{REGISTRY, RegistryEntry};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, locks::SyncRwLock, serial::WriteTo};
 
 use crate::chunk::paletted_container::{BiomePalette, BlockPalette};
-use crate::physics::block_state_may_expand_collision_cursor;
+use crate::physics::{
+    block_state_has_extensible_collision_behavior, block_state_may_expand_collision_cursor,
+};
 
 /// Lock-free index of sections containing randomly-ticking blocks or fluids.
 ///
@@ -581,6 +583,17 @@ impl ChunkSection {
     pub(crate) fn maybe_has_special_colliding_blocks(&self) -> bool {
         self.states
             .maybe_has(block_state_may_expand_collision_cursor)
+    }
+
+    /// Returns whether collision behavior calls for this section must observe live block states.
+    ///
+    /// Steel owns and audits the frozen `minecraft` behavior table. Plugin-owned block behavior
+    /// may mutate other positions while resolving a shape, so those sections cannot use a block
+    /// state snapshot across callbacks.
+    #[must_use]
+    pub(crate) fn maybe_has_extensible_collision_behavior(&self) -> bool {
+        self.states
+            .maybe_has(block_state_has_extensible_collision_behavior)
     }
 
     /// Appends block-light source positions in `ScalableLux` local-index order.

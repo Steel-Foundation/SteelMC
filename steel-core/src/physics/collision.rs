@@ -14,8 +14,10 @@ use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionBoxes, BlockCollisionContext, blocks::PowderSnowBlock,
 };
 use crate::entity::{Entity, EntityCollisionCandidates};
-use crate::physics::COLLISION_EPSILON;
+#[cfg(test)]
+use crate::physics::block_has_extensible_collision_behavior;
 use crate::physics::shapes::join_is_not_empty;
+use crate::physics::{COLLISION_EPSILON, block_may_expand_collision_cursor};
 use crate::world::{BlockRegionBounds, World};
 
 const BLOCK_COLLISION_EPSILON: f64 = 1.0e-7;
@@ -294,7 +296,7 @@ fn should_resolve_collision_shape_for_block(
     match cursor_type {
         CollisionCursorType::Inside => true,
         CollisionCursorType::Face => {
-            crate::physics::block_may_expand_collision_cursor(block, has_large_static_shape)
+            block_may_expand_collision_cursor(block, has_large_static_shape)
         }
         CollisionCursorType::Edge => block == &vanilla_blocks::MOVING_PISTON,
         CollisionCursorType::Corner => false,
@@ -346,6 +348,12 @@ impl<'a> WorldCollisionProvider<'a> {
 
         self.world
             .try_with_block_region(bounds.region_bounds(), |region| {
+                // A plugin collision callback may mutate a later candidate. Vanilla reads each
+                // state immediately before its callback, so retain that live path whenever this
+                // region contains plugin-owned behavior.
+                if region.maybe_has_extensible_collision_behavior() {
+                    return None;
+                }
                 let mut candidates = SmallVec::new();
                 let has_special_colliding_blocks = region.maybe_has_special_colliding_blocks();
                 let _ = bounds.try_for_each_region_candidate(
@@ -360,8 +368,9 @@ impl<'a> WorldCollisionProvider<'a> {
                         ControlFlow::<()>::Continue(())
                     },
                 );
-                candidates
+                Some(candidates)
             })
+            .flatten()
     }
 
     fn visit_block_collision_candidates<R>(
@@ -1055,6 +1064,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one scenario pins ordinary, large, dynamic, and moving-piston cursor transitions"
+    )]
     fn prefetched_candidates_use_full_cursor_only_for_special_sections() {
         init_vanilla_registry();
         init_behaviors();
@@ -1569,11 +1582,10 @@ mod tests {
         );
 
         assert!(!PLUGIN_BLOCK.config.dynamic_shape);
+        assert!(block_has_extensible_collision_behavior(&PLUGIN_BLOCK));
         let has_large_static_shape = false;
-        let has_special_colliding_blocks = crate::physics::block_may_expand_collision_cursor(
-            &PLUGIN_BLOCK,
-            has_large_static_shape,
-        );
+        let has_special_colliding_blocks =
+            block_may_expand_collision_cursor(&PLUGIN_BLOCK, has_large_static_shape);
         assert!(has_special_colliding_blocks);
 
         let bounds = BlockCollisionSearchBounds {
