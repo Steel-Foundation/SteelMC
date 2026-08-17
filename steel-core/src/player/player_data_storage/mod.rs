@@ -15,6 +15,7 @@ use simdnbt::{ToNbtTag, borrow::read_compound as read_borrowed_compound, owned::
 use tokio::{
     fs,
     io::{self, AsyncWriteExt},
+    sync::OwnedMutexGuard as OwnedAsyncMutexGuard,
 };
 use uuid::Uuid;
 use wincode::{SchemaRead, SchemaWrite};
@@ -312,8 +313,7 @@ impl FilePlayerDataStorage {
         let player_stats_file = PlayerStatsFile::from_persistent_stats(&data.stats)?;
         if let Some(toml_string) = serialize_player_stats_file(&player_stats_file) {
             let final_path = Self::player_stats_file(&self.domain_players_dir(domain), uuid);
-            let lock = self.file_lock(&final_path);
-            let _guard = lock.lock().await;
+            let _guard = self.file_lock(&final_path).await;
             Self::write_atomic_path_locked(&final_path, toml_string.as_bytes()).await?;
             log::debug!("Saved player stats for {uuid} in domain {domain}");
         } else {
@@ -354,8 +354,7 @@ impl FilePlayerDataStorage {
     ) -> io::Result<Option<PersistentPlayerData>> {
         let domain_dir = self.domain_players_dir(domain);
         let path = Self::player_data_file(&domain_dir, uuid);
-        let lock = self.file_lock(&path);
-        let _guard = lock.lock().await;
+        let _guard = self.file_lock(&path).await;
         if !Self::recover_missing_atomic_path_locked(&path).await? {
             return Ok(None);
         }
@@ -374,8 +373,7 @@ impl FilePlayerDataStorage {
     ) -> io::Result<Option<Vec<PersistentStat>>> {
         let domain_dir = self.domain_players_dir(domain);
         let path = Self::player_stats_file(&domain_dir, uuid);
-        let lock = self.file_lock(&path);
-        let _guard = lock.lock().await;
+        let _guard = self.file_lock(&path).await;
         if !Self::recover_missing_atomic_path_locked(&path).await? {
             return Ok(None);
         }
@@ -395,8 +393,7 @@ impl FilePlayerDataStorage {
 
     async fn load_global(&self, uuid: Uuid) -> io::Result<Option<GlobalPlayerData>> {
         let path = Self::player_data_file(&self.global_players_dir(), uuid);
-        let lock = self.file_lock(&path);
-        let _guard = lock.lock().await;
+        let _guard = self.file_lock(&path).await;
         if !Self::recover_missing_atomic_path_locked(&path).await? {
             return Ok(None);
         }
@@ -415,8 +412,7 @@ impl FilePlayerDataStorage {
 
     async fn load_known_players(&self) -> io::Result<KnownPlayers> {
         let path = self.known_players_file();
-        let lock = self.file_lock(&path);
-        let _guard = lock.lock().await;
+        let _guard = self.file_lock(&path).await;
         match Self::read_known_players_file_locked(&path).await {
             Ok(players) => Ok(players),
             Err(error) => {
@@ -443,8 +439,7 @@ impl FilePlayerDataStorage {
         is_current: impl FnOnce() -> bool + Send,
     ) -> io::Result<bool> {
         let path = self.known_players_file();
-        let lock = self.file_lock(&path);
-        let _guard = lock.lock().await;
+        let _guard = self.file_lock(&path).await;
         if !is_current() {
             return Ok(false);
         }
@@ -465,8 +460,7 @@ impl FilePlayerDataStorage {
 
     async fn save_permission_subjects(&self, subjects: &PermissionSubjectIndex) -> io::Result<()> {
         let path = self.player_permissions_file();
-        let lock = self.file_lock(&path);
-        let _guard = lock.lock().await;
+        let _guard = self.file_lock(&path).await;
         let file = PlayerPermissionsFile::from_subject_index(subjects);
         self.write_player_permissions_file_locked(&path, &file)
             .await
@@ -474,8 +468,7 @@ impl FilePlayerDataStorage {
 
     async fn load_player_permissions_file(&self) -> io::Result<PlayerPermissionsFile> {
         let path = self.player_permissions_file();
-        let lock = self.file_lock(&path);
-        let _guard = lock.lock().await;
+        let _guard = self.file_lock(&path).await;
         self.read_player_permissions_file_locked(&path).await
     }
 
@@ -542,12 +535,15 @@ impl FilePlayerDataStorage {
         players_dir.join(format!("stats/{uuid}.toml"))
     }
 
-    fn file_lock(&self, path: &Path) -> Arc<AsyncMutex<()>> {
-        let mut locks = self.file_locks.lock();
-        locks
+    async fn file_lock(&self, path: &Path) -> OwnedAsyncMutexGuard<()> {
+        let mutex = self
+            .file_locks
+            .lock()
             .entry(path.to_path_buf())
             .or_insert_with(|| Arc::new(AsyncMutex::new(())))
-            .clone()
+            .clone();
+
+        mutex.lock_owned().await
     }
 
     async fn write_atomic_player_data(
@@ -557,8 +553,7 @@ impl FilePlayerDataStorage {
         bytes: &[u8],
     ) -> io::Result<()> {
         let final_path = Self::player_data_file(players_dir, uuid);
-        let lock = self.file_lock(&final_path);
-        let _guard = lock.lock().await;
+        let _guard = self.file_lock(&final_path).await;
         Self::write_atomic_path_locked(&final_path, bytes).await
     }
 
