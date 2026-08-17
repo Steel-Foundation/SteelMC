@@ -46,7 +46,7 @@ pub struct CactusBlock {
     block: BlockRef,
 }
 
-const AGE_15: &IntProperty = &BlockStateProperties::AGE_15;
+const AGE: &IntProperty = &BlockStateProperties::AGE_15;
 
 impl CactusBlock {
     /// Creates a new cactus block behavior.
@@ -130,7 +130,7 @@ impl BlockBehavior for CactusBlock {
 
         // Count cactus blocks below
         let mut height = 1u32;
-        let age = state.get_value(AGE_15);
+        let age = state.get_value(AGE);
 
         while world
             .get_block_state(pos.offset(0, -(height as i32), 0))
@@ -138,7 +138,7 @@ impl BlockBehavior for CactusBlock {
             == &vanilla_blocks::CACTUS
         {
             height += 1;
-            if height == MAX_CACTUS_HEIGHT && age == 15 {
+            if height == MAX_CACTUS_HEIGHT && age == AGE.max {
                 return;
             }
         }
@@ -159,19 +159,19 @@ impl BlockBehavior for CactusBlock {
                     UpdateFlags::UPDATE_ALL,
                 );
             }
-        } else if age == 15 && height < MAX_CACTUS_HEIGHT {
+        } else if age == AGE.max && height < MAX_CACTUS_HEIGHT {
             world.set_block(
                 above_pos,
                 vanilla_blocks::CACTUS.default_state(),
                 UpdateFlags::UPDATE_ALL,
             );
-            let new_state = state.set_value(AGE_15, 0);
+            let new_state = state.set_value(AGE, 0);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_NONE);
             world.neighbor_changed(above_pos, &vanilla_blocks::CACTUS);
         }
 
-        if age < 15 {
-            let new_state = state.set_value(AGE_15, age + 1);
+        if age < AGE.max {
+            let new_state = state.set_value(AGE, age + 1);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_NONE);
         }
     }

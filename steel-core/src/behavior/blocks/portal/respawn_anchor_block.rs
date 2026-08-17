@@ -19,6 +19,7 @@ use steel_utils::{
 
 use crate::entity::dismount_helper;
 use crate::{
+    behavior::blocks::redstone::MAX_REDSTONE_SIGNAL,
     behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess},
     entity::Entity,
     level_data::RespawnData,
@@ -154,7 +155,7 @@ impl RespawnAnchorBlock {
     }
 
     fn analog_output_signal(charges: u8) -> i32 {
-        i32::from(charges) * 15 / i32::from(Self::MAX_CHARGES)
+        i32::from(charges) * MAX_REDSTONE_SIGNAL / i32::from(Self::MAX_CHARGES)
     }
 
     fn player_offhand_has_respawn_fuel(player: &Player) -> bool {
