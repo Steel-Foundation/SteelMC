@@ -1,5 +1,5 @@
-//! This module provides the [`StatsCounter`] which keeps track of stats with their counters, and
-//! implements some stat-related function for the player.
+//! This module provides the [`StatsCounter`], which keeps track of stats with their counters, and
+//! implements some stat-related functions for the player.
 
 use crate::player::Player;
 use rustc_hash::{FxHashMap, FxHashSet};
