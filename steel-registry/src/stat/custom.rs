@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
 /// A custom stat definition, which represents a particular stat in the *General* tab in
-/// the Statistics menu.
+/// the Statistics menu. This just contains an identifier which identifies the stat.
 ///
 /// These stats are called 'custom' because they are manually defined. Vanilla defines its
 /// own custom stats, which have been extracted to generate definitions used by Steel.
