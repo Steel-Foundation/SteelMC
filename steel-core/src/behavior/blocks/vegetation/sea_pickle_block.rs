@@ -81,7 +81,7 @@ impl BlockBehavior for SeaPickleBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = context.world.get_block_state(context.place_pos());
         if state.get_block() == self.block {
-            return Some(state.set_value(PICKLES, 4.min(state.get_value(PICKLES) + 1)));
+            return Some(state.set_value(PICKLES, MAX_PICKLES.min(state.get_value(PICKLES) + 1)));
         }
         let replaced_fluid_state = get_fluid_state_from_block(state);
         let is_water_source = replaced_fluid_state.is_water() && replaced_fluid_state.is_source();
@@ -152,7 +152,7 @@ impl Bonemealable for SeaPickleBlock {
                         if below_state.get_block().has_tag(&BlockTag::CORAL_BLOCKS) {
                             let sea_pickle_state = vanilla_blocks::SEA_PICKLE
                                 .default_state()
-                                .set_value(PICKLES, rng.random_range(0..4) + 1);
+                                .set_value(PICKLES, rng.random_range(0..MAX_PICKLES) + 1);
 
                             world.set_block(position, sea_pickle_state, UpdateFlags::UPDATE_ALL);
                         }
@@ -169,7 +169,7 @@ impl Bonemealable for SeaPickleBlock {
             }
         }
 
-        let final_state = state.set_value(PICKLES, 4);
+        let final_state = state.set_value(PICKLES, MAX_PICKLES);
 
         world.set_block(pos, final_state, UpdateFlags::UPDATE_CLIENTS);
     }
