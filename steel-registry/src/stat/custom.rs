@@ -1,7 +1,13 @@
 use rustc_hash::FxHashMap;
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
-/// A custom stat definition.
+/// A custom stat definition, which represents a particular stat in the *General* tab in
+/// the Statistics menu.
+///
+/// These stats are called 'custom' because they are manually defined. Vanilla defines its
+/// own custom stats, which have been extracted to generate definitions used by Steel.
+///
+/// Therefore, 'custom' here should not be misinterpreted to mean Steel's custom stats.
 #[derive(Debug)]
 pub struct CustomStat {
     pub key: Identifier,
@@ -9,6 +15,12 @@ pub struct CustomStat {
 
 pub type CustomStatRef = &'static CustomStat;
 
+/// Contains all the stats that can be found in the *General* tab in the Statistics menu.
+///
+/// These stats are called 'custom' because they are manually defined. Vanilla defines its
+/// own custom stats, which have been extracted to generate definitions used by Steel.
+///
+/// Therefore, 'custom' here should not be misinterpreted to mean Steel's custom stats.
 pub struct CustomStatRegistry {
     custom_stats_by_id: Vec<CustomStatRef>,
     custom_stats_by_key: FxHashMap<Identifier, usize>,

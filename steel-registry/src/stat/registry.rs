@@ -145,8 +145,14 @@ impl StatValueRegistryData {
     }
 }
 
-/// An entry stored in the stat type registry. It contains the registry responsible
-/// for the encoding and decoding of the stat identity involved.
+/// An entry stored in the stat type registry. It represents a stat type.
+///
+/// A stat type is always associated with a registry whose values will be used to identify
+/// stats from this stat type. Therefore, `StatTypeEntry` contains the registry responsible for the
+/// encoding and decoding of the values involved.
+///
+/// For example, `ITEM_DROPPED` uses the item registry to have each item in this registry become a stat
+/// under this stat type (like `diamond`) to track how many of those items have been dropped by the player.
 ///
 /// Internally, the registry is stored in a [`LazyLock`], so that the reference
 /// to the registry is only loaded after it has initialized.
@@ -194,7 +200,11 @@ impl Debug for StatTypeEntry {
 
 pub type StatTypeEntryRef = &'static StatTypeEntry;
 
-/// Registry of all stat types.
+/// Registry of all stat types. A stat type is always associated with a registry whose values
+/// will be used to identify stats from this stat type.
+///
+/// For example, `ITEM_DROPPED` uses the item registry to have each item in this registry become a stat
+/// under this stat type (like `diamond`) to track how many of those items have been dropped by the player.
 pub struct StatTypeRegistry {
     /// Stat types indexed by network ID.
     stat_types_by_id: Vec<StatTypeEntryRef>,
