@@ -36,7 +36,6 @@ pub static CUSTOM: StatType<CustomStatRegistry> =
 pub fn register_vanilla_stat_types(registry: &mut StatTypeRegistry) {
     // 0: mined
     registry.register(&BLOCK_MINED, || &REGISTRY.blocks);
-
     // 1: crafted
     registry.register(&ITEM_CRAFTED, || &REGISTRY.items);
     // 2: used
@@ -47,12 +46,10 @@ pub fn register_vanilla_stat_types(registry: &mut StatTypeRegistry) {
     registry.register(&ITEM_PICKED_UP, || &REGISTRY.items);
     // 5: dropped
     registry.register(&ITEM_DROPPED, || &REGISTRY.items);
-
     // 6: killed
     registry.register(&ENTITY_KILLED, || &REGISTRY.entity_types);
     // 7: killed_by
     registry.register(&ENTITY_KILLED_BY, || &REGISTRY.entity_types);
-
     // 8: custom
     registry.register(&CUSTOM, || &REGISTRY.custom_stats);
 }
