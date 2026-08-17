@@ -292,7 +292,7 @@ impl PersistentPlayerData {
             .lock()
             .stats
             .iter()
-            .map(|(&stat, &count)| PersistentStat { stat, count })
+            .map(|(&stat, &(count, _))| PersistentStat { stat, count })
             .collect()
     }
 
@@ -482,12 +482,14 @@ impl PersistentPlayerData {
         {
             let mut stats = player.stats.lock();
 
+            // This clears all counters, but also sets their dirty flag. This is important
+            // because the player needs to get notified that these stats got set to zero, for example
+            // after switching domains where the previous domain's state is remembered by the client.
+            // This means stale data is overwritten for the newer data the next time stats are sent.
             stats.clear();
-            stats.stats.reserve(self.stats.len());
 
             for PersistentStat { stat, count } in &self.stats {
-                stats.stats.insert(*stat, *count);
-                stats.dirty.insert(*stat);
+                stats.stats.insert(*stat, (*count, true));
             }
         }
     }

@@ -2,7 +2,7 @@
 //! implements some stat-related functions for the player.
 
 use crate::player::Player;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use steel_protocol::packets::game::CAwardStats;
 use steel_registry::RegistryExt;
 use steel_registry::stat::custom::CustomStatRef;
@@ -11,12 +11,10 @@ use steel_registry::stat::{Stat, StatTypeRef, vanilla_stat_types};
 /// Manages the counters for every statistic for a particular player.
 /// Analogous to Vanilla's `ServerStatsCounter.java`.
 pub struct StatsCounter {
-    /// The map of values stored in the counters for each stat that is
-    /// currently being tracked.
-    pub(super) stats: FxHashMap<Stat, i32>,
-
-    /// Stats that have been modified which haven't been updated to the client yet.
-    pub(super) dirty: FxHashSet<Stat>,
+    /// The map of each stat currently being tracked to its value and dirty flag.
+    // Vanilla uses a map and set separately for the counters and dirty flag respectively,
+    // but it is faster to just use one map to store both the count and dirty flag in the same map.
+    pub(super) stats: FxHashMap<Stat, (i32, bool)>,
 }
 
 impl StatsCounter {
@@ -25,7 +23,6 @@ impl StatsCounter {
     pub fn new() -> Self {
         Self {
             stats: FxHashMap::default(),
-            dirty: FxHashSet::default(),
         }
     }
 
@@ -33,50 +30,48 @@ impl StatsCounter {
     /// If this counter is not currently being tracked, `0` is returned instead.
     #[must_use]
     pub fn get(&self, stat: &Stat) -> i32 {
-        self.stats.get(stat).copied().unwrap_or_default()
+        self.stats.get(stat).map_or_default(|(count, _)| *count)
     }
 
     /// Sets the value of the counter corresponding to the given stat to a given value.
     pub fn set(&mut self, stat: Stat, count: i32) {
-        self.stats.insert(stat, count);
-        self.dirty.insert(stat);
+        self.stats.insert(stat, (count, true));
     }
 
     /// Increments the value of the counter corresponding to the given stat by a given value.
     pub fn increment(&mut self, stat: Stat, count: i32) {
         let entry = self.stats.entry(stat).or_default();
-        let sum = (i64::from(*entry) + i64::from(count)).min(i64::from(i32::MAX));
-        *entry = sum as i32;
-        self.dirty.insert(stat);
+        let sum = (i64::from(entry.0) + i64::from(count)).min(i64::from(i32::MAX));
+        *entry = (sum as i32, true);
     }
 
     /// Marks all the stat counters of this player to be dirty. This means that the next time
     /// statistics are requested, all tracked stat counters will be sent to the client.
     pub fn mark_all_dirty(&mut self) {
-        for stat in self.stats.keys() {
-            self.dirty.insert(*stat);
+        for (_, dirty_flag) in self.stats.values_mut() {
+            *dirty_flag = true;
         }
     }
 
     /// Gets all the counters of stats that are marked dirty and clears their dirty flag as
     /// well.
     pub(crate) fn get_dirty_and_clear(&mut self) -> Vec<(Stat, i32)> {
-        let mut dirty = Vec::with_capacity(self.dirty.len());
-        for stat in self.dirty.drain() {
-            let count = self.stats.get(&stat).copied().unwrap_or_default();
-            dirty.push((stat, count));
+        let mut dirty_stats = Vec::new();
+        for (&stat, (count, dirty)) in &mut self.stats {
+            if *dirty {
+                dirty_stats.push((stat, *count));
+                *dirty = false;
+            }
         }
-        dirty
+        dirty_stats
     }
 
-    /// Clears all the stats in this counter, resetting it into an empty state.
-    /// This will also make all stats that used to be in this counter dirty before
-    /// clearing them so that the client can be updated of the new stat counters.
+    /// Clears the counters of all stats in this counter to zero,
+    /// and makes all stats dirty.
     pub fn clear(&mut self) {
-        for stat in self.stats.keys() {
-            self.dirty.insert(*stat);
+        for tuple in self.stats.values_mut() {
+            *tuple = (0, true);
         }
-        self.stats.clear();
     }
 
     /// Returns the number of stats currently being tracked for this player.
@@ -166,7 +161,7 @@ impl Player {
             .lock()
             .stats
             .iter()
-            .map(|(&stat, &count)| (stat, count))
+            .map(|(&stat, &(count, _))| (stat, count))
             .collect()
     }
 }
