@@ -30,6 +30,8 @@ pub struct SeaPickleBlock {
     block: BlockRef,
 }
 
+const MAX_PICKLES: u8 = 4;
+
 const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 const PICKLES: &IntProperty = &BlockStateProperties::PICKLES;
 
@@ -92,7 +94,7 @@ impl BlockBehavior for SeaPickleBlock {
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
         if !context.is_secondary_use_active()
             && context.with_item(|item| item.item() == REGISTRY.items.by_block(state.get_block()))
-            && state.get_value(PICKLES) < 4
+            && state.get_value(PICKLES) < MAX_PICKLES
         {
             return true;
         }
