@@ -32,7 +32,7 @@ impl BaseCoralPlantBlock {
 
 impl BlockBehavior for BaseCoralPlantBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        CoralBlock::coral_plant_can_survive(world, pos)
+        CoralBlock::can_survive(world, pos)
     }
 
     fn update_shape(

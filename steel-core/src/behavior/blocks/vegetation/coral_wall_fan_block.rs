@@ -46,7 +46,7 @@ impl CoralWallFanBlock {
 impl BlockBehavior for CoralWallFanBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let facing = state.get_value(HORIZONTAL_FACING);
-        BaseCoralWallFanBlock::coral_wall_fan_can_survive(world, pos, facing)
+        BaseCoralWallFanBlock::can_survive(world, pos, facing)
     }
 
     fn on_place(
