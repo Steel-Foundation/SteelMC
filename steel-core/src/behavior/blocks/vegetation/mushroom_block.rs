@@ -21,6 +21,12 @@ use steel_utils::random::worldgen_random::WorldgenRandom;
 
 use crate::worldgen::feature::FeatureDecorationRunner;
 
+const SPREAD_CHANCE: u32 = 25; //
+const SPREAD_ATTEMPTS: usize = 4; //
+const MAX_SURVIVAL_BRIGHTNESS: u8 = 13;
+const BASE_HUGE_MUSHROOM_HEIGHT: i32 = 4;
+const BONEMEAL_SUCCESS_CHANCE: f32 = 0.4; //
+
 /// Vanilla `MushroomBlock` survival and growth.
 #[block_behavior]
 pub struct MushroomBlock {
@@ -35,9 +41,11 @@ impl MushroomBlock {
     pub const fn new(block: BlockRef, feature: &'static LazyLock<ConfiguredFeature>) -> Self {
         Self { block, feature }
     }
+
     fn may_place_on(state: BlockStateId, _world: &dyn LevelReader, _pos: BlockPos) -> bool {
         state.is_solid_render()
     }
+
     fn grow_mushroom(
         &self,
         world: &Arc<World>,
@@ -83,7 +91,7 @@ impl MushroomBlock {
 impl BlockBehavior for MushroomBlock {
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let mut random = rand::rng();
-        if random.random_range(0..25) == 0 {
+        if random.random_range(0..SPREAD_CHANCE) == 0 {
             let max = 5;
 
             for block_pos in BlockPos::between_closed(pos.offset(-4, -1, -4), pos.offset(4, 1, -4))
@@ -99,7 +107,7 @@ impl BlockBehavior for MushroomBlock {
                 random.random_range(0..3) - 1,
             );
             let mut pos = pos;
-            for _ in 0..4 {
+            for _ in 0..SPREAD_ATTEMPTS {
                 if world.get_block_state(offset).is_air() && self.can_survive(state, world, offset)
                 {
                     pos = offset;
@@ -117,6 +125,7 @@ impl BlockBehavior for MushroomBlock {
             }
         }
     }
+
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -143,12 +152,14 @@ impl BlockBehavior for MushroomBlock {
             return true;
         }
 
-        world.raw_brightness(pos, 0) < 13 && Self::may_place_on(below, world, below_pos)
+        world.raw_brightness(pos, 0) < MAX_SURVIVAL_BRIGHTNESS
+            && Self::may_place_on(below, world, below_pos)
     }
 
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }
+
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }
@@ -167,10 +178,11 @@ impl Bonemealable for MushroomBlock {
         else {
             return false;
         };
-        let min_height = 4 + config.foliage_radius;
+        let min_height = BASE_HUGE_MUSHROOM_HEIGHT + config.foliage_radius;
 
         !world.is_outside_build_height(pos.above_n(min_height).y())
     }
+
     fn is_bonemeal_success(
         &self,
         _state: BlockStateId,
@@ -178,8 +190,9 @@ impl Bonemealable for MushroomBlock {
         rng: &mut dyn Rng,
         _pos: BlockPos,
     ) -> bool {
-        rng.random::<f32>() < 0.4
+        rng.random::<f32>() < BONEMEAL_SUCCESS_CHANCE
     }
+
     fn perform_bonemeal(
         &self,
         state: BlockStateId,
