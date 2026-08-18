@@ -5,7 +5,7 @@ use super::runner::FeatureDecorationRunner;
 
 impl FeatureDecorationRunner {
     pub(super) fn test_optional_block_predicate(
-        level: &dyn LevelReader,
+        level: &impl LevelReader,
         registry: &Registry,
         predicate: Option<&BlockPredicate>,
         origin: BlockPos,

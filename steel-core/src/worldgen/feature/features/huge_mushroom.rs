@@ -90,7 +90,7 @@ impl FeatureDecorationRunner {
     }
 
     fn is_valid_huge_mushroom_position(
-        level: &dyn LevelReader,
+        level: &impl LevelReader,
         registry: &Registry,
         config: &HugeMushroomConfiguration,
         origin: BlockPos,
