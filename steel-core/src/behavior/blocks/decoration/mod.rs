@@ -4,6 +4,7 @@ mod candle_block;
 mod candle_cake_block;
 mod chain_block;
 mod end_rod_block;
+mod lantern_block;
 mod sign_block;
 mod torch_block;
 
@@ -13,6 +14,7 @@ pub use candle_block::CandleBlock;
 pub use candle_cake_block::CandleCakeBlock;
 pub use chain_block::{ChainBlock, WeatheringCopperChainBlock};
 pub use end_rod_block::EndRodBlock;
+pub use lantern_block::LanternBlock;
 pub use sign_block::{
     CeilingHangingSignBlock, StandingSignBlock, WallHangingSignBlock, WallSignBlock,
 };
