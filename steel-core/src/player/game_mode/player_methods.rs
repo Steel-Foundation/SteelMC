@@ -214,6 +214,15 @@ impl Player {
     pub fn is_within_block_interaction_range(&self, pos: BlockPos) -> bool {
         self.is_within_block_interaction_range_with_buffer(pos, 1.0)
     }
+    /// Vanilla `player.blockInteractionRange()`
+    /// vanilla default is 4.5
+    #[must_use]
+    pub fn block_interaction_range(&self) -> f64 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
+            .unwrap_or(4.5)
+    }
 
     /// Returns true if player is within block interaction range plus a vanilla buffer.
     #[must_use]
