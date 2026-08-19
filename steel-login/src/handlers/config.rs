@@ -33,8 +33,7 @@ impl JavaTcpClient {
         // Convert packet to our ClientInformation struct and store it
         let info = ClientInformation {
             language: packet.language,
-            view_distance: packet
-                .view_distance
+            view_distance: i32::from(packet.view_distance)
                 .clamp(2, i32::from(self.server.config.view_distance).max(2))
                 as u8,
             chat_visibility: packet.chat_visibility,

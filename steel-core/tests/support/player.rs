@@ -40,6 +40,7 @@ pub(crate) struct TestPlayerBuilder {
     world: Arc<World>,
     context: TestPlayerContext,
     entity_id: i32,
+    client_information: ClientInformation,
 }
 
 enum TestPlayerContext {
@@ -68,6 +69,7 @@ impl TestPlayerBuilder {
             world,
             context: TestPlayerContext::Detached(test_runtime_config(1)),
             entity_id,
+            client_information: ClientInformation::default(),
         }
     }
 
@@ -89,6 +91,11 @@ impl TestPlayerBuilder {
         self
     }
 
+    pub(crate) fn client_information(mut self, client_information: ClientInformation) -> Self {
+        self.client_information = client_information;
+        self
+    }
+
     pub(crate) fn build(self) -> Arc<Player> {
         let (server, config) = match self.context {
             TestPlayerContext::Detached(config) => (Weak::new(), config),
@@ -101,7 +108,7 @@ impl TestPlayerBuilder {
             server,
             config,
             self.entity_id,
-            ClientInformation::default(),
+            self.client_information,
         ))
     }
 }

@@ -13,6 +13,7 @@ use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket
 use steel_protocol::packets::common::{
     ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
 };
+use steel_protocol::packets::game::CPlayerInfoUpdate;
 use steel_protocol::utils::ConnectionProtocol;
 use text_components::TextComponent;
 
@@ -31,7 +32,7 @@ pub struct ClientInformation {
     /// Whether chat colors are enabled.
     pub chat_colors: bool,
     /// Bitmask for displayed skin parts.
-    pub model_customization: i32,
+    pub model_customization: u8,
     /// The player's main hand (left or right).
     pub main_hand: HumanoidArm,
     /// Whether text filtering is enabled.
@@ -205,11 +206,11 @@ impl Player {
     /// Handles client information updates during play phase.
     pub fn handle_client_information(&self, packet: SClientInformation) {
         let old_view_distance = self.view_distance();
+        let was_hat_shown = self.shows_hat();
 
         let info = ClientInformation {
             language: packet.language,
-            view_distance: packet
-                .view_distance
+            view_distance: i32::from(packet.view_distance)
                 .clamp(2, i32::from(self.config.view_distance).max(2))
                 as u8,
             chat_visibility: packet.chat_visibility,
@@ -221,6 +222,12 @@ impl Player {
             particle_status: packet.particle_status,
         };
         self.set_client_information(info);
+
+        let show_hat = self.shows_hat();
+        if show_hat != was_hat_shown {
+            self.server()
+                .broadcast_to_online(CPlayerInfoUpdate::update_hat(self.gameprofile.id, show_hat));
+        }
 
         // Vanilla does not echo CSetChunkCacheRadius here; it is only broadcast
         // when the server-wide view distance changes.
@@ -237,6 +244,7 @@ impl Player {
 
     /// Updates the player's client information settings.
     pub fn set_client_information(&self, info: ClientInformation) {
+        Self::apply_client_information_to_entity_data(&mut self.entity_data.lock(), &info);
         *self.client_information.lock() = info;
     }
 

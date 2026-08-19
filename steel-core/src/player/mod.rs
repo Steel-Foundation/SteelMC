@@ -133,6 +133,7 @@ use steel_utils::{
 use crate::inventory::container::Container;
 
 const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
+const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::player::chunk_sender::ChunkSender;
@@ -419,6 +420,28 @@ impl Player {
         self.client_information.lock().main_hand
     }
 
+    #[must_use]
+    pub(crate) fn shows_hat(&self) -> bool {
+        let model_customization = *self
+            .entity_data
+            .lock()
+            .avatar()
+            .player_mode_customization
+            .get();
+        model_customization & HAT_MODEL_PART_MASK != 0
+    }
+
+    fn apply_client_information_to_entity_data(
+        data: &mut PlayerEntityData,
+        client_information: &ClientInformation,
+    ) {
+        let avatar = data.avatar_mut();
+        avatar.player_main_hand.set(client_information.main_hand);
+        avatar
+            .player_mode_customization
+            .set(client_information.model_customization.cast_signed());
+    }
+
     /// Computes the start (eye position) and end positions for a raytrace.
     pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
         let pos = self.position();
@@ -497,6 +520,7 @@ impl Player {
             entity_data: SyncMutex::new({
                 let mut data = PlayerEntityData::new();
                 living_base.initialize_synced_data(&mut data);
+                Self::apply_client_information_to_entity_data(&mut data, &client_information);
                 data
             }),
             last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),
