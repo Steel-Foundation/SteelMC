@@ -1,10 +1,10 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
-use steel_registry::{vanilla_blocks, vanilla_fluids};
+use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::blocks::CoralBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess};
@@ -44,10 +44,7 @@ impl BlockBehavior for BaseCoralPlantBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         if direction == Direction::Down && !self.can_survive(state, world, pos) {
             vanilla_blocks::AIR.default_state()

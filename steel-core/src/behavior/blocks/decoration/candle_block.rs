@@ -22,7 +22,7 @@ use steel_utils::{
 use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
-        block::schedule_placed_liquid_tick,
+        block::{schedule_placed_liquid_tick, schedule_water_tick_if_waterlogged},
     },
     entity::projectile::Projectile,
     player,
@@ -98,10 +98,7 @@ impl BlockBehavior for CandleBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: steel_utils::BlockStateId,
     ) -> steel_utils::BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         if !self.can_survive(state, world, pos) {
             return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
