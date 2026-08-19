@@ -7,18 +7,18 @@ use steel_registry::{
         shapes::SupportType,
     },
     fluid::FluidStateExt,
-    vanilla_blocks, vanilla_fluids,
+    vanilla_blocks,
 };
 use steel_utils::{BlockPos, BlockStateId, Direction, axis::Axis};
 
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext},
+    behavior::{BlockBehavior, BlockPlaceContext, block::schedule_water_tick_if_waterlogged},
     entity::ai::path::PathComputationType,
     fluid::get_fluid_state,
     world::{LevelReader, ScheduledTickAccess},
 };
 
-/// Behavior for all Lantern type blocks
+/// Behavior for all non-weathering Lantern type blocks
 #[block_behavior]
 pub struct LanternBlock {
     block: BlockRef,
@@ -28,7 +28,7 @@ const HANGING: &BoolProperty = &BlockStateProperties::HANGING;
 const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl LanternBlock {
-    /// Creates a new candle block behavior for the given block
+    /// Creates a new lantern block behavior for the given block
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
@@ -53,7 +53,10 @@ impl BlockBehavior for LanternBlock {
                     .default_state()
                     .set_value(HANGING, dir == Direction::Up);
                 if self.can_survive(state, context.world, context.place_pos()) {
-                    return Some(state.set_value(WATERLOGGED, replaced_fluid_state.is_water()));
+                    return Some(state.set_value(
+                        WATERLOGGED,
+                        replaced_fluid_state.is_water() && replaced_fluid_state.is_source(),
+                    ));
                 }
             }
         }
@@ -80,10 +83,7 @@ impl BlockBehavior for LanternBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         if Self::get_connected_dir(state).opposite() == direction
             && !self.can_survive(state, world, pos)

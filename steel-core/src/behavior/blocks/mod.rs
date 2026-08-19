@@ -34,6 +34,7 @@ pub use decoration::{
     BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
     EndRodBlock, LanternBlock, StandingSignBlock, TorchBlock, WallBannerBlock,
     WallHangingSignBlock, WallSignBlock, WallTorchBlock, WeatheringCopperChainBlock,
+    WeatheringLanternBlock,
 };
 pub use falling::{ConcretePowderBlock, FallingBlock, SandBlock};
 pub use fluid::{BubbleColumnBlock, LiquidBlock};
