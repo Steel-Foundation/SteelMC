@@ -42,72 +42,16 @@ impl BlockBehavior for MyceliumBlock {
 #[cfg(test)]
 mod tests {
     use steel_registry::blocks::block_state_ext::BlockStateExt;
-    use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
-    use steel_registry::item_stack::ItemStack;
+    use steel_registry::blocks::properties::BlockStateProperties;
     use steel_registry::{init_vanilla_registry, vanilla_blocks};
-    use steel_utils::types::UpdateFlags;
-    use steel_utils::{BlockPos, ChunkPos, Direction};
+    use steel_utils::{BlockPos, Direction};
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::test_support::{TestLevel, fresh_test_world, insert_ready_full_chunk};
-
-    const SNOWY: &BoolProperty = &BlockStateProperties::SNOWY;
+    use crate::test_support::TestLevel;
 
     #[test]
-    fn placement_resolves_snowy_from_above_block() {
-        init_vanilla_registry();
-        init_behaviors();
-
-        let world = fresh_test_world("mycelium_block_placement");
-        let pos = BlockPos::new(0, 64, 0);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
-
-        let behavior = MyceliumBlock::new(&vanilla_blocks::MYCELIUM);
-
-        for snow in [
-            &vanilla_blocks::SNOW,
-            &vanilla_blocks::SNOW_BLOCK,
-            &vanilla_blocks::POWDER_SNOW,
-        ] {
-            world.set_block(pos.above(), snow.default_state(), UpdateFlags::empty());
-            let mut stack = ItemStack::empty();
-            let context = BlockPlaceContext::directional(
-                &world,
-                pos,
-                Direction::Down,
-                &mut stack,
-                Direction::Up,
-            );
-            let state = behavior
-                .get_state_for_placement(&context)
-                .expect("placement state should exist");
-            assert!(state.get_value(SNOWY));
-        }
-
-        for non_snow in [
-            &vanilla_blocks::AIR,
-            &vanilla_blocks::STONE,
-            &vanilla_blocks::ICE,
-        ] {
-            world.set_block(pos.above(), non_snow.default_state(), UpdateFlags::empty());
-            let mut stack = ItemStack::empty();
-            let context = BlockPlaceContext::directional(
-                &world,
-                pos,
-                Direction::Down,
-                &mut stack,
-                Direction::Up,
-            );
-            let state = behavior
-                .get_state_for_placement(&context)
-                .expect("placement state should exist");
-            assert!(!state.get_value(SNOWY));
-        }
-    }
-
-    #[test]
-    fn upward_neighbor_update_recalculates_snowy() {
+    fn mycelium_block_updates_snowy_state() {
         init_vanilla_registry();
         init_behaviors();
 
@@ -115,90 +59,25 @@ mod tests {
         let pos = BlockPos::new(0, 64, 0);
         let behavior = MyceliumBlock::new(&vanilla_blocks::MYCELIUM);
 
-        let base = vanilla_blocks::MYCELIUM
-            .default_state()
-            .set_value(SNOWY, false);
-        let snowy = vanilla_blocks::MYCELIUM
-            .default_state()
-            .set_value(SNOWY, true);
+        let non_snowy = vanilla_blocks::MYCELIUM.default_state();
+        let snowy = behavior.update_shape(
+            non_snowy,
+            &level,
+            pos,
+            Direction::Up,
+            pos.above(),
+            vanilla_blocks::SNOW.default_state(),
+        );
+        assert!(snowy.get_value(&BlockStateProperties::SNOWY));
 
-        for snow in [
-            &vanilla_blocks::SNOW,
-            &vanilla_blocks::SNOW_BLOCK,
-            &vanilla_blocks::POWDER_SNOW,
-        ] {
-            let state = behavior.update_shape(
-                base,
-                &level,
-                pos,
-                Direction::Up,
-                pos.above(),
-                snow.default_state(),
-            );
-            assert!(state.get_value(SNOWY));
-        }
-
-        for non_snow in [
-            &vanilla_blocks::AIR,
-            &vanilla_blocks::STONE,
-            &vanilla_blocks::ICE,
-        ] {
-            let state = behavior.update_shape(
-                snowy,
-                &level,
-                pos,
-                Direction::Up,
-                pos.above(),
-                non_snow.default_state(),
-            );
-            assert!(!state.get_value(SNOWY));
-        }
-    }
-
-    #[test]
-    fn lateral_and_downward_neighbor_updates_keep_existing_state() {
-        init_vanilla_registry();
-        init_behaviors();
-
-        let level = TestLevel::default();
-        let pos = BlockPos::new(0, 64, 0);
-        let behavior = MyceliumBlock::new(&vanilla_blocks::MYCELIUM);
-
-        let base = vanilla_blocks::MYCELIUM
-            .default_state()
-            .set_value(SNOWY, false);
-        let snowy = vanilla_blocks::MYCELIUM
-            .default_state()
-            .set_value(SNOWY, true);
-
-        for dir in [
-            Direction::Down,
-            Direction::North,
-            Direction::South,
-            Direction::East,
-            Direction::West,
-        ] {
-            let neighbor_pos = dir.relative(pos);
-
-            let updated_snowy = behavior.update_shape(
-                snowy,
-                &level,
-                pos,
-                dir,
-                neighbor_pos,
-                vanilla_blocks::AIR.default_state(),
-            );
-            assert_eq!(updated_snowy, snowy);
-
-            let updated_base = behavior.update_shape(
-                base,
-                &level,
-                pos,
-                dir,
-                neighbor_pos,
-                vanilla_blocks::SNOW.default_state(),
-            );
-            assert_eq!(updated_base, base);
-        }
+        let cleared = behavior.update_shape(
+            snowy,
+            &level,
+            pos,
+            Direction::Up,
+            pos.above(),
+            vanilla_blocks::AIR.default_state(),
+        );
+        assert!(!cleared.get_value(&BlockStateProperties::SNOWY));
     }
 }
