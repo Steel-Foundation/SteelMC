@@ -48,34 +48,36 @@ impl DefaultRedstoneWireEvaluator {
     }
 
     fn calculate_target_strength(&self, level: &dyn LevelReader, pos: BlockPos) -> i32 {
+        // This is vanilla's `calculateTargetStrength` with Lithium's
+        // `getNeighborSignal(..., false, false)` calculation inlined.
         let context = SignalQueryContext::without_wire_signals();
         let center_state = level.get_block_state(pos);
-        let skip_center_signal =
+        let ignore_center_signal =
             center_state.is_air() || center_state.get_block() == self.wire_block;
         let below_pos = pos.below();
         let above_pos = pos.above();
         let below_state = level.get_block_state(below_pos);
         let above_state = level.get_block_state(above_pos);
 
-        let (below_signal, _) = self.get_vertical_signal(
+        let (below_signal, _) = self.get_signal_from_vertical(
             level,
             below_pos,
             below_state,
             Direction::Down,
             context,
-            skip_center_signal,
+            ignore_center_signal,
         );
         if below_signal == 15 {
             return 15;
         }
 
-        let (above_signal, above_is_conductor) = self.get_vertical_signal(
+        let (above_signal, above_is_conductor) = self.get_signal_from_vertical(
             level,
             above_pos,
             above_state,
             Direction::Up,
             context,
-            skip_center_signal,
+            ignore_center_signal,
         );
         let mut signal = below_signal.max(above_signal);
         if signal == 15 {
@@ -88,13 +90,16 @@ impl DefaultRedstoneWireEvaluator {
             if neighbor_state.get_block() == self.wire_block {
                 signal = signal.max(self.get_wire_signal(neighbor_state) - 1);
             } else {
+                // This branch is the non-wire part of Lithium's
+                // `getSignalFromSide`. The wire/step checks remain here so the
+                // already-fetched state and conductor result can be reused.
                 let (neighbor_signal, neighbor_is_conductor) = self.get_non_wire_signal(
                     level,
                     neighbor_pos,
                     neighbor_state,
                     direction,
                     context,
-                    skip_center_signal,
+                    ignore_center_signal,
                 );
                 signal = signal.max(neighbor_signal);
                 if signal == 15 {
@@ -124,22 +129,25 @@ impl DefaultRedstoneWireEvaluator {
         signal
     }
 
-    fn get_vertical_signal(
+    /// Translation of Lithium's `getSignalFromVertical`.
+    fn get_signal_from_vertical(
         &self,
         level: &dyn LevelReader,
         pos: BlockPos,
         state: BlockStateId,
         direction: Direction,
         context: SignalQueryContext,
-        skip_center_signal: bool,
+        ignore_center_signal: bool,
     ) -> (i32, bool) {
         if state.get_block() == self.wire_block {
             return (0, false);
         }
 
-        self.get_non_wire_signal(level, pos, state, direction, context, skip_center_signal)
+        self.get_non_wire_signal(level, pos, state, direction, context, ignore_center_signal)
     }
 
+    /// Shared translation of the non-wire work in Lithium's
+    /// `getSignalFromVertical` and `getSignalFromSide`.
     fn get_non_wire_signal(
         &self,
         level: &dyn LevelReader,
@@ -147,7 +155,7 @@ impl DefaultRedstoneWireEvaluator {
         state: BlockStateId,
         direction: Direction,
         context: SignalQueryContext,
-        skip_center_signal: bool,
+        ignore_center_signal: bool,
     ) -> (i32, bool) {
         if state.is_air() {
             return (0, false);
@@ -157,29 +165,34 @@ impl DefaultRedstoneWireEvaluator {
         let mut signal = behavior.get_signal(state, level, pos, direction, context);
         let is_conductor = behavior.is_redstone_conductor(state, level, pos);
         if is_conductor && signal < 15 {
-            signal = signal.max(self.get_direct_signal_to_except(
+            signal = signal.max(self.get_direct_signal_to(
                 level,
                 pos,
                 direction.opposite(),
                 context,
-                skip_center_signal,
+                ignore_center_signal,
             ));
         }
 
         (signal, is_conductor)
     }
 
-    fn get_direct_signal_to_except(
+    /// Translation of Lithium's `getDirectSignalTo`.
+    ///
+    /// Lithium always ignores the direction back to the wire. Steel also runs
+    /// this path after replacement, so that direction is ignored only while the
+    /// center is still wire or air.
+    fn get_direct_signal_to(
         &self,
         level: &dyn LevelReader,
         pos: BlockPos,
-        skip_direction: Direction,
+        direction_to_center: Direction,
         context: SignalQueryContext,
-        skip_center_signal: bool,
+        ignore_center_signal: bool,
     ) -> i32 {
         let mut signal = 0;
         for direction in Direction::ALL {
-            if direction == skip_direction && skip_center_signal {
+            if direction == direction_to_center && ignore_center_signal {
                 continue;
             }
 
@@ -298,10 +311,10 @@ mod tests {
         }
 
         let evaluator = DefaultRedstoneWireEvaluator::new(&vanilla_blocks::REDSTONE_WIRE);
-        block_signal.max(incoming_wire_power_reference(&evaluator, level, pos))
+        block_signal.max(get_incoming_wire_signal_reference(&evaluator, level, pos))
     }
 
-    fn incoming_wire_power_reference(
+    fn get_incoming_wire_signal_reference(
         evaluator: &DefaultRedstoneWireEvaluator,
         level: &dyn LevelReader,
         pos: BlockPos,

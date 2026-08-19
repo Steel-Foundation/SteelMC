@@ -49,6 +49,7 @@ impl RedStoneWireBlock {
         }
     }
 
+    /// Rust equivalent of vanilla's `PROPERTY_BY_DIRECTION` map.
     const fn property_for_direction(
         direction: Direction,
     ) -> Option<&'static EnumProperty<RedstoneSide>> {
@@ -61,6 +62,7 @@ impl RedStoneWireBlock {
         }
     }
 
+    /// Rust equivalent of vanilla's `RedstoneSide.isConnected()`.
     fn is_connected(side: RedstoneSide) -> bool {
         side != RedstoneSide::None
     }
@@ -158,6 +160,7 @@ impl RedStoneWireBlock {
         self.get_connecting_side_with_up(level, pos, direction, can_connect_up)
     }
 
+    /// Translation of vanilla's four-argument `getConnectingSide` overload.
     fn get_connecting_side_with_up(
         &self,
         level: &dyn LevelReader,
@@ -421,6 +424,8 @@ impl BlockBehavior for RedStoneWireBlock {
         _source_block: BlockRef,
         _moved_by_piston: bool,
     ) {
+        // `BlockBehavior` names vanilla's `neighborChanged` callback
+        // `handle_neighbor_changed` to distinguish it from update dispatch.
         if self.can_survive(state, world.as_ref(), pos) {
             self.evaluator.update_power_strength(world, pos, state);
         } else {
@@ -478,6 +483,7 @@ impl BlockBehavior for RedStoneWireBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
+        // `BlockBehavior::get_own_signal` is vanilla's `ownSignal` hook.
         i32::from(state.get_value(&BlockStateProperties::POWER))
     }
 
