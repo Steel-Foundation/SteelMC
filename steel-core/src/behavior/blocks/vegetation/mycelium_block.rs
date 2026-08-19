@@ -8,7 +8,7 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::world::ScheduledTickAccess;
 
 /// Behavior for mycelium blocks.
-// TODO: Implement SpreadingSnowyBlock random ticks (spreading, turning to dirt when covered) and client particle effects.
+// TODO: Implement SpreadingSnowyBlock random ticks (spreading, turning to dirt when covered).
 #[block_behavior]
 pub struct MyceliumBlock {
     block: BlockRef,
