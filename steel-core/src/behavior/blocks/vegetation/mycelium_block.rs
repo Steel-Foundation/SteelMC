@@ -1,61 +1,27 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
-use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
+use super::snowy_block::{snowy_placement_state, update_snowy_shape};
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::ScheduledTickAccess;
 
-#[must_use]
-pub(super) fn is_snowy_setting(above_state: BlockStateId) -> bool {
-    above_state.get_block().has_tag(&BlockTag::SNOW)
-}
-
-#[must_use]
-pub(super) fn snowy_placement_state(
-    block: BlockRef,
-    context: &BlockPlaceContext<'_>,
-) -> BlockStateId {
-    let above = context.world.get_block_state(context.place_pos().above());
-    block
-        .default_state()
-        .set_value(&BlockStateProperties::SNOWY, is_snowy_setting(above))
-}
-
-#[must_use]
-pub(super) fn update_snowy_shape(
-    state: BlockStateId,
-    direction: Direction,
-    neighbor_state: BlockStateId,
-) -> BlockStateId {
-    if direction == Direction::Up {
-        state.set_value(
-            &BlockStateProperties::SNOWY,
-            is_snowy_setting(neighbor_state),
-        )
-    } else {
-        state
-    }
-}
-
-/// Behavior for podzol and other basic snowy dirt blocks.
+/// Behavior for mycelium blocks.
 #[block_behavior]
-pub struct SnowyBlock {
+pub struct MyceliumBlock {
     block: BlockRef,
 }
 
-impl SnowyBlock {
-    /// Creates a new snowy block behavior.
+impl MyceliumBlock {
+    /// Creates a new mycelium block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
 }
 
-impl BlockBehavior for SnowyBlock {
+impl BlockBehavior for MyceliumBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(snowy_placement_state(self.block, context))
     }
@@ -75,6 +41,7 @@ impl BlockBehavior for SnowyBlock {
 
 #[cfg(test)]
 mod tests {
+    use steel_registry::blocks::block_state_ext::BlockStateExt;
     use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
     use steel_registry::item_stack::ItemStack;
     use steel_registry::{init_vanilla_registry, vanilla_blocks};
@@ -92,11 +59,11 @@ mod tests {
         init_vanilla_registry();
         init_behaviors();
 
-        let world = fresh_test_world("snowy_block_placement");
+        let world = fresh_test_world("mycelium_block_placement");
         let pos = BlockPos::new(0, 64, 0);
         insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
 
-        let behavior = SnowyBlock::new(&vanilla_blocks::PODZOL);
+        let behavior = MyceliumBlock::new(&vanilla_blocks::MYCELIUM);
 
         for snow in [
             &vanilla_blocks::SNOW,
@@ -146,12 +113,12 @@ mod tests {
 
         let level = TestLevel::default();
         let pos = BlockPos::new(0, 64, 0);
-        let behavior = SnowyBlock::new(&vanilla_blocks::PODZOL);
+        let behavior = MyceliumBlock::new(&vanilla_blocks::MYCELIUM);
 
-        let base = vanilla_blocks::PODZOL
+        let base = vanilla_blocks::MYCELIUM
             .default_state()
             .set_value(SNOWY, false);
-        let snowy = vanilla_blocks::PODZOL
+        let snowy = vanilla_blocks::MYCELIUM
             .default_state()
             .set_value(SNOWY, true);
 
@@ -195,12 +162,12 @@ mod tests {
 
         let level = TestLevel::default();
         let pos = BlockPos::new(0, 64, 0);
-        let behavior = SnowyBlock::new(&vanilla_blocks::PODZOL);
+        let behavior = MyceliumBlock::new(&vanilla_blocks::MYCELIUM);
 
-        let base = vanilla_blocks::PODZOL
+        let base = vanilla_blocks::MYCELIUM
             .default_state()
             .set_value(SNOWY, false);
-        let snowy = vanilla_blocks::PODZOL
+        let snowy = vanilla_blocks::MYCELIUM
             .default_state()
             .set_value(SNOWY, true);
 
