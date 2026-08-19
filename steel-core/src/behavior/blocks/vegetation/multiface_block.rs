@@ -200,19 +200,18 @@ impl BlockBehavior for MultifaceBlock {
     /// Vanilla `MultifaceBlock.getStateForPlacement`
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let level = context.world;
-        let place_pos = if context.replaces_clicked_block() {
-            context.hit_pos()
-        } else {
-            context.place_pos()
-        };
-        let old_state = level.get_block_state(place_pos);
+        let old_state = level.get_block_state(context.place_pos());
 
         context
             .get_nearest_looking_directions()
             .iter()
             .find_map(|direction| {
                 MultifaceBlock::get_state_for_placement_with_dir(
-                    self.block, old_state, level, place_pos, *direction,
+                    self.block,
+                    old_state,
+                    level,
+                    context.place_pos(),
+                    *direction,
                 )
             })
     }
