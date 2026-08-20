@@ -202,7 +202,7 @@ impl Player {
 
         let mut inventory = self.inventory.lock();
 
-        let slot_with_item = inventory.find_slot_matching_item_with_same_componnents(&item_stack);
+        let slot_with_item = inventory.find_slot_matching_item_with_same_components(&item_stack);
 
         if slot_with_item != -1 {
             if PlayerInventory::is_hotbar_slot(slot_with_item as usize) {
