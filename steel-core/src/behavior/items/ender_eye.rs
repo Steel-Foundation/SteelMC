@@ -2,18 +2,27 @@
 
 use std::sync::Arc;
 
+use crate::entity::Entity;
+use crate::entity::ai::path::PathType::BigMobsCloseToDanger;
+use crate::worldgen::generator::ChunkGenerator;
 use steel_macros::item_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::level_events;
 use steel_registry::vanilla_blocks;
+use steel_utils::Identifier;
 use steel_utils::{BlockPos, types::UpdateFlags};
+use steel_worldgen::structure::generator::StructureGenerator;
 
 use crate::behavior::ItemBehavior;
 use crate::behavior::block::push_entities_up;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::world::{LevelReader, World};
+
+use glam::{DVec3, IVec3};
+
+use log::info;
 
 const END_PORTAL_PATTERN_DISTANCE: i32 = 5;
 const END_PORTAL_PATTERN: [[char; 5]; 5] = [
@@ -83,7 +92,55 @@ impl ItemBehavior for EnderEyeItem {
 
         InteractionResult::Success
     }
+
+    // This function doesn't run if you right click a end portal frame :)
+    fn use_item(&self, context: &mut crate::behavior::UseItemContext) -> InteractionResult {
+        let world = context.world;
+        let Some(structure_generator) = world
+            .chunk_map
+            .world_gen_context
+            .generator
+            .structure_generator()
+        else {
+            return InteractionResult::Fail;
+        };
+
+        let Some(structure_locate_plan) = structure_generator
+            .locate_plan_for_structures(&[Identifier::vanilla_static("stronghold")])
+        else {
+            return InteractionResult::Fail;
+        };
+
+        let player_pos = context.player.block_position();
+        let strongholds = structure_locate_plan.ring_candidates(player_pos);
+
+        let Some(closest_stronghold) = strongholds.first() else {
+            return InteractionResult::Fail;
+        };
+
+        let stronghold_pos = closest_stronghold.locate_pos;
+
+        let diff = DVec3::new(
+            (stronghold_pos.x() - player_pos.x()) as f64,
+            0.0,
+            (stronghold_pos.z() - player_pos.z()) as f64,
+        );
+        let dist = diff.length();
+        let target_pos = if dist > 12.0 {
+            DVec3::new(diff.x / dist * 12.0, 8.0, diff.z / dist * 12.0)
+        } else {
+            DVec3::new(
+                stronghold_pos.x() as f64,
+                stronghold_pos.y() as f64,
+                stronghold_pos.z() as f64,
+            )
+        };
+
+        InteractionResult::Success
+    }
 }
+
+// fn locate_starting_staircase() -> Option<BlockPos> {}
 
 fn find_completed_end_portal_origin(
     level: &impl LevelReader,
