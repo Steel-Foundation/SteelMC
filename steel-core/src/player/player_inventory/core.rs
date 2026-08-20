@@ -223,6 +223,18 @@ impl PlayerInventory {
         -1
     }
 
+    /// Finds the next empty slot after the selected in the inventory, or -1 if full.
+    #[must_use]
+    pub fn get_suitable_hotbar_slot(&self) -> u8 {
+        let selected = self.selected as usize;
+        let order = || (selected..Self::SELECTION_SIZE).chain(0..selected);
+
+        order()
+            .find(|&i| self.items[i].is_empty())
+            .or_else(|| order().find(|&i| !self.items[i].is_enchanted()))
+            .map_or(selected as u8, |i| i as u8)
+    }
+
     /// Finds a slot containing an item matching the given stack (same item type).
     /// Returns -1 if not found.
     #[must_use]
