@@ -586,6 +586,18 @@ impl ItemStack {
                 .is_some_and(ItemEnchantments::is_empty)
     }
 
+    pub fn is_enchanted(&self) -> bool {
+        let Some(enchantments) = self.get_enchantments() else {
+            return false;
+        };
+
+        if enchantments.is_empty() {
+            return false;
+        }
+
+        return true;
+    }
+
     #[must_use]
     pub fn has_enchantment_effect(&self, component: EnchantmentEffectComponent) -> bool {
         let Some(enchantments) = self.get_enchantments() else {
