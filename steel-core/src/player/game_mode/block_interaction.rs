@@ -1,5 +1,4 @@
 use super::{block_breaking::BlockBreakAction, *};
-use log::info;
 
 impl Player {
     /// Sends block update packets for a position and its neighbor.
@@ -210,13 +209,8 @@ impl Player {
                 inventory.set_selected_slot(slot_with_item as u8);
             } else {
                 let free_slot = inventory.get_suitable_hotbar_slot();
-                info!(
-                    "Current: {}, Free: {}",
-                    inventory.get_selected_slot(),
-                    free_slot
-                );
 
-                inventory.set_selected_slot(free_slot as u8);
+                inventory.set_selected_slot(free_slot);
                 inventory.pick_slot(slot_with_item);
             }
         } else if self.has_infinite_materials() {
