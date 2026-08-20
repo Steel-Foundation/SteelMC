@@ -11,6 +11,8 @@ use crate::inventory::{
 
 use super::container::InvalidHotbarSlot;
 
+use log::info;
+
 /// Player inventory container managing the main inventory and equipment.
 ///
 /// Contains 36 main inventory slots (0-8 hotbar, 9-35 main) plus equipment slots
@@ -227,12 +229,25 @@ impl PlayerInventory {
     #[must_use]
     pub fn get_suitable_hotbar_slot(&self) -> u8 {
         let selected = self.selected as usize;
-        let order = || (selected..Self::SELECTION_SIZE).chain(0..selected);
 
-        order()
+        if let Some(empty_slot) = (selected..Self::SELECTION_SIZE)
+            .chain(0..selected)
             .find(|&i| self.items[i].is_empty())
-            .or_else(|| order().find(|&i| !self.items[i].is_enchanted()))
-            .map_or(selected as u8, |i| i as u8)
+        {
+            info!("Empty spot available");
+            return empty_slot as u8;
+        } else {
+            if let Some(non_enchanted_slot) = (selected..Self::SELECTION_SIZE)
+                .chain(0..selected)
+                .find(|&i| !self.items[i].is_enchanted())
+            {
+                info!("No open spots");
+                return non_enchanted_slot as u8;
+            } else {
+                info!("ALL ENCHANTED ITEMS");
+                return selected as u8;
+            }
+        }
     }
 
     /// Finds a slot containing an item matching the given stack (same item type).
