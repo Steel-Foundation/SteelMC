@@ -228,19 +228,21 @@ impl PlayerInventory {
     pub fn get_suitable_hotbar_slot(&self) -> u8 {
         let selected = self.selected as usize;
 
-        if let Some(empty_slot) = (selected..Self::SELECTION_SIZE)
-            .chain(0..selected)
-            .find(|&i| self.items[i].is_empty())
-        {
-            return empty_slot as u8;
+        for slot in 0..Self::SELECTION_SIZE {
+            let index = (selected + slot) % Self::SELECTION_SIZE;
+            if self.items[index].is_empty() {
+                return index as u8;
+            }
         }
-        if let Some(non_enchanted_slot) = (selected..Self::SELECTION_SIZE)
-            .chain(0..selected)
-            .find(|&i| !self.items[i].is_enchanted())
-        {
-            return non_enchanted_slot as u8;
+
+        for slot in 0..Self::SELECTION_SIZE {
+            let index = (selected + slot) % Self::SELECTION_SIZE;
+            if !self.items[index].is_enchanted() {
+                return index as u8;
+            }
         }
-        selected as u8
+
+        self.selected
     }
 
     /// Finds a slot containing an item matching the given stack (same item type).
