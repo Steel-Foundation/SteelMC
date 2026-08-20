@@ -9,7 +9,7 @@ use steel_utils::Downcast as _;
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 use super::super::super::vanilla_collections::JavaBlockPosSet;
-use super::TreePlacement;
+use super::{TreeLevel, TreePlacement};
 
 use crate::block_entity::entities::BeehiveBlockEntity;
 
@@ -19,7 +19,7 @@ const BEEHIVE_SPAWN_DIRECTIONS: [Direction; 3] =
 
 impl FeatureDecorationRunner {
     pub(super) fn place_tree_decorators(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         decorators: &[TreeDecorator],
@@ -102,7 +102,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_alter_ground_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         provider: &BlockStateProvider,
@@ -167,7 +167,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_alter_ground_circle(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         provider: &BlockStateProvider,
@@ -191,7 +191,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_alter_ground_block_at(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         provider: &BlockStateProvider,
@@ -214,7 +214,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_on_ground_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         decorator: &PlaceOnGroundDecorator,
@@ -264,7 +264,7 @@ impl FeatureDecorationRunner {
     }
 
     fn attempt_place_tree_ground_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         provider: &BlockStateProvider,
@@ -288,7 +288,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_trunk_vine_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         random: &mut WorldgenRandom,
         placement: &mut TreePlacement,
     ) {
@@ -329,7 +329,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_leave_vine_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         random: &mut WorldgenRandom,
         probability: f32,
         placement: &mut TreePlacement,
@@ -371,7 +371,7 @@ impl FeatureDecorationRunner {
     }
 
     fn try_place_hanging_tree_vine(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         placement: &mut TreePlacement,
         pos: BlockPos,
         vine_face: Direction,
@@ -390,7 +390,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_cocoa_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         probability: f32,
@@ -429,7 +429,7 @@ impl FeatureDecorationRunner {
     }
 
     fn try_place_tree_vine(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         placement: &mut TreePlacement,
         pos: BlockPos,
         vine_face: Direction,
@@ -443,7 +443,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_tree_vine(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         placement: &mut TreePlacement,
         pos: BlockPos,
         vine_face: Direction,
@@ -468,7 +468,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_beehive_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         probability: f32,
@@ -533,7 +533,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_attached_to_leaves_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         decorator: &AttachedToLeavesDecorator,
@@ -576,7 +576,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_attached_to_logs_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         decorator: &AttachedToLogsDecorator,
@@ -605,7 +605,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_pale_moss_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         leaves_probability: f32,
@@ -628,8 +628,7 @@ impl FeatureDecorationRunner {
                     "pale moss tree decorator references unknown configured feature {pale_moss_patch_key}"
                 );
             };
-            Self::place_configured_feature_kind(
-                region,
+            region.place_nested_configured_feature(
                 registry,
                 random,
                 &pale_moss_patch.kind,
@@ -658,7 +657,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_creaking_heart_tree_decorator(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         probability: f32,
@@ -693,7 +692,7 @@ impl FeatureDecorationRunner {
     }
 
     fn add_pale_moss_hanger(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         random: &mut WorldgenRandom,
         mut pos: BlockPos,
         placement: &mut TreePlacement,
@@ -717,7 +716,7 @@ impl FeatureDecorationRunner {
     }
 
     fn tree_decorator_has_required_empty_blocks(
-        region: &WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         leaf: BlockPos,
         direction: Direction,
         required_empty_blocks: i32,

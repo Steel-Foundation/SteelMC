@@ -8,7 +8,7 @@ use std::f64::consts::PI;
 
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
-use super::{FoliageAttachment, TreePlacement, abs_i32};
+use super::{FoliageAttachment, TreeLevel, TreePlacement, abs_i32};
 
 const FANCY_TRUNK_HEIGHT_SCALE: f64 = 0.618;
 const FANCY_CLUSTER_DENSITY_MAGIC: f64 = 1.382;
@@ -62,7 +62,7 @@ impl FeatureDecorationRunner {
     }
 
     pub(super) fn place_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -159,7 +159,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_straight_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -182,7 +182,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_forking_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -260,7 +260,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_giant_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -340,7 +340,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_mega_jungle_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -383,7 +383,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_bending_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -431,7 +431,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_upwards_branching_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -491,7 +491,7 @@ impl FeatureDecorationRunner {
 
     #[expect(clippy::too_many_arguments, reason = "mirrors vanilla branch state")]
     fn place_upwards_branching_tree_branch(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -557,7 +557,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_cherry_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -647,7 +647,7 @@ impl FeatureDecorationRunner {
 
     #[expect(clippy::too_many_arguments, reason = "mirrors vanilla branch state")]
     fn generate_cherry_tree_branch(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -725,7 +725,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_dark_oak_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -842,7 +842,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_fancy_tree_trunk(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         tree_height: i32,
@@ -953,7 +953,7 @@ impl FeatureDecorationRunner {
     }
 
     fn make_fancy_tree_limb(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         start_pos: BlockPos,
@@ -1036,7 +1036,7 @@ impl FeatureDecorationRunner {
     }
 
     fn make_fancy_tree_branches(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         height: i32,
@@ -1065,7 +1065,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_tree_log_with_axis(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
@@ -1090,7 +1090,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_fancy_tree_log(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
@@ -1127,7 +1127,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_below_trunk_block(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
@@ -1147,7 +1147,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_tree_log(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
@@ -1170,7 +1170,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_tree_log_if_free(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,
@@ -1185,7 +1185,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_tree_log_growing_through(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,

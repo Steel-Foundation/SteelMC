@@ -3,6 +3,12 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 use super::super::vanilla_collections::JavaBlockPosSet;
+use steel_utils::ChunkPos;
+
+use std::sync::Arc;
+
+use crate::block_entity::SharedBlockEntity;
+use crate::world::World;
 
 mod decorators;
 mod fallen;
@@ -12,9 +18,86 @@ mod root_system;
 mod roots;
 mod trunk;
 
+/// Level operations used by tree placement in worldgen and live worlds.
+pub(crate) trait TreeLevel: LevelAccessor {
+    fn block_state(&self, pos: BlockPos) -> BlockStateId {
+        self.get_block_state(pos)
+    }
+
+    fn block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        self.get_block_entity(pos)
+    }
+
+    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32;
+
+    fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool;
+
+    fn place_nested_configured_feature(
+        &mut self,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        kind: &ConfiguredFeatureKind,
+        origin: BlockPos,
+        biome_zoom_seed: i64,
+    ) -> bool;
+}
+
+impl TreeLevel for WorldGenRegion<'_> {
+    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
+        WorldGenRegion::height_at(self, heightmap_type, x, z)
+    }
+
+    fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
+        WorldGenRegion::can_write_to_chunk(self, chunk_x, chunk_z)
+    }
+
+    fn place_nested_configured_feature(
+        &mut self,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        kind: &ConfiguredFeatureKind,
+        origin: BlockPos,
+        biome_zoom_seed: i64,
+    ) -> bool {
+        FeatureDecorationRunner::place_configured_feature_kind(
+            self,
+            registry,
+            random,
+            kind,
+            origin,
+            biome_zoom_seed,
+        )
+    }
+}
+
+impl TreeLevel for Arc<World> {
+    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
+        self.as_ref()
+            .height_at(heightmap_type, x, z)
+            .unwrap_or_else(|| self.min_y())
+    }
+
+    fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
+        self.chunk_map
+            .with_full_chunk(ChunkPos::new(chunk_x, chunk_z), |_| ())
+            .is_some()
+    }
+
+    fn place_nested_configured_feature(
+        &mut self,
+        _registry: &Registry,
+        _random: &mut WorldgenRandom,
+        _kind: &ConfiguredFeatureKind,
+        _origin: BlockPos,
+        _biome_zoom_seed: i64,
+    ) -> bool {
+        false
+    }
+}
+
 impl FeatureDecorationRunner {
     pub(crate) fn place_tree_feature(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -46,7 +129,7 @@ impl FeatureDecorationRunner {
     }
 
     fn do_place_tree(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -143,7 +226,7 @@ impl FeatureDecorationRunner {
     }
 
     fn max_free_tree_height(
-        region: &WorldGenRegion<'_>,
+        region: &impl TreeLevel,
         max_tree_height: i32,
         tree_pos: BlockPos,
         config: &TreeConfiguration,
@@ -165,13 +248,13 @@ impl FeatureDecorationRunner {
         max_tree_height
     }
 
-    fn tree_valid_pos(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
+    fn tree_valid_pos(region: &impl TreeLevel, pos: BlockPos) -> bool {
         let state = region.block_state(pos);
         state.is_air() || state.get_block().has_tag(&BlockTag::REPLACEABLE_BY_TREES)
     }
 
     fn tree_trunk_placer_is_free(
-        region: &WorldGenRegion<'_>,
+        region: &impl TreeLevel,
         pos: BlockPos,
         trunk_placer: &TrunkPlacer,
     ) -> bool {
@@ -181,7 +264,7 @@ impl FeatureDecorationRunner {
     }
 
     fn tree_valid_pos_for_trunk_placer(
-        region: &WorldGenRegion<'_>,
+        region: &impl TreeLevel,
         pos: BlockPos,
         trunk_placer: &TrunkPlacer,
     ) -> bool {
@@ -200,22 +283,22 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn tree_valid_pos_or_tag(region: &WorldGenRegion<'_>, pos: BlockPos, tag: &Identifier) -> bool {
+    fn tree_valid_pos_or_tag(region: &impl TreeLevel, pos: BlockPos, tag: &Identifier) -> bool {
         let state = region.block_state(pos);
         let block = state.get_block();
         state.is_air() || block.has_tag(&BlockTag::REPLACEABLE_BY_TREES) || block.has_tag(tag)
     }
 
-    fn tree_is_air_or_leaves(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
+    fn tree_is_air_or_leaves(region: &impl TreeLevel, pos: BlockPos) -> bool {
         let state = region.block_state(pos);
         state.is_air() || state.get_block().has_tag(&BlockTag::LEAVES)
     }
 
-    fn tree_is_vine(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
+    fn tree_is_vine(region: &impl TreeLevel, pos: BlockPos) -> bool {
         region.block_state(pos).get_block() == &vanilla_blocks::VINE
     }
 
-    fn set_tree_block(region: &mut WorldGenRegion<'_>, pos: BlockPos, state: BlockStateId) {
+    fn set_tree_block(region: &mut impl TreeLevel, pos: BlockPos, state: BlockStateId) {
         let flags = UpdateFlags::UPDATE_NEIGHBORS
             | UpdateFlags::UPDATE_CLIENTS
             | UpdateFlags::UPDATE_KNOWN_SHAPE;
@@ -239,27 +322,22 @@ struct TreePlacement {
 }
 
 impl TreePlacement {
-    fn set_root(&mut self, region: &mut WorldGenRegion<'_>, pos: BlockPos, state: BlockStateId) {
+    fn set_root(&mut self, region: &mut impl TreeLevel, pos: BlockPos, state: BlockStateId) {
         self.roots.insert(pos);
         FeatureDecorationRunner::set_tree_block(region, pos, state);
     }
 
-    fn set_trunk(&mut self, region: &mut WorldGenRegion<'_>, pos: BlockPos, state: BlockStateId) {
+    fn set_trunk(&mut self, region: &mut impl TreeLevel, pos: BlockPos, state: BlockStateId) {
         self.trunks.insert(pos);
         FeatureDecorationRunner::set_tree_block(region, pos, state);
     }
 
-    fn set_foliage(&mut self, region: &mut WorldGenRegion<'_>, pos: BlockPos, state: BlockStateId) {
+    fn set_foliage(&mut self, region: &mut impl TreeLevel, pos: BlockPos, state: BlockStateId) {
         self.foliage.insert(pos);
         FeatureDecorationRunner::set_tree_block(region, pos, state);
     }
 
-    fn set_decoration(
-        &mut self,
-        region: &mut WorldGenRegion<'_>,
-        pos: BlockPos,
-        state: BlockStateId,
-    ) {
+    fn set_decoration(&mut self, region: &mut impl TreeLevel, pos: BlockPos, state: BlockStateId) {
         self.decorations.insert(pos);
         FeatureDecorationRunner::set_tree_block(region, pos, state);
     }

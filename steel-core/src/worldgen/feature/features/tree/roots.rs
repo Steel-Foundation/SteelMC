@@ -5,7 +5,7 @@
 
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
-use super::TreePlacement;
+use super::{TreeLevel, TreePlacement};
 
 impl FeatureDecorationRunner {
     pub(super) fn tree_root_origin(
@@ -22,7 +22,7 @@ impl FeatureDecorationRunner {
     }
 
     pub(super) fn place_tree_roots(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         origin: BlockPos,
@@ -45,7 +45,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_mangrove_tree_roots(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         origin: BlockPos,
@@ -95,7 +95,7 @@ impl FeatureDecorationRunner {
     }
 
     fn simulate_mangrove_tree_roots(
-        region: &WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         random: &mut WorldgenRandom,
         root_pos: BlockPos,
         direction: Direction,
@@ -167,7 +167,7 @@ impl FeatureDecorationRunner {
     }
 
     fn can_place_mangrove_tree_root(
-        region: &WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
 
         pos: BlockPos,
         placement: &MangroveRootPlacement,
@@ -176,7 +176,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_mangrove_tree_root(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         pos: BlockPos,

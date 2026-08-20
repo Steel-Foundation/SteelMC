@@ -3,13 +3,13 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 use super::super::super::vanilla_collections::JavaBlockPosSet;
-use super::{TreeBounds, TreePlacement};
+use super::{TreeBounds, TreeLevel, TreePlacement};
 
 const LEAF_DISTANCE_LIMIT: usize = 7;
 
 impl FeatureDecorationRunner {
     pub(super) fn update_tree_leaves(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         bounds: TreeBounds,
         placement: &TreePlacement,
     ) {
@@ -88,7 +88,7 @@ impl FeatureDecorationRunner {
     }
 
     fn update_tree_shape_at_edge(
-        region: &WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         bounds: TreeBounds,
         shape: &FxHashSet<BlockPos>,
     ) {
@@ -136,7 +136,7 @@ impl FeatureDecorationRunner {
     }
 
     fn scan_tree_shape_line(
-        region: &WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         shape: &FxHashSet<BlockPos>,
         start: i32,
         end: i32,
@@ -159,7 +159,7 @@ impl FeatureDecorationRunner {
         }
     }
 
-    fn update_tree_shape_face(region: &WorldGenRegion<'_>, pos: BlockPos, direction: Direction) {
+    fn update_tree_shape_face(region: &mut impl TreeLevel, pos: BlockPos, direction: Direction) {
         let neighbor_pos = pos.relative(direction);
         let state = region.block_state(pos);
         let neighbor_state = region.block_state(neighbor_pos);
@@ -194,7 +194,7 @@ impl FeatureDecorationRunner {
     }
 
     fn update_leaf_shape_at_edge(
-        region: &WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         pos: BlockPos,
         state: BlockStateId,
         neighbor_state: BlockStateId,
@@ -236,7 +236,7 @@ impl FeatureDecorationRunner {
         Self::tree_optional_leaf_distance_at(state).unwrap_or(7)
     }
 
-    const fn tree_can_schedule_tick_at(region: &WorldGenRegion<'_>, pos: BlockPos) -> bool {
+    fn tree_can_schedule_tick_at(region: &mut impl TreeLevel, pos: BlockPos) -> bool {
         region.can_write_to_chunk(
             SectionPos::block_to_section_coord(pos.x()),
             SectionPos::block_to_section_coord(pos.z()),
