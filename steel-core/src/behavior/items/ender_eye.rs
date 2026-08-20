@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use crate::entity::Entity;
-use crate::entity::ai::path::PathType::BigMobsCloseToDanger;
 use crate::worldgen::generator::ChunkGenerator;
 use steel_macros::item_behavior;
 use steel_registry::REGISTRY;
@@ -11,18 +10,18 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::level_events;
 use steel_registry::vanilla_blocks;
+use steel_registry::vanilla_entities;
 use steel_utils::Identifier;
 use steel_utils::{BlockPos, types::UpdateFlags};
-use steel_worldgen::structure::generator::StructureGenerator;
 
 use crate::behavior::ItemBehavior;
 use crate::behavior::block::push_entities_up;
 use crate::behavior::context::{InteractionResult, UseOnContext};
+use crate::entity::entities::EyeOfEnder;
+use crate::entity::{SharedEntity, next_entity_id};
 use crate::world::{LevelReader, World};
 
-use glam::{DVec3, IVec3};
-
-use log::info;
+use glam::DVec3;
 
 const END_PORTAL_PATTERN_DISTANCE: i32 = 5;
 const END_PORTAL_PATTERN: [[char; 5]; 5] = [
@@ -111,8 +110,7 @@ impl ItemBehavior for EnderEyeItem {
             return InteractionResult::Fail;
         };
 
-        let player_pos = context.player.block_position();
-        let strongholds = structure_locate_plan.ring_candidates(player_pos);
+        let strongholds = structure_locate_plan.ring_candidates(context.player.block_position());
 
         let Some(closest_stronghold) = strongholds.first() else {
             return InteractionResult::Fail;
@@ -120,21 +118,40 @@ impl ItemBehavior for EnderEyeItem {
 
         let stronghold_pos = closest_stronghold.locate_pos;
 
+        let player_pos = context.player.position();
+        let spawn_pos = DVec3::new(player_pos.x, context.player.get_eye_y() - 0.1, player_pos.z);
+
         let diff = DVec3::new(
-            (stronghold_pos.x() - player_pos.x()) as f64,
+            f64::from(stronghold_pos.x()) - player_pos.x,
             0.0,
-            (stronghold_pos.z() - player_pos.z()) as f64,
+            f64::from(stronghold_pos.z()) - player_pos.z,
         );
+
         let dist = diff.length();
         let target_pos = if dist > 12.0 {
-            DVec3::new(diff.x / dist * 12.0, 8.0, diff.z / dist * 12.0)
+            DVec3::new(diff.x / dist * 12.0, 8.0, diff.z / dist * 12.0) + player_pos
         } else {
             DVec3::new(
-                stronghold_pos.x() as f64,
-                stronghold_pos.y() as f64,
-                stronghold_pos.z() as f64,
+                f64::from(stronghold_pos.x()),
+                f64::from(stronghold_pos.y()),
+                f64::from(stronghold_pos.z()),
             )
         };
+
+        let eye = EyeOfEnder::new(
+            &vanilla_entities::EYE_OF_ENDER,
+            next_entity_id(),
+            spawn_pos,
+            Arc::downgrade(world),
+        );
+
+        eye.init_target_pos(target_pos);
+
+        let entity: SharedEntity = Arc::new(eye);
+        if let Err(error) = world.try_add_entity(entity) {
+            log::debug!("failed to spawn eye of ender: {error}");
+            return InteractionResult::Fail;
+        }
 
         InteractionResult::Success
     }
