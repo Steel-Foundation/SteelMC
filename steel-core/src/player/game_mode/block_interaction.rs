@@ -202,12 +202,14 @@ impl Player {
 
         let mut inventory = self.inventory.lock();
 
-        let slot_with_item = inventory.find_slot_matching_item(&item_stack);
+        let slot_with_item = inventory.find_slot_matching_item_with_same_componnents(&item_stack);
 
         if slot_with_item != -1 {
             if PlayerInventory::is_hotbar_slot(slot_with_item as usize) {
                 inventory.set_selected_slot(slot_with_item as u8);
             } else {
+                // TODO: If current slot contains item it should pick another slot
+
                 inventory.pick_slot(slot_with_item);
             }
         } else if self.has_infinite_materials() {

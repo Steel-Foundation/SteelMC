@@ -235,6 +235,20 @@ impl PlayerInventory {
         -1
     }
 
+    /// Finds a slot containing an item matching the exact given stack (same item type).
+    /// Returns -1 if not found.
+    #[must_use]
+    pub fn find_slot_matching_item_with_same_componnents(&self, stack: &ItemStack) -> i32 {
+        for i in 0..Self::INVENTORY_SIZE {
+            if !self.items[i].is_empty()
+                && ItemStack::is_same_item_same_components(&self.items[i], stack)
+            {
+                return i as i32;
+            }
+        }
+        -1
+    }
+
     /// Swaps items between selected hotbar slot and the given slot.
     /// Used for pick block when item is in main inventory but not hotbar.
     pub fn pick_slot(&mut self, slot: i32) {
