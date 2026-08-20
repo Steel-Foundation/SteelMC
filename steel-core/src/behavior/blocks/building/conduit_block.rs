@@ -12,23 +12,24 @@ use steel_registry::blocks::{
 };
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
-/// Behavior for vanilla heavy core block.
+/// Behavior for vanilla conduit blocks.
+// TODO: implement Block entity
 #[block_behavior]
-pub struct HeavyCoreBlock {
+pub struct ConduitBlock {
     block: BlockRef,
 }
 
 const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
-impl HeavyCoreBlock {
-    /// Creates a new heavy core block behavior.
+impl ConduitBlock {
+    /// Creates a new conduit block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
 }
 
-impl BlockBehavior for HeavyCoreBlock {
+impl BlockBehavior for ConduitBlock {
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -46,11 +47,10 @@ impl BlockBehavior for HeavyCoreBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let replaced_fluid_state = get_fluid_state(context.world, context.place_pos());
         let is_water_source = replaced_fluid_state.is_water() && replaced_fluid_state.is_source();
-        Some(
-            self.block
-                .default_state()
-                .set_value(WATERLOGGED, is_water_source),
-        )
+        Some(self.block.default_state().set_value(
+            WATERLOGGED,
+            is_water_source && replaced_fluid_state.is_full(),
+        ))
     }
 
     fn is_pathfindable(
