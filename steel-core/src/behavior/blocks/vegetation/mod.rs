@@ -48,6 +48,7 @@ mod leaf_litter_block;
 mod leaves_block;
 mod lily_pad_block;
 mod mangrove_propagule_block;
+mod mangrove_roots_block;
 mod mossy_carpet_block;
 mod multiface_block;
 mod mushroom_block;
@@ -129,6 +130,7 @@ pub use leaves_block::{
 };
 pub use lily_pad_block::LilyPadBlock;
 pub use mangrove_propagule_block::MangrovePropaguleBlock;
+pub use mangrove_roots_block::MangroveRootsBlock;
 pub use mossy_carpet_block::MossyCarpetBlock;
 pub use multiface_block::MultifaceBlock;
 pub use mushroom_block::MushroomBlock;
