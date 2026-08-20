@@ -1,18 +1,17 @@
-use std::sync::Arc;
-
+use rand::{Rng, RngExt};
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::blocks::shapes::{self, SupportType, is_block_local_face_sturdy};
 use steel_registry::fluid::FluidStateExt;
 use steel_registry::{REGISTRY, vanilla_blocks};
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::fluid::get_fluid_state_from_block;
-use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess};
 
 use super::BlockRef;
 
@@ -20,6 +19,23 @@ use super::BlockRef;
 #[block_behavior]
 pub struct MultifaceBlock {
     block: BlockRef,
+}
+
+pub(super) struct MultifaceSpreader {
+    block: BlockRef,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct MultifaceSpreadPos {
+    pub(super) pos: BlockPos,
+    pub(super) face: Direction,
+}
+
+#[derive(Clone, Copy)]
+enum MultifaceSpreadType {
+    SamePosition,
+    SamePlane,
+    WrapAround,
 }
 
 const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
@@ -106,7 +122,7 @@ impl MultifaceBlock {
     fn get_state_for_placement_with_dir(
         block: BlockRef,
         old_state: BlockStateId,
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         placement_pos: BlockPos,
         placement_direction: Direction,
     ) -> Option<BlockStateId> {
@@ -136,7 +152,7 @@ impl MultifaceBlock {
 
     fn is_valid_state_for_placement(
         block: BlockRef,
-        world: &Arc<World>,
+        world: &dyn LevelReader,
         old_state: BlockStateId,
         placement_pos: BlockPos,
         placement_direction: Direction,
@@ -155,7 +171,7 @@ impl MultifaceBlock {
         false
     }
 
-    fn has_face(state: BlockStateId, direction: Direction) -> bool {
+    pub(super) fn has_face(state: BlockStateId, direction: Direction) -> bool {
         state
             .try_get_value(Self::face_property(direction))
             .unwrap_or(false)
@@ -179,6 +195,167 @@ impl MultifaceBlock {
             return new_state;
         }
         vanilla_blocks::AIR.default_state()
+    }
+}
+
+impl MultifaceSpreader {
+    const SPREAD_TYPES: [MultifaceSpreadType; 3] = [
+        MultifaceSpreadType::SamePosition,
+        MultifaceSpreadType::SamePlane,
+        MultifaceSpreadType::WrapAround,
+    ];
+
+    pub(super) const fn new(block: BlockRef) -> Self {
+        Self { block }
+    }
+
+    pub(super) fn can_spread_in_any_direction(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        starting_face: Direction,
+    ) -> bool {
+        Direction::ALL.iter().any(|spread_direction| {
+            self.get_spread_from_face_toward_direction(
+                state,
+                world,
+                pos,
+                starting_face,
+                *spread_direction,
+            )
+            .is_some()
+        })
+    }
+
+    pub(super) fn spread_from_random_face_toward_random_direction<W: LevelAccessor>(
+        &self,
+        state: BlockStateId,
+        world: &W,
+        pos: BlockPos,
+        rng: &mut dyn Rng,
+    ) -> Option<MultifaceSpreadPos> {
+        let mut faces = Direction::ALL;
+        Self::shuffle_directions(&mut faces, rng);
+
+        for starting_face in faces {
+            if !MultifaceBlock::has_face(state, starting_face) {
+                continue;
+            }
+
+            let mut spread_directions = Direction::ALL;
+            Self::shuffle_directions(&mut spread_directions, rng);
+            for spread_direction in spread_directions {
+                if let Some(spread_pos) = self.spread_from_face_toward_direction(
+                    state,
+                    world,
+                    pos,
+                    starting_face,
+                    spread_direction,
+                ) {
+                    return Some(spread_pos);
+                }
+            }
+        }
+
+        None
+    }
+
+    pub(super) fn spread_from_face_toward_direction<W: LevelAccessor>(
+        &self,
+        state: BlockStateId,
+        world: &W,
+        pos: BlockPos,
+        starting_face: Direction,
+        spread_direction: Direction,
+    ) -> Option<MultifaceSpreadPos> {
+        let spread_pos = self.get_spread_from_face_toward_direction(
+            state,
+            world,
+            pos,
+            starting_face,
+            spread_direction,
+        )?;
+        let old_state = world.get_block_state(spread_pos.pos);
+        let spread_state = MultifaceBlock::get_state_for_placement_with_dir(
+            self.block,
+            old_state,
+            world,
+            spread_pos.pos,
+            spread_pos.face,
+        )?;
+
+        world
+            .set_block_state(spread_pos.pos, spread_state, UpdateFlags::UPDATE_CLIENTS)
+            .then_some(spread_pos)
+    }
+
+    fn get_spread_from_face_toward_direction(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        starting_face: Direction,
+        spread_direction: Direction,
+    ) -> Option<MultifaceSpreadPos> {
+        if spread_direction.axis() == starting_face.axis()
+            || !MultifaceBlock::has_face(state, starting_face)
+            || MultifaceBlock::has_face(state, spread_direction)
+        {
+            return None;
+        }
+
+        Self::SPREAD_TYPES.iter().find_map(|spread_type| {
+            let spread_pos = Self::spread_pos(pos, spread_direction, starting_face, *spread_type);
+            self.can_spread_into(world, spread_pos)
+                .then_some(spread_pos)
+        })
+    }
+
+    fn can_spread_into(&self, world: &dyn LevelReader, spread_pos: MultifaceSpreadPos) -> bool {
+        let old_state = world.get_block_state(spread_pos.pos);
+        let fluid_state = get_fluid_state_from_block(old_state);
+        let replaceable = old_state.is_air()
+            || old_state.get_block() == self.block
+            || (fluid_state.is_water() && fluid_state.is_source());
+
+        replaceable
+            && MultifaceBlock::is_valid_state_for_placement(
+                self.block,
+                world,
+                old_state,
+                spread_pos.pos,
+                spread_pos.face,
+            )
+    }
+
+    fn spread_pos(
+        pos: BlockPos,
+        spread_direction: Direction,
+        starting_face: Direction,
+        spread_type: MultifaceSpreadType,
+    ) -> MultifaceSpreadPos {
+        match spread_type {
+            MultifaceSpreadType::SamePosition => MultifaceSpreadPos {
+                pos,
+                face: spread_direction,
+            },
+            MultifaceSpreadType::SamePlane => MultifaceSpreadPos {
+                pos: pos.relative(spread_direction),
+                face: starting_face,
+            },
+            MultifaceSpreadType::WrapAround => MultifaceSpreadPos {
+                pos: pos.relative(spread_direction).relative(starting_face),
+                face: spread_direction.opposite(),
+            },
+        }
+    }
+
+    fn shuffle_directions(directions: &mut [Direction; 6], rng: &mut dyn Rng) {
+        for i in (1..directions.len()).rev() {
+            let j = rng.random_range(0..=i);
+            directions.swap(i, j);
+        }
     }
 }
 
