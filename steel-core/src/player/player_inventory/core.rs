@@ -227,11 +227,11 @@ impl PlayerInventory {
     #[must_use]
     pub fn get_suitable_hotbar_slot(&self) -> u8 {
         let selected = self.selected as usize;
-        let order = (selected..Self::SELECTION_SIZE).chain(0..selected);
+        let order = || (selected..Self::SELECTION_SIZE).chain(0..selected);
 
-        order
+        order()
             .find(|&i| self.items[i].is_empty())
-            .or_else(|| order.find(|&i| !self.items[i].is_enchanted()))
+            .or_else(|| order().find(|&i| !self.items[i].is_enchanted()))
             .map_or(selected as u8, |i| i as u8)
     }
 
