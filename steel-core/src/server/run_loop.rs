@@ -613,7 +613,7 @@ mod tests {
         let sender = player.chunk_sender.lock();
         assert!(sender.pending_chunks.contains(&center));
         assert!(!sender.is_chunk_sent(center));
-        assert_eq!(sender.unacknowledged_batches, 0);
+        assert_eq!(sender.unacknowledged_batch_count_for_test(), 0);
         drop(sender);
 
         assert!(world.players.insert(Arc::clone(&player)));
