@@ -86,6 +86,7 @@ use text_components::{
 use text_components::{content::Resolvable, custom::CustomData};
 
 use crate::behavior::{BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult};
+use crate::block_entity::entities::ENDERCHEST_SLOTS;
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
@@ -101,6 +102,7 @@ use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::Menu;
 use crate::inventory::menu::kinds::inventory_menu;
+use crate::inventory::prelude::SimpleContainer;
 use crate::level_data::RespawnData;
 use crate::permission::{
     PermissionContext, PermissionExpr, PermissionMetadataSet, PermissionMetadataValue,
@@ -253,6 +255,9 @@ pub struct Player {
     /// In-flight ender pearls thrown by this player, kept weakly so they persist
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
     ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
+
+    /// Ender chest container
+    pub ender_chest: Shared<SimpleContainer>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -531,6 +536,7 @@ impl Player {
             chunk_send_epoch: SyncMutex::new(0),
             residence: SyncMutex::new(PlayerResidenceState::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
+            ender_chest: Arc::new(SyncMutex::new(SimpleContainer::new(ENDERCHEST_SLOTS))),
         }
     }
 

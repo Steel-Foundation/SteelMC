@@ -7,6 +7,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_utils::types::GameType;
 
 use crate::{
+    block_entity::entities::ENDERCHEST_SLOTS,
     chunk_saver::{ChunkStorage, PersistentEntity},
     entity::{Entity, EntityFireFreezeState, LivingEntity},
     inventory::container::Container,
@@ -116,6 +117,9 @@ pub struct PersistentPlayerData {
 
     /// Vanilla in-flight ender pearls stored with the player (`ServerPlayer.enderPearls`).
     pub ender_pearls: Vec<PersistentEnderPearl>,
+
+    /// Ender chest items with slot indices
+    pub ender_chest: Vec<PersistentSlot>,
 }
 
 /// A vanilla `RootVehicle` tree persisted with player data.
@@ -179,6 +183,7 @@ impl PersistentPlayerData {
         let fire_freeze = player.fire_freeze_state();
         let abilities = player.abilities.lock();
         let inventory = player.inventory.lock();
+        let ender_chest = player.ender_chest.lock();
         let food_data = player.food_data.lock();
 
         // Collect non-empty inventory slots
@@ -188,6 +193,17 @@ impl PersistentPlayerData {
             let item = inventory.get_item(slot);
             if !item.is_empty() {
                 slots.push(PersistentSlot {
+                    slot: slot as i8,
+                    item: item.clone(),
+                });
+            }
+        }
+        // Collect non-empty ender chest slots
+        let mut ender_chest_slots = Vec::new();
+        for slot in 0..ENDERCHEST_SLOTS {
+            let item = ender_chest.get_item(slot);
+            if !item.is_empty() {
+                ender_chest_slots.push(PersistentSlot {
                     slot: slot as i8,
                     item: item.clone(),
                 });
@@ -245,6 +261,7 @@ impl PersistentPlayerData {
             respawn_config: player.respawn_config(),
 
             ender_pearls,
+            ender_chest: ender_chest_slots,
         }
     }
 
@@ -429,6 +446,20 @@ impl PersistentPlayerData {
             // Restore selected slot
             let selected = self.selected_slot.clamp(0, 8) as u8;
             inventory.set_selected_slot(selected);
+        }
+
+        // Ender chest
+        {
+            let mut ender_chest = player.ender_chest.lock();
+            for slot in 0..ENDERCHEST_SLOTS {
+                ender_chest.set_item(slot, ItemStack::empty());
+            }
+            for slot_data in &self.ender_chest {
+                let slot_index = slot_data.slot as usize;
+                if slot_index < 27 {
+                    ender_chest.set_item(slot_index, slot_data.item.clone());
+                }
+            }
         }
 
         // Food data

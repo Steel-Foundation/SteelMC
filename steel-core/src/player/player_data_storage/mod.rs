@@ -100,6 +100,7 @@ struct PlayerDataFile {
     root_vehicle: Option<RootVehicleFile>,
     respawn_config: Option<RespawnConfigFile>,
     ender_pearls: Vec<EnderPearlFile>,
+    ender_chest: Vec<SlotFile>,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -595,6 +596,13 @@ impl PlayerDataFile {
                 item_nbt: item_to_nbt_bytes(&slot.item)?,
             });
         }
+        let mut ender_chest = Vec::with_capacity(data.ender_chest.len());
+        for slot in &data.ender_chest {
+            ender_chest.push(SlotFile {
+                slot: slot.slot,
+                item_nbt: item_to_nbt_bytes(&slot.item)?,
+            });
+        }
 
         Ok(Self {
             data_version: data.data_version,
@@ -651,6 +659,7 @@ impl PlayerDataFile {
                     entity: pearl.entity.clone(),
                 })
                 .collect(),
+            ender_chest,
         })
     }
 
@@ -668,6 +677,14 @@ impl PlayerDataFile {
         let mut inventory = Vec::with_capacity(self.inventory.len());
         for slot in self.inventory {
             inventory.push(PersistentSlot {
+                slot: slot.slot,
+                item: item_from_nbt_bytes(&slot.item_nbt)?,
+            });
+        }
+
+        let mut ender_chest = Vec::with_capacity(self.ender_chest.len());
+        for slot in self.ender_chest {
+            ender_chest.push(PersistentSlot {
                 slot: slot.slot,
                 item: item_from_nbt_bytes(&slot.item_nbt)?,
             });
@@ -725,6 +742,7 @@ impl PlayerDataFile {
                     entity: pearl.entity,
                 })
                 .collect(),
+            ender_chest,
         })
     }
 }
@@ -912,6 +930,7 @@ mod tests {
             root_vehicle: None,
             respawn_config: None,
             ender_pearls: Vec::new(),
+            ender_chest: Vec::new(),
         }
     }
 

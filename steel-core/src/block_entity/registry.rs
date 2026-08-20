@@ -21,6 +21,7 @@ use super::entities::{
     EndPortalBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity, RawBlockEntity,
     SignBlockEntity,
 };
+use crate::block_entity::entities::EnderChestBlockEntity;
 use crate::world::World;
 
 /// Factory function type for creating block entities.
@@ -269,6 +270,11 @@ pub fn init_block_entities() {
         registry.register(
             &vanilla_block_entity_types::POTENT_SULFUR,
             |level, pos, state| Arc::new(PotentSulfurBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(
+            &vanilla_block_entity_types::ENDER_CHEST,
+            |level, pos, state| Arc::new(EnderChestBlockEntity::new(level, pos, state)),
         );
 
         registry
