@@ -208,12 +208,15 @@ impl Player {
             if PlayerInventory::is_hotbar_slot(slot_with_item as usize) {
                 inventory.set_selected_slot(slot_with_item as u8);
             } else {
-                let free_slot = inventory.get_suitable_hotbar_slot();
+                let slot = inventory.get_suitable_hotbar_slot();
 
-                inventory.set_selected_slot(free_slot);
+                inventory.set_selected_slot(slot);
                 inventory.pick_slot(slot_with_item);
             }
         } else if self.has_infinite_materials() {
+            let slot = inventory.get_suitable_hotbar_slot();
+
+            inventory.set_selected_slot(slot);
             inventory.add_and_pick_item(item_stack);
         } else {
             return;
