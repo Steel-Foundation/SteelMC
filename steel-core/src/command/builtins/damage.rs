@@ -65,7 +65,10 @@ fn damage(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSy
 
     // Else, it's from the "by", or maybe it's nothing
     if let Ok(entity) = context.entity("entity") {
-        damage_source.direct_entity_id = Some(entity.id());
+        let entity_id = entity.id();
+
+        damage_source.direct_entity_id = Some(entity_id);
+        damage_source.causing_entity_id = Some(entity_id);
 
         // Maybe even the causing entity is known
         if let Ok(cause) = context.entity("cause") {
