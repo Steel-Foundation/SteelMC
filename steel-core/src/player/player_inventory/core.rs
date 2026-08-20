@@ -238,7 +238,7 @@ impl PlayerInventory {
     /// Finds a slot containing an item matching the exact given stack (same item type).
     /// Returns -1 if not found.
     #[must_use]
-    pub fn find_slot_matching_item_with_same_componnents(&self, stack: &ItemStack) -> i32 {
+    pub fn find_slot_matching_item_with_same_components(&self, stack: &ItemStack) -> i32 {
         for i in 0..Self::INVENTORY_SIZE {
             if !self.items[i].is_empty()
                 && ItemStack::is_same_item_same_components(&self.items[i], stack)
