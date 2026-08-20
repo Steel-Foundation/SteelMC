@@ -8,10 +8,11 @@ use steel_registry::blocks::properties::Direction;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::{BlockBehavior, BlockPlaceContext};
+use crate::behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess};
+use crate::entity::ai::path::PathComputationType;
+use crate::player::Player;
 use crate::world::{LevelAccessor, ScheduledTickAccess, World};
-
-use log::info;
+use steel_registry::items::item::BlockHitResult;
 
 use super::FallingBlock;
 
@@ -32,7 +33,7 @@ impl DragonEggBlock {
         }
     }
 
-    fn teleport(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+    fn teleport(state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         for _ in 0..1000 {
             let x = random_range(0..15) - random_range(0..15);
             let y = random_range(0..7) - random_range(0..7);
@@ -49,11 +50,8 @@ impl DragonEggBlock {
             }
 
             if world.is_outside_build_height(y) {
-                info!("Outside height limit");
                 continue;
             }
-
-            info!("{} {} {}", x, y, z);
 
             world.set_block_state(new_pos, state, UpdateFlags::UPDATE_CLIENTS);
             world.remove_block(pos, false);
@@ -100,28 +98,22 @@ impl BlockBehavior for DragonEggBlock {
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        _player: &crate::inventory::prelude::Player,
-        _hit_result: &steel_registry::items::item::BlockHitResult,
-        _inv: &mut crate::behavior::InventoryAccess,
-    ) -> crate::behavior::InteractionResult {
-        self.teleport(state, world, pos);
-        crate::behavior::InteractionResult::Success
+        _player: &Player,
+        _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        Self::teleport(state, world, pos);
+        InteractionResult::Success
     }
 
-    fn attack(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        _player: &crate::inventory::prelude::Player,
-    ) {
-        self.teleport(state, world, pos);
+    fn attack(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, _player: &Player) {
+        Self::teleport(state, world, pos);
     }
 
     fn is_pathfindable(
         &self,
         _state: BlockStateId,
-        _computation_type: crate::entity::ai::path::PathComputationType,
+        _computation_type: PathComputationType,
     ) -> bool {
         false
     }
