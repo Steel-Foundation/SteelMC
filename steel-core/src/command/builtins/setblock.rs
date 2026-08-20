@@ -98,7 +98,7 @@ fn set_block(
     let place_needed = if matches!(mode, SetBlockMode::Destroy) {
         level.destroy_block(block_pos, true);
 
-        !block_state.is_air() || level.get_block_state(block_pos).is_air()
+        !block_state.is_air() || !level.get_block_state(block_pos).is_air()
     } else {
         true
     };
