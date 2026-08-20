@@ -12,9 +12,8 @@ use crate::world::World;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{Axis, BlockStateProperties, EnumProperty};
 use steel_registry::vanilla_blocks::AIR;
-use steel_utils::axis::Axis;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 /// Behavior for the nether portal block.
@@ -22,6 +21,9 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 pub struct NetherPortalBlock {
     block: BlockRef,
 }
+
+const HORIZONTAL_AXIS: &EnumProperty<Axis> = &BlockStateProperties::HORIZONTAL_AXIS;
+
 impl NetherPortalBlock {
     /// Create a new `NetherPortalBlock`
     #[must_use]
@@ -47,7 +49,7 @@ impl BlockBehavior for NetherPortalBlock {
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
         let update_axis = direction.get_axis();
-        let axis: Axis = state.get_value(&BlockStateProperties::HORIZONTAL_AXIS);
+        let axis: Axis = state.get_value(HORIZONTAL_AXIS);
         let wrong_axis = axis != update_axis && update_axis != Axis::Y;
 
         if !wrong_axis
@@ -61,7 +63,7 @@ impl BlockBehavior for NetherPortalBlock {
     }
 
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        None // TODO: add this functionality but has low priority
+        Some(self.block.default_state())
     }
 
     fn entity_inside(

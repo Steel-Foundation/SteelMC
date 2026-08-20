@@ -7,7 +7,7 @@ use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
 use crate::behavior::blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock;
-use crate::behavior::blocks::vegetation::nether_vines_get_blocks_to_grow_when_bonemealed;
+use crate::behavior::blocks::vegetation::nether_vines;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, World};
 use crate::{behavior::block::BlockBehavior, world::ScheduledTickAccess};
@@ -17,42 +17,38 @@ use super::BlockRef;
 /// Vanilla `WeepingVinesBlock` (head) survival.
 #[block_behavior]
 pub struct WeepingVinesBlock {
-    block: BlockRef,
+    base: GrowingPlantHeadBlock,
 }
 
 impl WeepingVinesBlock {
     /// Creates a new weeping vines (head) block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
-        Self { block }
+        Self {
+            base: GrowingPlantHeadBlock::new(
+                block,
+                Direction::Down,
+                false,
+                0.1,
+                &vanilla_blocks::WEEPING_VINES_PLANT,
+                Some(nether_vines::get_blocks_to_grow_when_bonemealed),
+                Self::can_grow_into,
+            ),
+        }
     }
 
     fn can_grow_into(state: BlockStateId) -> bool {
         state.is_air()
     }
-
-    const fn growing_plant_head_block(&self) -> GrowingPlantHeadBlock {
-        GrowingPlantHeadBlock::new(
-            self.block,
-            Direction::Down,
-            false,
-            0.1,
-            &vanilla_blocks::WEEPING_VINES_PLANT,
-            Some(nether_vines_get_blocks_to_grow_when_bonemealed),
-            Self::can_grow_into,
-        )
-    }
 }
 
 impl BlockBehavior for WeepingVinesBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        self.growing_plant_head_block()
-            .can_survive(state, world, pos)
+        self.base.can_survive(state, world, pos)
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_head_block()
-            .random_tick(state, world, pos);
+        self.base.random_tick(state, world, pos);
     }
 
     fn update_shape(
@@ -64,23 +60,16 @@ impl BlockBehavior for WeepingVinesBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        self.growing_plant_head_block().update_shape(
-            state,
-            world,
-            pos,
-            direction,
-            neighbor_pos,
-            neighbor_state,
-        )
+        self.base
+            .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_head_block().tick(state, world, pos);
+        self.base.tick(state, world, pos);
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        self.growing_plant_head_block()
-            .get_state_for_placement(context)
+        self.base.get_state_for_placement(context)
     }
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
@@ -94,8 +83,7 @@ impl Bonemealable for WeepingVinesBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        self.growing_plant_head_block()
-            .is_valid_bonemeal_target(state, world, pos)
+        self.base.is_valid_bonemeal_target(state, world, pos)
     }
 
     fn perform_bonemeal(
@@ -105,8 +93,7 @@ impl Bonemealable for WeepingVinesBlock {
         rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        self.growing_plant_head_block()
-            .perform_bonemeal(state, world, rng, pos);
+        self.base.perform_bonemeal(state, world, rng, pos);
     }
 
     fn bonemeal_action_type(&self) -> BonemealAction {

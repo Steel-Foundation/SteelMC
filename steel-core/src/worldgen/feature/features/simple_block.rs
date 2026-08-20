@@ -102,14 +102,14 @@ impl FeatureDecorationRunner {
     ) {
         let simple_carpet_layer = vanilla_blocks::PALE_MOSS_CARPET.default_state();
         let adjusted_carpet_layer =
-            MossyCarpetBlock::updated_state(region, simple_carpet_layer, pos, true);
+            MossyCarpetBlock::updated_state(simple_carpet_layer, region, pos, true);
         let _ = region.set_block_state(pos, adjusted_carpet_layer, UpdateFlags::UPDATE_CLIENTS);
 
         let topper = Self::create_mossy_carpet_topper(region, pos);
         if !topper.is_air() {
             let _ = region.set_block_state(pos.above(), topper, UpdateFlags::UPDATE_CLIENTS);
             let update_bottom =
-                MossyCarpetBlock::updated_state(region, adjusted_carpet_layer, pos, true);
+                MossyCarpetBlock::updated_state(adjusted_carpet_layer, region, pos, true);
             let _ = region.set_block_state(pos, update_bottom, UpdateFlags::UPDATE_CLIENTS);
         }
     }
@@ -130,14 +130,14 @@ impl FeatureDecorationRunner {
                 .default_state()
                 .set_value(&BlockStateProperties::BOTTOM, false);
             let mut above_state =
-                MossyCarpetBlock::updated_state(region, no_base_state, above, true);
+                MossyCarpetBlock::updated_state(no_base_state, region, above, true);
 
             for direction in MossyCarpetBlock::HORIZONTAL_DIRECTIONS {
                 let property = MossyCarpetBlock::wall_property(direction);
-                if above_state.get_value(&property) != WallSide::None
+                if above_state.get_value(property) != WallSide::None
                     && !region.random_mut().next_bool()
                 {
-                    above_state = above_state.set_value(&property, WallSide::None);
+                    above_state = above_state.set_value(property, WallSide::None);
                 }
             }
 

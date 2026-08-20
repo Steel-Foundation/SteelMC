@@ -1,10 +1,10 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::{vanilla_blocks, vanilla_fluids};
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
+use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
@@ -15,6 +15,8 @@ use super::BlockRef;
 pub struct HangingRootsBlock {
     block: BlockRef,
 }
+
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl HangingRootsBlock {
     /// Creates a new hanging roots block behavior.
@@ -38,10 +40,7 @@ impl BlockBehavior for HangingRootsBlock {
             return vanilla_blocks::AIR.default_state();
         }
 
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         state
     }
@@ -58,9 +57,6 @@ impl BlockBehavior for HangingRootsBlock {
         if !self.can_survive(state, context.world, context.place_pos()) {
             return None;
         }
-        Some(state.set_value(
-            &BlockStateProperties::WATERLOGGED,
-            context.is_water_source(),
-        ))
+        Some(state.set_value(WATERLOGGED, context.is_water_source()))
     }
 }

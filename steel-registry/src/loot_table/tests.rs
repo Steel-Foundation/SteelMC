@@ -105,6 +105,8 @@ fn test_pig_loot_drops_raw_porkchop_when_not_on_fire() {
         flags: EntityRefFlags::default(),
         equipment: None,
         custom_name: None,
+        sheep_color: None,
+        sheep_sheared: None,
     };
 
     let mut ctx = LootContext::new(&mut rng).with_this_entity(pig);
@@ -113,6 +115,79 @@ fn test_pig_loot_drops_raw_porkchop_when_not_on_fire() {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].item.key, Identifier::vanilla_static("porkchop"));
     assert!((1..=3).contains(&items[0].count));
+}
+
+#[test]
+fn shearing_sheep_table_parses_the_flat_type_specific_sheep_key() {
+    init_test_registries();
+
+    let table = &vanilla_loot_tables::SHEARING_SHEEP;
+    let pool = table
+        .pools
+        .first()
+        .expect("shearing table should have a pool");
+    let LootEntry::Alternatives { children, .. } = pool
+        .entries
+        .first()
+        .expect("shearing pool should start with alternatives")
+    else {
+        panic!("shearing pool should use an alternatives entry");
+    };
+
+    let mut checked = 0;
+    for child in *children {
+        let LootEntry::LootTableRef { conditions, .. } = child else {
+            continue;
+        };
+        let Some(LootCondition::EntityProperties { predicate, .. }) = conditions.first() else {
+            continue;
+        };
+        assert!(
+            predicate.sheep_color.is_some(),
+            "branch should match its wool color"
+        );
+        assert_eq!(
+            predicate.sheep_sheared,
+            Some(false),
+            "sheared must come from the flat minecraft:type_specific/sheep key"
+        );
+        checked += 1;
+    }
+    assert_eq!(
+        checked, 16,
+        "all sixteen color branches should carry the sheared predicate"
+    );
+}
+
+#[test]
+fn sheared_predicate_rejects_non_sheep_entities() {
+    init_test_registries();
+    let mut rng = test_rng();
+    let pig_key = Identifier::vanilla_static("pig");
+    let pig = EntityRef {
+        entity_type: Some(&pig_key),
+        flags: EntityRefFlags::default(),
+        equipment: None,
+        custom_name: None,
+        sheep_color: None,
+        sheep_sheared: None,
+    };
+    let mut ctx = LootContext::new(&mut rng).with_this_entity(pig);
+
+    let condition = LootCondition::EntityProperties {
+        entity: LootContextEntity::This,
+        predicate: EntityPredicate {
+            entity_type: None,
+            flags: None,
+            equipment: None,
+            sheep_color: None,
+            sheep_sheared: Some(false),
+        },
+    };
+    assert!(
+        !condition.test(&mut ctx),
+        "a non-sheep entity must fail a sheared predicate, mirroring SheepPredicate.matches"
+    );
 }
 
 #[test]
@@ -128,6 +203,8 @@ fn test_pig_loot_smelt_condition_uses_entity_fire_flag() {
         },
         equipment: None,
         custom_name: None,
+        sheep_color: None,
+        sheep_sheared: None,
     };
 
     let mut ctx = LootContext::new(&mut rng).with_this_entity(pig);

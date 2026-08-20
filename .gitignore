@@ -16,6 +16,7 @@
 /world
 /saves
 /players
+/script/.gitcraft-tmp
 
 # Misc
 CLAUDE.md

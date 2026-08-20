@@ -5,11 +5,12 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::sound_event::SoundEventRef;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::base::BasePressurePlateBlock;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, SignalQueryContext, World};
@@ -40,6 +41,8 @@ pub struct PressurePlateBlock {
     sound_click_off: SoundEventRef,
 }
 
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
+
 impl PressurePlateBlock {
     /// Creates a binary pressure-plate behavior from extracted block-set data.
     #[must_use]
@@ -58,15 +61,15 @@ impl PressurePlateBlock {
     }
 
     fn signal_for_state(state: BlockStateId) -> i32 {
-        if state.get_value(&BlockStateProperties::POWERED) {
-            15
+        if state.get_value(POWERED) {
+            MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
     fn state_for_signal(state: BlockStateId, signal: i32) -> BlockStateId {
-        state.set_value(&BlockStateProperties::POWERED, signal > 0)
+        state.set_value(POWERED, signal > 0)
     }
 
     fn signal_strength(&self, world: &World, pos: BlockPos) -> i32 {
@@ -77,7 +80,11 @@ impl PressurePlateBlock {
                 // entities become eligible when they gain `LivingEntity` behavior.
                 PressurePlateSensitivity::Mobs => entity.is_living_entity(),
             });
-        if count > 0 { 15 } else { 0 }
+        if count > 0 {
+            MAX_REDSTONE_SIGNAL
+        } else {
+            MIN_REDSTONE_SIGNAL
+        }
     }
 
     fn check_pressed(
@@ -104,6 +111,10 @@ impl PressurePlateBlock {
 }
 
 impl BlockBehavior for PressurePlateBlock {
+    fn is_possible_to_respawn_in_this(&self, _state: BlockStateId) -> bool {
+        true
+    }
+
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         BasePressurePlateBlock::can_survive(world, pos)
     }
@@ -229,7 +240,7 @@ mod tests {
         let behavior = stone_pressure_plate();
         let state = vanilla_blocks::STONE_PRESSURE_PLATE
             .default_state()
-            .set_value(&BlockStateProperties::POWERED, true);
+            .set_value(POWERED, true);
         let level = TestLevel::default();
 
         assert_eq!(

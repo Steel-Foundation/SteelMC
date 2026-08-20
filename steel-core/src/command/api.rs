@@ -20,6 +20,7 @@ use super::{
         CommandSuspensionOrder, SteelArgumentParser, SteelArgumentSuggestionContext,
         SteelArgumentType, SteelCommandContext, SteelCommandRuntime,
     },
+    incorrectly_typed_argument,
     registration::{
         CommandDispatcherBuilder, CommandRegistration as InternalCommandRegistration,
         CommandRegistrationError as InternalCommandRegistrationError,
@@ -257,60 +258,52 @@ impl<'context> CommandContext<'context> {
     }
 
     /// Returns a parsed custom value by its deterministic concrete type key.
-    #[must_use]
-    pub fn value<T: DowncastType>(self, name: &str) -> Option<&'context T> {
-        self.inner.argument(name)?.downcast_ref::<T>()
+    pub fn value<T: DowncastType>(self, name: &str) -> Result<&'context T, CommandError> {
+        self.inner
+            .argument(name)?
+            .downcast_ref::<T>()
+            .ok_or_else(|| incorrectly_typed_argument(name))
+            .map_err(CommandError::from)
     }
 
-    #[must_use]
     /// Returns a parsed boolean, or `None` when the named argument has another type.
-    pub fn boolean(self, name: &str) -> Option<bool> {
-        self.inner.boolean(name)
+    pub fn boolean(self, name: &str) -> Result<bool, CommandError> {
+        self.inner.boolean(name).map_err(CommandError::from)
     }
 
-    #[must_use]
     /// Returns a parsed 32-bit integer.
-    pub fn integer(self, name: &str) -> Option<i32> {
-        self.inner.integer(name)
+    pub fn integer(self, name: &str) -> Result<i32, CommandError> {
+        self.inner.integer(name).map_err(CommandError::from)
     }
 
-    #[must_use]
     /// Returns a parsed 64-bit integer.
-    pub fn long(self, name: &str) -> Option<i64> {
-        self.inner.long(name)
+    pub fn long(self, name: &str) -> Result<i64, CommandError> {
+        self.inner.long(name).map_err(CommandError::from)
     }
 
-    #[must_use]
     /// Returns a parsed 32-bit floating-point value.
-    pub fn float(self, name: &str) -> Option<f32> {
-        self.inner.float(name)
+    pub fn float(self, name: &str) -> Result<f32, CommandError> {
+        self.inner.float(name).map_err(CommandError::from)
     }
 
-    #[must_use]
     /// Returns a parsed 64-bit floating-point value.
-    pub fn double(self, name: &str) -> Option<f64> {
-        self.inner.double(name)
+    pub fn double(self, name: &str) -> Result<f64, CommandError> {
+        self.inner.double(name).map_err(CommandError::from)
     }
 
-    #[must_use]
     /// Returns a parsed word, phrase, or greedy string.
-    pub fn string(self, name: &str) -> Option<&'context str> {
-        self.inner.string(name)
+    pub fn string(self, name: &str) -> Result<&'context str, CommandError> {
+        self.inner.string(name).map_err(CommandError::from)
     }
 
     /// Returns a parsed configured domain name.
-    #[must_use]
-    pub fn domain(self, name: &str) -> Option<&'context str> {
-        self.inner.domain(name)
+    pub fn domain(self, name: &str) -> Result<&'context str, CommandError> {
+        self.inner.domain(name).map_err(CommandError::from)
     }
 
     /// Resolves a parsed loaded-world argument against the current source domain.
     pub fn world(self, name: &str) -> Result<Arc<World>, CommandError> {
-        let Some(world) = self.inner.world_argument(name) else {
-            return Err(CommandError::from(format!(
-                "missing parsed world argument '{name}'"
-            )));
-        };
+        let world = self.inner.world_argument(name)?;
         world
             .resolve(self.inner.source())
             .map_err(CommandError::from)
@@ -806,9 +799,12 @@ impl<'context> CommandSuggestionContext<'context> {
     }
 
     /// Returns a previously parsed custom value by deterministic concrete type key.
-    #[must_use]
-    pub fn value<T: DowncastType>(&self, name: &str) -> Option<&'context T> {
-        self.inner.argument(name)?.downcast_ref::<T>()
+    pub fn value<T: DowncastType>(&self, name: &str) -> Result<&'context T, CommandError> {
+        self.inner
+            .argument(name)?
+            .downcast_ref::<T>()
+            .ok_or_else(|| incorrectly_typed_argument(name))
+            .map_err(CommandError::from)
     }
 }
 

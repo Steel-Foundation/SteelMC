@@ -7,7 +7,9 @@ use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction, PistonType};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, Direction, EnumProperty, PistonType,
+};
 use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _};
@@ -32,6 +34,7 @@ const UPDATE_DESTROYED_BLOCK: UpdateFlags =
 const UPDATE_CLEARED_MOVED_BLOCK: UpdateFlags = UpdateFlags::UPDATE_CLIENTS
     .union(UpdateFlags::UPDATE_KNOWN_SHAPE)
     .union(UpdateFlags::UPDATE_MOVE_BY_PISTON);
+const PISTON_NEIGHBOR_UPDATE_LIMIT: i32 = 512;
 
 /// Vanilla `PistonBaseBlock` shared by normal and sticky pistons.
 #[block_behavior]
@@ -40,6 +43,10 @@ pub struct PistonBaseBlock {
     #[json_arg(value, json = "is_sticky")]
     sticky: bool,
 }
+
+const EXTENDED: &BoolProperty = &BlockStateProperties::EXTENDED;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
+const PISTON_TYPE: &EnumProperty<PistonType> = &BlockStateProperties::PISTON_TYPE;
 
 impl PistonBaseBlock {
     /// Creates normal or sticky piston behavior from extracted constructor data.
@@ -95,23 +102,23 @@ impl PistonBaseBlock {
     }
 
     fn check_if_extend(&self, world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
-        let direction = state.get_value(&BlockStateProperties::FACING);
+        let direction = state.get_value(FACING);
         let powered = Self::neighbor_signal(world, pos, direction);
-        if powered && !state.get_value(&BlockStateProperties::EXTENDED) {
+        if powered && !state.get_value(EXTENDED) {
             let mut resolver = PistonStructureResolver::new(world.as_ref(), pos, direction, true);
             if resolver.resolve() {
                 world.block_event(pos, self.block, 0, Self::direction_legacy_id(direction));
             }
             return;
         }
-        if powered || !state.get_value(&BlockStateProperties::EXTENDED) {
+        if powered || !state.get_value(EXTENDED) {
             return;
         }
 
         let pushed_pos = pos.relative_n(direction, 2);
         let pushed_state = world.get_block_state(pushed_pos);
         let event = if pushed_state.get_block() == &vanilla_blocks::MOVING_PISTON
-            && pushed_state.get_value(&BlockStateProperties::FACING) == direction
+            && pushed_state.get_value(FACING) == direction
             && world
                 .get_block_entity(pushed_pos)
                 .is_some_and(|block_entity| {
@@ -206,7 +213,7 @@ impl PistonBaseBlock {
                 PushReaction::PushOnly => return direction == connection_direction,
                 PushReaction::Normal | PushReaction::Ignore => {}
             }
-        } else if state.get_value(&BlockStateProperties::EXTENDED) {
+        } else if state.get_value(EXTENDED) {
             return false;
         }
 
@@ -276,7 +283,7 @@ impl PistonBaseBlock {
             delete_after_move.retain(|(delete_pos, _)| *delete_pos != destination);
             let moving_state = vanilla_blocks::MOVING_PISTON
                 .default_state()
-                .set_value(&BlockStateProperties::FACING, direction);
+                .set_value(FACING, direction);
             world.set_block(destination, moving_state, UPDATE_MOVING_BLOCK);
             world.set_block_entity(Self::moving_block_entity(
                 world,
@@ -293,9 +300,9 @@ impl PistonBaseBlock {
         if extending {
             let head_state = vanilla_blocks::PISTON_HEAD
                 .default_state()
-                .set_value(&BlockStateProperties::FACING, direction)
+                .set_value(FACING, direction)
                 .set_value(
-                    &BlockStateProperties::PISTON_TYPE,
+                    PISTON_TYPE,
                     if self.sticky {
                         PistonType::Sticky
                     } else {
@@ -304,9 +311,9 @@ impl PistonBaseBlock {
                 );
             let moving_state = vanilla_blocks::MOVING_PISTON
                 .default_state()
-                .set_value(&BlockStateProperties::FACING, direction)
+                .set_value(FACING, direction)
                 .set_value(
-                    &BlockStateProperties::PISTON_TYPE,
+                    PISTON_TYPE,
                     if self.sticky {
                         PistonType::Sticky
                     } else {
@@ -340,9 +347,14 @@ impl PistonBaseBlock {
                     world,
                     pos,
                     UpdateFlags::UPDATE_CLIENTS,
-                    512,
+                    PISTON_NEIGHBOR_UPDATE_LIMIT,
                 );
-            world.update_neighbour_shapes(air, pos, UpdateFlags::UPDATE_CLIENTS, 512);
+            world.update_neighbour_shapes(
+                air,
+                pos,
+                UpdateFlags::UPDATE_CLIENTS,
+                PISTON_NEIGHBOR_UPDATE_LIMIT,
+            );
             BLOCK_BEHAVIORS
                 .get_behavior(air.get_block())
                 .update_indirect_neighbour_shapes(
@@ -350,7 +362,7 @@ impl PistonBaseBlock {
                     world,
                     pos,
                     UpdateFlags::UPDATE_CLIENTS,
-                    512,
+                    PISTON_NEIGHBOR_UPDATE_LIMIT,
                 );
         }
 
@@ -369,7 +381,7 @@ impl PistonBaseBlock {
                     world,
                     pos,
                     UpdateFlags::UPDATE_CLIENTS,
-                    512,
+                    PISTON_NEIGHBOR_UPDATE_LIMIT,
                 );
             world.update_neighbors_at(pos, state.get_block());
         }
@@ -401,13 +413,13 @@ impl PistonBaseBlock {
         };
         let moving_state = vanilla_blocks::MOVING_PISTON
             .default_state()
-            .set_value(&BlockStateProperties::FACING, direction)
-            .set_value(&BlockStateProperties::PISTON_TYPE, piston_type);
+            .set_value(FACING, direction)
+            .set_value(PISTON_TYPE, piston_type);
         world.set_block(pos, moving_state, UPDATE_RETRACT_BASE);
-        let moved_state = self.block.default_state().set_value(
-            &BlockStateProperties::FACING,
-            Self::direction_from_legacy_id(event_direction),
-        );
+        let moved_state = self
+            .block
+            .default_state()
+            .set_value(FACING, Self::direction_from_legacy_id(event_direction));
         world.set_block_entity(Self::moving_block_entity(
             world,
             pos,
@@ -418,7 +430,12 @@ impl PistonBaseBlock {
             true,
         ));
         world.update_neighbors_at(pos, moving_state.get_block());
-        world.update_neighbour_shapes(moving_state, pos, UpdateFlags::UPDATE_CLIENTS, 512);
+        world.update_neighbour_shapes(
+            moving_state,
+            pos,
+            UpdateFlags::UPDATE_CLIENTS,
+            PISTON_NEIGHBOR_UPDATE_LIMIT,
+        );
 
         let arm_pos = pos.relative(direction);
         if self.sticky {
@@ -484,11 +501,8 @@ impl BlockBehavior for PistonBaseBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(
-                    &BlockStateProperties::FACING,
-                    context.get_nearest_looking_direction().opposite(),
-                )
-                .set_value(&BlockStateProperties::EXTENDED, false),
+                .set_value(FACING, context.get_nearest_looking_direction().opposite())
+                .set_value(EXTENDED, false),
         )
     }
 
@@ -534,8 +548,8 @@ impl BlockBehavior for PistonBaseBlock {
         event: i32,
         event_direction: i32,
     ) -> bool {
-        let direction = state.get_value(&BlockStateProperties::FACING);
-        let extended_state = state.set_value(&BlockStateProperties::EXTENDED, true);
+        let direction = state.get_value(FACING);
+        let extended_state = state.set_value(EXTENDED, true);
         let powered = Self::neighbor_signal(world, pos, direction);
         if powered && matches!(event, 1 | 2) {
             world.set_block(pos, extended_state, UpdateFlags::UPDATE_CLIENTS);
@@ -598,6 +612,9 @@ mod tests {
     use crate::chunk::chunk_holder::ChunkHolder;
     use crate::test_support::{TestLevel, fresh_test_world, insert_ready_full_chunk};
 
+    const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+    const ATTACH_FACE: &EnumProperty<AttachFace> = &BlockStateProperties::ATTACH_FACE;
+
     fn tick_block_entities(world: &Arc<World>, ticks: usize) {
         for _ in 0..ticks {
             world.block_entity_tickers().tick(world, true);
@@ -616,8 +633,8 @@ mod tests {
         let holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(piston_pos));
         let piston_state = piston
             .default_state()
-            .set_value(&BlockStateProperties::FACING, Direction::East)
-            .set_value(&BlockStateProperties::EXTENDED, false);
+            .set_value(FACING, Direction::East)
+            .set_value(EXTENDED, false);
         assert!(world.set_block(
             piston_pos.east(),
             vanilla_blocks::STONE.default_state(),
@@ -707,10 +724,7 @@ mod tests {
             .get_state_for_placement(&context)
             .expect("piston placement should produce a state");
         assert_eq!(context.clicked_face(), Direction::East);
-        assert_eq!(
-            state.get_value(&BlockStateProperties::FACING),
-            Direction::Up,
-        );
+        assert_eq!(state.get_value(FACING), Direction::Up,);
     }
 
     #[test]
@@ -732,11 +746,7 @@ mod tests {
     fn normal_piston_extends_settles_and_retracts_without_pulling() {
         let (world, _holder, piston_pos, power_pos) =
             powered_piston_world("normal_piston_cycle", &vanilla_blocks::PISTON);
-        assert!(
-            world
-                .get_block_state(piston_pos)
-                .get_value(&BlockStateProperties::EXTENDED)
-        );
+        assert!(world.get_block_state(piston_pos).get_value(EXTENDED));
         assert_eq!(
             world.get_block_state(piston_pos.east()).get_block(),
             &vanilla_blocks::MOVING_PISTON
@@ -769,7 +779,7 @@ mod tests {
         tick_block_entities(&world, 3);
         let base = world.get_block_state(piston_pos);
         assert_eq!(base.get_block(), &vanilla_blocks::PISTON);
-        assert!(!base.get_value(&BlockStateProperties::EXTENDED));
+        assert!(!base.get_value(EXTENDED));
         assert!(world.get_block_state(piston_pos.east()).is_air());
         assert_eq!(
             world
@@ -790,12 +800,12 @@ mod tests {
         let _holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(piston_pos));
         let piston_state = vanilla_blocks::PISTON
             .default_state()
-            .set_value(&BlockStateProperties::FACING, Direction::East)
-            .set_value(&BlockStateProperties::EXTENDED, false);
+            .set_value(FACING, Direction::East)
+            .set_value(EXTENDED, false);
         let button_state = vanilla_blocks::OAK_BUTTON
             .default_state()
-            .set_value(&BlockStateProperties::ATTACH_FACE, AttachFace::Wall)
-            .set_value(&BlockStateProperties::HORIZONTAL_FACING, Direction::West);
+            .set_value(ATTACH_FACE, AttachFace::Wall)
+            .set_value(HORIZONTAL_FACING, Direction::West);
 
         assert!(world.set_block(piston_pos, piston_state, UpdateFlags::UPDATE_NONE));
         assert!(world.set_block(button_pos, button_state, UpdateFlags::UPDATE_NONE));
@@ -847,7 +857,7 @@ mod tests {
 
         let base = world.get_block_state(piston_pos);
         assert_eq!(base.get_block(), &vanilla_blocks::STICKY_PISTON);
-        assert!(!base.get_value(&BlockStateProperties::EXTENDED));
+        assert!(!base.get_value(EXTENDED));
         assert_eq!(
             world.get_block_state(piston_pos.east()).get_block(),
             &vanilla_blocks::STONE

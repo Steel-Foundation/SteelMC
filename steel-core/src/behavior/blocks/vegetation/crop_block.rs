@@ -23,6 +23,14 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
+const MOISTURE: &IntProperty = &BlockStateProperties::MOISTURE;
+
+pub(super) const MIN_CROP_LIGHT_LEVEL: u8 = 8;
+const MIN_CROP_GROWTH_LIGHT_LEVEL: u8 = 9;
+pub(super) const CROP_GROWTH_CHANCE_BASE: f32 = 25.0;
+pub(super) const ADJACENT_FARMLAND_SPEED_DIVISOR: f32 = 4.0;
+pub(super) const CROWDED_CROP_SPEED_DIVISOR: f32 = 2.0;
+
 /// Behavior for crop blocks (wheat, carrots, potatoes).
 ///
 /// Crops grow through random ticks when placed on farmland with sufficient light.
@@ -30,6 +38,57 @@ use crate::world::{LevelReader, ScheduledTickAccess, World};
 #[block_behavior]
 pub struct CropBlock {
     block: BlockRef,
+}
+
+const AGE: &IntProperty = &BlockStateProperties::AGE_7;
+
+/// Calculates Vanilla crop growth speed for the supplied crop block.
+///
+/// Stems use the same farmland and neighboring-crop calculation as crops, but
+/// have different survival and mature-growth behavior.
+pub(super) fn crop_growth_speed(block: BlockRef, world: &dyn LevelReader, pos: BlockPos) -> f32 {
+    let mut speed = 1.0_f32;
+    let below = pos.below();
+
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            let state = world.get_block_state(below.offset(dx, 0, dz));
+            if !state.get_block().has_tag(&BlockTag::GROWS_CROPS) {
+                continue;
+            }
+
+            let block_speed = if state.try_get_value(MOISTURE).unwrap_or(0) > 0 {
+                3.0
+            } else {
+                1.0
+            };
+
+            speed += if dx == 0 && dz == 0 {
+                block_speed
+            } else {
+                block_speed / ADJACENT_FARMLAND_SPEED_DIVISOR
+            };
+        }
+    }
+
+    let north = pos.north();
+    let south = pos.south();
+    let west = pos.west();
+    let east = pos.east();
+    let same_block_at = |neighbor: BlockPos| block == world.get_block_state(neighbor).get_block();
+
+    let east_west = [west, east].into_iter().any(&same_block_at);
+    let north_south = [north, south].into_iter().any(&same_block_at);
+    let crowded = (east_west && north_south)
+        || [west.north(), east.north(), east.south(), west.south()]
+            .into_iter()
+            .any(same_block_at);
+
+    if crowded {
+        speed / CROWDED_CROP_SPEED_DIVISOR
+    } else {
+        speed
+    }
 }
 
 pub trait CropLike {
@@ -58,11 +117,11 @@ pub trait CropLike {
     }
 
     fn has_sufficient_light(&self, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        world.raw_brightness(pos, 0) >= 8
+        world.raw_brightness(pos, 0) >= MIN_CROP_LIGHT_LEVEL
     }
 
     fn has_sufficient_growth_light(&self, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        world.raw_brightness(pos, 0) >= 9
+        world.raw_brightness(pos, 0) >= MIN_CROP_GROWTH_LIGHT_LEVEL
     }
 
     /// Calculates the growth speed based on surrounding farmland.
@@ -72,68 +131,7 @@ pub trait CropLike {
     /// - Adjacent farmland: +0.25 (dry) or +0.75 (hydrated)
     /// - Same crop in row: /2.0 speed penalty
     fn get_growth_speed(&self, world: &Arc<World>, pos: BlockPos) -> f32 {
-        let mut speed: f32 = 1.0;
-        let below = pos.below();
-
-        // Check 3x3 area of farmland below
-        for dx in -1..=1 {
-            for dz in -1..=1 {
-                let check_pos = below.offset(dx, 0, dz);
-                let block_state = world.get_block_state(check_pos);
-                let mut block_speed = 0.0;
-
-                if block_state.get_block().has_tag(&BlockTag::GROWS_CROPS) {
-                    block_speed = 1.0;
-                    // Check moisture level (defaults to 0 for non-farmland blocks)
-                    let moisture = block_state
-                        .try_get_value(&BlockStateProperties::MOISTURE)
-                        .unwrap_or(0);
-                    if moisture > 0 {
-                        block_speed = 3.0;
-                    }
-                }
-
-                // Diagonal/adjacent farmland contributes less
-                if dx != 0 || dz != 0 {
-                    block_speed /= 4.0;
-                }
-
-                speed += block_speed;
-            }
-        }
-
-        // Check for same crop in adjacent positions (reduces growth speed)
-        let north = world.get_block_state(pos.north());
-        let south = world.get_block_state(pos.south());
-        let west = world.get_block_state(pos.west());
-        let east = world.get_block_state(pos.east());
-
-        let block = self.block();
-
-        let horizontal_row = block == west.get_block() || block == east.get_block();
-        let vertical_row = block == north.get_block() || block == south.get_block();
-
-        if horizontal_row && vertical_row {
-            // Crops in both directions - penalty
-            speed /= 2.0;
-        } else {
-            // Check diagonals
-            let nw = world.get_block_state(pos.north().west());
-            let ne = world.get_block_state(pos.north().east());
-            let sw = world.get_block_state(pos.south().west());
-            let se = world.get_block_state(pos.south().east());
-
-            let has_diagonal = block == nw.get_block()
-                || block == ne.get_block()
-                || block == sw.get_block()
-                || block == se.get_block();
-
-            if has_diagonal {
-                speed /= 2.0;
-            }
-        }
-
-        speed
+        crop_growth_speed(self.block(), world.as_ref(), pos)
     }
 
     fn on_random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
@@ -147,7 +145,7 @@ pub trait CropLike {
 
             // Random chance to grow based on growth speed
             // Vanilla formula: random.nextInt((int)(25.0F / growthSpeed) + 1) == 0
-            let growth_chance = (25.0 / growth_speed) as u32 + 1;
+            let growth_chance = (CROP_GROWTH_CHANCE_BASE / growth_speed) as u32 + 1;
 
             if rand::random::<u32>().is_multiple_of(growth_chance) {
                 let new_state = self.get_state_for_age(age + 1);
@@ -188,7 +186,7 @@ impl CropLike for CropBlock {
     }
 
     fn age_property(&self) -> &IntProperty {
-        &BlockStateProperties::AGE_7
+        AGE
     }
 
     fn max_age(&self) -> u8 {

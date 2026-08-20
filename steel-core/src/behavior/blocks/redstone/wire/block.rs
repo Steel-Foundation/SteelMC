@@ -5,12 +5,15 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, EnumProperty, RedstoneSide};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, EnumProperty, IntProperty, RedstoneSide,
+};
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use super::evaluator::DefaultRedstoneWireEvaluator;
+use crate::behavior::blocks::redstone::MIN_REDSTONE_SIGNAL;
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult,
     InventoryAccess,
@@ -32,16 +35,24 @@ pub struct RedStoneWireBlock {
     evaluator: DefaultRedstoneWireEvaluator,
 }
 
+const EAST_REDSTONE: &EnumProperty<RedstoneSide> = &BlockStateProperties::EAST_REDSTONE;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const NORTH_REDSTONE: &EnumProperty<RedstoneSide> = &BlockStateProperties::NORTH_REDSTONE;
+const POWER: &IntProperty = &BlockStateProperties::POWER;
+const SOUTH_REDSTONE: &EnumProperty<RedstoneSide> = &BlockStateProperties::SOUTH_REDSTONE;
+const WEST_REDSTONE: &EnumProperty<RedstoneSide> = &BlockStateProperties::WEST_REDSTONE;
+
 impl RedStoneWireBlock {
     /// Creates the ordinary redstone-wire behavior and its persistent evaluator.
     #[must_use]
     pub fn new(block: BlockRef) -> Self {
         let cross_state = block
             .default_state()
-            .set_value(&BlockStateProperties::NORTH_REDSTONE, RedstoneSide::Side)
-            .set_value(&BlockStateProperties::EAST_REDSTONE, RedstoneSide::Side)
-            .set_value(&BlockStateProperties::SOUTH_REDSTONE, RedstoneSide::Side)
-            .set_value(&BlockStateProperties::WEST_REDSTONE, RedstoneSide::Side);
+            .set_value(NORTH_REDSTONE, RedstoneSide::Side)
+            .set_value(EAST_REDSTONE, RedstoneSide::Side)
+            .set_value(SOUTH_REDSTONE, RedstoneSide::Side)
+            .set_value(WEST_REDSTONE, RedstoneSide::Side);
         Self {
             block,
             cross_state,
@@ -54,10 +65,10 @@ impl RedStoneWireBlock {
         direction: Direction,
     ) -> Option<&'static EnumProperty<RedstoneSide>> {
         match direction {
-            Direction::North => Some(&BlockStateProperties::NORTH_REDSTONE),
-            Direction::East => Some(&BlockStateProperties::EAST_REDSTONE),
-            Direction::South => Some(&BlockStateProperties::SOUTH_REDSTONE),
-            Direction::West => Some(&BlockStateProperties::WEST_REDSTONE),
+            Direction::North => Some(NORTH_REDSTONE),
+            Direction::East => Some(EAST_REDSTONE),
+            Direction::South => Some(SOUTH_REDSTONE),
+            Direction::West => Some(WEST_REDSTONE),
             Direction::Down | Direction::Up => None,
         }
     }
@@ -90,34 +101,33 @@ impl RedStoneWireBlock {
         let was_dot = Self::is_dot(state);
         let mut state = self.get_missing_connections(
             level,
-            self.block.default_state().set_value(
-                &BlockStateProperties::POWER,
-                state.get_value(&BlockStateProperties::POWER),
-            ),
+            self.block
+                .default_state()
+                .set_value(POWER, state.get_value(POWER)),
             pos,
         );
         if was_dot && Self::is_dot(state) {
             return state;
         }
 
-        let north = Self::is_connected(state.get_value(&BlockStateProperties::NORTH_REDSTONE));
-        let south = Self::is_connected(state.get_value(&BlockStateProperties::SOUTH_REDSTONE));
-        let east = Self::is_connected(state.get_value(&BlockStateProperties::EAST_REDSTONE));
-        let west = Self::is_connected(state.get_value(&BlockStateProperties::WEST_REDSTONE));
+        let north = Self::is_connected(state.get_value(NORTH_REDSTONE));
+        let south = Self::is_connected(state.get_value(SOUTH_REDSTONE));
+        let east = Self::is_connected(state.get_value(EAST_REDSTONE));
+        let west = Self::is_connected(state.get_value(WEST_REDSTONE));
         let north_south_empty = !north && !south;
         let east_west_empty = !east && !west;
 
         if !west && north_south_empty {
-            state = state.set_value(&BlockStateProperties::WEST_REDSTONE, RedstoneSide::Side);
+            state = state.set_value(WEST_REDSTONE, RedstoneSide::Side);
         }
         if !east && north_south_empty {
-            state = state.set_value(&BlockStateProperties::EAST_REDSTONE, RedstoneSide::Side);
+            state = state.set_value(EAST_REDSTONE, RedstoneSide::Side);
         }
         if !north && east_west_empty {
-            state = state.set_value(&BlockStateProperties::NORTH_REDSTONE, RedstoneSide::Side);
+            state = state.set_value(NORTH_REDSTONE, RedstoneSide::Side);
         }
         if !south && east_west_empty {
-            state = state.set_value(&BlockStateProperties::SOUTH_REDSTONE, RedstoneSide::Side);
+            state = state.set_value(SOUTH_REDSTONE, RedstoneSide::Side);
         }
 
         state
@@ -200,11 +210,11 @@ impl RedStoneWireBlock {
             return true;
         }
         if state.get_block() == &vanilla_blocks::REPEATER {
-            let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+            let facing = state.get_value(HORIZONTAL_FACING);
             return direction == Some(facing) || direction == Some(facing.opposite());
         }
         if state.get_block() == &vanilla_blocks::OBSERVER {
-            return direction == Some(state.get_value(&BlockStateProperties::FACING));
+            return direction == Some(state.get_value(FACING));
         }
 
         direction.is_some()
@@ -315,10 +325,7 @@ impl BlockBehavior for RedStoneWireBlock {
             self.get_connection_state(
                 world,
                 self.cross_state
-                    .set_value(
-                        &BlockStateProperties::POWER,
-                        state.get_value(&BlockStateProperties::POWER),
-                    )
+                    .set_value(POWER, state.get_value(POWER))
                     .set_value(property, side_connection),
                 pos,
             )
@@ -457,10 +464,7 @@ impl BlockBehavior for RedStoneWireBlock {
         };
         let new_state = self.get_connection_state(
             world.as_ref(),
-            new_base_state.set_value(
-                &BlockStateProperties::POWER,
-                state.get_value(&BlockStateProperties::POWER),
-            ),
+            new_base_state.set_value(POWER, state.get_value(POWER)),
             pos,
         );
         if new_state == state {
@@ -484,7 +488,7 @@ impl BlockBehavior for RedStoneWireBlock {
         _context: SignalQueryContext,
     ) -> i32 {
         // `BlockBehavior::get_own_signal` is vanilla's `ownSignal` hook.
-        i32::from(state.get_value(&BlockStateProperties::POWER))
+        i32::from(state.get_value(POWER))
     }
 
     fn get_signal(
@@ -496,19 +500,19 @@ impl BlockBehavior for RedStoneWireBlock {
         context: SignalQueryContext,
     ) -> i32 {
         if !context.wire_signals_enabled() || direction == Direction::Down {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         }
 
         let power = self.get_own_signal(state, world, pos, context);
-        if power == 0 {
-            return 0;
+        if power == MIN_REDSTONE_SIGNAL {
+            return MIN_REDSTONE_SIGNAL;
         }
         if direction == Direction::Up {
             return power;
         }
 
         let Some(property) = Self::property_for_direction(direction.opposite()) else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         if Self::is_connected(
             self.get_connection_state(world, state, pos)
@@ -516,7 +520,7 @@ impl BlockBehavior for RedStoneWireBlock {
         ) {
             power
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
@@ -531,7 +535,7 @@ impl BlockBehavior for RedStoneWireBlock {
         if context.wire_signals_enabled() {
             self.get_signal(state, world, pos, direction, context)
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
@@ -601,9 +605,9 @@ mod tests {
         let state = behavior
             .block
             .default_state()
-            .set_value(&BlockStateProperties::POWER, 9)
-            .set_value(&BlockStateProperties::NORTH_REDSTONE, RedstoneSide::Side)
-            .set_value(&BlockStateProperties::EAST_REDSTONE, RedstoneSide::Side);
+            .set_value(POWER, 9)
+            .set_value(NORTH_REDSTONE, RedstoneSide::Side)
+            .set_value(EAST_REDSTONE, RedstoneSide::Side);
         let level = TestLevel::default()
             .with_block(pos.below(), vanilla_blocks::STONE.default_state())
             .with_block(pos.north(), behavior.block.default_state())

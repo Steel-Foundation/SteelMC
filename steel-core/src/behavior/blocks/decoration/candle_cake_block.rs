@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::{
-    blocks::{BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties},
+    blocks::{
+        BlockRef,
+        block_state_ext::BlockStateExt,
+        properties::{BlockStateProperties, BoolProperty},
+    },
     item_stack::ItemStack,
     items::item::BlockHitResult,
     sound_events, vanilla_blocks, vanilla_items,
@@ -30,6 +34,8 @@ use crate::{
 pub struct CandleCakeBlock {
     block: BlockRef,
 }
+
+const LIT: &BoolProperty = &BlockStateProperties::LIT;
 
 impl CandleCakeBlock {
     /// Creates a new Candle Cake Block Behavior
@@ -73,13 +79,9 @@ impl BlockBehavior for CandleCakeBlock {
             return InteractionResult::Pass; // lighting of candles and candle cakes is handled by the flint and steel/fire charge implementation
         } else if (hit_result.location.y - f64::from(hit_result.block_pos.y())) > 0.5
             && is_empty
-            && state.get_value(&BlockStateProperties::LIT)
+            && state.get_value(LIT)
         {
-            world.set_block(
-                pos,
-                state.set_value(&BlockStateProperties::LIT, false),
-                UpdateFlags::UPDATE_ALL,
-            );
+            world.set_block(pos, state.set_value(LIT, false), UpdateFlags::UPDATE_ALL);
             // TODO: particles!
             world.play_block_sound(
                 &sound_events::BLOCK_CANDLE_EXTINGUISH,

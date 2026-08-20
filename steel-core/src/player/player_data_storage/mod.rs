@@ -24,24 +24,26 @@ use self::{
     known_players::{KnownPlayersFile, decode_known_players_file, encode_known_players_file},
     permissions::{PlayerPermissionsFile, serialize_player_permissions_file},
 };
+use super::PlayerRespawnConfig;
 use super::player_data::{
     PLAYER_DATA_VERSION, PersistentAbilities, PersistentEnderPearl, PersistentPlayerData,
     PersistentRootVehicle, PersistentSlot,
 };
 use crate::chunk_saver::PersistentEntity;
 use crate::config::StorageSelection;
+use crate::level_data::RespawnData;
 use crate::permission::PermissionSubjectIndex;
 #[cfg(test)]
 use crate::permission::PermissionSubjectState;
 use crate::player::KnownPlayers;
 use crate::player::Player;
 use steel_registry::item_stack::ItemStack;
-use steel_utils::Identifier;
 use steel_utils::locks::{AsyncMutex, SyncMutex};
+use steel_utils::{BlockPos, Identifier};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 7;
+const PLAYER_STORAGE_VERSION: u16 = 8;
 const GLOBAL_STORAGE_VERSION: u16 = 1;
 const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
@@ -96,6 +98,7 @@ struct PlayerDataFile {
     score: i32,
     seen_credits: bool,
     root_vehicle: Option<RootVehicleFile>,
+    respawn_config: Option<RespawnConfigFile>,
     ender_pearls: Vec<EnderPearlFile>,
 }
 
@@ -103,6 +106,15 @@ struct PlayerDataFile {
 struct RootVehicleFile {
     attach: [u8; 16],
     entity: PersistentEntity,
+}
+
+#[derive(SchemaWrite, SchemaRead)]
+struct RespawnConfigFile {
+    dimension: String,
+    pos: [i32; 3],
+    yaw: f32,
+    pitch: f32,
+    forced: bool,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -565,10 +577,11 @@ impl FilePlayerDataStorage {
     }
 
     async fn sync_parent(parent: &Path) -> io::Result<()> {
-        #[cfg(unix)]
-        fs::File::open(parent).await?.sync_all().await?;
-        #[cfg(not(unix))]
-        let _ = parent;
+        // Runtime check so the `.await`s stay present on all platforms for clippy;
+        // on Windows the branch never runs (directory fsync is unix-only).
+        if cfg!(unix) {
+            fs::File::open(parent).await?.sync_all().await?;
+        }
         Ok(())
     }
 }
@@ -626,6 +639,10 @@ impl PlayerDataFile {
                     attach: root_vehicle.attach,
                     entity: root_vehicle.entity,
                 }),
+            respawn_config: data
+                .respawn_config
+                .clone()
+                .map(RespawnConfigFile::from_runtime),
             ender_pearls: data
                 .ender_pearls
                 .iter()
@@ -696,6 +713,10 @@ impl PlayerDataFile {
                 attach: root_vehicle.attach,
                 entity: root_vehicle.entity,
             }),
+            respawn_config: self
+                .respawn_config
+                .map(RespawnConfigFile::into_runtime)
+                .transpose()?,
             ender_pearls: self
                 .ender_pearls
                 .into_iter()
@@ -704,6 +725,36 @@ impl PlayerDataFile {
                     entity: pearl.entity,
                 })
                 .collect(),
+        })
+    }
+}
+
+impl RespawnConfigFile {
+    fn from_runtime(config: PlayerRespawnConfig) -> Self {
+        let pos = config.respawn_data.pos();
+        Self {
+            dimension: config.respawn_data.dimension().to_string(),
+            pos: [pos.x(), pos.y(), pos.z()],
+            yaw: config.respawn_data.yaw,
+            pitch: config.respawn_data.pitch,
+            forced: config.forced,
+        }
+    }
+
+    fn into_runtime(self) -> io::Result<PlayerRespawnConfig> {
+        Ok(PlayerRespawnConfig {
+            respawn_data: RespawnData::of(
+                self.dimension.parse().map_err(|error| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("invalid respawn dimension: {error}"),
+                    )
+                })?,
+                BlockPos::new(self.pos[0], self.pos[1], self.pos[2]),
+                self.yaw,
+                self.pitch,
+            ),
+            forced: self.forced,
         })
     }
 }
@@ -859,6 +910,7 @@ mod tests {
             score: 9,
             seen_credits: true,
             root_vehicle: None,
+            respawn_config: None,
             ender_pearls: Vec::new(),
         }
     }
@@ -1357,8 +1409,15 @@ mod tests {
     }
 
     #[test]
-    fn player_file_roundtrip_preserves_ender_pearls() {
+    fn player_file_roundtrip_preserves_respawn_config() {
         let mut file = sample_player_file(PLAYER_DATA_VERSION);
+        file.respawn_config = Some(RespawnConfigFile {
+            dimension: "minecraft:overworld".to_owned(),
+            pos: [10, 64, -3],
+            yaw: 181.0,
+            pitch: -120.0,
+            forced: false,
+        });
         file.ender_pearls = vec![
             EnderPearlFile {
                 world: "minecraft:overworld".to_owned(),
@@ -1375,6 +1434,24 @@ mod tests {
         let persistent = decoded
             .into_persistent()
             .expect("player file should convert");
+
+        let Some(respawn_config) = persistent.respawn_config else {
+            panic!("respawn config should survive roundtrip");
+        };
+        assert_eq!(
+            respawn_config.respawn_data.dimension(),
+            &Identifier::vanilla_static("overworld")
+        );
+        assert_eq!(respawn_config.respawn_data.pos(), BlockPos::new(10, 64, -3));
+        assert_eq!(
+            respawn_config.respawn_data.yaw.to_bits(),
+            (-179.0_f32).to_bits()
+        );
+        assert_eq!(
+            respawn_config.respawn_data.pitch.to_bits(),
+            (-90.0_f32).to_bits()
+        );
+        assert!(!respawn_config.forced);
 
         assert_eq!(persistent.ender_pearls.len(), 2);
         assert_eq!(persistent.ender_pearls[0].world, "minecraft:overworld");

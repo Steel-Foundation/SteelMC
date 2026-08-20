@@ -23,6 +23,11 @@ pub(crate) fn path_ends_with(path: &syn::Path, name: &str) -> bool {
 pub(crate) enum JsonArgKind {
     /// Raw JSON value → token literal (handles numbers, strings, bools)
     Value,
+    /// Vanilla codec JSON → a constant or uniform `IntProvider`.
+    ///
+    /// Unsupported provider shapes fail code generation so new vanilla data
+    /// cannot silently receive the wrong distribution.
+    IntProvider,
     /// JSON string → `module::IDENT`. Stores the module name.
     Registry(String),
     /// JSON string → `EnumType::Variant` (`PascalCase`).
@@ -77,11 +82,13 @@ pub(crate) fn parse_object_behavior(
 }
 
 const KNOWN_REGISTRIES: &[&str] = &[
+    "vanilla_block_tags",
     "vanilla_blocks",
     "vanilla_entities",
     "vanilla_items",
     "vanilla_fluids",
     "sound_events",
+    "vanilla_configured_features",
 ];
 
 /// Parses a `#[json_arg(...)]` attribute from a `syn::Field`.
@@ -99,6 +106,8 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
         meta.parse_nested_meta(|meta| {
             if meta.path.is_ident("value") {
                 kind = Some(JsonArgKind::Value);
+            } else if meta.path.is_ident("int_provider") {
+                kind = Some(JsonArgKind::IntProvider);
             } else if meta.path.is_ident("r#enum") || meta.path.is_ident("enum") {
                 let value = meta.value()?;
                 let lit: syn::LitStr = value.parse()?;
@@ -125,7 +134,7 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
                 assert!(
                     KNOWN_REGISTRIES.contains(&name.as_str()),
                     "Unknown json_arg attribute '{name}' on field '{field_name}'. \
-                     Expected: value, enum, ref, json, optional, or a registry module ({}).",
+                     Expected: value, int_provider, enum, ref, json, optional, or a registry module ({}).",
                     KNOWN_REGISTRIES.join(", ")
                 );
                 kind = Some(JsonArgKind::Registry(name));
@@ -145,7 +154,7 @@ pub(crate) fn parse_json_arg(field: &syn::Field) -> Option<JsonArgField> {
     };
 
     let kind = kind.unwrap_or_else(|| {
-        panic!("json_arg on field '{field_name}' must specify a kind (value, enum, or a registry module name)")
+        panic!("json_arg on field '{field_name}' must specify a kind (value, int_provider, enum, or a registry module name)")
     });
 
     Some(JsonArgField {
@@ -188,19 +197,82 @@ pub(crate) fn json_value_to_tokens(
     key: &str,
 ) -> TokenStream {
     match value {
-        serde_json::Value::Number(n) => {
-            let n = n.as_i64().unwrap_or_else(|| {
-                panic!("JSON field '{key}' for entry '{entry_name}' must be an integer")
-            });
-            let n = i32::try_from(n).unwrap_or_else(|_| {
-                panic!("JSON field '{key}' for entry '{entry_name}' overflows i32: {n}")
-            });
+        serde_json::Value::Number(_) => {
+            let n = json_i32(value, entry_name, key);
             let lit = proc_macro2::Literal::i32_suffixed(n);
             quote! { #lit }
         }
         serde_json::Value::String(s) => quote! { #s },
         serde_json::Value::Bool(b) => quote! { #b },
         _ => panic!("Unsupported JSON value type for entry '{entry_name}' field '{key}'"),
+    }
+}
+
+fn json_i32(value: &serde_json::Value, entry_name: &str, key: &str) -> i32 {
+    let value = value.as_i64().unwrap_or_else(|| {
+        panic!("JSON field '{key}' for entry '{entry_name}' must be an integer")
+    });
+    i32::try_from(value).unwrap_or_else(|_| {
+        panic!("JSON field '{key}' for entry '{entry_name}' overflows i32: {value}")
+    })
+}
+
+fn int_provider_to_tokens(
+    extra: &serde_json::Map<String, serde_json::Value>,
+    entry_name: &str,
+    key: &str,
+) -> TokenStream {
+    let provider = get_json_value(extra, entry_name, key);
+    if provider.is_number() {
+        let value = json_i32(provider, entry_name, key);
+        return quote! { steel_utils::value_providers::IntProvider::Constant(#value) };
+    }
+
+    let provider = provider.as_object().unwrap_or_else(|| {
+        panic!(
+            "JSON field '{key}' for entry '{entry_name}' must be an integer or int-provider object"
+        )
+    });
+    let provider_type = provider
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_else(|| {
+            panic!("JSON field '{key}.type' for entry '{entry_name}' must be a string")
+        });
+    assert!(
+        provider_type == "minecraft:uniform",
+        "Unsupported int provider '{provider_type}' in JSON field '{key}' for entry '{entry_name}'"
+    );
+
+    if let Some(unexpected) = provider
+        .keys()
+        .find(|field| !matches!(field.as_str(), "type" | "min_inclusive" | "max_inclusive"))
+    {
+        panic!(
+            "Unsupported JSON field '{key}.{unexpected}' for uniform int provider in entry '{entry_name}'"
+        );
+    }
+
+    let min_key = format!("{key}.min_inclusive");
+    let max_key = format!("{key}.max_inclusive");
+    let min = provider
+        .get("min_inclusive")
+        .unwrap_or_else(|| panic!("Entry '{entry_name}' missing JSON field '{min_key}'"));
+    let max = provider
+        .get("max_inclusive")
+        .unwrap_or_else(|| panic!("Entry '{entry_name}' missing JSON field '{max_key}'"));
+    let min = json_i32(min, entry_name, &min_key);
+    let max = json_i32(max, entry_name, &max_key);
+    assert!(
+        min <= max,
+        "Uniform int provider in entry '{entry_name}' has min_inclusive {min} greater than max_inclusive {max}"
+    );
+
+    quote! {
+        steel_utils::value_providers::IntProvider::Uniform {
+            min_inclusive: #min,
+            max_inclusive: #max,
+        }
     }
 }
 
@@ -228,11 +300,15 @@ pub(crate) fn generate_arg(
             let value = get_json_value(extra, entry_name, json_key);
             json_value_to_tokens(value, entry_name, json_key)
         }
+        JsonArgKind::IntProvider => int_provider_to_tokens(extra, entry_name, json_key),
         JsonArgKind::Registry(module) => {
             let name = get_json_str(extra, entry_name, json_key);
             if module == "vanilla_items" {
                 let item_ident = to_item_ident(name);
                 quote! { &*vanilla_items::#item_ident }
+            } else if module == "vanilla_block_tags" {
+                let const_ident = to_block_ident(name);
+                quote! { vanilla_block_tags::BlockTag::#const_ident }
             } else {
                 let module_ident = Ident::new(module, Span::call_site());
                 let const_ident = to_block_ident(name);
@@ -241,6 +317,7 @@ pub(crate) fn generate_arg(
                 if module == "vanilla_blocks"
                     || module == "vanilla_entities"
                     || module == "sound_events"
+                    || module == "vanilla_configured_features"
                 {
                     quote! { &#module_ident::#const_ident }
                 } else {

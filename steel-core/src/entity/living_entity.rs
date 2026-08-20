@@ -1,3 +1,5 @@
+use steel_registry::DyeColor;
+
 use super::*;
 
 /// A trait for living entities that can take damage, heal, and die.
@@ -121,6 +123,11 @@ pub trait LivingEntity: Entity {
     /// Returns a reference to this entity's attribute map.
     fn attributes(&self) -> &SyncMutex<AttributeMap> {
         self.living_base().attributes()
+    }
+
+    /// Vanilla `LivingEntity.getLuck` - non-players contribute no luck to loot.
+    fn get_luck(&self) -> f32 {
+        0.0
     }
 
     /// Packs syncable attributes for initial spawn pairing.
@@ -275,6 +282,15 @@ pub trait LivingEntity: Entity {
     /// Returns vanilla `LivingEntity.isBaby()`.
     fn is_baby(&self) -> bool {
         self.as_ageable_mob().is_some_and(AgeableMob::is_baby)
+    }
+
+    /// Returns the vanilla sheep loot predicate state (`minecraft:components.sheep/color`
+    /// together with `minecraft:type_specific/sheep.sheared`), when this entity is a sheep.
+    ///
+    /// Mirrors `Sheep.get(DataComponents.SHEEP_COLOR)` + `Sheep.isSheared()` for the
+    /// entity loot context.
+    fn sheep_loot_state(&self) -> Option<(DyeColor, bool)> {
+        None
     }
 
     /// Returns vanilla `LivingEntity.getSoundVolume`.
@@ -2672,11 +2688,17 @@ pub trait LivingEntity: Entity {
     /// Sets the vanilla living-entity sleeping position.
     fn set_sleeping_pos(&self, bed_position: BlockPos) {
         self.living_base().set_sleeping_pos(bed_position);
+        if let Some(entity_data) = self.living_synced_data() {
+            entity_data.set_sleeping_pos(bed_position);
+        }
     }
 
     /// Clears the vanilla living-entity sleeping position.
     fn clear_sleeping_pos(&self) {
         self.living_base().clear_sleeping_pos();
+        if let Some(entity_data) = self.living_synced_data() {
+            entity_data.clear_sleeping_pos();
+        }
     }
 
     /// Checks if the entity is sleeping.
@@ -2684,9 +2706,96 @@ pub trait LivingEntity: Entity {
         self.sleeping_pos().is_some()
     }
 
+    /// Returns synchronized data declared by vanilla `LivingEntity`.
+    fn living_synced_data(&self) -> Option<&dyn LivingEntitySyncedData> {
+        None
+    }
+
+    /// Starts sleeping at the given bed position.
+    fn start_sleeping(&self, bed_position: BlockPos) -> Result<(), EntityMoveError> {
+        if self.is_passenger() {
+            self.stop_riding();
+        }
+
+        let Some(world) = self.level() else {
+            return Err(EntityMoveError::NotLive {
+                entity_id: self.id(),
+            });
+        };
+        self.try_set_position(DVec3::new(
+            f64::from(bed_position.x()) + 0.5,
+            f64::from(bed_position.y()) + 0.6875,
+            f64::from(bed_position.z()) + 0.5,
+        ))?;
+
+        let block_state = world.get_block_state(bed_position);
+        if block_state.is_bed() {
+            world.set_block(
+                bed_position,
+                block_state.set_value(&BlockStateProperties::OCCUPIED, true),
+                UpdateFlags::UPDATE_ALL,
+            );
+        }
+
+        self.set_pose(EntityPose::Sleeping);
+        self.set_sleeping_pos(bed_position);
+        self.set_velocity(DVec3::ZERO);
+        Ok(())
+    }
+
+    /// Shared body for overrides that need vanilla `super.stopSleeping()`.
+    fn default_stop_sleeping(&self) {
+        if let Some(bed_position) = self.sleeping_pos()
+            && let Some(world) = self.level()
+        {
+            let state = world.get_block_state(bed_position);
+            if state.is_bed() {
+                let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+                world.set_block(
+                    bed_position,
+                    state.set_value(&BlockStateProperties::OCCUPIED, false),
+                    UpdateFlags::UPDATE_ALL,
+                );
+                let stand_up = BedBlock::find_standup_position(
+                    &world,
+                    self.as_entity_event_source(),
+                    facing,
+                    bed_position,
+                )
+                .unwrap_or_else(|| {
+                    let above = bed_position.above();
+                    DVec3::new(
+                        f64::from(above.x()) + 0.5,
+                        f64::from(above.y()) + 0.1,
+                        f64::from(above.z()) + 0.5,
+                    )
+                });
+                let bed_center = DVec3::new(
+                    f64::from(bed_position.x()) + 0.5,
+                    f64::from(bed_position.y()),
+                    f64::from(bed_position.z()) + 0.5,
+                );
+                let look_direction = (bed_center - stand_up).normalize_or_zero();
+                let yaw = wrap_degrees(
+                    (look_direction.z.atan2(look_direction.x).to_degrees() - 90.0) as f32,
+                );
+                if let Err(error) = self.try_set_position(stand_up) {
+                    log::warn!(
+                        "failed to move entity {} to bed stand-up position: {error}",
+                        self.id()
+                    );
+                }
+                self.set_rotation((yaw, 0.0));
+            }
+        }
+
+        self.set_pose(EntityPose::Standing);
+        self.clear_sleeping_pos();
+    }
+
     /// Stops the entity from sleeping.
     fn stop_sleeping(&self) {
-        self.clear_sleeping_pos();
+        self.default_stop_sleeping();
     }
 
     /// Checks if the entity is sprinting.
@@ -2838,6 +2947,7 @@ fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
 }
 
 fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_> {
+    let sheep = entity.sheep_loot_state();
     EntityRef {
         entity_type: Some(&entity.entity_type().key),
         flags: EntityRefFlags {
@@ -2850,5 +2960,26 @@ fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_>
         // TODO: Include equipment and custom name once loot contexts can snapshot entity data.
         equipment: None,
         custom_name: None,
+        sheep_color: sheep.map(|(color, _)| color),
+        sheep_sheared: sheep.map(|(_, sheared)| sheared),
     }
+}
+
+/// Runs vanilla `LivingEntity.dropFromShearingLootTable` for `loot_table`, returning the
+/// drops resolved with the vanilla shearing loot params (origin, entity, tool).
+pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
+    entity: &E,
+    loot_table: LootTableRef,
+    tool: &ItemStack,
+    rng: &mut R,
+) -> Vec<ItemStack> {
+    let position = entity.position();
+    let mut context = LootContext::new(rng)
+        .with_origin(position.x, position.y, position.z)
+        .with_this_entity(living_entity_loot_ref(entity))
+        .with_tool(tool);
+    if let Some(level) = entity.level() {
+        context = context.with_game_time(level.game_time());
+    }
+    loot_table.get_random_items(&mut context)
 }
