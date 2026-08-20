@@ -210,9 +210,11 @@ impl Player {
 
         let info = ClientInformation {
             language: packet.language,
-            view_distance: i32::from(packet.view_distance)
-                .clamp(2, i32::from(self.config.view_distance).max(2))
-                as u8,
+            view_distance: packet
+                .view_distance
+                .max(2)
+                .cast_unsigned()
+                .min(self.config.view_distance.max(2)),
             chat_visibility: packet.chat_visibility,
             chat_colors: packet.chat_colors,
             model_customization: packet.model_customization,
