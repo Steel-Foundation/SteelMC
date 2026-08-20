@@ -69,7 +69,7 @@ pub use vegetation::{
     KelpBlock, KelpPlantBlock, LeafLitterBlock, LilyPadBlock, MangrovePropaguleBlock,
     MangroveRootsBlock, MossyCarpetBlock, MushroomBlock, NetherFungusBlock, NetherRootsBlock,
     PointedDripstoneBlock, SaplingBlock, SculkVeinBlock, SeaPickleBlock, ShortDryGrassBlock,
-    SmallDripleafBlock, SporeBlossomBlock, SulfurSpikeBlock, TallDryGrassBlock, TwistingVinesBlock,
-    TwistingVinesPlantBlock, VineBlock, WeepingVinesBlock, WeepingVinesPlantBlock, WitherRoseBlock,
-    WoolCarpetBlock,
+    SmallDripleafBlock, SporeBlossomBlock, SulfurSpikeBlock, TallDryGrassBlock, TreeGrower,
+    TwistingVinesBlock, TwistingVinesPlantBlock, VineBlock, WeepingVinesBlock,
+    WeepingVinesPlantBlock, WitherRoseBlock, WoolCarpetBlock,
 };

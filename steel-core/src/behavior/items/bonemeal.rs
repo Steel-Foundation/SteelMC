@@ -123,7 +123,7 @@ impl ItemBehavior for BoneMealItem {
                 15,
                 None,
             );
-            return InteractionResult::Success;
+            return InteractionResult::SuccessServer;
         }
         let state = context.world.get_block_state(context.hit_result.block_pos);
         let is_clicked_face_sturdy = context.world.is_face_sturdy(
@@ -155,5 +155,63 @@ impl ItemBehavior for BoneMealItem {
             return InteractionResult::Success;
         }
         InteractionResult::Pass
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::DVec3;
+    use steel_registry::item_stack::ItemStack;
+    use steel_registry::items::item::BlockHitResult;
+    use steel_registry::{init_vanilla_registry, vanilla_items};
+    use steel_utils::{ChunkPos, types::InteractionHand};
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+
+    #[test]
+    fn crop_bonemeal_requests_server_swing() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("bonemeal_crop_server_swing");
+        let pos = BlockPos::new(8, 64, 8);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        assert!(world.set_block(
+            pos.below(),
+            vanilla_blocks::DIRT.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::OAK_SAPLING.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let player =
+            TestPlayerBuilder::new(world.clone(), Uuid::from_u128(1), "TestPlayer", 1).build();
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::BONE_MEAL));
+        let mut context = UseOnContext::new(
+            &player,
+            InteractionHand::MainHand,
+            BlockHitResult {
+                location: DVec3::new(8.5, 64.5, 8.5),
+                direction: Direction::Up,
+                block_pos: pos,
+                miss: false,
+                inside: false,
+                world_border_hit: false,
+            },
+            &world,
+            Arc::clone(&player.inventory),
+        );
+
+        let result = BoneMealItem.use_on(&mut context);
+
+        assert_eq!(result, InteractionResult::SuccessServer);
+        assert!(result.should_swing_server());
     }
 }

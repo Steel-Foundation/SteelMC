@@ -146,7 +146,7 @@ pub use pointed_dripstone_block::{
 pub use potato::PotatoBlock;
 pub use pumpkin_block::PumpkinBlock;
 pub use rooted_dirt_block::RootedDirtBlock;
-pub use sapling_block::SaplingBlock;
+pub use sapling_block::{SaplingBlock, TreeGrower};
 pub use sculk_vein_block::SculkVeinBlock;
 pub use sea_pickle_block::SeaPickleBlock;
 pub use seagrass_block::SeagrassBlock;
