@@ -16,6 +16,8 @@ use crate::worldgen::feature::FeatureDecorationRunner;
 
 use super::{BlockRef, default_surviving_state, survives_on_tag};
 
+const BONEMEAL_SUCCESS_CHANCE: f32 = 0.4;
+
 /// Vanilla `NetherFungusBlock` survival.
 #[block_behavior]
 pub struct NetherFungusBlock {
@@ -78,7 +80,7 @@ impl Bonemealable for NetherFungusBlock {
         rng: &mut dyn Rng,
         _pos: BlockPos,
     ) -> bool {
-        rng.random::<f32>() < 0.4
+        rng.random::<f32>() < BONEMEAL_SUCCESS_CHANCE
     }
 
     fn perform_bonemeal(
@@ -171,7 +173,8 @@ mod tests {
             .with_block(pos.below(), vanilla_blocks::CRIMSON_NYLIUM.default_state());
         assert!(!behavior.is_valid_bonemeal_target(state, &wrong_nylium, pos));
 
-        let top = BlockPos::new(0, 319, 0);
+        let at_build_limit = TestLevel::default();
+        let top = BlockPos::new(0, at_build_limit.max_y_exclusive() - 1, 0);
         let at_build_limit = TestLevel::default()
             .with_block(top.below(), vanilla_blocks::WARPED_NYLIUM.default_state());
         assert!(!behavior.is_valid_bonemeal_target(state, &at_build_limit, top));

@@ -11,7 +11,6 @@ use steel_registry::blocks::shapes::SupportType;
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
 use steel_registry::sound_event::SoundEventRef;
-use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::block_entity::SharedBlockEntity;
@@ -157,13 +156,7 @@ pub trait LevelAccessor: ScheduledTickAccess {
     fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool;
 
     /// Destroys a block and optionally drops its resources.
-    fn destroy_block(&self, pos: BlockPos, _drop_items: bool) -> bool {
-        self.set_block_state(
-            pos,
-            vanilla_blocks::AIR.default_state(),
-            UpdateFlags::UPDATE_ALL,
-        )
-    }
+    fn destroy_block(&self, pos: BlockPos, drop_items: bool) -> bool;
 
     /// Plays a block sound when this level surface supports runtime side effects.
     #[expect(

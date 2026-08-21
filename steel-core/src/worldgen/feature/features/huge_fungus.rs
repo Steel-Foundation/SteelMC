@@ -26,7 +26,14 @@ impl FeatureDecorationRunner {
         config: &HugeFungusConfiguration,
         origin: BlockPos,
     ) -> bool {
-        Self::place_huge_fungus(level, registry, random, config, origin, level.height())
+        Self::place_huge_fungus(
+            level,
+            registry,
+            random,
+            config,
+            origin,
+            level.max_y_exclusive(),
+        )
     }
 
     fn place_huge_fungus(
