@@ -14,6 +14,7 @@ use steel_utils::types::UpdateFlags;
 
 use crate::{
     behavior::{InteractionResult, ItemBehavior, UseOnContext},
+    entity::Entity,
     world::game_event::GameEventContext,
 };
 
