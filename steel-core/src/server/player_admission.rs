@@ -499,6 +499,14 @@ impl Server {
     }
 
     pub(super) fn process_player_disconnects(&self) -> Vec<PendingPlayerDisconnect> {
+        // Connection implementations report transport state; the server owns player removal.
+        self.online_players.iter_players(|_, player| {
+            if player.connection.closed() {
+                self.queue_player_disconnect(Arc::clone(player));
+            }
+            true
+        });
+
         let mut pending = Vec::new();
         while let Some(player) = self.pending_player_disconnects.pop() {
             if let Some(disconnect) = self.process_player_disconnect(player) {

@@ -1,9 +1,6 @@
 //! This module contains the `JavaConnection` struct, which is used to represent a connection to a Java client.
 use std::io::Cursor;
-use std::sync::{
-    Arc, Weak,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::{Arc, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use steel_protocol::packet_reader::TCPNetworkDecoder;
@@ -394,7 +391,6 @@ pub struct JavaConnection {
     id: u64,
 
     player: Weak<Player>,
-    player_disconnect_queued: AtomicBool,
     keep_alive_tracker: SyncMutex<KeepAliveTracker>,
     latency: SyncMutex<u32>,
 }
@@ -416,7 +412,6 @@ impl JavaConnection {
             network_writer,
             id,
             player,
-            player_disconnect_queued: AtomicBool::new(false),
             keep_alive_tracker: SyncMutex::new(KeepAliveTracker {
                 alive_time: 0,
                 alive_pending: false,
@@ -456,23 +451,6 @@ impl JavaConnection {
                 self.id
             ),
         }
-    }
-
-    fn queue_player_disconnect_once(&self) {
-        if self.player_disconnect_queued.load(Ordering::Acquire) {
-            return;
-        }
-
-        let Some(player) = self.player.upgrade() else {
-            return;
-        };
-        if !player.has_joined_world() || player.server().cancel_token.is_cancelled() {
-            return;
-        }
-        if self.player_disconnect_queued.swap(true, Ordering::AcqRel) {
-            return;
-        }
-        player.server().queue_player_disconnect(player);
     }
 
     /// Ticks the connection.
@@ -591,7 +569,6 @@ impl JavaConnection {
     /// Closes the connection.
     pub fn close(&self) {
         self.cancel_token.cancel();
-        self.queue_player_disconnect_once();
     }
 
     /// Returns whether the connection is closed.
@@ -916,9 +893,6 @@ impl JavaConnection {
             }
         };
 
-        // Cancellation may come directly from the parent token during shutdown rather than
-        // through `JavaConnection::close`.
-        self.queue_player_disconnect_once();
         self.finish_disconnect(disconnect_packet).await;
     }
 

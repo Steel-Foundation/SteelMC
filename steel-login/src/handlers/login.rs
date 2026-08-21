@@ -18,6 +18,8 @@ use crate::{
 
 impl JavaTcpClient {
     async fn disconnect_duplicate_player(&self, profile: &GameProfile) -> bool {
+        // TODO: Drive pre-play connections from server ticks and enforce Vanilla's total
+        // 600-tick login deadline, including duplicate-session waits.
         match self
             .server
             .disconnect_duplicate_player_and_wait(profile.id, &self.cancel_token)

@@ -226,7 +226,6 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
             );
 
             server.release_player_admission(uuid, PlayerAdmissionState::Relocating);
-            server.queue_player_disconnect(Arc::clone(&player));
             let pending = server.process_player_disconnects();
             assert_eq!(pending.len(), 1);
             assert_eq!(
