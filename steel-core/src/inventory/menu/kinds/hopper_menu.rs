@@ -7,6 +7,7 @@
 
 use steel_registry::vanilla_menu_types;
 
+use crate::block_entity::entities::HOPPER_SLOTS;
 use crate::inventory::prelude::*;
 use crate::player::player_inventory::PlayerInventory;
 
@@ -20,7 +21,7 @@ pub fn hopper(
     let container = container.into();
 
     let mut builder = MenuBuilder::new(&vanilla_menu_types::HOPPER, container_id);
-    let hopper = builder.section(&container, 5);
+    let hopper = builder.section(&container, HOPPER_SLOTS);
     let player = builder.player_inventory(&inventory);
 
     builder.route(hopper, player.all(), FillDirection::Backward);
@@ -63,6 +64,6 @@ mod tests {
 
         let menu = hopper(inventory, 1, container);
 
-        assert_eq!(menu.behavior().slot_count(), 5 + 36);
+        assert_eq!(menu.behavior().slot_count(), HOPPER_SLOTS + 36);
     }
 }

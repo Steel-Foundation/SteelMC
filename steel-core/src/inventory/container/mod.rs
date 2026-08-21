@@ -14,7 +14,7 @@ pub use simple::SimpleContainer;
 use std::mem;
 
 use steel_registry::item_stack::ItemStack;
-use steel_utils::ErasedType;
+use steel_utils::{Direction, ErasedType};
 
 /// Default distance buffer for container interaction range checks.
 pub const DEFAULT_DISTANCE_BUFFER: f32 = 4.0;
@@ -129,6 +129,11 @@ pub trait Container: ErasedType + Send + Sync {
         _stack: &ItemStack,
     ) -> bool {
         true
+    }
+
+    /// Returns this container's sided access rules, if it has any (vanilla `instanceof WorldlyContainer`).
+    fn as_worldly(&self) -> Option<&dyn WorldlyContainer> {
+        None
     }
 
     /// Clears all items from this container.
@@ -289,6 +294,24 @@ pub trait Container: ErasedType + Send + Sync {
     fn iter_mut(&mut self) -> Box<dyn Iterator<Item = &mut ItemStack> + '_> {
         Box::new(self.items_mut().iter_mut())
     }
+}
+
+/// Vanilla `WorldlyContainer`: a container with per-face slot visibility and
+/// insert/extract rules, honored by automation such as hoppers and droppers.
+pub trait WorldlyContainer: Container {
+    /// Returns the slots reachable through `face` (vanilla `getSlotsForFace`).
+    fn get_slots_for_face(&self, face: Direction) -> &[usize];
+
+    /// Returns true if `stack` may be inserted into `slot` through `face` (vanilla `canPlaceItemThroughFace`).
+    fn can_place_item_through_face(
+        &self,
+        slot: usize,
+        stack: &ItemStack,
+        face: Option<Direction>,
+    ) -> bool;
+
+    /// Returns true if `stack` may be extracted from `slot` through `face` (vanilla `canTakeItemThroughFace`).
+    fn can_take_item_through_face(&self, slot: usize, stack: &ItemStack, face: Direction) -> bool;
 }
 
 /// Removes or counts matching items in one stack using vanilla `/clear` semantics.

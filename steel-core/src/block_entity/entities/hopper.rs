@@ -18,7 +18,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{
-    BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb,
+    BlockPos, BlockStateId, Direction, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb,
     locks::SyncMutex,
 };
 
@@ -184,13 +184,11 @@ impl HopperBlockEntity {
         Self::unpack_in_guard(&mut guard, self_id, pos);
         Self::unpack_in_guard(&mut guard, target_id, target_pos);
 
-        // Vanilla passes the insertion face for WorldlyContainer (sided) slot
-        // selection; Steel has no sided containers yet, so the flat slot order
-        // below is the only path.
+        let insertion_face = facing.opposite();
         let Some(target) = guard.get(target_id) else {
             return false;
         };
-        if Self::is_full_container(target) {
+        if Self::is_full_container(target, insertion_face) {
             return false;
         }
 
@@ -208,7 +206,13 @@ impl HopperBlockEntity {
                 return false;
             };
             let taken = source.remove_item(slot, 1);
-            let leftover = Self::add_item_into(&mut guard, Some(self_id), target_id, taken);
+            let leftover = Self::add_item_into(
+                &mut guard,
+                Some(self_id),
+                target_id,
+                taken,
+                Some(insertion_face),
+            );
             if leftover.is_empty() {
                 return true;
             }
@@ -237,11 +241,18 @@ impl HopperBlockEntity {
             Self::unpack_in_guard(&mut guard, self_id, pos);
             Self::unpack_in_guard(&mut guard, source_id, above_pos);
 
-            let source_size = guard
-                .get(source_id)
-                .map_or(0, Container::get_container_size);
-            for slot in 0..source_size {
-                if Self::try_take_in_item_from_slot(&mut guard, source_id, self_id, slot) {
+            // Vanilla pulls through the source's bottom face.
+            let slots = guard.get(source_id).map_or_else(Vec::new, |source| {
+                Self::slots_through_face(source, Direction::Down)
+            });
+            for slot in slots {
+                if Self::try_take_in_item_from_slot(
+                    &mut guard,
+                    source_id,
+                    self_id,
+                    slot,
+                    Direction::Down,
+                ) {
                     return true;
                 }
             }
@@ -285,7 +296,7 @@ impl HopperBlockEntity {
         let self_id = self_ref.container_id();
         let mut guard = ContainerLockGuard::lock_all(&[&self_ref]);
         Self::unpack_in_guard(&mut guard, self_id, pos);
-        let leftover = Self::add_item_into(&mut guard, None, self_id, item_entity.get_item());
+        let leftover = Self::add_item_into(&mut guard, None, self_id, item_entity.get_item(), None);
         drop(guard);
 
         if leftover.is_empty() {
@@ -304,12 +315,15 @@ impl HopperBlockEntity {
         from_id: ContainerId,
         to_id: ContainerId,
         slot: usize,
+        direction: Direction,
     ) -> bool {
         let (Some(from), Some(to)) = (guard.get(from_id), guard.get(to_id)) else {
             return false;
         };
         let stack = from.get_item(slot).clone();
-        if stack.is_empty() || !from.can_take_item(to, slot, &stack) {
+        if stack.is_empty()
+            || !Self::can_take_item_from_container(to, from, &stack, slot, direction)
+        {
             return false;
         }
 
@@ -318,7 +332,8 @@ impl HopperBlockEntity {
             return false;
         };
         let taken = from.remove_item(slot, 1);
-        let leftover = Self::add_item_into(guard, Some(from_id), to_id, taken);
+        // Vanilla inserts into the hopper itself with a null direction.
+        let leftover = Self::add_item_into(guard, Some(from_id), to_id, taken, None);
         if leftover.is_empty() {
             guard.set_changed(from_id);
             return true;
@@ -335,19 +350,27 @@ impl HopperBlockEntity {
         false
     }
 
-    /// Vanilla `addItem(Container, Container, ItemStack, Direction)` over flat slots.
+    /// Vanilla `addItem(Container, Container, ItemStack, Direction)`: walks the
+    /// insertion face's slots for sided targets, all slots otherwise.
     fn add_item_into(
         guard: &mut ContainerLockGuard,
         from_id: Option<ContainerId>,
         to_id: ContainerId,
         mut stack: ItemStack,
+        direction: Option<Direction>,
     ) -> ItemStack {
-        let size = guard.get(to_id).map_or(0, Container::get_container_size);
-        for slot in 0..size {
+        let Some(target) = guard.get(to_id) else {
+            return stack;
+        };
+        let slots = match (target.as_worldly(), direction) {
+            (Some(worldly), Some(face)) => worldly.get_slots_for_face(face).to_vec(),
+            _ => (0..target.get_container_size()).collect(),
+        };
+        for slot in slots {
             if stack.is_empty() {
                 break;
             }
-            stack = Self::try_move_in_item(guard, from_id, to_id, stack, slot);
+            stack = Self::try_move_in_item(guard, from_id, to_id, stack, slot, direction);
         }
         stack
     }
@@ -360,6 +383,7 @@ impl HopperBlockEntity {
         to_id: ContainerId,
         mut stack: ItemStack,
         slot: usize,
+        direction: Option<Direction>,
     ) -> ItemStack {
         let was_empty;
         let success;
@@ -367,7 +391,7 @@ impl HopperBlockEntity {
             let Some(target) = guard.get_mut(to_id) else {
                 return stack;
             };
-            if !target.can_place_item(slot, &stack) {
+            if !Self::can_place_item_in_container(target, &stack, slot, direction) {
                 return stack;
             }
             was_empty = target.is_empty();
@@ -418,15 +442,49 @@ impl HopperBlockEntity {
             && ItemStack::is_same_item_same_components(target, source)
     }
 
-    /// Vanilla `isFullContainer`: every slot at its own item's stack limit.
-    fn is_full_container(container: &dyn Container) -> bool {
-        for slot in 0..container.get_container_size() {
-            let stack = container.get_item(slot);
-            if stack.count() < stack.max_stack_size() {
-                return false;
-            }
+    /// Vanilla `canPlaceItemInContainer`: the slot check plus the sided through-face check.
+    fn can_place_item_in_container(
+        container: &dyn Container,
+        stack: &ItemStack,
+        slot: usize,
+        direction: Option<Direction>,
+    ) -> bool {
+        container.can_place_item(slot, stack)
+            && container
+                .as_worldly()
+                .is_none_or(|worldly| worldly.can_place_item_through_face(slot, stack, direction))
+    }
+
+    /// Vanilla `canTakeItemFromContainer`: the slot check plus the sided through-face check.
+    fn can_take_item_from_container(
+        into: &dyn Container,
+        from: &dyn Container,
+        stack: &ItemStack,
+        slot: usize,
+        direction: Direction,
+    ) -> bool {
+        from.can_take_item(into, slot, stack)
+            && from
+                .as_worldly()
+                .is_none_or(|worldly| worldly.can_take_item_through_face(slot, stack, direction))
+    }
+
+    /// Vanilla `getSlots`: the slots reachable through `face`, flat when unsided.
+    fn slots_through_face(container: &dyn Container, face: Direction) -> Vec<usize> {
+        match container.as_worldly() {
+            Some(worldly) => worldly.get_slots_for_face(face).to_vec(),
+            None => (0..container.get_container_size()).collect(),
         }
-        true
+    }
+
+    /// Vanilla `isFullContainer`: every slot reachable through `face` at its own limit.
+    fn is_full_container(container: &dyn Container, face: Direction) -> bool {
+        Self::slots_through_face(container, face)
+            .into_iter()
+            .all(|slot| {
+                let stack = container.get_item(slot);
+                stack.count() >= stack.max_stack_size()
+            })
     }
 
     /// Vanilla `getContainerAt` for block containers.
@@ -601,6 +659,7 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
+    use crate::inventory::container::{SimpleContainer, WorldlyContainer};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
     fn test_hopper() -> HopperBlockEntity {
@@ -932,5 +991,173 @@ mod tests {
         assert!(entity.get_item().is_empty());
         assert!(entity.is_removed());
         assert_eq!(hopper.container.lock().cooldown_time, MOVE_ITEM_SPEED);
+    }
+
+    /// Test-only sided container: only slot 1 is reachable through Down, and
+    /// dirt never passes through a face.
+    struct SidedTestContainer {
+        items: Vec<ItemStack>,
+    }
+
+    // SAFETY: This key is owned by Steel and uniquely identifies the sided
+    // container used by hopper tests.
+    unsafe impl DowncastType for SidedTestContainer {
+        const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:test/sided_container");
+    }
+
+    impl SidedTestContainer {
+        fn shared(items: Vec<ItemStack>) -> Arc<SyncMutex<Self>> {
+            Arc::new(SyncMutex::new(Self { items }))
+        }
+    }
+
+    impl Container for SidedTestContainer {
+        fn items(&self) -> &[ItemStack] {
+            &self.items
+        }
+
+        fn items_mut(&mut self) -> &mut [ItemStack] {
+            &mut self.items
+        }
+
+        fn set_changed(&mut self) {}
+
+        fn as_worldly(&self) -> Option<&dyn WorldlyContainer> {
+            Some(self)
+        }
+    }
+
+    impl WorldlyContainer for SidedTestContainer {
+        fn get_slots_for_face(&self, face: Direction) -> &[usize] {
+            const DOWN_SLOTS: [usize; 1] = [1];
+            if face == Direction::Down {
+                &DOWN_SLOTS
+            } else {
+                &[]
+            }
+        }
+
+        fn can_place_item_through_face(
+            &self,
+            _slot: usize,
+            stack: &ItemStack,
+            _face: Option<Direction>,
+        ) -> bool {
+            !stack.is(&vanilla_items::DIRT)
+        }
+
+        fn can_take_item_through_face(
+            &self,
+            _slot: usize,
+            stack: &ItemStack,
+            _face: Direction,
+        ) -> bool {
+            !stack.is(&vanilla_items::DIRT)
+        }
+    }
+
+    #[test]
+    fn sided_push_only_reaches_face_slots_and_honors_the_place_check() {
+        init_vanilla_registry();
+        let sided = SidedTestContainer::shared(vec![ItemStack::empty(); 3]);
+        let sided_ref: ContainerRef = sided.into();
+        let id = sided_ref.container_id();
+        let mut guard = ContainerLockGuard::lock_all(&[&sided_ref]);
+
+        let leftover = HopperBlockEntity::add_item_into(
+            &mut guard,
+            None,
+            id,
+            ItemStack::new(&vanilla_items::STONE),
+            Some(Direction::Down),
+        );
+        assert!(leftover.is_empty());
+        let target = guard.get(id).expect("sided container");
+        assert!(target.get_item(0).is_empty());
+        assert_eq!(target.get_item(1).count(), 1);
+
+        let rejected = HopperBlockEntity::add_item_into(
+            &mut guard,
+            None,
+            id,
+            ItemStack::new(&vanilla_items::DIRT),
+            Some(Direction::Down),
+        );
+        assert_eq!(rejected.count(), 1);
+        let target = guard.get(id).expect("sided container");
+        assert!(target.get_item(0).is_empty());
+        assert!(target.get_item(2).is_empty());
+    }
+
+    #[test]
+    fn sided_pull_honors_face_slots_and_the_take_check() {
+        let hopper = test_hopper();
+        let hopper_ref = hopper.container_ref.clone();
+        let source = SidedTestContainer::shared(vec![
+            ItemStack::new(&vanilla_items::STONE),
+            ItemStack::new(&vanilla_items::DIRT),
+            ItemStack::empty(),
+        ]);
+        let source_ref: ContainerRef = source.into();
+        let (hopper_id, source_id) = (hopper_ref.container_id(), source_ref.container_id());
+        let mut guard = ContainerLockGuard::lock_all(&[&hopper_ref, &source_ref]);
+
+        // Only slot 1 faces Down, and its dirt fails the through-face check.
+        assert_eq!(
+            HopperBlockEntity::slots_through_face(
+                guard.get(source_id).expect("source"),
+                Direction::Down,
+            ),
+            vec![1],
+        );
+        assert!(!HopperBlockEntity::try_take_in_item_from_slot(
+            &mut guard,
+            source_id,
+            hopper_id,
+            1,
+            Direction::Down,
+        ));
+
+        guard
+            .get_mut(source_id)
+            .expect("source")
+            .set_item(1, ItemStack::new(&vanilla_items::STONE));
+        assert!(HopperBlockEntity::try_take_in_item_from_slot(
+            &mut guard,
+            source_id,
+            hopper_id,
+            1,
+            Direction::Down,
+        ));
+        assert_eq!(guard.get(hopper_id).expect("hopper").get_item(0).count(), 1);
+        // The slot hidden from the face is untouched.
+        assert_eq!(guard.get(source_id).expect("source").get_item(0).count(), 1);
+    }
+
+    #[test]
+    fn full_check_walks_only_the_face_slots() {
+        init_vanilla_registry();
+        let sided = SidedTestContainer::shared(vec![
+            ItemStack::empty(),
+            ItemStack::with_count(&vanilla_items::STONE, 64),
+            ItemStack::empty(),
+        ]);
+        let sided_ref: ContainerRef = sided.into();
+        let flat = Arc::new(SyncMutex::new(SimpleContainer::new(3)));
+        flat.lock()
+            .set_item(1, ItemStack::with_count(&vanilla_items::STONE, 64));
+        let flat_ref: ContainerRef = flat.into();
+        let guard = ContainerLockGuard::lock_all(&[&sided_ref, &flat_ref]);
+
+        // The sided container's only Down-facing slot is full; the same items
+        // in a flat container leave empty slots reachable.
+        assert!(HopperBlockEntity::is_full_container(
+            guard.get(sided_ref.container_id()).expect("sided"),
+            Direction::Down,
+        ));
+        assert!(!HopperBlockEntity::is_full_container(
+            guard.get(flat_ref.container_id()).expect("flat"),
+            Direction::Down,
+        ));
     }
 }

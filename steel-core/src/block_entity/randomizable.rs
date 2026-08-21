@@ -8,12 +8,13 @@
 use std::mem;
 use std::str::FromStr as _;
 
-use rand::{Rng, RngExt as _, SeedableRng as _, rngs::StdRng};
+use rand::{Rng, RngExt as _};
 use simdnbt::borrow::NbtCompound as NbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::loot_table::{LootContext, LootTableRef};
 use steel_registry::{REGISTRY, RegistryExt as _};
+use steel_utils::random::{RandBridge, legacy_random::LegacyRandom};
 use steel_utils::{BlockPos, Identifier};
 
 use crate::inventory::container::Container;
@@ -77,14 +78,18 @@ impl PendingLoot {
     /// over the container's empty slots.
     ///
     /// Seed 0 rolls with runtime randomness; any other seed is deterministic.
-    /// Steel's loot evaluation runs on `rand` rather than the vanilla LCG (see
-    /// the RNG note on `LootTable::get_random_items`), so slot arrangement is
-    /// deterministic per seed but not bit-identical to vanilla saves.
+    /// Seeded rolls draw from the vanilla legacy LCG; the pipeline still
+    /// consumes them through `rand`'s range sampling, so slot arrangement is
+    /// deterministic per seed but not yet bit-identical to vanilla saves
+    /// (tracked on `LootTable::get_random_items`).
     pub fn fill_container(self, origin: BlockPos, container: &mut dyn Container) {
         if self.seed == 0 {
+            // Vanilla falls back to random sequences / the level random here;
+            // Steel has neither yet, so runtime randomness stands in.
             self.fill_with_rng(origin, container, &mut rand::rng());
         } else {
-            let mut rng = StdRng::seed_from_u64(self.seed as u64);
+            // Vanilla `RandomSource.create(seed)`.
+            let mut rng = RandBridge(LegacyRandom::from_seed(self.seed as u64));
             self.fill_with_rng(origin, container, &mut rng);
         }
     }
