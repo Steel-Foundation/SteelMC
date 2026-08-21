@@ -2881,10 +2881,20 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
 
         let target_uuid = Uuid::from_u128(1);
         let attacker_uuid = Uuid::from_u128(2);
-        let (target, _) =
-            test_player_with_packets(&server, Arc::clone(&world), target_uuid, "Victim", 1);
-        let (attacker, _) =
-            test_player_with_packets(&server, Arc::clone(&world), attacker_uuid, "Attacker", 101);
+        let (target, _) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(&world),
+            target_uuid,
+            "Victim",
+            1,
+        );
+        let (attacker, _) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(&world),
+            attacker_uuid,
+            "Attacker",
+            101,
+        );
 
         assert!(world.add_player(Arc::clone(&target), ResetReason::InitialJoin));
         assert!(world.add_player(Arc::clone(&attacker), ResetReason::InitialJoin));
