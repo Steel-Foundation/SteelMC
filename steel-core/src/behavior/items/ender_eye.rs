@@ -122,9 +122,9 @@ impl ItemBehavior for EnderEyeItem {
         let spawn_pos = DVec3::new(player_pos.x, context.player.get_eye_y() - 0.1, player_pos.z);
 
         let target_pos = DVec3::new(
-            stronghold_pos.x() as f64,
-            stronghold_pos.y() as f64,
-            stronghold_pos.z() as f64,
+            f64::from(stronghold_pos.x()),
+            f64::from(stronghold_pos.y()),
+            f64::from(stronghold_pos.z()),
         );
 
         let eye = EyeOfEnderEntity::new(
