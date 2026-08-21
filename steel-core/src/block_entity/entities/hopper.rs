@@ -121,12 +121,15 @@ impl HopperBlockEntity {
     }
 
     /// Vanilla `Hopper.SUCK_AABB` moved to the hopper position: the full column
-    /// from the bowl rim (y 11/16) to one block above the hopper.
+    /// from the bowl rim to one block above the hopper.
     fn suck_aabb(pos: BlockPos) -> WorldAabb {
+        // Vanilla `Block.column(16.0, 11.0, 32.0)`, converted from sixteenths.
+        const SUCK_MIN_Y: f64 = 11.0 / 16.0;
+        const SUCK_MAX_Y: f64 = 32.0 / 16.0;
         let base = DVec3::new(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()));
         WorldAabb::from_min_max(
-            base + DVec3::new(0.0, 11.0 / 16.0, 0.0),
-            base + DVec3::new(1.0, 2.0, 1.0),
+            base + DVec3::new(0.0, SUCK_MIN_Y, 0.0),
+            base + DVec3::new(1.0, SUCK_MAX_Y, 1.0),
         )
     }
 
