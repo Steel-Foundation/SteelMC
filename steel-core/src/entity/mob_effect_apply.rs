@@ -71,7 +71,11 @@ fn apply_mob_effect_instance(
 /// Applies one `ConsumeEffectData` entry from a `Consumable.on_consume_effects`
 /// list. Mirrors vanilla's `ConsumeEffect` subtypes in
 /// `net/minecraft/world/item/consume_effects`.
-pub(crate) fn apply_consume_effect(effect: &ConsumeEffectData, world: &World, user: &dyn LivingEntity) {
+pub(crate) fn apply_consume_effect(
+    effect: &ConsumeEffectData,
+    world: &World,
+    user: &dyn LivingEntity,
+) {
     let effect_type = effect.effect_type();
     if effect_type == &vanilla_consume_effect_types::APPLY_EFFECTS {
         let Some(apply) = effect.downcast_ref::<ApplyStatusEffectsConsumeEffect>() else {

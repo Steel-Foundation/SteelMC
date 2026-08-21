@@ -797,12 +797,12 @@ pub use living_base::{
     MobEffectSyncChange, MobEffectSyncPacket,
 };
 pub use living_entity::LivingEntity;
-pub(crate) use mob_effect_apply::{apply_consume_effect, apply_potion_contents};
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
 };
 pub(crate) use mob::{Mob, MobBase, PathfinderMob};
+pub(crate) use mob_effect_apply::{apply_consume_effect, apply_potion_contents};
 pub use movement_sync::{
     EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
     EntityMovementSyncUpdate, EntityPositionRotSyncPacket, EntityPositionSyncDecision,

@@ -17,8 +17,8 @@ use text_components::TextComponent;
 
 use crate::behavior::items::DefaultItemBehavior;
 use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
-use crate::entity::damage::DamageSource;
 use crate::entity::apply_consume_effect;
+use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity};
 use crate::player::{Player, player_inventory::EquipmentSwapResult};
 use crate::world::World;
@@ -348,14 +348,15 @@ mod tests {
         {
             let mut inventory = player.inventory.lock();
             for slot in 0..36 {
-                inventory.set_item(slot, steel_registry::item_stack::ItemStack::with_count(
-                    &vanilla_items::STONE,
-                    64,
-                ));
+                inventory.set_item(
+                    slot,
+                    steel_registry::item_stack::ItemStack::with_count(&vanilla_items::STONE, 64),
+                );
             }
         }
 
-        let stack = steel_registry::item_stack::ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 5);
+        let stack =
+            steel_registry::item_stack::ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 5);
         let result = finish_consuming_stack(&stack, &world, player.as_ref());
 
         assert!(result.is(&vanilla_items::HONEY_BOTTLE));
