@@ -223,7 +223,11 @@ impl PlayerInventory {
         -1
     }
 
-    /// Finds the next empty slot after the selected in the inventory, or -1 if full.
+    /// Finds next empty slot in hotbar (and returns)
+    /// if none, then
+    ///     it finds the next slot with a non-enchanted item (and returns)
+    /// if none, then
+    ///     returns the current slot
     #[must_use]
     pub fn get_suitable_hotbar_slot(&self) -> u8 {
         let selected = self.selected as usize;
