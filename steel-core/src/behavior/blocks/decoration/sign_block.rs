@@ -15,7 +15,7 @@ use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty, IntProperty,
 };
 use steel_registry::blocks::shapes::SupportType;
-use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
+use steel_registry::{sound_events, vanilla_block_entity_types, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, Downcast as _};
 
 use crate::behavior::InventoryAccess;
@@ -250,7 +250,13 @@ fn try_open_sign_editor(
 
     // Check 1: Is the sign waxed?
     if sign.is_waxed() {
-        // TODO: Play waxed sign interaction fail sound
+        world.play_block_sound(
+            &sound_events::BLOCK_SIGN_WAXED_INTERACT_FAIL,
+            pos,
+            1.0,
+            1.0,
+            Some(player.id()),
+        );
         return InteractionResult::Success; // Vanilla returns SUCCESS even when waxed
     }
 
