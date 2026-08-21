@@ -36,7 +36,6 @@ const MAX_AGE: u8 = 4;
 const RANDOM_GROWTH_BOUND: u32 = 7;
 const BONEMEAL_SUCCESS_CHANCE: f32 = 0.45;
 const TALL_MANGROVE_CHANCE: f32 = 0.85;
-const MANGROVE_MINIMUM_HEIGHT: i32 = 2;
 
 impl MangrovePropaguleBlock {
     /// Creates a new mangrove propagule block behavior.
@@ -185,14 +184,14 @@ impl Bonemealable for MangrovePropaguleBlock {
     fn is_valid_bonemeal_target(
         &self,
         state: BlockStateId,
-        world: &dyn LevelReader,
-        pos: BlockPos,
+        _world: &dyn LevelReader,
+        _pos: BlockPos,
     ) -> bool {
         if state.get_value(HANGING) {
             return state.get_value(AGE) < MAX_AGE;
         }
 
-        !world.is_outside_build_height(pos.above_n(MANGROVE_MINIMUM_HEIGHT).y())
+        true
     }
 
     fn is_bonemeal_success(
@@ -368,7 +367,7 @@ mod tests {
             &level,
             BlockPos::new(0, 7, 0),
         ));
-        assert!(!behavior.is_valid_bonemeal_target(
+        assert!(behavior.is_valid_bonemeal_target(
             vanilla_blocks::MANGROVE_PROPAGULE.default_state(),
             &level,
             BlockPos::new(0, 8, 0),
