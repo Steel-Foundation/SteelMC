@@ -237,6 +237,14 @@ fn configured_thread_counts_parse_and_flow_to_runtime_config() {
 }
 
 #[test]
+fn validate_accepts_zero_simulation_distance() {
+    let config_toml = DEFAULT_CONFIG.replace("simulation_distance = 10", "simulation_distance = 0");
+    let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+    validate(&config.server).expect("simulation_distance = 0 validates");
+}
+
+#[test]
 fn validate_rejects_extended_view_distance_without_opt_in() {
     let config_toml = DEFAULT_CONFIG.replace("view_distance = 10", "view_distance = 33");
     let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
