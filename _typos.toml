@@ -21,6 +21,10 @@ replaceables = "replaceables"
 undescore = "undescore"
 # Vanilla block tag name minecraft:convertable_to_mud
 convertable = "convertable"
+# Dependency crate name.
+writeable = "writeable"
+# Vanilla block name: OCHRE_FROGLIGHT.
+OCHRE = "OCHRE"
 
 [default]
 locale = "en-us"
