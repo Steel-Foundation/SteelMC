@@ -26,16 +26,38 @@ pub(super) struct MultifaceSpreader {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct MultifaceSpreadPos {
-    pub(super) pos: BlockPos,
-    pub(super) face: Direction,
+pub(crate) struct MultifaceSpreadPos {
+    pub(crate) pos: BlockPos,
+    pub(crate) face: Direction,
 }
 
 #[derive(Clone, Copy)]
-enum MultifaceSpreadType {
+pub(crate) enum MultifaceSpreadType {
     SamePosition,
     SamePlane,
     WrapAround,
+}
+
+pub(crate) fn multiface_spread_pos(
+    pos: BlockPos,
+    spread_direction: Direction,
+    starting_face: Direction,
+    spread_type: MultifaceSpreadType,
+) -> MultifaceSpreadPos {
+    match spread_type {
+        MultifaceSpreadType::SamePosition => MultifaceSpreadPos {
+            pos,
+            face: spread_direction,
+        },
+        MultifaceSpreadType::SamePlane => MultifaceSpreadPos {
+            pos: pos.relative(spread_direction),
+            face: starting_face,
+        },
+        MultifaceSpreadType::WrapAround => MultifaceSpreadPos {
+            pos: pos.relative(spread_direction).relative(starting_face),
+            face: spread_direction.opposite(),
+        },
+    }
 }
 
 const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
@@ -306,7 +328,8 @@ impl MultifaceSpreader {
         }
 
         Self::SPREAD_TYPES.iter().find_map(|spread_type| {
-            let spread_pos = Self::spread_pos(pos, spread_direction, starting_face, *spread_type);
+            let spread_pos =
+                multiface_spread_pos(pos, spread_direction, starting_face, *spread_type);
             self.can_spread_into(world, spread_pos)
                 .then_some(spread_pos)
         })
@@ -327,28 +350,6 @@ impl MultifaceSpreader {
                 spread_pos.pos,
                 spread_pos.face,
             )
-    }
-
-    fn spread_pos(
-        pos: BlockPos,
-        spread_direction: Direction,
-        starting_face: Direction,
-        spread_type: MultifaceSpreadType,
-    ) -> MultifaceSpreadPos {
-        match spread_type {
-            MultifaceSpreadType::SamePosition => MultifaceSpreadPos {
-                pos,
-                face: spread_direction,
-            },
-            MultifaceSpreadType::SamePlane => MultifaceSpreadPos {
-                pos: pos.relative(spread_direction),
-                face: starting_face,
-            },
-            MultifaceSpreadType::WrapAround => MultifaceSpreadPos {
-                pos: pos.relative(spread_direction).relative(starting_face),
-                face: spread_direction.opposite(),
-            },
-        }
     }
 
     fn shuffle_directions(directions: &mut [Direction; 6], rng: &mut dyn Rng) {
