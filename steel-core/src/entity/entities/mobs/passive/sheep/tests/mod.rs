@@ -6,7 +6,6 @@ use steel_registry::{
     vanilla_entities, vanilla_items,
 };
 use steel_utils::types::InteractionHand;
-use uuid::Uuid;
 
 use crate::entity::damage::DamageSource;
 use crate::entity::init_entities;
