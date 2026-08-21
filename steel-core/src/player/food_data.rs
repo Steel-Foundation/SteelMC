@@ -21,7 +21,7 @@ pub mod food_constants {
 
     /// Default saturation for a freshly spawned player
     pub const DEFAULT_SATURATION: f32 = 5.0;
-
+    
     /// Saturation floor used by some food items
     pub const SATURATION_FLOOR: f32 = 2.5;
 
@@ -168,6 +168,14 @@ impl FoodData {
             nutrition,
             saturation_by_modifier(nutrition, saturation_modifier),
         );
+    }
+
+    /// Applies nutrition and an already-absolute saturation value, as stored
+    /// on `FoodProperties`. Unlike [`Self::eat`], which recomputes saturation
+    /// from a modifier, this applies the value as-is. Mirrors vanilla
+    /// `FoodData.eat(FoodProperties)`.
+    pub fn add_food(&mut self, nutrition: i32, saturation: f32) {
+        self.add(nutrition, saturation);
     }
 
     /// Runs one tick of the hunger system.
@@ -346,6 +354,22 @@ mod tests {
         food.exhaustion_level = 5.0;
         let _ = food.tick(Difficulty::Normal, false, 20.0, 20.0);
         assert_eq!(food.food_level, MAX_FOOD_LEVEL - 1);
+    }
+
+    /// `add_food` must apply saturation as-is (it is already the absolute
+    /// value stored on `FoodProperties`), unlike `eat` which recomputes it
+    /// from a modifier — regression guard against re-multiplying it.
+    #[test]
+    fn add_food_applies_absolute_saturation_without_recomputing_it() {
+        let mut food = FoodData::new();
+        food.food_level = 10;
+        food.saturation_level = 0.0;
+
+        // Vanilla apple: nutrition 4, saturation 2.4 (already absolute).
+        food.add_food(4, 2.4);
+
+        assert_eq!(food.food_level, 14);
+        assert!((food.saturation_level - 2.4).abs() < f32::EPSILON);
     }
 
     /// Fast regen: food=20, saturation>0, hurt → heal every 10 ticks.

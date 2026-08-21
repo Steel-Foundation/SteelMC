@@ -7,6 +7,7 @@ use super::{
     World, WorldAabb, enchantment_helper, piercing_ray_hit_t, vanilla_attributes,
     vanilla_damage_types, vanilla_entities,
 };
+use crate::player::food_data::food_constants;
 
 const fn sound_holder_ref(holder: &SoundEventHolder) -> Option<SoundEventRef> {
     match holder {
@@ -356,7 +357,7 @@ impl Player {
 
         self.item_attack_interaction(entity, &damage_source, damage_dealt);
         self.set_last_hurt_mob(Some(target));
-        self.cause_food_exhaustion(0.1);
+        self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         true
     }
 
@@ -436,7 +437,7 @@ impl Player {
                 old_movement,
             );
             self.item_attack_interaction(entity, &damage_source, true);
-            self.cause_food_exhaustion(0.1);
+            self.cause_food_exhaustion(food_constants::EXHAUSTION_ATTACK);
         }
 
         let world = self.get_world();

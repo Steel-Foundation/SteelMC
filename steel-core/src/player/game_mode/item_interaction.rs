@@ -226,7 +226,8 @@ mod tests {
     use steel_utils::types::InteractionHand;
     use uuid::Uuid;
 
-    use crate::behavior::init_behaviors;
+    use super::use_item;
+    use crate::behavior::{InteractionResult, init_behaviors};
     use crate::entity::Entity as _;
     use crate::player::connection::NetworkConnection as _;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world};
@@ -257,5 +258,49 @@ mod tests {
             assert_eq!(player.rotation(), expected);
         }
         assert!(!player.connection.closed());
+    }
+
+    /// A player at full hunger cannot start eating a normal food item —
+    /// vanilla `Consumable.canConsume` fails and returns `Fail` without
+    /// starting active use.
+    #[test]
+    fn use_item_refuses_normal_food_at_full_hunger() {
+        let world = fresh_test_world("use_item_full_hunger_normal_food");
+        init_behaviors();
+        let player =
+            TestPlayerBuilder::new(world.clone(), Uuid::from_u128(1), "TestPlayer", 1).build();
+        player.set_client_loaded(true);
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::APPLE));
+
+        let result = use_item(&player, &world, InteractionHand::MainHand);
+
+        assert_eq!(result, InteractionResult::Fail);
+        assert_eq!(player.active_item_use_hand(), None);
+    }
+
+    /// An always-edible food item (e.g. golden apple) can still be eaten at
+    /// full hunger, matching vanilla `FoodProperties.canAlwaysEat`.
+    #[test]
+    fn use_item_allows_always_edible_food_at_full_hunger() {
+        let world = fresh_test_world("use_item_full_hunger_always_edible_food");
+        init_behaviors();
+        let player =
+            TestPlayerBuilder::new(world.clone(), Uuid::from_u128(1), "TestPlayer", 1).build();
+        player.set_client_loaded(true);
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::GOLDEN_APPLE));
+
+        let result = use_item(&player, &world, InteractionHand::MainHand);
+
+        assert_eq!(result, InteractionResult::Consume);
+        assert_eq!(
+            player.active_item_use_hand(),
+            Some(InteractionHand::MainHand)
+        );
     }
 }

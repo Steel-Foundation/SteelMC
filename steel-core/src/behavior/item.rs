@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use std::borrow::Cow;
 use steel_registry::data_components::vanilla_components::{
-    BLOCKS_ATTACKS, CONSUMABLE, KINETIC_WEAPON, USE_REMAINDER,
+    BLOCKS_ATTACKS, CONSUMABLE, FOOD, KINETIC_WEAPON, USE_REMAINDER,
 };
 
 use steel_registry::data_components::vanilla_components::ITEM_NAME;
@@ -54,9 +54,16 @@ pub trait ItemBehavior: Send + Sync {
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
         // TODO: Mirror Item.use for BLOCKS_ATTACKS and KINETIC_WEAPON so
         // specialized behaviors inherit the complete Vanilla base path.
-        if context.inv.with_item(|item| item.has(CONSUMABLE)) {
-            // TODO: Gate this on vanilla food eligibility (hunger not full,
-            // unless the food is always edible) once the food system lands.
+        let (is_consumable, can_eat) = context.inv.with_item(|item| {
+            let can_eat = item
+                .get(FOOD)
+                .is_none_or(|food| context.player.can_eat(food.can_always_eat()));
+            (item.has(CONSUMABLE), can_eat)
+        });
+        if is_consumable {
+            if !can_eat {
+                return InteractionResult::Fail;
+            }
             context.player.start_using_item(context.hand);
             return InteractionResult::Consume;
         }
@@ -215,6 +222,15 @@ pub(crate) fn finish_consuming_stack(
         return apply_use_remainder(stack, stack.copy_with_count(stack.count()), user);
     };
 
+    if let Some(food) = stack.get(FOOD)
+        && let Some(player) = user.as_player()
+    {
+        player
+            .food_data
+            .lock()
+            .add_food(food.nutrition(), food.saturation());
+    }
+
     for effect in consumable.on_consume_effects() {
         apply_consume_effect(effect, world, user);
     }
@@ -369,5 +385,30 @@ mod tests {
             panic!("dropped entity should retain its concrete item type");
         };
         assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+    }
+
+    /// Eating a food item must restore hunger/saturation by the exact
+    /// vanilla amounts from its `minecraft:food` component, applied as-is
+    /// (not recomputed from a modifier).
+    #[test]
+    fn eating_food_applies_its_nutrition_and_saturation() {
+        init_vanilla_registry();
+        let world = fresh_test_world("finish_consuming_food_applies_nutrition");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(world.clone(), Uuid::from_u128(1), "Test", 1).build();
+        player.set_client_loaded(true);
+        {
+            let mut food = player.food_data.lock();
+            food.food_level = 10;
+            food.saturation_level = 0.0;
+        }
+
+        let stack = steel_registry::item_stack::ItemStack::new(&vanilla_items::APPLE);
+        let _ = finish_consuming_stack(&stack, &world, player.as_ref());
+
+        let food = player.food_data.lock();
+        // Vanilla apple: nutrition 4, saturation 2.4.
+        assert_eq!(food.food_level, 14);
+        assert!((food.saturation_level - 2.4).abs() < f32::EPSILON);
     }
 }
