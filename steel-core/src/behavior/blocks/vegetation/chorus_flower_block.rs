@@ -32,6 +32,11 @@ pub struct ChorusFlowerBlock {
 
 const AGE: &IntProperty = &BlockStateProperties::AGE_5;
 const DEAD_AGE: u8 = 5;
+const PILLAR_SCAN_DEPTH: i32 = 4;
+const MIN_PILLAR_HEIGHT: i32 = 2;
+const GROWTH_RANDOM_RANGE: i32 = 4;
+const GROWTH_RANDOM_RANGE_ON_SUPPORT: i32 = 5;
+const BRANCH_ATTEMPT_RANDOM_RANGE: i32 = 4;
 
 impl ChorusFlowerBlock {
     /// Creates a new chorus flower block behavior.
@@ -96,7 +101,7 @@ impl ChorusFlowerBlock {
             grow_upwards = true;
         } else if below.get_block() == self.plant {
             let mut height = 1;
-            for _ in 0..4 {
+            for _ in 0..PILLAR_SCAN_DEPTH {
                 let test_state = world.get_block_state(pos.below_n(height + 1));
                 if test_state.get_block() != self.plant {
                     pillar_on_support_block = test_state
@@ -107,8 +112,15 @@ impl ChorusFlowerBlock {
                 height += 1;
             }
 
-            if height < 2
-                || height <= rng.random_range(0..if pillar_on_support_block { 5 } else { 4 })
+            if height < MIN_PILLAR_HEIGHT
+                || height
+                    <= rng.random_range(
+                        0..if pillar_on_support_block {
+                            GROWTH_RANDOM_RANGE_ON_SUPPORT
+                        } else {
+                            GROWTH_RANDOM_RANGE
+                        },
+                    )
             {
                 grow_upwards = true;
             }
@@ -127,7 +139,7 @@ impl ChorusFlowerBlock {
             );
             self.place_grown_flower(world, above, current_age);
         } else if current_age < DEAD_AGE - 1 {
-            let mut branch_attempts = rng.random_range(0..4);
+            let mut branch_attempts = rng.random_range(0..BRANCH_ATTEMPT_RANDOM_RANGE);
             if pillar_on_support_block {
                 branch_attempts += 1;
             }
