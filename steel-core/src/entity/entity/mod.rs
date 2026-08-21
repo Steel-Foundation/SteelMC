@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use super::*;
 
 /// Final state accepted from a client-authored movement packet.
@@ -3466,6 +3468,108 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ///
     /// Mirrors vanilla's `Entity.readAdditionalSaveData()`.
     fn load_additional(&self, _nbt: BorrowedNbtCompoundView<'_, '_>) {}
+
+    /// Applies the merged entity data used by vanilla `TypedEntityData.loadInto`.
+    ///
+    /// Spawn-item data is merged into the entity's current save state before it
+    /// is loaded. Keeping that merge at the entity boundary preserves defaults
+    /// and entity-specific state when the component only overrides one field.
+    fn apply_spawn_data(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        let read_int = |key: &str| {
+            nbt.int(key)
+                .or_else(|| nbt.short(key).map(i32::from))
+                .or_else(|| nbt.byte(key).map(i32::from))
+        };
+
+        if let Some(values) = nbt.list("Pos").and_then(|list| list.doubles())
+            && values.len() >= 3
+        {
+            let position = DVec3::new(values[0], values[1], values[2]);
+            if position.is_finite() {
+                self.base().set_position_local(position);
+            }
+        }
+
+        if let Some(values) = nbt.list("Motion").and_then(|list| list.doubles())
+            && values.len() >= 3
+        {
+            self.set_velocity(DVec3::new(values[0], values[1], values[2]));
+        }
+
+        if let Some(values) = nbt.list("Rotation").and_then(|list| list.floats())
+            && values.len() >= 2
+        {
+            self.set_rotation((values[0], values[1]));
+            if let Some(living) = self.as_living_entity() {
+                living.set_y_head_rot(values[0]);
+                living.set_y_body_rot(values[0]);
+            }
+        }
+
+        if let Some(fall_distance) = nbt
+            .double("fall_distance")
+            .or_else(|| nbt.double("FallDistance"))
+        {
+            self.set_fall_distance(fall_distance);
+        }
+
+        if let Some(on_ground) = nbt.byte("OnGround") {
+            self.set_on_ground(on_ground != 0);
+        }
+
+        let mut save_data = self.base().save_data();
+        if let Some(air_supply) = read_int("Air") {
+            save_data.air_supply = air_supply;
+        }
+        if let Some(portal_cooldown) = read_int("PortalCooldown") {
+            save_data.portal_cooldown = portal_cooldown;
+        }
+        if let Some(no_gravity) = nbt.byte("NoGravity") {
+            save_data.no_gravity = no_gravity != 0;
+        }
+        if let Some(invulnerable) = nbt.byte("Invulnerable") {
+            save_data.invulnerable = invulnerable != 0;
+        }
+        if let Some(custom_name) = nbt
+            .get("CustomName")
+            .and_then(|tag| TextComponent::from_nbt(&tag.to_owned()))
+        {
+            save_data.custom_name = Some(custom_name);
+        }
+        if let Some(custom_name_visible) = nbt.byte("CustomNameVisible") {
+            save_data.custom_name_visible = custom_name_visible != 0;
+        }
+        if let Some(silent) = nbt.byte("Silent") {
+            save_data.silent = silent != 0;
+        }
+        if let Some(glowing) = nbt.byte("Glowing") {
+            save_data.glowing = glowing != 0;
+        }
+        if let Some(tags) = nbt.list("Tags").and_then(|list| list.strings()) {
+            save_data.tags = tags
+                .iter()
+                .take(MAX_ENTITY_TAGS)
+                .map(|tag| tag.to_str().into_owned())
+                .collect::<BTreeSet<_>>();
+        }
+        if let Some(custom_data) = nbt.compound("data") {
+            save_data.custom_data = custom_data.to_owned();
+        }
+        self.base().replace_save_data(save_data);
+
+        if let Some(remaining_fire_ticks) = read_int("Fire") {
+            self.set_remaining_fire_ticks(remaining_fire_ticks);
+        }
+        if let Some(ticks_frozen) = read_int("TicksFrozen") {
+            self.set_ticks_frozen(ticks_frozen);
+        }
+        if let Some(has_visual_fire) = nbt.byte("HasVisualFire") {
+            self.base().set_visual_fire(has_visual_fire != 0);
+        }
+
+        self.load_additional(nbt);
+        self.sync_base_entity_data();
+    }
 
     /// Applies damage to this entity.
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {

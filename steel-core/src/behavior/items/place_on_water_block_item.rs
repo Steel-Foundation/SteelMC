@@ -48,7 +48,7 @@ impl ItemBehavior for PlaceOnWaterBlockItem {
     }
 }
 
-fn get_player_pov_hit_result(
+pub(super) fn get_player_pov_hit_result(
     world: &Arc<World>,
     player: &Player,
     fluid: ClipFluid,

@@ -502,7 +502,21 @@ pub trait Mob: LivingEntity {
             return InteractionResult::Pass;
         }
 
-        // TODO: Handle name tags and spawn eggs once item-on-entity behavior exists.
+        let spawn_egg_result = {
+            let mut item_stack = player
+                .inventory
+                .lock()
+                .get_item_in_hand(hand)
+                .copy_with_count(1);
+            crate::behavior::items::SpawnEggItem::interact_with_mob(&mut item_stack, self)
+        };
+        if spawn_egg_result.consumes_action() {
+            if spawn_egg_result == InteractionResult::SuccessServer {
+                player.inventory.lock().get_item_in_hand_mut(hand).shrink(1);
+            }
+            return spawn_egg_result;
+        }
+
         let interaction_result = self.interact_entity(player, hand, location);
         if interaction_result != InteractionResult::Pass {
             return interaction_result;
