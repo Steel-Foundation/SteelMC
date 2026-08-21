@@ -469,7 +469,7 @@ impl World {
         tallest.unwrap_or(around)
     }
 
-    pub(super) fn is_collision_shape_full_block_at(
+    pub(crate) fn is_collision_shape_full_block_at(
         &self,
         pos: BlockPos,
         state: BlockStateId,

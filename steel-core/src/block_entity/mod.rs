@@ -25,6 +25,7 @@
 
 pub(crate) mod block_state_nbt;
 pub mod entities;
+pub mod randomizable;
 mod registry;
 mod storage;
 
