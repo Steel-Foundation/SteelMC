@@ -16,7 +16,7 @@ pub mod vegetation;
 
 pub use building::{
     AmethystBlock, AmethystClusterBlock, BarrierBlock, BedBlock, BrushableBlock,
-    BuddingAmethystBlock, CampfireBlock, CauldronBlock, ComposterBlock, DoorBlock,
+    BuddingAmethystBlock, CampfireBlock, CauldronBlock, ComposterBlock, ConduitBlock, DoorBlock,
     DropExperienceBlock, FenceBlock, FenceGateBlock, GlazedTerracottaBlock, HayBlock,
     HeavyCoreBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock,
     LayeredCauldronBlock, MagmaBlock, MudBlock, PotentSulfurBlock, PowderSnowBlock,
@@ -54,11 +54,11 @@ pub(crate) use redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 pub use vegetation::{
     AttachedStemBlock, AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock,
     CactusBlock, CactusFlowerBlock, CarrotBlock, CocoaBlock, CoralBlock, CropBlock,
-    DoublePlantBlock, FlowerBlock, MangroveLeavesBlock, MultifaceBlock, NetherSproutsBlock,
-    NetherWartBlock, PitcherCropBlock, PotatoBlock, PumpkinBlock, RootedDirtBlock, SeagrassBlock,
-    StemBlock, SugarCaneBlock, SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock,
-    TallSeagrassBlock, TintedParticleLeavesBlock, TorchflowerCropBlock,
-    UntintedParticleLeavesBlock,
+    DoublePlantBlock, FlowerBlock, GrassBlock, MangroveLeavesBlock, MultifaceBlock, MyceliumBlock,
+    NetherSproutsBlock, NetherWartBlock, PitcherCropBlock, PotatoBlock, PumpkinBlock,
+    RootedDirtBlock, SeagrassBlock, SnowyBlock, StemBlock, SugarCaneBlock, SweetBerryBushBlock,
+    TallFlowerBlock, TallGrassBlock, TallSeagrassBlock, TintedParticleLeavesBlock,
+    TorchflowerCropBlock, UntintedParticleLeavesBlock,
 };
 pub use vegetation::{
     BaseCoralFanBlock, BaseCoralPlantBlock, BaseCoralWallFanBlock, BigDripleafBlock,
