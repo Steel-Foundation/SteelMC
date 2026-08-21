@@ -65,6 +65,18 @@ pub trait MenuKind: ErasedType + Send + Sync {
         ClickOutcome::Fallthrough
     }
 
+    /// Runs for every button click before default handling. Return
+    /// [`ClickOutcome::Fallthrough`] for default handling
+    fn on_button_clicked(
+        &mut self,
+        _behavior: &mut MenuBehavior,
+        _guard: &mut ContainerLockGuard,
+        button_id: i32,
+        _player: &Player,
+    ) -> ClickOutcome {
+        ClickOutcome::Fallthrough
+    }
+
     /// Runs for each drag phase before default handling. Return
     /// [`ClickOutcome::Consume`] to cancel the drag.
     fn on_drag(

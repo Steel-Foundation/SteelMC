@@ -316,6 +316,16 @@ impl Menu {
         }
     }
 
+    pub fn button_clicked(&mut self, button_id: i32, player: &Player) {
+        // Menu-defined click hook. A consumed click skips default handling.
+        // The guard is dropped before the default arms re-lock the same containers.
+        let outcome = {
+            let mut guard = self.behavior().lock_all_containers();
+            let Self { behavior, kind, .. } = self;
+            kind.on_button_clicked(behavior, &mut guard, button_id, player)
+        };
+    }
+
     /// Handles quick move (shift-click).
     fn do_quick_move(&mut self, slot_index: usize, player: &Player) {
         let mut guard = self.behavior().lock_all_containers();

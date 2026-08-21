@@ -193,6 +193,28 @@ impl Player {
             packet.button_id,
             packet.container_id
         );
+        match self.take_open_menu_for_callback(Some(packet.container_id)) {
+            Ok(mut menu) => {
+                if self.game_mode() == GameType::Spectator || self.get_health() <= 0.0 {
+                    menu.behavior_mut()
+                        .send_all_data_to_remote(&self.connection);
+                    return;
+                }
+
+                if !menu.still_valid(self) {
+                    log::debug!(
+                        "Player {} interacted with invalid menu",
+                        self.gameprofile.name
+                    );
+                    return;
+                }
+
+                menu.button_clicked(packet.button_id, self);
+
+                self.finish_open_menu_callback(menu);
+            }
+            Err(_) => {} // Not quite sure what to do here
+        }
         // TODO: Implement container button click handling
         // This is used for things like:
         // - Enchanting table level selection
