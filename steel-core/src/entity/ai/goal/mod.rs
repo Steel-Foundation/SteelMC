@@ -10,6 +10,7 @@ mod flee_sun;
 mod float_goal;
 mod follow_mob;
 mod follow_parent;
+mod hurt_by_target;
 mod interact;
 mod leap_at_target;
 mod look_at_player;
@@ -17,6 +18,7 @@ mod melee_attack;
 mod move_to_block;
 mod move_towards_restriction;
 mod move_towards_target;
+mod nearest_attackable_target;
 mod open_door;
 mod panic_goal;
 mod random_look_around;
@@ -34,7 +36,17 @@ pub(crate) use breed_goal::BreedGoal;
 pub(crate) use eat_block_goal::EatBlockGoal;
 pub(crate) use float_goal::FloatGoal;
 pub(crate) use follow_parent::FollowParentGoal;
+#[expect(
+    unused_imports,
+    reason = "target goals are consumed by mob goal registration modules"
+)]
+pub(crate) use hurt_by_target::HurtByTargetGoal;
 pub(crate) use look_at_player::LookAtPlayerGoal;
+#[expect(
+    unused_imports,
+    reason = "target goals are consumed by mob goal registration modules"
+)]
+pub(crate) use nearest_attackable_target::NearestAttackableTargetGoal;
 pub(crate) use panic_goal::PanicGoal;
 pub(crate) use random_look_around::RandomLookAroundGoal;
 pub(crate) use selector::{GoalControl, GoalSelector};
