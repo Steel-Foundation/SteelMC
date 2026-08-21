@@ -36,7 +36,7 @@ pub use decoration::{
     WallHangingSignBlock, WallSignBlock, WallTorchBlock, WeatheringCopperChainBlock,
     WeatheringLanternBlock,
 };
-pub use falling::{ConcretePowderBlock, FallingBlock, SandBlock};
+pub use falling::{ConcretePowderBlock, DragonEggBlock, FallingBlock, SandBlock};
 pub use fluid::{BubbleColumnBlock, LiquidBlock};
 pub use portal::{
     EndGatewayBlock, EndPortalBlock, EndPortalFrameBlock, FireBlock, NetherPortalBlock,
