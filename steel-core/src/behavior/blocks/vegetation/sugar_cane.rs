@@ -11,7 +11,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, IntProperty};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
-use steel_registry::vanilla_fluid_tags;
+use steel_registry::vanilla_fluid_tags::FluidTag;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::BlockBehavior;
@@ -27,7 +27,7 @@ pub struct SugarCaneBlock {
     block: BlockRef,
 }
 
-const AGE_15: &IntProperty = &BlockStateProperties::AGE_15;
+const AGE: &IntProperty = &BlockStateProperties::AGE_15;
 
 impl SugarCaneBlock {
     /// Creates a new sugar cane block behavior.
@@ -91,18 +91,18 @@ impl BlockBehavior for SugarCaneBlock {
             return;
         }
 
-        let age = state.get_value(AGE_15);
+        let age = state.get_value(AGE);
 
-        if age == 15 {
+        if age == AGE.max {
             world.set_block(
                 above_pos,
                 self.block.default_state(),
                 UpdateFlags::UPDATE_ALL,
             );
-            let new_state = state.set_value(AGE_15, 0);
+            let new_state = state.set_value(AGE, 0);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         } else {
-            let new_state = state.set_value(AGE_15, age + 1);
+            let new_state = state.set_value(AGE, age + 1);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         }
     }
@@ -152,7 +152,7 @@ impl BlockBehavior for SugarCaneBlock {
                 || neighbor_state
                     .get_fluid_state()
                     .fluid_id
-                    .has_tag(&vanilla_fluid_tags::FluidTag::SUPPORTS_SUGAR_CANE_ADJACENTLY)
+                    .has_tag(&FluidTag::SUPPORTS_SUGAR_CANE_ADJACENTLY)
             {
                 return true;
             }

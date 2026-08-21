@@ -48,6 +48,7 @@ pub(super) use crate::behavior::BLOCK_BEHAVIORS;
 pub(super) use crate::chunk::heightmap::HeightmapType;
 pub(super) use crate::chunk::status::ChunkStatus;
 pub(super) use crate::fluid::state::get_fluid_state_from_block;
+pub(super) use crate::world::{LevelAccessor, LevelReader};
 pub(super) use crate::worldgen::generator::vanilla::fuzzed_biome_at_block;
 pub(super) use crate::worldgen::region::{WorldGenBulkSectionAccess, WorldGenRegion};
 
