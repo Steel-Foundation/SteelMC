@@ -7,13 +7,16 @@ use crate::{
     inventory::container::{ResultContainer, SimpleContainer},
     player::player_inventory::PlayerInventory,
 };
-use steel_registry::{items, vanilla_item_tags::ItemTag, vanilla_menu_types,
-    data_components::vanilla_components::PROVIDES_BANNER_PATTERNS,
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::{
     data_components::vanilla_components::DYE,
+    data_components::vanilla_components::PROVIDES_BANNER_PATTERNS, vanilla_blocks,
+    vanilla_item_tags::ItemTag, vanilla_menu_types,
 };
 use steel_utils::BlockPos;
 use steel_utils::locks::{IntoShared, Shared};
 
+/// Builds a loom menu
 #[must_use]
 pub fn loom(inventory: Shared<PlayerInventory>, container_id: u8, block_pos: BlockPos) -> Menu {
     let input_container = SimpleContainer::new(3).into_shared();
@@ -34,7 +37,7 @@ pub fn loom(inventory: Shared<PlayerInventory>, container_id: u8, block_pos: Blo
     let input = builder.section_at(
         &input_container,
         [0, 1, 2],
-        SectionKind::restricted(|i: usize, stack: &ItemStack| match (i) {
+        SectionKind::restricted(|i: usize, stack: &ItemStack| match i {
             0 => stack.item.has_tag(&ItemTag::BANNERS), // TODO: Uses item tag in place of instanceof
             1 => stack.item.has_tag(&ItemTag::LOOM_DYES) && stack.has(DYE),
             2 => stack.item.has_tag(&ItemTag::LOOM_PATTERNS) && stack.has(PROVIDES_BANNER_PATTERNS),
@@ -59,7 +62,6 @@ pub fn loom(inventory: Shared<PlayerInventory>, container_id: u8, block_pos: Blo
     );
     builder.drain(input);
     builder.build(LoomKind {
-        input_container,
         result_container,
         button_id,
         buttons_len,
@@ -68,8 +70,8 @@ pub fn loom(inventory: Shared<PlayerInventory>, container_id: u8, block_pos: Blo
     })
 }
 
+/// Per-menu loom state
 pub struct LoomKind {
-    input_container: Shared<SimpleContainer>,
     result_container: Shared<ResultContainer>,
     button_id: Arc<AtomicI32>,
     buttons_len: Arc<AtomicI32>,
@@ -91,10 +93,22 @@ impl MenuKind for LoomKind {
         guard: &mut ContainerLockGuard,
         button_id: i32,
         _player: &Player,
-    ) -> ClickOutcome { // TODO: ClickOutcome is the wrong return type
+    ) -> ClickOutcome {
+        // TODO: ClickOutcome is the wrong return type
+        if self.buttons_len.load(Ordering::Relaxed) <= button_id {
+            return ClickOutcome::Fallthrough;
+        }
         self.button_id.store(button_id, Ordering::Relaxed);
         self.handler.update_result(guard);
         ClickOutcome::Fallthrough
+    }
+
+    /// Returns true if the block is still a loom and the player is in
+    /// range (plus a 4.0 buffer).
+    fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
+        let world = player.get_world();
+        world.get_block_state(self.block_pos).get_block() == &vanilla_blocks::LOOM
+            && player.is_within_block_interaction_range_with_buffer(self.block_pos, 4.0)
     }
 
     fn removed(&mut self, _behavior: &mut MenuBehavior, _player: &Player) {

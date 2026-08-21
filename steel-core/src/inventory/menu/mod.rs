@@ -316,10 +316,11 @@ impl Menu {
         }
     }
 
+    /// Handles a button click action in this menu
     pub fn button_clicked(&mut self, button_id: i32, player: &Player) {
         // Menu-defined click hook. A consumed click skips default handling.
         // The guard is dropped before the default arms re-lock the same containers.
-        let outcome = {
+        let _outcome = {
             let mut guard = self.behavior().lock_all_containers();
             let Self { behavior, kind, .. } = self;
             kind.on_button_clicked(behavior, &mut guard, button_id, player)

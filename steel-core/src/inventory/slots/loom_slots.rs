@@ -17,10 +17,10 @@ use steel_registry::{
     },
     item_stack::ItemStack,
     vanilla_banner_pattern_tags::BannerPatternTag,
-    vanilla_banner_patterns,
 };
 use steel_utils::locks::Shared;
 
+/// Handler for Loom
 #[derive(Clone)]
 pub struct LoomHandler {
     input_container: Shared<SimpleContainer>,
@@ -34,6 +34,7 @@ const DYE_SLOT: usize = 1;
 const PATTERN_SLOT: usize = 2;
 
 impl LoomHandler {
+    /// Creates a new Loom Handler
     pub const fn new(
         input_container: Shared<SimpleContainer>,
         result_container: Shared<ResultContainer>,
@@ -75,7 +76,7 @@ impl LoomHandler {
         ContainerId::from_arc(&self.result_container)
     }
 
-    pub fn get_result(&self, guard: &ContainerLockGuard) -> Option<ItemStack> {
+    fn get_result(&self, guard: &ContainerLockGuard) -> Option<ItemStack> {
         let input_container = guard
             .get_typed::<SimpleContainer>(self.input_id())
             .expect("input container not locked");
@@ -112,7 +113,7 @@ impl LoomHandler {
             .layers()
             .to_vec();
         layers.push(BannerPatternLayer::new(
-            RegistryHolder::Reference(pattern.unwrap().clone()),
+            RegistryHolder::Reference(pattern.unwrap()),
             *color.unwrap(),
         ));
         result.count = 1;
@@ -132,6 +133,10 @@ impl ResultHandler for LoomHandler {
     }
 
     fn update_result(&self, guard: &mut ContainerLockGuard) {
+        // Temp store large number for buttons
+        // TODO: Remove but cache selectable_patterns
+        self.buttons_len.store(64, Ordering::Relaxed);
+
         let result = self.get_result(guard).unwrap_or_default();
         let result_container = guard
             .get_typed_mut::<ResultContainer>(self.result_id())
@@ -143,7 +148,7 @@ impl ResultHandler for LoomHandler {
     fn on_result_taken(
         &self,
         guard: &mut ContainerLockGuard,
-        player: &crate::inventory::prelude::Player,
+        _player: &crate::inventory::prelude::Player,
     ) -> Option<ItemStack> {
         let input_container = guard
             .get_typed_mut::<SimpleContainer>(self.input_id())
@@ -158,7 +163,7 @@ impl ResultHandler for LoomHandler {
     fn is_result_valid(
         &self,
         guard: &ContainerLockGuard,
-        player: &crate::inventory::prelude::Player,
+        _player: &crate::inventory::prelude::Player,
     ) -> bool {
         let result = self.get_result(guard).unwrap_or_default();
         let result_container = guard

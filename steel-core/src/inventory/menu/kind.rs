@@ -71,7 +71,7 @@ pub trait MenuKind: ErasedType + Send + Sync {
         &mut self,
         _behavior: &mut MenuBehavior,
         _guard: &mut ContainerLockGuard,
-        button_id: i32,
+        _button_id: i32,
         _player: &Player,
     ) -> ClickOutcome {
         ClickOutcome::Fallthrough

@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
-use crate::inventory;
 use crate::inventory::menu::kinds::loom;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
@@ -11,6 +10,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumPr
 use steel_utils::{BlockPos, BlockStateId, translations};
 use text_components::TextComponent;
 
+/// Behavior for the loom block.
 #[block_behavior]
 pub struct LoomBlock {
     block: BlockRef,
@@ -19,6 +19,7 @@ pub struct LoomBlock {
 const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 
 impl LoomBlock {
+    /// Creates a new loom block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
@@ -34,12 +35,12 @@ impl BlockBehavior for LoomBlock {
 
     fn use_without_item(
         &self,
-        state: BlockStateId,
-        world: &Arc<crate::world::World>,
+        _state: BlockStateId,
+        _world: &Arc<crate::world::World>,
         pos: BlockPos,
         player: &crate::player::Player,
-        hit_result: &BlockHitResult,
-        inv: &mut crate::behavior::InventoryAccess,
+        _hit_result: &BlockHitResult,
+        _inv: &mut crate::behavior::InventoryAccess,
     ) -> crate::behavior::InteractionResult {
         let inventory = player.inventory.clone();
         player.open_menu(
