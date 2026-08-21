@@ -50,6 +50,17 @@ mimalloc = { version = "0.1.52", optional = true }
 dhat = { version = "0.3.3", optional = true }
 strip-ansi-escapes = "0.2.1"
 
+# Shutdown signal handling
+[target.'cfg(unix)'.dependencies]
+# `termination` extends the default SIGINT handling to SIGTERM and SIGHUP.
+ctrlc = { version = "3.5.0", features = ["termination"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Console",
+] }
+
 [lints]
 workspace = true
 
