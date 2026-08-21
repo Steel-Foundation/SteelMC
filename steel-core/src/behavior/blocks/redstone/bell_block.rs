@@ -61,13 +61,7 @@ impl BellBlock {
         world.is_face_sturdy(support, support_pos, direction.opposite())
     }
     // TODO: Notify villagers when the villager AI is fully implemented.
-    fn ring(
-        &self,
-        source: Option<&dyn Entity>,
-        world: &Arc<World>,
-        pos: BlockPos,
-        direction: Direction,
-    ) {
+    fn ring(source: Option<&dyn Entity>, world: &Arc<World>, pos: BlockPos, direction: Direction) {
         let Some(block_entity) = world.get_block_entity(pos) else {
             return;
         };
@@ -113,7 +107,7 @@ impl BellBlock {
         }
     }
 
-    fn update_powered(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+    fn update_powered(state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let powered = world.has_neighbor_signal(pos);
         let old_powered = state.get_value(POWERED);
 
@@ -123,80 +117,11 @@ impl BellBlock {
 
         if powered {
             let direction = state.get_value(FACING);
-            self.ring(None, world, pos, direction);
+            Self::ring(None, world, pos, direction);
         }
 
         let new_state = state.set_value(POWERED, powered);
         world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use steel_registry::init_vanilla_registry;
-    use steel_utils::ChunkPos;
-
-    use super::*;
-    use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
-    use crate::block_entity::init_block_entities;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
-
-    #[test]
-    fn wall_attachment_uses_facing_as_support_direction() {
-        init_vanilla_registry();
-        let state = vanilla_blocks::BELL
-            .default_state()
-            .set_value(BELL_ATTACHMENT, BellAttachType::SingleWall)
-            .set_value(FACING, Direction::West);
-
-        assert_eq!(BellBlock::connected_direction(state), Direction::West);
-    }
-
-    #[test]
-    fn generated_registry_bell_behavior_creates_registered_typed_entity() {
-        init_vanilla_registry();
-        init_block_entities();
-        init_behaviors();
-        let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::BELL);
-        let entity = behavior
-            .new_block_entity(
-                Weak::new(),
-                BlockPos::new(0, 64, 0),
-                vanilla_blocks::BELL.default_state(),
-            )
-            .into_created()
-            .expect("bell should create its registered block entity");
-
-        assert!(BLOCK_ENTITIES.has_factory(&vanilla_block_entity_types::BELL));
-        assert!(entity.downcast_ref::<BellBlockEntity>().is_some());
-    }
-
-    #[test]
-    fn placed_bell_is_stored_with_its_ticker() {
-        init_vanilla_registry();
-        init_block_entities();
-        init_behaviors();
-        let world = fresh_test_world("placed_bell_entity");
-        let pos = BlockPos::new(4, 64, 4);
-        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
-        assert!(world.set_block(
-            pos.relative(Direction::Down),
-            vanilla_blocks::STONE.default_state(),
-            UpdateFlags::UPDATE_ALL,
-        ));
-        let state = vanilla_blocks::BELL.default_state();
-        assert!(world.set_block(pos, state, UpdateFlags::UPDATE_ALL));
-
-        let entity = world
-            .get_block_entity(pos)
-            .expect("placed bell should be stored as a block entity");
-        assert!(entity.downcast_ref::<BellBlockEntity>().is_some());
-        assert!(
-            BLOCK_BEHAVIORS
-                .get_behavior(&vanilla_blocks::BELL)
-                .get_block_entity_ticker(&world, state, entity.get_type())
-                .is_some()
-        );
     }
 }
 
@@ -299,7 +224,7 @@ impl BlockBehavior for BellBlock {
         _source_block: BlockRef,
         _moved_by_piston: bool,
     ) {
-        self.update_powered(state, world, pos);
+        Self::update_powered(state, world, pos);
     }
 
     fn use_without_item(
@@ -315,7 +240,7 @@ impl BlockBehavior for BellBlock {
             return InteractionResult::Pass;
         }
 
-        self.ring(Some(player), world, pos, hit.direction);
+        Self::ring(Some(player), world, pos, hit.direction);
         InteractionResult::Success
     }
 
@@ -365,5 +290,74 @@ impl BlockBehavior for BellBlock {
         _computation_type: PathComputationType,
     ) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::init_vanilla_registry;
+    use steel_utils::ChunkPos;
+
+    use super::*;
+    use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
+    use crate::block_entity::init_block_entities;
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+
+    #[test]
+    fn wall_attachment_uses_facing_as_support_direction() {
+        init_vanilla_registry();
+        let state = vanilla_blocks::BELL
+            .default_state()
+            .set_value(BELL_ATTACHMENT, BellAttachType::SingleWall)
+            .set_value(FACING, Direction::West);
+
+        assert_eq!(BellBlock::connected_direction(state), Direction::West);
+    }
+
+    #[test]
+    fn generated_registry_bell_behavior_creates_registered_typed_entity() {
+        init_vanilla_registry();
+        init_block_entities();
+        init_behaviors();
+        let behavior = BLOCK_BEHAVIORS.get_behavior(&vanilla_blocks::BELL);
+        let entity = behavior
+            .new_block_entity(
+                Weak::new(),
+                BlockPos::new(0, 64, 0),
+                vanilla_blocks::BELL.default_state(),
+            )
+            .into_created()
+            .expect("bell should create its registered block entity");
+
+        assert!(BLOCK_ENTITIES.has_factory(&vanilla_block_entity_types::BELL));
+        assert!(entity.downcast_ref::<BellBlockEntity>().is_some());
+    }
+
+    #[test]
+    fn placed_bell_is_stored_with_its_ticker() {
+        init_vanilla_registry();
+        init_block_entities();
+        init_behaviors();
+        let world = fresh_test_world("placed_bell_entity");
+        let pos = BlockPos::new(4, 64, 4);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        assert!(world.set_block(
+            pos.relative(Direction::Down),
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+        let state = vanilla_blocks::BELL.default_state();
+        assert!(world.set_block(pos, state, UpdateFlags::UPDATE_ALL));
+
+        let entity = world
+            .get_block_entity(pos)
+            .expect("placed bell should be stored as a block entity");
+        assert!(entity.downcast_ref::<BellBlockEntity>().is_some());
+        assert!(
+            BLOCK_BEHAVIORS
+                .get_behavior(&vanilla_blocks::BELL)
+                .get_block_entity_ticker(&world, state, entity.get_type())
+                .is_some()
+        );
     }
 }

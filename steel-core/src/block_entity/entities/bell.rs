@@ -162,7 +162,7 @@ impl BellBlockEntity {
                 continue;
             };
             living.add_mob_effect(MobEffectInstance::with_duration(
-                &vanilla_mob_effects::GLOWING,
+                vanilla_mob_effects::GLOWING,
                 GLOW_DURATION,
                 0,
             ));
