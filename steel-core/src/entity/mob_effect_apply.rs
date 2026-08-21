@@ -3,12 +3,12 @@
 //! `Consumable.on_consume_effects`, and the small set of instantaneous mob
 //! effects that bypass the tick loop entirely.
 
-use steel_protocol::packets::game::SoundSource;
 use steel_registry::consume_effect::{
     ApplyStatusEffectsConsumeEffect, ClearAllStatusEffectsConsumeEffect, ConsumeEffectData,
     PlaySoundConsumeEffect, RemoveStatusEffectsConsumeEffect, vanilla_consume_effect_types,
 };
 use steel_registry::data_components::PotionContents;
+use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{
     MobEffectInstance as RegistryMobEffectInstance, vanilla_damage_types, vanilla_mob_effects,
 };
@@ -42,14 +42,14 @@ fn apply_mob_effect_instance(
     // swap heal/harm for Instant Health/Instant Damage) once entity-type tags
     // expose that classification.
     if effect_ref == vanilla_mob_effects::INSTANT_HEALTH {
-        user.heal((4_i32 << effect.amplifier()) as f32);
+        user.heal(4_i32.wrapping_shl(effect.amplifier() as u32) as f32);
         return;
     }
     if effect_ref == vanilla_mob_effects::INSTANT_DAMAGE {
         user.hurt(
             world,
             &DamageSource::environment(&vanilla_damage_types::MAGIC),
-            (6_i32 << effect.amplifier()) as f32,
+            6_i32.wrapping_shl(effect.amplifier() as u32) as f32,
         );
         return;
     }
@@ -106,8 +106,59 @@ pub(crate) fn apply_consume_effect(
             return;
         };
         if let Some(sound) = play_sound.sound().registry_ref() {
-            world.play_sound_at(sound, SoundSource::Players, user.position(), 1.0, 1.0, None);
+            play_entity_sound(world, sound, user);
         }
     }
     // TODO: TELEPORT_RANDOMLY is out of scope for the drink-potion pass.
+}
+
+/// Plays a sound at `user`'s position, in `user`'s own sound category
+/// (`SoundSource::Players` for players, a mob-appropriate category for
+/// others). Mirrors vanilla `LivingEntity.playSound`, which always uses
+/// `this.getSoundSource()` rather than a fixed category.
+pub(crate) fn play_entity_sound(world: &World, sound: SoundEventRef, user: &dyn LivingEntity) {
+    world.play_sound_at(sound, user.sound_source(), user.position(), 1.0, 1.0, None);
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::data_components::PotionContents;
+    use steel_registry::{
+        MobEffectInstance as RegistryMobEffectInstance, init_vanilla_registry, vanilla_mob_effects,
+    };
+    use steel_utils::ChunkPos;
+    use uuid::Uuid;
+
+    use super::apply_potion_contents;
+    use crate::entity::LivingEntity;
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+
+    /// Vanilla's `int` shift is masked to the low 5 bits (Java `<<` never
+    /// throws), so an Instant Health/Instant Damage amplifier of 32 or more
+    /// must not panic and must reproduce that masked value rather than the
+    /// naive (and here overflowing) shift amount.
+    #[test]
+    fn instant_health_amplifier_at_shift_width_does_not_panic_and_wraps_like_vanilla() {
+        init_vanilla_registry();
+        let world = fresh_test_world("instant_health_high_amplifier");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(world.clone(), Uuid::from_u128(1), "Test", 1).build();
+        player.set_health(1.0);
+
+        let contents = PotionContents::new(
+            None,
+            None,
+            vec![RegistryMobEffectInstance::simple(
+                vanilla_mob_effects::INSTANT_HEALTH,
+                1,
+                32,
+            )],
+            None,
+        );
+
+        apply_potion_contents(&contents, &world, player.as_ref());
+
+        // 4 << 32 wraps to 4 << (32 % 32) == 4 << 0 == 4, matching Java.
+        assert_eq!(player.get_health(), 5.0);
+    }
 }

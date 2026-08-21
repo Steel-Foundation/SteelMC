@@ -802,7 +802,7 @@ pub use manager::{
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
 };
 pub(crate) use mob::{Mob, MobBase, PathfinderMob};
-pub(crate) use mob_effect_apply::{apply_consume_effect, apply_potion_contents};
+pub(crate) use mob_effect_apply::{apply_consume_effect, apply_potion_contents, play_entity_sound};
 pub use movement_sync::{
     EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
     EntityMovementSyncUpdate, EntityPositionRotSyncPacket, EntityPositionSyncDecision,

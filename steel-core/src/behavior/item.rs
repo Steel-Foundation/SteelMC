@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use std::borrow::Cow;
-use steel_protocol::packets::game::SoundSource;
 use steel_registry::data_components::vanilla_components::{
     BLOCKS_ATTACKS, CONSUMABLE, KINETIC_WEAPON, USE_REMAINDER,
 };
@@ -17,9 +16,8 @@ use text_components::TextComponent;
 
 use crate::behavior::items::DefaultItemBehavior;
 use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
-use crate::entity::apply_consume_effect;
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity};
+use crate::entity::{Entity, LivingEntity, apply_consume_effect, play_entity_sound};
 use crate::player::{Player, player_inventory::EquipmentSwapResult};
 use crate::world::World;
 
@@ -222,7 +220,7 @@ pub(crate) fn finish_consuming_stack(
     }
 
     if let Some(sound) = consumable.sound().registry_ref() {
-        world.play_sound_at(sound, SoundSource::Players, user.position(), 1.0, 1.0, None);
+        play_entity_sound(world, sound, user);
     }
     // TODO: Spawn item-crumb particles when `has_consume_particles()` is set.
 
