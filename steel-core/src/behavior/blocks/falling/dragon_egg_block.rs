@@ -17,6 +17,10 @@ use steel_registry::items::item::BlockHitResult;
 use super::FallingBlock;
 
 const DRAGON_EGG_FALL_DELAY: i32 = 5;
+const DRAGON_EGG_MAX_TELEPORTS: u32 = 1000;
+const DRAGON_EGG_MAX_X: i32 = 15;
+const DRAGON_EGG_MAX_Y: i32 = 7;
+const DRAGON_EGG_MAX_Z: i32 = 15;
 
 /// Vanilla `Dragon Egg` behavior.
 #[block_behavior]
@@ -34,10 +38,10 @@ impl DragonEggBlock {
     }
 
     fn teleport(state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        for _ in 0..1000 {
-            let x = random_range(0..15) - random_range(0..15);
-            let y = random_range(0..7) - random_range(0..7);
-            let z = random_range(0..15) - random_range(0..15);
+        for _ in 0..DRAGON_EGG_MAX_TELEPORTS {
+            let x = random_range(0..DRAGON_EGG_MAX_X) - random_range(0..DRAGON_EGG_MAX_X);
+            let y = random_range(0..DRAGON_EGG_MAX_Y) - random_range(0..DRAGON_EGG_MAX_Y);
+            let z = random_range(0..DRAGON_EGG_MAX_Z) - random_range(0..DRAGON_EGG_MAX_Z);
 
             let new_pos = BlockPos::new(pos.x() + x, pos.y() + y, pos.z() + z);
 
