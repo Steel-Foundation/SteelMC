@@ -1,9 +1,7 @@
 //! Process shutdown signal handling.
 //!
-//! Every handled signal cancels the server's [`CancellationToken`], which is the
-//! single entry point into the graceful shutdown that persists world and player
-//! data. The platform modules only differ in how they learn about the request and
-//! in whether they must hold the process open until that data is on disk.
+//! Every handled signal cancels the server's [`CancellationToken`], the single
+//! entry point into the shutdown that persists world and player data.
 
 use std::sync::OnceLock;
 
@@ -13,8 +11,8 @@ static CANCEL_TOKEN: OnceLock<CancellationToken> = OnceLock::new();
 
 /// Installs the shutdown signal handlers for the running platform.
 ///
-/// On Unix this covers `SIGINT`, `SIGTERM` and `SIGHUP`. On Windows it covers
-/// `Ctrl-C`, `Ctrl-Break`, closing the console window, logoff and system shutdown.
+/// Unix covers `SIGINT`, `SIGTERM` and `SIGHUP`; Windows covers `Ctrl-C`,
+/// `Ctrl-Break`, console close, logoff and system shutdown.
 pub fn install(cancel_token: CancellationToken) {
     if CANCEL_TOKEN.set(cancel_token).is_err() {
         log::error!("Shutdown signal handler is already installed");
@@ -26,16 +24,14 @@ pub fn install(cancel_token: CancellationToken) {
     }
 }
 
-/// Reports that world and player data have been persisted.
-///
-/// Windows blocks the console control handler until this is called, so it must run
-/// on every exit path once the graceful shutdown has finished.
+/// Reports that world and player data have been persisted. Windows blocks the
+/// console control handler until this is called, so it must run on every exit path.
 pub fn cleanup_finished() {
     platform::cleanup_finished();
 }
 
-/// Starts the graceful shutdown. Repeat requests are ignored so that a second
-/// signal cannot restart a shutdown that is already saving data.
+/// Cancels the server, ignoring repeat signals so a second one cannot disturb a
+/// shutdown that is already saving.
 fn request_shutdown(source: &str) {
     let Some(cancel_token) = CANCEL_TOKEN.get() else {
         return;
@@ -52,13 +48,13 @@ fn request_shutdown(source: &str) {
 mod platform {
     use super::request_shutdown;
 
-    /// Registers the `ctrlc` handler. Its `termination` feature extends the default
-    /// `SIGINT` handling to `SIGTERM` and `SIGHUP`.
+    /// The `termination` feature extends `ctrlc`'s default `SIGINT` handling to
+    /// `SIGTERM` and `SIGHUP`.
     pub fn install() -> Result<(), ctrlc::Error> {
         ctrlc::set_handler(|| request_shutdown("shutdown signal"))
     }
 
-    /// Unix signal handlers never hold the process open, so there is nothing to release.
+    /// Unix handlers never hold the process open, so there is nothing to release.
     pub const fn cleanup_finished() {}
 }
 
@@ -77,13 +73,9 @@ mod platform {
 
     use super::request_shutdown;
 
-    /// How long a console control handler waits for the graceful shutdown to finish.
-    ///
-    /// Windows terminates the process as soon as the handler returns, so without this
-    /// wait closing the console window would cut world saving short and leave region
-    /// files half written. Windows enforces its own limit on top of this (about five
-    /// seconds, from `HKCU\Control Panel\Desktop\WaitToKillAppTimeout`), so this is an
-    /// upper bound on how long we ask for, not a guarantee of how long we get.
+    /// How long the console control handler waits for the shutdown to finish before
+    /// letting Windows kill the process. Windows enforces its own ceiling on top of
+    /// this (about five seconds, `HKCU\Control Panel\Desktop\WaitToKillAppTimeout`).
     const CLEANUP_GRACE: Duration = Duration::from_secs(10);
 
     static CLEANUP_DONE: SyncMutex<bool> = SyncMutex::new(false);
@@ -104,8 +96,9 @@ mod platform {
         CLEANUP_SIGNAL.notify_all();
     }
 
-    /// Console control handler. Windows runs this on a dedicated thread and, for the
-    /// close, logoff and shutdown events, kills the process once it returns.
+    /// Windows runs this on its own thread and, for the close, logoff and shutdown
+    /// events, kills the process once it returns. Blocking here is what keeps the
+    /// world save from being cut short.
     unsafe extern "system" fn console_ctrl_handler(ctrl_type: u32) -> BOOL {
         let source = match ctrl_type {
             CTRL_C_EVENT => "Ctrl-C",
