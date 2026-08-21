@@ -18,9 +18,9 @@ use super::FallingBlock;
 
 const DRAGON_EGG_FALL_DELAY: i32 = 5;
 const DRAGON_EGG_MAX_TELEPORTS: u32 = 1000;
-const DRAGON_EGG_MAX_X: i32 = 15;
-const DRAGON_EGG_MAX_Y: i32 = 7;
-const DRAGON_EGG_MAX_Z: i32 = 15;
+const DRAGON_EGG_MAX_X: i32 = 16;
+const DRAGON_EGG_MAX_Y: i32 = 8;
+const DRAGON_EGG_MAX_Z: i32 = 16;
 
 /// Vanilla `Dragon Egg` behavior.
 #[block_behavior]
@@ -49,11 +49,15 @@ impl DragonEggBlock {
                 continue;
             }
 
+            if world.get_block_state(new_pos.below()).is_air() {
+                continue;
+            }
+
             if !world.is_block_within_world_border(new_pos) {
                 continue;
             }
 
-            if world.is_outside_build_height(y) {
+            if world.is_outside_build_height(new_pos.y()) {
                 continue;
             }
 
