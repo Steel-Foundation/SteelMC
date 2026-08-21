@@ -252,24 +252,20 @@ impl ChunkSender {
         }
         drop(epoch);
 
-        let prepared_chunks: FxHashMap<ChunkPos, &PreparedChunk> = batch
-            .chunks
-            .iter()
-            .map(|prepared| (prepared.pos, prepared))
-            .collect();
+        let mut prepared_chunks = batch.chunks.iter();
 
         let mut valid_chunks = Vec::with_capacity(encoded_chunks.len());
         for encoded in encoded_chunks {
             if !self.pending_chunks.contains(&encoded.pos) {
                 continue;
             }
-            let Some(prepared) = prepared_chunks.get(&encoded.pos).copied() else {
+            let Some(prepared) = prepared_chunks.find(|prepared| prepared.pos == encoded.pos)
+            else {
                 continue;
             };
-            if !encoded.is_current_for(prepared) {
-                continue;
+            if encoded.is_current_for(prepared) {
+                valid_chunks.push(encoded);
             }
-            valid_chunks.push(encoded);
         }
 
         if valid_chunks.is_empty() {
