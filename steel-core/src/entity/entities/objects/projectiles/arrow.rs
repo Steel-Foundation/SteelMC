@@ -21,7 +21,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ArrowEntityData;
-use steel_registry::{sound_events, vanilla_damage_types, vanilla_items};
+use steel_registry::{sound_events, vanilla_damage_types, vanilla_entities, vanilla_items};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockStateId, DowncastType, DowncastTypeKey};
 
@@ -219,7 +219,6 @@ impl ArrowEntity {
         self.set_in_ground(true);
         let mut runtime = self.runtime.lock();
         runtime.shake_time = SHAKE_TIME;
-        runtime.last_state = Some(world.get_block_state(self.block_position()));
         drop(runtime);
         self.set_crit_arrow(false);
         self.entity_data.lock().abstract_arrow.pierce_level.set(0);
@@ -241,14 +240,8 @@ impl Entity for ArrowEntity {
             return;
         };
 
-        // Vanilla runs `super.tick()` first, so base projectile bookkeeping
-        // happens even for grounded arrows.
         self.set_old_position_to_current();
         self.base().set_old_rotation_to_current();
-        self.projectile_base_tick();
-        if self.is_removed() {
-            return;
-        }
 
         if self.runtime.lock().shake_time > 0 {
             self.runtime.lock().shake_time -= 1;
@@ -263,11 +256,9 @@ impl Entity for ArrowEntity {
 
         if self.is_in_ground() {
             let current = world.get_block_state(self.block_position());
-            let changed = self
-                .runtime
-                .lock()
-                .last_state
-                .is_some_and(|last| last != current);
+            // A missing `last_state` (fresh load without persisted block data)
+            // counts as changed, like vanilla's null `lastState` check.
+            let changed = self.runtime.lock().last_state != Some(current);
             if changed && self.should_fall() {
                 self.start_falling();
                 // Falls through into the flight branch like vanilla.
@@ -280,7 +271,12 @@ impl Entity for ArrowEntity {
             self.runtime.lock().in_ground_time = 0;
         }
 
-        // Flight branch.
+        // Flight branch. Water drag applies pre-move; bubble/crit particles are
+        // VANILLA CLIENT-LOCAL so there is no server work for them.
+        if self.is_in_water() {
+            self.set_velocity(self.velocity() * WATER_INERTIA);
+        }
+
         self.update_rotation();
         self.check_left_owner();
 
@@ -296,18 +292,23 @@ impl Entity for ArrowEntity {
         }
         self.runtime.lock().last_state = Some(world.get_block_state(self.block_position()));
 
-        if self.is_in_water() {
-            self.set_velocity(self.velocity() * WATER_INERTIA);
-        } else {
+        if !self.is_in_water() {
             self.set_velocity(self.velocity() * INERTIA);
         }
-        self.apply_gravity();
+        // Vanilla skips gravity once this tick's hit has grounded the arrow.
+        if !self.is_in_ground() {
+            self.apply_gravity();
+        }
 
         if let Some(result) = hit
             && self.is_alive()
         {
             self.hit_target_or_deflect_self(&result);
         }
+
+        // Vanilla runs `super.tick()` at the very end of the flight branch
+        // (grounded arrows return above without reaching it).
+        self.projectile_base_tick();
     }
 
     fn get_default_gravity(&self) -> f64 {
@@ -335,6 +336,9 @@ impl Entity for ArrowEntity {
     }
 
     fn attackable(&self) -> bool {
+        // TODO: vanilla returns the REDIRECTABLE_PROJECTILE tag check, which
+        // lets players deflect arrows in melee. Revisit once combat deflection
+        // exists on the Steel side.
         false
     }
 
@@ -409,13 +413,16 @@ impl Projectile for ArrowEntity {
             damage_amount += (rand::random::<u32>() % (damage_amount / 2 + 2) as u32) as i32;
         }
 
-        let mut damage =
-            DamageSource::environment(&vanilla_damage_types::ARROW).with_direct_entity(self.id());
-        if let Some(owner) = self.get_owner() {
-            damage = damage.with_causing_entity(owner.id());
-        }
+        // Vanilla `damageSources().arrow(this, owner != null ? owner : this)`.
+        let damage = DamageSource::environment(&vanilla_damage_types::ARROW)
+            .with_direct_entity(self.id())
+            .with_causing_entity(self.get_owner().map_or(self.id(), |owner| owner.id()));
 
         if entity.hurt(&world, &damage, damage_amount as f32) {
+            // Vanilla lets arrows pass through endermen without sound or discard.
+            if entity.entity_type() == &vanilla_entities::ENDERMAN {
+                return;
+            }
             let pitch = 1.2 / (rand::random::<f32>() * 0.2 + 0.9);
             world.play_sound_at(
                 &sound_events::ENTITY_ARROW_HIT,
@@ -427,21 +434,28 @@ impl Projectile for ArrowEntity {
             );
             self.set_removed(RemovalReason::Discarded);
         } else {
-            // Vanilla deflect path: bounce back weakly, die when nearly stopped.
-            self.set_velocity(self.velocity() * -0.1);
+            // Vanilla deflect path: `REVERSE` deflection plus a `scale(0.2)`
+            // shrink; a near-stopped allowed arrow drops as an item.
+            self.set_velocity(self.velocity() * -0.2);
             if self.velocity().length_squared() < 1.0e-7 {
+                if self.runtime.lock().pickup == Pickup::Allowed {
+                    world.spawn_item(self.position(), ItemStack::new(&vanilla_items::ARROW));
+                }
                 self.set_removed(RemovalReason::Discarded);
             }
         }
     }
 
-    /// Vanilla `AbstractArrow.onHitBlock`: stick, then the base dispatch so
-    /// target blocks etc. can still react through `projectile_on_hit_block`.
+    /// Vanilla `AbstractArrow.onHitBlock`: record `lastState` at the hit block,
+    /// run the base dispatch so target blocks etc. can react, then stick.
     fn on_hit_block(&self, hit: &ClipHitResult) {
         if let Some(world) = self.level() {
+            self.runtime.lock().last_state = Some(world.get_block_state(hit.block_pos));
+            self.projectile_on_hit_block(hit);
             self.stick_in_ground(&world);
+        } else {
+            self.projectile_on_hit_block(hit);
         }
-        self.projectile_on_hit_block(hit);
     }
 }
 
