@@ -1666,6 +1666,13 @@ pub trait LivingEntity: Entity {
         false
     }
 
+    /// Called with a `use_remainder` item that could not fit back into the
+    /// stack that was consumed (e.g. drinking one honey bottle out of a
+    /// stack of several leaves a spare glass bottle). Mirrors vanilla
+    /// `LivingEntity.handleExtraItemsCreatedOnUse`, which is a no-op for
+    /// non-player mobs.
+    fn handle_extra_items_created_on_use(&self, _extra: ItemStack) {}
+
     /// Called after an equipped item breaks.
     fn on_equipped_item_broken(&self, slot: EquipmentSlot) {
         let event = match slot {

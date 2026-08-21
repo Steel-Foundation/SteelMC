@@ -194,6 +194,20 @@ impl MobEffectInstance {
             return interval <= 0 || tick_count % interval == 0;
         }
 
+        if self.effect == vanilla_mob_effects::POISON {
+            let interval = 25_i32.wrapping_shr(self.amplifier as u32);
+            return interval <= 0 || tick_count % interval == 0;
+        }
+
+        if self.effect == vanilla_mob_effects::REGENERATION {
+            let interval = 50_i32.wrapping_shr(self.amplifier as u32);
+            return interval <= 0 || tick_count % interval == 0;
+        }
+
+        if self.effect == vanilla_mob_effects::HUNGER {
+            return true;
+        }
+
         // TODO: Add the remaining vanilla effect schedules as their gameplay systems land.
         false
     }
@@ -209,6 +223,27 @@ impl MobEffectInstance {
                 &DamageSource::environment(&vanilla_damage_types::WITHER),
                 1.0,
             );
+        }
+
+        // Poison never kills: mirrors vanilla `PoisonMobEffect.applyEffectTick`.
+        if self.effect == vanilla_mob_effects::POISON && entity.get_health() > 1.0 {
+            entity.hurt(
+                world,
+                &DamageSource::environment(&vanilla_damage_types::MAGIC),
+                1.0,
+            );
+        }
+
+        if self.effect == vanilla_mob_effects::REGENERATION
+            && entity.get_health() < entity.get_max_health()
+        {
+            entity.heal(1.0);
+        }
+
+        if self.effect == vanilla_mob_effects::HUNGER
+            && let Some(player) = entity.as_player()
+        {
+            player.cause_food_exhaustion(0.005 * (self.amplifier + 1) as f32);
         }
 
         // Vanilla effect ticks return whether the effect remains active. Wither

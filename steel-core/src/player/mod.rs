@@ -48,7 +48,6 @@ pub use profile::{
 };
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
-use std::mem::replace;
 use std::sync::{Arc, Weak};
 use steel_protocol::packets::game::{
     CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn, CSetDefaultSpawnPosition, CSetHealth,
@@ -358,9 +357,13 @@ impl Player {
             self.stop_using_item();
             return;
         }
+        // See the comment in `tick_active_item_use`: read a copy rather than
+        // clearing the slot, so any inventory-touching side effect from
+        // `release_using` never sees the hand as vacant.
         let mut item = {
-            let mut inventory = self.inventory.lock();
-            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+            let inventory = self.inventory.lock();
+            let current = inventory.get_item_in_hand(hand);
+            current.copy_with_count(current.count())
         };
         let world = self.get_world();
         let use_on_release = ITEM_BEHAVIORS.get_behavior(item.item()).release_using(
@@ -389,9 +392,17 @@ impl Player {
             self.stop_using_item();
             return;
         }
+        // Vanilla mutates the item in place while it stays resident in the
+        // hand slot, so a use-remainder overflow check triggered mid-behavior
+        // (e.g. `handle_extra_items_created_on_use`) never sees the hand as
+        // vacant. We can't hold the inventory lock across the behavior calls
+        // below (they may need to lock it themselves), so read a copy here
+        // instead of clearing the slot; each exit path below writes the true
+        // final result back with a single `set_item_in_hand`.
         let mut item = {
-            let mut inventory = self.inventory.lock();
-            replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+            let inventory = self.inventory.lock();
+            let current = inventory.get_item_in_hand(hand);
+            current.copy_with_count(current.count())
         };
         let world = self.get_world();
         let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
@@ -1753,6 +1764,13 @@ impl LivingEntity for Player {
 
     fn has_infinite_materials(&self) -> bool {
         Player::has_infinite_materials(self)
+    }
+
+    fn handle_extra_items_created_on_use(&self, extra: ItemStack) {
+        let leftover = self.inventory.lock().add_or_return(extra);
+        if !leftover.is_empty() {
+            let _ = self.drop_item(leftover, false, false);
+        }
     }
 
     fn get_absorption_amount(&self) -> f32 {

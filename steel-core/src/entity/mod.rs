@@ -754,6 +754,7 @@ mod living_base;
 mod living_entity;
 mod manager;
 mod mob;
+mod mob_effect_apply;
 mod movement_sync;
 pub mod projectile;
 mod registry;
@@ -796,6 +797,7 @@ pub use living_base::{
     MobEffectSyncChange, MobEffectSyncPacket,
 };
 pub use living_entity::LivingEntity;
+pub(crate) use mob_effect_apply::{apply_consume_effect, apply_potion_contents};
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,

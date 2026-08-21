@@ -610,3 +610,33 @@ fn jumping_and_jump_delay_are_shared_living_state() {
     base.tick_no_jump_delay();
     assert_eq!(base.no_jump_delay(), 0);
 }
+
+#[test]
+fn poison_and_regeneration_tick_schedules_match_vanilla_interval_formulas() {
+    init_vanilla_registry();
+
+    // Vanilla `PoisonMobEffect`: interval = 25 >> amplifier, applied when
+    // remaining duration is a multiple of the interval.
+    let poison = MobEffectInstance::with_duration(vanilla_mob_effects::POISON, 50, 0);
+    assert!(poison.should_apply_effect_tick_this_tick(0));
+    let poison_amplified = MobEffectInstance::with_duration(vanilla_mob_effects::POISON, 48, 1);
+    // 25 >> 1 == 12; 48 % 12 == 0.
+    assert!(poison_amplified.should_apply_effect_tick_this_tick(0));
+    let poison_off_schedule = MobEffectInstance::with_duration(vanilla_mob_effects::POISON, 49, 1);
+    assert!(!poison_off_schedule.should_apply_effect_tick_this_tick(0));
+
+    // Vanilla `RegenerationMobEffect`: interval = 50 >> amplifier.
+    let regen = MobEffectInstance::with_duration(vanilla_mob_effects::REGENERATION, 50, 0);
+    assert!(regen.should_apply_effect_tick_this_tick(0));
+    let regen_off_schedule =
+        MobEffectInstance::with_duration(vanilla_mob_effects::REGENERATION, 49, 0);
+    assert!(!regen_off_schedule.should_apply_effect_tick_this_tick(0));
+
+    // Vanilla `HungerMobEffect`: applies every tick.
+    let hunger = MobEffectInstance::with_duration(vanilla_mob_effects::HUNGER, 100, 0);
+    assert!(hunger.should_apply_effect_tick_this_tick(0));
+
+    // An effect with no vanilla tick schedule (e.g. Speed) never ticks.
+    let speed = MobEffectInstance::with_duration(vanilla_mob_effects::SPEED, 100, 0);
+    assert!(!speed.should_apply_effect_tick_this_tick(0));
+}

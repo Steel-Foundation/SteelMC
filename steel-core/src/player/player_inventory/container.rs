@@ -70,6 +70,16 @@ impl PlayerInventory {
             result_stack
         }
     }
+
+    /// Tries to add `stack` to the main inventory, returning whatever did
+    /// not fit (empty if it was fully absorbed).
+    pub fn add_or_return(&mut self, mut stack: ItemStack) -> ItemStack {
+        if self.add(&mut stack) {
+            ItemStack::empty()
+        } else {
+            stack
+        }
+    }
 }
 
 /// Static empty item stack for returning references to invalid slots.

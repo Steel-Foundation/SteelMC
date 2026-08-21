@@ -1,6 +1,11 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 
+use crate::behavior::item::finish_consuming_stack;
 use crate::behavior::{InteractionResult, ItemBehavior, UseOnContext};
+use crate::entity::LivingEntity;
+use crate::entity::apply_potion_contents;
+use crate::world::World;
 use crate::world::game_event::GameEventContext;
 use glam::DVec3;
 use steel_macros::item_behavior;
@@ -23,14 +28,23 @@ use super::dynamic_name::potion_name;
 /// Potion behavior providing Vanilla's potion-content-dependent name.
 // TODO: Add PotionItem's water default instance when Steel has item-specific
 // default-stack factories.
-// TODO: Complete the shared CONSUMABLE use/finish lifecycle so potions can be
-// drunk.
 #[item_behavior]
 pub struct PotionItem;
 
 impl ItemBehavior for PotionItem {
     fn get_name<'a>(&self, stack: &'a ItemStack) -> Cow<'a, TextComponent> {
         potion_name(stack)
+    }
+
+    fn finish_using(
+        &self,
+        stack: &mut ItemStack,
+        world: &Arc<World>,
+        user: &dyn LivingEntity,
+    ) -> ItemStack {
+        let contents = stack.get_or_default(vanilla_components::POTION_CONTENTS, PotionContents::empty());
+        apply_potion_contents(&contents, world, user);
+        finish_consuming_stack(stack, world, user)
     }
 
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {

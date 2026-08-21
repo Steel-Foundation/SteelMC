@@ -1125,3 +1125,109 @@ fn block_action_restriction_precedes_redstone_ore_attack() {
             .get_value(&BlockStateProperties::LIT)
     );
 }
+
+#[test]
+fn extra_items_created_on_use_fill_inventory_when_there_is_room() {
+    init_vanilla_registry();
+    let world = fresh_test_world("extra_items_created_on_use_has_room");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    player.handle_extra_items_created_on_use(ItemStack::new(&vanilla_items::GLASS_BOTTLE));
+
+    assert!(
+        player
+            .inventory
+            .lock()
+            .items()
+            .iter()
+            .any(|item| item.is(&vanilla_items::GLASS_BOTTLE))
+    );
+    let dropped = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-2.0, -1.0, -2.0, 2.0, 3.0, 2.0),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    );
+    assert!(dropped.is_empty());
+}
+
+#[test]
+fn extra_items_created_on_use_are_dropped_when_inventory_is_full() {
+    init_vanilla_registry();
+    let world = fresh_test_world("extra_items_created_on_use_full");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    {
+        let mut inventory = player.inventory.lock();
+        for slot in 0..36 {
+            inventory.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
+        }
+    }
+
+    player.handle_extra_items_created_on_use(ItemStack::new(&vanilla_items::GLASS_BOTTLE));
+
+    assert!(
+        player
+            .inventory
+            .lock()
+            .items()
+            .iter()
+            .all(|item| !item.is(&vanilla_items::GLASS_BOTTLE))
+    );
+    let dropped = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-2.0, -1.0, -2.0, 2.0, 3.0, 2.0),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    );
+    assert_eq!(dropped.len(), 1);
+    let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
+        panic!("dropped entity should retain its concrete item type");
+    };
+    assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+}
+
+/// Drinking a honey bottle out of a stack, through the real active-use tick
+/// loop (`start_using_item` + `tick_active_item_use`), with a full inventory,
+/// must not lose the empty glass bottle. This is a regression test for the
+/// hand slot being emptied up front: a `use_remainder` overflow check that
+/// runs mid-`finish_using` would otherwise see that emptied hand slot as free
+/// room, place the bottle there, and then have it silently overwritten when
+/// the final (shrunk) stack is written back to the same slot.
+#[test]
+fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tick_loop() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("drink_honey_bottle_tick_loop_full_inventory");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
+
+    {
+        let mut inventory = player.inventory.lock();
+        for slot in 0..36 {
+            inventory.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
+        }
+        inventory.set_selected_item(ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 5));
+    }
+
+    player.start_using_item(InteractionHand::MainHand);
+    for _ in 0..40 {
+        player.tick_active_item_use();
+    }
+
+    let hand_item = player
+        .inventory
+        .lock()
+        .get_item_in_hand(InteractionHand::MainHand)
+        .clone();
+    assert!(hand_item.is(&vanilla_items::HONEY_BOTTLE));
+    assert_eq!(hand_item.count(), 4);
+
+    let dropped = world.get_entities_in_aabb_matching(
+        &WorldAabb::new(-2.0, -1.0, -2.0, 2.0, 3.0, 2.0),
+        |entity| entity.entity_type() == &vanilla_entities::ITEM,
+    );
+    assert_eq!(dropped.len(), 1);
+    let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
+        panic!("dropped entity should retain its concrete item type");
+    };
+    assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+}
