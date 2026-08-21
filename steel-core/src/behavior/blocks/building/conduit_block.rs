@@ -46,10 +46,9 @@ impl BlockBehavior for ConduitBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let replaced_fluid_state = get_fluid_state(context.world, context.place_pos());
-        let is_water_source = replaced_fluid_state.is_water() && replaced_fluid_state.is_source();
         Some(self.block.default_state().set_value(
             WATERLOGGED,
-            is_water_source && replaced_fluid_state.is_full(),
+            replaced_fluid_state.is_water() && replaced_fluid_state.is_full(),
         ))
     }
 
