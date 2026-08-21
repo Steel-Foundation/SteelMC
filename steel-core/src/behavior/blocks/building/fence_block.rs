@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 use steel_macros::block_behavior;
@@ -14,7 +14,6 @@ use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty,
 };
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_fluids;
 use steel_utils::{BlockPos, BlockStateId};
 
 /// Behavior for fence blocks.
@@ -150,10 +149,7 @@ impl BlockBehavior for FenceBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         // Only update for horizontal directions
         match direction {
@@ -185,7 +181,7 @@ impl BlockBehavior for FenceBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{init_vanilla_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_fluids};
     use steel_utils::BlockPos;
 
     use crate::test_support::TestLevel;

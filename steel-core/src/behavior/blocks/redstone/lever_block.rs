@@ -11,6 +11,7 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::face_attached_horizontal_directional_block::FaceAttachedHorizontalDirectionalBlock;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{
     BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
 };
@@ -127,7 +128,11 @@ impl BlockBehavior for LeverBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
-        if state.get_value(POWERED) { 15 } else { 0 }
+        if state.get_value(POWERED) {
+            MAX_REDSTONE_SIGNAL
+        } else {
+            MIN_REDSTONE_SIGNAL
+        }
     }
 
     fn get_direct_signal(
@@ -141,9 +146,9 @@ impl BlockBehavior for LeverBlock {
         if state.get_value(POWERED)
             && FaceAttachedHorizontalDirectionalBlock::connected_direction(state) == direction
         {
-            15
+            MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
