@@ -1,4 +1,4 @@
-//! Eye of ender entity implementation (`EyeOfEnder`).
+//! Eye of ender entity implementation (`EyeOfEnderEntity`).
 //!
 //! Thrown by [`EnderEyeItem`](crate::behavior::items::EnderEyeItem) to point
 //! toward the nearest stronghold. Unlike its neighbors in this module, vanilla's
@@ -31,7 +31,7 @@ use crate::world::World;
 
 /// Vanilla: ticks alive before the eye plays its death sound and either drops
 /// itself as an item or shatters. `EyeOfEnderEntity` field `lifespan` threshold.
-const LIFESPAN_TICKS: i32 = 80;
+const LIFESPAN_TICKS: u32 = 80;
 
 /// Vanilla `EyeOfEnderEntity.initTargetPos`: horizontal distance beyond which
 /// the eye targets a nearby point in the structure's direction instead of the
@@ -60,7 +60,7 @@ struct EyeOfEnderState {
     /// Point the eye is flying toward. `None` until `init_target_pos` is called.
     target_pos: Option<DVec3>,
     /// Ticks alive. Despawns at `LIFESPAN_TICKS`.
-    lifespan: i32,
+    lifespan: u32,
     /// Whether this eye drops itself as a pickup item when it expires,
     /// instead of shattering. Rolled fresh each time `init_target_pos` is called.
     drops_item: bool,
@@ -82,8 +82,8 @@ impl EyeOfEnderState {
 /// - Flies toward a target point set by `init_target_pos`
 /// - Despawns after 80 ticks, dropping itself (4/5 chance) or shattering
 /// - Not attackable
-#[entity_behavior]
-pub struct EyeOfEnder {
+#[entity_behavior(class = "EyeOfEnder")]
+pub struct EyeOfEnderEntity {
     /// Common entity fields (id, uuid, position, etc.).
     base: EntityBase,
 
@@ -97,12 +97,12 @@ pub struct EyeOfEnder {
     state: SyncMutex<EyeOfEnderState>,
 }
 
-// SAFETY: This key is owned by Steel and uniquely identifies `EyeOfEnder`.
-unsafe impl DowncastType for EyeOfEnder {
+// SAFETY: This key is owned by Steel and uniquely identifies `EyeOfEnderEntity`.
+unsafe impl DowncastType for EyeOfEnderEntity {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/eye_of_ender");
 }
 
-impl EyeOfEnder {
+impl EyeOfEnderEntity {
     /// Creates a new eye of ender with the default (plain ender eye) displayed item.
     #[must_use]
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
@@ -189,6 +189,14 @@ impl EyeOfEnder {
     }
 
     /// Vanilla `EyeOfEnderEntity.updateVelocity` (static).
+    ///
+    /// Deliberate divergence: vanilla computes `lv.multiply(e / d)` without
+    /// guarding `d`, so an eye sitting exactly on its target's X/Z divides by
+    /// zero and poisons its own position with `NaN`. Steel asserts positions are
+    /// finite, which would turn that into a world-tick panic, so the horizontal
+    /// term is skipped when there is no horizontal distance left to cover. The
+    /// vertical nudge still applies, matching what vanilla does for every
+    /// non-degenerate input.
     fn update_velocity(velocity: DVec3, current_pos: DVec3, target_pos: DVec3) -> DVec3 {
         let horizontal = DVec3::new(
             target_pos.x - current_pos.x,
@@ -212,11 +220,16 @@ impl EyeOfEnder {
             -1.0
         };
 
-        horizontal * (e / d) + DVec3::new(0.0, f + (g - f) * VERTICAL_NUDGE, 0.0)
+        let vertical = DVec3::new(0.0, f + (g - f) * VERTICAL_NUDGE, 0.0);
+        if d == 0.0 {
+            return vertical;
+        }
+
+        horizontal * (e / d) + vertical
     }
 }
 
-impl Entity for EyeOfEnder {
+impl Entity for EyeOfEnderEntity {
     fn base(&self) -> &EntityBase {
         &self.base
     }

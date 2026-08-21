@@ -17,7 +17,7 @@ use steel_utils::{BlockPos, types::UpdateFlags};
 use crate::behavior::ItemBehavior;
 use crate::behavior::block::push_entities_up;
 use crate::behavior::context::{InteractionResult, UseOnContext};
-use crate::entity::entities::EyeOfEnder;
+use crate::entity::entities::EyeOfEnderEntity;
 use crate::entity::{SharedEntity, next_entity_id};
 use crate::world::{LevelReader, World};
 
@@ -138,7 +138,7 @@ impl ItemBehavior for EnderEyeItem {
             )
         };
 
-        let eye = EyeOfEnder::new(
+        let eye = EyeOfEnderEntity::new(
             &vanilla_entities::EYE_OF_ENDER,
             next_entity_id(),
             spawn_pos,
@@ -156,8 +156,6 @@ impl ItemBehavior for EnderEyeItem {
         InteractionResult::Success
     }
 }
-
-// fn locate_starting_staircase() -> Option<BlockPos> {}
 
 fn find_completed_end_portal_origin(
     level: &impl LevelReader,
