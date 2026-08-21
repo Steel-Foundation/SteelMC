@@ -84,6 +84,8 @@ impl HurtByTargetGoal {
             let Some(other) = entity.as_mob() else {
                 return false;
             };
+
+            //TODO tamable animal owner check is required here
             other.target().is_none() && !other.is_allied_to(hurt_by_mob.as_ref())
         }) {
             if let Some(other) = entity.as_mob() {
