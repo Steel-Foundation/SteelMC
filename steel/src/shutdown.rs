@@ -1,11 +1,15 @@
 //! Process shutdown signal handling.
 //!
 //! Every handled signal cancels the server's [`CancellationToken`], the single
-//! entry point into the shutdown that persists world and player data.
+//! entry point into the shutdown that persists world and player data. Once that
+//! data is on disk, [`cleanup_finished`] must run on every exit path: Windows
+//! blocks its console control handler until it does.
 
 use std::sync::OnceLock;
 
 use tokio_util::sync::CancellationToken;
+
+pub use platform::cleanup_finished;
 
 static CANCEL_TOKEN: OnceLock<CancellationToken> = OnceLock::new();
 
@@ -22,12 +26,6 @@ pub fn install(cancel_token: CancellationToken) {
     if let Err(error) = platform::install() {
         log::error!("Failed to install shutdown signal handler: {error}");
     }
-}
-
-/// Reports that world and player data have been persisted. Windows blocks the
-/// console control handler until this is called, so it must run on every exit path.
-pub fn cleanup_finished() {
-    platform::cleanup_finished();
 }
 
 /// Cancels the server, ignoring repeat signals so a second one cannot disturb a
@@ -91,6 +89,7 @@ mod platform {
         Ok(())
     }
 
+    /// Releases the console control handler so the process can exit.
     pub fn cleanup_finished() {
         *CLEANUP_DONE.lock() = true;
         CLEANUP_SIGNAL.notify_all();
