@@ -93,7 +93,10 @@ impl ItemBehavior for ShovelItem {
                 updated_state,
                 UpdateFlags::UPDATE_ALL_IMMEDIATE,
             );
-            // TODO: hurt_and_break(1, ...) — shovels take durability damage
+            let infinite_materials = context.player.has_infinite_materials();
+            context
+                .inv
+                .with_item(|item| item.hurt_and_break(1, infinite_materials));
             context.world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 context.hit_result.block_pos,
