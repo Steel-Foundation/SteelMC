@@ -406,7 +406,7 @@ impl Projectile for ArrowEntity {
         let raw = speed * self.runtime.lock().base_damage as f32;
         let mut damage_amount = raw.ceil().clamp(0.0, i32::MAX as f32) as i32;
         if self.is_crit_arrow() {
-            damage_amount += rand::random::<i32>() % (damage_amount / 2 + 2);
+            damage_amount += (rand::random::<u32>() % (damage_amount / 2 + 2) as u32) as i32;
         }
 
         let mut damage =
