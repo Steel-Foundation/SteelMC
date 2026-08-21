@@ -29,8 +29,8 @@ use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
 use crate::command::execution::{
-    CommandArgumentSource, CommandPermissionSource, CommandSource, ExecutionCommandSource,
-    parse_entity_selector_text,
+    CommandArgumentSource, CommandExecutionContext, CommandPermissionSource, CommandResultCallback,
+    CommandSource, ExecutionCommandSource, ExecutionStop, parse_entity_selector_text,
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection};
@@ -2849,4 +2849,70 @@ fn ender_pearl_end_return_requires_owner_seen_credits_when_owner_is_player() {
         &item,
         owner_seen_credits
     ));
+}
+
+#[test]
+fn damage_command_records_by_entity_as_the_responsible_player() {
+    let world = fresh_test_world("damage-command-attribution");
+    let storage_root = test_storage_root("damage-command-attribution");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let target_uuid = Uuid::from_u128(1);
+        let attacker_uuid = Uuid::from_u128(2);
+        let (target, _) =
+            test_player_with_packets(&server, Arc::clone(&world), target_uuid, "Victim", 1);
+        let (attacker, _) =
+            test_player_with_packets(&server, Arc::clone(&world), attacker_uuid, "Attacker", 101);
+
+        assert!(world.add_player(Arc::clone(&target), ResetReason::InitialJoin));
+        assert!(world.add_player(Arc::clone(&attacker), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&target)));
+        assert!(server.online_players.insert(Arc::clone(&attacker)));
+        let _ = target.mark_joined_world();
+        let _ = attacker.mark_joined_world();
+        target.set_client_loaded(true);
+        attacker.set_client_loaded(true);
+
+        let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
+        let command = "damage Victim 1 minecraft:player_attack by Attacker";
+        let chain = {
+            let dispatcher = server.command_dispatcher.read();
+            let parse = dispatcher.parse(command, source.clone());
+            dispatcher.context_chain(parse)
+        };
+        let chain = match chain {
+            Ok(chain) => chain,
+            Err(error) => panic!("damage command should parse: {error}"),
+        };
+
+        let mut execution = CommandExecutionContext::for_source(&source);
+        execution.queue_initial_command(chain, source, CommandResultCallback::empty());
+        assert!(matches!(execution.run(), ExecutionStop::Completed));
+
+        assert_eq!(
+            target.last_hurt_by_player_uuid(),
+            Some(attacker_uuid),
+            "the `by` entity must be recorded as the player responsible for damage"
+        );
+
+        drop((target, attacker));
+        drop(execution);
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
 }
