@@ -12,7 +12,7 @@ use crate::entity::Entity;
 use crate::entity::ai::path::PathComputationType;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
-use crate::world::{Explosion, ScheduledTickAccess, SignalGetter as _, World};
+use crate::world::{ScheduledTickAccess, SignalGetter as _, World};
 use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
@@ -20,7 +20,6 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty,
 };
-use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_events;
@@ -76,33 +75,6 @@ impl FenceGateBlock {
     /// Vanilla `FenceGateBlock.isWall`.
     fn is_wall(state: BlockStateId) -> bool {
         state.get_block().has_tag(&BlockTag::WALLS)
-    }
-
-    fn emit_transition_effects(
-        &self,
-        world: &Arc<World>,
-        pos: BlockPos,
-        open: bool,
-        source_entity: Option<&dyn Entity>,
-        affected_state: Option<BlockStateId>,
-    ) {
-        let sound = if open {
-            self.sound_open
-        } else {
-            self.sound_close
-        };
-        let pitch = rand::random::<f32>() * 0.1 + 0.9;
-        world.play_block_sound(sound, pos, 1.0, pitch, source_entity.map(Entity::id));
-        let event = if open {
-            &vanilla_game_events::BLOCK_OPEN
-        } else {
-            &vanilla_game_events::BLOCK_CLOSE
-        };
-        world.game_event(
-            event,
-            pos,
-            &GameEventContext::new(source_entity, affected_state),
-        );
     }
 }
 
@@ -185,24 +157,20 @@ impl BlockBehavior for FenceGateBlock {
         );
 
         let opens = new_state.get_value(OPEN);
-        self.emit_transition_effects(world, pos, opens, Some(player), None);
+        let sound = if opens {
+            self.sound_open
+        } else {
+            self.sound_close
+        };
+        let pitch = rand::random::<f32>() * 0.1 + 0.9;
+        world.play_block_sound(sound, pos, 1.0, pitch, Some(player.id()));
+        let event = if opens {
+            &vanilla_game_events::BLOCK_OPEN
+        } else {
+            &vanilla_game_events::BLOCK_CLOSE
+        };
+        world.game_event(event, pos, &GameEventContext::new(Some(player), None));
         InteractionResult::Success
-    }
-
-    fn on_explosion_hit(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        explosion: &dyn Explosion,
-        on_hit: &mut dyn FnMut(ItemStack, BlockPos),
-    ) {
-        if explosion.can_trigger_blocks() && !state.get_value(POWERED) {
-            let open = !state.get_value(OPEN);
-            world.set_block(pos, state.set_value(OPEN, open), UpdateFlags::UPDATE_ALL);
-            self.emit_transition_effects(world, pos, open, None, Some(state));
-        }
-        self.default_on_explosion_hit(state, world, pos, explosion, on_hit);
     }
 
     fn handle_neighbor_changed(
@@ -229,7 +197,19 @@ impl BlockBehavior for FenceGateBlock {
             return;
         }
 
-        self.emit_transition_effects(world, pos, has_power, None, None);
+        let sound = if has_power {
+            self.sound_open
+        } else {
+            self.sound_close
+        };
+        let pitch = rand::random::<f32>() * 0.1 + 0.9;
+        world.play_block_sound(sound, pos, 1.0, pitch, None);
+        let event = if has_power {
+            &vanilla_game_events::BLOCK_OPEN
+        } else {
+            &vanilla_game_events::BLOCK_CLOSE
+        };
+        world.game_event(event, pos, &GameEventContext::default());
     }
 
     fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {

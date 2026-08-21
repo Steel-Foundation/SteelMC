@@ -957,10 +957,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Runs vanilla `Entity.handlePortal` behavior currently implemented by Steel.
     fn handle_portal(&self) {
         self.base().process_portal_cooldown();
-        let Some(process) = self.base().portal_process() else {
+        let Some(world) = self.level() else {
             return;
         };
-        let Some(world) = self.level() else {
+        let Some(process) = self.base().portal_process() else {
             return;
         };
 

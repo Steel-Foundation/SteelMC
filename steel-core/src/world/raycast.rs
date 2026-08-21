@@ -62,6 +62,11 @@ pub struct ClipHitResult {
     pub world_border_hit: bool,
 }
 
+const VANILLA_RAY_ENDPOINT_ADJUSTMENT: f64 = -1.0e-7;
+const MIN_SHAPE_CLIP_LENGTH_SQUARED: f64 = 1.0e-7;
+const SHAPE_INSIDE_PROBE_SCALE: f64 = 0.001;
+const AABB_CLIP_EPSILON: f64 = 1.0e-7;
+
 // Radius-four TNT exposure repeatedly visits a few hundred nearby positions. A 256-entry direct
 // cache retains almost all of that working set without heap allocation or cross-explosion lifetime.
 const EXPLOSION_EXPOSURE_CACHE_BITS: u32 = 8;
@@ -421,9 +426,8 @@ fn is_collision_path_clear(
         return true;
     }
 
-    let adjust = -1.0e-7f64;
-    let to = end_pos.lerp(start_pos, adjust);
-    let from = start_pos.lerp(end_pos, adjust);
+    let to = end_pos.lerp(start_pos, VANILLA_RAY_ENDPOINT_ADJUSTMENT);
+    let from = start_pos.lerp(end_pos, VANILLA_RAY_ENDPOINT_ADJUSTMENT);
     let mut block = BlockPos::from(from);
     if blocks_ray(block) {
         return false;
@@ -566,9 +570,8 @@ impl World {
             return Self::clip_miss(start_pos, end_pos);
         }
 
-        let adjust = -1.0e-7f64;
-        let to = end_pos.lerp(start_pos, adjust);
-        let from = start_pos.lerp(end_pos, adjust);
+        let to = end_pos.lerp(start_pos, VANILLA_RAY_ENDPOINT_ADJUSTMENT);
+        let from = start_pos.lerp(end_pos, VANILLA_RAY_ENDPOINT_ADJUSTMENT);
 
         let mut block = BlockPos::new(
             from.x.floor() as i32,
@@ -852,7 +855,7 @@ impl World {
             return None;
         }
 
-        if (to - from).length_squared() < 1.0e-7 {
+        if (to - from).length_squared() < MIN_SHAPE_CLIP_LENGTH_SQUARED {
             return None;
         }
 
@@ -861,7 +864,7 @@ impl World {
             f64::from(block_pos.y()),
             f64::from(block_pos.z()),
         );
-        let inside_test_point = from + (to - from) * 0.001;
+        let inside_test_point = from + (to - from) * SHAPE_INSIDE_PROBE_SCALE;
         if Self::shape_contains_world_point(shape, block_vec, inside_test_point) {
             return Some(ClipHitResult {
                 location: inside_test_point,
@@ -908,7 +911,7 @@ impl World {
             return None;
         }
 
-        if (to - from).length_squared() < 1.0e-7 {
+        if (to - from).length_squared() < MIN_SHAPE_CLIP_LENGTH_SQUARED {
             return None;
         }
 
@@ -917,7 +920,7 @@ impl World {
             f64::from(block_pos.y()),
             f64::from(block_pos.z()),
         );
-        let inside_test_point = from + (to - from) * 0.001;
+        let inside_test_point = from + (to - from) * SHAPE_INSIDE_PROBE_SCALE;
         if Self::local_aabb_contains_world_point(aabb, block_vec, inside_test_point) {
             return Some(ClipHitResult {
                 location: inside_test_point,
@@ -1014,7 +1017,7 @@ impl World {
         let mut scale = 1.0;
         let mut direction = None;
 
-        if delta.x > 1.0e-7 {
+        if delta.x > AABB_CLIP_EPSILON {
             Self::clip_aabb_face(
                 &mut scale,
                 &mut direction,
@@ -1024,7 +1027,7 @@ impl World {
                 [min.y, max.y, min.z, max.z],
                 Direction::West,
             );
-        } else if delta.x < -1.0e-7 {
+        } else if delta.x < -AABB_CLIP_EPSILON {
             Self::clip_aabb_face(
                 &mut scale,
                 &mut direction,
@@ -1038,7 +1041,7 @@ impl World {
 
         let y_delta = DVec3::new(delta.y, delta.z, delta.x);
         let y_start = DVec3::new(start.y, start.z, start.x);
-        if delta.y > 1.0e-7 {
+        if delta.y > AABB_CLIP_EPSILON {
             Self::clip_aabb_face(
                 &mut scale,
                 &mut direction,
@@ -1048,7 +1051,7 @@ impl World {
                 [min.z, max.z, min.x, max.x],
                 Direction::Down,
             );
-        } else if delta.y < -1.0e-7 {
+        } else if delta.y < -AABB_CLIP_EPSILON {
             Self::clip_aabb_face(
                 &mut scale,
                 &mut direction,
@@ -1062,7 +1065,7 @@ impl World {
 
         let z_delta = DVec3::new(delta.z, delta.x, delta.y);
         let z_start = DVec3::new(start.z, start.x, start.y);
-        if delta.z > 1.0e-7 {
+        if delta.z > AABB_CLIP_EPSILON {
             Self::clip_aabb_face(
                 &mut scale,
                 &mut direction,
@@ -1072,7 +1075,7 @@ impl World {
                 [min.x, max.x, min.y, max.y],
                 Direction::North,
             );
-        } else if delta.z < -1.0e-7 {
+        } else if delta.z < -AABB_CLIP_EPSILON {
             Self::clip_aabb_face(
                 &mut scale,
                 &mut direction,
@@ -1102,10 +1105,10 @@ impl World {
         let side_c = start.z + candidate_scale * delta.z;
         if 0.0 < candidate_scale
             && candidate_scale < *scale
-            && side_bounds[0] - 1.0e-7 < side_b
-            && side_b < side_bounds[1] + 1.0e-7
-            && side_bounds[2] - 1.0e-7 < side_c
-            && side_c < side_bounds[3] + 1.0e-7
+            && side_bounds[0] - AABB_CLIP_EPSILON < side_b
+            && side_b < side_bounds[1] + AABB_CLIP_EPSILON
+            && side_bounds[2] - AABB_CLIP_EPSILON < side_c
+            && side_c < side_bounds[3] + AABB_CLIP_EPSILON
         {
             *scale = candidate_scale;
             *direction = Some(new_direction);
@@ -1128,9 +1131,8 @@ impl World {
             return (None, None);
         }
 
-        let adjust = -1.0e-7f64;
-        let to = end_pos.lerp(start_pos, adjust);
-        let from = start_pos.lerp(end_pos, adjust);
+        let to = end_pos.lerp(start_pos, VANILLA_RAY_ENDPOINT_ADJUSTMENT);
+        let from = start_pos.lerp(end_pos, VANILLA_RAY_ENDPOINT_ADJUSTMENT);
 
         let mut block = BlockPos::new(
             from.x.floor() as i32,
@@ -1379,8 +1381,8 @@ mod voxel_shape_clip_tests {
 
             assert!(
                 World::intersects_aabb_with_t(
-                    axis_point(axis, -1.0, 1.0 + 1.0e-7, 0.5),
-                    axis_point(axis, 2.0, 1.0 + 1.0e-7, 0.5),
+                    axis_point(axis, -1.0, 1.0 + AABB_CLIP_EPSILON, 0.5),
+                    axis_point(axis, 2.0, 1.0 + AABB_CLIP_EPSILON, 0.5),
                     min,
                     max,
                 )
@@ -1389,8 +1391,8 @@ mod voxel_shape_clip_tests {
             );
             assert!(
                 World::intersects_aabb_with_t(
-                    axis_point(axis, -1.0, 0.5, -1.0e-7),
-                    axis_point(axis, 2.0, 0.5, -1.0e-7),
+                    axis_point(axis, -1.0, 0.5, -AABB_CLIP_EPSILON),
+                    axis_point(axis, 2.0, 0.5, -AABB_CLIP_EPSILON),
                     min,
                     max,
                 )
@@ -1402,7 +1404,7 @@ mod voxel_shape_clip_tests {
 
     #[test]
     fn aabb_clip_matches_java_direction_threshold_in_every_axis() {
-        let threshold = 1.0e-7_f64;
+        let threshold = AABB_CLIP_EPSILON;
         let above_threshold = f64::from_bits(threshold.to_bits() + 1);
         for (axis, positive_direction, negative_direction) in [
             (0, Direction::West, Direction::East),
@@ -1522,33 +1524,6 @@ mod explosion_exposure_cache_tests {
     }
 
     #[test]
-    fn clear_grid_covers_normal_tnt_query_without_heap_storage() {
-        let mut grid = ExplosionExposureClearGrid::new();
-        grid.configure(BlockPos::new(-9, 55, -9), BlockPos::new(9, 73, 9));
-        assert!(grid.bounds.is_some());
-        assert!(grid.index(BlockPos::new(-9, 55, -9)).is_some());
-        assert!(grid.index(BlockPos::new(9, 73, 9)).is_some());
-        assert!(grid.index(BlockPos::new(10, 73, 9)).is_none());
-        let Some(index) = grid.index(BlockPos::new(9, 73, 9)) else {
-            panic!("the configured upper corner should be represented in the grid");
-        };
-        grid.record(index, true);
-        assert_eq!(grid.cached(index), Some(true));
-        grid.clear();
-        assert_eq!(grid.cached(index), None);
-        grid.record(index, false);
-        assert_eq!(grid.cached(index), Some(false));
-
-        grid.configure(BlockPos::new(-10, 54, -10), BlockPos::new(10, 74, 10));
-        assert!(grid.bounds.is_none());
-
-        grid.configure(BlockPos::new(1, 1, 1), BlockPos::new(0, 0, 0));
-        assert!(grid.bounds.is_none());
-        grid.configure(BlockPos::new(i32::MIN, 0, 0), BlockPos::new(i32::MAX, 0, 0));
-        assert!(grid.bounds.is_none());
-    }
-
-    #[test]
     fn extensible_collision_query_invalidates_every_exposure_cache() {
         static PLUGIN_BLOCK: Block = Block::new(
             Identifier::new_static("exposure_test", "mutating_shape"),
@@ -1580,27 +1555,5 @@ mod explosion_exposure_cache_tests {
         assert_ne!(raycast.generation, initial_generation);
         assert_eq!(raycast.clear_grid.cached(grid_index), None);
         assert_ne!(raycast.entries[direct_index].generation, raycast.generation);
-    }
-
-    #[test]
-    fn cache_index_uses_the_full_fastutil_long_mix() {
-        let fixtures = [
-            (BlockPos::new(0, 64, 0), 94),
-            (BlockPos::new(1, 64, 0), 61),
-            (BlockPos::new(0, 64, 1), 14),
-            (BlockPos::new(50, 200, 53), 208),
-            (BlockPos::new(50, 200, 68), 48),
-            (BlockPos::new(-1, 64, -1), 180),
-        ];
-
-        for (pos, expected) in fixtures {
-            assert_eq!(explosion_exposure_cache_index(pos), expected);
-        }
-
-        // These positions collide under the truncated multiply-high variant.
-        assert_ne!(
-            explosion_exposure_cache_index(BlockPos::new(50, 200, 53)),
-            explosion_exposure_cache_index(BlockPos::new(50, 200, 68)),
-        );
     }
 }

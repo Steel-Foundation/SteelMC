@@ -399,13 +399,19 @@ pub trait BlockBehavior: Send + Sync {
         explosion: &dyn Explosion,
         on_hit: &mut dyn FnMut(ItemStack, BlockPos),
     ) {
-        if state.is_air() || explosion.block_interaction() == BlockInteraction::TriggerBlock {
+        if state.is_air() {
             return;
         }
 
         if self.drop_from_explosion(explosion) {
             let empty_tool = ItemStack::empty();
+            let block_entity = if state.has_block_entity() {
+                world.get_block_entity(pos)
+            } else {
+                None
+            };
             let context = BlockLootContext::new(world, pos)
+                .with_block_entity(block_entity.as_ref())
                 .with_entity(explosion.direct_source_entity())
                 .with_tool(&empty_tool);
             let context = if explosion.block_interaction() == BlockInteraction::DestroyWithDecay {

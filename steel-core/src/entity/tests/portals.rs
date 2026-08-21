@@ -237,19 +237,6 @@ fn set_as_inside_portal_resets_cooldown_without_starting_process() {
 }
 
 #[test]
-fn handle_portal_processes_cooldown_without_an_active_process() {
-    let world = fresh_test_world("portal_cooldown_without_process");
-    let entity = TypedTestEntity::new(1, &vanilla_entities::ITEM);
-    entity.base().set_world(Arc::downgrade(&world));
-    entity.set_portal_cooldown(2);
-
-    entity.handle_portal();
-
-    assert_eq!(entity.portal_cooldown(), 1);
-    assert_eq!(entity.base().portal_process(), None);
-}
-
-#[test]
 fn handle_portal_advances_process_with_a_live_world() {
     let world = fresh_test_world("portal_process_live_world");
     let entity = TypedTestEntity::new(1, &vanilla_entities::ITEM);

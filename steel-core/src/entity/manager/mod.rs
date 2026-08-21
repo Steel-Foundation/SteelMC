@@ -1881,27 +1881,21 @@ impl WorldEntityManager {
             return true;
         }
 
-        let entity_id = entity.id();
-        let Some(mut current) = entity.vehicle() else {
-            return false;
-        };
-        let mut visited = SmallVec::<[i32; 8]>::new();
-        visited.push(entity_id);
-        loop {
-            let current_id = current.id();
+        let mut visited = FxHashSet::default();
+        visited.insert(entity.id());
+        let mut vehicle = entity.vehicle();
+        while let Some(current) = vehicle {
             assert!(
-                !visited.contains(&current_id),
-                "cyclic passenger relationship involving entity {entity_id}"
+                visited.insert(current.id()),
+                "cyclic passenger relationship involving entity {}",
+                entity.id()
             );
-            visited.push(current_id);
             if current.is_world_change_pending() {
                 return true;
             }
-            let Some(vehicle) = current.vehicle() else {
-                return false;
-            };
-            current = vehicle;
+            vehicle = current.vehicle();
         }
+        false
     }
 
     fn is_accessible(state: &ManagerState, entry: &EntityEntry) -> bool {

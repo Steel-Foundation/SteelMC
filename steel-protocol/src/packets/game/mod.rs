@@ -118,7 +118,6 @@ pub use c_entity_event::CEntityEvent;
 pub use c_entity_position_sync::CEntityPositionSync;
 pub use c_explode::{
     CExplode, ExplosionParticleInfo, ExplosionParticlePalette, ExplosionParticleWeightError,
-    WeightedExplosionParticleInfo,
 };
 pub use c_game_event::CGameEvent;
 pub use c_game_event::GameEventType;

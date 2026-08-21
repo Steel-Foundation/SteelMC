@@ -3,7 +3,8 @@ use super::{
     ItemStack, SharedBlockEntity, SmallVec, SoundEventRef, VoxelShape, World, vanilla_damage_types,
     vanilla_entities,
 };
-use crate::entity::entities::FallingBlockEntity;
+use crate::entity::{entities::FallingBlockEntity, entity_loot_ref};
+use steel_registry::loot_table::{BlockEntityRef, LootContext};
 
 pub struct PickupResult {
     pub filled_bucket: ItemStack,
@@ -99,11 +100,12 @@ pub type BlockCollisionBoxes = SmallVec<[BlockLocalAabb; 4]>;
 /// Live parameters used to resolve a block's loot.
 ///
 /// This is the Steel counterpart to vanilla's block `LootParams`. Behaviors can
-/// override loot generation while retaining the original tool, entity, luck,
-/// and position when delegating to another block state.
+/// override loot generation while retaining the original block entity, tool,
+/// entity, luck, and position when delegating to another block state.
 pub struct BlockLootContext<'a> {
     world: &'a Arc<World>,
     pos: BlockPos,
+    block_entity: Option<&'a SharedBlockEntity>,
     entity: Option<&'a dyn Entity>,
     tool: Option<&'a ItemStack>,
     explosion_radius: Option<f32>,
@@ -117,11 +119,19 @@ impl<'a> BlockLootContext<'a> {
         Self {
             world,
             pos,
+            block_entity: None,
             entity: None,
             tool: None,
             explosion_radius: None,
             luck: 0.0,
         }
+    }
+
+    /// Adds the live block entity at the loot position.
+    #[must_use]
+    pub const fn with_block_entity(mut self, block_entity: Option<&'a SharedBlockEntity>) -> Self {
+        self.block_entity = block_entity;
+        self
     }
 
     /// Adds the entity responsible for destroying the block.
@@ -170,20 +180,50 @@ impl<'a> BlockLootContext<'a> {
         World::block_drops(state, self)
     }
 
-    pub(crate) const fn entity(&self) -> Option<&'a dyn Entity> {
-        self.entity
+    /// Builds the generic loot evaluator's view of these live block parameters.
+    pub(crate) fn create_loot_context<'context, R>(
+        &'context self,
+        state: BlockStateId,
+        rng: &'context mut R,
+    ) -> LootContext<'context, R>
+    where
+        R: rand::Rng,
+        'a: 'context,
+    {
+        let mut context = LootContext::new(rng)
+            .with_luck(self.luck)
+            .with_block_state(state)
+            .with_origin(
+                f64::from(self.pos.x()) + 0.5,
+                f64::from(self.pos.y()) + 0.5,
+                f64::from(self.pos.z()) + 0.5,
+            );
+        if let Some(tool) = self.tool {
+            context = context.with_tool(tool);
+        }
+        if let Some(radius) = self.explosion_radius {
+            context = context.with_explosion(radius);
+        }
+        if let Some(entity) = self.entity {
+            context = context.with_this_entity(entity_loot_ref(entity));
+        }
+        if let Some(block_entity) = self.block_entity_ref() {
+            context = context.with_block_entity(block_entity);
+        }
+        context
     }
 
-    pub(crate) const fn tool(&self) -> Option<&'a ItemStack> {
-        self.tool
-    }
-
-    pub(crate) const fn explosion_radius(&self) -> Option<f32> {
-        self.explosion_radius
-    }
-
-    pub(crate) const fn luck(&self) -> f32 {
-        self.luck
+    /// Returns the block-entity data currently supported by Steel's generic loot evaluator.
+    ///
+    /// Block-entity custom names and dynamic slot loot remain unsupported by that evaluator;
+    /// keeping those fields empty here preserves the existing limitation without dropping the
+    /// available Vanilla type identity.
+    fn block_entity_ref(&self) -> Option<BlockEntityRef<'_>> {
+        self.block_entity.map(|block_entity| BlockEntityRef {
+            block_entity_type: Some(&block_entity.get_type().key),
+            custom_name: None,
+            inventory: None,
+        })
     }
 }
 

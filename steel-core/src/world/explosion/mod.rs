@@ -3,9 +3,7 @@
 use std::sync::Arc;
 
 use glam::DVec3;
-use steel_protocol::packets::game::{
-    CExplode, ExplosionParticleInfo, ExplosionParticlePalette, WeightedExplosionParticleInfo,
-};
+use steel_protocol::packets::game::{CExplode, ExplosionParticleInfo, ExplosionParticlePalette};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::fluid::FluidState;
 use steel_registry::game_rules::GameRule;
@@ -40,10 +38,6 @@ pub enum ExplosionInteraction {
     Mob,
     /// A TNT explosion governed by `tnt_explosion_drop_decay`.
     Tnt,
-    /// Trigger eligible blocks without destroying them.
-    ///
-    /// TODO: Ring bells once Steel has its Bell block and block-entity foundation.
-    Trigger,
 }
 
 /// How an explosion interacts with blocks after its affected positions are calculated.
@@ -55,8 +49,6 @@ pub enum BlockInteraction {
     Destroy,
     /// Destroy affected blocks with the explosion radius in their loot context.
     DestroyWithDecay,
-    /// Invoke trigger-aware block hooks without normal destruction.
-    TriggerBlock,
 }
 
 impl BlockInteraction {
@@ -83,8 +75,6 @@ pub trait Explosion {
     fn radius(&self) -> f32;
     /// Returns the exact explosion center.
     fn center(&self) -> DVec3;
-    /// Returns whether trigger-aware block behavior may run.
-    fn can_trigger_blocks(&self) -> bool;
     /// Returns whether block-like entities may be affected.
     fn should_affect_blocklike_entities(&self) -> bool;
 }
@@ -469,15 +459,15 @@ impl World {
 
         self.players.iter_players(|_, player| {
             if player.position().distance_squared(options.center) < MAX_PACKET_DISTANCE_SQUARED {
-                player.send_packet(CExplode::new(
-                    options.center,
-                    options.radius,
-                    packet_block_count,
-                    explosion.hit_players.get(&player.id()).copied(),
-                    explosion_particle.clone(),
-                    options.explosion_sound.clone(),
-                    options.block_particles.clone(),
-                ));
+                player.send_packet(CExplode {
+                    center: options.center,
+                    radius: options.radius,
+                    block_count: packet_block_count,
+                    player_knockback: explosion.hit_players.get(&player.id()).copied(),
+                    explosion_particle: explosion_particle.clone(),
+                    explosion_sound: options.explosion_sound.clone(),
+                    block_particles: options.block_particles.clone(),
+                });
             }
             true
         });
@@ -499,7 +489,6 @@ impl World {
                 }
             }
             ExplosionInteraction::Tnt => self.destroy_interaction(&TNT_EXPLOSION_DROP_DECAY),
-            ExplosionInteraction::Trigger => BlockInteraction::TriggerBlock,
         }
     }
 
@@ -526,12 +515,7 @@ fn default_block_particles() -> ExplosionParticlePalette {
         },
     ]
     .into_iter()
-    .map(|particle| {
-        let Ok(entry) = WeightedExplosionParticleInfo::try_new(particle, 1) else {
-            panic!("Vanilla explosion particle weight must be valid");
-        };
-        entry
-    })
+    .map(|particle| (particle, 1))
     .collect();
     let Ok(palette) = ExplosionParticlePalette::try_new(entries) else {
         panic!("Vanilla explosion particle palette must be valid");

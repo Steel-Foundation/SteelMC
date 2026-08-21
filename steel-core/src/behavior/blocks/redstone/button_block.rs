@@ -11,7 +11,6 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
-use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_game_events;
 use steel_utils::types::UpdateFlags;
@@ -25,8 +24,7 @@ use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionRes
 use crate::entity::{Entity, InsideBlockEffectCollector, SharedEntity};
 use crate::player::Player;
 use crate::world::{
-    Explosion, LevelReader, ScheduledTickAccess, SignalQueryContext, World,
-    game_event::GameEventContext,
+    LevelReader, ScheduledTickAccess, SignalQueryContext, World, game_event::GameEventContext,
 };
 
 /// Behavior for all button block variants.
@@ -201,20 +199,6 @@ impl BlockBehavior for ButtonBlock {
         }
         self.press(state, world, pos, Some(player));
         InteractionResult::Success
-    }
-
-    fn on_explosion_hit(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        explosion: &dyn Explosion,
-        on_hit: &mut dyn FnMut(ItemStack, BlockPos),
-    ) {
-        if explosion.can_trigger_blocks() && !state.get_value(POWERED) {
-            self.press(state, world, pos, None);
-        }
-        self.default_on_explosion_hit(state, world, pos, explosion, on_hit);
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {

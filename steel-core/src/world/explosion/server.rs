@@ -5,11 +5,7 @@ use std::{
 };
 
 use glam::DVec3;
-#[cfg(test)]
-use rayon::prelude::*;
 use rustc_hash::FxHashMap;
-#[cfg(test)]
-use rustc_hash::{FxBuildHasher, FxHashSet};
 #[cfg(test)]
 use smallvec::SmallVec;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -40,11 +36,27 @@ use super::{
 };
 
 const RAY_GRID_SIZE: i32 = 16;
-const RAY_COUNT: usize = 16 * 16 * 16 - 14 * 14 * 14;
+const RAY_GRID_LAST_INDEX: i32 = RAY_GRID_SIZE - 1;
+const RAY_GRID_INTERIOR_SIZE: i32 = RAY_GRID_SIZE - 2;
+const RAY_COUNT: usize = (RAY_GRID_SIZE * RAY_GRID_SIZE * RAY_GRID_SIZE
+    - RAY_GRID_INTERIOR_SIZE * RAY_GRID_INTERIOR_SIZE * RAY_GRID_INTERIOR_SIZE)
+    as usize;
 const RAY_STEP: f64 = 0.3_f32 as f64;
 const RAY_POWER_DECAY: f32 = 0.225_000_01;
+const INITIAL_RAY_POWER_BASE: f32 = 0.7;
+const INITIAL_RAY_POWER_RANDOM_SCALE: f32 = 0.6;
+const MAX_INITIAL_RAY_POWER_SCALE: f32 = 1.3;
+const RESISTANCE_POWER_OFFSET: f32 = 0.3;
+const RESISTANCE_POWER_SCALE: f32 = 0.3;
+const RAY_REGION_BLOCK_PADDING: f64 = 1.0;
 const MIN_DAMAGE_RADIUS: f32 = 1.0e-5;
+const DAMAGE_RADIUS_SCALE: f32 = 2.0;
+const ENTITY_QUERY_PADDING: f64 = 1.0;
 const NORMALIZE_EPSILON: f64 = 1.0e-5_f32 as f64;
+const FIRE_CHANCE_DENOMINATOR: i32 = 3;
+const SMALL_EXPLOSION_RADIUS: f32 = 2.0;
+const EXPOSURE_SAMPLE_DENSITY: f64 = 2.0;
+const EXPOSURE_SAMPLE_OFFSET_DIVISOR: f64 = 2.0;
 const MAX_DROPS_PER_COMBINED_STACK: i32 = 16;
 const BLOCK_CACHE_BITS: u32 = 9;
 const BLOCK_CACHE_SIZE: usize = 1 << BLOCK_CACHE_BITS;
@@ -52,6 +64,10 @@ const BLOCK_CACHE_MASK: usize = BLOCK_CACHE_SIZE - 1;
 const LONG_HASH_PHI: u64 = 0x9e37_79b9_7f4a_7c15;
 const JAVA_HASH_MAP_TREEIFY_THRESHOLD: usize = 8;
 const JAVA_HASH_MAP_MIN_TREEIFY_CAPACITY: usize = 64;
+const JAVA_HASH_MAP_LOAD_FACTOR_NUMERATOR: usize = 3;
+const JAVA_HASH_MAP_LOAD_FACTOR_DENOMINATOR: usize = 4;
+const JAVA_BLOCK_POS_HASH_MULTIPLIER: i32 = 31;
+const JAVA_HASH_MAP_SPREAD_SHIFT: u32 = 16;
 
 #[derive(Clone, Copy)]
 struct ExplosionRay {
@@ -360,9 +376,10 @@ impl<'a> ServerExplosion<'a> {
         if !self.center.is_finite() {
             return None;
         }
-        let maximum_ray_distance =
-            f64::from(self.radius) * f64::from(1.3_f32) / f64::from(RAY_POWER_DECAY) * RAY_STEP;
-        let extent = maximum_ray_distance + f64::from(read_radius) + 1.0;
+        let maximum_ray_distance = f64::from(self.radius) * f64::from(MAX_INITIAL_RAY_POWER_SCALE)
+            / f64::from(RAY_POWER_DECAY)
+            * RAY_STEP;
+        let extent = maximum_ray_distance + f64::from(read_radius) + RAY_REGION_BLOCK_PADDING;
         if !extent.is_finite() {
             return None;
         }
@@ -381,7 +398,7 @@ impl<'a> ServerExplosion<'a> {
         let bounds = ExplosionWorldBounds::from_world(self.world);
 
         for &step in RAY_STEPS.iter() {
-            let mut remaining_power = self.radius * (0.7 + next_float() * 0.6);
+            let mut remaining_power = initial_ray_power(self.radius, next_float());
             let mut ray_pos = self.center;
             while remaining_power > 0.0 {
                 let pos = BlockPos::from(ray_pos);
@@ -395,7 +412,7 @@ impl<'a> ServerExplosion<'a> {
                     .damage_calculator
                     .block_explosion_resistance(self, self.world, pos, state, fluid)
                 {
-                    remaining_power -= (resistance + 0.3) * 0.3;
+                    remaining_power -= ray_power_loss_from_resistance(resistance);
                 }
 
                 if remaining_power > 0.0
@@ -421,7 +438,7 @@ impl<'a> ServerExplosion<'a> {
     fn draw_immutable_ray_powers(&self, mut next_float: impl FnMut() -> f32) -> [f32; RAY_COUNT] {
         let mut powers = [0.0; RAY_COUNT];
         for power in &mut powers {
-            *power = self.radius * (0.7 + next_float() * 0.6);
+            *power = initial_ray_power(self.radius, next_float());
         }
         powers
     }
@@ -445,18 +462,18 @@ impl<'a> ServerExplosion<'a> {
             return;
         }
 
-        let double_radius = self.radius * 2.0;
+        let double_radius = self.radius * DAMAGE_RADIUS_SCALE;
         let radius = f64::from(double_radius);
         let bounds = WorldAabb::from_min_max(
             DVec3::new(
-                (self.center.x - radius - 1.0).floor(),
-                (self.center.y - radius - 1.0).floor(),
-                (self.center.z - radius - 1.0).floor(),
+                (self.center.x - radius - ENTITY_QUERY_PADDING).floor(),
+                (self.center.y - radius - ENTITY_QUERY_PADDING).floor(),
+                (self.center.z - radius - ENTITY_QUERY_PADDING).floor(),
             ),
             DVec3::new(
-                (self.center.x + radius + 1.0).floor(),
-                (self.center.y + radius + 1.0).floor(),
-                (self.center.z + radius + 1.0).floor(),
+                (self.center.x + radius + ENTITY_QUERY_PADDING).floor(),
+                (self.center.y + radius + ENTITY_QUERY_PADDING).floor(),
+                (self.center.z + radius + ENTITY_QUERY_PADDING).floor(),
             ),
         );
         let source_id = self.source.map(Entity::id);
@@ -575,7 +592,8 @@ impl<'a> ServerExplosion<'a> {
 
     fn create_fire(&self, affected: &[BlockPos]) {
         self.create_fire_with(affected, || {
-            self.world.with_random(|random| random.next_i32_bounded(3))
+            self.world
+                .with_random(|random| random.next_i32_bounded(FIRE_CHANCE_DENOMINATOR))
         });
     }
 
@@ -599,14 +617,14 @@ impl<'a> ServerExplosion<'a> {
     }
 
     pub(super) fn is_small(&self) -> bool {
-        self.radius < 2.0 || !self.interacts_with_blocks()
+        self.radius < SMALL_EXPLOSION_RADIUS || !self.interacts_with_blocks()
     }
 }
 
 fn ray_direction(xx: i32, yy: i32, zz: i32) -> DVec3 {
-    let mut xd = f64::from(xx as f32 / 15.0 * 2.0 - 1.0);
-    let mut yd = f64::from(yy as f32 / 15.0 * 2.0 - 1.0);
-    let mut zd = f64::from(zz as f32 / 15.0 * 2.0 - 1.0);
+    let mut xd = ray_direction_component(xx);
+    let mut yd = ray_direction_component(yy);
+    let mut zd = ray_direction_component(zz);
     let direction_length = (xd * xd + yd * yd + zd * zd).sqrt();
     xd /= direction_length;
     yd /= direction_length;
@@ -614,13 +632,25 @@ fn ray_direction(xx: i32, yy: i32, zz: i32) -> DVec3 {
     DVec3::new(xd, yd, zd)
 }
 
+fn ray_direction_component(index: i32) -> f64 {
+    f64::from(index as f32 / RAY_GRID_LAST_INDEX as f32 * 2.0 - 1.0)
+}
+
+fn initial_ray_power(radius: f32, random: f32) -> f32 {
+    radius * (INITIAL_RAY_POWER_BASE + random * INITIAL_RAY_POWER_RANDOM_SCALE)
+}
+
+fn ray_power_loss_from_resistance(resistance: f32) -> f32 {
+    (resistance + RESISTANCE_POWER_OFFSET) * RESISTANCE_POWER_SCALE
+}
+
 const fn is_boundary_ray(xx: i32, yy: i32, zz: i32) -> bool {
     xx == 0
-        || xx == RAY_GRID_SIZE - 1
+        || xx == RAY_GRID_LAST_INDEX
         || yy == 0
-        || yy == RAY_GRID_SIZE - 1
+        || yy == RAY_GRID_LAST_INDEX
         || zz == 0
-        || zz == RAY_GRID_SIZE - 1
+        || zz == RAY_GRID_LAST_INDEX
 }
 
 fn vanilla_shuffle<T>(values: &mut [T], mut next_index: impl FnMut(i32) -> i32) {
@@ -631,65 +661,6 @@ fn vanilla_shuffle<T>(values: &mut [T], mut next_index: impl FnMut(i32) -> i32) 
         let swap_index = next_index(remaining) as usize;
         values.swap(remaining as usize - 1, swap_index);
     }
-}
-
-#[cfg(test)]
-fn calculate_immutable_rays_sharded<R: ExplosionBlockReader>(
-    rays: &[ExplosionRay],
-    context: ExplosionRayContext,
-    reader: &R,
-    calculator: &dyn ImmutableExplosionBlockCalculator,
-    target_shards: usize,
-) -> Vec<BlockPos> {
-    if rays.is_empty() {
-        return Vec::new();
-    }
-    let target_shards = target_shards.clamp(1, rays.len());
-    let rays_per_shard = rays.len().div_ceil(target_shards);
-    let batches: Vec<Vec<BlockPos>> = rays
-        .par_chunks(rays_per_shard)
-        .map(|rays| {
-            let initial_capacity = rays.len() * 8;
-            let mut seen = FxHashSet::with_capacity_and_hasher(initial_capacity, FxBuildHasher);
-            let mut affected = Vec::with_capacity(initial_capacity);
-            for ray in rays {
-                visit_immutable_ray_positions(*ray, context, reader, calculator, |pos| {
-                    if seen.insert(pos) {
-                        affected.push(pos);
-                    }
-                });
-            }
-            affected
-        })
-        .collect();
-    unique_affected_positions(batches)
-}
-
-#[cfg(test)]
-fn calculate_immutable_rays_sequential<R: ExplosionBlockReader>(
-    rays: &[ExplosionRay],
-    context: ExplosionRayContext,
-    reader: &R,
-    calculator: &dyn ImmutableExplosionBlockCalculator,
-) -> Vec<BlockPos> {
-    let mut affected = JavaBlockPosSet::default();
-    let mut cache = ExplosionBlockCache::default();
-    let cache_policy = ImmutableRayCachePolicy {
-        resistance: calculator.can_cache_explosion_resistance(),
-        always_allows_block_explosion: calculator.always_allows_block_explosion(),
-    };
-    for ray in rays {
-        assert!(visit_immutable_ray_positions_cached(
-            *ray,
-            context,
-            reader,
-            calculator,
-            cache_policy,
-            &mut cache,
-            &mut affected,
-        ));
-    }
-    affected.into_iter().collect()
 }
 
 fn visit_immutable_ray_positions_cached<R: ExplosionBlockReader>(
@@ -713,7 +684,7 @@ fn visit_immutable_ray_positions_cached<R: ExplosionBlockReader>(
             && cache.entries[cache_index].affected
         {
             if let Some(resistance) = cache.entries[cache_index].resistance {
-                remaining_power -= (resistance + 0.3) * 0.3;
+                remaining_power -= ray_power_loss_from_resistance(resistance);
             }
             ray_pos += ray.step;
             remaining_power -= RAY_POWER_DECAY;
@@ -765,7 +736,7 @@ fn visit_immutable_ray_positions_cached<R: ExplosionBlockReader>(
         previous_cell = Some((pos, cache_index));
 
         if let Some(resistance) = resistance {
-            remaining_power -= (resistance + 0.3) * 0.3;
+            remaining_power -= ray_power_loss_from_resistance(resistance);
         }
 
         if remaining_power > 0.0 {
@@ -868,7 +839,10 @@ impl JavaBlockPosSet {
         }
         // Steel intentionally keeps list bins at larger capacities. HashMap tree-bin order can
         // depend on JVM identity hashes and is not a reproducible Vanilla ordering contract.
-        if self.entries.len() > self.buckets.len() * 3 / 4 {
+        if self.entries.len()
+            > self.buckets.len() * JAVA_HASH_MAP_LOAD_FACTOR_NUMERATOR
+                / JAVA_HASH_MAP_LOAD_FACTOR_DENOMINATOR
+        {
             self.resize();
         }
         true
@@ -927,10 +901,10 @@ const JAVA_BLOCK_POS_SET_EMPTY_INDEX: u32 = u32::MAX;
 const fn java_block_pos_bucket(pos: BlockPos, capacity: usize) -> usize {
     let hash = pos
         .y()
-        .wrapping_add(pos.z().wrapping_mul(31))
-        .wrapping_mul(31)
+        .wrapping_add(pos.z().wrapping_mul(JAVA_BLOCK_POS_HASH_MULTIPLIER))
+        .wrapping_mul(JAVA_BLOCK_POS_HASH_MULTIPLIER)
         .wrapping_add(pos.x()) as u32;
-    let spread = hash ^ (hash >> 16);
+    let spread = hash ^ (hash >> JAVA_HASH_MAP_SPREAD_SHIFT);
     spread as usize & (capacity - 1)
 }
 
@@ -954,7 +928,7 @@ fn visit_immutable_ray_positions<R: ExplosionBlockReader>(
         }
 
         if let Some(resistance) = calculator.explosion_resistance(reader, pos, state, fluid) {
-            remaining_power -= (resistance + 0.3) * 0.3;
+            remaining_power -= ray_power_loss_from_resistance(resistance);
         }
 
         if remaining_power > 0.0 && calculator.should_explode(reader, pos, state, remaining_power) {
@@ -964,17 +938,6 @@ fn visit_immutable_ray_positions<R: ExplosionBlockReader>(
         ray_pos += ray.step;
         remaining_power -= RAY_POWER_DECAY;
     }
-}
-
-#[cfg(test)]
-fn unique_affected_positions(batches: impl IntoIterator<Item = Vec<BlockPos>>) -> Vec<BlockPos> {
-    let mut affected = FxHashSet::default();
-    for batch in batches {
-        for pos in batch {
-            affected.insert(pos);
-        }
-    }
-    affected.into_iter().collect()
 }
 
 impl Explosion for ServerExplosion<'_> {
@@ -1006,16 +969,6 @@ impl Explosion for ServerExplosion<'_> {
 
     fn center(&self) -> DVec3 {
         self.center
-    }
-
-    fn can_trigger_blocks(&self) -> bool {
-        if self.block_interaction != BlockInteraction::TriggerBlock {
-            return false;
-        }
-        self.source.is_none_or(|source| {
-            source.entity_type() != &vanilla_entities::BREEZE_WIND_CHARGE
-                || self.world.get_game_rule(&MOB_GRIEFING)
-        })
     }
 
     fn should_affect_blocklike_entities(&self) -> bool {
@@ -1077,9 +1030,9 @@ struct EntityExplosionExposure {
 impl EntityExplosionExposure {
     fn capture(entity: &dyn Entity) -> Self {
         let bounding_box = entity.bounding_box();
-        let x_step = 1.0 / (bounding_box.width() * 2.0 + 1.0);
-        let y_step = 1.0 / (bounding_box.height() * 2.0 + 1.0);
-        let z_step = 1.0 / (bounding_box.depth() * 2.0 + 1.0);
+        let x_step = exposure_axis_step(bounding_box.width());
+        let y_step = exposure_axis_step(bounding_box.height());
+        let z_step = exposure_axis_step(bounding_box.depth());
         let collision_context =
             BlockCollisionContext::entity(entity.position().y, entity.is_descending())
                 .with_fall_distance(entity.fall_distance())
@@ -1094,8 +1047,8 @@ impl EntityExplosionExposure {
             x_step,
             y_step,
             z_step,
-            x_offset: (1.0 - (1.0 / x_step).floor() * x_step) / 2.0,
-            z_offset: (1.0 - (1.0 / z_step).floor() * z_step) / 2.0,
+            x_offset: (1.0 - (1.0 / x_step).floor() * x_step) / EXPOSURE_SAMPLE_OFFSET_DIVISOR,
+            z_offset: (1.0 - (1.0 / z_step).floor() * z_step) / EXPOSURE_SAMPLE_OFFSET_DIVISOR,
         }
     }
 
@@ -1191,6 +1144,10 @@ impl EntityExplosionExposure {
     }
 }
 
+fn exposure_axis_step(axis_length: f64) -> f64 {
+    1.0 / (axis_length * EXPOSURE_SAMPLE_DENSITY + 1.0)
+}
+
 #[cfg(test)]
 fn seen_percent(world: &World, center: DVec3, entity: &dyn Entity) -> f32 {
     let exposure = EntityExplosionExposure::capture(entity);
@@ -1225,6 +1182,10 @@ fn add_or_append_stack(stacks: &mut Vec<StackCollector>, mut stack: ItemStack, p
     }
     stacks.push(StackCollector { pos, stack });
 }
+
+#[cfg(test)]
+#[path = "server/ray_tests.rs"]
+mod ray_tests;
 
 #[cfg(test)]
 mod tests;

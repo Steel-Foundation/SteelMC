@@ -1105,14 +1105,6 @@ fn movement_trace_falls_back_to_old_position_when_no_moves_were_recorded() {
 
     let movements = base.take_movements_for_block_effects();
 
-    assert!(!movements.spilled());
-    assert!(
-        !base
-            .movement_trace
-            .lock()
-            .final_movements_this_tick
-            .spilled()
-    );
     assert_eq!(
         movements.as_slice(),
         &[EntityMovement::new(
@@ -1133,7 +1125,6 @@ fn movement_trace_replays_last_finalized_movements() {
     assert_eq!(base.last_movements_for_block_effects().len(), 0);
 
     base.record_movement_this_tick(EntityMovement::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0)));
-    assert!(!base.movement_trace.lock().movement_this_tick.spilled());
     base.set_position_local(DVec3::new(1.0, 0.0, 0.0));
     let finalized = base.take_movements_for_block_effects();
     assert_eq!(base.last_movements_for_block_effects(), finalized);

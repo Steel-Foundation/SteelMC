@@ -11,7 +11,6 @@ use steel_registry::{
     },
     entity_data::Direction,
     fluid::FluidState,
-    item_stack::ItemStack,
     items::item::BlockHitResult,
     sound_events, vanilla_blocks, vanilla_fluids, vanilla_game_events,
 };
@@ -25,10 +24,10 @@ use crate::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
         block::{schedule_placed_liquid_tick, schedule_water_tick_if_waterlogged},
     },
-    entity::{Entity, projectile::Projectile},
+    entity::projectile::Projectile,
     player,
     world::{
-        ClipHitResult, Explosion, LevelAccessor, LevelReader, ScheduledTickAccess, World,
+        ClipHitResult, LevelAccessor, LevelReader, ScheduledTickAccess, World,
         game_event::GameEventContext,
     },
 };
@@ -59,26 +58,6 @@ impl CandleBlock {
             && state.try_get_value(WATERLOGGED) != Some(true)
             && !state.get_value(LIT_PROPERTY))
         .then(|| state.set_value(LIT_PROPERTY, true))
-    }
-
-    pub(super) fn extinguish(
-        state: steel_utils::BlockStateId,
-        level: &dyn LevelAccessor,
-        pos: BlockPos,
-        player: Option<&player::Player>,
-    ) {
-        level.set_block_state(
-            pos,
-            state.set_value(LIT_PROPERTY, false),
-            UpdateFlags::UPDATE_ALL_IMMEDIATE,
-        );
-        // Vanilla's smoke uses Level.addParticle and is client-local.
-        level.play_block_sound(&sound_events::BLOCK_CANDLE_EXTINGUISH, pos, 1.0, 1.0, None);
-        level.game_event(
-            &vanilla_game_events::BLOCK_CHANGE,
-            pos,
-            &GameEventContext::new(player.map(|player| player as &dyn Entity), None),
-        );
     }
 }
 
@@ -145,7 +124,7 @@ impl BlockBehavior for CandleBlock {
         state: steel_utils::BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
-        player: &player::Player,
+        _player: &player::Player,
         _hand: types::InteractionHand,
         _hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
@@ -155,7 +134,8 @@ impl BlockBehavior for CandleBlock {
             if !state.get_value(LIT_PROPERTY) {
                 return InteractionResult::Pass;
             }
-            Self::extinguish(state, world, pos, Some(player));
+            let new_state = state.set_value(LIT_PROPERTY, false);
+            world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
             return InteractionResult::Success;
         }
 
@@ -172,20 +152,6 @@ impl BlockBehavior for CandleBlock {
         }
 
         InteractionResult::TryEmptyHandInteraction
-    }
-
-    fn on_explosion_hit(
-        &self,
-        state: steel_utils::BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        explosion: &dyn Explosion,
-        on_hit: &mut dyn FnMut(ItemStack, BlockPos),
-    ) {
-        if explosion.can_trigger_blocks() && state.get_value(LIT_PROPERTY) {
-            Self::extinguish(state, world, pos, None);
-        }
-        self.default_on_explosion_hit(state, world, pos, explosion, on_hit);
     }
 
     fn place_liquid(

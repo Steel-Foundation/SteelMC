@@ -1,5 +1,5 @@
 use super::*;
-use crate::entity::{AcceptedClientMovement, AcceptedClientMovementOutcome, VisitedBlockPositions};
+use crate::entity::{AcceptedClientMovement, AcceptedClientMovementOutcome};
 use crate::physics::MoverType;
 use steel_utils::types::UpdateFlags;
 
@@ -116,22 +116,6 @@ fn accepted_living_movement_uses_the_post_move_fluid_interaction() {
     assert!(matches!(result, Ok(AcceptedClientMovementOutcome::Applied)));
     assert!(entity.fluid_contact().water_height() > 0.0);
     assert_eq!(entity.fall_distance().to_bits(), 0.0_f64.to_bits());
-}
-
-#[test]
-fn block_effect_visited_positions_stay_inline_for_short_paths_and_spill_exactly() {
-    let mut positions = VisitedBlockPositions::default();
-    for x in 0..8 {
-        assert!(positions.insert(BlockPos::new(x, 0, 0)));
-    }
-    assert!(positions.overflow.is_none());
-    assert!(!positions.insert(BlockPos::new(7, 0, 0)));
-
-    assert!(positions.insert(BlockPos::new(8, 0, 0)));
-    assert!(positions.overflow.is_some());
-    for x in 0..=8 {
-        assert!(!positions.insert(BlockPos::new(x, 0, 0)));
-    }
 }
 
 #[test]

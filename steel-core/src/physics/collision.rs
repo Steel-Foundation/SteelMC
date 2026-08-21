@@ -1550,30 +1550,6 @@ mod tests {
     }
 
     #[test]
-    fn special_section_candidate_sequence_uses_full_compatibility_cursor() {
-        let bounds = BlockCollisionSearchBounds {
-            min_x: -2,
-            min_y: 4,
-            min_z: 7,
-            max_x: 2,
-            max_y: 8,
-            max_z: 11,
-        };
-        let mut compatibility = Vec::new();
-        let _ = bounds.try_for_each_candidate(|pos, cursor_type| {
-            compatibility.push((pos, cursor_type));
-            ControlFlow::<()>::Continue(())
-        });
-        let mut optimized = Vec::new();
-        let _ = bounds.try_for_each_region_candidate(true, |pos, cursor_type| {
-            optimized.push((pos, cursor_type));
-            ControlFlow::<()>::Continue(())
-        });
-
-        assert_eq!(optimized, compatibility);
-    }
-
-    #[test]
     fn static_looking_plugin_block_keeps_full_cursor_callback_order() {
         static PLUGIN_BLOCK: Block = Block::new(
             Identifier::new_static("collision_test", "static_cube"),

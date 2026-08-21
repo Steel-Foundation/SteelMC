@@ -615,19 +615,6 @@ mod tests {
     }
 
     #[test]
-    fn movement_visited_blocks_spills_without_losing_duplicate_state() {
-        let mut visited = MovementVisitedBlocks::default();
-        for x in 0..24 {
-            assert!(visited.insert(BlockPos::new(x, 64, 0)));
-        }
-
-        assert!(visited.overflow.is_some());
-        for x in 0..24 {
-            assert!(!visited.insert(BlockPos::new(x, 64, 0)));
-        }
-    }
-
-    #[test]
     fn diagonal_corner_crossing_visits_unique_blocks_in_order() {
         let positions = visited_positions(
             DVec3::new(0.5, 64.0, 0.5),

@@ -334,13 +334,9 @@ impl World {
         old_state: BlockStateId,
         new_state: BlockStateId,
     ) {
-        let navigating_mob_ids = self.navigating_mob_ids();
-        if navigating_mob_ids.is_empty() {
-            return;
-        }
         let collision_shape_changed = self.block_collision_shape_changed(pos, old_state, new_state);
         let game_time = self.game_time();
-        for entity_id in navigating_mob_ids {
+        for entity_id in self.navigating_mob_ids() {
             let Some(entity) = self.entity_manager.get_by_id(entity_id) else {
                 self.untrack_navigating_mob(entity_id);
                 continue;

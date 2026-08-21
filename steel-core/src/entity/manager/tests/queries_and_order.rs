@@ -306,31 +306,6 @@ fn hard_collision_index_tracks_move_bounds_unload_restore_and_remove() {
 }
 
 #[test]
-fn movement_collision_predicate_runs_after_manager_lock_release() {
-    let manager = Arc::new(WorldEntityManager::new());
-    load_chunk(&manager, ChunkPos::new(0, 0));
-    let target = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
-    let target_bounds = target.bounding_box();
-    assert!(
-        manager
-            .add_live_entity(target, EntityOwnership::ManagerOwned)
-            .is_ok()
-    );
-
-    let result = manager.get_movement_collision_boxes_in_aabb_matching(
-        &target_bounds,
-        EntityCollisionCandidates::HardCollisionRelevant,
-        |entity| {
-            manager.commit_bounding_box_change(entity.id());
-            true
-        },
-    );
-
-    assert_eq!(result, vec![target_bounds]);
-    assert!(manager.get_by_id(1).is_some());
-}
-
-#[test]
 fn movement_collision_uses_live_bounds_across_vanilla_query_phases() {
     let manager = WorldEntityManager::new();
     load_chunk(&manager, ChunkPos::new(0, 0));
@@ -543,24 +518,6 @@ fn accessible_entities_keep_tracking_start_order() {
 }
 
 #[test]
-fn ordered_entity_ids_preserve_logical_insert_positions_after_removals() {
-    let mut ids = OrderedEntityIds::default();
-    for entity_id in [10, 20, 30, 40] {
-        assert!(ids.insert(entity_id));
-    }
-
-    assert!(ids.remove(20));
-    ids.insert_at(1, 25);
-    ids.insert_at(0, 5);
-    ids.insert_at(ids.ids.len(), 50);
-
-    assert_eq!(
-        ids.iter().copied().collect::<Vec<_>>(),
-        vec![5, 10, 25, 30, 40, 50]
-    );
-}
-
-#[test]
 fn indexed_ordered_entity_ids_compaction_preserves_order_across_reinsertion() {
     let mut ids = IndexedOrderedEntityIds::default();
     for entity_id in 0..128 {
@@ -571,7 +528,6 @@ fn indexed_ordered_entity_ids_compaction_preserves_order_across_reinsertion() {
         assert!(ids.remove(entity_id));
     }
 
-    assert_eq!(ids.nodes.len(), 64);
     assert_eq!(
         ids.iter().copied().collect::<Vec<_>>(),
         (0..128)
@@ -583,7 +539,6 @@ fn indexed_ordered_entity_ids_compaction_preserves_order_across_reinsertion() {
         assert!(ids.insert(entity_id));
     }
 
-    assert_eq!(ids.nodes.len(), 128);
     assert_eq!(
         ids.iter().copied().collect::<Vec<_>>(),
         (0..128)

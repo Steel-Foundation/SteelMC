@@ -481,35 +481,3 @@ fn stable_passenger_tree_ticks_once_in_vehicle_depth_first_order() {
     assert_eq!(passenger.tick_count(), 1);
     assert!(passenger.is_passenger());
 }
-
-#[test]
-fn pending_world_change_search_spills_for_deep_vehicle_chain() {
-    const ENTITY_COUNT: i32 = 10;
-
-    let manager = WorldEntityManager::new();
-    let chunk = ChunkPos::new(0, 0);
-    load_chunk(&manager, chunk);
-    let entities = (1..=ENTITY_COUNT)
-        .map(|id| entity(id, id as u128, DVec3::new(1.0, 64.0, 1.0)))
-        .collect::<Vec<_>>();
-    for pair in entities.windows(2) {
-        EntityBase::restore_passenger_relationship(&pair[0], &pair[1]);
-    }
-    for entity in &entities {
-        assert!(
-            manager
-                .add_live_entity(entity.clone(), EntityOwnership::ManagerOwned)
-                .is_ok()
-        );
-    }
-    let Some(pending_token) = entities[0].begin_pending_world_change() else {
-        panic!("fresh root should accept a pending world change");
-    };
-
-    manager.tick_entities(0, true);
-    assert!(entities.iter().all(|entity| entity.tick_count() == 0));
-
-    assert!(entities[0].finish_pending_world_change(pending_token));
-    manager.tick_entities(1, true);
-    assert!(entities.iter().all(|entity| entity.tick_count() == 1));
-}
