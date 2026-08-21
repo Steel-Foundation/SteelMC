@@ -31,6 +31,11 @@ const MAX_AGE: u8 = 3;
 const NEIGHBORS_TO_AGE: i32 = 4;
 const NEIGHBORS_TO_MELT: i32 = 2;
 const MELT_BRIGHTNESS_THRESHOLD: i32 = 11;
+const AGE_RANDOM_CHANCE: u32 = 3;
+const TICK_DELAY_MIN: u8 = 20;
+const TICK_DELAY_RANGE: u8 = 21;
+const INITIAL_TICK_DELAY_MIN: u8 = 60;
+const INITIAL_TICK_DELAY_RANGE: u8 = 61;
 
 impl FrostedIceBlock {
     /// Creates a new frosted ice block behavior.
@@ -94,12 +99,13 @@ impl BlockBehavior for FrostedIceBlock {
         _old_state: BlockStateId,
         _moved_by_piston: bool,
     ) {
-        let delay = i32::from(rand::random::<u8>() % 61 + 60);
+        let delay =
+            i32::from(rand::random::<u8>() % INITIAL_TICK_DELAY_RANGE + INITIAL_TICK_DELAY_MIN);
         world.schedule_block_tick_default(pos, self.block, delay);
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        let should_age = rand::random::<u32>().is_multiple_of(3)
+        let should_age = rand::random::<u32>().is_multiple_of(AGE_RANDOM_CHANCE)
             || Self::fewer_neighbors_than(world, pos, NEIGHBORS_TO_AGE);
 
         if should_age {
@@ -117,7 +123,8 @@ impl BlockBehavior for FrostedIceBlock {
                     if neighbor_state.get_block() == self.block
                         && !Self::slightly_melt(neighbor_state, world, neighbor_pos)
                     {
-                        let delay = i32::from(rand::random::<u8>() % 21 + 20);
+                        let delay =
+                            i32::from(rand::random::<u8>() % TICK_DELAY_RANGE + TICK_DELAY_MIN);
                         world.schedule_block_tick_default(neighbor_pos, self.block, delay);
                     }
                 }
@@ -125,7 +132,7 @@ impl BlockBehavior for FrostedIceBlock {
             }
         }
 
-        let delay = i32::from(rand::random::<u8>() % 21 + 20);
+        let delay = i32::from(rand::random::<u8>() % TICK_DELAY_RANGE + TICK_DELAY_MIN);
         world.schedule_block_tick_default(pos, self.block, delay);
     }
 
@@ -185,5 +192,10 @@ mod tests {
         assert_eq!(MAX_AGE, 3);
         assert_eq!(NEIGHBORS_TO_AGE, 4);
         assert_eq!(NEIGHBORS_TO_MELT, 2);
+        assert_eq!(AGE_RANDOM_CHANCE, 3);
+        assert_eq!(TICK_DELAY_MIN, 20);
+        assert_eq!(TICK_DELAY_RANGE, 21);
+        assert_eq!(INITIAL_TICK_DELAY_MIN, 60);
+        assert_eq!(INITIAL_TICK_DELAY_RANGE, 61);
     }
 }
