@@ -153,9 +153,10 @@ impl BlockBehavior for HopperBlock {
         block_entity_type: BlockEntityTypeRef,
     ) -> Option<BlockEntityTicker> {
         // Vanilla gates only on the client check; `enabled` is read inside the block entity tick.
-        BlockEntityTicker::for_matching_entity_tick(
+        BlockEntityTicker::for_matching_filtered_entity_tick(
             block_entity_type,
             &vanilla_block_entity_types::HOPPER,
+            HopperBlockEntity::should_tick,
         )
     }
 

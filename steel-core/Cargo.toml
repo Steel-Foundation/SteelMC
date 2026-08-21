@@ -97,5 +97,10 @@ name = "worldgen"
 harness = false
 required-features = ["benchmark-support"]
 
+[[bench]]
+name = "hopper_sleep"
+harness = false
+required-features = ["benchmark-support"]
+
 [lints]
 workspace = true

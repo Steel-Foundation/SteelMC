@@ -65,6 +65,7 @@ use crate::world::game_event::SharedGameEventListener;
 pub struct BlockEntityTicker {
     block_entity_type: BlockEntityTypeRef,
     tick: fn(&Arc<World>, BlockPos, BlockStateId, &dyn BlockEntity),
+    should_tick: Option<fn(&dyn BlockEntity) -> bool>,
 }
 
 impl BlockEntityTicker {
@@ -77,6 +78,22 @@ impl BlockEntityTicker {
         Self {
             block_entity_type,
             tick,
+            should_tick: None,
+        }
+    }
+
+    /// Creates a ticker that can cheaply skip dormant block entities before
+    /// world, chunk, and block-state validation.
+    #[must_use]
+    pub const fn new_filtered(
+        block_entity_type: BlockEntityTypeRef,
+        tick: fn(&Arc<World>, BlockPos, BlockStateId, &dyn BlockEntity),
+        should_tick: fn(&dyn BlockEntity) -> bool,
+    ) -> Self {
+        Self {
+            block_entity_type,
+            tick,
+            should_tick: Some(should_tick),
         }
     }
 
@@ -95,10 +112,27 @@ impl BlockEntityTicker {
         ptr::eq(actual, expected).then(|| Self::for_entity_tick(expected))
     }
 
+    /// Creates the default entity callback with an early tick filter only when
+    /// Vanilla's requested type matches.
+    #[must_use]
+    pub fn for_matching_filtered_entity_tick(
+        actual: BlockEntityTypeRef,
+        expected: BlockEntityTypeRef,
+        should_tick: fn(&dyn BlockEntity) -> bool,
+    ) -> Option<Self> {
+        ptr::eq(actual, expected)
+            .then(|| Self::new_filtered(expected, Self::tick_entity, should_tick))
+    }
+
     /// Returns whether this ticker accepts the concrete block-entity type.
     #[must_use]
     pub fn accepts(self, block_entity_type: BlockEntityTypeRef) -> bool {
         ptr::eq(self.block_entity_type, block_entity_type)
+    }
+
+    #[must_use]
+    pub(crate) fn should_tick(self, block_entity: &dyn BlockEntity) -> bool {
+        self.should_tick.is_none_or(|filter| filter(block_entity))
     }
 
     pub(crate) fn tick(

@@ -52,7 +52,15 @@ struct HopperContainer {
     items: Vec<ItemStack>,
     cooldown_time: i32,
     ticked_game_time: i64,
+    tick_state: HopperTickState,
     loot: RandomizableContainerLoot,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HopperTickState {
+    Awake,
+    Sleeping,
+    SleepUntil(i64),
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `HopperBlockEntity`.
@@ -80,6 +88,7 @@ impl HopperBlockEntity {
             items: vec![ItemStack::empty(); HOPPER_SLOTS],
             cooldown_time: NO_COOLDOWN_TIME,
             ticked_game_time: 0,
+            tick_state: HopperTickState::Awake,
             loot: RandomizableContainerLoot::new(),
         }));
         let shared_container: SharedContainer = container.clone();
@@ -141,11 +150,15 @@ impl HopperBlockEntity {
         state: BlockStateId,
         suck: impl FnOnce() -> bool,
     ) -> bool {
-        if self.container.lock().cooldown_time > 0 {
-            return false;
-        }
-        if !state.get_value(&BlockStateProperties::ENABLED) {
-            return false;
+        {
+            let mut container = self.container.lock();
+            if container.cooldown_time > 0 {
+                return false;
+            }
+            if !state.get_value(&BlockStateProperties::ENABLED) {
+                container.start_sleeping();
+                return false;
+            }
         }
 
         let mut changed = false;
@@ -157,7 +170,7 @@ impl HopperBlockEntity {
         }
 
         if changed {
-            self.container.lock().cooldown_time = MOVE_ITEM_SPEED;
+            self.container.lock().set_cooldown(MOVE_ITEM_SPEED, None);
             self.set_changed();
             return true;
         }
@@ -429,7 +442,7 @@ impl HopperBlockEntity {
             {
                 let skip_tick =
                     i32::from(source_time.is_some_and(|t| destination.ticked_game_time >= t));
-                destination.cooldown_time = MOVE_ITEM_SPEED - skip_tick;
+                destination.set_cooldown(MOVE_ITEM_SPEED - skip_tick, source_time);
             }
             guard.set_changed(to_id);
         }
@@ -505,6 +518,45 @@ impl HopperBlockEntity {
 }
 
 impl HopperContainer {
+    fn start_sleeping(&mut self) {
+        if self.tick_state == HopperTickState::Sleeping {
+            return;
+        }
+        self.tick_state = HopperTickState::Sleeping;
+        // A hopper transferring into this one must choose Vanilla's seven-tick
+        // handoff even though this hopper did not tick during the current game tick.
+        self.ticked_game_time = i64::MAX;
+    }
+
+    const fn wake_up_now(&mut self) {
+        self.tick_state = HopperTickState::Awake;
+    }
+
+    const fn wake_for_tick(&mut self, game_time: i64) -> bool {
+        match self.tick_state {
+            HopperTickState::Awake => true,
+            HopperTickState::SleepUntil(wake_time) if game_time >= wake_time => {
+                self.tick_state = HopperTickState::Awake;
+                true
+            }
+            HopperTickState::Sleeping | HopperTickState::SleepUntil(_) => false,
+        }
+    }
+
+    fn set_cooldown(&mut self, cooldown_time: i32, source_tick: Option<i64>) {
+        self.cooldown_time = cooldown_time;
+        if cooldown_time == MOVE_ITEM_SPEED - 1
+            && self.ticked_game_time == i64::MAX
+            && let Some(source_tick) = source_tick
+        {
+            // Do not tick later in the source hopper's current game tick. The
+            // first cooldown decrement therefore happens on the following tick.
+            self.tick_state = HopperTickState::SleepUntil(source_tick.wrapping_add(1));
+        } else if cooldown_time > 0 && self.tick_state == HopperTickState::Sleeping {
+            self.wake_up_now();
+        }
+    }
+
     fn unpack_loot_table(&mut self, pos: BlockPos) {
         if let Some(pending) = self.loot.take_pending() {
             pending.fill_container(pos, self);
@@ -542,6 +594,16 @@ impl BlockEntity for HopperBlockEntity {
         for item in items {
             world.drop_item_stack(pos, item);
         }
+    }
+
+    fn on_block_state_changed(&self, _state: BlockStateId) {
+        // Vanilla rebinds the wrapper on every block-state change. Lithium's
+        // wrapper hook wakes a sleeping hopper as part of that rebind.
+        self.container.lock().wake_up_now();
+    }
+
+    fn on_clear_removed(&self) {
+        self.container.lock().wake_up_now();
     }
 
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
@@ -602,18 +664,31 @@ impl BlockEntity for HopperBlockEntity {
         let state = self.get_block_state();
         let on_cooldown = {
             let mut container = self.container.lock();
+            if !container.wake_for_tick(world.game_time()) {
+                return;
+            }
             container.cooldown_time -= 1;
             container.ticked_game_time = world.game_time();
             if container.cooldown_time > 0 {
                 true
             } else {
-                container.cooldown_time = 0;
+                container.set_cooldown(0, None);
                 false
             }
         };
         if !on_cooldown {
             self.try_move_items(world, pos, state, || self.suck_in_items(world, pos));
         }
+    }
+}
+
+impl HopperBlockEntity {
+    /// Returns whether the world ticker needs to perform full validation for
+    /// this hopper. One-tick sleeps stay active so their wake deadline can run.
+    pub(crate) fn should_tick(block_entity: &dyn BlockEntity) -> bool {
+        block_entity
+            .downcast_ref::<Self>()
+            .is_some_and(|hopper| hopper.container.lock().tick_state != HopperTickState::Sleeping)
     }
 }
 
@@ -658,7 +733,7 @@ mod tests {
 
     use super::*;
     use crate::behavior::init_behaviors;
-    use crate::block_entity::init_block_entities;
+    use crate::block_entity::{BlockEntityLifecycleExt as _, init_block_entities};
     use crate::inventory::container::{SimpleContainer, WorldlyContainer};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
@@ -877,7 +952,7 @@ mod tests {
     }
 
     #[test]
-    fn locked_hopper_moves_nothing_while_its_cooldown_still_counts_down() {
+    fn locked_hopper_sleeps_after_its_cooldown_expires_and_wakes_on_state_change() {
         let pos = BlockPos::new(8, 64, 8);
         let world = hopper_world("hopper_locked", pos);
         assert!(world.set_block(
@@ -903,9 +978,81 @@ mod tests {
         for _ in 0..6 {
             hopper.tick(&world);
         }
-        assert_eq!(hopper.container.lock().cooldown_time, 0);
+        {
+            let container = hopper.container.lock();
+            assert_eq!(container.cooldown_time, 0);
+            assert_eq!(container.tick_state, HopperTickState::Sleeping);
+            assert_eq!(container.ticked_game_time, i64::MAX);
+        }
         assert_eq!(hopper.container.lock().get_item(0).count(), 1);
         assert!(container_item(&world, pos.below(), 0).is_empty());
+
+        // A sleeping ticker is inert until the block-state rebind wakes it.
+        hopper.tick(&world);
+        assert_eq!(hopper.container.lock().ticked_game_time, i64::MAX);
+
+        hopper.set_block_state(state.set_value(&BlockStateProperties::ENABLED, true));
+        hopper.tick(&world);
+        assert_eq!(hopper.container.lock().get_item(0).count(), 0);
+        assert_eq!(container_item(&world, pos.below(), 0).count(), 1);
+    }
+
+    #[test]
+    fn hopper_handoff_wakes_a_sleeping_destination_on_the_following_tick() {
+        let source_pos = BlockPos::new(8, 65, 8);
+        let destination_pos = source_pos.below();
+        let world = hopper_world("hopper_sleeping_handoff", destination_pos);
+        let source = HopperBlockEntity::new(
+            Arc::downgrade(&world),
+            source_pos,
+            vanilla_blocks::HOPPER.default_state(),
+        );
+        let locked_state = vanilla_blocks::HOPPER
+            .default_state()
+            .set_value(&BlockStateProperties::ENABLED, false);
+        let destination =
+            HopperBlockEntity::new(Arc::downgrade(&world), destination_pos, locked_state);
+
+        destination.tick(&world);
+        source.container.lock().ticked_game_time = world.game_time();
+
+        let source_ref = source.container_ref.clone();
+        let destination_ref = destination.container_ref.clone();
+        let source_id = source_ref.container_id();
+        let destination_id = destination_ref.container_id();
+        let mut guard = ContainerLockGuard::lock_all(&[&source_ref, &destination_ref]);
+        let leftover = HopperBlockEntity::add_item_into(
+            &mut guard,
+            Some(source_id),
+            destination_id,
+            ItemStack::new(&vanilla_items::STONE),
+            None,
+        );
+        drop(guard);
+
+        assert!(leftover.is_empty());
+        {
+            let container = destination.container.lock();
+            assert_eq!(container.cooldown_time, MOVE_ITEM_SPEED - 1);
+            assert_eq!(
+                container.tick_state,
+                HopperTickState::SleepUntil(world.game_time().wrapping_add(1))
+            );
+        }
+
+        // If the destination follows the source in ticker order, it must not
+        // consume one cooldown tick during the source's current game tick.
+        destination.tick(&world);
+        assert_eq!(
+            destination.container.lock().cooldown_time,
+            MOVE_ITEM_SPEED - 1
+        );
+
+        world.tick_game(1, true);
+        destination.tick(&world);
+        let container = destination.container.lock();
+        assert_eq!(container.cooldown_time, MOVE_ITEM_SPEED - 2);
+        assert_eq!(container.tick_state, HopperTickState::Awake);
     }
 
     #[test]

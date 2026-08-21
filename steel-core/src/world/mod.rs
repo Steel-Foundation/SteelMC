@@ -103,6 +103,9 @@ use crate::{
 };
 
 mod block_entity_ticker;
+#[cfg(feature = "benchmark-support")]
+#[doc(hidden)]
+pub use block_entity_ticker::benchmark_support as block_entity_ticker_benchmark_support;
 mod block_event;
 mod block_region;
 mod block_updates;
