@@ -5,10 +5,14 @@ use super::super::runner::FeatureDecorationRunner;
 use super::super::vanilla_collections::JavaBlockPosSet;
 use steel_utils::ChunkPos;
 
-use std::sync::Arc;
+use rustc_hash::FxHashMap;
+use std::{
+    cell::{Cell, RefCell},
+    sync::Arc,
+};
 
 use crate::block_entity::SharedBlockEntity;
-use crate::world::World;
+use crate::world::{ScheduledTickAccess, World};
 
 mod decorators;
 mod fallen;
@@ -31,6 +35,10 @@ pub(crate) trait TreeLevel: LevelAccessor {
     fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32;
 
     fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool;
+
+    fn requires_live_write_preflight(&self) -> bool {
+        false
+    }
 
     fn place_nested_configured_feature(
         &mut self,
@@ -83,6 +91,10 @@ impl TreeLevel for Arc<World> {
             .is_some()
     }
 
+    fn requires_live_write_preflight(&self) -> bool {
+        true
+    }
+
     fn place_nested_configured_feature(
         &mut self,
         _registry: &Registry,
@@ -104,6 +116,23 @@ impl FeatureDecorationRunner {
         origin: BlockPos,
         biome_zoom_seed: i64,
     ) -> bool {
+        if region.requires_live_write_preflight() {
+            let mut preflight_random = random.clone();
+            let mut preflight_region = TreeWritePreflight::new(region);
+            let mut preflight_placement = TreePlacement::default();
+            let preflight_placed = Self::do_place_tree(
+                &mut preflight_region,
+                registry,
+                &mut preflight_random,
+                config,
+                origin,
+                &mut preflight_placement,
+            );
+            if !preflight_placed || preflight_region.failed() {
+                return false;
+            }
+        }
+
         let mut placement = TreePlacement::default();
         let placed = Self::do_place_tree(region, registry, random, config, origin, &mut placement);
         if !placed || (placement.trunks.is_empty() && placement.foliage.is_empty()) {
@@ -306,6 +335,124 @@ impl FeatureDecorationRunner {
     }
 }
 
+struct TreeWritePreflight<'a, L: TreeLevel + ?Sized> {
+    level: &'a mut L,
+    writes: RefCell<FxHashMap<BlockPos, BlockStateId>>,
+    failed: Cell<bool>,
+}
+
+impl<'a, L: TreeLevel + ?Sized> TreeWritePreflight<'a, L> {
+    fn new(level: &'a mut L) -> Self {
+        Self {
+            level,
+            writes: RefCell::new(FxHashMap::default()),
+            failed: Cell::new(false),
+        }
+    }
+
+    fn failed(&self) -> bool {
+        self.failed.get()
+    }
+}
+
+impl<L: TreeLevel + ?Sized> LevelReader for TreeWritePreflight<'_, L> {
+    fn get_block_state(&self, pos: BlockPos) -> BlockStateId {
+        self.writes
+            .borrow()
+            .get(&pos)
+            .copied()
+            .unwrap_or_else(|| self.level.get_block_state(pos))
+    }
+
+    fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
+        self.level.get_block_entity(pos)
+    }
+
+    fn is_face_sturdy_for(
+        &self,
+        state: BlockStateId,
+        pos: BlockPos,
+        direction: Direction,
+        support_type: shapes::SupportType,
+    ) -> bool {
+        self.level
+            .is_face_sturdy_for(state, pos, direction, support_type)
+    }
+
+    fn raw_brightness(&self, pos: BlockPos, sky_darkening: u8) -> u8 {
+        self.level.raw_brightness(pos, sky_darkening)
+    }
+
+    fn can_see_sky(&self, pos: BlockPos) -> bool {
+        self.level.can_see_sky(pos)
+    }
+
+    fn ambient_light(&self) -> f32 {
+        self.level.ambient_light()
+    }
+
+    fn min_y(&self) -> i32 {
+        self.level.min_y()
+    }
+
+    fn height(&self) -> i32 {
+        self.level.height()
+    }
+}
+
+impl<L: TreeLevel + ?Sized> ScheduledTickAccess for TreeWritePreflight<'_, L> {
+    fn fluid_tick_delay(&self, fluid: FluidRef) -> i32 {
+        self.level.fluid_tick_delay(fluid)
+    }
+
+    fn schedule_block_tick_default(&self, _pos: BlockPos, _block: BlockRef, _delay: i32) -> bool {
+        false
+    }
+
+    fn schedule_fluid_tick_default(&self, _pos: BlockPos, _fluid: FluidRef, _delay: i32) -> bool {
+        false
+    }
+}
+
+impl<L: TreeLevel + ?Sized> LevelAccessor for TreeWritePreflight<'_, L> {
+    fn set_block_state(&self, pos: BlockPos, state: BlockStateId, _flags: UpdateFlags) -> bool {
+        let chunk_x = SectionPos::block_to_section_coord(pos.x());
+        let chunk_z = SectionPos::block_to_section_coord(pos.z());
+        if !self.level.can_write_to_chunk(chunk_x, chunk_z) {
+            self.failed.set(true);
+            return false;
+        }
+
+        self.writes.borrow_mut().insert(pos, state);
+        true
+    }
+}
+
+impl<L: TreeLevel + ?Sized> TreeLevel for TreeWritePreflight<'_, L> {
+    fn block_state(&self, pos: BlockPos) -> BlockStateId {
+        self.get_block_state(pos)
+    }
+
+    fn height_at(&self, heightmap_type: HeightmapType, x: i32, z: i32) -> i32 {
+        self.level.height_at(heightmap_type, x, z)
+    }
+
+    fn can_write_to_chunk(&self, chunk_x: i32, chunk_z: i32) -> bool {
+        self.level.can_write_to_chunk(chunk_x, chunk_z)
+    }
+
+    fn place_nested_configured_feature(
+        &mut self,
+        _registry: &Registry,
+        _random: &mut WorldgenRandom,
+        _kind: &ConfiguredFeatureKind,
+        _origin: BlockPos,
+        _biome_zoom_seed: i64,
+    ) -> bool {
+        false
+    }
+}
+
 #[derive(Clone, Copy)]
 struct FoliageAttachment {
     pos: BlockPos,
@@ -403,4 +550,123 @@ impl TreeBounds {
 
 const fn abs_i32(value: i32) -> i32 {
     if value < 0 { -value } else { value }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
+
+    struct WriteTestLevel {
+        can_write: bool,
+    }
+
+    impl LevelReader for WriteTestLevel {
+        fn get_block_state(&self, _pos: BlockPos) -> BlockStateId {
+            vanilla_blocks::AIR.default_state()
+        }
+
+        fn raw_brightness(&self, _pos: BlockPos, _sky_darkening: u8) -> u8 {
+            0
+        }
+
+        fn min_y(&self) -> i32 {
+            -64
+        }
+
+        fn height(&self) -> i32 {
+            384
+        }
+    }
+
+    impl ScheduledTickAccess for WriteTestLevel {
+        fn fluid_tick_delay(&self, _fluid: FluidRef) -> i32 {
+            0
+        }
+
+        fn schedule_block_tick_default(
+            &self,
+            _pos: BlockPos,
+            _block: BlockRef,
+            _delay: i32,
+        ) -> bool {
+            false
+        }
+
+        fn schedule_fluid_tick_default(
+            &self,
+            _pos: BlockPos,
+            _fluid: FluidRef,
+            _delay: i32,
+        ) -> bool {
+            false
+        }
+    }
+
+    impl LevelAccessor for WriteTestLevel {
+        fn set_block_state(
+            &self,
+            _pos: BlockPos,
+            _state: BlockStateId,
+            _flags: UpdateFlags,
+        ) -> bool {
+            self.can_write
+        }
+    }
+
+    impl TreeLevel for WriteTestLevel {
+        fn height_at(&self, _heightmap_type: HeightmapType, _x: i32, _z: i32) -> i32 {
+            0
+        }
+
+        fn can_write_to_chunk(&self, _chunk_x: i32, _chunk_z: i32) -> bool {
+            self.can_write
+        }
+
+        fn place_nested_configured_feature(
+            &mut self,
+            _registry: &Registry,
+            _random: &mut WorldgenRandom,
+            _kind: &ConfiguredFeatureKind,
+            _origin: BlockPos,
+            _biome_zoom_seed: i64,
+        ) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn tree_write_preflight_rejects_unwritable_chunks() {
+        init_vanilla_registry();
+        let mut level = WriteTestLevel { can_write: false };
+        let preflight_state = vanilla_blocks::OAK_LOG.default_state();
+        let preflight = TreeWritePreflight::new(&mut level);
+
+        assert!(!preflight.set_block_state(
+            BlockPos::ZERO,
+            preflight_state,
+            UpdateFlags::UPDATE_ALL,
+        ));
+        assert!(preflight.failed());
+        assert_eq!(
+            preflight.get_block_state(BlockPos::ZERO),
+            vanilla_blocks::AIR.default_state()
+        );
+    }
+
+    #[test]
+    fn tree_write_preflight_overlays_accepted_writes() {
+        init_vanilla_registry();
+        let mut level = WriteTestLevel { can_write: true };
+        let preflight_state = vanilla_blocks::OAK_LOG.default_state();
+        let preflight = TreeWritePreflight::new(&mut level);
+
+        assert!(preflight.set_block_state(
+            BlockPos::ZERO,
+            preflight_state,
+            UpdateFlags::UPDATE_ALL,
+        ));
+        assert!(!preflight.failed());
+        assert_eq!(preflight.get_block_state(BlockPos::ZERO), preflight_state);
+    }
 }
