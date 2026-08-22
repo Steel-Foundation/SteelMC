@@ -12,6 +12,9 @@ use std::{
 
 use glam::DVec3;
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
+use steel_protocol::packets::common::{
+    ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
+};
 use steel_protocol::packets::game::CRemovePlayerInfo;
 use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::entity_type::EntityTypeRef;
@@ -2101,6 +2104,67 @@ fn packet_id(packet: &EncodedPacket) -> i32 {
     }
 }
 
+fn decode_initial_player_info_hat(packet: &EncodedPacket) -> (Uuid, bool) {
+    let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+    VarInt::read(&mut cursor).expect("packet length should decode");
+    assert_eq!(
+        VarInt::read(&mut cursor)
+            .expect("packet id should decode")
+            .0,
+        C_PLAYER_INFO_UPDATE
+    );
+    assert_eq!(u8::read(&mut cursor).expect("actions should decode"), 0xff);
+    assert_eq!(
+        VarInt::read(&mut cursor)
+            .expect("entry count should decode")
+            .0,
+        1
+    );
+    let uuid = Uuid::read(&mut cursor).expect("entry UUID should decode");
+    let name_length = VarInt::read(&mut cursor)
+        .expect("profile name length should decode")
+        .0;
+    assert!(name_length >= 0);
+    cursor.set_position(cursor.position() + name_length as u64);
+    assert_eq!(
+        VarInt::read(&mut cursor)
+            .expect("property count should decode")
+            .0,
+        0
+    );
+    assert!(!bool::read(&mut cursor).expect("chat session flag should decode"));
+    VarInt::read(&mut cursor).expect("game mode should decode");
+    bool::read(&mut cursor).expect("listed state should decode");
+    VarInt::read(&mut cursor).expect("latency should decode");
+    assert!(!bool::read(&mut cursor).expect("display name flag should decode"));
+    VarInt::read(&mut cursor).expect("list order should decode");
+    let show_hat = bool::read(&mut cursor).expect("hat state should decode");
+    assert_eq!(cursor.position() as usize, packet.encoded_data.len());
+    (uuid, show_hat)
+}
+
+fn decode_hat_update(packet: &EncodedPacket) -> (Uuid, bool) {
+    let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+    VarInt::read(&mut cursor).expect("packet length should decode");
+    assert_eq!(
+        VarInt::read(&mut cursor)
+            .expect("packet id should decode")
+            .0,
+        C_PLAYER_INFO_UPDATE
+    );
+    assert_eq!(u8::read(&mut cursor).expect("actions should decode"), 0x80);
+    assert_eq!(
+        VarInt::read(&mut cursor)
+            .expect("entry count should decode")
+            .0,
+        1
+    );
+    let uuid = Uuid::read(&mut cursor).expect("entry UUID should decode");
+    let show_hat = bool::read(&mut cursor).expect("hat state should decode");
+    assert_eq!(cursor.position() as usize, packet.encoded_data.len());
+    (uuid, show_hat)
+}
+
 #[test]
 fn initial_player_info_precedes_entity_spawn_for_existing_players() {
     let world = fresh_test_world("join_player_info_before_spawn");
@@ -2176,12 +2240,125 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
             player_info_index < entity_spawn_index,
             "player info must precede the entity spawn; packet ids: {packet_ids:?}"
         );
+        let (player_info_uuid, show_hat) = {
+            let packets = existing_packets.lock();
+            decode_initial_player_info_hat(&packets[player_info_index])
+        };
+        assert_eq!(player_info_uuid, joining.gameprofile.id);
+        assert!(
+            !show_hat,
+            "initial player info should reflect the joining player's disabled hat layer"
+        );
 
         if let Err(error) = server.flush_known_players().await {
             panic!("known player cache should flush before test teardown: {error}");
         }
         drop(joining);
         drop(existing);
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn client_information_broadcasts_hat_updates_only_when_the_hat_bit_changes() {
+    let world = fresh_test_world("client_information_hat_updates");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+
+    runtime.block_on(async {
+        let storage_root = test_storage_root("client-information-hat-updates");
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let (player, sent_packets) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(&world),
+            Uuid::from_u128(1),
+            "TestPlayer",
+            1,
+        );
+        let (observer, observer_packets) =
+            test_player_with_uuid_and_packets(&server, world, Uuid::from_u128(2), "Observer", 2);
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(server.online_players.insert(Arc::clone(&observer)));
+
+        let client_information = |model_customization| SClientInformation {
+            language: "en_us".to_owned(),
+            view_distance: 8,
+            chat_visibility: ChatVisibility::Full,
+            chat_colors: true,
+            model_customization,
+            main_hand: HumanoidArm::Right,
+            text_filtering_enabled: false,
+            allows_listing: true,
+            particle_status: ParticleStatus::All,
+        };
+
+        player.handle_client_information(client_information(0x40));
+        let hat_packets = sent_packets
+            .lock()
+            .iter()
+            .filter(|packet| packet_id(packet) == C_PLAYER_INFO_UPDATE)
+            .map(decode_hat_update)
+            .collect::<Vec<_>>();
+        assert_eq!(hat_packets, vec![(player.gameprofile.id, true)]);
+        let observer_hat_packets = observer_packets
+            .lock()
+            .iter()
+            .filter(|packet| packet_id(packet) == C_PLAYER_INFO_UPDATE)
+            .map(decode_hat_update)
+            .collect::<Vec<_>>();
+        assert_eq!(observer_hat_packets, vec![(player.gameprofile.id, true)]);
+
+        sent_packets.lock().clear();
+        observer_packets.lock().clear();
+        player.handle_client_information(client_information(0x41));
+        assert!(
+            sent_packets
+                .lock()
+                .iter()
+                .all(|packet| packet_id(packet) != C_PLAYER_INFO_UPDATE),
+            "changing a non-hat model part must not send a hat update"
+        );
+        assert!(
+            observer_packets
+                .lock()
+                .iter()
+                .all(|packet| packet_id(packet) != C_PLAYER_INFO_UPDATE),
+            "changing a non-hat model part must not broadcast a hat update"
+        );
+
+        sent_packets.lock().clear();
+        observer_packets.lock().clear();
+        player.handle_client_information(client_information(0x01));
+        let hat_packets = sent_packets
+            .lock()
+            .iter()
+            .filter(|packet| packet_id(packet) == C_PLAYER_INFO_UPDATE)
+            .map(decode_hat_update)
+            .collect::<Vec<_>>();
+        assert_eq!(hat_packets, vec![(player.gameprofile.id, false)]);
+        let observer_hat_packets = observer_packets
+            .lock()
+            .iter()
+            .filter(|packet| packet_id(packet) == C_PLAYER_INFO_UPDATE)
+            .map(decode_hat_update)
+            .collect::<Vec<_>>();
+        assert_eq!(observer_hat_packets, vec![(player.gameprofile.id, false)]);
+
+        drop(observer);
+        drop(player);
         drop(server);
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");
