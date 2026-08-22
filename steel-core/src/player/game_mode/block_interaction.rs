@@ -174,6 +174,7 @@ impl Player {
     /// # Panics
     ///
     /// Panics if the behavior registry has not been initialized.
+    /// TODO Implement ctrl + middle click
     pub fn handle_pick_item_from_block(&self, packet: SPickItemFromBlock) {
         if !self.is_within_block_interaction_range(packet.pos) {
             return;
