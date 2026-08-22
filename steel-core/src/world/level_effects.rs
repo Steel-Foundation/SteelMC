@@ -7,6 +7,7 @@ use super::{
     vanilla_blocks, vanilla_game_events,
 };
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
+
 pub(super) fn sound_is_within_range(
     sound: SoundEventRef,
     volume: f32,
