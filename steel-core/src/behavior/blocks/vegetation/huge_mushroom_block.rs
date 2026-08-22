@@ -4,6 +4,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Dir
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::MultifaceBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
@@ -29,22 +30,11 @@ impl HugeMushroomBlock {
         Self { block }
     }
 
-    const fn face_property(direction: Direction) -> &'static BoolProperty {
-        match direction {
-            Direction::Down => DOWN,
-            Direction::Up => UP,
-            Direction::North => NORTH,
-            Direction::South => SOUTH,
-            Direction::West => WEST,
-            Direction::East => EAST,
-        }
-    }
-
     fn placement_state(&self, world: &dyn LevelReader, pos: BlockPos) -> BlockStateId {
         let mut state = self.block.default_state();
         for direction in Direction::ALL {
             let exposed = world.get_block_state(pos.relative(direction)).get_block() != self.block;
-            state = state.set_value(Self::face_property(direction), exposed);
+            state = state.set_value(MultifaceBlock::face_property(direction), exposed);
         }
         state
     }
@@ -65,7 +55,7 @@ impl BlockBehavior for HugeMushroomBlock {
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
         if neighbor_state.get_block() == self.block {
-            state.set_value(Self::face_property(direction), false)
+            state.set_value(MultifaceBlock::face_property(direction), false)
         } else {
             state
         }
