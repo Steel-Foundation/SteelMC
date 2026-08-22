@@ -225,6 +225,22 @@ impl SoulFireBlock {
 }
 
 impl BlockBehavior for SoulFireBlock {
+    /// Removes soul fire when its supporting block no longer allows it to survive
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        if direction == Direction::Down && !self.can_survive(state, world, pos) {
+            return vanilla_blocks::AIR.default_state();
+        }
+        state
+    }
+
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let state = self.block.default_state();
         self.can_survive(state, context.world, context.place_pos())
@@ -258,7 +274,7 @@ mod tests {
     use crate::behavior::block::BlockBehavior;
     use crate::test_support::TestLevel;
 
-    use super::FireBlock;
+    use super::{FireBlock, SoulFireBlock};
 
     const POS: BlockPos = BlockPos::new(0, 64, 0);
 
@@ -297,6 +313,23 @@ mod tests {
         init_vanilla_registry();
         let behavior = FireBlock::new(&vanilla_blocks::FIRE);
         let state = vanilla_blocks::FIRE.default_state();
+        let level = TestLevel::default();
+        let result = behavior.update_shape(
+            state,
+            &level,
+            POS,
+            Direction::Down,
+            POS.below(),
+            vanilla_blocks::AIR.default_state(),
+        );
+        assert_eq!(result.get_block(), &vanilla_blocks::AIR);
+    }
+
+    #[test]
+    fn update_shape_removes_unsupported_soul_fire() {
+        init_vanilla_registry();
+        let behavior = SoulFireBlock::new(&vanilla_blocks::SOUL_FIRE);
+        let state = vanilla_blocks::SOUL_FIRE.default_state();
         let level = TestLevel::default();
         let result = behavior.update_shape(
             state,
