@@ -1500,6 +1500,20 @@ impl Entity for Player {
         SoundSource::Players
     }
 
+    /// Matches vanilla `Player.playSound`, which excludes the source player.
+    fn play_sound(&self, sound: SoundEventRef, volume: f32, pitch: f32) {
+        if let Some(world) = self.level() {
+            world.play_sound_at(
+                sound,
+                self.sound_source(),
+                self.position(),
+                volume,
+                pitch,
+                Some(self.id()),
+            );
+        }
+    }
+
     fn swim_sound(&self) -> SoundEventRef {
         &sound_events::ENTITY_PLAYER_SWIM
     }
