@@ -589,15 +589,7 @@ impl ItemStack {
     /// Checks if `ItemStack` has an enchantment
     #[must_use]
     pub fn is_enchanted(&self) -> bool {
-        let Some(enchantments) = self.get_enchantments() else {
-            return false;
-        };
-
-        if enchantments.is_empty() {
-            return false;
-        }
-
-        true
+        self.get_enchantments().map_or(false, |e| !e.is_empty())
     }
 
     #[must_use]
