@@ -485,7 +485,7 @@ fn death_removes_tracked_entities_from_dead_players_client() {
         sent_packets: Arc::clone(&sent_packets),
         closed: AtomicBool::new(false),
     })));
-    let player = TestPlayerBuilder::new(Arc::clone(&world),"TestPlayer", 1)
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1)
         .connection(connection)
         .build();
     let item: SharedEntity = Arc::new(ItemEntity::new(
