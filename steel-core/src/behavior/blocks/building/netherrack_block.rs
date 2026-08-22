@@ -18,6 +18,9 @@ use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemeal
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::world::{LevelReader, World};
 
+/// Chance to pick `Warped Nylium` when both nylium types are nearby.
+const WARPED_VS_CRIMSON_CHANCE: f64 = 0.5;
+
 /// Vanilla `NetherrackBlock`.
 #[block_behavior]
 pub struct NetherrackBlock {
@@ -49,8 +52,11 @@ impl Bonemealable for NetherrackBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        // Vanilla checks `propagatesSkylightDown` — client-local light check.
-        // Approximation: above must not be solid (air, glass, etc. let light through).
+        // Vanilla `propagatesSkylightDown` checks if the block above lets skylight
+        // through. Steel has no direct `propagates_skylight_down` on `BlockStateId`
+        // yet, so we approximate with `!is_solid()` (air/glass/leaves pass, stone
+        // doesn't). `can_see_sky` is not suitable here — it checks actual sky
+        // visibility, which is always false in the Nether where this runs.
         if world.get_block_state(pos.above()).is_solid() {
             return false;
         }
@@ -89,7 +95,7 @@ impl Bonemealable for NetherrackBlock {
             }
         }
         let new_state = if found_warped && found_crimson {
-            if rng.random_bool(0.5) {
+            if rng.random_bool(WARPED_VS_CRIMSON_CHANCE) {
                 vanilla_blocks::WARPED_NYLIUM.default_state()
             } else {
                 vanilla_blocks::CRIMSON_NYLIUM.default_state()
