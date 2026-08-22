@@ -23,7 +23,6 @@ use steel_utils::serial::ReadFrom as _;
 use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, ChunkPos, Direction, Downcast as _, SectionPos, WorldAabb};
 use text_components::TextComponent;
-use uuid::Uuid;
 
 use super::JukeboxBlock;
 use crate::behavior::blocks::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
@@ -142,16 +141,7 @@ fn jukebox_entity(world: &World, pos: BlockPos) -> SharedBlockEntity {
 }
 
 fn test_player(world: &Arc<World>, id: i32) -> Arc<Player> {
-    let Ok(uuid_id) = u128::try_from(id) else {
-        panic!("test player id must be positive");
-    };
-    TestPlayerBuilder::new(
-        Arc::clone(world),
-        Uuid::from_u128(uuid_id),
-        format!("JukeboxTester{id}"),
-        id,
-    )
-    .build()
+    TestPlayerBuilder::new(Arc::clone(world), format!("JukeboxTester{id}"), id).build()
 }
 
 fn block_bottom_center(pos: BlockPos) -> DVec3 {
@@ -233,14 +223,9 @@ fn recording_player(
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
         packets: Arc::clone(&packets),
     })));
-    let player = TestPlayerBuilder::new(
-        Arc::clone(world),
-        Uuid::from_u128(9_001),
-        "JukeboxObserver",
-        9_001,
-    )
-    .connection(connection)
-    .build();
+    let player = TestPlayerBuilder::new(Arc::clone(world), "JukeboxObserver", 9_001)
+        .connection(connection)
+        .build();
     let moved = player.try_set_position(block_bottom_center(pos.above()));
     assert!(moved.is_ok(), "test player should move beside jukebox");
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));

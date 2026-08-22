@@ -126,6 +126,7 @@ impl BlockBehavior for JukeboxBlock {
                 &GameEventContext::new(Some(player as &dyn Entity), Some(state)),
             );
         }
+        // TODO: Award Stats.PLAY_RECORD once Steel has a statistics foundation.
         InteractionResult::Success
     }
 
