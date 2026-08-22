@@ -18,11 +18,22 @@ use crate::{
 
 impl JavaTcpClient {
     async fn disconnect_duplicate_player(&self, profile: &GameProfile) -> bool {
-        // TODO: Drive pre-play connections from server ticks and enforce Vanilla's total
-        // 600-tick login deadline, including duplicate-session waits.
+        let Some(login_deadline) = self.login_deadline.load() else {
+            log::error!(
+                "Client {} reached duplicate login handling without a deadline",
+                self.id
+            );
+            self.close();
+            return false;
+        };
+
         match self
             .server
-            .disconnect_duplicate_player_and_wait(profile.id, &self.cancel_token)
+            .disconnect_duplicate_player_and_wait(
+                profile.id,
+                &self.cancel_token,
+                login_deadline.expires_at_tick(),
+            )
             .await
         {
             Ok(()) => true,
@@ -30,6 +41,7 @@ impl JavaTcpClient {
                 self.close();
                 false
             }
+            Err(DuplicatePlayerWaitError::TimedOut) => false,
         }
     }
 
@@ -231,6 +243,7 @@ impl JavaTcpClient {
         if let Err(error) = sequence_result {
             return self.reject_unexpected_packet(error).await;
         }
+        self.login_deadline.store(None);
         self.protocol.store(ConnectionProtocol::Config);
 
         self.start_configuration().await;

@@ -31,6 +31,9 @@ pub enum DuplicatePlayerWaitError {
     /// The replacement connection or server stopped while waiting.
     #[error("duplicate-player wait was cancelled")]
     Cancelled,
+    /// Vanilla's total login deadline elapsed while the old session was leaving.
+    #[error("duplicate-player wait exceeded the login deadline")]
+    TimedOut,
 }
 
 /// Exclusive ownership of one UUID's pending join pipeline.
@@ -141,10 +144,12 @@ impl Server {
     ///
     /// Steel keeps the disconnect admission until asynchronous persistence finishes, preventing
     /// the replacement from loading stale player data after the old player leaves the online map.
+    /// `login_deadline_tick` is the absolute deadline established when Login began.
     pub async fn disconnect_duplicate_player_and_wait(
         &self,
         uuid: Uuid,
         connection_cancel: &CancellationToken,
+        login_deadline_tick: u64,
     ) -> Result<(), DuplicatePlayerWaitError> {
         loop {
             let admission_changed = self.player_admission_changed.notified();
@@ -167,6 +172,7 @@ impl Server {
             }
 
             tokio::select! {
+                biased;
                 () = connection_cancel.cancelled() => {
                     return Err(DuplicatePlayerWaitError::Cancelled);
                 }
@@ -174,6 +180,9 @@ impl Server {
                     return Err(DuplicatePlayerWaitError::Cancelled);
                 }
                 () = &mut admission_changed => {}
+                () = self.wait_until_tick(login_deadline_tick) => {
+                    return Err(DuplicatePlayerWaitError::TimedOut);
+                }
             }
         }
     }

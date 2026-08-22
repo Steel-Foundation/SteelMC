@@ -19,6 +19,7 @@ use uuid::Uuid;
 use crate::{
     player::connection::{JavaConnection, JavaNetworkWriter, NetworkConnection, OutboundPacket},
     player::{ClientInformation, GameProfile, Player, PlayerConnection},
+    server::DuplicatePlayerWaitError,
     world::World,
 };
 
@@ -214,7 +215,7 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
         let pending = {
             let replacement_cancel = CancellationToken::new();
             let replacement =
-                server.disconnect_duplicate_player_and_wait(uuid, &replacement_cancel);
+                server.disconnect_duplicate_player_and_wait(uuid, &replacement_cancel, 601);
             tokio::pin!(replacement);
 
             assert!(matches!(futures::poll!(&mut replacement), Poll::Pending));
@@ -254,6 +255,89 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
 
         drop(pending);
         drop(player);
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn duplicate_login_wait_matches_vanillas_deadline_ordering() {
+    let world = fresh_test_world("duplicate_login_deadline");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+
+    runtime.block_on(async {
+        let storage_root = test_storage_root("duplicate-login-deadline");
+        let server = test_server(
+            Arc::clone(&world),
+            super::PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let uuid = Uuid::from_u128(1);
+        assert!(
+            server
+                .player_admissions
+                .lock()
+                .insert(uuid, PlayerAdmissionState::Disconnecting)
+                .is_none()
+        );
+
+        {
+            let replacement_cancel = CancellationToken::new();
+            let replacement =
+                server.disconnect_duplicate_player_and_wait(uuid, &replacement_cancel, 601);
+            tokio::pin!(replacement);
+
+            assert!(matches!(futures::poll!(&mut replacement), Poll::Pending));
+            for _ in 0..600 {
+                let _ = server.advance_server_tick();
+            }
+            assert_eq!(server.current_tick(), 600);
+            assert!(matches!(futures::poll!(&mut replacement), Poll::Pending));
+
+            let _ = server.advance_server_tick();
+            assert!(matches!(
+                futures::poll!(&mut replacement),
+                Poll::Ready(Err(DuplicatePlayerWaitError::TimedOut))
+            ));
+        }
+
+        server.release_player_admission(uuid, PlayerAdmissionState::Disconnecting);
+
+        let boundary_uuid = Uuid::from_u128(2);
+        assert!(
+            server
+                .player_admissions
+                .lock()
+                .insert(boundary_uuid, PlayerAdmissionState::Disconnecting)
+                .is_none()
+        );
+        {
+            let replacement_cancel = CancellationToken::new();
+            let replacement = server.disconnect_duplicate_player_and_wait(
+                boundary_uuid,
+                &replacement_cancel,
+                602,
+            );
+            tokio::pin!(replacement);
+
+            assert!(matches!(futures::poll!(&mut replacement), Poll::Pending));
+            server.release_player_admission(boundary_uuid, PlayerAdmissionState::Disconnecting);
+            let _ = server.advance_server_tick();
+            assert!(matches!(
+                futures::poll!(&mut replacement),
+                Poll::Ready(Ok(()))
+            ));
+        }
+
         drop(server);
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");

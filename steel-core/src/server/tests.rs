@@ -234,6 +234,7 @@ async fn test_server_with_worlds(
         online_players: PlayerMap::new(),
         player_admissions: SyncMutex::new(FxHashMap::default()),
         player_admission_changed: Notify::new(),
+        server_tick_changed: Notify::new(),
         tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
         scoreboards,
         command_storage,

@@ -12,6 +12,18 @@ use super::{
 };
 
 impl Server {
+    pub(super) fn advance_server_tick(&self) -> (u64, bool) {
+        let (tick_count, runs_normally) = {
+            let mut tick_manager = self.tick_rate_manager.write();
+            tick_manager.tick();
+            let runs_normally = tick_manager.runs_normally();
+            tick_manager.increment_tick_count();
+            (tick_manager.tick_count, runs_normally)
+        };
+        self.server_tick_changed.notify_waiters();
+        (tick_count, runs_normally)
+    }
+
     /// Runs gameplay packets, game ticks, and chunk sending. Game-tick boundaries
     /// fork background chunk-scheduling epochs through each world's task tracker.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
@@ -125,13 +137,7 @@ impl Server {
             self.advance_chunk_scheduling();
             self.start_player_disconnect_saves(&mut player_disconnect_saves);
 
-            let (tick_count, runs_normally) = {
-                let mut tick_manager = self.tick_rate_manager.write();
-                tick_manager.tick();
-                let runs_normally = tick_manager.runs_normally();
-                tick_manager.increment_tick_count();
-                (tick_manager.tick_count, runs_normally)
-            };
+            let (tick_count, runs_normally) = self.advance_server_tick();
 
             self.tick_pending_command_executions(&mut pending_command_executions);
             self.tick_command_requests(&mut pending_command_executions);
