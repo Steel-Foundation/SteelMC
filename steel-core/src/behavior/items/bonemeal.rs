@@ -165,7 +165,6 @@ mod tests {
     use steel_registry::items::item::BlockHitResult;
     use steel_registry::{init_vanilla_registry, vanilla_items};
     use steel_utils::{ChunkPos, types::InteractionHand};
-    use uuid::Uuid;
 
     use super::*;
     use crate::behavior::init_behaviors;
@@ -188,8 +187,7 @@ mod tests {
             vanilla_blocks::OAK_SAPLING.default_state(),
             UpdateFlags::UPDATE_NONE,
         ));
-        let player =
-            TestPlayerBuilder::new(world.clone(), Uuid::from_u128(1), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
         player
             .inventory
             .lock()
