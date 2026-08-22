@@ -689,7 +689,7 @@ impl Player {
 
             world.unregister_player_entity(self);
             world.chunk_map.remove_player(self);
-            world.entity_tracker().on_player_leave(self.id());
+            world.entity_tracker().on_player_leave(self);
             world.player_area_map.remove_by_entity_id(self.id());
             self.set_removed(RemovalReason::Killed);
             assert_eq!(
