@@ -26,6 +26,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::objects::projectiles::abstract_arrow::{AbstractArrow, Pickup};
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntitySyncedData, Projectile, ProjectileBase,
     RemovalReason, SharedEntity,
@@ -33,46 +34,14 @@ use crate::entity::{
 use crate::player::Player;
 use crate::world::{ClipHitResult, LevelReader as _, World};
 
-/// Vanilla `AbstractArrow.ARROW_BASE_DAMAGE`.
 const ARROW_BASE_DAMAGE: f64 = 2.0;
-/// Vanilla `AbstractArrow.SHAKE_TIME`.
 const SHAKE_TIME: i32 = 7;
-/// Vanilla `AbstractArrow.WATER_INERTIA`.
 const WATER_INERTIA: f64 = 0.6;
-/// Vanilla `AbstractArrow.INERTIA` (air drag).
 const INERTIA: f64 = 0.99;
-/// Vanilla `AbstractArrow.tickDespawn`: 1200 ticks (~60s) before discard.
 const DESPAWN_LIFE: i32 = 1200;
-/// Vanilla `AbstractArrow.getDefaultGravity`.
 const GRAVITY: f64 = 0.05;
-/// Vanilla `AbstractArrow.startFalling`: per-axis random velocity multiplier
-/// upper bound applied when a stuck arrow pops free.
 const START_FALLING_JITTER_SCALE: f32 = 0.2;
-/// Vanilla `AbstractArrow.onHitBlock`: distance backed off along the impact
-/// sign direction before the arrow sticks into the block.
 const HIT_BLOCK_BACKOFF: f64 = 0.05;
-
-/// Vanilla `AbstractArrow.Pickup`. Ordinals match the vanilla enum for NBT.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Pickup {
-    /// Vanilla `DISALLOWED` — nobody can pick the arrow up.
-    #[default]
-    Disallowed = 0,
-    /// Vanilla `ALLOWED` — players can pick the arrow up.
-    Allowed = 1,
-    /// Vanilla `CREATIVE_ONLY` — only players with infinite materials.
-    CreativeOnly = 2,
-}
-
-impl From<i8> for Pickup {
-    fn from(value: i8) -> Self {
-        match value {
-            1 => Self::Allowed,
-            2 => Self::CreativeOnly,
-            _ => Self::Disallowed,
-        }
-    }
-}
 
 /// Per-tick mutable runtime state mirroring vanilla `AbstractArrow` fields.
 struct ArrowRuntime {
@@ -122,6 +91,36 @@ unsafe impl DowncastType for ArrowEntity {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/arrow");
 }
 
+impl AbstractArrow for ArrowEntity {
+    fn is_in_ground(&self) -> bool {
+        *self.entity_data.lock().abstract_arrow.in_ground.get()
+    }
+
+    fn set_in_ground(&self, value: bool) {
+        self.entity_data.lock().abstract_arrow.in_ground.set(value);
+    }
+
+    fn is_crit_arrow(&self) -> bool {
+        *self.entity_data.lock().abstract_arrow.id_flags.get() & 1 != 0
+    }
+
+    fn set_crit_arrow(&self, value: bool) {
+        let mut data = self.entity_data.lock();
+        let flags = *data.abstract_arrow.id_flags.get();
+        data.abstract_arrow
+            .id_flags
+            .set(if value { flags | 1 } else { flags & !1 });
+    }
+
+    fn pickup(&self) -> Pickup {
+        self.runtime.lock().pickup
+    }
+
+    fn set_pickup(&self, pickup: Pickup) {
+        self.runtime.lock().pickup = pickup;
+    }
+}
+
 impl ArrowEntity {
     /// Creates an arrow at `position` with no owner.
     #[must_use]
@@ -148,29 +147,25 @@ impl ArrowEntity {
     }
 
     fn is_in_ground(&self) -> bool {
-        *self.entity_data.lock().abstract_arrow.in_ground.get()
+        <Self as AbstractArrow>::is_in_ground(self)
     }
 
     fn set_in_ground(&self, value: bool) {
-        self.entity_data.lock().abstract_arrow.in_ground.set(value);
+        <Self as AbstractArrow>::set_in_ground(self, value);
     }
 
     fn is_crit_arrow(&self) -> bool {
-        *self.entity_data.lock().abstract_arrow.id_flags.get() & 1 != 0
+        <Self as AbstractArrow>::is_crit_arrow(self)
     }
 
     /// Vanilla `AbstractArrow.setCritArrow` (synced flag bit 0).
     pub fn set_crit_arrow(&self, value: bool) {
-        let mut data = self.entity_data.lock();
-        let flags = *data.abstract_arrow.id_flags.get();
-        data.abstract_arrow
-            .id_flags
-            .set(if value { flags | 1 } else { flags & !1 });
+        <Self as AbstractArrow>::set_crit_arrow(self, value);
     }
 
     /// Sets the vanilla `Pickup` rule used by [`Entity::player_touch`].
     pub fn set_pickup(&self, pickup: Pickup) {
-        self.runtime.lock().pickup = pickup;
+        <Self as AbstractArrow>::set_pickup(self, pickup);
     }
 
     /// Vanilla `AbstractArrow.shouldFall`: free space around the resting point.
@@ -473,7 +468,8 @@ mod tests {
     use simdnbt::owned::NbtCompound;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
-    use super::{ArrowEntity, Pickup};
+    use super::ArrowEntity;
+    use crate::entity::entities::objects::projectiles::Pickup;
     use crate::entity::{Entity, Projectile};
     use crate::world::World;
 
