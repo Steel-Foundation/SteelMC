@@ -171,6 +171,8 @@ impl ItemBehavior for EnderEyeItem {
         context.inv.with_item(|item| item.shrink(1));
 
         InteractionResult::SuccessServer
+
+        // TODO implement statistics and advancment
     }
 }
 
