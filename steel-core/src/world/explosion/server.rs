@@ -6,8 +6,6 @@ use std::{
 
 use glam::DVec3;
 use rustc_hash::FxHashMap;
-#[cfg(test)]
-use smallvec::SmallVec;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
@@ -132,6 +130,7 @@ impl ExplosionBlockReader for RegionExplosionBlockReader<'_, '_> {
 static RAY_STEPS: LazyLock<[DVec3; RAY_COUNT]> = LazyLock::new(|| {
     let mut steps = [DVec3::ZERO; RAY_COUNT];
     let mut index = 0;
+    // Keep Vanilla's X/Y/Z traversal order: random ray powers are consumed in this order.
     for xx in 0..RAY_GRID_SIZE {
         for yy in 0..RAY_GRID_SIZE {
             for zz in 0..RAY_GRID_SIZE {
@@ -1056,38 +1055,43 @@ impl EntityExplosionExposure {
         self.x_step < 0.0 || self.y_step < 0.0 || self.z_step < 0.0
     }
 
+    fn sample_position(&self, x_fraction: f64, y_fraction: f64, z_fraction: f64) -> DVec3 {
+        DVec3::new(
+            self.bounding_box.min_x()
+                + (self.bounding_box.max_x() - self.bounding_box.min_x()) * x_fraction
+                + self.x_offset,
+            self.bounding_box.min_y()
+                + (self.bounding_box.max_y() - self.bounding_box.min_y()) * y_fraction,
+            self.bounding_box.min_z()
+                + (self.bounding_box.max_z() - self.bounding_box.min_z()) * z_fraction
+                + self.z_offset,
+        )
+    }
+
     fn for_each_sample(self, mut visit: impl FnMut(DVec3)) -> usize {
         let mut sample_count = 0;
-        let mut x = 0.0;
-        while x <= 1.0 {
-            let mut y = 0.0;
-            while y <= 1.0 {
-                let mut z = 0.0;
-                while z <= 1.0 {
-                    let from = DVec3::new(
-                        self.bounding_box.min_x()
-                            + (self.bounding_box.max_x() - self.bounding_box.min_x()) * x
-                            + self.x_offset,
-                        self.bounding_box.min_y()
-                            + (self.bounding_box.max_y() - self.bounding_box.min_y()) * y,
-                        self.bounding_box.min_z()
-                            + (self.bounding_box.max_z() - self.bounding_box.min_z()) * z
-                            + self.z_offset,
-                    );
-                    visit(from);
+        // Repeated addition and inclusive bounds intentionally mirror Vanilla's floating-point
+        // sample sequence; deriving each fraction from an integer index can change boundary rays.
+        let mut x_fraction = 0.0;
+        while x_fraction <= 1.0 {
+            let mut y_fraction = 0.0;
+            while y_fraction <= 1.0 {
+                let mut z_fraction = 0.0;
+                while z_fraction <= 1.0 {
+                    visit(self.sample_position(x_fraction, y_fraction, z_fraction));
                     sample_count += 1;
-                    z += self.z_step;
+                    z_fraction += self.z_step;
                 }
-                y += self.y_step;
+                y_fraction += self.y_step;
             }
-            x += self.x_step;
+            x_fraction += self.x_step;
         }
         sample_count
     }
 
     #[cfg(test)]
-    fn sample_positions(self) -> SmallVec<[DVec3; 32]> {
-        let mut samples = SmallVec::new();
+    fn sample_positions(self) -> Vec<DVec3> {
+        let mut samples = Vec::new();
         self.for_each_sample(|sample| samples.push(sample));
         samples
     }

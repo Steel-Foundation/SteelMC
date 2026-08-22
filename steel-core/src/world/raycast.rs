@@ -66,20 +66,63 @@ const VANILLA_RAY_ENDPOINT_ADJUSTMENT: f64 = -1.0e-7;
 const MIN_SHAPE_CLIP_LENGTH_SQUARED: f64 = 1.0e-7;
 const SHAPE_INSIDE_PROBE_SCALE: f64 = 0.001;
 const AABB_CLIP_EPSILON: f64 = 1.0e-7;
+// Java's `Float.MIN_VALUE` is the smallest positive subnormal, unlike Rust's
+// `f32::MIN_POSITIVE`.
+const JAVA_FLOAT_MIN_VALUE: f32 = f32::from_bits(1);
 
 // Radius-four TNT exposure repeatedly visits a few hundred nearby positions. A 256-entry direct
 // cache retains almost all of that working set without heap allocation or cross-explosion lifetime.
-const EXPLOSION_EXPOSURE_CACHE_BITS: u32 = 8;
-const EXPLOSION_EXPOSURE_CACHE_SIZE: usize = 1 << EXPLOSION_EXPOSURE_CACHE_BITS;
+// Its size must remain a power of two because lookups wrap with a mask.
+const EXPLOSION_EXPOSURE_CACHE_SIZE: usize = 256;
 const EXPLOSION_EXPOSURE_CACHE_MASK: usize = EXPLOSION_EXPOSURE_CACHE_SIZE - 1;
-const EXPLOSION_EXPOSURE_HASH_PHI: u64 = 0x9e37_79b9_7f4a_7c15;
+const EXPLOSION_EXPOSURE_FIBONACCI_HASH_MULTIPLIER: u64 = 0x9e37_79b9_7f4a_7c15;
+const EMPTY_EXPOSURE_CACHE_GENERATION: u32 = 0;
+const FIRST_EXPOSURE_CACHE_GENERATION: u32 = 1;
 
-// A normal radius-four explosion queries a 19x19x19 block region. Two bits per position fit in
-// these inline words, avoiding one heap allocation per explosion while unusual radii simply use
-// the compatibility path.
-const EXPLOSION_EXPOSURE_CLEAR_GRID_WORDS: usize = 224;
-const EXPLOSION_EXPOSURE_CLEAR_GRID_POSITIONS: usize =
-    EXPLOSION_EXPOSURE_CLEAR_GRID_WORDS * (u64::BITS as usize / 2);
+// A normal radius-four explosion queries at most 19 positions on each axis. Two bits per position
+// fit inline, avoiding one heap allocation while unusual radii use the compatibility path.
+const EXPLOSION_EXPOSURE_CLEAR_GRID_AXIS_SIZE: usize = 19;
+const EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_BITS: usize = 2;
+const EXPLOSION_EXPOSURE_CLEAR_GRID_STATES_PER_WORD: usize =
+    u64::BITS as usize / EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_BITS;
+const EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_MASK: u64 =
+    (1 << EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_BITS) - 1;
+const EXPLOSION_EXPOSURE_CLEAR_GRID_POSITIONS: usize = EXPLOSION_EXPOSURE_CLEAR_GRID_AXIS_SIZE
+    * EXPLOSION_EXPOSURE_CLEAR_GRID_AXIS_SIZE
+    * EXPLOSION_EXPOSURE_CLEAR_GRID_AXIS_SIZE;
+const EXPLOSION_EXPOSURE_CLEAR_GRID_WORDS: usize =
+    EXPLOSION_EXPOSURE_CLEAR_GRID_POSITIONS.div_ceil(EXPLOSION_EXPOSURE_CLEAR_GRID_STATES_PER_WORD);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum ExplosionExposureClearGridState {
+    Unresolved = 0,
+    StaticEmpty = 1,
+    RequiresExactCollision = 2,
+}
+
+const UNRESOLVED_EXPOSURE_GRID_WORD: u64 = ExplosionExposureClearGridState::Unresolved as u64;
+
+impl ExplosionExposureClearGridState {
+    const fn for_collision(is_empty: bool) -> Self {
+        if is_empty {
+            Self::StaticEmpty
+        } else {
+            Self::RequiresExactCollision
+        }
+    }
+
+    const fn from_encoded(encoded: u64) -> Self {
+        if encoded == Self::Unresolved as u64 {
+            Self::Unresolved
+        } else if encoded == Self::StaticEmpty as u64 {
+            Self::StaticEmpty
+        } else {
+            // The unused fourth encoding conservatively takes the exact path too.
+            Self::RequiresExactCollision
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 struct ExplosionExposureClearGridBounds {
@@ -91,8 +134,7 @@ struct ExplosionExposureClearGridBounds {
 
 struct ExplosionExposureClearGrid {
     bounds: Option<ExplosionExposureClearGridBounds>,
-    // Packed two-bit values: 0 is unresolved, 1 is a stable static empty shape, and 2 must use
-    // the exact collision path. Each lookup therefore reads one word instead of two bitsets.
+    // Each lookup reads one packed word instead of two bitsets.
     states: [u64; EXPLOSION_EXPOSURE_CLEAR_GRID_WORDS],
 }
 
@@ -100,7 +142,7 @@ impl ExplosionExposureClearGrid {
     const fn new() -> Self {
         Self {
             bounds: None,
-            states: [0; EXPLOSION_EXPOSURE_CLEAR_GRID_WORDS],
+            states: [UNRESOLVED_EXPOSURE_GRID_WORD; EXPLOSION_EXPOSURE_CLEAR_GRID_WORDS],
         }
     }
 
@@ -135,11 +177,11 @@ impl ExplosionExposureClearGrid {
             size_y,
             size_z,
         });
-        self.states.fill(0);
+        self.states.fill(UNRESOLVED_EXPOSURE_GRID_WORD);
     }
 
     fn clear(&mut self) {
-        self.states.fill(0);
+        self.states.fill(UNRESOLVED_EXPOSURE_GRID_WORD);
     }
 
     fn index(&self, pos: BlockPos) -> Option<usize> {
@@ -156,21 +198,21 @@ impl ExplosionExposureClearGrid {
         Some((y * bounds.size_z + z) * bounds.size_x + x)
     }
 
-    const fn cached(&self, index: usize) -> Option<bool> {
-        let word = index / (u64::BITS as usize / 2);
-        let shift = (index % (u64::BITS as usize / 2)) * 2;
-        match (self.states[word] >> shift) & 0b11 {
-            0 => None,
-            1 => Some(true),
-            _ => Some(false),
-        }
+    const fn state(&self, index: usize) -> ExplosionExposureClearGridState {
+        let word = index / EXPLOSION_EXPOSURE_CLEAR_GRID_STATES_PER_WORD;
+        let shift = (index % EXPLOSION_EXPOSURE_CLEAR_GRID_STATES_PER_WORD)
+            * EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_BITS;
+        let encoded = (self.states[word] >> shift) & EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_MASK;
+        ExplosionExposureClearGridState::from_encoded(encoded)
     }
 
-    fn record(&mut self, index: usize, clear: bool) {
-        let word = index / (u64::BITS as usize / 2);
-        let shift = (index % (u64::BITS as usize / 2)) * 2;
-        let mask = 0b11_u64 << shift;
-        let value = u64::from(if clear { 1_u8 } else { 2_u8 }) << shift;
+    fn record(&mut self, index: usize, state: ExplosionExposureClearGridState) {
+        debug_assert_ne!(state, ExplosionExposureClearGridState::Unresolved);
+        let word = index / EXPLOSION_EXPOSURE_CLEAR_GRID_STATES_PER_WORD;
+        let shift = (index % EXPLOSION_EXPOSURE_CLEAR_GRID_STATES_PER_WORD)
+            * EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_BITS;
+        let mask = EXPLOSION_EXPOSURE_CLEAR_GRID_STATE_MASK << shift;
+        let value = (state as u64) << shift;
         self.states[word] = (self.states[word] & !mask) | value;
     }
 }
@@ -191,8 +233,14 @@ impl ExplosionExposureCacheEntry {
     const EMPTY: Self = Self {
         pos: BlockPos::new(0, 0, 0),
         collision: OffsetVoxelShape::without_offset(VoxelShape::EMPTY),
-        generation: 0,
+        generation: EMPTY_EXPOSURE_CACHE_GENERATION,
     };
+}
+
+#[derive(Clone, Copy)]
+struct ExplosionExposureBlockRead {
+    state: BlockStateId,
+    cacheable: bool,
 }
 
 /// Bounded cache for vanilla explosion exposure rays.
@@ -236,7 +284,7 @@ impl<'world> ExplosionExposureRaycast<'world> {
             full_chunks: LocalFullChunkHolderCache::new(),
             entries: [ExplosionExposureCacheEntry::EMPTY; EXPLOSION_EXPOSURE_CACHE_SIZE],
             clear_grid: ExplosionExposureClearGrid::new(),
-            generation: 1,
+            generation: FIRST_EXPOSURE_CACHE_GENERATION,
             #[cfg(test)]
             stats: ExplosionExposureRaycastStats {
                 block_visits: 0,
@@ -262,7 +310,7 @@ impl<'world> ExplosionExposureRaycast<'world> {
         self.clear_grid.clear();
         if self.generation == u32::MAX {
             self.entries.fill(ExplosionExposureCacheEntry::EMPTY);
-            self.generation = 1;
+            self.generation = FIRST_EXPOSURE_CACHE_GENERATION;
         } else {
             self.generation += 1;
         }
@@ -298,16 +346,18 @@ impl<'world> ExplosionExposureRaycast<'world> {
 
         let mut unresolved_grid_index = None;
         if let Some(index) = self.clear_grid.index(pos) {
-            match self.clear_grid.cached(index) {
-                Some(true) => {
+            match self.clear_grid.state(index) {
+                ExplosionExposureClearGridState::StaticEmpty => {
                     #[cfg(test)]
                     {
                         self.stats.clear_grid_hits += 1;
                     }
                     return false;
                 }
-                Some(false) => {}
-                None => unresolved_grid_index = Some(index),
+                ExplosionExposureClearGridState::RequiresExactCollision => {}
+                ExplosionExposureClearGridState::Unresolved => {
+                    unresolved_grid_index = Some(index);
+                }
             }
         }
 
@@ -329,7 +379,9 @@ impl<'world> ExplosionExposureRaycast<'world> {
                 self.stats.cache_hits += 1;
             }
             if let Some(index) = unresolved_grid_index {
-                self.clear_grid.record(index, entry.collision.is_empty());
+                let grid_state =
+                    ExplosionExposureClearGridState::for_collision(entry.collision.is_empty());
+                self.clear_grid.record(index, grid_state);
                 #[cfg(test)]
                 {
                     self.stats.clear_grid_resolutions += 1;
@@ -343,9 +395,10 @@ impl<'world> ExplosionExposureRaycast<'world> {
             self.stats.state_lookups += 1;
             self.stats.collision_lookups += 1;
         }
-        let (state, cacheable) = self
+        let block_read = self
             .world
             .explosion_exposure_block_state(pos, &mut self.full_chunks);
+        let state = block_read.state;
         let block = state.get_block();
         let behavior = BLOCK_BEHAVIORS.get_behavior(block);
         if block.config.dynamic_shape {
@@ -366,11 +419,12 @@ impl<'world> ExplosionExposureRaycast<'world> {
         let collision = OffsetVoxelShape::new(shape, offset);
         let retain_cache = self.retain_cache_after_collision_query(block);
         let intersects = Self::static_collision_intersects(collision, pos, from, to);
-        if cacheable && retain_cache {
+        if block_read.cacheable && retain_cache {
             let collision_is_empty = collision.is_empty();
             let mut recorded_in_grid = false;
             if let Some(index) = unresolved_grid_index {
-                self.clear_grid.record(index, collision_is_empty);
+                let grid_state = ExplosionExposureClearGridState::for_collision(collision_is_empty);
+                self.clear_grid.record(index, grid_state);
                 recorded_in_grid = true;
                 #[cfg(test)]
                 {
@@ -410,9 +464,11 @@ impl<'world> ExplosionExposureRaycast<'world> {
 #[inline]
 fn explosion_exposure_cache_index(pos: BlockPos) -> usize {
     let tag = PackedBlockPos::from(pos).as_raw() as u64;
-    let mut mixed = tag.wrapping_mul(EXPLOSION_EXPOSURE_HASH_PHI);
-    mixed ^= mixed >> 32;
-    mixed ^= mixed >> 16;
+    // Fibonacci multiplication followed by xor folding disperses nearby packed positions into
+    // the low bits used by the power-of-two cache.
+    let mut mixed = tag.wrapping_mul(EXPLOSION_EXPOSURE_FIBONACCI_HASH_MULTIPLIER);
+    mixed ^= mixed >> (u64::BITS / 2);
+    mixed ^= mixed >> (u64::BITS / 4);
     (mixed as usize) & EXPLOSION_EXPOSURE_CACHE_MASK
 }
 
@@ -522,22 +578,23 @@ impl World {
         &self,
         pos: BlockPos,
         full_chunks: &mut LocalFullChunkHolderCache,
-    ) -> (BlockStateId, bool) {
+    ) -> ExplosionExposureBlockRead {
         if !self.is_in_valid_bounds(pos) {
-            return (
-                REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR),
-                true,
-            );
+            return ExplosionExposureBlockRead {
+                state: REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR),
+                cacheable: true,
+            };
         }
 
         full_chunks.block_state(&self.chunk_map, pos).map_or_else(
-            || {
-                (
-                    REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR),
-                    false,
-                )
+            || ExplosionExposureBlockRead {
+                state: REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR),
+                cacheable: false,
             },
-            |state| (state, true),
+            |state| ExplosionExposureBlockRead {
+                state,
+                cacheable: true,
+            },
         )
     }
 
@@ -986,9 +1043,13 @@ impl World {
         }
     }
 
+    /// Mirrors Minecraft 26.2 `Direction.getApproximateNearest(double, double, double)`.
     pub(super) fn approximate_nearest_direction(vector: DVec3) -> Direction {
+        let dx = vector.x as f32;
+        let dy = vector.y as f32;
+        let dz = vector.z as f32;
         let mut result = Direction::North;
-        let mut highest_dot = 0.0;
+        let mut highest_dot = JAVA_FLOAT_MIN_VALUE;
         for direction in [
             Direction::Down,
             Direction::Up,
@@ -997,7 +1058,8 @@ impl World {
             Direction::West,
             Direction::East,
         ] {
-            let dot = vector.dot(direction.offset_vec().as_dvec3());
+            let normal = direction.offset_vec();
+            let dot = dx * normal.x as f32 + dy * normal.y as f32 + dz * normal.z as f32;
             if dot > highest_dot {
                 highest_dot = dot;
                 result = direction;
@@ -1485,6 +1547,25 @@ mod voxel_shape_clip_tests {
         };
         assert_eq!(direction, Direction::West);
     }
+
+    #[test]
+    fn approximate_nearest_direction_uses_java_float_arithmetic() {
+        let java_min_value = f64::from(JAVA_FLOAT_MIN_VALUE);
+        assert_eq!(
+            World::approximate_nearest_direction(DVec3::new(java_min_value, 0.0, 0.0)),
+            Direction::North,
+        );
+        assert_eq!(
+            World::approximate_nearest_direction(DVec3::new(java_min_value * 2.0, 0.0, 0.0)),
+            Direction::East,
+        );
+
+        // Java narrows the components to float before comparing the direction dot products.
+        assert_eq!(
+            World::approximate_nearest_direction(DVec3::new(1.0 + f64::EPSILON, 0.0, -1.0)),
+            Direction::North,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1539,7 +1620,9 @@ mod explosion_exposure_cache_tests {
         let Some(grid_index) = raycast.clear_grid.index(pos) else {
             panic!("the configured position should be represented in the clear grid");
         };
-        raycast.clear_grid.record(grid_index, true);
+        raycast
+            .clear_grid
+            .record(grid_index, ExplosionExposureClearGridState::StaticEmpty);
         let direct_index = explosion_exposure_cache_index(pos);
         raycast.entries[direct_index] = ExplosionExposureCacheEntry {
             pos,
@@ -1550,10 +1633,16 @@ mod explosion_exposure_cache_tests {
         let initial_generation = raycast.generation;
         assert!(raycast.retain_cache_after_collision_query(&vanilla_blocks::STONE));
         assert_eq!(raycast.generation, initial_generation);
-        assert_eq!(raycast.clear_grid.cached(grid_index), Some(true));
+        assert_eq!(
+            raycast.clear_grid.state(grid_index),
+            ExplosionExposureClearGridState::StaticEmpty,
+        );
         assert!(!raycast.retain_cache_after_collision_query(&PLUGIN_BLOCK));
         assert_ne!(raycast.generation, initial_generation);
-        assert_eq!(raycast.clear_grid.cached(grid_index), None);
+        assert_eq!(
+            raycast.clear_grid.state(grid_index),
+            ExplosionExposureClearGridState::Unresolved,
+        );
         assert_ne!(raycast.entries[direct_index].generation, raycast.generation);
     }
 }
