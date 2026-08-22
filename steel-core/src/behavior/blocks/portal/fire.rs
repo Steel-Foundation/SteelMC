@@ -78,7 +78,7 @@ impl FireBlock {
     fn can_survive_at(world: &dyn LevelReader, pos: BlockPos) -> bool {
         let below_pos = pos.below();
         world.is_face_sturdy(world.get_block_state(below_pos), below_pos, Direction::Up)
-        // TODO: || is_valid_fire_location (check adjacent flammable blocks once flammability exists)
+        // TODO: Include adjacent flammable blocks once the flammability system exists.
     }
 
     /// Matches vanilla's `BaseFireBlock.isPortal`: checks if placing fire here could form a portal.
@@ -132,6 +132,7 @@ impl FireBlock {
 }
 
 impl BlockBehavior for FireBlock {
+    // TODO: Implement vanilla random tick behavior for fire spreading and aging
     /// Removes fire when its supporting block no longer allows it to survive
     fn update_shape(
         &self,
@@ -215,8 +216,7 @@ impl BlockBehavior for FireBlock {
 /// Behavior for soul fire survival.
 ///
 /// Vanilla keeps this as `SoulFireBlock`, separate from normal `FireBlock`.
-/// Spread/burn behavior is still TODO with the rest of fire ticking.
-// TODO: Implement full vanilla behavior beyond can_survive.
+
 #[block_behavior]
 pub struct SoulFireBlock {
     block: BlockRef,
