@@ -689,7 +689,7 @@ impl Player {
 
             world.unregister_player_entity(self);
             world.chunk_map.remove_player(self);
-            world.entity_tracker().on_player_leave(self.id());
+            world.entity_tracker().on_player_leave(self);
             world.player_area_map.remove_by_entity_id(self.id());
             self.set_removed(RemovalReason::Killed);
             assert_eq!(
@@ -1498,6 +1498,20 @@ impl Entity for Player {
 
     fn sound_source(&self) -> SoundSource {
         SoundSource::Players
+    }
+
+    /// Matches vanilla `Player.playSound`, which excludes the source player.
+    fn play_sound(&self, sound: SoundEventRef, volume: f32, pitch: f32) {
+        if let Some(world) = self.level() {
+            world.play_sound_at(
+                sound,
+                self.sound_source(),
+                self.position(),
+                volume,
+                pitch,
+                Some(self.id()),
+            );
+        }
     }
 
     fn swim_sound(&self) -> SoundEventRef {
