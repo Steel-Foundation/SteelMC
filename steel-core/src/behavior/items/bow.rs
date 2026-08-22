@@ -30,6 +30,11 @@ use crate::world::game_event::GameEventContext;
 const USE_DURATION: i32 = 72000;
 /// Vanilla `BowItem.MAX_DRAW_DURATION`.
 const MAX_DRAW_DURATION: i32 = 20;
+/// Vanilla `BowItem.releaseUsing`: draws under this power abort unfired.
+const MIN_RELEASE_POWER: f32 = 0.1;
+/// Vanilla `BowItem.releaseUsing`: `pow == 1.0F` marks the shot as a crit.
+/// [`Self::get_power_for_time`] clamps at this value, so `>=` is equivalent.
+const FULL_DRAW_POWER: f32 = 1.0;
 
 /// Behavior for the bow item.
 #[item_behavior(class = "BowItem")]
@@ -73,7 +78,7 @@ impl ItemBehavior for BowItem {
 
         let held_ticks = USE_DURATION.saturating_sub(time_left);
         let power = Self::get_power_for_time(held_ticks);
-        if power < 0.1 {
+        if power < MIN_RELEASE_POWER {
             return false;
         }
 
@@ -95,7 +100,12 @@ impl ItemBehavior for BowItem {
             player.request_inventory_resync([slot]);
         }
 
-        // TODO: enchantment modifiers (power/punch/flame).
+        // TODO: vanilla selects the projectile via `Player.getProjectile`
+        // (Infinity, creative default arrow) and copies the consumed stack's
+        // components onto the entity (`AbstractArrow` ctor), so tipped/spectral
+        // arrows keep their effects. Enchantment modifiers (Power/Punch/Flame)
+        // apply through `EnchantmentHelper` on release. Both need enchantment
+        // + component-transfer foundations.
         let player_pos = player.position();
         let spawn_pos = DVec3::new(player_pos.x, player.get_eye_y() - 0.1, player_pos.z);
         let arrow = Arc::new(ArrowEntity::new(
@@ -111,7 +121,7 @@ impl ItemBehavior for BowItem {
             arrow.set_owner_uuid(Some(player.gameprofile.id));
         }
         arrow.set_pickup(Pickup::Allowed);
-        if power >= 1.0 {
+        if power >= FULL_DRAW_POWER {
             arrow.set_crit_arrow(true);
         }
 
