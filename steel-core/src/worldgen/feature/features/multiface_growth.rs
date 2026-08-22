@@ -1,19 +1,10 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use crate::behavior::blocks::vegetation::{
+    MultifaceSpreadPos, MultifaceSpreadType, multiface_spread_pos,
+};
 use smallvec::SmallVec;
 use steel_registry::vanilla_block_tags::BlockTag;
-
-#[derive(Clone, Copy)]
-enum MultifaceSpreadType {
-    SamePosition,
-    SamePlane,
-    WrapAround,
-}
-
-struct MultifaceSpreadPos {
-    pos: BlockPos,
-    face: Direction,
-}
 
 struct ResolvedMultifaceGrowth<'a> {
     raw: &'a MultifaceGrowthConfiguration,
@@ -200,7 +191,7 @@ impl FeatureDecorationRunner {
 
         for spread_type in Self::multiface_spread_types(config) {
             let spread_pos =
-                Self::multiface_spread_pos(pos, spread_direction, starting_face, spread_type);
+                multiface_spread_pos(pos, spread_direction, starting_face, spread_type);
             if Self::multiface_can_spread_into(region, config, pos, &spread_pos) {
                 return Some(spread_pos);
             }
@@ -427,28 +418,6 @@ impl FeatureDecorationRunner {
             MultifaceSpreadType::SamePlane,
             MultifaceSpreadType::WrapAround,
         ]
-    }
-
-    fn multiface_spread_pos(
-        pos: BlockPos,
-        spread_direction: Direction,
-        from_face: Direction,
-        spread_type: MultifaceSpreadType,
-    ) -> MultifaceSpreadPos {
-        match spread_type {
-            MultifaceSpreadType::SamePosition => MultifaceSpreadPos {
-                pos,
-                face: spread_direction,
-            },
-            MultifaceSpreadType::SamePlane => MultifaceSpreadPos {
-                pos: pos.relative(spread_direction),
-                face: from_face,
-            },
-            MultifaceSpreadType::WrapAround => MultifaceSpreadPos {
-                pos: pos.relative(spread_direction).relative(from_face),
-                face: spread_direction.opposite(),
-            },
-        }
     }
 
     fn multiface_shuffled_valid_directions(

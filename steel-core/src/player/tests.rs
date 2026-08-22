@@ -114,7 +114,7 @@ fn removed_entity_ids(packet: &EncodedPacket) -> Vec<i32> {
 }
 
 fn test_player(world: Arc<World>) -> Arc<Player> {
-    let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "TestPlayer", 1).build();
+    let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
     player.set_client_loaded(true);
     player
 }
@@ -805,8 +805,7 @@ fn equipping_player_target_uses_inventory_equipment_storage() {
     init_vanilla_registry();
     let world = Arc::clone(test_world());
     let source = test_player(Arc::clone(&world));
-    let target =
-        TestPlayerBuilder::new(world, Uuid::from_u128(2), "Target", next_entity_id()).build();
+    let target = TestPlayerBuilder::new(world, "Target", next_entity_id()).build();
     let mut helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
     let Some(mut equippable) = helmet.get_equippable().cloned() else {
         panic!("diamond helmet should have equippable data");
