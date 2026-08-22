@@ -560,12 +560,17 @@ impl HopperBlockEntity {
 
     /// Vanilla `isFullContainer`: every slot reachable through `face` at its own limit.
     fn is_full_container(container: &dyn Container, face: Direction) -> bool {
-        Self::slots_through_face(container, face)
-            .into_iter()
-            .all(|slot| {
-                let stack = container.get_item(slot);
-                stack.count() >= stack.max_stack_size()
-            })
+        let slot_count = Self::slot_count(container, Some(face));
+        for slot_index in 0..slot_count {
+            let Some(slot) = Self::slot_at(container, Some(face), slot_index) else {
+                return false;
+            };
+            let stack = container.get_item(slot);
+            if stack.count() < stack.max_stack_size() {
+                return false;
+            }
+        }
+        true
     }
 
     /// Vanilla `getContainerAt` for block containers.
