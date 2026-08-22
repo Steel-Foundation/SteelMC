@@ -309,18 +309,16 @@ impl HopperBlockEntity {
         let (Some(from), Some(to)) = (guard.get(from_id), guard.get(to_id)) else {
             return false;
         };
-        let stack = from.get_item(slot).clone();
-        if stack.is_empty()
-            || !Self::can_take_item_from_container(to, from, &stack, slot, direction)
+        let stack = from.get_item(slot);
+        if stack.is_empty() || !Self::can_take_item_from_container(to, from, stack, slot, direction)
         {
             return false;
         }
 
-        let original_count = stack.count();
         let Some(from) = guard.get_mut(from_id) else {
             return false;
         };
-        let taken = from.remove_item(slot, 1);
+        let taken = from.remove_item(slot, TRANSFER_AMOUNT);
         // Vanilla inserts into the hopper itself with a null direction.
         let leftover = Self::add_item_into(guard, Some(from_id), to_id, taken, None);
         if leftover.is_empty() {
@@ -331,10 +329,10 @@ impl HopperBlockEntity {
         let Some(from) = guard.get_mut(from_id) else {
             return false;
         };
-        if original_count == 1 {
-            from.set_item(slot, stack);
+        if from.get_item(slot).is_empty() {
+            from.set_item(slot, leftover);
         } else {
-            from.get_item_mut(slot).set_count(original_count);
+            from.get_item_mut(slot).grow(leftover.count());
         }
         false
     }
