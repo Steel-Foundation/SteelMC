@@ -66,7 +66,16 @@ impl Player {
         let world = self.get_world();
 
         if pos.y() >= world.max_build_height() {
-            // TODO: Send "build.tooHigh" message to player
+            self.send_message(
+                &TranslatedMessage {
+                    key: "build.tooHigh".into(),
+                    fallback: None,
+                    args: Some(Box::new([TextComponent::plain(
+                        world.max_build_height().to_string(),
+                    )])),
+                }
+                .component(),
+            );
             self.send_block_updates(pos, direction);
             return;
         }
