@@ -32,9 +32,9 @@ pub(crate) enum StatState {
 /// Manages the counters for every statistic for a particular player.
 /// Analogous to Vanilla's `ServerStatsCounter.java`.
 pub struct StatsCounter {
-    /// The map of each stat currently being tracked to its value and dirty flag.
+    /// The map of each stat currently being tracked to its value and state.
     // Vanilla uses a map and set separately for the counters and dirty flag respectively,
-    // but it is faster to just use one map to store both the count and dirty flag in the same map.
+    // but it is faster to just use one map to store both the count and state in the same map.
     pub(super) stats: FxHashMap<Stat, (i32, StatState)>,
 }
 
