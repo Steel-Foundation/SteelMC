@@ -75,11 +75,12 @@ impl MultifaceBlock {
         Self { block }
     }
 
-    /// Vanilla `MultifaceBlock.canAttachTo(level, directionTowardsNeighbor, neighborPos, neighborState)`.
+    /// Vanilla `MultifaceBlock.canAttachTo(level, pos, direction)`.
     ///
-    /// Returns whether the block at `neighbor_pos` has a full face on the side
-    /// facing back toward us. Checks the support shape first, then the collision
-    /// shape, matching vanilla's `Block.isFaceFull` OR pattern.
+    /// Returns whether a face of the multiface block at `pos` can attach to the
+    /// neighbour in `direction_to_neighbor`. The neighbour position is derived
+    /// here, so callers that already have it should use
+    /// [`can_attach_to_state`](Self::can_attach_to_state).
     pub fn can_attach_to(
         world: &dyn LevelReader,
         pos: BlockPos,
@@ -90,6 +91,10 @@ impl MultifaceBlock {
         Self::can_attach_to_state(world, direction_to_neighbor, neighbor_pos, block_state)
     }
 
+    /// Vanilla `MultifaceBlock.canAttachTo(level, directionTowardsNeighbor, neighborPos, neighborState)`.
+    ///
+    /// Returns whether `neighbor_state` has a full face pointing back at the
+    /// attaching block, checking the support shape before the collision shape.
     pub(super) fn can_attach_to_state(
         world: &dyn LevelReader,
         direction_to_neighbor: Direction,
@@ -422,5 +427,41 @@ impl BlockBehavior for MultifaceBlock {
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
         !context.with_item(|item| item.item() == REGISTRY.items.by_block(state.get_block()))
             || Self::has_any_vacant_face(state)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::init_vanilla_registry;
+
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::test_support::TestLevel;
+
+    #[test]
+    fn update_shape_uses_supplied_neighbor_state_and_schedules_water_first() {
+        init_vanilla_registry();
+        init_behaviors();
+
+        let behavior = MultifaceBlock::new(&vanilla_blocks::GLOW_LICHEN);
+        let pos = BlockPos::new(0, 64, 0);
+        let state = vanilla_blocks::GLOW_LICHEN
+            .default_state()
+            .set_value(NORTH, true)
+            .set_value(WATERLOGGED, true);
+        let level =
+            TestLevel::default().with_block(pos.north(), vanilla_blocks::STONE.default_state());
+
+        let updated = behavior.update_shape(
+            state,
+            &level,
+            pos,
+            Direction::North,
+            pos.north(),
+            vanilla_blocks::AIR.default_state(),
+        );
+
+        assert!(updated.is_air());
+        assert!(level.scheduled_water_tick());
     }
 }

@@ -7,6 +7,19 @@ use std::{
     thread,
 };
 
+use crate::{
+    entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity, next_entity_id},
+    inventory::{
+        click::{Click, ClickOutcome, DragKind, MouseButton, QuickCraft},
+        container::{Container, SimpleContainer},
+        equipment::{EntityEquipment, EquipmentSlot},
+        lock::ContainerLockGuard,
+        menu::{Menu, MenuBehavior, MenuBuilder, MenuKind, kinds::BasicKind},
+    },
+    player::{Player, PlayerConnection, ResetReason, connection::NetworkConnection},
+    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world},
+    world::World,
+};
 use rustc_hash::FxHashMap;
 use simdnbt::owned::{NbtList, NbtTag};
 use steel_protocol::{
@@ -23,21 +36,6 @@ use steel_utils::{
     types::{GameType, InteractionHand},
 };
 use text_components::TextComponent;
-use uuid::Uuid;
-
-use crate::{
-    entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity, next_entity_id},
-    inventory::{
-        click::{Click, ClickOutcome, DragKind, MouseButton, QuickCraft},
-        container::{Container, SimpleContainer},
-        equipment::{EntityEquipment, EquipmentSlot},
-        lock::ContainerLockGuard,
-        menu::{Menu, MenuBehavior, MenuBuilder, MenuKind, kinds::BasicKind},
-    },
-    player::{Player, PlayerConnection, ResetReason, connection::NetworkConnection},
-    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk, test_world},
-    world::World,
-};
 
 use super::{
     EquipmentSwapResult, InvalidHotbarSlot, MenuItemDisposition, MenuRemovalStatus, PlayerInventory,
@@ -731,7 +729,7 @@ fn equippable_stack_moves_one_item_and_returns_old_equipment_to_inventory() {
 }
 
 fn test_player(world: Arc<World>) -> Arc<Player> {
-    let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "TestPlayer", 1).build();
+    let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
     player.set_client_loaded(true);
     player
 }
@@ -1131,14 +1129,9 @@ fn disconnected_menu_removal_drops_transient_items() {
         state: Arc::clone(&probe_state),
         container: Arc::clone(&transient),
     })));
-    let observer = TestPlayerBuilder::new(
-        Arc::clone(&world),
-        Uuid::from_u128(2),
-        "Observer",
-        next_entity_id(),
-    )
-    .connection(observer_connection)
-    .build();
+    let observer = TestPlayerBuilder::new(Arc::clone(&world), "Observer", next_entity_id())
+        .connection(observer_connection)
+        .build();
     assert!(world.add_player(Arc::clone(&observer), ResetReason::InitialJoin));
     let _ = observer.mark_joined_world();
     observer.set_client_loaded(true);
@@ -1333,14 +1326,9 @@ fn malformed_non_quickcraft_click_resets_active_drag() {
         state: Arc::clone(&probe_state),
         container: SimpleContainer::new(1).into_shared(),
     })));
-    let player = TestPlayerBuilder::new(
-        Arc::clone(test_world()),
-        Uuid::from_u128(1),
-        "TestPlayer",
-        1,
-    )
-    .connection(connection)
-    .build();
+    let player = TestPlayerBuilder::new(Arc::clone(test_world()), "TestPlayer", 1)
+        .connection(connection)
+        .build();
     player.set_client_loaded(true);
     let out_of_range_slot = {
         let mut menu = player.inventory_menu.lock();
