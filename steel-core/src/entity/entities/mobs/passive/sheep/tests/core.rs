@@ -119,8 +119,7 @@ fn sheep_shear_drops_wool_and_damages_shears() {
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
 
-    let player =
-        TestPlayerBuilder::new(world, Uuid::from_u128(1), "Shearer", next_entity_id()).build();
+    let player = TestPlayerBuilder::new(world, "Shearer", next_entity_id()).build();
     player
         .inventory
         .lock()
@@ -161,7 +160,7 @@ fn sheep_shear_interaction_is_consumed_when_not_ready() {
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
 
-    let player = TestPlayerBuilder::new(world, Uuid::from_u128(2), "Shearer", 11).build();
+    let player = TestPlayerBuilder::new(world, "Shearer", 11).build();
     player
         .inventory
         .lock()
@@ -264,7 +263,7 @@ fn sheep_shearing_drop_spawns_one_item_entity_per_count_unit() {
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     let sheep = SheepEntity::new(
         &vanilla_entities::SHEEP,
-        1,
+        next_entity_id(),
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(&world),
     );
@@ -313,8 +312,7 @@ fn dye_item_dyes_an_unsheared_sheep_and_consumes_the_dye() {
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
 
-    let player =
-        TestPlayerBuilder::new(world, Uuid::from_u128(3), "Dyer", next_entity_id()).build();
+    let player = TestPlayerBuilder::new(world, "Dyer", next_entity_id()).build();
     let mut dye = ItemStack::with_count(&vanilla_items::RED_DYE, 2);
     let behavior = ITEM_BEHAVIORS.get_behavior(dye.item());
 
@@ -352,8 +350,7 @@ fn dye_item_passes_for_sheared_or_matching_color_sheep() {
     let sheep = shared
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
-    let player =
-        TestPlayerBuilder::new(world, Uuid::from_u128(4), "Dyer", next_entity_id()).build();
+    let player = TestPlayerBuilder::new(world, "Dyer", next_entity_id()).build();
     let mut dye = ItemStack::new(&vanilla_items::RED_DYE);
     let behavior = ITEM_BEHAVIORS.get_behavior(dye.item());
 

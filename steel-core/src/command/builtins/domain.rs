@@ -52,11 +52,7 @@ fn switch_world(context: &SteelCommandContext<CommandSource>) -> Result<i32, Com
             "This command can only be used by a player",
         ));
     };
-    let Some(world) = context.world_argument("world") else {
-        return Err(CommandSyntaxError::dynamic(
-            "Parsed world is missing from the command context",
-        ));
-    };
+    let world = context.world_argument("world")?;
     let world = world.resolve(source)?;
     source
         .server()

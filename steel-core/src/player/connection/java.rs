@@ -593,7 +593,7 @@ impl JavaConnection {
             return Ok(());
         }
 
-        let payload_bytes = packet.payload.len();
+        let payload_bytes = packet.payload().len();
         let Some(packet) = Self::decode_domain_gated_packet(packet, &player)? else {
             return Ok(());
         };
@@ -639,7 +639,7 @@ impl JavaConnection {
         reason = "single match decode over all implemented play packets keeps protocol routing auditable"
     )]
     fn decode_play_packet(packet: RawPacket) -> Result<DecodedPlayPacket, PacketError> {
-        let data = &mut Cursor::new(packet.payload.as_slice());
+        let data = &mut Cursor::new(packet.payload());
         let scheduled = |packet| DecodedPlayPacket::Scheduled(ScheduledPlayPacket(packet));
 
         Ok(match packet.id {
@@ -1000,7 +1000,7 @@ mod tests {
     #[test]
     fn queued_domain_switch_records_only_perform_respawn_at_connection_gate() {
         let world = fresh_test_world("queued_domain_switch_respawn_packet");
-        let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "RespawnTester", 1).build();
+        let player = TestPlayerBuilder::new(world, "RespawnTester", 1).build();
         let Some(token) = player.begin_pending_world_change() else {
             panic!("test player should acquire a world-change token");
         };
@@ -1008,20 +1008,20 @@ mod tests {
         player.set_health(0.0);
 
         let request_stats = JavaConnection::decode_domain_gated_packet(
-            RawPacket {
-                id: play::S_CLIENT_COMMAND,
-                payload: vec![ClientCommandAction::RequestStats as u8],
-            },
+            RawPacket::new(
+                play::S_CLIENT_COMMAND,
+                vec![ClientCommandAction::RequestStats as u8],
+            ),
             &player,
         );
         assert!(matches!(request_stats, Ok(None)));
         assert!(!player.has_deferred_death_respawn_for_test());
 
         let perform_respawn = JavaConnection::decode_domain_gated_packet(
-            RawPacket {
-                id: play::S_CLIENT_COMMAND,
-                payload: vec![ClientCommandAction::PerformRespawn as u8],
-            },
+            RawPacket::new(
+                play::S_CLIENT_COMMAND,
+                vec![ClientCommandAction::PerformRespawn as u8],
+            ),
             &player,
         );
         assert!(matches!(perform_respawn, Ok(None)));
@@ -1037,10 +1037,7 @@ mod tests {
         let mut payload = vec![channel.len() as u8];
         payload.extend_from_slice(channel);
         payload.extend_from_slice(b"steel");
-        let decoded = decode(RawPacket {
-            id: play::S_CUSTOM_PAYLOAD,
-            payload,
-        });
+        let decoded = decode(RawPacket::new(play::S_CUSTOM_PAYLOAD, payload));
         let DecodedPlayPacket::Scheduled(
             packet @ ScheduledPlayPacket(ScheduledPlayPacketKind::CustomPayload(_)),
         ) = decoded
@@ -1078,19 +1075,13 @@ mod tests {
 
     #[test]
     fn scheduled_domain_handshake_classification_is_narrow() {
-        let accept = decode(RawPacket {
-            id: play::S_ACCEPT_TELEPORTATION,
-            payload: vec![0],
-        });
+        let accept = decode(RawPacket::new(play::S_ACCEPT_TELEPORTATION, vec![0]));
         let DecodedPlayPacket::Scheduled(accept) = accept else {
             panic!("teleport acknowledgement should be scheduled");
         };
         assert!(accept.is_domain_handshake_packet());
 
-        let client_tick_end = decode(RawPacket {
-            id: play::S_CLIENT_TICK_END,
-            payload: Vec::new(),
-        });
+        let client_tick_end = decode(RawPacket::new(play::S_CLIENT_TICK_END, Vec::new()));
         let DecodedPlayPacket::Scheduled(client_tick_end) = client_tick_end else {
             panic!("client tick end should be scheduled");
         };
@@ -1099,10 +1090,7 @@ mod tests {
 
     #[test]
     fn client_tick_end_is_scheduled_for_the_inter_tick_phase() {
-        let decoded = decode(RawPacket {
-            id: play::S_CLIENT_TICK_END,
-            payload: Vec::new(),
-        });
+        let decoded = decode(RawPacket::new(play::S_CLIENT_TICK_END, Vec::new()));
 
         assert!(matches!(
             decoded,
@@ -1346,10 +1334,10 @@ mod tests {
 
     #[test]
     fn keep_alive_remains_on_the_immediate_connection_path() {
-        let decoded = decode(RawPacket {
-            id: play::S_KEEP_ALIVE,
-            payload: 42_i64.to_be_bytes().to_vec(),
-        });
+        let decoded = decode(RawPacket::new(
+            play::S_KEEP_ALIVE,
+            42_i64.to_be_bytes().to_vec(),
+        ));
 
         assert!(matches!(
             decoded,
@@ -1359,10 +1347,10 @@ mod tests {
 
     #[test]
     fn chunk_batch_ack_uses_the_immediate_connection_path() {
-        let decoded = decode(RawPacket {
-            id: play::S_CHUNK_BATCH_RECEIVED,
-            payload: 12.5_f32.to_be_bytes().to_vec(),
-        });
+        let decoded = decode(RawPacket::new(
+            play::S_CHUNK_BATCH_RECEIVED,
+            12.5_f32.to_be_bytes().to_vec(),
+        ));
 
         assert!(matches!(
             decoded,

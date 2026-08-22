@@ -123,7 +123,7 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
 
         let mut cursor = io::Cursor::new(packet_data.as_slice());
 
-        let decompressed_data = if let Some(threshold) = self.compression {
+        let (packet_buffer, packet_data_start) = if let Some(threshold) = self.compression {
             let decompressed_len = VarInt::read(&mut cursor)?.0 as usize;
             let raw_packet_len = packet_len - VarInt::written_size(decompressed_len as i32);
 
@@ -148,31 +148,128 @@ impl<R: AsyncRead + Unpin> TCPNetworkDecoder<R> {
                         "decompressed packet exceeds declared length of {decompressed_len}"
                     )))?;
                 }
-                decompressed
+                (decompressed, 0)
             } else {
                 // Validate that we are not less than the compression threshold
                 if raw_packet_len > threshold.get() as _ {
                     Err(PacketError::NotCompressed)?;
                 }
 
-                // Rest of the data is uncompressed
-                let pos = cursor.position() as usize;
-                packet_data[pos..].to_vec()
+                // The rest of the packet data is uncompressed.
+                let packet_data_start = cursor.position() as usize;
+                (packet_data, packet_data_start)
             }
         } else {
-            packet_data
+            (packet_data, 0)
         };
 
-        // Parse packet ID and payload from decompressed data
-        let mut cursor = io::Cursor::new(decompressed_data.as_slice());
+        // Parse the packet ID while retaining the buffer that already owns the payload.
+        let mut cursor = io::Cursor::new(&packet_buffer[packet_data_start..]);
         let packet_id = VarInt::read(&mut cursor)?.0;
-        let pos = cursor.position() as usize;
-        let payload = decompressed_data[pos..].to_vec();
+        let payload_start = packet_data_start + cursor.position() as usize;
 
-        Ok(RawPacket {
-            id: packet_id,
-            payload,
-        })
+        Ok(RawPacket::from_buffer(
+            packet_id,
+            packet_buffer,
+            payload_start,
+        ))
+    }
+}
+
+#[cfg(test)]
+mod payload_tests {
+    use std::{io::Write as _, num::NonZeroU32};
+
+    use flate2::{Compression, write::ZlibEncoder};
+
+    use super::TCPNetworkDecoder;
+
+    const VARINT_DATA_MASK: u8 = 0x7f;
+    const VARINT_CONTINUE_BIT: u8 = 0x80;
+
+    fn write_varint(mut value: u32, output: &mut Vec<u8>) {
+        loop {
+            if value <= u32::from(VARINT_DATA_MASK) {
+                output.push(value as u8);
+                return;
+            }
+            output.push((value as u8 & VARINT_DATA_MASK) | VARINT_CONTINUE_BIT);
+            value >>= 7;
+        }
+    }
+
+    fn packet_data(packet_id: u32, payload: &[u8]) -> Vec<u8> {
+        let mut data = Vec::with_capacity(payload.len() + 5);
+        write_varint(packet_id, &mut data);
+        data.extend_from_slice(payload);
+        data
+    }
+
+    fn frame(data: &[u8]) -> Vec<u8> {
+        let mut framed = Vec::with_capacity(data.len() + 5);
+        write_varint(data.len() as u32, &mut framed);
+        framed.extend_from_slice(data);
+        framed
+    }
+
+    #[tokio::test]
+    async fn payload_slice_starts_after_framing_and_packet_id() {
+        let packet_id = 300;
+        let payload = b"payload bytes";
+        let frame = frame(&packet_data(packet_id, payload));
+        let mut decoder = TCPNetworkDecoder::new(frame.as_slice());
+
+        let packet = decoder.get_raw_packet().await.expect("decode plain packet");
+
+        assert_eq!(packet.id, packet_id as i32);
+        assert_eq!(packet.payload(), payload);
+    }
+
+    #[tokio::test]
+    async fn uncompressed_payload_slice_skips_compression_length() {
+        let packet_id = 300;
+        let payload = b"payload bytes";
+        let packet_data = packet_data(packet_id, payload);
+        let mut compression_data = Vec::with_capacity(packet_data.len() + 1);
+        write_varint(0, &mut compression_data);
+        compression_data.extend_from_slice(&packet_data);
+        let frame = frame(&compression_data);
+        let mut decoder = TCPNetworkDecoder::new(frame.as_slice());
+        decoder.set_compression(NonZeroU32::new(256).expect("nonzero threshold"));
+
+        let packet = decoder
+            .get_raw_packet()
+            .await
+            .expect("decode uncompressed packet");
+
+        assert_eq!(packet.id, packet_id as i32);
+        assert_eq!(packet.payload(), payload);
+    }
+
+    #[tokio::test]
+    async fn decompressed_payload_slice_starts_after_packet_id() {
+        let packet_id = 300;
+        let payload = vec![0x5a; 1_024];
+        let packet_data = packet_data(packet_id, &payload);
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+        encoder
+            .write_all(&packet_data)
+            .expect("compress packet data");
+        let compressed = encoder.finish().expect("finish packet compression");
+        let mut compression_data = Vec::with_capacity(compressed.len() + 5);
+        write_varint(packet_data.len() as u32, &mut compression_data);
+        compression_data.extend_from_slice(&compressed);
+        let frame = frame(&compression_data);
+        let mut decoder = TCPNetworkDecoder::new(frame.as_slice());
+        decoder.set_compression(NonZeroU32::new(256).expect("nonzero threshold"));
+
+        let packet = decoder
+            .get_raw_packet()
+            .await
+            .expect("decode compressed packet");
+
+        assert_eq!(packet.id, packet_id as i32);
+        assert_eq!(packet.payload(), payload);
     }
 }
 
@@ -505,6 +602,6 @@ mod compression_security_tests {
             .expect("valid compressed packet should decode");
 
         assert_eq!(raw_packet.id, 2);
-        assert_eq!(raw_packet.payload, b"hello");
+        assert_eq!(raw_packet.payload(), b"hello");
     }
 }

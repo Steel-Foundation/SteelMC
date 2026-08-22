@@ -3,10 +3,10 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
-use steel_registry::{vanilla_blocks, vanilla_fluids};
+use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::blocks::CoralBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
@@ -41,7 +41,7 @@ impl CoralPlantBlock {
 
 impl BlockBehavior for CoralPlantBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        CoralBlock::coral_plant_can_survive(world, pos)
+        CoralBlock::can_survive(world, pos)
     }
 
     fn on_place(
@@ -70,10 +70,7 @@ impl BlockBehavior for CoralPlantBlock {
 
         CoralBlock::schedule_die_tick(state, world, pos, self.block);
 
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         state
     }

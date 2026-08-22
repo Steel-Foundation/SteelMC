@@ -6,7 +6,8 @@ use std::{
 
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{
-    init_vanilla_registry, sound_events, vanilla_entities, vanilla_fluids, vanilla_items,
+    init_vanilla_registry, sound_events, vanilla_entities, vanilla_fluids, vanilla_game_rules,
+    vanilla_items,
 };
 use uuid::Uuid;
 
@@ -37,6 +38,22 @@ fn sound_range_uses_event_range_and_strict_vanilla_boundary() {
 
     assert!(sound_is_within_range(sound, 0.75, 255.0));
     assert!(!sound_is_within_range(sound, 0.75, 256.0));
+}
+
+#[test]
+fn face_directed_item_drops_respect_block_drops_game_rule() {
+    init_vanilla_registry();
+    let world = fresh_test_world("face_drop_game_rule");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    assert!(world.set_game_rule(&vanilla_game_rules::BLOCK_DROPS, false));
+
+    let dropped = world.pop_resource_from_face(
+        BlockPos::new(8, 64, 8),
+        Direction::Up,
+        ItemStack::new(&vanilla_items::HANGING_ROOTS),
+    );
+
+    assert!(dropped.is_none());
 }
 
 #[test]

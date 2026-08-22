@@ -48,11 +48,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 
 fn damage(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
     let target = context.entity("target")?;
-    let Some(amount) = context.float("amount") else {
-        return Err(CommandSyntaxError::dynamic(
-            "Parsed value for amount is missing from the command context",
-        ));
-    };
+    let amount = context.float("amount")?;
 
     // The base damage type for this command is generic
     let damage_type = context
@@ -63,13 +59,16 @@ fn damage(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSy
     let mut damage_source = DamageSource::environment(damage_type);
 
     // If we can get "location" from the context, it's from "at"
-    if let Some(coordinates) = context.coordinates("location") {
+    if let Ok(coordinates) = context.coordinates("location") {
         damage_source.source_position = Some(coordinates.position(context.source()));
     }
 
     // Else, it's from the "by", or maybe it's nothing
     if let Ok(entity) = context.entity("entity") {
-        damage_source.direct_entity_id = Some(entity.id());
+        let entity_id = entity.id();
+
+        damage_source.direct_entity_id = Some(entity_id);
+        damage_source.causing_entity_id = Some(entity_id);
 
         // Maybe even the causing entity is known
         if let Ok(cause) = context.entity("cause") {

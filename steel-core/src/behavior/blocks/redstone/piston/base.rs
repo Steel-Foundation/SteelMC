@@ -34,6 +34,7 @@ const UPDATE_DESTROYED_BLOCK: UpdateFlags =
 const UPDATE_CLEARED_MOVED_BLOCK: UpdateFlags = UpdateFlags::UPDATE_CLIENTS
     .union(UpdateFlags::UPDATE_KNOWN_SHAPE)
     .union(UpdateFlags::UPDATE_MOVE_BY_PISTON);
+const PISTON_NEIGHBOR_UPDATE_LIMIT: i32 = 512;
 
 /// Vanilla `PistonBaseBlock` shared by normal and sticky pistons.
 #[block_behavior]
@@ -346,9 +347,14 @@ impl PistonBaseBlock {
                     world,
                     pos,
                     UpdateFlags::UPDATE_CLIENTS,
-                    512,
+                    PISTON_NEIGHBOR_UPDATE_LIMIT,
                 );
-            world.update_neighbour_shapes(air, pos, UpdateFlags::UPDATE_CLIENTS, 512);
+            world.update_neighbour_shapes(
+                air,
+                pos,
+                UpdateFlags::UPDATE_CLIENTS,
+                PISTON_NEIGHBOR_UPDATE_LIMIT,
+            );
             BLOCK_BEHAVIORS
                 .get_behavior(air.get_block())
                 .update_indirect_neighbour_shapes(
@@ -356,7 +362,7 @@ impl PistonBaseBlock {
                     world,
                     pos,
                     UpdateFlags::UPDATE_CLIENTS,
-                    512,
+                    PISTON_NEIGHBOR_UPDATE_LIMIT,
                 );
         }
 
@@ -375,7 +381,7 @@ impl PistonBaseBlock {
                     world,
                     pos,
                     UpdateFlags::UPDATE_CLIENTS,
-                    512,
+                    PISTON_NEIGHBOR_UPDATE_LIMIT,
                 );
             world.update_neighbors_at(pos, state.get_block());
         }
@@ -424,7 +430,12 @@ impl PistonBaseBlock {
             true,
         ));
         world.update_neighbors_at(pos, moving_state.get_block());
-        world.update_neighbour_shapes(moving_state, pos, UpdateFlags::UPDATE_CLIENTS, 512);
+        world.update_neighbour_shapes(
+            moving_state,
+            pos,
+            UpdateFlags::UPDATE_CLIENTS,
+            PISTON_NEIGHBOR_UPDATE_LIMIT,
+        );
 
         let arm_pos = pos.relative(direction);
         if self.sticky {

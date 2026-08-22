@@ -5,10 +5,10 @@
 use crate::{
     behavior::{
         BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
+        block::schedule_water_tick_if_waterlogged,
         blocks::{WeatherState, WeatheringCopper},
     },
-    entity::Entity,
-    entity::ai::path::PathComputationType,
+    entity::{Entity, ai::path::PathComputationType},
     player::Player,
     world::{ScheduledTickAccess, SignalGetter as _, World, game_event::GameEventContext},
 };
@@ -104,10 +104,8 @@ impl TrapDoorBlock {
     fn toggle(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, player: &Player) {
         let block_state = state.set_value(OPEN, !state.get_value(OPEN));
         world.set_block(pos, block_state, UpdateFlags::UPDATE_CLIENTS);
-        if block_state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
+
         self.play_sound(Some(player), world, pos, block_state.get_value(OPEN));
     }
 }
@@ -158,10 +156,7 @@ impl BlockBehavior for TrapDoorBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
         state
     }
 
