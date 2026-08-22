@@ -5,13 +5,13 @@ use std::sync::Arc;
 use crate::entity::Entity;
 use crate::worldgen::generator::ChunkGenerator;
 use steel_macros::item_behavior;
-use steel_registry::REGISTRY;
+use steel_registry::TaggedRegistryExt;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::level_events;
-use steel_registry::vanilla_blocks;
-use steel_registry::vanilla_entities;
-use steel_utils::Identifier;
+use steel_registry::{
+    REGISTRY, level_events, vanilla_blocks, vanilla_entities, vanilla_game_events,
+    vanilla_structure_tags,
+};
 use steel_utils::{BlockPos, types::UpdateFlags};
 
 use crate::behavior::ItemBehavior;
@@ -19,6 +19,7 @@ use crate::behavior::block::push_entities_up;
 use crate::behavior::context::{InteractionResult, UseOnContext};
 use crate::entity::entities::EyeOfEnderEntity;
 use crate::entity::{SharedEntity, next_entity_id};
+use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
 
 use glam::DVec3;
@@ -101,30 +102,55 @@ impl ItemBehavior for EnderEyeItem {
             .generator
             .structure_generator()
         else {
-            return InteractionResult::Fail;
+            log::debug!("World generator not found");
+            return InteractionResult::Consume;
         };
 
-        let Some(structure_locate_plan) = structure_generator
-            .locate_plan_for_structures(&[Identifier::vanilla_static("stronghold")])
+        let Some(structures) = REGISTRY
+            .structures
+            .get_tag(&vanilla_structure_tags::StructureTag::EYE_OF_ENDER_LOCATED)
         else {
-            return InteractionResult::Fail;
+            log::debug!("Can't find `EYE_OF_ENDER_LOCATED` tag");
+            return InteractionResult::Consume;
+        };
+
+        let structure_keys = structures
+            .iter()
+            .map(|structure| structure.key.clone())
+            .collect::<Vec<_>>();
+
+        let Some(structure_locate_plan) =
+            structure_generator.locate_plan_for_structures(&structure_keys)
+        else {
+            log::debug!("No structure found");
+            return InteractionResult::Consume;
         };
 
         let strongholds = structure_locate_plan.ring_candidates(context.player.block_position());
 
         let Some(closest_stronghold) = strongholds.first() else {
-            return InteractionResult::Fail;
+            return InteractionResult::Consume;
         };
 
         let stronghold_pos = closest_stronghold.locate_pos;
 
         let player_pos = context.player.position();
-        let spawn_pos = DVec3::new(player_pos.x, context.player.get_eye_y() - 0.1, player_pos.z);
+        let spawn_pos = DVec3::new(
+            player_pos.x,
+            player_pos.y + f64::from(context.player.base().dimensions().height * 0.5),
+            player_pos.z,
+        );
 
         let target_pos = DVec3::new(
             f64::from(stronghold_pos.x()),
             f64::from(stronghold_pos.y()),
             f64::from(stronghold_pos.z()),
+        );
+
+        world.game_event_at(
+            &vanilla_game_events::PROJECTILE_SHOOT,
+            spawn_pos,
+            &GameEventContext::new(Some(context.player), None),
         );
 
         let eye = EyeOfEnderEntity::new(
@@ -139,10 +165,12 @@ impl ItemBehavior for EnderEyeItem {
         let entity: SharedEntity = Arc::new(eye);
         if let Err(error) = world.try_add_entity(entity) {
             log::debug!("failed to spawn eye of ender: {error}");
-            return InteractionResult::Fail;
+            return InteractionResult::Consume;
         }
 
-        InteractionResult::Success
+        context.inv.with_item(|item| item.shrink(1));
+
+        InteractionResult::SuccessServer
     }
 }
 
