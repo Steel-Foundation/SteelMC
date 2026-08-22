@@ -23,10 +23,7 @@ use crate::{
     world::World,
 };
 
-use super::{
-    PlayerAdmissionState, Server, fresh_test_world, test_player_with_connection, test_server,
-    test_storage_root,
-};
+use super::{PlayerAdmissionState, Server, fresh_test_world, test_server, test_storage_root};
 
 fn java_test_player(
     server: &Arc<Server>,
@@ -191,14 +188,20 @@ fn duplicate_login_evicts_relocating_player_and_waits_for_disconnect_admission_r
                 closed: AtomicBool::new(false),
             },
         )));
-        let player = test_player_with_connection(
-            &server,
-            Arc::clone(&world),
-            uuid,
-            "TestPlayer",
-            1,
+        let player = Arc::new(Player::new(
+            GameProfile {
+                id: uuid,
+                name: "TestPlayer".to_owned(),
+                properties: Vec::new(),
+                profile_actions: None,
+            },
             connection,
-        );
+            Arc::clone(&world),
+            Arc::downgrade(&server),
+            Arc::clone(&server.config),
+            1,
+            ClientInformation::default(),
+        ));
 
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(world.add_player(Arc::clone(&player), super::ResetReason::InitialJoin));
