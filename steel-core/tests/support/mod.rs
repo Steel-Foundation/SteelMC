@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::slice;
 use std::sync::{Arc, OnceLock};
 
-use steel_registry::blocks::BlockRef;
+use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
 use steel_registry::sound_event::SoundEventRef;
@@ -360,6 +360,18 @@ impl LevelAccessor for TestLevel {
             .borrow_mut()
             .push(PlacedBlockState { pos, state, flags });
         true
+    }
+
+    fn destroy_block(&self, pos: BlockPos, _drop_items: bool) -> bool {
+        if self.get_block_state(pos).is_air() {
+            return false;
+        }
+
+        self.set_block_state(
+            pos,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        )
     }
 
     fn play_block_sound(
