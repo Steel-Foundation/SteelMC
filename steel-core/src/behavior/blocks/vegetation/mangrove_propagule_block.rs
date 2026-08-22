@@ -135,16 +135,16 @@ impl BlockBehavior for MangrovePropaguleBlock {
         state: BlockStateId,
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
-        _direction: Direction,
+        direction: Direction,
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
         schedule_water_tick_if_waterlogged(state, world, pos);
-        if self.can_survive(state, world, pos) {
-            state
-        } else {
-            vanilla_blocks::AIR.default_state()
+        if direction == Direction::Up && !self.can_survive(state, world, pos) {
+            return vanilla_blocks::AIR.default_state();
         }
+
+        state
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
@@ -452,5 +452,15 @@ mod tests {
                 .is_air()
         );
         assert!(level.scheduled_water_tick());
+
+        let side_update = behavior.update_shape(
+            state,
+            &TestLevel::default(),
+            BlockPos::ZERO,
+            Direction::North,
+            BlockPos::ZERO.north(),
+            vanilla_blocks::AIR.default_state(),
+        );
+        assert_eq!(side_update, state);
     }
 }
