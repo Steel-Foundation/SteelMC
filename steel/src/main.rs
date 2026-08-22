@@ -280,9 +280,6 @@ async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConf
 
     logger.stop().await;
 
-    // Data is persisted; let a blocked platform shutdown handler return.
-    shutdown::cleanup_finished();
-
     if let Some(payload) = panic_payload {
         panic::resume_unwind(payload);
     }

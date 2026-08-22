@@ -12,8 +12,6 @@ use tokio::sync::{Mutex, RwLock};
 pub type SyncMutex<T> = parking_lot::Mutex<T>;
 /// A synchronous read-write lock.
 pub type SyncRwLock<T> = parking_lot::RwLock<T>;
-/// A synchronous condition variable, paired with [`SyncMutex`].
-pub type SyncCondvar = parking_lot::Condvar;
 
 /// An asynchronous mutex.
 pub type AsyncMutex<T> = Mutex<T>;
