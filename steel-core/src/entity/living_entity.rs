@@ -293,6 +293,14 @@ pub trait LivingEntity: Entity {
         None
     }
 
+    /// Returns this entity's `minecraft:components.chicken/variant` key for the
+    /// entity loot context, when it is a chicken.
+    ///
+    /// Mirrors `Chicken.get(DataComponents.CHICKEN_VARIANT)` for the loot predicate.
+    fn chicken_loot_variant(&self) -> Option<&Identifier> {
+        None
+    }
+
     /// Returns vanilla `LivingEntity.getSoundVolume`.
     fn sound_volume(&self) -> f32 {
         1.0
@@ -569,11 +577,7 @@ pub trait LivingEntity: Entity {
 
     /// Returns vanilla base living-entity invulnerability.
     fn default_is_invulnerable_to(&self, source: &DamageSource) -> bool {
-        self.is_removed()
-            || self.is_invulnerable() && !source.bypasses_invulnerability()
-            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE) && self.fire_immune()
-            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FALL)
-                && self.is_fall_damage_immune()
+        self.is_invulnerable_to_base(source)
     }
 
     /// Returns whether this living entity ignores a damage source.
@@ -2962,6 +2966,7 @@ fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_>
         custom_name: None,
         sheep_color: sheep.map(|(color, _)| color),
         sheep_sheared: sheep.map(|(_, sheared)| sheared),
+        chicken_variant: entity.chicken_loot_variant(),
     }
 }
 

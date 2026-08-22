@@ -345,16 +345,16 @@ impl ChickenEntity {
 
     /// Runs vanilla `Chicken.aiStep` egg-laying side effects.
     fn tick_egg_laying(&self) {
-        if self.level().is_none()
-            || !Entity::is_alive(self)
-            || AgeableMob::is_baby(self)
-            || self.is_chicken_jockey()
-        {
+        if self.level().is_none() || !Entity::is_alive(self) || AgeableMob::is_baby(self) {
             return;
         }
 
         let should_lay_egg = {
             let mut state = self.chicken_state.lock();
+            // Vanilla gates egg laying on `!isChickenJockey()`.
+            if state.is_chicken_jockey {
+                return;
+            }
             state.egg_time -= 1;
             state.egg_time <= 0
         };
@@ -506,6 +506,10 @@ impl LivingEntity for ChickenEntity {
 
     fn death_sound(&self) -> Option<SoundEventRef> {
         Some(self.current_sound_set().death_sound)
+    }
+
+    fn chicken_loot_variant(&self) -> Option<&Identifier> {
+        Some(&self.variant().key)
     }
 
     fn base_experience_reward(&self) -> i32 {

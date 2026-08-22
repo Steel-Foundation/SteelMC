@@ -6,7 +6,6 @@
 
 use std::sync::Arc;
 
-use glam::DVec3;
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::{sound_events, vanilla_entities};
@@ -14,7 +13,7 @@ use steel_registry::{sound_events, vanilla_entities};
 use crate::behavior::context::{InteractionResult, UseItemContext};
 use crate::behavior::item::ItemBehavior;
 use crate::entity::entities::ThrownEggEntity;
-use crate::entity::{Entity, Projectile, SharedEntity, ThrowableItemProjectile, next_entity_id};
+use crate::entity::{Entity, next_entity_id, spawn_throwable_item_projectile};
 
 /// Vanilla `EggItem.PROJECTILE_SHOOT_POWER`.
 const SHOOT_POWER: f32 = 1.5;
@@ -24,8 +23,8 @@ const THROW_SOUND_VOLUME: f32 = 0.5;
 const THROW_PITCH_JITTER_SCALE: f32 = 0.4;
 /// Vanilla `EggItem.use` throw pitch jitter base.
 const THROW_PITCH_JITTER_BASE: f32 = 0.8;
-/// Vanilla `ThrowableItemProjectile` spawn offset below the shooter's eye.
-const THROWN_ITEM_EYE_OFFSET: f64 = 0.1;
+/// Vanilla `EggItem.use` throw uncertainty (`spawnProjectileFromRotation`).
+const THROW_UNCERTAINTY: f32 = 1.0;
 
 /// Behavior for the egg item.
 #[item_behavior(class = "EggItem")]
@@ -47,41 +46,29 @@ impl ItemBehavior for EggItem {
             None,
         );
 
-        let thrown_item = context.inv.with_item(|item| item.clone());
-
-        // Vanilla `ThrowableItemProjectile` spawns at the shooter's eye minus 0.1.
-        let player_pos = player.position();
-        let spawn_pos = DVec3::new(
-            player_pos.x,
-            player.get_eye_y() - THROWN_ITEM_EYE_OFFSET,
-            player_pos.z,
-        );
-
-        let egg = Arc::new(ThrownEggEntity::new(
-            &vanilla_entities::EGG,
-            next_entity_id(),
-            spawn_pos,
-            Arc::downgrade(world),
-        ));
-        if let Some(owner) = world.players.get_by_uuid(&player.gameprofile.id) {
-            let owner: SharedEntity = owner;
-            egg.set_owner_entity(Some(&owner));
-        } else {
-            egg.set_owner_uuid(Some(player.gameprofile.id));
-        }
-        egg.set_item_clamped(thrown_item);
-
-        let (yaw, player_pitch) = player.rotation();
-        egg.shoot_from_rotation(player, player_pitch, yaw, 0.0, SHOOT_POWER, 1.0);
-
-        let entity: SharedEntity = egg;
-        if let Err(error) = world.try_add_entity(entity.clone()) {
-            log::debug!("failed to spawn thrown egg: {error}");
+        let mut thrown_item = context.inv.with_item(|item| item.clone());
+        let Some(_egg) = spawn_throwable_item_projectile(
+            world,
+            player,
+            &mut thrown_item,
+            SHOOT_POWER,
+            THROW_UNCERTAINTY,
+            |spawn_pos| {
+                ThrownEggEntity::new(
+                    &vanilla_entities::EGG,
+                    next_entity_id(),
+                    spawn_pos,
+                    Arc::downgrade(world),
+                )
+            },
+        ) else {
             return InteractionResult::Fail;
-        }
+        };
 
         // TODO: award the ITEM_USED stat once a stats system exists.
-        context.inv.with_item(|item| item.shrink(1));
+        if !player.has_infinite_materials() {
+            context.inv.with_item(|item| item.shrink(1));
+        }
 
         InteractionResult::Success
     }

@@ -191,11 +191,6 @@ impl Entity for ThrownEggEntity {
         Some(&self.entity_data)
     }
 
-    fn hurt(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
-        // Vanilla `Projectile.hurtServer` marks hurt but never takes damage.
-        false
-    }
-
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.save_projectile(nbt);
         self.save_throwable_item(nbt);
@@ -283,17 +278,35 @@ mod tests {
     use glam::DVec3;
     use steel_registry::{
         RegistryReference, init_vanilla_registry, vanilla_blocks, vanilla_chicken_variants,
-        vanilla_entities, vanilla_items,
+        vanilla_damage_types, vanilla_entities, vanilla_items,
     };
     use steel_utils::types::UpdateFlags;
     use steel_utils::{BlockPos, ChunkPos, Downcast};
 
     use crate::behavior::init_behaviors;
+    use crate::entity::damage::DamageSource;
     use crate::entity::entities::ChickenEntity;
     use crate::entity::{AgeableMob, Entity, ThrowableItemProjectile, WorldAabb};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
 
     use super::*;
+
+    #[test]
+    fn hurt_marks_egg_unless_base_invulnerable_and_always_returns_false() {
+        init_vanilla_registry();
+
+        let egg =
+            ThrownEggEntity::new(&vanilla_entities::EGG, 1, DVec3::ZERO, Weak::<World>::new());
+        let source = DamageSource::environment(&vanilla_damage_types::GENERIC);
+
+        assert!(!Entity::hurt(&egg, test_world(), &source, 1.0));
+        assert!(egg.hurt_marked());
+
+        egg.clear_hurt_mark();
+        egg.set_invulnerable(true);
+        assert!(!Entity::hurt(&egg, test_world(), &source, 1.0));
+        assert!(!egg.hurt_marked());
+    }
 
     #[test]
     fn hatch_count_matches_vanilla_odds() {

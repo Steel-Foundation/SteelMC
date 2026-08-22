@@ -3555,8 +3555,21 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla's `Entity.readAdditionalSaveData()`.
     fn load_additional(&self, _nbt: BorrowedNbtCompoundView<'_, '_>) {}
 
+    /// Returns vanilla `Entity.isInvulnerableToBase`.
+    fn is_invulnerable_to_base(&self, source: &DamageSource) -> bool {
+        self.is_removed()
+            || self.is_invulnerable() && !source.bypasses_invulnerability()
+            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE) && self.fire_immune()
+            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FALL)
+                && self.is_fall_damage_immune()
+    }
+
     /// Applies damage to this entity.
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
+        // Vanilla `Projectile.hurtServer` overrides the entity default.
+        if let Some(projectile) = self.as_projectile() {
+            return Projectile::hurt(projectile, world, source, amount);
+        }
         let Some(living) = self.as_living_entity() else {
             return false;
         };
