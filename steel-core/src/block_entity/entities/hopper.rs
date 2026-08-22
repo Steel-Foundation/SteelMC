@@ -355,14 +355,17 @@ impl HopperBlockEntity {
         let Some(target) = guard.get(to_id) else {
             return stack;
         };
-        let slots = match (target.as_worldly(), direction) {
-            (Some(worldly), Some(face)) => worldly.get_slots_for_face(face).to_vec(),
-            _ => (0..target.get_container_size()).collect(),
-        };
-        for slot in slots {
+        let slot_count = Self::slot_count(target, direction);
+        for slot_index in 0..slot_count {
             if stack.is_empty() {
                 break;
             }
+            let Some(slot) = guard
+                .get(to_id)
+                .and_then(|target| Self::slot_at(target, direction, slot_index))
+            else {
+                break;
+            };
             stack = Self::try_move_in_item(guard, from_id, to_id, stack, slot, direction);
         }
         stack
