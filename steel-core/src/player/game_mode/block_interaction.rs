@@ -174,7 +174,6 @@ impl Player {
     /// # Panics
     ///
     /// Panics if the behavior registry has not been initialized.
-    /// TODO Implement ctrl + middle click
     pub fn handle_pick_item_from_block(&self, packet: SPickItemFromBlock) {
         if !self.is_within_block_interaction_range(packet.pos) {
             return;
@@ -203,25 +202,28 @@ impl Player {
 
         let mut inventory = self.inventory.lock();
 
-        let slot_with_item = inventory.find_slot_matching_item_with_same_components(&item_stack);
+        match inventory.find_slot_matching_item_with_same_components(&item_stack) {
+            Some(slot_with_item) => {
+                if PlayerInventory::is_hotbar_slot(slot_with_item) {
+                    inventory.set_selected_slot(slot_with_item as u8);
+                } else {
+                    let slot = inventory.get_suitable_hotbar_slot();
 
-        if slot_with_item != -1 {
-            if PlayerInventory::is_hotbar_slot(slot_with_item as usize) {
-                inventory.set_selected_slot(slot_with_item as u8);
-            } else {
-                let slot = inventory.get_suitable_hotbar_slot();
-
-                inventory.set_selected_slot(slot);
-                inventory.pick_slot(slot_with_item);
+                    inventory.set_selected_slot(slot);
+                    inventory.pick_slot(slot_with_item);
+                }
             }
-        } else if self.has_infinite_materials() {
-            let slot = inventory.get_suitable_hotbar_slot();
+            None => {
+                if self.has_infinite_materials() {
+                    let slot = inventory.get_suitable_hotbar_slot();
 
-            inventory.set_selected_slot(slot);
-            inventory.add_and_pick_item(item_stack);
-        } else {
-            return;
-        }
+                    inventory.set_selected_slot(slot);
+                    inventory.add_and_pick_item(item_stack);
+                } else {
+                    return;
+                }
+            }
+        };
 
         self.send_packet(CSetHeldSlot {
             slot: i32::from(inventory.get_selected_slot()),

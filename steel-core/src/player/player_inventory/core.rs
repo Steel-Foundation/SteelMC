@@ -212,15 +212,15 @@ impl PlayerInventory {
         items
     }
 
-    /// Finds the first empty slot in the inventory, or -1 if full.
+    /// Finds the first empty slot in the inventory, or `None` if full.
     #[must_use]
-    pub fn get_free_slot(&self) -> i32 {
+    pub fn get_free_slot(&self) -> Option<usize> {
         for i in 0..Self::INVENTORY_SIZE {
             if self.items[i].is_empty() {
-                return i as i32;
+                return Some(i);
             }
         }
-        -1
+        None
     }
 
     /// Finds next empty slot in hotbar (and returns)
@@ -250,35 +250,32 @@ impl PlayerInventory {
     }
 
     /// Finds a slot containing an item matching the given stack (same item type).
-    /// Returns -1 if not found.
     #[must_use]
-    pub fn find_slot_matching_item(&self, stack: &ItemStack) -> i32 {
+    pub fn find_slot_matching_item(&self, stack: &ItemStack) -> Option<usize> {
         for i in 0..Self::INVENTORY_SIZE {
             if !self.items[i].is_empty() && ItemStack::is_same_item(&self.items[i], stack) {
-                return i as i32;
+                return Some(i);
             }
         }
-        -1
+        None
     }
 
     /// Finds a slot containing an item matching the exact given stack (same item type).
-    /// Returns -1 if not found.
     #[must_use]
-    pub fn find_slot_matching_item_with_same_components(&self, stack: &ItemStack) -> i32 {
+    pub fn find_slot_matching_item_with_same_components(&self, stack: &ItemStack) -> Option<usize> {
         for i in 0..Self::INVENTORY_SIZE {
             if !self.items[i].is_empty()
                 && ItemStack::is_same_item_same_components(&self.items[i], stack)
             {
-                return i as i32;
+                return Some(i);
             }
         }
-        -1
+        None
     }
 
     /// Swaps items between selected hotbar slot and the given slot.
     /// Used for pick block when item is in main inventory but not hotbar.
-    pub fn pick_slot(&mut self, slot: i32) {
-        let slot = slot as usize;
+    pub fn pick_slot(&mut self, slot: usize) {
         if slot >= Self::INVENTORY_SIZE {
             return;
         }
