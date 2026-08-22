@@ -126,17 +126,29 @@ fn aabb_matching_query_filters_accessible_entities() {
 
 #[test]
 fn hard_collision_broad_phase_matches_full_scan_with_source_dependent_targets() {
+    const NON_HARD_DISTRACTOR_COUNT: i32 = 128;
+    const BACKGROUND_GRID_SIDE: i32 = 4;
+    const SOURCE_ENTITY_ID: i32 = NON_HARD_DISTRACTOR_COUNT + 1;
+    const LATER_SECTION_ENTITY_ID: i32 = SOURCE_ENTITY_ID + 1;
+    const FIRST_SAME_SECTION_ENTITY_ID: i32 = SOURCE_ENTITY_ID + 2;
+    const SECOND_SAME_SECTION_ENTITY_ID: i32 = SOURCE_ENTITY_ID + 3;
+    const NEXT_CHUNK_INTERIOR_Z: f64 = 17.0;
+
     let manager = WorldEntityManager::new();
     load_chunk(&manager, ChunkPos::new(0, 0));
     load_chunk(&manager, ChunkPos::new(0, 1));
 
     let source = ManagerTestEntity::shared_non_hard(
-        10_000,
-        Uuid::from_u128(10_000),
+        SOURCE_ENTITY_ID,
+        Uuid::from_u128(SOURCE_ENTITY_ID as u128),
         DVec3::new(1.0, 64.0, 1.0),
     );
-    for id in 1..=128 {
-        let position = DVec3::new(f64::from(id % 4), 64.0, f64::from((id / 4) % 4));
+    for id in 1..=NON_HARD_DISTRACTOR_COUNT {
+        let position = DVec3::new(
+            f64::from(id % BACKGROUND_GRID_SIDE),
+            64.0,
+            f64::from((id / BACKGROUND_GRID_SIDE) % BACKGROUND_GRID_SIDE),
+        );
         let entity = ManagerTestEntity::shared_non_hard(id, Uuid::from_u128(id as u128), position);
         assert!(
             manager
@@ -146,20 +158,20 @@ fn hard_collision_broad_phase_matches_full_scan_with_source_dependent_targets() 
     }
 
     let later_section = SourceAwareHardCollisionEntity::shared(
-        201,
-        Uuid::from_u128(201),
-        DVec3::new(1.0, 64.0, 17.0),
+        LATER_SECTION_ENTITY_ID,
+        Uuid::from_u128(LATER_SECTION_ENTITY_ID as u128),
+        DVec3::new(1.0, 64.0, NEXT_CHUNK_INTERIOR_Z),
         source.id(),
     );
     let first_same_section = SourceAwareHardCollisionEntity::shared(
-        202,
-        Uuid::from_u128(202),
+        FIRST_SAME_SECTION_ENTITY_ID,
+        Uuid::from_u128(FIRST_SAME_SECTION_ENTITY_ID as u128),
         DVec3::new(1.0, 64.0, 1.0),
         source.id(),
     );
     let second_same_section = SourceAwareHardCollisionEntity::shared(
-        203,
-        Uuid::from_u128(203),
+        SECOND_SAME_SECTION_ENTITY_ID,
+        Uuid::from_u128(SECOND_SAME_SECTION_ENTITY_ID as u128),
         DVec3::new(2.0, 64.0, 1.0),
         source.id(),
     );
@@ -519,31 +531,33 @@ fn accessible_entities_keep_tracking_start_order() {
 
 #[test]
 fn indexed_ordered_entity_ids_compaction_preserves_order_across_reinsertion() {
+    const ENTITY_COUNT: i32 = (IndexedOrderedEntityIds::MIN_COMPACTION_SIZE * 2) as i32;
+
     let mut ids = IndexedOrderedEntityIds::default();
-    for entity_id in 0..128 {
+    for entity_id in 0..ENTITY_COUNT {
         assert!(ids.insert(entity_id));
     }
 
-    for entity_id in (0..128).step_by(2) {
+    for entity_id in (0..ENTITY_COUNT).step_by(2) {
         assert!(ids.remove(entity_id));
     }
 
     assert_eq!(
         ids.iter().copied().collect::<Vec<_>>(),
-        (0..128)
+        (0..ENTITY_COUNT)
             .filter(|entity_id| entity_id % 2 != 0)
             .collect::<Vec<_>>()
     );
 
-    for entity_id in (0..128).step_by(2).rev() {
+    for entity_id in (0..ENTITY_COUNT).step_by(2).rev() {
         assert!(ids.insert(entity_id));
     }
 
     assert_eq!(
         ids.iter().copied().collect::<Vec<_>>(),
-        (0..128)
+        (0..ENTITY_COUNT)
             .filter(|entity_id| entity_id % 2 != 0)
-            .chain((0..128).step_by(2).rev())
+            .chain((0..ENTITY_COUNT).step_by(2).rev())
             .collect::<Vec<_>>()
     );
 }
