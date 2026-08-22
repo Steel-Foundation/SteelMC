@@ -1,24 +1,29 @@
 //! Data-driven vanilla spawn-egg behavior.
 
+use std::sync::Arc;
+
 use steel_macros::item_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::data_components::components::EntityData;
 use steel_registry::data_components::vanilla_components::ENTITY_DATA;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{vanilla_blocks, vanilla_game_events};
-use steel_utils::types::InteractionHand;
+use steel_utils::{BlockPos, types::InteractionHand};
 
 use super::place_on_water_block_item::get_player_pov_hit_result;
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockCollisionContext, InteractionResult, ItemBehavior, UseItemContext,
-    UseOnContext,
+    BLOCK_BEHAVIORS, BlockCollisionContext, InteractionResult, InventoryAccess, ItemBehavior,
+    UseItemContext, UseOnContext,
 };
 use crate::entity::{
     AgeableMob, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, LivingEntity, Mob,
     SharedEntity, add_spawned_entity, apply_item_stack_components, create_entity_instance,
     spawn_entity,
 };
+use crate::player::Player;
 use crate::world::ClipFluid;
+use crate::world::World;
 use crate::world::game_event::GameEventContext;
 
 /// Behavior for every data-driven `SpawnEggItem` registry entry.
@@ -27,15 +32,15 @@ pub struct SpawnEggItem;
 
 impl SpawnEggItem {
     fn entity_type(stack: &ItemStack) -> Option<EntityTypeRef> {
-        stack.get(ENTITY_DATA).map(|data| data.entity_type())
+        stack.get(ENTITY_DATA).map(EntityData::entity_type)
     }
 
     fn spawn_mob(
-        world: &std::sync::Arc<crate::world::World>,
-        player: &crate::player::Player,
-        inventory: &crate::behavior::InventoryAccess,
+        world: &Arc<World>,
+        player: &Player,
+        inventory: &InventoryAccess,
         stack: &ItemStack,
-        spawn_pos: steel_utils::BlockPos,
+        spawn_pos: BlockPos,
         try_move_down: bool,
         moved_up: bool,
     ) -> InteractionResult {
@@ -59,7 +64,9 @@ impl SpawnEggItem {
             return InteractionResult::Fail;
         }
 
-        inventory.with_item(|item| item.shrink(1));
+        if !player.has_infinite_materials() {
+            inventory.with_item(|item| item.shrink(1));
+        }
         world.game_event(
             &vanilla_game_events::ENTITY_PLACE,
             spawn_pos,
@@ -71,12 +78,15 @@ impl SpawnEggItem {
     /// Runs the interaction before normal mob handling.
     pub(crate) fn interact_with_mob<M: Mob + ?Sized>(
         stack: &mut ItemStack,
+        player: &Player,
         parent: &M,
     ) -> InteractionResult {
         if Self::spawn_offspring(stack, parent).is_none() {
             return InteractionResult::Pass;
         }
-        stack.shrink(1);
+        if !player.has_infinite_materials() {
+            stack.shrink(1);
+        }
         InteractionResult::SuccessServer
     }
 
@@ -185,13 +195,13 @@ impl ItemBehavior for SpawnEggItem {
     fn interact_living_entity(
         &self,
         stack: &mut ItemStack,
-        _player: &crate::player::Player,
+        player: &Player,
         target: &dyn LivingEntity,
         _hand: InteractionHand,
     ) -> InteractionResult {
         let Some(parent) = target.as_mob() else {
             return InteractionResult::Pass;
         };
-        Self::interact_with_mob(stack, parent)
+        Self::interact_with_mob(stack, player, parent)
     }
 }

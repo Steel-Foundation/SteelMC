@@ -57,11 +57,6 @@ pub(crate) enum EntitySpawnPlacement {
         try_move_down: bool,
         moved_up: bool,
     },
-    /// Spawn at an exact command or lifecycle position.
-    Exact {
-        position: DVec3,
-        rotation: (f32, f32),
-    },
 }
 
 impl EntitySpawnPlacement {
@@ -81,7 +76,6 @@ impl EntitySpawnPlacement {
                 f64::from(pos.y()),
                 f64::from(pos.z()) + 0.5,
             ),
-            Self::Exact { position, .. } => position,
         }
     }
 }
@@ -104,7 +98,7 @@ pub(crate) enum EntitySpawnError {
     Peaceful,
     MissingFactory,
     InvalidEntityData,
-    AddEntity(AddEntityError),
+    AddEntity,
 }
 
 /// Creates an entity instance through the generated entity factory registry.
@@ -180,37 +174,31 @@ pub(crate) fn spawn_entity(
         request.placement.factory_position(),
     )?;
 
-    let (position, rotation) = match request.placement {
-        EntitySpawnPlacement::Exact { position, rotation } => (position, rotation),
-        EntitySpawnPlacement::Block {
-            pos,
-            try_move_down,
-            moved_up,
-        } => {
-            let position_above = DVec3::new(
-                f64::from(pos.x()) + 0.5,
-                f64::from(pos.y()) + 1.0,
-                f64::from(pos.z()) + 0.5,
-            );
-            if try_move_down {
-                entity.base().set_position_local(position_above);
-            }
+    let EntitySpawnPlacement::Block {
+        pos,
+        try_move_down,
+        moved_up,
+    } = request.placement;
+    let position_above = DVec3::new(
+        f64::from(pos.x()) + 0.5,
+        f64::from(pos.y()) + 1.0,
+        f64::from(pos.z()) + 0.5,
+    );
+    if try_move_down {
+        entity.base().set_position_local(position_above);
+    }
 
-            let y_offset = if try_move_down {
-                entity_y_offset(world, pos, moved_up, entity.bounding_box())
-            } else {
-                0.0
-            };
-            (
-                DVec3::new(
-                    f64::from(pos.x()) + 0.5,
-                    f64::from(pos.y()) + y_offset,
-                    f64::from(pos.z()) + 0.5,
-                ),
-                (wrap_degrees(rand::random::<f32>() * 360.0), 0.0),
-            )
-        }
+    let y_offset = if try_move_down {
+        entity_y_offset(world, pos, moved_up, entity.bounding_box())
+    } else {
+        0.0
     };
+    let position = DVec3::new(
+        f64::from(pos.x()) + 0.5,
+        f64::from(pos.y()) + y_offset,
+        f64::from(pos.z()) + 0.5,
+    );
+    let rotation = (wrap_degrees(rand::random::<f32>() * 360.0), 0.0);
 
     entity.base().set_position_local(position);
     entity.set_rotation(rotation);
@@ -229,7 +217,7 @@ pub(crate) fn spawn_entity(
         apply_item_stack_components(&entity, item_stack)?;
     }
 
-    add_spawned_entity(world, Arc::clone(&entity)).map_err(EntitySpawnError::AddEntity)?;
+    add_spawned_entity(world, Arc::clone(&entity)).map_err(|_| EntitySpawnError::AddEntity)?;
 
     if request.play_ambient_sound
         && let Some(mob) = entity.as_mob()
