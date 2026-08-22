@@ -523,6 +523,8 @@ impl HopperBlockEntity {
                 .is_none_or(|worldly| worldly.can_take_item_through_face(slot, stack, direction))
     }
 
+    /// Returns the number of slots a hopper may visit from `face` without
+    /// allocating a temporary flat-slot list.
     fn slot_count(container: &dyn Container, face: Option<Direction>) -> usize {
         match (container.as_worldly(), face) {
             (Some(worldly), Some(face)) => worldly.get_slots_for_face(face).len(),
@@ -530,6 +532,10 @@ impl HopperBlockEntity {
         }
     }
 
+    /// Resolves one hopper-visible slot by traversal index.
+    ///
+    /// Sided access follows the container's face-specific slot ordering;
+    /// unsided or directionless access maps the index directly to a slot.
     fn slot_at(
         container: &dyn Container,
         face: Option<Direction>,
