@@ -227,7 +227,7 @@ impl Player {
                     return;
                 }
             }
-        };
+        }
 
         self.send_packet(CSetHeldSlot {
             slot: i32::from(inventory.get_selected_slot()),
