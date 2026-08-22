@@ -2,7 +2,7 @@
 use std::{ptr, sync::Arc};
 
 use steel_protocol::packets::game::{CGameEvent, GameEventType};
-use steel_registry::vanilla_entities;
+use steel_registry::{vanilla_custom_stats, vanilla_entities};
 use steel_utils::ChunkPos;
 
 use crate::{
@@ -173,6 +173,7 @@ impl World {
             "disconnect menu removal must run at the packet-processing safe point"
         );
 
+        player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
         let Some(player) = self.take_player_for_removal(&player) else {
             // End credits and failed target admission deliberately have no live
             // world membership but still need one authoritative disconnect save.
@@ -206,6 +207,7 @@ impl World {
         let Some(player) = self.take_player_for_removal(player) else {
             return;
         };
+        player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
         self.unride_player_for_removal(&player, false);
         self.unregister_player_entity(&player);
         self.entity_tracker().on_player_leave(&player);
@@ -219,6 +221,8 @@ impl World {
         player: &Arc<Player>,
     ) -> Option<(PersistentPlayerData, DomainResidenceToken)> {
         let player = self.take_player_for_removal(player)?;
+
+        player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
         let player_data = PersistentPlayerData::from_player(&player);
 
         self.unride_player_for_removal(&player, true);

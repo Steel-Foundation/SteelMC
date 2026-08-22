@@ -18,6 +18,7 @@ use steel_core::player::player_data::PersistentPlayerData;
 use steel_core::player::player_data_storage::GlobalPlayerData;
 use steel_core::player::player_inventory::MenuRemovalStatus;
 use steel_core::server::Server;
+use steel_registry::vanilla_custom_stats;
 use steel_utils::text::DisplayResolutor;
 use steel_utils::threading::worker_threads_for_available;
 use text_components::fmt::set_display_resolutor;
@@ -406,6 +407,7 @@ async fn shutdown_worlds(server: &Arc<Server>) {
     let mut players_to_save = Vec::new();
     for player in players {
         let domain = player.get_world().domain().to_owned();
+        player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
         let data = PersistentPlayerData::from_player(&player);
         player.store_ender_pearls_with_player();
         players_to_save.push((player, domain, data));

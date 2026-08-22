@@ -6,6 +6,7 @@ use super::{
     UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block, level_events,
     vanilla_blocks, vanilla_game_events,
 };
+use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 
 pub(super) fn sound_is_within_range(
     sound: SoundEventRef,
@@ -284,7 +285,24 @@ impl World {
 
         if drop_items {
             self.drop_resources_with_entity(state, pos, entity);
-            // TODO: block entity drops
+            // TODO: This only covers the `drop_items` path. In vanilla, container
+            // content dropping runs unconditionally on any block-entity removal
+            // (BlockEntity.preRemoveSideEffects via LevelChunk.setBlockState) —
+            // independent of drop_items — so explosions, pistons, etc. still need
+            // a similar hook once Steel's block-update pipeline has one.
+            if let Some(block_entity) = self.get_block_entity(pos)
+                && let Some(container_ref) = ContainerRef::from_block_entity(block_entity)
+            {
+                let mut guard = ContainerLockGuard::lock_all(&[&container_ref]);
+                if let Some(container) = guard.get_mut(container_ref.container_id()) {
+                    for slot in 0..container.get_container_size() {
+                        let item = container.remove_item_no_update(slot);
+                        if !item.is_empty() {
+                            self.pop_resource(pos, item);
+                        }
+                    }
+                }
+            }
         }
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
