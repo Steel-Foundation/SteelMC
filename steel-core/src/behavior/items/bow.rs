@@ -15,8 +15,8 @@ use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_events;
+use steel_registry::vanilla_entities;
 use steel_registry::vanilla_item_tags::ItemTag;
-use steel_registry::{vanilla_entities, vanilla_game_events};
 
 use crate::behavior::context::{InteractionResult, UseItemContext};
 use crate::behavior::{ItemBehavior, ItemUseAnimation};
@@ -24,7 +24,6 @@ use crate::entity::entities::{ArrowEntity, Pickup};
 use crate::entity::{Entity, LivingEntity, Projectile, SharedEntity, next_entity_id};
 use crate::inventory::prelude::Container;
 use crate::world::World;
-use crate::world::game_event::GameEventContext;
 
 /// Vanilla `Item.getUseDuration` for bows (draw is released manually).
 const USE_DURATION: i32 = 72000;
@@ -143,12 +142,6 @@ impl ItemBehavior for BowItem {
             sound_pitch,
             None,
         );
-        world.game_event(
-            &vanilla_game_events::PROJECTILE_SHOOT,
-            player.block_position(),
-            &GameEventContext::new(Some(player), None),
-        );
-
         stack.hurt_and_break(1, player.has_infinite_materials());
         true
     }
