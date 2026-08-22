@@ -22,5 +22,8 @@ undescore = "undescore"
 # Vanilla block tag name minecraft:convertable_to_mud
 convertable = "convertable"
 
+[default.extend-identifiers]
+player_mode_customisation = "player_mode_customisation"
+
 [default]
 locale = "en-us"
