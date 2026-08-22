@@ -143,6 +143,7 @@ impl ItemBehavior for BowItem {
             None,
         );
         stack.hurt_and_break(1, player.has_infinite_materials());
+        // TODO: award ITEM_USED stat for bow
         true
     }
 }
