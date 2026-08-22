@@ -8,6 +8,7 @@ use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
+use crate::behavior::blocks::multiface_face_property;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::fluid::get_fluid_state_from_block;
@@ -61,12 +62,6 @@ pub(crate) fn multiface_spread_pos(
 }
 
 const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
-const DOWN: &BoolProperty = &BlockStateProperties::DOWN;
-const EAST: &BoolProperty = &BlockStateProperties::EAST;
-const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
-const SOUTH: &BoolProperty = &BlockStateProperties::SOUTH;
-const UP: &BoolProperty = &BlockStateProperties::UP;
-const WEST: &BoolProperty = &BlockStateProperties::WEST;
 
 impl MultifaceBlock {
     /// Creates a new multiface block behavior.
@@ -129,18 +124,6 @@ impl MultifaceBlock {
         )
     }
 
-    /// Vanilla `MultifaceBlock.getFaceProperty(faceDirection)`.
-    pub(super) const fn face_property(direction: Direction) -> &'static BoolProperty {
-        match direction {
-            Direction::Up => UP,
-            Direction::Down => DOWN,
-            Direction::North => NORTH,
-            Direction::South => SOUTH,
-            Direction::East => EAST,
-            Direction::West => WEST,
-        }
-    }
-
     const fn is_face_supported(_face_direction: Direction) -> bool {
         true
     }
@@ -173,7 +156,7 @@ impl MultifaceBlock {
                 block.default_state()
             }
         };
-        new_state = new_state.set_value(Self::face_property(placement_direction), true);
+        new_state = new_state.set_value(multiface_face_property(placement_direction), true);
         Some(new_state)
     }
 
@@ -200,7 +183,7 @@ impl MultifaceBlock {
 
     pub(super) fn has_face(state: BlockStateId, direction: Direction) -> bool {
         state
-            .try_get_value(Self::face_property(direction))
+            .try_get_value(multiface_face_property(direction))
             .unwrap_or(false)
     }
 
@@ -418,7 +401,7 @@ impl BlockBehavior for MultifaceBlock {
         if Self::has_face(state, direction)
             && !Self::can_attach_to_state(world, direction, neighbor_pos, neighbor_state)
         {
-            return Self::remove_face(state, Self::face_property(direction));
+            return Self::remove_face(state, multiface_face_property(direction));
         }
         state
     }
@@ -438,6 +421,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::test_support::TestLevel;
 
+    const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
     #[test]
     fn update_shape_uses_supplied_neighbor_state_and_schedules_water_first() {
         init_vanilla_registry();

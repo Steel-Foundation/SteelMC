@@ -1,10 +1,10 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
+use steel_registry::blocks::properties::Direction;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
-use crate::behavior::blocks::MultifaceBlock;
+use crate::behavior::blocks::utils::multiface_face_property;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
@@ -15,13 +15,6 @@ use super::BlockRef;
 pub struct HugeMushroomBlock {
     block: BlockRef,
 }
-
-const DOWN: &BoolProperty = &BlockStateProperties::DOWN;
-const EAST: &BoolProperty = &BlockStateProperties::EAST;
-const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
-const SOUTH: &BoolProperty = &BlockStateProperties::SOUTH;
-const UP: &BoolProperty = &BlockStateProperties::UP;
-const WEST: &BoolProperty = &BlockStateProperties::WEST;
 
 impl HugeMushroomBlock {
     /// Creates a huge mushroom block behavior.
@@ -34,7 +27,7 @@ impl HugeMushroomBlock {
         let mut state = self.block.default_state();
         for direction in Direction::ALL {
             let exposed = world.get_block_state(pos.relative(direction)).get_block() != self.block;
-            state = state.set_value(MultifaceBlock::face_property(direction), exposed);
+            state = state.set_value(multiface_face_property(direction), exposed);
         }
         state
     }
@@ -55,7 +48,7 @@ impl BlockBehavior for HugeMushroomBlock {
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
         if neighbor_state.get_block() == self.block {
-            state.set_value(MultifaceBlock::face_property(direction), false)
+            state.set_value(multiface_face_property(direction), false)
         } else {
             state
         }
@@ -64,11 +57,18 @@ impl BlockBehavior for HugeMushroomBlock {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::TestLevel;
+    use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
     use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
-    use crate::test_support::TestLevel;
-
     use super::*;
+
+    const DOWN: &BoolProperty = &BlockStateProperties::DOWN;
+    const EAST: &BoolProperty = &BlockStateProperties::EAST;
+    const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
+    const SOUTH: &BoolProperty = &BlockStateProperties::SOUTH;
+    const UP: &BoolProperty = &BlockStateProperties::UP;
+    const WEST: &BoolProperty = &BlockStateProperties::WEST;
 
     #[test]
     fn placement_hides_only_faces_joined_to_the_same_mushroom_block() {

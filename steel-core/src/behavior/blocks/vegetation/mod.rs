@@ -51,7 +51,7 @@ mod leaves_block;
 mod lily_pad_block;
 mod mangrove_propagule_block;
 mod mossy_carpet_block;
-mod multiface_block;
+pub(crate) mod multiface_block;
 mod mushroom_block;
 mod mycelium_block;
 mod nether_fungus_block;

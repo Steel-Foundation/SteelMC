@@ -1,5 +1,6 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use crate::behavior::blocks::multiface_face_property;
 use crate::behavior::blocks::vegetation::{
     MultifaceSpreadPos, MultifaceSpreadType, multiface_spread_pos,
 };
@@ -356,7 +357,7 @@ impl FeatureDecorationRunner {
                 config.default_state
             }
         };
-        new_state = new_state.set_value(Self::multiface_face_property(placement_direction), true);
+        new_state = new_state.set_value(multiface_face_property(placement_direction), true);
         Some(new_state)
     }
 
@@ -466,19 +467,8 @@ impl FeatureDecorationRunner {
 
     fn multiface_has_face(state: BlockStateId, direction: Direction) -> bool {
         state
-            .try_get_value(Self::multiface_face_property(direction))
+            .try_get_value(multiface_face_property(direction))
             .unwrap_or(false)
-    }
-
-    const fn multiface_face_property(direction: Direction) -> &'static BoolProperty {
-        match direction {
-            Direction::Up => &BlockStateProperties::UP,
-            Direction::Down => &BlockStateProperties::DOWN,
-            Direction::North => &BlockStateProperties::NORTH,
-            Direction::South => &BlockStateProperties::SOUTH,
-            Direction::East => &BlockStateProperties::EAST,
-            Direction::West => &BlockStateProperties::WEST,
-        }
     }
 
     fn multiface_is_air_or_water(state: BlockStateId) -> bool {
