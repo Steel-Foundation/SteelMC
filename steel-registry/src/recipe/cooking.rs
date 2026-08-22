@@ -37,6 +37,37 @@ impl SmeltingRecipe {
     }
 }
 
+/// A blast furnace smelting recipe.
+#[derive(Debug)]
+pub struct BlastingRecipe {
+    pub id: Identifier,
+    pub ingredient: Ingredient,
+    pub result: RecipeResult,
+    pub experience: f32,
+    pub cooking_time: i32,
+}
+
+impl BlastingRecipe {
+    /// Returns whether this blasting recipe accepts `input`.
+    #[must_use]
+    pub fn matches(&self, input: &ItemStack) -> bool {
+        self.ingredient.test(input)
+    }
+
+    /// Assembles the result stack used by loot-table furnace smelting.
+    #[must_use]
+    pub fn assemble_result(&self, input_count: i32, use_input_count: bool) -> ItemStack {
+        let count = if use_input_count { input_count } else { 1 };
+        let mut result = self.result.to_item_stack();
+        result.set_count(
+            count
+                .saturating_mul(result.count())
+                .min(result.max_stack_size()),
+        );
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use steel_utils::Identifier;
@@ -81,6 +112,46 @@ mod tests {
         };
 
         let result = recipe.assemble_result(3, false);
+
+        assert!(result.is(&vanilla_items::IRON_INGOT));
+        assert_eq!(result.count(), 1);
+    }
+
+    #[test]
+    fn blasting_result_uses_input_count_when_requested() {
+        init_vanilla_registry();
+        let recipe = BlastingRecipe {
+            id: Identifier::vanilla_static("test_blasting"),
+            ingredient: Ingredient::Item(&vanilla_items::RAW_IRON),
+            result: RecipeResult {
+                item: &vanilla_items::IRON_INGOT,
+                count: 1,
+            },
+            experience: 0.7,
+            cooking_time: 100,
+        };
+
+        let result = recipe.assemble_result(4, true);
+
+        assert!(result.is(&vanilla_items::IRON_INGOT));
+        assert_eq!(result.count(), 4);
+    }
+
+    #[test]
+    fn blasting_result_can_ignore_input_count() {
+        init_vanilla_registry();
+        let recipe = BlastingRecipe {
+            id: Identifier::vanilla_static("test_blasting"),
+            ingredient: Ingredient::Item(&vanilla_items::RAW_IRON),
+            result: RecipeResult {
+                item: &vanilla_items::IRON_INGOT,
+                count: 1,
+            },
+            experience: 0.7,
+            cooking_time: 100,
+        };
+
+        let result = recipe.assemble_result(4, false);
 
         assert!(result.is(&vanilla_items::IRON_INGOT));
         assert_eq!(result.count(), 1);

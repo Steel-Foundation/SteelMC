@@ -3,7 +3,7 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-use super::cooking::SmeltingRecipe;
+use super::cooking::{BlastingRecipe, SmeltingRecipe};
 use super::crafting::{CraftingInput, CraftingRecipe, ShapedRecipe, ShapelessRecipe};
 use crate::item_stack::ItemStack;
 
@@ -19,6 +19,8 @@ pub struct RecipeRegistry {
     shapeless_recipes: Vec<&'static ShapelessRecipe>,
     /// All furnace smelting recipes.
     smelting_recipes: Vec<&'static SmeltingRecipe>,
+    /// All blast furnace smelting recipes.
+    blasting_recipes: Vec<&'static BlastingRecipe>,
     /// Whether registration is still allowed.
     allows_registering: bool,
 }
@@ -39,6 +41,7 @@ impl RecipeRegistry {
             shaped_recipes: Vec::new(),
             shapeless_recipes: Vec::new(),
             smelting_recipes: Vec::new(),
+            blasting_recipes: Vec::new(),
             allows_registering: true,
         }
     }
@@ -76,6 +79,15 @@ impl RecipeRegistry {
             "Cannot register recipes after the registry has been frozen"
         );
         self.smelting_recipes.push(recipe);
+    }
+
+    /// Registers a blast furnace smelting recipe.
+    pub fn register_blasting(&mut self, recipe: &'static BlastingRecipe) {
+        assert!(
+            self.allows_registering,
+            "Cannot register recipes after the registry has been frozen"
+        );
+        self.blasting_recipes.push(recipe);
     }
 
     /// Finds a matching crafting recipe for the given positioned input.
@@ -145,6 +157,19 @@ impl RecipeRegistry {
             .map(|recipe| recipe.assemble_result(input.count(), use_input_count))
     }
 
+    /// Finds the first blast furnace smelting result stack for `input`.
+    #[must_use]
+    pub fn find_blasting_result(
+        &self,
+        input: &ItemStack,
+        use_input_count: bool,
+    ) -> Option<ItemStack> {
+        self.blasting_recipes
+            .iter()
+            .find(|recipe| recipe.matches(input))
+            .map(|recipe| recipe.assemble_result(input.count(), use_input_count))
+    }
+
     /// Returns the number of shaped recipes.
     #[must_use]
     pub const fn shaped_count(&self) -> usize {
@@ -163,6 +188,12 @@ impl RecipeRegistry {
         self.smelting_recipes.len()
     }
 
+    /// Returns the number of blast furnace smelting recipes.
+    #[must_use]
+    pub const fn blasting_count(&self) -> usize {
+        self.blasting_recipes.len()
+    }
+
     /// Iterates over all shaped recipes.
     pub fn iter_shaped(&self) -> impl Iterator<Item = &'static ShapedRecipe> + '_ {
         self.shaped_recipes.iter().copied()
@@ -176,6 +207,11 @@ impl RecipeRegistry {
     /// Iterates over all furnace smelting recipes.
     pub fn iter_smelting(&self) -> impl Iterator<Item = &'static SmeltingRecipe> + '_ {
         self.smelting_recipes.iter().copied()
+    }
+
+    /// Iterates over all blast furnace smelting recipes.
+    pub fn iter_blasting(&self) -> impl Iterator<Item = &'static BlastingRecipe> + '_ {
+        self.blasting_recipes.iter().copied()
     }
 }
 

@@ -2,6 +2,7 @@
 
 mod barrel;
 mod beehive;
+mod blast_furnace;
 mod brushable;
 mod chiseled_bookshelf;
 mod comparator;
@@ -18,6 +19,7 @@ pub use barrel::{BARREL_SLOTS, BarrelBlockEntity};
 pub use beehive::{
     BEEHIVE_MAX_OCCUPANTS, BEEHIVE_MIN_OCCUPATION_TICKS_NECTARLESS, BeehiveBlockEntity,
 };
+pub use blast_furnace::{BLAST_FURNACE_SLOTS, BlastFurnaceBlockEntity, BlastFurnaceContainer};
 pub use brushable::BrushableBlockEntity;
 pub use chiseled_bookshelf::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEntity};
 pub use comparator::ComparatorBlockEntity;
