@@ -350,7 +350,7 @@ impl<'a, L: TreeLevel + ?Sized> TreeWritePreflight<'a, L> {
         }
     }
 
-    fn failed(&self) -> bool {
+    const fn failed(&self) -> bool {
         self.failed.get()
     }
 }
