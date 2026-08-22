@@ -7,6 +7,7 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::level_events;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_damage_types;
@@ -19,9 +20,9 @@ use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
+use crate::player::Player;
 use crate::portal::portal_shape::{PortalShape, nether_portal_config};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
-
 /// Behavior for fire blocks.
 #[block_behavior]
 pub struct FireBlock {
@@ -199,6 +200,16 @@ impl BlockBehavior for FireBlock {
             );
         }
     }
+    fn player_will_destroy(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        _player: &Player,
+    ) -> BlockStateId {
+        world.level_event(level_events::SOUND_EXTINGUISH_FIRE, pos, 0, None);
+        state
+    }
 }
 
 /// Behavior for soul fire survival.
@@ -261,6 +272,16 @@ impl BlockBehavior for SoulFireBlock {
         _is_precise: bool,
     ) {
         FireBlock::queue_entity_contact_effects(effect_collector, 2.0);
+    }
+    fn player_will_destroy(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        _player: &Player,
+    ) -> BlockStateId {
+        world.level_event(level_events::SOUND_EXTINGUISH_FIRE, pos, 0, None);
+        state
     }
 }
 
