@@ -45,6 +45,12 @@ const INERTIA: f64 = 0.99;
 const DESPAWN_LIFE: i32 = 1200;
 /// Vanilla `AbstractArrow.getDefaultGravity`.
 const GRAVITY: f64 = 0.05;
+/// Vanilla `AbstractArrow.startFalling`: per-axis random velocity multiplier
+/// upper bound applied when a stuck arrow pops free.
+const START_FALLING_JITTER_SCALE: f32 = 0.2;
+/// Vanilla `AbstractArrow.onHitBlock`: distance backed off along the impact
+/// sign direction before the arrow sticks into the block.
+const HIT_BLOCK_BACKOFF: f64 = 0.05;
 
 /// Vanilla `AbstractArrow.Pickup`. Ordinals match the vanilla enum for NBT.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -176,9 +182,9 @@ impl ArrowEntity {
     fn start_falling(&self) {
         self.set_in_ground(false);
         let jitter = DVec3::new(
-            f64::from(rand::random::<f32>() * 0.2),
-            f64::from(rand::random::<f32>() * 0.2),
-            f64::from(rand::random::<f32>() * 0.2),
+            f64::from(rand::random::<f32>() * START_FALLING_JITTER_SCALE),
+            f64::from(rand::random::<f32>() * START_FALLING_JITTER_SCALE),
+            f64::from(rand::random::<f32>() * START_FALLING_JITTER_SCALE),
         );
         self.set_velocity(self.velocity() * jitter);
         self.runtime.lock().life = 0;
@@ -199,9 +205,9 @@ impl ArrowEntity {
     fn stick_in_ground(&self, world: &Arc<World>) {
         let movement = self.velocity();
         let offset = DVec3::new(
-            movement.x.signum() * 0.05,
-            movement.y.signum() * 0.05,
-            movement.z.signum() * 0.05,
+            movement.x.signum() * HIT_BLOCK_BACKOFF,
+            movement.y.signum() * HIT_BLOCK_BACKOFF,
+            movement.z.signum() * HIT_BLOCK_BACKOFF,
         );
         let _ = self.try_set_position(self.position() - offset);
         self.set_velocity(DVec3::ZERO);
