@@ -206,38 +206,14 @@ impl HopperBlockEntity {
         }
 
         for slot in 0..HOPPER_SLOTS {
-            let Some(source) = guard.get(self_id) else {
-                return false;
-            };
-            let stack = source.get_item(slot).clone();
-            if stack.is_empty() {
-                continue;
-            }
-
-            let original_count = stack.count();
-            let Some(source) = guard.get_mut(self_id) else {
-                return false;
-            };
-            let taken = source.remove_item(slot, 1);
-            let leftover = Self::add_item_into(
+            if Self::try_move_single_item_from_hopper(
                 &mut guard,
-                Some(self_id),
+                self_id,
                 target_id,
-                taken,
+                slot,
                 Some(insertion_face),
-            );
-            if leftover.is_empty() {
+            ) {
                 return true;
-            }
-
-            // Nothing fit; restore the slot exactly as vanilla does.
-            let Some(source) = guard.get_mut(self_id) else {
-                return false;
-            };
-            if original_count == 1 {
-                source.set_item(slot, stack);
-            } else {
-                source.get_item_mut(slot).set_count(original_count);
             }
         }
         false
@@ -388,6 +364,73 @@ impl HopperBlockEntity {
         stack
     }
 
+    /// Lithium's single-item push path: mutate the hopper's source stack only
+    /// after a destination slot accepts it, avoiding copy/remove/restore work.
+    fn try_move_single_item_from_hopper(
+        guard: &mut ContainerLockGuard,
+        from_id: ContainerId,
+        to_id: ContainerId,
+        from_slot: usize,
+        direction: Option<Direction>,
+    ) -> bool {
+        let was_empty = {
+            let Some([source, target]) = guard.get_disjoint_mut([from_id, to_id]) else {
+                return false;
+            };
+            if source.get_item(from_slot).is_empty() {
+                return false;
+            }
+            let transfer_stack = source.get_item_mut(from_slot);
+            let Some(was_empty) = Self::try_insert_single_item(target, transfer_stack, direction)
+            else {
+                return false;
+            };
+            was_empty
+        };
+
+        let source_time = guard
+            .get_typed::<HopperContainer>(from_id)
+            .map(|source| source.ticked_game_time);
+        if was_empty
+            && let Some(destination) = guard.get_typed_mut::<HopperContainer>(to_id)
+            && !destination.is_on_custom_cooldown()
+        {
+            let skip_tick =
+                i32::from(source_time.is_some_and(|t| destination.ticked_game_time >= t));
+            destination.set_cooldown(MOVE_ITEM_SPEED - skip_tick, source_time);
+        }
+        guard.set_changed(to_id);
+        true
+    }
+
+    fn try_insert_single_item(
+        target: &mut dyn Container,
+        transfer_stack: &mut ItemStack,
+        direction: Option<Direction>,
+    ) -> Option<bool> {
+        let slot_count = Self::slot_count(target, direction);
+        for slot_index in 0..slot_count {
+            let slot = Self::slot_at(target, direction, slot_index)?;
+            if !Self::can_place_item_in_container(target, transfer_stack, slot, direction) {
+                continue;
+            }
+
+            let was_empty = target.is_empty();
+            if target.get_item(slot).is_empty() {
+                target.set_item(slot, transfer_stack.split(TRANSFER_AMOUNT));
+                return Some(was_empty);
+            }
+            let can_merge = Self::can_merge_items(target.get_item(slot), transfer_stack);
+            let has_space = target.get_item(slot).count() < transfer_stack.max_stack_size();
+            if can_merge && has_space {
+                transfer_stack.shrink(TRANSFER_AMOUNT);
+                target.get_item_mut(slot).grow(TRANSFER_AMOUNT);
+                return Some(was_empty);
+            }
+        }
+        None
+    }
+
     /// Vanilla `tryMoveInItem`: one slot's insertion attempt, including the
     /// cooldown hand-off when filling an empty hopper.
     fn try_move_in_item(
@@ -482,11 +525,23 @@ impl HopperBlockEntity {
                 .is_none_or(|worldly| worldly.can_take_item_through_face(slot, stack, direction))
     }
 
-    /// Vanilla `getSlots`: the slots reachable through `face`, flat when unsided.
-    fn slots_through_face(container: &dyn Container, face: Direction) -> Vec<usize> {
-        match container.as_worldly() {
-            Some(worldly) => worldly.get_slots_for_face(face).to_vec(),
-            None => (0..container.get_container_size()).collect(),
+    fn slot_count(container: &dyn Container, face: Option<Direction>) -> usize {
+        match (container.as_worldly(), face) {
+            (Some(worldly), Some(face)) => worldly.get_slots_for_face(face).len(),
+            _ => container.get_container_size(),
+        }
+    }
+
+    fn slot_at(
+        container: &dyn Container,
+        face: Option<Direction>,
+        slot_index: usize,
+    ) -> Option<usize> {
+        match (container.as_worldly(), face) {
+            (Some(worldly), Some(face)) => {
+                worldly.get_slots_for_face(face).get(slot_index).copied()
+            }
+            _ => (slot_index < container.get_container_size()).then_some(slot_index),
         }
     }
 
