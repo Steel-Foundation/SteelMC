@@ -7,15 +7,15 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::stat::Stat;
 use steel_utils::types::GameType;
 
+use super::{
+    Player, PlayerRespawnConfig, abilities::Abilities, experience::Experience, food_data::FoodData,
+    player_inventory::PlayerInventory,
+};
+use crate::player::stats_counter::StatState;
 use crate::{
     chunk_saver::{ChunkStorage, PersistentEntity},
     entity::{Entity, EntityFireFreezeState, LivingEntity},
     inventory::container::Container,
-};
-
-use super::{
-    Player, PlayerRespawnConfig, abilities::Abilities, experience::Experience, food_data::FoodData,
-    player_inventory::PlayerInventory,
 };
 
 /// Current data version for player saves.
@@ -288,11 +288,9 @@ impl PersistentPlayerData {
     /// Snapshots the player's tracked stats and their counters for persistence.
     fn stats_from_player(player: &Player) -> Vec<PersistentStat> {
         player
-            .stats
-            .lock()
-            .stats
-            .iter()
-            .map(|(&stat, &(count, _))| PersistentStat { stat, count })
+            .stats()
+            .into_iter()
+            .map(|(stat, count)| PersistentStat { stat, count })
             .collect()
     }
 
@@ -326,7 +324,7 @@ impl Player {
         *self.abilities.lock() = Abilities::default();
         *self.inventory.lock() = PlayerInventory::new();
         *self.food_data.lock() = FoodData::new();
-        self.stats.lock().clear();
+        self.stats.lock().reset();
 
         let mut experience = Experience::default();
         experience.dirty = true;
@@ -482,14 +480,14 @@ impl PersistentPlayerData {
         {
             let mut stats = player.stats.lock();
 
-            // This clears all counters, but also sets their dirty flag. This is important
-            // because the player needs to get notified that these stats got set to zero, for example
-            // after switching domains where the previous domain's state is remembered by the client.
-            // This means stale data is overwritten for the newer data the next time stats are sent.
-            stats.clear();
+            // This resets all counters to zero, but also marks them as non-persistent. However, they still need
+            // to be sent to the client the next time they are queried.
+            // This is important so that stale data from the previous domain doesn't stay in the client's cache.
+            // We then populate the counter with all the serialized stat counters from the new domain.
+            stats.reset();
 
             for PersistentStat { stat, count } in &self.stats {
-                stats.stats.insert(*stat, (*count, true));
+                stats.stats.insert(*stat, (*count, StatState::Dirty));
             }
         }
     }
