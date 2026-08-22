@@ -582,14 +582,12 @@ impl Server {
 mod tests {
     use std::sync::Arc;
 
-    use rustc_hash::FxHashMap;
-    use uuid::Uuid;
-
     use super::Server;
     use crate::{
         player::ResetReason,
         test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
     };
+    use rustc_hash::FxHashMap;
     use steel_utils::ChunkPos;
 
     #[test]
@@ -597,9 +595,7 @@ mod tests {
         let world = fresh_test_world("chunk_send_membership_revalidation");
         let center = ChunkPos::new(0, 0);
         insert_ready_full_chunk(&world, center);
-        let player =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(1), "ChunkTester", 1)
-                .build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "ChunkTester", 1).build();
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         assert!(world.players.remove_player_sync(&player).is_some());
 
