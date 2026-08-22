@@ -36,6 +36,9 @@ pub const HOPPER_SLOTS: usize = 5;
 /// Vanilla `MOVE_ITEM_SPEED`: ticks of cooldown after a successful transfer.
 const MOVE_ITEM_SPEED: i32 = 8;
 
+/// Items moved by one hopper transfer operation.
+const TRANSFER_AMOUNT: i32 = 1;
+
 /// Vanilla `NO_COOLDOWN_TIME`: cooldown value of a freshly created hopper.
 const NO_COOLDOWN_TIME: i32 = -1;
 
