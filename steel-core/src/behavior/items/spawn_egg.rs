@@ -13,8 +13,8 @@ use steel_utils::{BlockPos, types::InteractionHand};
 
 use super::place_on_water_block_item::get_player_pov_hit_result;
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockCollisionContext, InteractionResult, InventoryAccess, ItemBehavior,
-    UseItemContext, UseOnContext,
+    BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, InteractionResult,
+    InventoryAccess, ItemBehavior, UseItemContext, UseOnContext,
 };
 use crate::entity::{
     AgeableMob, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, LivingEntity, Mob,
@@ -173,8 +173,8 @@ impl ItemBehavior for SpawnEggItem {
         }
 
         let pos = hit_result.block_pos;
-        let block = context.world.get_block_state(pos).get_block();
-        if block != &vanilla_blocks::WATER && block != &vanilla_blocks::LAVA {
+        let state = context.world.get_block_state(pos);
+        if !state.is_liquid_block() {
             return InteractionResult::Pass;
         }
         if !context.world.may_interact(context.player, pos) {
