@@ -20,7 +20,7 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
 use crate::portal::portal_shape::{PortalShape, nether_portal_config};
-use crate::world::{LevelReader, World};
+use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 /// Behavior for fire blocks.
 #[block_behavior]
@@ -131,6 +131,21 @@ impl FireBlock {
 }
 
 impl BlockBehavior for FireBlock {
+    /// Removes fire when its supporting block no longer allows it to survive
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        direction: Direction,
+        _neighbor_pos: BlockPos,
+        _neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        if direction == Direction::Down && !self.can_survive(state, world, pos) {
+            return vanilla_blocks::AIR.default_state();
+        }
+        state
+    }
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         if SoulFireBlock::can_survive_at(context.world.as_ref(), context.place_pos()) {
             Some(vanilla_blocks::SOUL_FIRE.default_state())
@@ -238,8 +253,9 @@ mod tests {
     use steel_registry::{
         blocks::block_state_ext::BlockStateExt, init_vanilla_registry, vanilla_blocks,
     };
-    use steel_utils::{BlockPos, BlockStateId};
+    use steel_utils::{BlockPos, BlockStateId, Direction};
 
+    use crate::behavior::block::BlockBehavior;
     use crate::test_support::TestLevel;
 
     use super::FireBlock;
@@ -275,5 +291,21 @@ mod tests {
             FireBlock::get_state(&level, POS).get_block(),
             &vanilla_blocks::FIRE
         );
+    }
+    #[test]
+    fn update_shape_removes_unsupported_fire() {
+        init_vanilla_registry();
+        let behavior = FireBlock::new(&vanilla_blocks::FIRE);
+        let state = vanilla_blocks::FIRE.default_state();
+        let level = TestLevel::default();
+        let result = behavior.update_shape(
+            state,
+            &level,
+            POS,
+            Direction::Down,
+            POS.below(),
+            vanilla_blocks::AIR.default_state(),
+        );
+        assert_eq!(result.get_block(), &vanilla_blocks::AIR);
     }
 }
