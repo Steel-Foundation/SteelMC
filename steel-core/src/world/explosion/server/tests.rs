@@ -55,6 +55,10 @@ const ENTITY_EFFECT_TEST_RADIUS: f32 = 2.0;
 const STANDARD_TNT_EXPLOSION_POWER: f32 = 4.0;
 const VANILLA_SMALL_EXPLOSION_RADIUS: f32 = 2.0;
 const VANILLA_COMBINED_DROP_STACK_LIMIT: i32 = 16;
+const FULL_EXPOSURE: f32 = 1.0;
+const NO_EXPOSURE: f32 = 0.0;
+const FIXED_RAY_RANDOM_SAMPLE: f32 = 0.5;
+const DOES_NOT_CREATE_FIRE: bool = false;
 
 struct VetoExplosionSource {
     base: EntityBase,
@@ -272,7 +276,7 @@ fn vanilla_damage_formula_uses_distance_and_exposure() {
         }
 
         fn radius(&self) -> f32 {
-            4.0
+            STANDARD_TNT_EXPLOSION_POWER
         }
 
         fn center(&self) -> DVec3 {
@@ -285,15 +289,20 @@ fn vanilla_damage_formula_uses_distance_and_exposure() {
     }
 
     init_vanilla_registry();
+    let half_diameter_distance = f64::from(STANDARD_TNT_EXPLOSION_POWER);
+    let expected_damage_at_half_diameter = 22.0_f32;
     let entity = ItemEntity::new(
         &vanilla_entities::ITEM,
         next_entity_id(),
-        DVec3::new(4.0, 0.0, 0.0),
+        DVec3::X * half_diameter_distance,
         Weak::new(),
     );
-    let damage =
-        DefaultExplosionDamageCalculator.entity_damage_amount(&TestExplosion, &entity, 1.0);
-    assert_eq!(damage.to_bits(), 22.0_f32.to_bits());
+    let damage = DefaultExplosionDamageCalculator.entity_damage_amount(
+        &TestExplosion,
+        &entity,
+        FULL_EXPOSURE,
+    );
+    assert_eq!(damage.to_bits(), expected_damage_at_half_diameter.to_bits());
 }
 
 #[test]
@@ -331,8 +340,8 @@ fn explicit_position_explosion_damage_source_retains_raw_position() {
         None,
         None,
         position,
-        4.0,
-        false,
+        STANDARD_TNT_EXPLOSION_POWER,
+        DOES_NOT_CREATE_FIRE,
         BlockInteraction::Keep,
     );
 
@@ -369,7 +378,7 @@ fn primed_tnt_damage_source_preserves_direct_and_owner_attribution() {
         None,
         TEST_BLOCK_BOTTOM_CENTER,
         STANDARD_TNT_EXPLOSION_POWER,
-        false,
+        DOES_NOT_CREATE_FIRE,
         BlockInteraction::Destroy,
     );
 
@@ -424,21 +433,28 @@ fn player_knockback_map_excludes_creative_flying_and_spectator_players() {
         None,
         None,
         TEST_BLOCK_BOTTOM_CENTER,
-        2.0,
-        false,
+        ENTITY_EFFECT_TEST_RADIUS,
+        DOES_NOT_CREATE_FIRE,
         BlockInteraction::Keep,
     );
+    let initial_survival_health = survival.get_health();
 
     explosion.hurt_entities();
 
-    let expected_damage =
-        DefaultExplosionDamageCalculator.entity_damage_amount(&explosion, survival.as_ref(), 1.0);
+    let expected_damage = DefaultExplosionDamageCalculator.entity_damage_amount(
+        &explosion,
+        survival.as_ref(),
+        FULL_EXPOSURE,
+    );
     assert_eq!(
         survival.get_health().to_bits(),
-        (20.0_f32 - expected_damage).to_bits()
+        (initial_survival_health - expected_damage).to_bits()
     );
     let delta = survival.explosion_damage_origin() - explosion.center;
-    let expected_knockback = delta / delta.length() * 0.75;
+    let blast_diameter = f64::from(ENTITY_EFFECT_TEST_RADIUS) * 2.0;
+    let normalized_distance = survival.position().distance(explosion.center) / blast_diameter;
+    let expected_knockback =
+        delta / delta.length() * (1.0 - normalized_distance) * f64::from(FULL_EXPOSURE);
     assert_eq!(survival.velocity(), expected_knockback);
     assert_eq!(
         explosion.hit_players.get(&survival.id()),
@@ -457,20 +473,21 @@ fn packet_delivery_uses_vanillas_strict_sixty_four_block_cutoff() {
     let world = fresh_test_world("explosion_packet_cutoff");
     let center = TEST_BLOCK_BOTTOM_CENTER;
     insert_ready_full_chunk(&world, ChunkPos::from_block_pos(BlockPos::from(center)));
-    insert_ready_full_chunk(&world, ChunkPos::new(4, 0));
-    let (_near, near_packets) = recording_player(
+    let near_position = center + DVec3::X * (PACKET_VIEW_DISTANCE - PACKET_CUTOFF_EPSILON);
+    let boundary_position = center + DVec3::X * PACKET_VIEW_DISTANCE;
+    insert_ready_full_chunk(
         &world,
-        "Near",
-        center + DVec3::X * (PACKET_VIEW_DISTANCE - PACKET_CUTOFF_EPSILON),
+        ChunkPos::from_block_pos(BlockPos::from(boundary_position)),
     );
-    let (_boundary, boundary_packets) =
-        recording_player(&world, "Boundary", center + DVec3::X * PACKET_VIEW_DISTANCE);
+    let (_near, near_packets) = recording_player(&world, "Near", near_position);
+    let (_boundary, boundary_packets) = recording_player(&world, "Boundary", boundary_position);
     near_packets.lock().clear();
     boundary_packets.lock().clear();
 
+    let packet_only_radius = -1.0;
     world.explode(ExplosionOptions::new(
         center,
-        -1.0,
+        packet_only_radius,
         ExplosionInteraction::None,
     ));
 
@@ -493,7 +510,7 @@ fn small_particle_selection_matches_radius_and_block_interaction() {
             None,
             DVec3::ZERO,
             radius,
-            false,
+            DOES_NOT_CREATE_FIRE,
             interaction,
         )
     };
@@ -592,7 +609,7 @@ fn source_and_custom_calculator_hooks_run_on_the_sequential_lane() {
     ));
     let source = VetoExplosionSource {
         base: EntityBase::new(
-            71,
+            next_entity_id(),
             center,
             vanilla_entities::ITEM.dimensions,
             Arc::downgrade(&world),
@@ -607,12 +624,12 @@ fn source_and_custom_calculator_hooks_run_on_the_sequential_lane() {
         None,
         None,
         center,
-        2.0,
-        false,
+        VANILLA_SMALL_EXPLOSION_RADIUS,
+        DOES_NOT_CREATE_FIRE,
         BlockInteraction::Destroy,
     );
 
-    let source_affected = source_explosion.calculate_exploded_positions(|| 0.5);
+    let source_affected = source_explosion.calculate_exploded_positions(|| FIXED_RAY_RANDOM_SAMPLE);
 
     assert!(source_affected.is_empty());
     assert!(source.resistance_calls.load(Ordering::Relaxed) > 0);
@@ -626,11 +643,11 @@ fn source_and_custom_calculator_hooks_run_on_the_sequential_lane() {
         Some(&custom),
         None,
         center,
-        2.0,
-        false,
+        VANILLA_SMALL_EXPLOSION_RADIUS,
+        DOES_NOT_CREATE_FIRE,
         BlockInteraction::Destroy,
     );
-    let custom_affected = custom_explosion.calculate_exploded_positions(|| 0.5);
+    let custom_affected = custom_explosion.calculate_exploded_positions(|| FIXED_RAY_RANDOM_SAMPLE);
 
     assert!(custom_affected.is_empty());
     assert!(custom.resistance_calls.load(Ordering::Relaxed) > RAY_COUNT);
@@ -663,14 +680,16 @@ fn cached_exposure_raycast_matches_clear_partial_and_blocked_paths() {
         let exposure = EntityExplosionExposure::capture(player.as_ref());
         let uncached = exposure.calculate_uncached(world.as_ref(), center);
         let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), exposure.collision_context);
-        raycast.configure_clear_grid(BlockPos::new(0, 63, 0), BlockPos::new(4, 67, 1));
+        let clear_grid_min = BlockPos::new(0, 63, 0);
+        let clear_grid_max = BlockPos::new(4, 67, 1);
+        raycast.configure_clear_grid(clear_grid_min, clear_grid_max);
         let cached = exposure.calculate_with_visibility(|from| raycast.is_path_clear(from, center));
         assert_eq!(cached.to_bits(), uncached.to_bits());
         (cached, raycast.stats())
     };
 
     let (clear, stats) = compare();
-    assert_eq!(clear.to_bits(), 1.0_f32.to_bits());
+    assert_eq!(clear.to_bits(), FULL_EXPOSURE.to_bits());
     assert!(
         stats.cache_hits + stats.clear_grid_hits > 0,
         "stats={stats:?}"
@@ -698,7 +717,7 @@ fn cached_exposure_raycast_matches_clear_partial_and_blocked_paths() {
         UpdateFlags::UPDATE_NONE,
     ));
     let (blocked, _) = compare();
-    assert_eq!(blocked.to_bits(), 0.0_f32.to_bits());
+    assert_eq!(blocked.to_bits(), NO_EXPOSURE.to_bits());
 }
 
 #[test]
@@ -748,7 +767,9 @@ fn dense_exposure_grid_skips_repeated_static_empty_shape_resolution() {
     let exposure = EntityExplosionExposure::capture(&entity);
     let expected = exposure.calculate_uncached(world.as_ref(), center);
     let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), exposure.collision_context);
-    raycast.configure_clear_grid(BlockPos::new(0, 63, 0), BlockPos::new(8, 66, 1));
+    let clear_grid_min = BlockPos::new(0, 63, 0);
+    let clear_grid_max = BlockPos::new(8, 66, 1);
+    raycast.configure_clear_grid(clear_grid_min, clear_grid_max);
 
     let first = exposure.calculate_cached_with(&mut raycast, center);
     let after_first = raycast.stats();
@@ -795,19 +816,22 @@ fn cached_exposure_matches_across_chunk_and_section_boundaries() {
     let world = fresh_test_world("cached_exposure_boundaries");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     insert_ready_full_chunk(&world, ChunkPos::new(1, 0));
+    let occluding_block_pos = BlockPos::new(15, 79, 0);
+    let entity_position = DVec3::new(16.5, 80.0, 0.5);
+    let explosion_center = DVec3::new(14.5, 78.5, 0.5);
     assert!(world.set_block(
-        BlockPos::new(15, 79, 0),
+        occluding_block_pos,
         vanilla_blocks::STONE_SLAB.default_state(),
         UpdateFlags::UPDATE_NONE,
     ));
     let entity = ItemEntity::new(
         &vanilla_entities::ITEM,
         next_entity_id(),
-        DVec3::new(16.5, 80.0, 0.5),
+        entity_position,
         Arc::downgrade(&world),
     );
 
-    assert_exposure_matches_seen_percent(&world, DVec3::new(14.5, 78.5, 0.5), &entity);
+    assert_exposure_matches_seen_percent(&world, explosion_center, &entity);
 }
 
 #[test]
@@ -818,7 +842,9 @@ fn exposure_cache_does_not_retain_air_from_a_missing_chunk() {
     let from = TEST_BLOCK_CENTER + DVec3::X * NEAR_EXPOSURE_TARGET_DISTANCE;
     let to = TEST_BLOCK_CENTER;
     let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), BlockCollisionContext::empty());
-    raycast.configure_clear_grid(BlockPos::new(0, 64, 0), BlockPos::new(2, 64, 0));
+    let clear_grid_min = BlockPos::new(0, 64, 0);
+    let clear_grid_max = BlockPos::new(2, 64, 0);
+    raycast.configure_clear_grid(clear_grid_min, clear_grid_max);
 
     assert!(raycast.is_path_clear(from, to));
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
@@ -853,10 +879,12 @@ fn exposure_clipping_uses_the_entity_collision_context() {
     let walking_exposure = EntityExplosionExposure::capture(&entity);
     let mut shared_raycast =
         ExplosionExposureRaycast::new(world.as_ref(), walking_exposure.collision_context);
-    shared_raycast.configure_clear_grid(BlockPos::new(0, 63, 0), BlockPos::new(3, 66, 1));
+    let clear_grid_min = BlockPos::new(0, 63, 0);
+    let clear_grid_max = BlockPos::new(3, 66, 1);
+    shared_raycast.configure_clear_grid(clear_grid_min, clear_grid_max);
     let walking = walking_exposure.calculate_cached_with(&mut shared_raycast, center);
     let after_walking = shared_raycast.stats();
-    assert_eq!(walking.to_bits(), 1.0_f32.to_bits());
+    assert_eq!(walking.to_bits(), FULL_EXPOSURE.to_bits());
     assert_eq!(
         walking.to_bits(),
         walking_exposure
@@ -864,13 +892,14 @@ fn exposure_clipping_uses_the_entity_collision_context() {
             .to_bits()
     );
 
-    entity.set_fall_distance(3.0);
+    let descending_fall_distance = 3.0;
+    entity.set_fall_distance(descending_fall_distance);
     entity.set_shared_shift_key_down(true);
     let falling_exposure = EntityExplosionExposure::capture(&entity);
     assert!(falling_exposure.collision_context.is_descending());
     let falling = falling_exposure.calculate_cached_with(&mut shared_raycast, center);
     let after_falling = shared_raycast.stats();
-    assert_eq!(falling.to_bits(), 0.0_f32.to_bits());
+    assert_eq!(falling.to_bits(), NO_EXPOSURE.to_bits());
     assert_eq!(
         falling.to_bits(),
         falling_exposure
@@ -891,19 +920,21 @@ fn exposure_cache_is_cleared_before_block_mutating_entity_callbacks() {
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
     let wall_pos = TEST_WALL_POS;
     let position = TEST_BLOCK_BOTTOM_CENTER + DVec3::X * NEAR_EXPOSURE_TARGET_DISTANCE;
+    let mutator_places_wall_on_hit = true;
     let mutator = Arc::new(BlockMutatingExposureEntity::new(
         next_entity_id(),
         position,
         &world,
         wall_pos,
-        true,
+        mutator_places_wall_on_hit,
     ));
+    let observer_places_wall_on_hit = false;
     let observer = Arc::new(BlockMutatingExposureEntity::new(
         next_entity_id(),
         position,
         &world,
         wall_pos,
-        false,
+        observer_places_wall_on_hit,
     ));
     let mutator_entity: SharedEntity = mutator.clone();
     let observer_entity: SharedEntity = observer.clone();
@@ -940,6 +971,8 @@ fn moving_piston_exposure_uses_live_block_entities() {
         .default_state()
         .set_value(&BlockStateProperties::FACING, Direction::East)
         .set_value(&BlockStateProperties::EXTENDED, true);
+    let is_extending = false;
+    let is_source_piston = true;
     assert!(world.set_block(piston_pos, moving_state, UpdateFlags::UPDATE_NONE));
     let block_entity: SharedBlockEntity = Arc::new(PistonMovingBlockEntity::new_moving(
         Arc::downgrade(&world),
@@ -947,8 +980,8 @@ fn moving_piston_exposure_uses_live_block_entities() {
         moving_state,
         moved_state,
         Direction::East,
-        false,
-        true,
+        is_extending,
+        is_source_piston,
     ));
     assert!(world.set_block_entity(block_entity));
     let center = TEST_LOW_EXPLOSION_CENTER;
@@ -964,7 +997,9 @@ fn moving_piston_exposure_uses_live_block_entities() {
         !world.is_block_collision_path_clear(from, center, exposure.collision_context)
     }));
     let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), exposure.collision_context);
-    raycast.configure_clear_grid(BlockPos::new(0, 63, 0), BlockPos::new(3, 66, 1));
+    let clear_grid_min = BlockPos::new(0, 63, 0);
+    let clear_grid_max = BlockPos::new(3, 66, 1);
+    raycast.configure_clear_grid(clear_grid_min, clear_grid_max);
     assert_eq!(
         exposure
             .calculate_cached_with(&mut raycast, center)
@@ -988,14 +1023,16 @@ fn explosion_block_entity_context_preserves_the_live_loot_type() {
         .default_state()
         .set_value(&BlockStateProperties::FACING, Direction::East)
         .set_value(&BlockStateProperties::EXTENDED, true);
+    let is_extending = false;
+    let is_source_piston = true;
     let block_entity: SharedBlockEntity = Arc::new(PistonMovingBlockEntity::new_moving(
         Arc::downgrade(&world),
         pos,
         moving_state,
         moved_state,
         Direction::East,
-        false,
-        true,
+        is_extending,
+        is_source_piston,
     ));
     assert!(world.set_block(pos, moving_state, UpdateFlags::UPDATE_NONE));
     assert!(world.set_block_entity(block_entity));
@@ -1030,7 +1067,7 @@ fn explosion_applies_damage_and_impulse_to_nearby_entities() {
         TEST_BLOCK_BOTTOM_CENTER + DVec3::X,
         Arc::downgrade(&world),
     ));
-    item.set_item(ItemStack::with_count(&vanilla_items::STONE, 1));
+    item.set_item(ItemStack::new(&vanilla_items::STONE));
     let entity: SharedEntity = item.clone();
     let Ok(()) = world.try_add_entity(entity) else {
         panic!("test item must be added to its loaded chunk");
@@ -1061,7 +1098,7 @@ fn non_destructive_explosion_ignores_items_when_mob_griefing_is_disabled() {
         TEST_BLOCK_BOTTOM_CENTER + DVec3::X,
         Arc::downgrade(&world),
     ));
-    item.set_item(ItemStack::with_count(&vanilla_items::STONE, 1));
+    item.set_item(ItemStack::new(&vanilla_items::STONE));
     let entity: SharedEntity = item.clone();
     let Ok(()) = world.try_add_entity(entity) else {
         panic!("test item must be added to its loaded chunk");
@@ -1145,9 +1182,18 @@ fn submerged_source_explosion_does_not_push_block_attached_entities() {
         TEST_BLOCK_BOTTOM_CENTER,
         Arc::downgrade(&world),
     );
+    let water_height = 1.0;
+    let lava_height = 0.0;
+    let eye_in_water = false;
+    let eye_in_lava = false;
     source
         .base()
-        .set_fluid_contact(EntityFluidContact::from_parts(1.0, 0.0, false, false));
+        .set_fluid_contact(EntityFluidContact::from_parts(
+            water_height,
+            lava_height,
+            eye_in_water,
+            eye_in_lava,
+        ));
     assert!(source.is_in_water());
     let (item_frame, leash_knot) = add_block_attached_targets(&world);
     let mut options = ExplosionOptions::new(
@@ -1210,17 +1256,17 @@ fn destructive_explosion_removes_stone_and_spawns_its_loot() {
         None,
         TEST_BLOCK_CENTER,
         STANDARD_TNT_EXPLOSION_POWER,
-        false,
+        DOES_NOT_CREATE_FIRE,
         BlockInteraction::Destroy,
     );
 
     explosion.explode();
 
     assert!(world.get_block_state(center_pos).is_air());
-    let drops = world.get_entities_in_aabb_matching(
-        &WorldAabb::new(-1.0, 63.0, -1.0, 2.0, 67.0, 2.0),
-        |entity| entity.entity_type() == &vanilla_entities::ITEM,
-    );
+    let drop_search_bounds = WorldAabb::new(-1.0, 63.0, -1.0, 2.0, 67.0, 2.0);
+    let drops = world.get_entities_in_aabb_matching(&drop_search_bounds, |entity| {
+        entity.entity_type() == &vanilla_entities::ITEM
+    });
     assert!(drops.iter().any(|entity| {
         entity
             .as_ref()
@@ -1232,6 +1278,7 @@ fn destructive_explosion_removes_stone_and_spawns_its_loot() {
 #[test]
 fn combined_explosion_drops_never_exceed_vanilla_stack_limit() {
     const INPUT_STACK_SIZE: i32 = 10;
+    const EXPECTED_STACK_COUNT: usize = 2;
 
     init_vanilla_registry();
     let stack = ItemStack::with_count(&vanilla_items::STONE, INPUT_STACK_SIZE);
@@ -1240,7 +1287,7 @@ fn combined_explosion_drops_never_exceed_vanilla_stack_limit() {
     add_or_append_stack(&mut stacks, stack.clone(), BlockPos::ZERO);
     add_or_append_stack(&mut stacks, stack, BlockPos::ZERO);
 
-    assert_eq!(stacks.len(), 2);
+    assert_eq!(stacks.len(), EXPECTED_STACK_COUNT);
     assert_eq!(stacks[0].stack.count(), VANILLA_COMBINED_DROP_STACK_LIMIT);
     assert_eq!(
         stacks[1].stack.count(),
