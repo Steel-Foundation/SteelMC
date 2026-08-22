@@ -129,6 +129,7 @@ impl ItemBehavior for SpawnEggItem {
         let clicked_pos = context.hit_result.block_pos;
         let clicked_state = context.world.get_block_state(clicked_pos);
         if clicked_state.get_block() == &vanilla_blocks::SPAWNER {
+            // TODO: Use spawn eggs on a spawner block.
             // Spawner block-entity mutation is a separate foundation; do not
             // incorrectly create a mob beside a spawner in its place.
             return InteractionResult::Fail;
@@ -181,7 +182,7 @@ impl ItemBehavior for SpawnEggItem {
             return InteractionResult::Fail;
         }
 
-        Self::spawn_mob(
+        let result = Self::spawn_mob(
             context.world,
             context.player,
             &context.inv,
@@ -189,7 +190,9 @@ impl ItemBehavior for SpawnEggItem {
             pos,
             false,
             false,
-        )
+        );
+        // TODO: Award the ITEM_USED stat for the item if the result is Successful.
+        result
     }
 
     fn interact_living_entity(
