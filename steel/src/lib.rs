@@ -9,7 +9,9 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
+use std::path::Path;
 use steel_core::{command::CommandRegistry, permission::PermissionGroupManager, server::Server};
+use steel_loader::{DependencyResolver, ModDiscovery, ModLoader};
 use steel_login::{JavaTcpClient, ServerConnectionSession};
 use tokio::{net::TcpListener, runtime::Runtime, select};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -34,6 +36,8 @@ pub struct SteelServer {
     pub server: Arc<Server>,
     /// Session id UUID state
     pub connection_session: Arc<ServerConnectionSession>,
+    /// Loaded mods manager.
+    pub mod_loader: ModLoader,
 }
 
 /// Startup error for expected operational failures.
@@ -118,12 +122,36 @@ impl SteelServer {
                 source,
             })?;
 
+        // Mod discovery, dependency resolution, and loading
+        let mods_dir = Path::new("mods");
+        let discovered = ModDiscovery::discover_all(mods_dir);
+        let resolved_mods = match DependencyResolver::resolve(discovered) {
+            Ok(mods) => mods,
+            Err(err) => {
+                return Err(SteelServerError::Core(format!(
+                    "Mod dependency resolution failed: {err}"
+                )));
+            }
+        };
+
+        let server_arc = Arc::new(server);
+        let mut mod_loader = ModLoader::new();
+        let server_ptr = Arc::as_ptr(&server_arc) as *mut std::ffi::c_void;
+
+        for m in resolved_mods {
+            // SAFETY: Loading dynamic libraries and invoking mod init entrypoints.
+            if let Err(err) = unsafe { mod_loader.load_and_init(m, server_ptr) } {
+                return Err(SteelServerError::Core(format!("Failed to load mod: {err}")));
+            }
+        }
+
         Ok(Self {
             tcp_listener,
             cancel_token,
             client_id: 0,
-            server: Arc::new(server),
+            server: server_arc,
             connection_session: Arc::new(ServerConnectionSession::default()),
+            mod_loader,
         })
     }
 

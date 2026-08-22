@@ -377,6 +377,13 @@ async fn run_server(
     task_tracker.close();
     task_tracker.wait().await;
 
+    // Shutdown loaded mods
+    let server_ptr = Arc::as_ptr(&server) as *mut std::ffi::c_void;
+    // SAFETY: Shutting down loaded mods foreign entrypoints.
+    unsafe {
+        steel.mod_loader.shutdown(server_ptr);
+    }
+
     shutdown_worlds(&server).await;
 
     log::info!("Server stopped");

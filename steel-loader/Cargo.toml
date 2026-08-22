@@ -1,0 +1,20 @@
+[package]
+name = "steel-loader"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+steel-utils.workspace = true
+
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+semver = { workspace = true, features = ["serde"] }
+tracing.workspace = true
+thiserror.workspace = true
+libloading.workspace = true
+zip.workspace = true
+
+[lints]
+workspace = true
