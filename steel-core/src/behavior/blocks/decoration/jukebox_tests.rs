@@ -35,7 +35,7 @@ use crate::block_entity::{BlockEntity, SharedBlockEntity};
 use crate::bootstrap::init_globals_once;
 use crate::chunk::chunk_holder::ChunkHolder;
 use crate::entity::entities::ItemEntity;
-use crate::entity::{Entity as _, SharedEntity};
+use crate::entity::{Entity as _, SharedEntity, next_entity_id};
 use crate::player::connection::NetworkConnection;
 use crate::player::{Player, PlayerConnection, ResetReason};
 use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
@@ -223,7 +223,7 @@ fn recording_player(
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
         packets: Arc::clone(&packets),
     })));
-    let player = TestPlayerBuilder::new(Arc::clone(world), "JukeboxObserver", 9_001)
+    let player = TestPlayerBuilder::new(Arc::clone(world), "JukeboxObserver", next_entity_id())
         .connection(connection)
         .build();
     let moved = player.try_set_position(block_bottom_center(pos.above()));
