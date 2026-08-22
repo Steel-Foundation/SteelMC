@@ -36,7 +36,7 @@ pub use decoration::{
     WallHangingSignBlock, WallSignBlock, WallTorchBlock, WeatheringCopperChainBlock,
     WeatheringLanternBlock,
 };
-pub use falling::{ConcretePowderBlock, FallingBlock, SandBlock};
+pub use falling::{ConcretePowderBlock, DragonEggBlock, FallingBlock, SandBlock};
 pub use fluid::{BubbleColumnBlock, LiquidBlock};
 pub use portal::{
     EndGatewayBlock, EndPortalBlock, EndPortalFrameBlock, FireBlock, NetherPortalBlock,
@@ -51,14 +51,15 @@ pub use redstone::{
     WeatheringCopperBulbBlock, WeightedPressurePlateBlock,
 };
 pub(crate) use redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
+pub(crate) use utils::multiface_face_property;
 pub use vegetation::{
     AttachedStemBlock, AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock,
     CactusBlock, CactusFlowerBlock, CarrotBlock, CocoaBlock, CoralBlock, CropBlock,
-    DoublePlantBlock, FlowerBlock, MangroveLeavesBlock, MultifaceBlock, NetherSproutsBlock,
-    NetherWartBlock, PitcherCropBlock, PotatoBlock, PumpkinBlock, RootedDirtBlock, SeagrassBlock,
-    StemBlock, SugarCaneBlock, SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock,
-    TallSeagrassBlock, TintedParticleLeavesBlock, TorchflowerCropBlock,
-    UntintedParticleLeavesBlock,
+    DoublePlantBlock, FlowerBlock, GrassBlock, MangroveLeavesBlock, MultifaceBlock, MyceliumBlock,
+    NetherSproutsBlock, NetherWartBlock, PitcherCropBlock, PotatoBlock, PumpkinBlock,
+    RootedDirtBlock, SeagrassBlock, SnowyBlock, StemBlock, SugarCaneBlock, SweetBerryBushBlock,
+    TallFlowerBlock, TallGrassBlock, TallSeagrassBlock, TintedParticleLeavesBlock,
+    TorchflowerCropBlock, UntintedParticleLeavesBlock,
 };
 pub use vegetation::{
     BaseCoralFanBlock, BaseCoralPlantBlock, BaseCoralWallFanBlock, BigDripleafBlock,
@@ -66,10 +67,10 @@ pub use vegetation::{
     ChorusFlowerBlock, ChorusPlantBlock, CoralFanBlock, CoralPlantBlock, CoralWallFanBlock,
     DirtPathBlock, DryVegetationBlock, EyeblossomBlock, EyeblossomType, FarmlandBlock,
     FireflyBushBlock, FlowerBedBlock, GlowLichenBlock, HangingMossBlock, HangingRootsBlock,
-    KelpBlock, KelpPlantBlock, LeafLitterBlock, LilyPadBlock, MangrovePropaguleBlock,
-    MossyCarpetBlock, MushroomBlock, NetherFungusBlock, NetherRootsBlock, PointedDripstoneBlock,
-    SaplingBlock, SculkVeinBlock, SeaPickleBlock, ShortDryGrassBlock, SmallDripleafBlock,
-    SporeBlossomBlock, SulfurSpikeBlock, TallDryGrassBlock, TwistingVinesBlock,
+    HugeMushroomBlock, KelpBlock, KelpPlantBlock, LeafLitterBlock, LilyPadBlock,
+    MangrovePropaguleBlock, MossyCarpetBlock, MushroomBlock, NetherFungusBlock, NetherRootsBlock,
+    PointedDripstoneBlock, SaplingBlock, SculkVeinBlock, SeaPickleBlock, ShortDryGrassBlock,
+    SmallDripleafBlock, SporeBlossomBlock, SulfurSpikeBlock, TallDryGrassBlock, TwistingVinesBlock,
     TwistingVinesPlantBlock, VineBlock, WeepingVinesBlock, WeepingVinesPlantBlock, WitherRoseBlock,
     WoolCarpetBlock,
 };
