@@ -430,7 +430,7 @@ fn dynamic_error(
 }
 
 /*
-//TODO: reactivate this test when furance gets implemented
+//TODO: reactivate this test when furnace gets implemented
 #[cfg(test)]
 mod tests {
 use super::*;
