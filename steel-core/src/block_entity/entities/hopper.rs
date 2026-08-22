@@ -231,10 +231,16 @@ impl HopperBlockEntity {
             Self::unpack_in_guard(&mut guard, source_id, above_pos);
 
             // Vanilla pulls through the source's bottom face.
-            let slots = guard.get(source_id).map_or_else(Vec::new, |source| {
-                Self::slots_through_face(source, Direction::Down)
-            });
-            for slot in slots {
+            let slot_count = guard
+                .get(source_id)
+                .map_or(0, |source| Self::slot_count(source, Some(Direction::Down)));
+            for slot_index in 0..slot_count {
+                let Some(slot) = guard
+                    .get(source_id)
+                    .and_then(|source| Self::slot_at(source, Some(Direction::Down), slot_index))
+                else {
+                    return false;
+                };
                 if Self::try_take_in_item_from_slot(
                     &mut guard,
                     source_id,
