@@ -1,6 +1,5 @@
 //! Vanilla jukebox block behavior.
 
-use std::ptr;
 use std::sync::{Arc, Weak};
 
 use steel_macros::block_behavior;
@@ -63,10 +62,7 @@ impl BlockBehavior for JukeboxBlock {
         });
 
         if let Some((block_entity_type, data)) = block_entity_data
-            && ptr::eq(
-                block_entity_type,
-                &raw const vanilla_block_entity_types::JUKEBOX,
-            )
+            && block_entity_type == &vanilla_block_entity_types::JUKEBOX
             && let Some(block_entity) = world.get_block_entity(pos)
             && let Some(jukebox) = block_entity.downcast_ref::<JukeboxBlockEntity>()
         {
