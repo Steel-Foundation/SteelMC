@@ -239,6 +239,12 @@ impl StatTypeRegistry {
             "Cannot register stat types after the registry has been frozen"
         );
 
+        let key = &stat_type.key;
+        assert!(
+            !self.stat_types_by_key.contains_key(key),
+            "Cannot register duplicate stat type key {key}"
+        );
+
         let entry = StatTypeEntry {
             key: stat_type.key.clone(),
             registry: LazyLock::new(Box::new(|| StatValueRegistryData::new(registry_supplier()))),

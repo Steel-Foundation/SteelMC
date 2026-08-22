@@ -33,28 +33,28 @@ impl PlayerStatsFile {
         Ok(Self { stats })
     }
 
-    pub(super) fn into_persistent_stats(self) -> io::Result<Vec<PersistentStat>> {
+    pub(super) fn into_persistent_stats(self) -> Vec<PersistentStat> {
         let mut stats = Vec::new();
 
         for (stat_type_key, stats_in_stat_type) in self.stats {
-            let stat_type_entry = REGISTRY.stat_types.by_key(&stat_type_key).ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("unknown stat type {stat_type_key}"),
-                )
-            })?;
+            let Some(stat_type_entry) = REGISTRY.stat_types.by_key(&stat_type_key) else {
+                log::warn!(
+                    "Player stats file referenced unknown stat type {stat_type_key}, skipping stats in it"
+                );
+                continue;
+            };
 
             for (stat_value_key, count) in stats_in_stat_type {
-                let stat_value = stat_type_entry.value_from_key(&stat_value_key).ok_or_else(
-                    || {
-                        io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!(
-                                "unknown stat with type {stat_type_key} and value {stat_value_key}"
-                            ),
-                        )
-                    },
-                )?;
+                let Some(stat_value) = stat_type_entry.value_from_key(&stat_value_key) else {
+                    log::warn!(
+                        "Player stats file referenced unknown stat {}.{}:{}.{}, skipping it",
+                        stat_type_key.namespace,
+                        stat_type_key.path,
+                        stat_value_key.namespace,
+                        stat_value_key.path
+                    );
+                    continue;
+                };
 
                 stats.push(PersistentStat {
                     stat: Stat::from_erased(stat_type_entry, stat_value),
@@ -63,16 +63,13 @@ impl PlayerStatsFile {
             }
         }
 
-        Ok(stats)
+        stats
     }
 }
 
-pub(super) fn serialize_player_stats_file(file: &PlayerStatsFile) -> Option<String> {
-    if file.stats.is_empty() {
-        return None;
-    }
-
+pub(super) fn serialize_player_stats_file(file: &PlayerStatsFile) -> String {
     let mut output = String::new();
+
     for (stat_type, stats_in_stat_type) in &file.stats {
         output.push_str("[stats.\"");
         output.push_str(&stat_type.namespace);
@@ -93,5 +90,5 @@ pub(super) fn serialize_player_stats_file(file: &PlayerStatsFile) -> Option<Stri
         output.push('\n');
     }
 
-    Some(output)
+    output
 }

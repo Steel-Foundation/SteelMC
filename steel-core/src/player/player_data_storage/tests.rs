@@ -649,9 +649,7 @@ fn player_stats_file_roundtrips() {
 
     let file = sample_player_stats_file();
 
-    let mut stats = file
-        .into_persistent_stats()
-        .expect("conversion should not have failed");
+    let mut stats = file.into_persistent_stats();
 
     assert_eq!(stats.len(), 5);
 

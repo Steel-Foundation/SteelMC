@@ -72,14 +72,11 @@ impl FilePlayerDataStorage {
         data: &PersistentPlayerData,
     ) -> io::Result<()> {
         let player_stats_file = PlayerStatsFile::from_persistent_stats(&data.stats)?;
-        if let Some(toml_string) = serialize_player_stats_file(&player_stats_file) {
-            let final_path = Self::player_stats_file(&self.domain_players_dir(domain), uuid);
-            let _guard = self.file_lock(&final_path).await;
-            Self::write_atomic_path_locked(&final_path, toml_string.as_bytes()).await?;
-            log::debug!("Saved player stats for {uuid} in domain {domain}");
-        } else {
-            log::debug!("Did not save empty player stats for {uuid} in domain {domain}");
-        }
+        let toml_string = serialize_player_stats_file(&player_stats_file);
+        let final_path = Self::player_stats_file(&self.domain_players_dir(domain), uuid);
+        let _guard = self.file_lock(&final_path).await;
+        Self::write_atomic_path_locked(&final_path, toml_string.as_bytes()).await?;
+        log::debug!("Saved player stats for {uuid} in domain {domain}");
 
         Ok(())
     }
@@ -146,7 +143,7 @@ impl FilePlayerDataStorage {
                 format!("Invalid player stats for {uuid} in domain {domain}: {e}"),
             )
         })?;
-        let persistent_stats = stats_file.into_persistent_stats()?;
+        let persistent_stats = stats_file.into_persistent_stats();
         log::debug!("Loaded player stats for {uuid} in domain {domain}");
 
         Ok(Some(persistent_stats))

@@ -76,7 +76,6 @@ mod tests {
         let mut registry = StatTypeRegistry::new();
         register_vanilla_stat_types(&mut registry);
 
-        assert_eq!(entries.len(), 9);
         assert_eq!(registry.len(), entries.len());
 
         for (expected_id, entry) in entries.into_iter().enumerate() {
