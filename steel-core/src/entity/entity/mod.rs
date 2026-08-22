@@ -1,5 +1,11 @@
 use super::*;
 
+/// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
+/// this wide and tall (in blocks) get their position fudged after growing.
+const FUDGE_SMALL_DIMENSION_LIMIT: f32 = 4.0;
+/// Vanilla `Entity.fudgePositionAfterSizeChange` epsilon padding (vanilla `1.0E-6`).
+const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
+
 /// Final state accepted from a client-authored movement packet.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AcceptedClientMovement {
@@ -689,19 +695,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ///
     /// Mirrors vanilla `Entity.positionRider`.
     fn position_rider(&self, passenger: &dyn Entity) {
-        if !self.has_passenger(passenger) {
-            return;
-        }
-
-        let riding_position = self.passenger_riding_position(passenger);
-        let vehicle_attachment = passenger.vehicle_attachment_point(self.as_entity_event_source());
-        if let Err(error) = passenger.try_set_position(riding_position - vehicle_attachment) {
-            log::debug!(
-                "Failed to position passenger {} riding entity {}: {error}",
-                passenger.id(),
-                self.id()
-            );
-        }
+        position_rider_default(self, passenger);
     }
 
     /// Returns this entity's root vehicle ID, or this entity's ID when it is not riding.
@@ -2584,9 +2578,103 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Refreshes dimensions for the current physical pose.
     fn refresh_dimensions(&self) {
         let pose = self.pose();
-        self.base()
-            .set_pose_and_dimensions(pose, self.dimensions_for_pose(pose));
-        // TODO: Fudge position after growth once free-position probing exists.
+        let old_dimensions = self.base().dimensions();
+        let new_dimensions = self.dimensions_for_pose(pose);
+        self.base().set_pose_and_dimensions(pose, new_dimensions);
+
+        // Vanilla fudges the position when growth would push the entity into
+        // neighboring blocks, and only for small, non-player entities. Vanilla
+        // also requires the entity to have ticked once (`!firstTick`), which
+        // Steel does not track; no current entity grows on its first tick, so
+        // the omission is not observable.
+        let is_small = new_dimensions.width <= FUDGE_SMALL_DIMENSION_LIMIT
+            && new_dimensions.height <= FUDGE_SMALL_DIMENSION_LIMIT;
+        if self.level().is_some()
+            && !self.no_physics()
+            && is_small
+            && (new_dimensions.width > old_dimensions.width
+                || new_dimensions.height > old_dimensions.height)
+            && self.as_player().is_none()
+        {
+            self.fudge_position_after_size_change(old_dimensions);
+        }
+    }
+
+    /// Vanilla `Entity.fudgePositionAfterSizeChange`.
+    ///
+    /// Moves the entity to the closest free position for its new dimensions
+    /// within the previous dimensions' footprint, returning whether a valid
+    /// position was found. Vanilla runs this after growing in a confined space;
+    /// Steel's `ThrownEgg` hatchlings also use it to fit a newborn chick at the
+    /// egg's impact point.
+    fn fudge_position_after_size_change(&self, previous_dimensions: EntityDimensions) -> bool {
+        let new_dimensions = self.dimensions_for_pose(self.pose());
+        let old_center =
+            self.position() + DVec3::new(0.0, f64::from(previous_dimensions.height) / 2.0, 0.0);
+        let width_delta = f64::from((new_dimensions.width - previous_dimensions.width).max(0.0))
+            + FUDGE_POSITION_EPSILON;
+        let height_delta = f64::from((new_dimensions.height - previous_dimensions.height).max(0.0))
+            + FUDGE_POSITION_EPSILON;
+        let allowed_centers = [WorldAabb::of_size(
+            old_center,
+            width_delta,
+            height_delta,
+            width_delta,
+        )];
+
+        let Some(world) = self.level() else {
+            return false;
+        };
+        let provider = WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
+        if let Some(free_center) = provider.find_free_position(
+            &allowed_centers,
+            old_center,
+            f64::from(new_dimensions.width),
+            f64::from(new_dimensions.height),
+            f64::from(new_dimensions.width),
+        ) {
+            let new_position =
+                free_center + DVec3::new(0.0, -f64::from(new_dimensions.height) / 2.0, 0.0);
+            match self.try_set_position(new_position) {
+                Ok(()) => return true,
+                Err(error) => {
+                    log::warn!(
+                        "failed to fudge entity {} position after size change: {error}",
+                        self.id()
+                    );
+                }
+            }
+        }
+
+        // Vanilla retries ignoring the vertical axis when both dimensions grow,
+        // allowing the entity to keep its previous footprint horizontally.
+        if new_dimensions.width > previous_dimensions.width
+            && new_dimensions.height > previous_dimensions.height
+        {
+            let allowed_centers_ignoring_y = [WorldAabb::of_size(
+                old_center,
+                width_delta,
+                FUDGE_POSITION_EPSILON,
+                width_delta,
+            )];
+            if let Some(free_center) = provider.find_free_position(
+                &allowed_centers_ignoring_y,
+                old_center,
+                f64::from(new_dimensions.width),
+                f64::from(previous_dimensions.height),
+                f64::from(new_dimensions.width),
+            ) {
+                let new_position = free_center
+                    + DVec3::new(
+                        0.0,
+                        -f64::from(previous_dimensions.height) / 2.0 + FUDGE_POSITION_EPSILON,
+                        0.0,
+                    );
+                return self.try_set_position(new_position).is_ok();
+            }
+        }
+
+        false
     }
 
     /// Sets the physical pose and synchronized pose metadata.
@@ -3473,6 +3561,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return false;
         };
         living.hurt_server(world, source, amount)
+    }
+}
+
+/// Repositions a direct passenger from the vehicle's attachment point.
+///
+/// Shared between the [`Entity::position_rider`] default and entity overrides that
+/// extend it (e.g. `Chicken` mirroring the rider's body yaw).
+pub(crate) fn position_rider_default<E: Entity + ?Sized>(entity: &E, passenger: &dyn Entity) {
+    if !entity.has_passenger(passenger) {
+        return;
+    }
+
+    let riding_position = entity.passenger_riding_position(passenger);
+    let vehicle_attachment = passenger.vehicle_attachment_point(entity.as_entity_event_source());
+    if let Err(error) = passenger.try_set_position(riding_position - vehicle_attachment) {
+        log::debug!(
+            "Failed to position passenger {} riding entity {}: {error}",
+            passenger.id(),
+            entity.id()
+        );
     }
 }
 
