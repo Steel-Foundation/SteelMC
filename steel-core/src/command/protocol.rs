@@ -739,6 +739,14 @@ mod tests {
     }
 
     #[test]
+    fn steel_block_state_argument_projects_vanillas_parser() {
+        let (argument, suggestions) = SteelArgumentType::block_state().protocol_argument();
+
+        assert!(matches!(argument, ProtocolArgumentType::BlockState));
+        assert!(suggestions.is_none());
+    }
+
+    #[test]
     fn steel_nbt_path_argument_projects_vanillas_parser() {
         let (argument, suggestions) = SteelArgumentType::nbt_path().protocol_argument();
 

@@ -10,7 +10,7 @@ use super::{
 /// Maps component keys to their values. Used on items to store their data components.
 #[derive(Debug, Clone)]
 pub struct DataComponentMap {
-    map: FxHashMap<Identifier, ComponentData>,
+    pub(super) map: FxHashMap<Identifier, ComponentData>,
 }
 
 impl Default for DataComponentMap {
@@ -128,6 +128,11 @@ impl DataComponentMap {
     /// Iterates over component keys.
     pub fn keys(&self) -> impl Iterator<Item = &Identifier> {
         self.map.keys()
+    }
+
+    /// Iterates over component keys and their erased values.
+    pub fn iter(&self) -> impl Iterator<Item = (&Identifier, &ComponentData)> {
+        self.map.iter()
     }
 
     /// Gets raw component data by key (for plugin use).

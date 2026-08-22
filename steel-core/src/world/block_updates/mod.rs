@@ -49,6 +49,11 @@ impl World {
             .is_entity_ticking_full_chunk_loaded(Self::chunk_pos_for_block(pos))
     }
 
+    pub(crate) fn is_block_ticking_chunk_loaded(&self, pos: BlockPos) -> bool {
+        self.chunk_map
+            .is_block_ticking_full_chunk_loaded(Self::chunk_pos_for_block(pos))
+    }
+
     pub(crate) fn is_full_chunk_loaded_at(&self, pos: BlockPos) -> bool {
         self.chunk_map
             .with_full_chunk(Self::chunk_pos_for_block(pos), |_| ())
@@ -385,6 +390,35 @@ impl World {
     pub fn update_neighbors_at(self: &Arc<Self>, pos: BlockPos, source_block: BlockRef) {
         self.neighbor_updater
             .update_neighbors_at_except_from_facing(self, pos, source_block, None);
+    }
+
+    /// Runs Vanilla's deferred command-placement neighbor notifications.
+    ///
+    /// `/fill`, `/setblock`, and `/clone` suppress ordinary neighbor updates
+    /// while mutating their regions, then replay this operation in a stable
+    /// second pass.
+    pub(crate) fn update_neighbors_on_block_set(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        old_state: BlockStateId,
+    ) {
+        let state = self.get_block_state(pos);
+        let block = state.get_block();
+        if old_state.get_block() != block {
+            BLOCK_BEHAVIORS
+                .get_behavior(old_state.get_block())
+                .affect_neighbors_after_removal(old_state, self, pos, false);
+        }
+
+        self.update_neighbors_at(pos, block);
+        self.update_neighbors_at(pos, block);
+        if BLOCK_BEHAVIORS
+            .get_behavior(block)
+            .has_analog_output_signal(state)
+        {
+            self.update_neighbor_for_output_signal(pos, block);
+            self.update_neighbor_for_output_signal(pos, block);
+        }
     }
 
     /// Updates all neighbors except the one in `skip_direction`.
