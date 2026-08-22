@@ -1,7 +1,9 @@
+use std::io::Cursor;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use glam::DVec3;
+use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
     ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
 };
@@ -11,21 +13,25 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::data_component_predicate::DataComponentMatchers;
 use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
 use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
+use steel_registry::packets::play::C_REMOVE_ENTITIES;
 use steel_registry::{
     RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
     vanilla_attributes, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_rules,
     vanilla_items, vanilla_menu_types,
 };
-use steel_utils::locks::IntoShared as _;
+use steel_utils::codec::VarInt;
+use steel_utils::locks::{IntoShared as _, SyncMutex};
+use steel_utils::serial::ReadFrom;
 use steel_utils::types::{Difficulty, GameType, InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
+use text_components::TextComponent;
 use uuid::Uuid;
 
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
-    DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, damage::DamageSource,
-    entities::ItemEntity, next_entity_id,
+    DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, SharedEntity,
+    damage::DamageSource, entities::ItemEntity, next_entity_id,
 };
 use crate::inventory::{
     click::{Click, DragKind, QuickCraft},
@@ -41,7 +47,9 @@ use crate::test_support::{
 use crate::world::World;
 
 use super::{
-    ClientInformation, DEATH_DURATION, Player, PlayerPermissionState, ResetReason,
+    ClientInformation, DEATH_DURATION, Player, PlayerConnection, PlayerPermissionState,
+    ResetReason,
+    connection::NetworkConnection,
     experience::Experience,
     experience::first_point_level_up_sound,
     game_mode::block_breaking::BlockBreakAction,
@@ -60,7 +68,8 @@ const CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK: u8 = 0b0001_0101;
 #[test]
 fn client_information_initializes_player_cosmetic_metadata() {
     let world = fresh_test_world("initial_player_cosmetic_metadata");
-    let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "TestPlayer", 1)
+    let player = TestPlayerBuilder::new(world, "TestPlayer", 1)
+        .uuid(Uuid::from_u128(1))
         .client_information(ClientInformation {
             model_customization: MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET,
             main_hand: HumanoidArm::Left,
@@ -161,8 +170,68 @@ fn play_client_information_dirties_changed_cosmetic_metadata_once() {
     assert!(player.pack_dirty_entity_data().is_none());
 }
 
+struct RecordingConnection {
+    sent_packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
+    closed: AtomicBool,
+}
+
+impl NetworkConnection for RecordingConnection {
+    fn compression(&self) -> Option<CompressionInfo> {
+        None
+    }
+
+    fn send_encoded(&self, packet: EncodedPacket) {
+        self.sent_packets.lock().push(packet);
+    }
+
+    fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
+        self.sent_packets.lock().extend(packets);
+    }
+
+    fn disconnect_with_reason(&self, _reason: TextComponent) {}
+
+    fn tick(&self) {}
+
+    fn latency(&self) -> i32 {
+        0
+    }
+
+    fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+    }
+
+    fn closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
+}
+
+fn removed_entity_ids(packet: &EncodedPacket) -> Vec<i32> {
+    let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+    let Ok(_) = VarInt::read(&mut cursor) else {
+        return Vec::new();
+    };
+    let Ok(packet_id) = VarInt::read(&mut cursor) else {
+        return Vec::new();
+    };
+    if packet_id.0 != C_REMOVE_ENTITIES {
+        return Vec::new();
+    }
+    let Ok(entity_count) = VarInt::read(&mut cursor) else {
+        return Vec::new();
+    };
+
+    let mut entity_ids = Vec::new();
+    for _ in 0..entity_count.0 {
+        let Ok(entity_id) = VarInt::read(&mut cursor) else {
+            return Vec::new();
+        };
+        entity_ids.push(entity_id.0);
+    }
+    entity_ids
+}
+
 fn test_player(world: Arc<World>) -> Arc<Player> {
-    let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "TestPlayer", 1).build();
+    let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
     player.set_client_loaded(true);
     player
 }
@@ -525,6 +594,58 @@ fn death_keeps_menu_items_until_entity_removal() {
 }
 
 #[test]
+fn death_removes_tracked_entities_from_dead_players_client() {
+    init_vanilla_registry();
+    let world = fresh_test_world("death_entity_pairing_cleanup");
+    let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
+    let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+        sent_packets: Arc::clone(&sent_packets),
+        closed: AtomicBool::new(false),
+    })));
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1)
+        .connection(connection)
+        .build();
+    let item: SharedEntity = Arc::new(ItemEntity::new(
+        &vanilla_entities::ITEM,
+        2,
+        DVec3::ZERO,
+        Arc::downgrade(&world),
+    ));
+
+    world.entity_tracker().add(
+        &item,
+        |_| vec![player.id()],
+        |player_id| (player_id == player.id()).then(|| Arc::clone(&player)),
+    );
+    assert_eq!(
+        world.entity_tracker().tracking_player_ids(item.id()),
+        vec![player.id()]
+    );
+    sent_packets.lock().clear();
+
+    for _ in 0..DEATH_DURATION {
+        player.tick_death();
+    }
+
+    let removed_ids = sent_packets
+        .lock()
+        .iter()
+        .flat_map(removed_entity_ids)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        removed_ids,
+        vec![item.id()],
+        "vanilla removes every entity pairing from a dead player's client"
+    );
+    assert!(
+        world
+            .entity_tracker()
+            .tracking_player_ids(item.id())
+            .is_empty()
+    );
+}
+
+#[test]
 fn death_respawn_drops_menu_items_exactly_once() {
     init_vanilla_registry();
     let world = fresh_test_world("death_respawn_menu_cleanup");
@@ -801,8 +922,7 @@ fn equipping_player_target_uses_inventory_equipment_storage() {
     init_vanilla_registry();
     let world = Arc::clone(test_world());
     let source = test_player(Arc::clone(&world));
-    let target =
-        TestPlayerBuilder::new(world, Uuid::from_u128(2), "Target", next_entity_id()).build();
+    let target = TestPlayerBuilder::new(world, "Target", next_entity_id()).build();
     let mut helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
     let Some(mut equippable) = helmet.get_equippable().cloned() else {
         panic!("diamond helmet should have equippable data");

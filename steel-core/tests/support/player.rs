@@ -52,15 +52,10 @@ enum TestPlayerContext {
 }
 
 impl TestPlayerBuilder {
-    pub(crate) fn new(
-        world: Arc<World>,
-        uuid: Uuid,
-        name: impl Into<String>,
-        entity_id: i32,
-    ) -> Self {
+    pub(crate) fn new(world: Arc<World>, name: impl Into<String>, entity_id: i32) -> Self {
         Self {
             profile: GameProfile {
-                id: uuid,
+                id: Uuid::new_v4(),
                 name: name.into(),
                 properties: Vec::new(),
                 profile_actions: None,
@@ -71,6 +66,11 @@ impl TestPlayerBuilder {
             entity_id,
             client_information: ClientInformation::default(),
         }
+    }
+
+    pub(crate) fn uuid(mut self, uuid: Uuid) -> Self {
+        self.profile.id = uuid;
+        self
     }
 
     pub(crate) fn connection(mut self, connection: Arc<PlayerConnection>) -> Self {
