@@ -1323,12 +1323,14 @@ mod tests {
         let mut guard = ContainerLockGuard::lock_all(&[&hopper_ref, &source_ref]);
 
         // Only slot 1 faces Down, and its dirt fails the through-face check.
+        let source_container = guard.get(source_id).expect("source");
         assert_eq!(
-            HopperBlockEntity::slots_through_face(
-                guard.get(source_id).expect("source"),
-                Direction::Down,
-            ),
-            vec![1],
+            HopperBlockEntity::slot_count(source_container, Some(Direction::Down)),
+            1
+        );
+        assert_eq!(
+            HopperBlockEntity::slot_at(source_container, Some(Direction::Down), 0),
+            Some(1)
         );
         assert!(!HopperBlockEntity::try_take_in_item_from_slot(
             &mut guard,
