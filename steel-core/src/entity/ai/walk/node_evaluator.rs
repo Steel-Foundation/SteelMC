@@ -17,7 +17,7 @@ pub struct AcceptedNodeRequest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WalkNeighbors {
-    nodes: [Option<i32>; 8],
+    nodes: [Option<i32>; 10],
     len: usize,
 }
 
@@ -25,7 +25,7 @@ impl WalkNeighbors {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            nodes: [None; 8],
+            nodes: [None; 10],
             len: 0,
         }
     }
@@ -157,7 +157,7 @@ impl WalkNodeEvaluator {
     pub fn get_neighbors(
         &mut self,
         context: &mut PathfindingContext<'_>,
-        collision: &mut impl WalkNodeCollision,
+        collision: &mut dyn WalkNodeCollision,
         pos_hash: i32,
     ) -> WalkNeighbors {
         let Some(pos) = self.node(pos_hash) else {
@@ -326,7 +326,7 @@ impl WalkNodeEvaluator {
     pub fn find_accepted_node(
         &mut self,
         context: &mut PathfindingContext<'_>,
-        collision: &mut impl WalkNodeCollision,
+        collision: &mut dyn WalkNodeCollision,
         request: AcceptedNodeRequest,
     ) -> Option<i32> {
         let x = request.pos.x();
@@ -558,7 +558,7 @@ impl WalkNodeEvaluator {
     fn try_jump_on(
         &mut self,
         context: &mut PathfindingContext<'_>,
-        collision: &mut impl WalkNodeCollision,
+        collision: &mut dyn WalkNodeCollision,
         request: AcceptedNodeRequest,
     ) -> Option<i32> {
         let x = request.pos.x();
@@ -663,7 +663,7 @@ impl WalkNodeEvaluator {
 
     fn can_reach_without_collision(
         &self,
-        collision: &mut impl WalkNodeCollision,
+        collision: &mut dyn WalkNodeCollision,
         target: i32,
     ) -> bool {
         let Some(node) = self.node(target) else {
@@ -727,4 +727,35 @@ impl WalkNodeEvaluator {
 
 const fn clockwise_direction_index(index: usize) -> usize {
     (index + 1) % VANILLA_HORIZONTAL_DIRECTIONS.len()
+}
+
+impl NodeEvaluator for WalkNodeEvaluator {
+    fn reset_search_state(&mut self) {
+        self.reset_search_state();
+    }
+
+    fn node(&self, hash: i32) -> Option<&Node> {
+        self.node(hash)
+    }
+
+    fn node_mut(&mut self, hash: i32) -> Option<&mut Node> {
+        self.node_mut(hash)
+    }
+
+    fn nodes_mut(&mut self) -> &mut NodeStore {
+        self.nodes_mut()
+    }
+
+    fn get_start(&mut self, context: &mut PathfindingContext<'_>) -> i32 {
+        self.get_start(context)
+    }
+
+    fn get_neighbors(
+        &mut self,
+        context: &mut PathfindingContext<'_>,
+        collision: &mut impl WalkNodeCollision,
+        pos_hash: i32,
+    ) -> WalkNeighbors {
+        self.get_neighbors(context, collision, pos_hash)
+    }
 }

@@ -3,8 +3,8 @@ use std::{f32::consts::TAU, mem, sync::Arc};
 use glam::DVec3;
 use steel_protocol::packets::game::{
     CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
-    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetCarriedItem,
-    SSetCreativeModeSlot,
+    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSelectTrade,
+    SSetCarriedItem, SSetCreativeModeSlot,
 };
 use steel_registry::item_stack::ItemStack;
 use steel_utils::{
@@ -199,6 +199,16 @@ impl Player {
         // - Stonecutter recipe selection
         // - Loom pattern selection
         // - Lectern page turning
+    }
+
+    pub fn handle_select_trade(&self, packet: SSelectTrade) {
+        match self.take_open_menu_for_callback(None) {
+            Ok(mut menu) => {
+                menu.select_trade(usize::try_from(packet.item).unwrap_or(usize::MAX), self);
+                self.finish_open_menu_callback(menu);
+            }
+            Err(_) => {}
+        }
     }
 
     /// Handles a container click packet (slot interaction).
@@ -574,13 +584,24 @@ impl Player {
             break;
         }
 
+        // === RUNTIME DEBUG INSTRUMENTATION ===
+        let container_id = menu.container_id();
+        let menu_type = menu
+            .menu_type()
+            .expect("a menu opened via open_menu must declare a menu type");
+
+        eprintln!("[PLAYER-{}] Sending COpenScreen packet:", self.id());
+        eprintln!("[PLAYER-{}]   container_id: {}", self.id(), container_id);
+        eprintln!("[PLAYER-{}]   menu_type: {}", self.id(), menu_type.key);
+        eprintln!("[PLAYER-{}]   title: {:?}", self.id(), title);
+
         self.send_packet(COpenScreen {
-            container_id: i32::from(menu.container_id()),
-            menu_type: menu
-                .menu_type()
-                .expect("a menu opened via open_menu must declare a menu type"),
+            container_id: i32::from(container_id),
+            menu_type,
             title,
         });
+
+        eprintln!("[PLAYER-{}] COpenScreen packet sent\n", self.id());
 
         // Fire on_open before the full sync so anything the menu populates here
         // is included in the first render sent below.

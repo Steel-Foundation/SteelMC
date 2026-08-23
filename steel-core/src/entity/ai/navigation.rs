@@ -8,7 +8,7 @@ use steel_utils::BlockPos;
 
 use crate::entity::ai::path::{Path, PathType, PathTypeCache, PathfindingContext};
 use crate::entity::ai::pathfinder::{PathFinder, PathRequest};
-use crate::entity::ai::walk::{WalkNodeCollision, WalkNodeEvaluator};
+use crate::entity::ai::walk::{NodeEvaluator, WalkNodeCollision, WalkNodeEvaluator};
 use crate::world::LevelReader;
 
 const DIRECT_TARGET_REACHED_DISTANCE_SQR: f64 = 2.500_000_3e-7;
@@ -68,6 +68,7 @@ pub struct PathNavigation {
     can_walk_over_fences: bool,
     avoid_sun: bool,
     can_path_to_targets_below_surface: bool,
+    water_bound: bool,
 }
 
 impl PathNavigation {
@@ -99,6 +100,7 @@ impl PathNavigation {
             can_walk_over_fences: false,
             avoid_sun: false,
             can_path_to_targets_below_surface: false,
+            water_bound: false,
         }
     }
 
@@ -217,6 +219,15 @@ impl PathNavigation {
         self.can_path_to_targets_below_surface = can_path_to_targets_below_surface;
     }
 
+    #[must_use]
+    pub const fn water_bound(&self) -> bool {
+        self.water_bound
+    }
+
+    pub const fn set_water_bound(&mut self, water_bound: bool) {
+        self.water_bound = water_bound;
+    }
+
     pub const fn tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
     }
@@ -244,7 +255,7 @@ impl PathNavigation {
 
     pub fn create_path(
         &mut self,
-        evaluator: &mut WalkNodeEvaluator,
+        evaluator: &mut impl NodeEvaluator,
         level: &dyn LevelReader,
         collision: &mut impl WalkNodeCollision,
         request: NavigationPathRequest<'_>,

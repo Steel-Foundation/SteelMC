@@ -212,6 +212,12 @@ impl Menu {
         kind.on_tick(behavior, &mut guard, player);
     }
 
+    /// Dispatches a merchant offer selection to the menu kind.
+    pub fn select_trade(&mut self, offer: usize, player: &Player) {
+        let Self { behavior, kind, .. } = self;
+        kind.on_select_trade(behavior, offer, player);
+    }
+
     /// Shift-click (quick move) for a slot: the kind's override if any, else the
     /// declarative route table. Returns the item originally in the slot, or
     /// empty if nothing moved.

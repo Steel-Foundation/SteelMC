@@ -22,6 +22,7 @@ mod c_hurt_animation;
 mod c_level_event;
 mod c_level_particles;
 mod c_login;
+mod c_merchant_offers;
 mod c_move_entity;
 mod c_move_vehicle;
 mod c_open_screen;
@@ -60,6 +61,7 @@ mod c_update_attributes;
 mod c_update_mob_effect;
 mod chat;
 mod chunk;
+mod merchant;
 mod s_accept_teleportation;
 mod s_attack;
 mod s_change_difficulty;
@@ -81,6 +83,7 @@ mod s_player_command;
 mod s_player_input;
 mod s_player_load;
 mod s_rename_item;
+mod s_select_trade;
 mod s_set_carried_item;
 mod s_set_creative_mode_slot;
 mod s_set_held_item;
@@ -120,6 +123,7 @@ pub use c_level_event::CLevelEvent;
 pub use c_level_particles::CLevelParticles;
 pub use c_login::CLogin;
 pub use c_login::CommonPlayerSpawnInfo;
+pub use c_merchant_offers::CMerchantOffers;
 pub use c_move_entity::{
     CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, PackedEntityDelta, calc_delta, to_angle_byte,
 };
@@ -172,6 +176,7 @@ pub use chunk::{
     CLevelChunkWithLight, CLightUpdate, CSetChunkCacheRadius, CSetChunkCenter, ChunkPacketData,
     HeightmapType, Heightmaps, LightUpdatePacketData, SChunkBatchReceived,
 };
+pub use merchant::{ItemCost, MerchantOfferPacket};
 pub use s_accept_teleportation::SAcceptTeleportation;
 pub use s_attack::SAttack;
 pub use s_change_difficulty::SChangeDifficulty;
@@ -195,6 +200,7 @@ pub use s_player_command::{PlayerCommandAction, SPlayerCommand};
 pub use s_player_input::SPlayerInput;
 pub use s_player_load::SPlayerLoad;
 pub use s_rename_item::SRenameItem;
+pub use s_select_trade::SSelectTrade;
 pub use s_set_carried_item::SSetCarriedItem;
 pub use s_set_creative_mode_slot::SSetCreativeModeSlot;
 pub use s_set_held_item::SSetHeldItem;

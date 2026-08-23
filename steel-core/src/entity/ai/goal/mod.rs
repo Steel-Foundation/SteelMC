@@ -30,14 +30,19 @@ mod tempt_goal;
 mod try_find_water;
 mod water_avoiding_random_stroll;
 
+pub(crate) use avoid_entity::AvoidEntityGoal;
 pub(crate) use breed_goal::BreedGoal;
 pub(crate) use eat_block_goal::EatBlockGoal;
 pub(crate) use float_goal::FloatGoal;
 pub(crate) use follow_parent::FollowParentGoal;
 pub(crate) use look_at_player::LookAtPlayerGoal;
+pub(crate) use melee_attack::MeleeAttackGoal;
+pub(crate) use move_towards_restriction::MoveTowardsRestrictionGoal;
 pub(crate) use panic_goal::PanicGoal;
 pub(crate) use random_look_around::RandomLookAroundGoal;
+pub(crate) use random_swimming::RandomSwimmingGoal;
 pub(crate) use selector::{GoalControl, GoalSelector};
+pub(crate) use target_goal::{HurtByTargetGoal, NearestAttackableTargetGoal};
 pub(crate) use tempt_goal::TemptGoal;
 pub(crate) use water_avoiding_random_stroll::WaterAvoidingRandomStrollGoal;
 

@@ -77,6 +77,9 @@ pub trait MenuKind: ErasedType + Send + Sync {
         ClickOutcome::Fallthrough
     }
 
+    /// Handles the selected offer index from a merchant screen.
+    fn on_select_trade(&mut self, _behavior: &mut MenuBehavior, _offer: usize, _player: &Player) {}
+
     /// Returns true if a drag may distribute items into `slot_index`.
     fn can_drag_to(&self, _slot_index: usize) -> bool {
         true

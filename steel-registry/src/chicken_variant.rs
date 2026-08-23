@@ -1,3 +1,7 @@
+use steel_utils::random::Random;
+
+use crate::biome::BiomeRef;
+use crate::shared_structs::pick_spawn_conditioned_entry;
 use crate::shared_structs::{SpawnConditionEntry, insert_spawn_conditions};
 use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
@@ -56,6 +60,20 @@ impl ChickenVariantRegistry {
             chicken_variants_by_key: FxHashMap::default(),
             allows_registering: true,
         }
+    }
+
+    #[must_use]
+    pub fn select_spawn_variant(
+        &self,
+        biome: BiomeRef,
+        random: &mut impl Random,
+    ) -> Option<ChickenVariantRef> {
+        pick_spawn_conditioned_entry(
+            self.iter().map(|(_, variant)| variant),
+            |variant| variant.spawn_conditions,
+            biome,
+            random,
+        )
     }
 }
 

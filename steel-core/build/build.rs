@@ -15,7 +15,9 @@ mod candle_cakes;
 mod common;
 mod entities;
 mod items;
+mod spawns;
 mod strippables;
+mod trades;
 mod waxables;
 mod weathering;
 
@@ -31,6 +33,7 @@ pub fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let behavior_out_dir = format!("{manifest_dir}/src/behavior/generated");
     let entity_out_dir = format!("{manifest_dir}/src/entity/generated");
+    let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
 
     let classes_json = fs::read_to_string(format!("{manifest_dir}/build/classes.json"))
         .expect("Failed to read classes.json");
@@ -66,10 +69,25 @@ pub fn main() {
         entities::build(&classes.entities),
     );
 
+    write_if_changed(
+        format!("{out_dir}/villager_trades.rs"),
+        trades::build(&manifest_dir),
+    );
+    write_if_changed(
+        format!("{out_dir}/biome_spawns.rs"),
+        spawns::build(&manifest_dir),
+    );
+
     println!("cargo:rerun-if-changed={manifest_dir}/build/classes.json");
     println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/blocks");
     println!("cargo:rerun-if-changed={manifest_dir}/src/behavior/items");
     println!("cargo:rerun-if-changed={manifest_dir}/src/entity/entities");
+    println!("cargo:rerun-if-changed={manifest_dir}/../generated/data/minecraft/villager_trade");
+    println!(
+        "cargo:rerun-if-changed={manifest_dir}/../generated/data/minecraft/tags/villager_trade"
+    );
+    println!("cargo:rerun-if-changed={manifest_dir}/../generated/data/minecraft/trade_set");
+    println!("cargo:rerun-if-changed={manifest_dir}/../generated/data/minecraft/worldgen/biome");
 }
 
 /// Items use `SCREAMING_SNAKE_CASE` statics (`vanilla_items::STONE`)

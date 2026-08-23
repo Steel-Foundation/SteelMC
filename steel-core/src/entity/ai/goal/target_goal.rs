@@ -1,7 +1,11 @@
 use super::reduced_tick_delay;
+use super::selector::{Goal, GoalControls};
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::{LivingEntity, Mob, PathfinderMob, SharedEntity};
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_attributes;
+
+type TargetCheck = Option<Box<dyn Fn(&dyn LivingEntity) -> bool + Send>>;
 
 const DEFAULT_UNSEEN_MEMORY_TICKS: i32 = 60;
 
@@ -143,6 +147,197 @@ fn follow_distance(mob: &dyn PathfinderMob) -> f64 {
     mob.attributes()
         .lock()
         .required_value(vanilla_attributes::FOLLOW_RANGE)
+}
+
+/// Vanilla `NearestAttackableTargetGoal`.
+///
+/// Scans for the nearest living entity of a specific type that passes the
+/// targeting conditions, then sets it as the mob's attack target.
+pub(crate) struct NearestAttackableTargetGoal {
+    base: TargetGoalBase,
+    target_conditions: TargetingConditions,
+    target_type: EntityTypeRef,
+    target_check: TargetCheck,
+}
+
+impl NearestAttackableTargetGoal {
+    #[must_use]
+    pub(crate) fn new(target_type: EntityTypeRef, must_see: bool) -> Self {
+        Self {
+            base: TargetGoalBase::new(must_see, false),
+            target_conditions: TargetingConditions::for_combat(),
+            target_type,
+            target_check: None,
+        }
+    }
+
+    /// Creates a goal with an additional per-target predicate (e.g. baby turtles).
+    #[must_use]
+    pub(crate) fn with_check(
+        target_type: EntityTypeRef,
+        must_see: bool,
+        check: impl Fn(&dyn LivingEntity) -> bool + Send + 'static,
+    ) -> Self {
+        Self {
+            base: TargetGoalBase::new(must_see, false),
+            target_conditions: TargetingConditions::for_combat(),
+            target_type,
+            target_check: Some(Box::new(check)),
+        }
+    }
+
+    pub(crate) const fn set_unseen_memory_ticks(&mut self, ticks: i32) {
+        self.base.set_unseen_memory_ticks(ticks);
+    }
+}
+
+impl Goal for NearestAttackableTargetGoal {
+    fn controls(&self) -> GoalControls {
+        GoalControls::TARGET
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        let Some(world) = mob.level() else {
+            return false;
+        };
+
+        let follow_distance = follow_distance(mob);
+        let search_box = mob
+            .bounding_box()
+            .inflate_xyz(follow_distance, 4.0, follow_distance);
+
+        let target_type_key = &self.target_type.key;
+        let target_conditions = self.target_conditions.clone();
+        let target_check = &self.target_check;
+
+        let Some(target) =
+            world.nearest_entity_in_aabb_matching(&search_box, mob.position(), |entity| {
+                if entity.entity_type().key != *target_type_key {
+                    return false;
+                }
+                let Some(living) = entity.as_living_entity() else {
+                    return false;
+                };
+                if !target_conditions.test(world.as_ref(), Some(mob), living) {
+                    return false;
+                }
+                if let Some(check) = target_check
+                    && !check(living)
+                {
+                    return false;
+                }
+                true
+            })
+        else {
+            return false;
+        };
+
+        self.base.set_target_mob(Some(target));
+        true
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.base.can_continue_to_use(mob)
+    }
+
+    fn start(&mut self, _mob: &dyn PathfinderMob) {
+        self.base.start();
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.base.stop(mob);
+    }
+}
+
+/// Vanilla `HurtByTargetGoal`.
+///
+/// Sets the mob's target to whoever last hurt it, optionally alerting nearby
+/// mobs of the same type.
+pub(crate) struct HurtByTargetGoal {
+    base: TargetGoalBase,
+    alert_same_type: bool,
+}
+
+impl HurtByTargetGoal {
+    #[must_use]
+    pub(crate) const fn new() -> Self {
+        Self {
+            base: TargetGoalBase::new(true, false),
+            alert_same_type: false,
+        }
+    }
+
+    /// Alerts nearby mobs of the same type when this mob is hurt (vanilla
+    /// `setAlertOthers`).
+    pub(crate) const fn alert_same_type(mut self) -> Self {
+        self.alert_same_type = true;
+        self
+    }
+}
+
+impl Default for HurtByTargetGoal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Goal for HurtByTargetGoal {
+    fn controls(&self) -> GoalControls {
+        GoalControls::TARGET
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        let Some(attacker) = mob.last_hurt_by_mob() else {
+            return false;
+        };
+        let Some(attacker_living) = attacker.as_living_entity() else {
+            return false;
+        };
+
+        if !Mob::can_attack(mob, attacker_living) {
+            return false;
+        }
+
+        let target_conditions = TargetingConditions::for_combat();
+        let Some(world) = mob.level() else {
+            return false;
+        };
+        if !target_conditions.test(world.as_ref(), Some(mob), attacker_living) {
+            return false;
+        }
+
+        self.base.set_target_mob(Some(attacker.clone()));
+
+        if self.alert_same_type {
+            let entity_type_key = &mob.entity_type().key;
+            let alert_box = mob.bounding_box().inflate_xyz(16.0, 4.0, 16.0);
+            let mob_id = mob.id();
+            for other in world.get_entities_in_aabb_matching(&alert_box, |entity| {
+                entity.id() != mob_id && entity.entity_type().key == *entity_type_key
+            }) {
+                let Some(other_mob) = other.as_mob() else {
+                    continue;
+                };
+                if other_mob.target().is_none() && Mob::can_attack(other_mob, attacker_living) {
+                    other_mob.set_target(Some(&attacker));
+                }
+            }
+        }
+
+        true
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.base.can_continue_to_use(mob)
+    }
+
+    fn start(&mut self, _mob: &dyn PathfinderMob) {
+        self.base.start();
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.base.stop(mob);
+    }
 }
 
 #[cfg(test)]

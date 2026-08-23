@@ -17,8 +17,9 @@ use steel_protocol::packets::game::{
     SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
     SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
-    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem, SSetCarriedItem,
-    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem, SUseItemOn,
+    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem, SSelectTrade,
+    SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem,
+    SUseItemOn,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
@@ -88,6 +89,7 @@ enum ScheduledPlayPacketKind {
     ContainerClick(SContainerClick),
     ContainerClose(SContainerClose),
     ContainerSlotStateChanged(SContainerSlotStateChanged),
+    SelectTrade(SSelectTrade),
     SetCreativeModeSlot(SSetCreativeModeSlot),
     PlayerInput(SPlayerInput),
     PlayerCommand(SPlayerCommand),
@@ -215,6 +217,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::ContainerSlotStateChanged(_) => {
                 ScheduledPacketExecution::Exclusive
             }
+            ScheduledPlayPacketKind::SelectTrade(_) => ScheduledPacketExecution::Serialized,
         }
     }
 
@@ -294,6 +297,7 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::ContainerSlotStateChanged(packet) => {
                 player.handle_container_slot_state_changed(packet);
             }
+            ScheduledPlayPacketKind::SelectTrade(packet) => player.handle_select_trade(packet),
             ScheduledPlayPacketKind::SetCreativeModeSlot(packet) => {
                 player.handle_set_creative_mode_slot(packet);
             }
@@ -720,6 +724,9 @@ impl JavaConnection {
                     SContainerSlotStateChanged::read_packet(data)?,
                 ))
             }
+            play::S_SELECT_TRADE => scheduled(ScheduledPlayPacketKind::SelectTrade(
+                SSelectTrade::read_packet(data)?,
+            )),
             play::S_SET_CREATIVE_MODE_SLOT => {
                 scheduled(ScheduledPlayPacketKind::SetCreativeModeSlot(
                     SSetCreativeModeSlot::read_packet(data)?,

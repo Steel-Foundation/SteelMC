@@ -11,7 +11,7 @@ use crate::entity::ai::navigation::{
     NavigationPathRequest, NavigationRecomputeRequest, NavigationTickContext,
 };
 use crate::entity::ai::path::Path;
-use crate::entity::ai::walk::{MobPathSettings, WalkNodeEvaluator};
+use crate::entity::ai::walk::{MobPathSettings, NodeEvaluator, WalkNodeEvaluator, SwimNodeEvaluator};
 use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::physics::WorldCollisionProvider;
 use crate::world::{LevelReader, World};
@@ -24,8 +24,13 @@ pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
 ) {
     let (target, speed_modifier) = {
         let mut navigation = mob.mob_base().navigation().lock();
-        let mob_position =
-            ground_navigation_temp_mob_pos(mob, world.as_ref(), navigation.can_float());
+        let water_bound = navigation.water_bound();
+        let mob_position = if water_bound {
+            let bb = mob.bounding_box();
+            DVec3::new(mob.position().x, (bb.min_y() + bb.max_y()) / 2.0, mob.position().z)
+        } else {
+            ground_navigation_temp_mob_pos(mob, world.as_ref(), navigation.can_float())
+        };
         let context = NavigationTickContext {
             mob_position,
             mob_bounding_box_width: mob.bounding_box().width(),
@@ -44,7 +49,9 @@ pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
     };
 
     let target_pos = BlockPos::containing(target.x, target.y, target.z);
-    let ground_y = if world.get_block_state(target_pos.below()).is_air() {
+    let ground_y = if mob.mob_base().navigation().lock().water_bound() {
+        target.y
+    } else if world.get_block_state(target_pos.below()).is_air() {
         target.y
     } else {
         WalkNodeEvaluator::floor_level(world.as_ref(), target_pos)
@@ -316,7 +323,7 @@ pub trait PathfinderMob: Mob {
 
         let mob_position = self.block_position();
         let settings = MobPathSettings::from_mob(self);
-        let mut evaluator = WalkNodeEvaluator::new(settings);
+        let water_bound = self.mob_base().navigation().lock().water_bound();
         let collision_world =
             WorldCollisionProvider::for_path_navigation(world, self.as_entity_event_source());
         let mut collision = |aabb| {
@@ -327,17 +334,33 @@ pub trait PathfinderMob: Mob {
             )
         };
 
-        self.mob_base().navigation().lock().create_path(
-            &mut evaluator,
-            world.as_ref(),
-            &mut collision,
-            NavigationPathRequest {
-                mob_position,
-                targets,
-                max_path_length,
-                reach_range,
-            },
-        )
+        if water_bound {
+            let mut evaluator = SwimNodeEvaluator::new(settings, false);
+            self.mob_base().navigation().lock().create_path(
+                &mut evaluator,
+                world.as_ref(),
+                &mut collision,
+                NavigationPathRequest {
+                    mob_position,
+                    targets,
+                    max_path_length,
+                    reach_range,
+                },
+            )
+        } else {
+            let mut evaluator = WalkNodeEvaluator::new(settings);
+            self.mob_base().navigation().lock().create_path(
+                &mut evaluator,
+                world.as_ref(),
+                &mut collision,
+                NavigationPathRequest {
+                    mob_position,
+                    targets,
+                    max_path_length,
+                    reach_range,
+                },
+            )
+        }
     }
 }
 

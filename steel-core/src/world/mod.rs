@@ -116,6 +116,7 @@ mod events;
 pub mod game_event;
 mod level_effects;
 mod level_reader;
+mod natural_spawn;
 mod player_index;
 pub(crate) mod player_spawn_finder;
 mod portals;
@@ -517,6 +518,7 @@ impl World {
         if runs_normally {
             let _span = tracing::trace_span!("block_events").entered();
             self.run_block_events();
+            self.tick_natural_spawning(tick_count);
         }
 
         // Vanilla clears this before ticking entities and block entities.
