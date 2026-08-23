@@ -34,15 +34,6 @@ use crate::entity::{
 use crate::player::Player;
 use crate::world::{ClipHitResult, LevelReader as _, World};
 
-const ARROW_BASE_DAMAGE: f64 = 2.0;
-const SHAKE_TIME: i32 = 7;
-const WATER_INERTIA: f64 = 0.6;
-const INERTIA: f64 = 0.99;
-const DESPAWN_LIFE: i32 = 1200;
-const GRAVITY: f64 = 0.05;
-const START_FALLING_JITTER_SCALE: f32 = 0.2;
-const HIT_BLOCK_BACKOFF: f64 = 0.05;
-
 /// Per-tick mutable runtime state mirroring vanilla `AbstractArrow` fields.
 struct ArrowRuntime {
     /// Vanilla `life` — despawn counter while in ground.
@@ -64,7 +55,7 @@ impl ArrowRuntime {
             life: 0,
             in_ground_time: 0,
             shake_time: 0,
-            base_damage: ARROW_BASE_DAMAGE,
+            base_damage: <ArrowEntity as AbstractArrow>::BASE_DAMAGE,
             pickup: Pickup::Disallowed,
             last_state: None,
         }
@@ -177,9 +168,15 @@ impl ArrowEntity {
     fn start_falling(&self) {
         self.set_in_ground(false);
         let jitter = DVec3::new(
-            f64::from(rand::random::<f32>() * START_FALLING_JITTER_SCALE),
-            f64::from(rand::random::<f32>() * START_FALLING_JITTER_SCALE),
-            f64::from(rand::random::<f32>() * START_FALLING_JITTER_SCALE),
+            f64::from(
+                rand::random::<f32>() * <ArrowEntity as AbstractArrow>::START_FALLING_JITTER_SCALE,
+            ),
+            f64::from(
+                rand::random::<f32>() * <ArrowEntity as AbstractArrow>::START_FALLING_JITTER_SCALE,
+            ),
+            f64::from(
+                rand::random::<f32>() * <ArrowEntity as AbstractArrow>::START_FALLING_JITTER_SCALE,
+            ),
         );
         self.set_velocity(self.velocity() * jitter);
         self.runtime.lock().life = 0;
@@ -189,7 +186,7 @@ impl ArrowEntity {
     fn tick_despawn(&self) {
         let mut runtime = self.runtime.lock();
         runtime.life += 1;
-        if runtime.life >= DESPAWN_LIFE {
+        if runtime.life >= <ArrowEntity as AbstractArrow>::DESPAWN_LIFE {
             drop(runtime);
             self.set_removed(RemovalReason::Discarded);
         }
@@ -200,9 +197,9 @@ impl ArrowEntity {
     fn stick_in_ground(&self, world: &Arc<World>) {
         let movement = self.velocity();
         let offset = DVec3::new(
-            movement.x.signum() * HIT_BLOCK_BACKOFF,
-            movement.y.signum() * HIT_BLOCK_BACKOFF,
-            movement.z.signum() * HIT_BLOCK_BACKOFF,
+            movement.x.signum() * <ArrowEntity as AbstractArrow>::HIT_BLOCK_BACKOFF,
+            movement.y.signum() * <ArrowEntity as AbstractArrow>::HIT_BLOCK_BACKOFF,
+            movement.z.signum() * <ArrowEntity as AbstractArrow>::HIT_BLOCK_BACKOFF,
         );
         let _ = self.try_set_position(self.position() - offset);
         self.set_velocity(DVec3::ZERO);
@@ -219,7 +216,7 @@ impl ArrowEntity {
 
         self.set_in_ground(true);
         let mut runtime = self.runtime.lock();
-        runtime.shake_time = SHAKE_TIME;
+        runtime.shake_time = <ArrowEntity as AbstractArrow>::SHAKE_TIME;
         drop(runtime);
         self.set_crit_arrow(false);
         self.entity_data.lock().abstract_arrow.pierce_level.set(0);
@@ -244,8 +241,11 @@ impl Entity for ArrowEntity {
         self.set_old_position_to_current();
         self.base().set_old_rotation_to_current();
 
-        if self.runtime.lock().shake_time > 0 {
-            self.runtime.lock().shake_time -= 1;
+        {
+            let mut runtime = self.runtime.lock();
+            if runtime.shake_time > 0 {
+                runtime.shake_time -= 1;
+            }
         }
 
         // Resting inside a non-air cell counts as stuck (approximation of the
@@ -275,7 +275,7 @@ impl Entity for ArrowEntity {
         // Flight branch. Water drag applies pre-move; bubble/crit particles are
         // VANILLA CLIENT-LOCAL so there is no server work for them.
         if self.is_in_water() {
-            self.set_velocity(self.velocity() * WATER_INERTIA);
+            self.set_velocity(self.velocity() * <ArrowEntity as AbstractArrow>::WATER_INERTIA);
         }
 
         self.update_rotation();
@@ -294,7 +294,7 @@ impl Entity for ArrowEntity {
         self.runtime.lock().last_state = Some(world.get_block_state(self.block_position()));
 
         if !self.is_in_water() {
-            self.set_velocity(self.velocity() * INERTIA);
+            self.set_velocity(self.velocity() * <ArrowEntity as AbstractArrow>::INERTIA);
         }
         // Vanilla skips gravity once this tick's hit has grounded the arrow.
         if !self.is_in_ground() {
@@ -313,7 +313,7 @@ impl Entity for ArrowEntity {
     }
 
     fn get_default_gravity(&self) -> f64 {
-        GRAVITY
+        <ArrowEntity as AbstractArrow>::GRAVITY
     }
 
     fn sound_source(&self) -> SoundSource {
@@ -369,7 +369,9 @@ impl Entity for ArrowEntity {
             let mut runtime = self.runtime.lock();
             runtime.life = i32::from(nbt.short("life").unwrap_or(0));
             runtime.shake_time = i32::from(nbt.byte("shake").unwrap_or(0));
-            runtime.base_damage = nbt.double("damage").unwrap_or(ARROW_BASE_DAMAGE);
+            runtime.base_damage = nbt
+                .double("damage")
+                .unwrap_or(<ArrowEntity as AbstractArrow>::BASE_DAMAGE);
             runtime.pickup = Pickup::from(nbt.byte("pickup").unwrap_or(0));
         }
         self.set_crit_arrow(nbt.byte("crit").is_some_and(|v| v != 0));

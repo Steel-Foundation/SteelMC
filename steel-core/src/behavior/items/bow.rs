@@ -81,22 +81,15 @@ impl ItemBehavior for BowItem {
             return false;
         }
 
+        let has_infinite = player.has_infinite_materials();
         let ammo_slot = {
             let inventory = player.inventory.lock();
             inventory.items().iter().position(|candidate| {
                 !candidate.is_empty() && candidate.item().has_tag(&ItemTag::ARROWS)
             })
         };
-        if ammo_slot.is_none() && !player.has_infinite_materials() {
+        if ammo_slot.is_none() && !has_infinite {
             return false;
-        }
-
-        if let Some(slot) = ammo_slot {
-            {
-                let mut inventory = player.inventory.lock();
-                inventory.items_mut()[slot].shrink(1);
-            }
-            player.request_inventory_resync([slot]);
         }
 
         // TODO: vanilla selects the projectile via `Player.getProjectile`
@@ -119,7 +112,14 @@ impl ItemBehavior for BowItem {
         } else {
             arrow.set_owner_uuid(Some(player.gameprofile.id));
         }
-        arrow.set_pickup(Pickup::Allowed);
+        // Vanilla `AbstractArrow` with `INTANGIBLE_PROJECTILE` (infinite materials)
+        // uses `CREATIVE_ONLY`; normal ammo uses `ALLOWED`.
+        let pickup = if has_infinite {
+            Pickup::CreativeOnly
+        } else {
+            Pickup::Allowed
+        };
+        arrow.set_pickup(pickup);
         if power >= FULL_DRAW_POWER {
             arrow.set_crit_arrow(true);
         }
@@ -131,6 +131,18 @@ impl ItemBehavior for BowItem {
         if let Err(error) = world.try_add_entity(entity.clone()) {
             log::debug!("failed to spawn arrow: {error}");
             return false;
+        }
+
+        // Consume ammo only after successful spawn (failure-atomic, matches
+        // `EnderPearlItem`/`FireworkRocketItem` on `master`).
+        if let Some(slot) = ammo_slot
+            && !has_infinite
+        {
+            {
+                let mut inventory = player.inventory.lock();
+                inventory.items_mut()[slot].shrink(1);
+            }
+            player.request_inventory_resync([slot]);
         }
 
         let sound_pitch = 1.0 / (rand::random::<f32>() * 0.4 + 1.2) + power * 0.5;
