@@ -1220,19 +1220,11 @@ mod tests {
     use super::*;
 
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "fancy tree shape tests assert exact vanilla sentinel values"
-    )]
     fn fancy_tree_shape_rejects_lower_third() {
         assert_eq!(FeatureDecorationRunner::fancy_tree_shape(12, 3), -1.0);
     }
 
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "fancy tree shape tests assert exact vanilla crown values"
-    )]
     fn fancy_tree_shape_uses_half_circle_crown() {
         assert_eq!(FeatureDecorationRunner::fancy_tree_shape(12, 6), 3.0);
         assert_eq!(FeatureDecorationRunner::fancy_tree_shape(12, 12), 0.0);

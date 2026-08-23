@@ -671,8 +671,9 @@ impl Player {
                     self.respawn();
                 }
             }
-            ClientCommandAction::RequestStats | ClientCommandAction::RequestGameRuleValues => {
-                // TODO: implement stats
+            ClientCommandAction::RequestStats => self.send_stats(),
+            ClientCommandAction::RequestGameRuleValues => {
+                // TODO: implement requesting for game rule values
             }
         }
     }

@@ -512,21 +512,29 @@ impl EntityTracker {
         }
     }
 
-    /// Called when a player leaves - removes them from all entity tracking.
-    pub fn on_player_leave(&self, player_id: i32) {
-        // We need to iterate all entities to remove this player
-        // This is acceptable since player leave is infrequent
+    /// Removes a player from every entity pairing and despawns those entities from their client.
+    ///
+    /// Mirrors vanilla `ChunkMap.removeEntity` calling `TrackedEntity.removePlayer` for each
+    /// tracked entity before the player leaves the world.
+    pub fn on_player_leave(&self, player: &Player) {
+        let player_id = player.id();
+        let mut entities_to_despawn = Vec::new();
         let mut dead_entities = Vec::new();
 
         self.entities.iter_sync(|entity_id, tracked| {
-            tracked.seen_by.write().remove(&player_id);
+            if tracked.seen_by.write().remove(&player_id) {
+                entities_to_despawn.push(*entity_id);
+            }
             if tracked.entity.strong_count() == 0 {
                 dead_entities.push(*entity_id);
             }
-            true // continue iteration
+            true
         });
 
-        // Clean up any dead entities we found
+        for entity_id in entities_to_despawn {
+            player.send_packet(CRemoveEntities::single(entity_id));
+        }
+
         for entity_id in dead_entities {
             self.remove_dead_entity(entity_id);
         }

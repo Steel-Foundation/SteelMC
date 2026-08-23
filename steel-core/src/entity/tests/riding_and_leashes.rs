@@ -144,7 +144,7 @@ fn set_leashed_to_notifies_replaced_holder() {
     assert!(mob.set_leashed_to(&new_holder));
 
     assert_eq!(old_holder_typed.removed_notifications(), vec![3]);
-    assert!(new_holder_typed.removed_notifications().is_empty());
+    assert_eq!(new_holder_typed.removed_notifications().len(), 0);
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn tick_leash_notifies_live_holder() {
 
     assert_eq!(holder_typed.holder_notifications(), vec![3]);
     assert!(mob.is_leashed());
-    assert!(holder_typed.removed_notifications().is_empty());
+    assert_eq!(holder_typed.removed_notifications().len(), 0);
 }
 
 #[test]

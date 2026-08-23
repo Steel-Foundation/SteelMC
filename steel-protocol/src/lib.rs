@@ -12,9 +12,8 @@
 #![cfg_attr(
     test,
     expect(
-        clippy::float_cmp,
         clippy::unwrap_used,
-        reason = "packet round-trip tests compare exact serialized float values and unwrap known-good buffers"
+        reason = "packet round-trip tests unwrap known-good buffers"
     )
 )]
 

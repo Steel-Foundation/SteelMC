@@ -1,5 +1,6 @@
 mod c_add_entity;
 mod c_animate;
+mod c_award_stats;
 mod c_block_changed_ack;
 mod c_block_destruction;
 mod c_block_entity_data;
@@ -96,6 +97,7 @@ mod world_border;
 
 pub use c_add_entity::{CAddEntity, write_lp_vec3};
 pub use c_animate::{AnimateAction, CAnimate};
+pub use c_award_stats::CAwardStats;
 pub use c_block_changed_ack::CBlockChangedAck;
 pub use c_block_destruction::CBlockDestruction;
 pub use c_block_entity_data::CBlockEntityData;
