@@ -153,10 +153,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "gaussian cache parity must match vanilla exactly"
-    )]
     fn feature_seed_preserves_pending_gaussian() {
         let mut random = WorldgenRandom::from_seed(123);
         let _ = random.next_gaussian();
