@@ -920,7 +920,6 @@ impl Player {
 }
 
 #[cfg(test)]
-#[expect(clippy::float_cmp, reason = "exact match against vanilla test vectors")]
 mod tests {
     use super::*;
 

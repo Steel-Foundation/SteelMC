@@ -42,7 +42,7 @@ fn parses_literal_commands_and_tracks_ranges() {
     let parse = dispatcher.parse("ping", TestSource { allowed: true });
 
     assert!(!parse.reader().can_read());
-    assert!(parse.errors().is_empty());
+    assert_eq!(parse.errors(), []);
     assert!(parse.context().is_executable());
     assert_eq!(parse.context().range(), StringRange::between(0, 4));
     assert_eq!(parsed_names(&dispatcher, parse.context().nodes()), ["ping"]);
@@ -69,7 +69,7 @@ fn literal_ranges_and_failure_cursors_use_utf16_units() {
 
     let failed = dispatcher.parse("say \u{1f603}", TestSource { allowed: true });
     assert_eq!(failed.reader().cursor(), 4);
-    assert!(failed.errors().is_empty());
+    assert_eq!(failed.errors(), []);
 }
 
 #[test]
@@ -86,8 +86,8 @@ fn requirements_hide_unavailable_nodes_from_parsing() {
 
     let denied = dispatcher.parse("secure", TestSource { allowed: false });
     assert_eq!(denied.reader().cursor(), 0);
-    assert!(denied.context().nodes().is_empty());
-    assert!(denied.errors().is_empty());
+    assert_eq!(denied.context().nodes(), []);
+    assert_eq!(denied.errors(), []);
 
     let allowed = dispatcher.parse("secure", TestSource { allowed: true });
     assert!(!allowed.reader().can_read());
@@ -148,7 +148,7 @@ fn unknown_subcommands_keep_the_last_successful_context() {
     assert_eq!(parse.reader().remaining(), "baz");
     assert_eq!(parsed_names(&dispatcher, parse.context().nodes()), ["foo"]);
     assert!(parse.context().is_executable());
-    assert!(parse.errors().is_empty());
+    assert_eq!(parse.errors(), []);
 }
 
 #[test]

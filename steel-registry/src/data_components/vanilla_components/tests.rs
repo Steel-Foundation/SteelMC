@@ -243,7 +243,7 @@ fn unit_component_network_codecs_match_vanilla() {
 
     let mut expected = Vec::new();
     NbtTag::Compound(NbtCompound::new()).write(&mut expected);
-    assert!(!expected.is_empty());
+    assert_ne!(expected.len(), 0);
     assert_eq!(encoded, expected);
 
     let mut cursor = Cursor::new(encoded.as_slice());
