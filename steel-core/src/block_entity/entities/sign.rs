@@ -231,6 +231,23 @@ impl SignBlockEntity {
         sign.is_waxed = true;
         true
     }
+    /// Sets whether a side's text glows, returning whether its state changed or not :3.
+    ///
+    /// Mirrors vanilla `SignBlockEntity.updateText`: returns false when the side
+    /// already has the requested glow state, so callers can skip consuming the item.
+    pub fn set_glowing(&self, front: bool, glowing: bool) -> bool {
+        let mut sign = self.sign.lock();
+        let text = if front {
+            &mut sign.front_text
+        } else {
+            &mut sign.back_text
+        };
+        if text.has_glowing_text == glowing {
+            return false;
+        }
+        text.has_glowing_text = glowing;
+        true
+    }
 
     /// Sets the text for a side.
     pub fn set_text(&self, text: SignText, front: bool) {

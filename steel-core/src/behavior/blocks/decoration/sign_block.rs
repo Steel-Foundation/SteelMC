@@ -89,7 +89,7 @@ fn get_nearest_looking_directions(rotation: f32, clicked_face: Direction) -> Vec
 ///
 /// Uses the sign's rotation (from block state) and the player's position
 /// relative to the sign to determine which side they're looking at.
-fn is_facing_front_text(state: BlockStateId, pos: BlockPos, player: &Player) -> bool {
+pub fn is_facing_front_text(state: BlockStateId, pos: BlockPos, player: &Player) -> bool {
     // Get the sign's Y rotation in degrees from the block state
     let sign_y_rot = get_sign_rotation_degrees(state);
 
