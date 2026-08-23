@@ -307,6 +307,10 @@ impl SpeleothemBlockBehavior {
         }
     }
 
+    /// Makes a speleothem block at `pos` (if any), and the other connected blocks directly below it, fall as a [`FallingBlockEntity`].
+    ///
+    /// These entities also deal damage. The further a connected block is below from the block at `pos`, the more damage its
+    /// falling block entity deals.
     pub fn spawn_falling_stalactite(state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let mut fall_pos = pos;
         let mut fall_state = state;
