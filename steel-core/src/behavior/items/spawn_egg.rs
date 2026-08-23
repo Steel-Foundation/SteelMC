@@ -8,6 +8,7 @@ use steel_registry::data_components::components::EntityData;
 use steel_registry::data_components::vanilla_components::ENTITY_DATA;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{vanilla_blocks, vanilla_game_events};
 use steel_utils::{BlockPos, types::InteractionHand};
 
@@ -191,7 +192,11 @@ impl ItemBehavior for SpawnEggItem {
             false,
             false,
         );
-        // TODO: Award the ITEM_USED stat for the item if the result is Successful.
+        if result == InteractionResult::Success {
+            context
+                .player
+                .award_stat(&vanilla_stat_types::ITEM_USED, stack.item());
+        }
         result
     }
 
