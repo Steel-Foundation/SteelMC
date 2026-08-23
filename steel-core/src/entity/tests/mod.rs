@@ -859,7 +859,7 @@ fn wither_effect_only_damages_on_its_vanilla_interval() {
     entity.tick_mob_effects();
 
     assert_f32_close(entity.get_health(), 20.0);
-    assert!(entity.damage_type_keys().is_empty());
+    assert_eq!(entity.damage_type_keys().len(), 0);
     assert_eq!(
         entity
             .mob_effect(vanilla_mob_effects::WITHER)

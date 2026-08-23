@@ -40,3 +40,4 @@ rustc-ice-*
 .idea
 
 .DS_STORE
+/.vs

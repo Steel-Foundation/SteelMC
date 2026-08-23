@@ -619,10 +619,6 @@ impl Aabb<IVec3, Structure> {
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::float_cmp,
-    reason = "geometry constructors use exact test values"
-)]
 mod tests {
     use super::*;
 

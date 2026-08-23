@@ -704,7 +704,7 @@ mod tests {
         let positions = generate_ring_positions::<
             fn(i32, i32, &mut LegacyRandom) -> Option<(i32, i32)>,
         >(0, 32, 3, 0, None, &thread_pool);
-        assert!(positions.is_empty());
+        assert_eq!(positions.len(), 0);
     }
 
     #[test]
