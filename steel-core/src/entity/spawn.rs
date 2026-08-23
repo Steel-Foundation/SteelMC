@@ -111,9 +111,7 @@ pub(crate) fn create_entity_instance(
         return Err(EntitySpawnError::InvalidPosition);
     }
 
-    if world.difficulty() == Difficulty::Peaceful
-        && !entity_type.allowed_in_peaceful
-    {
+    if world.difficulty() == Difficulty::Peaceful && !entity_type.allowed_in_peaceful {
         return Err(EntitySpawnError::Peaceful);
     }
 

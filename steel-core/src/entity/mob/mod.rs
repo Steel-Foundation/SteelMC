@@ -37,8 +37,8 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{BlockPos, Identifier, WorldAabb, axis::Axis};
 
-use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
 use crate::behavior::items::SpawnEggItem;
+use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::ai::control::{
     BodyRotationInput, MobControls, MoveControlOperation, rotate_if_necessary, rotate_towards,
