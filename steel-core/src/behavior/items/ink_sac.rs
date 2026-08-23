@@ -12,6 +12,7 @@ use steel_protocol::packets::game::SoundSource;
 use steel_registry::{
     sound_event::SoundEventRef,
     sound_events::{ITEM_GLOW_INK_SAC_USE, ITEM_INK_SAC_USE},
+    stat::vanilla_stat_types,
     vanilla_game_events,
 };
 use steel_utils::Downcast as _;
@@ -43,6 +44,11 @@ fn apply_glow(context: &mut UseOnContext, glowing: bool) -> InteractionResult {
     let state = context.world.get_block_state(pos);
     let is_front_text = is_facing_front_text(state, pos, context.player);
 
+    // Vanilla `SignApplicator.canApplyToSign` refuses a blank sign.
+    if !sign.get_text(is_front_text).has_message() {
+        return InteractionResult::TryEmptyHandInteraction;
+    }
+
     if !sign.set_glowing(is_front_text, glowing) {
         return InteractionResult::TryEmptyHandInteraction;
     }
@@ -60,7 +66,13 @@ fn apply_glow(context: &mut UseOnContext, glowing: bool) -> InteractionResult {
         &GameEventContext::new(Some(context.player), Some(state)),
     );
 
-    context.inv.with_item(|item| item.shrink(1));
+    let item_used = context.inv.with_item(|item| {
+        item.shrink(1);
+        item.item
+    });
+    context
+        .player
+        .award_stat(&vanilla_stat_types::ITEM_USED, item_used);
 
     context
         .world
