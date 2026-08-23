@@ -4,6 +4,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use glam::DVec3;
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
+use steel_protocol::packets::common::{
+    ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
+};
 use steel_protocol::packets::game::EquipmentSlotItem;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
@@ -12,9 +15,9 @@ use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE}
 use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
 use steel_registry::packets::play::C_REMOVE_ENTITIES;
 use steel_registry::{
-    RegistryHolderSet, init_vanilla_registry, item_stack::ItemStack, vanilla_attributes,
-    vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_rules, vanilla_items,
-    vanilla_menu_types,
+    RegistryHolderSet, entity_data::EntityData, init_vanilla_registry, item_stack::ItemStack,
+    vanilla_attributes, vanilla_blocks, vanilla_damage_types, vanilla_entities, vanilla_game_rules,
+    vanilla_items, vanilla_menu_types,
 };
 use steel_utils::codec::VarInt;
 use steel_utils::locks::{IntoShared as _, SyncMutex};
@@ -44,7 +47,8 @@ use crate::test_support::{
 use crate::world::World;
 
 use super::{
-    DEATH_DURATION, Player, PlayerConnection, PlayerPermissionState, ResetReason,
+    ClientInformation, DEATH_DURATION, Player, PlayerConnection, PlayerPermissionState,
+    ResetReason,
     connection::NetworkConnection,
     experience::Experience,
     experience::first_point_level_up_sound,
@@ -52,6 +56,119 @@ use super::{
     lifecycle::nullable_game_mode_id,
     player_data::{PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle},
 };
+
+const PLAYER_MAIN_HAND_METADATA_INDEX: u8 = 15;
+const PLAYER_MODEL_CUSTOMIZATION_METADATA_INDEX: u8 = 16;
+const BYTE_ENTITY_DATA_SERIALIZER_ID: i32 = 0;
+const HUMANOID_ARM_ENTITY_DATA_SERIALIZER_ID: i32 = 42;
+
+const MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET: u8 = 0xff;
+const CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK: u8 = 0b0001_0101;
+
+#[test]
+fn client_information_initializes_player_cosmetic_metadata() {
+    let world = fresh_test_world("initial_player_cosmetic_metadata");
+    let player = TestPlayerBuilder::new(world, "TestPlayer", 1)
+        .uuid(Uuid::from_u128(1))
+        .client_information(ClientInformation {
+            model_customization: MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET,
+            main_hand: HumanoidArm::Left,
+            ..ClientInformation::default()
+        })
+        .build();
+
+    let values = player.pack_all_entity_data();
+    let Some(main_hand) = values
+        .iter()
+        .find(|value| value.index == PLAYER_MAIN_HAND_METADATA_INDEX)
+    else {
+        panic!("initial metadata should include the non-default main hand");
+    };
+    assert_eq!(
+        main_hand.serializer_id,
+        HUMANOID_ARM_ENTITY_DATA_SERIALIZER_ID
+    );
+    assert!(matches!(
+        main_hand.value,
+        EntityData::HumanoidArm(HumanoidArm::Left)
+    ));
+
+    let Some(model_customization) = values
+        .iter()
+        .find(|value| value.index == PLAYER_MODEL_CUSTOMIZATION_METADATA_INDEX)
+    else {
+        panic!("initial metadata should include the model customization byte");
+    };
+    assert_eq!(
+        model_customization.serializer_id,
+        BYTE_ENTITY_DATA_SERIALIZER_ID
+    );
+    let expected_model_customization = MODEL_CUSTOMIZATION_WITH_HIGH_BIT_SET.cast_signed();
+    assert!(matches!(
+        model_customization.value,
+        EntityData::Byte(value) if value == expected_model_customization
+    ));
+    assert!(player.shows_hat());
+}
+
+#[test]
+fn play_client_information_dirties_changed_cosmetic_metadata_once() {
+    let world = fresh_test_world("updated_player_cosmetic_metadata");
+    let player = test_player(world);
+    let _ = player.pack_dirty_entity_data();
+
+    let packet = SClientInformation {
+        language: "en_us".to_owned(),
+        view_distance: 8,
+        chat_visibility: ChatVisibility::Full,
+        chat_colors: true,
+        model_customization: CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK,
+        main_hand: HumanoidArm::Left,
+        text_filtering_enabled: false,
+        allows_listing: true,
+        particle_status: ParticleStatus::All,
+    };
+    player.handle_client_information(packet.clone());
+
+    let Some(values) = player.pack_dirty_entity_data() else {
+        panic!("changed client information should dirty player metadata");
+    };
+    assert_eq!(values.len(), 2);
+
+    let Some(main_hand) = values
+        .iter()
+        .find(|value| value.index == PLAYER_MAIN_HAND_METADATA_INDEX)
+    else {
+        panic!("changed metadata should include the main hand");
+    };
+    assert_eq!(
+        main_hand.serializer_id,
+        HUMANOID_ARM_ENTITY_DATA_SERIALIZER_ID
+    );
+    assert!(matches!(
+        main_hand.value,
+        EntityData::HumanoidArm(HumanoidArm::Left)
+    ));
+
+    let Some(model_customization) = values
+        .iter()
+        .find(|value| value.index == PLAYER_MODEL_CUSTOMIZATION_METADATA_INDEX)
+    else {
+        panic!("changed metadata should include model customization");
+    };
+    assert_eq!(
+        model_customization.serializer_id,
+        BYTE_ENTITY_DATA_SERIALIZER_ID
+    );
+    let expected_model_customization = CAPE_LEFT_SLEEVE_LEFT_PANTS_MASK.cast_signed();
+    assert!(matches!(
+        model_customization.value,
+        EntityData::Byte(value) if value == expected_model_customization
+    ));
+
+    player.handle_client_information(packet);
+    assert!(player.pack_dirty_entity_data().is_none());
+}
 
 struct RecordingConnection {
     sent_packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
@@ -520,11 +637,9 @@ fn death_removes_tracked_entities_from_dead_players_client() {
         vec![item.id()],
         "vanilla removes every entity pairing from a dead player's client"
     );
-    assert!(
-        world
-            .entity_tracker()
-            .tracking_player_ids(item.id())
-            .is_empty()
+    assert_eq!(
+        world.entity_tracker().tracking_player_ids(item.id()).len(),
+        0
     );
 }
 
@@ -887,7 +1002,10 @@ fn living_tick_detects_raw_inventory_equipment_mutation() {
         }]
     );
     LivingEntity::detect_equipment_updates(player.as_ref());
-    assert!(LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty());
+    assert_eq!(
+        LivingEntity::drain_dirty_equipment(player.as_ref()).len(),
+        0
+    );
 }
 
 #[test]
@@ -957,7 +1075,10 @@ fn death_respawn_redetects_unchanged_kept_equipment() {
     );
 
     LivingEntity::detect_equipment_updates(player.as_ref());
-    assert!(LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty());
+    assert_eq!(
+        LivingEntity::drain_dirty_equipment(player.as_ref()).len(),
+        0
+    );
 }
 
 #[test]
@@ -1029,7 +1150,10 @@ fn equipment_detection_suppresses_exact_hand_swap_packet() {
     assert!(player.inventory.lock().swap_hands());
     LivingEntity::detect_equipment_updates(player.as_ref());
 
-    assert!(LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty());
+    assert_eq!(
+        LivingEntity::drain_dirty_equipment(player.as_ref()).len(),
+        0
+    );
 }
 
 #[test]

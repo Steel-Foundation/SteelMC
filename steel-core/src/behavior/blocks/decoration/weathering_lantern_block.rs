@@ -14,7 +14,6 @@ use crate::{
 };
 
 /// Behavior for all weathering Lantern type blocks
-//TODO: implement is_randomly_ticking to get oxidation working.
 #[block_behavior]
 pub struct WeatheringLanternBlock {
     lantern: LanternBlock,
