@@ -1,14 +1,8 @@
 //! Vanilla-shaped mob foundations.
 
-mod leash;
 mod pathfinder;
 
-pub use leash::LeashAttachment;
-use leash::{
-    DELAYED_LEASH_DROP_TICKS, LEASH_ELASTIC_DISTANCE, LEASH_SNAP_DISTANCE, LEASH_STIFFNESS,
-    LEASH_TORSIONAL_ELASTICITY, LeashData, axis_specific_leash_elasticity,
-    compute_elastic_interaction, leash_bounding_box_center, leash_holder_movement,
-};
+use crate::entity::leash::{LeashData, Leashable};
 pub use pathfinder::PathfinderMob;
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
@@ -21,17 +15,15 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_math::fast_floor;
-use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_game_rules::ENTITY_DROPS;
 use steel_registry::{
-    REGISTRY, RegistryExt, sound_events, vanilla_attributes, vanilla_damage_types,
-    vanilla_entities, vanilla_game_events, vanilla_items,
+    REGISTRY, RegistryExt, vanilla_attributes, vanilla_damage_types, vanilla_entities,
+    vanilla_game_events,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
@@ -49,7 +41,6 @@ use crate::entity::ai::sensing::Sensing;
 use crate::entity::ai::walk::WalkPathEvaluator;
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::LeashFenceKnotEntity;
 use crate::entity::{
     Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason, SharedEntity,
     SpawnGroupData, WeakEntity,
@@ -329,7 +320,7 @@ impl Default for MobBase {
     }
 }
 
-pub trait Mob: LivingEntity {
+pub trait Mob: LivingEntity + Leashable {
     fn mob_base(&self) -> &MobBase;
 
     fn mob_flags(&self) -> i8;
@@ -725,278 +716,6 @@ pub trait Mob: LivingEntity {
 
     fn clear_custom_death_loot_table(&self) {
         *self.mob_base().death_loot_table().lock() = None;
-    }
-
-    fn is_leashed(&self) -> bool {
-        self.leash_holder().is_some()
-    }
-
-    fn may_be_leashed(&self) -> bool {
-        self.mob_base().leash_data().lock().is_some()
-    }
-
-    fn leash_holder(&self) -> Option<SharedEntity> {
-        self.mob_base()
-            .leash_data()
-            .lock()
-            .as_ref()
-            .and_then(LeashData::holder)
-    }
-
-    fn leash_attachment(&self) -> Option<LeashAttachment> {
-        self.mob_base()
-            .leash_data()
-            .lock()
-            .as_ref()
-            .map(LeashData::saved_attachment)
-    }
-
-    fn set_delayed_leash_attachment(&self, attachment: LeashAttachment) {
-        *self.mob_base().leash_data().lock() = Some(LeashData::from_delayed_attachment(attachment));
-    }
-
-    fn can_be_leashed(&self) -> bool {
-        // TODO: Return false for enemy mobs once hostile mob foundations exist.
-        true
-    }
-
-    fn leash_distance_to(&self, holder: &dyn Entity) -> f64 {
-        leash_bounding_box_center(self.as_entity_event_source())
-            .distance(leash_bounding_box_center(holder))
-    }
-
-    fn leash_snap_distance(&self) -> f64 {
-        LEASH_SNAP_DISTANCE
-    }
-
-    fn leash_elastic_distance(&self) -> f64 {
-        LEASH_ELASTIC_DISTANCE
-    }
-
-    fn when_leashed_to(&self, holder: &dyn Entity) {
-        holder.notify_leash_holder(self.as_entity_event_source());
-    }
-
-    fn leash_too_far_behaviour(&self) {
-        self.drop_leash();
-    }
-
-    fn on_elastic_leash_pull(&self) {
-        self.check_fall_distance_accumulation();
-    }
-
-    fn close_range_leash_behaviour(&self, _holder: &dyn Entity) {}
-
-    fn check_elastic_interactions(&self, holder: &dyn Entity) -> bool {
-        let Some(wrench) = compute_elastic_interaction(
-            self.as_entity_event_source(),
-            holder,
-            self.leash_elastic_distance(),
-        ) else {
-            return false;
-        };
-
-        {
-            let mut leash_data = self.mob_base().leash_data().lock();
-            let Some(leash_data) = leash_data.as_mut() else {
-                return false;
-            };
-            leash_data.angular_momentum += LEASH_TORSIONAL_ELASTICITY * wrench.torque;
-        }
-
-        let relative_velocity_to_leasher =
-            leash_holder_movement(holder) - leash_holder_movement(self.as_entity_event_source());
-        self.push_impulse(
-            axis_specific_leash_elasticity(wrench.force)
-                + relative_velocity_to_leasher * LEASH_STIFFNESS,
-        );
-        true
-    }
-
-    fn apply_leash_angular_momentum(&self) -> bool {
-        let angular_friction = self.leash_angular_friction();
-        let angular_momentum = {
-            let mut leash_data = self.mob_base().leash_data().lock();
-            let Some(leash_data) = leash_data.as_mut() else {
-                return false;
-            };
-            let angular_momentum = leash_data.angular_momentum;
-            leash_data.angular_momentum *= angular_friction;
-            angular_momentum
-        };
-        self.rotate_by_leash_angular_momentum(angular_momentum);
-        true
-    }
-
-    fn rotate_by_leash_angular_momentum(&self, angular_momentum: f64) {
-        let (yaw, pitch) = self.rotation();
-        self.set_rotation((yaw - angular_momentum as f32, pitch));
-    }
-
-    fn leash_angular_momentum(&self) -> Option<f64> {
-        self.mob_base()
-            .leash_data()
-            .lock()
-            .as_ref()
-            .map(|leash_data| leash_data.angular_momentum)
-    }
-
-    fn leash_angular_friction(&self) -> f64 {
-        if self.on_ground() {
-            let Some(world) = self.level() else {
-                return 0.91;
-            };
-            let Some(pos) = self.block_pos_below_that_affects_movement() else {
-                return 0.91;
-            };
-            return f64::from(world.get_block_state(pos).get_block().config.friction * 0.91);
-        }
-
-        if self.is_in_water() || self.is_in_lava() {
-            return 0.8;
-        }
-
-        0.91
-    }
-
-    fn can_have_a_leash_attached_to(&self, holder: &dyn Entity) -> bool {
-        self.id() != holder.id()
-            && self.leash_distance_to(holder) <= self.leash_snap_distance()
-            && self.can_be_leashed()
-    }
-
-    fn set_leashed_to(&self, holder: &SharedEntity) -> bool {
-        if self.id() == holder.id() {
-            return false;
-        }
-
-        let old_holder = self.leash_holder();
-        {
-            let mut leash_data = self.mob_base().leash_data().lock();
-            if let Some(leash_data) = leash_data.as_mut() {
-                leash_data.set_holder(holder);
-            } else {
-                *leash_data = Some(LeashData::from_entity(holder));
-            }
-        }
-
-        if self.is_passenger() {
-            self.stop_riding();
-        }
-        if let Some(old_holder) = old_holder
-            && old_holder.id() != holder.id()
-        {
-            old_holder.notify_leashee_removed(self.as_entity_event_source());
-        }
-        true
-    }
-
-    fn tick_leash(&self) {
-        if let Some(holder) = self.leash_holder() {
-            if !self.can_interact_with_level() || !holder.can_interact_with_level() {
-                if let Some(world) = self.level()
-                    && world.get_game_rule(&ENTITY_DROPS)
-                {
-                    self.drop_leash();
-                } else {
-                    self.remove_leash();
-                }
-                return;
-            }
-
-            let distance_to = self.leash_distance_to(holder.as_ref());
-            self.when_leashed_to(holder.as_ref());
-            let angular_momentum_before_distance_action = self.leash_angular_momentum();
-            if distance_to > self.leash_snap_distance() {
-                if let Some(world) = self.level() {
-                    world.play_sound_at(
-                        &sound_events::ITEM_LEAD_BREAK,
-                        SoundSource::Neutral,
-                        holder.position(),
-                        1.0,
-                        1.0,
-                        None,
-                    );
-                }
-                self.leash_too_far_behaviour();
-            } else if distance_to
-                > self.leash_elastic_distance()
-                    - f64::from(holder.base().dimensions().width)
-                    - f64::from(self.base().dimensions().width)
-                && self.check_elastic_interactions(holder.as_ref())
-            {
-                self.on_elastic_leash_pull();
-            } else {
-                self.close_range_leash_behaviour(holder.as_ref());
-            }
-            if !self.apply_leash_angular_momentum()
-                && let Some(angular_momentum) = angular_momentum_before_distance_action
-            {
-                self.rotate_by_leash_angular_momentum(angular_momentum);
-            }
-            return;
-        }
-
-        let Some(attachment) = self.leash_attachment() else {
-            return;
-        };
-
-        let Some(world) = self.level() else {
-            return;
-        };
-
-        match attachment {
-            LeashAttachment::Entity(uuid) => {
-                if let Some(holder) = world.get_entity_by_uuid(&uuid) {
-                    let _ = self.set_leashed_to(&holder);
-                    return;
-                }
-
-                if self.tick_count() > DELAYED_LEASH_DROP_TICKS {
-                    let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
-                    self.remove_leash_state();
-                }
-            }
-            LeashAttachment::FenceKnot(pos) => {
-                if let Some(holder) = LeashFenceKnotEntity::get_or_create_knot(&world, pos) {
-                    let _ = self.set_leashed_to(&holder);
-                    return;
-                }
-
-                if self.tick_count() > DELAYED_LEASH_DROP_TICKS {
-                    let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
-                    self.remove_leash_state();
-                }
-            }
-        }
-    }
-
-    fn drop_leash(&self) {
-        if self.leash_holder().is_none() {
-            return;
-        }
-
-        let holder = self.remove_leash_state();
-        let _ = self.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
-        if let Some(holder) = holder {
-            holder.notify_leashee_removed(self.as_entity_event_source());
-        }
-    }
-
-    fn remove_leash(&self) {
-        if self.leash_holder().is_some()
-            && let Some(holder) = self.remove_leash_state()
-        {
-            holder.notify_leashee_removed(self.as_entity_event_source());
-        }
-    }
-
-    fn remove_leash_state(&self) -> Option<SharedEntity> {
-        self.mob_base()
-            .leash_data()
-            .lock()
-            .take()
-            .and_then(|leash_data| leash_data.holder())
     }
 
     fn is_within_home(&self) -> bool {
@@ -1613,6 +1332,13 @@ pub trait Mob: LivingEntity {
             .tick(input);
         self.set_y_body_rot(update.y_body_rot());
         self.set_y_head_rot(update.y_head_rot());
+    }
+}
+
+// Blanket implementation for all mobs to implement `Leashable`
+impl<T: Mob> Leashable for T {
+    fn leash_data(&self) -> &SyncMutex<Option<LeashData>> {
+        self.mob_base().leash_data()
     }
 }
 

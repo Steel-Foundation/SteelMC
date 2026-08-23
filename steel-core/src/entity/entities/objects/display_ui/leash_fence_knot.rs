@@ -2,21 +2,28 @@
 
 use std::sync::{Arc, Weak};
 
-use glam::DVec3;
-use steel_macros::entity_behavior;
-use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::sound_events;
-use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_entities;
-use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
-
+use crate::behavior::InteractionResult;
+use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, RemovalReason, SharedEntity,
     next_entity_id,
 };
+use crate::player::Player;
 use crate::world::World;
+use glam::DVec3;
+use steel_macros::entity_behavior;
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::item_stack::ItemStack;
+use steel_registry::sound_events::ITEM_LEAD_TIED;
+use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_entities;
+use steel_registry::vanilla_game_events::BLOCK_ATTACH;
+use steel_registry::vanilla_game_rules::MOB_GRIEFING;
+use steel_registry::{sound_events, vanilla_items};
+use steel_utils::locks::SyncMutex;
+use steel_utils::types::InteractionHand;
+use steel_utils::{BlockPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
 
 /// Vanilla leash knot attached to a fence block.
 #[entity_behavior(class = "LeashFenceKnotEntity")]
@@ -160,8 +167,16 @@ impl LeashFenceKnotEntity {
         }
     }
 
-    fn play_drop_sound(&self) {
+    fn drop_item(&self) {
         self.play_sound(&sound_events::ITEM_LEAD_UNTIED, 1.0, 1.0);
+
+        // Vanilla does not drop a lead here. However, due to how Rust handles `Weak`
+        // pointers to leash holders when a holder despawns, in the code where a lead
+        // is supposed in drop in Vanilla, the holder is `None`. So, a lead does not drop
+        // in `leash_tick`. We can replicate this behavior by dropping it for each entity instead.
+        for entity in self.leashables_leashed_to() {
+            entity.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
+        }
     }
 
     fn knot_center(block_pos: BlockPos) -> DVec3 {
@@ -218,11 +233,95 @@ impl Entity for LeashFenceKnotEntity {
         self.check_below_world();
         if self.should_check_survival() && !self.is_removed() && !self.survives() {
             self.set_removed(RemovalReason::Discarded);
-            self.play_drop_sound();
+            self.drop_item();
         }
     }
 
+    fn interact(
+        &self,
+        player: &Player,
+        hand: InteractionHand,
+        location: DVec3,
+    ) -> InteractionResult {
+        let Some(world) = self.level() else {
+            return InteractionResult::Pass;
+        };
+
+        let holding_shears = {
+            let inventory = player.inventory.lock();
+            inventory.get_item_in_hand(hand).is(&vanilla_items::SHEARS)
+        };
+        if holding_shears {
+            let result = self.interact_entity(player, hand, location);
+            if result == InteractionResult::Success {
+                return result;
+            }
+        }
+
+        let mut attached_mob = false;
+        let Some(knot) = world.get_entity_by_id(self.id()) else {
+            return InteractionResult::Pass;
+        };
+        for entity in player.leashables_leashed_to() {
+            if let Some(leashable) = entity.as_leashable()
+                && leashable.can_have_a_leash_attached_to(self)
+            {
+                leashable.set_leashed_to(&knot);
+                attached_mob = true;
+            }
+        }
+
+        let mut any_dropped = false;
+        let Some(player_entity) = world.get_entity_by_id(player.id()) else {
+            return InteractionResult::Pass;
+        };
+        if !attached_mob && !player.is_secondary_use_active() {
+            for entity in knot.leashables_leashed_to() {
+                if let Some(leashable) = entity.as_leashable()
+                    && leashable.can_have_a_leash_attached_to(player)
+                {
+                    leashable.set_leashed_to(&player_entity);
+                    any_dropped = true;
+                }
+            }
+        }
+
+        if !attached_mob && !any_dropped {
+            return self.interact_entity(player, hand, location);
+        }
+
+        self.game_event_with_player(&BLOCK_ATTACH, player);
+        self.play_sound(&ITEM_LEAD_TIED, 1.0, 1.0);
+
+        InteractionResult::Success
+    }
+
     fn is_pickable(&self) -> bool {
+        true
+    }
+
+    fn hurt(&self, world: &World, source: &DamageSource, _amount: f32) -> bool {
+        if self.default_is_invulnerable_to(source) {
+            return false;
+        }
+
+        let causing_entity = source
+            .causing_entity_id
+            .and_then(|id| world.get_entity_by_id(id));
+
+        if !world.get_game_rule(&MOB_GRIEFING)
+            && let Some(causing_entity) = causing_entity
+            && causing_entity.is_mob()
+        {
+            return false;
+        }
+
+        if !self.is_removed() {
+            self.kill(world);
+            self.mark_hurt();
+            self.drop_item();
+        }
+
         true
     }
 }
