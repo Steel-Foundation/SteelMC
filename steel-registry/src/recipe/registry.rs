@@ -5,7 +5,10 @@ use steel_utils::Identifier;
 
 use super::cooking::SmeltingRecipe;
 use super::crafting::{CraftingInput, CraftingRecipe, ShapedRecipe, ShapelessRecipe};
+use super::ingredient::Ingredient;
+use super::smithing::{SmithingRecipe, SmithingTransformRecipe, SmithingTrimRecipe};
 use crate::item_stack::ItemStack;
+use crate::items::ItemRef;
 
 /// Registry for all recipes.
 pub struct RecipeRegistry {
@@ -19,6 +22,8 @@ pub struct RecipeRegistry {
     shapeless_recipes: Vec<&'static ShapelessRecipe>,
     /// All furnace smelting recipes.
     smelting_recipes: Vec<&'static SmeltingRecipe>,
+    /// All smithing recipes, in registration order.
+    smithing_recipes: Vec<SmithingRecipe>,
     /// Whether registration is still allowed.
     allows_registering: bool,
 }
@@ -39,6 +44,7 @@ impl RecipeRegistry {
             shaped_recipes: Vec::new(),
             shapeless_recipes: Vec::new(),
             smelting_recipes: Vec::new(),
+            smithing_recipes: Vec::new(),
             allows_registering: true,
         }
     }
@@ -76,6 +82,25 @@ impl RecipeRegistry {
             "Cannot register recipes after the registry has been frozen"
         );
         self.smelting_recipes.push(recipe);
+    }
+
+    /// Registers a smithing transform recipe.
+    pub fn register_smithing_transform(&mut self, recipe: &'static SmithingTransformRecipe) {
+        assert!(
+            self.allows_registering,
+            "Cannot register recipes after the registry has been frozen"
+        );
+        self.smithing_recipes
+            .push(SmithingRecipe::Transform(recipe));
+    }
+
+    /// Registers a smithing trim recipe.
+    pub fn register_smithing_trim(&mut self, recipe: &'static SmithingTrimRecipe) {
+        assert!(
+            self.allows_registering,
+            "Cannot register recipes after the registry has been frozen"
+        );
+        self.smithing_recipes.push(SmithingRecipe::Trim(recipe));
     }
 
     /// Finds a matching crafting recipe for the given positioned input.
@@ -177,6 +202,100 @@ impl RecipeRegistry {
     pub fn iter_smelting(&self) -> impl Iterator<Item = &'static SmeltingRecipe> + '_ {
         self.smelting_recipes.iter().copied()
     }
+
+    /// Finds the first matching smithing recipe for the three input slots.
+    #[must_use]
+    pub fn find_smithing_recipe(
+        &self,
+        template: &ItemStack,
+        base: &ItemStack,
+        addition: &ItemStack,
+    ) -> Option<SmithingRecipe> {
+        self.smithing_recipes
+            .iter()
+            .copied()
+            .find(|recipe| recipe.matches(template, base, addition))
+    }
+
+    /// Whether `stack` is a valid smithing template input.
+    #[must_use]
+    pub fn smithing_accepts_template(&self, stack: &ItemStack) -> bool {
+        self.smithing_recipes.iter().any(|recipe| {
+            recipe
+                .template_ingredient()
+                .is_some_and(|ingredient| ingredient.test(stack))
+        })
+    }
+
+    /// Whether `stack` is a valid smithing base input.
+    #[must_use]
+    pub fn smithing_accepts_base(&self, stack: &ItemStack) -> bool {
+        self.smithing_recipes
+            .iter()
+            .any(|recipe| recipe.base_ingredient().test(stack))
+    }
+
+    /// Whether `stack` is a valid smithing addition input.
+    #[must_use]
+    pub fn smithing_accepts_addition(&self, stack: &ItemStack) -> bool {
+        self.smithing_recipes.iter().any(|recipe| {
+            recipe
+                .addition_ingredient()
+                .is_some_and(|ingredient| ingredient.test(stack))
+        })
+    }
+
+    /// Items accepted by smithing template slots, for `RecipePropertySet`.
+    #[must_use]
+    pub fn smithing_template_items(&self) -> Vec<ItemRef> {
+        collect_ingredient_items(
+            self.smithing_recipes
+                .iter()
+                .filter_map(|recipe| recipe.template_ingredient()),
+        )
+    }
+
+    /// Items accepted by smithing base slots, for `RecipePropertySet`.
+    #[must_use]
+    pub fn smithing_base_items(&self) -> Vec<ItemRef> {
+        collect_ingredient_items(
+            self.smithing_recipes
+                .iter()
+                .map(|recipe| recipe.base_ingredient()),
+        )
+    }
+
+    /// Items accepted by smithing addition slots, for `RecipePropertySet`.
+    #[must_use]
+    pub fn smithing_addition_items(&self) -> Vec<ItemRef> {
+        collect_ingredient_items(
+            self.smithing_recipes
+                .iter()
+                .filter_map(|recipe| recipe.addition_ingredient()),
+        )
+    }
+
+    /// Items accepted as furnace inputs, for `RecipePropertySet`.
+    #[must_use]
+    pub fn furnace_input_items(&self) -> Vec<ItemRef> {
+        collect_ingredient_items(
+            self.smelting_recipes
+                .iter()
+                .map(|recipe| &recipe.ingredient),
+        )
+    }
+}
+
+fn collect_ingredient_items<'a>(ingredients: impl Iterator<Item = &'a Ingredient>) -> Vec<ItemRef> {
+    let mut items = Vec::new();
+    for ingredient in ingredients {
+        for item in ingredient.get_items() {
+            if !items.contains(&item) {
+                items.push(item);
+            }
+        }
+    }
+    items
 }
 
 impl crate::RegistryExt for RecipeRegistry {

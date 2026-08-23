@@ -32,7 +32,7 @@ struct RecipeJson {
     #[serde(default)]
     key: Option<serde_json::Map<String, Value>>,
     #[serde(default)]
-    pattern: Option<Vec<String>>,
+    pattern: Option<Value>,
     // Shapeless recipe fields
     #[serde(default)]
     ingredients: Option<Vec<Value>>,
@@ -48,6 +48,12 @@ struct RecipeJson {
     result: Option<RecipeResult>,
     #[serde(default)]
     show_notification: Option<bool>,
+    #[serde(default)]
+    template: Option<Value>,
+    #[serde(default)]
+    base: Option<Value>,
+    #[serde(default)]
+    addition: Option<Value>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -140,9 +146,38 @@ struct SmeltingRecipeData {
     cooking_time: i32,
 }
 
+struct SmithingTransformData {
+    name: String,
+    ident: Ident,
+    template: Option<ParsedIngredient>,
+    base: ParsedIngredient,
+    addition: Option<ParsedIngredient>,
+    result_item_ident: Ident,
+    result_count: i32,
+}
+
+struct SmithingTrimData {
+    name: String,
+    ident: Ident,
+    template: ParsedIngredient,
+    base: ParsedIngredient,
+    addition: ParsedIngredient,
+    pattern: String,
+}
+
 /// Parses a shaped recipe from JSON.
 fn parse_shaped_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<ShapedRecipeData> {
-    let pattern = recipe.pattern.as_ref()?;
+    let pattern: Vec<String> = recipe
+        .pattern
+        .as_ref()?
+        .as_array()?
+        .iter()
+        .filter_map(|row| row.as_str().map(str::to_string))
+        .collect();
+    if pattern.is_empty() {
+        return None;
+    }
+    let pattern = &pattern;
     let key = recipe.key.as_ref()?;
     let result = recipe.result.as_ref()?;
 
@@ -282,6 +317,50 @@ fn parse_smelting_recipe(recipe_name: &str, recipe: &RecipeJson) -> Option<Smelt
     })
 }
 
+fn parse_optional_ingredient(value: Option<&Value>) -> Option<ParsedIngredient> {
+    value.map(parse_ingredient)
+}
+
+fn parse_smithing_transform(
+    recipe_name: &str,
+    recipe: &RecipeJson,
+) -> Option<SmithingTransformData> {
+    let base = recipe.base.as_ref()?;
+    let result = recipe.result.as_ref()?;
+    let result_item_id = result.id.strip_prefix("minecraft:").unwrap_or(&result.id);
+    let result_item_ident = Ident::new(&result_item_id.to_shouty_snake_case(), Span::call_site());
+    let snake_name = recipe_name.to_snake_case();
+    Some(SmithingTransformData {
+        name: recipe_name.to_string(),
+        ident: Ident::new(&snake_name, Span::call_site()),
+        template: parse_optional_ingredient(recipe.template.as_ref()),
+        base: parse_ingredient(base),
+        addition: parse_optional_ingredient(recipe.addition.as_ref()),
+        result_item_ident,
+        result_count: result.count,
+    })
+}
+
+fn parse_smithing_trim(recipe_name: &str, recipe: &RecipeJson) -> Option<SmithingTrimData> {
+    let template = recipe.template.as_ref()?;
+    let base = recipe.base.as_ref()?;
+    let addition = recipe.addition.as_ref()?;
+    let pattern = recipe.pattern.as_ref()?.as_str()?;
+    let pattern = pattern
+        .strip_prefix("minecraft:")
+        .unwrap_or(pattern)
+        .to_string();
+    let snake_name = recipe_name.to_snake_case();
+    Some(SmithingTrimData {
+        name: recipe_name.to_string(),
+        ident: Ident::new(&snake_name, Span::call_site()),
+        template: parse_ingredient(template),
+        base: parse_ingredient(base),
+        addition: parse_ingredient(addition),
+        pattern,
+    })
+}
+
 /// Generates a `TokenStream` for an ingredient.
 /// For Choice ingredients, uses `Box::leak` to create a static slice.
 fn generate_ingredient_tokens(ingredient: &ParsedIngredient) -> TokenStream {
@@ -317,6 +396,8 @@ pub(crate) fn build() -> TokenStream {
     let mut shaped_recipes: Vec<ShapedRecipeData> = Vec::new();
     let mut shapeless_recipes: Vec<ShapelessRecipeData> = Vec::new();
     let mut smelting_recipes: Vec<SmeltingRecipeData> = Vec::new();
+    let mut smithing_transform_recipes: Vec<SmithingTransformData> = Vec::new();
+    let mut smithing_trim_recipes: Vec<SmithingTrimData> = Vec::new();
 
     // Read all recipe files
     fn read_recipes(
@@ -324,13 +405,22 @@ pub(crate) fn build() -> TokenStream {
         shaped: &mut Vec<ShapedRecipeData>,
         shapeless: &mut Vec<ShapelessRecipeData>,
         smelting: &mut Vec<SmeltingRecipeData>,
+        smithing_transform: &mut Vec<SmithingTransformData>,
+        smithing_trim: &mut Vec<SmithingTrimData>,
     ) {
         for entry in fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
 
             if path.is_dir() {
-                read_recipes(&path, shaped, shapeless, smelting);
+                read_recipes(
+                    &path,
+                    shaped,
+                    shapeless,
+                    smelting,
+                    smithing_transform,
+                    smithing_trim,
+                );
             } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
                 let recipe_name = path
                     .file_stem()
@@ -363,7 +453,16 @@ pub(crate) fn build() -> TokenStream {
                             smelting.push(r);
                         }
                     }
-                    // Skip other recipe types for now (stonecutting, smithing, etc.)
+                    "minecraft:smithing_transform" => {
+                        if let Some(r) = parse_smithing_transform(recipe_name, &recipe) {
+                            smithing_transform.push(r);
+                        }
+                    }
+                    "minecraft:smithing_trim" => {
+                        if let Some(r) = parse_smithing_trim(recipe_name, &recipe) {
+                            smithing_trim.push(r);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -375,6 +474,8 @@ pub(crate) fn build() -> TokenStream {
         &mut shaped_recipes,
         &mut shapeless_recipes,
         &mut smelting_recipes,
+        &mut smithing_transform_recipes,
+        &mut smithing_trim_recipes,
     );
 
     // Generate individual creator functions for each shaped recipe.
@@ -571,11 +672,134 @@ pub(crate) fn build() -> TokenStream {
         })
         .collect();
 
+    let optional_ingredient = |ingredient: &Option<ParsedIngredient>| match ingredient {
+        None | Some(ParsedIngredient::Empty) => quote! { None },
+        Some(ingredient) => {
+            let tokens = generate_ingredient_tokens(ingredient);
+            quote! { Some(#tokens) }
+        }
+    };
+
+    let smithing_transform_creator_fns: Vec<TokenStream> = smithing_transform_recipes
+        .iter()
+        .map(|r| {
+            let fn_ident = Ident::new(
+                &format!("create_smithing_transform_{}", r.ident),
+                Span::call_site(),
+            );
+            let name = &r.name;
+            let template = optional_ingredient(&r.template);
+            let base = generate_ingredient_tokens(&r.base);
+            let addition = optional_ingredient(&r.addition);
+            let result_item_ident = &r.result_item_ident;
+            let result_count = r.result_count;
+            quote! {
+                #[inline(never)]
+                fn #fn_ident() -> SmithingTransformRecipe {
+                    SmithingTransformRecipe {
+                        id: Identifier::vanilla_static(#name),
+                        template: #template,
+                        base: #base,
+                        addition: #addition,
+                        result: RecipeResult {
+                            item: &*vanilla_items::#result_item_ident,
+                            count: #result_count,
+                        },
+                    }
+                }
+            }
+        })
+        .collect();
+
+    let smithing_trim_creator_fns: Vec<TokenStream> = smithing_trim_recipes
+        .iter()
+        .map(|r| {
+            let fn_ident = Ident::new(
+                &format!("create_smithing_trim_{}", r.ident),
+                Span::call_site(),
+            );
+            let name = &r.name;
+            let template = generate_ingredient_tokens(&r.template);
+            let base = generate_ingredient_tokens(&r.base);
+            let addition = generate_ingredient_tokens(&r.addition);
+            let pattern = &r.pattern;
+            quote! {
+                #[inline(never)]
+                fn #fn_ident() -> SmithingTrimRecipe {
+                    SmithingTrimRecipe {
+                        id: Identifier::vanilla_static(#name),
+                        template: #template,
+                        base: #base,
+                        addition: #addition,
+                        pattern: Identifier::vanilla_static(#pattern),
+                    }
+                }
+            }
+        })
+        .collect();
+
+    let smithing_transform_fields: Vec<TokenStream> = smithing_transform_recipes
+        .iter()
+        .map(|r| {
+            let ident = &r.ident;
+            quote! { pub #ident: SmithingTransformRecipe, }
+        })
+        .collect();
+
+    let smithing_trim_fields: Vec<TokenStream> = smithing_trim_recipes
+        .iter()
+        .map(|r| {
+            let ident = &r.ident;
+            quote! { pub #ident: SmithingTrimRecipe, }
+        })
+        .collect();
+
+    let smithing_transform_field_inits: Vec<TokenStream> = smithing_transform_recipes
+        .iter()
+        .map(|r| {
+            let ident = &r.ident;
+            let fn_ident = Ident::new(
+                &format!("create_smithing_transform_{}", r.ident),
+                Span::call_site(),
+            );
+            quote! { #ident: #fn_ident(), }
+        })
+        .collect();
+
+    let smithing_trim_field_inits: Vec<TokenStream> = smithing_trim_recipes
+        .iter()
+        .map(|r| {
+            let ident = &r.ident;
+            let fn_ident = Ident::new(
+                &format!("create_smithing_trim_{}", r.ident),
+                Span::call_site(),
+            );
+            quote! { #ident: #fn_ident(), }
+        })
+        .collect();
+
+    let smithing_transform_registers: Vec<TokenStream> = smithing_transform_recipes
+        .iter()
+        .map(|r| {
+            let ident = &r.ident;
+            quote! { registry.register_smithing_transform(&RECIPES.smithing_transform.#ident); }
+        })
+        .collect();
+
+    let smithing_trim_registers: Vec<TokenStream> = smithing_trim_recipes
+        .iter()
+        .map(|r| {
+            let ident = &r.ident;
+            quote! { registry.register_smithing_trim(&RECIPES.smithing_trim.#ident); }
+        })
+        .collect();
+
     quote! {
         use crate::{
             recipe::{
                 CraftingCategory, Ingredient, RecipeRegistry, RecipeResult,
                 ShapedRecipe, ShapelessRecipe, SmeltingRecipe,
+                SmithingTransformRecipe, SmithingTrimRecipe,
             },
             vanilla_items,
         };
@@ -601,10 +825,20 @@ pub(crate) fn build() -> TokenStream {
             #(#smelting_fields)*
         }
 
+        pub struct SmithingTransformRecipes {
+            #(#smithing_transform_fields)*
+        }
+
+        pub struct SmithingTrimRecipes {
+            #(#smithing_trim_fields)*
+        }
+
         pub struct Recipes {
             pub shaped: ShapedRecipes,
             pub shapeless: ShapelessRecipes,
             pub smelting: SmeltingRecipes,
+            pub smithing_transform: SmithingTransformRecipes,
+            pub smithing_trim: SmithingTrimRecipes,
         }
 
         // Individual recipe creator functions.
@@ -621,6 +855,8 @@ pub(crate) fn build() -> TokenStream {
         #(#shaped_creator_fns)*
         #(#shapeless_creator_fns)*
         #(#smelting_creator_fns)*
+        #(#smithing_transform_creator_fns)*
+        #(#smithing_trim_creator_fns)*
 
         impl Recipes {
             fn init() -> Self {
@@ -634,6 +870,12 @@ pub(crate) fn build() -> TokenStream {
                     smelting: SmeltingRecipes {
                         #(#smelting_field_inits)*
                     },
+                    smithing_transform: SmithingTransformRecipes {
+                        #(#smithing_transform_field_inits)*
+                    },
+                    smithing_trim: SmithingTrimRecipes {
+                        #(#smithing_trim_field_inits)*
+                    },
                 }
             }
         }
@@ -645,6 +887,8 @@ pub(crate) fn build() -> TokenStream {
             #(#shaped_registers)*
             #(#shapeless_registers)*
             #(#smelting_registers)*
+            #(#smithing_transform_registers)*
+            #(#smithing_trim_registers)*
         }
     }
 }

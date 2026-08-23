@@ -7,6 +7,7 @@ mod cooking;
 mod crafting;
 mod ingredient;
 mod registry;
+mod smithing;
 
 pub use cooking::SmeltingRecipe;
 pub use crafting::{
@@ -15,3 +16,4 @@ pub use crafting::{
 };
 pub use ingredient::Ingredient;
 pub use registry::RecipeRegistry;
+pub use smithing::{SmithingRecipe, SmithingTransformRecipe, SmithingTrimRecipe};

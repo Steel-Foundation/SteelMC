@@ -59,6 +59,7 @@ mod c_ticking_state;
 mod c_ticking_step;
 mod c_update_attributes;
 mod c_update_mob_effect;
+mod c_update_recipes;
 mod chat;
 mod chunk;
 mod s_accept_teleportation;
@@ -164,6 +165,7 @@ pub use c_update_attributes::{
     AttributeModifierData, AttributeModifierOperation, AttributeSnapshot, CUpdateAttributes,
 };
 pub use c_update_mob_effect::{CUpdateMobEffect, MobEffectPacketFlags};
+pub use c_update_recipes::CUpdateRecipes;
 pub use chat::{
     ArgumentSignature, CDisguisedChat, CPlayerChat, CSystemChat, ChatTypeBound, FilterType,
     LastSeenMessagesUpdate, PreviousMessage, ProtocolRemoteChatSessionData, SChat, SChatAck,

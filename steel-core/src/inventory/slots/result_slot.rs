@@ -4,6 +4,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::{
+    behavior::ITEM_BEHAVIORS,
     inventory::{
         lock::{ContainerLockGuard, ContainerRef},
         slots::{ResultHandler, Slot, SlotStorage},
@@ -90,9 +91,12 @@ impl Slot for ResultSlot {
     fn on_take(
         &self,
         guard: &mut ContainerLockGuard,
-        _stack: &ItemStack,
+        stack: &mut ItemStack,
         player: &Player,
     ) -> Option<ItemStack> {
+        ITEM_BEHAVIORS
+            .get_behavior(stack.item())
+            .on_crafted_by(stack, player);
         self.handler.on_result_taken(guard, player)
     }
 

@@ -288,7 +288,8 @@ impl MenuKind for InventoryKind {
             return Some(ItemStack::empty());
         }
 
-        if let Some(remainder) = behavior.slots()[slot_index].on_take(guard, &stack_mut, player) {
+        if let Some(remainder) = behavior.slots()[slot_index].on_take(guard, &mut stack_mut, player)
+        {
             // Crafting remainders like empty buckets go back to the inventory.
             player.add_item_or_drop_with_guard(guard, remainder);
         }

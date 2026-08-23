@@ -87,7 +87,7 @@ use steel_crypto::{key_store::KeyStore, signature::ProfileKeyValidator};
 use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
     CCommandSuggestions, CEntityEvent, CLogin, CPlayerInfoUpdate, CRemovePlayerInfo,
-    CSetDefaultSpawnPosition, CSystemChat, CTabList, CTickingState, CTickingStep,
+    CSetDefaultSpawnPosition, CSystemChat, CTabList, CTickingState, CTickingStep, CUpdateRecipes,
     CommonPlayerSpawnInfo, RelativeMovement,
 };
 use steel_protocol::utils::ConnectionProtocol;

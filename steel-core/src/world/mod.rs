@@ -116,6 +116,7 @@ mod events;
 pub mod game_event;
 mod level_effects;
 mod level_reader;
+pub(crate) mod map_data;
 mod player_index;
 pub(crate) mod player_spawn_finder;
 mod portals;
@@ -247,6 +248,8 @@ pub struct World {
     pub level_data: SyncRwLock<LevelDataManager>,
     /// Per-world saved data storage.
     pub(crate) saved_data: SavedDataManager,
+    /// Filled map saved data for this world.
+    pub(crate) map_data: SyncMutex<map_data::MapDataStore>,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
     /// Vanilla sleeping player counts for night-skip checks.
@@ -415,6 +418,7 @@ impl World {
                 dimension_type,
                 level_data: SyncRwLock::new(level_data),
                 saved_data,
+                map_data: SyncMutex::new(map_data::MapDataStore::default()),
                 world_border: SyncMutex::new(world_border),
                 sleep_status: SyncMutex::new(sleep_status::SleepStatus::default()),
                 view_distance,
