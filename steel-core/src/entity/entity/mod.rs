@@ -3572,10 +3572,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns vanilla `Entity.isInvulnerableToBase`.
     fn is_invulnerable_to_base(&self, source: &DamageSource) -> bool {
         self.is_removed()
-            || self.is_invulnerable() && !source.bypasses_invulnerability()
+            || self.is_invulnerable()
+                && !source.bypasses_invulnerability()
+                && !self.source_is_creative_player(source)
             || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE) && self.fire_immune()
             || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FALL)
                 && self.is_fall_damage_immune()
+    }
+
+    /// Returns vanilla `DamageSource.isCreativePlayer`: whether the damage's
+    /// causing entity is a player with infinite materials.
+    fn source_is_creative_player(&self, source: &DamageSource) -> bool {
+        let Some(causing_entity_id) = source.causing_entity_id else {
+            return false;
+        };
+        let Some(world) = self.level() else {
+            return false;
+        };
+        world
+            .get_entity_by_id(causing_entity_id)
+            .is_some_and(|entity| entity.as_player().is_some_and(Player::has_infinite_materials))
     }
 
     /// Applies damage to this entity.
