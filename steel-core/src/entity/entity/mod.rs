@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::leash::Leashable;
 
 /// Final state accepted from a client-authored movement packet.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -117,6 +118,15 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 Some(name),
             ))
             .insertion(self.uuid().to_string())
+    }
+
+    /// Returns vanilla base living-entity invulnerability.
+    fn default_is_invulnerable_to(&self, source: &DamageSource) -> bool {
+        self.is_removed()
+            || self.is_invulnerable() && !source.bypasses_invulnerability()
+            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE) && self.fire_immune()
+            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FALL)
+                && self.is_fall_damage_immune()
     }
 
     /// Returns this entity's plain vanilla name.
@@ -957,7 +967,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.check_below_world();
         self.sync_base_fire_freeze_entity_data();
         // Vanilla checks `this instanceof Leashable` inside `Entity.baseTick`.
-        if let Some(mob) = self.as_mob() {
+        if let Some(mob) = self.as_leashable() {
             mob.tick_leash();
         }
         // VANILLA CLIENT-LOCAL: `Entity.spawnSprintParticle` creates sprint particles.
@@ -1134,6 +1144,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         );
     }
 
+    /// Emits a vanilla game event from this entity's exact position with a player.
+    fn game_event_with_player(&self, event: GameEventRef, player: &Player) {
+        if let Some(world) = self.level() {
+            world.game_event_at(
+                event,
+                self.position(),
+                &GameEventContext::new(Some(player), None),
+            );
+        }
+    }
+
     /// Kills this entity using vanilla's living/non-living class split.
     ///
     /// `world` is vanilla's explicit `ServerLevel` argument. Living entities
@@ -1181,14 +1202,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let Some(world) = self.level() else {
             return Vec::new();
         };
-        let holder_id = holder.id();
-        let scan_area = leash_scan_area(world_aabb_center(self.bounding_box()));
-        world.get_entities_in_aabb_matching(&scan_area, |entity| {
-            entity.as_mob().is_some_and(|mob| {
-                mob.leash_holder()
-                    .is_some_and(|holder| holder.id() == holder_id)
-            })
-        })
+        leashables_leashed_to_holder_in_area_near_position(
+            &world,
+            world_aabb_center(self.bounding_box()),
+            holder,
+        )
     }
 
     /// Transfers leashables currently held by `old_holder` to this entity.
@@ -1211,7 +1229,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let leashables = self.leashables_leashed_to();
         let mut dropped = !leashables.is_empty();
 
-        if let Some(mob) = self.as_mob()
+        if let Some(mob) = self.as_leashable()
             && mob.is_leashed()
         {
             mob.drop_leash();
@@ -1219,7 +1237,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         for leashable in leashables {
-            if let Some(mob) = leashable.as_mob() {
+            if let Some(mob) = leashable.as_leashable() {
                 mob.drop_leash();
             }
         }
@@ -1500,6 +1518,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla's frequent `instanceof Mob` branches.
     fn as_mob(&self) -> Option<&dyn Mob> {
         try_as_dyn::<Self, dyn Mob>(self)
+    }
+
+    /// Returns this entity as a `Leashable` if it has [`Leashable`] behavior.
+    fn as_leashable(&self) -> Option<&dyn Leashable> {
+        try_as_dyn::<Self, dyn Leashable>(self)
     }
 
     /// Returns true for entities that implement vanilla animal behavior.
