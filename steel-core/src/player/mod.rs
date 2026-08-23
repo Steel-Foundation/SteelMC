@@ -1910,7 +1910,7 @@ impl LivingEntity for Player {
 
     fn jump_from_ground(&self) {
         self.default_jump_from_ground();
-        // TODO: Award Stats.JUMP once player statistics exist.
+        self.award_custom_stat(&vanilla_custom_stats::JUMP);
         if self.is_sprinting() {
             self.cause_food_exhaustion(0.2);
         } else {
