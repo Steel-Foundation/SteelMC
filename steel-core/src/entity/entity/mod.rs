@@ -858,13 +858,18 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ///
     /// Mirrors vanilla `Entity.rideTick`.
     fn ride_tick(&self) {
+        self.default_ride_tick();
+        if let Some(living) = self.as_living_entity() {
+            living.reset_fall_distance();
+        }
+    }
+
+    /// The default implementation of `Entity.rideTick` when not overridden.
+    fn default_ride_tick(&self) {
         self.set_velocity(DVec3::ZERO);
         self.tick();
         if let Some(vehicle) = self.vehicle() {
             vehicle.position_rider(self.as_entity_event_source());
-        }
-        if let Some(living) = self.as_living_entity() {
-            living.reset_fall_distance();
         }
     }
 
