@@ -307,7 +307,7 @@ impl SpeleothemBlockBehavior {
         }
     }
 
-    fn spawn_falling_stalactite(state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+    pub fn spawn_falling_stalactite(state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let mut fall_pos = pos;
         let mut fall_state = state;
 
