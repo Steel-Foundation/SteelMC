@@ -8,6 +8,8 @@ use super::{
 };
 use crate::behavior::blocks::PowderSnowBlock;
 
+const SURVIVAL_DEFAULT_BLOCK_INTERACTION_RANGE: f64 = 4.5;
+
 impl Player {
     /// Sets the player's game mode and notifies the client.
     ///
@@ -213,6 +215,14 @@ impl Player {
     #[must_use]
     pub fn is_within_block_interaction_range(&self, pos: BlockPos) -> bool {
         self.is_within_block_interaction_range_with_buffer(pos, 1.0)
+    }
+    /// Vanilla `player.blockInteractionRange()`
+    #[must_use]
+    pub fn block_interaction_range(&self) -> f64 {
+        self.attributes()
+            .lock()
+            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
+            .unwrap_or(SURVIVAL_DEFAULT_BLOCK_INTERACTION_RANGE)
     }
 
     /// Returns true if player is within block interaction range plus a vanilla buffer.

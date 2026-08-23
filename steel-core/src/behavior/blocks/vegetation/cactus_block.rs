@@ -12,7 +12,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction, IntPro
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_damage_types;
-use steel_registry::vanilla_fluid_tags;
+use steel_registry::vanilla_fluid_tags::FluidTag;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::BlockBehavior;
@@ -79,7 +79,7 @@ impl BlockBehavior for CactusBlock {
             }
 
             let fluid = neighbor.get_fluid_state();
-            if fluid.fluid_id.has_tag(&vanilla_fluid_tags::FluidTag::LAVA) {
+            if fluid.fluid_id.has_tag(&FluidTag::LAVA) {
                 return false;
             }
         }

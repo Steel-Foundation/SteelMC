@@ -11,7 +11,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, IntProperty};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
-use steel_registry::vanilla_fluid_tags;
+use steel_registry::vanilla_fluid_tags::FluidTag;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::BlockBehavior;
@@ -152,7 +152,7 @@ impl BlockBehavior for SugarCaneBlock {
                 || neighbor_state
                     .get_fluid_state()
                     .fluid_id
-                    .has_tag(&vanilla_fluid_tags::FluidTag::SUPPORTS_SUGAR_CANE_ADJACENTLY)
+                    .has_tag(&FluidTag::SUPPORTS_SUGAR_CANE_ADJACENTLY)
             {
                 return true;
             }

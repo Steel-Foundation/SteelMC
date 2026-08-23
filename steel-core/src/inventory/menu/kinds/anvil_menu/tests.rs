@@ -1,5 +1,18 @@
 use std::sync::Arc;
 
+use super::{AnvilKind, anvil};
+use crate::{
+    behavior::init_behaviors,
+    entity::Entity as _,
+    inventory::{
+        click::{Click, MouseButton},
+        container::Container as _,
+        menu::Menu,
+    },
+    player::Player,
+    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
+    world::World,
+};
 use glam::DVec3;
 use steel_registry::{
     REGISTRY, RegistryExt, RegistryReference,
@@ -16,24 +29,9 @@ use steel_utils::{
     BlockPos, ChunkPos, WorldAabb,
     types::{GameType, UpdateFlags},
 };
-use uuid::Uuid;
-
-use super::{AnvilKind, anvil};
-use crate::{
-    behavior::init_behaviors,
-    entity::Entity as _,
-    inventory::{
-        click::{Click, MouseButton},
-        container::Container as _,
-        menu::Menu,
-    },
-    player::Player,
-    test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
-    world::World,
-};
 
 fn test_player(world: Arc<World>) -> Arc<Player> {
-    TestPlayerBuilder::new(world, Uuid::from_u128(1), "AnvilTester", 1).build()
+    TestPlayerBuilder::new(world, "AnvilTester", 1).build()
 }
 
 fn test_anvil(key: &'static str) -> (Arc<World>, Arc<Player>, BlockPos, Menu) {

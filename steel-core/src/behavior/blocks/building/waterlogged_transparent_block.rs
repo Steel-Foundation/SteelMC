@@ -5,10 +5,10 @@ use steel_registry::blocks::properties::{BoolProperty, Direction};
 use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
 };
-use steel_registry::vanilla_fluids;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::weathering_block::{WeatherState, WeatheringCopper};
+use crate::behavior::block::schedule_water_tick_if_waterlogged;
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::world::{ScheduledTickAccess, World};
 
@@ -46,10 +46,7 @@ impl BlockBehavior for WaterloggedTransparentBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         state
     }
@@ -102,6 +99,7 @@ mod tests {
     use super::*;
     use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
+    use steel_registry::vanilla_fluids;
 
     #[test]
     fn waterlogged_transparent_block_returns_falling_source_water() {

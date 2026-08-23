@@ -16,6 +16,7 @@ use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Direction, types::Upda
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::block::{
     BlockBehavior, BlockCollisionContext, EntityFallDamage, EntityFallOnContext, push_entities_up,
+    schedule_water_tick_if_waterlogged,
 };
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::damage::DamageSource;
@@ -272,10 +273,7 @@ impl SpeleothemBlockBehavior {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         if direction != Direction::Up && direction != Direction::Down {
             return state;

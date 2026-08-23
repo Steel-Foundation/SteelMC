@@ -103,7 +103,6 @@ impl BlockBehavior for PumpkinBlock {
             pos,
             vanilla_blocks::CARVED_PUMPKIN
                 .default_state()
-                // TODO: Once CarvedPumpkinBlock is implemented, replace HORIZONTAL_FACING with FACING of CarvedPumpkinBlock.
                 .set_value(HORIZONTAL_FACING, direction),
             UpdateFlags::UPDATE_IMMEDIATE
                 | UpdateFlags::UPDATE_CLIENTS
