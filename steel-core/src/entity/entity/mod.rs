@@ -126,15 +126,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             .insertion(self.uuid().to_string())
     }
 
-    /// Returns vanilla base living-entity invulnerability.
-    fn default_is_invulnerable_to(&self, source: &DamageSource) -> bool {
-        self.is_removed()
-            || self.is_invulnerable() && !source.bypasses_invulnerability()
-            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE) && self.fire_immune()
-            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FALL)
-                && self.is_fall_damage_immune()
-    }
-
     /// Returns this entity's plain vanilla name.
     ///
     /// Custom names are resolved as text components; otherwise entities use
