@@ -55,7 +55,7 @@ pub(crate) fn insert_unready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Ar
     insert_full_chunk(world, pos, false)
 }
 
-fn insert_full_chunk(
+pub(crate) fn insert_full_chunk(
     world: &Arc<World>,
     pos: ChunkPos,
     block_ticking_ready: bool,
