@@ -8,7 +8,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_utils::{BlockPos, BlockStateId, translations};
 use text_components::TextComponent;
-
+use steel_registry::vanilla_custom_stats;
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
@@ -52,7 +52,7 @@ impl BlockBehavior for CraftingTableBlock {
             TextComponent::translated(translations::CONTAINER_CRAFTING.msg()),
             move |context| crafting(inventory, context.container_id, pos),
         );
-        // TODO: Award stat INTERACT_WITH_CRAFTING_TABLE
+        player.award_custom_stat(&vanilla_custom_stats::INTERACT_WITH_CRAFTING_TABLE);
         InteractionResult::Success
     }
 }
