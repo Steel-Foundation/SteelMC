@@ -29,7 +29,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::projectiles::abstract_arrow::{AbstractArrow, Pickup};
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntitySyncedData, Projectile, ProjectileBase,
-    RemovalReason, SharedEntity,
+    ProjectileDeflection, RemovalReason, SharedEntity,
 };
 use crate::player::Player;
 use crate::world::{ClipHitResult, LevelReader as _, World};
@@ -161,7 +161,28 @@ impl ArrowEntity {
 
     /// Vanilla `AbstractArrow.shouldFall`: free space around the resting point.
     fn should_fall(&self) -> bool {
-        self.is_free(DVec3::ZERO)
+        // Vanilla `noCollision(new AABB(pos,pos).inflate(0.06))`
+        let Some(world) = self.level() else {
+            return false;
+        };
+        let pos = self.position();
+        // Check 0.06 inflated cube has no solid collision (approx via is_air)
+        for dx in [-0.06, 0.06] {
+            for dy in [-0.06, 0.06] {
+                for dz in [-0.06, 0.06] {
+                    let p = DVec3::new(pos.x + dx, pos.y + dy, pos.z + dz);
+                    let bpos = steel_utils::BlockPos::new(
+                        p.x.floor() as i32,
+                        p.y.floor() as i32,
+                        p.z.floor() as i32,
+                    );
+                    if !world.get_block_state(bpos).is_air() {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
     }
 
     /// Vanilla `AbstractArrow.startFalling`.
@@ -195,6 +216,9 @@ impl ArrowEntity {
     /// Vanilla `AbstractArrow.onHitBlock` body: back off along the impact
     /// direction, stop, play the hit sound, and stick (`IN_GROUND` + shake).
     fn stick_in_ground(&self, world: &Arc<World>) {
+        if self.is_in_ground() {
+            return;
+        }
         let movement = self.velocity();
         let offset = DVec3::new(
             movement.x.signum() * <ArrowEntity as AbstractArrow>::HIT_BLOCK_BACKOFF,
@@ -250,7 +274,8 @@ impl Entity for ArrowEntity {
 
         // Resting inside a non-air cell counts as stuck (approximation of the
         // vanilla point-in-collision-shape test; arrows stop inside the shape).
-        if !world.get_block_state(self.block_position()).is_air() && self.velocity() == DVec3::ZERO
+        if !world.get_block_state(self.block_position()).is_air()
+            && self.velocity().length_squared() < 1.0e-9
         {
             self.set_in_ground(true);
         }
@@ -393,6 +418,12 @@ impl Entity for ArrowEntity {
         }
         // TODO: leave the arrow in-world when the inventory cannot fit it
         // (vanilla only picks up when `inventory.add` succeeds fully).
+        if let Some(world) = self.level() {
+            let take_packet =
+                steel_protocol::packets::game::CTakeItemEntity::new(self.id(), player.id(), 1);
+            let chunk_pos = steel_utils::ChunkPos::from_entity_pos(self.position());
+            world.broadcast_to_nearby(chunk_pos, take_packet, None);
+        }
         player.add_item_or_drop(ItemStack::new(&vanilla_items::ARROW));
         self.set_removed(RemovalReason::Discarded);
     }
@@ -437,9 +468,19 @@ impl Projectile for ArrowEntity {
             );
             self.set_removed(RemovalReason::Discarded);
         } else {
-            // Vanilla deflect path: `REVERSE` deflection plus a `scale(0.2)`
-            // shrink; a near-stopped allowed arrow drops as an item.
-            self.set_velocity(self.velocity() * -0.2);
+            // Vanilla deflect path: `REVERSE` + `scale(0.2)` + Y pop to leave
+            // creative hitbox.
+            self.deflect(
+                ProjectileDeflection::Reverse,
+                Some(entity.as_ref() as &dyn Entity),
+                self.projectile_owner_uuid(),
+                self.projectile_owner().as_ref(),
+                false,
+            );
+            self.set_velocity(self.velocity() * 0.2);
+            let mut v = self.velocity();
+            v.y += 0.04;
+            self.set_velocity(v);
             if self.velocity().length_squared() < 1.0e-7 {
                 if self.runtime.lock().pickup == Pickup::Allowed {
                     world.spawn_item(self.position(), ItemStack::new(&vanilla_items::ARROW));
