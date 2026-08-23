@@ -423,59 +423,6 @@ mod tests {
             &vanilla_blocks::GLASS
         );
     }
-    /*
-    //TODO: revive this branch of code once tnts get merged
-        #[test]
-        fn strict_fill_skips_tnt_on_place_side_effects() {
-            let pos = BlockPos::new(8, 64, 8);
-            let strict_world = setup_world("fill_strict_tnt", ChunkPos::from_block_pos(pos));
-            assert!(strict_world.set_block(
-                pos.west(),
-                vanilla_blocks::REDSTONE_BLOCK.default_state(),
-                UpdateFlags::UPDATE_NONE,
-            ));
-            let target = BlockInput::from_state(vanilla_blocks::TNT.default_state());
-            assert_eq!(
-                fill_blocks(
-                    &strict_world,
-                    BoundingBox::from_corners(pos, pos),
-                    &target,
-                    FillMode::Replace,
-                    FillSelection::All,
-                    true,
-                ),
-                Ok(1)
-            );
-            assert_eq!(
-                strict_world.get_block_state(pos).get_block(),
-                &vanilla_blocks::TNT
-            );
-
-            let regular_world = setup_world("fill_regular_tnt", ChunkPos::from_block_pos(pos));
-            assert!(regular_world.set_block(
-                pos.west(),
-                vanilla_blocks::REDSTONE_BLOCK.default_state(),
-                UpdateFlags::UPDATE_NONE,
-            ));
-            assert_eq!(
-                fill_blocks(
-                    &regular_world,
-                    BoundingBox::from_corners(pos, pos),
-                    &target,
-                    FillMode::Replace,
-                    FillSelection::All,
-                    false,
-                ),
-                Ok(1)
-            );
-            assert!(regular_world.get_block_state(pos).is_air());
-            assert!(
-                regular_world
-                    .get_entities_in_aabb(&WorldAabb::new(8.0, 63.0, 8.0, 9.0, 67.0, 9.0))
-                    .iter()
-                    .any(|entity| entity.downcast_ref::<PrimedTntEntity>().is_some())
-            );
-        }*/
 
     #[test]
     fn destroy_mode_counts_the_destroyed_block_and_drops_its_loot() {
