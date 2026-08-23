@@ -1,8 +1,5 @@
 //! `NetherrackBlock` behavior (`net.minecraft.world.level.block.NetherrackBlock`).
-//!
-//! Vanilla `NetherrackBlock` is `Bonemealable` — when bonemealed it turns
-//! into `Warped Nylium` or `Crimson Nylium` if either is nearby (3x3x3) and
-//! the block above propagates skylight.
+
 
 use std::sync::Arc;
 
@@ -52,11 +49,6 @@ impl Bonemealable for NetherrackBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        // Vanilla `propagatesSkylightDown` checks if the block above lets skylight
-        // through. Steel has no direct `propagates_skylight_down` on `BlockStateId`
-        // yet, so we approximate with `!is_solid()` (air/glass/leaves pass, stone
-        // doesn't). `can_see_sky` is not suitable here — it checks actual sky
-        // visibility, which is always false in the Nether where this runs.
         if world.get_block_state(pos.above()).is_solid() {
             return false;
         }
