@@ -3,12 +3,12 @@ use std::ptr;
 use crate::player::connection::NetworkConnection;
 
 use super::{
-    Arc, CLogin, CSetDefaultSpawnPosition, CommonPlayerSpawnInfo, DVec3, DomainPlayerData,
-    DomainPlayerState, DomainResidenceToken, EnderPearlRestoreJob, Entity, IMMEDIATE_RESPAWN,
-    Identifier, LIMITED_CRAFTING, PersistentEnderPearl, PersistentRootVehicle, Player,
-    PreparedSpawn, REDUCED_DEBUG_INFO, RegistryEntry, RespawnData, RootVehicleRestoreJob, Server,
-    UnpreparedDomainPlayerData, UnpreparedDomainPlayerState, Uuid, World, apply_default_spawn,
-    local_respawn_data_for_world,
+    Arc, CLogin, CSetDefaultSpawnPosition, CUpdateRecipes, CommonPlayerSpawnInfo, DVec3,
+    DomainPlayerData, DomainPlayerState, DomainResidenceToken, EnderPearlRestoreJob, Entity,
+    IMMEDIATE_RESPAWN, Identifier, LIMITED_CRAFTING, PersistentEnderPearl, PersistentRootVehicle,
+    Player, PreparedSpawn, REDUCED_DEBUG_INFO, RegistryEntry, RespawnData, RootVehicleRestoreJob,
+    Server, UnpreparedDomainPlayerData, UnpreparedDomainPlayerState, Uuid, World,
+    apply_default_spawn, local_respawn_data_for_world,
 };
 
 pub(super) struct PreparedDomainRestores {
@@ -417,6 +417,7 @@ impl Server {
             online_mode: self.config.online_mode,
             enforces_secure_chat: self.enforces_secure_chat(),
         });
+        player.send_packet(CUpdateRecipes::from_registry());
     }
 
     /// Gets all the players on the server
