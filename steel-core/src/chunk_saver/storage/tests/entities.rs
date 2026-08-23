@@ -135,7 +135,7 @@ fn proto_block_entities_roundtrip_and_promote_to_full_chunk() {
     assert!(loaded_full.get_block_entities().is_empty());
     assert_eq!(loaded_full.pending_block_entity_positions(), [block_pos]);
     assert!(loaded_full.get_block_entity(block_pos).is_some());
-    assert!(loaded_full.pending_block_entity_positions().is_empty());
+    assert_eq!(loaded_full.pending_block_entity_positions().len(), 0);
 }
 
 #[test]
@@ -230,8 +230,8 @@ fn proto_entities_roundtrip_and_promote_to_full_chunk() {
         prepared.persistent.entities[0].tags,
         vec!["steel:test".to_owned()]
     );
-    assert!(!prepared.persistent.entities[0].custom_name_nbt.is_empty());
-    assert!(!prepared.persistent.entities[0].custom_data_nbt.is_empty());
+    assert_ne!(prepared.persistent.entities[0].custom_name_nbt.len(), 0);
+    assert_ne!(prepared.persistent.entities[0].custom_data_nbt.len(), 0);
     let custom_name_nbt = read_borrowed_compound(&mut Cursor::new(
         &prepared.persistent.entities[0].custom_name_nbt,
     ))

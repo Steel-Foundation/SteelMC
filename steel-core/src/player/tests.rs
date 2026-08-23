@@ -637,11 +637,9 @@ fn death_removes_tracked_entities_from_dead_players_client() {
         vec![item.id()],
         "vanilla removes every entity pairing from a dead player's client"
     );
-    assert!(
-        world
-            .entity_tracker()
-            .tracking_player_ids(item.id())
-            .is_empty()
+    assert_eq!(
+        world.entity_tracker().tracking_player_ids(item.id()).len(),
+        0
     );
 }
 
@@ -1004,7 +1002,10 @@ fn living_tick_detects_raw_inventory_equipment_mutation() {
         }]
     );
     LivingEntity::detect_equipment_updates(player.as_ref());
-    assert!(LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty());
+    assert_eq!(
+        LivingEntity::drain_dirty_equipment(player.as_ref()).len(),
+        0
+    );
 }
 
 #[test]
@@ -1074,7 +1075,10 @@ fn death_respawn_redetects_unchanged_kept_equipment() {
     );
 
     LivingEntity::detect_equipment_updates(player.as_ref());
-    assert!(LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty());
+    assert_eq!(
+        LivingEntity::drain_dirty_equipment(player.as_ref()).len(),
+        0
+    );
 }
 
 #[test]
@@ -1146,7 +1150,10 @@ fn equipment_detection_suppresses_exact_hand_swap_packet() {
     assert!(player.inventory.lock().swap_hands());
     LivingEntity::detect_equipment_updates(player.as_ref());
 
-    assert!(LivingEntity::drain_dirty_equipment(player.as_ref()).is_empty());
+    assert_eq!(
+        LivingEntity::drain_dirty_equipment(player.as_ref()).len(),
+        0
+    );
 }
 
 #[test]

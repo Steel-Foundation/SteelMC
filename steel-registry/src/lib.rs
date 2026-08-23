@@ -19,14 +19,6 @@
     clippy::unused_self,
     reason = "registry model code mirrors vanilla/generated data and keeps existing panic-heavy registry invariants"
 )]
-#![cfg_attr(
-    test,
-    expect(
-        clippy::float_cmp,
-        reason = "registry tests compare exact extracted floating-point constants"
-    )
-)]
-
 pub mod attribute;
 pub mod banner_pattern;
 pub mod biome;

@@ -76,7 +76,7 @@ fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() 
 
     assert!(world.chunk_map.chunks_to_broadcast.lock().is_empty());
     assert!(!holder.has_changes_to_broadcast());
-    assert!(holder.take_changed_blocks().is_empty());
+    assert_eq!(holder.take_changed_blocks().len(), 0);
     assert!(world.chunk_map.light_update_touches_chunk(center));
     let relevant_packet_ids = packets
         .lock()

@@ -810,7 +810,7 @@ fn domain_detach_invalidates_an_encoded_source_chunk_batch() {
             &player.connection,
             &player.chunk_send_epoch,
         );
-        assert!(committed.is_empty());
+        assert_eq!(committed.len(), 0);
         assert!(sent_packets.lock().is_empty());
         assert!(server.online_players.remove_player_sync(&player).is_some());
 
@@ -1627,7 +1627,7 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
             Ok(2),
             "administrative profile selectors retain globally online players"
         );
-        assert!(source.selector_player_names().is_empty());
+        assert_eq!(source.selector_player_names().len(), 0);
         assert_eq!(server.get_players().len(), 2);
         for _ in 0..2 {
             let Some(request) = server.command_requests.pop_front_runnable(|_| true) else {

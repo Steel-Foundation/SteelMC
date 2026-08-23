@@ -276,7 +276,7 @@ async fn interrupted_first_known_player_publication_discards_its_temporary_file(
         .load_known_players()
         .await
         .expect("uncommitted known-player state should be ignored");
-    assert!(loaded.entries().is_empty());
+    assert_eq!(loaded.entries(), []);
     assert!(!path.exists());
     assert!(!temporary.exists());
 
@@ -300,7 +300,7 @@ async fn corrupt_known_player_cache_loads_as_empty() {
         .load_known_players()
         .await
         .expect("a corrupt optional cache should not prevent startup");
-    assert!(loaded.entries().is_empty());
+    assert_eq!(loaded.entries(), []);
     assert_eq!(
         fs::read(&path)
             .await
@@ -332,7 +332,7 @@ async fn incompatible_known_player_cache_version_loads_as_empty() {
         .load_known_players()
         .await
         .expect("an incompatible optional cache should not prevent startup");
-    assert!(loaded.entries().is_empty());
+    assert_eq!(loaded.entries(), []);
     assert!(loaded.by_uuid(uuid).is_none());
 
     fs::remove_dir_all(root)

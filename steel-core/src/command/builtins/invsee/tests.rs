@@ -526,7 +526,7 @@ fn replacing_overriding_menu_keeps_main_inventory_sync_deferred() {
     recording.packets.lock().clear();
 
     recording.player.tick();
-    assert!(player_inventory_updates(&recording.packets).is_empty());
+    assert_eq!(player_inventory_updates(&recording.packets).len(), 0);
 
     recording.player.do_close_container();
     recording.player.tick();
