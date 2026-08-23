@@ -1,0 +1,66 @@
+warning: unused import: `crate::behavior::InteractionResult`
+  --> steel-core\src\entity\entities\mobs\passive\wandering_trader\mod.rs:17:5
+   |
+17 | use crate::behavior::InteractionResult;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::player::Player`
+  --> steel-core\src\entity\entities\mobs\passive\wandering_trader\mod.rs:27:5
+   |
+27 | use crate::player::Player;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `steel_utils::types::InteractionHand`
+  --> steel-core\src\entity\entities\mobs\passive\wolf\mod.rs:14:5
+   |
+14 | use steel_utils::types::InteractionHand;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::behavior::InteractionResult`
+  --> steel-core\src\entity\entities\mobs\passive\wolf\mod.rs:17:5
+   |
+17 | use crate::behavior::InteractionResult;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::player::Player`
+  --> steel-core\src\entity\entities\mobs\passive\wolf\mod.rs:27:5
+   |
+27 | use crate::player::Player;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `steel_utils::types::InteractionHand`
+  --> steel-core\src\entity\entities\mobs\passive\zombie_horse\mod.rs:14:5
+   |
+14 | use steel_utils::types::InteractionHand;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::behavior::InteractionResult`
+  --> steel-core\src\entity\entities\mobs\passive\zombie_horse\mod.rs:17:5
+   |
+17 | use crate::behavior::InteractionResult;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::player::Player`
+  --> steel-core\src\entity\entities\mobs\passive\zombie_horse\mod.rs:27:5
+   |
+27 | use crate::player::Player;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NodeEvaluator`
+  --> steel-core\src\entity\mob\pathfinder.rs:14:48
+   |
+14 | use crate::entity::ai::walk::{MobPathSettings, NodeEvaluator, WalkNodeEvaluator, SwimNodeEvaluator};
+   |                                                ^^^^^^^^^^^^^
+
+warning: unused import: `MobControls`
+ --> steel-core\src\entity\mob\fish.rs:6:56
+  |
+6 | use crate::entity::ai::control::{MoveControlOperation, MobControls};
+  |                                                        ^^^^^^^^^^^
+
+Some errors have detailed explanations: E0405, E0425, E0432, E0433, E0603.
+For more information about an error, try `rustc --explain E0405`.
+warning: `steel-core` (lib) generated 200 warnings
+error: could not compile `steel-core` (lib) due to 174 previous errors; 200 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+PS C:\Users\tanaw\Downloads\SteelMC\SteelMC>
