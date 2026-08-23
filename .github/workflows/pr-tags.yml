@@ -88,3 +88,18 @@ jobs:
                 owner, repo, issue_number, name: currentByNorm.get(key),
               });
             }
+
+            // Rewrite the body so the "Type of change" list only keeps what the
+            // author actually ticked. Unticked options from TYPE_LABELS are dropped;
+            // every other line (including other checklists) is left alone.
+            const managedTexts = new Set(TYPE_LABELS.map(t => t.text));
+            const kept = body.split("\n").filter(line => {
+              const m = line.match(/^\s*-\s*\[\s*\]\s*(.+?)\s*$/);
+              return !(m && managedTexts.has(m[1].trim()));
+            });
+            const newBody = kept.join("\n");
+            if (newBody !== body) {
+              await github.rest.pulls.update({
+                owner, repo, pull_number: issue_number, body: newBody,
+              });
+            }
