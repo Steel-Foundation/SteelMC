@@ -19,14 +19,6 @@
     clippy::unused_self,
     reason = "registry model code mirrors vanilla/generated data and keeps existing panic-heavy registry invariants"
 )]
-#![cfg_attr(
-    test,
-    expect(
-        clippy::float_cmp,
-        reason = "registry tests compare exact extracted floating-point constants"
-    )
-)]
-
 pub mod attribute;
 pub mod banner_pattern;
 pub mod biome;
@@ -85,6 +77,7 @@ pub use registry::reference as registry_reference;
 pub use registry::*;
 pub mod resolvable_profile;
 pub mod sound_event;
+pub mod stat;
 pub mod structure;
 pub use structure::processor as structure_processor;
 pub use structure::set as structure_set;
@@ -476,3 +469,8 @@ pub mod vanilla_configured_features;
 #[rustfmt::skip]
 #[path = "generated/vanilla_placed_features.rs"]
 pub mod vanilla_placed_features;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_custom_stats.rs"]
+pub mod vanilla_custom_stats;

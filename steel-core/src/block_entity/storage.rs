@@ -633,7 +633,7 @@ mod tests {
         assert!(!entity.is_removed());
         let (concrete, pending) = storage.save_snapshot();
         assert_eq!(concrete.len(), 1);
-        assert!(pending.is_empty());
+        assert_eq!(pending.len(), 0);
     }
 
     #[test]

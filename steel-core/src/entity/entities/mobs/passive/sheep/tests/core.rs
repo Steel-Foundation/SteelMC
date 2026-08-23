@@ -475,7 +475,7 @@ fn sheep_shear_loot_resolves_the_matching_color_table() {
         &mut rng,
     );
 
-    assert!(!drops.is_empty());
+    assert_ne!(drops.len(), 0);
     for drop in &drops {
         assert!(drop.is(&vanilla_items::RED_WOOL));
     }

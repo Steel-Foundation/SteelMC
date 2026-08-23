@@ -10,6 +10,7 @@ authors.workspace = true
 steel-core.workspace = true
 steel-login.workspace = true
 steel-utils.workspace = true
+steel-registry.workspace = true
 
 # Async runtime
 tokio.workspace = true

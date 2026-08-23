@@ -21,7 +21,7 @@ use crate::blocks::properties::Property;
 use crate::blocks::shapes::ShapeChannel;
 use crate::fluid::{FluidRef, FluidState};
 use crate::{RegistryExt, RegistryTags, TaggedRegistryExt};
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
 pub type ShapeFn = fn(u16) -> shapes::VoxelShape;
@@ -462,6 +462,11 @@ pub struct BlockRegistry {
     pub block_to_base_state: Vec<u16>,
     /// The next state ID to be allocated
     pub next_state_id: u16,
+}
+
+// SAFETY: This Steel-owned key uniquely identifies the block registry.
+unsafe impl DowncastType for BlockRegistry {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:registry/block");
 }
 
 impl Default for BlockRegistry {
@@ -1398,7 +1403,7 @@ mod tests {
             .expect("Should find state");
 
         let retrieved = registry.get_properties(state_id);
-        assert!(retrieved.is_empty());
+        assert_eq!(retrieved.len(), 0);
     }
 
     #[test]

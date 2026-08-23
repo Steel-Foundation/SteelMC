@@ -586,7 +586,7 @@ fn structure_start_roundtrip_preserves_template_and_procedural_payloads() {
     };
     assert_eq!(payload.height_position, Some(63));
     assert_eq!(payload.has_placed_chest, [true, false, true, false]);
-    assert!(payload.potential_suspicious_sand_world_positions.is_empty());
+    assert_eq!(payload.potential_suspicious_sand_world_positions.len(), 0);
     assert_eq!(payload.random_collapsed_roof_pos, BlockPos::new(0, 0, 0));
 
     let StructurePiecePayload::Procedural(ProceduralPieceData::JungleTemple(payload)) =

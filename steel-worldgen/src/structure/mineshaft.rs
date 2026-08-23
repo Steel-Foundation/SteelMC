@@ -831,7 +831,7 @@ mod tests {
         else {
             panic!("first mineshaft piece should be the start room");
         };
-        assert!(!child_entrance_boxes.is_empty());
+        assert_ne!(child_entrance_boxes.len(), 0);
 
         let corridor = result
             .pieces

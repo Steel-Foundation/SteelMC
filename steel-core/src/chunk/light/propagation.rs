@@ -1397,7 +1397,7 @@ mod tests {
             panic!("dynamic block changes should skip a missing center chunk");
         };
 
-        assert!(result.updated_sections.is_empty());
+        assert_eq!(result.updated_sections.len(), 0);
     }
 
     #[test]
