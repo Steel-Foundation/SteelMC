@@ -411,12 +411,10 @@ impl World {
         }
 
         self.update_neighbors_at(pos, block);
-        self.update_neighbors_at(pos, block);
         if BLOCK_BEHAVIORS
             .get_behavior(block)
             .has_analog_output_signal(state)
         {
-            self.update_neighbor_for_output_signal(pos, block);
             self.update_neighbor_for_output_signal(pos, block);
         }
     }
