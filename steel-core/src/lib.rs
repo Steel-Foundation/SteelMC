@@ -3,8 +3,6 @@
 //! The core library for the Steel Minecraft server. Handles everything related to the PLAY state.
 
 #![feature(try_as_dyn)]
-// TODO: do a proper fix
-#![recursion_limit = "256"]
 
 use crate::chunk::chunk_map::ChunkMap;
 
