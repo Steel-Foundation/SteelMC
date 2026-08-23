@@ -38,6 +38,7 @@ use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{BlockPos, Identifier, WorldAabb, axis::Axis};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
+use crate::behavior::items::SpawnEggItem;
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::ai::control::{
     BodyRotationInput, MobControls, MoveControlOperation, rotate_if_necessary, rotate_towards,
@@ -508,7 +509,7 @@ pub trait Mob: LivingEntity {
                 .lock()
                 .get_item_in_hand(hand)
                 .copy_with_count(1);
-            crate::behavior::items::SpawnEggItem::interact_with_mob(&mut item_stack, player, self)
+            SpawnEggItem::interact_with_mob(&mut item_stack, player, self)
         };
         if spawn_egg_result.consumes_action() {
             if spawn_egg_result == InteractionResult::SuccessServer

@@ -6,7 +6,7 @@ use steel_registry::data_components::vanilla_components::ENTITY_DATA;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::nbt::merge_nbt_compounds;
-use steel_utils::{BlockPos, WorldAabb, axis::Axis, wrap_degrees};
+use steel_utils::{BlockPos, WorldAabb, axis::Axis, types::Difficulty, wrap_degrees};
 
 use super::{AddEntityError, ENTITIES, SharedEntity, next_entity_id};
 use crate::physics::{CollisionWorld, WorldCollisionProvider, collide};
@@ -111,7 +111,7 @@ pub(crate) fn create_entity_instance(
         return Err(EntitySpawnError::InvalidPosition);
     }
 
-    if world.difficulty() == steel_utils::types::Difficulty::Peaceful
+    if world.difficulty() == Difficulty::Peaceful
         && !entity_type.allowed_in_peaceful
     {
         return Err(EntitySpawnError::Peaceful);
@@ -382,8 +382,7 @@ mod tests {
             &vanilla_entities::PIG,
             CustomData::try_from_compound(payload).expect("test entity data should be valid"),
         );
-        let mut spawn_egg =
-            steel_registry::item_stack::ItemStack::new(&vanilla_items::PIG_SPAWN_EGG);
+        let mut spawn_egg = ItemStack::new(&vanilla_items::PIG_SPAWN_EGG);
         spawn_egg.set(ENTITY_DATA, entity_data);
 
         apply_item_stack_components(&entity, &spawn_egg)
