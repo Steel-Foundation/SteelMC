@@ -48,7 +48,7 @@ impl Bonemealable for NetherrackBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        if world.get_block_state(pos.above()).is_solid() {
+        if world.get_block_state(pos.above()).get_light_dampening() != 0 {
             return false;
         }
         for check_pos in BlockPos::between_closed(pos.offset(-1, -1, -1), pos.offset(1, 1, 1)) {
