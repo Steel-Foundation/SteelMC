@@ -324,6 +324,7 @@ mod tests {
     use steel_registry::data_components::components::EntityData;
     use steel_registry::data_components::{CustomData, vanilla_components::ENTITY_DATA};
     use steel_registry::init_vanilla_registry;
+    use steel_registry::item_stack::ItemStack;
     use steel_registry::{vanilla_entities, vanilla_items, vanilla_pig_variants};
     use text_components::TextComponent;
 
