@@ -11,6 +11,7 @@ use crate::behavior::{
     BLOCK_BEHAVIORS, BlockStateBehaviorExt, FLUID_BEHAVIORS, ItemBehavior, UseItemContext,
     pickup_waterlogged_block,
 };
+use crate::entity::Entity;
 use crate::fluid::FluidStateExt;
 use crate::world::RaytraceAction;
 use steel_macros::item_behavior;
@@ -101,9 +102,8 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
     {
         // Apply sound
         if let Some(sound) = result.sound {
-            context
-                .world
-                .play_block_sound(sound, hit_pos, 1.0, 1.0, None);
+            // Vanilla `BucketItem.use`: `bucketPickupBlock.getPickupSound()...player.playSound(...)`.
+            context.player.play_sound(sound, 1.0, 1.0);
         }
 
         // Give filled bucket
@@ -126,9 +126,8 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         Some(context.player),
     ) {
         if let Some(sound) = result.sound {
-            context
-                .world
-                .play_block_sound(sound, hit_pos, 1.0, 1.0, None);
+            // Vanilla `BucketItem.use`: `bucketPickupBlock.getPickupSound()...player.playSound(...)`.
+            context.player.play_sound(sound, 1.0, 1.0);
         }
 
         create_filled_result(context, result.filled_bucket, true);
@@ -311,9 +310,14 @@ fn play_empty_sound_and_event(context: &UseItemContext, pos: BlockPos, is_water_
     } else {
         &sound_events::ITEM_BUCKET_EMPTY_LAVA
     };
-    context
-        .world
-        .play_block_sound(sound_event, pos, 1.0, 1.0, None);
+    context.world.play_block_sound(
+        sound_event,
+        pos,
+        1.0,
+        1.0,
+        // Vanilla `BucketItem.playEmptySound`: `level.playSound(user, pos, ...)` excludes the placing player.
+        Some(context.player.id()),
+    );
     context.world.game_event(
         &vanilla_game_events::FLUID_PLACE,
         pos,

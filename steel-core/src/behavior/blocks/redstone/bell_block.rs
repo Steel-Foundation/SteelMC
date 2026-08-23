@@ -40,7 +40,7 @@ pub struct BellBlock {
 }
 
 impl BellBlock {
-    /// creates bell behavior for `block`.
+    /// Creates bell behavior for `block`.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
@@ -60,6 +60,7 @@ impl BellBlock {
 
         world.is_face_sturdy(support, support_pos, direction.opposite())
     }
+    // TODO: Award the `BELL_RING` statistic once the statistics system is implemented.
     // TODO: Notify villagers when the villager AI is fully implemented.
     fn ring(source: Option<&dyn Entity>, world: &Arc<World>, pos: BlockPos, direction: Direction) {
         let Some(block_entity) = world.get_block_entity(pos) else {

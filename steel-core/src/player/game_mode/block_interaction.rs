@@ -1,4 +1,5 @@
 use super::{block_breaking::BlockBreakAction, *};
+use steel_utils::translations;
 
 impl Player {
     /// Sends block update packets for a position and its neighbor.
@@ -66,11 +67,14 @@ impl Player {
         let world = self.get_world();
 
         if pos.y() >= world.max_build_height() {
-            // TODO: Send "build.tooHigh" message to player
+            self.send_message(
+                &translations::BUILD_TOO_HIGH
+                    .message([TextComponent::plain(world.max_build_height().to_string())])
+                    .component(),
+            );
             self.send_block_updates(pos, direction);
             return;
         }
-
         if self.is_awaiting_teleport() {
             self.send_block_updates(pos, direction);
             return;

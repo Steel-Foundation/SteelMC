@@ -2,7 +2,7 @@
 use std::{ptr, sync::Arc};
 
 use steel_protocol::packets::game::{CGameEvent, GameEventType};
-use steel_registry::vanilla_entities;
+use steel_registry::{vanilla_custom_stats, vanilla_entities};
 use steel_utils::ChunkPos;
 
 use crate::{
@@ -173,6 +173,7 @@ impl World {
             "disconnect menu removal must run at the packet-processing safe point"
         );
 
+        player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
         let Some(player) = self.take_player_for_removal(&player) else {
             // End credits and failed target admission deliberately have no live
             // world membership but still need one authoritative disconnect save.
@@ -181,7 +182,6 @@ impl World {
             player.store_ender_pearls_with_player();
             return (player, domain, player_data);
         };
-        let entity_id = player.id();
         let domain = self.domain().to_owned();
         if player.is_sleeping() {
             player.stop_sleep_in_bed(true, false);
@@ -193,7 +193,7 @@ impl World {
         self.unregister_player_entity(&player);
 
         // Remove player from entity tracking (stop tracking all entities for this player)
-        self.entity_tracker().on_player_leave(entity_id);
+        self.entity_tracker().on_player_leave(&player);
 
         self.player_area_map.on_player_leave(&player);
         (player, domain, player_data)
@@ -207,11 +207,10 @@ impl World {
         let Some(player) = self.take_player_for_removal(player) else {
             return;
         };
-        let entity_id = player.id();
-
+        player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
         self.unride_player_for_removal(&player, false);
         self.unregister_player_entity(&player);
-        self.entity_tracker().on_player_leave(entity_id);
+        self.entity_tracker().on_player_leave(&player);
         self.player_area_map.on_player_leave(&player);
         // Note: no CRemovePlayerInfo — player stays in the global tab list
     }
@@ -222,13 +221,14 @@ impl World {
         player: &Arc<Player>,
     ) -> Option<(PersistentPlayerData, DomainResidenceToken)> {
         let player = self.take_player_for_removal(player)?;
-        let entity_id = player.id();
+
+        player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
         let player_data = PersistentPlayerData::from_player(&player);
 
         self.unride_player_for_removal(&player, true);
         player.store_ender_pearls_with_player();
         self.unregister_player_entity(&player);
-        self.entity_tracker().on_player_leave(entity_id);
+        self.entity_tracker().on_player_leave(&player);
         self.player_area_map.on_player_leave(&player);
         let residence_token = player.advance_domain_residence();
         Some((player_data, residence_token))
