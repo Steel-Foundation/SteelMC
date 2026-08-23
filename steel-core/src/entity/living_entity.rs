@@ -683,7 +683,9 @@ pub trait LivingEntity: Entity {
         let durability_damage = (damage / 4.0).max(1.0) as i32;
         for &slot in slots {
             let mut item_broke = false;
+            let mut item_ref = &*vanilla_items::AIR;
             self.with_equipment_slot_mut(slot, &mut |item| {
+                item_ref = item.item;
                 let damage_on_hurt = item
                     .get_equippable()
                     .is_some_and(|equippable| equippable.damage_on_hurt);
@@ -696,7 +698,7 @@ pub trait LivingEntity: Entity {
                 }
             });
             if item_broke {
-                self.on_equipped_item_broken(slot);
+                self.on_equipped_item_broken(item_ref, slot);
             }
         }
     }
@@ -1671,18 +1673,8 @@ pub trait LivingEntity: Entity {
     }
 
     /// Called after an equipped item breaks.
-    fn on_equipped_item_broken(&self, slot: EquipmentSlot) {
-        let event = match slot {
-            EquipmentSlot::MainHand => EntityStatus::MainhandBreak,
-            EquipmentSlot::OffHand => EntityStatus::OffhandBreak,
-            EquipmentSlot::Head => EntityStatus::HeadBreak,
-            EquipmentSlot::Chest => EntityStatus::ChestBreak,
-            EquipmentSlot::Legs => EntityStatus::LegsBreak,
-            EquipmentSlot::Feet => EntityStatus::FeetBreak,
-            EquipmentSlot::Body => EntityStatus::BodyBreak,
-            EquipmentSlot::Saddle => EntityStatus::SaddleBreak,
-        };
-        self.broadcast_entity_event(event);
+    fn on_equipped_item_broken(&self, _item: ItemRef, slot: EquipmentSlot) {
+        self.broadcast_entity_event(slot.into());
         self.refresh_equipment_attribute_modifiers(slot);
     }
 
@@ -1842,11 +1834,13 @@ pub trait LivingEntity: Entity {
         let slot_to_damage = slots_with_gliders[slot_index];
         let has_infinite_materials = self.has_infinite_materials();
         let mut item_broke = false;
+        let mut item_ref = &*vanilla_items::AIR;
         self.with_equipment_slot_mut(slot_to_damage, &mut |item_stack| {
+            item_ref = item_stack.item;
             item_broke = item_stack.hurt_and_break(1, has_infinite_materials);
         });
         if item_broke {
-            self.on_equipped_item_broken(slot_to_damage);
+            self.on_equipped_item_broken(item_ref, slot_to_damage);
         }
     }
 

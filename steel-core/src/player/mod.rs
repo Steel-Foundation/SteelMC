@@ -130,6 +130,7 @@ use steel_protocol::packets::{
 };
 use steel_registry::RegistryEntry;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::ItemRef;
 use steel_registry::stat::vanilla_stat_types;
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, Identifier, UuidExt as _,
@@ -1979,6 +1980,12 @@ impl LivingEntity for Player {
         } else {
             0.02
         }
+    }
+
+    fn on_equipped_item_broken(&self, item: ItemRef, slot: EquipmentSlot) {
+        self.broadcast_entity_event(slot.into());
+        self.refresh_equipment_attribute_modifiers(slot);
+        self.award_stat(&vanilla_stat_types::ITEM_BROKEN, item);
     }
 }
 
