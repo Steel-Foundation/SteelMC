@@ -1,6 +1,5 @@
 //! `NetherrackBlock` behavior (`net.minecraft.world.level.block.NetherrackBlock`).
 
-
 use std::sync::Arc;
 
 use rand::RngExt;
