@@ -215,12 +215,7 @@ impl PlayerInventory {
     /// Finds the first empty slot in the inventory, or `None` if full.
     #[must_use]
     pub fn get_free_slot(&self) -> Option<usize> {
-        for i in 0..Self::INVENTORY_SIZE {
-            if self.items[i].is_empty() {
-                return Some(i);
-            }
-        }
-        None
+        (0..Self::INVENTORY_SIZE).find(|&i| self.items[i].is_empty())
     }
 
     /// Finds next empty slot in hotbar (and returns)
@@ -252,25 +247,17 @@ impl PlayerInventory {
     /// Finds a slot containing an item matching the given stack (same item type).
     #[must_use]
     pub fn find_slot_matching_item(&self, stack: &ItemStack) -> Option<usize> {
-        for i in 0..Self::INVENTORY_SIZE {
-            if !self.items[i].is_empty() && ItemStack::is_same_item(&self.items[i], stack) {
-                return Some(i);
-            }
-        }
-        None
+        (0..Self::INVENTORY_SIZE)
+            .find(|&i| !self.items[i].is_empty() && ItemStack::is_same_item(&self.items[i], stack))
     }
 
     /// Finds a slot containing an item matching the exact given stack (same item type).
     #[must_use]
     pub fn find_slot_matching_item_with_same_components(&self, stack: &ItemStack) -> Option<usize> {
-        for i in 0..Self::INVENTORY_SIZE {
-            if !self.items[i].is_empty()
+        (0..Self::INVENTORY_SIZE).find(|&i| {
+            !self.items[i].is_empty()
                 && ItemStack::is_same_item_same_components(&self.items[i], stack)
-            {
-                return Some(i);
-            }
-        }
-        None
+        })
     }
 
     /// Swaps items between selected hotbar slot and the given slot.
