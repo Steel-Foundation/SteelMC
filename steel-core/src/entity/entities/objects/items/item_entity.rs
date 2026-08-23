@@ -32,6 +32,7 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::CTakeItemEntity;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::stat::vanilla_stat_types;
 use steel_utils::BlockPos;
 
 /// Maximum age in ticks before despawn (5 minutes = 6000 ticks).
@@ -332,6 +333,15 @@ impl ItemEntity {
 
         // Calculate how many items were picked up
         let picked_up_count = original_count - item.count();
+
+        // Vanilla uses the stack's count to award the stat that many items picked up, which is
+        // wrong if not all the items get picked up by the player. We use the correct difference
+        // of counts instead to award the stat for picking up the items.
+        player.award_stat_with_count(
+            &vanilla_stat_types::ITEM_PICKED_UP,
+            item.item,
+            picked_up_count,
+        );
 
         // Send the take animation packet to nearby players
         if let Some(world) = self.level() {
