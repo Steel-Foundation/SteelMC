@@ -731,8 +731,8 @@ impl MenuBehavior {
                 (slot_item.count + 1) / 2
             };
 
-            if let Some(taken) = slot.try_remove(&mut guard, amount, i32::MAX, player) {
-                if let Some(remainder) = slot.on_take(&mut guard, &taken, player) {
+            if let Some(mut taken) = slot.try_remove(&mut guard, amount, i32::MAX, player) {
+                if let Some(remainder) = slot.on_take(&mut guard, &mut taken, player) {
                     player.add_item_or_drop_with_guard(&mut guard, remainder);
                 }
                 self.carried = taken;
@@ -751,10 +751,10 @@ impl MenuBehavior {
                 if slot.may_pickup(&guard, player) {
                     let space = carried.max_stack_size() - carried.count;
                     if space > 0 {
-                        if let Some(taken) =
+                        if let Some(mut taken) =
                             slot.try_remove(&mut guard, slot_item.count, space, player)
                         {
-                            if let Some(remainder) = slot.on_take(&mut guard, &taken, player) {
+                            if let Some(remainder) = slot.on_take(&mut guard, &mut taken, player) {
                                 player.add_item_or_drop_with_guard(&mut guard, remainder);
                             }
                             let mut new_carried = carried;

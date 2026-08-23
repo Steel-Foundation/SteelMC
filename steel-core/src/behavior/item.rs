@@ -190,6 +190,9 @@ pub trait ItemBehavior: Send + Sync {
             .get_weapon()
             .map(|weapon| weapon.item_damage_per_attack)
     }
+
+    /// Vanilla `Item.onCraftedBy`.
+    fn on_crafted_by(&self, _stack: &mut ItemStack, _player: &Player) {}
 }
 
 /// Registry for item behaviors.

@@ -170,7 +170,7 @@ pub trait Slot: ErasedType + Send + Sync {
     fn on_take(
         &self,
         guard: &mut ContainerLockGuard,
-        _stack: &ItemStack,
+        _stack: &mut ItemStack,
         _player: &Player,
     ) -> Option<ItemStack> {
         self.set_changed(guard);
@@ -185,8 +185,8 @@ pub trait Slot: ErasedType + Send + Sync {
         max_amount: i32,
         player: &Player,
     ) -> ItemStack {
-        if let Some(taken) = self.try_remove(guard, amount, max_amount, player) {
-            if let Some(remainder) = self.on_take(guard, &taken, player) {
+        if let Some(mut taken) = self.try_remove(guard, amount, max_amount, player) {
+            if let Some(remainder) = self.on_take(guard, &mut taken, player) {
                 player.add_item_or_drop_with_guard(guard, remainder);
             }
             taken
