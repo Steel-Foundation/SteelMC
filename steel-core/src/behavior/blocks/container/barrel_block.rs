@@ -8,7 +8,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
-use steel_registry::vanilla_block_entity_types;
+use steel_registry::{vanilla_block_entity_types, vanilla_custom_stats};
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, translations};
 use text_components::TextComponent;
 
@@ -20,7 +20,7 @@ use crate::block_entity::entities::BarrelBlockEntity;
 use crate::entity::LivingEntity as _;
 use crate::inventory::container::calculate_redstone_signal_from_container;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
-use crate::inventory::menu::kinds::chest;
+use crate::inventory::menu::kinds::chest_for_block_entities;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 
@@ -60,7 +60,6 @@ impl BlockBehavior for BarrelBlock {
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        // Get the block entity
         let Some(block_entity) = world.get_block_entity(pos) else {
             return InteractionResult::Pass;
         };
@@ -69,26 +68,35 @@ impl BlockBehavior for BarrelBlock {
         if let Some(barrel) = block_entity.downcast_ref::<BarrelBlockEntity>() {
             barrel.unpack_loot_table(player.get_luck());
         }
-
-        // Create a container reference from the block entity
-        let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
+        if block_entity.container_ref().is_none() {
             return InteractionResult::Pass;
-        };
+        }
 
-        // Open the chest menu (3 rows for barrel)
+        // Open the chest menu (3 rows for barrel). Going through the block entity
+        // lets its `ContainerOpenersCounter` see the viewer.
         let inventory = player.inventory.clone();
         player.open_menu(
             TextComponent::translated(translations::CONTAINER_BARREL.msg()),
-            move |context| chest(inventory, context.container_id, container_ref, 3),
+            move |context| {
+                chest_for_block_entities(inventory, context.container_id, vec![block_entity])
+            },
         );
 
-        // TODO: Award stat OPEN_BARREL
+        player.award_custom_stat(&vanilla_custom_stats::OPEN_BARREL);
+
         // TODO: Anger nearby piglins (PiglinAi.angerNearbyPiglins)
-        // TODO: Implement ContainerOpenersCounter to track open state, play sounds,
-        //       and update OPEN block property. Requires scheduled block ticks (scheduleTick)
-        //       for recheck functionality. See vanilla BarrelBlockEntity and ContainerOpenersCounter.
 
         InteractionResult::Success
+    }
+
+    fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        let Some(block_entity) = world.get_block_entity(pos) else {
+            return;
+        };
+        let Some(barrel) = block_entity.downcast_ref::<BarrelBlockEntity>() else {
+            return;
+        };
+        barrel.recheck_open(world);
     }
 
     fn new_block_entity(

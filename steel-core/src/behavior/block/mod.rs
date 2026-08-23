@@ -28,6 +28,7 @@ use steel_utils::value_providers::IntProvider;
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Identifier, WorldAabb, axis::Axis};
 
 use crate::behavior::BLOCK_BEHAVIORS;
+use crate::behavior::blocks::ChestBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::behavior::{InventoryAccess, PlacementSource};
@@ -1212,6 +1213,13 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns the shared vanilla rail capability implemented by this block.
     fn as_rail(&self) -> Option<&dyn RailBehavior> {
+        None
+    }
+
+    /// Returns the chest lid-sound capability implemented by this block.
+    ///
+    /// Mirrors Vanilla `ChestBlockEntity`'s `instanceof ChestBlock` check.
+    fn as_chest(&self) -> Option<&dyn ChestBehavior> {
         None
     }
 }

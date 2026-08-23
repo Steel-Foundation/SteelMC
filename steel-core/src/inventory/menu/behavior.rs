@@ -105,6 +105,14 @@ impl MenuBehavior {
         ContainerLockGuard::lock_all(&self.container_refs)
     }
 
+    /// Returns whether any slot of this menu is backed by `container`.
+    #[must_use]
+    pub fn views_container(&self, container: ContainerId) -> bool {
+        self.container_refs
+            .iter()
+            .any(|reference| reference.container_id() == container)
+    }
+
     /// Locks the menu containers together with one additional container.
     #[must_use]
     pub(crate) fn lock_all_containers_with(&self, additional: ContainerRef) -> ContainerLockGuard {

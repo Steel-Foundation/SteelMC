@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
-use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, ChestType};
 use steel_registry::vanilla_game_events;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::{
+    behavior::blocks::connected_chest_pos,
     entity::Entity,
     player::Player,
     world::{World, game_event::GameEventContext},
@@ -35,22 +34,6 @@ pub(super) fn emit_connected_chest_block_change(
     }
 }
 
-fn connected_chest_pos(pos: BlockPos, state: BlockStateId) -> Option<BlockPos> {
-    let chest_type = state.try_get_value(&BlockStateProperties::CHEST_TYPE)?;
-    if chest_type == ChestType::Single {
-        return None;
-    }
-
-    let facing = state.try_get_value(&BlockStateProperties::FACING)?;
-    let connected_direction = if chest_type == ChestType::Left {
-        facing.rotate_y_clockwise()
-    } else {
-        facing.rotate_y_counter_clockwise()
-    };
-
-    Some(pos.relative(connected_direction))
-}
-
 #[cfg(test)]
 mod tests {
     use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -59,7 +42,7 @@ mod tests {
     use steel_registry::vanilla_blocks;
     use steel_utils::BlockPos;
 
-    use crate::behavior::items::copper_chest_events::connected_chest_pos;
+    use crate::behavior::blocks::connected_chest_pos;
 
     #[test]
     fn connected_chest_pos_matches_vanilla_left_and_right_offsets() {

@@ -781,6 +781,21 @@ impl Player {
         open_menu.menu.is_some() || open_menu.dispatch.is_some()
     }
 
+    /// Returns whether the player's open menu is backed by `container`.
+    ///
+    /// Mirrors the container identity half of Vanilla
+    /// `ContainerOpenersCounter.isOwnContainer`. Reports `false` while a menu
+    /// hook holds the menu, matching Vanilla's inability to observe a menu
+    /// mid-transition.
+    #[must_use]
+    pub fn views_container(&self, container: ContainerId) -> bool {
+        self.open_menu
+            .lock()
+            .menu
+            .as_ref()
+            .is_some_and(|menu| menu.views_container(container))
+    }
+
     /// Runs the open menu's per-tick hook, if an external menu is open.
     ///
     /// Scoped to the opened menu; the base inventory menu is not ticked. Called

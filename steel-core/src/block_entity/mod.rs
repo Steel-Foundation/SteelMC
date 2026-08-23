@@ -25,6 +25,7 @@
 
 pub(crate) mod block_state_nbt;
 pub mod entities;
+pub mod openers_counter;
 mod registry;
 mod storage;
 
@@ -43,6 +44,7 @@ use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_utils::{BlockPos, BlockStateId, ErasedType, locks::SyncMutex};
 
+pub use openers_counter::{ContainerOpenersCounter, ContainerOpenersHost};
 pub use registry::{BLOCK_ENTITIES, BlockEntityFactory, BlockEntityRegistry, init_block_entities};
 pub(crate) use storage::{
     BlockEntityInsert, BlockEntityLookup, BlockEntityStorage, ClearedBlockEntities,
@@ -441,6 +443,23 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     fn container_ref(&self) -> Option<ContainerRef> {
         None
     }
+
+    /// Mirrors Vanilla `Container.startOpen`: a viewer opened this container.
+    ///
+    /// Called after the viewer's menu is built, without holding any container
+    /// lock, so implementations may touch the world.
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameter used by overrides"
+    )]
+    fn start_open(&self, player: &Player) {}
+
+    /// Mirrors Vanilla `Container.stopOpen`: a viewer closed this container.
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameter used by overrides"
+    )]
+    fn stop_open(&self, player: &Player) {}
 
     /// Returns this entity's fixed game-event listener, if it provides one.
     ///

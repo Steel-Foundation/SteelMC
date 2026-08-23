@@ -118,6 +118,12 @@ impl Menu {
         self.kind.still_valid(&self.behavior, player)
     }
 
+    /// Returns whether any slot of this menu is backed by `container`.
+    #[must_use]
+    pub fn views_container(&self, container: ContainerId) -> bool {
+        self.behavior.views_container(container)
+    }
+
     /// Returns true if the item can be taken from the slot during pickup all.
     #[must_use]
     pub fn can_take_item_for_pick_all(&self, carried: &ItemStack, slot_index: usize) -> bool {

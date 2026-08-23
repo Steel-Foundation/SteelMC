@@ -342,18 +342,33 @@ fn matching_item_count(
 /// Signal strength from 0 to 15
 #[must_use]
 pub fn calculate_redstone_signal_from_container(container: &dyn Container) -> i32 {
-    let size = container.get_container_size();
+    calculate_redstone_signal_from_containers(&[container])
+}
+
+/// Calculates the comparator signal over several containers read as one.
+///
+/// Vanilla passes a `CompoundContainer` to
+/// `AbstractContainerMenu.getRedstoneSignalFromContainer`, so both halves of a
+/// double chest share a single fill ratio over their combined slot count.
+#[must_use]
+pub fn calculate_redstone_signal_from_containers(containers: &[&dyn Container]) -> i32 {
+    let size: usize = containers
+        .iter()
+        .map(|container| container.get_container_size())
+        .sum();
     if size == 0 {
         return 0;
     }
 
     let mut total_percent: f32 = 0.0;
 
-    for i in 0..size {
-        let item = container.get_item(i);
-        if !item.is_empty() {
-            let max_stack = container.get_max_stack_size_for_item(item);
-            total_percent += item.count() as f32 / max_stack as f32;
+    for container in containers {
+        for i in 0..container.get_container_size() {
+            let item = container.get_item(i);
+            if !item.is_empty() {
+                let max_stack = container.get_max_stack_size_for_item(item);
+                total_percent += item.count() as f32 / max_stack as f32;
+            }
         }
     }
 
@@ -538,6 +553,24 @@ mod tests {
             container.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
         }
         assert_eq!(calculate_redstone_signal_from_container(&container), 15);
+    }
+
+    /// A double chest averages over both halves, so the same contents produce a
+    /// weaker signal than in a single chest.
+    #[test]
+    fn comparator_signal_spans_every_container_of_a_double_chest() {
+        init_vanilla_registry();
+        let mut full = TestContainer::new(27);
+        for slot in 0..full.get_container_size() {
+            full.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
+        }
+        let empty = TestContainer::new(27);
+
+        assert_eq!(calculate_redstone_signal_from_container(&full), 15);
+        assert_eq!(
+            calculate_redstone_signal_from_containers(&[&full, &empty]),
+            8
+        );
     }
 
     #[test]
