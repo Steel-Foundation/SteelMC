@@ -12,7 +12,7 @@ use steel_registry::blocks::{
 };
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
-/// Behavior for vanilla budding amethyst blocks.
+/// Behavior for vanilla heavy core block.
 #[block_behavior]
 pub struct HeavyCoreBlock {
     block: BlockRef,
@@ -21,7 +21,7 @@ pub struct HeavyCoreBlock {
 const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl HeavyCoreBlock {
-    /// Creates a new budding amethyst block behavior.
+    /// Creates a new heavy core block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }

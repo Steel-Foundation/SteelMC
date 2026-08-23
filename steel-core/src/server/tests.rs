@@ -12,6 +12,9 @@ use std::{
 
 use glam::DVec3;
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
+use steel_protocol::packets::common::{
+    ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
+};
 use steel_protocol::packets::game::CRemovePlayerInfo;
 use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::entity_type::EntityTypeRef;
@@ -29,8 +32,8 @@ use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
 use crate::command::execution::{
-    CommandArgumentSource, CommandPermissionSource, CommandSource, ExecutionCommandSource,
-    parse_entity_selector_text,
+    CommandArgumentSource, CommandExecutionContext, CommandPermissionSource, CommandResultCallback,
+    CommandSource, ExecutionCommandSource, ExecutionStop, parse_entity_selector_text,
 };
 use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection};
@@ -295,8 +298,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
             panic!("test server should initialize");
         };
 
-        let uuid = Uuid::from_u128(1);
-        let saved_player = test_player(&server, Arc::clone(&saved_world), uuid);
+        let saved_player = test_player(&server, Arc::clone(&saved_world));
         let saved_position = DVec3::new(8.25, 70.0, 8.75);
         let saved_velocity = DVec3::new(0.25, -0.5, 0.75);
         saved_player.base().set_position_local(saved_position);
@@ -310,7 +312,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
         });
         if let Err(error) = server
             .player_data_storage
-            .save_domain_data("target", uuid, &saved_data)
+            .save_domain_data("target", saved_player.gameprofile.id, &saved_data)
             .await
         {
             panic!("saved target-domain data should persist: {error}");
@@ -354,11 +356,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
             spawn_chunk_request: mismatch_request,
         };
         assert!(Server::root_vehicle_to_restore(&mismatch_state).is_none());
-        let mismatch_player = test_player(
-            &server,
-            Arc::clone(&mismatch_state.world),
-            Uuid::from_u128(2),
-        );
+        let mismatch_player = test_player(&server, Arc::clone(&mismatch_state.world));
         Server::apply_domain_player_state(&mismatch_player, &mismatch_state);
         assert_eq!(mismatch_player.position(), mismatch_spawn.position);
         assert_eq!(mismatch_player.velocity(), DVec3::ZERO);
@@ -404,11 +402,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
             },
             spawn_chunk_request: matching_request,
         };
-        let matching_player = test_player(
-            &server,
-            Arc::clone(&matching_state.world),
-            Uuid::from_u128(3),
-        );
+        let matching_player = test_player(&server, Arc::clone(&matching_state.world));
         Server::apply_domain_player_state(&matching_player, &matching_state);
         assert_eq!(matching_player.position(), saved_position);
         assert_eq!(matching_player.velocity(), saved_velocity);
@@ -436,7 +430,7 @@ fn saved_location_planning_honors_explicit_world_selection() {
         saved_data.world = "target:missing".to_owned();
         if let Err(error) = server
             .player_data_storage
-            .save_domain_data("target", uuid, &saved_data)
+            .save_domain_data("target", saved_player.gameprofile.id, &saved_data)
             .await
         {
             panic!("unavailable saved-world data should persist: {error}");
@@ -518,8 +512,7 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
             panic!("test server should initialize");
         };
 
-        let uuid = Uuid::from_u128(1);
-        let player = test_player(&server, Arc::clone(&source_world), uuid);
+        let player = test_player(&server, Arc::clone(&source_world));
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
@@ -531,7 +524,7 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
         target_data.pos = target_position.to_array();
         let saved = server
             .player_data_storage
-            .save_domain_data("target", uuid, &target_data)
+            .save_domain_data("target", player.gameprofile.id, &target_data)
             .await;
         if let Err(error) = saved {
             panic!("target-domain data should save: {error}");
@@ -553,8 +546,18 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
         let target_residence = player.domain_residence_token();
         assert_ne!(source_residence, target_residence);
         assert!(!player.is_domain_residence_current(source_residence));
-        assert!(source_world.players.get_by_uuid(&uuid).is_none());
-        assert!(target_world.players.get_by_uuid(&uuid).is_none());
+        assert!(
+            source_world
+                .players
+                .get_by_uuid(&player.gameprofile.id)
+                .is_none()
+        );
+        assert!(
+            target_world
+                .players
+                .get_by_uuid(&player.gameprofile.id)
+                .is_none()
+        );
 
         let mut saw_target_admission = false;
         for tick in 1..=10_000 {
@@ -579,11 +582,16 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
         assert!(player.is_domain_residence_current(target_residence));
         assert!(!player.is_domain_switching());
         assert!(!player.is_world_change_pending());
-        assert!(source_world.players.get_by_uuid(&uuid).is_none());
+        assert!(
+            source_world
+                .players
+                .get_by_uuid(&player.gameprofile.id)
+                .is_none()
+        );
         assert!(
             target_world
                 .players
-                .get_by_uuid(&uuid)
+                .get_by_uuid(&player.gameprofile.id)
                 .is_some_and(|current| Arc::ptr_eq(&current, &player))
         );
         assert_eq!(player.position(), target_position);
@@ -614,7 +622,7 @@ fn ender_pearl_restore_waits_while_its_owner_has_no_live_membership() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+        let player = test_player(&server, Arc::clone(&world));
         assert!(server.online_players.insert(Arc::clone(&player)));
 
         let residence_token = player.domain_residence_token();
@@ -675,7 +683,7 @@ fn domain_detach_snapshots_pending_restores_before_stale_jobs_finish() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+        let player = test_player(&server, Arc::clone(&world));
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
@@ -766,13 +774,8 @@ fn domain_detach_invalidates_an_encoded_source_chunk_batch() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let (player, sent_packets) = test_player_with_packets(
-            &server,
-            Arc::clone(&world),
-            Uuid::from_u128(1),
-            "ChunkTester",
-            1,
-        );
+        let (player, sent_packets) =
+            test_player_with_packets(&server, Arc::clone(&world), "ChunkTester", 1);
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
@@ -854,8 +857,7 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
             panic!("test server should initialize");
         };
 
-        let uuid = Uuid::from_u128(1);
-        let player = test_player(&server, Arc::clone(&source_world), uuid);
+        let player = test_player(&server, Arc::clone(&source_world));
         player.set_health(7.0);
         player
             .base()
@@ -872,7 +874,7 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
         server.process_domain_switches();
         assert!(!source_world.contains_player(&player));
         assert_eq!(
-            server.player_admissions.lock().get(&uuid),
+            server.player_admissions.lock().get(&player.gameprofile.id),
             Some(&PlayerAdmissionState::Relocating)
         );
 
@@ -888,12 +890,18 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
         server.tick_jobs(1, true);
         assert!(server.jobs.is_empty());
         assert_eq!(
-            server.player_admissions.lock().get(&uuid),
+            server.player_admissions.lock().get(&player.gameprofile.id),
             Some(&PlayerAdmissionState::Disconnecting)
         );
         for _ in 0..1_000 {
             server.start_player_disconnect_saves(&mut disconnect_saves);
-            if disconnect_saves.is_empty() && server.player_admissions.lock().get(&uuid).is_none() {
+            if disconnect_saves.is_empty()
+                && server
+                    .player_admissions
+                    .lock()
+                    .get(&player.gameprofile.id)
+                    .is_none()
+            {
                 break;
             }
             sleep(Duration::from_millis(1)).await;
@@ -903,7 +911,10 @@ fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
             "the detached snapshot should finish saving"
         );
 
-        let saved = server.player_data_storage.load_domain("source", uuid).await;
+        let saved = server
+            .player_data_storage
+            .load_domain("source", player.gameprofile.id)
+            .await;
         let Ok(Some(saved)) = saved else {
             panic!("the source-domain snapshot should be the active save");
         };
@@ -960,8 +971,7 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
             panic!("test server should initialize");
         };
 
-        let uuid = Uuid::from_u128(1);
-        let player = test_player(&server, Arc::clone(&source_world), uuid);
+        let player = test_player(&server, Arc::clone(&source_world));
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
@@ -988,7 +998,7 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
         ];
         if let Err(error) = server
             .player_data_storage
-            .save_domain_data("target", uuid, &target_data)
+            .save_domain_data("target", player.gameprofile.id, &target_data)
             .await
         {
             panic!("target-domain data should save: {error}");
@@ -1042,7 +1052,10 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
             "failed target admission should persist its prepared disconnect"
         );
 
-        let saved_target = server.player_data_storage.load_domain("target", uuid).await;
+        let saved_target = server
+            .player_data_storage
+            .load_domain("target", player.gameprofile.id)
+            .await;
         let Ok(Some(saved_target)) = saved_target else {
             panic!("failed target state should be persisted");
         };
@@ -1103,7 +1116,7 @@ fn rejected_queued_domain_switch_retries_deferred_respawn_request() {
             panic!("test server should initialize");
         };
 
-        let player = test_player(&server, Arc::clone(&source_world), Uuid::from_u128(1));
+        let player = test_player(&server, Arc::clone(&source_world));
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
@@ -1158,7 +1171,7 @@ fn portal_job_validity_rechecks_vanilla_portal_eligibility() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+        let player = test_player(&server, Arc::clone(&world));
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
@@ -1285,15 +1298,17 @@ fn first_domain_visit_resets_domain_scoped_player_data() {
             panic!("test server should initialize");
         };
 
-        let uuid = Uuid::from_u128(1);
-        let player = test_player(&server, Arc::clone(&source_world), uuid);
+        let player = test_player(&server, Arc::clone(&source_world));
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
 
         apply_non_default_domain_data(&player);
 
-        let target_before_switch = server.player_data_storage.load_domain("target", uuid).await;
+        let target_before_switch = server
+            .player_data_storage
+            .load_domain("target", player.gameprofile.id)
+            .await;
         assert!(matches!(target_before_switch, Ok(None)));
 
         let queued = server.queue_domain_switch(Arc::clone(&player), "target".to_owned());
@@ -1357,7 +1372,7 @@ fn command_world_scope_survives_entity_transforms() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&alpha), Uuid::from_u128(30));
+        let player = test_player(&server, Arc::clone(&alpha));
         let player_source = CommandSource::new(
             CommandSender::Player(Arc::clone(&player)),
             Arc::clone(&server),
@@ -1407,7 +1422,6 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
     };
     runtime.block_on(async {
         let initiator_uuid = Uuid::from_u128(31);
-        let receiver_uuid = Uuid::from_u128(32);
         let invsee = PermissionExpr::key(permission_key("steel.command.invsee"));
         let modify_key = permission_key("steel.command.invsee.modify");
         let modify = PermissionExpr::key(modify_key.clone());
@@ -1425,9 +1439,14 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let (initiator, _) =
-            test_player_with_packets(&server, Arc::clone(&world), initiator_uuid, "Initiator", 31);
-        let (receiver, _) = test_player_with_packets(&server, world, receiver_uuid, "Receiver", 32);
+        let (initiator, _) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(&world),
+            initiator_uuid,
+            "Initiator",
+            31,
+        );
+        let (receiver, _) = test_player_with_packets(&server, world, "Receiver", 32);
         assert!(server.online_players.insert(Arc::clone(&initiator)));
         assert!(server.online_players.insert(Arc::clone(&receiver)));
 
@@ -1519,8 +1538,7 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let uuid = Uuid::from_u128(40);
-        let player = test_player(&server, Arc::clone(&world), uuid);
+        let player = test_player(&server, Arc::clone(&world));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let pre_admission_owner =
             CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(&player)), &server);
@@ -1534,13 +1552,8 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
             !pre_admission_owner.is_current(&server),
             "an owner rejected at capture must not become valid after admission"
         );
-        let (remote, _) = test_player_with_packets(
-            &server,
-            Arc::clone(&remote_world),
-            Uuid::from_u128(42),
-            "Remote",
-            42,
-        );
+        let (remote, _) =
+            test_player_with_packets(&server, Arc::clone(&remote_world), "Remote", 42);
         assert!(server.online_players.insert(Arc::clone(&remote)));
         assert!(remote_world.add_player(Arc::clone(&remote), ResetReason::InitialJoin));
         let _ = remote.mark_joined_world();
@@ -1701,7 +1714,7 @@ fn command_gameplay_availability_tracks_exact_domain_residence() {
         assert!(player.finish_pending_world_change(pending_token));
         world.remove_player_for_world_change(&player);
         assert!(server.online_players.remove_player_sync(&player).is_some());
-        let replacement = test_player(&server, Arc::clone(&world), uuid);
+        let replacement = test_player_with_uuid(&server, Arc::clone(&world), player.gameprofile.id);
         assert!(server.online_players.insert(Arc::clone(&replacement)));
         assert!(world.add_player(Arc::clone(&replacement), ResetReason::InitialJoin));
         assert!(
@@ -1793,7 +1806,7 @@ fn player_world_selection_uses_one_token_owned_route() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&source_world), Uuid::from_u128(41));
+        let player = test_player(&server, Arc::clone(&source_world));
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let _ = player.mark_joined_world();
@@ -1912,7 +1925,7 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&source_world), Uuid::from_u128(51));
+        let player = test_player(&server, Arc::clone(&source_world));
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(source_world.players.insert(Arc::clone(&player)));
         let _ = player.mark_joined_world();
@@ -1978,8 +1991,12 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
     });
 }
 
-fn test_player(server: &Arc<Server>, world: Arc<World>, uuid: Uuid) -> Arc<Player> {
-    test_player_with_packets(server, world, uuid, "TestPlayer", 1).0
+fn test_player(server: &Arc<Server>, world: Arc<World>) -> Arc<Player> {
+    test_player_with_packets(server, world, "TestPlayer", 1).0
+}
+
+fn test_player_with_uuid(server: &Arc<Server>, world: Arc<World>, uuid: Uuid) -> Arc<Player> {
+    test_player_with_uuid_and_packets(server, world, uuid, "TestPlayer", 1).0
 }
 
 fn test_persistent_entity(entity_type: EntityTypeRef, uuid: [u8; 16]) -> PersistentEntity {
@@ -2014,18 +2031,32 @@ fn test_persistent_entity(entity_type: EntityTypeRef, uuid: [u8; 16]) -> Persist
 fn test_player_with_connection(
     server: &Arc<Server>,
     world: Arc<World>,
-    uuid: Uuid,
     name: &str,
     entity_id: i32,
     connection: Arc<PlayerConnection>,
 ) -> Arc<Player> {
-    TestPlayerBuilder::new(world, uuid, name, entity_id)
+    TestPlayerBuilder::new(world, name, entity_id)
         .connection(connection)
         .server(server)
         .build()
 }
 
 fn test_player_with_packets(
+    server: &Arc<Server>,
+    world: Arc<World>,
+    name: &str,
+    entity_id: i32,
+) -> (Arc<Player>, Arc<SyncMutex<Vec<EncodedPacket>>>) {
+    let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
+    let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection {
+        sent_packets: Arc::clone(&sent_packets),
+        closed: AtomicBool::new(false),
+    })));
+    let player = test_player_with_connection(server, world, name, entity_id, connection);
+    (player, sent_packets)
+}
+
+fn test_player_with_uuid_and_packets(
     server: &Arc<Server>,
     world: Arc<World>,
     uuid: Uuid,
@@ -2037,7 +2068,11 @@ fn test_player_with_packets(
         sent_packets: Arc::clone(&sent_packets),
         closed: AtomicBool::new(false),
     })));
-    let player = test_player_with_connection(server, world, uuid, name, entity_id, connection);
+    let player = TestPlayerBuilder::new(world, name, entity_id)
+        .uuid(uuid)
+        .connection(connection)
+        .server(server)
+        .build();
     (player, sent_packets)
 }
 
@@ -2069,6 +2104,67 @@ fn packet_id(packet: &EncodedPacket) -> i32 {
     }
 }
 
+fn decode_initial_player_info_hat(packet: &EncodedPacket) -> (Uuid, bool) {
+    let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+    VarInt::read(&mut cursor).expect("packet length should decode");
+    assert_eq!(
+        VarInt::read(&mut cursor)
+            .expect("packet id should decode")
+            .0,
+        C_PLAYER_INFO_UPDATE
+    );
+    assert_eq!(u8::read(&mut cursor).expect("actions should decode"), 0xff);
+    assert_eq!(
+        VarInt::read(&mut cursor)
+            .expect("entry count should decode")
+            .0,
+        1
+    );
+    let uuid = Uuid::read(&mut cursor).expect("entry UUID should decode");
+    let name_length = VarInt::read(&mut cursor)
+        .expect("profile name length should decode")
+        .0;
+    assert!(name_length >= 0);
+    cursor.set_position(cursor.position() + name_length as u64);
+    assert_eq!(
+        VarInt::read(&mut cursor)
+            .expect("property count should decode")
+            .0,
+        0
+    );
+    assert!(!bool::read(&mut cursor).expect("chat session flag should decode"));
+    VarInt::read(&mut cursor).expect("game mode should decode");
+    bool::read(&mut cursor).expect("listed state should decode");
+    VarInt::read(&mut cursor).expect("latency should decode");
+    assert!(!bool::read(&mut cursor).expect("display name flag should decode"));
+    VarInt::read(&mut cursor).expect("list order should decode");
+    let show_hat = bool::read(&mut cursor).expect("hat state should decode");
+    assert_eq!(cursor.position() as usize, packet.encoded_data.len());
+    (uuid, show_hat)
+}
+
+fn decode_hat_update(packet: &EncodedPacket) -> (Uuid, bool) {
+    let mut cursor = Cursor::new(packet.encoded_data.as_slice());
+    VarInt::read(&mut cursor).expect("packet length should decode");
+    assert_eq!(
+        VarInt::read(&mut cursor)
+            .expect("packet id should decode")
+            .0,
+        C_PLAYER_INFO_UPDATE
+    );
+    assert_eq!(u8::read(&mut cursor).expect("actions should decode"), 0x80);
+    assert_eq!(
+        VarInt::read(&mut cursor)
+            .expect("entry count should decode")
+            .0,
+        1
+    );
+    let uuid = Uuid::read(&mut cursor).expect("entry UUID should decode");
+    let show_hat = bool::read(&mut cursor).expect("hat state should decode");
+    assert_eq!(cursor.position() as usize, packet.encoded_data.len());
+    (uuid, show_hat)
+}
+
 #[test]
 fn initial_player_info_precedes_entity_spawn_for_existing_players() {
     let world = fresh_test_world("join_player_info_before_spawn");
@@ -2088,13 +2184,8 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let (existing, existing_packets) = test_player_with_packets(
-            &server,
-            Arc::clone(&world),
-            Uuid::from_u128(1),
-            "ExistingPlayer",
-            1,
-        );
+        let (existing, existing_packets) =
+            test_player_with_packets(&server, Arc::clone(&world), "ExistingPlayer", 1);
         assert!(server.online_players.insert(Arc::clone(&existing)));
         assert!(world.add_player(Arc::clone(&existing), ResetReason::InitialJoin));
         let _ = existing.mark_joined_world();
@@ -2107,14 +2198,7 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
             .mark_chunk_sent_for_test(spawn_chunk);
         existing_packets.lock().clear();
 
-        let joining = test_player_with_packets(
-            &server,
-            Arc::clone(&world),
-            Uuid::from_u128(2),
-            "JoiningPlayer",
-            2,
-        )
-        .0;
+        let joining = test_player_with_packets(&server, Arc::clone(&world), "JoiningPlayer", 2).0;
         assert!(server.reserve_player_join(&joining));
         let spawn = PreparedSpawn {
             position: spawn_position,
@@ -2156,12 +2240,125 @@ fn initial_player_info_precedes_entity_spawn_for_existing_players() {
             player_info_index < entity_spawn_index,
             "player info must precede the entity spawn; packet ids: {packet_ids:?}"
         );
+        let (player_info_uuid, show_hat) = {
+            let packets = existing_packets.lock();
+            decode_initial_player_info_hat(&packets[player_info_index])
+        };
+        assert_eq!(player_info_uuid, joining.gameprofile.id);
+        assert!(
+            !show_hat,
+            "initial player info should reflect the joining player's disabled hat layer"
+        );
 
         if let Err(error) = server.flush_known_players().await {
             panic!("known player cache should flush before test teardown: {error}");
         }
         drop(joining);
         drop(existing);
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn client_information_broadcasts_hat_updates_only_when_the_hat_bit_changes() {
+    let world = fresh_test_world("client_information_hat_updates");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+
+    runtime.block_on(async {
+        let storage_root = test_storage_root("client-information-hat-updates");
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let (player, sent_packets) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(&world),
+            Uuid::from_u128(1),
+            "TestPlayer",
+            1,
+        );
+        let (observer, observer_packets) =
+            test_player_with_uuid_and_packets(&server, world, Uuid::from_u128(2), "Observer", 2);
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(server.online_players.insert(Arc::clone(&observer)));
+
+        let client_information = |model_customization| SClientInformation {
+            language: "en_us".to_owned(),
+            view_distance: 8,
+            chat_visibility: ChatVisibility::Full,
+            chat_colors: true,
+            model_customization,
+            main_hand: HumanoidArm::Right,
+            text_filtering_enabled: false,
+            allows_listing: true,
+            particle_status: ParticleStatus::All,
+        };
+
+        player.handle_client_information(client_information(0x40));
+        let hat_packets = sent_packets
+            .lock()
+            .iter()
+            .filter(|packet| packet_id(packet) == C_PLAYER_INFO_UPDATE)
+            .map(decode_hat_update)
+            .collect::<Vec<_>>();
+        assert_eq!(hat_packets, vec![(player.gameprofile.id, true)]);
+        let observer_hat_packets = observer_packets
+            .lock()
+            .iter()
+            .filter(|packet| packet_id(packet) == C_PLAYER_INFO_UPDATE)
+            .map(decode_hat_update)
+            .collect::<Vec<_>>();
+        assert_eq!(observer_hat_packets, vec![(player.gameprofile.id, true)]);
+
+        sent_packets.lock().clear();
+        observer_packets.lock().clear();
+        player.handle_client_information(client_information(0x41));
+        assert!(
+            sent_packets
+                .lock()
+                .iter()
+                .all(|packet| packet_id(packet) != C_PLAYER_INFO_UPDATE),
+            "changing a non-hat model part must not send a hat update"
+        );
+        assert!(
+            observer_packets
+                .lock()
+                .iter()
+                .all(|packet| packet_id(packet) != C_PLAYER_INFO_UPDATE),
+            "changing a non-hat model part must not broadcast a hat update"
+        );
+
+        sent_packets.lock().clear();
+        observer_packets.lock().clear();
+        player.handle_client_information(client_information(0x01));
+        let hat_packets = sent_packets
+            .lock()
+            .iter()
+            .filter(|packet| packet_id(packet) == C_PLAYER_INFO_UPDATE)
+            .map(decode_hat_update)
+            .collect::<Vec<_>>();
+        assert_eq!(hat_packets, vec![(player.gameprofile.id, false)]);
+        let observer_hat_packets = observer_packets
+            .lock()
+            .iter()
+            .filter(|packet| packet_id(packet) == C_PLAYER_INFO_UPDATE)
+            .map(decode_hat_update)
+            .collect::<Vec<_>>();
+        assert_eq!(observer_hat_packets, vec![(player.gameprofile.id, false)]);
+
+        drop(observer);
+        drop(player);
         drop(server);
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");
@@ -2187,7 +2384,7 @@ fn initial_admission_installs_restores_before_scheduling_jobs() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let joining = test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+        let joining = test_player(&server, Arc::clone(&world));
         assert!(server.reserve_player_join(&joining));
 
         let root_uuid = [13; 16];
@@ -2259,7 +2456,7 @@ fn player_disconnect_detaches_before_async_persistence() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+        let player = test_player(&server, Arc::clone(&world));
 
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
@@ -2310,7 +2507,6 @@ fn simultaneous_disconnects_batch_tab_list_removal() {
         let survivor = test_player_with_connection(
             &server,
             Arc::clone(&world),
-            Uuid::from_u128(1),
             "TestPlayer",
             1,
             Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
@@ -2318,11 +2514,9 @@ fn simultaneous_disconnects_batch_tab_list_removal() {
                 closed: false,
             }))),
         );
-        let first_uuid = Uuid::from_u128(2);
         let first = test_player_with_connection(
             &server,
             Arc::clone(&world),
-            first_uuid,
             "TestPlayer",
             2,
             Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
@@ -2330,11 +2524,9 @@ fn simultaneous_disconnects_batch_tab_list_removal() {
                 closed: true,
             }))),
         );
-        let second_uuid = Uuid::from_u128(3);
         let second = test_player_with_connection(
             &server,
             Arc::clone(&world),
-            second_uuid,
             "TestPlayer",
             3,
             Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
@@ -2342,7 +2534,6 @@ fn simultaneous_disconnects_batch_tab_list_removal() {
                 closed: true,
             }))),
         );
-
         for player in [&survivor, &first, &second] {
             assert!(server.online_players.insert(Arc::clone(player)));
             assert!(world.add_player(Arc::clone(player), ResetReason::InitialJoin));
@@ -2366,7 +2557,7 @@ fn simultaneous_disconnects_batch_tab_list_removal() {
             }
             let expected = EncodedPacket::from_bare(
                 CRemovePlayerInfo {
-                    uuids: vec![first_uuid, second_uuid],
+                    uuids: vec![first.gameprofile.id, second.gameprofile.id],
                 },
                 None,
                 ConnectionProtocol::Play,
@@ -2410,7 +2601,7 @@ fn online_player_snapshot_includes_player_detached_for_end_credits() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+        let player = test_player(&server, Arc::clone(&world));
 
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
@@ -2650,7 +2841,7 @@ fn command_source_and_operator_checks_use_published_subject_state() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let player = test_player(&server, world, uuid);
+        let player = test_player_with_uuid(&server, world, uuid);
         let permission = permission_key("minecraft.command.stop");
         let stale_player_permissions =
             PermissionSet::from_entries([PermissionEntry::allow(permission.clone())]);
@@ -2722,15 +2913,10 @@ fn renamed_join_message_only_reaches_existing_players() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let (existing_player, existing_packets) = test_player_with_packets(
-            &server,
-            Arc::clone(&world),
-            Uuid::from_u128(1),
-            "ExistingPlayer",
-            1,
-        );
+        let (existing_player, existing_packets) =
+            test_player_with_packets(&server, Arc::clone(&world), "ExistingPlayer", 1);
         let (joining_player, joining_packets) =
-            test_player_with_packets(&server, world, Uuid::from_u128(2), "NewName", 2);
+            test_player_with_packets(&server, world, "NewName", 2);
         assert!(server.online_players.insert(existing_player));
         assert!(server.online_players.insert(Arc::clone(&joining_player)));
 
@@ -2849,4 +3035,80 @@ fn ender_pearl_end_return_requires_owner_seen_credits_when_owner_is_player() {
         &item,
         owner_seen_credits
     ));
+}
+
+#[test]
+fn damage_command_records_by_entity_as_the_responsible_player() {
+    let world = fresh_test_world("damage-command-attribution");
+    let storage_root = test_storage_root("damage-command-attribution");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let target_uuid = Uuid::from_u128(1);
+        let attacker_uuid = Uuid::from_u128(2);
+        let (target, _) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(&world),
+            target_uuid,
+            "Victim",
+            1,
+        );
+        let (attacker, _) = test_player_with_uuid_and_packets(
+            &server,
+            Arc::clone(&world),
+            attacker_uuid,
+            "Attacker",
+            101,
+        );
+
+        assert!(world.add_player(Arc::clone(&target), ResetReason::InitialJoin));
+        assert!(world.add_player(Arc::clone(&attacker), ResetReason::InitialJoin));
+        assert!(server.online_players.insert(Arc::clone(&target)));
+        assert!(server.online_players.insert(Arc::clone(&attacker)));
+        let _ = target.mark_joined_world();
+        let _ = attacker.mark_joined_world();
+        target.set_client_loaded(true);
+        attacker.set_client_loaded(true);
+
+        let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
+        let command = "damage Victim 1 minecraft:player_attack by Attacker";
+        let chain = {
+            let dispatcher = server.command_dispatcher.read();
+            let parse = dispatcher.parse(command, source.clone());
+            dispatcher.context_chain(parse)
+        };
+        let chain = match chain {
+            Ok(chain) => chain,
+            Err(error) => panic!("damage command should parse: {error}"),
+        };
+
+        let mut execution = CommandExecutionContext::for_source(&source);
+        execution.queue_initial_command(chain, source, CommandResultCallback::empty());
+        assert!(matches!(execution.run(), ExecutionStop::Completed));
+
+        assert_eq!(
+            target.last_hurt_by_player_uuid(),
+            Some(attacker_uuid),
+            "the `by` entity must be recorded as the player responsible for damage"
+        );
+
+        drop((target, attacker));
+        drop(execution);
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
 }
