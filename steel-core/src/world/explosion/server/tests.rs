@@ -631,7 +631,7 @@ fn source_and_custom_calculator_hooks_run_on_the_sequential_lane() {
 
     let source_affected = source_explosion.calculate_exploded_positions(|| FIXED_RAY_RANDOM_SAMPLE);
 
-    assert!(source_affected.is_empty());
+    assert_eq!(source_affected, Vec::new());
     assert!(source.resistance_calls.load(Ordering::Relaxed) > 0);
     assert!(source.decision_calls.load(Ordering::Relaxed) > 0);
 
@@ -649,7 +649,7 @@ fn source_and_custom_calculator_hooks_run_on_the_sequential_lane() {
     );
     let custom_affected = custom_explosion.calculate_exploded_positions(|| FIXED_RAY_RANDOM_SAMPLE);
 
-    assert!(custom_affected.is_empty());
+    assert_eq!(custom_affected, Vec::new());
     assert!(custom.resistance_calls.load(Ordering::Relaxed) > RAY_COUNT);
     assert!(custom.decision_calls.load(Ordering::Relaxed) > RAY_COUNT);
 }

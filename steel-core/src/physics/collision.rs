@@ -1446,7 +1446,7 @@ mod tests {
             thin_visited.push((pos, cursor_type));
             ControlFlow::<()>::Continue(())
         });
-        assert!(thin_visited.is_empty());
+        assert_eq!(thin_visited, Vec::new());
 
         for bounds in [
             BlockCollisionSearchBounds {

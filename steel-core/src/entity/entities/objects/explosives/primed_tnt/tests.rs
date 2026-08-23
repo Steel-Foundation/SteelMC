@@ -122,7 +122,7 @@ fn primed_tnt_does_not_create_hard_movement_collision_shapes() {
         .inflate(COLLISION_QUERY_MARGIN);
     let collision_world = WorldCollisionProvider::for_entity(&world, first.as_ref());
 
-    assert!(collision_world.get_entity_collisions(&query).is_empty());
+    assert_eq!(collision_world.get_entity_collisions(&query), Vec::new());
     assert!(!collision_world.has_entity_collision(&query));
 }
 

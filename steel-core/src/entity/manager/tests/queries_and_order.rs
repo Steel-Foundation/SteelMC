@@ -90,7 +90,7 @@ fn hard_collision_candidate_ids(manager: &WorldEntityManager, aabb: &WorldAabb) 
             false
         },
     );
-    assert!(boxes.is_empty());
+    assert_eq!(boxes, Vec::new());
     ids
 }
 
@@ -253,7 +253,7 @@ fn conservative_custom_source_scans_non_hard_targets() {
     );
 
     assert_eq!(optimized, vec![target.bounding_box()]);
-    assert!(incorrectly_narrowed.is_empty());
+    assert_eq!(incorrectly_narrowed, Vec::new());
 }
 
 #[test]
@@ -284,7 +284,10 @@ fn hard_collision_index_tracks_move_bounds_unload_restore_and_remove() {
     let moved_position = DVec3::new(17.0, 80.0, 1.0);
     hard.base().set_position_local(moved_position);
     assert!(manager.commit_move(hard.id(), moved_position).is_ok());
-    assert!(hard_collision_candidate_ids(&manager, &original_bounds).is_empty());
+    assert_eq!(
+        hard_collision_candidate_ids(&manager, &original_bounds),
+        Vec::<i32>::new()
+    );
     assert_eq!(
         hard_collision_candidate_ids(&manager, &hard.bounding_box()),
         vec![1]
@@ -300,7 +303,10 @@ fn hard_collision_index_tracks_move_bounds_unload_restore_and_remove() {
 
     let unload = manager.begin_chunk_unload(second_chunk);
     assert_eq!(unload.retained.len(), 1);
-    assert!(hard_collision_candidate_ids(&manager, &moved_bounds).is_empty());
+    assert_eq!(
+        hard_collision_candidate_ids(&manager, &moved_bounds),
+        Vec::<i32>::new()
+    );
     let restored = manager.on_chunk_loaded(second_chunk);
     assert_eq!(restored.restored.len(), 1);
     let _ = manager.update_chunk_visibility(second_chunk, EntityVisibility::Ticking);
@@ -314,7 +320,10 @@ fn hard_collision_index_tracks_move_bounds_unload_restore_and_remove() {
             .remove_live_entity(hard.id(), RemovalReason::Discarded)
             .is_some()
     );
-    assert!(hard_collision_candidate_ids(&manager, &moved_bounds).is_empty());
+    assert_eq!(
+        hard_collision_candidate_ids(&manager, &moved_bounds),
+        Vec::<i32>::new()
+    );
 }
 
 #[test]

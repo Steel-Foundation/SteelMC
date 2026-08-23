@@ -175,7 +175,7 @@ fn resistant_center_block_stops_explosion_rays() {
 
     let affected = explosion.calculate_exploded_positions(|| FIXED_RANDOM_SAMPLE);
 
-    assert!(affected.is_empty());
+    assert_eq!(affected, Vec::new());
 }
 
 #[test]
@@ -384,7 +384,7 @@ fn unusual_radii_retain_vanilla_ray_sampling_and_bounds_behavior() {
         FIXED_RANDOM_SAMPLE
     });
     assert_eq!(draws, RAY_COUNT);
-    assert!(affected.is_empty());
+    assert_eq!(affected, Vec::new());
 }
 
 #[test]
