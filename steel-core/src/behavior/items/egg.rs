@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{sound_events, vanilla_entities};
 
 use crate::behavior::context::{InteractionResult, UseItemContext};
@@ -65,7 +66,7 @@ impl ItemBehavior for EggItem {
             return InteractionResult::Fail;
         };
 
-        // TODO: award the ITEM_USED stat once a stats system exists.
+        player.award_stat(&vanilla_stat_types::ITEM_USED, thrown_item.item);
         if !player.has_infinite_materials() {
             context.inv.with_item(|item| item.shrink(1));
         }
