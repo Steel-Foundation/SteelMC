@@ -247,7 +247,7 @@ impl SheepEntity {
             None,
         );
 
-        let mut rng = rand::rng();
+        let mut rng = LegacyRandom::from_entropy();
         for drop in
             shearing_loot_items_with_rng(self, &vanilla_loot_tables::SHEARING_SHEEP, tool, &mut rng)
         {

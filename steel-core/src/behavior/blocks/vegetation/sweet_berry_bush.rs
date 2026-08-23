@@ -1,7 +1,8 @@
 use std::sync::Arc;
+use steel_utils::random::Random;
+use steel_utils::random::legacy_random::LegacyRandom;
 
 use glam::DVec3;
-use rand::RngExt;
 use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
@@ -143,7 +144,7 @@ impl BlockBehavior for SweetBerryBushBlock {
             return InteractionResult::Pass;
         }
 
-        let mut rng = rand::rng();
+        let mut rng = LegacyRandom::from_entropy();
 
         let items = drop_from_block_interact_loot_table(
             &vanilla_loot_tables::HARVEST_SWEET_BERRY_BUSH,
@@ -162,7 +163,7 @@ impl BlockBehavior for SweetBerryBushBlock {
             &sound_events::BLOCK_SWEET_BERRY_BUSH_PICK_BERRIES,
             pos,
             1.0,
-            0.8 + rng.random::<f32>() * 0.4,
+            0.8 + rng.next_f32() * 0.4,
             Some(player.id()),
         );
 

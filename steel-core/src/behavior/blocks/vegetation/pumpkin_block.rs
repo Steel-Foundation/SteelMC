@@ -7,7 +7,6 @@ use crate::player::Player;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
 use glam::DVec3;
-use rand::RngExt;
 use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -17,6 +16,8 @@ use steel_registry::{
     sound_events, vanilla_blocks, vanilla_game_events, vanilla_items, vanilla_loot_tables,
 };
 use steel_utils::axis::Axis;
+use steel_utils::random::Random;
+use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -51,7 +52,7 @@ impl BlockBehavior for PumpkinBlock {
         hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        let mut rng = rand::rng();
+        let mut rng = LegacyRandom::from_entropy();
 
         let Some(drops) = inv.with_item(|item_stack| {
             if !item_stack.is(&vanilla_items::SHEARS) {
@@ -91,9 +92,9 @@ impl BlockBehavior for PumpkinBlock {
                 ),
                 drop,
                 DVec3::new(
-                    0.05 * x_offset + rng.random::<f64>() * 0.02,
+                    0.05 * x_offset + rng.next_f64() * 0.02,
                     0.05,
-                    0.05 * z_offset + rng.random::<f64>() * 0.02,
+                    0.05 * z_offset + rng.next_f64() * 0.02,
                 ),
             );
         }

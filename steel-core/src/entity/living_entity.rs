@@ -1,4 +1,6 @@
 use steel_registry::DyeColor;
+use steel_utils::random::Random;
+use steel_utils::random::legacy_random::LegacyRandom;
 
 use super::*;
 
@@ -994,28 +996,22 @@ pub trait LivingEntity: Entity {
             return;
         };
 
+        // Vanilla selects a `LegacyRandomSource` from the stored death-loot seed,
+        // falling back to the level's source when the seed is unset.
         let seed = self.death_loot_table_seed();
-        let drops = if seed == 0 {
-            let mut rng = rand::rng();
-            death_loot_items_with_rng(
-                self,
-                loot_table,
-                world.as_ref(),
-                source,
-                killed_by_player,
-                &mut rng,
-            )
+        let mut rng = if seed == 0 {
+            LegacyRandom::from_entropy()
         } else {
-            let mut rng = StdRng::seed_from_u64(seed as u64);
-            death_loot_items_with_rng(
-                self,
-                loot_table,
-                world.as_ref(),
-                source,
-                killed_by_player,
-                &mut rng,
-            )
+            LegacyRandom::from_seed(seed as u64)
         };
+        let drops = death_loot_items_with_rng(
+            self,
+            loot_table,
+            world.as_ref(),
+            source,
+            killed_by_player,
+            &mut rng,
+        );
 
         if has_custom_death_loot_table && let Some(mob) = self.as_mob() {
             mob.clear_custom_death_loot_table();
@@ -2894,7 +2890,7 @@ pub trait LivingEntity: Entity {
     }
 }
 
-fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
+fn death_loot_items_with_rng<R: Random, E: LivingEntity + ?Sized>(
     entity: &E,
     loot_table: LootTableRef,
     world: &World,
@@ -2967,7 +2963,7 @@ fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_>
 
 /// Runs vanilla `LivingEntity.dropFromShearingLootTable` for `loot_table`, returning the
 /// drops resolved with the vanilla shearing loot params (origin, entity, tool).
-pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
+pub(crate) fn shearing_loot_items_with_rng<R: Random, E: LivingEntity + ?Sized>(
     entity: &E,
     loot_table: LootTableRef,
     tool: &ItemStack,

@@ -3,7 +3,6 @@
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
-use rand::rngs::ThreadRng;
 use smallvec::SmallVec;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
@@ -66,7 +65,7 @@ pub(crate) fn drop_from_block_interact_loot_table(
     _interacted_block_entity: Option<SharedBlockEntity>,
     tool: Option<&ItemStack>,
     interacting_entity: Option<&dyn Entity>,
-    rng: &mut ThreadRng,
+    rng: &mut LegacyRandom,
 ) -> Vec<ItemStack> {
     let mut ctx = LootContext::new(rng).with_block_state(interacted_block_state);
 
@@ -93,7 +92,7 @@ pub(crate) fn try_drop_experience(
     tool: &ItemStack,
     experience: &IntProvider,
 ) {
-    let mut random = LegacyRandom::from_seed(rand::random());
+    let mut random = LegacyRandom::from_entropy();
     let base_experience = experience.sample(&mut random);
     let experience = tool.apply_unconditional_enchantment_value_effects(
         EnchantmentEffectComponent::BlockExperience,

@@ -1,7 +1,10 @@
 use super::{
     ConditionalLootFunction, Identifier, ItemStack, LootCondition, LootContext, LootType,
-    NumberProvider, REGISTRY, RegistryExt, RngExt, TaggedRegistryExt,
+    NumberProvider, REGISTRY, RegistryExt, TaggedRegistryExt,
 };
+use steel_utils::random::Random;
+
+use super::random_index;
 
 /// A loot table entry that can generate items.
 #[derive(Debug, Clone)]
@@ -188,9 +191,11 @@ pub struct LootTable {
 
 impl LootTable {
     /// Generate random items from this loot table.
-    // TODO: Add a world-aware entry point that selects the vanilla RNG before evaluation:
-    // nonzero loot seed -> LegacyRandom, table random_sequence -> RandomSequences (including
-    // world seed 0), otherwise the level random source.
+    ///
+    /// Callers pick the random source Vanilla would use: a `LegacyRandom` from a
+    /// non-zero stored loot seed, otherwise the level's source. Table
+    /// `random_sequence` entries still fall back to the caller's source, since
+    /// Steel has no `RandomSequences` registry yet.
     ///
     /// # Arguments
     /// * `ctx` - The loot context containing RNG, luck, block state, tool, etc.
@@ -202,7 +207,7 @@ impl LootTable {
     /// 4. Apply entry-level functions to each item
     /// 5. Apply pool-level functions to all items from that pool
     /// 6. Apply table-level functions to all items from the table
-    pub fn get_random_items<R: rand::Rng>(&self, ctx: &mut LootContext<'_, R>) -> Vec<ItemStack> {
+    pub fn get_random_items<R: Random>(&self, ctx: &mut LootContext<'_, R>) -> Vec<ItemStack> {
         let mut result = Vec::new();
         for pool in self.pools {
             pool.add_random_items(ctx, &mut result);
@@ -227,7 +232,7 @@ impl LootTable {
 
 impl LootPool {
     /// Add random items from this pool to the result.
-    fn add_random_items<R: rand::Rng>(
+    fn add_random_items<R: Random>(
         &self,
         ctx: &mut LootContext<'_, R>,
         result: &mut Vec<ItemStack>,
@@ -264,7 +269,7 @@ impl LootPool {
     }
 
     /// Select and add a single random item from this pool.
-    fn add_random_item<R: rand::Rng>(
+    fn add_random_item<R: Random>(
         &self,
         ctx: &mut LootContext<'_, R>,
         result: &mut Vec<ItemStack>,
@@ -296,7 +301,7 @@ impl LootPool {
         let selected = if valid_entries.len() == 1 {
             valid_entries[0].0
         } else {
-            let mut index = ctx.rng.random_range(0..total_weight);
+            let mut index = ctx.rng.next_i32_bounded(total_weight);
             let mut selected_entry = valid_entries[0].0;
             for (entry, weight) in &valid_entries {
                 index -= weight;
@@ -315,11 +320,7 @@ impl LootPool {
 
 impl LootEntry {
     /// Create items from this entry and add them to the result.
-    fn create_items<R: rand::Rng>(
-        &self,
-        ctx: &mut LootContext<'_, R>,
-        result: &mut Vec<ItemStack>,
-    ) {
+    fn create_items<R: Random>(&self, ctx: &mut LootContext<'_, R>, result: &mut Vec<ItemStack>) {
         match self {
             LootEntry::Item {
                 name, functions, ..
@@ -385,7 +386,7 @@ impl LootEntry {
                     if *expand {
                         // Pick one random item from the tag (weighted equally)
                         if !items.is_empty() {
-                            let index = ctx.rng.random_range(0..items.len());
+                            let index = random_index(ctx.rng, items.len());
                             let mut item = ItemStack::new(items[index]);
                             for cond_func in *functions {
                                 if cond_func.conditions.iter().all(|c| c.test(ctx)) {

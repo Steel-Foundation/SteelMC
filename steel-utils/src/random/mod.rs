@@ -64,6 +64,41 @@ pub trait Random {
     }
 }
 
+/// Vanilla `Mth.nextInt(random, min, max)`: inclusive on both ends.
+///
+/// Returns `min` without drawing when `min >= max`. [`Random::next_i32_between`]
+/// always draws, so a degenerate range there would shift every later value in a
+/// seeded sequence.
+pub fn next_int_between<R: Random + ?Sized>(random: &mut R, min: i32, max: i32) -> i32 {
+    if min >= max {
+        min
+    } else {
+        random.next_i32_bounded(max - min + 1) + min
+    }
+}
+
+/// Vanilla `Mth.nextFloat(random, min, max)`, which returns `min` without
+/// drawing when `min >= max`.
+pub fn next_float_between<R: Random + ?Sized>(random: &mut R, min: f32, max: f32) -> f32 {
+    if min >= max {
+        min
+    } else {
+        random.next_f32() * (max - min) + min
+    }
+}
+
+/// Shuffles `values` in place, mirroring Vanilla `Util.shuffle`.
+///
+/// Draw order matters: seeded loot and worldgen reproduce Vanilla only when the
+/// swaps consume the same sequence of `nextInt` calls.
+pub fn shuffle<T, R: Random + ?Sized>(values: &mut [T], random: &mut R) {
+    for index in (1..values.len()).rev() {
+        let bound = i32::try_from(index + 1).unwrap_or(i32::MAX);
+        let swap_to = random.next_i32_bounded(bound) as usize;
+        values.swap(index, swap_to);
+    }
+}
+
 /// A trait for positional random number generators.
 #[enum_dispatch]
 #[expect(missing_docs, reason = "method names are self-explanatory")]

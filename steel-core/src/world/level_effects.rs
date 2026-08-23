@@ -7,6 +7,7 @@ use super::{
     vanilla_blocks, vanilla_game_events,
 };
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
+use steel_utils::random::legacy_random::LegacyRandom;
 
 pub(super) fn sound_is_within_range(
     sound: SoundEventRef,
@@ -368,7 +369,7 @@ impl World {
             return Vec::new();
         };
 
-        let mut rng = rand::rng();
+        let mut rng = LegacyRandom::from_entropy();
         let mut ctx = LootContext::new(&mut rng)
             .with_luck(context.luck())
             .with_block_state(state)

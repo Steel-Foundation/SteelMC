@@ -35,6 +35,17 @@ impl LegacyRandom {
         }
     }
 
+    /// Creates a generator seeded from system entropy.
+    ///
+    /// Vanilla draws incidental gameplay randomness from the level's shared
+    /// `LegacyRandomSource`. Steel has no level-wide source yet, so unseeded
+    /// call sites take a fresh one; the algorithms stay Vanilla's, only the
+    /// seed is incidental.
+    #[must_use]
+    pub fn from_entropy() -> Self {
+        Self::from_seed(rand::random::<u64>())
+    }
+
     /// Returns the internal seed (for debugging/checkpointing).
     #[must_use]
     pub const fn get_seed(&self) -> i64 {

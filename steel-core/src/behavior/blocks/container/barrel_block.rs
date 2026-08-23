@@ -9,13 +9,15 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
 use steel_registry::vanilla_block_entity_types;
-use steel_utils::{BlockPos, BlockStateId, translations};
+use steel_utils::{BlockPos, BlockStateId, Downcast as _, translations};
 use text_components::TextComponent;
 
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::BLOCK_ENTITIES;
+use crate::block_entity::entities::BarrelBlockEntity;
+use crate::entity::LivingEntity as _;
 use crate::inventory::container::calculate_redstone_signal_from_container;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::kinds::chest;
@@ -63,6 +65,11 @@ impl BlockBehavior for BarrelBlock {
             return InteractionResult::Pass;
         };
 
+        // Vanilla unpacks a worldgen loot table before building the menu.
+        if let Some(barrel) = block_entity.downcast_ref::<BarrelBlockEntity>() {
+            barrel.unpack_loot_table(player.get_luck());
+        }
+
         // Create a container reference from the block entity
         let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
             return InteractionResult::Pass;
@@ -109,11 +116,15 @@ impl BlockBehavior for BarrelBlock {
         pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
-        // Get the block entity and calculate signal from container contents
-        let Some(container_ref) = world
-            .get_block_entity(pos)
-            .and_then(ContainerRef::from_block_entity)
-        else {
+        let Some(block_entity) = world.get_block_entity(pos) else {
+            return 0;
+        };
+        // Vanilla's comparator reads the container through
+        // `RandomizableContainerBlockEntity.getItem`, which unpacks first.
+        if let Some(barrel) = block_entity.downcast_ref::<BarrelBlockEntity>() {
+            barrel.unpack_loot_table(0.0);
+        }
+        let Some(container_ref) = ContainerRef::from_block_entity(block_entity) else {
             return 0;
         };
         let guard = ContainerLockGuard::lock_all(&[&container_ref]);

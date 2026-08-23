@@ -10,6 +10,8 @@ use steel_registry::loot_table::LootContext;
 use steel_registry::{
     sound_events, vanilla_blocks, vanilla_game_events, vanilla_items, vanilla_loot_tables,
 };
+use steel_utils::random::legacy_random::LegacyRandom;
+use steel_utils::random::next_float_between;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -79,7 +81,7 @@ impl CaveVinesBlock {
         if !state.get_value(BERRIES) {
             return InteractionResult::Pass;
         }
-        let mut rng = rand::rng();
+        let mut rng = LegacyRandom::from_entropy();
         let mut ctx = LootContext::new(&mut rng)
             .with_block_state(state)
             .with_interacting_entity(entity_loot_ref(source_entity));
@@ -88,7 +90,8 @@ impl CaveVinesBlock {
         for item in items {
             world.pop_resource(pos, item);
         }
-        let pitch = rng.random_range(0.8..1.2);
+        // Vanilla `Mth.randomBetween(level.getRandom(), 0.8F, 1.2F)`.
+        let pitch = next_float_between(&mut rng, 0.8, 1.2);
         world.play_sound(
             &sound_events::BLOCK_CAVE_VINES_PICK_BERRIES,
             SoundSource::Blocks,

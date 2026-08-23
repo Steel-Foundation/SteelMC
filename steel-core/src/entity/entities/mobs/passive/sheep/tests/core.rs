@@ -1,4 +1,5 @@
 use super::*;
+use steel_utils::random::legacy_random::LegacyRandom;
 
 /// Trials for the random breeding-color fallback assertion.
 const COLOR_FALLBACK_TRIALS: u32 = 32;
@@ -467,7 +468,7 @@ fn sheep_shear_loot_resolves_the_matching_color_table() {
         .downcast_ref::<SheepEntity>()
         .expect("shared entity should be a sheep");
 
-    let mut rng = rand::rng();
+    let mut rng = LegacyRandom::from_entropy();
     let drops = shearing_loot_items_with_rng(
         sheep,
         &vanilla_loot_tables::SHEARING_SHEEP,

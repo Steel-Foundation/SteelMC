@@ -2,9 +2,10 @@
 
 use std::str::FromStr as _;
 use std::sync::{Arc, Weak};
+use steel_utils::random::Random;
+use steel_utils::random::legacy_random::LegacyRandom;
 
 use glam::DVec3;
-use rand::{SeedableRng as _, rngs::StdRng};
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -203,17 +204,18 @@ impl BrushableBlockEntity {
         };
         let loot_table = REGISTRY.loot_tables.by_key(&loot_table_key);
 
-        if state.loot_table_seed == 0 {
-            let mut rng = rand::rng();
-            self.unpack_loot_items(state, loot_table, &loot_table_key, &mut rng, player, brush);
+        // Vanilla selects a `LegacyRandomSource` from the stored seed, falling
+        // back to the level's source when the seed is unset.
+        let mut rng = if state.loot_table_seed == 0 {
+            LegacyRandom::from_entropy()
         } else {
-            let mut rng = StdRng::seed_from_u64(state.loot_table_seed as u64);
-            self.unpack_loot_items(state, loot_table, &loot_table_key, &mut rng, player, brush);
-        }
+            LegacyRandom::from_seed(state.loot_table_seed as u64)
+        };
+        self.unpack_loot_items(state, loot_table, &loot_table_key, &mut rng, player, brush);
         self.set_changed();
     }
 
-    fn unpack_loot_items<R: rand::Rng>(
+    fn unpack_loot_items<R: Random>(
         &self,
         state: &mut BrushableState,
         loot_table: Option<LootTableRef>,

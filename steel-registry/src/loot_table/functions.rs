@@ -1,8 +1,10 @@
 use super::{
     DyeColor, EquipmentSlotGroup, Identifier, InstrumentRef, ItemStack, LootCondition, LootContext,
-    LootContextEntity, LootEntry, NumberProvider, REGISTRY, RngExt, TaggedRegistryExt,
-    ToolPredicate,
+    LootContextEntity, LootEntry, NumberProvider, REGISTRY, TaggedRegistryExt, ToolPredicate,
 };
+use steel_utils::random::Random;
+
+use super::random_index;
 
 /// Options for selecting enchantments - either a tag reference or explicit list.
 #[derive(Debug, Clone)]
@@ -21,17 +23,17 @@ pub enum InstrumentOptions {
 }
 
 impl InstrumentOptions {
-    fn get_random<R: rand::Rng>(&self, rng: &mut R) -> Option<InstrumentRef> {
+    fn get_random<R: Random>(&self, rng: &mut R) -> Option<InstrumentRef> {
         match self {
             Self::Tag(tag) => {
                 let instruments = REGISTRY.instruments.get_tag(tag)?;
                 (!instruments.is_empty()).then(|| {
-                    let index = rng.random_range(0..instruments.len());
+                    let index = random_index(rng, instruments.len());
                     instruments[index]
                 })
             }
             Self::Direct(instruments) => (!instruments.is_empty()).then(|| {
-                let index = rng.random_range(0..instruments.len());
+                let index = random_index(rng, instruments.len());
                 instruments[index]
             }),
         }
@@ -321,7 +323,7 @@ impl LootFunction {
     /// - Components/NBT (`CopyComponents`, `SetComponents`, `CopyState`)
     /// - Item type (`FurnaceSmelt`)
     /// - And more...
-    pub fn apply<R: rand::Rng>(&self, item: &mut ItemStack, ctx: &mut LootContext<'_, R>) {
+    pub fn apply<R: Random>(&self, item: &mut ItemStack, ctx: &mut LootContext<'_, R>) {
         match self {
             LootFunction::SetCount {
                 count: provider,
@@ -340,7 +342,7 @@ impl LootFunction {
                     let probability = 1.0 / radius;
                     let mut result_count = 0;
                     for _ in 0..item.count {
-                        if ctx.rng.random::<f32>() <= probability {
+                        if ctx.rng.next_f32() <= probability {
                             result_count += 1;
                         }
                     }
@@ -535,12 +537,12 @@ impl LootFunction {
 
 impl BonusFormula {
     /// Apply the bonus formula to calculate new count.
-    pub fn apply<R: rand::Rng>(&self, count: i32, level: i32, rng: &mut R) -> i32 {
+    pub fn apply<R: Random>(&self, count: i32, level: i32, rng: &mut R) -> i32 {
         match self {
             BonusFormula::OreDrops => {
                 if level > 0 {
                     // Vanilla: count * (max(0, random(0..level+2) - 1) + 1)
-                    let bonus = rng.random_range(0..level + 2) - 1;
+                    let bonus = rng.next_i32_bounded(level + 2) - 1;
                     let multiplier = bonus.max(0) + 1;
                     count * multiplier
                 } else {
@@ -550,7 +552,7 @@ impl BonusFormula {
             BonusFormula::UniformBonusCount { bonus_multiplier } => {
                 // Vanilla: count + random(0..bonusMultiplier * level + 1)
                 if level > 0 {
-                    count + rng.random_range(0..bonus_multiplier * level + 1)
+                    count + rng.next_i32_bounded(bonus_multiplier * level + 1)
                 } else {
                     count
                 }
@@ -560,7 +562,7 @@ impl BonusFormula {
                 let trials = level + extra;
                 let mut bonus = 0;
                 for _ in 0..trials {
-                    if rng.random::<f32>() < *probability {
+                    if rng.next_f32() < *probability {
                         bonus += 1;
                     }
                 }

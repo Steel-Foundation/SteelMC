@@ -16,7 +16,7 @@ use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
-use crate::inventory::container::Container;
+use crate::inventory::container::{Container, ContainerLoot, unpack_container_loot};
 use crate::inventory::lock::{ContainerRef, SharedContainer};
 use crate::world::World;
 
@@ -34,6 +34,8 @@ pub struct BarrelBlockEntity {
 
 struct BarrelContainer {
     items: Vec<ItemStack>,
+    /// Vanilla `RandomizableContainerBlockEntity`'s pending loot table.
+    loot: ContainerLoot,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `BarrelBlockEntity`.
@@ -59,6 +61,7 @@ impl BarrelBlockEntity {
         ));
         let container = Arc::new(SyncMutex::new(BarrelContainer {
             items: vec![ItemStack::empty(); BARREL_SLOTS],
+            loot: ContainerLoot::default(),
         }));
         let shared_container: SharedContainer = container.clone();
         Self {
@@ -66,6 +69,21 @@ impl BarrelBlockEntity {
             base,
             container,
         }
+    }
+
+    /// Vanilla `RandomizableContainer.unpackLootTable`.
+    ///
+    /// Rolls a worldgen-assigned loot table into the barrel the first time its
+    /// contents become observable.
+    pub fn unpack_loot_table(&self, luck: f32) {
+        let pos = self.get_block_pos();
+        let mut container = self.container.lock();
+        let Some(pending) = container.loot.take() else {
+            return;
+        };
+        unpack_container_loot(pending, &mut *container, pos, luck);
+        drop(container);
+        self.set_changed();
     }
 }
 
@@ -92,6 +110,7 @@ impl BlockEntity for BarrelBlockEntity {
         let nbt_view: NbtCompoundView<'_, '_> = nbt.into();
         let mut container = self.container.lock();
         container.items.fill(ItemStack::empty());
+        container.loot.load(&nbt_view);
 
         // Load items from NBT using borrowed NBT for proper ItemStack parsing
         if let Some(items_list) = nbt_view.list("Items")
@@ -115,6 +134,10 @@ impl BlockEntity for BarrelBlockEntity {
     fn save_additional(&self, nbt: &mut NbtCompound) {
         // Save items to NBT (only non-empty slots)
         let container = self.container.lock();
+        if container.loot.save(nbt) {
+            // Vanilla skips the item list while a loot table is still pending.
+            return;
+        }
         let mut items: Vec<NbtCompound> = Vec::new();
         for (slot, item) in container.items.iter().enumerate() {
             if !item.is_empty() {
