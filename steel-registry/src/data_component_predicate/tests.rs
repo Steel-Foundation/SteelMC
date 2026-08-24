@@ -8,7 +8,10 @@ use crate::data_components::vanilla_components::{
 };
 use crate::data_components::{ComponentData, DataComponentMap};
 use crate::init_vanilla_registry;
-use crate::item_predicate::{AdventureModePredicate, BlockPredicate, LockCode};
+use crate::item_predicate::{
+    AdventureModePredicate, BlockPredicate, LockCode, NbtPredicate, StatePropertiesPredicate,
+    StatePropertyMatcher, StatePropertyValueMatcher,
+};
 use crate::{RegistryHolderSet, vanilla_blocks, vanilla_items};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry};
@@ -117,14 +120,45 @@ fn every_builtin_predicate_payload_round_trips_persistence_and_network() {
 fn adventure_and_lock_components_round_trip_both_codecs() {
     init_vanilla_registry();
 
-    let block = BlockPredicate::new(
-        Some(RegistryHolderSet::Direct(vec![&vanilla_blocks::STONE])),
+    let state_properties = StatePropertiesPredicate::new(vec![StatePropertyMatcher::new(
+        "axis".to_owned(),
+        StatePropertyValueMatcher::Exact("y".to_owned()),
+    )])
+    .expect("one state property has a unique name");
+    let mut expected_nbt = NbtCompound::new();
+    expected_nbt.insert("id", "minecraft:chest");
+    let mut block_components = DataComponentMap::new();
+    block_components.set(DAMAGE, Some(3));
+    let damage_type = REGISTRY
+        .data_component_predicate_types
+        .by_key(&Identifier::vanilla_static("damage"))
+        .expect("damage predicate type should exist");
+    let partial = DataComponentPredicateData::new(
+        damage_type,
+        DamagePredicate::new(IntBounds::ANY, IntBounds::exactly(3)),
+    );
+    let block_matchers = DataComponentMatchers::new(
+        DataComponentExactPredicate::all_of(&block_components)
+            .expect("exact components should persist"),
+        vec![partial],
+    )
+    .expect("exact and partial maps use separate namespaces");
+    let direct_block = BlockPredicate::new(
+        Some(RegistryHolderSet::Direct(vec![&vanilla_blocks::OAK_LOG])),
+        Some(state_properties),
+        Some(NbtPredicate::new(expected_nbt).expect("compound NBT is valid")),
+        block_matchers,
+    );
+    let tagged_block = BlockPredicate::new(
+        Some(RegistryHolderSet::Tag(Identifier::vanilla_static(
+            "mineable/axe",
+        ))),
         None,
         None,
         DataComponentMatchers::ANY,
     );
-    let adventure =
-        AdventureModePredicate::new(vec![block]).expect("one block predicate is persistable");
+    let adventure = AdventureModePredicate::new(vec![direct_block, tagged_block])
+        .expect("two block predicates are persistable");
     let adventure = ComponentData::new(adventure);
     round_trip_component(CAN_BREAK.key.clone(), adventure.clone());
     round_trip_component(CAN_PLACE_ON.key.clone(), adventure);
