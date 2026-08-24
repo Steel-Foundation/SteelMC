@@ -944,12 +944,6 @@ impl Player {
             None,
         );
 
-        if let Some(killer) = get_kill_credit(self, world.as_ref()) {
-            self.award_stat(&vanilla_stat_types::ENTITY_KILLED_BY, killer.entity_type());
-            killer.award_kill_score(self, source);
-            // TODO: Create wither rose
-        }
-
         let show_death_messages = world.get_game_rule(&SHOW_DEATH_MESSAGES);
 
         // TODO: use CombatTracker for multi-arg messages (killer name, item, etc.)
@@ -992,7 +986,11 @@ impl Player {
             }
         }
 
-        // TODO: Based on kill credit, award stats, score and create a wither rose
+        if let Some(killer) = get_kill_credit(self, world.as_ref()) {
+            self.award_stat(&vanilla_stat_types::ENTITY_KILLED_BY, killer.entity_type());
+            killer.award_kill_score(self, source);
+            // TODO: Create wither rose
+        }
 
         self.award_custom_stat(&vanilla_custom_stats::DEATHS);
         self.reset_custom_stat(&vanilla_custom_stats::TIME_SINCE_DEATH);
