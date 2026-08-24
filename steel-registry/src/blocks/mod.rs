@@ -1403,7 +1403,7 @@ mod tests {
             .expect("Should find state");
 
         let retrieved = registry.get_properties(state_id);
-        assert!(retrieved.is_empty());
+        assert_eq!(retrieved.len(), 0);
     }
 
     #[test]
