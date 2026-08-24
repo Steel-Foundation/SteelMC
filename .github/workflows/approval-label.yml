@@ -11,12 +11,17 @@ jobs:
   label:
     runs-on: ubuntu-latest
     steps:
-      - name: Add/remove "approved-by-<login>" labels based on review state
+      - name: Add/remove per-reviewer labels based on review state
         uses: actions/github-script@v7
         with:
           script: |
-            const PREFIX = "approved-by-";
-            const COLOR = "0e8a16";
+            // One (state -> label prefix/color) entry per review state we track.
+            // Both prefixes are mutually exclusive per reviewer since they're
+            // derived from the same latest-review-per-user map below.
+            const STATE_CONFIG = {
+              APPROVED:          { prefix: "approved-by-",          color: "0e8a16" },
+              CHANGES_REQUESTED: { prefix: "changes-requested-by-", color: "d73a4a" },
+            };
 
             const { owner, repo } = context.repo;
             const issue_number = context.payload.pull_request.number;
@@ -33,29 +38,47 @@ jobs:
               if (r.user) latestByUser.set(r.user.login, r.state);
             }
 
-            const approvers = [...latestByUser.entries()]
-              .filter(([, state]) => state === "APPROVED")
-              .map(([login]) => login);
+            // Only reviews from collaborators with write+ access count — anyone
+            // with read access can submit an approve/request-changes review,
+            // but GitHub itself ignores those for branch protection purposes.
+            const WRITE_LEVELS = new Set(["admin", "write"]);
+            const isWriteCollaborator = async login => {
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner, repo, username: login,
+              });
+              return WRITE_LEVELS.has(data.permission);
+            };
 
-            const labelFor = login => `${PREFIX}${login.toLowerCase()}`;
-            const wanted = new Set(approvers.map(labelFor));
+            const labelFor = (state, login) => `${STATE_CONFIG[state].prefix}${login.toLowerCase()}`;
 
+            const eligible = [];
+            for (const [login, state] of latestByUser) {
+              if (STATE_CONFIG[state] && await isWriteCollaborator(login)) {
+                eligible.push([login, state]);
+              }
+            }
+
+            const wanted = new Set(eligible.map(([login, state]) => labelFor(state, login)));
+
+            const managedPrefixes = Object.values(STATE_CONFIG).map(c => c.prefix);
             const current = await github.paginate(github.rest.issues.listLabelsOnIssue, {
               owner, repo, issue_number,
             });
             const currentManaged = current
               .map(l => l.name)
-              .filter(name => name.startsWith(PREFIX));
+              .filter(name => managedPrefixes.some(p => name.startsWith(p)));
 
             const toAdd = [...wanted].filter(l => !currentManaged.includes(l));
             const toRemove = currentManaged.filter(l => !wanted.has(l));
 
             for (const name of toAdd) {
+              const prefix = managedPrefixes.find(p => name.startsWith(p));
+              const color = Object.values(STATE_CONFIG).find(c => c.prefix === prefix).color;
               try {
                 await github.rest.issues.getLabel({ owner, repo, name });
               } catch (e) {
                 if (e.status === 404) {
-                  await github.rest.issues.createLabel({ owner, repo, name, color: COLOR });
+                  await github.rest.issues.createLabel({ owner, repo, name, color });
                 } else {
                   throw e;
                 }
