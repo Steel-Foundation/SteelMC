@@ -3591,7 +3591,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         };
         world
             .get_entity_by_id(causing_entity_id)
-            .is_some_and(|entity| entity.as_player().is_some_and(Player::has_infinite_materials))
+            .is_some_and(|entity| {
+                entity
+                    .as_player()
+                    .is_some_and(Player::has_infinite_materials)
+            })
     }
 
     /// Applies damage to this entity.
