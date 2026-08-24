@@ -46,7 +46,7 @@
             pkgs.typos
 
             pkgs.git
-            pkgs.jdk21
+            pkgs.jdk25
           ];
         };
       });
