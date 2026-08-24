@@ -312,3 +312,75 @@ impl steel_utils::serial::WriteTo for CPlayerInfoUpdate {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use steel_utils::{
+        codec::VarInt,
+        serial::{PrefixedRead as _, ReadFrom as _, WriteTo as _},
+    };
+    use uuid::Uuid;
+
+    use super::{CPlayerInfoUpdate, GameProfileProperty, PLAYER_INFO_INIT_ACTIONS};
+
+    #[test]
+    fn initial_player_info_preserves_signed_texture_property() {
+        let uuid = Uuid::from_u128(1);
+        let packet = CPlayerInfoUpdate::create_player_initializing(
+            uuid,
+            "CapePlayer".to_owned(),
+            vec![GameProfileProperty {
+                name: "textures".to_owned(),
+                value: "signed-texture-payload".to_owned(),
+                signature: Some("texture-signature".to_owned()),
+            }],
+            0,
+            0,
+            None,
+            true,
+        );
+        let mut bytes = Vec::new();
+        packet.write(&mut bytes).expect("player info should encode");
+
+        let mut cursor = Cursor::new(bytes.as_slice());
+        assert_eq!(
+            u8::read(&mut cursor).expect("actions should decode"),
+            PLAYER_INFO_INIT_ACTIONS
+        );
+        assert_eq!(
+            VarInt::read(&mut cursor)
+                .expect("entry count should decode")
+                .0,
+            1
+        );
+        assert_eq!(
+            Uuid::read(&mut cursor).expect("entry UUID should decode"),
+            uuid
+        );
+        assert_eq!(
+            String::read_prefixed::<VarInt>(&mut cursor).expect("profile name should decode"),
+            "CapePlayer"
+        );
+        assert_eq!(
+            VarInt::read(&mut cursor)
+                .expect("property count should decode")
+                .0,
+            1
+        );
+        assert_eq!(
+            String::read_prefixed::<VarInt>(&mut cursor).expect("property name should decode"),
+            "textures"
+        );
+        assert_eq!(
+            String::read_prefixed::<VarInt>(&mut cursor).expect("property value should decode"),
+            "signed-texture-payload"
+        );
+        assert!(bool::read(&mut cursor).expect("signature presence should decode"));
+        assert_eq!(
+            String::read_prefixed::<VarInt>(&mut cursor).expect("signature should decode"),
+            "texture-signature"
+        );
+    }
+}
