@@ -158,6 +158,16 @@ impl FeatureDecorationRunner {
     ) -> bool {
         let neighbor_pos = pos.relative(direction_towards_neighbor);
         let neighbor_state = region.block_state(neighbor_pos);
+        Self::is_sturdy_multiface_support(neighbor_pos, neighbor_state, direction_towards_neighbor)
+    }
+
+    /// Face-sturdiness check against an already-read neighbor state, letting
+    /// callers that batch their region reads reuse one acquisition.
+    pub(in crate::worldgen::feature) fn is_sturdy_multiface_support(
+        neighbor_pos: BlockPos,
+        neighbor_state: BlockStateId,
+        direction_towards_neighbor: Direction,
+    ) -> bool {
         let support_direction = direction_towards_neighbor.opposite();
         shapes::is_offset_face_full(
             neighbor_state.get_support_shape_at(neighbor_pos),
