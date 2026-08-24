@@ -15,6 +15,7 @@ use steel_utils::types::UpdateFlags;
 
 use crate::{
     behavior::{InteractionResult, ItemBehavior, UseOnContext},
+    entity::Entity,
     world::game_event::GameEventContext,
 };
 
@@ -51,13 +52,12 @@ impl ItemBehavior for ShovelItem {
             {
                 return InteractionResult::Pass;
             }
-            context.world.play_sound(
+            context.world.play_block_sound(
                 &sound_events::ITEM_SHOVEL_FLATTEN,
-                SoundSource::Players,
                 context.hit_result.block_pos,
                 1.0,
                 1.0,
-                None,
+                Some(context.player.id()),
             );
             let infinite_materials = context.player.has_infinite_materials();
             context
