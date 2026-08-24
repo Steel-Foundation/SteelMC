@@ -29,7 +29,7 @@ use text_components::content::Resolvable;
 use text_components::custom::CustomData;
 use text_components::resolving::TextResolutor;
 use text_components::{Modifier, TextComponent, format::Color};
-use tokio::io::{BufReader, BufWriter};
+use tokio::io::{AsyncWrite, BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
@@ -40,8 +40,9 @@ use crate::player::Player;
 use crate::player::connection::NetworkConnection;
 use crate::server::Server;
 
-/// Shared Java socket writer.
-pub type JavaNetworkWriter = Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>>;
+type JavaPacketWriter = TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>;
+/// Shared Java socket writer during pre-play states.
+pub type JavaNetworkWriter = Arc<AsyncMutex<Option<JavaPacketWriter>>>;
 
 /// Outbound packet queue message for Java connections.
 pub enum OutboundPacket {
@@ -416,18 +417,6 @@ impl JavaConnection {
             }),
             latency: SyncMutex::new(0),
         }
-    }
-
-    async fn write_packet_now(&self, packet: &EncodedPacket) -> Result<(), PacketError> {
-        let mut network_writer = self.network_writer.lock().await;
-        let Some(network_writer) = network_writer.as_mut() else {
-            return Err(PacketError::ConnectionClosed);
-        };
-        network_writer.write_packet(packet).await
-    }
-
-    async fn release_network_writer(&self) {
-        self.network_writer.lock().await.take();
     }
 
     /// Ticks the connection.
@@ -826,11 +815,40 @@ impl JavaConnection {
     /// Sends packets to the client.
     ///
     pub async fn sender(&self, mut sender_recv: UnboundedReceiver<OutboundPacket>) {
+        let mut shared_writer = self.network_writer.lock().await;
+        let Some(mut network_writer) = shared_writer.take() else {
+            return;
+        };
+        drop(shared_writer);
+
+        self.send_packets(&mut network_writer, &mut sender_recv)
+            .await;
+        drop(network_writer);
+
+        let Some(player) = self.player.upgrade() else {
+            return;
+        };
+        if !player.has_joined_world() || player.server().cancel_token.is_cancelled() {
+            return;
+        }
+        player.server().queue_player_disconnect(player);
+    }
+
+    async fn send_packets<W: AsyncWrite + Unpin>(
+        &self,
+        network_writer: &mut TCPNetworkEncoder<W>,
+        sender_recv: &mut UnboundedReceiver<OutboundPacket>,
+    ) {
+        let close = self.wait_for_close();
+        tokio::pin!(close);
+
         loop {
             select! {
                 biased;
-                () = self.wait_for_close() => {
-                    self.write_queued_disconnect(&mut sender_recv).await;
+                () = close.as_mut() => {
+                    if let Some(closing_packets) = Self::close_and_take_packets_through_disconnect(sender_recv) {
+                        self.write_closing_packets(network_writer, closing_packets).await;
+                    }
                     break;
                 }
                 outbound = sender_recv.recv() => {
@@ -841,27 +859,41 @@ impl JavaConnection {
                         };
 
                         if close_after_write {
-                            if let Err(err) = self.write_packet_now(&packet).await {
+                            if let Err(err) = network_writer.write_packet(&packet).await {
                                 log::warn!("Failed to send disconnect packet to client {}: {err}", self.id);
                             }
                             self.close();
                             break;
                         }
 
-                        let write_result = self.write_packet_now(&packet);
-                        select! {
-                            biased;
-                            () = self.wait_for_close() => {
-                                self.write_queued_disconnect(&mut sender_recv).await;
-                                break;
-                            },
-                            result = write_result => {
-                                if let Err(err) = result {
-                                    log::warn!("Failed to send packet to client {}: {err}", self.id);
-                                    self.close();
-                                    break;
+                        let closing_packets = {
+                            let write_result = network_writer.write_packet(&packet);
+                            tokio::pin!(write_result);
+                            select! {
+                                biased;
+                                () = close.as_mut() => {
+                                    let Some(closing_packets) = Self::close_and_take_packets_through_disconnect(sender_recv) else {
+                                        break;
+                                    };
+                                    if let Err(err) = write_result.as_mut().await {
+                                        log::warn!("Failed to finish packet before disconnecting client {}: {err}", self.id);
+                                        break;
+                                    }
+                                    Some(closing_packets)
+                                },
+                                result = write_result.as_mut() => {
+                                    if let Err(err) = result {
+                                        log::warn!("Failed to send packet to client {}: {err}", self.id);
+                                        self.close();
+                                        break;
+                                    }
+                                    None
                                 }
                             }
+                        };
+                        if let Some(closing_packets) = closing_packets {
+                            self.write_closing_packets(network_writer, closing_packets).await;
+                            break;
                         }
                     } else {
                         //log::warn!(
@@ -873,36 +905,38 @@ impl JavaConnection {
                 }
             }
         }
-
-        self.release_network_writer().await;
-
-        let Some(player) = self.player.upgrade() else {
-            return;
-        };
-        if !player.has_joined_world() || player.server().cancel_token.is_cancelled() {
-            return;
-        }
-        player.server().queue_player_disconnect(player);
     }
 
-    async fn write_queued_disconnect(&self, sender_recv: &mut UnboundedReceiver<OutboundPacket>) {
-        let mut disconnect_packet = None;
+    fn close_and_take_packets_through_disconnect(
+        sender_recv: &mut UnboundedReceiver<OutboundPacket>,
+    ) -> Option<Vec<EncodedPacket>> {
+        sender_recv.close();
+        let mut packets = Vec::new();
         loop {
             match sender_recv.try_recv() {
-                Ok(OutboundPacket::Packet(_)) => {}
-                Ok(OutboundPacket::Disconnect(packet)) => disconnect_packet = Some(packet),
-                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+                Ok(OutboundPacket::Packet(packet)) => packets.push(packet),
+                Ok(OutboundPacket::Disconnect(packet)) => {
+                    packets.push(packet);
+                    return Some(packets);
+                }
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => return None,
             }
         }
+    }
 
-        let Some(packet) = disconnect_packet else {
-            return;
-        };
-        if let Err(err) = self.write_packet_now(&packet).await {
-            log::warn!(
-                "Failed to send disconnect packet to client {} during close: {err}",
-                self.id
-            );
+    async fn write_closing_packets<W: AsyncWrite + Unpin>(
+        &self,
+        network_writer: &mut TCPNetworkEncoder<W>,
+        packets: Vec<EncodedPacket>,
+    ) {
+        for packet in packets {
+            if let Err(err) = network_writer.write_packet(&packet).await {
+                log::warn!(
+                    "Failed to finish the outbound queue for client {} during disconnect: {err}",
+                    self.id
+                );
+                return;
+            }
         }
     }
 }
@@ -961,7 +995,12 @@ impl NetworkConnection for JavaConnection {
 
 #[cfg(test)]
 mod tests {
-    use std::array;
+    use std::{
+        array, io,
+        pin::Pin,
+        sync::Arc,
+        task::{Context, Poll, Waker},
+    };
 
     use crate::{
         entity::{Entity as _, LivingEntity as _},
@@ -971,7 +1010,13 @@ mod tests {
     use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
     use steel_protocol::packets::game::{ClickType, ClientCommandAction, HashedStack};
     use steel_registry::{blocks::properties::Direction, item_stack::ItemStack};
-    use steel_utils::{BlockPos, codec::VarInt, types::InteractionHand};
+    use steel_utils::{BlockPos, FrontVec, codec::VarInt, types::InteractionHand};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWrite},
+        net::{TcpListener, TcpStream},
+        sync::{Notify, mpsc},
+        task::yield_now,
+    };
     use uuid::Uuid;
 
     use super::*;
@@ -985,6 +1030,244 @@ mod tests {
 
     fn execution(kind: ScheduledPlayPacketKind) -> ScheduledPacketExecution {
         ScheduledPlayPacket(kind).execution()
+    }
+
+    fn encoded_bytes(bytes: &[u8]) -> EncodedPacket {
+        let mut data = FrontVec::new(0);
+        data.extend_from_slice(bytes);
+        EncodedPacket {
+            encoded_data: Arc::new(data),
+        }
+    }
+
+    fn encoded_marker(marker: u8) -> EncodedPacket {
+        encoded_bytes(&[marker])
+    }
+
+    #[derive(Default)]
+    struct PausingWriterState {
+        bytes: Vec<u8>,
+        released: bool,
+        waker: Option<Waker>,
+    }
+
+    struct PausingWriter {
+        state: Arc<SyncMutex<PausingWriterState>>,
+        paused: Arc<Notify>,
+        pause_after: usize,
+    }
+
+    impl AsyncWrite for PausingWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            bytes: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            let mut state = self.state.lock();
+            if !state.released && state.bytes.len() >= self.pause_after {
+                state.waker = Some(cx.waker().clone());
+                drop(state);
+                self.paused.notify_one();
+                return Poll::Pending;
+            }
+
+            let write_len = if state.released {
+                bytes.len()
+            } else {
+                bytes.len().min(self.pause_after - state.bytes.len())
+            };
+            state.bytes.extend_from_slice(&bytes[..write_len]);
+            Poll::Ready(Ok(write_len))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl PausingWriter {
+        fn release(&self) {
+            let waker = {
+                let mut state = self.state.lock();
+                state.released = true;
+                state.waker.take()
+            };
+            if let Some(waker) = waker {
+                waker.wake();
+            }
+        }
+    }
+
+    #[test]
+    fn disconnect_close_preserves_queued_packet_order() {
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        assert!(
+            sender
+                .send(OutboundPacket::Packet(encoded_marker(1)))
+                .is_ok()
+        );
+        assert!(
+            sender
+                .send(OutboundPacket::Packet(encoded_marker(2)))
+                .is_ok()
+        );
+        assert!(
+            sender
+                .send(OutboundPacket::Disconnect(encoded_marker(3)))
+                .is_ok()
+        );
+        assert!(
+            sender
+                .send(OutboundPacket::Packet(encoded_marker(4)))
+                .is_ok()
+        );
+
+        let Some(closing_packets) =
+            JavaConnection::close_and_take_packets_through_disconnect(&mut receiver)
+        else {
+            panic!("disconnect packet should be present");
+        };
+        let markers: Vec<_> = closing_packets
+            .iter()
+            .map(|packet| packet.encoded_data[0])
+            .collect();
+
+        assert_eq!(markers, [1, 2, 3]);
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(OutboundPacket::Packet(packet)) if packet.encoded_data[0] == 4
+        ));
+    }
+
+    #[test]
+    fn hard_close_discards_queue_without_disconnect_packet() {
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        assert!(
+            sender
+                .send(OutboundPacket::Packet(encoded_marker(1)))
+                .is_ok()
+        );
+
+        assert!(JavaConnection::close_and_take_packets_through_disconnect(&mut receiver).is_none());
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(TryRecvError::Empty | TryRecvError::Disconnected)
+        ));
+    }
+
+    #[tokio::test]
+    async fn play_sender_takes_writer_and_writes_fifo() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("loopback listener should bind");
+        let address = listener
+            .local_addr()
+            .expect("loopback listener should have an address");
+        let connect = TcpStream::connect(address);
+        let accept = listener.accept();
+        let (client_result, server_result) = tokio::join!(connect, accept);
+        let mut client = client_result.expect("loopback client should connect");
+        let (server, _) = server_result.expect("loopback server should accept");
+        let (_, server_write) = server.into_split();
+
+        let network_writer: JavaNetworkWriter = Arc::new(AsyncMutex::new(Some(
+            TCPNetworkEncoder::new(BufWriter::new(server_write)),
+        )));
+        let (outgoing, receiver) = mpsc::unbounded_channel();
+        let connection = Arc::new(JavaConnection::new(
+            outgoing.clone(),
+            CancellationToken::new(),
+            None,
+            Arc::clone(&network_writer),
+            1,
+            Weak::new(),
+        ));
+        let sender_connection = Arc::clone(&connection);
+        let sender = tokio::spawn(async move {
+            sender_connection.sender(receiver).await;
+        });
+
+        assert!(
+            outgoing
+                .send(OutboundPacket::Packet(encoded_marker(1)))
+                .is_ok()
+        );
+        assert!(
+            outgoing
+                .send(OutboundPacket::Disconnect(encoded_marker(2)))
+                .is_ok()
+        );
+
+        let mut wire_bytes = [0; 2];
+        client
+            .read_exact(&mut wire_bytes)
+            .await
+            .expect("loopback client should receive both packets");
+        sender.await.expect("sender task should finish");
+
+        assert_eq!(wire_bytes, [1, 2]);
+        assert!(network_writer.lock().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn disconnect_finishes_partial_write_before_terminal_packet() {
+        let state = Arc::new(SyncMutex::new(PausingWriterState::default()));
+        let paused = Arc::new(Notify::new());
+        let writer = PausingWriter {
+            state: Arc::clone(&state),
+            paused: Arc::clone(&paused),
+            pause_after: 1,
+        };
+        let writer_control = PausingWriter {
+            state: Arc::clone(&state),
+            paused: Arc::clone(&paused),
+            pause_after: 1,
+        };
+        let (outgoing, mut receiver) = mpsc::unbounded_channel();
+        let connection = Arc::new(JavaConnection::new(
+            outgoing.clone(),
+            CancellationToken::new(),
+            None,
+            Arc::new(AsyncMutex::new(None)),
+            1,
+            Weak::new(),
+        ));
+        let sender_connection = Arc::clone(&connection);
+        let sender = tokio::spawn(async move {
+            let mut network_writer = TCPNetworkEncoder::new(writer);
+            sender_connection
+                .send_packets(&mut network_writer, &mut receiver)
+                .await;
+        });
+
+        assert!(
+            outgoing
+                .send(OutboundPacket::Packet(encoded_bytes(&[1, 2])))
+                .is_ok()
+        );
+        paused.notified().await;
+        assert!(
+            outgoing
+                .send(OutboundPacket::Packet(encoded_marker(3)))
+                .is_ok()
+        );
+        assert!(
+            outgoing
+                .send(OutboundPacket::Disconnect(encoded_marker(4)))
+                .is_ok()
+        );
+        connection.close();
+        yield_now().await;
+
+        assert!(!sender.is_finished());
+        writer_control.release();
+        sender.await.expect("sender task should finish");
+
+        assert_eq!(state.lock().bytes, [1, 2, 3, 4]);
     }
 
     #[test]

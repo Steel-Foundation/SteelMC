@@ -88,6 +88,7 @@ syn = { workspace = true, features = ["full"] }
 glob = "0.3.4"
 
 [dev-dependencies]
+aes.workspace = true
 criterion.workspace = true
 sha1.workspace = true
 steel-registry.workspace = true
@@ -96,6 +97,10 @@ steel-registry.workspace = true
 name = "worldgen"
 harness = false
 required-features = ["benchmark-support"]
+
+[[bench]]
+name = "outbound_transport"
+harness = false
 
 [lints]
 workspace = true

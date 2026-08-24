@@ -287,7 +287,9 @@ impl JavaTcpClient {
                 select! {
                     biased;
                     () = cancel_token.cancelled() => {
-                        Self::write_queued_disconnect(&network_writer, &mut sender_recv, id).await;
+                        if let Some(closing_packets) = Self::close_and_take_packets_through_disconnect(&mut sender_recv) {
+                            Self::write_closing_packets(&network_writer, closing_packets, id).await;
+                        }
                         break;
                     }
                     outbound = sender_recv.recv() => {
@@ -306,13 +308,21 @@ impl JavaTcpClient {
                             }
 
                             let write_result = Self::write_network_packet(&network_writer, &packet);
+                            tokio::pin!(write_result);
                             select! {
                                 biased;
                                 () = cancel_token.cancelled() => {
-                                    Self::write_queued_disconnect(&network_writer, &mut sender_recv, id).await;
+                                    let Some(closing_packets) = Self::close_and_take_packets_through_disconnect(&mut sender_recv) else {
+                                        break;
+                                    };
+                                    if let Err(err) = write_result.as_mut().await {
+                                        log::warn!("Failed to finish packet before disconnecting client {id}: {err}");
+                                        break;
+                                    }
+                                    Self::write_closing_packets(&network_writer, closing_packets, id).await;
                                     break;
                                 },
-                                result = write_result => {
+                                result = write_result.as_mut() => {
                                     if let Err(err) = result {
                                         log::warn!("Failed to send packet to client {id}: {err}");
                                         cancel_token.cancel();
@@ -371,25 +381,35 @@ impl JavaTcpClient {
         });
     }
 
-    async fn write_queued_disconnect(
-        network_writer: &JavaNetworkWriter,
+    fn close_and_take_packets_through_disconnect(
         sender_recv: &mut UnboundedReceiver<OutboundPacket>,
-        id: u64,
-    ) {
-        let mut disconnect_packet = None;
+    ) -> Option<Vec<EncodedPacket>> {
+        sender_recv.close();
+        let mut packets = Vec::new();
         loop {
             match sender_recv.try_recv() {
-                Ok(OutboundPacket::Packet(_)) => {}
-                Ok(OutboundPacket::Disconnect(packet)) => disconnect_packet = Some(packet),
-                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+                Ok(OutboundPacket::Packet(packet)) => packets.push(packet),
+                Ok(OutboundPacket::Disconnect(packet)) => {
+                    packets.push(packet);
+                    return Some(packets);
+                }
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => return None,
             }
         }
+    }
 
-        let Some(packet) = disconnect_packet else {
-            return;
-        };
-        if let Err(err) = Self::write_network_packet(network_writer, &packet).await {
-            log::warn!("Failed to send disconnect packet to client {id} during close: {err}");
+    async fn write_closing_packets(
+        network_writer: &JavaNetworkWriter,
+        packets: Vec<EncodedPacket>,
+        id: u64,
+    ) {
+        for packet in packets {
+            if let Err(err) = Self::write_network_packet(network_writer, &packet).await {
+                log::warn!(
+                    "Failed to finish the outbound queue for client {id} during disconnect: {err}"
+                );
+                return;
+            }
         }
     }
 

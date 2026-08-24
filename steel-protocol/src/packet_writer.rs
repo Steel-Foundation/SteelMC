@@ -11,7 +11,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use aes::cipher::KeyIvInit;
 use thiserror::Error;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
@@ -38,6 +37,15 @@ impl<W: AsyncWrite + Unpin> EncryptionWriter<W> {
     pub fn upgrade(self, cipher: Aes128Cfb8Enc) -> Self {
         match self {
             Self::None(stream) => Self::Encrypt(Box::new(StreamEncryptor::new(cipher, stream))),
+            Self::Encrypt(_) => panic!("Cannot upgrade a stream that already has a cipher!"),
+        }
+    }
+
+    fn upgrade_from_key(self, key: &[u8; 16]) -> Self {
+        match self {
+            Self::None(stream) => {
+                Self::Encrypt(Box::new(StreamEncryptor::from_key(key, key, stream)))
+            }
             Self::Encrypt(_) => panic!("Cannot upgrade a stream that already has a cipher!"),
         }
     }
@@ -107,13 +115,13 @@ impl<W: AsyncWrite + Unpin> TCPNetworkEncoder<W> {
     ///
     /// # Panics
     /// - If the stream is already encrypted.
-    /// - If the key is invalid.
     pub fn set_encryption(&mut self, key: &[u8; 16]) {
         if matches!(self.writer, EncryptionWriter::Encrypt(_)) {
             panic!("Cannot upgrade a stream that already has a cipher!");
         }
-        let cipher = Aes128Cfb8Enc::new_from_slices(key, key).expect("invalid key");
-        replace_with::replace_with_or_abort(&mut self.writer, |encoder| encoder.upgrade(cipher));
+        replace_with::replace_with_or_abort(&mut self.writer, |encoder| {
+            encoder.upgrade_from_key(key)
+        });
     }
 
     /// Writes a packet to the stream.

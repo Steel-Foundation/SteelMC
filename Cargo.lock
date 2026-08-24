@@ -2698,6 +2698,7 @@ dependencies = [
 name = "steel-core"
 version = "0.15.2+mc26.2"
 dependencies = [
+ "aes",
  "arc-swap",
  "base64 0.23.0",
  "bitflags",
@@ -2801,6 +2802,7 @@ version = "0.15.2+mc26.2"
 dependencies = [
  "aes",
  "cfb8",
+ "criterion",
  "flate2",
  "glam",
  "log",
