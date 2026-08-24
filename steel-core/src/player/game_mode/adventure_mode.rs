@@ -1,4 +1,4 @@
-//! Vanilla adventure-mode item component checks.
+//! Vanilla adventuremode item component checks
 
 use steel_registry::{
     blocks::properties::Direction,
