@@ -2,8 +2,7 @@
 //!
 //! These entities store an additional counter, incrementing each tick,
 //! checking whether it can survive when it reaches the maximum value.
-//! They are also bound to a position, and cannot move. Trying to move them
-//! results in them being destroyed.
+//! They are also bound to a position, and cannot move.
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{BorrowedNbtCompoundView, EntityMoveError};
