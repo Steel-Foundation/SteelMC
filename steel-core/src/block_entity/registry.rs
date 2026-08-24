@@ -18,8 +18,8 @@ use super::SharedBlockEntity;
 use super::entities::{
     BarrelBlockEntity, BeehiveBlockEntity, BrushableBlockEntity, ChiseledBookShelfBlockEntity,
     ComparatorBlockEntity, DaylightDetectorBlockEntity, EndGatewayBlockEntity,
-    EndPortalBlockEntity, HopperBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity,
-    RawBlockEntity, SignBlockEntity,
+    EndPortalBlockEntity, HopperBlockEntity, JukeboxBlockEntity, PistonMovingBlockEntity,
+    PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity,
 };
 use crate::world::World;
 
@@ -231,6 +231,11 @@ pub fn init_block_entities() {
         // Register hopper block entity factory
         registry.register(&vanilla_block_entity_types::HOPPER, |level, pos, state| {
             Arc::new(HopperBlockEntity::new(level, pos, state))
+        });
+
+        // Register jukebox block entity factory
+        registry.register(&vanilla_block_entity_types::JUKEBOX, |level, pos, state| {
+            Arc::new(JukeboxBlockEntity::new(level, pos, state))
         });
 
         // Register beehive block entity factory
