@@ -223,12 +223,15 @@ impl PlayerInventory {
         -1
     }
 
-    /// Finds a slot containing an item matching the given stack (same item type).
+    /// Finds a slot containing an item matching the given stack (same item type
+    /// and components), matching vanilla `Inventory.findSlotMatchingItem`.
     /// Returns -1 if not found.
     #[must_use]
     pub fn find_slot_matching_item(&self, stack: &ItemStack) -> i32 {
         for i in 0..Self::INVENTORY_SIZE {
-            if !self.items[i].is_empty() && ItemStack::is_same_item(&self.items[i], stack) {
+            if !self.items[i].is_empty()
+                && ItemStack::is_same_item_same_components(&self.items[i], stack)
+            {
                 return i as i32;
             }
         }
