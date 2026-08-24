@@ -76,11 +76,15 @@ mod tests {
     use steel_registry::{
         RegistryHolderSet,
         blocks::properties::Direction,
-        data_component_predicate::DataComponentMatchers,
+        data_component_predicate::{DataComponentExactPredicate, DataComponentMatchers},
         data_components::{
-            AdventureModePredicate, BlockPredicate, vanilla_components::CAN_PLACE_ON,
+            AdventureModePredicate, BlockPredicate, DataComponentMap,
+            vanilla_components::{CAN_BREAK, CAN_PLACE_ON, DAMAGE},
         },
         init_vanilla_registry,
+        item_predicate::{
+            StatePropertiesPredicate, StatePropertyMatcher, StatePropertyValueMatcher,
+        },
         item_stack::ItemStack,
         vanilla_blocks, vanilla_items,
     };
@@ -93,6 +97,8 @@ mod tests {
         behavior::init_behaviors,
         test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
     };
+
+    use super::can_break;
 
     #[test]
     fn may_use_item_at_tests_the_block_behind_the_placement_face() {
@@ -133,5 +139,46 @@ mod tests {
 
         player.abilities.lock().may_build = true;
         assert!(player.may_use_item_at(placement_pos, Direction::Up, &plain_bucket));
+    }
+
+    #[test]
+    fn block_in_world_predicates_ignore_component_matchers() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("adventure_mode_ignores_component_matchers");
+        let pos = BlockPos::new(1, 64, 0);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::OAK_LOG.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+
+        let state_properties = StatePropertiesPredicate::new(vec![StatePropertyMatcher::new(
+            "axis".to_owned(),
+            StatePropertyValueMatcher::Exact("y".to_owned()),
+        )])
+        .expect("one state property has a unique name");
+        let mut expected_components = DataComponentMap::new();
+        expected_components.set(DAMAGE, Some(1));
+        let component_matchers = DataComponentMatchers::new(
+            DataComponentExactPredicate::all_of(&expected_components)
+                .expect("damage is persistable"),
+            Vec::new(),
+        )
+        .expect("one exact matcher is valid");
+        let predicate = BlockPredicate::new(
+            Some(RegistryHolderSet::Direct(vec![&vanilla_blocks::OAK_LOG])),
+            Some(state_properties),
+            None,
+            component_matchers,
+        );
+        let mut item = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
+        item.set(
+            CAN_BREAK,
+            AdventureModePredicate::new(vec![predicate]).expect("one block predicate is valid"),
+        );
+
+        assert!(can_break(&item, &world, pos));
     }
 }

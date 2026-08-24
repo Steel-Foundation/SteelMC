@@ -310,8 +310,9 @@ impl BlockBreakingManager {
     fn destroy_block(&self, player: &Player, world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
 
-        // Check if player's tool can destroy this block
-        // TODO: Implement canDestroyBlock check for adventure mode
+        if player.block_action_restricted(world, pos) {
+            return false;
+        }
 
         // Get block info
         let Some(_block) = REGISTRY.blocks.by_state_id(state) else {

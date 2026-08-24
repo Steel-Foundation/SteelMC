@@ -1367,3 +1367,69 @@ fn block_action_restriction_precedes_redstone_ore_attack() {
             .get_value(&BlockStateProperties::LIT)
     );
 }
+
+#[test]
+fn block_action_restriction_is_rechecked_before_block_destruction() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("block_action_restriction_before_destruction");
+    let pos = BlockPos::new(1, 64, 0);
+    insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+    assert!(world.set_block(
+        pos,
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_ALL,
+    ));
+
+    let player = test_player(Arc::clone(&world));
+    player.base.set_position_local(DVec3::new(1.0, 64.0, 0.0));
+    player.restore_game_modes(GameType::Adventure, None);
+    player
+        .abilities
+        .lock()
+        .update_for_game_mode(GameType::Adventure);
+
+    let predicate = BlockPredicate::new(
+        Some(RegistryHolderSet::Direct(vec![&vanilla_blocks::STONE])),
+        None,
+        None,
+        DataComponentMatchers::ANY,
+    );
+    let mut allowed_tool = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
+    allowed_tool.set(
+        CAN_BREAK,
+        AdventureModePredicate::new(vec![predicate]).expect("one block predicate is valid"),
+    );
+    player.inventory.lock().set_selected_item(allowed_tool);
+
+    {
+        let mut breaking = player.block_breaking.lock();
+        breaking.handle_block_break_action(
+            &player,
+            &world,
+            pos,
+            BlockBreakAction::Start,
+            Direction::Up,
+        );
+        for _ in 0..3 {
+            breaking.tick(&player, &world);
+        }
+    }
+
+    player
+        .inventory
+        .lock()
+        .set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_PICKAXE));
+    player.block_breaking.lock().handle_block_break_action(
+        &player,
+        &world,
+        pos,
+        BlockBreakAction::Stop,
+        Direction::Up,
+    );
+
+    assert_eq!(
+        world.get_block_state(pos),
+        vanilla_blocks::STONE.default_state()
+    );
+}
