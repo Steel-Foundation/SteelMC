@@ -30,6 +30,7 @@ use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Identifier, WorldAabb,
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
+use crate::behavior::blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::behavior::{InventoryAccess, PlacementSource};
 use crate::block_entity::{BlockEntity, BlockEntityTicker, SharedBlockEntity};
@@ -1213,6 +1214,11 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns the shared vanilla rail capability implemented by this block.
     fn as_rail(&self) -> Option<&dyn RailBehavior> {
+        None
+    }
+
+    /// Returns the shared behavior for growing plant head blocks.
+    fn as_growing_plant_head_block(&self) -> Option<&GrowingPlantHeadBlock> {
         None
     }
 }

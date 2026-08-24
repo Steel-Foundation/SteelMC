@@ -160,6 +160,10 @@ impl BlockBehavior for CaveVinesBlock {
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }
+
+    fn as_growing_plant_head_block(&self) -> Option<&GrowingPlantHeadBlock> {
+        Some(&self.base)
+    }
 }
 impl Bonemealable for CaveVinesBlock {
     fn is_valid_bonemeal_target(

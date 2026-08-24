@@ -75,6 +75,10 @@ impl BlockBehavior for WeepingVinesBlock {
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }
+
+    fn as_growing_plant_head_block(&self) -> Option<&GrowingPlantHeadBlock> {
+        Some(&self.base)
+    }
 }
 impl Bonemealable for WeepingVinesBlock {
     fn is_valid_bonemeal_target(

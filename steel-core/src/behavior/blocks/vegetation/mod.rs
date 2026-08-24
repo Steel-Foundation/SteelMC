@@ -41,7 +41,7 @@ mod glow_lichen_block;
 mod grass_block;
 mod growing_plant_block;
 mod growing_plant_body_block;
-mod growing_plant_head_block;
+pub mod growing_plant_head_block;
 mod hanging_moss_block;
 mod hanging_roots_block;
 mod huge_mushroom_block;

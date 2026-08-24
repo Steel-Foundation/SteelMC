@@ -127,6 +127,10 @@ impl BlockBehavior for KelpBlock {
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }
+
+    fn as_growing_plant_head_block(&self) -> Option<&GrowingPlantHeadBlock> {
+        Some(&self.base)
+    }
 }
 
 impl Bonemealable for KelpBlock {

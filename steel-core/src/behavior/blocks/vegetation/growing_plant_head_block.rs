@@ -1,3 +1,5 @@
+//! Shared behavior for growing plant head blocks.
+
 use rand::{Rng, RngExt, rng};
 use std::sync::Arc;
 use steel_registry::{
@@ -104,10 +106,21 @@ impl GrowingPlantHeadBlock {
         state
     }
 
+    /// Returns the head state of a growing plant head block with a random age.
     pub fn get_head_state(block: BlockRef, rng: &mut dyn Rng) -> BlockStateId {
         block
             .default_state()
             .set_value(AGE, rng.random_range(0..25))
+    }
+
+    /// Returns whether the state is at max age.
+    pub fn is_max_age(state: BlockStateId) -> bool {
+        state.get_value(AGE) >= AGE.max
+    }
+
+    /// Returns the state with max age.
+    pub fn get_max_age_state(state: BlockStateId) -> BlockStateId {
+        state.set_value(AGE, AGE.max)
     }
 
     fn state_for_placement(
