@@ -628,10 +628,7 @@ impl Mob for ChickenEntity {
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
         let biome = world.biome_at(self.block_position());
-        // Divergence: vanilla draws both rolls from the level's shared RNG
-        // stream (`level.getRandom()`). Steel has no world RNG stream yet, so
-        // both draws use a fresh seed; the selection probabilities are
-        // identical. Mirrors the cow/pig convention.
+        // Mirrors the cow/pig convention.
         let (variant, sound_variant) = {
             let mut random = LegacyRandom::from_seed(rand::random());
             let variant = biome.and_then(|biome| {
