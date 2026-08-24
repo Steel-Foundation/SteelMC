@@ -1,7 +1,6 @@
 #![expect(
     clippy::unwrap_used,
-    clippy::float_cmp,
-    reason = "test assertions: unwrap panics on parse failures, float equality is the check"
+    reason = "test assertions: unwrap panics on parse failures"
 )]
 
 use super::*;

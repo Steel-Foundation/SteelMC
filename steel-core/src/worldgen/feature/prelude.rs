@@ -3,7 +3,6 @@ pub(super) use std::sync::LazyLock;
 pub(super) use rustc_hash::FxHashSet;
 pub(super) use steel_math::{fast_floor, lerp};
 pub(super) use steel_registry::biome::{BiomeRef, TemperatureModifier};
-pub(super) use steel_registry::blocks::properties::BoolProperty;
 pub(super) use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt as _, properties::BambooLeaves,
     properties::BlockStateProperties, properties::CreakingHeartState, properties::DoubleBlockHalf,

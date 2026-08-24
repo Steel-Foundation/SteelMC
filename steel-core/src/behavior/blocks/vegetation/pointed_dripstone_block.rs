@@ -20,6 +20,7 @@ use crate::behavior::block::{
 };
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::FallingBlockEntity;
 use crate::entity::projectile::Projectile;
 use crate::fluid::FluidStateExt as _;
 use crate::world::game_event::GameEventContext;
@@ -33,7 +34,6 @@ use super::BlockRef;
 /// Survival mirrors vanilla's `isValidPointedDripstonePlacement`: the block
 /// opposite the tip direction must be face-sturdy on the face pointing toward
 /// us, or be another pointed dripstone with the same `vertical_direction`.
-// TODO: Implement falling stalactites after falling block entities exist.
 #[block_behavior]
 pub struct PointedDripstoneBlock {
     block: BlockRef,
@@ -302,6 +302,29 @@ impl SpeleothemBlockBehavior {
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if Self::is_stalagmite(state) && !self.can_survive(state, world.as_ref(), pos) {
             world.destroy_block(pos, true);
+        } else {
+            Self::spawn_falling_stalactite(state, world, pos);
+        }
+    }
+
+    /// Makes a speleothem block at `pos` (if any), and the other connected blocks directly below it, fall as a [`FallingBlockEntity`].
+    ///
+    /// These entities also deal damage. The further a connected block is below from the block at `pos`, the more damage its
+    /// falling block entity deals.
+    pub fn spawn_falling_stalactite(state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        let mut fall_pos = pos;
+        let mut fall_state = state;
+
+        while Self::is_stalactite(fall_state) {
+            let entity = FallingBlockEntity::fall(world, fall_pos, fall_state);
+            if Self::is_tip(fall_state, true) {
+                let size = (1 + pos.y() - fall_pos.y()).max(6);
+                let damage_per_fall_distance = size as f32;
+                entity.set_hurts_entities(damage_per_fall_distance, 40);
+                break;
+            }
+            fall_pos = fall_pos.relative(Direction::Down);
+            fall_state = world.get_block_state(fall_pos);
         }
     }
 
