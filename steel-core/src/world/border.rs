@@ -745,7 +745,7 @@ mod tests {
         let inside = WorldAabb::new(0.0, 0.0, -0.3, 0.6, 1.8, 0.3);
 
         assert_eq!(snapshot.collision_shapes_for(crossing_east).len(), 1);
-        assert!(snapshot.collision_shapes_for(inside).is_empty());
+        assert_eq!(snapshot.collision_shapes_for(inside).len(), 0);
     }
 
     #[test]
