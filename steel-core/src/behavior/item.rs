@@ -118,7 +118,7 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Called when active use is released before completion.
     ///
-    /// Returns whether vanilla should update active use once more before stopping it.
+    /// Returns whether vanilla should apply the stack's after-use component side effects.
     fn release_using(
         &self,
         _stack: &mut ItemStack,
@@ -126,6 +126,11 @@ pub trait ItemBehavior: Send + Sync {
         _user: &dyn LivingEntity,
         _time_left: i32,
     ) -> bool {
+        false
+    }
+
+    /// Returns vanilla `Item.useOnRelease`.
+    fn use_on_release(&self, _stack: &ItemStack) -> bool {
         false
     }
 

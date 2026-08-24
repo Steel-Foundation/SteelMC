@@ -86,7 +86,9 @@ use text_components::{
 };
 use text_components::{content::Resolvable, custom::CustomData};
 
-use crate::behavior::{BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult};
+use crate::behavior::{
+    BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult, ItemBehavior,
+};
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
@@ -125,6 +127,7 @@ use steel_protocol::packets::{
     game::{CContainerClose, CGameEvent, CSystemChat, GameEventType},
 };
 use steel_registry::RegistryEntry;
+use steel_registry::data_components::vanilla_components::USE_REMAINDER;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, Identifier, UuidExt as _,
@@ -349,8 +352,37 @@ impl Player {
             .set(flags & !Self::USING_ITEM_FLAG);
     }
 
+    /// Applies vanilla `ItemStack.applyAfterUseComponentSideEffects`.
+    fn apply_after_use_component_side_effects(
+        &self,
+        stack: &mut ItemStack,
+        stack_before_using: &ItemStack,
+    ) {
+        if !self.has_infinite_materials()
+            && stack.count() < stack_before_using.count()
+            && let Some(use_remainder) = stack_before_using.get(USE_REMAINDER)
+        {
+            let remainder = use_remainder.convert_into().create();
+            if stack.is_empty() {
+                *stack = remainder;
+            } else {
+                self.add_item_or_drop(remainder);
+            }
+        }
+
+        self.apply_item_use_cooldown(stack_before_using);
+    }
+
     /// Releases the currently used item and invokes its release hook.
     pub fn release_using_item(&self) {
+        let Some(active) = self.living_base.active_item_use() else {
+            return;
+        };
+        let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
+        self.release_using_item_with_behavior(behavior);
+    }
+
+    fn release_using_item_with_behavior(&self, behavior: &dyn ItemBehavior) {
         let Some(active) = self.living_base.active_item_use() else {
             return;
         };
@@ -367,16 +399,17 @@ impl Player {
             let mut inventory = self.inventory.lock();
             replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
         };
+        let stack_before_using = item.copy_with_count(item.count());
         let world = self.get_world();
-        let use_on_release = ITEM_BEHAVIORS.get_behavior(item.item()).release_using(
-            &mut item,
-            &world,
-            self,
-            active.remaining_ticks(),
-        );
+        let apply_after_use_effects =
+            behavior.release_using(&mut item, &world, self, active.remaining_ticks());
+        let use_on_release = behavior.use_on_release(&item);
+        if apply_after_use_effects {
+            self.apply_after_use_component_side_effects(&mut item, &stack_before_using);
+        }
         self.inventory.lock().set_item_in_hand(hand, item);
         if use_on_release {
-            self.tick_active_item_use();
+            self.tick_active_item_use_with_behavior(behavior);
         }
         self.stop_using_item();
     }
@@ -385,6 +418,14 @@ impl Player {
         let Some(active) = self.living_base.active_item_use() else {
             return;
         };
+        let behavior = ITEM_BEHAVIORS.get_behavior(active.item());
+        self.tick_active_item_use_with_behavior(behavior);
+    }
+
+    fn tick_active_item_use_with_behavior(&self, behavior: &dyn ItemBehavior) {
+        let Some(active) = self.living_base.active_item_use() else {
+            return;
+        };
         let hand = active.hand();
         let item_matches = {
             let inventory = self.inventory.lock();
@@ -399,7 +440,6 @@ impl Player {
             replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
         };
         let world = self.get_world();
-        let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
         behavior.on_use_tick(&world, self, &mut item, active.remaining_ticks());
 
         if self.active_item_use_hand() != Some(hand) {
@@ -410,8 +450,11 @@ impl Player {
             self.inventory.lock().set_item_in_hand(hand, item);
             return;
         };
-        if active.remaining_ticks() <= 0 {
+        let use_on_release = behavior.use_on_release(&item);
+        if active.remaining_ticks() == 0 && !use_on_release {
+            let stack_before_using = item.copy_with_count(item.count());
             item = behavior.finish_using(&mut item, &world, self);
+            self.apply_after_use_component_side_effects(&mut item, &stack_before_using);
             self.stop_using_item();
         }
 
