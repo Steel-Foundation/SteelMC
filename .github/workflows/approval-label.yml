@@ -1,0 +1,70 @@
+name: Approval label
+
+on:
+  pull_request_review:
+    types: [submitted, dismissed, edited]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add/remove "approved-by-<login>" labels based on review state
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const PREFIX = "approved-by-";
+            const COLOR = "0e8a16";
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner, repo, pull_number: issue_number,
+            });
+
+            // Keep only each reviewer's most recent review (a user can review
+            // more than once; a dismissed review keeps its own id and its
+            // state flips to DISMISSED in place, so this is enough).
+            const latestByUser = new Map();
+            for (const r of reviews.sort((a, b) => new Date(a.submitted_at) - new Date(b.submitted_at))) {
+              if (r.user) latestByUser.set(r.user.login, r.state);
+            }
+
+            const approvers = [...latestByUser.entries()]
+              .filter(([, state]) => state === "APPROVED")
+              .map(([login]) => login);
+
+            const labelFor = login => `${PREFIX}${login.toLowerCase()}`;
+            const wanted = new Set(approvers.map(labelFor));
+
+            const current = await github.paginate(github.rest.issues.listLabelsOnIssue, {
+              owner, repo, issue_number,
+            });
+            const currentManaged = current
+              .map(l => l.name)
+              .filter(name => name.startsWith(PREFIX));
+
+            const toAdd = [...wanted].filter(l => !currentManaged.includes(l));
+            const toRemove = currentManaged.filter(l => !wanted.has(l));
+
+            for (const name of toAdd) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name });
+              } catch (e) {
+                if (e.status === 404) {
+                  await github.rest.issues.createLabel({ owner, repo, name, color: COLOR });
+                } else {
+                  throw e;
+                }
+              }
+            }
+
+            if (toAdd.length) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: toAdd });
+            }
+            for (const name of toRemove) {
+              await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+            }
