@@ -4,7 +4,7 @@ use super::core::write_registry_id;
 use super::*;
 use crate::data_components::components::OminousBottleAmplifier;
 use crate::data_components::vanilla_components::{
-    CAN_BREAK, DAMAGE, LOCK, OMINOUS_BOTTLE_AMPLIFIER,
+    CAN_BREAK, CAN_PLACE_ON, DAMAGE, LOCK, OMINOUS_BOTTLE_AMPLIFIER,
 };
 use crate::data_components::{ComponentData, DataComponentMap};
 use crate::init_vanilla_registry;
@@ -125,7 +125,9 @@ fn adventure_and_lock_components_round_trip_both_codecs() {
     );
     let adventure =
         AdventureModePredicate::new(vec![block]).expect("one block predicate is persistable");
-    round_trip_component(CAN_BREAK.key, ComponentData::new(adventure));
+    let adventure = ComponentData::new(adventure);
+    round_trip_component(CAN_BREAK.key.clone(), adventure.clone());
+    round_trip_component(CAN_PLACE_ON.key.clone(), adventure);
 
     let mut exact_components = DataComponentMap::new();
     exact_components.set(DAMAGE, Some(3));

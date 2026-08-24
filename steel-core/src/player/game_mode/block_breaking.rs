@@ -7,8 +7,6 @@ use std::sync::Arc;
 
 use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::data_components::AdventureModePredicate;
-use steel_registry::data_components::vanilla_components::CAN_BREAK;
 use steel_registry::vanilla_attributes;
 use steel_registry::{
     REGISTRY, blocks::properties::Direction, item_stack::ItemStack, vanilla_blocks,
@@ -16,7 +14,6 @@ use steel_registry::{
 };
 use steel_utils::{
     BlockPos, BlockStateId,
-    nbt::compare_nbt_compounds,
     types::{GameType, InteractionHand, UpdateFlags},
 };
 
@@ -26,6 +23,8 @@ use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
 use crate::player::food_data::food_constants;
 use crate::world::{ConditionalBlockSetResult, World, game_event::GameEventContext};
+
+use super::adventure_mode;
 
 impl Player {
     /// Mirrors vanilla `Player.blockActionRestricted` for block breaking.
@@ -41,44 +40,15 @@ impl Player {
             return false;
         }
 
-        // TODO: Retain Vanilla's mutable per-component AdventureModePredicate
-        // cache once Steel's item components support that identity. Until then,
-        // snapshotting safely releases the inventory lock but reevaluates each use.
-        let can_break = {
+        let item = {
             let inventory = self.inventory.lock();
             let item = inventory.get_selected_item();
             if item.is_empty() {
                 return true;
             }
-            item.get(CAN_BREAK).cloned()
+            item.clone()
         };
-        let Some(can_break) = can_break else {
-            return true;
-        };
-        !Self::can_break_block_in_adventure_mode(&can_break, world, pos)
-    }
-
-    fn can_break_block_in_adventure_mode(
-        predicate: &AdventureModePredicate,
-        world: &World,
-        pos: BlockPos,
-    ) -> bool {
-        let state = world.get_block_state(pos);
-        // Vanilla's BlockInWorld overload intentionally does not test the
-        // predicate's block-entity component matchers.
-        predicate.predicates().iter().any(|predicate| {
-            if !predicate.matches_state(state) {
-                return false;
-            }
-            let Some(expected_nbt) = predicate.nbt() else {
-                return true;
-            };
-            let Some(block_entity) = world.get_block_entity(pos) else {
-                return false;
-            };
-            let actual_nbt = block_entity.save_with_full_metadata();
-            compare_nbt_compounds(expected_nbt.tag(), &actual_nbt, true)
-        })
+        !adventure_mode::can_break(&item, world, pos)
     }
 }
 

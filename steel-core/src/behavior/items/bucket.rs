@@ -174,6 +174,14 @@ fn use_filled_bucket(fluid_block: BlockRef, context: &mut UseItemContext) -> Int
         return InteractionResult::Fail;
     }
 
+    let item = context.inv.with_item(|item| item.clone());
+    if !context
+        .player
+        .may_use_item_at(direction.relative(clicked_pos), direction, &item)
+    {
+        return InteractionResult::Pass;
+    }
+
     let clicked_state = context.world.get_block_state(clicked_pos);
     let is_sneaking = context.player.is_crouching();
 
