@@ -13,7 +13,6 @@ PR template
 - [ ] Breaking change
 - [ ] Refactor / code cleanup
 - [ ] Performance improvement
-- [ ] Documentation
 - [ ] Chore / tooling
 
 ## Description
