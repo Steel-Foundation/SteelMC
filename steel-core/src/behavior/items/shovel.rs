@@ -1,11 +1,12 @@
 use steel_macros::item_behavior;
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::{
     blocks::{
         Block,
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, BoolProperty},
     },
-    level_events,
+    level_events, sound_events,
     vanilla_block_tags::BlockTag,
     vanilla_blocks, vanilla_game_events,
 };
@@ -50,7 +51,14 @@ impl ItemBehavior for ShovelItem {
             {
                 return InteractionResult::Pass;
             }
-            // TODO: Play SoundEvents.SHOVEL_FLATTEN
+            context.world.play_sound(
+                &sound_events::ITEM_SHOVEL_FLATTEN,
+                SoundSource::Players,
+                context.hit_result.block_pos,
+                1.0,
+                1.0,
+                None,
+            );
             let infinite_materials = context.player.has_infinite_materials();
             context
                 .inv
