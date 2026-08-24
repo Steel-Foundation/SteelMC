@@ -909,6 +909,12 @@ impl Player {
         if damage != 0.0 {
             self.cause_food_exhaustion(source.damage_type.exhaustion);
             self.set_health(self.get_health() - damage);
+            if damage < f32::MAX {
+                self.award_custom_stat_with_count(
+                    &vanilla_custom_stats::DAMAGE_TAKEN,
+                    (damage * 10.0).round() as i32,
+                );
+            }
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
         }
     }
