@@ -19,6 +19,7 @@ use steel_utils::ChunkPos;
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
+use crate::entity::leash::Leashable;
 use crate::entity::{
     Entity, EntityMovementSyncPacket, MobEffectSyncPacket, ServerEntityMovementSyncState,
     ServerEntityMovementSyncUpdate, SharedEntity, WeakEntity,
@@ -803,8 +804,8 @@ impl EntityTracker {
 
 fn leash_holder_id(entity: &dyn Entity) -> Option<i32> {
     entity
-        .as_mob()
-        .and_then(super::mob::Mob::leash_holder)
+        .as_leashable()
+        .and_then(Leashable::leash_holder)
         .map(|holder| holder.id())
 }
 

@@ -19,10 +19,10 @@ pub use building::{
     BuddingAmethystBlock, CampfireBlock, CauldronBlock, ComposterBlock, ConduitBlock, DoorBlock,
     DropExperienceBlock, FenceBlock, FenceGateBlock, GlazedTerracottaBlock, HayBlock,
     HeavyCoreBlock, HoneyBlock, IceBlock, IronBarsBlock, LadderBlock, LavaCauldronBlock,
-    LayeredCauldronBlock, MagmaBlock, MudBlock, PotentSulfurBlock, PowderSnowBlock,
-    RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock, SpongeBlock,
-    StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock, WeatherState,
-    WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
+    LayeredCauldronBlock, MagmaBlock, MudBlock, NetherrackBlock, PotentSulfurBlock,
+    PowderSnowBlock, RotatedPillarBlock, ScaffoldingBlock, SlabBlock, SlimeBlock, SnowLayerBlock,
+    SoulSandBlock, SpongeBlock, StairBlock, TrapDoorBlock, WallBlock, WaterloggedTransparentBlock,
+    WeatherState, WeatheringCopper, WeatheringCopperBarsBlock, WeatheringCopperDoorBlock,
     WeatheringCopperFullBlock, WeatheringCopperGrateBlock, WeatheringCopperSlabBlock,
     WeatheringCopperStairBlock, WeatheringCopperTrapDoorBlock, WebBlock, WetSpongeBlock,
 };
@@ -34,7 +34,7 @@ pub use decoration::{
     BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
     EndRodBlock, JukeboxBlock, LanternBlock, StandingSignBlock, TorchBlock, WallBannerBlock,
     WallHangingSignBlock, WallSignBlock, WallTorchBlock, WeatheringCopperChainBlock,
-    WeatheringLanternBlock,
+    WeatheringLanternBlock, is_facing_front_text,
 };
 pub use falling::{ConcretePowderBlock, DragonEggBlock, FallingBlock, SandBlock};
 pub use fluid::{BubbleColumnBlock, LiquidBlock};

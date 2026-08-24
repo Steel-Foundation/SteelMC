@@ -68,9 +68,9 @@ fn transfer_leashables_to_holder_moves_valid_mobs() {
         DVec3::new(1.0, 0.0, 0.0),
         Weak::new(),
     ));
-    let Some(mob) = leashable.as_mob() else {
-        panic!("pig should expose mob behavior");
-    };
+    let mob = leashable
+        .as_leashable()
+        .expect("pig should expose leashable behavior");
     assert!(mob.set_leashed_to(&old_holder));
 
     assert!(transfer_leashables_to_holder(
@@ -78,9 +78,9 @@ fn transfer_leashables_to_holder_moves_valid_mobs() {
         &new_holder
     ));
 
-    let Some(holder) = mob.leash_holder() else {
-        panic!("transferred mob should stay leashed");
-    };
+    let holder = mob
+        .leash_holder()
+        .expect("transferred mob should stay leashed");
     assert_eq!(holder.id(), new_holder.id());
 }
 
@@ -106,9 +106,9 @@ fn transfer_leashables_to_holder_skips_mobs_outside_snap_distance() {
         DVec3::new(20.0, 0.0, 0.0),
         Weak::new(),
     ));
-    let Some(mob) = leashable.as_mob() else {
-        panic!("pig should expose mob behavior");
-    };
+    let mob = leashable
+        .as_leashable()
+        .expect("pig should expose leashable behavior");
     assert!(mob.set_leashed_to(&old_holder));
 
     assert!(!transfer_leashables_to_holder(
@@ -116,9 +116,9 @@ fn transfer_leashables_to_holder_skips_mobs_outside_snap_distance() {
         &new_holder
     ));
 
-    let Some(holder) = mob.leash_holder() else {
-        panic!("untransferred mob should stay leashed");
-    };
+    let holder = mob
+        .leash_holder()
+        .expect("untransferred mob should stay leashed");
     assert_eq!(holder.id(), old_holder.id());
 }
 
@@ -136,9 +136,9 @@ fn set_leashed_to_notifies_replaced_holder() {
         DVec3::ZERO,
         Weak::new(),
     ));
-    let Some(mob) = leashable.as_mob() else {
-        panic!("pig should expose mob behavior");
-    };
+    let mob = leashable
+        .as_leashable()
+        .expect("pig should expose leashable behavior");
 
     assert!(mob.set_leashed_to(&old_holder));
     assert!(mob.set_leashed_to(&new_holder));
@@ -159,9 +159,9 @@ fn tick_leash_notifies_live_holder() {
         DVec3::ZERO,
         Weak::new(),
     ));
-    let Some(mob) = leashable.as_mob() else {
-        panic!("pig should expose mob behavior");
-    };
+    let mob = leashable
+        .as_leashable()
+        .expect("pig should expose leashable behavior");
     assert!(mob.set_leashed_to(&holder));
 
     mob.tick_leash();
@@ -183,9 +183,9 @@ fn tick_leash_snaps_live_holder_past_snap_distance() {
         DVec3::ZERO,
         Weak::new(),
     ));
-    let Some(mob) = leashable.as_mob() else {
-        panic!("pig should expose mob behavior");
-    };
+    let mob = leashable
+        .as_leashable()
+        .expect("pig should expose leashable behavior");
     assert!(mob.set_leashed_to(&holder));
 
     mob.tick_leash();
@@ -285,12 +285,12 @@ fn controlled_vehicle_returns_direct_controlled_vehicle_not_root_vehicle() {
     assert!(start_riding_entities(&passenger, &vehicle));
     assert!(start_riding_entities(&vehicle, &root_vehicle));
 
-    let Some(controlled_vehicle) = passenger.controlled_vehicle() else {
-        panic!("passenger should directly control the middle vehicle");
-    };
-    let Some(root) = passenger.root_vehicle() else {
-        panic!("passenger should have a root vehicle");
-    };
+    let controlled_vehicle = passenger
+        .controlled_vehicle()
+        .expect("passenger should directly control the middle vehicle");
+    let root = passenger
+        .root_vehicle()
+        .expect("passenger should have a root vehicle");
 
     assert_eq!(controlled_vehicle.id(), vehicle.id());
     assert_eq!(root.id(), root_vehicle.id());
