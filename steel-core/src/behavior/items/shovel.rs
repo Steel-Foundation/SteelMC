@@ -1,5 +1,4 @@
 use steel_macros::item_behavior;
-use steel_protocol::packets::game::SoundSource;
 use steel_registry::{
     blocks::{
         Block,
