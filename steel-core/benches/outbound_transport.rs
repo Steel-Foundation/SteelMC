@@ -35,9 +35,8 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-const ENCRYPTION_KEY: [u8; 16] = [
-    0x15, 0x71, 0xC4, 0x7E, 0x2A, 0x9B, 0x03, 0xD8, 0x66, 0xF0, 0x4D, 0xB2, 0x89, 0x3C, 0xAE, 0x51,
-];
+const BENCHMARK_ENCRYPTION_KEY: [u8; 16] = *b"SteelMC-test-key";
+const LOOPBACK_READ_BUFFER_SIZE: usize = 16 * 1_024;
 
 struct TransportWorkload {
     packets: Vec<EncodedPacket>,
@@ -48,7 +47,7 @@ struct TransportSession {
     connection: Arc<JavaConnection>,
     reader: BufReader<OwnedReadHalf>,
     sender: Option<JoinHandle<()>>,
-    receive_buffer: [u8; 16 * 1_024],
+    receive_buffer: [u8; LOOPBACK_READ_BUFFER_SIZE],
 }
 
 #[derive(Clone, Copy)]
@@ -209,7 +208,7 @@ impl TransportSession {
         let (_, server_write) = server.into_split();
         let (client_read, _) = client.into_split();
         let mut encoder = TCPNetworkEncoder::new(BufWriter::new(server_write));
-        encoder.set_encryption(&ENCRYPTION_KEY);
+        encoder.set_encryption(&BENCHMARK_ENCRYPTION_KEY);
         let network_writer: JavaNetworkWriter = Arc::new(AsyncMutex::new(Some(encoder)));
         let (outgoing_packets, outgoing_receiver) = mpsc::unbounded_channel();
         let cancel_token = CancellationToken::new();
@@ -239,7 +238,7 @@ impl TransportSession {
             connection,
             reader: BufReader::new(client_read),
             sender: Some(sender),
-            receive_buffer: [0; 16 * 1_024],
+            receive_buffer: [0; LOOPBACK_READ_BUFFER_SIZE],
         }
     }
 
@@ -353,7 +352,11 @@ async fn verify_transport_ciphertext(workload: &TransportWorkload, sender_path: 
     for packet in &workload.packets {
         expected.extend_from_slice(&packet.encoded_data);
     }
-    Aes128Cfb8Enc::new(&ENCRYPTION_KEY.into(), &ENCRYPTION_KEY.into()).encrypt(&mut expected);
+    Aes128Cfb8Enc::new(
+        &BENCHMARK_ENCRYPTION_KEY.into(),
+        &BENCHMARK_ENCRYPTION_KEY.into(),
+    )
+    .encrypt(&mut expected);
 
     assert_eq!(actual, expected);
     session.close().await;

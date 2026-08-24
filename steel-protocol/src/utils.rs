@@ -177,9 +177,10 @@ impl Cfb8Encryptor {
                 for byte in self.bytes {
                     let mut encrypted_state = Array::from(self.state.to_be_bytes());
                     backend.encrypt_block_inplace(&mut encrypted_state);
-                    *byte ^= encrypted_state[0];
+                    let keystream_byte = encrypted_state[0];
+                    *byte ^= keystream_byte;
                     // CFB8 drops the most-significant state byte and appends the ciphertext byte.
-                    *self.state = self.state.wrapping_shl(8) | u128::from(*byte);
+                    *self.state = self.state.wrapping_shl(u8::BITS) | u128::from(*byte);
                 }
             }
         }

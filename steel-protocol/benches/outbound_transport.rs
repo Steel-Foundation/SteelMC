@@ -22,9 +22,7 @@ use tokio::{
     runtime::{Builder, Runtime},
 };
 
-const ENCRYPTION_KEY: [u8; 16] = [
-    0x15, 0x71, 0xC4, 0x7E, 0x2A, 0x9B, 0x03, 0xD8, 0x66, 0xF0, 0x4D, 0xB2, 0x89, 0x3C, 0xAE, 0x51,
-];
+const BENCHMARK_ENCRYPTION_KEY: [u8; 16] = *b"SteelMC-test-key";
 
 struct TransportWorkload {
     name: &'static str,
@@ -41,8 +39,11 @@ struct LegacyBytewiseEncryptor<W> {
 impl<W> LegacyBytewiseEncryptor<W> {
     fn new(writer: W) -> Self {
         Self {
-            cipher: Aes128Cfb8Enc::new_from_slices(&ENCRYPTION_KEY, &ENCRYPTION_KEY)
-                .expect("benchmark key should be valid"),
+            cipher: Aes128Cfb8Enc::new_from_slices(
+                &BENCHMARK_ENCRYPTION_KEY,
+                &BENCHMARK_ENCRYPTION_KEY,
+            )
+            .expect("benchmark key should be valid"),
             writer,
             pending_byte: None,
         }
@@ -164,7 +165,7 @@ async fn write_production_workload(workload: &TransportWorkload) -> Vec<u8> {
     {
         let writer = BufWriter::new(&mut output);
         let mut encoder = TCPNetworkEncoder::new(writer);
-        encoder.set_encryption(&ENCRYPTION_KEY);
+        encoder.set_encryption(&BENCHMARK_ENCRYPTION_KEY);
 
         for packet in &workload.packets {
             encoder
