@@ -133,7 +133,8 @@ pub use propagation::{
 pub use queue::{
     LightAxisDirection, LightDirectionSet, LightDirectionSetIter, LightPropagationQueue,
     LightPropagationQueues, LightQueueEntry, LightQueueFlags, PackedLightPropagationQueue,
-    PackedLightPropagationQueues, PackedLightQueueEntry, QueuedLightUpdate,
+    PackedLightPropagationQueues, PackedLightQueueEntry, PooledPackedLightQueues,
+    QueuedLightUpdate,
 };
 pub use section_storage::{LightSectionRange, LightSectionRangeError};
 pub use sky_propagation::{
