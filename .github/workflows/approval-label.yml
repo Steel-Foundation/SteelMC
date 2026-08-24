@@ -1,8 +1,14 @@
 name: Approval label
 
+# Privileged half of the approval-label pair. Runs via workflow_run so the
+# token gets normal write permissions even when the triggering review came
+# from a fork PR (workflow_run never gets the fork read-only downgrade that
+# pull_request_review does — see approval-label-capture.yml).
+
 on:
-  pull_request_review:
-    types: [submitted, dismissed, edited]
+  workflow_run:
+    workflows: ["Approval label (capture)"]
+    types: [completed]
 
 permissions:
   issues: write
@@ -10,12 +16,23 @@ permissions:
 
 jobs:
   label:
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
+      - name: Download PR number
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          name: pr_number
+
       - name: Add/remove per-reviewer labels based on review state
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require("fs");
+            const issue_number = parseInt(fs.readFileSync("pr_number.txt", "utf8").trim(), 10);
+
             // One (state -> label prefix/color) entry per review state we track.
             // Both prefixes are mutually exclusive per reviewer since they're
             // derived from the same latest-review-per-user map below.
@@ -25,7 +42,6 @@ jobs:
             };
 
             const { owner, repo } = context.repo;
-            const issue_number = context.payload.pull_request.number;
 
             const reviews = await github.paginate(github.rest.pulls.listReviews, {
               owner, repo, pull_number: issue_number,
