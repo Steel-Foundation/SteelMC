@@ -37,10 +37,26 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 const BENCHMARK_ENCRYPTION_KEY: [u8; 16] = *b"SteelMC-test-key";
-const LOOPBACK_READ_BUFFER_SIZE: usize = 16 * 1_024;
+const LOOPBACK_READ_BUFFER_BYTES: usize = 16 * 1_024;
 // Keep the hot writer backpressured so wire progress is a reliable contention barrier.
-const CONTENDED_RECEIVE_BUFFER_SIZE: u32 = 16 * 1_024;
-const FAIRNESS_SAMPLE_COUNT: usize = 256;
+const CONTENDED_RECEIVE_BUFFER_BYTES: u32 = 16 * 1_024;
+const CONTROL_LATENCY_SAMPLE_COUNT: usize = 256;
+
+// This is a fixed stress burst, not an estimate of Vanilla packet frequency. It combines real
+// packet encoders with synthetic values. These sizes describe chunk data before packet framing
+// and compression; the protocol bench instead sizes already-encoded bytes.
+const SMALL_PLAY_PACKET_COUNT: usize = 768;
+const MEDIUM_CHUNK_PACKET_COUNT: usize = 96;
+const MEDIUM_CHUNK_DATA_BYTE_SIZES: [usize; 6] = [320, 512, 768, 1_024, 1_536, 2_048];
+const LARGE_CHUNK_DATA_BYTE_SIZES: [usize; 4] = [16_384, 32_768, 49_152, 65_536];
+const BATCH_CHUNK_DATA_BYTE_SIZES: [usize; 4] = [8_192, 16_384, 24_576, 32_768];
+// Separate seed ranges prevent the workload classes from reusing the same payload prefix.
+const MEDIUM_CHUNK_PAYLOAD_SEED_START: u32 = 1;
+const LARGE_CHUNK_PAYLOAD_SEED_START: u32 = 101;
+const BATCH_CHUNK_PAYLOAD_SEED_START: u32 = 501;
+
+const SMALL_EXPLICIT_BATCH_PACKET_COUNT: usize = 8;
+const REPRESENTATIVE_CHUNK_BATCH_SIZE: usize = 9;
 type ReferenceCfb8Encryptor = cfb8::Encryptor<aes::Aes128>;
 
 struct TransportWorkload {
@@ -52,7 +68,7 @@ struct TransportSession {
     connection: Arc<JavaConnection>,
     reader: BufReader<OwnedReadHalf>,
     sender: Option<JoinHandle<()>>,
-    receive_buffer: [u8; LOOPBACK_READ_BUFFER_SIZE],
+    receive_buffer: [u8; LOOPBACK_READ_BUFFER_BYTES],
 }
 
 #[derive(Clone, Copy)]
@@ -67,70 +83,63 @@ enum SendMode {
     Batch,
 }
 
+#[derive(Clone, Copy)]
+enum SmallPlayPacketKind {
+    KeepAlive,
+    TimeUpdate,
+    HealthUpdate,
+    ExperienceUpdate,
+    RelativeEntityMove,
+}
+
+const SMALL_PLAY_PACKET_MIX: [SmallPlayPacketKind; 5] = [
+    SmallPlayPacketKind::KeepAlive,
+    SmallPlayPacketKind::TimeUpdate,
+    SmallPlayPacketKind::HealthUpdate,
+    SmallPlayPacketKind::ExperienceUpdate,
+    SmallPlayPacketKind::RelativeEntityMove,
+];
+
 impl TransportWorkload {
     fn representative_play_burst() -> Self {
         let compression = CompressionInfo::default();
         let mut packets = Vec::new();
 
-        for index in 0..768 {
-            match index % 5 {
-                0 => push_packet(&mut packets, CKeepAlive::new(index), compression),
-                1 => push_packet(
-                    &mut packets,
-                    CSetTime::new(index, vec![(0, index, 0.5, 1.0)]),
-                    compression,
-                ),
-                2 => push_packet(
-                    &mut packets,
-                    CSetHealth {
-                        health: 20.0,
-                        food: 20,
-                        food_saturation: 5.0,
-                    },
-                    compression,
-                ),
-                3 => push_packet(
-                    &mut packets,
-                    CSetExperience {
-                        progress: 0.5,
-                        level: index as i32 % 100,
-                        total_experience: index as i32 * 7,
-                    },
-                    compression,
-                ),
-                _ => push_packet(
-                    &mut packets,
-                    CMoveEntityPosRot {
-                        entity_id: index as i32,
-                        dx: PackedEntityDelta::from_raw(17),
-                        dy: PackedEntityDelta::from_raw(-3),
-                        dz: PackedEntityDelta::from_raw(9),
-                        y_rot: 32,
-                        x_rot: -8,
-                        on_ground: true,
-                    },
-                    compression,
-                ),
-            }
-        }
-
-        for (index, size) in [320, 512, 768, 1_024, 1_536, 2_048]
+        for (packet_index, packet_kind) in SMALL_PLAY_PACKET_MIX
             .into_iter()
             .cycle()
-            .take(96)
+            .take(SMALL_PLAY_PACKET_COUNT)
+            .enumerate()
+        {
+            push_small_play_packet(&mut packets, packet_kind, packet_index, compression);
+        }
+
+        for (packet_index, chunk_data_bytes) in MEDIUM_CHUNK_DATA_BYTE_SIZES
+            .into_iter()
+            .cycle()
+            .take(MEDIUM_CHUNK_PACKET_COUNT)
             .enumerate()
         {
             push_packet(
                 &mut packets,
-                chunk_packet(index as i32, size, index as u32 + 1),
+                chunk_packet(
+                    packet_index as i32,
+                    chunk_data_bytes,
+                    packet_index as u32 + MEDIUM_CHUNK_PAYLOAD_SEED_START,
+                ),
                 compression,
             );
         }
 
-        for (index, size) in [16_384, 32_768, 49_152, 65_536].into_iter().enumerate() {
+        for (packet_index, chunk_data_bytes) in LARGE_CHUNK_DATA_BYTE_SIZES.into_iter().enumerate()
+        {
             push_packet(
                 &mut packets,
-                chunk_packet(index as i32, size, index as u32 + 101),
+                chunk_packet(
+                    packet_index as i32,
+                    chunk_data_bytes,
+                    packet_index as u32 + LARGE_CHUNK_PAYLOAD_SEED_START,
+                ),
                 compression,
             );
         }
@@ -142,7 +151,7 @@ impl TransportWorkload {
         let compression = CompressionInfo::default();
         let mut packets = Vec::with_capacity(chunk_count.saturating_add(2));
         push_packet(&mut packets, CChunkBatchStart {}, compression);
-        for (index, size) in [8_192, 16_384, 24_576, 32_768]
+        for (packet_index, chunk_data_bytes) in BATCH_CHUNK_DATA_BYTE_SIZES
             .into_iter()
             .cycle()
             .take(chunk_count)
@@ -150,7 +159,11 @@ impl TransportWorkload {
         {
             push_packet(
                 &mut packets,
-                chunk_packet(index as i32, size, index as u32 + 501),
+                chunk_packet(
+                    packet_index as i32,
+                    chunk_data_bytes,
+                    packet_index as u32 + BATCH_CHUNK_PAYLOAD_SEED_START,
+                ),
                 compression,
             );
         }
@@ -188,7 +201,68 @@ fn push_packet<P: ClientPacket>(
     );
 }
 
-fn chunk_packet(index: i32, data_size: usize, seed: u32) -> CLevelChunkWithLight {
+fn push_small_play_packet(
+    packets: &mut Vec<EncodedPacket>,
+    packet_kind: SmallPlayPacketKind,
+    packet_index: usize,
+    compression: CompressionInfo,
+) {
+    // Sequence-derived IDs and counters vary integer encodings. Fixed float, signed delta, and
+    // rotation fields keep those encodings in the mix. These are reproducible fixture values, not
+    // a simulated player or Vanilla gameplay constants.
+    let sequence = packet_index as i64;
+    match packet_kind {
+        SmallPlayPacketKind::KeepAlive => {
+            push_packet(packets, CKeepAlive::new(sequence), compression);
+        }
+        SmallPlayPacketKind::TimeUpdate => {
+            let clock_registry_id = 0;
+            let partial_tick = 0.5;
+            let normal_clock_rate = 1.0;
+            push_packet(
+                packets,
+                CSetTime::new(
+                    sequence,
+                    vec![(clock_registry_id, sequence, partial_tick, normal_clock_rate)],
+                ),
+                compression,
+            );
+        }
+        SmallPlayPacketKind::HealthUpdate => push_packet(
+            packets,
+            CSetHealth {
+                health: 20.0,
+                food: 20,
+                food_saturation: 5.0,
+            },
+            compression,
+        ),
+        SmallPlayPacketKind::ExperienceUpdate => push_packet(
+            packets,
+            CSetExperience {
+                progress: 0.5,
+                level: packet_index as i32 % 100,
+                total_experience: packet_index as i32 * 7,
+            },
+            compression,
+        ),
+        SmallPlayPacketKind::RelativeEntityMove => push_packet(
+            packets,
+            CMoveEntityPosRot {
+                entity_id: packet_index as i32,
+                dx: PackedEntityDelta::from_raw(17),
+                dy: PackedEntityDelta::from_raw(-3),
+                dz: PackedEntityDelta::from_raw(9),
+                y_rot: 32,
+                x_rot: -8,
+                on_ground: true,
+            },
+            compression,
+        ),
+    }
+}
+
+fn chunk_packet(index: i32, chunk_data_bytes: usize, payload_seed: u32) -> CLevelChunkWithLight {
     CLevelChunkWithLight {
         x: index,
         z: -index,
@@ -196,7 +270,7 @@ fn chunk_packet(index: i32, data_size: usize, seed: u32) -> CLevelChunkWithLight
             heightmaps: Heightmaps {
                 heightmaps: Vec::new(),
             },
-            data: deterministic_bytes(data_size, seed),
+            data: deterministic_payload_bytes(chunk_data_bytes, payload_seed),
             block_entities: Vec::new(),
         },
         light_data: LightUpdatePacketData {
@@ -214,7 +288,9 @@ fn empty_bit_set() -> BitSet {
     BitSet(Vec::new().into_boxed_slice())
 }
 
-fn deterministic_bytes(len: usize, seed: u32) -> Vec<u8> {
+fn deterministic_payload_bytes(len: usize, seed: u32) -> Vec<u8> {
+    // Xorshift32 gives reproducible, non-constant chunk data without using gameplay RNG.
+    // Its zero state never changes, so start zero-valued seeds at one instead.
     let mut state = seed.max(1);
     (0..len)
         .map(|_| {
@@ -234,7 +310,7 @@ impl TransportSession {
     async fn connect_for_contention() -> Self {
         Self::connect_with_sender_and_receive_buffer(
             SenderPath::Production,
-            Some(CONTENDED_RECEIVE_BUFFER_SIZE),
+            Some(CONTENDED_RECEIVE_BUFFER_BYTES),
         )
         .await
     }
@@ -306,7 +382,7 @@ impl TransportSession {
             connection,
             reader: BufReader::new(client_read),
             sender: Some(sender),
-            receive_buffer: [0; LOOPBACK_READ_BUFFER_SIZE],
+            receive_buffer: [0; LOOPBACK_READ_BUFFER_BYTES],
         }
     }
 
@@ -509,9 +585,9 @@ async fn sample_hot_connection_control_latency(
 ) -> Vec<Duration> {
     let mut hot_session = TransportSession::connect_for_contention().await;
     let mut control_session = TransportSession::connect().await;
-    let mut samples = Vec::with_capacity(FAIRNESS_SAMPLE_COUNT);
+    let mut samples = Vec::with_capacity(CONTROL_LATENCY_SAMPLE_COUNT);
 
-    for _ in 0..FAIRNESS_SAMPLE_COUNT {
+    for _ in 0..CONTROL_LATENCY_SAMPLE_COUNT {
         samples.push(
             hot_connection_control_latency(
                 &mut hot_session,
@@ -669,8 +745,9 @@ fn outbound_transport(criterion: &mut Criterion) {
     let runtime = benchmark_runtime();
     let multi_thread_runtime = multi_thread_benchmark_runtime();
     let workload = TransportWorkload::representative_play_burst();
-    let small_group = workload.prefix(8);
-    let chunk_batch = TransportWorkload::representative_chunk_batch(9);
+    let small_group = workload.prefix(SMALL_EXPLICIT_BATCH_PACKET_COUNT);
+    let chunk_batch =
+        TransportWorkload::representative_chunk_batch(REPRESENTATIVE_CHUNK_BATCH_SIZE);
     runtime.block_on(verify_transport_ciphertext(
         &workload,
         SenderPath::Production,

@@ -21,6 +21,16 @@ use tokio::{
 };
 
 const BENCHMARK_ENCRYPTION_KEY: [u8; 16] = *b"SteelMC-test-key";
+// Fixed synthetic byte lengths keep the cipher benchmark independent of packet serialization.
+// The core benchmark uses real packet encoders, so its final encoded lengths differ.
+const SMALL_PACKET_BYTE_SIZES: [usize; 12] = [3, 11, 14, 18, 24, 31, 43, 57, 76, 96, 128, 192];
+const SMALL_PACKET_COUNT: usize = 2_048;
+
+const MIXED_SMALL_PACKET_BYTE_SIZES: [usize; 8] = [3, 11, 14, 24, 43, 76, 128, 192];
+const MIXED_SMALL_PACKET_COUNT: usize = 768;
+const MIXED_MEDIUM_PACKET_BYTE_SIZES: [usize; 6] = [320, 512, 768, 1_024, 1_536, 2_048];
+const MIXED_MEDIUM_PACKET_COUNT: usize = 96;
+const MIXED_LARGE_PACKET_BYTE_SIZES: [usize; 4] = [16_384, 32_768, 49_152, 65_536];
 type RustCryptoCfb8Encryptor = cfb8::Encryptor<aes::Aes128>;
 
 struct TransportWorkload {
@@ -101,11 +111,11 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for LegacyBytewiseEncryptor<W> {
 }
 
 impl TransportWorkload {
-    fn from_sizes(name: &'static str, sizes: impl IntoIterator<Item = usize>) -> Self {
-        let packets: Vec<_> = sizes
+    fn from_byte_sizes(name: &'static str, byte_sizes: impl IntoIterator<Item = usize>) -> Self {
+        let packets: Vec<_> = byte_sizes
             .into_iter()
             .enumerate()
-            .map(|(packet_index, size)| encoded_packet(packet_index, size))
+            .map(|(packet_index, byte_size)| synthetic_packet(packet_index, byte_size))
             .collect();
         let encoded_bytes = packets.iter().map(|packet| packet.encoded_data.len()).sum();
 
@@ -117,9 +127,11 @@ impl TransportWorkload {
     }
 }
 
-fn encoded_packet(packet_index: usize, size: usize) -> EncodedPacket {
-    let mut bytes = FrontVec::capacity(0, size);
-    for byte_index in 0..size {
+fn synthetic_packet(packet_index: usize, byte_size: usize) -> EncodedPacket {
+    // The writer only needs stable, non-constant bytes here. These coefficients vary the
+    // synthetic payload by packet and position; they are not Minecraft protocol values.
+    let mut bytes = FrontVec::capacity(0, byte_size);
+    for byte_index in 0..byte_size {
         let value = packet_index
             .wrapping_mul(31)
             .wrapping_add(byte_index.wrapping_mul(17)) as u8;
@@ -132,30 +144,31 @@ fn encoded_packet(packet_index: usize, size: usize) -> EncodedPacket {
 }
 
 fn small_packet_workload() -> TransportWorkload {
-    const SMALL_PACKET_SIZES: [usize; 12] = [3, 11, 14, 18, 24, 31, 43, 57, 76, 96, 128, 192];
-
-    TransportWorkload::from_sizes(
+    TransportWorkload::from_byte_sizes(
         "small_packets",
-        SMALL_PACKET_SIZES.into_iter().cycle().take(2_048),
+        SMALL_PACKET_BYTE_SIZES
+            .into_iter()
+            .cycle()
+            .take(SMALL_PACKET_COUNT),
     )
 }
 
 fn mixed_play_workload() -> TransportWorkload {
-    let small_packets = [3, 11, 14, 24, 43, 76, 128, 192]
+    // These bands exercise many small writes, fewer medium writes, and several large writes. The
+    // count ratios are stress-fixture choices, not estimates of Vanilla packet frequency.
+    let small_packets = MIXED_SMALL_PACKET_BYTE_SIZES
         .into_iter()
         .cycle()
-        .take(768);
-    let inventory_and_metadata = [320, 512, 768, 1_024, 1_536, 2_048]
+        .take(MIXED_SMALL_PACKET_COUNT);
+    let medium_packets = MIXED_MEDIUM_PACKET_BYTE_SIZES
         .into_iter()
         .cycle()
-        .take(96);
-    let chunk_packets = [16_384, 32_768, 49_152, 65_536].into_iter();
+        .take(MIXED_MEDIUM_PACKET_COUNT);
+    let large_packets = MIXED_LARGE_PACKET_BYTE_SIZES.into_iter();
 
-    TransportWorkload::from_sizes(
+    TransportWorkload::from_byte_sizes(
         "mixed_play",
-        small_packets
-            .chain(inventory_and_metadata)
-            .chain(chunk_packets),
+        small_packets.chain(medium_packets).chain(large_packets),
     )
 }
 
