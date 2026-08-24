@@ -148,7 +148,7 @@ pub trait BlockAttachedEntity: Entity {
         true
     }
 
-    fn drop_if_vec3_is_nonzero(&self, impulse: DVec3) {
+    fn drop_if_dvec3_is_nonzero(&self, impulse: DVec3) {
         if let Some(world) = self.level()
             && !self.is_removed()
             && impulse.length_squared() > 0.0
@@ -163,12 +163,12 @@ pub trait BlockAttachedEntity: Entity {
         _mover_type: MoverType,
         delta: DVec3,
     ) -> Option<MoveResult> {
-        self.drop_if_vec3_is_nonzero(delta);
+        self.drop_if_dvec3_is_nonzero(delta);
         None
     }
 
     fn push_impulse_block_attached_entity(&self, impulse: DVec3) {
-        self.drop_if_vec3_is_nonzero(impulse);
+        self.drop_if_dvec3_is_nonzero(impulse);
     }
 
     fn save_block_attached_entity(&self, nbt: &mut NbtCompound) {
