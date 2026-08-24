@@ -20,6 +20,7 @@ use crate::entity::ai::goal::GoalControl;
 use crate::entity::ai::node::Node;
 use crate::entity::ai::path::{Path, PathType};
 use crate::entity::damage::DamageSource;
+use crate::entity::leash::Leashable;
 use crate::entity::mob::{Mob, MobBase};
 use crate::entity::{
     Entity, EntityBase, LivingEntity, LivingEntityBase, PathfinderMob, SharedEntity,
