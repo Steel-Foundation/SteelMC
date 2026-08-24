@@ -68,6 +68,10 @@ pub(super) struct TranspileContext {
     pub(super) cse_bindings_simd: FxHashMap<u64, Ident>,
     /// Counter for generating unique CSE variable names.
     pub(super) cse_counter: usize,
+    /// SIMD lane width the emitted `__LaneV` alias and corner-fill functions
+    /// are generated for (4 or 8). Chosen at build time via
+    /// `STEEL_DENSITY_LANES`.
+    pub(super) simd_lanes: usize,
     /// Inline `Noise` nodes with `y_scale == 0.0` found inside non-flat
     /// functions. These are Y-independent but get recomputed per Y corner;
     /// caching them in the column cache avoids ~48 redundant evaluations per
@@ -76,7 +80,7 @@ pub(super) struct TranspileContext {
 }
 
 impl TranspileContext {
-    pub(super) fn new(prefix: &str) -> Self {
+    pub(super) fn new(prefix: &str, lanes: usize) -> Self {
         Self {
             noise_ids: BTreeSet::new(),
             flat_cached: BTreeSet::new(),
@@ -98,6 +102,7 @@ impl TranspileContext {
             cse_bindings: FxHashMap::default(),
             cse_bindings_simd: FxHashMap::default(),
             cse_counter: 0,
+            simd_lanes: lanes,
             inline_flat_noises: BTreeMap::new(),
         }
     }
