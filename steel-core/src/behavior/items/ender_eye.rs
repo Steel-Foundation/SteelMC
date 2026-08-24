@@ -7,6 +7,7 @@ use steel_registry::REGISTRY;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::level_events;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, types::UpdateFlags};
 
@@ -75,7 +76,12 @@ impl ItemBehavior for EnderEyeItem {
             .world
             .level_event(level_events::END_PORTAL_FRAME_FILL, clicked_pos, 0, None);
 
-        context.inv.with_item(|item| item.shrink(1));
+        context.inv.with_item(|item| {
+            item.shrink(1);
+            context
+                .player
+                .award_stat(&vanilla_stat_types::ITEM_USED, item.item());
+        });
 
         if let Some(portal_origin) = find_completed_end_portal_origin(context.world, clicked_pos) {
             spawn_end_portal(context.world, portal_origin);
