@@ -198,6 +198,7 @@ pub trait BlockAttachedEntity: Entity {
         self.block_attached_entity_base()
             .set_pos(BlockPos(pos.as_ivec3()));
         self.recalculate_bounding_box()?;
+        self.base().mark_velocity_sync();
         Ok(())
     }
 
