@@ -35,7 +35,43 @@ pub fn chest(
     builder.route(chest, player.all(), FillDirection::Backward);
     builder.route(player.all(), chest, FillDirection::Forward);
 
-    builder.build(ChestKind { container })
+    builder.build(ChestKind {
+        containers: ChestContainers::Single(container),
+    })
+}
+
+/// Builds a double-chest menu: two 27-slot containers as six rows.
+///
+/// Slot order matches vanilla `CompoundContainer(first, second)`: `first` is
+/// the `ChestType::RIGHT` half.
+#[must_use]
+pub fn double_chest(
+    inventory: Shared<PlayerInventory>,
+    container_id: u8,
+    first: impl Into<ContainerRef>,
+    second: impl Into<ContainerRef>,
+) -> Menu {
+    let first = first.into();
+    let second = second.into();
+    let mut builder = MenuBuilder::new(menu_type_for_rows(6), container_id);
+    let first_section = builder.section(&first, 27);
+    let second_section = builder.section(&second, 27);
+    let player = builder.player_inventory(&inventory);
+
+    builder.route(
+        [first_section, second_section],
+        player.all(),
+        FillDirection::Backward,
+    );
+    builder.route(
+        player.all(),
+        [first_section, second_section],
+        FillDirection::Forward,
+    );
+
+    builder.build(ChestKind {
+        containers: ChestContainers::Double { first, second },
+    })
 }
 
 /// Menu type for a chest of `rows` rows.
@@ -55,10 +91,17 @@ pub fn menu_type_for_rows(rows: usize) -> MenuTypeRef {
     }
 }
 
-/// Per-menu chest state: just the backing container for the validity check.
+enum ChestContainers {
+    Single(ContainerRef),
+    Double {
+        first: ContainerRef,
+        second: ContainerRef,
+    },
+}
+
+/// Per-menu chest state: the backing container(s) for the validity check.
 pub struct ChestKind {
-    /// The backing container.
-    container: ContainerRef,
+    containers: ChestContainers,
 }
 
 // SAFETY: This Steel-owned key uniquely identifies the concrete menu kind
@@ -71,7 +114,12 @@ unsafe impl steel_utils::DowncastType for ChestKind {
 impl MenuKind for ChestKind {
     /// Returns true if the backing container is still valid for the player.
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
-        self.container.still_valid(player)
+        match &self.containers {
+            ChestContainers::Single(container) => container.still_valid(player),
+            ChestContainers::Double { first, second } => {
+                first.still_valid(player) && second.still_valid(player)
+            }
+        }
     }
 }
 
@@ -90,5 +138,16 @@ mod tests {
         let menu = chest(inventory, 1, container, 1);
 
         assert_eq!(menu.behavior().slot_count(), 9 + 36);
+    }
+
+    #[test]
+    fn double_chest_exposes_fifty_four_container_slots() {
+        let inventory = PlayerInventory::new().into_shared();
+        let first = SimpleContainer::new(27).into_shared();
+        let second = SimpleContainer::new(27).into_shared();
+
+        let menu = double_chest(inventory, 1, first, second);
+
+        assert_eq!(menu.behavior().slot_count(), 54 + 36);
     }
 }
