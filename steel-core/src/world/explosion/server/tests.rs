@@ -58,6 +58,7 @@ const VANILLA_COMBINED_DROP_STACK_LIMIT: i32 = 16;
 const FULL_EXPOSURE: f32 = 1.0;
 const NO_EXPOSURE: f32 = 0.0;
 const FIXED_RAY_RANDOM_SAMPLE: f32 = 0.5;
+const TNT_EXPLOSION_HEIGHT_FRACTION: f32 = 0.0625;
 const DOES_NOT_CREATE_FIRE: bool = false;
 
 struct VetoExplosionSource {
@@ -733,6 +734,11 @@ fn exposure_cache_reuses_static_shapes_across_identical_entity_samples() {
         TEST_BLOCK_BOTTOM_CENTER + DVec3::X * FAR_EXPOSURE_TARGET_DISTANCE,
         Arc::downgrade(&world),
     );
+    assert!(world.set_block(
+        TEST_WALL_POS,
+        vanilla_blocks::LIGHT.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
     let exposure = EntityExplosionExposure::capture(&entity);
     let expected = exposure.calculate_uncached(world.as_ref(), center);
     let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), exposure.collision_context);
@@ -752,6 +758,74 @@ fn exposure_cache_reuses_static_shapes_across_identical_entity_samples() {
 }
 
 #[test]
+fn stable_air_certificate_skips_rays_and_observes_later_block_writes() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("stable_air_explosion_exposure");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let center = TEST_BLOCK_CENTER;
+    let entity = ItemEntity::new(
+        &vanilla_entities::ITEM,
+        next_entity_id(),
+        TEST_BLOCK_BOTTOM_CENTER + DVec3::X * FAR_EXPOSURE_TARGET_DISTANCE,
+        Arc::downgrade(&world),
+    );
+    let exposure = EntityExplosionExposure::capture(&entity);
+    let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), exposure.collision_context);
+
+    assert_eq!(
+        exposure
+            .calculate_cached_with(&mut raycast, center)
+            .to_bits(),
+        FULL_EXPOSURE.to_bits()
+    );
+    let after_air = raycast.stats();
+    assert_eq!(after_air.stable_air_queries, 1);
+    assert_eq!(after_air.stable_air_hits, 1);
+    assert_eq!(after_air.block_visits, 0);
+
+    assert!(world.set_block(
+        TEST_WALL_POS,
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+    let expected = exposure.calculate_uncached(world.as_ref(), center);
+    let actual = exposure.calculate_cached_with(&mut raycast, center);
+    let after_stone = raycast.stats();
+    assert_eq!(actual.to_bits(), expected.to_bits());
+    assert_eq!(after_stone.stable_air_queries, 2);
+    assert_eq!(after_stone.stable_air_hits, 1);
+    assert!(after_stone.block_visits > 0);
+}
+
+#[test]
+fn resting_tnt_certificate_includes_vanilla_adjusted_source_block() {
+    init_vanilla_registry();
+    init_behaviors();
+    let explosion_position = DVec3::new(0.5, 200.0, 0.5);
+    let target = PrimedTntEntity::new(
+        &vanilla_entities::TNT,
+        next_entity_id(),
+        explosion_position + DVec3::X * FAR_EXPOSURE_TARGET_DISTANCE,
+        Weak::new(),
+    );
+    let center = explosion_position
+        + DVec3::Y
+            * (f64::from(vanilla_entities::TNT.dimensions.height)
+                * f64::from(TNT_EXPLOSION_HEIGHT_FRACTION));
+    let exposure = EntityExplosionExposure::capture(&target);
+    let Some(bounds) = exposure.stable_air_certificate_bounds(center) else {
+        panic!("resting TNT exposure must have finite certificate bounds");
+    };
+    let (min, max) = bounds.corners();
+
+    // Vanilla extrapolates the bottom sample by -1e-7 before flooring it. Tightening this to the
+    // raw entity hull at y=200 would miss tall collision shapes sourced from the block below.
+    assert_eq!(min.y(), 199);
+    assert_eq!(max.y(), 200);
+}
+
+#[test]
 fn dense_exposure_grid_skips_repeated_static_empty_shape_resolution() {
     init_vanilla_registry();
     init_behaviors();
@@ -764,6 +838,11 @@ fn dense_exposure_grid_skips_repeated_static_empty_shape_resolution() {
         TEST_BLOCK_BOTTOM_CENTER + DVec3::X * FAR_EXPOSURE_TARGET_DISTANCE,
         Arc::downgrade(&world),
     );
+    assert!(world.set_block(
+        TEST_WALL_POS,
+        vanilla_blocks::LIGHT.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
     let exposure = EntityExplosionExposure::capture(&entity);
     let expected = exposure.calculate_uncached(world.as_ref(), center);
     let mut raycast = ExplosionExposureRaycast::new(world.as_ref(), exposure.collision_context);

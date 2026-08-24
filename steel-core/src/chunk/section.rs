@@ -11,8 +11,8 @@ use std::{
 
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::vanilla_biomes;
 use steel_registry::{REGISTRY, RegistryEntry};
+use steel_registry::{vanilla_biomes, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, locks::SyncRwLock, serial::WriteTo};
 
 use crate::chunk::paletted_container::{BiomePalette, BlockPalette};
@@ -194,6 +194,39 @@ impl<'a> SectionWriteGuard<'a> {
             was_randomly_ticking,
         }
     }
+
+    /// Sets one block while keeping all section-derived metadata current.
+    pub fn set_block_state(
+        &mut self,
+        x: usize,
+        y: usize,
+        z: usize,
+        new_state: BlockStateId,
+    ) -> BlockStateId {
+        self.guard.set_block_state(x, y, z, new_state)
+    }
+
+    /// Sets one world-generation block while retaining a conservative exposure certificate.
+    pub(crate) fn set_block_state_for_generation(
+        &mut self,
+        x: usize,
+        y: usize,
+        z: usize,
+        new_state: BlockStateId,
+    ) -> BlockStateId {
+        self.guard
+            .set_block_state_for_generation(x, y, z, new_state)
+    }
+
+    /// Finalizes deferred world-generation state while keeping derived metadata synchronized.
+    pub(crate) fn finalize_generation_counts_if_needed(&mut self) {
+        self.guard.finalize_generation_counts_if_needed();
+    }
+
+    /// Rebuilds all section-derived metadata from the current block palette.
+    pub fn recalculate_counts(&mut self) {
+        self.guard.recalculate_counts();
+    }
 }
 
 impl Deref for SectionWriteGuard<'_> {
@@ -206,6 +239,9 @@ impl Deref for SectionWriteGuard<'_> {
 
 impl DerefMut for SectionWriteGuard<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // Arbitrary mutable access can reach the block palette without going through a
+        // tracked setter. Keep the exposure certificate conservative until a recount rebuilds it.
+        self.guard.invalidate_stable_air_occupancy();
         &mut self.guard
     }
 }
@@ -237,7 +273,150 @@ pub(crate) struct BlockStateSectionCounts {
     randomly_ticking_fluid: bool,
 }
 
-const BLOCKS_PER_SECTION: u16 = 16 * 16 * 16;
+const BLOCKS_PER_SECTION: u16 = BlockPalette::VOLUME as u16;
+const STABLE_AIR_OCCUPANCY_ROW_COUNT: usize = BlockPalette::SIZE * BlockPalette::SIZE;
+
+/// Section-local occupancy of every state except Vanilla's three immutable air blocks.
+///
+/// `Unknown` is deliberately treated as occupied. It is used after arbitrary mutable palette
+/// access so an optimization can never hide plugin or future mutation paths that bypass the
+/// tracked setters.
+#[derive(Debug)]
+enum StableAirOccupancy {
+    Unknown,
+    Empty,
+    Full,
+    Mixed {
+        rows: Box<[u16; STABLE_AIR_OCCUPANCY_ROW_COUNT]>,
+        occupied_count: u16,
+    },
+}
+
+impl StableAirOccupancy {
+    fn from_palette(states: &BlockPalette) -> Self {
+        let has_stable_air = states.maybe_has(is_stable_vanilla_air);
+        if !has_stable_air {
+            return Self::Full;
+        }
+        if !states.maybe_has(|state| !is_stable_vanilla_air(state)) {
+            return Self::Empty;
+        }
+
+        let mut rows = Box::new([0; STABLE_AIR_OCCUPANCY_ROW_COUNT]);
+        let mut occupied_count = 0_u16;
+        for index in 0..BlockPalette::VOLUME {
+            if is_stable_vanilla_air(states.get_at_index(index)) {
+                continue;
+            }
+            let x = index % BlockPalette::SIZE;
+            let yz_index = index / BlockPalette::SIZE;
+            let z = yz_index % BlockPalette::SIZE;
+            let y = yz_index / BlockPalette::SIZE;
+            rows[y * BlockPalette::SIZE + z] |= 1_u16 << x;
+            occupied_count += 1;
+        }
+        debug_assert!(occupied_count > 0 && occupied_count < BLOCKS_PER_SECTION);
+        Self::Mixed {
+            rows,
+            occupied_count,
+        }
+    }
+
+    fn record_change(
+        &mut self,
+        x: usize,
+        y: usize,
+        z: usize,
+        old_state: BlockStateId,
+        new_state: BlockStateId,
+    ) {
+        let old_occupied = !is_stable_vanilla_air(old_state);
+        let new_occupied = !is_stable_vanilla_air(new_state);
+        if old_occupied == new_occupied {
+            return;
+        }
+
+        let row_index = y * BlockPalette::SIZE + z;
+        let bit = 1_u16 << x;
+        match self {
+            Self::Unknown => {}
+            Self::Empty => {
+                debug_assert!(new_occupied);
+                let mut rows = Box::new([0; STABLE_AIR_OCCUPANCY_ROW_COUNT]);
+                rows[row_index] = bit;
+                *self = Self::Mixed {
+                    rows,
+                    occupied_count: 1,
+                };
+            }
+            Self::Full => {
+                debug_assert!(old_occupied);
+                let mut rows = Box::new([u16::MAX; STABLE_AIR_OCCUPANCY_ROW_COUNT]);
+                rows[row_index] &= !bit;
+                *self = Self::Mixed {
+                    rows,
+                    occupied_count: BLOCKS_PER_SECTION - 1,
+                };
+            }
+            Self::Mixed {
+                rows,
+                occupied_count,
+            } => {
+                if new_occupied {
+                    rows[row_index] |= bit;
+                    *occupied_count += 1;
+                    if *occupied_count == BLOCKS_PER_SECTION {
+                        *self = Self::Full;
+                    }
+                } else {
+                    rows[row_index] &= !bit;
+                    *occupied_count -= 1;
+                    if *occupied_count == 0 {
+                        *self = Self::Empty;
+                    }
+                }
+            }
+        }
+    }
+
+    fn box_is_clear(
+        &self,
+        min_x: usize,
+        max_x: usize,
+        min_y: usize,
+        max_y: usize,
+        min_z: usize,
+        max_z: usize,
+    ) -> bool {
+        debug_assert!(min_x <= max_x && max_x < BlockPalette::SIZE);
+        debug_assert!(min_y <= max_y && max_y < BlockPalette::SIZE);
+        debug_assert!(min_z <= max_z && max_z < BlockPalette::SIZE);
+
+        let Self::Mixed { rows, .. } = self else {
+            return matches!(self, Self::Empty);
+        };
+        let below_max = if max_x == u16::BITS as usize - 1 {
+            u16::MAX
+        } else {
+            (1_u16 << (max_x + 1)) - 1
+        };
+        let x_mask = below_max & (u16::MAX << min_x);
+        for y in min_y..=max_y {
+            for z in min_z..=max_z {
+                if rows[y * BlockPalette::SIZE + z] & x_mask != 0 {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+}
+
+fn is_stable_vanilla_air(state: BlockStateId) -> bool {
+    state == vanilla_blocks::AIR.default_state()
+        || state == vanilla_blocks::CAVE_AIR.default_state()
+        || state == vanilla_blocks::VOID_AIR.default_state()
+}
 
 impl Sections {
     /// Creates a new `Sections` from a box of owned `ChunkSection`s.
@@ -495,7 +674,7 @@ impl Sections {
 #[derive(Debug)]
 pub struct ChunkSection {
     /// The block states in the section.
-    pub states: BlockPalette,
+    states: BlockPalette,
     /// The biomes in the section.
     pub biomes: BiomePalette,
     /// Number of non-air blocks in this section (0-4096).
@@ -508,6 +687,8 @@ pub struct ChunkSection {
     pub ticking_block_count: u16,
     /// Number of randomly-ticking fluids in this section (0-4096).
     ticking_fluid_count: u16,
+    /// Conservative spatial certificate for immutable Vanilla air.
+    stable_air_occupancy: StableAirOccupancy,
 }
 
 impl ChunkSection {
@@ -524,6 +705,7 @@ impl ChunkSection {
             fluid_count: 0,
             ticking_block_count: 0,
             ticking_fluid_count: 0,
+            stable_air_occupancy: StableAirOccupancy::Unknown,
         }
     }
 
@@ -538,7 +720,14 @@ impl ChunkSection {
             fluid_count: 0,
             ticking_block_count: 0,
             ticking_fluid_count: 0,
+            stable_air_occupancy: StableAirOccupancy::Empty,
         }
+    }
+
+    /// Returns the section's read-only block palette.
+    #[must_use]
+    pub(crate) const fn states(&self) -> &BlockPalette {
+        &self.states
     }
 
     /// Returns true if this section contains no non-air blocks.
@@ -594,6 +783,25 @@ impl ChunkSection {
     pub(crate) fn maybe_has_extensible_collision_behavior(&self) -> bool {
         self.states
             .maybe_has(block_state_has_extensible_collision_behavior)
+    }
+
+    /// Returns whether every block in one inclusive local box is immutable Vanilla air.
+    #[must_use]
+    pub(crate) fn stable_air_box_is_clear(
+        &self,
+        min_x: usize,
+        max_x: usize,
+        min_y: usize,
+        max_y: usize,
+        min_z: usize,
+        max_z: usize,
+    ) -> bool {
+        self.stable_air_occupancy
+            .box_is_clear(min_x, max_x, min_y, max_y, min_z, max_z)
+    }
+
+    fn invalidate_stable_air_occupancy(&mut self) {
+        self.stable_air_occupancy = StableAirOccupancy::Unknown;
     }
 
     /// Appends block-light source positions in `ScalableLux` local-index order.
@@ -669,6 +877,7 @@ impl ChunkSection {
         mut counts_for_state: impl FnMut(BlockStateId) -> BlockStateSectionCounts,
     ) {
         self.states.finalize_building();
+        let stable_air_occupancy = StableAirOccupancy::from_palette(&self.states);
 
         let mut non_empty: u16 = 0;
         let mut fluid: u16 = 0;
@@ -707,6 +916,7 @@ impl ChunkSection {
         self.fluid_count = fluid;
         self.ticking_block_count = ticking_blocks;
         self.ticking_fluid_count = ticking_fluids;
+        self.stable_air_occupancy = stable_air_occupancy;
     }
 
     const fn accumulate_counter_traits(
@@ -770,6 +980,8 @@ impl ChunkSection {
             let old_counts = Self::block_state_section_counts(old_state);
             let new_counts = Self::block_state_section_counts(new_state);
             self.apply_count_change(old_counts, new_counts);
+            self.stable_air_occupancy
+                .record_change(x, y, z, old_state, new_state);
         }
 
         old_state
@@ -787,6 +999,7 @@ impl ChunkSection {
         z: usize,
         new_state: BlockStateId,
     ) -> BlockStateId {
+        self.invalidate_stable_air_occupancy();
         self.states.enter_building_mode();
         self.states.set(x, y, z, new_state)
     }
@@ -876,6 +1089,8 @@ mod tests {
 
     use super::*;
 
+    const SECTION_MAX_LOCAL_COORDINATE: usize = BlockPalette::SIZE - 1;
+
     fn plains_biomes() -> BiomePalette {
         BiomePalette::Homogeneous(vanilla_biomes::PLAINS.id() as u16)
     }
@@ -883,6 +1098,77 @@ mod tests {
     fn init_test_behaviors() {
         init_vanilla_registry();
         init_behaviors();
+    }
+
+    fn entire_section_is_stable_air(section: &ChunkSection) -> bool {
+        section.stable_air_box_is_clear(
+            0,
+            SECTION_MAX_LOCAL_COORDINATE,
+            0,
+            SECTION_MAX_LOCAL_COORDINATE,
+            0,
+            SECTION_MAX_LOCAL_COORDINATE,
+        )
+    }
+
+    #[test]
+    fn stable_air_occupancy_tracks_canonical_air_and_non_air_transitions() {
+        init_test_behaviors();
+        let mut section = ChunkSection::new_empty();
+
+        assert!(entire_section_is_stable_air(&section));
+        section.set_block_state(2, 3, 4, vanilla_blocks::CAVE_AIR.default_state());
+        section.set_block_state(5, 6, 7, vanilla_blocks::VOID_AIR.default_state());
+        assert!(entire_section_is_stable_air(&section));
+
+        section.set_block_state(2, 3, 4, vanilla_blocks::STONE.default_state());
+        assert!(!section.stable_air_box_is_clear(2, 2, 3, 3, 4, 4));
+        assert!(section.stable_air_box_is_clear(3, 3, 3, 3, 4, 4));
+        section.set_block_state(2, 3, 4, vanilla_blocks::AIR.default_state());
+        assert!(entire_section_is_stable_air(&section));
+
+        let mut full = ChunkSection::new_with_biomes(
+            BlockPalette::Homogeneous(vanilla_blocks::STONE.default_state()),
+            plains_biomes(),
+        );
+        full.recalculate_counts();
+        assert!(!full.stable_air_box_is_clear(0, 0, 0, 0, 0, 0));
+        full.set_block_state(0, 0, 0, vanilla_blocks::AIR.default_state());
+        assert!(full.stable_air_box_is_clear(0, 0, 0, 0, 0, 0));
+        assert!(!full.stable_air_box_is_clear(1, 1, 0, 0, 0, 0));
+        full.set_block_state(0, 0, 0, vanilla_blocks::STONE.default_state());
+        assert!(!full.stable_air_box_is_clear(0, 0, 0, 0, 0, 0));
+    }
+
+    #[test]
+    fn arbitrary_palette_mutation_invalidates_stable_air_certificate_until_recount() {
+        init_test_behaviors();
+        let holder = SectionHolder::new(ChunkSection::new_empty());
+        {
+            let mut guard = holder.write();
+            guard.states.enter_building_mode();
+        }
+        assert!(!entire_section_is_stable_air(&holder.read()));
+
+        holder.write().recalculate_counts();
+        assert!(entire_section_is_stable_air(&holder.read()));
+    }
+
+    #[test]
+    fn raw_bulk_writes_invalidate_stable_air_certificate_until_recount() {
+        init_test_behaviors();
+        let sections = Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice());
+        let holder = &sections.sections[0];
+
+        sections.write_block_batch(&[(1, 2, 3, vanilla_blocks::STONE.default_state())]);
+        assert!(!entire_section_is_stable_air(&holder.read()));
+        holder.write().recalculate_counts();
+        assert!(!holder.read().stable_air_box_is_clear(1, 1, 2, 2, 3, 3));
+
+        sections.write_column_blocks(1, 3, &[(2, vanilla_blocks::AIR.default_state())]);
+        assert!(!entire_section_is_stable_air(&holder.read()));
+        holder.write().recalculate_counts();
+        assert!(entire_section_is_stable_air(&holder.read()));
     }
 
     #[test]

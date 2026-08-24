@@ -29,6 +29,12 @@ const EXPECTED_MAX_RADIUS_POSITION_SHA256: &str =
 const FNV1A_64_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV1A_64_PRIME: u64 = 0x100_0000_01b3;
 const EXPECTED_RAY_STEPS_FNV1A_64: u64 = 0x0f55_998f_8a80_904d;
+const OVERSIZED_DENSE_CACHE_MAX_COORDINATE: i32 = 20;
+const BOUNDED_FLOOR_RANDOM_CASE_COUNT: usize = 20_000;
+const BOUNDED_FLOOR_TEST_RNG_SEED: u64 = 0x6a09_e667_f3bc_c909;
+const BOUNDED_FLOOR_TEST_RNG_MULTIPLIER: u64 = 6_364_136_223_846_793_005;
+const BOUNDED_FLOOR_TEST_RNG_INCREMENT: u64 = 1_442_695_040_888_963_407;
+const EXACT_INTEGER_POWER_OF_TWO_SAMPLE: f64 = 65_536.0;
 const ORIGIN_BLOCK_CENTER: DVec3 = DVec3::new(0.5, 64.5, 0.5);
 // Bottom-center of a resting TNT plus Vanilla's 1/16-height explosion offset.
 const RESTING_PRIMED_TNT_EXPLOSION_CENTER: DVec3 = DVec3::new(0.5, 64.061_25, 0.5);
@@ -122,7 +128,7 @@ impl ExplosionBlockReader for CountingBlockReader<'_> {
 }
 
 #[cfg(test)]
-fn calculate_immutable_rays_sequential<R: ExplosionBlockReader>(
+fn calculate_cached_immutable_rays<R: ExplosionBlockReader, const USE_BOUNDED_FLOOR: bool>(
     rays: &[ExplosionRay],
     context: ExplosionRayContext,
     reader: &R,
@@ -135,7 +141,11 @@ fn calculate_immutable_rays_sequential<R: ExplosionBlockReader>(
         always_allows_block_explosion: calculator.always_allows_block_explosion(),
     };
     for ray in rays {
-        assert!(visit_immutable_ray_positions_cached(
+        assert!(visit_immutable_ray_positions_cached::<
+            R,
+            ExplosionBlockCache,
+            USE_BOUNDED_FLOOR,
+        >(
             *ray,
             context,
             reader,
@@ -210,6 +220,7 @@ fn deterministic_empty_world_rays_match_the_java_hash_set_fixture() {
 fn precomputed_ray_steps_match_java_bit_digest() {
     let mut digest = FNV1A_64_OFFSET_BASIS;
     for step in RAY_STEPS.iter() {
+        assert!(step.x.abs() < 1.0 && step.y.abs() < 1.0 && step.z.abs() < 1.0);
         for bits in [step.x.to_bits(), step.y.to_bits(), step.z.to_bits()] {
             for byte in bits.to_le_bytes() {
                 digest ^= u64::from(byte);
@@ -244,7 +255,7 @@ fn maximum_radius_air_rays_match_the_java_membership_fixture() {
             initial_power,
         })
         .collect::<Vec<_>>();
-    let mut affected = calculate_immutable_rays_sequential(
+    let mut affected = calculate_cached_immutable_rays::<_, false>(
         &rays,
         ExplosionRayContext {
             center,
@@ -545,6 +556,206 @@ fn explosion_rays_use_vanilla_world_bounds_in_both_lanes() {
 }
 
 #[test]
+fn dense_explosion_cache_indexes_inclusive_bounds_without_face_aliases() {
+    let min = BlockPos::new(-2, 63, -1);
+    let max = BlockPos::new(1, 65, 2);
+    let cache = DenseExplosionBlockCache::try_new(BlockRegionBounds::from_corners(min, max))
+        .expect("small explosion region uses dense indexing");
+
+    assert_eq!(cache.cell_index(min), Some(0));
+    assert_eq!(cache.cell_index(min.offset(1, 0, 0)), Some(1));
+    assert_eq!(cache.cell_index(min.offset(0, 0, 1)), Some(4));
+    assert_eq!(cache.cell_index(min.offset(0, 1, 0)), Some(16));
+    assert_eq!(cache.cell_index(max), Some(47));
+
+    for outside in [
+        min.offset(-1, 0, 0),
+        min.offset(0, -1, 0),
+        min.offset(0, 0, -1),
+        max.offset(1, 0, 0),
+        max.offset(0, 1, 0),
+        max.offset(0, 0, 1),
+    ] {
+        assert_eq!(cache.cell_index(outside), None, "outside={outside:?}");
+    }
+
+    assert!(
+        DenseExplosionBlockCache::try_new(BlockRegionBounds::from_corners(
+            BlockPos::ZERO,
+            BlockPos::new(
+                OVERSIZED_DENSE_CACHE_MAX_COORDINATE,
+                OVERSIZED_DENSE_CACHE_MAX_COORDINATE,
+                OVERSIZED_DENSE_CACHE_MAX_COORDINATE,
+            ),
+        ))
+        .is_none()
+    );
+    assert!(
+        DenseExplosionBlockCache::try_new(BlockRegionBounds::from_corners(
+            BlockPos::new(i32::MIN, i32::MIN, i32::MIN),
+            BlockPos::new(i32::MAX, i32::MAX, i32::MAX),
+        ))
+        .is_none()
+    );
+}
+
+#[test]
+fn bounded_floor_matches_rust_floor_cast_across_i32_domain() {
+    let mut values = vec![
+        0.0,
+        -0.0,
+        f64::from_bits(1),
+        -f64::from_bits(1),
+        0.5,
+        -0.5,
+        f64::from(i32::MIN),
+        f64::from(i32::MAX),
+        f64::from(VANILLA_HORIZONTAL_MIN),
+        f64::from(VANILLA_HORIZONTAL_MAX_EXCLUSIVE),
+    ];
+    for base in [
+        f64::from(i32::MIN),
+        f64::from(VANILLA_HORIZONTAL_MIN),
+        -EXACT_INTEGER_POWER_OF_TWO_SAMPLE,
+        -1.0,
+        0.0,
+        1.0,
+        EXACT_INTEGER_POWER_OF_TWO_SAMPLE,
+        f64::from(VANILLA_HORIZONTAL_MAX_EXCLUSIVE),
+        f64::from(i32::MAX),
+    ] {
+        values.extend([base.next_down(), base, base.next_up()]);
+    }
+
+    let lower = f64::from(i32::MIN);
+    let upper = f64::from(i32::MAX) + 1.0;
+    for value in values {
+        if value >= lower && value < upper {
+            assert_eq!(bounded_floor_to_i32(value), value.floor() as i32);
+        }
+    }
+
+    let mut state = BOUNDED_FLOOR_TEST_RNG_SEED;
+    for _ in 0..BOUNDED_FLOOR_RANDOM_CASE_COUNT {
+        state = state
+            .wrapping_mul(BOUNDED_FLOOR_TEST_RNG_MULTIPLIER)
+            .wrapping_add(BOUNDED_FLOOR_TEST_RNG_INCREMENT);
+        let integer = (state >> u32::BITS) as u32 as i32;
+        state = state
+            .wrapping_mul(BOUNDED_FLOOR_TEST_RNG_MULTIPLIER)
+            .wrapping_add(BOUNDED_FLOOR_TEST_RNG_INCREMENT);
+        let fraction = f64::from(state as u32) / (f64::from(u32::MAX) + 1.0);
+        let value = f64::from(integer) + fraction;
+        if value < upper {
+            assert_eq!(bounded_floor_to_i32(value), value.floor() as i32);
+        }
+    }
+}
+
+#[test]
+fn bounded_floor_gate_requires_centered_region_with_i32_headroom() {
+    let context = ExplosionRayContext {
+        center: ORIGIN_BLOCK_CENTER,
+        bounds: ExplosionWorldBounds {
+            min_y: VANILLA_OVERWORLD_MIN_Y,
+            max_y: VANILLA_OVERWORLD_MAX_Y,
+        },
+    };
+    let normal =
+        BlockRegionBounds::from_corners(BlockPos::new(-8, 56, -8), BlockPos::new(8, 72, 8));
+    assert!(context.can_use_bounded_floor(normal));
+
+    for center in [
+        DVec3::new(f64::NAN, 64.5, 0.5),
+        DVec3::new(f64::INFINITY, 64.5, 0.5),
+        DVec3::new(-8.001, 64.5, 0.5),
+        DVec3::new(9.0, 64.5, 0.5),
+    ] {
+        assert!(!ExplosionRayContext { center, ..context }.can_use_bounded_floor(normal));
+    }
+    assert!(
+        !context.can_use_bounded_floor(BlockRegionBounds::from_corners(
+            BlockPos::new(i32::MIN, 56, -8),
+            BlockPos::new(8, 72, 8),
+        ))
+    );
+    assert!(
+        !context.can_use_bounded_floor(BlockRegionBounds::from_corners(
+            BlockPos::new(-8, 56, -8),
+            BlockPos::new(i32::MAX, 72, 8),
+        ))
+    );
+}
+
+#[test]
+fn bounded_and_generic_floor_modes_preserve_ray_results_and_hook_counts() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("bounded_explosion_floor_modes");
+    let center = DVec3::new(-16.0, 64.0, -16.0);
+    let explosion = ServerExplosion::new(
+        &world,
+        None,
+        None,
+        None,
+        None,
+        center,
+        STANDARD_TNT_RADIUS,
+        false,
+        BlockInteraction::Destroy,
+    );
+    let rays = explosion.draw_immutable_rays(|| FIXED_RANDOM_SAMPLE);
+    let context = ExplosionRayContext {
+        center,
+        bounds: ExplosionWorldBounds::from_world(&world),
+    };
+
+    let generic_reader = CountingBlockReader {
+        world: world.as_ref(),
+        calls: AtomicUsize::new(0),
+    };
+    let generic_calculator = CountingImmutableCalculator {
+        cache_resistance: true,
+        ..CountingImmutableCalculator::default()
+    };
+    let generic = calculate_cached_immutable_rays::<_, false>(
+        &rays,
+        context,
+        &generic_reader,
+        &generic_calculator,
+    );
+
+    let bounded_reader = CountingBlockReader {
+        world: world.as_ref(),
+        calls: AtomicUsize::new(0),
+    };
+    let bounded_calculator = CountingImmutableCalculator {
+        cache_resistance: true,
+        ..CountingImmutableCalculator::default()
+    };
+    let bounded = calculate_cached_immutable_rays::<_, true>(
+        &rays,
+        context,
+        &bounded_reader,
+        &bounded_calculator,
+    );
+
+    assert_eq!(bounded, generic);
+    assert_eq!(
+        bounded_reader.calls.load(Ordering::Relaxed),
+        generic_reader.calls.load(Ordering::Relaxed)
+    );
+    assert_eq!(
+        bounded_calculator.resistance_calls.load(Ordering::Relaxed),
+        generic_calculator.resistance_calls.load(Ordering::Relaxed)
+    );
+    assert_eq!(
+        bounded_calculator.decision_calls.load(Ordering::Relaxed),
+        generic_calculator.decision_calls.load(Ordering::Relaxed)
+    );
+}
+
+#[test]
 fn immutable_block_rays_match_sequential_order_and_repeat() {
     const RANDOM_SEED: i64 = 0x1A11_0DED;
 
@@ -626,8 +837,12 @@ fn immutable_cache_preserves_order_and_extensible_hook_calls() {
         cache_resistance: true,
         ..CountingImmutableCalculator::default()
     };
-    let cached =
-        calculate_immutable_rays_sequential(&rays, context, &cached_reader, &cached_calculator);
+    let cached = calculate_cached_immutable_rays::<_, false>(
+        &rays,
+        context,
+        &cached_reader,
+        &cached_calculator,
+    );
 
     let uncached_reader = CountingBlockReader {
         world: world.as_ref(),
@@ -669,7 +884,7 @@ fn immutable_cache_preserves_order_and_extensible_hook_calls() {
         always_allows_block_explosion: true,
         ..CountingImmutableCalculator::default()
     };
-    let always_allows = calculate_immutable_rays_sequential(
+    let always_allows = calculate_cached_immutable_rays::<_, false>(
         &rays,
         context,
         &cached_reader,
@@ -781,7 +996,12 @@ fn bounded_immutable_reader_covers_maximum_power_rays() {
         let affected = world
             .try_with_block_region(bounds, |region| {
                 let reader = RegionExplosionBlockReader::new(region);
-                explosion.calculate_immutable_ray_powers_with_reader(&powers, &calculator, &reader)
+                explosion.calculate_immutable_ray_powers_with_reader(
+                    &powers,
+                    &calculator,
+                    &reader,
+                    bounds,
+                )
             })
             .expect("radius-four ray workset stays within the bounded-reader slot limit")
             .expect("bounded reader covers every maximum-power ray access");

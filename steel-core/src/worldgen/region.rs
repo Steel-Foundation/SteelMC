@@ -32,7 +32,7 @@ use crate::chunk::{
     chunk_pyramid::ChunkStep,
     full_chunk::FullChunkRef,
     heightmap::{Heightmap, HeightmapType},
-    section::{ChunkSection, SectionHolder, SectionWriteGuard, Sections},
+    section::{SectionHolder, SectionWriteGuard, Sections},
     status::ChunkStatus,
 };
 use crate::entity::SharedEntity;
@@ -980,7 +980,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         let local_x = Self::local_coord(pos.x());
         let local_y = Self::local_coord(pos.y());
         let local_z = Self::local_coord(pos.z());
-        let old_state = section_guard.states.get(local_x, local_y, local_z);
+        let old_state = section_guard.states().get(local_x, local_y, local_z);
         let Some(state) = replacement(old_state) else {
             Self::record_ore_write_time(ore_profile, started_at);
             return false;
@@ -1055,7 +1055,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_x = usize::from(pos.x());
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
-                let old_state = section_guard.states.get(local_x, local_y, local_z);
+                let old_state = section_guard.states().get(local_x, local_y, local_z);
                 if let Some(state) = replacement(old_state) {
                     let old_state = Self::set_bulk_block_state(
                         chunk.holder,
@@ -1075,7 +1075,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_x = usize::from(pos.x());
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
-                let old_state = section_guard.states.get(local_x, local_y, local_z);
+                let old_state = section_guard.states().get(local_x, local_y, local_z);
                 if let Some(state) = replacement(old_state) {
                     let old_state = Self::set_bulk_block_state(
                         chunk.holder,
@@ -1143,12 +1143,12 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         } else {
             section.read()
         };
-        if section_guard.states.has_only_air() {
+        if section_guard.states().has_only_air() {
             Self::record_ore_read_time(ore_profile, started_at);
             return air;
         }
 
-        let state = section_guard.states.get(
+        let state = section_guard.states().get(
             Self::local_coord(pos.x()),
             Self::local_coord(pos.y()),
             Self::local_coord(pos.z()),
@@ -1235,7 +1235,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
 
     fn set_bulk_block_state(
         holder: &ChunkHolder,
-        section: &mut ChunkSection,
+        section: &mut SectionWriteGuard<'_>,
         local_x: usize,
         local_y: usize,
         local_z: usize,
@@ -1500,7 +1500,7 @@ mod tests {
         chunk_holder::ChunkHolder,
         chunk_ticket_manager::ChunkTicketLevel,
         heightmap::{Heightmap, HeightmapType},
-        section::{ChunkSection, Sections},
+        section::{ChunkSection, SectionHolder, Sections},
         status::ChunkStatus,
     };
 
@@ -1660,7 +1660,8 @@ mod tests {
         let stone = vanilla_blocks::STONE.default_state();
         let air = vanilla_blocks::AIR.default_state();
 
-        let mut pre_light_section = ChunkSection::new_empty();
+        let pre_light_section = SectionHolder::new(ChunkSection::new_empty());
+        let mut pre_light_section = pre_light_section.write();
         let pre_light_holder = published_holder(ChunkStatus::Empty);
 
         WorldGenBulkSectionAccess::set_bulk_block_state(
@@ -1674,7 +1675,8 @@ mod tests {
 
         assert_eq!(pre_light_section.non_empty_block_count(), 0);
 
-        let mut initialized_section = ChunkSection::new_empty();
+        let initialized_section = SectionHolder::new(ChunkSection::new_empty());
+        let mut initialized_section = initialized_section.write();
         let initialized_holder = published_holder(ChunkStatus::InitializeLight);
 
         WorldGenBulkSectionAccess::set_bulk_block_state(
@@ -1687,8 +1689,19 @@ mod tests {
         );
 
         assert_eq!(initialized_section.non_empty_block_count(), 1);
+        WorldGenBulkSectionAccess::set_bulk_block_state(
+            &initialized_holder,
+            &mut initialized_section,
+            1,
+            2,
+            3,
+            air,
+        );
+        assert_eq!(initialized_section.non_empty_block_count(), 0);
+        assert!(initialized_section.stable_air_box_is_clear(0, 15, 0, 15, 0, 15));
 
-        let mut initialized_building_section = ChunkSection::new_empty();
+        let initialized_building_section = SectionHolder::new(ChunkSection::new_empty());
+        let mut initialized_building_section = initialized_building_section.write();
         initialized_building_section.set_block_state_for_generation(1, 2, 3, stone);
 
         let old_state = WorldGenBulkSectionAccess::set_bulk_block_state(

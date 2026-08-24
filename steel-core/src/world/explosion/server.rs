@@ -21,12 +21,13 @@ use steel_utils::{BlockPos, BlockStateId, PackedBlockPos, WorldAabb};
 use crate::behavior::blocks::{FireBlock, PowderSnowBlock};
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::chunk::gameplay_chunk_lookup_cache::LocalFullChunkHolderCache;
+use crate::chunk::paletted_container::BlockPalette;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::{ItemEntity, PrimedTntEntity};
 use crate::entity::{Entity, SharedEntity};
 use crate::world::game_event::GameEventContext;
-use crate::world::raycast::ExplosionExposureRaycast;
-use crate::world::{BlockRegionBounds, BlockRegionRead, World};
+use crate::world::raycast::{ExplosionExposureRaycast, collision_path_axis_block_bounds};
+use crate::world::{BlockRegionBounds, BlockRegionRead, MAX_BLOCK_REGION_WORKSET_SLOTS, World};
 
 use super::{
     BlockInteraction, Explosion, ExplosionBlockReader, ExplosionDamageCalculator,
@@ -55,10 +56,19 @@ const FIRE_CHANCE_DENOMINATOR: i32 = 3;
 const SMALL_EXPLOSION_RADIUS: f32 = 2.0;
 const EXPOSURE_SAMPLE_DENSITY: f64 = 2.0;
 const EXPOSURE_SAMPLE_OFFSET_DIVISOR: f64 = 2.0;
+const MAX_EXPOSURE_CERTIFICATE_AXIS_WORK: usize =
+    MAX_BLOCK_REGION_WORKSET_SLOTS * BlockPalette::SIZE;
 const MAX_DROPS_PER_COMBINED_STACK: i32 = 16;
 const BLOCK_CACHE_BITS: u32 = 9;
 const BLOCK_CACHE_SIZE: usize = 1 << BLOCK_CACHE_BITS;
 const BLOCK_CACHE_MASK: usize = BLOCK_CACHE_SIZE - 1;
+/// Bounds the temporary dense-cache allocations while covering standard radius-four explosions.
+const MAX_DENSE_BLOCK_CACHE_CELLS: usize = 8_192;
+const EMPTY_DENSE_BLOCK_CACHE_SLOT: u16 = u16::MAX;
+const DENSE_BLOCK_CACHE_HAS_RESISTANCE: u8 = 1;
+const DENSE_BLOCK_CACHE_AFFECTED: u8 = 1 << 1;
+const F64_INTEGER_MANTISSA_BIAS: f64 = 6_755_399_441_055_744.0;
+const DENSE_BLOCK_CACHE_ENTRY_SIZE_BYTES: usize = 8;
 const LONG_HASH_PHI: u64 = 0x9e37_79b9_7f4a_7c15;
 const JAVA_HASH_MAP_TREEIFY_THRESHOLD: usize = 8;
 const JAVA_HASH_MAP_MIN_TREEIFY_CAPACITY: usize = 64;
@@ -96,6 +106,44 @@ struct ExplosionBlockCache {
     entries: [ExplosionBlockCacheEntry; BLOCK_CACHE_SIZE],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct DenseExplosionBlockCacheEntry {
+    resistance: f32,
+    state: BlockStateId,
+    flags: u8,
+    _padding: u8,
+}
+
+const _: [(); DENSE_BLOCK_CACHE_ENTRY_SIZE_BYTES] =
+    [(); mem::size_of::<DenseExplosionBlockCacheEntry>()];
+
+struct DenseExplosionBlockCache {
+    min: BlockPos,
+    size_x: usize,
+    size_y: usize,
+    size_z: usize,
+    slots: Vec<u16>,
+    entries: Vec<DenseExplosionBlockCacheEntry>,
+}
+
+#[derive(Clone, Copy)]
+enum ExplosionBlockCacheLookup<Miss> {
+    Hit(usize),
+    Miss(Miss),
+}
+
+trait ExplosionRayBlockCache {
+    type Miss: Copy;
+
+    fn lookup(&self, pos: BlockPos) -> Option<ExplosionBlockCacheLookup<Self::Miss>>;
+    fn state(&self, entry_index: usize) -> BlockStateId;
+    fn resistance(&self, entry_index: usize) -> Option<f32>;
+    fn affected(&self, entry_index: usize) -> bool;
+    fn insert(&mut self, miss: Self::Miss, state: BlockStateId, resistance: Option<f32>) -> usize;
+    fn mark_affected(&mut self, entry_index: usize);
+}
+
 #[derive(Clone, Copy)]
 struct ImmutableRayCachePolicy {
     resistance: bool,
@@ -108,6 +156,156 @@ impl Default for ExplosionBlockCache {
             entries: [ExplosionBlockCacheEntry::EMPTY; BLOCK_CACHE_SIZE],
         }
     }
+}
+
+impl ExplosionRayBlockCache for ExplosionBlockCache {
+    type Miss = (usize, i64);
+
+    #[inline]
+    fn lookup(&self, pos: BlockPos) -> Option<ExplosionBlockCacheLookup<Self::Miss>> {
+        let tag = PackedBlockPos::from(pos).as_raw();
+        let cache_index = explosion_block_cache_index(tag);
+        let entry = self.entries[cache_index];
+        Some(if entry.occupied && entry.tag == tag {
+            ExplosionBlockCacheLookup::Hit(cache_index)
+        } else {
+            ExplosionBlockCacheLookup::Miss((cache_index, tag))
+        })
+    }
+
+    #[inline]
+    fn state(&self, entry_index: usize) -> BlockStateId {
+        self.entries[entry_index].state
+    }
+
+    #[inline]
+    fn resistance(&self, entry_index: usize) -> Option<f32> {
+        self.entries[entry_index].resistance
+    }
+
+    #[inline]
+    fn affected(&self, entry_index: usize) -> bool {
+        self.entries[entry_index].affected
+    }
+
+    #[inline]
+    fn insert(
+        &mut self,
+        (cache_index, tag): Self::Miss,
+        state: BlockStateId,
+        resistance: Option<f32>,
+    ) -> usize {
+        self.entries[cache_index] = ExplosionBlockCacheEntry {
+            tag,
+            state,
+            resistance,
+            occupied: true,
+            affected: false,
+        };
+        cache_index
+    }
+
+    #[inline]
+    fn mark_affected(&mut self, entry_index: usize) {
+        self.entries[entry_index].affected = true;
+    }
+}
+
+impl DenseExplosionBlockCache {
+    fn try_new(bounds: BlockRegionBounds) -> Option<Self> {
+        let (min, max) = bounds.corners();
+        let size_x = inclusive_block_count(min.x(), max.x())?;
+        let size_y = inclusive_block_count(min.y(), max.y())?;
+        let size_z = inclusive_block_count(min.z(), max.z())?;
+        let volume = size_x.checked_mul(size_y)?.checked_mul(size_z)?;
+        if volume > MAX_DENSE_BLOCK_CACHE_CELLS
+            || volume >= usize::from(EMPTY_DENSE_BLOCK_CACHE_SLOT)
+        {
+            return None;
+        }
+
+        Some(Self {
+            min,
+            size_x,
+            size_y,
+            size_z,
+            slots: vec![EMPTY_DENSE_BLOCK_CACHE_SLOT; volume],
+            entries: Vec::with_capacity(volume),
+        })
+    }
+
+    #[inline]
+    fn cell_index(&self, pos: BlockPos) -> Option<usize> {
+        let x = usize::try_from(i64::from(pos.x()) - i64::from(self.min.x())).ok()?;
+        let y = usize::try_from(i64::from(pos.y()) - i64::from(self.min.y())).ok()?;
+        let z = usize::try_from(i64::from(pos.z()) - i64::from(self.min.z())).ok()?;
+        if x >= self.size_x || y >= self.size_y || z >= self.size_z {
+            return None;
+        }
+        Some((y * self.size_z + z) * self.size_x + x)
+    }
+}
+
+impl ExplosionRayBlockCache for DenseExplosionBlockCache {
+    type Miss = usize;
+
+    #[inline]
+    fn lookup(&self, pos: BlockPos) -> Option<ExplosionBlockCacheLookup<Self::Miss>> {
+        let slot_index = self.cell_index(pos)?;
+        let entry_index = self.slots[slot_index];
+        Some(if entry_index == EMPTY_DENSE_BLOCK_CACHE_SLOT {
+            ExplosionBlockCacheLookup::Miss(slot_index)
+        } else {
+            ExplosionBlockCacheLookup::Hit(usize::from(entry_index))
+        })
+    }
+
+    #[inline]
+    fn state(&self, entry_index: usize) -> BlockStateId {
+        self.entries[entry_index].state
+    }
+
+    #[inline]
+    fn resistance(&self, entry_index: usize) -> Option<f32> {
+        let entry = self.entries[entry_index];
+        (entry.flags & DENSE_BLOCK_CACHE_HAS_RESISTANCE != 0).then_some(entry.resistance)
+    }
+
+    #[inline]
+    fn affected(&self, entry_index: usize) -> bool {
+        self.entries[entry_index].flags & DENSE_BLOCK_CACHE_AFFECTED != 0
+    }
+
+    #[inline]
+    fn insert(
+        &mut self,
+        slot_index: Self::Miss,
+        state: BlockStateId,
+        resistance: Option<f32>,
+    ) -> usize {
+        let entry_index = self.entries.len();
+        debug_assert!(entry_index < usize::from(EMPTY_DENSE_BLOCK_CACHE_SLOT));
+        let (resistance, flags) = resistance.map_or((0.0, 0), |resistance| {
+            (resistance, DENSE_BLOCK_CACHE_HAS_RESISTANCE)
+        });
+        self.entries.push(DenseExplosionBlockCacheEntry {
+            resistance,
+            state,
+            flags,
+            _padding: 0,
+        });
+        self.slots[slot_index] = entry_index as u16;
+        entry_index
+    }
+
+    #[inline]
+    fn mark_affected(&mut self, entry_index: usize) {
+        self.entries[entry_index].flags |= DENSE_BLOCK_CACHE_AFFECTED;
+    }
+}
+
+fn inclusive_block_count(min: i32, max: i32) -> Option<usize> {
+    usize::try_from(i64::from(max) - i64::from(min) + 1).ok()
 }
 
 struct RegionExplosionBlockReader<'reader, 'world> {
@@ -149,6 +347,23 @@ static RAY_STEPS: LazyLock<[DVec3; RAY_COUNT]> = LazyLock::new(|| {
 struct ExplosionRayContext {
     center: DVec3,
     bounds: ExplosionWorldBounds,
+}
+
+impl ExplosionRayContext {
+    /// Proves the cached traversal's current and first out-of-region samples fit in `i32`.
+    /// Every component is bounded by [`RAY_STEP`]. One-cell headroom on each face therefore covers
+    /// the sample that makes the bounded reader request the generic fallback.
+    fn can_use_bounded_floor(self, region_bounds: BlockRegionBounds) -> bool {
+        let (min, max) = region_bounds.corners();
+        self.center.is_finite()
+            && ray_axis_has_bounded_floor(self.center.x, min.x(), max.x())
+            && ray_axis_has_bounded_floor(self.center.y, min.y(), max.y())
+            && ray_axis_has_bounded_floor(self.center.z, min.z(), max.z())
+    }
+}
+
+fn ray_axis_has_bounded_floor(center: f64, min: i32, max: i32) -> bool {
+    min > i32::MIN && max < i32::MAX && center >= f64::from(min) && center < f64::from(max) + 1.0
 }
 
 #[derive(Clone, Copy)]
@@ -294,7 +509,7 @@ impl<'a> ServerExplosion<'a> {
                     return None;
                 }
                 let reader = RegionExplosionBlockReader::new(region);
-                self.calculate_immutable_ray_powers_with_reader(powers, calculator, &reader)
+                self.calculate_immutable_ray_powers_with_reader(powers, calculator, &reader, bounds)
             })
         {
             return affected;
@@ -312,20 +527,91 @@ impl<'a> ServerExplosion<'a> {
         powers: &[f32; RAY_COUNT],
         calculator: &dyn ImmutableExplosionBlockCalculator,
         reader: &R,
+        bounds: BlockRegionBounds,
     ) -> Option<Vec<BlockPos>> {
         let context = ExplosionRayContext {
             center: self.center,
             bounds: ExplosionWorldBounds::from_world(self.world),
         };
-        let mut affected = JavaBlockPosSet::default();
         let cache_policy = ImmutableRayCachePolicy {
             resistance: calculator.can_cache_explosion_resistance(),
             always_allows_block_explosion: calculator.always_allows_block_explosion(),
         };
+        let use_bounded_floor = context.can_use_bounded_floor(bounds);
 
-        let mut cache = ExplosionBlockCache::default();
+        if cache_policy.resistance
+            && cache_policy.always_allows_block_explosion
+            && let Some(cache) = DenseExplosionBlockCache::try_new(bounds)
+        {
+            return Self::calculate_immutable_ray_powers_with_cache(
+                powers,
+                calculator,
+                reader,
+                context,
+                cache_policy,
+                cache,
+                use_bounded_floor,
+            );
+        }
+
+        Self::calculate_immutable_ray_powers_with_cache(
+            powers,
+            calculator,
+            reader,
+            context,
+            cache_policy,
+            ExplosionBlockCache::default(),
+            use_bounded_floor,
+        )
+    }
+
+    fn calculate_immutable_ray_powers_with_cache<
+        R: ExplosionBlockReader,
+        C: ExplosionRayBlockCache,
+    >(
+        powers: &[f32; RAY_COUNT],
+        calculator: &dyn ImmutableExplosionBlockCalculator,
+        reader: &R,
+        context: ExplosionRayContext,
+        cache_policy: ImmutableRayCachePolicy,
+        cache: C,
+        use_bounded_floor: bool,
+    ) -> Option<Vec<BlockPos>> {
+        if use_bounded_floor {
+            return Self::calculate_immutable_ray_powers_with_cache_mode::<R, C, true>(
+                powers,
+                calculator,
+                reader,
+                context,
+                cache_policy,
+                cache,
+            );
+        }
+        Self::calculate_immutable_ray_powers_with_cache_mode::<R, C, false>(
+            powers,
+            calculator,
+            reader,
+            context,
+            cache_policy,
+            cache,
+        )
+    }
+
+    fn calculate_immutable_ray_powers_with_cache_mode<
+        R: ExplosionBlockReader,
+        C: ExplosionRayBlockCache,
+        const USE_BOUNDED_FLOOR: bool,
+    >(
+        powers: &[f32; RAY_COUNT],
+        calculator: &dyn ImmutableExplosionBlockCalculator,
+        reader: &R,
+        context: ExplosionRayContext,
+        cache_policy: ImmutableRayCachePolicy,
+        mut cache: C,
+    ) -> Option<Vec<BlockPos>> {
+        let mut affected = JavaBlockPosSet::default();
         for (&step, &initial_power) in RAY_STEPS.iter().zip(powers) {
-            if !visit_immutable_ray_positions_cached(
+            if !visit_immutable_ray_positions_cached::<R, C, USE_BOUNDED_FLOOR>(
                 ExplosionRay {
                     step,
                     initial_power,
@@ -662,27 +948,31 @@ fn vanilla_shuffle<T>(values: &mut [T], mut next_index: impl FnMut(i32) -> i32) 
     }
 }
 
-fn visit_immutable_ray_positions_cached<R: ExplosionBlockReader>(
+fn visit_immutable_ray_positions_cached<
+    R: ExplosionBlockReader,
+    C: ExplosionRayBlockCache,
+    const USE_BOUNDED_FLOOR: bool,
+>(
     ray: ExplosionRay,
     context: ExplosionRayContext,
     reader: &R,
     calculator: &dyn ImmutableExplosionBlockCalculator,
     cache_policy: ImmutableRayCachePolicy,
-    cache: &mut ExplosionBlockCache,
+    cache: &mut C,
     affected: &mut JavaBlockPosSet,
 ) -> bool {
     let mut remaining_power = ray.initial_power;
     let mut ray_pos = context.center;
     let mut previous_cell: Option<(BlockPos, usize)> = None;
     while remaining_power > 0.0 {
-        let pos = BlockPos::from(ray_pos);
+        let pos = ray_block_pos::<USE_BOUNDED_FLOOR>(ray_pos);
         if let Some((previous, cache_index)) = previous_cell
             && previous == pos
             && cache_policy.resistance
             && cache_policy.always_allows_block_explosion
-            && cache.entries[cache_index].affected
+            && cache.affected(cache_index)
         {
-            if let Some(resistance) = cache.entries[cache_index].resistance {
+            if let Some(resistance) = cache.resistance(cache_index) {
                 remaining_power -= ray_power_loss_from_resistance(resistance);
             }
             ray_pos += ray.step;
@@ -690,48 +980,51 @@ fn visit_immutable_ray_positions_cached<R: ExplosionBlockReader>(
             continue;
         }
 
-        let (tag, cache_index) = match previous_cell {
+        let lookup = match previous_cell {
             Some((previous, cache_index)) if previous == pos => {
-                (cache.entries[cache_index].tag, cache_index)
+                ExplosionBlockCacheLookup::Hit(cache_index)
             }
             _ => {
-                let tag = PackedBlockPos::from(pos).as_raw();
-                (tag, explosion_block_cache_index(tag))
+                let Some(lookup) = cache.lookup(pos) else {
+                    return false;
+                };
+                lookup
             }
         };
-        let cached = cache.entries[cache_index];
-        let cache_hit = cached.occupied && cached.tag == tag;
-        let state = if cache_hit {
-            cached.state
-        } else {
-            let Some(state) = reader.block_state(pos) else {
-                return false;
-            };
-            state
+        let state = match lookup {
+            ExplosionBlockCacheLookup::Hit(cache_index) => cache.state(cache_index),
+            ExplosionBlockCacheLookup::Miss(_) => {
+                let Some(state) = reader.block_state(pos) else {
+                    return false;
+                };
+                state
+            }
         };
         if !context.bounds.contains(pos) {
             break;
         }
 
-        let resistance = if cache_hit && cache_policy.resistance {
-            cached.resistance
-        } else {
-            let fluid = state.get_fluid_state();
-            calculator.explosion_resistance(reader, pos, state, fluid)
+        let resistance = match lookup {
+            ExplosionBlockCacheLookup::Hit(cache_index) if cache_policy.resistance => {
+                cache.resistance(cache_index)
+            }
+            _ => {
+                let fluid = state.get_fluid_state();
+                calculator.explosion_resistance(reader, pos, state, fluid)
+            }
         };
-        if !cache_hit {
-            cache.entries[cache_index] = ExplosionBlockCacheEntry {
-                tag,
+        let cache_index = match lookup {
+            ExplosionBlockCacheLookup::Hit(cache_index) => cache_index,
+            ExplosionBlockCacheLookup::Miss(miss) => cache.insert(
+                miss,
                 state,
-                resistance: if cache_policy.resistance {
+                if cache_policy.resistance {
                     resistance
                 } else {
                     None
                 },
-                occupied: true,
-                affected: false,
-            };
-        }
+            ),
+        };
         previous_cell = Some((pos, cache_index));
 
         if let Some(resistance) = resistance {
@@ -739,7 +1032,7 @@ fn visit_immutable_ray_positions_cached<R: ExplosionBlockReader>(
         }
 
         if remaining_power > 0.0 {
-            let already_affected = cache.entries[cache_index].affected;
+            let already_affected = cache.affected(cache_index);
             let should_explode = if cache_policy.always_allows_block_explosion {
                 !already_affected
             } else {
@@ -747,7 +1040,7 @@ fn visit_immutable_ray_positions_cached<R: ExplosionBlockReader>(
             };
             if should_explode && !already_affected {
                 affected.insert(pos);
-                cache.entries[cache_index].affected = true;
+                cache.mark_affected(cache_index);
             }
         }
 
@@ -755,6 +1048,31 @@ fn visit_immutable_ray_positions_cached<R: ExplosionBlockReader>(
         remaining_power -= RAY_POWER_DECAY;
     }
     true
+}
+
+#[inline]
+fn ray_block_pos<const USE_BOUNDED_FLOOR: bool>(position: DVec3) -> BlockPos {
+    if USE_BOUNDED_FLOOR {
+        BlockPos::new(
+            bounded_floor_to_i32(position.x),
+            bounded_floor_to_i32(position.y),
+            bounded_floor_to_i32(position.z),
+        )
+    } else {
+        BlockPos::from(position)
+    }
+}
+
+/// Floors a finite in-range coordinate without Rust's saturating float-to-int conversion.
+///
+/// Adding `1.5 * 2^52` maps every integral binary64 value in the i32 range exactly into the
+/// mantissa; its low 32 bits are the integer's two's-complement representation.
+#[inline]
+fn bounded_floor_to_i32(value: f64) -> i32 {
+    debug_assert!(
+        value.is_finite() && value >= f64::from(i32::MIN) && value < f64::from(i32::MAX) + 1.0
+    );
+    ((value.floor() + F64_INTEGER_MANTISSA_BIAS).to_bits() as u32) as i32
 }
 
 #[inline]
@@ -1068,6 +1386,80 @@ impl EntityExplosionExposure {
         )
     }
 
+    fn axis_sample_block_bounds(
+        axis_min: f64,
+        axis_max: f64,
+        step: f64,
+        offset: f64,
+        center: f64,
+    ) -> Option<(i32, i32)> {
+        let can_sample_axis = axis_min.is_finite()
+            && axis_max.is_finite()
+            && axis_max >= axis_min
+            && step.is_finite()
+            && step > 0.0
+            && offset.is_finite()
+            && center.is_finite();
+        if !can_sample_axis {
+            return None;
+        }
+
+        let axis_length = axis_max - axis_min;
+        let mut min_block = i32::MAX;
+        let mut max_block = i32::MIN;
+        let mut fraction = 0.0;
+        for _ in 0..MAX_EXPOSURE_CERTIFICATE_AXIS_WORK {
+            if fraction > 1.0 {
+                return Some((min_block, max_block));
+            }
+            let sample = axis_min + axis_length * fraction + offset;
+            let (sample_min, sample_max) = collision_path_axis_block_bounds(
+                sample,
+                center,
+                MAX_EXPOSURE_CERTIFICATE_AXIS_WORK,
+            )?;
+            min_block = min_block.min(sample_min);
+            max_block = max_block.max(sample_max);
+            fraction += step;
+            if !fraction.is_finite() {
+                return None;
+            }
+        }
+        None
+    }
+
+    /// Builds a Cartesian envelope containing every block visited by all exposure rays.
+    ///
+    /// Each axis uses Vanilla's repeated-addition sample sequence and exact scalar DDA recurrence.
+    /// This is linear in the three axis sample counts instead of their Cartesian product.
+    fn stable_air_certificate_bounds(self, center: DVec3) -> Option<BlockRegionBounds> {
+        let (min_x, max_x) = Self::axis_sample_block_bounds(
+            self.bounding_box.min_x(),
+            self.bounding_box.max_x(),
+            self.x_step,
+            self.x_offset,
+            center.x,
+        )?;
+        let (min_y, max_y) = Self::axis_sample_block_bounds(
+            self.bounding_box.min_y(),
+            self.bounding_box.max_y(),
+            self.y_step,
+            0.0,
+            center.y,
+        )?;
+        let (min_z, max_z) = Self::axis_sample_block_bounds(
+            self.bounding_box.min_z(),
+            self.bounding_box.max_z(),
+            self.z_step,
+            self.z_offset,
+            center.z,
+        )?;
+        Some(BlockRegionBounds::from_corners(
+            BlockPos::new(min_x, min_y, min_z),
+            BlockPos::new(max_x, max_y, max_z),
+        ))
+    }
+
     fn for_each_sample(self, mut visit: impl FnMut(DVec3)) -> usize {
         let mut sample_count = 0;
         // Repeated addition and inclusive bounds intentionally mirror Vanilla's floating-point
@@ -1142,6 +1534,11 @@ impl EntityExplosionExposure {
     ) -> f32 {
         if self.has_negative_step() {
             return 0.0;
+        }
+        if let Some(bounds) = self.stable_air_certificate_bounds(center)
+            && raycast.stable_air_box_is_clear(bounds)
+        {
+            return 1.0;
         }
         raycast.set_collision_context(self.collision_context);
         self.calculate_with_visibility(|from| raycast.is_path_clear(from, center))

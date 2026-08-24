@@ -271,6 +271,8 @@ pub(crate) struct ExplosionExposureRaycastStats {
     pub(crate) collision_lookups: usize,
     pub(crate) clear_grid_hits: usize,
     pub(crate) clear_grid_resolutions: usize,
+    pub(crate) stable_air_queries: usize,
+    pub(crate) stable_air_hits: usize,
 }
 
 impl<'world> ExplosionExposureRaycast<'world> {
@@ -293,6 +295,8 @@ impl<'world> ExplosionExposureRaycast<'world> {
                 collision_lookups: 0,
                 clear_grid_hits: 0,
                 clear_grid_resolutions: 0,
+                stable_air_queries: 0,
+                stable_air_hits: 0,
             },
         }
     }
@@ -319,6 +323,29 @@ impl<'world> ExplosionExposureRaycast<'world> {
     /// Selects the entity collision context used by subsequent exposure rays.
     pub(crate) const fn set_collision_context(&mut self, collision_context: BlockCollisionContext) {
         self.collision_context = collision_context;
+    }
+
+    /// Proves that an inclusive block box contains only immutable Vanilla air.
+    pub(crate) fn stable_air_box_is_clear(&mut self, bounds: BlockRegionBounds) -> bool {
+        #[cfg(test)]
+        {
+            self.stats.stable_air_queries += 1;
+        }
+        #[expect(
+            clippy::redundant_closure_for_method_calls,
+            reason = "the method item cannot satisfy the region callback's higher-ranked lifetime"
+        )]
+        let Some(clear) = self
+            .world
+            .try_with_block_region(bounds, |region| region.contains_only_stable_air())
+        else {
+            return false;
+        };
+        #[cfg(test)]
+        if clear {
+            self.stats.stable_air_hits += 1;
+        }
+        clear
     }
 
     /// Keeps cached shapes only across Steel-owned Vanilla collision behavior calls.
@@ -482,8 +509,8 @@ fn is_collision_path_clear(
         return true;
     }
 
-    let to = end_pos.lerp(start_pos, VANILLA_RAY_ENDPOINT_ADJUSTMENT);
-    let from = start_pos.lerp(end_pos, VANILLA_RAY_ENDPOINT_ADJUSTMENT);
+    let to = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, end_pos, start_pos);
+    let from = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, start_pos, end_pos);
     let mut block = BlockPos::from(from);
     if blocks_ray(block) {
         return false;
@@ -552,6 +579,65 @@ fn is_collision_path_clear(
     true
 }
 
+/// Returns the inclusive block-coordinate envelope visited by one axis of Vanilla's block DDA.
+///
+/// Axis crossing counts are independent of inter-axis tie order: the traversal cannot finish
+/// until every finite `next` value is greater than one. Replaying the scalar recurrence also
+/// retains the rare terminal step caused by floating-point rounding at `next == 1`.
+pub(crate) fn collision_path_axis_block_bounds(
+    start: f64,
+    end: f64,
+    max_steps: usize,
+) -> Option<(i32, i32)> {
+    if !start.is_finite() || !end.is_finite() {
+        return None;
+    }
+
+    let to = vanilla_lerp(VANILLA_RAY_ENDPOINT_ADJUSTMENT, end, start);
+    let from = vanilla_lerp(VANILLA_RAY_ENDPOINT_ADJUSTMENT, start, end);
+    let can_initialize_block_traversal = to.is_finite()
+        && from.is_finite()
+        && from >= f64::from(i32::MIN)
+        && from < f64::from(i32::MAX) + 1.0;
+    if !can_initialize_block_traversal {
+        return None;
+    }
+
+    let mut block = from.floor() as i32;
+    let mut min = block;
+    let mut max = block;
+    let difference = to - from;
+    let step = minecraft_sign(difference);
+    let delta = if step == 0 {
+        f64::MAX
+    } else {
+        f64::from(step) / difference
+    };
+    let from_fraction = from - from.floor();
+    let mut next = delta
+        * if step > 0 {
+            1.0 - from_fraction
+        } else {
+            from_fraction
+        };
+    if !delta.is_finite() || !next.is_finite() {
+        return None;
+    }
+
+    let mut steps = 0;
+    while next <= 1.0 {
+        if steps == max_steps {
+            return None;
+        }
+        block = block.checked_add(step)?;
+        min = min.min(block);
+        max = max.max(block);
+        next += delta;
+        steps += 1;
+    }
+    Some((min, max))
+}
+
 #[inline]
 const fn minecraft_sign(number: f64) -> i32 {
     if number == 0.0 {
@@ -561,6 +647,22 @@ const fn minecraft_sign(number: f64) -> i32 {
     } else {
         -1
     }
+}
+
+#[inline]
+fn vanilla_lerp(alpha: f64, start: f64, end: f64) -> f64 {
+    start + alpha * (end - start)
+}
+
+#[inline]
+fn vanilla_lerp_vec3(alpha: f64, start: DVec3, end: DVec3) -> DVec3 {
+    // `glam::DVec3::lerp` uses `start * (1 - alpha) + end * alpha`. Vanilla's
+    // `Mth.lerp` uses this operation order, which can round to a different block boundary.
+    DVec3::new(
+        vanilla_lerp(alpha, start.x, end.x),
+        vanilla_lerp(alpha, start.y, end.y),
+        vanilla_lerp(alpha, start.z, end.z),
+    )
 }
 
 impl ClipHitResult {
@@ -627,8 +729,8 @@ impl World {
             return Self::clip_miss(start_pos, end_pos);
         }
 
-        let to = end_pos.lerp(start_pos, VANILLA_RAY_ENDPOINT_ADJUSTMENT);
-        let from = start_pos.lerp(end_pos, VANILLA_RAY_ENDPOINT_ADJUSTMENT);
+        let to = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, end_pos, start_pos);
+        let from = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, start_pos, end_pos);
 
         let mut block = BlockPos::new(
             from.x.floor() as i32,
@@ -643,7 +745,11 @@ impl World {
 
         let difference = to - from;
 
-        let step = difference.signum().as_ivec3();
+        let step = glam::IVec3::new(
+            minecraft_sign(difference.x),
+            minecraft_sign(difference.y),
+            minecraft_sign(difference.z),
+        );
 
         let delta = DVec3::new(
             if step.x == 0 {
@@ -1177,6 +1283,27 @@ impl World {
         }
     }
 
+    fn raytrace_block_hit<F>(
+        &self,
+        block: BlockPos,
+        start_pos: DVec3,
+        end_pos: DVec3,
+        block_direction: Option<Direction>,
+        hit_check: &F,
+    ) -> Option<(BlockPos, Option<Direction>)>
+    where
+        F: Fn(BlockPos, &Self) -> RaytraceAction,
+    {
+        match hit_check(block, self) {
+            RaytraceAction::ImmediateHit => Some((block, block_direction)),
+            RaytraceAction::CheckShape => {
+                let (hit, face) = self.ray_outline_check(block, start_pos, end_pos);
+                hit.then_some((block, face))
+            }
+            RaytraceAction::Pass => None,
+        }
+    }
+
     /// Performs a raytrace in the world.
     ///
     /// Adapted from Pumpkin project.
@@ -1193,8 +1320,8 @@ impl World {
             return (None, None);
         }
 
-        let to = end_pos.lerp(start_pos, VANILLA_RAY_ENDPOINT_ADJUSTMENT);
-        let from = start_pos.lerp(end_pos, VANILLA_RAY_ENDPOINT_ADJUSTMENT);
+        let to = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, end_pos, start_pos);
+        let from = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, start_pos, end_pos);
 
         let mut block = BlockPos::new(
             from.x.floor() as i32,
@@ -1202,20 +1329,19 @@ impl World {
             from.z.floor() as i32,
         );
 
-        match hit_check(block, self) {
-            RaytraceAction::ImmediateHit => return (Some(block), None),
-            RaytraceAction::CheckShape => {
-                let (hit, face) = self.ray_outline_check(block, start_pos, end_pos);
-                if hit {
-                    return (Some(block), face);
-                }
-            }
-            RaytraceAction::Pass => {}
+        if let Some((hit, direction)) =
+            self.raytrace_block_hit(block, start_pos, end_pos, None, &hit_check)
+        {
+            return (Some(hit), direction);
         }
 
         let difference = to - from;
 
-        let step = difference.signum().as_ivec3();
+        let step = glam::IVec3::new(
+            minecraft_sign(difference.x),
+            minecraft_sign(difference.y),
+            minecraft_sign(difference.z),
+        );
 
         let delta = DVec3::new(
             if step.x == 0 {
@@ -1257,10 +1383,7 @@ impl World {
         );
 
         while next.x <= 1.0 || next.y <= 1.0 || next.z <= 1.0 {
-            // Vanilla parity: traverseBlocks tie-breaking — Z wins on any tie.
-            // X wins only when strictly less than both Y and Z.
-            // Y wins only when strictly less than both X and Z.
-            // Everything else (including all ties) goes to Z.
+            // Vanilla's nested comparisons make Y win only the X = Y < Z tie.
             let block_direction = if next.x < next.y && next.x < next.z {
                 block.0.x += step.x;
                 next.x += delta.x;
@@ -1269,7 +1392,7 @@ impl World {
                 } else {
                     Direction::East
                 }
-            } else if next.y < next.x && next.y < next.z {
+            } else if next.y < next.z {
                 block.0.y += step.y;
                 next.y += delta.y;
                 if step.y > 0 {
@@ -1287,17 +1410,14 @@ impl World {
                 }
             };
 
-            match hit_check(block, self) {
-                RaytraceAction::ImmediateHit => {
-                    return (Some(block), Some(block_direction));
-                }
-                RaytraceAction::CheckShape => {
-                    let (hit, face) = self.ray_outline_check(block, start_pos, end_pos);
-                    if hit {
-                        return (Some(block), face);
-                    }
-                }
-                RaytraceAction::Pass => {}
+            if let Some((hit, direction)) = self.raytrace_block_hit(
+                block,
+                start_pos,
+                end_pos,
+                Some(block_direction),
+                &hit_check,
+            ) {
+                return (Some(hit), direction);
             }
         }
 
@@ -1570,12 +1690,116 @@ mod voxel_shape_clip_tests {
 
 #[cfg(test)]
 mod explosion_exposure_cache_tests {
+    use std::cell::RefCell;
+
     use super::*;
     use crate::test_support::fresh_test_world;
     use steel_registry::{
         blocks::{Block, behavior::BlockConfig},
         vanilla_blocks,
     };
+
+    const TEST_DDA_MAX_STEPS: usize = 64;
+
+    #[test]
+    fn scalar_axis_envelope_matches_full_vanilla_dda_visits() {
+        for (start, end) in [
+            (DVec3::splat(0.5), DVec3::new(5.5, 2.5, -3.5)),
+            (DVec3::new(1.0, 2.0, 3.0), DVec3::new(0.0, 2.0, 3.0)),
+            (DVec3::splat(-0.5), DVec3::new(-4.5, -4.5, -1.5)),
+            (DVec3::splat(0.5), DVec3::splat(4.5)),
+        ] {
+            let mut visits = Vec::new();
+            assert!(is_collision_path_clear(start, end, |pos| {
+                visits.push(pos);
+                false
+            }));
+            for axis in 0..3 {
+                let (expected_min, expected_max) = visits
+                    .iter()
+                    .map(|pos| pos.0[axis])
+                    .fold((i32::MAX, i32::MIN), |(min, max), value| {
+                        (min.min(value), max.max(value))
+                    });
+                assert_eq!(
+                    collision_path_axis_block_bounds(start[axis], end[axis], TEST_DDA_MAX_STEPS),
+                    Some((expected_min, expected_max)),
+                    "axis={axis}, start={start:?}, end={end:?}, visits={visits:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn scalar_axis_envelope_rejects_non_finite_reciprocal() {
+        assert_eq!(
+            collision_path_axis_block_bounds(0.0, -f64::from_bits(1), TEST_DDA_MAX_STEPS),
+            None
+        );
+    }
+
+    #[test]
+    fn raytrace_matches_vanilla_axis_tie_breaking() {
+        let world = fresh_test_world("raytrace_axis_tie_breaking");
+        let start = DVec3::splat(0.5);
+
+        for (end, expected_pos, expected_direction) in [
+            (
+                DVec3::new(1.5, 1.5, 0.75),
+                BlockPos::new(0, 1, 0),
+                Direction::Down,
+            ),
+            (
+                DVec3::new(1.5, 0.75, 1.5),
+                BlockPos::new(0, 0, 1),
+                Direction::North,
+            ),
+            (
+                DVec3::new(0.75, 1.5, 1.5),
+                BlockPos::new(0, 0, 1),
+                Direction::North,
+            ),
+            (DVec3::splat(1.5), BlockPos::new(0, 0, 1), Direction::North),
+        ] {
+            let (hit, direction) = world.raytrace(start, end, |pos, _| {
+                if pos == BlockPos::ZERO {
+                    RaytraceAction::Pass
+                } else {
+                    RaytraceAction::ImmediateHit
+                }
+            });
+
+            assert_eq!(hit, Some(expected_pos), "end={end:?}");
+            assert_eq!(direction, Some(expected_direction), "end={end:?}");
+        }
+    }
+
+    #[test]
+    fn block_dda_preserves_vanilla_lerp_rounding_at_integer_boundaries() {
+        let start = DVec3::new(1.0, 0.5, 0.5);
+        let end = DVec3::new(1.000_000_001, 0.5, 0.5);
+        let adjusted_start = vanilla_lerp_vec3(VANILLA_RAY_ENDPOINT_ADJUSTMENT, start, end);
+        assert!(adjusted_start.x < 1.0);
+
+        let expected = [BlockPos::new(0, 0, 0), BlockPos::new(1, 0, 0)];
+        let mut collision_visits = Vec::new();
+        assert!(is_collision_path_clear(start, end, |pos| {
+            collision_visits.push(pos);
+            false
+        }));
+        assert_eq!(collision_visits, expected);
+
+        let world = fresh_test_world("raytrace_vanilla_lerp_rounding");
+        let raytrace_visits = RefCell::new(Vec::new());
+        assert_eq!(
+            world.raytrace(start, end, |pos, _| {
+                raytrace_visits.borrow_mut().push(pos);
+                RaytraceAction::Pass
+            }),
+            (None, None)
+        );
+        assert_eq!(*raytrace_visits.borrow(), expected);
+    }
 
     #[test]
     fn collision_path_clear_preserves_zero_axis_callback_order() {
