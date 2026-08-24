@@ -224,7 +224,6 @@ mod tests {
     use steel_protocol::packets::game::SUseItem;
     use steel_registry::{item_stack::ItemStack, vanilla_items};
     use steel_utils::types::InteractionHand;
-    use uuid::Uuid;
 
     use super::use_item;
     use crate::behavior::{InteractionResult, init_behaviors};
@@ -236,7 +235,7 @@ mod tests {
     fn use_item_discards_non_finite_rotation_components() {
         let world = fresh_test_world("use_item_non_finite_rotation");
         init_behaviors();
-        let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(world, "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
@@ -268,7 +267,7 @@ mod tests {
         let world = fresh_test_world("use_item_full_hunger_normal_food");
         init_behaviors();
         let player =
-            TestPlayerBuilder::new(world.clone(), Uuid::from_u128(1), "TestPlayer", 1).build();
+            TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
@@ -288,7 +287,7 @@ mod tests {
         let world = fresh_test_world("use_item_full_hunger_always_edible_food");
         init_behaviors();
         let player =
-            TestPlayerBuilder::new(world.clone(), Uuid::from_u128(1), "TestPlayer", 1).build();
+            TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory

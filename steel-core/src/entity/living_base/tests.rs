@@ -293,7 +293,7 @@ fn equipment_is_living_entity_state() {
     init_vanilla_registry();
     let base = LivingEntityBase::new(&vanilla_entities::PLAYER);
 
-    assert!(base.equipment().lock().non_empty_items().is_empty());
+    assert_eq!(base.equipment().lock().non_empty_items().len(), 0);
 
     base.equipment()
         .lock()

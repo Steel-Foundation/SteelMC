@@ -127,7 +127,6 @@ mod tests {
         MobEffectInstance as RegistryMobEffectInstance, init_vanilla_registry, vanilla_mob_effects,
     };
     use steel_utils::ChunkPos;
-    use uuid::Uuid;
 
     use super::apply_potion_contents;
     use crate::entity::LivingEntity;
@@ -142,7 +141,7 @@ mod tests {
         init_vanilla_registry();
         let world = fresh_test_world("instant_health_high_amplifier");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(world.clone(), Uuid::from_u128(1), "Test", 1).build();
+        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
         player.set_health(1.0);
 
         let contents = PotionContents::new(

@@ -206,7 +206,7 @@ impl Player {
                 // Same world — re-enter chunk tracking
                 world.chunk_map.remove_player(self);
                 world.player_area_map.remove_by_entity_id(self.id());
-                world.entity_tracker().on_player_leave(self.id());
+                world.entity_tracker().on_player_leave(self);
 
                 self.send_packet(CGameEvent {
                     event: GameEventType::LevelChunksLoadStart,

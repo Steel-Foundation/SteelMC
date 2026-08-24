@@ -345,7 +345,6 @@ impl Default for ItemBehaviorRegistry {
 mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_items};
     use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
-    use uuid::Uuid;
 
     use super::finish_consuming_stack;
     use crate::entity::entities::ItemEntity;
@@ -361,7 +360,7 @@ mod tests {
         init_vanilla_registry();
         let world = fresh_test_world("finish_consuming_honey_bottle_stack");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(world.clone(), Uuid::from_u128(1), "Test", 1).build();
+        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
         player.set_client_loaded(true);
 
         // Fill the inventory so the glass bottle remainder cannot be stored
@@ -403,7 +402,7 @@ mod tests {
         init_vanilla_registry();
         let world = fresh_test_world("finish_consuming_food_applies_nutrition");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(world.clone(), Uuid::from_u128(1), "Test", 1).build();
+        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
         player.set_client_loaded(true);
         {
             let mut food = player.food_data.lock();
