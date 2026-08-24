@@ -5,6 +5,7 @@ on:
     types: [submitted, dismissed, edited]
 
 permissions:
+  issues: write
   pull-requests: write
 
 jobs:
