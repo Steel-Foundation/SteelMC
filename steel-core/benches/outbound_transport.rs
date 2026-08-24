@@ -23,7 +23,7 @@ use steel_protocol::{
             ChunkPacketData, Heightmaps, LightUpdatePacketData, PackedEntityDelta,
         },
     },
-    utils::{Aes128Cfb8Enc, ConnectionProtocol},
+    utils::ConnectionProtocol,
 };
 use steel_utils::{codec::BitSet, locks::AsyncMutex};
 use tokio::{
@@ -37,6 +37,7 @@ use tokio_util::sync::CancellationToken;
 
 const BENCHMARK_ENCRYPTION_KEY: [u8; 16] = *b"SteelMC-test-key";
 const LOOPBACK_READ_BUFFER_SIZE: usize = 16 * 1_024;
+type ReferenceCfb8Encryptor = cfb8::Encryptor<aes::Aes128>;
 
 struct TransportWorkload {
     packets: Vec<EncodedPacket>,
@@ -352,7 +353,7 @@ async fn verify_transport_ciphertext(workload: &TransportWorkload, sender_path: 
     for packet in &workload.packets {
         expected.extend_from_slice(&packet.encoded_data);
     }
-    Aes128Cfb8Enc::new(
+    ReferenceCfb8Encryptor::new(
         &BENCHMARK_ENCRYPTION_KEY.into(),
         &BENCHMARK_ENCRYPTION_KEY.into(),
     )

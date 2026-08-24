@@ -2702,6 +2702,7 @@ dependencies = [
  "arc-swap",
  "base64 0.23.0",
  "bitflags",
+ "cfb8",
  "chrono",
  "criterion",
  "crossbeam",

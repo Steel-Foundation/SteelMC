@@ -16,39 +16,16 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use crate::{
     packet_traits::EncodedPacket,
-    utils::{Aes128Cfb8Enc, PacketError, StreamEncryptor},
+    utils::{PacketError, StreamEncryptor},
 };
 
 // raw -> compress -> encrypt
 /// A writer that can encrypt data.
-pub enum EncryptionWriter<W: AsyncWrite + Unpin> {
+enum EncryptionWriter<W: AsyncWrite + Unpin> {
     /// A writer that encrypts data.
     Encrypt(Box<StreamEncryptor<W>>),
     /// A writer that does not encrypt data.
     None(W),
-}
-
-impl<W: AsyncWrite + Unpin> EncryptionWriter<W> {
-    /// Upgrades the writer to encrypt data.
-    ///
-    /// # Panics
-    /// - If the writer is already encrypting data.
-    #[must_use]
-    pub fn upgrade(self, cipher: Aes128Cfb8Enc) -> Self {
-        match self {
-            Self::None(stream) => Self::Encrypt(Box::new(StreamEncryptor::new(cipher, stream))),
-            Self::Encrypt(_) => panic!("Cannot upgrade a stream that already has a cipher!"),
-        }
-    }
-
-    fn upgrade_from_key(self, key: &[u8; 16]) -> Self {
-        match self {
-            Self::None(stream) => {
-                Self::Encrypt(Box::new(StreamEncryptor::from_key(key, key, stream)))
-            }
-            Self::Encrypt(_) => panic!("Cannot upgrade a stream that already has a cipher!"),
-        }
-    }
 }
 
 impl<W: AsyncWrite + Unpin> AsyncWrite for EncryptionWriter<W> {
@@ -119,8 +96,13 @@ impl<W: AsyncWrite + Unpin> TCPNetworkEncoder<W> {
         if matches!(self.writer, EncryptionWriter::Encrypt(_)) {
             panic!("Cannot upgrade a stream that already has a cipher!");
         }
-        replace_with::replace_with_or_abort(&mut self.writer, |encoder| {
-            encoder.upgrade_from_key(key)
+        replace_with::replace_with_or_abort(&mut self.writer, |writer| match writer {
+            EncryptionWriter::None(stream) => {
+                EncryptionWriter::Encrypt(Box::new(StreamEncryptor::new(key, stream)))
+            }
+            EncryptionWriter::Encrypt(_) => {
+                unreachable!("set_encryption rejects an already encrypted writer")
+            }
         });
     }
 

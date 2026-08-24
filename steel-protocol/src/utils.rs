@@ -14,8 +14,6 @@ use aes::cipher::{
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-/// An AES-128 CFB-8 encryptor.
-pub type Aes128Cfb8Enc = cfb8::Encryptor<aes::Aes128>;
 /// An AES-128 CFB-8 decryptor.
 pub type Aes128Cfb8Dec = cfb8::Decryptor<aes::Aes128>;
 
@@ -192,23 +190,9 @@ impl Cfb8Encryptor {
     }
 }
 
-enum StreamCipher {
-    Optimized(Cfb8Encryptor),
-    RustCrypto(Aes128Cfb8Enc),
-}
-
-impl StreamCipher {
-    fn encrypt(&mut self, bytes: &mut [u8]) {
-        match self {
-            Self::Optimized(cipher) => cipher.encrypt(bytes),
-            Self::RustCrypto(cipher) => cipher.encrypt(bytes),
-        }
-    }
-}
-
 /// An encrypted writer with a bounded, reusable ciphertext buffer.
-pub struct StreamEncryptor<W: AsyncWrite + Unpin> {
-    cipher: StreamCipher,
+pub(crate) struct StreamEncryptor<W: AsyncWrite + Unpin> {
+    cipher: Cfb8Encryptor,
     write: W,
     pending: [u8; ENCRYPTION_BUFFER_SIZE],
     pending_start: usize,
@@ -216,18 +200,9 @@ pub struct StreamEncryptor<W: AsyncWrite + Unpin> {
 }
 
 impl<W: AsyncWrite + Unpin> StreamEncryptor<W> {
-    /// Creates a new `StreamEncryptor`.
-    pub const fn new(cipher: Aes128Cfb8Enc, stream: W) -> Self {
-        Self::with_cipher(StreamCipher::RustCrypto(cipher), stream)
-    }
-
-    pub(crate) fn from_key(key: &[u8; 16], iv: &[u8; 16], stream: W) -> Self {
-        Self::with_cipher(StreamCipher::Optimized(Cfb8Encryptor::new(key, iv)), stream)
-    }
-
-    const fn with_cipher(cipher: StreamCipher, stream: W) -> Self {
+    pub(crate) fn new(shared_secret: &[u8; 16], stream: W) -> Self {
         Self {
-            cipher,
+            cipher: Cfb8Encryptor::new(shared_secret, shared_secret),
             write: stream,
             pending: [0; ENCRYPTION_BUFFER_SIZE],
             pending_start: 0,
@@ -426,9 +401,9 @@ mod stream_encryptor_tests {
             .collect()
     }
 
-    fn reference_ciphertext(plaintext: &[u8]) -> Vec<u8> {
+    fn reference_ciphertext(plaintext: &[u8], iv: &[u8; 16]) -> Vec<u8> {
         let mut ciphertext = plaintext.to_vec();
-        let mut cipher = cfb8::Encryptor::<aes::Aes128>::new(&KEY.into(), &IV.into());
+        let mut cipher = cfb8::Encryptor::<aes::Aes128>::new(&KEY.into(), iv.into());
         cipher.encrypt(&mut ciphertext);
         ciphertext
     }
@@ -462,7 +437,7 @@ mod stream_encryptor_tests {
 
         for len in LENGTHS {
             let plaintext = deterministic_bytes(len, len as u32 + 1);
-            let expected = reference_ciphertext(&plaintext);
+            let expected = reference_ciphertext(&plaintext, &IV);
 
             for pattern in SEGMENT_PATTERNS {
                 let mut actual = plaintext.clone();
@@ -491,7 +466,7 @@ mod stream_encryptor_tests {
             WriteStep::Limit(17),
             WriteStep::Limit(1_023),
         ]);
-        let mut encryptor = StreamEncryptor::from_key(&KEY, &IV, writer);
+        let mut encryptor = StreamEncryptor::new(&KEY, writer);
         let packets = [
             deterministic_bytes(31, 1),
             deterministic_bytes(ENCRYPTION_BUFFER_SIZE + 37, 2),
@@ -507,14 +482,17 @@ mod stream_encryptor_tests {
             encryptor.flush().await.expect("packet should flush");
         }
 
-        assert_eq!(encryptor.write.bytes, reference_ciphertext(&plaintext));
+        assert_eq!(
+            encryptor.write.bytes,
+            reference_ciphertext(&plaintext, &KEY)
+        );
         assert_eq!(encryptor.write.flushes, packets.len());
     }
 
     #[tokio::test]
     async fn canceled_write_keeps_only_the_accepted_prefix() {
         let writer = ScriptedWriter::with_steps([WriteStep::Pending]);
-        let mut encryptor = StreamEncryptor::from_key(&KEY, &IV, writer);
+        let mut encryptor = StreamEncryptor::new(&KEY, writer);
         let interrupted = deterministic_bytes(ENCRYPTION_BUFFER_SIZE + 37, 4);
         let following = deterministic_bytes(113, 5);
 
@@ -536,7 +514,7 @@ mod stream_encryptor_tests {
             .collect();
         assert_eq!(
             encryptor.write.bytes,
-            reference_ciphertext(&accepted_plaintext)
+            reference_ciphertext(&accepted_plaintext, &KEY)
         );
     }
 
@@ -544,7 +522,7 @@ mod stream_encryptor_tests {
     async fn write_zero_and_error_leave_ciphertext_pending_for_retry() {
         for failure in [WriteStep::Zero, WriteStep::Error] {
             let writer = ScriptedWriter::with_steps([failure]);
-            let mut encryptor = StreamEncryptor::from_key(&KEY, &IV, writer);
+            let mut encryptor = StreamEncryptor::new(&KEY, writer);
             let plaintext = deterministic_bytes(ENCRYPTION_BUFFER_SIZE, 6);
             encryptor
                 .write_all(&plaintext)
@@ -557,14 +535,17 @@ mod stream_encryptor_tests {
                 .await
                 .expect("retry should drain ciphertext");
 
-            assert_eq!(encryptor.write.bytes, reference_ciphertext(&plaintext));
+            assert_eq!(
+                encryptor.write.bytes,
+                reference_ciphertext(&plaintext, &KEY)
+            );
             assert_eq!(encryptor.write.flushes, 1);
         }
     }
 
     #[tokio::test]
     async fn shutdown_drains_pending_ciphertext_first() {
-        let mut encryptor = StreamEncryptor::from_key(&KEY, &IV, ScriptedWriter::default());
+        let mut encryptor = StreamEncryptor::new(&KEY, ScriptedWriter::default());
         let plaintext = deterministic_bytes(1_025, 7);
         encryptor
             .write_all(&plaintext)
@@ -573,7 +554,10 @@ mod stream_encryptor_tests {
 
         encryptor.shutdown().await.expect("shutdown should succeed");
 
-        assert_eq!(encryptor.write.bytes, reference_ciphertext(&plaintext));
+        assert_eq!(
+            encryptor.write.bytes,
+            reference_ciphertext(&plaintext, &KEY)
+        );
         assert_eq!(encryptor.write.shutdowns, 1);
     }
 }

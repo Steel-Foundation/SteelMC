@@ -13,9 +13,7 @@ use aes::cipher::KeyIvInit;
 use criterion::{
     BenchmarkId, Criterion, Throughput, criterion_group, criterion_main, measurement::WallTime,
 };
-use steel_protocol::{
-    packet_traits::EncodedPacket, packet_writer::TCPNetworkEncoder, utils::Aes128Cfb8Enc,
-};
+use steel_protocol::{packet_traits::EncodedPacket, packet_writer::TCPNetworkEncoder};
 use steel_utils::FrontVec;
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt, BufWriter},
@@ -23,6 +21,7 @@ use tokio::{
 };
 
 const BENCHMARK_ENCRYPTION_KEY: [u8; 16] = *b"SteelMC-test-key";
+type RustCryptoCfb8Encryptor = cfb8::Encryptor<aes::Aes128>;
 
 struct TransportWorkload {
     name: &'static str,
@@ -31,7 +30,7 @@ struct TransportWorkload {
 }
 
 struct LegacyBytewiseEncryptor<W> {
-    cipher: Aes128Cfb8Enc,
+    cipher: RustCryptoCfb8Encryptor,
     writer: W,
     pending_byte: Option<u8>,
 }
@@ -39,7 +38,7 @@ struct LegacyBytewiseEncryptor<W> {
 impl<W> LegacyBytewiseEncryptor<W> {
     fn new(writer: W) -> Self {
         Self {
-            cipher: Aes128Cfb8Enc::new_from_slices(
+            cipher: RustCryptoCfb8Encryptor::new_from_slices(
                 &BENCHMARK_ENCRYPTION_KEY,
                 &BENCHMARK_ENCRYPTION_KEY,
             )
