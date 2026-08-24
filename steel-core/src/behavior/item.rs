@@ -10,6 +10,7 @@ use steel_registry::data_components::vanilla_components::{
 use steel_registry::data_components::vanilla_components::ITEM_NAME;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, vanilla_game_events};
 use steel_utils::types::InteractionHand;
 use text_components::TextComponent;
@@ -244,9 +245,12 @@ pub(crate) fn finish_consuming_stack(
         &vanilla_game_events::EAT
     };
     user.game_event(event);
+    if let Some(player) = user.as_player() {
+        player.award_stat(&vanilla_stat_types::ITEM_USED, stack.item());
+    }
     // TODO: Spawn item-crumb particles when `has_consume_particles()` is set.
-    // TODO: Award Stats.ITEM_USED and trigger CriteriaTriggers.CONSUME_ITEM
-    // once the stat and advancement-criteria foundations exist.
+    // TODO: Trigger CriteriaTriggers.CONSUME_ITEM once the advancement-criteria
+    // foundation exists.
 
     let mut used_stack = stack.copy_with_count(stack.count());
     if !user.has_infinite_materials() {
@@ -417,5 +421,30 @@ mod tests {
         // Vanilla apple: nutrition 4, saturation 2.4.
         assert_eq!(food.food_level, 14);
         assert!((food.saturation_level - 2.4).abs() < f32::EPSILON);
+    }
+
+    /// Consuming an item must award one count of `Stats.ITEM_USED` for that
+    /// item, matching vanilla `Consumable.onConsume`.
+    #[test]
+    fn consuming_an_item_awards_the_item_used_stat() {
+        init_vanilla_registry();
+        let world = fresh_test_world("finish_consuming_awards_item_used_stat");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        player.set_client_loaded(true);
+
+        let stack = steel_registry::item_stack::ItemStack::new(&vanilla_items::APPLE);
+        let _ = finish_consuming_stack(&stack, &world, player.as_ref());
+
+        let apple_used =
+            steel_registry::stat::vanilla_stat_types::ITEM_USED.get(&vanilla_items::APPLE);
+        assert_eq!(
+            player
+                .stats()
+                .into_iter()
+                .find(|(stat, _)| *stat == apple_used)
+                .map(|(_, count)| count),
+            Some(1)
+        );
     }
 }

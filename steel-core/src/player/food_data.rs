@@ -21,7 +21,7 @@ pub mod food_constants {
 
     /// Default saturation for a freshly spawned player
     pub const DEFAULT_SATURATION: f32 = 5.0;
-    
+
     /// Saturation floor used by some food items
     pub const SATURATION_FLOOR: f32 = 2.5;
 

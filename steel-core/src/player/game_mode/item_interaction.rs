@@ -266,8 +266,7 @@ mod tests {
     fn use_item_refuses_normal_food_at_full_hunger() {
         let world = fresh_test_world("use_item_full_hunger_normal_food");
         init_behaviors();
-        let player =
-            TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
@@ -286,8 +285,7 @@ mod tests {
     fn use_item_allows_always_edible_food_at_full_hunger() {
         let world = fresh_test_world("use_item_full_hunger_always_edible_food");
         init_behaviors();
-        let player =
-            TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
+        let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
         player.set_client_loaded(true);
         player
             .inventory
