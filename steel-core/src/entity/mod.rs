@@ -751,7 +751,6 @@ mod generated_entities;
 mod inside_block_effects;
 mod item_based_steering;
 mod item_frame;
-mod leash;
 mod living_base;
 mod living_entity;
 mod manager;
