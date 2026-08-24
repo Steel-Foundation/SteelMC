@@ -131,6 +131,11 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         hit_state,
         Some(context.player),
     ) {
+        context.inv.with_item(|item| {
+            context
+                .player
+                .award_stat(&vanilla_stat_types::ITEM_USED, item.item());
+        });
         if let Some(sound) = result.sound {
             // Vanilla `BucketItem.use`: `bucketPickupBlock.getPickupSound()...player.playSound(...)`.
             context.player.play_sound(sound, 1.0, 1.0);
