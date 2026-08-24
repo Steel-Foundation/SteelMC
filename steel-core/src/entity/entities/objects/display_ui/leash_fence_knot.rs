@@ -3,11 +3,13 @@
 use std::sync::{Arc, Weak};
 
 use crate::behavior::InteractionResult;
+use crate::entity::block_attached_entity::{BlockAttachedEntity, BlockAttachedEntityBase};
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    Entity, EntityBase, EntityBaseLoad, EntityBaseState, RemovalReason, SharedEntity,
-    next_entity_id,
+    Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntityMoveError, RemovalReason,
+    SharedEntity, next_entity_id,
 };
+use crate::physics::{MoveResult, MoverType};
 use crate::player::Player;
 use crate::world::World;
 use glam::DVec3;
@@ -74,8 +76,7 @@ impl LeashFenceKnotEntity {
                 world,
             ),
             entity_type,
-            block_pos: SyncMutex::new(block_pos),
-            check_interval: SyncMutex::new(0),
+            block_attached_entity_base: BlockAttachedEntityBase::new(block_pos),
         }
     }
 
@@ -91,27 +92,14 @@ impl LeashFenceKnotEntity {
         Self {
             base: EntityBase::from_load(load, entity_type.dimensions),
             entity_type,
-            block_pos: SyncMutex::new(block_pos),
-            check_interval: SyncMutex::new(0),
+            block_attached_entity_base: BlockAttachedEntityBase::new(block_pos),
         }
     }
 
     /// Returns the fence block this knot is attached to.
     #[must_use]
     pub fn block_pos(&self) -> BlockPos {
-        *self.block_pos.lock()
-    }
-
-    /// Returns true when the backing fence block still supports this knot.
-    #[must_use]
-    pub fn survives(&self) -> bool {
-        let Some(world) = self.level() else {
-            return false;
-        };
-        world
-            .get_block_state(self.block_pos())
-            .get_block()
-            .has_tag(&BlockTag::FENCES)
+        self.block_attached_entity_base.pos()
     }
 
     /// Finds an existing leash knot at `pos`.
@@ -154,29 +142,6 @@ impl LeashFenceKnotEntity {
         }
 
         Some(knot)
-    }
-
-    fn should_check_survival(&self) -> bool {
-        let mut check_interval = self.check_interval.lock();
-        if *check_interval == 100 {
-            *check_interval = 0;
-            true
-        } else {
-            *check_interval += 1;
-            false
-        }
-    }
-
-    fn drop_item(&self) {
-        self.play_sound(&sound_events::ITEM_LEAD_UNTIED, 1.0, 1.0);
-
-        // Vanilla does not drop a lead here. However, due to how Rust handles `Weak`
-        // pointers to leash holders when a holder despawns, in the code where a lead
-        // is supposed in drop in Vanilla, the holder is `None`. So, a lead does not drop
-        // in `leash_tick`. We can replicate this behavior by dropping it for each entity instead.
-        for entity in self.leashables_leashed_to() {
-            entity.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
-        }
     }
 
     fn knot_center(block_pos: BlockPos) -> DVec3 {
@@ -223,17 +188,6 @@ impl Entity for LeashFenceKnotEntity {
     fn notify_leashee_removed(&self, _leashable: &dyn Entity) {
         if self.level().is_some() && self.leashables_leashed_to().is_empty() {
             self.set_removed(RemovalReason::Discarded);
-        }
-    }
-
-    fn tick(self: Arc<Self>) {
-        if self.level().is_none() {
-            return;
-        }
-        self.check_below_world();
-        if self.should_check_survival() && !self.is_removed() && !self.survives() {
-            self.set_removed(RemovalReason::Discarded);
-            self.drop_item();
         }
     }
 
@@ -290,7 +244,7 @@ impl Entity for LeashFenceKnotEntity {
             return self.interact_entity(player, hand, location);
         }
 
-        self.game_event_with_source_entity(&BLOCK_ATTACH, Some(player));
+        self.game_event_with_player(&BLOCK_ATTACH, player);
         self.play_sound(&ITEM_LEAD_TIED, 1.0, 1.0);
 
         InteractionResult::Success
@@ -300,27 +254,48 @@ impl Entity for LeashFenceKnotEntity {
         true
     }
 
-    fn hurt(&self, world: &World, source: &DamageSource, _amount: f32) -> bool {
-        if self.is_invulnerable_to_base(source) {
+    fn move_entity(&self, mover_type: MoverType, delta: DVec3) -> Option<MoveResult> {
+        self.move_entity_block_attached_entity(mover_type, delta)
+    }
+
+    fn try_set_position(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        self.try_set_position_block_attached_entity(pos)
+    }
+}
+
+impl BlockAttachedEntity for LeashFenceKnotEntity {
+    fn block_attached_entity_base(&self) -> &BlockAttachedEntityBase {
+        &self.block_attached_entity_base
+    }
+
+    fn survives(&self) -> bool {
+        let Some(world) = self.level() else {
             return false;
+        };
+        world
+            .get_block_state(self.block_pos())
+            .get_block()
+            .has_tag(&BlockTag::FENCES)
+    }
+
+    fn drop_item(&self, _caused_by: Option<&dyn Entity>) {
+        self.play_sound(&sound_events::ITEM_LEAD_UNTIED, 1.0, 1.0);
+
+        // Vanilla does not drop a lead here. However, due to how Rust handles `Weak`
+        // pointers to leash holders when a holder despawns, in the code where a lead
+        // is supposed in drop in Vanilla, the holder is `None`. So, a lead does not drop
+        // in `leash_tick`. We can replicate this behavior by dropping it for each entity instead.
+        for entity in self.leashables_leashed_to() {
+            entity.spawn_at_location(ItemStack::new(&vanilla_items::LEAD), 0.0);
         }
+    }
 
-        let causing_entity = source.causing_entity();
-
-        if !world.get_game_rule(&MOB_GRIEFING)
-            && let Some(causing_entity) = causing_entity
-            && causing_entity.is_mob()
-        {
-            return false;
-        }
-
-        if !self.is_removed() {
-            self.kill(world);
-            self.mark_hurt();
-            self.drop_item();
-        }
-
-        true
+    fn recalculate_bounding_box(&self) -> Result<(), EntityMoveError> {
+        let pos = self.block_attached_entity_base.pos();
+        self.try_set_position_base(Self::knot_center(pos))?;
+        self.base()
+            .set_bounding_box(Self::knot_bounding_box(self.entity_type, pos));
+        Ok(())
     }
 }
 
