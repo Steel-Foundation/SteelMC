@@ -209,7 +209,7 @@ impl Player {
         match inventory.find_slot_matching_item_with_same_components(&item_stack) {
             Some(slot_with_item) => {
                 if PlayerInventory::is_hotbar_slot(slot_with_item) {
-                    inventory.set_selected_slot(slot_with_item as u8);
+                    inventory.set_selected_slot(slot_with_item);
                 } else {
                     let slot = inventory.get_suitable_hotbar_slot();
 
