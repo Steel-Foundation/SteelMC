@@ -64,6 +64,11 @@ pub enum ConnectionUpdate {
     Upgrade(Arc<PlayerConnection>),
 }
 
+enum PrePlayWrite {
+    Packet(EncodedPacket),
+    Batch(Vec<EncodedPacket>),
+}
+
 impl Debug for ConnectionUpdate {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -252,6 +257,20 @@ impl JavaTcpClient {
         network_writer.write_packet(packet).await
     }
 
+    async fn write_network_batch(
+        network_writer: &JavaNetworkWriter,
+        packets: &[EncodedPacket],
+    ) -> Result<(), PacketError> {
+        let mut network_writer = network_writer.lock().await;
+        let Some(network_writer) = network_writer.as_mut() else {
+            return Err(PacketError::ConnectionClosed);
+        };
+        for packet in packets {
+            network_writer.write_packet(packet).await?;
+        }
+        Ok(())
+    }
+
     async fn release_network_writer(network_writer: &JavaNetworkWriter) {
         network_writer.lock().await.take();
     }
@@ -294,20 +313,20 @@ impl JavaTcpClient {
                     }
                     outbound = sender_recv.recv() => {
                         if let Some(outbound) = outbound {
-                            let (packet, close_after_write) = match outbound {
-                                OutboundPacket::Packet(packet) => (packet, false),
-                                OutboundPacket::Disconnect(packet) => (packet, true),
+                            let queued_write = match outbound {
+                                OutboundPacket::Packet(packet) => PrePlayWrite::Packet(packet),
+                                OutboundPacket::PacketBatch(packets) => PrePlayWrite::Batch(*packets),
+                                OutboundPacket::Disconnect(packet) => {
+                                    sender_recv.close();
+                                    if let Err(err) = Self::write_network_packet(&network_writer, &packet).await {
+                                        log::warn!("Failed to send disconnect packet to client {id}: {err}");
+                                    }
+                                    cancel_token.cancel();
+                                    break;
+                                }
                             };
 
-                            if close_after_write {
-                                if let Err(err) = Self::write_network_packet(&network_writer, &packet).await {
-                                    log::warn!("Failed to send disconnect packet to client {id}: {err}");
-                                }
-                                cancel_token.cancel();
-                                break;
-                            }
-
-                            let write_result = Self::write_network_packet(&network_writer, &packet);
+                            let write_result = Self::write_pre_play(&network_writer, queued_write);
                             tokio::pin!(write_result);
                             select! {
                                 biased;
@@ -381,6 +400,20 @@ impl JavaTcpClient {
         });
     }
 
+    async fn write_pre_play(
+        network_writer: &JavaNetworkWriter,
+        queued_write: PrePlayWrite,
+    ) -> Result<(), PacketError> {
+        match queued_write {
+            PrePlayWrite::Packet(packet) => {
+                Self::write_network_packet(network_writer, &packet).await
+            }
+            PrePlayWrite::Batch(packets) => {
+                Self::write_network_batch(network_writer, &packets).await
+            }
+        }
+    }
+
     fn close_and_take_packets_through_disconnect(
         sender_recv: &mut UnboundedReceiver<OutboundPacket>,
     ) -> Option<Vec<EncodedPacket>> {
@@ -389,6 +422,7 @@ impl JavaTcpClient {
         loop {
             match sender_recv.try_recv() {
                 Ok(OutboundPacket::Packet(packet)) => packets.push(packet),
+                Ok(OutboundPacket::PacketBatch(batch)) => packets.extend(*batch),
                 Ok(OutboundPacket::Disconnect(packet)) => {
                     packets.push(packet);
                     return Some(packets);
@@ -684,5 +718,65 @@ impl TextResolutor for JavaTcpClient {
 
     fn translate(&self, _key: &str) -> Option<String> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::FrontVec;
+
+    use super::*;
+
+    fn encoded_marker(marker: u8) -> EncodedPacket {
+        let mut data = FrontVec::new(0);
+        data.push(marker);
+        EncodedPacket {
+            encoded_data: Arc::new(data),
+        }
+    }
+
+    #[test]
+    fn pre_play_close_preserves_batch_order_through_disconnect() {
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        assert!(
+            sender
+                .send(OutboundPacket::Packet(encoded_marker(1)))
+                .is_ok()
+        );
+        assert!(
+            sender
+                .send(OutboundPacket::PacketBatch(Box::new(vec![
+                    encoded_marker(2),
+                    encoded_marker(3),
+                ])))
+                .is_ok()
+        );
+        assert!(
+            sender
+                .send(OutboundPacket::Disconnect(encoded_marker(4)))
+                .is_ok()
+        );
+        assert!(
+            sender
+                .send(OutboundPacket::Packet(encoded_marker(5)))
+                .is_ok()
+        );
+
+        let Some(packets) = JavaTcpClient::close_and_take_packets_through_disconnect(&mut receiver)
+        else {
+            panic!("disconnect packet should be present");
+        };
+
+        assert_eq!(
+            packets
+                .iter()
+                .map(|packet| packet.encoded_data[0])
+                .collect::<Vec<_>>(),
+            [1, 2, 3, 4]
+        );
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(OutboundPacket::Packet(packet)) if packet.encoded_data[0] == 5
+        ));
     }
 }

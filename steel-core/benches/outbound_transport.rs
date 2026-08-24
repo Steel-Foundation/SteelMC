@@ -4,14 +4,14 @@ use std::{
     hint::black_box,
     slice,
     sync::{Arc, Weak},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use aes::cipher::KeyIvInit;
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use steel_core::player::{
     Player,
-    connection::{JavaConnection, JavaNetworkWriter, OutboundPacket},
+    connection::{JavaConnection, JavaNetworkWriter, NetworkConnection, OutboundPacket},
 };
 use steel_protocol::{
     packet_traits::{ClientPacket, CompressionInfo, EncodedPacket},
@@ -19,8 +19,9 @@ use steel_protocol::{
     packets::{
         common::CKeepAlive,
         game::{
-            CLevelChunkWithLight, CMoveEntityPosRot, CSetExperience, CSetHealth, CSetTime,
-            ChunkPacketData, Heightmaps, LightUpdatePacketData, PackedEntityDelta,
+            CChunkBatchFinished, CChunkBatchStart, CLevelChunkWithLight, CMoveEntityPosRot,
+            CSetExperience, CSetHealth, CSetTime, ChunkPacketData, Heightmaps,
+            LightUpdatePacketData, PackedEntityDelta,
         },
     },
     utils::ConnectionProtocol,
@@ -28,7 +29,7 @@ use steel_protocol::{
 use steel_utils::{codec::BitSet, locks::AsyncMutex};
 use tokio::{
     io::{AsyncReadExt, BufReader, BufWriter},
-    net::{TcpListener, TcpStream, tcp::OwnedReadHalf},
+    net::{TcpListener, TcpSocket, TcpStream, tcp::OwnedReadHalf},
     runtime::{Builder as RuntimeBuilder, Runtime},
     sync::mpsc,
     task::JoinHandle,
@@ -37,6 +38,9 @@ use tokio_util::sync::CancellationToken;
 
 const BENCHMARK_ENCRYPTION_KEY: [u8; 16] = *b"SteelMC-test-key";
 const LOOPBACK_READ_BUFFER_SIZE: usize = 16 * 1_024;
+// Keep the hot writer backpressured so wire progress is a reliable contention barrier.
+const CONTENDED_RECEIVE_BUFFER_SIZE: u32 = 16 * 1_024;
+const FAIRNESS_SAMPLE_COUNT: usize = 256;
 type ReferenceCfb8Encryptor = cfb8::Encryptor<aes::Aes128>;
 
 struct TransportWorkload {
@@ -55,6 +59,12 @@ struct TransportSession {
 enum SenderPath {
     LegacyLocked,
     Production,
+}
+
+#[derive(Clone, Copy)]
+enum SendMode {
+    Individual,
+    Batch,
 }
 
 impl TransportWorkload {
@@ -125,6 +135,40 @@ impl TransportWorkload {
             );
         }
 
+        Self::from_packets(packets)
+    }
+
+    fn representative_chunk_batch(chunk_count: usize) -> Self {
+        let compression = CompressionInfo::default();
+        let mut packets = Vec::with_capacity(chunk_count.saturating_add(2));
+        push_packet(&mut packets, CChunkBatchStart {}, compression);
+        for (index, size) in [8_192, 16_384, 24_576, 32_768]
+            .into_iter()
+            .cycle()
+            .take(chunk_count)
+            .enumerate()
+        {
+            push_packet(
+                &mut packets,
+                chunk_packet(index as i32, size, index as u32 + 501),
+                compression,
+            );
+        }
+        push_packet(
+            &mut packets,
+            CChunkBatchFinished {
+                batch_size: chunk_count as i32,
+            },
+            compression,
+        );
+        Self::from_packets(packets)
+    }
+
+    fn prefix(&self, packet_count: usize) -> Self {
+        Self::from_packets(self.packets[..packet_count].to_vec())
+    }
+
+    fn from_packets(packets: Vec<EncodedPacket>) -> Self {
         let encoded_bytes = packets.iter().map(|packet| packet.encoded_data.len()).sum();
         Self {
             packets,
@@ -187,14 +231,37 @@ impl TransportSession {
         Self::connect_with_sender(SenderPath::Production).await
     }
 
+    async fn connect_for_contention() -> Self {
+        Self::connect_with_sender_and_receive_buffer(
+            SenderPath::Production,
+            Some(CONTENDED_RECEIVE_BUFFER_SIZE),
+        )
+        .await
+    }
+
     async fn connect_with_sender(sender_path: SenderPath) -> Self {
+        Self::connect_with_sender_and_receive_buffer(sender_path, None).await
+    }
+
+    async fn connect_with_sender_and_receive_buffer(
+        sender_path: SenderPath,
+        receive_buffer_size: Option<u32>,
+    ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("loopback listener should bind");
         let address = listener
             .local_addr()
             .expect("loopback listener should have an address");
-        let connect = TcpStream::connect(address);
+        let connect = async {
+            if let Some(receive_buffer_size) = receive_buffer_size {
+                let socket = TcpSocket::new_v4()?;
+                socket.set_recv_buffer_size(receive_buffer_size)?;
+                socket.connect(address).await
+            } else {
+                TcpStream::connect(address).await
+            }
+        };
         let accept = listener.accept();
         let (client_result, server_result) = tokio::join!(connect, accept);
         let client = client_result.expect("loopback client should connect");
@@ -244,10 +311,32 @@ impl TransportSession {
     }
 
     async fn send(&mut self, packets: &[EncodedPacket], encoded_bytes: usize) {
-        for packet in packets {
-            self.connection.send_encoded_packet(packet.clone());
-        }
+        self.send_with_mode(packets, encoded_bytes, SendMode::Individual)
+            .await;
+    }
 
+    async fn send_with_mode(
+        &mut self,
+        packets: &[EncodedPacket],
+        encoded_bytes: usize,
+        mode: SendMode,
+    ) {
+        self.enqueue(packets, mode);
+        self.receive(encoded_bytes).await;
+    }
+
+    fn enqueue(&self, packets: &[EncodedPacket], mode: SendMode) {
+        match mode {
+            SendMode::Individual => {
+                for packet in packets {
+                    self.connection.send_encoded_packet(packet.clone());
+                }
+            }
+            SendMode::Batch => self.connection.send_encoded_batch(packets.to_vec()),
+        }
+    }
+
+    async fn receive(&mut self, encoded_bytes: usize) {
         let mut remaining = encoded_bytes;
         while remaining != 0 {
             let to_read = remaining.min(self.receive_buffer.len());
@@ -264,10 +353,9 @@ impl TransportSession {
         &mut self,
         packets: &[EncodedPacket],
         encoded_bytes: usize,
+        mode: SendMode,
     ) -> Vec<u8> {
-        for packet in packets {
-            self.connection.send_encoded_packet(packet.clone());
-        }
+        self.enqueue(packets, mode);
 
         let mut ciphertext = vec![0; encoded_bytes];
         self.reader
@@ -313,6 +401,12 @@ async fn legacy_locked_sender(
                 };
                 let (packet, close_after_write) = match outbound {
                     OutboundPacket::Packet(packet) => (packet, false),
+                    OutboundPacket::PacketBatch(packets) => {
+                        for packet in *packets {
+                            write_locked_packet(&network_writer, &packet).await;
+                        }
+                        continue;
+                    }
                     OutboundPacket::Disconnect(packet) => (packet, true),
                 };
                 if close_after_write {
@@ -335,18 +429,22 @@ async fn legacy_locked_sender(
     drop(network_writer.lock().await.take());
 }
 
-async fn transport_round_trip(workload: &TransportWorkload) {
+async fn transport_round_trip(workload: &TransportWorkload, mode: SendMode) {
     let mut session = TransportSession::connect().await;
     session
-        .send(&workload.packets, workload.encoded_bytes)
+        .send_with_mode(&workload.packets, workload.encoded_bytes, mode)
         .await;
     session.close().await;
 }
 
-async fn verify_transport_ciphertext(workload: &TransportWorkload, sender_path: SenderPath) {
+async fn verify_transport_ciphertext(
+    workload: &TransportWorkload,
+    sender_path: SenderPath,
+    mode: SendMode,
+) {
     let mut session = TransportSession::connect_with_sender(sender_path).await;
     let actual = session
-        .send_and_collect(&workload.packets, workload.encoded_bytes)
+        .send_and_collect(&workload.packets, workload.encoded_bytes, mode)
         .await;
 
     let mut expected = Vec::with_capacity(workload.encoded_bytes);
@@ -373,6 +471,75 @@ async fn verify_transport_ciphertext(workload: &TransportWorkload, sender_path: 
     );
 }
 
+async fn hot_connection_control_latency(
+    hot_session: &mut TransportSession,
+    control_session: &mut TransportSession,
+    hot_workload: &TransportWorkload,
+    control_packet: &EncodedPacket,
+    hot_mode: SendMode,
+) -> Duration {
+    hot_session.enqueue(&hot_workload.packets, hot_mode);
+    // Unlike yielding, receiving bytes proves that the hot sender has started.
+    let first_packet_bytes = hot_workload
+        .packets
+        .first()
+        .expect("hot workload should not be empty")
+        .encoded_data
+        .len();
+    hot_session.receive(first_packet_bytes).await;
+
+    let started = Instant::now();
+    control_session.enqueue(slice::from_ref(control_packet), SendMode::Individual);
+    let control_bytes = control_packet.encoded_data.len();
+    let control_receive = async {
+        control_session.receive(control_bytes).await;
+        started.elapsed()
+    };
+    let ((), control_latency) = tokio::join!(
+        hot_session.receive(hot_workload.encoded_bytes - first_packet_bytes),
+        control_receive
+    );
+    control_latency
+}
+
+async fn sample_hot_connection_control_latency(
+    hot_workload: &TransportWorkload,
+    control_packet: &EncodedPacket,
+    hot_mode: SendMode,
+) -> Vec<Duration> {
+    let mut hot_session = TransportSession::connect_for_contention().await;
+    let mut control_session = TransportSession::connect().await;
+    let mut samples = Vec::with_capacity(FAIRNESS_SAMPLE_COUNT);
+
+    for _ in 0..FAIRNESS_SAMPLE_COUNT {
+        samples.push(
+            hot_connection_control_latency(
+                &mut hot_session,
+                &mut control_session,
+                hot_workload,
+                control_packet,
+                hot_mode,
+            )
+            .await,
+        );
+    }
+
+    hot_session.close().await;
+    control_session.close().await;
+    samples
+}
+
+fn percentile(samples: &mut [Duration], percentile: usize) -> Duration {
+    samples.sort_unstable();
+    let rank = samples
+        .len()
+        .saturating_mul(percentile)
+        .div_ceil(100)
+        .saturating_sub(1)
+        .min(samples.len().saturating_sub(1));
+    samples[rank]
+}
+
 fn benchmark_runtime() -> Runtime {
     RuntimeBuilder::new_current_thread()
         .enable_io()
@@ -380,23 +547,156 @@ fn benchmark_runtime() -> Runtime {
         .expect("benchmark runtime should build")
 }
 
+fn multi_thread_benchmark_runtime() -> Runtime {
+    RuntimeBuilder::new_multi_thread()
+        .worker_threads(2)
+        .enable_io()
+        .build()
+        .expect("multi-thread benchmark runtime should build")
+}
+
+fn benchmark_explicit_batching(
+    criterion: &mut Criterion,
+    runtime: &Runtime,
+    workloads: &[(&str, &TransportWorkload)],
+) {
+    let mut group = criterion.benchmark_group("encrypted_outbound_transport_batching_ab");
+    for &(workload_name, workload) in workloads {
+        group.throughput(Throughput::Bytes(workload.encoded_bytes as u64));
+        for (mode_name, mode) in [
+            ("individual_flushes", SendMode::Individual),
+            ("explicit_batch", SendMode::Batch),
+        ] {
+            let mut session = runtime.block_on(TransportSession::connect());
+            runtime.block_on(session.send_with_mode(
+                &workload.packets,
+                workload.encoded_bytes,
+                mode,
+            ));
+            group.bench_with_input(
+                BenchmarkId::new(workload_name, mode_name),
+                workload,
+                |bencher, workload| {
+                    bencher.iter(|| {
+                        runtime.block_on(session.send_with_mode(
+                            black_box(&workload.packets),
+                            black_box(workload.encoded_bytes),
+                            mode,
+                        ));
+                    });
+                },
+            );
+            runtime.block_on(session.close());
+        }
+    }
+    group.finish();
+}
+
+fn benchmark_multi_connection_contention(
+    criterion: &mut Criterion,
+    runtimes: &[(&str, &Runtime)],
+    workload: &TransportWorkload,
+    control_packet: &EncodedPacket,
+) {
+    for &(runtime_name, runtime) in runtimes {
+        for (mode_name, mode) in [
+            ("individual_flushes", SendMode::Individual),
+            ("explicit_batch", SendMode::Batch),
+        ] {
+            let mut samples = runtime.block_on(sample_hot_connection_control_latency(
+                workload,
+                control_packet,
+                mode,
+            ));
+            let p50 = percentile(&mut samples, 50);
+            let p95 = percentile(&mut samples, 95);
+            let p99 = percentile(&mut samples, 99);
+            eprintln!(
+                "hot-connection control latency {runtime_name}/{mode_name}: p50={p50:?} p95={p95:?} p99={p99:?}"
+            );
+        }
+    }
+
+    let mut group =
+        criterion.benchmark_group("encrypted_outbound_transport_multi_connection_contention");
+    group.throughput(Throughput::Bytes(workload.encoded_bytes as u64));
+    for &(runtime_name, runtime) in runtimes {
+        for (mode_name, mode) in [
+            ("individual_flushes", SendMode::Individual),
+            ("explicit_batch", SendMode::Batch),
+        ] {
+            let mut hot_session = runtime.block_on(TransportSession::connect_for_contention());
+            let mut control_session = runtime.block_on(TransportSession::connect());
+            group.bench_function(BenchmarkId::new(runtime_name, mode_name), |bencher| {
+                bencher.iter(|| {
+                    black_box(runtime.block_on(hot_connection_control_latency(
+                        &mut hot_session,
+                        &mut control_session,
+                        black_box(workload),
+                        black_box(control_packet),
+                        mode,
+                    )));
+                });
+            });
+            runtime.block_on(hot_session.close());
+            runtime.block_on(control_session.close());
+        }
+    }
+    group.finish();
+}
+
+fn benchmark_single_packet_latency(
+    criterion: &mut Criterion,
+    runtime: &Runtime,
+    packet: &EncodedPacket,
+) {
+    let packet_bytes = packet.encoded_data.len();
+    let mut session = runtime.block_on(TransportSession::connect());
+    runtime.block_on(session.send(slice::from_ref(packet), packet_bytes));
+
+    let mut group = criterion.benchmark_group("encrypted_outbound_transport_latency");
+    group.throughput(Throughput::Bytes(packet_bytes as u64));
+    group.bench_function("single_small_packet", |bencher| {
+        bencher.iter(|| {
+            runtime.block_on(session.send(slice::from_ref(packet), packet_bytes));
+        });
+    });
+    group.finish();
+    runtime.block_on(session.close());
+}
+
 fn outbound_transport(criterion: &mut Criterion) {
     let runtime = benchmark_runtime();
+    let multi_thread_runtime = multi_thread_benchmark_runtime();
     let workload = TransportWorkload::representative_play_burst();
+    let small_group = workload.prefix(8);
+    let chunk_batch = TransportWorkload::representative_chunk_batch(9);
     runtime.block_on(verify_transport_ciphertext(
         &workload,
         SenderPath::Production,
+        SendMode::Individual,
+    ));
+    runtime.block_on(verify_transport_ciphertext(
+        &workload,
+        SenderPath::Production,
+        SendMode::Batch,
     ));
     runtime.block_on(verify_transport_ciphertext(
         &workload,
         SenderPath::LegacyLocked,
+        SendMode::Individual,
     ));
-    runtime.block_on(transport_round_trip(&workload));
+    runtime.block_on(transport_round_trip(&workload, SendMode::Individual));
 
     let mut group = criterion.benchmark_group("encrypted_outbound_transport_e2e");
     group.throughput(Throughput::Bytes(workload.encoded_bytes as u64));
     group.bench_function("representative_play_burst", |bencher| {
-        bencher.iter(|| runtime.block_on(transport_round_trip(black_box(&workload))));
+        bencher.iter(|| {
+            runtime.block_on(transport_round_trip(
+                black_box(&workload),
+                SendMode::Individual,
+            ));
+        });
     });
     group.finish();
 
@@ -437,24 +737,33 @@ fn outbound_transport(criterion: &mut Criterion) {
     }
     sender_group.finish();
 
-    let latency_packet = workload
+    benchmark_explicit_batching(
+        criterion,
+        &runtime,
+        &[
+            ("small_packet_group_8", &small_group),
+            ("chunk_batch_9", &chunk_batch),
+            ("mixed_ready_group_upper_bound", &workload),
+        ],
+    );
+
+    let control_packet = workload
         .packets
         .first()
         .expect("representative workload should not be empty")
         .clone();
-    let latency_bytes = latency_packet.encoded_data.len();
-    let mut latency_session = runtime.block_on(TransportSession::connect());
-    runtime.block_on(latency_session.send(slice::from_ref(&latency_packet), latency_bytes));
+    let fairness_runtimes = [
+        ("one_worker", &runtime),
+        ("two_workers", &multi_thread_runtime),
+    ];
+    benchmark_multi_connection_contention(
+        criterion,
+        &fairness_runtimes,
+        &workload,
+        &control_packet,
+    );
 
-    let mut latency_group = criterion.benchmark_group("encrypted_outbound_transport_latency");
-    latency_group.throughput(Throughput::Bytes(latency_bytes as u64));
-    latency_group.bench_function("single_small_packet", |bencher| {
-        bencher.iter(|| {
-            runtime.block_on(latency_session.send(slice::from_ref(&latency_packet), latency_bytes));
-        });
-    });
-    latency_group.finish();
-    runtime.block_on(latency_session.close());
+    benchmark_single_packet_latency(criterion, &runtime, &control_packet);
 }
 
 criterion_group! {
