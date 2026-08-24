@@ -22,6 +22,7 @@ pub mod player_inventory;
 mod profile;
 mod sleep;
 mod sleep_state;
+pub mod stats_counter;
 mod tick_state;
 
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
@@ -125,7 +126,6 @@ use steel_protocol::packets::{
 };
 use steel_registry::RegistryEntry;
 use steel_registry::item_stack::ItemStack;
-
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, Identifier, UuidExt as _,
 };
@@ -133,9 +133,11 @@ use steel_utils::{
 use crate::inventory::container::Container;
 
 const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
+const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::player::chunk_sender::ChunkSender;
+use crate::player::stats_counter::StatsCounter;
 use crate::portal::{
     PortalTicketTarget, TeleportPostAction, TeleportPostTransition, TeleportTransition,
 };
@@ -253,6 +255,9 @@ pub struct Player {
     /// In-flight ender pearls thrown by this player, kept weakly so they persist
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
     ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
+
+    /// The counter keeping track of this player's statistics.
+    stats: SyncMutex<StatsCounter>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -419,6 +424,28 @@ impl Player {
         self.client_information.lock().main_hand
     }
 
+    #[must_use]
+    pub(crate) fn shows_hat(&self) -> bool {
+        let model_customization = *self
+            .entity_data
+            .lock()
+            .avatar()
+            .player_mode_customization
+            .get();
+        model_customization & HAT_MODEL_PART_MASK != 0
+    }
+
+    fn apply_client_information_to_entity_data(
+        data: &mut PlayerEntityData,
+        client_information: &ClientInformation,
+    ) {
+        let avatar = data.avatar_mut();
+        avatar.player_main_hand.set(client_information.main_hand);
+        avatar
+            .player_mode_customization
+            .set(client_information.model_customization.cast_signed());
+    }
+
     /// Computes the start (eye position) and end positions for a raytrace.
     pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
         let pos = self.position();
@@ -497,6 +524,7 @@ impl Player {
             entity_data: SyncMutex::new({
                 let mut data = PlayerEntityData::new();
                 living_base.initialize_synced_data(&mut data);
+                Self::apply_client_information_to_entity_data(&mut data, &client_information);
                 data
             }),
             last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),
@@ -531,6 +559,7 @@ impl Player {
             chunk_send_epoch: SyncMutex::new(0),
             residence: SyncMutex::new(PlayerResidenceState::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
+            stats: SyncMutex::new(StatsCounter::new()),
         }
     }
 
@@ -1498,6 +1527,20 @@ impl Entity for Player {
 
     fn sound_source(&self) -> SoundSource {
         SoundSource::Players
+    }
+
+    /// Matches vanilla `Player.playSound`, which excludes the source player.
+    fn play_sound(&self, sound: SoundEventRef, volume: f32, pitch: f32) {
+        if let Some(world) = self.level() {
+            world.play_sound_at(
+                sound,
+                self.sound_source(),
+                self.position(),
+                volume,
+                pitch,
+                Some(self.id()),
+            );
+        }
     }
 
     fn swim_sound(&self) -> SoundEventRef {

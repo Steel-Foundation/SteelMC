@@ -1,6 +1,6 @@
 use glam::DVec3;
 use rustc_hash::FxHashMap;
-use steel_utils::Identifier;
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
 use crate::{RegistryTags, blocks::behavior::PushReaction};
 
@@ -300,6 +300,11 @@ pub struct EntityTypeRegistry {
     types_by_key: FxHashMap<Identifier, usize>,
     tags: RegistryTags,
     allows_registering: bool,
+}
+
+// SAFETY: This Steel-owned key uniquely identifies the entity type registry.
+unsafe impl DowncastType for EntityTypeRegistry {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:registry/entity_type");
 }
 
 impl Default for EntityTypeRegistry {

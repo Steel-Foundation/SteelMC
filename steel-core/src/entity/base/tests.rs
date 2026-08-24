@@ -630,7 +630,7 @@ fn player_respawn_reset_restores_fresh_base_state_and_preserves_tags() {
         DVec3::new(2.0, 64.0, 1.0),
     ));
     base.set_position_local(DVec3::new(2.0, 64.0, 1.0));
-    assert!(!base.take_movements_for_block_effects().is_empty());
+    assert_ne!(base.take_movements_for_block_effects().len(), 0);
     base.record_movement_this_tick(EntityMovement::new(
         DVec3::new(2.0, 64.0, 1.0),
         DVec3::new(3.0, 64.0, 1.0),
@@ -663,7 +663,7 @@ fn player_respawn_reset_restores_fresh_base_state_and_preserves_tags() {
     assert!(!base.needs_velocity_sync());
     assert!(!base.hurt_marked());
     assert_eq!(base.dimensions(), reset_dimensions);
-    assert!(base.last_movements_for_block_effects().is_empty());
+    assert_eq!(base.last_movements_for_block_effects().len(), 0);
     assert_eq!(
         base.take_movements_for_block_effects(),
         vec![EntityMovement::new(reset_position, reset_position)]
@@ -1122,7 +1122,7 @@ fn movement_trace_replays_last_finalized_movements() {
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
     );
-    assert!(base.last_movements_for_block_effects().is_empty());
+    assert_eq!(base.last_movements_for_block_effects().len(), 0);
 
     base.record_movement_this_tick(EntityMovement::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0)));
     base.set_position_local(DVec3::new(1.0, 0.0, 0.0));

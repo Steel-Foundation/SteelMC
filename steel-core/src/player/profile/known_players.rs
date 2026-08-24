@@ -246,6 +246,6 @@ mod tests {
             players.resolve_name("Steve", 10),
             super::KnownPlayerNameLookup::Expired
         ));
-        assert!(players.entries().is_empty());
+        assert_eq!(players.entries(), []);
     }
 }
