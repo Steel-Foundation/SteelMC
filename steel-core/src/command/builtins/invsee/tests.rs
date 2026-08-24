@@ -8,15 +8,12 @@ use std::{
 
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_registry::packets::play::C_SET_PLAYER_INVENTORY;
-use steel_registry::{
-    init_vanilla_registry, item_stack::ItemStack, vanilla_items, vanilla_menu_types,
-};
+use steel_registry::{item_stack::ItemStack, vanilla_items, vanilla_menu_types};
 use steel_utils::codec::VarInt;
 use steel_utils::locks::{IntoShared as _, Shared, SyncMutex};
 use steel_utils::serial::ReadFrom as _;
 use steel_utils::types::GameType;
 use text_components::TextComponent;
-use uuid::Uuid;
 
 use super::*;
 use crate::{
@@ -87,8 +84,7 @@ struct RecordingPlayer {
     callbacks_saw_unlocked_inventories: Arc<AtomicBool>,
 }
 
-fn recording_player(uuid: u128, name: &str, entity_id: i32) -> RecordingPlayer {
-    init_vanilla_registry();
+fn recording_player(name: &str, entity_id: i32) -> RecordingPlayer {
     let packets = Arc::new(SyncMutex::new(Vec::new()));
     let inventories = Arc::new(SyncMutex::new(Vec::new()));
     let callbacks_saw_unlocked_inventories = Arc::new(AtomicBool::new(true));
@@ -97,15 +93,10 @@ fn recording_player(uuid: u128, name: &str, entity_id: i32) -> RecordingPlayer {
         inventories: Arc::clone(&inventories),
         callbacks_saw_unlocked_inventories: Arc::clone(&callbacks_saw_unlocked_inventories),
     })));
-    let player = TestPlayerBuilder::new(
-        Arc::clone(test_world()),
-        Uuid::from_u128(uuid),
-        name,
-        entity_id,
-    )
-    .detached_config(test_runtime_config(2))
-    .connection(connection)
-    .build();
+    let player = TestPlayerBuilder::new(Arc::clone(test_world()), name, entity_id)
+        .detached_config(test_runtime_config(2))
+        .connection(connection)
+        .build();
     RecordingPlayer {
         player,
         packets,
@@ -142,16 +133,10 @@ fn player_inventory_updates(packets: &SyncMutex<Vec<EncodedPacket>>) -> Vec<(i32
         .collect()
 }
 
-fn test_player(uuid: u128, name: &str, entity_id: i32) -> Arc<Player> {
-    init_vanilla_registry();
-    TestPlayerBuilder::new(
-        Arc::clone(test_world()),
-        Uuid::from_u128(uuid),
-        name,
-        entity_id,
-    )
-    .detached_config(test_runtime_config(2))
-    .build()
+fn test_player(name: &str, entity_id: i32) -> Arc<Player> {
+    TestPlayerBuilder::new(Arc::clone(test_world()), name, entity_id)
+        .detached_config(test_runtime_config(2))
+        .build()
 }
 
 fn permission_key(value: &str) -> PermissionKey {
@@ -206,8 +191,8 @@ fn base_and_modify_permissions_grant_the_expected_access() {
 
 #[test]
 fn invsee_rejects_players_in_different_domains() {
-    let source = test_player(24, "Viewer", 24);
-    let target = test_player(25, "Target", 25);
+    let source = test_player("Viewer", 24);
+    let target = test_player("Target", 25);
     assert!(ensure_same_domain(&source, &target).is_ok());
 
     let switch_token = begin_domain_switch(&target);
@@ -222,8 +207,8 @@ fn invsee_rejects_players_in_different_domains() {
 
 #[test]
 fn readonly_target_slots_reject_pickup_and_creative_clone() {
-    let source = test_player(1, "Viewer", 1);
-    let target = test_player(2, "Target", 2);
+    let source = test_player("Viewer", 1);
+    let target = test_player("Target", 2);
     source.restore_game_modes(GameType::Creative, None);
     target
         .inventory
@@ -251,8 +236,8 @@ fn readonly_target_slots_reject_pickup_and_creative_clone() {
 
 #[test]
 fn modify_view_edits_armor_slots_within_equipment_rules() {
-    let source = test_player(8, "Viewer", 8);
-    let target = test_player(9, "Target", 9);
+    let source = test_player("Viewer", 8);
+    let target = test_player("Target", 9);
     let mut menu = invsee(1, &source, &target, true);
 
     *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::STONE);
@@ -290,8 +275,8 @@ fn modify_view_edits_armor_slots_within_equipment_rules() {
 
 #[test]
 fn modify_view_synchronizes_target_armor_without_inventory_locks() {
-    let source = test_player(10, "Viewer", 10);
-    let target = recording_player(11, "Target", 11);
+    let source = test_player("Viewer", 10);
+    let target = recording_player("Target", 11);
     target
         .inventories
         .lock()
@@ -330,7 +315,7 @@ fn modify_view_synchronizes_target_armor_without_inventory_locks() {
 
 #[test]
 fn self_invsee_synchronizes_own_armor_slot() {
-    let recording = recording_player(12, "SelfViewer", 12);
+    let recording = recording_player("SelfViewer", 12);
     recording
         .inventories
         .lock()
@@ -360,8 +345,8 @@ fn self_invsee_synchronizes_own_armor_slot() {
 
 #[test]
 fn modify_view_synchronizes_empty_offhand_after_removal() {
-    let source = test_player(13, "Viewer", 13);
-    let target = recording_player(14, "Target", 14);
+    let source = test_player("Viewer", 13);
+    let target = recording_player("Target", 14);
     target
         .player
         .inventory
@@ -387,8 +372,8 @@ fn modify_view_synchronizes_empty_offhand_after_removal() {
 
 #[test]
 fn modify_view_synchronizes_target_hotbar_slot() {
-    let source = test_player(20, "Viewer", 20);
-    let target = recording_player(21, "Target", 21);
+    let source = test_player("Viewer", 20);
+    let target = recording_player("Target", 21);
     let mut menu = invsee(1, &source, &target.player, true);
     *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::STONE);
 
@@ -409,8 +394,8 @@ fn modify_view_synchronizes_target_hotbar_slot() {
 
 #[test]
 fn modify_view_coalesces_to_latest_target_inventory_value() {
-    let source = test_player(15, "Viewer", 15);
-    let target = recording_player(16, "Target", 16);
+    let source = test_player("Viewer", 15);
+    let target = recording_player("Target", 16);
     let mut menu = invsee(1, &source, &target.player, true);
 
     *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::IRON_HELMET);
@@ -440,8 +425,8 @@ fn modify_view_coalesces_to_latest_target_inventory_value() {
 
 #[test]
 fn modify_view_drag_queues_each_changed_target_slot() {
-    let source = test_player(17, "Viewer", 17);
-    let target = recording_player(18, "Target", 18);
+    let source = test_player("Viewer", 17);
+    let target = recording_player("Target", 18);
     let mut menu = invsee(1, &source, &target.player, true);
     *menu.behavior_mut().carried_mut() = ItemStack::with_count(&vanilla_items::STONE, 2);
 
@@ -472,7 +457,7 @@ fn modify_view_drag_queues_each_changed_target_slot() {
 
 #[test]
 fn overriding_menu_defers_main_inventory_sync_until_close() {
-    let recording = recording_player(19, "OverlayViewer", 19);
+    let recording = recording_player("OverlayViewer", 19);
     recording
         .inventories
         .lock()
@@ -520,7 +505,7 @@ fn overriding_menu_defers_main_inventory_sync_until_close() {
 
 #[test]
 fn replacing_overriding_menu_keeps_main_inventory_sync_deferred() {
-    let recording = recording_player(23, "ReplacementOverlayViewer", 23);
+    let recording = recording_player("ReplacementOverlayViewer", 23);
     recording
         .player
         .inventory
@@ -541,7 +526,7 @@ fn replacing_overriding_menu_keeps_main_inventory_sync_deferred() {
     recording.packets.lock().clear();
 
     recording.player.tick();
-    assert!(player_inventory_updates(&recording.packets).is_empty());
+    assert_eq!(player_inventory_updates(&recording.packets).len(), 0);
 
     recording.player.do_close_container();
     recording.player.tick();
@@ -553,7 +538,7 @@ fn replacing_overriding_menu_keeps_main_inventory_sync_deferred() {
 
 #[test]
 fn normal_menu_does_not_defer_main_inventory_sync() {
-    let recording = recording_player(22, "NormalMenuViewer", 22);
+    let recording = recording_player("NormalMenuViewer", 22);
     recording
         .player
         .inventory
@@ -581,8 +566,8 @@ fn normal_menu_does_not_defer_main_inventory_sync() {
 
 #[test]
 fn modify_view_moves_inventory_items_in_both_directions() {
-    let source = test_player(8, "Viewer", 8);
-    let target = test_player(9, "Target", 9);
+    let source = test_player("Viewer", 8);
+    let target = test_player("Target", 9);
     target
         .inventory
         .lock()
@@ -610,8 +595,8 @@ fn modify_view_moves_inventory_items_in_both_directions() {
 
 #[test]
 fn modify_view_extracts_but_cannot_insert_crafting_items() {
-    let source = test_player(3, "Viewer", 3);
-    let target = test_player(4, "Target", 4);
+    let source = test_player("Viewer", 3);
+    let target = test_player("Target", 4);
     let handler = target.inventory_crafting_handler();
     handler
         .crafting_container()
@@ -659,7 +644,7 @@ fn modify_view_extracts_but_cannot_insert_crafting_items() {
 
 #[test]
 fn self_invsee_quick_move_does_not_rearrange_the_aliased_inventory() {
-    let player = test_player(5, "SelfViewer", 5);
+    let player = test_player("SelfViewer", 5);
     player
         .inventory
         .lock()
@@ -689,8 +674,8 @@ fn self_invsee_quick_move_does_not_rearrange_the_aliased_inventory() {
 
 #[test]
 fn open_menu_keeps_captured_access_and_tracks_target_lifecycle() {
-    let source = test_player(6, "Viewer", 6);
-    let target = test_player(7, "Target", 7);
+    let source = test_player("Viewer", 6);
+    let target = test_player("Target", 7);
 
     set_permissions(
         &source,

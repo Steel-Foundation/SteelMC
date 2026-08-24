@@ -316,7 +316,7 @@ mod tests {
         let result = source.write(&mut encoded);
 
         assert!(result.is_err());
-        assert!(encoded.is_empty());
+        assert_eq!(encoded.len(), 0);
     }
 
     #[test]
