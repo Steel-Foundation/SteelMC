@@ -168,7 +168,10 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
             .iter()
             .all(|structure| structure.step.decoration_ordinal() == 7)
     );
-    assert!(FeatureDecorationRunner::structures_for_decoration_step(&registry, 0).is_empty());
+    assert_eq!(
+        FeatureDecorationRunner::structures_for_decoration_step(&registry, 0).len(),
+        0
+    );
 }
 
 #[test]

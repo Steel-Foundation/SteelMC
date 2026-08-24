@@ -711,7 +711,7 @@ impl ChunkTicketManager {
 
     /// Returns a drained change buffer for reuse by the next propagation pass.
     pub(crate) fn recycle_changes(&mut self, mut changes: Vec<LevelChange>) {
-        debug_assert!(self.changes.is_empty());
+        debug_assert_eq!(self.changes, []);
         changes.clear();
         self.changes = changes;
     }

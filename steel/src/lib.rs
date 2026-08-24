@@ -9,7 +9,9 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use steel_core::{command::CommandRegistry, permission::PermissionGroupManager, server::Server};
+use steel_core::{
+    GIT_HASH_SHORT, command::CommandRegistry, permission::PermissionGroupManager, server::Server,
+};
 use steel_login::{JavaTcpClient, ServerConnectionSession};
 use tokio::{net::TcpListener, runtime::Runtime, select};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -87,7 +89,7 @@ impl SteelServer {
         steel_config: config::SteelConfig,
         command_registry: CommandRegistry,
     ) -> Result<Self, SteelServerError> {
-        log::info!("Starting Steel Server");
+        log::info!("Starting Steel Server ({GIT_HASH_SHORT})");
 
         let permission_group_store = steel_config.permission_group_store();
         let server_port = steel_config.server.server_port;

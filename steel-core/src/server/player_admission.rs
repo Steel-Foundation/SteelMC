@@ -105,18 +105,21 @@ impl Server {
         }
 
         let server = Arc::clone(self);
-        tokio::spawn(async move {
-            let state = server.prepare_player_join(&player).await;
-            server
-                .pending_player_joins
-                .send(PendingPlayerJoin { player, state });
-        });
+        tokio::spawn(Self::prepare_and_queue_player_join(server, player));
     }
 
-    async fn prepare_player_join(&self, player: &Player) -> Result<DomainPlayerState, String> {
-        let target_domain = self.load_join_domain(player).await?;
-        self.load_domain_player_state(player, &target_domain, None)
-            .await
+    async fn prepare_and_queue_player_join(server: Arc<Self>, player: Arc<Player>) {
+        let state = match server.load_join_domain(&player).await {
+            Ok(target_domain) => {
+                server
+                    .load_domain_player_state(&player, &target_domain, None)
+                    .await
+            }
+            Err(error) => Err(error),
+        };
+        server
+            .pending_player_joins
+            .send(PendingPlayerJoin { player, state });
     }
 
     pub(super) fn process_player_joins(self: &Arc<Self>) {

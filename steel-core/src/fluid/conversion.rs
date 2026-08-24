@@ -401,7 +401,7 @@ mod tests {
         }
 
         let blocked = get_spread(&world, origin, source_water, &vanilla_fluids::WATER, 1, 4);
-        assert!(blocked.is_empty());
+        assert_eq!(blocked.len(), 0);
 
         assert!(world.set_block_with_limit(
             origin.north(),
