@@ -427,7 +427,7 @@ impl Player {
             .as_living_entity()
             .map_or(0.0, LivingEntity::get_health);
 
-        // TODO: Apply crits, sweep attacks, damage stats, and sounds.
+        // TODO: Apply crits, sweep attacks, and sounds.
         let old_movement = entity.velocity();
         let Some(target_world) = entity.level() else {
             return false;
