@@ -10,7 +10,7 @@ use steel_registry::data_components::vanilla_components::{
 use steel_registry::data_components::vanilla_components::ITEM_NAME;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
-use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
+use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, vanilla_game_events};
 use steel_utils::types::InteractionHand;
 use text_components::TextComponent;
 
@@ -238,7 +238,15 @@ pub(crate) fn finish_consuming_stack(
     if let Some(sound) = consumable.sound().registry_ref() {
         play_entity_sound(world, sound, user);
     }
+    let event = if consumable.animation() == ItemUseAnimation::Drink {
+        &vanilla_game_events::DRINK
+    } else {
+        &vanilla_game_events::EAT
+    };
+    user.game_event(event);
     // TODO: Spawn item-crumb particles when `has_consume_particles()` is set.
+    // TODO: Award Stats.ITEM_USED and trigger CriteriaTriggers.CONSUME_ITEM
+    // once the stat and advancement-criteria foundations exist.
 
     let mut used_stack = stack.copy_with_count(stack.count());
     if !user.has_infinite_materials() {
