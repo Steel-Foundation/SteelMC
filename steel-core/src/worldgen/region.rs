@@ -4,6 +4,8 @@
 //! stay inside the stage's block-state write radius. `WorldGenRegion` centralizes that
 //! contract so feature, structure, and vegetation code cannot bypass the chunk pyramid.
 
+use rustc_hash::FxHashMap;
+
 use std::{
     cell::RefCell,
     sync::{Arc, Weak},
@@ -67,7 +69,9 @@ pub struct WorldGenRegion<'a> {
 pub(crate) struct WorldGenBulkSectionAccess<'region, 'world, 'profile> {
     region: &'region WorldGenRegion<'world>,
     chunk_cache_radius: i32,
-    chunks: Box<[Option<CachedWorldGenChunk<'region>>]>,
+    /// Sparse per-chunk cache. Features only touch the few chunks around their
+    /// origin, so a map avoids materializing the full radius² grid per placement.
+    chunks: FxHashMap<(i32, i32), CachedWorldGenChunk<'region>>,
     air: BlockStateId,
     ore_profile: Option<&'profile RefCell<OreFeatureStats>>,
 }
@@ -905,16 +909,10 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         region: &'region WorldGenRegion<'world>,
         ore_profile: Option<&'profile RefCell<OreFeatureStats>>,
     ) -> Self {
-        let chunk_cache_radius = region.chunk_cache_radius;
-        let chunk_cache_size = chunk_cache_radius.saturating_mul(2).saturating_add(1);
-        let chunk_cache_len =
-            usize::try_from(chunk_cache_size.saturating_mul(chunk_cache_size)).unwrap_or(0);
-        let chunks = (0..chunk_cache_len).map(|_| None).collect();
-
         Self {
             region,
-            chunk_cache_radius,
-            chunks,
+            chunk_cache_radius: region.chunk_cache_radius,
+            chunks: FxHashMap::default(),
             air: REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR),
             ore_profile,
         }
@@ -1294,59 +1292,49 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         chunk_z: i32,
         status: ChunkStatus,
     ) -> &CachedWorldGenChunk<'region> {
-        let Some(cache_index) = self.chunk_cache_index(chunk_x, chunk_z) else {
+        let Some(cache_key) = self.chunk_cache_key(chunk_x, chunk_z) else {
             panic!(
                 "Worldgen bulk section requested chunk ({chunk_x}, {chunk_z}) outside the region cache centered on ({}, {})",
                 self.region.center.0.x, self.region.center.0.y
             );
         };
 
-        let cache_needs_insert = self.chunks.get(cache_index).is_none_or(Option::is_none);
+        let cache_needs_insert = !self.chunks.contains_key(&cache_key);
         if cache_needs_insert {
             self.with_ore_profile(OreFeatureStats::record_chunk_cache_miss);
             let chunk = self.region.chunk(chunk_x, chunk_z, status);
-            let Some(slot) = self.chunks.get_mut(cache_index) else {
-                panic!("Worldgen bulk section cache index {cache_index} escaped its storage");
-            };
-            *slot = Some(CachedWorldGenChunk {
-                access_mode: chunk.access_mode,
-                holder: chunk.holder,
-                chunk: chunk.chunk,
-                verified_status: status,
-            });
-        } else if self.chunks.get(cache_index).is_some_and(|cached| {
-            cached
-                .as_ref()
-                .is_some_and(|cached| status > cached.verified_status)
-        }) {
+            let cached = self
+                .chunks
+                .entry(cache_key)
+                .or_insert_with(|| CachedWorldGenChunk {
+                    access_mode: chunk.access_mode,
+                    holder: chunk.holder,
+                    chunk: chunk.chunk,
+                    verified_status: status,
+                });
+            return cached;
+        }
+        if let Some(cached) = self.chunks.get(&cache_key)
+            && status > cached.verified_status
+        {
             self.with_ore_profile(OreFeatureStats::record_chunk_status_upgrade);
             let _ = self.region.chunk(chunk_x, chunk_z, status);
-            let Some(Some(cached)) = self.chunks.get_mut(cache_index) else {
-                panic!("Worldgen bulk section cache lost verified chunk ({chunk_x}, {chunk_z})");
-            };
-            cached.verified_status = status;
         }
 
-        let Some(Some(cached)) = self.chunks.get(cache_index) else {
-            panic!("Worldgen bulk section cache failed to store chunk ({chunk_x}, {chunk_z})");
-        };
-        cached
+        self.chunks
+            .get(&cache_key)
+            .expect("cached chunk just inserted")
     }
 
-    fn chunk_cache_index(&self, chunk_x: i32, chunk_z: i32) -> Option<usize> {
+    fn chunk_cache_key(&self, chunk_x: i32, chunk_z: i32) -> Option<(i32, i32)> {
         let radius = self.chunk_cache_radius;
-        let size = radius.checked_mul(2)?.checked_add(1)?;
-        let rel_x = chunk_x
-            .checked_sub(self.region.center.0.x)?
-            .checked_add(radius)?;
-        let rel_z = chunk_z
-            .checked_sub(self.region.center.0.y)?
-            .checked_add(radius)?;
-        if rel_x < 0 || rel_x >= size || rel_z < 0 || rel_z >= size {
+        let rel_x = chunk_x.checked_sub(self.region.center.0.x)?;
+        let rel_z = chunk_z.checked_sub(self.region.center.0.y)?;
+        if rel_x.abs() > radius || rel_z.abs() > radius {
             return None;
         }
 
-        usize::try_from(rel_z.checked_mul(size)?.checked_add(rel_x)?).ok()
+        Some((rel_x, rel_z))
     }
 
     fn section_index(min_y: i32, height: i32, y: i32) -> Option<usize> {
