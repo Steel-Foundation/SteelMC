@@ -13,7 +13,7 @@ use steel_utils::{BlockPos, nbt::compare_nbt_compounds};
 use crate::{player::Player, world::World};
 
 impl Player {
-    /// Mirrors vanilla `Player.mayUseItemAt`.
+    /// Can the player use the given item at the given position in the given direction?
     #[must_use]
     pub(crate) fn may_use_item_at(
         &self,
@@ -30,14 +30,14 @@ impl Player {
     }
 }
 
-/// Mirrors `ItemStack.canBreakBlockInAdventureMode`.
+/// Is it breakable=
 #[must_use]
 pub(super) fn can_break(item: &ItemStack, world: &World, pos: BlockPos) -> bool {
     item.get(CAN_BREAK)
         .is_some_and(|predicate| matches(predicate, world, pos))
 }
 
-/// Mirrors `ItemStack.canPlaceOnBlockInAdventureMode`.
+/// Can you place it on something?
 #[must_use]
 pub(super) fn can_place_on(item: &ItemStack, world: &World, pos: BlockPos) -> bool {
     item.get(CAN_PLACE_ON)
@@ -63,8 +63,6 @@ fn block_predicate_matches(predicate: &BlockPredicate, world: &World, pos: Block
         return false;
     };
 
-    // Vanilla's `BlockPredicate.matches(BlockInWorld)` deliberately ignores
-    // data-component matchers and evaluates only the block entity's full NBT.
     let actual_nbt = block_entity.save_with_full_metadata();
     compare_nbt_compounds(expected_nbt.tag(), &actual_nbt, true)
 }
