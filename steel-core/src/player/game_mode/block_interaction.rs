@@ -64,6 +64,8 @@ impl Player {
             return;
         }
 
+        self.reset_last_action_time();
+
         let world = self.get_world();
 
         if pos.y() >= world.max_build_height() {
@@ -100,6 +102,8 @@ impl Player {
         if !self.has_client_loaded() {
             return;
         }
+
+        self.reset_last_action_time();
 
         let world = self.get_world();
         match packet.action {
@@ -236,6 +240,8 @@ impl Player {
         if !self.is_within_block_interaction_range(packet.pos) {
             return;
         }
+
+        self.reset_last_action_time();
 
         let world = self.get_world();
 

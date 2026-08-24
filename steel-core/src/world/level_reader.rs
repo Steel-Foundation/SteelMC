@@ -155,6 +155,9 @@ pub trait LevelAccessor: ScheduledTickAccess {
     /// Sets a block state with vanilla update flags.
     fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool;
 
+    /// Destroys a block and optionally drops its resources.
+    fn destroy_block(&self, pos: BlockPos, drop_items: bool) -> bool;
+
     /// Plays a block sound when this level surface supports runtime side effects.
     #[expect(
         unused_variables,
