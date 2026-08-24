@@ -3614,6 +3614,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         };
         living.hurt_server(world, source, amount)
     }
+
+    /// Runs when this entity causes another entity to die.
+    /// The entity provided is the entity who was killed.
+    fn killed_entity(&self, _world: &World, _entity: &dyn LivingEntity, _source: &DamageSource) -> bool {
+        true
+    }
+
+    /// Runs when this entity kills another entity.
+    fn award_kill_score(&self, _victim: &dyn Entity, _killing_blow: &DamageSource) {
+        // TODO: Trigger advancement criterion ENTITY_KILLED_PLAYER if the victim is a player.
+    }
 }
 
 /// Repositions a direct passenger from the vehicle's attachment point.

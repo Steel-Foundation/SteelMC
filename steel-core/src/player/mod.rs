@@ -96,11 +96,7 @@ use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
-use crate::entity::{
-    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
-    EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange,
-    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, start_riding_entities,
-};
+use crate::entity::{DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, start_riding_entities, get_kill_credit};
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
@@ -927,6 +923,12 @@ impl Player {
             None,
         );
 
+        if let Some(killer) = get_kill_credit(self, world.as_ref()) {
+            self.award_stat(&vanilla_stat_types::ENTITY_KILLED_BY, killer.entity_type());
+            killer.award_kill_score(self, source);
+            // TODO: Create wither rose
+        }
+
         let show_death_messages = world.get_game_rule(&SHOW_DEATH_MESSAGES);
 
         // TODO: use CombatTracker for multi-arg messages (killer name, item, etc.)
@@ -1681,6 +1683,25 @@ impl Entity for Player {
         // Delegates to Player's inherent hurt method which handles
         // player-specific prechecks before the shared living hurt path.
         Player::hurt(self, world, source, amount)
+    }
+
+    fn killed_entity(&self, _world: &World, entity: &dyn LivingEntity, _source: &DamageSource) -> bool {
+        log::debug!("1");
+        self.award_stat(&vanilla_stat_types::ENTITY_KILLED, entity.entity_type());
+        true
+    }
+
+    fn award_kill_score(&self, victim: &dyn Entity, _killing_blow: &DamageSource) {
+        if self.id() != victim.id() {
+            // TODO: Trigger advancement criteria.
+            // TODO: Increment the score of some objectives of this player.
+            if let Some(victim) = victim.as_player() {
+                self.award_custom_stat(&vanilla_custom_stats::PLAYER_KILLS);
+            } else {
+                self.award_custom_stat(&vanilla_custom_stats::MOB_KILLS);
+            }
+            // TODO: Handle team kill
+        }
     }
 }
 
