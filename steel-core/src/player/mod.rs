@@ -70,11 +70,9 @@ use steel_registry::vanilla_game_rules::{
     SHOW_DEATH_MESSAGES,
 };
 use steel_registry::{
-    level_events, sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
-    vanilla_game_events,
+    level_events, sound_events, vanilla_attributes, vanilla_custom_stats, vanilla_damage_type_tags,
+    vanilla_entities, vanilla_game_events,
 };
-use steel_utils::{entity_events::EntityStatus, locks::Shared, translations};
-use steel_registry::{level_events, sound_events, vanilla_attributes, vanilla_custom_stats, vanilla_damage_type_tags, vanilla_entities, vanilla_game_events};
 use steel_utils::{entity_events::EntityStatus, locks::Shared};
 use tick_state::PlayerTickState;
 use uuid::Uuid;
@@ -96,7 +94,12 @@ use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
-use crate::entity::{DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, start_riding_entities, get_kill_credit};
+use crate::entity::{
+    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
+    EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange,
+    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, get_kill_credit,
+    start_riding_entities,
+};
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
@@ -575,6 +578,10 @@ impl Player {
     ///
     /// Panics if the player position cannot be restored after `ai_step`. Vanilla treats the
     /// pre-tick position as authoritative here, so a rejection indicates corrupted entity state.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "splitting this function would hurt the readability and flow of this function"
+    )]
     pub fn tick(&self) {
         self.advance_tick();
         self.tick_item_cooldowns();
@@ -1567,7 +1574,10 @@ impl Entity for Player {
         }
 
         if fall_distance >= 2.0 {
-            self.award_custom_stat_with_count(&vanilla_custom_stats::FALL_ONE_CM, (fall_distance * 100.0).round() as i32);
+            self.award_custom_stat_with_count(
+                &vanilla_custom_stats::FALL_ONE_CM,
+                (fall_distance * 100.0).round() as i32,
+            );
         }
 
         LivingEntity::cause_living_fall_damage(self, fall_distance, damage_modifier, source)
@@ -1685,7 +1695,12 @@ impl Entity for Player {
         Player::hurt(self, world, source, amount)
     }
 
-    fn killed_entity(&self, _world: &World, entity: &dyn LivingEntity, _source: &DamageSource) -> bool {
+    fn killed_entity(
+        &self,
+        _world: &World,
+        entity: &dyn LivingEntity,
+        _source: &DamageSource,
+    ) -> bool {
         log::debug!("1");
         self.award_stat(&vanilla_stat_types::ENTITY_KILLED, entity.entity_type());
         true
@@ -1695,11 +1710,11 @@ impl Entity for Player {
         if self.id() != victim.id() {
             // TODO: Trigger advancement criteria.
             // TODO: Increment the score of some objectives of this player.
-            if let Some(victim) = victim.as_player() {
-                self.award_custom_stat(&vanilla_custom_stats::PLAYER_KILLS);
+            self.award_custom_stat(if victim.as_player().is_some() {
+                &vanilla_custom_stats::PLAYER_KILLS
             } else {
-                self.award_custom_stat(&vanilla_custom_stats::MOB_KILLS);
-            }
+                &vanilla_custom_stats::MOB_KILLS
+            });
             // TODO: Handle team kill
         }
     }

@@ -1358,9 +1358,15 @@ pub fn leashables_leashed_to_holder_in_area_near_position(
 }
 
 /// Returns the living entity that will be credited with killing this entity.
-pub(crate) fn get_kill_credit<E: LivingEntity + ?Sized>(entity: &E, world: &World) -> Option<SharedEntity> {
+pub(crate) fn get_kill_credit<E: LivingEntity + ?Sized>(
+    entity: &E,
+    world: &World,
+) -> Option<SharedEntity> {
     if let Some(uuid) = entity.last_hurt_by_player_uuid() {
-        world.players.get_by_uuid(&uuid).and_then(|player| world.get_entity_by_id(player.id()))
+        world
+            .players
+            .get_by_uuid(&uuid)
+            .and_then(|player| world.get_entity_by_id(player.id()))
     } else {
         entity.last_hurt_by_mob()
     }

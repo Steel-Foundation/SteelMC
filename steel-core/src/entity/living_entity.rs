@@ -886,9 +886,14 @@ pub trait LivingEntity: Entity {
 
         // Can't directly use &self for &dyn LivingEntity, as the compiler doesn't know if it's Sized.
         // Using a function meant for getting &dyn LivingEntity directly works well here.
-        if let Some(world) = self.level() && let Some(self_entity) = self.as_living_entity() {
-            let source_entity = source.causing_entity_id.and_then(|id| world.get_entity_by_id(id));
-            if source_entity.is_none_or(|entity| entity.killed_entity(&*world, self_entity, source)) {
+        if let Some(world) = self.level()
+            && let Some(self_entity) = self.as_living_entity()
+        {
+            let source_entity = source
+                .causing_entity_id
+                .and_then(|id| world.get_entity_by_id(id));
+            if source_entity.is_none_or(|entity| entity.killed_entity(&world, self_entity, source))
+            {
                 self.game_event(&vanilla_game_events::ENTITY_DIE);
                 self.drop_all_death_loot(source);
                 // TODO: Create wither rose for killer

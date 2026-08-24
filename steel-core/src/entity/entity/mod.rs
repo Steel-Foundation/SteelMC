@@ -3617,7 +3617,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Runs when this entity causes another entity to die.
     /// The entity provided is the entity who was killed.
-    fn killed_entity(&self, _world: &World, _entity: &dyn LivingEntity, _source: &DamageSource) -> bool {
+    fn killed_entity(
+        &self,
+        _world: &World,
+        _entity: &dyn LivingEntity,
+        _source: &DamageSource,
+    ) -> bool {
         true
     }
 

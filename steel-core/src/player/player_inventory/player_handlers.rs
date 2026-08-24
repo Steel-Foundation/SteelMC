@@ -1,20 +1,5 @@
 use std::{f32::consts::TAU, mem, sync::Arc};
 
-use glam::DVec3;
-use steel_protocol::packets::game::{
-    CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
-    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetCarriedItem,
-    SSetCreativeModeSlot,
-};
-use steel_registry::item_stack::ItemStack;
-use steel_utils::{
-    Downcast as _,
-    locks::Shared,
-    types::{GameType, InteractionHand},
-};
-use text_components::TextComponent;
-use steel_registry::stat::vanilla_stat_types;
-use steel_registry::vanilla_custom_stats;
 use crate::{
     entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity},
     inventory::{
@@ -29,6 +14,21 @@ use crate::{
     },
     player::{Player, connection::NetworkConnection as _},
 };
+use glam::DVec3;
+use steel_protocol::packets::game::{
+    CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
+    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetCarriedItem,
+    SSetCreativeModeSlot,
+};
+use steel_registry::item_stack::ItemStack;
+use steel_registry::stat::vanilla_stat_types;
+use steel_registry::vanilla_custom_stats;
+use steel_utils::{
+    Downcast as _,
+    locks::Shared,
+    types::{GameType, InteractionHand},
+};
+use text_components::TextComponent;
 
 use super::{
     DeferredMenuAction, MenuItemDisposition, MenuOpenContext, MenuRemovalStatus, OpenMenuDispatch,

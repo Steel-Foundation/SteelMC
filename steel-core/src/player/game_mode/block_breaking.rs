@@ -9,13 +9,13 @@ use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::data_components::AdventureModePredicate;
 use steel_registry::data_components::vanilla_components::CAN_BREAK;
+use steel_registry::equipment::EquipmentSlot;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_attributes;
 use steel_registry::{
     REGISTRY, blocks::properties::Direction, item_stack::ItemStack, vanilla_blocks,
     vanilla_game_events,
 };
-use steel_registry::equipment::EquipmentSlot;
-use steel_registry::stat::vanilla_stat_types;
 use steel_utils::{
     BlockPos, BlockStateId,
     nbt::compare_nbt_compounds,
@@ -420,7 +420,9 @@ impl BlockBreakingManager {
                         let has_infinite_materials = player.has_infinite_materials();
                         inv.with_selected_item_mut(|main_hand| {
                             let item = main_hand.item;
-                            main_hand.hurt_and_break(damage_per_block, has_infinite_materials).then_some(item)
+                            main_hand
+                                .hurt_and_break(damage_per_block, has_infinite_materials)
+                                .then_some(item)
                         })
                     } else {
                         None
