@@ -893,14 +893,9 @@ impl Player {
         self.set_absorption_amount(self.get_absorption_amount() - (original_damage - damage));
 
         let absorbed_damage = original_damage - damage;
-        if (0.0..f32::MAX).contains(&absorbed_damage)
-            && let Some(damage_causer) = source
-                .causing_entity_id
-                .and_then(|id| world.get_entity_by_id(id))
-            && let Some(player) = damage_causer.as_player()
-        {
-            player.award_custom_stat_with_count(
-                &vanilla_custom_stats::DAMAGE_DEALT_ABSORBED,
+        if (0.0..f32::MAX).contains(&absorbed_damage) {
+            self.award_custom_stat_with_count(
+                &vanilla_custom_stats::DAMAGE_ABSORBED,
                 (absorbed_damage * 10.0).round() as i32,
             );
         }

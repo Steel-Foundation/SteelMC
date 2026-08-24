@@ -733,7 +733,27 @@ pub trait LivingEntity: Entity {
         {
             let absorb_value = (resistance.amplifier() + 1) * 5;
             let absorb = 25 - absorb_value;
+            let old_damage = damage;
             damage = (damage * absorb as f32 / 25.0).max(0.0);
+            let damage_resisted = old_damage - damage;
+            if (0.0..f32::MAX).contains(&damage_resisted) {
+                let stats_to_award = (damage_resisted * 10.0).round() as i32;
+                if let Some(player) = self.as_player() {
+                    player.award_custom_stat_with_count(
+                        &vanilla_custom_stats::DAMAGE_RESISTED,
+                        stats_to_award,
+                    );
+                } else if let Some(damage_causer) = source
+                    .causing_entity_id
+                    .and_then(|id| self.level().and_then(|world| world.get_entity_by_id(id)))
+                    && let Some(player) = damage_causer.as_player()
+                {
+                    player.award_custom_stat_with_count(
+                        &vanilla_custom_stats::DAMAGE_DEALT_RESISTED,
+                        stats_to_award,
+                    );
+                }
+            }
         }
 
         if damage <= 0.0 {
