@@ -114,11 +114,13 @@ impl GrowingPlantHeadBlock {
     }
 
     /// Returns whether the state is at max age.
+    #[must_use]
     pub fn is_max_age(state: BlockStateId) -> bool {
         state.get_value(AGE) >= AGE.max
     }
 
     /// Returns the state with max age.
+    #[must_use]
     pub fn get_max_age_state(state: BlockStateId) -> BlockStateId {
         state.set_value(AGE, AGE.max)
     }
