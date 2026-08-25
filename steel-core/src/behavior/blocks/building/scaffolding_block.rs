@@ -202,7 +202,7 @@ mod tests {
 
         let shape = collision_shape(
             scaffolding_state(0, false),
-            BlockCollisionContext::pre_move(65.0, false),
+            BlockCollisionContext::with_position(65.0, false),
         );
 
         assert_eq!(shape, VoxelShape::EMPTY);

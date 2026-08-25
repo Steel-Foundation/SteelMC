@@ -96,11 +96,12 @@ impl BlockItem {
             return InteractionResult::Fail;
         }
 
-        let collision_context = context
-            .player()
-            .map_or_else(BlockCollisionContext::placement_without_entity, |player| {
-                BlockCollisionContext::pre_move(player.position().y, player.is_descending())
-            });
+        let collision_context = context.player().map_or_else(
+            BlockCollisionContext::placement_without_entity,
+            |player| {
+                BlockCollisionContext::with_position(player.position().y, player.is_descending())
+            },
+        );
         let collision_shape = OffsetVoxelShape::new(
             behavior.get_collision_shape(
                 new_state,
