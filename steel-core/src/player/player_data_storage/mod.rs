@@ -320,7 +320,7 @@ impl PlayerDataFile {
     fn into_persistent(self) -> io::Result<PersistentPlayerData> {
         if self.data_version != PLAYER_DATA_VERSION {
             return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
+                io::ErrorKind::Unsupported,
                 format!(
                     "unsupported player data payload version {}",
                     self.data_version
@@ -490,6 +490,17 @@ fn encode_file(
     Ok(bytes)
 }
 
+/// Decodes a magic-and-version framed payload.
+///
+/// Error kinds separate the two failure classes, because callers recover from
+/// them differently:
+///
+/// - [`io::ErrorKind::Unsupported`] means the file is intact but was written by
+///   a different format version. A backup carries the same version, so falling
+///   back to one cannot help.
+/// - [`io::ErrorKind::InvalidData`] means the bytes are damaged: bad magic, a
+///   truncated header, or a payload the zstd frame check or wincode rejected.
+///   Recovering from a backup is worthwhile here.
 fn decode_file(
     expected_magic: [u8; 4],
     expected_version: u16,
@@ -510,9 +521,17 @@ fn decode_file(
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
     if version != expected_version {
         return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
+            io::ErrorKind::Unsupported,
             format!("unsupported player data storage version {version}"),
         ));
     }
-    zstd::decode_all(&bytes[6..])
+    // zstd reports frame and checksum failures as `ErrorKind::Other`. Normalize
+    // them so damaged payloads join the rest of the corruption class rather than
+    // slipping past callers that match on the kind.
+    zstd::decode_all(&bytes[6..]).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("player data payload is corrupt: {error}"),
+        )
+    })
 }

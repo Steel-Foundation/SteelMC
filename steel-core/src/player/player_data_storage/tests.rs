@@ -672,7 +672,53 @@ fn stale_player_payload_version_is_rejected() {
         .into_persistent()
         .expect_err("stale payload should fail");
 
-    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    // A version mismatch is not corruption: the file is intact and a backup
+    // would carry the same version, so recovery must not treat it as damage.
+    assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+}
+
+/// Pins the split that recovery keys on: an intact file from another format
+/// version reports `Unsupported`, while damaged bytes report `InvalidData`.
+#[test]
+fn version_mismatch_and_corruption_report_distinct_error_kinds() {
+    fn rejection_kind(bytes: &[u8], expectation: &str) -> io::ErrorKind {
+        let Err(error) = decode_player_file(bytes) else {
+            panic!("{expectation}");
+        };
+        error.kind()
+    }
+
+    let encoded =
+        encode_player_file(&sample_player_file(PLAYER_DATA_VERSION)).expect("player file encodes");
+
+    let mut wrong_version = encoded.clone();
+    wrong_version[4..6].copy_from_slice(&(PLAYER_STORAGE_VERSION + 1).to_le_bytes());
+    assert_eq!(
+        rejection_kind(&wrong_version, "a foreign storage version should be rejected"),
+        io::ErrorKind::Unsupported
+    );
+
+    let mut wrong_magic = encoded.clone();
+    wrong_magic[0] ^= 0xFF;
+    assert_eq!(
+        rejection_kind(&wrong_magic, "a damaged magic should be rejected"),
+        io::ErrorKind::InvalidData
+    );
+
+    assert_eq!(
+        rejection_kind(&encoded[..3], "a truncated header should be rejected"),
+        io::ErrorKind::InvalidData
+    );
+
+    // Damage inside the zstd frame: the content checksum added in the previous
+    // change is what makes this reliably detectable.
+    let mut damaged_payload = encoded.clone();
+    let last = damaged_payload.len() - 1;
+    damaged_payload[last] ^= 0xFF;
+    assert_eq!(
+        rejection_kind(&damaged_payload, "a damaged payload should be rejected"),
+        io::ErrorKind::InvalidData
+    );
 }
 
 #[test]
