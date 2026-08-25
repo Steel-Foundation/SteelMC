@@ -570,6 +570,8 @@ impl Player {
             return;
         };
 
+        self.reset_last_action_time();
+
         let target_pos = target.block_position();
         if !world.world_border_snapshot().is_within_bounds_with_margin(
             f64::from(target_pos.x()),
@@ -643,6 +645,7 @@ impl Player {
         }
 
         let world = self.get_world();
+        self.reset_last_action_time();
         let target = world.get_accessible_entity_by_id(packet.entity_id);
         self.set_crouching(packet.using_secondary_action);
         let Some(target) = target else {

@@ -35,6 +35,11 @@ profile.json.syms.json
 # ICE crash reports
 rustc-ice-*
 
+# Nix
+/.direnv
+/result
+/result-*
+
 # IDE
 .vscode/settings.json
 .idea

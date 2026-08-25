@@ -21,6 +21,7 @@ mod perms;
 mod return_command;
 mod seed;
 mod setblock;
+mod setidletimeout;
 mod setworldspawn;
 mod stop;
 mod summon;
@@ -80,6 +81,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(return_command::registration())?;
     builder.register(seed::registration())?;
     builder.register(setblock::registration())?;
+    builder.register(setidletimeout::registration())?;
     builder.register(setworldspawn::registration())?;
     builder.register(stop::registration())?;
     builder.register(summon::registration())?;
@@ -154,6 +156,7 @@ mod tests {
                 "return",
                 "seed",
                 "setblock",
+                "setidletimeout",
                 "setworldspawn",
                 "stop",
                 "summon",

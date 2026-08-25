@@ -9,6 +9,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{sound_events, vanilla_entities};
 
 use crate::behavior::context::{InteractionResult, UseItemContext};
@@ -68,8 +69,11 @@ impl ItemBehavior for EnderPearlItem {
         }
         player.register_ender_pearl(&entity);
 
-        // TODO: award the ITEM_USED stat once a stats system exists.
-        context.inv.with_item(|item| item.shrink(1));
+        context.inv.with_item(|itemstack| {
+            let item = itemstack.item();
+            itemstack.shrink(1);
+            player.award_stat(&vanilla_stat_types::ITEM_USED, item);
+        });
 
         InteractionResult::Success
     }
