@@ -36,6 +36,10 @@ PR template
 - [ ] Docs updated (if applicable)
 - [ ] No leftover debug code / comments
 
+## Classes modified:
+
+<!-- The Classes need to be written the same as on the [tracker](https://steelmc.dev/tracker/) -->
+
 ## Additional notes
 
 <!-- Anything else reviewers should know -->
