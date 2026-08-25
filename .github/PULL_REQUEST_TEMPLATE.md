@@ -38,7 +38,7 @@ PR template
 
 ## Classes modified:
 
-<!-- The Classes need to be written the same as on the [tracker](https://steelmc.dev/tracker/) -->
+<!-- The Classes need to be written the same as on the [tracker](https://steelmc.dev/tracker/) to appear in it. -->
 
 ## Additional notes
 
