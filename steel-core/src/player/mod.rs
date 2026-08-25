@@ -73,7 +73,7 @@ use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_custom_stats, vanilla_damage_type_tags,
     vanilla_entities, vanilla_game_events,
 };
-use steel_utils::{entity_events::EntityStatus, locks::Shared};
+use steel_utils::{entity_events::EntityStatus, locks::Shared, translations};
 use tick_state::PlayerTickState;
 use uuid::Uuid;
 
@@ -578,10 +578,6 @@ impl Player {
     ///
     /// Panics if the player position cannot be restored after `ai_step`. Vanilla treats the
     /// pre-tick position as authoritative here, so a rejection indicates corrupted entity state.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "splitting this function would hurt the readability and flow of this function"
-    )]
     pub fn tick(&self) {
         self.advance_tick();
         self.tick_item_cooldowns();

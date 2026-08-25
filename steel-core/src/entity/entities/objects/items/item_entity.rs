@@ -335,12 +335,12 @@ impl ItemEntity {
         let picked_up_count = original_count - item.count();
 
         // Vanilla uses the stack's count to award the stat that many items picked up, which is
-        // wrong if not all the items get picked up by the player. We use the correct difference
-        // of counts instead to award the stat for picking up the items.
+        // wrong if not all the items get picked up by the player. This could be considered
+        // buggy, but it's possible that people depend on this behavior.
         player.award_stat_with_count(
             &vanilla_stat_types::ITEM_PICKED_UP,
             item.item,
-            picked_up_count,
+            original_count,
         );
 
         // Send the take animation packet to nearby players
