@@ -29,40 +29,25 @@ use crate::entity::{
 };
 use crate::world::World;
 
-/// Vanilla: ticks alive before the eye plays its death sound and either drops
-/// itself as an item or shatters. `EyeOfEnderEntity` field `lifespan` threshold.
 const LIFESPAN_TICKS: u32 = 80;
 
-/// Vanilla `EyeOfEnderEntity.initTargetPos`: horizontal distance beyond which
-/// the eye targets a nearby point in the structure's direction instead of the
-/// structure's real (and usually far away / underground) position.
-const TARGET_APPROACH_DISTANCE: f64 = 12.0;
+const TOO_FAR_DISTANCE: f64 = 12.0;
 
-/// Vanilla: height above the thrower the eye targets when clamping to
-/// `TARGET_APPROACH_DISTANCE`.
-const TARGET_APPROACH_HEIGHT: f64 = 8.0;
+const TOO_FAR_SIGNAL_HEIGHT: f64 = 8.0;
 
-/// Vanilla `EyeOfEnderEntity.updateVelocity`: `MathHelper.lerp` alpha applied
-/// to horizontal speed each tick.
 const VELOCITY_LERP_ALPHA: f64 = 0.0025;
 
-/// Vanilla: horizontal-distance-to-target threshold below which speed is damped.
 const NEAR_TARGET_THRESHOLD: f64 = 1.0;
 
-/// Vanilla: damping factor applied to speed when within `NEAR_TARGET_THRESHOLD`.
 const NEAR_TARGET_DAMPING: f64 = 0.8;
 
-/// Vanilla: per-tick nudge applied to vertical velocity toward the target height.
 const VERTICAL_NUDGE: f64 = 0.015;
 
-/// Mutable eye-specific state that changes during flight.
 struct EyeOfEnderState {
-    /// Point the eye is flying toward. `None` until `init_target_pos` is called.
     target_pos: Option<DVec3>,
-    /// Ticks alive. Despawns at `LIFESPAN_TICKS`.
+
     lifespan: u32,
-    /// Whether this eye drops itself as a pickup item when it expires,
-    /// instead of shattering. Rolled fresh each time `init_target_pos` is called.
+
     drops_item: bool,
 }
 
@@ -84,16 +69,9 @@ impl EyeOfEnderState {
 /// - Not attackable
 #[entity_behavior(class = "EyeOfEnder")]
 pub struct EyeOfEnderEntity {
-    /// Common entity fields (id, uuid, position, etc.).
     base: EntityBase,
-
-    /// Vanilla entity type registered for this implementation.
     entity_type: EntityTypeRef,
-
-    /// Entity data containing the displayed `ItemStack`.
     entity_data: SyncMutex<EyeOfEnderEntityData>,
-
-    /// Eye-specific mutable state.
     state: SyncMutex<EyeOfEnderState>,
 }
 
@@ -171,12 +149,12 @@ impl EyeOfEnderEntity {
         let diff = pos - self.position();
         let horizontal_dist = DVec3::new(diff.x, 0.0, diff.z).length();
 
-        let target = if horizontal_dist > TARGET_APPROACH_DISTANCE {
+        let target = if horizontal_dist > TOO_FAR_DISTANCE {
             self.position()
                 + DVec3::new(
-                    diff.x / horizontal_dist * TARGET_APPROACH_DISTANCE,
-                    TARGET_APPROACH_HEIGHT,
-                    diff.z / horizontal_dist * TARGET_APPROACH_DISTANCE,
+                    diff.x / horizontal_dist * TOO_FAR_DISTANCE,
+                    TOO_FAR_SIGNAL_HEIGHT,
+                    diff.z / horizontal_dist * TOO_FAR_DISTANCE,
                 )
         } else {
             pos
