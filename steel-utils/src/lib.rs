@@ -75,7 +75,7 @@ pub const MC_VERSION: &str = version::MINECRAFT_VERSION;
 /// builds running on the same machine.
 pub const SIMD_REGISTER_F64_SIZE: usize = if cfg!(target_feature = "avx512f") {
     8
-} else if cfg!(target_feature = "avx2") {
+} else if cfg!(target_feature = "avx") {
     4
 } else if cfg!(any(target_feature = "sse2", target_feature = "neon")) {
     2
