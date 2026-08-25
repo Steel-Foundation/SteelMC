@@ -5,13 +5,14 @@ use std::sync::Arc;
 use crate::entity::Entity;
 use crate::worldgen::generator::ChunkGenerator;
 use steel_macros::item_behavior;
-use steel_registry::TaggedRegistryExt;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     REGISTRY, level_events, vanilla_blocks, vanilla_entities, vanilla_game_events,
     vanilla_structure_tags,
 };
+use steel_registry::{TaggedRegistryExt, vanilla_items};
 use steel_utils::{BlockPos, types::UpdateFlags};
 
 use crate::behavior::ItemBehavior;
@@ -169,10 +170,13 @@ impl ItemBehavior for EnderEyeItem {
         }
 
         context.inv.with_item(|item| item.shrink(1));
+        context
+            .player
+            .award_stat(&vanilla_stat_types::ITEM_USED, &vanilla_items::ENDER_EYE);
 
         InteractionResult::SuccessServer
 
-        // TODO implement statistics and advancment
+        // TODO implement advancment
     }
 }
 
