@@ -13,10 +13,7 @@ fn parsed_coordinates(
 ) -> Result<Coordinates, CommandSyntaxError> {
     let parse = dispatcher.parse(input, TestSource::new());
     let chain = dispatcher.context_chain(parse)?;
-    chain
-        .top_context()
-        .coordinates("value")
-        .ok_or_else(|| CommandSyntaxError::dynamic("coordinates were not retained"))
+    chain.top_context().coordinates("value")
 }
 
 #[test]

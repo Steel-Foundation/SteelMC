@@ -18,6 +18,12 @@ mod target_block;
 mod tripwire;
 mod wire;
 
+/// Maximum vanilla redstone signal strength.
+pub(crate) const MAX_REDSTONE_SIGNAL: i32 = 15;
+
+/// Minimum vanilla redstone signal strength.
+pub(crate) const MIN_REDSTONE_SIGNAL: i32 = 0;
+
 pub use button_block::ButtonBlock;
 pub use copper_bulb_block::{CopperBulbBlock, WeatheringCopperBulbBlock};
 pub use daylight_detector_block::DaylightDetectorBlock;

@@ -2,7 +2,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::{
     BlockRef,
     block_state_ext::BlockStateExt,
-    properties::{BlockStateProperties, Direction},
+    properties::{BlockStateProperties, BoolProperty, Direction, IntProperty},
     shapes::VoxelShape,
 };
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
@@ -36,6 +36,9 @@ const SHAPE_BELOW_BLOCK: VoxelShape = VoxelShape::from_boxes(SHAPE_BELOW_BLOCK_B
 pub struct ScaffoldingBlock {
     block: BlockRef,
 }
+
+const BOTTOM: &BoolProperty = &BlockStateProperties::BOTTOM;
+const STABILITY_DISTANCE: &IntProperty = &BlockStateProperties::STABILITY_DISTANCE;
 
 impl ScaffoldingBlock {
     /// Creates a scaffolding block behavior.
@@ -81,8 +84,8 @@ impl BlockBehavior for ScaffoldingBlock {
             return SHAPE_STABLE;
         }
 
-        let distance = state.get_value(&BlockStateProperties::STABILITY_DISTANCE);
-        let bottom = state.get_value(&BlockStateProperties::BOTTOM);
+        let distance = state.get_value(STABILITY_DISTANCE);
+        let bottom = state.get_value(BOTTOM);
         if distance != 0 && bottom && context.is_above(SHAPE_BELOW_BLOCK, pos, true) {
             SHAPE_UNSTABLE_BOTTOM
         } else {
@@ -98,11 +101,13 @@ mod tests {
 
     use crate::test_support::TestLevel;
 
+    const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+
     fn scaffolding_state(distance: u8, bottom: bool) -> BlockStateId {
         vanilla_blocks::SCAFFOLDING
             .default_state()
-            .set_value(&BlockStateProperties::STABILITY_DISTANCE, distance)
-            .set_value(&BlockStateProperties::BOTTOM, bottom)
+            .set_value(STABILITY_DISTANCE, distance)
+            .set_value(BOTTOM, bottom)
     }
 
     fn collision_shape(state: BlockStateId, context: BlockCollisionContext) -> VoxelShape {
@@ -165,7 +170,7 @@ mod tests {
         let behavior = ScaffoldingBlock::new(&vanilla_blocks::SCAFFOLDING);
         let state = vanilla_blocks::SCAFFOLDING
             .default_state()
-            .set_value(&BlockStateProperties::WATERLOGGED, true);
+            .set_value(WATERLOGGED, true);
         let pos = BlockPos::new(0, 64, 0);
         let level = TestLevel::default();
 

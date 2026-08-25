@@ -49,9 +49,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 fn start_structure_search(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<LocateStructureSearch, CommandSyntaxError> {
-    let Some(query) = context.structure_or_tag_key("structure") else {
-        return Err(missing_argument("structure"));
-    };
+    let query = context.structure_or_tag_key("structure")?;
     let Some(structures) = query.resolve() else {
         return Err(invalid_structure(query));
     };
@@ -344,12 +342,6 @@ fn structure_not_found(query: &StructureOrTagKey) -> CommandSyntaxError {
             .message([TextComponent::from(query.as_printable())])
             .component(),
     )
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
 }
 
 fn horizontal_distance(a: BlockPos, b: BlockPos) -> i32 {

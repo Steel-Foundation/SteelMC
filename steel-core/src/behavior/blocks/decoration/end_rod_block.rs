@@ -8,7 +8,7 @@ use steel_utils::{BlockStateId, Direction};
 
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 
-const FACING: EnumProperty<Direction> = BlockStateProperties::FACING;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
 
 /// End rods use the clicked face for their orientation and reverse against an aligned rod.
 #[block_behavior]
@@ -30,12 +30,12 @@ impl BlockBehavior for EndRodBlock {
         let adjacent_pos = context.place_pos().relative(clicked_face.opposite());
         let adjacent = context.world.get_block_state(adjacent_pos);
         let facing =
-            if adjacent.get_block() == self.block && adjacent.get_value(&FACING) == clicked_face {
+            if adjacent.get_block() == self.block && adjacent.get_value(FACING) == clicked_face {
                 clicked_face.opposite()
             } else {
                 clicked_face
             };
 
-        Some(self.block.default_state().set_value(&FACING, facing))
+        Some(self.block.default_state().set_value(FACING, facing))
     }
 }

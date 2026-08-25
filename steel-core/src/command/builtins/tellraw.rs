@@ -25,11 +25,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 
 fn send_message(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
     let targets = context.players("targets")?;
-    let Some(message) = context.text_component("message") else {
-        return Err(CommandSyntaxError::dynamic(
-            "Parsed text component is missing from the command context",
-        ));
-    };
+    let message = context.text_component("message")?;
     let result = i32::try_from(targets.len()).map_err(|_| {
         CommandSyntaxError::dynamic("Target player count exceeds the command result range")
     })?;

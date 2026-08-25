@@ -108,8 +108,8 @@ mod context;
 
 pub use context::{
     BlockCollisionBoxes, BlockCollisionContext, BlockEntityCreation, BlockLootContext,
-    EntityFallDamage, EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, PickupResult,
-    RailBehavior,
+    EntityFallDamage, EntityFallOnContext, EntityFallOnFacts, EntityLandingContext, Fallable,
+    PickupResult, RailBehavior,
 };
 
 /// Data exposed by blocks that support vanilla archaeology brushing.
@@ -1203,6 +1203,11 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns the trait object for Blocks that have the Bonemealable trait implemented.
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        None
+    }
+
+    /// Returns the shared vanilla `Fallable` capability implemented by this block.
+    fn as_fallable(&self) -> Option<&dyn Fallable> {
         None
     }
 

@@ -31,15 +31,15 @@ pub struct IronBarsBlock {
 }
 
 /// North connection property.
-const NORTH: BoolProperty = BlockStateProperties::NORTH;
+const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
 /// East connection property.
-const EAST: BoolProperty = BlockStateProperties::EAST;
+const EAST: &BoolProperty = &BlockStateProperties::EAST;
 /// South connection property.
-const SOUTH: BoolProperty = BlockStateProperties::SOUTH;
+const SOUTH: &BoolProperty = &BlockStateProperties::SOUTH;
 /// West connection property.
-const WEST: BoolProperty = BlockStateProperties::WEST;
+const WEST: &BoolProperty = &BlockStateProperties::WEST;
 /// Waterlogged property.
-const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl IronBarsBlock {
     /// Creates a new bar block behavior for the given block.
@@ -66,7 +66,7 @@ impl BlockBehavior for IronBarsBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(
             get_connection_state(self.block, context.world, &context.place_pos())
-                .set_value(&WATERLOGGED, context.is_water_source()),
+                .set_value(WATERLOGGED, context.is_water_source()),
         )
     }
 
@@ -121,7 +121,7 @@ impl BlockBehavior for WeatheringCopperBarsBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(
             get_connection_state(self.block, context.world, &context.place_pos())
-                .set_value(&WATERLOGGED, context.is_water_source()),
+                .set_value(WATERLOGGED, context.is_water_source()),
         )
     }
 
@@ -161,25 +161,25 @@ pub fn get_connection_state(block: BlockRef, world: &World, pos: &BlockPos) -> B
     let north_pos = Direction::North.relative(*pos);
     let north_state = world.get_block_state(north_pos);
     let connects_north = connects_to(world, north_state, north_pos, Direction::North);
-    state = state.set_value(&NORTH, connects_north);
+    state = state.set_value(NORTH, connects_north);
 
     // Check east
     let east_pos = Direction::East.relative(*pos);
     let east_state = world.get_block_state(east_pos);
     let connects_east = connects_to(world, east_state, east_pos, Direction::East);
-    state = state.set_value(&EAST, connects_east);
+    state = state.set_value(EAST, connects_east);
 
     // Check south
     let south_pos = Direction::South.relative(*pos);
     let south_state = world.get_block_state(south_pos);
     let connects_south = connects_to(world, south_state, south_pos, Direction::South);
-    state = state.set_value(&SOUTH, connects_south);
+    state = state.set_value(SOUTH, connects_south);
 
     // Check west
     let west_pos = Direction::West.relative(*pos);
     let west_state = world.get_block_state(west_pos);
     let connects_west = connects_to(world, west_state, west_pos, Direction::West);
-    state = state.set_value(&WEST, connects_west);
+    state = state.set_value(WEST, connects_west);
 
     state
 }
@@ -194,19 +194,19 @@ pub fn update_shape(
     match direction {
         Direction::North => {
             let connects = connects_to(world, neighbor_state, neighbor_pos, Direction::North);
-            state.set_value(&NORTH, connects)
+            state.set_value(NORTH, connects)
         }
         Direction::East => {
             let connects = connects_to(world, neighbor_state, neighbor_pos, Direction::East);
-            state.set_value(&EAST, connects)
+            state.set_value(EAST, connects)
         }
         Direction::South => {
             let connects = connects_to(world, neighbor_state, neighbor_pos, Direction::South);
-            state.set_value(&SOUTH, connects)
+            state.set_value(SOUTH, connects)
         }
         Direction::West => {
             let connects = connects_to(world, neighbor_state, neighbor_pos, Direction::West);
-            state.set_value(&WEST, connects)
+            state.set_value(WEST, connects)
         }
         Direction::Up | Direction::Down => state,
     }

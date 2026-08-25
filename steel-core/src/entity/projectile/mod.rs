@@ -19,6 +19,7 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLOCKS};
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
@@ -28,8 +29,10 @@ use steel_utils::{UuidExt, WorldAabb};
 use uuid::Uuid;
 
 use crate::behavior::BLOCK_BEHAVIORS;
+use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
 
@@ -41,6 +44,9 @@ const SHOOT_INACCURACY_SCALE: f64 = 0.0172_275;
 
 /// Vanilla `ProjectileUtil.DEFAULT_ENTITY_HIT_RESULT_MARGIN`.
 const MAX_ENTITY_HIT_MARGIN: f64 = 0.3;
+
+/// Vanilla `ThrowableItemProjectile` spawn offset below the shooter's eye.
+const THROWN_ITEM_SPAWN_EYE_OFFSET: f64 = 0.1;
 
 /// Mirrors vanilla `RandomSource.triangle(mode, deviation)`.
 fn triangle_random(mode: f64, deviation: f64) -> f64 {
@@ -591,6 +597,15 @@ pub trait Projectile: Entity + ProjectileEventSource {
             .on_projectile_hit(state, &world, hit, projectile);
     }
 
+    /// Vanilla `Projectile.hurtServer`: marks hurt unless invulnerable to the
+    /// base checks, but never takes damage.
+    fn hurt(&self, _world: &World, source: &DamageSource, _amount: f32) -> bool {
+        if !self.is_invulnerable_to_base(source) {
+            self.mark_hurt();
+        }
+        false
+    }
+
     /// Vanilla `Projectile.tick` (the `super.tick()` reached from subclasses).
     fn projectile_base_tick(&self) {
         if !self.has_been_shot() {
@@ -632,6 +647,56 @@ pub trait Projectile: Entity + ProjectileEventSource {
         state.left_owner = nbt.byte("LeftOwner").is_some_and(|value| value != 0);
         state.has_been_shot = nbt.byte("HasBeenShot").is_some_and(|value| value != 0);
     }
+}
+
+/// Spawns a throwable-item projectile from the source's eye along its look
+/// direction and registers it in the world.
+///
+/// Mirrors vanilla `Projectile.spawnProjectileFromRotation` + `spawnProjectile`:
+/// create the projectile at the eye minus 0.1, set its owner, shoot it with
+/// `shootFromRotation`, add it to the world, then run `applyOnProjectileSpawned`
+/// (the `minecraft:projectile_spawned` enchantment effects). `create` receives
+/// the spawn position and must return the concrete projectile type. Returns
+/// `None` when the world rejects the projectile so the caller can fail the use.
+#[must_use]
+pub fn spawn_throwable_item_projectile<E>(
+    world: &Arc<World>,
+    player: &Player,
+    item_stack: &mut ItemStack,
+    power: f32,
+    uncertainty: f32,
+    create: impl FnOnce(DVec3) -> E,
+) -> Option<SharedEntity>
+where
+    E: Projectile + ThrowableItemProjectile + Entity + 'static,
+{
+    let player_pos = player.position();
+    let spawn_pos = DVec3::new(
+        player_pos.x,
+        player.get_eye_y() - THROWN_ITEM_SPAWN_EYE_OFFSET,
+        player_pos.z,
+    );
+
+    let entity = create(spawn_pos);
+    if let Some(owner) = world.players.get_by_uuid(&player.gameprofile.id) {
+        let owner: SharedEntity = owner;
+        entity.set_owner_entity(Some(&owner));
+    } else {
+        entity.set_owner_uuid(Some(player.gameprofile.id));
+    }
+    entity.set_item_clamped(item_stack.clone());
+
+    let (yaw, player_pitch) = player.rotation();
+    entity.shoot_from_rotation(player, player_pitch, yaw, 0.0, power, uncertainty);
+
+    let entity: SharedEntity = Arc::new(entity);
+    if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
+        log::debug!("failed to spawn throwable item projectile: {error}");
+        return None;
+    }
+    enchantment_helper::on_projectile_spawned(world, item_stack, entity.as_ref(), Some(player));
+
+    Some(entity)
 }
 
 /// Vanilla `ProjectileUtil.computeMargin`: ramps the entity hit margin from 0 to

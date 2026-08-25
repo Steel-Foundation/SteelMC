@@ -23,6 +23,7 @@ use crate::command::brigadier::{
     CommandSyntaxErrorKind, ContainsPrimitiveArgumentValue, PrimitiveArgumentValue, StringReader,
     SuggestionsBuilder,
 };
+use crate::command::incorrectly_typed_argument;
 use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use glam::DVec3;
@@ -415,8 +416,9 @@ impl fmt::Debug for SteelArgumentValue {
 }
 
 impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
-    fn primitive_value(&self) -> Option<&PrimitiveArgumentValue> {
+    fn primitive_value(&self, name: &str) -> Result<&PrimitiveArgumentValue, CommandSyntaxError> {
         self.downcast_ref::<PrimitiveArgumentValue>()
+            .ok_or_else(|| incorrectly_typed_argument(name))
     }
 }
 
@@ -424,7 +426,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
 pub(crate) trait SteelArgumentSuggestionContext {
     fn source(&self) -> &dyn CommandArgumentSource;
 
-    fn argument(&self, name: &str) -> Option<&SteelArgumentValue>;
+    fn argument(&self, name: &str) -> Result<&SteelArgumentValue, CommandSyntaxError>;
 }
 
 impl<S> SteelArgumentSuggestionContext for ArgumentSuggestionContext<'_, S, SteelArgumentValue>
@@ -435,7 +437,7 @@ where
         ArgumentSuggestionContext::source(self)
     }
 
-    fn argument(&self, name: &str) -> Option<&SteelArgumentValue> {
+    fn argument(&self, name: &str) -> Result<&SteelArgumentValue, CommandSyntaxError> {
         ArgumentSuggestionContext::argument(self, name)
     }
 }
@@ -1207,7 +1209,8 @@ fn selected_clock(
         return context.source().default_world_clock();
     };
     context
-        .argument(clock_argument)?
+        .argument(clock_argument)
+        .ok()?
         .downcast_ref::<WorldClockValue>()
         .map(|clock| clock.0)
 }

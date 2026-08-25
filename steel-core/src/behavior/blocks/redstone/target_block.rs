@@ -5,11 +5,12 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_utils::axis::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::entity::Entity;
 use crate::entity::projectile::Projectile;
@@ -25,6 +26,8 @@ const RESET_ON_PLACE_FLAGS: UpdateFlags =
 pub struct TargetBlock {
     block: BlockRef,
 }
+
+const POWER: &IntProperty = &BlockStateProperties::POWER;
 
 impl TargetBlock {
     /// Creates target block behavior.
@@ -47,7 +50,7 @@ impl TargetBlock {
             Axis::X => dist_y.max(dist_z),
         };
         let centered = ((0.5 - distance) / 0.5).clamp(0.0, 1.0);
-        (15.0 * centered).ceil().max(1.0) as i32
+        (f64::from(MAX_REDSTONE_SIGNAL) * centered).ceil().max(1.0) as i32
     }
 
     fn update_redstone_output(
@@ -61,7 +64,7 @@ impl TargetBlock {
         if !world.has_scheduled_block_tick(hit.block_pos, self.block) {
             world.set_block(
                 hit.block_pos,
-                state.set_value(&BlockStateProperties::POWER, strength as u8),
+                state.set_value(POWER, strength as u8),
                 UpdateFlags::UPDATE_ALL,
             );
             world.schedule_block_tick_default(
@@ -96,12 +99,8 @@ impl BlockBehavior for TargetBlock {
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if state.get_value(&BlockStateProperties::POWER) != 0 {
-            world.set_block(
-                pos,
-                state.set_value(&BlockStateProperties::POWER, 0_u8),
-                UpdateFlags::UPDATE_ALL,
-            );
+        if state.get_value(POWER) != MIN_REDSTONE_SIGNAL as u8 {
+            world.set_block(pos, state.set_value(POWER, 0_u8), UpdateFlags::UPDATE_ALL);
         }
     }
 
@@ -114,14 +113,10 @@ impl BlockBehavior for TargetBlock {
         _moved_by_piston: bool,
     ) {
         if old_state.get_block() != state.get_block()
-            && state.get_value(&BlockStateProperties::POWER) > 0
+            && i32::from(state.get_value(POWER)) > MIN_REDSTONE_SIGNAL
             && !world.has_scheduled_block_tick(pos, self.block)
         {
-            world.set_block(
-                pos,
-                state.set_value(&BlockStateProperties::POWER, 0_u8),
-                RESET_ON_PLACE_FLAGS,
-            );
+            world.set_block(pos, state.set_value(POWER, 0_u8), RESET_ON_PLACE_FLAGS);
         }
     }
 
@@ -136,7 +131,7 @@ impl BlockBehavior for TargetBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
-        i32::from(state.get_value(&BlockStateProperties::POWER))
+        i32::from(state.get_value(POWER))
     }
 }
 

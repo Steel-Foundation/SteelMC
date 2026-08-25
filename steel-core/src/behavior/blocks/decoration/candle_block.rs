@@ -22,7 +22,7 @@ use steel_utils::{
 use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess,
-        block::schedule_placed_liquid_tick,
+        block::{schedule_placed_liquid_tick, schedule_water_tick_if_waterlogged},
     },
     entity::projectile::Projectile,
     player,
@@ -32,9 +32,9 @@ use crate::{
     },
 };
 
-const CANDLES_PROPERTY: IntProperty = BlockStateProperties::CANDLES;
-const LIT_PROPERTY: BoolProperty = BlockStateProperties::LIT;
-const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+const CANDLES_PROPERTY: &IntProperty = &BlockStateProperties::CANDLES;
+const LIT_PROPERTY: &BoolProperty = &BlockStateProperties::LIT;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 const MAX_CANDLES: u8 = 4;
 
 /// Behavior for all Candle type blocks
@@ -55,9 +55,9 @@ impl CandleBlock {
         projectile_is_on_fire: bool,
     ) -> Option<steel_utils::BlockStateId> {
         (projectile_is_on_fire
-            && state.try_get_value(&WATERLOGGED) != Some(true)
-            && !state.get_value(&LIT_PROPERTY))
-        .then(|| state.set_value(&LIT_PROPERTY, true))
+            && state.try_get_value(WATERLOGGED) != Some(true)
+            && !state.get_value(LIT_PROPERTY))
+        .then(|| state.set_value(LIT_PROPERTY, true))
     }
 }
 
@@ -84,7 +84,7 @@ impl BlockBehavior for CandleBlock {
     ) -> Option<steel_utils::BlockStateId> {
         let default_state = self.block.default_state();
         if self.can_survive(default_state, context.world, context.place_pos()) {
-            return Some(default_state.set_value(&WATERLOGGED, context.is_water_source()));
+            return Some(default_state.set_value(WATERLOGGED, context.is_water_source()));
         }
         None
     }
@@ -98,10 +98,7 @@ impl BlockBehavior for CandleBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: steel_utils::BlockStateId,
     ) -> steel_utils::BlockStateId {
-        if state.get_value(&WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         if !self.can_survive(state, world, pos) {
             return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -134,10 +131,10 @@ impl BlockBehavior for CandleBlock {
     ) -> InteractionResult {
         let item_is_empty = inv.with_item(|item_stack| item_stack.is_empty());
         if item_is_empty {
-            if !state.get_value(&LIT_PROPERTY) {
+            if !state.get_value(LIT_PROPERTY) {
                 return InteractionResult::Pass;
             }
-            let new_state = state.set_value(&LIT_PROPERTY, false);
+            let new_state = state.set_value(LIT_PROPERTY, false);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
             return InteractionResult::Success;
         }
@@ -146,9 +143,9 @@ impl BlockBehavior for CandleBlock {
             .get_clone_item_stack(self.block, state, false)
             .is_some_and(|it| inv.with_item(|item_stack| it.is(item_stack.item)))
         {
-            let candles_amount = state.get_value(&CANDLES_PROPERTY);
+            let candles_amount = state.get_value(CANDLES_PROPERTY);
             if candles_amount < MAX_CANDLES {
-                let new_state = state.set_value(&CANDLES_PROPERTY, candles_amount + 1);
+                let new_state = state.set_value(CANDLES_PROPERTY, candles_amount + 1);
                 world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL_IMMEDIATE);
                 return InteractionResult::Success;
             }
@@ -164,15 +161,15 @@ impl BlockBehavior for CandleBlock {
         state: steel_utils::BlockStateId,
         fluid_state: FluidState,
     ) -> bool {
-        if state.try_get_value(&WATERLOGGED) != Some(false)
+        if state.try_get_value(WATERLOGGED) != Some(false)
             || fluid_state.fluid_id != &vanilla_fluids::WATER
         {
             return false;
         }
 
-        let waterlogged = state.set_value(&WATERLOGGED, true);
-        if state.get_value(&LIT_PROPERTY) {
-            let extinguished = waterlogged.set_value(&LIT_PROPERTY, false);
+        let waterlogged = state.set_value(WATERLOGGED, true);
+        if state.get_value(LIT_PROPERTY) {
+            let extinguished = waterlogged.set_value(LIT_PROPERTY, false);
             level.set_block_state(pos, extinguished, UpdateFlags::UPDATE_ALL_IMMEDIATE);
             level.play_block_sound(&sound_events::BLOCK_CANDLE_EXTINGUISH, pos, 1.0, 1.0, None);
             level.game_event(
@@ -209,7 +206,7 @@ mod tests {
         let candle = CandleBlock::new(&vanilla_blocks::CANDLE);
         let state = vanilla_blocks::CANDLE
             .default_state()
-            .set_value(&WATERLOGGED, true);
+            .set_value(WATERLOGGED, true);
         let level = supporting_level();
 
         assert_eq!(
@@ -240,10 +237,10 @@ mod tests {
 
         let unlit = vanilla_blocks::CANDLE
             .default_state()
-            .set_value(&LIT_PROPERTY, false)
-            .set_value(&WATERLOGGED, false);
-        let lit = unlit.set_value(&LIT_PROPERTY, true);
-        let waterlogged = unlit.set_value(&WATERLOGGED, true);
+            .set_value(LIT_PROPERTY, false)
+            .set_value(WATERLOGGED, false);
+        let lit = unlit.set_value(LIT_PROPERTY, true);
+        let waterlogged = unlit.set_value(WATERLOGGED, true);
 
         assert_eq!(CandleBlock::projectile_lit_state(unlit, true), Some(lit));
         assert_eq!(CandleBlock::projectile_lit_state(unlit, false), None);
@@ -258,8 +255,8 @@ mod tests {
         let candle = CandleBlock::new(&vanilla_blocks::CANDLE);
         let state = vanilla_blocks::CANDLE
             .default_state()
-            .set_value(&WATERLOGGED, false)
-            .set_value(&LIT_PROPERTY, true);
+            .set_value(WATERLOGGED, false)
+            .set_value(LIT_PROPERTY, true);
         let level = supporting_level();
 
         assert!(candle.place_liquid(
@@ -291,7 +288,7 @@ mod tests {
             level
                 .last_placed_state()
                 .expect("candle should be waterlogged")
-                .get_value(&WATERLOGGED)
+                .get_value(WATERLOGGED)
         );
     }
 }

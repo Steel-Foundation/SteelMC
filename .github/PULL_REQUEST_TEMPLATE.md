@@ -13,7 +13,6 @@ PR template
 - [ ] Breaking change
 - [ ] Refactor / code cleanup
 - [ ] Performance improvement
-- [ ] Documentation
 - [ ] Chore / tooling
 
 ## Description
@@ -36,6 +35,11 @@ PR template
 - [ ] Self-reviewed the diff
 - [ ] Docs updated (if applicable)
 - [ ] No leftover debug code / comments
+
+## Classes modified:
+
+<!-- This is optional and you dont need to do it for commands, chors or foundation -->
+<!-- The Classes need to be written the same as on the [tracker](https://steelmc.dev/tracker/) to appear in it. -->
 
 ## Additional notes
 
