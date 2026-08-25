@@ -7,6 +7,7 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::level_events;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
@@ -23,6 +24,10 @@ use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
 use crate::player::Player;
 use crate::portal::portal_shape::{PortalShape, nether_portal_config};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
+
+const AGE: &IntProperty = &BlockStateProperties::AGE_15;
+const MAX_AGE: u8 = 15;
+
 /// Behavior for fire blocks.
 #[block_behavior]
 pub struct FireBlock {
@@ -35,7 +40,44 @@ impl FireBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+    fn fire_tick_delay() -> u32 {
+        30 + rand::random_range(0..10) as u32
+    }
+    fn schedule_next_tick(&self, world: &Arc<World>, pos: BlockPos) {
+        world.schedule_block_tick(
+            pos,
+            self.block,
+            Self::fire_tick_delay() as i32,
+            crate::world::tick_scheduler::TickPriority::Normal,
+        );
+    }
+    fn tick_fire(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        if !self.can_survive(state, world.as_ref(), pos) {
+            world.set_block(
+                pos,
+                vanilla_blocks::AIR.default_state(),
+                UpdateFlags::UPDATE_ALL,
+            );
+            return;
+        }
+        let age = state.get_value(AGE);
+        if age < MAX_AGE {
+            world.set_block(pos, state.set_value(AGE, age + 1), UpdateFlags::UPDATE_ALL);
+        } else {
+            if !self.has_flammable_neighbors(world.as_ref(), pos) {
+                world.set_block(
+                    pos,
+                    vanilla_blocks::AIR.default_state(),
+                    UpdateFlags::UPDATE_ALL,
+                );
+            }
+        }
+    }
 
+    /// Returns true if any adjacent block is flammable
+    fn has_flammable_neighbors(&self, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        return false; // TODO: Implement flammability system
+    }
     /// Returns true if the world supports nether portal creation.
     ///
     /// Vanilla expresses this in terms of dimensions; Steel checks the loaded
@@ -132,17 +174,12 @@ impl FireBlock {
 }
 
 impl BlockBehavior for FireBlock {
-    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if !self.can_survive(state, world.as_ref(), pos) {
-            world.set_block(
-                pos,
-                vanilla_blocks::AIR.default_state(),
-                UpdateFlags::UPDATE_ALL,
-            );
-            return;
-        }
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        self.schedule_next_tick(world, pos);
+        self.tick_fire(state, world, pos);
     }
-    // TODO: Implement vanilla fire spreading and aging
+
+    // TODO: Implement fire spreading logic
     fn update_shape(
         &self,
         state: BlockStateId,
@@ -201,6 +238,8 @@ impl BlockBehavior for FireBlock {
             shape.place_portal_blocks(world);
             return;
         }
+
+        self.schedule_next_tick(world, pos);
 
         if !self.can_survive(state, world, pos) {
             world.set_block(
