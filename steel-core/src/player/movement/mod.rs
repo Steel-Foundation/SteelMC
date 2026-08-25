@@ -45,6 +45,9 @@ pub const CLAMP_HORIZONTAL: f64 = 3.0E7;
 /// Vertical position clamping limit (matches vanilla).
 pub const CLAMP_VERTICAL: f64 = 2.0E7;
 
+/// The threshold of the client delta of a player in order to reset their action time.
+pub const RESET_ACTION_TIME_DELTA_THRESHOLD: f64 = 1E-5;
+
 /// Clamps a horizontal coordinate to vanilla limits.
 #[must_use]
 pub fn clamp_horizontal(value: f64) -> f64 {
@@ -429,10 +432,7 @@ impl Player {
         self.movement
             .lock()
             .mark_last_good_position(self.position());
-
-        self.movement
-            .lock()
-            .set_last_known_client_movement(client_delta);
+        self.handle_player_known_movement(client_delta);
     }
 
     /// Handles a controlled-vehicle movement packet.
@@ -598,9 +598,7 @@ impl Player {
                 return;
             }
         }
-        self.movement
-            .lock()
-            .set_last_known_client_movement(client_delta);
+        self.handle_player_known_movement(client_delta);
         world.chunk_map.update_player_status(self);
         self.record_client_vehicle_floating(
             &world,
@@ -611,6 +609,15 @@ impl Player {
         self.movement
             .lock()
             .mark_vehicle_last_good_position(vehicle.id(), vehicle.position());
+    }
+
+    fn handle_player_known_movement(&self, client_delta: DVec3) {
+        if client_delta.length_squared() > RESET_ACTION_TIME_DELTA_THRESHOLD {
+            self.reset_last_action_time();
+        }
+        self.movement
+            .lock()
+            .set_last_known_client_movement(client_delta);
     }
 
     fn record_client_floating(
@@ -866,8 +873,7 @@ impl Player {
             return;
         }
 
-        // TODO: Vanilla calls this.player.resetLastActionTime() here which sets
-        // lastActionTime = Util.getMillis(), preventing idle-kick. Add when idle-kick system is implemented.
+        self.reset_last_action_time();
 
         self.set_crouching(input.shift());
     }
@@ -888,8 +894,7 @@ impl Player {
             return;
         }
 
-        // TODO: Vanilla calls this.player.resetLastActionTime() here which sets
-        // noActionTime = 0, preventing idle-kick. Add when idle-kick system is implemented.
+        self.reset_last_action_time();
 
         match packet.action {
             PlayerCommandAction::StartSprinting => {

@@ -235,6 +235,7 @@ impl Player {
 
     /// Handles a chat message from the player.
     pub fn handle_chat(&self, packet: SChat, player: Arc<Player>) {
+        player.reset_last_action_time();
         let chat_message = packet.message.clone();
 
         let verification_result = if let Some(_signature) = &packet.signature {
