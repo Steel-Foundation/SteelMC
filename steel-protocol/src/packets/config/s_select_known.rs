@@ -4,6 +4,6 @@ use crate::packets::shared_implementation::KnownPack;
 
 #[derive(ReadFrom, ServerPacket, Clone, Debug)]
 pub struct SSelectKnownPacks {
-    #[read(as = Prefixed(VarInt))]
+    #[read(as = Prefixed(VarInt), bound = 64)]
     pub packs: Vec<KnownPack>,
 }
