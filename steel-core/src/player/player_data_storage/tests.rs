@@ -432,6 +432,38 @@ fn known_player_cache_persists_vanillas_mru_limit() {
     assert!(decoded.by_uuid(Uuid::from_u128(1_000)).is_none());
 }
 
+/// Every player-side file kind shares `encode_file`, so this pins that the
+/// shared path frames payloads with a content checksum. Detection behaviour
+/// itself is pinned in `crate::compression`.
+#[test]
+fn persisted_player_files_carry_a_content_checksum() {
+    /// Bit 2 of a zstd frame header descriptor is the content checksum flag.
+    const CONTENT_CHECKSUM_FLAG: u8 = 0b0000_0100;
+    /// Magic (4 bytes) plus storage version (2 bytes) precede the zstd frame.
+    const FRAME_START: usize = 6;
+
+    let encoded =
+        encode_player_file(&sample_player_file(PLAYER_DATA_VERSION)).expect("player file encodes");
+    let global = encode_global_file(&GlobalPlayerDataFile {
+        data_version: GLOBAL_PLAYER_DATA_VERSION,
+        last_active_domain: "lobby".to_owned(),
+    })
+    .expect("global file encodes");
+
+    for (label, bytes) in [("player", &encoded), ("global", &global)] {
+        assert_eq!(
+            bytes[FRAME_START..FRAME_START + 4],
+            [0x28, 0xB5, 0x2F, 0xFD],
+            "{label} file should hold a zstd frame after its header"
+        );
+        assert_ne!(
+            bytes[FRAME_START + 4] & CONTENT_CHECKSUM_FLAG,
+            0,
+            "{label} file frame should advertise a content checksum"
+        );
+    }
+}
+
 #[test]
 fn player_file_roundtrip_preserves_domain_world_data() {
     let file = sample_player_file(PLAYER_DATA_VERSION);

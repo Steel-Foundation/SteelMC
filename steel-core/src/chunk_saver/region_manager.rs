@@ -20,6 +20,7 @@ use tokio::{
 };
 
 use crate::chunk::status::ChunkStatus;
+use crate::compression::encode_checked;
 use crate::world::World;
 
 use super::{
@@ -410,7 +411,7 @@ impl RegionManager {
     fn encode_chunk(prepared: PreparedChunkSave) -> io::Result<Vec<u8>> {
         let data = wincode::serialize(&prepared.persistent)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-        let compressed = zstd::encode_all(&data[..], 3)?;
+        let compressed = encode_checked(&data)?;
 
         if compressed.len() > MAX_CHUNK_SIZE {
             return Err(io::Error::new(
@@ -686,13 +687,17 @@ mod tests {
         path::Path,
         process,
         sync::{
-            Weak,
+            Arc, Weak,
             atomic::{AtomicU64, Ordering},
         },
     };
 
     use super::*;
     use crate::chunk_saver::{PersistentChunk, PersistentLightData};
+    use crate::test_support::test_world;
+    use tokio::runtime::Builder;
+    use crate::chunk_saver::format::{PersistentBiomeData, PersistentBlockState, PersistentSection};
+    use steel_utils::Identifier;
 
     static NEXT_TEST_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
@@ -803,6 +808,166 @@ mod tests {
             .await
             .expect("test directory should be removable");
     }
+
+    /// Builds a `PersistentChunk` that materializes for the test world's
+    /// geometry: homogeneous sections referencing one block-state and biome.
+    fn loadable_persistent_chunk(section_count: usize) -> PersistentChunk<'static> {
+        PersistentChunk {
+            last_modified: 0,
+            block_states: vec![PersistentBlockState {
+                name: Identifier::vanilla("air".to_owned()),
+                properties: Vec::new(),
+            }],
+            biomes: vec![Identifier::vanilla("plains".to_owned())],
+            sections: (0..section_count)
+                .map(|_| PersistentSection::Homogeneous {
+                    block_state: 0,
+                    biomes: PersistentBiomeData::Homogeneous { biome: 0 },
+                })
+                .collect(),
+            block_entities: Vec::new(),
+            entities: Vec::new(),
+            block_ticks: Vec::new(),
+            fluid_ticks: Vec::new(),
+            heightmaps: Vec::new(),
+            light: PersistentLightData::default(),
+            carving_mask: None,
+            postprocessing: Vec::new(),
+            structure_starts: Vec::new(),
+            structure_references: Vec::new(),
+            pois: Vec::new(),
+        }
+    }
+
+    /// Frames `data` with a content checksum, independent of the crate's write
+    /// policy, so this fixture stays a checksummed frame even if that policy
+    /// changes. The write policy itself is pinned in `crate::compression`.
+    fn checksummed_frame(data: &[u8]) -> Vec<u8> {
+        use std::io::Write;
+
+        let mut encoder = zstd::Encoder::new(Vec::new(), 3).expect("encoder should build");
+        encoder
+            .include_checksum(true)
+            .expect("checksum flag should be settable");
+        encoder.write_all(data).expect("payload should compress");
+        encoder.finish().expect("frame should finish")
+    }
+
+    /// Pins the *handling* of a checksum failure: a frame whose compressed body
+    /// is intact but whose content checksum does not match must be classified as
+    /// recoverable corruption and dropped for regeneration, not propagated as a
+    /// fatal load error. Detection itself is pinned in `crate::compression`.
+    #[test]
+    fn checksum_mismatch_is_removed_for_regeneration() {
+        let directory = test_directory("checksum");
+        let pos = ChunkPos::new(0, 0);
+
+        let world = test_world();
+        let (min_y, height) = (world.get_min_y(), world.get_height());
+        let chunk = loadable_persistent_chunk((height / 16) as usize);
+        let encoded = wincode::serialize(&chunk).expect("test chunk should encode");
+        let mut payload = checksummed_frame(&encoded);
+
+        // Flip a bit in the trailing content checksum. The compressed body is
+        // untouched, so only checksum verification can reject this frame.
+        let last = payload.len() - 1;
+        payload[last] ^= 0x01;
+
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime should start");
+
+        runtime.block_on(async {
+            write_test_region(&directory, pos, &payload, payload.len() as u32)
+                .await
+                .expect("test region should be written");
+
+            let manager = RegionManager::new(&directory);
+            assert!(
+                manager
+                    .acquire_chunk(pos)
+                    .await
+                    .expect("region should open")
+            );
+            let loaded = manager
+                .load_chunk(
+                    pos,
+                    min_y,
+                    height,
+                    Arc::downgrade(world),
+                    &test_thread_pool(),
+                )
+                .await
+                .expect("checksum mismatch should be handled, not propagated");
+            assert!(loaded.is_none(), "corrupt chunk must not be served");
+            assert!(
+                !manager
+                    .chunk_exists(pos)
+                    .await
+                    .expect("slot should be cleared"),
+                "corrupt chunk must be dropped so it regenerates"
+            );
+            manager
+                .release_chunk(pos)
+                .await
+                .expect("region should release");
+            fs::remove_dir_all(directory)
+                .await
+                .expect("test directory should be removable");
+            });
+}
+
+    /// The same chunk without the corruption must still load, so the test above
+    /// proves checksum rejection rather than a broken encode path.
+    #[test]
+    fn checksummed_payload_still_loads() {
+        let directory = test_directory("checksum-ok");
+        let pos = ChunkPos::new(0, 0);
+
+        let world = test_world();
+        let (min_y, height) = (world.get_min_y(), world.get_height());
+        let chunk = loadable_persistent_chunk((height / 16) as usize);
+        let encoded = wincode::serialize(&chunk).expect("test chunk should encode");
+        let payload = checksummed_frame(&encoded);
+
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime should start");
+
+        runtime.block_on(async {
+            write_test_region(&directory, pos, &payload, payload.len() as u32)
+                .await
+                .expect("test region should be written");
+
+            let manager = RegionManager::new(&directory);
+            assert!(
+                manager
+                    .acquire_chunk(pos)
+                    .await
+                    .expect("region should open")
+            );
+            let loaded = manager
+                .load_chunk(
+                    pos,
+                    min_y,
+                    height,
+                    Arc::downgrade(world),
+                    &test_thread_pool(),
+                )
+                .await
+                .expect("intact chunk should load");
+            assert!(loaded.is_some(), "intact checksummed chunk must be served");
+            manager
+                .release_chunk(pos)
+                .await
+                .expect("region should release");
+            fs::remove_dir_all(directory)
+                .await
+                .expect("test directory should be removable");
+            });
+}
 
     #[tokio::test]
     async fn semantically_invalid_complete_payload_is_removed_for_regeneration() {

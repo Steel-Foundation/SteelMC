@@ -23,6 +23,7 @@ use super::player_data::{
     PersistentRootVehicle, PersistentSlot,
 };
 use crate::chunk_saver::PersistentEntity;
+use crate::compression::encode_checked;
 use crate::config::StorageSelection;
 use crate::level_data::RespawnData;
 use crate::permission::PermissionSubjectIndex;
@@ -481,7 +482,7 @@ fn encode_file(
 ) -> io::Result<Vec<u8>> {
     let payload =
         serialized.map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-    let compressed = zstd::encode_all(&payload[..], 3)?;
+    let compressed = encode_checked(&payload)?;
     let mut bytes = Vec::with_capacity(6 + compressed.len());
     bytes.extend_from_slice(&magic);
     bytes.extend_from_slice(&version.to_le_bytes());

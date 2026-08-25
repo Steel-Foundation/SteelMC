@@ -12,6 +12,7 @@ pub mod bootstrap;
 pub mod chunk;
 pub mod chunk_saver;
 pub mod command;
+pub(crate) mod compression;
 pub mod config;
 pub(crate) mod enchantment_helper;
 pub mod entity;
