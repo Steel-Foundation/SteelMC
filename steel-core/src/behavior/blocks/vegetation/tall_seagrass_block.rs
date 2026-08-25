@@ -202,7 +202,9 @@ mod tests {
         let lower = vanilla_blocks::TALL_SEAGRASS
             .default_state()
             .set_value(DOUBLE_BLOCK_HALF, DoubleBlockHalf::Lower);
-        let falling_full_water = vanilla_blocks::WATER.default_state().set_value(LEVEL, 8);
+        let falling_full_water = vanilla_blocks::WATER
+            .default_state()
+            .set_value(LEVEL, LEVEL.max);
         let level = tall_seagrass_level(vanilla_blocks::DIRT.default_state(), falling_full_water);
 
         assert!(behavior.can_survive(lower, &level, BlockPos::ZERO));

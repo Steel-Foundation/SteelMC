@@ -13,6 +13,7 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use super::evaluator::DefaultRedstoneWireEvaluator;
+use crate::behavior::blocks::redstone::MIN_REDSTONE_SIGNAL;
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult,
     InventoryAccess,
@@ -493,19 +494,19 @@ impl BlockBehavior for RedStoneWireBlock {
         context: SignalQueryContext,
     ) -> i32 {
         if !context.wire_signals_enabled() || direction == Direction::Down {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         }
 
         let power = self.get_own_signal(state, world, pos, context);
-        if power == 0 {
-            return 0;
+        if power == MIN_REDSTONE_SIGNAL {
+            return MIN_REDSTONE_SIGNAL;
         }
         if direction == Direction::Up {
             return power;
         }
 
         let Some(property) = Self::property_for_direction(direction.opposite()) else {
-            return 0;
+            return MIN_REDSTONE_SIGNAL;
         };
         if Self::is_connected(
             self.get_connection_state(world, state, pos)
@@ -513,7 +514,7 @@ impl BlockBehavior for RedStoneWireBlock {
         ) {
             power
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
@@ -528,7 +529,7 @@ impl BlockBehavior for RedStoneWireBlock {
         if context.wire_signals_enabled() {
             self.get_signal(state, world, pos, direction, context)
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 

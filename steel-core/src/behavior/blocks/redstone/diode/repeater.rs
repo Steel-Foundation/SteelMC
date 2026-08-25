@@ -13,6 +13,7 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::base::DiodeBlock;
+use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
 use crate::behavior::{
     BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
     PlacementSource,
@@ -194,7 +195,7 @@ impl BlockBehavior for RepeaterBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
-        DiodeBlock::own_signal(state, 15)
+        DiodeBlock::own_signal(state, MAX_REDSTONE_SIGNAL)
     }
 
     fn get_signal(
@@ -205,7 +206,7 @@ impl BlockBehavior for RepeaterBlock {
         direction: Direction,
         _context: SignalQueryContext,
     ) -> i32 {
-        DiodeBlock::signal(state, direction, 15)
+        DiodeBlock::signal(state, direction, MAX_REDSTONE_SIGNAL)
     }
 
     fn get_direct_signal(

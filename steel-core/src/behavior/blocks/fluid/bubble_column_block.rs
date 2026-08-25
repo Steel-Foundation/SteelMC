@@ -88,7 +88,7 @@ impl BubbleColumnBlock {
             .has_tag(&FluidTag::BUBBLE_COLUMN_CAN_OCCUPY)
             && occupy_state.get_block() == &vanilla_blocks::WATER
             && fluid_state.is_source()
-            && fluid_state.amount >= 8
+            && fluid_state.is_full()
     }
 
     fn column_state(

@@ -7,6 +7,7 @@ use steel_registry::vanilla_fluids;
 use steel_utils::types::GameType;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::block::schedule_water_tick_if_waterlogged;
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
 use crate::player::Player;
 use crate::world::ScheduledTickAccess;
@@ -45,10 +46,7 @@ impl BlockBehavior for BarrierBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         state
     }

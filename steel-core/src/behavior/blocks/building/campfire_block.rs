@@ -10,6 +10,7 @@ use steel_registry::vanilla_damage_types;
 use steel_registry::{sound_events, vanilla_blocks, vanilla_fluids, vanilla_game_events};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
+use crate::behavior::block::schedule_water_tick_if_waterlogged;
 use crate::{
     behavior::{BlockBehavior, BlockPlaceContext, block::schedule_placed_liquid_tick},
     entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, projectile::Projectile},
@@ -102,10 +103,7 @@ impl BlockBehavior for CampfireBlock {
         _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         if direction == Direction::Down {
             state.set_value(SIGNAL_FIRE, Self::is_smoke_source(neighbor_state))

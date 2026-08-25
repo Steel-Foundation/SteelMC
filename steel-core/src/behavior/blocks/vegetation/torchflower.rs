@@ -26,7 +26,7 @@ pub struct TorchflowerCropBlock {
     block: BlockRef,
 }
 
-const AGE_1: &IntProperty = &BlockStateProperties::AGE_1;
+const AGE: &IntProperty = &BlockStateProperties::AGE_1;
 
 impl TorchflowerCropBlock {
     /// Creates a new crop block behavior with a custom age property.
@@ -42,7 +42,7 @@ impl CropLike for TorchflowerCropBlock {
     }
 
     fn age_property(&self) -> &IntProperty {
-        AGE_1
+        AGE
     }
 
     fn max_age(&self) -> u8 {
@@ -106,7 +106,7 @@ mod tests {
 
         let age_one = behavior.get_state_for_age(1);
         assert_eq!(age_one.get_block(), &vanilla_blocks::TORCHFLOWER_CROP);
-        assert_eq!(age_one.get_value(AGE_1), 1);
+        assert_eq!(age_one.get_value(AGE), 1);
 
         let mature = behavior.get_state_for_age(2);
         assert_eq!(mature.get_block(), &vanilla_blocks::TORCHFLOWER);

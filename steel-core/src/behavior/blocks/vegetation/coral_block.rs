@@ -37,7 +37,7 @@ impl CoralBlock {
     /// `CoralPlantBlock`, `CoralFanBlock`).
     ///
     /// The block below must be face-sturdy on its UP face.
-    pub(super) fn coral_plant_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
+    pub(super) fn can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
         let below_pos = pos.below();
         let below = world.get_block_state(below_pos);
         world.is_face_sturdy(below, below_pos, Direction::Up)

@@ -662,22 +662,20 @@ impl BlockEntity for PistonMovingBlockEntity {
 mod tests {
     use std::io::Cursor;
 
-    use glam::DVec3;
-    use simdnbt::borrow::read_compound as read_borrowed_compound;
-    use simdnbt::owned::NbtTag;
-    use steel_registry::{init_vanilla_registry, vanilla_entities};
-    use steel_utils::{ChunkPos, types::GameType};
-    use uuid::Uuid;
-
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::block_entity::SharedBlockEntity;
     use crate::entity::{SharedEntity, entities::RawEntity};
     use crate::player::Player;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use glam::DVec3;
+    use simdnbt::borrow::read_compound as read_borrowed_compound;
+    use simdnbt::owned::NbtTag;
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
+    use steel_utils::{ChunkPos, types::GameType};
 
     fn test_player(world: Arc<World>) -> Arc<Player> {
-        TestPlayerBuilder::new(world, Uuid::from_u128(1), "PistonTestPlayer", 1).build()
+        TestPlayerBuilder::new(world, "PistonTestPlayer", 1).build()
     }
 
     #[test]

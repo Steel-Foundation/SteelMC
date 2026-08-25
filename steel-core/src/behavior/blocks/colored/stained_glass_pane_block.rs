@@ -9,12 +9,11 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::blocks::building::{get_connection_state, update_shape};
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::ai::path::PathComputationType;
 use crate::world::ScheduledTickAccess;
-use steel_registry::vanilla_fluids;
 
 /// All glass colored pane blocks
 #[block_behavior]
@@ -50,10 +49,8 @@ impl BlockBehavior for StainedGlassPaneBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
+
         update_shape(world, state, neighbor_state, neighbor_pos, direction)
     }
 

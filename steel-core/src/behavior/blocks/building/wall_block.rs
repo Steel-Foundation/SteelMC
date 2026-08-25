@@ -11,11 +11,9 @@ use steel_registry::blocks::properties::{
 };
 use steel_registry::blocks::shapes::{OffsetVoxelShape, offset_face_rectangles_cover};
 use steel_registry::vanilla_block_tags::BlockTag;
-use steel_registry::vanilla_fluids;
-use steel_registry::vanilla_fluids::WATER;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::blocks::building::FenceGateBlock;
 use crate::behavior::blocks::utils::is_excluded_for_connection;
 use crate::behavior::context::BlockPlaceContext;
@@ -127,10 +125,7 @@ impl BlockBehavior for WallBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let water = &vanilla_fluids::WATER;
-            world.schedule_fluid_tick_default(pos, water, world.fluid_tick_delay(&WATER));
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         match direction {
             // Base behavior: nothing below changes a wall's shape.

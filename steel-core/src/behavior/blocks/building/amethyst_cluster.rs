@@ -1,5 +1,8 @@
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, blocks::AmethystBlock},
+    behavior::{
+        BlockBehavior, BlockPlaceContext, block::schedule_water_tick_if_waterlogged,
+        blocks::AmethystBlock,
+    },
     entity::projectile::Projectile,
     world::{ClipHitResult, LevelReader, ScheduledTickAccess, World},
 };
@@ -11,7 +14,7 @@ use steel_registry::{
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, BoolProperty, EnumProperty},
     },
-    vanilla_blocks, vanilla_fluids,
+    vanilla_blocks,
 };
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -52,10 +55,7 @@ impl BlockBehavior for AmethystClusterBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         if direction == state.get_value(FACING).opposite() && !self.can_survive(state, world, pos) {
             vanilla_blocks::AIR.default_state()

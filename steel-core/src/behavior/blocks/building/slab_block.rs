@@ -19,7 +19,10 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use super::weathering_block::{WeatherState, WeatheringCopper};
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, block::place_simple_waterlogged_liquid},
+    behavior::{
+        BlockBehavior, BlockPlaceContext,
+        block::{place_simple_waterlogged_liquid, schedule_water_tick_if_waterlogged},
+    },
     world::{LevelAccessor, ScheduledTickAccess, World},
 };
 
@@ -79,10 +82,7 @@ impl BlockBehavior for SlabBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         state
     }

@@ -114,7 +114,7 @@ impl LiquidBlock {
             .fluid_id
             .has_tag(&FluidTag::BUBBLE_COLUMN_CAN_OCCUPY)
             && fluid_state.is_source()
-            && fluid_state.amount >= 8
+            && fluid_state.is_full()
     }
 
     fn try_schedule_bubble_block_column(

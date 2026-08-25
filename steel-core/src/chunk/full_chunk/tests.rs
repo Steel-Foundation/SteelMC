@@ -216,7 +216,7 @@ fn extract_light_data_uses_chunk_owned_light_and_skylight_flag() {
 
     let without_sky = chunk.extract_light_data(false);
     assert_eq!(without_sky.sky_y_mask.0[0], 0);
-    assert!(without_sky.sky_updates.is_empty());
+    assert_eq!(without_sky.sky_updates.len(), 0);
     assert_eq!(without_sky.block_y_mask.0[0] & 0b10, 0b10);
     assert_eq!(without_sky.block_updates.len(), 1);
 }
@@ -261,7 +261,7 @@ fn draining_postprocessing_marks_full_chunk_dirty() {
 
     assert!(chunk.take_postprocessing().is_some());
     assert!(chunk.common().dirty.load(Ordering::Acquire));
-    assert!(chunk.postprocessing_for_serialization()[0].is_empty());
+    assert_eq!(chunk.postprocessing_for_serialization()[0].len(), 0);
 }
 
 #[test]

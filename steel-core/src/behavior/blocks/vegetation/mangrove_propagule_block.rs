@@ -24,7 +24,7 @@ pub struct MangrovePropaguleBlock {
     block: BlockRef,
 }
 
-const AGE_4: &IntProperty = &BlockStateProperties::AGE_4;
+const AGE: &IntProperty = &BlockStateProperties::AGE_4;
 const HANGING: &BoolProperty = &BlockStateProperties::HANGING;
 
 impl MangrovePropaguleBlock {
@@ -39,7 +39,7 @@ impl MangrovePropaguleBlock {
         vanilla_blocks::MANGROVE_PROPAGULE
             .default_state()
             .set_value(HANGING, true)
-            .set_value(AGE_4, 0)
+            .set_value(AGE, 0)
     }
 }
 
@@ -97,7 +97,7 @@ mod tests {
 
         assert_eq!(state.get_block(), &vanilla_blocks::MANGROVE_PROPAGULE);
         assert!(state.get_value(HANGING));
-        assert_eq!(state.get_value(AGE_4), 0);
+        assert_eq!(state.get_value(AGE), 0);
     }
 
     #[test]

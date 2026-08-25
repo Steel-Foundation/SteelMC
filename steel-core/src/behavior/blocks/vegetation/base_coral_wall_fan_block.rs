@@ -3,10 +3,10 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, EnumProperty,
 };
-use steel_registry::{vanilla_blocks, vanilla_fluids};
+use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
@@ -31,11 +31,7 @@ impl BaseCoralWallFanBlock {
     ///
     /// The block behind the wall fan (`pos.relative(facing.opposite())`) must be
     /// face-sturdy on the face pointing toward us (i.e. `facing`).
-    pub(super) fn coral_wall_fan_can_survive(
-        world: &dyn LevelReader,
-        pos: BlockPos,
-        facing: Direction,
-    ) -> bool {
+    pub(super) fn can_survive(world: &dyn LevelReader, pos: BlockPos, facing: Direction) -> bool {
         let relative_pos = pos.relative(facing.opposite());
         let relative_state = world.get_block_state(relative_pos);
         world.is_face_sturdy(relative_state, relative_pos, facing)
@@ -45,7 +41,7 @@ impl BaseCoralWallFanBlock {
 impl BlockBehavior for BaseCoralWallFanBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let facing = state.get_value(HORIZONTAL_FACING);
-        Self::coral_wall_fan_can_survive(world, pos, facing)
+        Self::can_survive(world, pos, facing)
     }
 
     fn update_shape(
@@ -57,10 +53,7 @@ impl BlockBehavior for BaseCoralWallFanBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         if direction.opposite() == state.get_value(HORIZONTAL_FACING)
             && !self.can_survive(state, world, pos)

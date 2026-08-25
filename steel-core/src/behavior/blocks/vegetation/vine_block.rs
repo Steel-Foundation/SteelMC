@@ -54,7 +54,7 @@ impl VineBlock {
             return false;
         }
 
-        if MultifaceBlock::can_attach_to(world, pos.relative(direction), direction) {
+        if Self::is_acceptable_neighbour(world, pos.relative(direction), direction) {
             return true;
         }
 
@@ -71,7 +71,12 @@ impl VineBlock {
         neighbour_pos: BlockPos,
         direction_to_neighbour: Direction,
     ) -> bool {
-        MultifaceBlock::can_attach_to(level, neighbour_pos, direction_to_neighbour)
+        MultifaceBlock::can_attach_to_state(
+            level,
+            direction_to_neighbour,
+            neighbour_pos,
+            level.get_block_state(neighbour_pos),
+        )
     }
     fn can_spread(&self, world: &Arc<World>, pos: BlockPos) -> bool {
         let mut max = 5;

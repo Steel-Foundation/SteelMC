@@ -273,11 +273,6 @@ impl Entity for EnderPearlEntity {
         Some(&self.entity_data)
     }
 
-    fn hurt(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
-        // Vanilla `Projectile.hurtServer` marks hurt but never takes damage.
-        false
-    }
-
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.save_projectile(nbt);
         self.save_throwable_item(nbt);

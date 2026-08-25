@@ -136,7 +136,7 @@ mod tests {
     use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
 
-    const AGE_25: &IntProperty = &BlockStateProperties::AGE_25;
+    const AGE: &IntProperty = &BlockStateProperties::AGE_25;
 
     #[test]
     fn kelp_plant_update_shape_schedules_water_tick() {
@@ -208,7 +208,7 @@ mod tests {
         );
 
         assert_eq!(updated.get_block(), &vanilla_blocks::KELP);
-        assert!(updated.get_value(AGE_25) < 25);
+        assert!(updated.get_value(AGE) < 25);
         assert!(level.scheduled_fluid_ticks.borrow().is_empty());
     }
 }
