@@ -58,8 +58,8 @@ pub const REGION_MAGIC: [u8; 4] = *b"STLR";
 /// v20: Added chunk-owned light section persistence.
 /// v21: Matched vanilla scheduled-tick persistence by rebuilding sub-tick order on load.
 /// v22: Preserve Vanilla pending `DUMMY` block entities across chunk stages.
-/// v23: Chunk payloads record their own position and status, so a damaged
-///      chunk table can be detected and rebuilt from the payloads themselves.
+/// v23: Chunk payloads record their own position and status, so a damaged chunk
+///      table entry can be detected by disagreeing with the payload it points at.
 pub const FORMAT_VERSION: u16 = 23;
 
 /// Number of chunks per region side (32×32 = 1024 chunks per region).
@@ -364,9 +364,8 @@ impl PersistentLightSection {
 ///
 /// The payload also records its own `pos` and `status`. Both are duplicated in
 /// the region's [`ChunkEntry`], but the entry table is uncompressed and
-/// unchecksummed while this payload rides inside a checksummed zstd frame. That
-/// asymmetry is deliberate: a damaged entry can be detected by disagreeing with
-/// the payload, and the payload is the copy worth trusting.
+/// unchecksummed while this payload rides inside a checksummed zstd frame, so a
+/// damaged entry can be detected by disagreeing with the payload.
 #[derive(SchemaWrite, SchemaRead)]
 pub struct PersistentChunk<'a> {
     /// Position this chunk was saved at, as ground truth for its table entry.

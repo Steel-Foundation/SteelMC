@@ -14,8 +14,7 @@ pub(crate) const PERSIST_COMPRESSION_LEVEL: i32 = 3;
 /// The checksum lets the decoder reject corrupted payloads at the frame
 /// boundary instead of surfacing them as plausible-looking decoded data.
 /// Decoding needs no matching change: zstd validates the checksum whenever a
-/// frame carries one, so frames written before this policy existed stay
-/// readable and existing files load unchanged.
+/// frame carries one, so checksumless files stay readable.
 pub(crate) fn encode_checked(data: &[u8]) -> io::Result<Vec<u8>> {
     let mut encoder = zstd::Encoder::new(Vec::new(), PERSIST_COMPRESSION_LEVEL)?;
     encoder.include_checksum(true)?;
@@ -81,8 +80,7 @@ mod tests {
     /// checksumless frame decodes as if nothing were wrong.
     #[test]
     fn silent_payload_corruption_is_rejected() {
-        // Well inside the raw block for both frames, clear of the checksum
-        // trailer, so each sees the same single-bit payload corruption.
+        // Inside the raw block for both frames, clear of the checksum trailer
         const CORRUPT_AT: usize = 100;
 
         let payload = incompressible_payload();
@@ -109,8 +107,7 @@ mod tests {
 
     #[test]
     fn checksumless_frames_still_decode() {
-        // Files written before this policy carry no checksum. They must keep
-        // loading, so enabling checksums stays backwards compatible.
+        // Files written before this policy carry no checksum and must still load
         let payload = sample_payload();
         let legacy = zstd::encode_all(&payload[..], PERSIST_COMPRESSION_LEVEL)
             .expect("payload should compress");

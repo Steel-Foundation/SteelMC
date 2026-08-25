@@ -719,7 +719,7 @@ async fn corrupt_player_data_recovers_the_previous_generation_from_its_backup() 
     let uuid = Uuid::from_u128(7);
     let path = publish_two_player_generations(&storage, uuid, "lobby:first", "lobby:second").await;
 
-    // Damage the live generation. The backup still holds "lobby:first".
+    // Damage the live generation; the backup still holds "lobby:first"
     let mut live = fs::read(&path).await.expect("live file should be readable");
     let last = live.len() - 1;
     live[last] ^= 0xFF;
@@ -734,7 +734,7 @@ async fn corrupt_player_data_recovers_the_previous_generation_from_its_backup() 
         .expect("recovered data should be present");
     assert_eq!(recovered.world, "lobby:first");
 
-    // The backup was promoted into place, so the next read succeeds directly.
+    // The backup was promoted, so the next read succeeds directly
     let reread = storage
         .load_domain_player_data("lobby", uuid)
         .await
@@ -742,7 +742,7 @@ async fn corrupt_player_data_recovers_the_previous_generation_from_its_backup() 
         .expect("promoted data should be present");
     assert_eq!(reread.world, "lobby:first");
 
-    // The damaged bytes are set aside rather than destroyed.
+    // The damaged bytes are set aside, not destroyed
     let quarantined = quarantined_files(path.parent().expect("path has a parent")).await;
     assert_eq!(quarantined.len(), 1, "damaged file should be quarantined");
     assert_eq!(
@@ -767,7 +767,7 @@ async fn corrupt_player_data_without_a_backup_stays_fatal() {
     let uuid = Uuid::from_u128(8);
     init_vanilla_registry();
 
-    // A single write leaves nothing to back up, so recovery has no source.
+    // A single write leaves nothing to back up
     let data = sample_player_file(PLAYER_DATA_VERSION)
         .into_persistent()
         .expect("sample player data should convert");
@@ -813,7 +813,7 @@ async fn unsupported_player_data_version_does_not_consume_the_backup() {
     let uuid = Uuid::from_u128(9);
     let path = publish_two_player_generations(&storage, uuid, "lobby:first", "lobby:second").await;
 
-    // Rewrite the live file intact but stamped with a foreign storage version.
+    // Intact, but stamped with a foreign storage version
     let mut live = fs::read(&path).await.expect("live file should be readable");
     live[4..6].copy_from_slice(&(PLAYER_STORAGE_VERSION + 1).to_le_bytes());
     fs::write(&path, &live)
@@ -891,8 +891,7 @@ fn stale_player_payload_version_is_rejected() {
         .into_persistent()
         .expect_err("stale payload should fail");
 
-    // A version mismatch is not corruption: the file is intact and a backup
-    // would carry the same version, so recovery must not treat it as damage.
+    // Not corruption: the file is intact and a backup carries the same version
     assert_eq!(error.kind(), io::ErrorKind::Unsupported);
 }
 
@@ -932,8 +931,7 @@ fn version_mismatch_and_corruption_report_distinct_error_kinds() {
         io::ErrorKind::InvalidData
     );
 
-    // Damage inside the zstd frame: the content checksum added in the previous
-    // change is what makes this reliably detectable.
+    // Damage inside the zstd frame, which the content checksum detects
     let mut damaged_payload = encoded.clone();
     let last = damaged_payload.len() - 1;
     damaged_payload[last] ^= 0xFF;

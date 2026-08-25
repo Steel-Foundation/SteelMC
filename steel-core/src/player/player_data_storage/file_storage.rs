@@ -384,13 +384,12 @@ impl FilePlayerDataStorage {
     ///
     /// On a successful recovery the damaged file is quarantined rather than
     /// deleted and the backup is promoted into its place, so the next read
-    /// finds the recovered generation instead of failing again. Quarantining
-    /// happens first: if the process stops between the two renames, the live
-    /// path is missing while the backup is intact, which is exactly the state
+    /// finds the recovered generation. Quarantining happens first: if the
+    /// process stops between the two renames, the live path is missing while
+    /// the backup is intact, which is the state
     /// `recover_missing_atomic_path_locked` repairs on the next read.
     ///
-    /// The recovered generation is one save behind, so callers trade a session
-    /// of progress for a player who can log in at all.
+    /// The recovered generation is one save behind.
     async fn load_recovering_from_backup_locked<T, F>(
         path: &Path,
         decode: F,

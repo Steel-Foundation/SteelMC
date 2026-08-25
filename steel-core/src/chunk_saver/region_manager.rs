@@ -526,6 +526,19 @@ impl RegionManager {
         }
     }
 
+    /// Decodes a chunk payload, checking it against the table entry it came
+    /// from.
+    ///
+    /// `pos` and `status` come from the entry, which lives in the uncompressed
+    /// chunk table, while the payload's own copies ride inside a checksummed
+    /// frame. The payload is therefore the one to trust, and a disagreement
+    /// means the entry is damaged:
+    ///
+    /// - A wrong position means the entry points at another chunk's payload, so
+    ///   this slot's data is absent and serving it would place a chunk in the
+    ///   wrong position. Treated as corruption.
+    /// - A wrong status is recoverable, but trusting the entry is not: a `Full`
+    ///   chunk read at a lower status is regenerated over.
     fn decode_chunk(
         compressed: Vec<u8>,
         pos: ChunkPos,
@@ -539,13 +552,6 @@ impl RegionManager {
         let persistent: PersistentChunk<'_> = wincode::deserialize(&data)
             .map_err(|error| CorruptChunkData(format!("chunk decode failed: {error}")))?;
 
-        // The payload's identity is the trustworthy copy: it rides inside a
-        // checksummed frame, while the table entry these arguments came from is
-        // plain bytes. Disagreement therefore means the entry is damaged.
-        //
-        // A wrong position means the entry pointed at some other chunk's
-        // payload, so this slot's real data is not here and serving it would
-        // write a chunk into the wrong place.
         let payload_pos = persistent.pos.to_chunk_pos();
         if payload_pos != pos {
             return Err(CorruptChunkData(format!(
@@ -553,9 +559,6 @@ impl RegionManager {
             )));
         }
 
-        // A wrong status is recoverable, and silently trusting the entry is the
-        // damaging case: a `Full` chunk read at a lower status is regenerated
-        // over, destroying whatever was built there.
         if persistent.status != status {
             tracing::warn!(
                 chunk = ?pos,
@@ -747,8 +750,8 @@ mod tests {
         write_test_region_as(directory, pos, payload, declared_size, ChunkStatus::Empty).await
     }
 
-    /// Writes a single-chunk region with an explicit format version and table
-    /// entry status, so tests can build legacy files and disagreeing entries.
+    /// Writes a single-chunk region with an explicit table entry status, so
+    /// tests can build entries that disagree with their payload.
     async fn write_test_region_as(
         directory: &Path,
         pos: ChunkPos,
@@ -916,7 +919,7 @@ mod tests {
             .expect("test runtime should start");
 
         runtime.block_on(async {
-            // The entry claims `Empty` while the payload records `Surface`.
+            // The entry claims `Empty`; the payload records `Surface`
             write_test_region_as(
                 &directory,
                 pos,
@@ -971,7 +974,7 @@ mod tests {
         let (min_y, height) = (world.get_min_y(), world.get_height());
 
         let mut chunk = loadable_persistent_chunk((height / 16) as usize);
-        // The payload belongs to a different chunk than the slot it is filed under.
+        // The payload belongs to a different chunk than its slot
         chunk.pos = ChunkPos::new(1, 1).into();
         let encoded = wincode::serialize(&chunk).expect("test chunk should encode");
         let payload = checksummed_frame(&encoded);
@@ -1046,8 +1049,7 @@ mod tests {
         let encoded = wincode::serialize(&chunk).expect("test chunk should encode");
         let mut payload = checksummed_frame(&encoded);
 
-        // Flip a bit in the trailing content checksum. The compressed body is
-        // untouched, so only checksum verification can reject this frame.
+        // Flip a bit in the trailing checksum; the compressed body stays intact
         let last = payload.len() - 1;
         payload[last] ^= 0x01;
 

@@ -525,9 +525,7 @@ fn decode_file(
             format!("unsupported player data storage version {version}"),
         ));
     }
-    // zstd reports frame and checksum failures as `ErrorKind::Other`. Normalize
-    // them so damaged payloads join the rest of the corruption class rather than
-    // slipping past callers that match on the kind.
+    // zstd reports frame and checksum failures as `ErrorKind::Other`
     zstd::decode_all(&bytes[6..]).map_err(|error| {
         io::Error::new(
             io::ErrorKind::InvalidData,
