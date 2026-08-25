@@ -68,6 +68,10 @@ pub struct ServerConfig {
     /// Thread counts for server thread pools.
     #[serde(default)]
     pub threads: ThreadConfig,
+    /// The number of minutes required for a player to be idle for them to be kicked (timed out) from the server.
+    /// If this is equal to 0, no kicking will happen.
+    #[serde(default)]
+    pub player_idle_timeout: i32,
 }
 
 impl ServerConfig {
