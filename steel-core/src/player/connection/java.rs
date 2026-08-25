@@ -264,6 +264,7 @@ impl ScheduledPlayPacket {
                 }
             }
             ScheduledPlayPacketKind::ChatCommand(packet) => {
+                player.reset_last_action_time();
                 if server
                     .submit_command(CommandSender::Player(Arc::clone(&player)), packet.command)
                     .is_err()
@@ -310,7 +311,7 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::SetCarriedItem(packet) => {
                 player.handle_set_carried_item(packet);
             }
-            ScheduledPlayPacketKind::Swing(packet) => player.swing(packet.hand, false),
+            ScheduledPlayPacketKind::Swing(packet) => player.handle_animate(packet),
             ScheduledPlayPacketKind::PlayerAction(packet) => {
                 player.handle_player_action(packet);
             }
@@ -1000,7 +1001,7 @@ mod tests {
     #[test]
     fn queued_domain_switch_records_only_perform_respawn_at_connection_gate() {
         let world = fresh_test_world("queued_domain_switch_respawn_packet");
-        let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "RespawnTester", 1).build();
+        let player = TestPlayerBuilder::new(world, "RespawnTester", 1).build();
         let Some(token) = player.begin_pending_world_change() else {
             panic!("test player should acquire a world-change token");
         };

@@ -361,14 +361,8 @@ mod tests {
         ];
 
         for &(a, b) in &samples {
-            #[expect(
-                clippy::float_cmp,
-                reason = "zero-axis helpers must be bit-identical to the full scalar path"
-            )]
-            {
-                assert_eq!(noise.get_value_xz(a, b), noise.get_value(a, 0.0, b));
-                assert_eq!(noise.get_value_xy(a, b), noise.get_value(a, b, 0.0));
-            }
+            assert_eq!(noise.get_value_xz(a, b), noise.get_value(a, 0.0, b));
+            assert_eq!(noise.get_value_xy(a, b), noise.get_value(a, b, 0.0));
         }
     }
 

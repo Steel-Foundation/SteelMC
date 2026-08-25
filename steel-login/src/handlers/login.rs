@@ -39,7 +39,7 @@ impl JavaTcpClient {
                 String::new(),
                 &self.server.key_store.public_key_der,
                 challenge,
-                true,
+                self.server.config.online_mode,
             ))
             .await;
             return ConnectionAction::none();

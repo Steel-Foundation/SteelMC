@@ -773,10 +773,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "the exactly representable configured clock rate must round-trip unchanged"
-    )]
     fn level_data_round_trips_world_clock_state() {
         init_vanilla_registry();
         let mut data = LevelData::new_with_seed(1);

@@ -35,8 +35,9 @@ impl JavaTcpClient {
             language: packet.language,
             view_distance: packet
                 .view_distance
-                .clamp(2, i32::from(self.server.config.view_distance).max(2))
-                as u8,
+                .max(2)
+                .cast_unsigned()
+                .min(self.server.config.view_distance.max(2)),
             chat_visibility: packet.chat_visibility,
             chat_colors: packet.chat_colors,
             model_customization: packet.model_customization,
