@@ -7,6 +7,7 @@ use super::{
     player_can_change_difficulty, shapes, vanilla_attributes,
 };
 use crate::behavior::blocks::PowderSnowBlock;
+use steel_protocol::packets::game::SSwing;
 
 const SURVIVAL_DEFAULT_BLOCK_INTERACTION_RANGE: f64 = 4.5;
 
@@ -288,6 +289,8 @@ impl Player {
             return;
         }
 
+        self.reset_last_action_time();
+
         let Some(entity_id) = packet.spectate_entity_id else {
             return;
         };
@@ -312,5 +315,11 @@ impl Player {
     #[must_use]
     pub fn is_secondary_use_active(&self) -> bool {
         self.is_crouching()
+    }
+
+    /// Handles a player swing packet.
+    pub fn handle_animate(&self, packet: SSwing) {
+        self.reset_last_action_time();
+        self.swing(packet.hand, false);
     }
 }
