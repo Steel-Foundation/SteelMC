@@ -112,6 +112,9 @@ cargo clippy -r --all-targets --all-features
 typos
 ```
 
+Nix and NixOS users can get the pinned toolchain, `lld`, `prek`, and `typos` in one
+step with `nix develop` (or `direnv allow`, using the checked-in `.envrc`).
+
 Generated documentation for SteelMC's Rust crates is available in the
 [Rust API reference](https://rustdoc.steelmc.dev/steel_core/index.html).
 
