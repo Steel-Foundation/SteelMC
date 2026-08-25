@@ -1,4 +1,4 @@
-use crate::config::RotationTimeFormat;
+use crate::config::{DEFAULT_MAX_HISTORY, RotationTimeFormat};
 use crate::logger::file::LogFile;
 use crate::logger::history::History;
 use crate::logger::output::Output;
@@ -26,6 +26,11 @@ pub struct LogState {
     pub file: LogFile,
 }
 
+pub(crate) enum Delete {
+    BeforeCursor,
+    AfterCursor,
+}
+
 impl LogState {
     pub async fn new(
         log_config: Option<&LogConfig>,
@@ -37,7 +42,7 @@ impl LogState {
         );
         let rotation_time = log_config.map_or(RotationTimeFormat::None, |l| l.rotation_time);
         let log_enabled = log_config.is_some_and(|l| l.log_file);
-        let max_history = log_config.map_or(50, |l| l.max_history);
+        let max_history = log_config.map_or(DEFAULT_MAX_HISTORY, |l| l.max_history);
 
         create_dir_all(&path)?;
 
@@ -87,28 +92,17 @@ impl LogState {
         self.rewrite_input(length, pos)
     }
 
-    pub fn pop_before(&mut self) -> Result<()> {
-        if self.out.is_at_start() {
-            return Ok(());
-        }
-        let (pos, _) = self.out.char_pos(self.out.pos.saturating_sub(1));
-        self.out.text.remove(pos);
+    pub fn delete(&mut self, direction: Delete) -> Result<()> {
+        let position = match direction {
+            Delete::BeforeCursor if !self.out.is_at_start() => self.out.pos - 1,
+            Delete::AfterCursor if !self.out.is_at_end() => self.out.pos,
+            Delete::BeforeCursor | Delete::AfterCursor => return Ok(()),
+        };
+        let (byte_position, _) = self.out.char_pos(position);
+        self.out.text.remove(byte_position);
         let length = self.out.length - 1;
-        let pos = self.out.pos - 1;
-        self.completion.update(&mut self.out, pos);
-        self.rewrite_input(length, pos)
-    }
-
-    pub fn pop_after(&mut self) -> Result<()> {
-        if self.out.is_at_end() {
-            return Ok(());
-        }
-        let (pos, _) = self.out.char_pos(self.out.pos);
-        self.out.text.remove(pos);
-        let length = self.out.length - 1;
-        let pos = self.out.pos;
-        self.completion.update(&mut self.out, pos);
-        self.rewrite_input(length, pos)
+        self.completion.update(&mut self.out, position);
+        self.rewrite_input(length, position)
     }
 
     pub fn delete_selection(&mut self) -> Result<()> {
@@ -168,61 +162,9 @@ impl LogState {
         self.out.cursor_to(0)?;
 
         let input_width = Output::visible_input_width();
-        if self.out.start > pos {
-            self.out.start = (pos + 1).saturating_sub(input_width);
-        } else if pos.saturating_sub(self.out.start) > input_width {
-            self.out.start += pos.saturating_sub(self.out.start) - input_width;
-        }
-
-        // Build the output string with selection highlighting
-        let output = if self.selection.is_active() {
-            let range = self.selection.get_range();
-            let start = range.start;
-            let end = range.end;
-
-            let mut result = String::new();
-            let mut highlighting = false;
-
-            for (i, ch) in self.out.text.chars().enumerate() {
-                if !(i >= self.out.start && i < self.out.start + input_width) {
-                    continue;
-                }
-                let selected = i >= start && i < end;
-                if selected && !highlighting {
-                    highlighting = true;
-                    write!(result, "{}", SetAttribute(Attribute::Reverse)).ok();
-                }
-                if !selected && highlighting {
-                    highlighting = false;
-                    write!(result, "{}", SetAttribute(Attribute::NoReverse)).ok();
-                }
-                result.push(ch);
-            }
-            if highlighting {
-                write!(result, "{}", SetAttribute(Attribute::NoReverse)).ok();
-            }
-            result
-        } else {
-            self.out
-                .text
-                .chars()
-                .skip(self.out.start)
-                .take(input_width)
-                .collect()
-        };
-
-        let input_color = if self.completion.error {
-            SetForegroundColor(Color::Red)
-        } else {
-            SetForegroundColor(Color::White)
-        };
-
-        let left_arrow = if self.out.start == 0 { ">" } else { "◄" };
-        let right_arrow = if self.out.start + input_width >= length {
-            ""
-        } else {
-            " ►"
-        };
+        self.out.start = Self::viewport_start(self.out.start, pos, input_width);
+        let output = self.visible_output(input_width);
+        let (input_color, left_arrow, right_arrow) = self.decorations(input_width, length);
 
         write!(
             self.out,
@@ -239,5 +181,75 @@ impl LogState {
             self.completion.rewrite(&mut self.out, Move::None)?;
         }
         Ok(())
+    }
+
+    const fn decorations(
+        &self,
+        input_width: usize,
+        length: usize,
+    ) -> (SetForegroundColor, &'static str, &'static str) {
+        let input_color = if self.completion.error {
+            SetForegroundColor(Color::Red)
+        } else {
+            SetForegroundColor(Color::White)
+        };
+        let left_arrow = if self.out.start == 0 { ">" } else { "◄" };
+        let right_arrow = if self.out.start + input_width >= length {
+            ""
+        } else {
+            " ►"
+        };
+        (input_color, left_arrow, right_arrow)
+    }
+
+    const fn viewport_start(start: usize, pos: usize, input_width: usize) -> usize {
+        if start > pos {
+            return (pos + 1).saturating_sub(input_width);
+        }
+        if pos.saturating_sub(start) > input_width {
+            return start + pos.saturating_sub(start) - input_width;
+        }
+        start
+    }
+
+    fn visible_output(&self, input_width: usize) -> String {
+        if self.selection.is_active() {
+            let range = self.selection.get_range();
+            let start = range.start;
+            let end = range.end;
+
+            let mut result = String::new();
+            let mut highlighting = false;
+
+            for (i, ch) in self
+                .out
+                .text
+                .chars()
+                .enumerate()
+                .skip(self.out.start)
+                .take(input_width)
+            {
+                let selected = i >= start && i < end;
+                if selected && !highlighting {
+                    highlighting = true;
+                    write!(result, "{}", SetAttribute(Attribute::Reverse)).ok();
+                }
+                if !selected && highlighting {
+                    highlighting = false;
+                    write!(result, "{}", SetAttribute(Attribute::NoReverse)).ok();
+                }
+                result.push(ch);
+            }
+            if highlighting {
+                write!(result, "{}", SetAttribute(Attribute::NoReverse)).ok();
+            }
+            return result;
+        }
+        self.out
+            .text
+            .chars()
+            .skip(self.out.start)
+            .take(input_width)
+            .collect()
     }
 }

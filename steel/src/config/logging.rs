@@ -10,8 +10,10 @@ const fn default_log_file() -> bool {
     true
 }
 
+pub(crate) const DEFAULT_MAX_HISTORY: usize = 50;
+
 const fn default_max_history() -> usize {
-    50
+    DEFAULT_MAX_HISTORY
 }
 
 /// Logging configuration

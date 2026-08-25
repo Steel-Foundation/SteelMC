@@ -16,6 +16,11 @@ use std::{
 };
 use steel_core::command::sender::CommandSender;
 
+const SUGGESTION_COLUMN_WIDTH: usize = 20;
+const MAX_SUGGESTION_ROWS: usize = 3;
+const SUGGESTION_ELLIPSIS_WIDTH: usize = 3;
+const PROMPT_RESERVED_ROWS: usize = 4;
+
 pub(super) struct Completion {
     pub(super) range: Range<usize>,
     pub(super) text: String,
@@ -130,15 +135,12 @@ impl Completer {
 
         // Updates completion position
         let len = self.suggestions.len();
-        match dir {
-            Move::Up => self.selected = (self.selected + len - 1) % len,
-            Move::Down => self.selected = (self.selected + 1) % len,
-            Move::None => (),
-        }
+        self.move_selection(dir, len);
 
         // Updates the screen width
-        let width = (super::terminal_width() / 20).max(1);
-        let max_height = 3.min(terminal_height().saturating_sub(4));
+        let width = (super::terminal_width() / SUGGESTION_COLUMN_WIDTH).max(1);
+        let max_height =
+            MAX_SUGGESTION_ROWS.min(terminal_height().saturating_sub(PROMPT_RESERVED_ROWS));
         let completion_height = self.suggestions.len().div_ceil(width).min(max_height);
         let grid_size = width * completion_height;
         if grid_size == 0 {
@@ -148,36 +150,7 @@ impl Completer {
         let missing_rows = completion_height.saturating_sub(self.reserved_rows);
         reserve_completion_rows(out, missing_rows)?;
         self.reserved_rows = self.reserved_rows.max(completion_height);
-        write!(out, "{SavePosition}\r\n")?;
-        write!(out, "{}", Clear(ClearType::FromCursorDown))?;
-        let start = (self.selected.checked_div(grid_size).unwrap_or(0)) * grid_size;
-        for h in 0..completion_height {
-            write!(out, "\r")?;
-            for w in 0..width {
-                let pos = start + w * completion_height + h;
-                if pos >= self.suggestions.len() {
-                    break;
-                }
-
-                let color = if pos == self.selected {
-                    Yellow
-                } else {
-                    DarkGrey
-                };
-
-                write!(
-                    out,
-                    "{}{:<20}{}",
-                    SetForegroundColor(color),
-                    display_suggestion(&self.suggestions[pos].text),
-                    ResetColor
-                )?;
-            }
-            if h + 1 < completion_height {
-                writeln!(out)?;
-            }
-        }
-        write!(out, "{RestorePosition}")?;
+        self.write_grid(out, width, completion_height, grid_size)?;
 
         let char_pos = if out.is_at_start() {
             0
@@ -206,6 +179,54 @@ impl Completer {
         }
         out.flush()
     }
+
+    const fn move_selection(&mut self, dir: Move, len: usize) {
+        match dir {
+            Move::Up => self.selected = (self.selected + len - 1) % len,
+            Move::Down => self.selected = (self.selected + 1) % len,
+            Move::None => (),
+        }
+    }
+
+    fn write_grid(
+        &self,
+        out: &mut Output,
+        width: usize,
+        completion_height: usize,
+        grid_size: usize,
+    ) -> Result<()> {
+        write!(out, "{SavePosition}\r\n")?;
+        write!(out, "{}", Clear(ClearType::FromCursorDown))?;
+        let start = (self.selected.checked_div(grid_size).unwrap_or(0)) * grid_size;
+        for h in 0..completion_height {
+            write!(out, "\r")?;
+            for w in 0..width {
+                let pos = start + w * completion_height + h;
+                if pos >= self.suggestions.len() {
+                    break;
+                }
+
+                let color = if pos == self.selected {
+                    Yellow
+                } else {
+                    DarkGrey
+                };
+
+                write!(
+                    out,
+                    "{}{:<width$}{}",
+                    SetForegroundColor(color),
+                    display_suggestion(&self.suggestions[pos].text),
+                    ResetColor,
+                    width = SUGGESTION_COLUMN_WIDTH,
+                )?;
+            }
+            if h + 1 < completion_height {
+                writeln!(out)?;
+            }
+        }
+        write!(out, "{RestorePosition}")
+    }
 }
 
 fn char_position_to_byte(input: &str, position: usize) -> usize {
@@ -216,8 +237,12 @@ fn char_position_to_byte(input: &str, position: usize) -> usize {
 }
 
 fn display_suggestion(suggestion: &str) -> String {
-    if suggestion.chars().count() > 20 {
-        format!("{}...", suggestion.chars().take(17).collect::<String>())
+    if suggestion.chars().count() > SUGGESTION_COLUMN_WIDTH {
+        let text_width = SUGGESTION_COLUMN_WIDTH - SUGGESTION_ELLIPSIS_WIDTH;
+        format!(
+            "{}...",
+            suggestion.chars().take(text_width).collect::<String>()
+        )
     } else {
         suggestion.to_owned()
     }

@@ -34,7 +34,7 @@ fn terminal_height() -> usize {
     terminal::size().map_or(30, |(_, h)| if h == 0 { 30 } else { h as usize })
 }
 
-pub(crate) use state::LogState;
+pub(crate) use state::{Delete, LogState};
 
 pub(crate) enum Move {
     None,
@@ -68,7 +68,7 @@ impl CommandLogger {
         let log = Arc::new(Self {
             input: Arc::new(AsyncRwLock::const_new(input)),
             sender,
-            cancel_token: log_cancel_token.clone(),
+            cancel_token: log_cancel_token,
             stopped: CancellationToken::new(),
             log_stopped: CancellationToken::new(),
             start_time: Instant::now(),

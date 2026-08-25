@@ -5,15 +5,18 @@ use std::backtrace::{Backtrace, BacktraceStatus};
 use std::num::NonZero;
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
+use std::process::exit;
 use std::sync::Arc;
+#[cfg(feature = "deadlock_detection")]
+use std::time::Duration;
 use std::{io, panic, thread};
 
 use crossterm::style::Attribute::{Bold, Dim, Reset};
 use crossterm::style::{Color, ResetColor, SetForegroundColor};
 use futures::FutureExt;
 use steel::config::{self, LogConfig};
-use steel::logger::CommandLogger;
-use steel::{SERVER, SteelServer, logger::LoggerLayer};
+use steel::logger::{CommandLogger, LoggerLayer};
+use steel::{SERVER, SteelServer};
 use steel_core::player::player_data::PersistentPlayerData;
 use steel_core::player::player_data_storage::GlobalPlayerData;
 use steel_core::player::player_inventory::MenuRemovalStatus;
@@ -31,8 +34,14 @@ use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitEx
 #[cfg(feature = "jaeger")]
 use tracing_subscriber::{Layer, registry::LookupSpan};
 
+#[cfg(all(windows, debug_assertions))]
+const DEBUG_MAIN_THREAD_STACK_SIZE: usize = 8 * 1024 * 1024;
+
+#[cfg(feature = "deadlock_detection")]
+const DEADLOCK_CHECK_INTERVAL: Duration = Duration::from_secs(10);
+
 #[cfg(feature = "jaeger")]
-fn init_jaeger<S>() -> impl Layer<S> + Send + Sync
+fn init_jaeger<S>() -> Result<impl Layer<S> + Send + Sync, String>
 where
     S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
 {
@@ -46,7 +55,7 @@ where
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .build()
-        .expect("Failed to create OTLP span exporter");
+        .map_err(|error| format!("failed to create OTLP span exporter: {error}"))?;
 
     let tracer_provider = SdkTracerProvider::builder()
         .with_resource(
@@ -69,8 +78,8 @@ where
 
     let tracer = tracer_provider.tracer("steel");
     global::set_tracer_provider(tracer_provider);
-    OpenTelemetryLayer::new(tracer)
-        .with_filter(EnvFilter::new("trace,h2=off,hyper=off,tonic=off,tower=off"))
+    Ok(OpenTelemetryLayer::new(tracer)
+        .with_filter(EnvFilter::new("trace,h2=off,hyper=off,tonic=off,tower=off")))
 }
 
 async fn init_tracing(
@@ -84,7 +93,7 @@ async fn init_tracing(
     let tracing = tracing_subscriber::registry();
 
     #[cfg(feature = "jaeger")]
-    let tracing = tracing.with(init_jaeger());
+    let tracing = tracing.with(init_jaeger()?);
 
     let layer = LoggerLayer::new(cancel_token, log_config)
         .await
@@ -118,20 +127,29 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 // Windows defaults to a 1 MB main thread stack, which overflows in debug
 // builds due to deeply nested generated density functions.
 fn main() {
+    if let Err(error) = run_main() {
+        eprintln!("{error}");
+        exit(1);
+    }
+}
+
+fn run_main() -> Result<(), String> {
     #[cfg(all(windows, debug_assertions))]
     {
-        thread::Builder::new()
+        let handle = thread::Builder::new()
             .name("steel-main".to_owned())
-            .stack_size(8 * 1024 * 1024)
+            .stack_size(DEBUG_MAIN_THREAD_STACK_SIZE)
             .spawn(steel_main)
-            .expect("failed to spawn steel-main bootstrap thread")
-            .join()
-            .expect("steel-main thread panicked");
+            .map_err(|error| format!("failed to spawn steel-main bootstrap thread: {error}"))?;
+        return match handle.join() {
+            Ok(result) => result,
+            Err(payload) => panic::resume_unwind(payload),
+        };
     }
 
     #[cfg(not(all(windows, debug_assertions)))]
     {
-        steel_main();
+        steel_main()
     }
 }
 
@@ -142,22 +160,13 @@ fn main() {
 /// If we only used one runtime this would lead to the tick task being blocked by the chunk tasks.
 ///
 /// We have to create the runtimes at this level cause tokio panics if you drop a runtime in a context where blocking is not allowed.
-#[expect(
-    clippy::unwrap_used,
-    reason = "runtime build failures are fatal and unrecoverable at startup"
-)]
-fn steel_main() {
+fn steel_main() -> Result<(), String> {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
     // Load config once at startup
-    let steel_config = match config::load_or_create(Path::new("config/config.toml")) {
-        Ok(config) => config,
-        Err(error) => {
-            eprintln!("Failed to load configuration: {error}");
-            return;
-        }
-    };
+    let steel_config = config::load_or_create(Path::new("config/config.toml"))
+        .map_err(|error| format!("failed to load configuration: {error}"))?;
 
     let main_worker_threads = configured_worker_threads(steel_config.server.threads.main_runtime);
     let chunk_worker_threads = configured_worker_threads(steel_config.server.threads.chunk_runtime);
@@ -168,7 +177,7 @@ fn steel_main() {
             .thread_name("chunk-worker")
             .enable_all()
             .build()
-            .unwrap(),
+            .map_err(|error| format!("failed to build chunk runtime: {error}"))?,
     );
 
     let main_runtime = Builder::new_multi_thread()
@@ -176,12 +185,13 @@ fn steel_main() {
         .thread_name("main-worker")
         .enable_all()
         .build()
-        .unwrap();
+        .map_err(|error| format!("failed to build main runtime: {error}"))?;
 
     main_runtime.block_on(main_async(chunk_runtime.clone(), steel_config));
 
     drop(main_runtime);
     drop(chunk_runtime);
+    Ok(())
 }
 
 fn configured_worker_threads(configured_threads: Option<usize>) -> usize {
@@ -203,7 +213,28 @@ async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConf
         }
     };
     spawn_shutdown_signal_listener(cancel_token.clone());
-    let panic_token = cancel_token.clone();
+    install_panic_hook(cancel_token.clone());
+
+    let run_result = AssertUnwindSafe(run_server(chunk_runtime, cancel_token, steel_config))
+        .catch_unwind()
+        .await;
+    let panic_payload = match run_result {
+        Ok(Ok(())) => None,
+        Ok(Err(error)) => {
+            log::error!("Server startup failed: {error}");
+            None
+        }
+        Err(payload) => Some(payload),
+    };
+
+    logger.stop().await;
+
+    if let Some(payload) = panic_payload {
+        panic::resume_unwind(payload);
+    }
+}
+
+fn install_panic_hook(panic_token: CancellationToken) {
     panic::set_hook(Box::new(move |panic_info| {
         let message = panic_info.payload_as_str().unwrap_or("Unknown");
         let current_thread = thread::current();
@@ -263,24 +294,6 @@ async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConf
 
         panic_token.cancel();
     }));
-
-    let run_result = AssertUnwindSafe(run_server(chunk_runtime, cancel_token, steel_config))
-        .catch_unwind()
-        .await;
-    let panic_payload = match run_result {
-        Ok(Ok(())) => None,
-        Ok(Err(error)) => {
-            log::error!("Server startup failed: {error}");
-            None
-        }
-        Err(payload) => Some(payload),
-    };
-
-    logger.stop().await;
-
-    if let Some(payload) = panic_payload {
-        panic::resume_unwind(payload);
-    }
 }
 
 fn spawn_shutdown_signal_listener(cancel_token: CancellationToken) {
@@ -332,12 +345,11 @@ async fn run_server(
         // only for #[cfg]
         use parking_lot::deadlock;
         use std::thread;
-        use std::time::Duration;
 
         // Create a background thread which checks for deadlocks every 10s
         thread::spawn(move || {
             loop {
-                thread::sleep(Duration::from_secs(10));
+                thread::sleep(DEADLOCK_CHECK_INTERVAL);
                 let deadlocks = deadlock::check_deadlock();
                 if deadlocks.is_empty() {
                     continue;
@@ -413,24 +425,14 @@ async fn shutdown_worlds(server: &Arc<Server>) {
         players_to_save.push((player, domain, data));
     }
 
-    // Save all dirty chunks before shutdown
     log::info!("Saving world data...");
-    let command_data = server.save_command_data().await;
-    match command_data.scoreboards {
-        Ok(saved) => log::info!("Saved {saved} domain scoreboards"),
-        Err(error) => log::error!("Failed to save domain scoreboards: {error}"),
-    }
-    match command_data.storage {
-        Ok(saved) => log::info!("Saved {saved} domain command storages"),
-        Err(error) => log::error!("Failed to save domain command storage: {error}"),
-    }
+    server.save_command_data().await;
     let mut total_saved = 0;
     for world in server.worlds.values() {
         world.cleanup(&mut total_saved).await;
     }
     log::info!("Saved {total_saved} chunks");
 
-    // Save all player data before shutdown
     log::info!("Saving player data...");
     let mut saved = 0;
     for (player, domain, data) in players_to_save {
@@ -440,14 +442,12 @@ async fn shutdown_worlds(server: &Arc<Server>) {
             .save_domain_data(&domain, uuid, &data)
             .await
         {
-            Ok(()) => {
-                saved += 1;
-            }
-            Err(e) => {
-                log::error!("Failed to save player {uuid} domain data during shutdown: {e}");
+            Ok(()) => saved += 1,
+            Err(error) => {
+                log::error!("Failed to save player {uuid} domain data during shutdown: {error}");
             }
         }
-        if let Err(e) = server
+        if let Err(error) = server
             .player_data_storage
             .save_global(
                 uuid,
@@ -457,7 +457,7 @@ async fn shutdown_worlds(server: &Arc<Server>) {
             )
             .await
         {
-            log::error!("Failed to save player {uuid} global data during shutdown: {e}");
+            log::error!("Failed to save player {uuid} global data during shutdown: {error}");
         }
     }
     log::info!("Saved {saved} players");

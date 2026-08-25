@@ -1,6 +1,6 @@
 use crate::SERVER;
 use crate::logger::history::History;
-use crate::logger::{CommandLogger, LogState, Move, terminal_width};
+use crate::logger::{CommandLogger, Delete, LogState, Move, terminal_width};
 use crossterm::{
     clipboard::CopyToClipboard,
     cursor::SetCursorStyle::{BlinkingBar, BlinkingBlock, DefaultUserShape},
@@ -8,16 +8,20 @@ use crossterm::{
     execute,
     terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode},
 };
-use std::time::Duration;
 use std::{
     fmt::Write as _,
     io::{Result, Write},
     sync::Arc,
+    time::Duration,
 };
 use steel_core::command::sender::CommandSender;
-use tokio::sync::RwLockWriteGuard;
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use tokio::task::spawn_blocking;
+use tokio::{
+    sync::{
+        RwLockWriteGuard,
+        mpsc::{self, UnboundedReceiver, UnboundedSender},
+    },
+    task::spawn_blocking,
+};
 
 enum ExtendedKey {
     Generic(KeyEvent),
@@ -73,7 +77,7 @@ impl CommandLogger {
                 }
                 if !string.is_empty() {
                     tx.send(ExtendedKey::String(string.clone())).ok();
-                    string = String::new();
+                    string.clear();
                 }
             }
         });
@@ -113,14 +117,14 @@ impl CommandLogger {
                                     state.delete_selection()?;
                                     continue;
                                 }
-                                state.pop_before()?;
+                                state.delete(Delete::BeforeCursor)?;
                             }
                             KeyCode::Delete => {
                                 if state.selection.is_active() {
                                     state.delete_selection()?;
                                     continue;
                                 }
-                                state.pop_after()?;
+                                state.delete(Delete::AfterCursor)?;
                             }
                             KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
                                 if !state.out.is_at_start() {
@@ -182,11 +186,11 @@ impl CommandLogger {
                                 }
                             }
                             KeyCode::Up => {
-                                previous(state)?;
+                                navigate(state, Move::Up)?;
                                 continue;
                             }
                             KeyCode::Down => {
-                                next(state)?;
+                                navigate(state, Move::Down)?;
                                 continue;
                             }
                             KeyCode::End if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -297,11 +301,11 @@ impl CommandLogger {
                                     continue;
                                 }
                                 'p' => {
-                                    previous(state)?;
+                                    navigate(state, Move::Up)?;
                                     continue;
                                 }
                                 'n' => {
-                                    next(state)?;
+                                    navigate(state, Move::Down)?;
                                     continue;
                                 }
                                 'j' => {
@@ -363,14 +367,14 @@ impl CommandLogger {
     }
 }
 
-fn send_state(mut lock: RwLockWriteGuard<'_, LogState>) {
-    if lock.out.is_empty() || lock.out.text.chars().all(char::is_whitespace) {
+fn send_state(mut state: RwLockWriteGuard<'_, LogState>) {
+    if state.out.is_empty() || state.out.text.chars().all(char::is_whitespace) {
         return;
     }
-    let message = lock.out.text.clone();
-    lock.history.push(message.clone());
-    lock.reset().ok();
-    drop(lock);
+    let message = state.out.text.clone();
+    state.history.push(message.clone());
+    state.reset().ok();
+    drop(state);
     steel_utils::console!("{}", message);
     if let Some(server) = SERVER.get()
         && server
@@ -397,21 +401,12 @@ fn copy_to_clipboard(input: &mut LogState) -> Option<()> {
     Some(())
 }
 
-fn previous(state: &mut LogState) -> Result<()> {
+fn navigate(state: &mut LogState, direction: Move) -> Result<()> {
     if state.completion.enabled {
-        state.completion.rewrite(&mut state.out, Move::Up)?;
+        state.completion.rewrite(&mut state.out, direction)?;
     } else {
         state.selection.clear();
-        History::update(state, Move::Up)?;
-    }
-    Ok(())
-}
-fn next(state: &mut LogState) -> Result<()> {
-    if state.completion.enabled {
-        state.completion.rewrite(&mut state.out, Move::Down)?;
-    } else {
-        state.selection.clear();
-        History::update(state, Move::Down)?;
+        History::update(state, direction)?;
     }
     Ok(())
 }

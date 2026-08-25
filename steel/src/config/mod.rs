@@ -9,6 +9,7 @@ mod logging;
 mod server;
 
 pub use groups::FilePermissionGroupStore;
+pub(crate) use logging::DEFAULT_MAX_HISTORY;
 pub use logging::{LogConfig, LogLevel, LogTimeFormat, RotationTimeFormat};
 pub use server::{ServerConfig, ThreadConfig};
 
@@ -76,6 +77,9 @@ const fn empty_worlds_config() -> WorldsConfig {
 
 /// Loads the server configuration from the given path, or creates it if it doesn't exist.
 pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?;
     let mut config = if path.exists() {
         let config_str = fs::read_to_string(path)
             .map_err(|e| format!("failed to read config file {}: {e}", path.display()))?;
@@ -84,9 +88,6 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
         validate(&config.server).map_err(|e| format!("failed to validate config: {e}"))?;
         config
     } else {
-        let parent = path
-            .parent()
-            .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?;
         fs::create_dir_all(parent).map_err(|e| {
             format!(
                 "failed to create config directory {}: {e}",
@@ -97,19 +98,12 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
             .map_err(|e| format!("failed to write config file {}: {e}", path.display()))?;
         let config: SteelConfig = toml::from_str(DEFAULT_CONFIG)
             .map_err(|e| format!("failed to parse default config: {e}"))?;
-        validate(&config.server).map_err(|e| format!("failed to validate default config: {e}"))?;
         config
     };
 
-    let worlds_path = path
-        .parent()
-        .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
-        .join("worlds.toml");
+    let worlds_path = parent.join("worlds.toml");
     config.worlds = load_or_create_worlds(&worlds_path)?;
-    let groups_path = path
-        .parent()
-        .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
-        .join("groups.toml");
+    let groups_path = parent.join("groups.toml");
     config.groups = load_or_create_groups(&groups_path)?;
     config.groups_path = Some(groups_path);
 
