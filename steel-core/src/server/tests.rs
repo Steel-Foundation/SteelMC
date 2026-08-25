@@ -1,3 +1,5 @@
+use glam::DVec3;
+use std::sync::atomic::AtomicI32;
 use std::{
     env::temp_dir,
     io::Cursor,
@@ -9,8 +11,6 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-
-use glam::DVec3;
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
     ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
@@ -263,6 +263,7 @@ async fn test_server_with_worlds(
         pending_player_disconnects: PlayerDisconnectQueue::new(),
         pending_world_changes: SyncMutex::new(Vec::new()),
         pending_domain_switches: SyncMutex::new(Vec::new()),
+        player_idle_timeout: AtomicI32::new(0),
     }))
 }
 
