@@ -283,6 +283,12 @@ impl Vector3f {
         z: 0.0,
     };
 
+    pub const ONE: Self = Self {
+        x: 1.0,
+        y: 1.0,
+        z: 1.0,
+    };
+
     #[must_use]
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
