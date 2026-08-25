@@ -217,12 +217,6 @@ impl BlockCollisionContext {
     /// Collision context for vanilla pre-move collision validation.
     #[must_use]
     pub const fn pre_move(entity_bottom: f64, descending: bool) -> Self {
-        Self::placement(entity_bottom, descending)
-    }
-
-    /// Collision context for vanilla block-placement obstruction checks.
-    #[must_use]
-    pub const fn placement(entity_bottom: f64, descending: bool) -> Self {
         Self {
             entity_bottom: Some(entity_bottom),
             fall_distance: 0.0,
@@ -238,7 +232,7 @@ impl BlockCollisionContext {
     /// This matches vanilla `CollisionContext.placementContext(null)`.
     #[must_use]
     pub const fn placement_without_entity() -> Self {
-        Self::placement(f64::MIN, false)
+        Self::pre_move(f64::MIN, false)
     }
 
     /// Collision context for vanilla `CollisionContext.positionContext(y)`.
