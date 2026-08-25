@@ -357,7 +357,7 @@ impl AnvilKind {
         })
     }
 
-    const fn calculate_increased_repair_cost(old_repair_cost: i32) -> i32 {
+    pub const fn calculate_increased_repair_cost(old_repair_cost: i32) -> i32 {
         old_repair_cost.saturating_mul(2).saturating_add(1)
     }
 }
