@@ -132,8 +132,17 @@ impl FireBlock {
 }
 
 impl BlockBehavior for FireBlock {
-    // TODO: Implement vanilla random tick behavior for fire spreading and aging
-    /// Removes fire when its supporting block no longer allows it to survive
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        if !self.can_survive(state, world.as_ref(), pos) {
+            world.set_block(
+                pos,
+                vanilla_blocks::AIR.default_state(),
+                UpdateFlags::UPDATE_ALL,
+            );
+            return;
+        }
+    }
+    // TODO: Implement vanilla fire spreading and aging
     fn update_shape(
         &self,
         state: BlockStateId,
