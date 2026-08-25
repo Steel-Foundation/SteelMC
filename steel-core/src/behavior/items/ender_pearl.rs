@@ -69,9 +69,10 @@ impl ItemBehavior for EnderPearlItem {
         }
         player.register_ender_pearl(&entity);
 
-        context.inv.with_item(|item| {
-            item.shrink(1);
-            player.award_stat(&vanilla_stat_types::ITEM_USED, item.item());
+        context.inv.with_item(|itemstack| {
+            let item = itemstack.item();
+            itemstack.shrink(1);
+            player.award_stat(&vanilla_stat_types::ITEM_USED, item);
         });
 
         InteractionResult::Success

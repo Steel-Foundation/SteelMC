@@ -101,17 +101,18 @@ impl ItemBehavior for FireworkRocketItem {
             context.player,
         );
         let rocket = Self::add_rocket(context.world, rocket);
-        context.inv.with_item(|item| {
+        context.inv.with_item(|itemstack| {
+            let item = itemstack.item();
             enchantment_helper::on_projectile_spawned(
                 context.world,
-                item,
+                itemstack,
                 rocket.as_ref(),
                 Some(context.player),
             );
-            item.shrink(1);
+            itemstack.shrink(1);
             context
                 .player
-                .award_stat(&vanilla_stat_types::ITEM_USED, item.item());
+                .award_stat(&vanilla_stat_types::ITEM_USED, item);
         });
 
         InteractionResult::Success
