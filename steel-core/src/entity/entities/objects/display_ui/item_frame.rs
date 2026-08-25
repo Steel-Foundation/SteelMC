@@ -140,7 +140,7 @@ impl ItemFrameEntity {
         self.recalculate_position_or_warn();
     }
 
-    fn recalculate_position(&self) -> Result<(), EntityMoveError> {
+    fn try_recalculate_position(&self) -> Result<(), EntityMoveError> {
         let block_pos = self.block_attached_entity_base.pos();
         let direction = *self.entity_data.lock().hanging_entity.direction.get();
         let position = Self::frame_center(block_pos, direction);
@@ -155,7 +155,7 @@ impl ItemFrameEntity {
     }
 
     fn recalculate_position_or_warn(&self) {
-        if let Err(error) = self.recalculate_position() {
+        if let Err(error) = self.try_recalculate_position() {
             log::warn!(
                 "failed to commit item frame {} position recalculation: {error}",
                 self.base.id()
@@ -352,7 +352,7 @@ impl BlockAttachedEntity for ItemFrameEntity {
     fn drop_item(&self, _caused_by: Option<&dyn Entity>) {}
 
     fn recalculate_bounding_box(&self) -> Result<(), EntityMoveError> {
-        self.recalculate_position()
+        self.try_recalculate_position()
     }
 }
 
