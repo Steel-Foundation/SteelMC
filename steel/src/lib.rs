@@ -2,6 +2,7 @@
 //!
 //! The main library for the Steel Minecraft server.
 
+use std::sync::atomic::Ordering;
 use std::{
     error::Error,
     fmt, io,
@@ -100,6 +101,7 @@ impl SteelServer {
                     SteelServerError::Core(format!("failed to validate groups config: {error}"))
                 },
             )?;
+        let player_idle_timeout = steel_config.server.player_idle_timeout;
         let runtime_config = steel_config.server.into_runtime_config();
 
         let server = Server::new_with_commands(
@@ -112,6 +114,10 @@ impl SteelServer {
         )
         .await
         .map_err(SteelServerError::Core)?;
+
+        server
+            .player_idle_timeout
+            .store(player_idle_timeout, Ordering::Relaxed);
 
         let tcp_listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, server_port))
             .await
