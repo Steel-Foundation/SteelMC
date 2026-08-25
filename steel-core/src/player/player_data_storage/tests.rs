@@ -913,7 +913,10 @@ fn version_mismatch_and_corruption_report_distinct_error_kinds() {
     let mut wrong_version = encoded.clone();
     wrong_version[4..6].copy_from_slice(&(PLAYER_STORAGE_VERSION + 1).to_le_bytes());
     assert_eq!(
-        rejection_kind(&wrong_version, "a foreign storage version should be rejected"),
+        rejection_kind(
+            &wrong_version,
+            "a foreign storage version should be rejected"
+        ),
         io::ErrorKind::Unsupported
     );
 

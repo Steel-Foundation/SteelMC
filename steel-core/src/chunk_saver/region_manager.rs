@@ -539,6 +539,33 @@ impl RegionManager {
         let persistent: PersistentChunk<'_> = wincode::deserialize(&data)
             .map_err(|error| CorruptChunkData(format!("chunk decode failed: {error}")))?;
 
+        // The payload's identity is the trustworthy copy: it rides inside a
+        // checksummed frame, while the table entry these arguments came from is
+        // plain bytes. Disagreement therefore means the entry is damaged.
+        //
+        // A wrong position means the entry pointed at some other chunk's
+        // payload, so this slot's real data is not here and serving it would
+        // write a chunk into the wrong place.
+        let payload_pos = persistent.pos.to_chunk_pos();
+        if payload_pos != pos {
+            return Err(CorruptChunkData(format!(
+                "chunk table entry for {pos:?} points at the payload for {payload_pos:?}"
+            )));
+        }
+
+        // A wrong status is recoverable, and silently trusting the entry is the
+        // damaging case: a `Full` chunk read at a lower status is regenerated
+        // over, destroying whatever was built there.
+        if persistent.status != status {
+            tracing::warn!(
+                chunk = ?pos,
+                entry_status = ?status,
+                payload_status = ?persistent.status,
+                "Chunk table status disagrees with the chunk payload; trusting the payload"
+            );
+        }
+        let status = persistent.status;
+
         ChunkStorage::try_persistent_to_chunk(&persistent, pos, status, min_y, height, level)
             .map_err(|error| CorruptChunkData(format!("chunk materialization failed: {error}")))
     }
@@ -693,11 +720,13 @@ mod tests {
     };
 
     use super::*;
+    use crate::chunk_saver::format::{
+        PersistentBiomeData, PersistentBlockState, PersistentSection,
+    };
     use crate::chunk_saver::{PersistentChunk, PersistentLightData};
     use crate::test_support::test_world;
-    use tokio::runtime::Builder;
-    use crate::chunk_saver::format::{PersistentBiomeData, PersistentBlockState, PersistentSection};
     use steel_utils::Identifier;
+    use tokio::runtime::Builder;
 
     static NEXT_TEST_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
@@ -715,6 +744,18 @@ mod tests {
         payload: &[u8],
         declared_size: u32,
     ) -> io::Result<()> {
+        write_test_region_as(directory, pos, payload, declared_size, ChunkStatus::Empty).await
+    }
+
+    /// Writes a single-chunk region with an explicit format version and table
+    /// entry status, so tests can build legacy files and disagreeing entries.
+    async fn write_test_region_as(
+        directory: &Path,
+        pos: ChunkPos,
+        payload: &[u8],
+        declared_size: u32,
+        entry_status: ChunkStatus,
+    ) -> io::Result<()> {
         fs::create_dir_all(directory).await?;
         let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
         let path = directory.join(region_pos.filename());
@@ -727,8 +768,7 @@ mod tests {
         let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
         let index = RegionHeader::chunk_index(local_x, local_z);
         let mut header = RegionHeader::new();
-        header.entries[index] =
-            ChunkEntry::new(FIRST_DATA_SECTOR, declared_size, ChunkStatus::Empty);
+        header.entries[index] = ChunkEntry::new(FIRST_DATA_SECTOR, declared_size, entry_status);
         file.write_all(&header.to_bytes()).await?;
         file.seek(io::SeekFrom::Start(
             u64::from(FIRST_DATA_SECTOR) * SECTOR_SIZE as u64,
@@ -813,6 +853,8 @@ mod tests {
     /// geometry: homogeneous sections referencing one block-state and biome.
     fn loadable_persistent_chunk(section_count: usize) -> PersistentChunk<'static> {
         PersistentChunk {
+            pos: ChunkPos::new(0, 0).into(),
+            status: ChunkStatus::Empty,
             last_modified: 0,
             block_states: vec![PersistentBlockState {
                 name: Identifier::vanilla("air".to_owned()),
@@ -851,6 +893,142 @@ mod tests {
             .expect("checksum flag should be settable");
         encoder.write_all(data).expect("payload should compress");
         encoder.finish().expect("frame should finish")
+    }
+
+    /// A table entry claiming the wrong status must not override the payload:
+    /// trusting a downgraded entry would regenerate over a finished chunk.
+    #[test]
+    fn chunk_table_status_disagreement_trusts_the_payload() {
+        let directory = test_directory("status-disagreement");
+        let pos = ChunkPos::new(0, 0);
+        let world = test_world();
+        let (min_y, height) = (world.get_min_y(), world.get_height());
+
+        let mut chunk = loadable_persistent_chunk((height / 16) as usize);
+        chunk.pos = pos.into();
+        chunk.status = ChunkStatus::Surface;
+        let encoded = wincode::serialize(&chunk).expect("test chunk should encode");
+        let payload = checksummed_frame(&encoded);
+
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime should start");
+
+        runtime.block_on(async {
+            // The entry claims `Empty` while the payload records `Surface`.
+            write_test_region_as(
+                &directory,
+                pos,
+                &payload,
+                payload.len() as u32,
+                ChunkStatus::Empty,
+            )
+            .await
+            .expect("test region should be written");
+
+            let manager = RegionManager::new(&directory);
+            assert!(
+                manager
+                    .acquire_chunk(pos)
+                    .await
+                    .expect("region should open")
+            );
+            let loaded = manager
+                .load_chunk(
+                    pos,
+                    min_y,
+                    height,
+                    Arc::downgrade(world),
+                    &test_thread_pool(),
+                )
+                .await
+                .expect("a disagreeing entry should not fail the load")
+                .expect("chunk should still be served");
+            assert_eq!(
+                loaded.status,
+                ChunkStatus::Surface,
+                "the payload's status must win over the table entry"
+            );
+
+            manager
+                .release_chunk(pos)
+                .await
+                .expect("region should release");
+            fs::remove_dir_all(directory)
+                .await
+                .expect("test directory should be removable");
+        });
+    }
+
+    /// An entry pointing at another chunk's payload must be rejected rather
+    /// than writing that chunk's contents into the wrong position.
+    #[test]
+    fn chunk_table_position_disagreement_is_rejected() {
+        let directory = test_directory("pos-disagreement");
+        let pos = ChunkPos::new(0, 0);
+        let world = test_world();
+        let (min_y, height) = (world.get_min_y(), world.get_height());
+
+        let mut chunk = loadable_persistent_chunk((height / 16) as usize);
+        // The payload belongs to a different chunk than the slot it is filed under.
+        chunk.pos = ChunkPos::new(1, 1).into();
+        let encoded = wincode::serialize(&chunk).expect("test chunk should encode");
+        let payload = checksummed_frame(&encoded);
+
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime should start");
+
+        runtime.block_on(async {
+            write_test_region_as(
+                &directory,
+                pos,
+                &payload,
+                payload.len() as u32,
+                ChunkStatus::Empty,
+            )
+            .await
+            .expect("test region should be written");
+
+            let manager = RegionManager::new(&directory);
+            assert!(
+                manager
+                    .acquire_chunk(pos)
+                    .await
+                    .expect("region should open")
+            );
+            let loaded = manager
+                .load_chunk(
+                    pos,
+                    min_y,
+                    height,
+                    Arc::downgrade(world),
+                    &test_thread_pool(),
+                )
+                .await
+                .expect("a misfiled payload should be handled, not propagated");
+            assert!(
+                loaded.is_none(),
+                "a payload for another chunk must not be served"
+            );
+            assert!(
+                !manager
+                    .chunk_exists(pos)
+                    .await
+                    .expect("slot should be readable"),
+                "the misfiled entry should be dropped for regeneration"
+            );
+
+            manager
+                .release_chunk(pos)
+                .await
+                .expect("region should release");
+            fs::remove_dir_all(directory)
+                .await
+                .expect("test directory should be removable");
+        });
     }
 
     /// Pins the *handling* of a checksum failure: a frame whose compressed body
@@ -915,8 +1093,8 @@ mod tests {
             fs::remove_dir_all(directory)
                 .await
                 .expect("test directory should be removable");
-            });
-}
+        });
+    }
 
     /// The same chunk without the corruption must still load, so the test above
     /// proves checksum rejection rather than a broken encode path.
@@ -966,14 +1144,16 @@ mod tests {
             fs::remove_dir_all(directory)
                 .await
                 .expect("test directory should be removable");
-            });
-}
+        });
+    }
 
     #[tokio::test]
     async fn semantically_invalid_complete_payload_is_removed_for_regeneration() {
         let directory = test_directory("semantic");
         let pos = ChunkPos::new(0, 0);
         let persistent = PersistentChunk {
+            pos: pos.into(),
+            status: ChunkStatus::Empty,
             last_modified: 0,
             block_states: Vec::new(),
             biomes: Vec::new(),
