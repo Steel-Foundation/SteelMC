@@ -21,6 +21,7 @@ use tokio::{
 
 use crate::chunk::status::ChunkStatus;
 use crate::compression::encode_checked;
+use crate::fatal::{fatal_shutdown_requested, request_fatal_shutdown};
 use crate::world::World;
 
 use super::{
@@ -30,6 +31,33 @@ use super::{
         MAX_CHUNK_SIZE, REGION_MAGIC, RegionHeader, RegionPos, SECTOR_SIZE,
     },
 };
+
+/// How the server should react to a storage error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StorageFailure {
+    /// Nothing can be persisted any more: the disk is full, or the world
+    /// directory cannot be written. Retrying cannot help.
+    Fatal,
+    /// The region file's own structure is damaged rather than inaccessible, so
+    /// it can be set aside and rebuilt.
+    Corrupt,
+    /// Transient or environmental -- a bad sector, exhausted file descriptors,
+    /// a stalled mount. Worth retrying later.
+    Transient,
+}
+
+impl StorageFailure {
+    fn classify(error: &io::Error) -> Self {
+        match error.kind() {
+            io::ErrorKind::StorageFull
+            | io::ErrorKind::QuotaExceeded
+            | io::ErrorKind::ReadOnlyFilesystem
+            | io::ErrorKind::PermissionDenied => Self::Fatal,
+            io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof => Self::Corrupt,
+            _ => Self::Transient,
+        }
+    }
+}
 
 #[derive(Debug)]
 struct CorruptChunkData(String);
@@ -97,7 +125,40 @@ impl RegionManager {
     }
 
     /// Opens or creates a region file, loading only the header.
+    ///
+    /// Triages storage errors so callers only ever see retryable ones.
     async fn open_region(&self, pos: RegionPos) -> io::Result<RegionHandle> {
+        match self.open_region_inner(pos).await {
+            Ok(handle) => Ok(handle),
+            Err(error) => match StorageFailure::classify(&error) {
+                StorageFailure::Fatal => {
+                    if !fatal_shutdown_requested() {
+                        request_fatal_shutdown(&format!(
+                            "cannot access region storage at {}: {error}",
+                            self.base_path.display()
+                        ));
+                    }
+                    Err(error)
+                }
+                StorageFailure::Corrupt => {
+                    // The header is unreadable, so every chunk in the region is
+                    // unreachable through it. Keep the bytes and rebuild.
+                    let path = self.region_path(pos);
+                    let backup_path = path.with_extension("srg.corrupt.bak");
+                    tracing::error!(
+                        "Region file {} is unreadable ({error}), moving it to {} and rebuilding",
+                        path.display(),
+                        backup_path.display(),
+                    );
+                    fs::rename(&path, &backup_path).await?;
+                    self.create_region(pos).await
+                }
+                StorageFailure::Transient => Err(error),
+            },
+        }
+    }
+
+    async fn open_region_inner(&self, pos: RegionPos) -> io::Result<RegionHandle> {
         let path = self.region_path(pos);
 
         if !path.exists() {
@@ -1272,8 +1333,11 @@ mod tests {
             .expect("test directory should be removable");
     }
 
+    /// A damaged chunk table makes every chunk in the region unreachable, so the
+    /// file is set aside and rebuilt rather than failing every load forever.
+    /// The original bytes are kept for recovery.
     #[tokio::test]
-    async fn invalid_chunk_status_byte_is_a_structural_error_and_is_preserved() {
+    async fn invalid_chunk_status_byte_rebuilds_the_region_and_keeps_the_original() {
         let directory = test_directory("invalid-status");
         let pos = ChunkPos::new(0, 0);
         let payload = b"payload must not be decoded";
@@ -1298,14 +1362,19 @@ mod tests {
         drop(file);
 
         let manager = RegionManager::new(&directory);
-        let Err(error) = manager.acquire_chunk(pos).await else {
-            panic!("invalid status byte must reject the region header");
-        };
-        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(
+            !manager
+                .acquire_chunk(pos)
+                .await
+                .expect("a damaged chunk table should be rebuilt, not surfaced as an error"),
+            "the rebuilt region must be empty"
+        );
 
-        let mut file = File::open(path)
+        // The damaged bytes survive alongside the replacement.
+        let backup = path.with_extension("srg.corrupt.bak");
+        let mut file = File::open(&backup)
             .await
-            .expect("rejected region should remain readable");
+            .expect("damaged region should be preserved");
         file.seek(io::SeekFrom::Start(FILE_HEADER_SIZE as u64 + 7))
             .await
             .expect("status byte should remain seekable");
@@ -1315,6 +1384,10 @@ mod tests {
             .expect("status byte should remain readable");
         assert_eq!(status[0], u8::MAX);
 
+        manager
+            .release_chunk(pos)
+            .await
+            .expect("region should release");
         fs::remove_dir_all(directory)
             .await
             .expect("test directory should be removable");

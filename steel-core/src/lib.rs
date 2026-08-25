@@ -16,6 +16,7 @@ pub(crate) mod compression;
 pub mod config;
 pub(crate) mod enchantment_helper;
 pub mod entity;
+pub mod fatal;
 pub mod fluid;
 pub mod inventory;
 pub mod level_data;
