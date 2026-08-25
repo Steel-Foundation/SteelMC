@@ -264,7 +264,7 @@ impl Entity for EyeOfEnderEntity {
             );
             let entity: SharedEntity = Arc::new(item);
             if let Err(error) = world.try_add_entity(entity) {
-                log::debug!("failed to drop eye of ender item: {error}");
+                log::warn!("failed to drop eye of ender item: {error}");
             }
         } else {
             world.level_event(
