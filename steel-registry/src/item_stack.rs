@@ -586,7 +586,7 @@ impl ItemStack {
                 .is_some_and(ItemEnchantments::is_empty)
     }
 
-    /// Checks if `ItemStack` has an enchantment
+    /// Checks if `ItemStack` has an enchantment, not including enchanted books
     #[must_use]
     pub fn is_enchanted(&self) -> bool {
         self.get_enchantments().is_some_and(|e| !e.is_empty())

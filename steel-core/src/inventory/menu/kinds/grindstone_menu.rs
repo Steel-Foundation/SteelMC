@@ -8,7 +8,7 @@ use steel_registry::{
     blocks::block_state_ext::BlockStateExt,
     data_components::{
         components::ItemEnchantments,
-        vanilla_components::{ENCHANTMENTS, REPAIR_COST},
+        vanilla_components::{ENCHANTMENTS, REPAIR_COST, STORED_ENCHANTMENTS},
     },
     item_stack::ItemStack,
     vanilla_enchantment_tags::EnchantmentTag,
@@ -132,7 +132,10 @@ impl GrindstoneKind {
                 let item = if first.is_empty() { second } else { first };
 
                 // TODO: check if item is enchanted, not just enchantable
-                if item.is_enchanted() {
+                if item
+                    .get_enchantments_for_crafting()
+                    .is_some_and(|e| !e.is_empty())
+                {
                     result_container
                         .set_item(0, GrindstoneKind::remove_non_curses_from(item.clone()));
                 } else {
@@ -169,18 +172,39 @@ impl GrindstoneKind {
             new_item.set_damage_value(max(durability - remaining, 0));
         }
 
-        // TODO: merge enchants
+        GrindstoneKind::merge_enchantments_from(&mut new_item, &second);
         GrindstoneKind::remove_non_curses_from(new_item)
+    }
+
+    /// Copies `source`'s enchantments onto `target`, keeping the higher level when
+    /// both carry the same one. Curses only transfer if `target` does not already
+    /// have them, so merging two cursed items cannot stack the curse level.
+    fn merge_enchantments_from(target: &mut ItemStack, source: &ItemStack) {
+        let Some(source_enchantments) = source.get_enchantments_for_crafting() else {
+            return;
+        };
+
+        for (id, level) in source_enchantments.iter() {
+            let is_curse = REGISTRY.enchantments.by_key(id).is_some_and(|enchantment| {
+                REGISTRY
+                    .enchantments
+                    .is_in_tag(enchantment, &EnchantmentTag::CURSE)
+            });
+
+            let target_level = target
+                .get_enchantments_for_crafting()
+                .map_or(0, |enchantments| enchantments.get_level(id));
+
+            if !is_curse || target_level == 0 {
+                target.upgrade_enchantment(id.clone(), *level);
+            }
+        }
     }
 
     /// Remove non-curse enchantments from items and returns them
     #[must_use]
     pub fn remove_non_curses_from(mut item: ItemStack) -> ItemStack {
-        let Some(enchantments) = item.get_enchantments() else {
-            // TODO: Only remove non-curses from enchanted books
-            if item.is(&vanilla_items::ENCHANTED_BOOK) {
-                return ItemStack::new(&vanilla_items::BOOK);
-            }
+        let Some(enchantments) = item.get_enchantments_for_crafting() else {
             return ItemStack::empty();
         };
 
@@ -203,8 +227,17 @@ impl GrindstoneKind {
             repair_cost = AnvilKind::calculate_increased_repair_cost(repair_cost);
         }
 
+        if item.is(&vanilla_items::ENCHANTED_BOOK) {
+            if new_enchantments.is_empty() {
+                return ItemStack::new(&vanilla_items::BOOK);
+            } else {
+                item.set(STORED_ENCHANTMENTS, new_enchantments);
+            }
+        } else {
+            item.set(ENCHANTMENTS, new_enchantments);
+        }
+
         item.set(REPAIR_COST, repair_cost);
-        item.set(ENCHANTMENTS, new_enchantments);
         item
     }
 }
