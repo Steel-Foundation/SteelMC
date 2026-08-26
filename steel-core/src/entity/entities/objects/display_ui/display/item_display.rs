@@ -117,7 +117,7 @@ pub struct ItemDisplayEntity {
     entity_data: SyncMutex<ItemDisplayEntityData>,
 }
 
-// SAFETY: This key is owned by Steel and uniquely identifies `SheepEntity`.
+// SAFETY: This key is owned by Steel and uniquely identifies `ItemDisplayEntity`.
 unsafe impl DowncastType for ItemDisplayEntity {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity/item_display");
 }
