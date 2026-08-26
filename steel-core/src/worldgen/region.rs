@@ -8,6 +8,7 @@ use rustc_hash::FxHashMap;
 
 use std::{
     cell::RefCell,
+    collections::hash_map::Entry,
     sync::{Arc, Weak},
     time::Instant,
 };
@@ -1299,38 +1300,42 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             );
         };
 
-        let cache_needs_insert = !self.chunks.contains_key(&cache_key);
-        if cache_needs_insert {
-            self.with_ore_profile(OreFeatureStats::record_chunk_cache_miss);
-            let chunk = self.region.chunk(chunk_x, chunk_z, status);
-            let cached = self
-                .chunks
-                .entry(cache_key)
-                .or_insert_with(|| CachedWorldGenChunk {
+        // Single entry lookup: insert on miss, in-place status upgrade on hit.
+        match self.chunks.entry(cache_key) {
+            Entry::Occupied(mut occupied) => {
+                let cached = occupied.get_mut();
+                if status > cached.verified_status {
+                    Self::with_ore_profile_ref(
+                        self.ore_profile,
+                        OreFeatureStats::record_chunk_status_upgrade,
+                    );
+                    let _ = self.region.chunk(chunk_x, chunk_z, status);
+                    cached.verified_status = status;
+                }
+                drop(cached);
+                occupied.into_mut()
+            }
+            Entry::Vacant(vacant) => {
+                Self::with_ore_profile_ref(
+                    self.ore_profile,
+                    OreFeatureStats::record_chunk_cache_miss,
+                );
+                let chunk = self.region.chunk(chunk_x, chunk_z, status);
+                vacant.insert(CachedWorldGenChunk {
                     access_mode: chunk.access_mode,
                     holder: chunk.holder,
                     chunk: chunk.chunk,
                     verified_status: status,
-                });
-            return cached;
+                })
+            }
         }
-        if let Some(cached) = self.chunks.get(&cache_key)
-            && status > cached.verified_status
-        {
-            self.with_ore_profile(OreFeatureStats::record_chunk_status_upgrade);
-            let _ = self.region.chunk(chunk_x, chunk_z, status);
-        }
-
-        self.chunks
-            .get(&cache_key)
-            .expect("cached chunk just inserted")
     }
 
     fn chunk_cache_key(&self, chunk_x: i32, chunk_z: i32) -> Option<(i32, i32)> {
         let radius = self.chunk_cache_radius;
         let rel_x = chunk_x.checked_sub(self.region.center.0.x)?;
         let rel_z = chunk_z.checked_sub(self.region.center.0.y)?;
-        if rel_x.abs() > radius || rel_z.abs() > radius {
+        if rel_x < -radius || rel_x > radius || rel_z < -radius || rel_z > radius {
             return None;
         }
 
