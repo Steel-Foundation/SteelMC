@@ -12,7 +12,6 @@ use steel_registry::consume_effect::{
     vanilla_consume_effect_types,
 };
 use steel_registry::data_components::PotionContents;
-use steel_registry::sound_event::SoundEventRef;
 use steel_registry::{
     MobEffectInstance as RegistryMobEffectInstance, sound_events, vanilla_damage_types,
     vanilla_game_events, vanilla_mob_effects,
@@ -112,7 +111,7 @@ pub(crate) fn apply_consume_effect(
             return;
         };
         if let Some(sound) = play_sound.sound().registry_ref() {
-            play_entity_sound(world, sound, user);
+            user.play_sound(sound, 1.0, 1.0);
         }
     } else if effect_type == &vanilla_consume_effect_types::TELEPORT_RANDOMLY {
         let Some(teleport) = effect.downcast_ref::<TeleportRandomlyConsumeEffect>() else {
@@ -169,14 +168,6 @@ fn teleport_randomly(
         user.reset_current_impulse_context();
         return;
     }
-}
-
-/// Plays a sound at `user`'s position, in `user`'s own sound category
-/// (`SoundSource::Players` for players, a mob-appropriate category for
-/// others). Mirrors vanilla `LivingEntity.playSound`, which always uses
-/// `this.getSoundSource()` rather than a fixed category.
-pub(crate) fn play_entity_sound(world: &World, sound: SoundEventRef, user: &dyn LivingEntity) {
-    world.play_sound_at(sound, user.sound_source(), user.position(), 1.0, 1.0, None);
 }
 
 #[cfg(test)]

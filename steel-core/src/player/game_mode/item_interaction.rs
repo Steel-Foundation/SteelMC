@@ -221,15 +221,14 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
-    use steel_protocol::packets::game::SUseItem;
-    use steel_registry::{item_stack::ItemStack, vanilla_items};
-    use steel_utils::types::InteractionHand;
-
     use super::use_item;
     use crate::behavior::{InteractionResult, init_behaviors};
     use crate::entity::Entity as _;
     use crate::player::connection::NetworkConnection as _;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world};
+    use steel_protocol::packets::game::SUseItem;
+    use steel_registry::{item_stack::ItemStack, vanilla_items};
+    use steel_utils::types::InteractionHand;
 
     #[test]
     fn use_item_discards_non_finite_rotation_components() {

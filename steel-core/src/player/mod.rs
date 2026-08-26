@@ -363,8 +363,8 @@ impl Player {
             self.stop_using_item();
             return;
         }
-        // See the comment in `tick_active_item_use`: read a copy rather than
-        // clearing the slot, so any inventory-touching side effect from
+        // Read a copy rather than clearing the slot,
+        // so any inventory-touching side effect from
         // `release_using` never sees the hand as vacant.
         let mut item = {
             let inventory = self.inventory.lock();
@@ -401,10 +401,7 @@ impl Player {
         // Vanilla mutates the item in place while it stays resident in the
         // hand slot, so a use-remainder overflow check triggered mid-behavior
         // (e.g. `handle_extra_items_created_on_use`) never sees the hand as
-        // vacant. We can't hold the inventory lock across the behavior calls
-        // below (they may need to lock it themselves), so read a copy here
-        // instead of clearing the slot; each exit path below writes the true
-        // final result back with a single `set_item_in_hand`.
+        // vacant.
         let mut item = {
             let inventory = self.inventory.lock();
             let current = inventory.get_item_in_hand(hand);

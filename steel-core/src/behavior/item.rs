@@ -18,7 +18,7 @@ use text_components::TextComponent;
 use crate::behavior::items::DefaultItemBehavior;
 use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity, apply_consume_effect, play_entity_sound};
+use crate::entity::{Entity, LivingEntity, apply_consume_effect};
 use crate::player::{Player, player_inventory::EquipmentSwapResult};
 use crate::world::World;
 
@@ -237,7 +237,7 @@ pub(crate) fn finish_consuming_stack(
     }
 
     if let Some(sound) = consumable.sound().registry_ref() {
-        play_entity_sound(world, sound, user);
+        user.play_sound(sound, 1.0, 1.0);
     }
     let event = if consumable.animation() == ItemUseAnimation::Drink {
         &vanilla_game_events::DRINK
