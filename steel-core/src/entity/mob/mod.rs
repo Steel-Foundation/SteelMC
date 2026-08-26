@@ -15,6 +15,7 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_math::fast_floor;
+use steel_protocol::packets::game::CTakeItemEntity;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::item_stack::ItemStack;
@@ -23,11 +24,11 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
     REGISTRY, RegistryExt, vanilla_attributes, vanilla_damage_types, vanilla_entities,
-    vanilla_game_events,
+    vanilla_game_events, vanilla_game_rules,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
-use steel_utils::{BlockPos, Identifier, WorldAabb, axis::Axis};
+use steel_utils::{BlockPos, ChunkPos, Downcast as _, Identifier, WorldAabb, axis::Axis};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
@@ -41,6 +42,7 @@ use crate::entity::ai::sensing::Sensing;
 use crate::entity::ai::walk::WalkPathEvaluator;
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
     Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason, SharedEntity,
     SpawnGroupData, WeakEntity,
@@ -65,6 +67,9 @@ const DEFAULT_ATTACK_REACH_OFFSET: f32 = 0.6;
 const RANDOM_SPAWN_BONUS_ID: Identifier = Identifier::vanilla_static("random_spawn_bonus");
 const RANDOM_SPAWN_BONUS_SCALE: f64 = 0.114_850_000_000_000_01;
 const LEFT_HANDED_SPAWN_CHANCE: f32 = 0.05;
+/// Vanilla `Mob.ITEM_PICKUP_REACH`: the per-axis distance the item-pickup search
+/// box is inflated by when a mob looks for nearby dropped items to collect.
+const ITEM_PICKUP_REACH: DVec3 = DVec3::new(1.0, 0.0, 1.0);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct DropChances {
@@ -568,6 +573,89 @@ pub trait Mob: LivingEntity + Leashable {
             .drop_chances()
             .lock()
             .set_guaranteed_drop(slot);
+    }
+
+    /// Vanilla `Mob.getPickupReach`: the per-axis distance the item-pickup search
+    /// box is inflated by. Overridable so mobs with a longer reach can widen it.
+    fn get_pickup_reach(&self) -> DVec3 {
+        ITEM_PICKUP_REACH
+    }
+
+    /// Vanilla `Mob.wantsToPickUp`: whether this mob wants to collect the item it
+    /// just walked over. Defaults to whatever the mob is willing to hold.
+    fn wants_to_pick_up(&self, item_stack: &ItemStack) -> bool {
+        self.can_hold_item(item_stack)
+    }
+
+    /// Vanilla `Mob.canHoldItem`: whether this mob is willing to hold the item.
+    /// The base mob holds anything; specific mobs narrow this down.
+    fn can_hold_item(&self, _item_stack: &ItemStack) -> bool {
+        true
+    }
+
+    /// Vanilla `Mob.pickUpItem`: take a dropped item into this mob's equipment.
+    ///
+    /// TODO(equip-armor): port the full vanilla `equipItemIfPossible` (armor-slot
+    /// selection via the item's equippable slot, the `canReplaceCurrentItem`
+    /// preference between held and dropped gear, and the drop-chance drop of any
+    /// replaced item) once armor-wearing mobs land. Until then this covers the
+    /// common case of taking an item into an empty main hand.
+    fn pick_up_item(&self, world: &Arc<World>, item_entity: &ItemEntity) {
+        let item_stack = item_entity.get_item();
+        if item_stack.is_empty()
+            || self.has_item_in_slot(EquipmentSlot::MainHand)
+            || !self.can_hold_item(&item_stack)
+        {
+            return;
+        }
+
+        let count = item_stack.count();
+        self.living_base()
+            .equipment()
+            .lock()
+            .set(EquipmentSlot::MainHand, item_stack);
+        self.set_guaranteed_drop(EquipmentSlot::MainHand);
+        self.set_persistence_required();
+
+        let chunk_pos = ChunkPos::from_entity_pos(item_entity.position());
+        world.broadcast_to_nearby(
+            chunk_pos,
+            CTakeItemEntity::new(item_entity.id(), self.id(), count),
+            None,
+        );
+        item_entity.set_removed(RemovalReason::Discarded);
+    }
+
+    /// Vanilla `Mob.aiStep` looting loop: while this mob may pick up loot and the
+    /// `mobGriefing` game rule allows it, collect nearby dropped items in reach.
+    fn tick_looting(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        if !self.can_pick_up_loot()
+            || !Entity::is_alive(self)
+            || !world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
+        {
+            return;
+        }
+
+        let reach = self.get_pickup_reach();
+        let search_box = self.bounding_box().inflate_xyz(reach.x, reach.y, reach.z);
+        for entity in world.get_entities_in_aabb(&search_box) {
+            let Some(item_entity) = entity.downcast_ref::<ItemEntity>() else {
+                continue;
+            };
+            let item = item_entity.get_item();
+            if item_entity.is_removed()
+                || item.is_empty()
+                || item_entity.has_pickup_delay()
+                || !self.wants_to_pick_up(&item)
+            {
+                continue;
+            }
+
+            self.pick_up_item(&world, item_entity);
+        }
     }
 
     fn drop_custom_death_loot_mob(&self, _source: &DamageSource, killed_by_player: bool) {
@@ -1099,6 +1187,7 @@ pub trait Mob: LivingEntity + Leashable {
         self.tick_move_control();
         self.tick_look_control();
         self.tick_jump_control();
+        self.tick_looting();
     }
 
     fn tick_path_navigation(&self) {

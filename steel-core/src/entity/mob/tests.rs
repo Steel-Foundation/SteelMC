@@ -9,7 +9,7 @@ use steel_registry::{
     REGISTRY, init_vanilla_registry, vanilla_attributes, vanilla_blocks, vanilla_damage_types,
 };
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, ChunkPos};
 
 use super::{
     can_attempt_equipment_drop, find_ground_path_target_surface, path_end_node_can_reach_target,
@@ -20,12 +20,15 @@ use crate::entity::ai::goal::GoalControl;
 use crate::entity::ai::node::Node;
 use crate::entity::ai::path::{Path, PathType};
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::PigEntity;
+use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::leash::Leashable;
 use crate::entity::mob::{Mob, MobBase};
 use crate::entity::{
     Entity, EntityBase, LivingEntity, LivingEntityBase, PathfinderMob, SharedEntity,
 };
-use crate::test_support::test_world;
+use crate::inventory::equipment::EquipmentSlot;
+use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
 use crate::world::{LevelReader, World};
 
 #[test]
@@ -718,6 +721,138 @@ fn mob_home_restriction_uses_vanilla_radius() {
     mob.clear_home();
     assert!(!mob.has_home());
     assert!(mob.is_within_home_pos(BlockPos::new(1000, 64, 1000)));
+}
+
+#[test]
+fn looting_collects_nearby_item_into_main_hand() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("mob_looting_pickup");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let mob = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::new(8.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    mob.set_can_pick_up_loot(true);
+
+    let item = Arc::new(ItemEntity::with_item(
+        &vanilla_entities::ITEM,
+        2,
+        DVec3::new(8.0, 65.0, 8.0),
+        ItemStack::new(&vanilla_items::STONE),
+        Arc::downgrade(&world),
+    ));
+    item.set_no_pickup_delay();
+
+    for entity in [
+        Arc::clone(&mob) as SharedEntity,
+        Arc::clone(&item) as SharedEntity,
+    ] {
+        world
+            .try_add_entity(entity)
+            .expect("test entity should attach to the loaded chunk");
+    }
+
+    Mob::tick_looting(mob.as_ref());
+
+    assert!(
+        item.is_removed(),
+        "the picked-up item entity should be discarded"
+    );
+    let mut held_is_stone = false;
+    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+        held_is_stone = item_stack.is(&vanilla_items::STONE);
+    });
+    assert!(
+        held_is_stone,
+        "the mob should now hold the picked-up item in its main hand"
+    );
+    assert!(
+        mob.is_equipment_drop_preserved(EquipmentSlot::MainHand),
+        "picked-up gear should always drop on death"
+    );
+}
+
+#[test]
+fn looting_skips_when_mob_cannot_pick_up_loot() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("mob_looting_disabled");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    // A mob leaves `canPickUpLoot` off by default, so it should ignore the item.
+    let mob = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::new(8.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+
+    let item = Arc::new(ItemEntity::with_item(
+        &vanilla_entities::ITEM,
+        2,
+        DVec3::new(8.0, 65.0, 8.0),
+        ItemStack::new(&vanilla_items::STONE),
+        Arc::downgrade(&world),
+    ));
+    item.set_no_pickup_delay();
+
+    for entity in [
+        Arc::clone(&mob) as SharedEntity,
+        Arc::clone(&item) as SharedEntity,
+    ] {
+        world
+            .try_add_entity(entity)
+            .expect("test entity should attach to the loaded chunk");
+    }
+
+    Mob::tick_looting(mob.as_ref());
+
+    assert!(
+        !item.is_removed(),
+        "the item should remain when the mob cannot pick up loot"
+    );
+    assert!(
+        !mob.has_item_in_slot(EquipmentSlot::MainHand),
+        "the mob should not have grabbed anything"
+    );
+}
+
+#[test]
+fn pick_up_item_leaves_an_occupied_main_hand_untouched() {
+    init_vanilla_registry();
+    let mob = DespawnTestMob::new(None, false);
+    mob.living_base().equipment().lock().set(
+        EquipmentSlot::MainHand,
+        ItemStack::new(&vanilla_items::WOODEN_SPEAR),
+    );
+
+    let item = ItemEntity::with_item(
+        &vanilla_entities::ITEM,
+        2,
+        DVec3::ZERO,
+        ItemStack::new(&vanilla_items::STONE),
+        Weak::<World>::new(),
+    );
+    item.set_no_pickup_delay();
+
+    Mob::pick_up_item(&mob, test_world(), &item);
+
+    assert!(
+        !item.is_removed(),
+        "the item should be left alone when the main hand is full"
+    );
+    let mut still_holding_spear = false;
+    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+        still_holding_spear = item_stack.is(&vanilla_items::WOODEN_SPEAR);
+    });
+    assert!(
+        still_holding_spear,
+        "an existing main-hand item must not be replaced"
+    );
 }
 
 #[test]
