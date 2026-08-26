@@ -454,6 +454,30 @@ impl<'a> WorldGenRegion<'a> {
         let min_y = self.min_y();
         let height = self.height();
 
+        // Fast path: when every position falls into one section of one chunk,
+        // take that section's read lock directly and skip the grouping
+        // array/sort, which buys nothing for the common 2-position predicate
+        // checks whose positions share a section.
+        if let Some((chunk_x, chunk_z, section_index)) =
+            Self::single_section_batch(&positions, min_y, height)
+        {
+            let mut states = [air; N];
+            self.with_cached_chunk(chunk_x, chunk_z, ChunkStatus::Empty, |chunk| {
+                let sections = chunk.chunk.sections();
+                if let Some(section) = sections.sections.get(section_index) {
+                    let guard = section.read();
+                    for (i, pos) in positions.iter().enumerate() {
+                        states[i] = guard.states.get(
+                            (pos.x() & 15) as usize,
+                            (pos.y() & 15) as usize,
+                            (pos.z() & 15) as usize,
+                        );
+                    }
+                }
+            });
+            return states;
+        }
+
         let mut order: [(i32, i32, usize, usize); N] = array::from_fn(|i| {
             let pos = &positions[i];
             let section_index = if pos.y() < min_y || pos.y() >= min_y + height {
@@ -524,6 +548,40 @@ impl<'a> WorldGenRegion<'a> {
         states
     }
 
+    /// Returns the shared chunk coords and section index when every position
+    /// of the batch resolves inside one distinct section.
+    fn single_section_batch(
+        positions: &[BlockPos],
+        min_y: i32,
+        height: i32,
+    ) -> Option<(i32, i32, usize)> {
+        let first = &positions[0];
+        let (cx0, cz0) = (
+            SectionPos::block_to_section_coord(first.x()),
+            SectionPos::block_to_section_coord(first.z()),
+        );
+        if !positions.iter().all(|p| {
+            (
+                SectionPos::block_to_section_coord(p.x()),
+                SectionPos::block_to_section_coord(p.z()),
+            ) == (cx0, cz0)
+        }) {
+            return None;
+        }
+
+        let section_index_of = |pos: &BlockPos| -> Option<usize> {
+            if pos.y() < min_y || pos.y() >= min_y + height {
+                None
+            } else {
+                usize::try_from((pos.y() - min_y) / 16).ok()
+            }
+        };
+        let shared_section = section_index_of(first)?;
+        (positions
+            .iter()
+            .all(|p| section_index_of(p) == Some(shared_section)))
+        .then_some((cx0, cz0, shared_section))
+    }
     /// Gets a block entity through the region dependency contract.
     ///
     /// # Panics
