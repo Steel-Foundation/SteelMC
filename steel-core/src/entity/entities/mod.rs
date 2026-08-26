@@ -8,6 +8,8 @@ pub use mobs::passive::{ChickenEntity, CowEntity, PigEntity, SheepEntity};
 pub use objects::display_ui::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity};
 pub use objects::explosives::EndCrystalEntity;
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
-pub use objects::projectiles::{EnderPearlEntity, EyeOfEnderEntity, FireworkRocketEntity, ThrownEggEntity};
+pub use objects::projectiles::{
+    EnderPearlEntity, EyeOfEnderEntity, FireworkRocketEntity, ThrownEggEntity,
+};
 pub use objects::vehicles::ChestMinecartEntity;
 pub use raw::RawEntity;
