@@ -101,7 +101,17 @@ impl SpawnEggItem {
         let offspring = if let Some(animal) = parent.as_animal() {
             animal.get_breed_offspring(&world, animal)?
         } else {
-            create_entity_instance(&world, entity_type, parent.position()).ok()?
+            match create_entity_instance(&world, entity_type, parent.position()) {
+                Ok(offspring) => offspring,
+                Err(error) => {
+                    log::warn!(
+                        "Failed to create spawn-egg offspring {} at {:?}: {error:?}",
+                        entity_type.key,
+                        parent.position()
+                    );
+                    return None;
+                }
+            }
         };
 
         let ageable = offspring.as_ageable_mob()?;

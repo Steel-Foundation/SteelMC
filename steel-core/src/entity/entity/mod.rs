@@ -4,10 +4,7 @@ use super::*;
 
 const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
 
-fn read_nbt_dvec3(
-    nbt: &BorrowedNbtCompoundView<'_, '_>,
-    key: &str,
-) -> Option<DVec3> {
+fn read_nbt_dvec3(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<DVec3> {
     let values = nbt.list(key)?.doubles()?;
     let &[x, y, z, ..] = values.as_slice() else {
         return None;
@@ -15,10 +12,7 @@ fn read_nbt_dvec3(
     Some(DVec3::new(x, y, z))
 }
 
-fn read_nbt_rotation(
-    nbt: &BorrowedNbtCompoundView<'_, '_>,
-    key: &str,
-) -> Option<(f32, f32)> {
+fn read_nbt_rotation(nbt: &BorrowedNbtCompoundView<'_, '_>, key: &str) -> Option<(f32, f32)> {
     let values = nbt.list(key)?.floats()?;
     let &[yaw, pitch, ..] = values.as_slice() else {
         return None;
