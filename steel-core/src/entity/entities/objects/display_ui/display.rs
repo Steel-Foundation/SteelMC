@@ -18,6 +18,20 @@ pub enum BillboardConstraints {
     Center = 3
 }
 
+impl TryFrom<i8> for BillboardConstraints {
+    type Error = ();
+
+    fn try_from(value: i8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(BillboardConstraints::Fixed),
+            1 => Ok(BillboardConstraints::Vertical),
+            2 => Ok(BillboardConstraints::Horizontal),
+            3 => Ok(BillboardConstraints::Center),
+            _ => Err(())
+        }
+    }
+}
+
 impl ToNbtTag for BillboardConstraints {
     fn to_nbt_tag(self) -> NbtTag {
         NbtTag::String(
@@ -118,8 +132,9 @@ impl Transformation {
 
 impl From<Mat4> for Transformation {
     /// Composes a [`Transformation`] with the provided matrix.
-    fn from(mat: Mat4) -> Self {
+    fn from(_mat: Mat4) -> Self {
         // TODO: Implement svdDecompose()
+        Transformation::IDENTITY
     }
 }
 
@@ -173,8 +188,6 @@ impl FromNbtTag for Transformation {
 }
 
 /// The abstract display trait, used by block, item and display entities.
-///
-/// TODO: Write special properties
 pub trait Display: Entity {
     fn tick_display(&self) {
         /// TODO: Implement dismounting if the vehicle of the display entity is removed.
@@ -193,6 +206,16 @@ pub trait Display: Entity {
         data.right_rotation.set(transformation.right_rotation);
     }
 
+    fn transformation(&self) -> Transformation {
+        let data = self.display_entity_data();
+        Transformation {
+            translation: *data.translation.get(),
+            left_rotation: *data.left_rotation.get(),
+            scale: *data.scale.get(),
+            right_rotation: *data.right_rotation.get()
+        }
+    }
+
     fn load_additional_display(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.set_transformation(Transformation::from_nbt_tag(nbt.list("transformation").into()).unwrap_or_else(|| Transformation::IDENTITY));
 
@@ -208,14 +231,28 @@ pub trait Display: Entity {
         data.width.set(nbt.float("width").unwrap_or(0.0));
         data.height.set(nbt.float("height").unwrap_or(0.0));
         data.glow_color_override.set(nbt.int("glow_color_override").unwrap_or(-1));
-        data.brightness_override.set(nbt.get("brightness").and_then(Brightness::from_nbt_tag).map(Brightness::unpack).unwrap_or(-1));
+        data.brightness_override.set(nbt.get("brightness").and_then(Brightness::from_nbt_tag).map(Brightness::pack).unwrap_or(-1));
     }
 
     fn save_additional_display(&self, nbt: &mut NbtCompound) {
-        // TODO
+        nbt.insert("transformation", &self.transformation());
+
+        let data = self.display_entity_data();
+        nbt.insert("billboard", BillboardConstraints::try_from(data.transformation_interpolation_duration.get()).unwrap_or(BillboardConstraints::Fixed));
+        nbt.insert("interpolation_duration", data.transformation_interpolation_duration.get());
+        nbt.insert("teleport_duration", data.pos_rot_interpolation_duration.get());
+        nbt.insert("view_range", data.view_range.get());
+        nbt.insert("shadow_radius", data.shadow_radius.get());
+        nbt.insert("shadow_strength", data.shadow_strength.get());
+        nbt.insert("width", data.width.get());
+        nbt.insert("height", data.height.get());
+        nbt.insert("glow_color_override", data.glow_color_override.get());
+        nbt.insert("brightness", Brightness::unpack(*data.brightness_override.get()));
     }
 
     fn hurt_display(&self) -> bool { false }
     fn piston_push_reaction(&self) -> PushReaction { PushReaction::Ignore }
     fn is_ignoring_block_triggers(&self) -> bool { true }
+
+    /// TODO: Add `getTeamColor()` when team foundations exist.
 }
