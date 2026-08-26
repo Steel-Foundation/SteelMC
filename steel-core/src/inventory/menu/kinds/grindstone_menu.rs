@@ -1,6 +1,7 @@
 //! Grindston menu.
 use std::sync::Arc;
 
+use steel_registry::data_components::vanilla_components::MAX_DAMAGE;
 use steel_registry::vanilla_blocks;
 use steel_registry::{
     REGISTRY, RegistryExt, TaggedRegistryExt,
@@ -28,6 +29,8 @@ use crate::{
     player::player_inventory::PlayerInventory,
     world::World,
 };
+
+use std::cmp::max;
 
 /// Builds the grindstone menu.
 #[must_use]
@@ -121,8 +124,10 @@ impl GrindstoneKind {
 
         if first.count() <= 1 && second.count() <= 1 {
             if !first.is_empty() && !second.is_empty() {
-                result_container.set_item(0, ItemStack::empty());
-                // TODO: merge items in grindstone
+                result_container.set_item(
+                    0,
+                    GrindstoneKind::merge_items(first.clone(), second.clone()),
+                );
             } else {
                 let item = if first.is_empty() { second } else { first };
 
@@ -135,6 +140,37 @@ impl GrindstoneKind {
                 }
             }
         }
+    }
+
+    ///
+    #[must_use]
+    fn merge_items(first: ItemStack, second: ItemStack) -> ItemStack {
+        if !first.is(second.item()) {
+            return ItemStack::empty();
+        }
+
+        let durability = max(first.get_max_damage(), second.get_max_damage());
+        let remaining1 = first.get_max_damage() - first.get_damage_value();
+        let remaining2 = second.get_max_damage() - second.get_damage_value();
+        let remaining = remaining1 + remaining2 + durability * 5 / 100;
+        let mut count = 1;
+
+        if !first.is_damageable_item() {
+            if first.max_stack_size() < 2 || !ItemStack::matches(&first, &second) {
+                return ItemStack::empty();
+            }
+
+            count = 2;
+        }
+
+        let mut new_item = first.copy_with_count(count);
+        if new_item.is_damageable_item() {
+            new_item.set(MAX_DAMAGE, durability);
+            new_item.set_damage_value(max(durability - remaining, 0));
+        }
+
+        // TODO: merge enchants
+        GrindstoneKind::remove_non_curses_from(new_item)
     }
 
     /// Remove non-curse enchantments from items and returns them
