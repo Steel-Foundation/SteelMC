@@ -2890,6 +2890,62 @@ pub trait LivingEntity: Entity {
             // TODO: WAYPOINT_TRANSMIT_RANGE → waypoint manager
         }
     }
+
+    /// Mirrors vanilla `Entity.randomTeleport`: attempts to move this entity
+    /// to `(x, y, z)`, snapping down to the first block that blocks motion
+    /// and validating the landing spot is free of block, entity, and liquid
+    /// collision. Returns `true` and commits the move on success, or
+    /// `false` and leaves the entity untouched on failure.
+    ///
+    /// // TODO: Stop pathfinding on landing once mobs have a `PathfinderMob`
+    /// // equivalent, mirroring vanilla's `pathfinderMob.getNavigation().stop()`.
+    fn random_teleport(&self, world: &Arc<World>, x: f64, y: f64, z: f64, broadcast: bool) -> bool {
+        let Some(landing_y) = random_teleport_ground_y(world, x, y, z) else {
+            return false;
+        };
+
+        let dimensions = self.base().dimensions();
+        let aabb = WorldAabb::entity_box(
+            x,
+            landing_y,
+            z,
+            f64::from(dimensions.half_width()),
+            f64::from(dimensions.height),
+        );
+        let collision = WorldCollisionProvider::for_entity(world, self.as_entity_event_source());
+        if collision.has_entity_collision(&aabb)
+            || collision.has_block_collision_with_context(&aabb, BlockCollisionContext::empty())
+            || aabb_contains_any_liquid(world, aabb)
+        {
+            return false;
+        }
+
+        if self.teleport_to(DVec3::new(x, landing_y, z)).is_err() {
+            return false;
+        }
+
+        if broadcast {
+            self.broadcast_entity_event(EntityStatus::Teleport);
+        }
+        true
+    }
+}
+
+/// Walks down from `y` until standing on a block that blocks motion,
+/// mirroring the descent loop in vanilla `Entity.randomTeleport`. Returns
+/// `None` if the world's floor is reached without finding solid ground.
+fn random_teleport_ground_y(world: &Arc<World>, x: f64, y: f64, z: f64) -> Option<f64> {
+    let mut pos = BlockPos::containing(x, y, z);
+    let mut current_y = y;
+    while pos.y() > world.get_min_y() {
+        let below = pos.below();
+        if world.get_block_state(below).blocks_motion() {
+            return Some(current_y);
+        }
+        current_y -= 1.0;
+        pos = below;
+    }
+    None
 }
 
 fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(

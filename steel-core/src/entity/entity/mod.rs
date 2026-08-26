@@ -2460,6 +2460,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().try_set_position(pos)
     }
 
+    /// Moves this entity to `pos`, keeping its current rotation.
+    #[must_use = "movement commits can fail when world entity state rejects the update"]
+    fn teleport_to(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        self.try_set_position(pos)
+    }
+
     /// Sets the vanilla movement-trace old position to the current position.
     fn set_old_position_to_current(&self) {
         self.base().set_old_position_to_current();

@@ -92,9 +92,10 @@ use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
-    EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange,
-    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, start_riding_entities,
+    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMoveError,
+    EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
+    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
+    apply_entity_look_at, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -1334,6 +1335,11 @@ impl Entity for Player {
             old_vehicle.id(),
             Self::passenger_ids_for_packet(old_vehicle.as_ref()),
         ));
+    }
+
+    fn teleport_to(&self, pos: DVec3) -> Result<(), EntityMoveError> {
+        let (yaw, pitch) = self.rotation();
+        self.teleport(pos, yaw, pitch)
     }
 
     fn start_riding(&self, entity_to_ride: &SharedEntity) -> bool {
