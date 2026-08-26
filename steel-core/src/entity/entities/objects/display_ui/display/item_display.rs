@@ -4,7 +4,7 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::display_ui::display::{
     Display, PrivateDisplay, Transformation,
 };
-use crate::entity::{Entity, EntityBase, EntityBaseLoad};
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -179,6 +179,10 @@ impl Entity for ItemDisplayEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
     }
 
     fn tick(&self) {

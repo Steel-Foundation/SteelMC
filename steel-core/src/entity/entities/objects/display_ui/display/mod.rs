@@ -351,14 +351,14 @@ pub trait Display: Entity + PrivateDisplay {
     ///
     /// Setting this to `0` indicates no culling on the vertical axis.
     fn set_height(&self, height: f32);
-    /// Gets this display entity's glow color override. If this equals `-1`, the entity glows according to its team's color.
+    /// Gets this display entity's glow color override. If this is `None`, the entity glows according to its team's color.
     ///
     /// **Note:** This has no effect on *text displays*.
     fn glow_color_override(&self) -> Option<i32> {
         let color = self.synced_glow_color_override();
         (color != -1).then_some(color)
     }
-    /// Sets this display entity's glow color override to `value`. If this equals `-1`, the entity glows according to its team's color.
+    /// Sets this display entity's glow color override to `value`. If this is `None`, the entity glows according to its team's color.
     ///
     /// **Note:** This has no effect on *text displays*.
     fn set_glow_color_override(&self, value: Option<i32>) {
@@ -390,7 +390,7 @@ pub trait Display: Entity + PrivateDisplay {
         self.set_shadow_strength(nbt.float("shadow_strength").unwrap_or(1.0));
         self.set_width(nbt.float("width").unwrap_or(0.0));
         self.set_height(nbt.float("height").unwrap_or(0.0));
-        self.set_glow_color_override(nbt.int("glow_color_override"));
+        self.set_synced_glow_color_override(nbt.int("glow_color_override").unwrap_or(-1));
         self.set_brightness_override(nbt.get("brightness").and_then(Brightness::from_nbt_tag));
     }
 
@@ -409,8 +409,13 @@ pub trait Display: Entity + PrivateDisplay {
         nbt.insert("shadow_strength", self.shadow_strength());
         nbt.insert("width", self.width());
         nbt.insert("height", self.height());
-        nbt.insert("glow_color_override", self.glow_color_override());
-        nbt.insert("brightness", self.brightness_override());
+        nbt.insert(
+            "glow_color_override",
+            self.glow_color_override().unwrap_or(-1),
+        );
+        if let Some(brightness) = self.brightness_override() {
+            nbt.insert("brightness", brightness);
+        }
     }
 
     // TODO: Add `getTeamColor()` when team foundations exist.
@@ -580,4 +585,5 @@ macro_rules! display_impl {
     };
 }
 
+pub(crate) mod block_display;
 pub mod item_display;
