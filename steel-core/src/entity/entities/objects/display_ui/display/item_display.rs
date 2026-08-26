@@ -19,93 +19,6 @@ use steel_registry::vanilla_entity_data::ItemDisplayEntityData;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
-/// The *item model transform* to use for displaying the item
-/// of an item display in the client.
-///
-/// Each model stores a rotation, translation and scale for each context.
-#[repr(i8)]
-#[derive(Debug, Copy, Clone)]
-pub enum ItemDisplayContext {
-    /// No special context.
-    None = 0,
-    /// Displays the item like how it would on the left hand in third person.
-    ThirdPersonLeftHand = 1,
-    /// Displays the item like how it would on the right hand in third person.
-    ThirdPersonRightHand = 2,
-    /// Displays the item like how it would on the left hand in first person.
-    FirstPersonLeftHand = 3,
-    /// Displays the item like how it would on the right hand in first person.
-    FirstPersonRightHand = 4,
-    /// Displays the item like how it would if a player wore it as their head slot.
-    Head = 5,
-    /// Displays the item like how it would in the hotbar and GUIs.
-    Gui = 6,
-    /// Displays the item like how it would for an item entity.
-    Ground = 7,
-    /// Displays the item like how an item frame would.
-    Fixed = 8,
-    /// Displays the item like how a shelf would.
-    OnShelf = 9,
-}
-
-impl TryFrom<i8> for ItemDisplayContext {
-    type Error = ();
-
-    fn try_from(value: i8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::None),
-            1 => Ok(Self::ThirdPersonLeftHand),
-            2 => Ok(Self::ThirdPersonRightHand),
-            3 => Ok(Self::FirstPersonLeftHand),
-            4 => Ok(Self::FirstPersonRightHand),
-            5 => Ok(Self::Head),
-            6 => Ok(Self::Gui),
-            7 => Ok(Self::Ground),
-            8 => Ok(Self::Fixed),
-            9 => Ok(Self::OnShelf),
-            _ => Err(()),
-        }
-    }
-}
-
-impl ToNbtTag for ItemDisplayContext {
-    fn to_nbt_tag(self) -> NbtTag {
-        NbtTag::String(
-            match self {
-                Self::None => "none",
-                Self::ThirdPersonLeftHand => "thirdperson_lefthand",
-                Self::ThirdPersonRightHand => "thirdperson_righthand",
-                Self::FirstPersonLeftHand => "firstperson_lefthand",
-                Self::FirstPersonRightHand => "firstperson_righthand",
-                Self::Head => "head",
-                Self::Gui => "gui",
-                Self::Ground => "ground",
-                Self::Fixed => "fixed",
-                Self::OnShelf => "on_shelf",
-            }
-            .into(),
-        )
-    }
-}
-
-impl FromNbtTag for ItemDisplayContext {
-    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        match tag.string()?.to_string().as_str() {
-            "none" => Some(Self::None),
-            "thirdperson_lefthand" => Some(Self::ThirdPersonLeftHand),
-            "thirdperson_righthand" => Some(Self::ThirdPersonRightHand),
-            "firstperson_lefthand" => Some(Self::FirstPersonLeftHand),
-            "firstperson_righthand" => Some(Self::FirstPersonRightHand),
-            "head" => Some(Self::Head),
-            "gui" => Some(Self::Gui),
-            "ground" => Some(Self::Ground),
-            "fixed" => Some(Self::Fixed),
-            "on_shelf" => Some(Self::OnShelf),
-            _ => None,
-        }
-    }
-}
-
 /// The Vanilla item display entity.
 ///
 /// In addition to having the common display entity properties, this entity
@@ -229,3 +142,90 @@ impl Entity for ItemDisplayEntity {
 }
 
 display_impl!(ItemDisplayEntity);
+
+/// The *item model transform* to use for displaying the item
+/// of an item display in the client.
+///
+/// Each model stores a rotation, translation and scale for each context.
+#[repr(i8)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ItemDisplayContext {
+    /// No special context.
+    None = 0,
+    /// Displays the item like how it would on the left hand in third person.
+    ThirdPersonLeftHand = 1,
+    /// Displays the item like how it would on the right hand in third person.
+    ThirdPersonRightHand = 2,
+    /// Displays the item like how it would on the left hand in first person.
+    FirstPersonLeftHand = 3,
+    /// Displays the item like how it would on the right hand in first person.
+    FirstPersonRightHand = 4,
+    /// Displays the item like how it would if a player wore it as their head slot.
+    Head = 5,
+    /// Displays the item like how it would in the hotbar and GUIs.
+    Gui = 6,
+    /// Displays the item like how it would for an item entity.
+    Ground = 7,
+    /// Displays the item like how an item frame would.
+    Fixed = 8,
+    /// Displays the item like how a shelf would.
+    OnShelf = 9,
+}
+
+impl TryFrom<i8> for ItemDisplayContext {
+    type Error = ();
+
+    fn try_from(value: i8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::None),
+            1 => Ok(Self::ThirdPersonLeftHand),
+            2 => Ok(Self::ThirdPersonRightHand),
+            3 => Ok(Self::FirstPersonLeftHand),
+            4 => Ok(Self::FirstPersonRightHand),
+            5 => Ok(Self::Head),
+            6 => Ok(Self::Gui),
+            7 => Ok(Self::Ground),
+            8 => Ok(Self::Fixed),
+            9 => Ok(Self::OnShelf),
+            _ => Err(()),
+        }
+    }
+}
+
+impl ToNbtTag for ItemDisplayContext {
+    fn to_nbt_tag(self) -> NbtTag {
+        NbtTag::String(
+            match self {
+                Self::None => "none",
+                Self::ThirdPersonLeftHand => "thirdperson_lefthand",
+                Self::ThirdPersonRightHand => "thirdperson_righthand",
+                Self::FirstPersonLeftHand => "firstperson_lefthand",
+                Self::FirstPersonRightHand => "firstperson_righthand",
+                Self::Head => "head",
+                Self::Gui => "gui",
+                Self::Ground => "ground",
+                Self::Fixed => "fixed",
+                Self::OnShelf => "on_shelf",
+            }
+            .into(),
+        )
+    }
+}
+
+impl FromNbtTag for ItemDisplayContext {
+    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
+        match tag.string()?.to_string().as_str() {
+            "none" => Some(Self::None),
+            "thirdperson_lefthand" => Some(Self::ThirdPersonLeftHand),
+            "thirdperson_righthand" => Some(Self::ThirdPersonRightHand),
+            "firstperson_lefthand" => Some(Self::FirstPersonLeftHand),
+            "firstperson_righthand" => Some(Self::FirstPersonRightHand),
+            "head" => Some(Self::Head),
+            "gui" => Some(Self::Gui),
+            "ground" => Some(Self::Ground),
+            "fixed" => Some(Self::Fixed),
+            "on_shelf" => Some(Self::OnShelf),
+            _ => None,
+        }
+    }
+}

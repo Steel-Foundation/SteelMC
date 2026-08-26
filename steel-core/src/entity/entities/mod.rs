@@ -6,7 +6,10 @@ pub mod objects;
 pub use mobs::ambient::BatEntity;
 pub use mobs::hostile::EndermiteEntity;
 pub use mobs::passive::*;
-pub use objects::display_ui::{BlockDisplayEntity, ItemDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity};
+pub use objects::display_ui::{
+    Alignment, BillboardConstraints, BlockDisplayEntity, Brightness, ItemDisplayContext,
+    ItemDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity, TextDisplayEntity, Transformation,
+};
 pub use objects::effects::AreaEffectCloudEntity;
 pub use objects::explosives::{EndCrystalEntity, PrimedTntEntity};
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};

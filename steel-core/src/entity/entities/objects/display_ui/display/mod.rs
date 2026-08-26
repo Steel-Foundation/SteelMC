@@ -10,223 +10,6 @@ use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_data::{Matrix4f, Quaternionf, Vector3f};
 
-/// Controls how a display entity looks at a player (from their client).
-///
-/// Each value controls whether a display entity follows the player along
-/// the horizontal axis and the vertical axis.
-#[repr(i8)]
-#[derive(Default, Debug, Clone, Copy)]
-pub enum BillboardConstraints {
-    #[default]
-    /// Both the horizontal and vertical axes are fixed.
-    Fixed = 0,
-    /// Only the vertical axis is fixed.
-    Vertical = 1,
-    /// Only the horizontal axis is fixed.
-    Horizontal = 2,
-    /// Neither the horizontal nor the vertical axis is fixed.
-    Center = 3,
-}
-
-impl TryFrom<i8> for BillboardConstraints {
-    type Error = ();
-
-    fn try_from(value: i8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Fixed),
-            1 => Ok(Self::Vertical),
-            2 => Ok(Self::Horizontal),
-            3 => Ok(Self::Center),
-            _ => Err(()),
-        }
-    }
-}
-
-impl ToNbtTag for BillboardConstraints {
-    fn to_nbt_tag(self) -> NbtTag {
-        NbtTag::String(
-            match self {
-                Self::Fixed => "fixed",
-                Self::Vertical => "vertical",
-                Self::Horizontal => "horizontal",
-                Self::Center => "center",
-            }
-            .into(),
-        )
-    }
-}
-
-impl FromNbtTag for BillboardConstraints {
-    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        match tag.string()?.to_string().as_str() {
-            "fixed" => Some(Self::Fixed),
-            "vertical" => Some(Self::Vertical),
-            "horizontal" => Some(Self::Horizontal),
-            "center" => Some(Self::Center),
-            _ => None,
-        }
-    }
-}
-
-/// A set of brightness (light) levels to override how bright a display entity looks.
-///
-/// It contains a block light level and skylight level.
-#[derive(Debug, Clone, Copy)]
-pub struct Brightness {
-    /// The block light level.
-    pub block: i32,
-    /// The skylight level.
-    pub sky: i32,
-}
-
-impl Brightness {
-    /// Packs this [`Brightness`] into a single `i32`.
-    #[must_use]
-    pub const fn pack(self) -> i32 {
-        self.block << 4 | self.sky << 20
-    }
-
-    /// Unpacks a [`Brightness`] from a single `i32`.
-    #[must_use]
-    pub const fn unpack(bits: i32) -> Brightness {
-        Self {
-            block: (bits >> 4) & 0b1111,
-            sky: (bits >> 20) & 0b1111,
-        }
-    }
-}
-
-impl ToNbtTag for Brightness {
-    fn to_nbt_tag(self) -> NbtTag {
-        let mut compound = NbtCompound::new();
-        compound.insert("block", self.block);
-        compound.insert("sky", self.sky);
-        NbtTag::Compound(compound)
-    }
-}
-
-impl FromNbtTag for Brightness {
-    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        let compound = tag.compound()?;
-        let block = compound.get("block")?.int()?;
-        let range = 0..=15;
-        if !range.contains(&block) {
-            return None;
-        }
-        let sky = compound.get("sky")?.int()?;
-        if !range.contains(&sky) {
-            return None;
-        }
-        Some(Self { block, sky })
-    }
-}
-
-/// A structure describing an affine transformation in 3D space.
-///
-/// Transformations are applied in the following order:
-/// `translation` -> `left_rotation` -> `scale` -> `right_rotation`
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Transformation {
-    /// The translation (displacement) applied by this transformation.
-    pub translation: Vector3f,
-    /// The left rotation applied by this transformation.
-    pub left_rotation: Quaternionf,
-    /// The scale applied by this transformation.
-    pub scale: Vector3f,
-    /// The right rotation applied by this transformation.
-    pub right_rotation: Quaternionf,
-}
-
-impl Transformation {
-    /// The identity [`Transformation`].
-    pub const IDENTITY: Self = Transformation {
-        translation: Vector3f::ZERO,
-        left_rotation: Quaternionf::IDENTITY,
-        scale: Vector3f::ONE,
-        right_rotation: Quaternionf::IDENTITY,
-    };
-
-    /// Composes a [`Matrix4f`] from this transformation.
-    #[must_use]
-    pub fn compose(self) -> Matrix4f {
-        Matrix4f(
-            Mat4::from_translation(self.translation.into())
-                * Mat4::from_quat(self.left_rotation.into())
-                * Mat4::from_scale(self.scale.into())
-                * Mat4::from_quat(self.right_rotation.into()),
-        )
-    }
-}
-
-impl From<Matrix4f> for Transformation {
-    /// Decomposes a [`Matrix4f`] to form a [`Transformation`].
-    fn from(_mat: Matrix4f) -> Self {
-        // TODO: Implement svdDecompose()
-        Transformation::IDENTITY
-    }
-}
-
-impl From<Transformation> for Matrix4f {
-    /// Composes a [`Transformation`] to form a matrix.
-    fn from(t: Transformation) -> Self {
-        Transformation::compose(t)
-    }
-}
-
-struct NormalTransformation(Transformation);
-impl From<Transformation> for NormalTransformation {
-    fn from(t: Transformation) -> Self {
-        Self(t)
-    }
-}
-impl From<NormalTransformation> for Transformation {
-    fn from(t: NormalTransformation) -> Self {
-        t.0
-    }
-}
-
-// Recreates Vanilla's `Transformation.CODEC`.
-impl ToNbtTag for NormalTransformation {
-    fn to_nbt_tag(self) -> NbtTag {
-        let mut compound = NbtCompound::new();
-        compound.insert("translation", self.0.translation.to_nbt_tag());
-        compound.insert("left_rotation", self.0.left_rotation.to_nbt_tag());
-        compound.insert("scale", self.0.scale.to_nbt_tag());
-        compound.insert("right_rotation", self.0.right_rotation.to_nbt_tag());
-        NbtTag::Compound(compound)
-    }
-}
-
-impl FromNbtTag for NormalTransformation {
-    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        let compound = tag.compound()?;
-        Some(Self(Transformation {
-            translation: Vector3f::from_nbt_tag(compound.get("transformation")?)?,
-            left_rotation: Quaternionf::from_nbt_tag(compound.get("left_rotation")?)?,
-            scale: Vector3f::from_nbt_tag(compound.get("scale")?)?,
-            right_rotation: Quaternionf::from_nbt_tag(compound.get("right_rotation")?)?,
-        }))
-    }
-}
-
-// Recreates Vanilla's `Transformation.EXTENDED_CODEC`.
-// This codec prefers using the ordinary codec created above, but it does also accept a matrix.
-impl FromNbtTag for Transformation {
-    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        if let Some(NormalTransformation(transformation)) = NormalTransformation::from_nbt_tag(tag)
-        {
-            return Some(transformation);
-        }
-        Some(Matrix4f::from_nbt_tag(tag)?.into())
-    }
-}
-
-impl ToNbtTag for Transformation {
-    fn to_nbt_tag(self) -> NbtTag {
-        NormalTransformation(self).to_nbt_tag()
-    }
-}
-
 /// A private trait, only used by display entities, to get and set
 /// some synced entity data.
 trait PrivateDisplay {
@@ -585,5 +368,223 @@ macro_rules! display_impl {
     };
 }
 
-pub(crate) mod block_display;
+/// Controls how a display entity looks at a player (from their client).
+///
+/// Each value controls whether a display entity follows the player along
+/// the horizontal axis and the vertical axis.
+#[repr(i8)]
+#[derive(Default, Debug, Clone, Copy)]
+pub enum BillboardConstraints {
+    #[default]
+    /// Both the horizontal and vertical axes are fixed.
+    Fixed = 0,
+    /// Only the vertical axis is fixed.
+    Vertical = 1,
+    /// Only the horizontal axis is fixed.
+    Horizontal = 2,
+    /// Neither the horizontal nor the vertical axis is fixed.
+    Center = 3,
+}
+
+impl TryFrom<i8> for BillboardConstraints {
+    type Error = ();
+
+    fn try_from(value: i8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Fixed),
+            1 => Ok(Self::Vertical),
+            2 => Ok(Self::Horizontal),
+            3 => Ok(Self::Center),
+            _ => Err(()),
+        }
+    }
+}
+
+impl ToNbtTag for BillboardConstraints {
+    fn to_nbt_tag(self) -> NbtTag {
+        NbtTag::String(
+            match self {
+                Self::Fixed => "fixed",
+                Self::Vertical => "vertical",
+                Self::Horizontal => "horizontal",
+                Self::Center => "center",
+            }
+            .into(),
+        )
+    }
+}
+
+impl FromNbtTag for BillboardConstraints {
+    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
+        match tag.string()?.to_string().as_str() {
+            "fixed" => Some(Self::Fixed),
+            "vertical" => Some(Self::Vertical),
+            "horizontal" => Some(Self::Horizontal),
+            "center" => Some(Self::Center),
+            _ => None,
+        }
+    }
+}
+
+/// A set of brightness (light) levels to override how bright a display entity looks.
+///
+/// It contains a block light level and skylight level.
+#[derive(Debug, Clone, Copy)]
+pub struct Brightness {
+    /// The block light level.
+    pub block: i32,
+    /// The skylight level.
+    pub sky: i32,
+}
+
+impl Brightness {
+    /// Packs this [`Brightness`] into a single `i32`.
+    #[must_use]
+    pub const fn pack(self) -> i32 {
+        self.block << 4 | self.sky << 20
+    }
+
+    /// Unpacks a [`Brightness`] from a single `i32`.
+    #[must_use]
+    pub const fn unpack(bits: i32) -> Brightness {
+        Self {
+            block: (bits >> 4) & 0b1111,
+            sky: (bits >> 20) & 0b1111,
+        }
+    }
+}
+
+impl ToNbtTag for Brightness {
+    fn to_nbt_tag(self) -> NbtTag {
+        let mut compound = NbtCompound::new();
+        compound.insert("block", self.block);
+        compound.insert("sky", self.sky);
+        NbtTag::Compound(compound)
+    }
+}
+
+impl FromNbtTag for Brightness {
+    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
+        let compound = tag.compound()?;
+        let block = compound.get("block")?.int()?;
+        let range = 0..=15;
+        if !range.contains(&block) {
+            return None;
+        }
+        let sky = compound.get("sky")?.int()?;
+        if !range.contains(&sky) {
+            return None;
+        }
+        Some(Self { block, sky })
+    }
+}
+
+/// A structure describing an affine transformation in 3D space.
+///
+/// Transformations are applied in the following order:
+/// `translation` -> `left_rotation` -> `scale` -> `right_rotation`
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Transformation {
+    /// The translation (displacement) applied by this transformation.
+    pub translation: Vector3f,
+    /// The left rotation applied by this transformation.
+    pub left_rotation: Quaternionf,
+    /// The scale applied by this transformation.
+    pub scale: Vector3f,
+    /// The right rotation applied by this transformation.
+    pub right_rotation: Quaternionf,
+}
+
+impl Transformation {
+    /// The identity [`Transformation`].
+    pub const IDENTITY: Self = Transformation {
+        translation: Vector3f::ZERO,
+        left_rotation: Quaternionf::IDENTITY,
+        scale: Vector3f::ONE,
+        right_rotation: Quaternionf::IDENTITY,
+    };
+
+    /// Composes a [`Matrix4f`] from this transformation.
+    #[must_use]
+    pub fn compose(self) -> Matrix4f {
+        Matrix4f(
+            Mat4::from_translation(self.translation.into())
+                * Mat4::from_quat(self.left_rotation.into())
+                * Mat4::from_scale(self.scale.into())
+                * Mat4::from_quat(self.right_rotation.into()),
+        )
+    }
+}
+
+impl From<Matrix4f> for Transformation {
+    /// Decomposes a [`Matrix4f`] to form a [`Transformation`].
+    fn from(_mat: Matrix4f) -> Self {
+        // TODO: Implement svdDecompose()
+        Transformation::IDENTITY
+    }
+}
+
+impl From<Transformation> for Matrix4f {
+    /// Composes a [`Transformation`] to form a matrix.
+    fn from(t: Transformation) -> Self {
+        Transformation::compose(t)
+    }
+}
+
+struct NormalTransformation(Transformation);
+impl From<Transformation> for NormalTransformation {
+    fn from(t: Transformation) -> Self {
+        Self(t)
+    }
+}
+impl From<NormalTransformation> for Transformation {
+    fn from(t: NormalTransformation) -> Self {
+        t.0
+    }
+}
+
+// Recreates Vanilla's `Transformation.CODEC`.
+impl ToNbtTag for NormalTransformation {
+    fn to_nbt_tag(self) -> NbtTag {
+        let mut compound = NbtCompound::new();
+        compound.insert("translation", self.0.translation.to_nbt_tag());
+        compound.insert("left_rotation", self.0.left_rotation.to_nbt_tag());
+        compound.insert("scale", self.0.scale.to_nbt_tag());
+        compound.insert("right_rotation", self.0.right_rotation.to_nbt_tag());
+        NbtTag::Compound(compound)
+    }
+}
+
+impl FromNbtTag for NormalTransformation {
+    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
+        let compound = tag.compound()?;
+        Some(Self(Transformation {
+            translation: Vector3f::from_nbt_tag(compound.get("transformation")?)?,
+            left_rotation: Quaternionf::from_nbt_tag(compound.get("left_rotation")?)?,
+            scale: Vector3f::from_nbt_tag(compound.get("scale")?)?,
+            right_rotation: Quaternionf::from_nbt_tag(compound.get("right_rotation")?)?,
+        }))
+    }
+}
+
+// Recreates Vanilla's `Transformation.EXTENDED_CODEC`.
+// This codec prefers using the ordinary codec created above, but it does also accept a matrix.
+impl FromNbtTag for Transformation {
+    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
+        if let Some(NormalTransformation(transformation)) = NormalTransformation::from_nbt_tag(tag)
+        {
+            return Some(transformation);
+        }
+        Some(Matrix4f::from_nbt_tag(tag)?.into())
+    }
+}
+
+impl ToNbtTag for Transformation {
+    fn to_nbt_tag(self) -> NbtTag {
+        NormalTransformation(self).to_nbt_tag()
+    }
+}
+
+pub mod block_display;
 pub mod item_display;
+pub mod text_display;

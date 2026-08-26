@@ -103,7 +103,7 @@ impl Entity for BlockDisplayEntity {
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.save_display(nbt);
 
-        nbt.insert("block_state", block_state_nbt::save(vanilla_blocks::BLACK_CONCRETE_POWDER.default_state()) /*block_state_nbt::save(self.block_state())*/);
+        nbt.insert("block_state", block_state_nbt::save(self.block_state()));
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
