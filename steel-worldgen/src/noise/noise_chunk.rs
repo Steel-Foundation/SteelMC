@@ -305,10 +305,12 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         // `place_block` keeps its original call order, so results and
         // column-batched write behavior stay bit-identical.
         let column_len = cell_count_y * cell_height as usize;
-        // Flat row-major storage sized by the ACTIVE channel count (not
-        // MAX_INTERP), so dimensions with fewer channels don't over-allocate.
-        let mut d0_col = vec![0.0f64; column_len * interp_count];
-        let mut d1_col = vec![0.0f64; column_len * interp_count];
+        // One flat scratch allocation holds both intermediate buffers back to
+        // back, split into disjoint halves per use. Row-major storage sized by
+        // the ACTIVE channel count (not MAX_INTERP), so dimensions with fewer
+        // channels don't over-allocate.
+        let mut scratch = vec![0.0f64; column_len * interp_count * 2];
+        let (d0_col, d1_col) = scratch.split_at_mut(column_len * interp_count);
 
         for cell_x_idx in 0..cell_count_xz {
             // Borrow both bounding slices once per cell-x strip.
