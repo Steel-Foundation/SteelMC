@@ -2,6 +2,41 @@ use std::collections::BTreeSet;
 
 use super::*;
 
+const MAX_ENTITY_MOTION_COMPONENT: f64 = 10.0;
+
+fn read_nbt_dvec3(
+    nbt: &BorrowedNbtCompoundView<'_, '_>,
+    key: &str,
+) -> Option<DVec3> {
+    let values = nbt.list(key)?.doubles()?;
+    let &[x, y, z, ..] = values.as_slice() else {
+        return None;
+    };
+    Some(DVec3::new(x, y, z))
+}
+
+fn read_nbt_rotation(
+    nbt: &BorrowedNbtCompoundView<'_, '_>,
+    key: &str,
+) -> Option<(f32, f32)> {
+    let values = nbt.list(key)?.floats()?;
+    let &[yaw, pitch, ..] = values.as_slice() else {
+        return None;
+    };
+    Some((yaw, pitch))
+}
+
+fn sanitize_nbt_motion(motion: DVec3) -> DVec3 {
+    let sanitize = |value: f64| {
+        if value.abs() > MAX_ENTITY_MOTION_COMPONENT {
+            0.0
+        } else {
+            value
+        }
+    };
+    DVec3::new(sanitize(motion.x), sanitize(motion.y), sanitize(motion.z))
+}
+
 /// Final state accepted from a client-authored movement packet.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AcceptedClientMovement {
@@ -3481,28 +3516,21 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 .or_else(|| nbt.byte(key).map(i32::from))
         };
 
-        if let Some(values) = nbt.list("Pos").and_then(|list| list.doubles())
-            && values.len() >= 3
+        if let Some(position) = read_nbt_dvec3(&nbt, "Pos")
+            && position.is_finite()
         {
-            let position = DVec3::new(values[0], values[1], values[2]);
-            if position.is_finite() {
-                self.base().set_position_local(position);
-            }
+            self.base().set_position_local(position);
         }
 
-        if let Some(values) = nbt.list("Motion").and_then(|list| list.doubles())
-            && values.len() >= 3
-        {
-            self.set_velocity(DVec3::new(values[0], values[1], values[2]));
+        if let Some(motion) = read_nbt_dvec3(&nbt, "Motion") {
+            self.set_velocity(sanitize_nbt_motion(motion));
         }
 
-        if let Some(values) = nbt.list("Rotation").and_then(|list| list.floats())
-            && values.len() >= 2
-        {
-            self.set_rotation((values[0], values[1]));
+        if let Some((yaw, pitch)) = read_nbt_rotation(&nbt, "Rotation") {
+            self.set_rotation((yaw, pitch));
             if let Some(living) = self.as_living_entity() {
-                living.set_y_head_rot(values[0]);
-                living.set_y_body_rot(values[0]);
+                living.set_y_head_rot(yaw);
+                living.set_y_body_rot(yaw);
             }
         }
 
