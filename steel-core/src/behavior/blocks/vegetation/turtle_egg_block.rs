@@ -14,8 +14,8 @@ use steel_registry::blocks::shapes::VoxelShape;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
-    sound_events, vanilla_entities, vanilla_game_events, vanilla_game_rules, vanilla_items,
-    vanilla_world_clocks,
+    level_events, sound_events, vanilla_entities, vanilla_game_events, vanilla_game_rules,
+    vanilla_items, vanilla_world_clocks,
 };
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
@@ -89,18 +89,16 @@ impl TurtleEggBlock {
 
     /// Rolls whether an egg should advance its cracking stage this random tick.
     ///
-    /// DESIGN NOTE (sanity check for us, not a proposal we are attached to):
-    /// In 26.2 this value comes from the `gameplay/turtle_egg_hatch_chance`
-    /// environment attribute: a base of 0.002, raised to 1.0 by a day-timeline
-    /// modifier during the pre-dawn window (ticks 21062 to 21904) via a
-    /// `maximum` float modifier. Steel already has a timeline sampler in
-    /// `world::environment`, but it currently only handles `multiply`/replace
-    /// modifiers and only exposes sky light and sun angle, so it cannot resolve
-    /// this attribute yet. Rather than grow that system inside a block PR, this
-    /// reproduces the exact turtle curve inline off the overworld day clock. If
-    /// maintainers would prefer the general path, the follow-up is: teach the
-    /// sampler the `maximum` modifier and expose a public environment-attribute
-    /// getter, then replace this with a single lookup.
+    /// In 26.2 this chance comes from the `gameplay/turtle_egg_hatch_chance`
+    /// environment attribute: base 0.002, raised to 1.0 by a day-timeline
+    /// `maximum` modifier during the pre-dawn window (ticks 21062 to 21904).
+    /// Steel's timeline sampler in `world::environment` only handles
+    /// `multiply`/replace modifiers and exposes sky light and sun angle, so it
+    /// cannot resolve this attribute yet; the turtle curve is reproduced inline
+    /// off the overworld day clock.
+    // TODO(environment-attributes): replace this inline curve with a single
+    // attribute lookup once the timeline sampler learns the `maximum` modifier
+    // and exposes a public environment-attribute getter.
     fn should_update_hatch_level(world: &Arc<World>) -> bool {
         let day_time = world
             .clock_total_ticks(&vanilla_world_clocks::OVERWORLD)
@@ -174,7 +172,12 @@ impl TurtleEggBlock {
                 pos,
                 &GameEventContext::default(),
             );
-            world.level_event(2001, pos, i32::from(state.0), None);
+            world.level_event(
+                level_events::PARTICLES_DESTROY_BLOCK,
+                pos,
+                level_events::encode_block_state_data(u32::from(state.0)),
+                None,
+            );
         }
     }
 
@@ -229,9 +232,9 @@ impl BlockBehavior for TurtleEggBlock {
         _old_state: BlockStateId,
         _moved_by_piston: bool,
     ) {
-        // Play the "placed on sand" effect (level event 2012, data 15).
+        // Play the "placed on sand" particle effect (data is the particle count).
         if Self::on_sand(world, pos) {
-            world.level_event(2012, pos, 15, None);
+            world.level_event(level_events::PARTICLES_TURTLE_EGG_PLACEMENT, pos, 15, None);
         }
     }
 
@@ -276,7 +279,12 @@ impl BlockBehavior for TurtleEggBlock {
 
             let eggs = state.get_value(EGGS);
             for _ in 0..eggs {
-                world.level_event(2001, pos, i32::from(state.0), None);
+                world.level_event(
+                    level_events::PARTICLES_DESTROY_BLOCK,
+                    pos,
+                    level_events::encode_block_state_data(u32::from(state.0)),
+                    None,
+                );
                 // TODO(turtle-entity): spawn one baby Turtle per egg here once the
                 // Turtle entity lands. Vanilla creates it with age -24000, calls
                 // setHomePos(pos), snaps it just above the nest, and adds it to the
@@ -303,13 +311,12 @@ impl BlockBehavior for TurtleEggBlock {
         if let Some(entity) = context.source_entity()
             && entity.entity_type() != &vanilla_entities::ZOMBIE
         {
-            // DESIGN NOTE (sanity check): vanilla excludes `instanceof Zombie`,
-            // which also covers husks, drowned, zombie villagers, and zombified
-            // piglins because they extend Zombie. None of those entities exist in
-            // Steel yet, so this single-type check is currently exact; when the
-            // zombie family is added, this should exclude the whole set (a shared
-            // "is a zombie" predicate or an entity-type tag) so falling zombies do
-            // not double up with their seek-and-trample AI.
+            // Vanilla excludes `instanceof Zombie`, which also covers husks,
+            // drowned, zombie villagers, and zombified piglins. None of those
+            // exist in Steel yet, so this single-type check is currently exact.
+            // TODO(zombie-family): widen this to the whole zombie set (a shared
+            // "is a zombie" predicate or an entity-type tag) once those entities
+            // land, so falling zombies do not double up with their trample AI.
             self.destroy_egg(world, state, pos, entity, FALL_TRAMPLE_ODDS);
         }
         self.default_fall_on(state, world, pos, context)
