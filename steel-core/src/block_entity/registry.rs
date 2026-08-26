@@ -17,9 +17,9 @@ use steel_utils::{BlockPos, BlockStateId};
 use super::SharedBlockEntity;
 use super::entities::{
     BarrelBlockEntity, BeehiveBlockEntity, BrushableBlockEntity, ChiseledBookShelfBlockEntity,
-    ComparatorBlockEntity, DaylightDetectorBlockEntity, EndGatewayBlockEntity,
-    EndPortalBlockEntity, JukeboxBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity,
-    RawBlockEntity, SignBlockEntity,
+    ComparatorBlockEntity, DaylightDetectorBlockEntity, DispenserBlockEntity, DropperBlockEntity,
+    EndGatewayBlockEntity, EndPortalBlockEntity, JukeboxBlockEntity, PistonMovingBlockEntity,
+    PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity,
 };
 use crate::world::World;
 
@@ -221,6 +221,17 @@ pub fn init_block_entities() {
         // Register barrel block entity factory
         registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
             Arc::new(BarrelBlockEntity::new(level, pos, state))
+        });
+
+        // Register dispenser block entity factory
+        registry.register(
+            &vanilla_block_entity_types::DISPENSER,
+            |level, pos, state| Arc::new(DispenserBlockEntity::new(level, pos, state)),
+        );
+
+        // Register dropper block entity factory
+        registry.register(&vanilla_block_entity_types::DROPPER, |level, pos, state| {
+            Arc::new(DropperBlockEntity::new(level, pos, state))
         });
 
         registry.register(

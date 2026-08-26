@@ -6,6 +6,7 @@ mod brushable;
 mod chiseled_bookshelf;
 mod comparator;
 mod daylight_detector;
+mod dispenser;
 mod end_gateway;
 mod end_portal;
 mod jukebox;
@@ -22,6 +23,9 @@ pub use brushable::BrushableBlockEntity;
 pub use chiseled_bookshelf::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEntity};
 pub use comparator::ComparatorBlockEntity;
 pub use daylight_detector::DaylightDetectorBlockEntity;
+pub use dispenser::{
+    DISPENSER_SLOTS, DispenserBlockEntity, DispenserContainer, DropperBlockEntity,
+};
 pub use end_gateway::EndGatewayBlockEntity;
 pub use end_portal::EndPortalBlockEntity;
 pub use jukebox::JukeboxBlockEntity;

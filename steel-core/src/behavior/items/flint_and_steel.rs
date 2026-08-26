@@ -152,7 +152,7 @@ fn try_light_block(
     true
 }
 
-fn can_light(state: BlockStateId) -> bool {
+pub fn can_light(state: BlockStateId) -> bool {
     let Some(lit) = state.try_get_value(&BlockStateProperties::LIT) else {
         return false;
     };
