@@ -55,7 +55,7 @@ fn message_dispatcher() -> TestDispatcher {
     let mut dispatcher = TestDispatcher::new();
     let command = literal("say").then(argument("message", SteelArgumentType::message()).executes(
         |context| {
-            // Touch the parsed value so a mis-typed argument fails the test loudly.
+            // Touch the parsed value so a wrongly typed argument fails the test loudly.
             context.message("message").map(|_| 1)
         },
     ));

@@ -1388,7 +1388,7 @@ fn parse_message(
         }
 
         // Parts index `text` by byte, so track byte offsets: `cursor()` counts UTF-16 units
-        // and would mis-slice any message containing non-ASCII text.
+        // and would slice incorrectly for any message containing non-ASCII text.
         let part_start = scan_reader.byte_cursor();
         match try_parse_message_selector(&mut scan_reader, source) {
             Ok(()) => {
