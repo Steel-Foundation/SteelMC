@@ -9,8 +9,8 @@ use std::{
     future::{Future, pending},
     io::Cursor,
     net::SocketAddr,
-    pin::Pin,
     sync::Arc,
+    time::Duration,
 };
 
 use crossbeam::atomic::AtomicCell;
@@ -52,7 +52,7 @@ use tokio::{
         mpsc::{self, UnboundedReceiver, UnboundedSender, error::TryRecvError},
     },
     task::yield_now,
-    time::sleep,
+    time::{Instant, sleep_until},
 };
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use uuid::Uuid;
@@ -60,7 +60,8 @@ use uuid::Uuid;
 use crate::pre_play_state::{PacketSequenceError, PrePlayPacket, PrePlayState};
 
 const MAX_TICKS_BEFORE_LOGIN: u64 = 600;
-const MAX_CLOSE_SCAN_ITEMS_PER_QUANTUM: usize = 32;
+const MAX_CLOSE_ITEMS_PER_QUANTUM: usize = 32;
+const MAX_PRE_PLAY_PACKETS_PER_WRITE_QUANTUM: usize = 32;
 
 type JavaNetworkWriter = Arc<AsyncMutex<Option<JavaPacketWriter>>>;
 
@@ -88,9 +89,9 @@ enum LoginOperationResult<T> {
     TimedOut,
 }
 
-enum CloseDeadlineResult<T> {
-    Completed(T),
-    Elapsed,
+#[derive(Clone, Copy)]
+struct CloseDeadline {
+    at: Instant,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -132,19 +133,20 @@ impl OutboundEncryptionTransition {
     }
 }
 
-async fn complete_before_deadline<T, O, D>(
-    operation: O,
-    mut deadline: Pin<&mut D>,
-) -> CloseDeadlineResult<T>
-where
-    O: Future<Output = T>,
-    D: Future<Output = ()> + ?Sized,
-{
-    tokio::pin!(operation);
-    select! {
-        biased;
-        () = deadline.as_mut() => CloseDeadlineResult::Elapsed,
-        output = operation.as_mut() => CloseDeadlineResult::Completed(output),
+impl CloseDeadline {
+    fn after(timeout: Duration) -> Self {
+        Self {
+            at: Instant::now() + timeout,
+        }
+    }
+
+    async fn run<T>(self, operation: impl Future<Output = T>) -> Option<T> {
+        tokio::pin!(operation);
+        select! {
+            biased;
+            () = sleep_until(self.at) => None,
+            output = operation.as_mut() => Some(output),
+        }
     }
 }
 
@@ -424,11 +426,24 @@ impl JavaTcpClient {
         let Some(mut writer) = network_writer.take() else {
             return Err(PacketError::ConnectionClosed);
         };
-        // Pre-play preserves immediate flushes while holding exclusive ownership across the group.
-        for packet in packets {
-            writer.write_packet(packet).await?;
-        }
+        Self::write_packet_batch(&mut writer, packets).await?;
         *network_writer = Some(writer);
+        Ok(())
+    }
+
+    async fn write_packet_batch<W: AsyncWrite + Unpin>(
+        writer: &mut TCPNetworkEncoder<W>,
+        packets: &[EncodedPacket],
+    ) -> Result<(), PacketError> {
+        let mut chunks = packets
+            .chunks(MAX_PRE_PLAY_PACKETS_PER_WRITE_QUANTUM)
+            .peekable();
+        while let Some(chunk) = chunks.next() {
+            writer.write_packets(chunk).await?;
+            if chunks.peek().is_some() {
+                yield_now().await;
+            }
+        }
         Ok(())
     }
 
@@ -475,23 +490,17 @@ impl JavaTcpClient {
                 select! {
                     biased;
                     () = cancel_token.cancelled() => {
-                        let mut deadline = Box::pin(sleep(GRACEFUL_CLOSE_TIMEOUT));
-                        let closing = match complete_before_deadline(
-                            Self::take_closing_writes(&mut sender_recv),
-                            deadline.as_mut(),
+                        let deadline = CloseDeadline::after(GRACEFUL_CLOSE_TIMEOUT);
+                        if let Some(closing) = Self::take_closing_before_deadline(
+                            &mut sender_recv,
+                            id,
+                            deadline,
                         ).await {
-                            CloseDeadlineResult::Completed(closing) => closing,
-                            CloseDeadlineResult::Elapsed => {
-                                Self::log_close_timeout(id);
-                                break;
-                            }
-                        };
-                        if let Some(closing) = closing {
                             Self::write_closing_before_deadline(
                                 &network_writer,
                                 closing,
                                 id,
-                                deadline.as_mut(),
+                                deadline,
                             ).await;
                         }
                         break;
@@ -507,7 +516,7 @@ impl JavaTcpClient {
                             OutboundPacket::Disconnect(disconnect) => {
                                 sender_recv.close();
                                 cancel_token.cancel();
-                                let mut deadline = Box::pin(sleep(GRACEFUL_CLOSE_TIMEOUT));
+                                let deadline = CloseDeadline::after(GRACEFUL_CLOSE_TIMEOUT);
                                 Self::write_closing_before_deadline(
                                     &network_writer,
                                     PrePlayClosingWrites {
@@ -515,7 +524,7 @@ impl JavaTcpClient {
                                         disconnect,
                                     },
                                     id,
-                                    deadline.as_mut(),
+                                    deadline,
                                 ).await;
                                 break;
                             }
@@ -526,32 +535,23 @@ impl JavaTcpClient {
                         select! {
                             biased;
                             () = cancel_token.cancelled() => {
-                                let mut deadline = Box::pin(sleep(GRACEFUL_CLOSE_TIMEOUT));
-                                let closing = match complete_before_deadline(
-                                    Self::take_closing_writes(&mut sender_recv),
-                                    deadline.as_mut(),
-                                ).await {
-                                    CloseDeadlineResult::Completed(closing) => closing,
-                                    CloseDeadlineResult::Elapsed => {
-                                        Self::log_close_timeout(id);
-                                        break;
-                                    }
-                                };
-                                let Some(closing) = closing else {
+                                let deadline = CloseDeadline::after(GRACEFUL_CLOSE_TIMEOUT);
+                                let Some(closing) = Self::take_closing_before_deadline(
+                                    &mut sender_recv,
+                                    id,
+                                    deadline,
+                                ).await else {
                                     break;
                                 };
-                                match complete_before_deadline(
-                                    write_result.as_mut(),
-                                    deadline.as_mut(),
-                                ).await {
-                                    CloseDeadlineResult::Completed(Ok(())) => {}
-                                    CloseDeadlineResult::Completed(Err(error)) => {
+                                match deadline.run(write_result.as_mut()).await {
+                                    Some(Ok(())) => {}
+                                    Some(Err(error)) => {
                                         log::debug!(
                                             "Best-effort close for client {id} failed while finishing the active outbound write: {error}"
                                         );
                                         break;
                                     }
-                                    CloseDeadlineResult::Elapsed => {
+                                    None => {
                                         Self::log_close_timeout(id);
                                         break;
                                     }
@@ -560,7 +560,7 @@ impl JavaTcpClient {
                                     &network_writer,
                                     closing,
                                     id,
-                                    deadline.as_mut(),
+                                    deadline,
                                 ).await;
                                 break;
                             },
@@ -668,79 +668,63 @@ impl JavaTcpClient {
             };
             queued.push(queued_write);
             scanned_since_yield += 1;
-            if scanned_since_yield == MAX_CLOSE_SCAN_ITEMS_PER_QUANTUM {
+            if scanned_since_yield == MAX_CLOSE_ITEMS_PER_QUANTUM {
                 scanned_since_yield = 0;
                 yield_now().await;
             }
         }
     }
 
-    async fn write_closing_before_deadline<W, D>(
+    async fn take_closing_before_deadline(
+        sender_recv: &mut UnboundedReceiver<OutboundPacket>,
+        id: u64,
+        deadline: CloseDeadline,
+    ) -> Option<PrePlayClosingWrites> {
+        let Some(closing) = deadline.run(Self::take_closing_writes(sender_recv)).await else {
+            Self::log_close_timeout(id);
+            return None;
+        };
+        closing
+    }
+
+    async fn write_closing_before_deadline<W: AsyncWrite + Unpin>(
         network_writer: &Arc<AsyncMutex<Option<TCPNetworkEncoder<W>>>>,
         closing: PrePlayClosingWrites,
         id: u64,
-        mut deadline: Pin<&mut D>,
-    ) where
-        W: AsyncWrite + Unpin,
-        D: Future<Output = ()> + ?Sized,
-    {
-        let mut slot =
-            match complete_before_deadline(network_writer.lock(), deadline.as_mut()).await {
-                CloseDeadlineResult::Completed(slot) => slot,
-                CloseDeadlineResult::Elapsed => {
-                    Self::log_close_timeout(id);
-                    return;
-                }
-            };
+        deadline: CloseDeadline,
+    ) {
+        match deadline
+            .run(Self::write_closing(network_writer, closing))
+            .await
+        {
+            Some(Ok(())) => {}
+            Some(Err(error)) => log::debug!("Best-effort close for client {id} failed: {error}"),
+            None => Self::log_close_timeout(id),
+        }
+    }
+
+    async fn write_closing<W: AsyncWrite + Unpin>(
+        network_writer: &Arc<AsyncMutex<Option<TCPNetworkEncoder<W>>>>,
+        closing: PrePlayClosingWrites,
+    ) -> Result<(), PacketError> {
+        let mut slot = network_writer.lock().await;
         let Some(mut writer) = slot.take() else {
-            return;
+            return Ok(());
         };
         drop(slot);
 
-        for queued_write in closing.queued {
+        for (index, queued_write) in closing.queued.into_iter().enumerate() {
             match queued_write {
-                PrePlayWrite::Packet(packet) => {
-                    if !Self::write_before_deadline(&mut writer, &packet, id, deadline.as_mut())
-                        .await
-                    {
-                        return;
-                    }
-                }
+                PrePlayWrite::Packet(packet) => writer.write_packet(&packet).await?,
                 PrePlayWrite::Batch(packets) => {
-                    for packet in packets {
-                        if !Self::write_before_deadline(&mut writer, &packet, id, deadline.as_mut())
-                            .await
-                        {
-                            return;
-                        }
-                    }
+                    Self::write_packet_batch(&mut writer, &packets).await?;
                 }
             }
-        }
-        let _ = Self::write_before_deadline(&mut writer, &closing.disconnect, id, deadline).await;
-    }
-
-    async fn write_before_deadline<W, D>(
-        writer: &mut TCPNetworkEncoder<W>,
-        packet: &EncodedPacket,
-        id: u64,
-        deadline: Pin<&mut D>,
-    ) -> bool
-    where
-        W: AsyncWrite + Unpin,
-        D: Future<Output = ()> + ?Sized,
-    {
-        match complete_before_deadline(writer.write_packet(packet), deadline).await {
-            CloseDeadlineResult::Completed(Ok(())) => true,
-            CloseDeadlineResult::Completed(Err(error)) => {
-                log::debug!("Best-effort close for client {id} failed: {error}");
-                false
-            }
-            CloseDeadlineResult::Elapsed => {
-                Self::log_close_timeout(id);
-                false
+            if (index + 1) % MAX_CLOSE_ITEMS_PER_QUANTUM == 0 {
+                yield_now().await;
             }
         }
+        writer.write_packet(&closing.disconnect).await
     }
 
     fn log_close_timeout(id: u64) {
@@ -894,26 +878,19 @@ impl JavaTcpClient {
     pub(crate) async fn disconnect_slow_login(&self) {
         let reason =
             TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_SLOW_LOGIN.msg());
-        let mut deadline = Box::pin(sleep(GRACEFUL_CLOSE_TIMEOUT));
+        let deadline = CloseDeadline::after(GRACEFUL_CLOSE_TIMEOUT);
         if self.outbound_encryption.is_pending()
-            && matches!(
-                complete_before_deadline(
-                    self.outbound_encryption.wait_until_enabled(),
-                    deadline.as_mut(),
-                )
-                .await,
-                CloseDeadlineResult::Elapsed
-            )
+            && deadline
+                .run(self.outbound_encryption.wait_until_enabled())
+                .await
+                .is_none()
         {
             self.log_slow_login_close_timeout();
             self.close();
             return;
         }
 
-        if matches!(
-            complete_before_deadline(self.kick(reason), deadline.as_mut()).await,
-            CloseDeadlineResult::Elapsed
-        ) {
+        if deadline.run(self.kick(reason)).await.is_none() {
             self.log_slow_login_close_timeout();
             self.close();
         }

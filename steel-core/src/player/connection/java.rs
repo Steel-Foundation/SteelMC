@@ -1,9 +1,8 @@
 //! This module contains the `JavaConnection` struct, which is used to represent a connection to a Java client.
 use std::future::Future;
 use std::io::Cursor;
-use std::pin::Pin;
 use std::sync::{Arc, Weak};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use steel_protocol::packet_reader::TCPNetworkDecoder;
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket, ServerPacket};
@@ -36,7 +35,7 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
 use tokio::task::yield_now;
-use tokio::time::sleep;
+use tokio::time::{Instant, sleep_until};
 use tokio_util::sync::CancellationToken;
 
 use crate::command::{handle_client_request, sender::CommandSender};
@@ -50,7 +49,7 @@ pub type JavaPacketWriter = TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>;
 // Tuned by the release `outbound_transport` A/B; these bound cooperative work, not protocol size.
 const MAX_PACKETS_PER_WRITE_QUANTUM: usize = 32;
 const MAX_BYTES_PER_WRITE_QUANTUM: usize = 256 * 1_024;
-const MAX_CLOSE_SCAN_ITEMS_PER_QUANTUM: usize = 32;
+const MAX_CLOSE_ITEMS_PER_QUANTUM: usize = 32;
 
 /// Outbound packet queue message for Java connections.
 pub enum OutboundPacket {
@@ -77,24 +76,25 @@ struct ClosingWrites {
     disconnect: EncodedPacket,
 }
 
-enum CloseDeadlineResult<T> {
-    Completed(T),
-    Elapsed,
+#[derive(Clone, Copy)]
+struct CloseDeadline {
+    at: Instant,
 }
 
-async fn complete_before_deadline<T, O, D>(
-    operation: O,
-    mut deadline: Pin<&mut D>,
-) -> CloseDeadlineResult<T>
-where
-    O: Future<Output = T>,
-    D: Future<Output = ()> + ?Sized,
-{
-    tokio::pin!(operation);
-    select! {
-        biased;
-        () = deadline.as_mut() => CloseDeadlineResult::Elapsed,
-        output = operation.as_mut() => CloseDeadlineResult::Completed(output),
+impl CloseDeadline {
+    fn after(timeout: Duration) -> Self {
+        Self {
+            at: Instant::now() + timeout,
+        }
+    }
+
+    async fn run<T>(self, operation: impl Future<Output = T>) -> Option<T> {
+        tokio::pin!(operation);
+        select! {
+            biased;
+            () = sleep_until(self.at) => None,
+            output = operation.as_mut() => Some(output),
+        }
     }
 }
 
@@ -882,22 +882,16 @@ impl JavaConnection {
         network_writer: &mut TCPNetworkEncoder<W>,
         sender_recv: &mut UnboundedReceiver<OutboundPacket>,
     ) {
-        self.send_packets_with_deadline(network_writer, sender_recv, || {
-            sleep(GRACEFUL_CLOSE_TIMEOUT)
-        })
-        .await;
+        self.send_packets_with_timeout(network_writer, sender_recv, GRACEFUL_CLOSE_TIMEOUT)
+            .await;
     }
 
-    async fn send_packets_with_deadline<W, D, F>(
+    async fn send_packets_with_timeout<W: AsyncWrite + Unpin>(
         &self,
         network_writer: &mut TCPNetworkEncoder<W>,
         sender_recv: &mut UnboundedReceiver<OutboundPacket>,
-        mut new_close_deadline: F,
-    ) where
-        W: AsyncWrite + Unpin,
-        D: Future<Output = ()>,
-        F: FnMut() -> D,
-    {
+        close_timeout: Duration,
+    ) {
         let close = self.wait_for_close();
         tokio::pin!(close);
 
@@ -905,17 +899,17 @@ impl JavaConnection {
             select! {
                 biased;
                 () = close.as_mut() => {
-                    let mut deadline = Box::pin(new_close_deadline());
+                    let deadline = CloseDeadline::after(close_timeout);
                     let Some(closing) = self.take_closing_before_deadline(
                         sender_recv,
-                        deadline.as_mut(),
+                        deadline,
                     ).await else {
                         break;
                     };
                     self.write_closing_before_deadline(
                         network_writer,
                         closing,
-                        deadline.as_mut(),
+                        deadline,
                     )
                     .await;
                     break;
@@ -931,14 +925,14 @@ impl JavaConnection {
                         OutboundPacket::Disconnect(disconnect) => {
                             sender_recv.close();
                             self.close();
-                            let mut deadline = Box::pin(new_close_deadline());
+                            let deadline = CloseDeadline::after(close_timeout);
                             self.write_closing_before_deadline(
                                 network_writer,
                                 ClosingWrites {
                                     queued: Vec::new(),
                                     disconnect,
                                 },
-                                deadline.as_mut(),
+                                deadline,
                             )
                             .await;
                             break;
@@ -951,16 +945,16 @@ impl JavaConnection {
                         select! {
                             biased;
                             () = close.as_mut() => {
-                                let mut deadline = Box::pin(new_close_deadline());
+                                let deadline = CloseDeadline::after(close_timeout);
                                 let Some(closing) = self.take_closing_before_deadline(
                                     sender_recv,
-                                    deadline.as_mut(),
+                                    deadline,
                                 ).await else {
                                     break;
                                 };
                                 if !self.finish_active_write_before_deadline(
                                     write_result.as_mut(),
-                                    deadline.as_mut(),
+                                    deadline,
                                 ).await {
                                     break;
                                 }
@@ -980,11 +974,11 @@ impl JavaConnection {
                         }
                     };
 
-                    if let Some((closing, mut deadline)) = closing {
+                    if let Some((closing, deadline)) = closing {
                         self.write_closing_before_deadline(
                             network_writer,
                             closing,
-                            deadline.as_mut(),
+                            deadline,
                         )
                         .await;
                         break;
@@ -994,46 +988,40 @@ impl JavaConnection {
         }
     }
 
-    async fn finish_active_write_before_deadline<O, D>(
+    async fn finish_active_write_before_deadline<O>(
         &self,
         write: O,
-        deadline: Pin<&mut D>,
+        deadline: CloseDeadline,
     ) -> bool
     where
         O: Future<Output = Result<(), PacketError>>,
-        D: Future<Output = ()> + ?Sized,
     {
-        match complete_before_deadline(write, deadline).await {
-            CloseDeadlineResult::Completed(Ok(())) => true,
-            CloseDeadlineResult::Completed(Err(error)) => {
+        match deadline.run(write).await {
+            Some(Ok(())) => true,
+            Some(Err(error)) => {
                 log::debug!(
                     "Best-effort close for client {} failed while finishing the active outbound write: {error}",
                     self.id
                 );
                 false
             }
-            CloseDeadlineResult::Elapsed => {
+            None => {
                 self.log_close_timeout();
                 false
             }
         }
     }
 
-    async fn take_closing_before_deadline<D>(
+    async fn take_closing_before_deadline(
         &self,
         sender_recv: &mut UnboundedReceiver<OutboundPacket>,
-        deadline: Pin<&mut D>,
-    ) -> Option<ClosingWrites>
-    where
-        D: Future<Output = ()> + ?Sized,
-    {
-        match complete_before_deadline(Self::take_closing_writes(sender_recv), deadline).await {
-            CloseDeadlineResult::Completed(closing) => closing,
-            CloseDeadlineResult::Elapsed => {
-                self.log_close_timeout();
-                None
-            }
-        }
+        deadline: CloseDeadline,
+    ) -> Option<ClosingWrites> {
+        let Some(closing) = deadline.run(Self::take_closing_writes(sender_recv)).await else {
+            self.log_close_timeout();
+            return None;
+        };
+        closing
     }
 
     fn log_close_timeout(&self) {
@@ -1072,32 +1060,37 @@ impl JavaConnection {
         max_packets: usize,
         max_bytes: usize,
     ) -> Result<(), PacketError> {
-        let mut pending_packets = 0usize;
-        let mut pending_bytes = 0usize;
+        let mut quantum_start = 0usize;
+        let mut quantum_bytes = 0usize;
 
-        for packet in packets {
-            let next_bytes = pending_bytes.saturating_add(packet.encoded_data.len());
-            if pending_packets != 0 && next_bytes > max_bytes {
-                network_writer.flush().await?;
-                pending_packets = 0;
-                pending_bytes = 0;
+        for (index, packet) in packets.iter().enumerate() {
+            let next_bytes = quantum_bytes.saturating_add(packet.encoded_data.len());
+            if index != quantum_start && next_bytes > max_bytes {
+                network_writer
+                    .write_packets(&packets[quantum_start..index])
+                    .await?;
+                quantum_start = index;
+                quantum_bytes = 0;
                 yield_now().await;
             }
 
-            network_writer.write_packet_unflushed(packet).await?;
-            pending_packets += 1;
-            pending_bytes = pending_bytes.saturating_add(packet.encoded_data.len());
+            quantum_bytes = quantum_bytes.saturating_add(packet.encoded_data.len());
+            let quantum_packets = index + 1 - quantum_start;
 
-            if pending_packets >= max_packets || pending_bytes >= max_bytes {
-                network_writer.flush().await?;
-                pending_packets = 0;
-                pending_bytes = 0;
+            if quantum_packets >= max_packets || quantum_bytes >= max_bytes {
+                network_writer
+                    .write_packets(&packets[quantum_start..=index])
+                    .await?;
+                quantum_start = index + 1;
+                quantum_bytes = 0;
                 yield_now().await;
             }
         }
 
-        if pending_packets != 0 {
-            network_writer.flush().await?;
+        if quantum_start != packets.len() {
+            network_writer
+                .write_packets(&packets[quantum_start..])
+                .await?;
         }
         Ok(())
     }
@@ -1119,56 +1112,42 @@ impl JavaConnection {
             };
             queued.push(queued_write);
             scanned_since_yield += 1;
-            if scanned_since_yield == MAX_CLOSE_SCAN_ITEMS_PER_QUANTUM {
+            if scanned_since_yield == MAX_CLOSE_ITEMS_PER_QUANTUM {
                 scanned_since_yield = 0;
                 yield_now().await;
             }
         }
     }
 
-    async fn write_closing_before_deadline<W, D>(
+    async fn write_closing_before_deadline<W: AsyncWrite + Unpin>(
         &self,
         network_writer: &mut TCPNetworkEncoder<W>,
         closing: ClosingWrites,
-        mut deadline: Pin<&mut D>,
-    ) where
-        W: AsyncWrite + Unpin,
-        D: Future<Output = ()> + ?Sized,
-    {
-        for queued_write in closing.queued {
-            match complete_before_deadline(
-                Self::write_queued(network_writer, queued_write),
-                deadline.as_mut(),
-            )
-            .await
-            {
-                CloseDeadlineResult::Completed(Ok(())) => {}
-                CloseDeadlineResult::Completed(Err(error)) => {
-                    log::debug!(
-                        "Best-effort close for client {} failed while draining packets: {error}",
-                        self.id
-                    );
-                    return;
-                }
-                CloseDeadlineResult::Elapsed => {
-                    self.log_close_timeout();
-                    return;
-                }
-            }
-        }
-
-        match complete_before_deadline(network_writer.write_packet(&closing.disconnect), deadline)
+        deadline: CloseDeadline,
+    ) {
+        match deadline
+            .run(Self::write_closing(network_writer, closing))
             .await
         {
-            CloseDeadlineResult::Completed(Ok(())) => {}
-            CloseDeadlineResult::Completed(Err(error)) => {
-                log::debug!(
-                    "Best-effort disconnect packet for client {} failed: {error}",
-                    self.id
-                );
+            Some(Ok(())) => {}
+            Some(Err(error)) => {
+                log::debug!("Best-effort close for client {} failed: {error}", self.id);
             }
-            CloseDeadlineResult::Elapsed => self.log_close_timeout(),
+            None => self.log_close_timeout(),
         }
+    }
+
+    async fn write_closing<W: AsyncWrite + Unpin>(
+        network_writer: &mut TCPNetworkEncoder<W>,
+        closing: ClosingWrites,
+    ) -> Result<(), PacketError> {
+        for (index, queued_write) in closing.queued.into_iter().enumerate() {
+            Self::write_queued(network_writer, queued_write).await?;
+            if (index + 1) % MAX_CLOSE_ITEMS_PER_QUANTUM == 0 {
+                yield_now().await;
+            }
+        }
+        network_writer.write_packet(&closing.disconnect).await
     }
 }
 
@@ -1247,13 +1226,10 @@ impl NetworkConnection for JavaConnection {
 mod tests {
     use std::{
         array,
-        future::{Future, pending, poll_fn, ready},
+        future::Future,
         io,
         pin::Pin,
-        sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        },
+        sync::Arc,
         task::{Context, Poll, Waker},
     };
 
@@ -1338,10 +1314,17 @@ mod tests {
         waker: Option<Waker>,
     }
 
+    #[derive(Clone, Copy)]
+    enum PausePoint {
+        WriteAfter(usize),
+        Flush,
+    }
+
+    #[derive(Clone)]
     struct PausingWriter {
         state: Arc<SyncMutex<PausingWriterState>>,
         paused: Arc<Notify>,
-        pause_after: usize,
+        pause_at: PausePoint,
     }
 
     impl AsyncWrite for PausingWriter {
@@ -1350,8 +1333,12 @@ mod tests {
             cx: &mut Context<'_>,
             bytes: &[u8],
         ) -> Poll<io::Result<usize>> {
+            let PausePoint::WriteAfter(pause_after) = self.pause_at else {
+                self.state.lock().bytes.extend_from_slice(bytes);
+                return Poll::Ready(Ok(bytes.len()));
+            };
             let mut state = self.state.lock();
-            if !state.released && state.bytes.len() >= self.pause_after {
+            if !state.released && state.bytes.len() >= pause_after {
                 state.waker = Some(cx.waker().clone());
                 drop(state);
                 self.paused.notify_one();
@@ -1361,50 +1348,16 @@ mod tests {
             let write_len = if state.released {
                 bytes.len()
             } else {
-                bytes.len().min(self.pause_after - state.bytes.len())
+                bytes.len().min(pause_after - state.bytes.len())
             };
             state.bytes.extend_from_slice(&bytes[..write_len]);
             Poll::Ready(Ok(write_len))
         }
 
-        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            Poll::Ready(Ok(()))
-        }
-    }
-
-    impl PausingWriter {
-        fn release(&self) {
-            let waker = {
-                let mut state = self.state.lock();
-                state.released = true;
-                state.waker.take()
-            };
-            if let Some(waker) = waker {
-                waker.wake();
-            }
-        }
-    }
-
-    struct PausingFlushWriter {
-        state: Arc<SyncMutex<PausingWriterState>>,
-        paused: Arc<Notify>,
-    }
-
-    impl AsyncWrite for PausingFlushWriter {
-        fn poll_write(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-            bytes: &[u8],
-        ) -> Poll<io::Result<usize>> {
-            self.state.lock().bytes.extend_from_slice(bytes);
-            Poll::Ready(Ok(bytes.len()))
-        }
-
         fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            if !matches!(self.pause_at, PausePoint::Flush) {
+                return Poll::Ready(Ok(()));
+            }
             let mut state = self.state.lock();
             if state.released {
                 return Poll::Ready(Ok(()));
@@ -1420,7 +1373,7 @@ mod tests {
         }
     }
 
-    impl PausingFlushWriter {
+    impl PausingWriter {
         fn release(&self) {
             let waker = {
                 let mut state = self.state.lock();
@@ -1809,13 +1762,9 @@ mod tests {
         let writer = PausingWriter {
             state: Arc::clone(&state),
             paused: Arc::clone(&paused),
-            pause_after: 1,
+            pause_at: PausePoint::WriteAfter(1),
         };
-        let writer_control = PausingWriter {
-            state: Arc::clone(&state),
-            paused: Arc::clone(&paused),
-            pause_after: 1,
-        };
+        let writer_control = writer.clone();
         let (outgoing, mut receiver) = mpsc::unbounded_channel();
         let connection = Arc::new(JavaConnection::new(
             outgoing.clone(),
@@ -1829,7 +1778,11 @@ mod tests {
             let mut network_writer = TCPNetworkEncoder::new(writer);
             network_writer.set_encryption(&KEY);
             sender_connection
-                .send_packets_with_deadline(&mut network_writer, &mut receiver, pending::<()>)
+                .send_packets_with_timeout(
+                    &mut network_writer,
+                    &mut receiver,
+                    GRACEFUL_CLOSE_TIMEOUT,
+                )
                 .await;
         });
 
@@ -1890,14 +1843,12 @@ mod tests {
 
         let state = Arc::new(SyncMutex::new(PausingWriterState::default()));
         let paused = Arc::new(Notify::new());
-        let writer = PausingFlushWriter {
+        let writer = PausingWriter {
             state: Arc::clone(&state),
             paused: Arc::clone(&paused),
+            pause_at: PausePoint::Flush,
         };
-        let writer_control = PausingFlushWriter {
-            state: Arc::clone(&state),
-            paused: Arc::clone(&paused),
-        };
+        let writer_control = writer.clone();
         let (outgoing, mut receiver) = mpsc::unbounded_channel();
         let connection = Arc::new(JavaConnection::new(
             outgoing.clone(),
@@ -1910,7 +1861,11 @@ mod tests {
         let sender = tokio::spawn(async move {
             let mut network_writer = TCPNetworkEncoder::new(writer);
             sender_connection
-                .send_packets_with_deadline(&mut network_writer, &mut receiver, pending::<()>)
+                .send_packets_with_timeout(
+                    &mut network_writer,
+                    &mut receiver,
+                    GRACEFUL_CLOSE_TIMEOUT,
+                )
                 .await;
         });
 
@@ -1966,17 +1921,9 @@ mod tests {
         let writer = PausingWriter {
             state: Arc::clone(&state),
             paused: Arc::clone(&paused),
-            pause_after: 1,
+            pause_at: PausePoint::WriteAfter(1),
         };
-        let writer_control = PausingWriter {
-            state: Arc::clone(&state),
-            paused: Arc::clone(&paused),
-            pause_after: 1,
-        };
-        let deadline_signal = Arc::new(Notify::new());
-        let sender_deadline_signal = Arc::clone(&deadline_signal);
-        let deadline_creations = Arc::new(AtomicUsize::new(0));
-        let sender_deadline_creations = Arc::clone(&deadline_creations);
+        let writer_control = writer.clone();
         let (outgoing, mut receiver) = mpsc::unbounded_channel();
         let connection = Arc::new(JavaConnection::new(
             outgoing.clone(),
@@ -1990,11 +1937,7 @@ mod tests {
             let mut network_writer = TCPNetworkEncoder::new(writer);
             network_writer.set_encryption(&KEY);
             sender_connection
-                .send_packets_with_deadline(&mut network_writer, &mut receiver, move || {
-                    sender_deadline_creations.fetch_add(1, Ordering::Relaxed);
-                    let deadline_signal = Arc::clone(&sender_deadline_signal);
-                    async move { deadline_signal.notified().await }
-                })
+                .send_packets_with_timeout(&mut network_writer, &mut receiver, Duration::ZERO)
                 .await;
         });
 
@@ -2019,12 +1962,10 @@ mod tests {
         connection.close();
         outgoing.closed().await;
 
-        deadline_signal.notify_one();
         sender
             .await
             .expect("sender task should honor close deadline");
 
-        assert_eq!(deadline_creations.load(Ordering::Relaxed), 1);
         let mut expected_prefix = vec![ACTIVE_PACKET[0]];
         cfb8::Encryptor::<aes::Aes128>::new(&KEY.into(), &KEY.into()).encrypt(&mut expected_prefix);
         assert_eq!(state.lock().bytes, expected_prefix);
@@ -2043,7 +1984,7 @@ mod tests {
         let writer = PausingWriter {
             state: Arc::clone(&state),
             paused: Arc::clone(&paused),
-            pause_after: 1,
+            pause_at: PausePoint::WriteAfter(1),
         };
         let (outgoing, mut receiver) = mpsc::unbounded_channel();
         let connection = Arc::new(JavaConnection::new(
@@ -2057,7 +1998,7 @@ mod tests {
         let sender = tokio::spawn(async move {
             let mut network_writer = TCPNetworkEncoder::new(writer);
             sender_connection
-                .send_packets_with_deadline(&mut network_writer, &mut receiver, pending::<()>)
+                .send_packets(&mut network_writer, &mut receiver)
                 .await;
         });
 
@@ -2077,25 +2018,6 @@ mod tests {
 
         sender.await.expect("hard close should not wait for I/O");
         assert_eq!(state.lock().bytes, [ACTIVE_PACKET[0]]);
-    }
-
-    #[tokio::test]
-    async fn close_deadline_is_reused_across_operations() {
-        let polls = AtomicUsize::new(0);
-        let deadline = poll_fn(|_| {
-            if polls.fetch_add(1, Ordering::Relaxed) == 0 {
-                Poll::Pending
-            } else {
-                Poll::Ready(())
-            }
-        });
-        tokio::pin!(deadline);
-
-        let first = complete_before_deadline(ready("first"), deadline.as_mut()).await;
-        assert!(matches!(first, CloseDeadlineResult::Completed("first")));
-
-        let second = complete_before_deadline(ready("second"), deadline.as_mut()).await;
-        assert!(matches!(second, CloseDeadlineResult::Elapsed));
     }
 
     #[test]

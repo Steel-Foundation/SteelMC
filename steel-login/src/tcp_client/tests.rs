@@ -169,7 +169,7 @@ async fn canceled_pre_play_batch_drops_its_partial_encoder() {
 }
 
 #[tokio::test]
-async fn pre_play_close_deadline_drops_its_partial_encoder() {
+async fn canceled_pre_play_close_drops_its_partial_encoder() {
     const KEY: [u8; 16] = *b"close-cipher-key";
     const ACTIVE_PACKET: &[u8] = b"AB";
     const DISCONNECT_PACKET: u8 = b'C';
@@ -184,26 +184,21 @@ async fn pre_play_close_deadline_drops_its_partial_encoder() {
     let mut encoder = TCPNetworkEncoder::new(writer);
     encoder.set_encryption(&KEY);
     let writer_slot = Arc::new(AsyncMutex::new(Some(encoder)));
-    let deadline_signal = Notify::new();
-    let deadline = deadline_signal.notified();
-    tokio::pin!(deadline);
-    let close = JavaTcpClient::write_closing_before_deadline(
-        &writer_slot,
-        PrePlayClosingWrites {
-            queued: vec![PrePlayWrite::Packet(encoded_bytes(ACTIVE_PACKET))],
-            disconnect: encoded_marker(DISCONNECT_PACKET),
-        },
-        1,
-        deadline.as_mut(),
-    );
-    tokio::pin!(close);
+    {
+        let close = JavaTcpClient::write_closing(
+            &writer_slot,
+            PrePlayClosingWrites {
+                queued: vec![PrePlayWrite::Packet(encoded_bytes(ACTIVE_PACKET))],
+                disconnect: encoded_marker(DISCONNECT_PACKET),
+            },
+        );
+        tokio::pin!(close);
 
-    tokio::select! {
-        () = paused.notified() => {}
-        () = close.as_mut() => panic!("close unexpectedly completed before its deadline"),
+        tokio::select! {
+            () = paused.notified() => {}
+            result = close.as_mut() => panic!("close unexpectedly completed: {result:?}"),
+        }
     }
-    deadline_signal.notify_one();
-    close.await;
 
     assert!(writer_slot.lock().await.is_none());
     assert_eq!(state.lock().bytes.len(), 1);

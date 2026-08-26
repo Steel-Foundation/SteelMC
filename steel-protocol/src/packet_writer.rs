@@ -106,27 +106,18 @@ impl<W: AsyncWrite + Unpin> TCPNetworkEncoder<W> {
         });
     }
 
-    /// Writes a packet to the stream without flushing it.
-    ///
-    /// Call [`Self::flush`] after the final packet in an explicitly bounded group.
+    /// Writes a group of packets and flushes after the final packet.
     ///
     /// # Errors
-    /// - If the packet fails to write.
-    pub async fn write_packet_unflushed(
-        &mut self,
-        packet: &EncodedPacket,
-    ) -> Result<(), PacketError> {
-        self.writer
-            .write_all(&packet.encoded_data)
-            .await
-            .map_err(|e| PacketError::EncryptionFailed(e.to_string()))
-    }
-
-    /// Flushes all packet bytes accepted by this encoder.
-    ///
-    /// # Errors
-    /// - If the stream fails to flush.
-    pub async fn flush(&mut self) -> Result<(), PacketError> {
+    /// - If a packet fails to write.
+    /// - If the stream fails to flush after the group.
+    pub async fn write_packets(&mut self, packets: &[EncodedPacket]) -> Result<(), PacketError> {
+        for packet in packets {
+            self.writer
+                .write_all(&packet.encoded_data)
+                .await
+                .map_err(|e| PacketError::EncryptionFailed(e.to_string()))?;
+        }
         self.writer
             .flush()
             .await
@@ -139,8 +130,7 @@ impl<W: AsyncWrite + Unpin> TCPNetworkEncoder<W> {
     /// - If the packet fails to write.
     /// - If the stream fails to flush.
     pub async fn write_packet(&mut self, packet: &EncodedPacket) -> Result<(), PacketError> {
-        self.write_packet_unflushed(packet).await?;
-        self.flush().await
+        self.write_packets(std::slice::from_ref(packet)).await
     }
 }
 

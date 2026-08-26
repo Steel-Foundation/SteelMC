@@ -2730,6 +2730,7 @@ dependencies = [
  "simdnbt",
  "small-map",
  "smallvec",
+ "socket2",
  "steel-crypto",
  "steel-macros",
  "steel-math",
