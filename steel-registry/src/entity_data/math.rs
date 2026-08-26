@@ -2,7 +2,7 @@ use glam::{Mat4, Quat, Vec3};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 
-type BorrowedNbtTag<'a: 'tape, 'tape> = simdnbt::borrow::NbtTag<'a, 'tape>;
+type BorrowedNbtTag<'a, 'tape> = simdnbt::borrow::NbtTag<'a, 'tape>;
 
 /// A 3D vector (for display entities).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -45,7 +45,10 @@ impl ToNbtTag for Vector3f {
 
 impl FromNbtTag for Vector3f {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        if let Some(l) = tag.list() && let Some(floats) = l.floats() && floats.len() == 3 {
+        if let Some(l) = tag.list()
+            && let Some(floats) = l.floats()
+            && floats.len() == 3
+        {
             Some(Vector3f::new(floats[0], floats[1], floats[2]))
         } else {
             None
@@ -57,7 +60,7 @@ impl FromNbtTag for Vector3f {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AxisAngle4f {
     pub angle: f32,
-    pub axis: Vector3f
+    pub axis: Vector3f,
 }
 
 impl ToNbtTag for AxisAngle4f {
@@ -75,13 +78,13 @@ impl FromNbtTag for AxisAngle4f {
             && let Some(angle) = compound.get("angle")
             && let Some(axis) = compound.get("axis")
         {
-            Some(
-                Self {
-                    angle: f32::from_nbt_tag(angle)?,
-                    axis: Vector3f::from_nbt_tag(axis)?
-                }
-            )
-        } else { None }
+            Some(Self {
+                angle: f32::from_nbt_tag(angle)?,
+                axis: Vector3f::from_nbt_tag(axis)?,
+            })
+        } else {
+            None
+        }
     }
 }
 
@@ -123,7 +126,7 @@ impl From<AxisAngle4f> for Quaternionf {
             x: value.axis.x * sin,
             y: value.axis.y * sin,
             z: value.axis.z * sin,
-            w: cos
+            w: cos,
         }
     }
 }
@@ -137,8 +140,11 @@ impl ToNbtTag for Quaternionf {
 impl FromNbtTag for Quaternionf {
     fn from_nbt_tag(tag: BorrowedNbtTag) -> Option<Self> {
         // One of the two: 4 floats or AxisAngle4f
-        if let Some(l) = tag.list() && let Some(floats) = l.floats() && floats.len() == 4 {
-            return Some(Quaternionf::new(floats[0], floats[1], floats[2], floats[3]))
+        if let Some(l) = tag.list()
+            && let Some(floats) = l.floats()
+            && floats.len() == 4
+        {
+            return Some(Quaternionf::new(floats[0], floats[1], floats[2], floats[3]));
         }
         Some(AxisAngle4f::from_nbt_tag(tag)?.into())
     }
@@ -146,15 +152,12 @@ impl FromNbtTag for Quaternionf {
 
 /// A 4D matrix (for display entities).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Matrix4f(Mat4);
+pub struct Matrix4f(pub Mat4);
 
 impl FromNbtTag for Matrix4f {
     fn from_nbt_tag(tag: BorrowedNbtTag) -> Option<Self> {
-        let list = tag.list()?;
-        let Some(elements) = list.floats() else {
-            return None;
-        };
-        let elements = elements.into_boxed_slice().as_ref().try_into().ok()?;
+        let floats = tag.list()?.floats()?;
+        let elements = floats.into_boxed_slice().as_ref().try_into().ok()?;
         Some(Matrix4f(Mat4::from_cols_array(&elements).transpose()))
     }
 }
