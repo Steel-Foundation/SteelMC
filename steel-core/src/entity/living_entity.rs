@@ -2896,9 +2896,6 @@ pub trait LivingEntity: Entity {
     /// and validating the landing spot is free of block, entity, and liquid
     /// collision. Returns `true` and commits the move on success, or
     /// `false` and leaves the entity untouched on failure.
-    ///
-    /// // TODO: Stop pathfinding on landing once mobs have a `PathfinderMob`
-    /// // equivalent, mirroring vanilla's `pathfinderMob.getNavigation().stop()`.
     fn random_teleport(&self, world: &Arc<World>, x: f64, y: f64, z: f64, broadcast: bool) -> bool {
         let Some(landing_y) = random_teleport_ground_y(world, x, y, z) else {
             return false;
@@ -2922,6 +2919,10 @@ pub trait LivingEntity: Entity {
 
         if self.teleport_to(DVec3::new(x, landing_y, z)).is_err() {
             return false;
+        }
+
+        if let Some(pathfinder) = self.as_pathfinder_mob() {
+            pathfinder.mob_base().navigation().lock().stop();
         }
 
         if broadcast {
