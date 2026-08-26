@@ -370,13 +370,9 @@ mod tests {
     }
 
     fn test_player(world: &Arc<World>) -> Arc<Player> {
-        TestPlayerBuilder::new(
-            Arc::clone(world),
-            TEST_PLAYER_UUID,
-            "BookshelfTester",
-            TEST_PLAYER_ENTITY_ID,
-        )
-        .build()
+        TestPlayerBuilder::new(Arc::clone(world), "BookshelfTester", TEST_PLAYER_ENTITY_ID)
+            .uuid(TEST_PLAYER_UUID)
+            .build()
     }
 
     fn assert_hit_targets_slot(

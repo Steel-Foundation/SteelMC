@@ -12,6 +12,18 @@ use super::{
 };
 
 impl Server {
+    pub(super) fn advance_server_tick(&self) -> (u64, bool) {
+        let (tick_count, runs_normally) = {
+            let mut tick_manager = self.tick_rate_manager.write();
+            tick_manager.tick();
+            let runs_normally = tick_manager.runs_normally();
+            tick_manager.increment_tick_count();
+            (tick_manager.tick_count, runs_normally)
+        };
+        self.server_tick_changed.notify_waiters();
+        (tick_count, runs_normally)
+    }
+
     /// Runs gameplay packets, game ticks, and chunk sending. Game-tick boundaries
     /// fork background chunk-scheduling epochs through each world's task tracker.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
@@ -125,13 +137,7 @@ impl Server {
             self.advance_chunk_scheduling();
             self.start_player_disconnect_saves(&mut player_disconnect_saves);
 
-            let (tick_count, runs_normally) = {
-                let mut tick_manager = self.tick_rate_manager.write();
-                tick_manager.tick();
-                let runs_normally = tick_manager.runs_normally();
-                tick_manager.increment_tick_count();
-                (tick_manager.tick_count, runs_normally)
-            };
+            let (tick_count, runs_normally) = self.advance_server_tick();
 
             self.tick_pending_command_executions(&mut pending_command_executions);
             self.tick_command_requests(&mut pending_command_executions);
@@ -582,14 +588,12 @@ impl Server {
 mod tests {
     use std::sync::Arc;
 
-    use rustc_hash::FxHashMap;
-    use uuid::Uuid;
-
     use super::Server;
     use crate::{
         player::ResetReason,
         test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
     };
+    use rustc_hash::FxHashMap;
     use steel_utils::ChunkPos;
 
     #[test]
@@ -597,9 +601,7 @@ mod tests {
         let world = fresh_test_world("chunk_send_membership_revalidation");
         let center = ChunkPos::new(0, 0);
         insert_ready_full_chunk(&world, center);
-        let player =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(1), "ChunkTester", 1)
-                .build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "ChunkTester", 1).build();
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         assert!(world.players.remove_player_sync(&player).is_some());
 

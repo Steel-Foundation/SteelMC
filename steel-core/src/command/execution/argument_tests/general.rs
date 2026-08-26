@@ -155,6 +155,194 @@ fn block_predicate_argument_parses_blocks_tags_properties_and_nbt() {
 }
 
 #[test]
+fn block_state_argument_parses_defaulted_properties_and_nbt_without_tags() {
+    init_vanilla_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::block_state());
+    let parse = dispatcher.parse(
+        "resource oak_log[axis=x]{custom:{value:3}}",
+        TestSource::new(),
+    );
+    let Ok(chain) = dispatcher.context_chain(parse) else {
+        panic!("concrete block state should parse");
+    };
+    let Ok(input) = chain.top_context().block_input("value") else {
+        panic!("block input should be retained");
+    };
+    let Some(expected) = steel_registry::REGISTRY
+        .blocks
+        .state_id_from_block_defaulted_properties(&vanilla_blocks::OAK_LOG, [("axis", "x")])
+    else {
+        panic!("oak log x state should exist");
+    };
+    assert_eq!(input.state(), expected);
+    assert_eq!(
+        input
+            .nbt()
+            .and_then(|nbt| nbt.compound("custom"))
+            .and_then(|custom| custom.int("value")),
+        Some(3)
+    );
+
+    for input in [
+        "resource #c:natural_logs/overworld",
+        "resource oak_log[missing=value]",
+        "resource oak_log[axis=missing]",
+    ] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        assert!(
+            dispatcher.context_chain(parse).is_err(),
+            "{input} should reject an invalid concrete block state"
+        );
+    }
+}
+
+#[test]
+fn block_arguments_use_vanilla_diagnostics() {
+    init_vanilla_registry();
+    let block_state = resource_dispatcher(SteelArgumentType::block_state());
+    let block_predicate = resource_dispatcher(SteelArgumentType::block_predicate());
+
+    for (dispatcher, input, translation, cursor) in [
+        (
+            &block_state,
+            "resource missing_block",
+            "argument.block.id.invalid",
+            "resource ".len(),
+        ),
+        (
+            &block_state,
+            "resource oak_log[missing=value]",
+            "argument.block.property.unknown",
+            "resource oak_log[".len(),
+        ),
+        (
+            &block_state,
+            "resource oak_log[axis=x,axis=y]",
+            "argument.block.property.duplicate",
+            "resource oak_log[axis=x,".len(),
+        ),
+        (
+            &block_state,
+            "resource oak_log[axis=missing]",
+            "argument.block.property.invalid",
+            "resource oak_log[axis=".len(),
+        ),
+        (
+            &block_state,
+            "resource oak_log[axis]",
+            "argument.block.property.novalue",
+            "resource oak_log[axis".len(),
+        ),
+        (
+            &block_state,
+            "resource oak_log[axis=x",
+            "argument.block.property.unclosed",
+            "resource oak_log[axis=x".len(),
+        ),
+        (
+            &block_state,
+            "resource #minecraft:logs",
+            "argument.block.tag.disallowed",
+            "resource ".len(),
+        ),
+        (
+            &block_predicate,
+            "resource #missing",
+            "arguments.block.tag.unknown",
+            "resource ".len(),
+        ),
+    ] {
+        let parse = dispatcher.parse(input, TestSource::new());
+        let Err(error) = dispatcher.context_chain(parse) else {
+            panic!("{input} should fail");
+        };
+        assert_eq!(error.cursor(), Some(cursor), "{input}");
+        let CommandSyntaxErrorKind::Dynamic(component) = error.kind() else {
+            panic!("{input} should use a translated dynamic error");
+        };
+        assert!(
+            matches!(&component.content, Content::Translate(message) if message.key == translation),
+            "{input} used {component:?} instead of {translation}"
+        );
+    }
+}
+
+#[test]
+fn block_arguments_use_vanilla_stateful_suggestions() {
+    init_vanilla_registry();
+    let block_state = resource_dispatcher(SteelArgumentType::block_state());
+    let block_predicate = resource_dispatcher(SteelArgumentType::block_predicate());
+
+    for (input, expected) in [
+        ("resource oak_log[ax", "oak_log[axis="),
+        ("resource oak_log[axis=", "oak_log[axis=x"),
+        ("resource oak_log[axis=x", "oak_log[axis=x]"),
+        ("resource furnace", "furnace{"),
+    ] {
+        let parse = block_state.parse(input, TestSource::new());
+        let Ok(suggestions) = block_state.completion_suggestions(&parse) else {
+            panic!("{input} suggestions should build");
+        };
+        assert!(
+            suggestions
+                .list()
+                .iter()
+                .any(|suggestion| suggestion.text() == expected),
+            "{input} should suggest {expected}; got {:?}",
+            suggestions
+                .list()
+                .iter()
+                .map(Suggestion::text)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    let input = "resource #c:natural_logs/overworld[ax";
+    let parse = block_predicate.parse(input, TestSource::new());
+    let Ok(suggestions) = block_predicate.completion_suggestions(&parse) else {
+        panic!("tag property suggestions should build");
+    };
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| { suggestion.text() == "#c:natural_logs/overworld[axis=" })
+    );
+
+    let input = "resource #c:natural_logs/overworld[unknown=value";
+    let parse = block_predicate.parse(input, TestSource::new());
+    let Ok(suggestions) = block_predicate.completion_suggestions(&parse) else {
+        panic!("vague tag property suggestions should build");
+    };
+    assert!(
+        suggestions
+            .list()
+            .iter()
+            .any(|suggestion| { suggestion.text() == "#c:natural_logs/overworld[unknown=value]" })
+    );
+
+    for input in [
+        "resource oak_log[axis=x,axis",
+        "resource oak_log[axis=x,axis=",
+        "resource oak_log[axis=x,",
+    ] {
+        let parse = block_state.parse(input, TestSource::new());
+        let Ok(suggestions) = block_state.completion_suggestions(&parse) else {
+            panic!("{input} suggestions should build");
+        };
+        assert!(
+            suggestions.list().is_empty(),
+            "{input} should have no completions; got {:?}",
+            suggestions
+                .list()
+                .iter()
+                .map(Suggestion::text)
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
 fn block_predicate_argument_validates_concrete_properties_but_defers_tag_properties() {
     init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::block_predicate());

@@ -571,9 +571,9 @@ pub trait BlockBehavior: Send + Sync {
 
     /// Returns the item stack to give when a player picks this block (middle click).
     ///
-    /// The default implementation looks up an item with the same key as the block.
-    /// Override this for blocks where the pick item differs from the block key
-    /// (e.g., crops → seeds, redstone wire → redstone dust, wall torch → torch).
+    /// The default implementation uses the block's registered item association.
+    /// Blocks without an associated item return an empty stack. Override this when
+    /// Vanilla selects the clone item from block state, block entity data, or another rule.
     ///
     /// # Arguments
     /// * `block` - The block being picked
@@ -589,8 +589,7 @@ pub trait BlockBehavior: Send + Sync {
         state: BlockStateId,
         include_data: bool,
     ) -> Option<ItemStack> {
-        // Default: look up item by block's key
-        REGISTRY.items.by_key(&block.key).map(ItemStack::new)
+        Some(ItemStack::new(REGISTRY.items.by_block(block)))
     }
 
     /// Returns whether this block state is pathfindable for the supplied vanilla path computation.

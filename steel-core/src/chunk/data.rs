@@ -1500,7 +1500,7 @@ mod tests {
         proto.set_pending_block_entity(pos);
 
         assert!(proto.promote_pending_block_entity(pos).is_some());
-        assert!(proto.pending_block_entity_positions().is_empty());
+        assert_eq!(proto.pending_block_entity_positions().len(), 0);
     }
 
     #[test]
@@ -1529,7 +1529,7 @@ mod tests {
         );
 
         assert!(!proto.set_pending_block_entity_if_state(pos, copper));
-        assert!(proto.pending_block_entity_positions().is_empty());
+        assert_eq!(proto.pending_block_entity_positions().len(), 0);
         assert!(proto.set_pending_block_entity_if_state(pos, exposed));
 
         let stone = vanilla_blocks::STONE.default_state();
@@ -1545,7 +1545,7 @@ mod tests {
         assert!(!proto.remove_block_entity_if_state(pos, exposed));
         assert_eq!(proto.pending_block_entity_positions(), [pos]);
         assert!(proto.remove_block_entity_if_state(pos, stone));
-        assert!(proto.pending_block_entity_positions().is_empty());
+        assert_eq!(proto.pending_block_entity_positions().len(), 0);
     }
 
     #[test]

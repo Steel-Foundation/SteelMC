@@ -663,6 +663,7 @@ impl Player {
 
     /// Handles client commands, requestStats and `RequestGameRuleValues` are still todo
     pub fn handle_client_command(self: &Arc<Self>, action: ClientCommandAction) {
+        self.reset_last_action_time();
         match action {
             ClientCommandAction::PerformRespawn => {
                 if self.has_won_game() {
@@ -671,8 +672,9 @@ impl Player {
                     self.respawn();
                 }
             }
-            ClientCommandAction::RequestStats | ClientCommandAction::RequestGameRuleValues => {
-                // TODO: implement stats
+            ClientCommandAction::RequestStats => self.send_stats(),
+            ClientCommandAction::RequestGameRuleValues => {
+                // TODO: implement requesting for game rule values
             }
         }
     }
