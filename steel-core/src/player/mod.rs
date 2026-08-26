@@ -50,7 +50,9 @@ pub use profile::{
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
 use std::mem::replace;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant};
 use steel_protocol::packets::game::{
     CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn, CSetDefaultSpawnPosition, CSetHealth,
     CSetHeldSlot, CSetPassengers, ClientCommandAction, LookAtAnchor, RelativeMovement, SoundSource,
@@ -71,7 +73,7 @@ use steel_registry::{
     level_events, sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
     vanilla_game_events,
 };
-use steel_utils::{entity_events::EntityStatus, locks::Shared};
+use steel_utils::{entity_events::EntityStatus, locks::Shared, translations};
 use tick_state::PlayerTickState;
 use uuid::Uuid;
 
@@ -258,6 +260,9 @@ pub struct Player {
 
     /// The counter keeping track of this player's statistics.
     stats: SyncMutex<StatsCounter>,
+
+    /// The last action time of this player.
+    last_action_time: SyncMutex<Instant>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -560,6 +565,7 @@ impl Player {
             residence: SyncMutex::new(PlayerResidenceState::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
             stats: SyncMutex::new(StatsCounter::new()),
+            last_action_time: SyncMutex::new(Instant::now()),
         }
     }
 
@@ -574,6 +580,7 @@ impl Player {
         self.tick_item_cooldowns();
         self.tick_attack_strength();
         self.tick_spam_throttlers();
+        self.check_idle_timeout();
         self.tick_client_load_timeout();
         self.tick_sleep_counter();
         if self.is_sleeping() {
@@ -679,6 +686,12 @@ impl Player {
             }
         }
 
+        self.send_experience_packet_if_dirty();
+
+        self.connection.tick();
+    }
+
+    fn send_experience_packet_if_dirty(&self) {
         let experience_packet = {
             let mut experience = self.experience.lock();
             if experience.dirty {
@@ -695,8 +708,6 @@ impl Player {
         if let Some(packet) = experience_packet {
             self.send_packet(packet);
         }
-
-        self.connection.tick();
     }
 
     /// Ticks the death animation timer.
@@ -1232,6 +1243,24 @@ impl Player {
             above_pos
         } else {
             affecting_pos
+        }
+    }
+
+    /// Resets the last action time of the player (to the current time).
+    pub fn reset_last_action_time(&self) {
+        *self.last_action_time.lock() = Instant::now();
+    }
+
+    fn check_idle_timeout(&self) {
+        if let Some(server) = self.server.upgrade() {
+            let player_idle_timeout = server.player_idle_timeout.load(Ordering::Relaxed);
+            if player_idle_timeout > 0
+                && Instant::now().duration_since(*self.last_action_time.lock())
+                    > Duration::from_mins(player_idle_timeout as u64)
+                && !self.has_won_game()
+            {
+                self.disconnect(translations::MULTIPLAYER_DISCONNECT_IDLING.msg());
+            }
         }
     }
 }

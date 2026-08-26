@@ -13,7 +13,8 @@ use steel_protocol::packets::config::CSelectKnownPacks;
 use steel_protocol::packets::config::SSelectKnownPacks;
 use steel_protocol::packets::shared_implementation::KnownPack;
 use steel_protocol::utils::ConnectionProtocol;
-use steel_utils::Identifier;
+use steel_utils::{Identifier, translations};
+use text_components::TextComponent;
 
 use crate::tcp_client::{ConnectionAction, ConnectionUpdate, JavaTcpClient};
 
@@ -100,6 +101,13 @@ impl JavaTcpClient {
             Ok(gameprofile) => gameprofile,
             Err(error) => return self.reject_unexpected_packet(error).await,
         };
+        let Some(reservation) = self.server.try_reserve_player_join(gameprofile.id) else {
+            self.kick(TextComponent::translated(
+                translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg(),
+            ))
+            .await;
+            return ConnectionAction::none();
+        };
         self.protocol.store(ConnectionProtocol::Play);
 
         let client_info = self.client_information.lock().await.clone();
@@ -112,7 +120,6 @@ impl JavaTcpClient {
                 self.outgoing_queue.clone(),
                 self.cancel_token.clone(),
                 self.compression.load(),
-                self.network_writer.clone(),
                 self.id,
                 player_weak.clone(),
             );
@@ -140,10 +147,10 @@ impl JavaTcpClient {
         }
 
         tokio::select! {
-            () = self.connection_updated.notified() => {}
+            () = self.connection_upgraded.notified() => {}
             () = self.cancel_token.cancelled() => return ConnectionAction::none(),
         }
-        self.server.queue_player_join(player);
+        reservation.queue_player_join(player);
 
         ConnectionAction::upgrade(connection)
     }

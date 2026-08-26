@@ -3,10 +3,15 @@
 //! The trait is object-safe to allow using `dyn PlayerConnection` for both real network
 //! connections (`JavaConnection`) and test connections (`FlintConnection`).
 
+use std::time::Duration;
+
 mod java;
 
-pub use java::{BundleBuilder, JavaConnection, JavaNetworkWriter, OutboundPacket};
+pub use java::{BundleBuilder, JavaConnection, JavaPacketWriter, OutboundPacket};
 pub(crate) use java::{ScheduledPacketExecution, ScheduledPlayPacket};
+
+/// Maximum time spent preserving queued packets during a graceful Java connection close.
+pub const GRACEFUL_CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 
 use enum_dispatch::enum_dispatch;
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket};

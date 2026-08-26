@@ -11,7 +11,7 @@ use aes::cipher::KeyIvInit;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use steel_core::player::{
     Player,
-    connection::{JavaConnection, JavaNetworkWriter, NetworkConnection, OutboundPacket},
+    connection::{JavaConnection, NetworkConnection, OutboundPacket},
 };
 use steel_protocol::{
     packet_traits::{ClientPacket, CompressionInfo, EncodedPacket},
@@ -29,7 +29,7 @@ use steel_protocol::{
 use steel_utils::{codec::BitSet, locks::AsyncMutex};
 use tokio::{
     io::{AsyncReadExt, BufReader, BufWriter},
-    net::{TcpListener, TcpSocket, TcpStream, tcp::OwnedReadHalf},
+    net::{TcpListener, TcpSocket, TcpStream, tcp::OwnedReadHalf, tcp::OwnedWriteHalf},
     runtime::{Builder as RuntimeBuilder, Runtime},
     sync::mpsc,
     task::JoinHandle,
@@ -58,6 +58,7 @@ const BATCH_CHUNK_PAYLOAD_SEED_START: u32 = 501;
 const SMALL_EXPLICIT_BATCH_PACKET_COUNT: usize = 8;
 const REPRESENTATIVE_CHUNK_BATCH_SIZE: usize = 9;
 type ReferenceCfb8Encryptor = cfb8::Encryptor<aes::Aes128>;
+type LegacyNetworkWriter = Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>>;
 
 struct TransportWorkload {
     packets: Vec<EncodedPacket>,
@@ -353,27 +354,28 @@ impl TransportSession {
         let (client_read, _) = client.into_split();
         let mut encoder = TCPNetworkEncoder::new(BufWriter::new(server_write));
         encoder.set_encryption(&BENCHMARK_ENCRYPTION_KEY);
-        let network_writer: JavaNetworkWriter = Arc::new(AsyncMutex::new(Some(encoder)));
         let (outgoing_packets, outgoing_receiver) = mpsc::unbounded_channel();
         let cancel_token = CancellationToken::new();
         let connection = Arc::new(JavaConnection::new(
             outgoing_packets,
             cancel_token.clone(),
             Some(CompressionInfo::default()),
-            Arc::clone(&network_writer),
             1,
             Weak::<Player>::new(),
         ));
         let sender = match sender_path {
-            SenderPath::LegacyLocked => tokio::spawn(legacy_locked_sender(
-                network_writer,
-                cancel_token,
-                outgoing_receiver,
-            )),
+            SenderPath::LegacyLocked => {
+                let network_writer = Arc::new(AsyncMutex::new(Some(encoder)));
+                tokio::spawn(legacy_locked_sender(
+                    network_writer,
+                    cancel_token,
+                    outgoing_receiver,
+                ))
+            }
             SenderPath::Production => {
                 let sender_connection = Arc::clone(&connection);
                 tokio::spawn(async move {
-                    sender_connection.sender(outgoing_receiver).await;
+                    sender_connection.sender(outgoing_receiver, encoder).await;
                 })
             }
         };
@@ -450,7 +452,7 @@ impl TransportSession {
     }
 }
 
-async fn write_locked_packet(network_writer: &JavaNetworkWriter, packet: &EncodedPacket) {
+async fn write_locked_packet(network_writer: &LegacyNetworkWriter, packet: &EncodedPacket) {
     let mut network_writer = network_writer.lock().await;
     let Some(network_writer) = network_writer.as_mut() else {
         panic!("legacy benchmark writer should remain open");
@@ -462,7 +464,7 @@ async fn write_locked_packet(network_writer: &JavaNetworkWriter, packet: &Encode
 }
 
 async fn legacy_locked_sender(
-    network_writer: JavaNetworkWriter,
+    network_writer: LegacyNetworkWriter,
     cancel_token: CancellationToken,
     mut receiver: mpsc::UnboundedReceiver<OutboundPacket>,
 ) {
@@ -619,6 +621,7 @@ fn percentile(samples: &mut [Duration], percentile: usize) -> Duration {
 fn benchmark_runtime() -> Runtime {
     RuntimeBuilder::new_current_thread()
         .enable_io()
+        .enable_time()
         .build()
         .expect("benchmark runtime should build")
 }
@@ -627,6 +630,7 @@ fn multi_thread_benchmark_runtime() -> Runtime {
     RuntimeBuilder::new_multi_thread()
         .worker_threads(2)
         .enable_io()
+        .enable_time()
         .build()
         .expect("multi-thread benchmark runtime should build")
 }
@@ -727,18 +731,22 @@ fn benchmark_single_packet_latency(
     packet: &EncodedPacket,
 ) {
     let packet_bytes = packet.encoded_data.len();
-    let mut session = runtime.block_on(TransportSession::connect());
-    runtime.block_on(session.send(slice::from_ref(packet), packet_bytes));
-
     let mut group = criterion.benchmark_group("encrypted_outbound_transport_latency");
     group.throughput(Throughput::Bytes(packet_bytes as u64));
-    group.bench_function("single_small_packet", |bencher| {
-        bencher.iter(|| {
-            runtime.block_on(session.send(slice::from_ref(packet), packet_bytes));
+    for (name, sender_path) in [
+        ("legacy_locked_per_packet", SenderPath::LegacyLocked),
+        ("production_owned_writer", SenderPath::Production),
+    ] {
+        let mut session = runtime.block_on(TransportSession::connect_with_sender(sender_path));
+        runtime.block_on(session.send(slice::from_ref(packet), packet_bytes));
+        group.bench_function(name, |bencher| {
+            bencher.iter(|| {
+                runtime.block_on(session.send(slice::from_ref(packet), packet_bytes));
+            });
         });
-    });
+        runtime.block_on(session.close());
+    }
     group.finish();
-    runtime.block_on(session.close());
 }
 
 fn outbound_transport(criterion: &mut Criterion) {

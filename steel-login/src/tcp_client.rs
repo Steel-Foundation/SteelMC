@@ -6,15 +6,17 @@
 use std::{
     cmp::Ordering,
     fmt::{self, Debug, Formatter},
+    future::{Future, pending},
     io::Cursor,
     net::SocketAddr,
+    pin::Pin,
     sync::Arc,
 };
 
 use crossbeam::atomic::AtomicCell;
 use steel_core::player::{
     ClientInformation, PlayerConnection,
-    connection::{JavaNetworkWriter, OutboundPacket},
+    connection::{GRACEFUL_CLOSE_TIMEOUT, JavaPacketWriter, OutboundPacket},
 };
 use steel_core::server::Server;
 use steel_protocol::{
@@ -41,7 +43,7 @@ use text_components::{
     TextComponent, content::Resolvable, custom::CustomData, resolving::TextResolutor,
 };
 use tokio::{
-    io::{BufReader, BufWriter},
+    io::{AsyncWrite, BufReader, BufWriter},
     net::{TcpStream, tcp::OwnedReadHalf},
     select,
     sync::{
@@ -49,11 +51,138 @@ use tokio::{
         broadcast::{self, Sender, error::RecvError},
         mpsc::{self, UnboundedReceiver, UnboundedSender, error::TryRecvError},
     },
+    task::yield_now,
+    time::sleep,
 };
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use uuid::Uuid;
 
 use crate::pre_play_state::{PacketSequenceError, PrePlayPacket, PrePlayState};
+
+const MAX_TICKS_BEFORE_LOGIN: u64 = 600;
+const MAX_CLOSE_SCAN_ITEMS_PER_QUANTUM: usize = 32;
+
+type JavaNetworkWriter = Arc<AsyncMutex<Option<JavaPacketWriter>>>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct LoginDeadline {
+    expires_at_tick: u64,
+}
+
+impl LoginDeadline {
+    const fn from_start_tick(start_tick: u64) -> Self {
+        Self {
+            // Vanilla initializes its counter to zero and checks `tick++ == 600`.
+            expires_at_tick: start_tick.saturating_add(MAX_TICKS_BEFORE_LOGIN + 1),
+        }
+    }
+
+    pub(crate) const fn expires_at_tick(self) -> u64 {
+        self.expires_at_tick
+    }
+}
+
+enum LoginOperationResult<T> {
+    Completed(T),
+    Cancelled,
+    TimedOut,
+}
+
+enum CloseDeadlineResult<T> {
+    Completed(T),
+    Elapsed,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum OutboundEncryptionState {
+    #[default]
+    Plaintext,
+    Requested,
+    Enabled,
+}
+
+#[derive(Default)]
+struct OutboundEncryptionTransition {
+    state: AtomicCell<OutboundEncryptionState>,
+    enabled: Notify,
+}
+
+impl OutboundEncryptionTransition {
+    fn begin(&self) {
+        self.state.store(OutboundEncryptionState::Requested);
+    }
+
+    fn finish(&self) {
+        self.state.store(OutboundEncryptionState::Enabled);
+        self.enabled.notify_waiters();
+    }
+
+    fn is_pending(&self) -> bool {
+        self.state.load() == OutboundEncryptionState::Requested
+    }
+
+    async fn wait_until_enabled(&self) {
+        loop {
+            let notified = self.enabled.notified();
+            if self.state.load() == OutboundEncryptionState::Enabled {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+async fn complete_before_deadline<T, O, D>(
+    operation: O,
+    mut deadline: Pin<&mut D>,
+) -> CloseDeadlineResult<T>
+where
+    O: Future<Output = T>,
+    D: Future<Output = ()> + ?Sized,
+{
+    tokio::pin!(operation);
+    select! {
+        biased;
+        () = deadline.as_mut() => CloseDeadlineResult::Elapsed,
+        output = operation.as_mut() => CloseDeadlineResult::Completed(output),
+    }
+}
+
+enum IncomingEvent {
+    Packet(Result<RawPacket, PacketError>),
+    ConnectionUpdate(Result<ConnectionUpdate, RecvError>),
+}
+
+async fn await_login_operation<T, O, D>(
+    cancel_token: &CancellationToken,
+    login_deadline: &AtomicCell<Option<LoginDeadline>>,
+    operation: O,
+    deadline: D,
+) -> LoginOperationResult<T>
+where
+    O: Future<Output = T>,
+    D: Future<Output = ()>,
+{
+    tokio::pin!(operation);
+    tokio::pin!(deadline);
+
+    tokio::select! {
+        biased;
+        () = cancel_token.cancelled() => LoginOperationResult::Cancelled,
+        result = &mut operation => LoginOperationResult::Completed(result),
+        () = &mut deadline => {
+            if login_deadline.load().is_some() {
+                LoginOperationResult::TimedOut
+            } else {
+                tokio::select! {
+                    biased;
+                    () = cancel_token.cancelled() => LoginOperationResult::Cancelled,
+                    result = &mut operation => LoginOperationResult::Completed(result),
+                }
+            }
+        }
+    }
+}
 
 /// Represents updates to the connection state.
 #[derive(Clone)]
@@ -69,10 +198,15 @@ enum PrePlayWrite {
     Batch(Vec<EncodedPacket>),
 }
 
+struct PrePlayClosingWrites {
+    queued: Vec<PrePlayWrite>,
+    disconnect: EncodedPacket,
+}
+
 impl Debug for ConnectionUpdate {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EnableEncryption(arg0) => f.debug_tuple("EnableEncryption").field(arg0).finish(),
+            Self::EnableEncryption(_) => f.write_str("EnableEncryption(<redacted>)"),
             Self::Upgrade(_) => f.debug_tuple("Upgrade").finish(),
         }
     }
@@ -149,7 +283,7 @@ pub struct JavaTcpClient {
     /// A queue of encoded packets to send to the network.
     pub outgoing_queue: UnboundedSender<OutboundPacket>,
     /// The packet encoder for outgoing packets.
-    pub network_writer: JavaNetworkWriter,
+    network_writer: JavaNetworkWriter,
     /// Current compression settings.
     pub compression: Arc<AtomicCell<Option<CompressionInfo>>>,
 
@@ -162,10 +296,12 @@ pub struct JavaTcpClient {
 
     /// Channel for broadcasting connection state updates.
     pub connection_updates: Sender<ConnectionUpdate>,
-    /// Notification for when connection updates are processed.
-    pub connection_updated: Arc<Notify>,
+    /// Notification that the outbound encoder has moved into the play sender.
+    pub(crate) connection_upgraded: Arc<Notify>,
+    outbound_encryption: Arc<OutboundEncryptionTransition>,
 
     pub(crate) pre_play_state: SyncMutex<PrePlayState>,
+    pub(crate) login_deadline: AtomicCell<Option<LoginDeadline>>,
     task_tracker: TaskTracker,
 }
 
@@ -205,8 +341,10 @@ impl JavaTcpClient {
             connection_session,
             challenge: AtomicCell::new([0; 4]),
             connection_updates,
-            connection_updated: Arc::new(Notify::new()),
+            connection_upgraded: Arc::new(Notify::new()),
+            outbound_encryption: Arc::new(OutboundEncryptionTransition::default()),
             pre_play_state: SyncMutex::new(PrePlayState::new()),
+            login_deadline: AtomicCell::new(None),
             task_tracker,
         };
 
@@ -216,6 +354,14 @@ impl JavaTcpClient {
     /// Closes the connection.
     pub fn close(&self) {
         self.cancel_token.cancel();
+    }
+
+    pub(crate) fn begin_outbound_encryption(&self) {
+        self.outbound_encryption.begin();
+    }
+
+    pub(crate) async fn wait_for_outbound_encryption(&self) {
+        self.outbound_encryption.wait_until_enabled().await;
     }
 
     /// Sends a packet immediately, without queuing.
@@ -246,33 +392,51 @@ impl JavaTcpClient {
         }
     }
 
-    async fn write_network_packet(
-        network_writer: &JavaNetworkWriter,
+    async fn write_network_packet<W>(
+        network_writer: &Arc<AsyncMutex<Option<TCPNetworkEncoder<W>>>>,
         packet: &EncodedPacket,
-    ) -> Result<(), PacketError> {
+    ) -> Result<(), PacketError>
+    where
+        W: AsyncWrite + Unpin,
+    {
         let mut network_writer = network_writer.lock().await;
-        let Some(network_writer) = network_writer.as_mut() else {
+        let Some(mut writer) = network_writer.take() else {
             return Err(PacketError::ConnectionClosed);
         };
-        network_writer.write_packet(packet).await
+        // Cancellation or failure drops the encoder instead of reusing a partial encrypted write.
+        match writer.write_packet(packet).await {
+            Ok(()) => {
+                *network_writer = Some(writer);
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
     }
 
-    async fn write_network_batch(
-        network_writer: &JavaNetworkWriter,
+    async fn write_network_batch<W>(
+        network_writer: &Arc<AsyncMutex<Option<TCPNetworkEncoder<W>>>>,
         packets: &[EncodedPacket],
-    ) -> Result<(), PacketError> {
+    ) -> Result<(), PacketError>
+    where
+        W: AsyncWrite + Unpin,
+    {
         let mut network_writer = network_writer.lock().await;
-        let Some(network_writer) = network_writer.as_mut() else {
+        let Some(mut writer) = network_writer.take() else {
             return Err(PacketError::ConnectionClosed);
         };
+        // Pre-play preserves immediate flushes while holding exclusive ownership across the group.
         for packet in packets {
-            network_writer.write_packet(packet).await?;
+            writer.write_packet(packet).await?;
         }
+        *network_writer = Some(writer);
         Ok(())
     }
 
-    async fn release_network_writer(network_writer: &JavaNetworkWriter) {
-        network_writer.lock().await.take();
+    // A concurrent direct write owns and will either restore or drop the encoder itself.
+    fn try_release_network_writer(network_writer: &JavaNetworkWriter) {
+        if let Ok(mut writer) = network_writer.try_lock() {
+            writer.take();
+        }
     }
 
     /// Queues an already encoded packet to be sent.
@@ -289,7 +453,11 @@ impl JavaTcpClient {
     }
 
     /// Starts a task that will send packets to the client from the outgoing packet queue.
-    /// This task will run until the client is closed or the cancellation token is cancelled.
+    /// On play-state upgrade, it transfers the encoder and queue to the play sender.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "keeping the pre-play ownership and cancellation state machine linear makes its ordering auditable"
+    )]
     pub fn start_outgoing_packet_task(
         self: &Arc<Self>,
         mut sender_recv: UnboundedReceiver<OutboundPacket>,
@@ -298,58 +466,111 @@ impl JavaTcpClient {
         let network_writer = self.network_writer.clone();
         let id = self.id;
         let mut connection_updates_recv = self.connection_updates.subscribe();
-        let connection_updated = self.connection_updated.clone();
+        let connection_upgraded = self.connection_upgraded.clone();
+        let outbound_encryption = Arc::clone(&self.outbound_encryption);
 
         self.task_tracker.spawn(async move {
-            let mut connection = None;
+            let mut play_connection = None;
             loop {
                 select! {
                     biased;
                     () = cancel_token.cancelled() => {
-                        if let Some(closing_packets) = Self::close_and_take_packets_through_disconnect(&mut sender_recv) {
-                            Self::write_closing_packets(&network_writer, closing_packets, id).await;
+                        let mut deadline = Box::pin(sleep(GRACEFUL_CLOSE_TIMEOUT));
+                        let closing = match complete_before_deadline(
+                            Self::take_closing_writes(&mut sender_recv),
+                            deadline.as_mut(),
+                        ).await {
+                            CloseDeadlineResult::Completed(closing) => closing,
+                            CloseDeadlineResult::Elapsed => {
+                                Self::log_close_timeout(id);
+                                break;
+                            }
+                        };
+                        if let Some(closing) = closing {
+                            Self::write_closing_before_deadline(
+                                &network_writer,
+                                closing,
+                                id,
+                                deadline.as_mut(),
+                            ).await;
                         }
                         break;
                     }
                     outbound = sender_recv.recv() => {
-                        if let Some(outbound) = outbound {
-                            let queued_write = match outbound {
-                                OutboundPacket::Packet(packet) => PrePlayWrite::Packet(packet),
-                                OutboundPacket::PacketBatch(packets) => PrePlayWrite::Batch(*packets),
-                                OutboundPacket::Disconnect(packet) => {
-                                    sender_recv.close();
-                                    if let Err(err) = Self::write_network_packet(&network_writer, &packet).await {
-                                        log::warn!("Failed to send disconnect packet to client {id}: {err}");
+                        let Some(outbound) = outbound else {
+                            cancel_token.cancel();
+                            break;
+                        };
+                        let queued_write = match outbound {
+                            OutboundPacket::Packet(packet) => PrePlayWrite::Packet(packet),
+                            OutboundPacket::PacketBatch(packets) => PrePlayWrite::Batch(*packets),
+                            OutboundPacket::Disconnect(disconnect) => {
+                                sender_recv.close();
+                                cancel_token.cancel();
+                                let mut deadline = Box::pin(sleep(GRACEFUL_CLOSE_TIMEOUT));
+                                Self::write_closing_before_deadline(
+                                    &network_writer,
+                                    PrePlayClosingWrites {
+                                        queued: Vec::new(),
+                                        disconnect,
+                                    },
+                                    id,
+                                    deadline.as_mut(),
+                                ).await;
+                                break;
+                            }
+                        };
+
+                        let write_result = Self::write_pre_play(&network_writer, queued_write);
+                        tokio::pin!(write_result);
+                        select! {
+                            biased;
+                            () = cancel_token.cancelled() => {
+                                let mut deadline = Box::pin(sleep(GRACEFUL_CLOSE_TIMEOUT));
+                                let closing = match complete_before_deadline(
+                                    Self::take_closing_writes(&mut sender_recv),
+                                    deadline.as_mut(),
+                                ).await {
+                                    CloseDeadlineResult::Completed(closing) => closing,
+                                    CloseDeadlineResult::Elapsed => {
+                                        Self::log_close_timeout(id);
+                                        break;
                                     }
+                                };
+                                let Some(closing) = closing else {
+                                    break;
+                                };
+                                match complete_before_deadline(
+                                    write_result.as_mut(),
+                                    deadline.as_mut(),
+                                ).await {
+                                    CloseDeadlineResult::Completed(Ok(())) => {}
+                                    CloseDeadlineResult::Completed(Err(error)) => {
+                                        log::debug!(
+                                            "Best-effort close for client {id} failed while finishing the active outbound write: {error}"
+                                        );
+                                        break;
+                                    }
+                                    CloseDeadlineResult::Elapsed => {
+                                        Self::log_close_timeout(id);
+                                        break;
+                                    }
+                                }
+                                Self::write_closing_before_deadline(
+                                    &network_writer,
+                                    closing,
+                                    id,
+                                    deadline.as_mut(),
+                                ).await;
+                                break;
+                            },
+                            result = write_result.as_mut() => {
+                                if let Err(error) = result {
+                                    log::warn!("Failed to send outbound write to client {id}: {error}");
                                     cancel_token.cancel();
                                     break;
                                 }
-                            };
-
-                            let write_result = Self::write_pre_play(&network_writer, queued_write);
-                            tokio::pin!(write_result);
-                            select! {
-                                biased;
-                                () = cancel_token.cancelled() => {
-                                    let Some(closing_packets) = Self::close_and_take_packets_through_disconnect(&mut sender_recv) else {
-                                        break;
-                                    };
-                                    if let Err(err) = write_result.as_mut().await {
-                                        log::warn!("Failed to finish packet before disconnecting client {id}: {err}");
-                                        break;
-                                    }
-                                    Self::write_closing_packets(&network_writer, closing_packets, id).await;
-                                    break;
-                                },
-                                result = write_result.as_mut() => {
-                                    if let Err(err) = result {
-                                        log::warn!("Failed to send packet to client {id}: {err}");
-                                        cancel_token.cancel();
-                                    }
-                                }
                             }
-                        } else {
-                            cancel_token.cancel();
                         }
                     }
                     connection_update = connection_updates_recv.recv() => {
@@ -357,17 +578,32 @@ impl JavaTcpClient {
                             Ok(connection_update) => {
                                 match connection_update {
                                     ConnectionUpdate::EnableEncryption(key) => {
-                                        let mut writer = network_writer.lock().await;
-                                        let Some(writer) = writer.as_mut() else {
+                                        let mut slot = select! {
+                                            biased;
+                                            () = cancel_token.cancelled() => break,
+                                            slot = network_writer.lock() => slot,
+                                        };
+                                        let Some(writer) = slot.as_mut() else {
                                             cancel_token.cancel();
                                             continue;
                                         };
                                         writer.set_encryption(&key);
-                                        connection_updated.notify_one();
+                                        drop(slot);
+                                        outbound_encryption.finish();
                                     },
                                     ConnectionUpdate::Upgrade(upgrade) => {
-                                        connection = Some(upgrade);
-                                        connection_updated.notify_one();
+                                        let mut slot = select! {
+                                            biased;
+                                            () = cancel_token.cancelled() => break,
+                                            slot = network_writer.lock() => slot,
+                                        };
+                                        let Some(writer) = slot.take() else {
+                                            cancel_token.cancel();
+                                            break;
+                                        };
+                                        drop(slot);
+                                        play_connection = Some((upgrade, writer));
+                                        connection_upgraded.notify_one();
                                         break;
                                     }
                                 }
@@ -385,16 +621,17 @@ impl JavaTcpClient {
 
             drop(cancel_token);
             drop(connection_updates_recv);
-            drop(connection_updated);
+            drop(connection_upgraded);
+            drop(outbound_encryption);
 
-            if let Some(connection) = connection {
+            if let Some((connection, writer)) = play_connection {
                 drop(network_writer);
                 match &*connection {
-                    PlayerConnection::Java(java) => java.sender(sender_recv).await,
+                    PlayerConnection::Java(java) => java.sender(sender_recv, writer).await,
                     PlayerConnection::Other(_) => unreachable!("Expected Java connection"),
                 }
             } else {
-                Self::release_network_writer(&network_writer).await;
+                Self::try_release_network_writer(&network_writer);
                 drop(network_writer);
             }
         });
@@ -414,37 +651,100 @@ impl JavaTcpClient {
         }
     }
 
-    fn close_and_take_packets_through_disconnect(
+    async fn take_closing_writes(
         sender_recv: &mut UnboundedReceiver<OutboundPacket>,
-    ) -> Option<Vec<EncodedPacket>> {
+    ) -> Option<PrePlayClosingWrites> {
         sender_recv.close();
-        let mut packets = Vec::new();
+        let mut queued = Vec::new();
+        let mut scanned_since_yield = 0usize;
         loop {
-            match sender_recv.try_recv() {
-                Ok(OutboundPacket::Packet(packet)) => packets.push(packet),
-                Ok(OutboundPacket::PacketBatch(batch)) => packets.extend(*batch),
-                Ok(OutboundPacket::Disconnect(packet)) => {
-                    packets.push(packet);
-                    return Some(packets);
+            let queued_write = match sender_recv.try_recv() {
+                Ok(OutboundPacket::Packet(packet)) => PrePlayWrite::Packet(packet),
+                Ok(OutboundPacket::PacketBatch(batch)) => PrePlayWrite::Batch(*batch),
+                Ok(OutboundPacket::Disconnect(disconnect)) => {
+                    return Some(PrePlayClosingWrites { queued, disconnect });
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => return None,
+            };
+            queued.push(queued_write);
+            scanned_since_yield += 1;
+            if scanned_since_yield == MAX_CLOSE_SCAN_ITEMS_PER_QUANTUM {
+                scanned_since_yield = 0;
+                yield_now().await;
             }
         }
     }
 
-    async fn write_closing_packets(
-        network_writer: &JavaNetworkWriter,
-        packets: Vec<EncodedPacket>,
+    async fn write_closing_before_deadline<W, D>(
+        network_writer: &Arc<AsyncMutex<Option<TCPNetworkEncoder<W>>>>,
+        closing: PrePlayClosingWrites,
         id: u64,
-    ) {
-        for packet in packets {
-            if let Err(err) = Self::write_network_packet(network_writer, &packet).await {
-                log::warn!(
-                    "Failed to finish the outbound queue for client {id} during disconnect: {err}"
-                );
-                return;
+        mut deadline: Pin<&mut D>,
+    ) where
+        W: AsyncWrite + Unpin,
+        D: Future<Output = ()> + ?Sized,
+    {
+        let mut slot =
+            match complete_before_deadline(network_writer.lock(), deadline.as_mut()).await {
+                CloseDeadlineResult::Completed(slot) => slot,
+                CloseDeadlineResult::Elapsed => {
+                    Self::log_close_timeout(id);
+                    return;
+                }
+            };
+        let Some(mut writer) = slot.take() else {
+            return;
+        };
+        drop(slot);
+
+        for queued_write in closing.queued {
+            match queued_write {
+                PrePlayWrite::Packet(packet) => {
+                    if !Self::write_before_deadline(&mut writer, &packet, id, deadline.as_mut())
+                        .await
+                    {
+                        return;
+                    }
+                }
+                PrePlayWrite::Batch(packets) => {
+                    for packet in packets {
+                        if !Self::write_before_deadline(&mut writer, &packet, id, deadline.as_mut())
+                            .await
+                        {
+                            return;
+                        }
+                    }
+                }
             }
         }
+        let _ = Self::write_before_deadline(&mut writer, &closing.disconnect, id, deadline).await;
+    }
+
+    async fn write_before_deadline<W, D>(
+        writer: &mut TCPNetworkEncoder<W>,
+        packet: &EncodedPacket,
+        id: u64,
+        deadline: Pin<&mut D>,
+    ) -> bool
+    where
+        W: AsyncWrite + Unpin,
+        D: Future<Output = ()> + ?Sized,
+    {
+        match complete_before_deadline(writer.write_packet(packet), deadline).await {
+            CloseDeadlineResult::Completed(Ok(())) => true,
+            CloseDeadlineResult::Completed(Err(error)) => {
+                log::debug!("Best-effort close for client {id} failed: {error}");
+                false
+            }
+            CloseDeadlineResult::Elapsed => {
+                Self::log_close_timeout(id);
+                false
+            }
+        }
+    }
+
+    fn log_close_timeout(id: u64) {
+        log::debug!("Best-effort graceful close for client {id} timed out");
     }
 
     /// Starts a task that will receive packets from the client.
@@ -462,53 +762,82 @@ impl JavaTcpClient {
         self.task_tracker.spawn(async move {
             let mut connection = None;
             loop {
-                select! {
-                    () = cancel_token.cancelled() => {
-                        break;
-                    }
-                    packet = reader.get_raw_packet() => {
-                        match packet {
-                            Ok(packet) => {
-                                match self_clone.process_packet(packet).await {
-                                    Ok(action) => {
-                                        if let Some(key) = action.reader_encryption {
-                                            reader.set_encryption(&key);
-                                        }
-                                        if let Some(compression) = action.reader_compression {
-                                            reader.set_compression(compression.threshold);
-                                        }
-                                        if let Some(upgrade) = action.upgrade {
-                                            connection = Some(upgrade);
-                                            break;
-                                        }
-                                    }
-                                    Err(err) => {
-                                        log::warn!(
-                                            "Failed to get packet from client {id}: {err}",
-                                        );
-                                    }
-                                }
-                            }
-                            Err(err) => {
-                                log::info!("Failed to get raw packet from client {id}: {err}");
-                                cancel_token.cancel();
+                let incoming_event = if self_clone.login_deadline_expired() {
+                    LoginOperationResult::TimedOut
+                } else {
+                    let incoming_event = async {
+                        select! {
+                            packet = reader.get_raw_packet() => IncomingEvent::Packet(packet),
+                            connection_update = connection_updates_recv.recv() => {
+                                IncomingEvent::ConnectionUpdate(connection_update)
                             }
                         }
-                    }
-                    connection_update = connection_updates_recv.recv() => {
-                        match connection_update {
-                            Ok(ConnectionUpdate::EnableEncryption(_)) => {}
-                            Ok(ConnectionUpdate::Upgrade(upgrade)) => {
-                                connection = Some(upgrade);
+                    };
+                    await_login_operation(
+                        &cancel_token,
+                        &self_clone.login_deadline,
+                        incoming_event,
+                        self_clone.wait_for_login_deadline(),
+                    )
+                    .await
+                };
+
+                match incoming_event {
+                    LoginOperationResult::Completed(IncomingEvent::Packet(Ok(packet))) => {
+                        match self_clone.process_packet_until_login_deadline(packet).await {
+                            LoginOperationResult::Completed(Ok(action)) => {
+                                if self_clone.login_deadline_expired() {
+                                    self_clone.disconnect_slow_login().await;
+                                    break;
+                                }
+                                if let Some(key) = action.reader_encryption {
+                                    reader.set_encryption(&key);
+                                }
+                                if let Some(compression) = action.reader_compression {
+                                    reader.set_compression(compression.threshold);
+                                }
+                                if let Some(upgrade) = action.upgrade {
+                                    connection = Some(upgrade);
+                                    break;
+                                }
+                            }
+                            LoginOperationResult::Completed(Err(err)) => {
+                                log::warn!("Failed to get packet from client {id}: {err}");
+                            }
+                            LoginOperationResult::Cancelled => break,
+                            LoginOperationResult::TimedOut => {
+                                self_clone.disconnect_slow_login().await;
                                 break;
                             }
-                            Err(err) => {
-                                if err != RecvError::Closed {
-                                    log::info!("Internal connection_updates_recv channel closed for client {id}: {err}");
-                                }
-                                cancel_token.cancel();
-                            }
                         }
+                    }
+                    LoginOperationResult::Completed(IncomingEvent::Packet(Err(err))) => {
+                        log::info!("Failed to get raw packet from client {id}: {err}");
+                        cancel_token.cancel();
+                    }
+                    LoginOperationResult::Completed(IncomingEvent::ConnectionUpdate(
+                        connection_update,
+                    )) => match connection_update {
+                        Ok(ConnectionUpdate::EnableEncryption(_)) => {}
+                        Ok(ConnectionUpdate::Upgrade(upgrade)) => {
+                            connection = Some(upgrade);
+                            break;
+                        }
+                        Err(err) => {
+                            if err != RecvError::Closed {
+                                log::info!(
+                                    "Internal connection_updates_recv channel closed for client {id}: {err}"
+                                );
+                            }
+                            cancel_token.cancel();
+                        }
+                    },
+                    LoginOperationResult::Cancelled => break,
+                    LoginOperationResult::TimedOut => {
+                        if self_clone.login_deadline_expired() {
+                            self_clone.disconnect_slow_login().await;
+                        }
+                        break;
                     }
                 }
             }
@@ -526,6 +855,75 @@ impl JavaTcpClient {
                 }
             }
         });
+    }
+
+    fn login_deadline_expired(&self) -> bool {
+        self.login_deadline
+            .load()
+            .is_some_and(|deadline| self.server.current_tick() >= deadline.expires_at_tick())
+    }
+
+    async fn wait_for_login_deadline(&self) {
+        match self.login_deadline.load() {
+            Some(deadline) => {
+                self.server
+                    .wait_until_tick(deadline.expires_at_tick())
+                    .await;
+            }
+            None => pending().await,
+        }
+    }
+
+    async fn process_packet_until_login_deadline(
+        &self,
+        packet: RawPacket,
+    ) -> LoginOperationResult<Result<ConnectionAction, PacketError>> {
+        if self.login_deadline_expired() {
+            return LoginOperationResult::TimedOut;
+        }
+
+        await_login_operation(
+            &self.cancel_token,
+            &self.login_deadline,
+            self.process_packet(packet),
+            self.wait_for_login_deadline(),
+        )
+        .await
+    }
+
+    pub(crate) async fn disconnect_slow_login(&self) {
+        let reason =
+            TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_SLOW_LOGIN.msg());
+        let mut deadline = Box::pin(sleep(GRACEFUL_CLOSE_TIMEOUT));
+        if self.outbound_encryption.is_pending()
+            && matches!(
+                complete_before_deadline(
+                    self.outbound_encryption.wait_until_enabled(),
+                    deadline.as_mut(),
+                )
+                .await,
+                CloseDeadlineResult::Elapsed
+            )
+        {
+            self.log_slow_login_close_timeout();
+            self.close();
+            return;
+        }
+
+        if matches!(
+            complete_before_deadline(self.kick(reason), deadline.as_mut()).await,
+            CloseDeadlineResult::Elapsed
+        ) {
+            self.log_slow_login_close_timeout();
+            self.close();
+        }
+    }
+
+    fn log_slow_login_close_timeout(&self) {
+        log::debug!(
+            "Best-effort slow-login disconnect write for client {} timed out",
+            self.id
+        );
     }
 
     async fn process_packet(&self, packet: RawPacket) -> Result<ConnectionAction, PacketError> {
@@ -564,11 +962,19 @@ impl JavaTcpClient {
                     .await;
                     return Ok(());
                 }
-                self.protocol.store(intent);
-
-                if intent != ConnectionProtocol::Status {
+                if intent == ConnectionProtocol::Status {
+                    self.protocol.store(intent);
+                } else {
                     let reason = match packet.protocol_version.cmp(&CURRENT_MC_PROTOCOL) {
-                        Ordering::Equal => return Ok(()),
+                        Ordering::Equal => {
+                            let tick_manager = self.server.tick_rate_manager.read();
+                            self.login_deadline
+                                .store(Some(LoginDeadline::from_start_tick(
+                                    tick_manager.tick_count,
+                                )));
+                            self.protocol.store(intent);
+                            return Ok(());
+                        }
                         Ordering::Less => TextComponent::translated(
                             translations::MULTIPLAYER_DISCONNECT_OUTDATED_CLIENT
                                 .message([MC_VERSION]),
@@ -577,6 +983,7 @@ impl JavaTcpClient {
                             translations::MULTIPLAYER_DISCONNECT_INCOMPATIBLE.message([MC_VERSION]),
                         ),
                     };
+                    self.protocol.store(intent);
                     self.kick(reason).await;
                     return Ok(());
                 }
@@ -722,61 +1129,4 @@ impl TextResolutor for JavaTcpClient {
 }
 
 #[cfg(test)]
-mod tests {
-    use steel_utils::FrontVec;
-
-    use super::*;
-
-    fn encoded_marker(marker: u8) -> EncodedPacket {
-        let mut data = FrontVec::new(0);
-        data.push(marker);
-        EncodedPacket {
-            encoded_data: Arc::new(data),
-        }
-    }
-
-    #[test]
-    fn pre_play_close_preserves_batch_order_through_disconnect() {
-        let (sender, mut receiver) = mpsc::unbounded_channel();
-        assert!(
-            sender
-                .send(OutboundPacket::Packet(encoded_marker(1)))
-                .is_ok()
-        );
-        assert!(
-            sender
-                .send(OutboundPacket::PacketBatch(Box::new(vec![
-                    encoded_marker(2),
-                    encoded_marker(3),
-                ])))
-                .is_ok()
-        );
-        assert!(
-            sender
-                .send(OutboundPacket::Disconnect(encoded_marker(4)))
-                .is_ok()
-        );
-        assert!(
-            sender
-                .send(OutboundPacket::Packet(encoded_marker(5)))
-                .is_ok()
-        );
-
-        let Some(packets) = JavaTcpClient::close_and_take_packets_through_disconnect(&mut receiver)
-        else {
-            panic!("disconnect packet should be present");
-        };
-
-        assert_eq!(
-            packets
-                .iter()
-                .map(|packet| packet.encoded_data[0])
-                .collect::<Vec<_>>(),
-            [1, 2, 3, 4]
-        );
-        assert!(matches!(
-            receiver.try_recv(),
-            Ok(OutboundPacket::Packet(packet)) if packet.encoded_data[0] == 5
-        ));
-    }
-}
+mod tests;

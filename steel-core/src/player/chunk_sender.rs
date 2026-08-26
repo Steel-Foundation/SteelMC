@@ -417,11 +417,10 @@ mod tests {
         light::ChunkLightData,
         section::{ChunkSection, Sections},
     };
-    use crate::player::connection::{JavaConnection, JavaNetworkWriter, OutboundPacket};
+    use crate::player::connection::{JavaConnection, OutboundPacket};
     use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
     use std::sync::Weak;
     use steel_registry::init_vanilla_registry;
-    use steel_utils::locks::AsyncMutex;
     use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
     use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
@@ -528,12 +527,10 @@ mod tests {
             .collect::<Vec<_>>();
 
         let (outgoing, mut receiver) = mpsc::unbounded_channel();
-        let network_writer: JavaNetworkWriter = Arc::new(AsyncMutex::new(None));
         let connection = PlayerConnection::Java(JavaConnection::new(
             outgoing,
             CancellationToken::new(),
             None,
-            network_writer,
             1,
             Weak::new(),
         ));
@@ -559,7 +556,7 @@ mod tests {
         let Ok(OutboundPacket::PacketBatch(packets)) = receiver.try_recv() else {
             panic!("chunk batch should occupy one outbound queue entry");
         };
-        assert_eq!(packets.len(), 4);
+        assert_eq!(packets.len(), positions.len() + 2);
         assert_eq!(packets[0].encoded_data, expected_start.encoded_data);
         assert!(Arc::ptr_eq(
             &packets[1].encoded_data,
