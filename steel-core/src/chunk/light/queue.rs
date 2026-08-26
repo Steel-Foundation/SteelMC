@@ -481,9 +481,10 @@ impl PackedLightPropagationQueues {
     }
 }
 
-/// Retained-capacity ceiling for the recycled queue pair. Larger buffers are
-/// dropped instead of pinned to a worker thread (2 MiB of packed entries).
-const POOLED_PACKED_QUEUES_MAX_ENTRIES: usize = 128 * 1024;
+/// Retained-capacity ceiling for the recycled queue pair, summed over both
+/// queues (~2 MiB of packed 8-byte entries). Larger buffers are dropped
+/// instead of pinned to a worker thread.
+const POOLED_PACKED_QUEUES_MAX_ENTRIES: usize = 256 * 1024;
 
 thread_local! {
     static POOLED_PACKED_QUEUES: RefCell<Option<PackedLightPropagationQueues>> =
