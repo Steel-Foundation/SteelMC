@@ -1,5 +1,6 @@
 use std::sync::{Arc, LazyLock};
 
+use parking_lot::RwLockUpgradableReadGuard;
 use rustc_hash::FxHashMap;
 use steel_utils::locks::SyncRwLock;
 
@@ -14,15 +15,15 @@ static VANILLA_TEMPLATE_CACHE: LazyLock<SyncRwLock<FxHashMap<Identifier, Arc<Str
 
 impl StructureTemplate {
     pub(crate) fn load_vanilla(registry: &Registry, key: &Identifier) -> Result<Arc<Self>, String> {
-        if let Some(template) = VANILLA_TEMPLATE_CACHE.read().get(key) {
-            return Ok(Arc::clone(template));
-        }
-
-        let mut cache = VANILLA_TEMPLATE_CACHE.write();
+        // Upgradable read keeps cache hits reader-parallel and still makes the
+        // miss path exclusive before parsing, so the map is looked up exactly
+        // once per call and no interleaving writer can double-insert.
+        let cache = VANILLA_TEMPLATE_CACHE.upgradable_read();
         if let Some(template) = cache.get(key) {
             return Ok(Arc::clone(template));
         }
 
+        let mut cache = RwLockUpgradableReadGuard::upgrade(cache);
         let bytes = vanilla_template_pools::vanilla_template_nbt_bytes(key)
             .ok_or_else(|| format!("vanilla structure template {key} is not bundled"))?;
         let template = Arc::new(Self::load_gzip_nbt(registry, bytes, &key.to_string())?);
