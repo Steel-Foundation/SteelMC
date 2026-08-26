@@ -390,7 +390,7 @@ fn biome_matches(context: &SteelCommandContext<CommandSource>) -> Result<bool, C
     Ok(expected.matches(biome))
 }
 
-pub(in crate::command::builtins) fn loaded_block_position(
+pub fn loaded_block_position(
     context: &SteelCommandContext<CommandSource>,
     name: &str,
 ) -> Result<steel_utils::BlockPos, CommandSyntaxError> {
