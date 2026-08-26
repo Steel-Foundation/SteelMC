@@ -5,6 +5,7 @@
 //! They are also bound to a position, and cannot move.
 
 use crate::entity::damage::DamageSource;
+use crate::entity::mob::block_pos_distance_sqr;
 use crate::entity::{BorrowedNbtCompoundView, EntityMoveError};
 use crate::entity::{Entity, RemovalReason};
 use crate::physics::{MoveResult, MoverType};
@@ -185,7 +186,7 @@ pub trait BlockAttachedEntity: Entity {
         {
             let block_pos = BlockPos::new(block_pos_vec[0], block_pos_vec[1], block_pos_vec[2]);
             self.block_attached_entity_base().set_pos(block_pos);
-            if block_pos.distance_sqr(block_pos.0.as_dvec3()) >= VALID_READ_DISTANCE_SQR {
+            if block_pos_distance_sqr(block_pos, self.block_position()) >= VALID_READ_DISTANCE_SQR {
                 log::warn!("Block-attached entity at invalid position: {block_pos:?}");
             }
         }

@@ -530,16 +530,6 @@ impl BlockPos {
         )
         .find(|pos| predicate(*pos))
     }
-
-    /// Returns the squared distance between this `BlockPos` (at the low corner)
-    /// and `pos`.
-    #[must_use]
-    pub fn distance_sqr(self, pos: DVec3) -> f64 {
-        let dx = f64::from(self.x()) - pos.x;
-        let dy = f64::from(self.y()) - pos.y;
-        let dz = f64::from(self.z()) - pos.z;
-        dx * dx + dy * dy + dz * dz
-    }
 }
 
 /// Iterator returned by [`BlockPos::within_manhattan`].
