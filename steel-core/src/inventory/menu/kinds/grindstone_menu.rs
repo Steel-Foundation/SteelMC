@@ -202,6 +202,37 @@ impl GrindstoneKind {
         }
     }
 
+    ///
+    #[must_use]
+    fn merge_items(first: ItemStack, second: ItemStack) -> ItemStack {
+        if !first.is(second.item()) {
+            return ItemStack::empty();
+        }
+
+        let durability = max(first.get_max_damage(), second.get_max_damage());
+        let remaining1 = first.get_max_damage() - first.get_damage_value();
+        let remaining2 = second.get_max_damage() - second.get_damage_value();
+        let remaining = remaining1 + remaining2 + durability * 5 / 100;
+        let mut count = 1;
+
+        if !first.is_damageable_item() {
+            if first.max_stack_size() < 2 || !ItemStack::matches(&first, &second) {
+                return ItemStack::empty();
+            }
+
+            count = 2;
+        }
+
+        let mut new_item = first.copy_with_count(count);
+        if new_item.is_damageable_item() {
+            new_item.set(MAX_DAMAGE, durability);
+            new_item.set_damage_value(max(durability - remaining, 0));
+        }
+
+        // TODO: merge enchants
+        GrindstoneKind::remove_non_curses_from(new_item)
+    }
+
     /// Remove non-curse enchantments from items and returns them
     #[must_use]
     pub fn remove_non_curses_from(mut item: ItemStack) -> ItemStack {
