@@ -1312,7 +1312,6 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                     let _ = self.region.chunk(chunk_x, chunk_z, status);
                     cached.verified_status = status;
                 }
-                drop(cached);
                 occupied.into_mut()
             }
             Entry::Vacant(vacant) => {
