@@ -1,38 +1,18 @@
 //! Grindstone Menu
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicI32, Ordering},
-};
+use std::sync::Arc;
 
-use steel_registry::{
-    REGISTRY, RegistryExt, TaggedRegistryExt,
-    blocks::block_state_ext::BlockStateExt,
-    data_components::{
-        components::ItemEnchantments,
-        vanilla_components::{CUSTOM_NAME, ENCHANTMENTS, REPAIR_COST, STORED_ENCHANTMENTS},
-    },
-    enchantment::Enchantment,
-    item_stack::ItemStack,
-    vanilla_block_tags::BlockTag,
-    vanilla_items, vanilla_menu_types,
-};
-use steel_utils::{
-    BlockPos, Identifier, java,
-    locks::{IntoShared, Shared, SyncMutex},
-    text::DisplayResolutor,
-};
-use text_components::TextComponent;
+use steel_registry::{item_stack::ItemStack, level_events};
+use steel_utils::{BlockPos, locks::Shared};
 
 use crate::{
-    behavior::ITEM_BEHAVIORS,
+    entity::entities::ExperienceOrbEntity,
     inventory::{
         container::{ResultContainer, SimpleContainer},
         prelude::*,
-        slots::AnvilResultHandler,
     },
-    player::player_inventory::PlayerInventory,
     world::World,
 };
+
 /// Result slot handler for an grindstone.
 #[derive(Clone)]
 pub struct GrindstoneResultHandler {
@@ -73,12 +53,28 @@ impl ResultHandler for GrindstoneResultHandler {
     fn on_result_taken(
         &self,
         guard: &mut ContainerLockGuard,
-        player: &Player,
+        _player: &Player,
     ) -> Option<ItemStack> {
+        // TODO: Add offset for orb spawning
+        // TODO: Implement experience orb calculation
+        ExperienceOrbEntity::award(&self.world, self.block_pos.as_dvec3(), 1);
+
+        self.world
+            .level_event(level_events::SOUND_GRINDSTONE_USED, self.block_pos, 0, None);
+
+        let id = ContainerId::from_arc(&self.input_container);
+        let Some(input) = guard.get_mut(id) else {
+            log::warn!("Couldn't get lock for grindstone.");
+            return None;
+        };
+
+        input.set_item(0, ItemStack::empty());
+        input.set_item(1, ItemStack::empty());
+
         None
     }
 
-    fn is_result_valid(&self, _guard: &ContainerLockGuard, player: &Player) -> bool {
+    fn is_result_valid(&self, _guard: &ContainerLockGuard, _player: &Player) -> bool {
         true
     }
 }

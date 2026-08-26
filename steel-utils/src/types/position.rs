@@ -528,6 +528,15 @@ impl BlockPos {
         )
         .find(|pos| predicate(*pos))
     }
+
+    #[must_use]
+    pub fn as_dvec3(self) -> DVec3 {
+        DVec3::new(
+            f64::from(self.x()),
+            f64::from(self.y()),
+            f64::from(self.z()),
+        )
+    }
 }
 
 /// Iterator returned by [`BlockPos::within_manhattan`].

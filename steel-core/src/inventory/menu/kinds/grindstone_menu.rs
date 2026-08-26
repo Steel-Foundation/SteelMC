@@ -1,35 +1,24 @@
 //! Grindston menu.
-use std::{
-    any::Any,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicI32, Ordering},
-    },
-};
+use std::sync::Arc;
 
-use steel_registry::vanilla_items::ENCHANTED_BOOK;
+use steel_registry::vanilla_blocks;
 use steel_registry::{
-    ENCHANTMENT_REGISTRY, REGISTRY, RegistryExt, TaggedRegistryExt,
+    REGISTRY, RegistryExt, TaggedRegistryExt,
     blocks::block_state_ext::BlockStateExt,
     data_components::{
         components::ItemEnchantments,
-        vanilla_components::{CUSTOM_NAME, ENCHANTMENTS, REPAIR_COST, STORED_ENCHANTMENTS},
+        vanilla_components::{ENCHANTMENTS, REPAIR_COST},
     },
-    enchantment::Enchantment,
     item_stack::ItemStack,
-    vanilla_block_tags::BlockTag,
     vanilla_enchantment_tags::EnchantmentTag,
     vanilla_items, vanilla_menu_types,
 };
 use steel_utils::{
-    BlockPos, Identifier, java,
-    locks::{IntoShared, Shared, SyncMutex},
-    text::DisplayResolutor,
+    BlockPos,
+    locks::{IntoShared, Shared},
 };
-use text_components::TextComponent;
 
 use crate::{
-    behavior::ITEM_BEHAVIORS,
     inventory::{
         container::{ResultContainer, SimpleContainer},
         menu::kinds::AnvilKind,
@@ -40,8 +29,6 @@ use crate::{
     world::World,
 };
 
-use log::info;
-
 /// Builds the grindstone menu.
 #[must_use]
 pub fn grindstone(
@@ -51,9 +38,6 @@ pub fn grindstone(
     world: &Arc<World>,
 ) -> Menu {
     let input_container = SimpleContainer::new(2).into_shared();
-    let repair_item_count = Arc::new(AtomicI32::new(0));
-    let level_cost = Arc::new(AtomicI32::new(0));
-    let only_renaming = Arc::new(AtomicBool::new(false));
 
     let result_container = ResultContainer::new().into_shared();
 
@@ -110,14 +94,10 @@ impl GrindstoneKind {
     ///
     /// # Panics
     /// Panics if the input container is not exactly two slots.
-    #[tracing::instrument(skip(self, behavior, player, guard), level = "info", fields(player = %player.gameprofile.name))]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "mirrors Vanilla's ordered createResult flow in one auditable calculation"
-    )]
+    #[tracing::instrument(skip(self, _behavior, player, guard), level = "info", fields(player = %player.gameprofile.name))]
     pub(crate) fn create_result(
         &mut self,
-        behavior: &mut MenuBehavior,
+        _behavior: &mut MenuBehavior,
         guard: &mut ContainerLockGuard,
         player: &Player,
     ) {
@@ -125,42 +105,46 @@ impl GrindstoneKind {
             ContainerId::from_arc(&self.input_container),
             ContainerId::from_arc(&self.result_container),
         ]) else {
-            panic!("failed to lock input and/or result containers to create anvil result")
+            log::warn!("failed to lock input and/or result containers to create grindstone result");
+            return;
         };
 
         let [first, second] = input_container.items() else {
-            panic!("input_container in anvil menu does not fit expected shape")
+            log::warn!("input_container in anvil menu does not fit expected shape");
+            return;
         };
 
-        if !(!first.is_empty() || !second.is_empty()) {
+        if first.is_empty() && second.is_empty() {
             result_container.set_item(0, ItemStack::empty());
-            log::info!("EMPTY!");
             return;
         }
 
         if first.count() <= 1 && second.count() <= 1 {
-            if !(!first.is_empty() && !second.is_empty()) {
-                let item = if !first.is_empty() { first } else { second };
-                log::info!("Item {:?}", item.item);
+            if !first.is_empty() && !second.is_empty() {
+                result_container.set_item(0, ItemStack::empty());
+                // TODO: merge items in grindstone
+            } else {
+                let item = if first.is_empty() { second } else { first };
 
                 // TODO: check if item is enchanted, not just enchantable
-                if !item.is_enchantable() {
+                if item.is_enchanted() {
                     result_container
                         .set_item(0, GrindstoneKind::remove_non_curses_from(item.clone()));
                 } else {
                     result_container.set_item(0, ItemStack::empty());
                 }
-            } else {
-                result_container.set_item(0, ItemStack::empty());
-                // TODO: merge items in grindstone
             }
         }
-
-        log::info!("Create result");
     }
 
+    /// Remove non-curse enchantments from items and returns them
+    #[must_use]
     pub fn remove_non_curses_from(mut item: ItemStack) -> ItemStack {
         let Some(enchantments) = item.get_enchantments() else {
+            // TODO: Only remove non-curses from enchanted books
+            if item.is(&vanilla_items::ENCHANTED_BOOK) {
+                return ItemStack::new(&vanilla_items::BOOK);
+            }
             return ItemStack::empty();
         };
 
@@ -168,18 +152,14 @@ impl GrindstoneKind {
 
         enchantments
             .iter()
-            .filter(|(e, l)| **l != 0 && **e == EnchantmentTag::CURSE)
-            .for_each(|(e, l)| new_enchantments.set(e.clone(), *l));
-
-        if item.is(&vanilla_items::ENCHANTED_BOOK) && new_enchantments.is_empty() {
-            return ItemStack::new(&vanilla_items::BOOK);
-        }
-
-        log::info!(
-            "Originally {} enchanments. But now {} enchantments",
-            enchantments.len(),
-            new_enchantments.len()
-        );
+            .filter(|(id, _)| {
+                REGISTRY.enchantments.by_key(id).is_some_and(|enchantment| {
+                    REGISTRY
+                        .enchantments
+                        .is_in_tag(enchantment, &EnchantmentTag::CURSE)
+                })
+            })
+            .for_each(|(id, level)| new_enchantments.set(id.clone(), *level));
 
         let mut repair_cost = 0;
 
@@ -188,19 +168,17 @@ impl GrindstoneKind {
         }
 
         item.set(REPAIR_COST, repair_cost);
-        return item;
+        item.set(ENCHANTMENTS, new_enchantments);
+        item
     }
 }
 
 impl MenuKind for GrindstoneKind {
     /// Returns true while the original grindstone remains in range.
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
-        // let state = self.world.get_block_state(self.block_pos);
-        // REGISTRY
-        //     .blocks
-        //     .is_in_tag(state.get_block(), &BlockTag::STONE)
-        //     && player.is_within_block_interaction_range_with_buffer(self.block_pos, 4.0)
-        true
+        let state = self.world.get_block_state(self.block_pos);
+        state.get_block() == &vanilla_blocks::GRINDSTONE
+            && player.is_within_block_interaction_range_with_buffer(self.block_pos, 4.0)
     }
 
     fn slots_changed(
@@ -214,6 +192,8 @@ impl MenuKind for GrindstoneKind {
 
     /// Clears the virtual result on close. Inputs are drained by [`Menu::removed`].
     fn removed(&mut self, _behavior: &mut MenuBehavior, _player: &Player) {
+        self.input_container.lock().set_item(0, ItemStack::empty());
+        self.input_container.lock().set_item(1, ItemStack::empty());
         self.result_container.lock().set_item(0, ItemStack::empty());
     }
 }

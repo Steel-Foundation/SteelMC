@@ -8,7 +8,6 @@ use steel_registry::{
         properties::{BlockStateProperties, EnumProperty},
     },
     items::item::BlockHitResult,
-    vanilla_blocks,
 };
 use steel_utils::{BlockStateId, Direction, translations};
 use text_components::TextComponent;
@@ -26,7 +25,6 @@ pub struct GrindstoneBlock {
     block: BlockRef,
 }
 
-const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
 const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 
 impl GrindstoneBlock {
