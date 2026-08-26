@@ -437,13 +437,12 @@ pub trait BlockBehavior: Send + Sync {
     }
 
     /// Called after this block is removed by an explosion.
-    #[expect(unused_variables, reason = "default implementation has no callback")]
     fn was_exploded(
         &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        explosion: &dyn Explosion,
+        _state: BlockStateId,
+        _world: &Arc<World>,
+        _pos: BlockPos,
+        _explosion: &dyn Explosion,
     ) {
     }
 
