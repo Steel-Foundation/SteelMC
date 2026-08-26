@@ -130,16 +130,7 @@ impl RegionManager {
     async fn open_region(&self, pos: RegionPos) -> io::Result<RegionHandle> {
         match self.open_region_inner(pos).await {
             Ok(handle) => Ok(handle),
-            Err(error) => match StorageFailure::classify(&error) {
-                StorageFailure::Fatal => {
-                    if !fatal_shutdown_requested() {
-                        request_fatal_shutdown(&format!(
-                            "cannot access region storage at {}: {error}",
-                            self.base_path.display()
-                        ));
-                    }
-                    Err(error)
-                }
+            Err(error) => match self.triage_storage_failure(&error) {
                 StorageFailure::Corrupt => {
                     // Damage to individual chunk table entries is handled per
                     // entry in `open_region_inner`; this is the file header.
@@ -153,9 +144,24 @@ impl RegionManager {
                     fs::rename(&path, &backup_path).await?;
                     self.create_region(pos).await
                 }
-                StorageFailure::Transient => Err(error),
+                // Shutdown is already requested for a fatal failure; a transient
+                // one is the caller's to retry.
+                StorageFailure::Fatal | StorageFailure::Transient => Err(error),
             },
         }
+    }
+
+    /// Classifies a storage error, stopping the server if nothing can be
+    /// persisted any more.
+    fn triage_storage_failure(&self, error: &io::Error) -> StorageFailure {
+        let failure = StorageFailure::classify(error);
+        if failure == StorageFailure::Fatal && !fatal_shutdown_requested() {
+            request_fatal_shutdown(&format!(
+                "cannot access region storage at {}: {error}",
+                self.base_path.display()
+            ));
+        }
+        failure
     }
 
     async fn open_region_inner(&self, pos: RegionPos) -> io::Result<RegionHandle> {
@@ -398,11 +404,24 @@ impl RegionManager {
     }
 
     /// Saves prepared chunk data to disk after the snapshot-preparation phase has ended.
-    #[expect(
-        clippy::missing_panics_doc,
-        reason = "panic on `just inserted` is unreachable"
-    )]
+    ///
+    /// Triages storage errors so a world that can be read but not written stops
+    /// the server instead of discarding everything players do.
     pub async fn save_chunk_data(
+        &self,
+        prepared: PreparedChunkSave,
+        thread_pool: &rayon::ThreadPool,
+    ) -> io::Result<bool> {
+        let result = self.save_chunk_data_inner(prepared, thread_pool).await;
+        if let Err(error) = &result {
+            // Corrupt data here is the chunk being encoded, not the file, so
+            // only a fatal failure changes what happens next.
+            self.triage_storage_failure(error);
+        }
+        result
+    }
+
+    async fn save_chunk_data_inner(
         &self,
         prepared: PreparedChunkSave,
         thread_pool: &rayon::ThreadPool,
