@@ -10,6 +10,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{
     BellAttachType, BlockStateProperties, BoolProperty, Direction, EnumProperty,
 };
+use steel_registry::vanilla_custom_stats::BELL_RING;
 use steel_registry::{
     sound_events, vanilla_block_entity_types, vanilla_blocks, vanilla_game_events,
 };
@@ -60,7 +61,7 @@ impl BellBlock {
 
         world.is_face_sturdy(support, support_pos, direction.opposite())
     }
-    // TODO: Award the `BELL_RING` statistic once the statistics system is implemented.
+
     // TODO: Notify villagers when the villager AI is fully implemented.
     fn ring(source: Option<&dyn Entity>, world: &Arc<World>, pos: BlockPos, direction: Direction) {
         let Some(block_entity) = world.get_block_entity(pos) else {
@@ -84,6 +85,11 @@ impl BellBlock {
             pos,
             &GameEventContext::new(source, None),
         );
+        if let Some(entity) = source
+            && let Some(player) = entity.as_player()
+        {
+            player.award_custom_stat(&BELL_RING);
+        }
     }
 
     fn is_proper_hit(state: BlockStateId, hit: &BlockHitResult, pos: BlockPos) -> bool {

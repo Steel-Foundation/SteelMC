@@ -196,7 +196,7 @@ impl BlockEntity for BellBlockEntity {
         state.shaking = true;
         true
     }
-     // TODO: make bell sleep when not used
+    // TODO: make bell sleep when not used
     fn tick(&self, world: &Arc<World>) {
         let pos = self.get_block_pos();
         let mut state = self.state.lock();
