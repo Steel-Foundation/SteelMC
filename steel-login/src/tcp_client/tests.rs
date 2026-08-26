@@ -1,6 +1,5 @@
 use std::{
     future::{Future, pending, poll_fn, ready},
-    io,
     pin::Pin,
     sync::{
         Arc,
@@ -13,8 +12,11 @@ use crossbeam::atomic::AtomicCell;
 use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packet_writer::TCPNetworkEncoder;
 use steel_protocol::utils::PacketError;
-use steel_utils::{FrontVec, locks::AsyncMutex, locks::SyncMutex};
-use tokio::{io::AsyncWrite, sync::Notify, sync::mpsc};
+use steel_utils::{FrontVec, locks::AsyncMutex};
+use tokio::{
+    io::{AsyncReadExt, DuplexStream, duplex},
+    sync::mpsc,
+};
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -58,111 +60,64 @@ fn encoded_bytes(bytes: &[u8]) -> EncodedPacket {
     }
 }
 
-#[derive(Default)]
-struct PausingWriterState {
-    bytes: Vec<u8>,
-    released: bool,
-    waker: Option<Waker>,
+fn assert_pending_once<F: Future + ?Sized>(future: Pin<&mut F>) {
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(future.poll(&mut context).is_pending());
 }
 
-struct PausingWriter {
-    state: Arc<SyncMutex<PausingWriterState>>,
-    paused: Arc<Notify>,
-    pause_after: usize,
+const TEST_ENCRYPTION_KEY: [u8; 16] = *b"close-cipher-key";
+const ACTIVE_PACKET: &[u8] = b"AB";
+const ACCEPTED_CIPHERTEXT_BYTES: usize = 1;
+
+fn bounded_encrypted_writer() -> (
+    Arc<AsyncMutex<Option<TCPNetworkEncoder<DuplexStream>>>>,
+    DuplexStream,
+) {
+    let (writer, peer) = duplex(ACCEPTED_CIPHERTEXT_BYTES);
+    let mut encoder = TCPNetworkEncoder::new(writer);
+    encoder.set_encryption(&TEST_ENCRYPTION_KEY);
+    (Arc::new(AsyncMutex::new(Some(encoder))), peer)
 }
 
-impl AsyncWrite for PausingWriter {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        context: &mut Context<'_>,
-        bytes: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        let mut state = self.state.lock();
-        if !state.released && state.bytes.len() >= self.pause_after {
-            state.waker = Some(context.waker().clone());
-            drop(state);
-            self.paused.notify_one();
-            return Poll::Pending;
-        }
-
-        let write_len = if state.released {
-            bytes.len()
-        } else {
-            bytes.len().min(self.pause_after - state.bytes.len())
-        };
-        state.bytes.extend_from_slice(&bytes[..write_len]);
-        Poll::Ready(Ok(write_len))
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
-    }
+async fn assert_partial_ciphertext(mut peer: DuplexStream) {
+    let mut ciphertext = Vec::new();
+    peer.read_to_end(&mut ciphertext)
+        .await
+        .expect("canceled writer should close its peer");
+    assert_eq!(ciphertext.len(), ACCEPTED_CIPHERTEXT_BYTES);
 }
 
 #[tokio::test]
 async fn canceled_pre_play_packet_drops_its_partial_encoder() {
-    const KEY: [u8; 16] = *b"close-cipher-key";
-    const ACTIVE_PACKET: &[u8] = b"AB";
-
-    let state = Arc::new(SyncMutex::new(PausingWriterState::default()));
-    let paused = Arc::new(Notify::new());
-    let writer = PausingWriter {
-        state: Arc::clone(&state),
-        paused: Arc::clone(&paused),
-        pause_after: 1,
-    };
-    let mut encoder = TCPNetworkEncoder::new(writer);
-    encoder.set_encryption(&KEY);
-    let writer_slot = Arc::new(AsyncMutex::new(Some(encoder)));
+    let (writer_slot, peer) = bounded_encrypted_writer();
     let packet = encoded_bytes(ACTIVE_PACKET);
 
     {
         let write = JavaTcpClient::write_network_packet(&writer_slot, &packet);
         tokio::pin!(write);
-        tokio::select! {
-            () = paused.notified() => {}
-            result = write.as_mut() => panic!("packet unexpectedly completed: {result:?}"),
-        }
+        assert_pending_once(write.as_mut());
     }
 
     assert!(writer_slot.lock().await.is_none());
-    assert_eq!(state.lock().bytes.len(), 1);
+    assert_partial_ciphertext(peer).await;
 }
 
 #[tokio::test]
 async fn canceled_pre_play_batch_drops_its_partial_encoder() {
-    const KEY: [u8; 16] = *b"close-cipher-key";
-    const ACTIVE_PACKET: &[u8] = b"AB";
     const QUEUED_PACKET: u8 = b'C';
     const LATER_PACKET: u8 = b'D';
 
-    let state = Arc::new(SyncMutex::new(PausingWriterState::default()));
-    let paused = Arc::new(Notify::new());
-    let writer = PausingWriter {
-        state: Arc::clone(&state),
-        paused: Arc::clone(&paused),
-        pause_after: 1,
-    };
-    let mut encoder = TCPNetworkEncoder::new(writer);
-    encoder.set_encryption(&KEY);
-    let writer_slot = Arc::new(AsyncMutex::new(Some(encoder)));
+    let (writer_slot, peer) = bounded_encrypted_writer();
     let packets = [encoded_bytes(ACTIVE_PACKET), encoded_marker(QUEUED_PACKET)];
 
     {
         let write = JavaTcpClient::write_network_batch(&writer_slot, &packets);
         tokio::pin!(write);
-        tokio::select! {
-            () = paused.notified() => {}
-            result = write.as_mut() => panic!("batch unexpectedly completed: {result:?}"),
-        }
+        assert_pending_once(write.as_mut());
     }
 
     assert!(writer_slot.lock().await.is_none());
-    assert_eq!(state.lock().bytes.len(), 1);
+    assert_partial_ciphertext(peer).await;
     let later_result =
         JavaTcpClient::write_network_packet(&writer_slot, &encoded_marker(LATER_PACKET)).await;
     assert!(matches!(later_result, Err(PacketError::ConnectionClosed)));
@@ -170,20 +125,9 @@ async fn canceled_pre_play_batch_drops_its_partial_encoder() {
 
 #[tokio::test]
 async fn canceled_pre_play_close_drops_its_partial_encoder() {
-    const KEY: [u8; 16] = *b"close-cipher-key";
-    const ACTIVE_PACKET: &[u8] = b"AB";
     const DISCONNECT_PACKET: u8 = b'C';
 
-    let state = Arc::new(SyncMutex::new(PausingWriterState::default()));
-    let paused = Arc::new(Notify::new());
-    let writer = PausingWriter {
-        state: Arc::clone(&state),
-        paused: Arc::clone(&paused),
-        pause_after: 1,
-    };
-    let mut encoder = TCPNetworkEncoder::new(writer);
-    encoder.set_encryption(&KEY);
-    let writer_slot = Arc::new(AsyncMutex::new(Some(encoder)));
+    let (writer_slot, peer) = bounded_encrypted_writer();
     {
         let close = JavaTcpClient::write_closing(
             &writer_slot,
@@ -193,15 +137,11 @@ async fn canceled_pre_play_close_drops_its_partial_encoder() {
             },
         );
         tokio::pin!(close);
-
-        tokio::select! {
-            () = paused.notified() => {}
-            result = close.as_mut() => panic!("close unexpectedly completed: {result:?}"),
-        }
+        assert_pending_once(close.as_mut());
     }
 
     assert!(writer_slot.lock().await.is_none());
-    assert_eq!(state.lock().bytes.len(), 1);
+    assert_partial_ciphertext(peer).await;
 }
 
 #[tokio::test]

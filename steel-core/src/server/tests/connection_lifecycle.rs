@@ -1,18 +1,21 @@
 use std::{
-    io,
-    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    task::{Context, Poll, Waker},
+    task::Poll,
 };
 
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packet_writer::TCPNetworkEncoder;
 use steel_utils::{locks::SyncMutex, translations};
 use text_components::TextComponent;
-use tokio::{fs, io::AsyncWrite, runtime::Builder, sync::mpsc};
+use tokio::{
+    fs,
+    io::{copy, duplex, sink},
+    runtime::Builder,
+    sync::mpsc,
+};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -58,55 +61,10 @@ fn java_test_player(
     (player, receiver)
 }
 
-#[derive(Default)]
-struct BlockingWriterState {
-    released: bool,
-    waker: Option<Waker>,
-}
-
-struct BlockingWriter {
-    state: Arc<SyncMutex<BlockingWriterState>>,
-}
-
-impl BlockingWriter {
-    fn release(&self) {
-        let waker = {
-            let mut state = self.state.lock();
-            state.released = true;
-            state.waker.take()
-        };
-        if let Some(waker) = waker {
-            waker.wake();
-        }
-    }
-}
-
-impl AsyncWrite for BlockingWriter {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        context: &mut Context<'_>,
-        bytes: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        let mut state = self.state.lock();
-        if state.released {
-            Poll::Ready(Ok(bytes.len()))
-        } else {
-            state.waker = Some(context.waker().clone());
-            Poll::Pending
-        }
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
-    }
-}
-
 #[test]
 fn blocked_disconnect_write_does_not_delay_player_removal() {
+    const BLOCKED_WRITE_CAPACITY: usize = 1;
+
     let world = fresh_test_world("blocked_disconnect_write");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
@@ -132,14 +90,9 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
         let _ = player.mark_joined_world();
         assert!(player.has_joined_world());
 
-        let writer_state = Arc::new(SyncMutex::new(BlockingWriterState::default()));
-        let writer_control = BlockingWriter {
-            state: Arc::clone(&writer_state),
-        };
-        let mut encoder = TCPNetworkEncoder::new(BlockingWriter {
-            state: writer_state,
-        });
-        {
+        let (writer, mut peer) = duplex(BLOCKED_WRITE_CAPACITY);
+        let mut encoder = TCPNetworkEncoder::new(writer);
+        let drain = {
             let PlayerConnection::Java(connection) = player.connection.as_ref() else {
                 panic!("test player should use a Java connection");
             };
@@ -161,9 +114,16 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
             assert!(matches!(futures::poll!(&mut sender), Poll::Pending));
 
             drop(pending);
-            writer_control.release();
+            let drain = tokio::spawn(async move {
+                copy(&mut peer, &mut sink())
+                    .await
+                    .expect("disconnect bytes should drain")
+            });
             sender.await;
-        }
+            drain
+        };
+        drop(encoder);
+        assert_ne!(drain.await.expect("drain task should finish"), 0);
 
         drop(player);
         drop(server);
