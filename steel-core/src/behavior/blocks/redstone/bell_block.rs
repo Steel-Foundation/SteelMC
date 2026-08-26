@@ -324,15 +324,11 @@ impl BlockBehavior for BellBlock {
 
 #[cfg(test)]
 mod tests {
-    use glam::DVec3;
     use steel_registry::init_vanilla_registry;
-    use steel_registry::item_stack::ItemStack;
-    use steel_registry::vanilla_items;
     use steel_utils::ChunkPos;
-    use steel_utils::types::InteractionHand;
 
     use super::*;
-    use crate::behavior::{BLOCK_BEHAVIORS, PlacementOrientation, PlacementSource, init_behaviors};
+    use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
     use crate::block_entity::init_block_entities;
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
