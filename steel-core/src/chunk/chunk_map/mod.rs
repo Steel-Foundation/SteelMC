@@ -32,7 +32,7 @@ use crate::block_entity::{BlockEntityLifecycleExt as _, ClearedBlockEntities, Sh
 use crate::chunk::chunk_holder::{
     ChunkHolder, ChunkSaveDependency, PostProcessGenerationError, TickingReadiness,
 };
-pub(crate) use crate::chunk::chunk_scheduler::ChunkMapSchedulingTimings;
+pub use crate::chunk::chunk_scheduler::ChunkMapSchedulingTimings;
 use crate::chunk::chunk_scheduler::{
     ChunkMapPreparationTimings, ChunkSchedulingBoundaryStep, ChunkSchedulingCoordinator,
     ChunkTicketOperation, ChunkTicketRevision, PreparedChunkSchedulingEpoch,
@@ -952,15 +952,22 @@ impl ChunkMap {
         timings
     }
 
-    /// Ticks block entities in tickable full chunks.
     /// Commits a ready scheduling epoch and forks the next background epoch.
     ///
     /// This must run at a gameplay lifecycle boundary or during startup before
     /// gameplay begins. It never waits for a running epoch; the previously
     /// committed chunk state remains authoritative until that epoch is ready at
     /// a later boundary.
+    ///
+    /// # Calling constraint
+    ///
+    /// Must only be called from the thread driving this world, between game
+    /// ticks (or during startup, before gameplay begins) — never concurrently
+    /// with [`Self::tick_game`]. Calling it mid-tick or from another thread
+    /// can commit a scheduling epoch while `tick_game` is iterating the chunk
+    /// snapshot from before that commit.
     #[instrument(level = "trace", skip(self), name = "advance_chunk_scheduling")]
-    pub(crate) fn advance_scheduling(self: &Arc<Self>) -> ChunkMapSchedulingTimings {
+    pub fn advance_scheduling(self: &Arc<Self>) -> ChunkMapSchedulingTimings {
         match self.scheduling.take_boundary_step() {
             ChunkSchedulingBoundaryStep::Running => ChunkMapSchedulingTimings::default(),
             ChunkSchedulingBoundaryStep::Start {

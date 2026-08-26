@@ -22,18 +22,16 @@ use super::{BlockRef, DoublePlantBlock};
 /// Vanilla `SmallDripleafBlock` survival.
 #[block_behavior]
 pub struct SmallDripleafBlock {
-    block: BlockRef,
     base: DoublePlantBlock,
 }
-const HALF: EnumProperty<DoubleBlockHalf> = BlockStateProperties::DOUBLE_BLOCK_HALF;
-const FACING: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
+const HALF: &EnumProperty<DoubleBlockHalf> = &BlockStateProperties::DOUBLE_BLOCK_HALF;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 
 impl SmallDripleafBlock {
     /// Creates a new small dripleaf block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self {
-            block,
             base: DoublePlantBlock::new(block),
         }
     }
@@ -67,7 +65,7 @@ impl BlockBehavior for SmallDripleafBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        if state.get_value(&HALF) == DoubleBlockHalf::Upper {
+        if state.get_value(HALF) == DoubleBlockHalf::Upper {
             return self.base.can_survive(state, world, pos);
         }
 
@@ -80,7 +78,7 @@ impl BlockBehavior for SmallDripleafBlock {
         let state = self
             .base
             .get_state_for_placement(context)?
-            .set_value(&FACING, context.horizontal_direction().opposite());
+            .set_value(FACING, context.horizontal_direction().opposite());
         Some(DoublePlantBlock::copy_waterlogged_from(
             context.world,
             context.place_pos(),
@@ -99,10 +97,11 @@ impl BlockBehavior for SmallDripleafBlock {
         let block_state = DoublePlantBlock::copy_waterlogged_from(
             world,
             above_pos,
-            self.block
+            self.base
+                .block
                 .default_state()
-                .set_value(&HALF, DoubleBlockHalf::Upper)
-                .set_value(&FACING, state.get_value(&FACING)),
+                .set_value(HALF, DoubleBlockHalf::Upper)
+                .set_value(FACING, state.get_value(FACING)),
         );
         world.set_block(above_pos, block_state, UpdateFlags::UPDATE_ALL);
     }
@@ -128,7 +127,7 @@ impl Bonemealable for SmallDripleafBlock {
         rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        if state.get_value(&HALF) == DoubleBlockHalf::Lower {
+        if state.get_value(HALF) == DoubleBlockHalf::Lower {
             let above = pos.above();
             world.set_block(
                 above,
@@ -138,7 +137,7 @@ impl Bonemealable for SmallDripleafBlock {
                     .create_legacy_block(),
                 UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_KNOWN_SHAPE,
             );
-            BigDripleafBlock::place_with_random_height(world, rng, pos, state.get_value(&FACING));
+            BigDripleafBlock::place_with_random_height(world, rng, pos, state.get_value(FACING));
             return;
         }
         let below_pos = pos.below();
@@ -161,7 +160,7 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::test_support::TestLevel;
 
-    const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
+    const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
     #[test]
     fn small_dripleaf_schedules_water_before_double_plant_survival() {
@@ -170,8 +169,8 @@ mod tests {
         let behavior = SmallDripleafBlock::new(&vanilla_blocks::SMALL_DRIPLEAF);
         let state = vanilla_blocks::SMALL_DRIPLEAF
             .default_state()
-            .set_value(&WATERLOGGED, true)
-            .set_value(&HALF, DoubleBlockHalf::Lower);
+            .set_value(WATERLOGGED, true)
+            .set_value(HALF, DoubleBlockHalf::Lower);
         let level = TestLevel::default();
 
         assert!(

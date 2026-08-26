@@ -1,10 +1,10 @@
 use std::{fmt, sync::Arc};
 
 use super::{
-    BiomeOrTag, BlockPredicate, CommandArgumentSource, Coordinates, IntRange, ItemPredicate,
-    ScoreHolderArgument, StructureOrTagKey, WorldArgument,
+    BiomeOrTag, BlockInput, BlockPredicate, CommandArgumentSource, Coordinates, IntRange,
+    ItemPredicate, ScoreHolderArgument, StructureOrTagKey, WorldArgument,
     biome::{parse_biome_or_tag, suggest_biomes},
-    block::{parse_block_predicate, suggest_blocks},
+    block::{parse_block_input, parse_block_predicate, suggest_block_inputs, suggest_blocks},
     coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
@@ -26,6 +26,7 @@ use crate::command::brigadier::{
     CommandSyntaxErrorKind, ContainsPrimitiveArgumentValue, PrimitiveArgumentValue, StringReader,
     SuggestionsBuilder,
 };
+use crate::command::incorrectly_typed_argument;
 use crate::command::protocol::protocol_argument_type;
 use crate::entity::{ENTITIES, EntityAnchor};
 use glam::DVec3;
@@ -290,6 +291,7 @@ impl SteelArgumentType {
     pub(crate) fn block_predicate() -> Self {
         Self::new(BlockPredicateParser)
     }
+
     pub(crate) fn block_state() -> Self {
         Self::new(BlockStateParser)
     }
@@ -422,8 +424,9 @@ impl fmt::Debug for SteelArgumentValue {
 }
 
 impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
-    fn primitive_value(&self) -> Option<&PrimitiveArgumentValue> {
+    fn primitive_value(&self, name: &str) -> Result<&PrimitiveArgumentValue, CommandSyntaxError> {
         self.downcast_ref::<PrimitiveArgumentValue>()
+            .ok_or_else(|| incorrectly_typed_argument(name))
     }
 }
 
@@ -431,7 +434,7 @@ impl ContainsPrimitiveArgumentValue for SteelArgumentValue {
 pub(crate) trait SteelArgumentSuggestionContext {
     fn source(&self) -> &dyn CommandArgumentSource;
 
-    fn argument(&self, name: &str) -> Option<&SteelArgumentValue>;
+    fn argument(&self, name: &str) -> Result<&SteelArgumentValue, CommandSyntaxError>;
 }
 
 impl<S> SteelArgumentSuggestionContext for ArgumentSuggestionContext<'_, S, SteelArgumentValue>
@@ -442,7 +445,7 @@ where
         ArgumentSuggestionContext::source(self)
     }
 
-    fn argument(&self, name: &str) -> Option<&SteelArgumentValue> {
+    fn argument(&self, name: &str) -> Result<&SteelArgumentValue, CommandSyntaxError> {
         ArgumentSuggestionContext::argument(self, name)
     }
 }
@@ -493,6 +496,7 @@ impl_downcast_type!(
     "steel:command/value/structure_or_tag_key"
 );
 impl_downcast_type!(BlockPredicate, "steel:command/value/block_predicate");
+impl_downcast_type!(BlockInput, "steel:command/value/block_input");
 impl_downcast_type!(WorldArgument, "steel:command/value/world");
 impl_downcast_type!(ItemPredicate, "steel:command/value/item_predicate");
 
@@ -935,6 +939,18 @@ unit_argument_parser!(
     )
 );
 unit_argument_parser!(
+    BlockStateParser,
+    "steel:command/parser/block_state",
+    BlockInput,
+    parse | reader,
+    _source | { parse_block_input(reader) },
+    suggest | _context,
+    builder | {
+        suggest_block_inputs(builder);
+    },
+    protocol(ProtocolArgumentType::BlockState, None)
+);
+unit_argument_parser!(
     BlockPredicateParser,
     "steel:command/parser/block_predicate",
     BlockPredicate,
@@ -945,16 +961,6 @@ unit_argument_parser!(
         suggest_blocks(builder);
     },
     protocol(ProtocolArgumentType::BlockPredicate, None)
-);
-unit_argument_parser!(
-    BlockStateParser,
-    "steel:command/parser/block_state",
-    BlockPredicate,
-    parse | reader,
-    _source | { parse_block_predicate(reader) },
-    suggest | _context,
-    _builder | {},
-    protocol(ProtocolArgumentType::BlockState, None)
 );
 unit_argument_parser!(
     GameModeParser,
@@ -1311,7 +1317,8 @@ fn selected_clock(
         return context.source().default_world_clock();
     };
     context
-        .argument(clock_argument)?
+        .argument(clock_argument)
+        .ok()?
         .downcast_ref::<WorldClockValue>()
         .map(|clock| clock.0)
 }

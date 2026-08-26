@@ -3,7 +3,7 @@
 use rsa::Pkcs1v15Encrypt;
 use sha1::Sha1;
 use sha2::Digest;
-use steel_core::player::GameProfile;
+use steel_core::{player::GameProfile, server::DuplicatePlayerWaitError};
 use steel_protocol::{
     packets::login::{CHello, CLoginCompression, CLoginFinished, SHello, SKey},
     utils::ConnectionProtocol,
@@ -17,33 +17,69 @@ use crate::{
 };
 
 impl JavaTcpClient {
+    async fn disconnect_duplicate_player(&self, profile: &GameProfile) -> bool {
+        let Some(login_deadline) = self.login_deadline.load() else {
+            log::error!(
+                "Client {} reached duplicate login handling without a deadline",
+                self.id
+            );
+            self.close();
+            return false;
+        };
+
+        match self
+            .server
+            .disconnect_duplicate_player_and_wait(
+                profile.id,
+                &self.cancel_token,
+                login_deadline.expires_at_tick(),
+            )
+            .await
+        {
+            Ok(()) => true,
+            Err(DuplicatePlayerWaitError::Cancelled) => {
+                self.close();
+                false
+            }
+            Err(DuplicatePlayerWaitError::TimedOut) => false,
+        }
+    }
+
+    async fn finish_verified_login(
+        &self,
+        profile: GameProfile,
+        reader_encryption: Option<[u8; 16]>,
+    ) -> ConnectionAction {
+        let action = self.send_login_compression().await;
+        if !self.disconnect_duplicate_player(&profile).await {
+            return ConnectionAction::none();
+        }
+        self.send_login_finished(&profile).await;
+        let sequence_result = self.pre_play_state.lock().complete_login(profile);
+        if let Err(error) = sequence_result {
+            return self.reject_unexpected_packet(error).await;
+        }
+        match reader_encryption {
+            Some(key) => action.with_reader_encryption(key),
+            None => action,
+        }
+    }
+
     /// Handles the hello packet during the login state.
-    ///
-    /// # Panics
-    /// This function will panic if the player name converted to a UUID fails.
     pub(crate) async fn handle_hello(&self, packet: SHello) -> ConnectionAction {
-        if !is_valid_player_name(&packet.name) {
+        // The hello UUID is client supplied; only authentication or offline derivation is trusted.
+        let requested_username = packet.name;
+        if !is_valid_player_name(&requested_username) {
             self.kick("Invalid player name".into()).await;
             return ConnectionAction::none();
         }
 
-        let id = if self.server.config.online_mode {
-            packet.profile_id
-        } else {
-            offline_uuid(&packet.name)
-        };
-
-        {
-            let mut gameprofile = self.gameprofile.lock().await;
-            *gameprofile = Some(GameProfile {
-                id,
-                name: packet.name.clone(),
-                properties: vec![],
-                profile_actions: None,
-            });
-        }
-
         if self.server.config.encryption {
+            let sequence_result = self.pre_play_state.lock().wait_for_key(requested_username);
+            if let Err(error) = sequence_result {
+                return self.reject_unexpected_packet(error).await;
+            }
+
             let challenge: [u8; 4] = rand::random();
             self.challenge.store(challenge);
 
@@ -51,25 +87,28 @@ impl JavaTcpClient {
                 String::new(),
                 &self.server.key_store.public_key_der,
                 challenge,
-                true,
+                self.server.config.online_mode,
             ))
             .await;
-        } else {
-            return self
-                .finish_login(&GameProfile {
-                    id,
-                    name: packet.name,
-                    properties: vec![],
-                    profile_actions: None,
-                })
-                .await;
+            return ConnectionAction::none();
         }
 
-        ConnectionAction::none()
+        let profile = GameProfile {
+            id: offline_uuid(&requested_username),
+            name: requested_username,
+            properties: vec![],
+            profile_actions: None,
+        };
+        self.finish_verified_login(profile, None).await
     }
 
     /// Handles the key packet during the login state, used for encryption.
     pub(crate) async fn handle_key(&self, packet: SKey) -> ConnectionAction {
+        let sequence_result = self.pre_play_state.lock().begin_authentication();
+        let requested_username = match sequence_result {
+            Ok(requested_username) => requested_username,
+            Err(error) => return self.reject_unexpected_packet(error).await,
+        };
         let challenge = self.challenge.load();
 
         let Ok(challenge_response) = self
@@ -117,14 +156,7 @@ impl JavaTcpClient {
             () = self.cancel_token.cancelled() => return ConnectionAction::none(),
         }
 
-        let mut gameprofile = self.gameprofile.lock().await;
-
-        let Some(profile) = gameprofile.as_mut() else {
-            self.kick("No GameProfile".into()).await;
-            return ConnectionAction::none();
-        };
-
-        if self.server.config.online_mode {
+        let profile = if self.server.config.online_mode {
             let server_hash = &Sha1::new()
                 .chain_update(secret_key)
                 .chain_update(&self.server.key_store.public_key_der)
@@ -133,13 +165,13 @@ impl JavaTcpClient {
             let server_hash = signed_bytes_be_to_hex(server_hash);
 
             match mojang_authenticate(
-                &profile.name,
+                &requested_username,
                 &server_hash,
                 self.server.config.auth_server.as_deref(),
             )
             .await
             {
-                Ok(new_profile) => *profile = new_profile,
+                Ok(profile) => profile,
                 Err(error) => {
                     self.kick(match error {
                         AuthError::FailedResponse => TextComponent::translated(
@@ -162,20 +194,23 @@ impl JavaTcpClient {
                     return ConnectionAction::none();
                 }
             }
-        }
+        } else {
+            GameProfile {
+                id: offline_uuid(&requested_username),
+                name: requested_username,
+                properties: vec![],
+                profile_actions: None,
+            }
+        };
 
-        //TODO: Check for duplicate player UUID or name
-
-        self.finish_login(profile)
-            .await
-            .with_reader_encryption(secret_key)
+        self.finish_verified_login(profile, Some(secret_key)).await
     }
 
-    /// Finishes the login process and transitions to the configuration state.
+    /// Negotiates packet compression before the successful login response.
     ///
     /// # Panics
     /// This function will panic if the compression threshold cannot be converted to an i32.
-    pub(crate) async fn finish_login(&self, profile: &GameProfile) -> ConnectionAction {
+    async fn send_login_compression(&self) -> ConnectionAction {
         let mut action = ConnectionAction::none();
         if let Some(compression) = self.server.config.compression {
             self.send_bare_packet_now(CLoginCompression::new(
@@ -190,19 +225,28 @@ impl JavaTcpClient {
             action = ConnectionAction::reader_compression(compression);
         }
 
+        action
+    }
+
+    /// Sends the successful login response.
+    async fn send_login_finished(&self, profile: &GameProfile) {
         self.send_bare_packet_now(CLoginFinished::new(
             profile.into(),
             self.connection_session.session_id(),
         ))
         .await;
-
-        action
     }
 
     /// Handles the login acknowledged packet and transitions to the configuration state.
-    pub async fn handle_login_acknowledged(&self) {
+    pub(crate) async fn handle_login_acknowledged(&self) -> ConnectionAction {
+        let sequence_result = self.pre_play_state.lock().acknowledge_login();
+        if let Err(error) = sequence_result {
+            return self.reject_unexpected_packet(error).await;
+        }
+        self.login_deadline.store(None);
         self.protocol.store(ConnectionProtocol::Config);
 
         self.start_configuration().await;
+        ConnectionAction::none()
     }
 }

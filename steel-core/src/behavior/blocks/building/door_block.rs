@@ -10,7 +10,10 @@ use steel_registry::{
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt as _,
-        properties::{BlockStateProperties, Direction, DoorHingeSide, DoubleBlockHalf},
+        properties::{
+            BlockStateProperties, BoolProperty, Direction, DoorHingeSide, DoubleBlockHalf,
+            EnumProperty,
+        },
         shapes,
     },
     sound_event::SoundEventRef,
@@ -49,6 +52,12 @@ pub struct DoorBlock {
     sound_close: SoundEventRef,
 }
 
+const DOOR_HINGE: &EnumProperty<DoorHingeSide> = &BlockStateProperties::DOOR_HINGE;
+const DOUBLE_BLOCK_HALF: &EnumProperty<DoubleBlockHalf> = &BlockStateProperties::DOUBLE_BLOCK_HALF;
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const OPEN: &BoolProperty = &BlockStateProperties::OPEN;
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
+
 impl DoorBlock {
     const USE_UPDATE_FLAGS: UpdateFlags =
         UpdateFlags::UPDATE_CLIENTS.union(UpdateFlags::UPDATE_IMMEDIATE);
@@ -70,17 +79,12 @@ impl DoorBlock {
     }
 
     fn is_door(state: BlockStateId) -> bool {
-        state
-            .try_get_value(&BlockStateProperties::DOOR_HINGE)
-            .is_some()
-            && state
-                .try_get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF)
-                .is_some()
+        state.try_get_value(DOOR_HINGE).is_some()
+            && state.try_get_value(DOUBLE_BLOCK_HALF).is_some()
     }
 
     fn is_lower_door(state: BlockStateId) -> bool {
-        Self::is_door(state)
-            && state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Lower
+        Self::is_door(state) && state.get_value(DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Lower
     }
 
     fn hinge_for_placement(context: &BlockPlaceContext<'_>) -> DoorHingeSide {
@@ -149,15 +153,14 @@ impl DoorBlock {
         state: BlockStateId,
         player: &Player,
     ) {
-        if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) != DoubleBlockHalf::Upper {
+        if state.get_value(DOUBLE_BLOCK_HALF) != DoubleBlockHalf::Upper {
             return;
         }
 
         let bottom_pos = pos.below();
         let bottom_state = world.get_block_state(bottom_pos);
         if bottom_state.get_block() != state.get_block()
-            || bottom_state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF)
-                != DoubleBlockHalf::Lower
+            || bottom_state.get_value(DOUBLE_BLOCK_HALF) != DoubleBlockHalf::Lower
         {
             return;
         }
@@ -196,20 +199,11 @@ impl BlockBehavior for DoorBlock {
         Some(
             self.block
                 .default_state()
-                .set_value(
-                    &BlockStateProperties::HORIZONTAL_FACING,
-                    context.horizontal_direction(),
-                )
-                .set_value(
-                    &BlockStateProperties::DOOR_HINGE,
-                    Self::hinge_for_placement(context),
-                )
-                .set_value(&BlockStateProperties::POWERED, powered)
-                .set_value(&BlockStateProperties::OPEN, powered)
-                .set_value(
-                    &BlockStateProperties::DOUBLE_BLOCK_HALF,
-                    DoubleBlockHalf::Lower,
-                ),
+                .set_value(HORIZONTAL_FACING, context.horizontal_direction())
+                .set_value(DOOR_HINGE, Self::hinge_for_placement(context))
+                .set_value(POWERED, powered)
+                .set_value(OPEN, powered)
+                .set_value(DOUBLE_BLOCK_HALF, DoubleBlockHalf::Lower),
         )
     }
 
@@ -222,14 +216,13 @@ impl BlockBehavior for DoorBlock {
         _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        let half = state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF);
+        let half = state.get_value(DOUBLE_BLOCK_HALF);
         if direction.get_axis() == Axis::Y
             && (half == DoubleBlockHalf::Lower) == (direction == Direction::Up)
         {
-            if Self::is_door(neighbor_state)
-                && neighbor_state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) != half
+            if Self::is_door(neighbor_state) && neighbor_state.get_value(DOUBLE_BLOCK_HALF) != half
             {
-                return neighbor_state.set_value(&BlockStateProperties::DOUBLE_BLOCK_HALF, half);
+                return neighbor_state.set_value(DOUBLE_BLOCK_HALF, half);
             }
             return vanilla_blocks::AIR.default_state();
         }
@@ -247,7 +240,7 @@ impl BlockBehavior for DoorBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let below_pos = pos.below();
         let below_state = world.get_block_state(below_pos);
-        if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Lower {
+        if state.get_value(DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Lower {
             world.is_face_sturdy(below_state, below_pos, Direction::Up)
         } else {
             below_state.get_block() == self.block
@@ -256,9 +249,7 @@ impl BlockBehavior for DoorBlock {
 
     fn is_pathfindable(&self, state: BlockStateId, computation_type: PathComputationType) -> bool {
         match computation_type {
-            PathComputationType::Land | PathComputationType::Air => {
-                state.get_value(&BlockStateProperties::OPEN)
-            }
+            PathComputationType::Land | PathComputationType::Air => state.get_value(OPEN),
             PathComputationType::Water => false,
         }
     }
@@ -275,11 +266,11 @@ impl BlockBehavior for DoorBlock {
         source_entity: Option<&dyn Entity>,
         open: bool,
     ) -> bool {
-        if !Self::is_door(state) || state.get_value(&BlockStateProperties::OPEN) == open {
+        if !Self::is_door(state) || state.get_value(OPEN) == open {
             return false;
         }
 
-        let new_state = state.set_value(&BlockStateProperties::OPEN, open);
+        let new_state = state.set_value(OPEN, open);
         if !world.set_block(pos, new_state, Self::USE_UPDATE_FLAGS) {
             return false;
         }
@@ -303,10 +294,7 @@ impl BlockBehavior for DoorBlock {
     ) {
         world.set_block(
             pos.above(),
-            state.set_value(
-                &BlockStateProperties::DOUBLE_BLOCK_HALF,
-                DoubleBlockHalf::Upper,
-            ),
+            state.set_value(DOUBLE_BLOCK_HALF, DoubleBlockHalf::Upper),
             UpdateFlags::UPDATE_ALL,
         );
     }
@@ -337,8 +325,8 @@ impl BlockBehavior for DoorBlock {
             return InteractionResult::Pass;
         }
 
-        let open = !state.get_value(&BlockStateProperties::OPEN);
-        let new_state = state.set_value(&BlockStateProperties::OPEN, open);
+        let open = !state.get_value(OPEN);
+        let new_state = state.set_value(OPEN, open);
         world.set_block(pos, new_state, Self::USE_UPDATE_FLAGS);
         self.play_sound(world, pos, open, Some(player.id()));
         let event = if open {
@@ -362,18 +350,18 @@ impl BlockBehavior for DoorBlock {
             return;
         }
 
-        let half = state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF);
+        let half = state.get_value(DOUBLE_BLOCK_HALF);
         let other_half_pos = if half == DoubleBlockHalf::Lower {
             pos.above()
         } else {
             pos.below()
         };
         let signal = world.has_neighbor_signal(pos) || world.has_neighbor_signal(other_half_pos);
-        if signal == state.get_value(&BlockStateProperties::POWERED) {
+        if signal == state.get_value(POWERED) {
             return;
         }
 
-        if signal != state.get_value(&BlockStateProperties::OPEN) {
+        if signal != state.get_value(OPEN) {
             self.play_sound(world, pos, signal, None);
             let event = if signal {
                 &vanilla_game_events::BLOCK_OPEN
@@ -383,9 +371,7 @@ impl BlockBehavior for DoorBlock {
             world.game_event(event, pos, &GameEventContext::default());
         }
 
-        let new_state = state
-            .set_value(&BlockStateProperties::POWERED, signal)
-            .set_value(&BlockStateProperties::OPEN, signal);
+        let new_state = state.set_value(POWERED, signal).set_value(OPEN, signal);
         world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
     }
 }
@@ -521,7 +507,7 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Lower {
+        if state.get_value(DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Lower {
             self.weathering.change_over_time(state, world, pos);
         }
     }
@@ -547,24 +533,18 @@ mod tests {
         );
         let lower = vanilla_blocks::SPRUCE_DOOR
             .default_state()
-            .set_value(&BlockStateProperties::HORIZONTAL_FACING, Direction::West)
-            .set_value(&BlockStateProperties::DOOR_HINGE, DoorHingeSide::Right)
-            .set_value(
-                &BlockStateProperties::DOUBLE_BLOCK_HALF,
-                DoubleBlockHalf::Lower,
-            )
-            .set_value(&BlockStateProperties::OPEN, false)
-            .set_value(&BlockStateProperties::POWERED, false);
+            .set_value(HORIZONTAL_FACING, Direction::West)
+            .set_value(DOOR_HINGE, DoorHingeSide::Right)
+            .set_value(DOUBLE_BLOCK_HALF, DoubleBlockHalf::Lower)
+            .set_value(OPEN, false)
+            .set_value(POWERED, false);
         let upper = vanilla_blocks::SPRUCE_DOOR
             .default_state()
-            .set_value(&BlockStateProperties::HORIZONTAL_FACING, Direction::South)
-            .set_value(&BlockStateProperties::DOOR_HINGE, DoorHingeSide::Left)
-            .set_value(
-                &BlockStateProperties::DOUBLE_BLOCK_HALF,
-                DoubleBlockHalf::Upper,
-            )
-            .set_value(&BlockStateProperties::OPEN, false)
-            .set_value(&BlockStateProperties::POWERED, false);
+            .set_value(HORIZONTAL_FACING, Direction::South)
+            .set_value(DOOR_HINGE, DoorHingeSide::Left)
+            .set_value(DOUBLE_BLOCK_HALF, DoubleBlockHalf::Upper)
+            .set_value(OPEN, false)
+            .set_value(POWERED, false);
         let level = TestLevel::default();
 
         let updated = behavior.update_shape(
@@ -576,18 +556,9 @@ mod tests {
             upper,
         );
 
-        assert_eq!(
-            updated.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF),
-            DoubleBlockHalf::Lower
-        );
-        assert_eq!(
-            updated.get_value(&BlockStateProperties::HORIZONTAL_FACING),
-            Direction::South
-        );
-        assert_eq!(
-            updated.get_value(&BlockStateProperties::DOOR_HINGE),
-            DoorHingeSide::Left
-        );
+        assert_eq!(updated.get_value(DOUBLE_BLOCK_HALF), DoubleBlockHalf::Lower);
+        assert_eq!(updated.get_value(HORIZONTAL_FACING), Direction::South);
+        assert_eq!(updated.get_value(DOOR_HINGE), DoorHingeSide::Left);
     }
 
     #[test]

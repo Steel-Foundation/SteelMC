@@ -77,9 +77,7 @@ fn set_target_game_mode(
 fn required_game_mode(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<GameType, CommandSyntaxError> {
-    context.game_mode("gamemode").ok_or_else(|| {
-        CommandSyntaxError::dynamic("Parsed gamemode is missing from the command context")
-    })
+    context.game_mode("gamemode")
 }
 
 fn require_game_mode_permission(

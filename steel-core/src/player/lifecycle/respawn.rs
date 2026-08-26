@@ -3,19 +3,66 @@ use std::ptr;
 use super::*;
 use crate::entity::PendingWorldChangeToken;
 use crate::player::connection::NetworkConnection as _;
-use crate::player::player_data::PersistentPlayerData;
+use crate::{
+    behavior::{
+        BlockStateBehaviorExt as _,
+        blocks::{BedBlock, RespawnAnchorBlock},
+    },
+    chunk::{
+        chunk_request::{ChunkRequest, ChunkTicketKind},
+        status::ChunkStatus,
+    },
+    player::{Player, player_data::PersistentPlayerData},
+};
+use steel_protocol::packets::game::{CSound, SoundSource};
+use steel_registry::blocks::{
+    block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
+};
+use steel_registry::{sound_events, vanilla_blocks};
+use steel_utils::wrap_degrees;
+
+// Bed candidates reach two blocks out and collision checks read one block farther.
+const PERSONAL_RESPAWN_SEARCH_BLOCK_RADIUS: i32 = 3;
+
+/// Vanilla per-player respawn configuration.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlayerRespawnConfig {
+    /// Dimension, bed/anchor position, yaw, and pitch used for respawn.
+    pub respawn_data: RespawnData,
+    /// Whether respawning is forced even if the spawn block is unavailable.
+    pub forced: bool,
+}
+
+impl PlayerRespawnConfig {
+    #[must_use]
+    pub(crate) const fn new(respawn_data: RespawnData, forced: bool) -> Self {
+        Self {
+            respawn_data,
+            forced,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn is_same_position(&self, other: Option<&Self>) -> bool {
+        other.is_some_and(|other| self.respawn_data.global_pos == other.respawn_data.global_pos)
+    }
+}
 
 #[derive(Clone, Copy)]
 struct DeathRespawnSpawn {
     position: DVec3,
     rotation: (f32, f32),
+    anchor_deplete_sound_pos: Option<BlockPos>,
+    missing_respawn_block: bool,
 }
 
 struct PlayerRespawnJob {
     player: Arc<Player>,
     source_world: Arc<World>,
+    fallback_respawn: Option<(Arc<World>, RespawnData)>,
     target_world: Arc<World>,
     rotation: (f32, f32),
+    missing_respawn_block: bool,
     kind: RespawnRequestKind,
     pending_token: PendingWorldChangeToken,
     phase: PlayerRespawnJobPhase,
@@ -28,36 +75,86 @@ enum RespawnRequestKind {
 }
 
 enum PlayerRespawnJobPhase {
-    Searching(PlayerSpawnSearch),
-    LoadingSpawnChunks {
-        spawn: DeathRespawnSpawn,
+    LoadingPersonalRespawnBlock {
+        config: PlayerRespawnConfig,
         request: ChunkRequestHandle,
     },
+    Searching(PlayerSpawnSearch),
 }
 
 impl PlayerRespawnJob {
     fn new(
         player: Arc<Player>,
         source_world: Arc<World>,
-        target_world: Arc<World>,
-        respawn_data: RespawnData,
+        fallback_world: Arc<World>,
+        fallback_respawn_data: RespawnData,
+        personal_respawn: Option<(Arc<World>, PlayerRespawnConfig)>,
         kind: RespawnRequestKind,
         pending_token: PendingWorldChangeToken,
     ) -> Result<Self, String> {
-        let search = PlayerSpawnSearch::new(
-            &target_world,
-            respawn_data.pos(),
-            target_world.default_gamemode,
-        )?;
+        let fallback_rotation = (fallback_respawn_data.yaw, fallback_respawn_data.pitch);
+        let (target_world, rotation, phase, fallback_respawn) =
+            if let Some((personal_world, config)) = personal_respawn {
+                let pos = config.respawn_data.pos();
+                let request = Self::request_personal_respawn_chunks(&personal_world, pos);
+                (
+                    personal_world,
+                    (config.respawn_data.yaw, config.respawn_data.pitch),
+                    PlayerRespawnJobPhase::LoadingPersonalRespawnBlock { config, request },
+                    Some((fallback_world, fallback_respawn_data)),
+                )
+            } else {
+                let fallback_search = PlayerSpawnSearch::new(
+                    &fallback_world,
+                    fallback_respawn_data.pos(),
+                    fallback_world.default_gamemode,
+                )?;
+                (
+                    fallback_world,
+                    fallback_rotation,
+                    PlayerRespawnJobPhase::Searching(fallback_search),
+                    None,
+                )
+            };
         Ok(Self {
             player,
             source_world,
+            fallback_respawn,
             target_world,
-            rotation: (respawn_data.yaw, respawn_data.pitch),
+            rotation,
+            missing_respawn_block: false,
             kind,
             pending_token,
-            phase: PlayerRespawnJobPhase::Searching(search),
+            phase,
         })
+    }
+
+    fn request_personal_respawn_chunks(world: &Arc<World>, pos: BlockPos) -> ChunkRequestHandle {
+        world.chunk_map.request_chunks(ChunkRequest {
+            status: ChunkStatus::Full,
+            positions: Self::personal_respawn_chunk_positions(pos),
+            ticket_kind: ChunkTicketKind::PlayerSpawn,
+        })
+    }
+
+    fn personal_respawn_chunk_positions(pos: BlockPos) -> Vec<ChunkPos> {
+        let min = ChunkPos::from_block_pos(pos.offset(
+            -PERSONAL_RESPAWN_SEARCH_BLOCK_RADIUS,
+            0,
+            -PERSONAL_RESPAWN_SEARCH_BLOCK_RADIUS,
+        ));
+        let max = ChunkPos::from_block_pos(pos.offset(
+            PERSONAL_RESPAWN_SEARCH_BLOCK_RADIUS,
+            0,
+            PERSONAL_RESPAWN_SEARCH_BLOCK_RADIUS,
+        ));
+        let mut positions = Vec::new();
+        for x in min.0.x..=max.0.x {
+            for z in min.0.y..=max.0.y {
+                positions.push(ChunkPos::new(x, z));
+            }
+        }
+        positions
     }
 
     fn still_valid(&self) -> bool {
@@ -91,6 +188,54 @@ impl ServerJob for PlayerRespawnJob {
 
         loop {
             match &mut self.phase {
+                PlayerRespawnJobPhase::LoadingPersonalRespawnBlock { config, request } => {
+                    match request.poll() {
+                        ChunkRequestState::Pending { .. } => return JobPoll::Pending,
+                        ChunkRequestState::Cancelled => {
+                            self.finish_pending();
+                            return JobPoll::Finished;
+                        }
+                        ChunkRequestState::Ready if request.ready_chunks().is_none() => {
+                            return JobPoll::Pending;
+                        }
+                        ChunkRequestState::Ready => {}
+                    }
+                    if let Some(spawn) = Self::resolve_personal_respawn(
+                        &self.target_world,
+                        &self.player,
+                        config,
+                        matches!(self.kind, RespawnRequestKind::Death),
+                    ) {
+                        self.finish(spawn);
+                        return JobPoll::Finished;
+                    }
+
+                    let Some((fallback_world, fallback_respawn_data)) =
+                        self.fallback_respawn.take()
+                    else {
+                        self.finish_pending();
+                        return JobPoll::Finished;
+                    };
+                    let fallback_search = match PlayerSpawnSearch::new(
+                        &fallback_world,
+                        fallback_respawn_data.pos(),
+                        fallback_world.default_gamemode,
+                    ) {
+                        Ok(search) => search,
+                        Err(error) => {
+                            log::error!(
+                                "Failed to prepare fallback respawn for player {}: {error}",
+                                self.player.gameprofile.name
+                            );
+                            self.finish_pending();
+                            return JobPoll::Finished;
+                        }
+                    };
+                    self.target_world = fallback_world;
+                    self.rotation = (fallback_respawn_data.yaw, fallback_respawn_data.pitch);
+                    self.missing_respawn_block = true;
+                    self.phase = PlayerRespawnJobPhase::Searching(fallback_search);
+                }
                 PlayerRespawnJobPhase::Searching(search) => {
                     match search.poll_with_ready_candidate_budget(
                         &self.target_world,
@@ -105,41 +250,10 @@ impl ServerJob for PlayerRespawnJob {
                             let spawn = DeathRespawnSpawn {
                                 position,
                                 rotation: self.rotation,
+                                anchor_deplete_sound_pos: None,
+                                missing_respawn_block: self.missing_respawn_block,
                             };
-                            let request = self.target_world.request_player_spawn_chunks(position);
-                            self.phase =
-                                PlayerRespawnJobPhase::LoadingSpawnChunks { spawn, request };
-                        }
-                    }
-                }
-                PlayerRespawnJobPhase::LoadingSpawnChunks { spawn, request } => {
-                    match request.poll() {
-                        ChunkRequestState::Pending { .. } => return JobPoll::Pending,
-                        ChunkRequestState::Cancelled => {
-                            self.finish_pending();
-                            return JobPoll::Finished;
-                        }
-                        ChunkRequestState::Ready => {
-                            if request.ready_chunks().is_none() {
-                                return JobPoll::Pending;
-                            }
-
-                            match self.kind {
-                                RespawnRequestKind::Death => self.player.finish_death_respawn(
-                                    &self.source_world,
-                                    &self.target_world,
-                                    *spawn,
-                                    self.pending_token,
-                                ),
-                                RespawnRequestKind::EndCredits => {
-                                    self.player.finish_end_credits_respawn(
-                                        &self.source_world,
-                                        &self.target_world,
-                                        *spawn,
-                                        self.pending_token,
-                                    );
-                                }
-                            }
+                            self.finish(spawn);
                             return JobPoll::Finished;
                         }
                     }
@@ -151,6 +265,120 @@ impl ServerJob for PlayerRespawnJob {
     fn cancel(&mut self) {
         self.finish_pending();
     }
+}
+
+impl PlayerRespawnJob {
+    fn finish(&self, spawn: DeathRespawnSpawn) {
+        match self.kind {
+            RespawnRequestKind::Death => {
+                self.player.finish_death_respawn(
+                    &self.source_world,
+                    &self.target_world,
+                    spawn,
+                    self.pending_token,
+                );
+            }
+            RespawnRequestKind::EndCredits => {
+                self.player.finish_end_credits_respawn(
+                    &self.source_world,
+                    &self.target_world,
+                    spawn,
+                    self.pending_token,
+                );
+            }
+        }
+    }
+
+    fn resolve_personal_respawn(
+        world: &Arc<World>,
+        player: &Player,
+        config: &PlayerRespawnConfig,
+        consume_spawn_block: bool,
+    ) -> Option<DeathRespawnSpawn> {
+        let pos = config.respawn_data.pos();
+        let state = world.get_block_state(pos);
+
+        if RespawnAnchorBlock::can_use_for_respawn(world, pos, state, config.forced) {
+            let position = RespawnAnchorBlock::find_standup_position(world, player, pos)?;
+            if RespawnAnchorBlock::should_consume_charge_after_respawn(
+                config.forced,
+                consume_spawn_block,
+                true,
+            ) {
+                let _ = RespawnAnchorBlock::consume_charge(world, pos, state);
+            }
+            return Some(DeathRespawnSpawn {
+                position,
+                rotation: (calculate_respawn_look_at_yaw(position, pos), 0.0),
+                anchor_deplete_sound_pos: Some(pos),
+                missing_respawn_block: false,
+            });
+        }
+
+        if state.is_bed()
+            && Player::bed_rule_value_allows_in_world(
+                world,
+                world.dimension_type.bed_rule.can_set_spawn,
+            )
+        {
+            let facing = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+            let position = BedBlock::find_standup_position_with_yaw(
+                world,
+                player,
+                facing,
+                pos,
+                config.respawn_data.yaw,
+            )?;
+            return Some(DeathRespawnSpawn {
+                position,
+                rotation: (calculate_respawn_look_at_yaw(position, pos), 0.0),
+                anchor_deplete_sound_pos: None,
+                missing_respawn_block: false,
+            });
+        }
+
+        if !config.forced {
+            return None;
+        }
+        let top_state = world.get_block_state(pos.above());
+        Self::resolve_forced_respawn_fallback(
+            pos,
+            state,
+            top_state,
+            (config.respawn_data.yaw, config.respawn_data.pitch),
+        )
+    }
+
+    fn resolve_forced_respawn_fallback(
+        pos: BlockPos,
+        state: BlockStateId,
+        top_state: BlockStateId,
+        rotation: (f32, f32),
+    ) -> Option<DeathRespawnSpawn> {
+        if !state.is_possible_to_respawn_in_this() || !top_state.is_possible_to_respawn_in_this() {
+            return None;
+        }
+        Some(DeathRespawnSpawn {
+            position: DVec3::new(
+                f64::from(pos.x()) + 0.5,
+                f64::from(pos.y()) + 0.1,
+                f64::from(pos.z()) + 0.5,
+            ),
+            rotation,
+            anchor_deplete_sound_pos: None,
+            missing_respawn_block: false,
+        })
+    }
+}
+
+fn calculate_respawn_look_at_yaw(position: DVec3, look_at_block_pos: BlockPos) -> f32 {
+    let bed_center = DVec3::new(
+        f64::from(look_at_block_pos.x()) + 0.5,
+        f64::from(look_at_block_pos.y()),
+        f64::from(look_at_block_pos.z()) + 0.5,
+    );
+    let look_direction = (bed_center - position).normalize_or_zero();
+    wrap_degrees((look_direction.z.atan2(look_direction.x).to_degrees() - 90.0) as f32)
 }
 
 impl Player {
@@ -169,7 +397,7 @@ impl Player {
         self.finish_pending_world_change(token);
     }
 
-    /// TODO: personal respawn blocks/anchors and noRespawnBlockAvailable.
+    /// Schedules a vanilla death respawn for this player.
     pub fn respawn(&self) {
         let health = self.get_health();
         if !Self::should_process_respawn(health) {
@@ -198,7 +426,7 @@ impl Player {
             );
             return;
         };
-        let (target_world, respawn_data) =
+        let (fallback_world, fallback_respawn_data) =
             match server.respawn_world_and_data_for_domain(source_world.domain()) {
                 Ok(resolved) => resolved,
                 Err(error) => {
@@ -210,12 +438,14 @@ impl Player {
                     return;
                 }
             };
+        let personal_respawn = self.personal_respawn(&server, &source_world);
 
         match PlayerRespawnJob::new(
             player_arc,
             source_world,
-            target_world,
-            respawn_data,
+            fallback_world,
+            fallback_respawn_data,
+            personal_respawn,
             RespawnRequestKind::Death,
             pending_token,
         ) {
@@ -228,6 +458,21 @@ impl Player {
                 );
             }
         }
+    }
+
+    fn personal_respawn(
+        &self,
+        server: &Server,
+        source_world: &World,
+    ) -> Option<(Arc<World>, PlayerRespawnConfig)> {
+        self.respawn_config().and_then(|config| {
+            server
+                .worlds
+                .get(config.respawn_data.dimension())
+                .filter(|world| world.domain() == source_world.domain())
+                .cloned()
+                .map(|world| (world, config))
+        })
     }
 
     fn finish_death_respawn(
@@ -249,11 +494,21 @@ impl Player {
         let was_removed = self.base.clear_removed();
         self.reset_state_for_death_respawn_during_world_change(pending_token);
 
-        // TODO: personal respawn blocks/anchors and NO_RESPAWN_BLOCK_AVAILABLE.
-
         if !was_removed && Arc::ptr_eq(source_world, target_world) {
             source_world.unregister_player_entity(self);
         }
+
+        let keep_inventory =
+            target_world.get_game_rule(&KEEP_INVENTORY) || self.game_mode() == GameType::Spectator;
+        if keep_inventory {
+            self.detect_equipment_updates();
+        } else {
+            self.inventory.lock().clear_content();
+            self.experience.lock().clear();
+            self.set_score(0);
+        }
+
+        self.handle_missing_respawn_block(spawn.missing_respawn_block);
 
         // Shared reset (clears transient state, sends CRespawn)
         self.reset(target_world.clone(), ResetReason::Respawn);
@@ -261,25 +516,28 @@ impl Player {
         self.send_difficulty();
 
         // Handle XP and score loss on death.
-        let loses_inventory =
-            !target_world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator;
         {
             let mut experience = self.experience.lock();
-            if loses_inventory {
-                // TODO: drop XP orbs (min(level * 7, 100))
-                experience.clear();
-            }
             // Re-send XP to client after respawn regardless of keepInventory
             experience.dirty = true;
-        }
-        if loses_inventory {
-            self.set_score(0);
         }
 
         // TODO: send mob effect packets once effects are implemented
 
         // Shared spawn (teleport, abilities, weather, time, chunk tracking reset)
         if self.spawn(spawn.position, spawn.rotation, ResetReason::Respawn) {
+            if let Some(pos) = spawn.anchor_deplete_sound_pos
+                && target_world.get_block_state(pos).get_block() == &vanilla_blocks::RESPAWN_ANCHOR
+            {
+                self.send_packet(CSound::new(
+                    &sound_events::BLOCK_RESPAWN_ANCHOR_DEPLETE,
+                    SoundSource::Blocks,
+                    pos.0.as_dvec3(),
+                    1.0,
+                    1.0,
+                    rand::random(),
+                ));
+            }
             self.finish_respawn_request(pending_token);
             return;
         }
@@ -304,6 +562,7 @@ impl Player {
         }
 
         self.set_won_game(false);
+        self.handle_missing_respawn_block(spawn.missing_respawn_block);
         self.reset(target_world.clone(), ResetReason::EndCredits);
         self.send_difficulty();
         self.experience.lock().dirty = true;
@@ -313,6 +572,17 @@ impl Player {
         }
 
         self.finish_failed_respawn(target_world, pending_token);
+    }
+
+    fn handle_missing_respawn_block(&self, missing_respawn_block: bool) {
+        if !missing_respawn_block {
+            return;
+        }
+        self.set_respawn_position(None, false);
+        self.send_packet(CGameEvent {
+            event: GameEventType::NoRespawnBlockAvailable,
+            data: 0.0,
+        });
     }
 
     fn finish_failed_respawn(
@@ -355,6 +625,7 @@ impl Player {
         self.detach_relationships_for_respawn();
 
         self.attributes().lock().remove_all_transient();
+        self.reset_abilities_for_death_respawn();
         self.living_base.reset_for_player_respawn();
         if let Some(pending_token) = pending_token {
             self.base.reset_for_player_respawn_during_world_change(
@@ -392,6 +663,7 @@ impl Player {
 
     /// Handles client commands, requestStats and `RequestGameRuleValues` are still todo
     pub fn handle_client_command(self: &Arc<Self>, action: ClientCommandAction) {
+        self.reset_last_action_time();
         match action {
             ClientCommandAction::PerformRespawn => {
                 if self.has_won_game() {
@@ -400,8 +672,9 @@ impl Player {
                     self.respawn();
                 }
             }
-            ClientCommandAction::RequestStats | ClientCommandAction::RequestGameRuleValues => {
-                // TODO: implement stats
+            ClientCommandAction::RequestStats => self.send_stats(),
+            ClientCommandAction::RequestGameRuleValues => {
+                // TODO: implement requesting for game rule values
             }
         }
     }
@@ -501,12 +774,14 @@ impl Player {
                     return;
                 }
             };
+        let personal_respawn = self.personal_respawn(&server, &source_world);
 
         match PlayerRespawnJob::new(
             Arc::clone(self),
             source_world,
             target_world,
             respawn_data,
+            personal_respawn,
             RespawnRequestKind::EndCredits,
             pending_token,
         ) {
@@ -519,5 +794,30 @@ impl Player {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::{BlockPos, ChunkPos};
+
+    use super::PlayerRespawnJob;
+
+    #[test]
+    fn personal_respawn_loads_only_chunks_touched_by_standup_search() {
+        assert_eq!(
+            PlayerRespawnJob::personal_respawn_chunk_positions(BlockPos::new(8, 64, 8)),
+            [ChunkPos::new(0, 0)]
+        );
+
+        assert_eq!(
+            PlayerRespawnJob::personal_respawn_chunk_positions(BlockPos::new(13, 64, 13)),
+            [
+                ChunkPos::new(0, 0),
+                ChunkPos::new(0, 1),
+                ChunkPos::new(1, 0),
+                ChunkPos::new(1, 1),
+            ]
+        );
     }
 }

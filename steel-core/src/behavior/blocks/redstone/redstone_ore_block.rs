@@ -2,20 +2,19 @@
 
 use std::sync::Arc;
 
-use rand::RngExt as _;
 use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::BlockStateProperties;
-use steel_registry::enchantment_effect::EnchantmentEffectComponent;
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_registry::item_stack::ItemStack;
 use steel_utils::types::{InteractionHand, UpdateFlags};
+use steel_utils::value_providers::IntProvider;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::{
     BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
-    PlacementSource,
+    PlacementSource, try_drop_experience,
 };
 use crate::entity::Entity;
 use crate::player::Player;
@@ -27,6 +26,8 @@ pub struct RedStoneOreBlock {
     block: BlockRef,
 }
 
+const LIT: &BoolProperty = &BlockStateProperties::LIT;
+
 impl RedStoneOreBlock {
     /// Creates a redstone ore behavior.
     #[must_use]
@@ -35,22 +36,11 @@ impl RedStoneOreBlock {
     }
 
     fn interact(state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if state.get_value(&BlockStateProperties::LIT) {
+        if state.get_value(LIT) {
             return;
         }
 
-        world.set_block(
-            pos,
-            state.set_value(&BlockStateProperties::LIT, true),
-            UpdateFlags::UPDATE_ALL,
-        );
-    }
-
-    fn process_block_experience(tool: &ItemStack, base_experience: i32) -> i32 {
-        tool.apply_unconditional_enchantment_value_effects(
-            EnchantmentEffectComponent::BlockExperience,
-            base_experience as f32,
-        ) as i32
+        world.set_block(pos, state.set_value(LIT, true), UpdateFlags::UPDATE_ALL);
     }
 }
 
@@ -94,12 +84,8 @@ impl BlockBehavior for RedStoneOreBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if state.get_value(&BlockStateProperties::LIT) {
-            world.set_block(
-                pos,
-                state.set_value(&BlockStateProperties::LIT, false),
-                UpdateFlags::UPDATE_ALL,
-            );
+        if state.get_value(LIT) {
+            world.set_block(pos, state.set_value(LIT, false), UpdateFlags::UPDATE_ALL);
         }
     }
 
@@ -115,9 +101,15 @@ impl BlockBehavior for RedStoneOreBlock {
             return;
         }
 
-        let base_experience = rand::rng().random_range(1..=5);
-        let experience = Self::process_block_experience(tool, base_experience);
-        world.pop_experience(pos, experience);
+        try_drop_experience(
+            world,
+            pos,
+            tool,
+            &IntProvider::Uniform {
+                min_inclusive: 1,
+                max_inclusive: 5,
+            },
+        );
     }
 
     // `animateTick` and interaction particles use client-local `Level.addParticle`.
@@ -130,8 +122,8 @@ mod tests {
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::init_vanilla_registry;
-    use steel_registry::{vanilla_blocks, vanilla_entities, vanilla_items};
-    use steel_utils::{ChunkPos, Identifier, WorldAabb};
+    use steel_registry::{vanilla_blocks, vanilla_entities};
+    use steel_utils::{ChunkPos, WorldAabb};
 
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
@@ -198,23 +190,15 @@ mod tests {
 
             let behavior = BLOCK_BEHAVIORS.get_behavior(block);
             behavior.step_on(unlit, &world, pos, &careful_entity);
-            assert!(
-                !world
-                    .get_block_state(pos)
-                    .get_value(&BlockStateProperties::LIT)
-            );
+            assert!(!world.get_block_state(pos).get_value(LIT));
 
             behavior.step_on(unlit, &world, pos, &ordinary_entity);
             let lit = world.get_block_state(pos);
-            assert!(lit.get_value(&BlockStateProperties::LIT));
+            assert!(lit.get_value(LIT));
             assert!(lit.is_randomly_ticking());
 
             behavior.random_tick(lit, &world, pos);
-            assert!(
-                !world
-                    .get_block_state(pos)
-                    .get_value(&BlockStateProperties::LIT)
-            );
+            assert!(!world.get_block_state(pos).get_value(LIT));
         }
     }
 
@@ -234,23 +218,6 @@ mod tests {
                 .get_entities_in_aabb(&query)
                 .iter()
                 .any(|entity| entity.entity_type() == &vanilla_entities::EXPERIENCE_ORB)
-        );
-    }
-
-    #[test]
-    fn silk_touch_suppresses_redstone_ore_experience() {
-        init_vanilla_registry();
-        let plain_tool = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
-        assert_eq!(
-            RedStoneOreBlock::process_block_experience(&plain_tool, 5),
-            5
-        );
-
-        let mut silk_touch_tool = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
-        silk_touch_tool.set_enchantments(&[(Identifier::vanilla_static("silk_touch"), 1)], false);
-        assert_eq!(
-            RedStoneOreBlock::process_block_experience(&silk_touch_tool, 5),
-            0
         );
     }
 }

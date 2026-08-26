@@ -1,14 +1,15 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::{vanilla_blocks, vanilla_fluids};
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
+use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, schedule_water_tick_if_waterlogged};
+use crate::behavior::blocks::CoralBlock;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess};
 
-use super::{BlockRef, coral_plant_can_survive};
+use super::BlockRef;
 
 /// Vanilla `BaseCoralFanBlock` survival (dead coral fans).
 ///
@@ -17,6 +18,8 @@ use super::{BlockRef, coral_plant_can_survive};
 pub struct BaseCoralFanBlock {
     block: BlockRef,
 }
+
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl BaseCoralFanBlock {
     /// Creates a new dead coral fan block behavior.
@@ -28,7 +31,7 @@ impl BaseCoralFanBlock {
 
 impl BlockBehavior for BaseCoralFanBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        coral_plant_can_survive(world, pos)
+        CoralBlock::can_survive(world, pos)
     }
 
     fn update_shape(
@@ -40,10 +43,7 @@ impl BlockBehavior for BaseCoralFanBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         if direction == Direction::Down && !self.can_survive(state, world, pos) {
             vanilla_blocks::AIR.default_state()
@@ -57,6 +57,6 @@ impl BlockBehavior for BaseCoralFanBlock {
         if !self.can_survive(state, context.world, context.place_pos()) {
             return None;
         }
-        Some(state.set_value(&BlockStateProperties::WATERLOGGED, context.is_full_water()))
+        Some(state.set_value(WATERLOGGED, context.is_full_water()))
     }
 }

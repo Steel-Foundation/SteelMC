@@ -38,7 +38,7 @@ pub enum ValidationError {
 /// Profile public key data containing key, expiry, and Mojang signature.
 ///
 /// Equivalent to ProfilePublicKey.Data in Minecraft.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProfilePublicKeyData {
     /// When this key expires
     pub expires_at: SystemTime,
@@ -112,11 +112,7 @@ impl ProfilePublicKeyData {
         payload.extend_from_slice(&profile_id.as_u128().to_be_bytes());
 
         // Expiry timestamp (milliseconds since epoch, big-endian)
-        let expiry_millis = self
-            .expires_at
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as i64;
+        let expiry_millis = system_time_to_millis(self.expires_at);
         payload.extend_from_slice(&expiry_millis.to_be_bytes());
 
         // Public key bytes
@@ -133,11 +129,7 @@ impl ProfilePublicKeyData {
         let mut bytes = Vec::new();
 
         // Expiry timestamp (i64 milliseconds)
-        let expiry_millis = self
-            .expires_at
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as i64;
+        let expiry_millis = system_time_to_millis(self.expires_at);
         bytes.extend_from_slice(&expiry_millis.to_be_bytes());
 
         // Public key
@@ -173,7 +165,7 @@ impl ProfilePublicKeyData {
                 .expect("slice is exactly 8 bytes"),
         );
         offset += 8;
-        let expires_at = UNIX_EPOCH + Duration::from_millis(expiry_millis as u64);
+        let expires_at = system_time_from_millis(expiry_millis);
 
         // Read public key length
         if bytes.len() < offset + 4 {
@@ -333,12 +325,30 @@ impl RemoteChatSessionData {
     pub fn to_protocol_data(&self) -> Result<ProtocolRemoteChatSessionData, ValidationError> {
         let key_bytes = public_key_to_bytes(&self.profile_public_key.key)?;
 
-        Ok(ProtocolRemoteChatSessionData::new(
-            self.session_id,
-            self.profile_public_key.expires_at,
-            key_bytes,
-            self.profile_public_key.key_signature.clone(),
-        ))
+        Ok(ProtocolRemoteChatSessionData {
+            session_id: self.session_id,
+            expires_at_millis: system_time_to_millis(self.profile_public_key.expires_at),
+            public_key_bytes: key_bytes,
+            key_signature: self.profile_public_key.key_signature.clone(),
+        })
+    }
+}
+
+pub(super) fn system_time_from_millis(millis: i64) -> SystemTime {
+    if millis >= 0 {
+        UNIX_EPOCH + Duration::from_millis(millis as u64)
+    } else {
+        UNIX_EPOCH - Duration::from_millis(millis.unsigned_abs())
+    }
+}
+
+fn system_time_to_millis(time: SystemTime) -> i64 {
+    match time.duration_since(UNIX_EPOCH) {
+        Ok(duration) => i64::try_from(duration.as_millis()).unwrap_or(i64::MAX),
+        Err(error) => match i64::try_from(error.duration().as_millis()) {
+            Ok(millis) => millis.saturating_neg(),
+            Err(_) => i64::MIN,
+        },
     }
 }
 
@@ -359,3 +369,95 @@ mod signature_helpers {
 }
 
 use signature_helpers::ByteSliceUpdater;
+
+#[cfg(test)]
+mod tests {
+    use rsa::{
+        pkcs1v15::SigningKey,
+        signature::{SignatureEncoding as _, Signer as _},
+    };
+    use sha1::Sha1;
+    use steel_crypto::{generate_key_pair, public_key_to_bytes, signature::ProfileKeyValidator};
+    use uuid::Uuid;
+
+    use super::{ProfilePublicKeyData, ValidationError, system_time_from_millis};
+
+    fn signed_profile_key(
+        profile_id: Uuid,
+        expires_at_millis: i64,
+    ) -> (ProfilePublicKeyData, ProfileKeyValidator) {
+        let (service_private_key, service_public_key) =
+            generate_key_pair().expect("test service key should generate");
+        let (_, player_public_key) = generate_key_pair().expect("test player key should generate");
+        let player_key_der =
+            public_key_to_bytes(&player_public_key).expect("test player key should encode");
+        let mut payload = Vec::with_capacity(24 + player_key_der.len());
+        payload.extend_from_slice(&profile_id.as_u128().to_be_bytes());
+        payload.extend_from_slice(&expires_at_millis.to_be_bytes());
+        payload.extend_from_slice(&player_key_der);
+        let signature = SigningKey::<Sha1>::new(service_private_key)
+            .sign(&payload)
+            .to_bytes()
+            .to_vec();
+
+        (
+            ProfilePublicKeyData::new(
+                system_time_from_millis(expires_at_millis),
+                player_public_key,
+                signature,
+            ),
+            ProfileKeyValidator::new(vec![service_public_key])
+                .expect("test service key should create a validator"),
+        )
+    }
+
+    #[test]
+    fn profile_key_signature_binds_uuid_expiry_and_public_key() {
+        let profile_id = Uuid::from_u128(1);
+        let (data, validator) = signed_profile_key(profile_id, 1_234);
+
+        data.validate_signature(profile_id, &validator)
+            .expect("untampered profile key should validate");
+        assert!(matches!(
+            data.validate_signature(Uuid::from_u128(2), &validator),
+            Err(ValidationError::InvalidSignature)
+        ));
+
+        let mut changed_expiry = data.clone();
+        changed_expiry.expires_at = system_time_from_millis(1_235);
+        assert!(matches!(
+            changed_expiry.validate_signature(profile_id, &validator),
+            Err(ValidationError::InvalidSignature)
+        ));
+
+        let mut changed_key = data.clone();
+        changed_key.key = generate_key_pair()
+            .expect("replacement player key should generate")
+            .1;
+        assert!(matches!(
+            changed_key.validate_signature(profile_id, &validator),
+            Err(ValidationError::InvalidSignature)
+        ));
+    }
+
+    #[test]
+    fn profile_key_signature_rejects_tampered_signature() {
+        let profile_id = Uuid::from_u128(1);
+        let (mut data, validator) = signed_profile_key(profile_id, 1_234);
+        data.key_signature[0] ^= 1;
+
+        assert!(matches!(
+            data.validate_signature(profile_id, &validator),
+            Err(ValidationError::InvalidSignature)
+        ));
+    }
+
+    #[test]
+    fn signed_payload_preserves_negative_expiry_millis() {
+        let profile_id = Uuid::from_u128(1);
+        let (data, validator) = signed_profile_key(profile_id, -1);
+
+        data.validate_signature(profile_id, &validator)
+            .expect("pre-epoch expiry should retain its signed timestamp");
+    }
+}

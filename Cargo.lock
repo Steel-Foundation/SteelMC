@@ -2215,6 +2215,7 @@ dependencies = [
  "pkcs1",
  "pkcs8",
  "rand_core 0.10.1",
+ "sha1",
  "sha2",
  "signature",
  "spki",
@@ -2681,6 +2682,7 @@ dependencies = [
  "serde_json",
  "steel-core",
  "steel-login",
+ "steel-registry",
  "steel-utils",
  "strip-ansi-escapes",
  "text_components",
@@ -2697,6 +2699,7 @@ name = "steel-core"
 version = "0.15.2+mc26.2"
 dependencies = [
  "arc-swap",
+ "base64 0.23.0",
  "bitflags",
  "chrono",
  "criterion",
@@ -2720,6 +2723,7 @@ dependencies = [
  "scc",
  "serde",
  "serde_json",
+ "sha1",
  "sha2",
  "simdnbt",
  "small-map",
@@ -2750,6 +2754,7 @@ dependencies = [
  "log",
  "rand 0.10.2",
  "rsa",
+ "sha1",
  "thiserror",
 ]
 

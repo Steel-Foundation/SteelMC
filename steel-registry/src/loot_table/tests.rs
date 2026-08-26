@@ -105,6 +105,9 @@ fn test_pig_loot_drops_raw_porkchop_when_not_on_fire() {
         flags: EntityRefFlags::default(),
         equipment: None,
         custom_name: None,
+        sheep_color: None,
+        sheep_sheared: None,
+        chicken_variant: None,
     };
 
     let mut ctx = LootContext::new(&mut rng).with_this_entity(pig);
@@ -113,6 +116,153 @@ fn test_pig_loot_drops_raw_porkchop_when_not_on_fire() {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].item.key, Identifier::vanilla_static("porkchop"));
     assert!((1..=3).contains(&items[0].count));
+}
+
+#[test]
+fn shearing_sheep_table_parses_the_flat_type_specific_sheep_key() {
+    init_test_registries();
+
+    let table = &vanilla_loot_tables::SHEARING_SHEEP;
+    let pool = table
+        .pools
+        .first()
+        .expect("shearing table should have a pool");
+    let LootEntry::Alternatives { children, .. } = pool
+        .entries
+        .first()
+        .expect("shearing pool should start with alternatives")
+    else {
+        panic!("shearing pool should use an alternatives entry");
+    };
+
+    let mut checked = 0;
+    for child in *children {
+        let LootEntry::LootTableRef { conditions, .. } = child else {
+            continue;
+        };
+        let Some(LootCondition::EntityProperties { predicate, .. }) = conditions.first() else {
+            continue;
+        };
+        assert!(
+            predicate.sheep_color.is_some(),
+            "branch should match its wool color"
+        );
+        assert_eq!(
+            predicate.sheep_sheared,
+            Some(false),
+            "sheared must come from the flat minecraft:type_specific/sheep key"
+        );
+        checked += 1;
+    }
+    assert_eq!(
+        checked, 16,
+        "all sixteen color branches should carry the sheared predicate"
+    );
+}
+
+#[test]
+fn chicken_lay_branches_carry_the_chicken_variant_component() {
+    init_test_registries();
+
+    let table = &vanilla_loot_tables::GAMEPLAY_CHICKEN_LAY;
+    let pool = table.pools.first().expect("chicken_lay should have a pool");
+    let LootEntry::Alternatives { children, .. } = pool
+        .entries
+        .first()
+        .expect("chicken_lay should start with alternatives")
+    else {
+        panic!("chicken_lay should use an alternatives entry");
+    };
+
+    let variants = children
+        .iter()
+        .filter_map(|child| {
+            let LootEntry::Item { conditions, .. } = child else {
+                return None;
+            };
+            let Some(LootCondition::EntityProperties { predicate, .. }) = conditions.first() else {
+                return None;
+            };
+            predicate
+                .chicken_variant
+                .as_ref()
+                .map(|id| id.path.as_ref())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        variants,
+        ["temperate", "warm", "cold"],
+        "each egg branch should match its chicken variant"
+    );
+}
+
+#[test]
+fn chicken_lay_drops_the_egg_matching_the_chicken_variant() {
+    init_test_registries();
+
+    for (variant, expected_egg) in [
+        (&crate::vanilla_chicken_variants::TEMPERATE.key, "egg"),
+        (&crate::vanilla_chicken_variants::WARM.key, "brown_egg"),
+        (&crate::vanilla_chicken_variants::COLD.key, "blue_egg"),
+    ] {
+        let mut rng = test_rng();
+        let chicken = EntityRef {
+            entity_type: Some(&Identifier::vanilla_static("chicken")),
+            flags: EntityRefFlags::default(),
+            equipment: None,
+            custom_name: None,
+            sheep_color: None,
+            sheep_sheared: None,
+            chicken_variant: Some(variant),
+        };
+
+        let mut ctx = LootContext::new(&mut rng).with_this_entity(chicken);
+        let items = vanilla_loot_tables::GAMEPLAY_CHICKEN_LAY.get_random_items(&mut ctx);
+
+        assert_eq!(
+            items.len(),
+            1,
+            "a {variant} chicken should lay exactly one egg"
+        );
+        assert_eq!(
+            items[0].item.key,
+            Identifier::vanilla_static(expected_egg),
+            "a {variant} chicken should lay {expected_egg}"
+        );
+    }
+}
+
+#[test]
+fn sheared_predicate_rejects_non_sheep_entities() {
+    init_test_registries();
+    let mut rng = test_rng();
+    let pig_key = Identifier::vanilla_static("pig");
+    let pig = EntityRef {
+        entity_type: Some(&pig_key),
+        flags: EntityRefFlags::default(),
+        equipment: None,
+        custom_name: None,
+        sheep_color: None,
+        sheep_sheared: None,
+        chicken_variant: None,
+    };
+    let mut ctx = LootContext::new(&mut rng).with_this_entity(pig);
+
+    let condition = LootCondition::EntityProperties {
+        entity: LootContextEntity::This,
+        predicate: EntityPredicate {
+            entity_type: None,
+            flags: None,
+            equipment: None,
+            sheep_color: None,
+            sheep_sheared: Some(false),
+            chicken_variant: None,
+        },
+    };
+    assert!(
+        !condition.test(&mut ctx),
+        "a non-sheep entity must fail a sheared predicate, mirroring SheepPredicate.matches"
+    );
 }
 
 #[test]
@@ -128,6 +278,9 @@ fn test_pig_loot_smelt_condition_uses_entity_fire_flag() {
         },
         equipment: None,
         custom_name: None,
+        sheep_color: None,
+        sheep_sheared: None,
+        chicken_variant: None,
     };
 
     let mut ctx = LootContext::new(&mut rng).with_this_entity(pig);

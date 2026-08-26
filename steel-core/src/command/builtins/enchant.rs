@@ -47,9 +47,7 @@ fn enchant_default_level(
 fn enchant_with_level(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(level) = context.integer("level") else {
-        return Err(missing_argument("level"));
-    };
+    let level = context.integer("level")?;
     enchant(context, level)
 }
 
@@ -58,9 +56,7 @@ fn enchant(
     level: i32,
 ) -> Result<i32, CommandSyntaxError> {
     let targets = context.entities("targets")?;
-    let Some(enchantment) = context.enchantment("enchantment") else {
-        return Err(missing_argument("enchantment"));
-    };
+    let enchantment = context.enchantment("enchantment")?;
     let level = u32::try_from(level)
         .map_err(|_| CommandSyntaxError::dynamic("Enchantment level cannot be negative"))?;
     if level > enchantment.max_level {
@@ -206,12 +202,6 @@ fn enchantment_display_name(enchantment: EnchantmentRef, level: u32) -> TextComp
                 }));
     }
     component
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
 }
 
 #[cfg(test)]

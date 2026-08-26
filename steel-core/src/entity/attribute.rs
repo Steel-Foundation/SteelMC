@@ -205,6 +205,18 @@ impl AttributeInstance {
         true
     }
 
+    /// Removes every modifier while preserving the base value
+    fn remove_modifiers(&mut self) -> bool {
+        if self.modifiers.is_empty() {
+            return false;
+        }
+
+        self.modifiers.clear();
+        self.persistent.clear();
+        self.recalculate();
+        true
+    }
+
     /// Three-phase vanilla calculation:
     /// 1. `ADD_VALUE`
     /// 2. `ADD_MULTIPLIED_BASE`
@@ -527,6 +539,25 @@ impl AttributeMap {
             }
         }
     }
+
+    /// Removes all permanent and transient modifiers while preserving base values
+    pub fn remove_all_modifiers(&mut self) {
+        let Self {
+            instances,
+            to_update,
+            to_sync,
+        } = self;
+        for (id, slot) in instances.iter_mut().enumerate() {
+            if let Some(inst) = slot
+                && inst.remove_modifiers()
+            {
+                to_update.mark(id as u16);
+                if inst.attribute.syncable {
+                    to_sync.mark(id as u16);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -607,5 +638,50 @@ mod tests {
             modifiers[0].string("operation").map(ToString::to_string),
             Some("add_multiplied_base".to_owned())
         );
+    }
+
+    #[test]
+    fn removing_all_modifiers_preserves_base_value() {
+        init_vanilla_registry();
+        let mut attributes = AttributeMap::new_for_entity(&vanilla_entities::PLAYER);
+        attributes.set_base_value(vanilla_attributes::MAX_HEALTH, 30.0);
+
+        let transient_id = Identifier::vanilla_static("transient_test");
+        let permanent_id = Identifier::vanilla_static("permanent_test");
+        assert!(attributes.add_modifier(
+            vanilla_attributes::MAX_HEALTH,
+            AttributeModifier {
+                id: Identifier::vanilla_static("transient_test"),
+                amount: 2.0,
+                operation: AttributeModifierOperation::AddValue,
+            },
+            false,
+        ));
+        assert!(attributes.add_modifier(
+            vanilla_attributes::MAX_HEALTH,
+            AttributeModifier {
+                id: Identifier::vanilla_static("permanent_test"),
+                amount: 3.0,
+                operation: AttributeModifierOperation::AddValue,
+            },
+            true,
+        ));
+
+        attributes.remove_all_modifiers();
+
+        assert_eq!(
+            attributes
+                .get_base_value(vanilla_attributes::MAX_HEALTH)
+                .map(f64::to_bits),
+            Some(30.0_f64.to_bits())
+        );
+        assert_eq!(
+            attributes
+                .get_value(vanilla_attributes::MAX_HEALTH)
+                .map(f64::to_bits),
+            Some(30.0_f64.to_bits())
+        );
+        assert!(!attributes.has_modifier(vanilla_attributes::MAX_HEALTH, &transient_id));
+        assert!(!attributes.has_modifier(vanilla_attributes::MAX_HEALTH, &permanent_id));
     }
 }

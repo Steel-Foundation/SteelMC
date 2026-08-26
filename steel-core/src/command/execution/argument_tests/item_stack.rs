@@ -11,7 +11,7 @@ fn item_stack_argument_parses_supported_components_and_registered_removals() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("supported item components should parse");
     };
-    let Some(stack) = chain.top_context().item_stack("value") else {
+    let Ok(stack) = chain.top_context().item_stack("value") else {
         panic!("item stack should be retained");
     };
 
@@ -38,7 +38,7 @@ fn item_stack_argument_parses_identifier_components() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("identifier item components should parse");
     };
-    let Some(stack) = chain.top_context().item_stack("value") else {
+    let Ok(stack) = chain.top_context().item_stack("value") else {
         panic!("item stack should be retained");
     };
 
@@ -67,7 +67,7 @@ fn item_stack_argument_parses_custom_data_codecs() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("custom data components should parse");
     };
-    let Some(stack) = chain.top_context().item_stack("value") else {
+    let Ok(stack) = chain.top_context().item_stack("value") else {
         panic!("item stack should be retained");
     };
 
@@ -102,7 +102,7 @@ fn item_stack_argument_parses_custom_model_data_and_enchantability() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("custom model data and enchantability should parse");
     };
-    let Some(stack) = chain.top_context().item_stack("value") else {
+    let Ok(stack) = chain.top_context().item_stack("value") else {
         panic!("item stack should be retained");
     };
 
@@ -133,7 +133,7 @@ fn item_stack_argument_parses_color_map_and_amplifier_components() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("color, map, and amplifier components should parse");
     };
-    let Some(stack) = chain.top_context().item_stack("value") else {
+    let Ok(stack) = chain.top_context().item_stack("value") else {
         panic!("item stack should be retained");
     };
 
@@ -181,7 +181,7 @@ fn item_stack_argument_parses_direct_entity_variant_components() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("direct entity variant components should parse");
     };
-    let Some(stack) = chain.top_context().item_stack("value") else {
+    let Ok(stack) = chain.top_context().item_stack("value") else {
         panic!("item stack should be retained");
     };
 
@@ -234,7 +234,7 @@ fn item_stack_argument_parses_registry_holder_set_components() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("registry holder-set components should parse");
     };
-    let Some(stack) = chain.top_context().item_stack("value") else {
+    let Ok(stack) = chain.top_context().item_stack("value") else {
         panic!("item stack should be retained");
     };
 
@@ -255,7 +255,7 @@ fn item_stack_argument_uses_vanilla_numeric_codec_coercions() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("vanilla numeric component coercions should parse");
     };
-    let Some(stack) = chain.top_context().item_stack("value") else {
+    let Ok(stack) = chain.top_context().item_stack("value") else {
         panic!("item stack should be retained");
     };
 
@@ -281,7 +281,7 @@ fn item_stack_argument_parses_compound_component_values() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("supported compound component should parse");
     };
-    let Some(stack) = chain.top_context().item_stack("value") else {
+    let Ok(stack) = chain.top_context().item_stack("value") else {
         panic!("item stack should be retained");
     };
     let Some(cooldown) = stack.get(vanilla_components::USE_COOLDOWN) else {
@@ -355,7 +355,7 @@ fn item_stack_argument_sanitizes_redundant_component_changes() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("redundant component changes should parse");
     };
-    let Some(stack) = chain.top_context().item_stack("value") else {
+    let Ok(stack) = chain.top_context().item_stack("value") else {
         panic!("item stack should be retained");
     };
 
@@ -394,7 +394,7 @@ fn removing_max_stack_size_uses_vanillas_fallback_of_one() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("registered component removal should parse");
     };
-    let Some(stack) = chain.top_context().item_stack("value") else {
+    let Ok(stack) = chain.top_context().item_stack("value") else {
         panic!("item stack should be retained");
     };
 

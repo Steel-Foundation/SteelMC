@@ -16,6 +16,7 @@
 /world
 /saves
 /players
+/script/.gitcraft-tmp
 
 # Misc
 CLAUDE.md
@@ -34,8 +35,15 @@ profile.json.syms.json
 # ICE crash reports
 rustc-ice-*
 
+# Nix
+/.direnv
+/result
+/result-*
+
 # IDE
 .vscode/settings.json
 .idea
 
 .DS_STORE
+.gitcraft-tmp/
+/.vs

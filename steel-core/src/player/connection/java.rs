@@ -1,7 +1,7 @@
 //! This module contains the `JavaConnection` struct, which is used to represent a connection to a Java client.
 use std::io::Cursor;
 use std::sync::{Arc, Weak};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use steel_protocol::packet_reader::TCPNetworkDecoder;
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket, ServerPacket};
@@ -33,6 +33,7 @@ use tokio::io::{BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
+use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use crate::command::{handle_client_request, sender::CommandSender};
@@ -43,11 +44,13 @@ use crate::server::Server;
 /// Shared Java socket writer.
 pub type JavaNetworkWriter = Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>>;
 
+const DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
+
 /// Outbound packet queue message for Java connections.
 pub enum OutboundPacket {
     /// Normal packet write that may be interrupted by connection shutdown.
     Packet(EncodedPacket),
-    /// Final disconnect packet that must be flushed before closing the socket.
+    /// Final disconnect packet that is flushed on a bounded best-effort basis.
     Disconnect(EncodedPacket),
 }
 
@@ -185,8 +188,8 @@ impl ScheduledPlayPacket {
                 | PlayerAction::StopDestroyBlock
                 | PlayerAction::DropAllItems
                 | PlayerAction::DropItem => ScheduledPacketExecution::Serialized,
-                // Release-use is not implemented, while stab spans independently locked targets;
-                // neither can yet overlap player-local work safely.
+                // Active-use release may invoke item behavior and mutate inventory, while stab
+                // spans independently locked targets; neither can overlap player-local work.
                 PlayerAction::ReleaseUseItem | PlayerAction::Stab => {
                     ScheduledPacketExecution::Exclusive
                 }
@@ -264,6 +267,7 @@ impl ScheduledPlayPacket {
                 }
             }
             ScheduledPlayPacketKind::ChatCommand(packet) => {
+                player.reset_last_action_time();
                 if server
                     .submit_command(CommandSender::Player(Arc::clone(&player)), packet.command)
                     .is_err()
@@ -310,7 +314,7 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::SetCarriedItem(packet) => {
                 player.handle_set_carried_item(packet);
             }
-            ScheduledPlayPacketKind::Swing(packet) => player.swing(packet.hand, false),
+            ScheduledPlayPacketKind::Swing(packet) => player.handle_animate(packet),
             ScheduledPlayPacketKind::PlayerAction(packet) => {
                 player.handle_player_action(packet);
             }
@@ -426,8 +430,28 @@ impl JavaConnection {
         network_writer.write_packet(packet).await
     }
 
-    async fn release_network_writer(&self) {
-        self.network_writer.lock().await.take();
+    async fn finish_disconnect(&self, disconnect_packet: Option<EncodedPacket>) {
+        let finish = async {
+            let Some(mut network_writer) = self.network_writer.lock().await.take() else {
+                return Ok(());
+            };
+            let Some(packet) = disconnect_packet else {
+                return Ok(());
+            };
+            network_writer.write_packet(&packet).await
+        };
+
+        match timeout(DISCONNECT_FLUSH_TIMEOUT, finish).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => log::debug!(
+                "Best-effort disconnect write for client {} failed: {error}",
+                self.id
+            ),
+            Err(_) => log::debug!(
+                "Best-effort disconnect write for client {} timed out",
+                self.id
+            ),
+        }
     }
 
     /// Ticks the connection.
@@ -593,7 +617,7 @@ impl JavaConnection {
             return Ok(());
         }
 
-        let payload_bytes = packet.payload.len();
+        let payload_bytes = packet.payload().len();
         let Some(packet) = Self::decode_domain_gated_packet(packet, &player)? else {
             return Ok(());
         };
@@ -639,7 +663,7 @@ impl JavaConnection {
         reason = "single match decode over all implemented play packets keeps protocol routing auditable"
     )]
     fn decode_play_packet(packet: RawPacket) -> Result<DecodedPlayPacket, PacketError> {
-        let data = &mut Cursor::new(packet.payload.as_slice());
+        let data = &mut Cursor::new(packet.payload());
         let scheduled = |packet| DecodedPlayPacket::Scheduled(ScheduledPlayPacket(packet));
 
         Ok(match packet.id {
@@ -826,12 +850,11 @@ impl JavaConnection {
     /// Sends packets to the client.
     ///
     pub async fn sender(&self, mut sender_recv: UnboundedReceiver<OutboundPacket>) {
-        loop {
+        let disconnect_packet = loop {
             select! {
                 biased;
                 () = self.wait_for_close() => {
-                    self.write_queued_disconnect(&mut sender_recv).await;
-                    break;
+                    break Self::take_queued_disconnect(&mut sender_recv);
                 }
                 outbound = sender_recv.recv() => {
                     if let Some(outbound) = outbound {
@@ -841,25 +864,21 @@ impl JavaConnection {
                         };
 
                         if close_after_write {
-                            if let Err(err) = self.write_packet_now(&packet).await {
-                                log::warn!("Failed to send disconnect packet to client {}: {err}", self.id);
-                            }
                             self.close();
-                            break;
+                            break Some(packet);
                         }
 
                         let write_result = self.write_packet_now(&packet);
                         select! {
                             biased;
                             () = self.wait_for_close() => {
-                                self.write_queued_disconnect(&mut sender_recv).await;
-                                break;
+                                break Self::take_queued_disconnect(&mut sender_recv);
                             },
                             result = write_result => {
                                 if let Err(err) = result {
                                     log::warn!("Failed to send packet to client {}: {err}", self.id);
                                     self.close();
-                                    break;
+                                    break None;
                                 }
                             }
                         }
@@ -869,23 +888,18 @@ impl JavaConnection {
                         //    self.id
                         //);
                         self.close();
+                        break None;
                     }
                 }
             }
-        }
-
-        self.release_network_writer().await;
-
-        let Some(player) = self.player.upgrade() else {
-            return;
         };
-        if !player.has_joined_world() || player.server().cancel_token.is_cancelled() {
-            return;
-        }
-        player.server().queue_player_disconnect(player);
+
+        self.finish_disconnect(disconnect_packet).await;
     }
 
-    async fn write_queued_disconnect(&self, sender_recv: &mut UnboundedReceiver<OutboundPacket>) {
+    fn take_queued_disconnect(
+        sender_recv: &mut UnboundedReceiver<OutboundPacket>,
+    ) -> Option<EncodedPacket> {
         let mut disconnect_packet = None;
         loop {
             match sender_recv.try_recv() {
@@ -894,16 +908,7 @@ impl JavaConnection {
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
             }
         }
-
-        let Some(packet) = disconnect_packet else {
-            return;
-        };
-        if let Err(err) = self.write_packet_now(&packet).await {
-            log::warn!(
-                "Failed to send disconnect packet to client {} during close: {err}",
-                self.id
-            );
-        }
+        disconnect_packet
     }
 }
 
@@ -951,7 +956,7 @@ impl NetworkConnection for JavaConnection {
     }
 
     fn close(&self) {
-        self.cancel_token.cancel();
+        JavaConnection::close(self);
     }
 
     fn closed(&self) -> bool {
@@ -1000,7 +1005,7 @@ mod tests {
     #[test]
     fn queued_domain_switch_records_only_perform_respawn_at_connection_gate() {
         let world = fresh_test_world("queued_domain_switch_respawn_packet");
-        let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "RespawnTester", 1).build();
+        let player = TestPlayerBuilder::new(world, "RespawnTester", 1).build();
         let Some(token) = player.begin_pending_world_change() else {
             panic!("test player should acquire a world-change token");
         };
@@ -1008,20 +1013,20 @@ mod tests {
         player.set_health(0.0);
 
         let request_stats = JavaConnection::decode_domain_gated_packet(
-            RawPacket {
-                id: play::S_CLIENT_COMMAND,
-                payload: vec![ClientCommandAction::RequestStats as u8],
-            },
+            RawPacket::new(
+                play::S_CLIENT_COMMAND,
+                vec![ClientCommandAction::RequestStats as u8],
+            ),
             &player,
         );
         assert!(matches!(request_stats, Ok(None)));
         assert!(!player.has_deferred_death_respawn_for_test());
 
         let perform_respawn = JavaConnection::decode_domain_gated_packet(
-            RawPacket {
-                id: play::S_CLIENT_COMMAND,
-                payload: vec![ClientCommandAction::PerformRespawn as u8],
-            },
+            RawPacket::new(
+                play::S_CLIENT_COMMAND,
+                vec![ClientCommandAction::PerformRespawn as u8],
+            ),
             &player,
         );
         assert!(matches!(perform_respawn, Ok(None)));
@@ -1037,10 +1042,7 @@ mod tests {
         let mut payload = vec![channel.len() as u8];
         payload.extend_from_slice(channel);
         payload.extend_from_slice(b"steel");
-        let decoded = decode(RawPacket {
-            id: play::S_CUSTOM_PAYLOAD,
-            payload,
-        });
+        let decoded = decode(RawPacket::new(play::S_CUSTOM_PAYLOAD, payload));
         let DecodedPlayPacket::Scheduled(
             packet @ ScheduledPlayPacket(ScheduledPlayPacketKind::CustomPayload(_)),
         ) = decoded
@@ -1078,19 +1080,13 @@ mod tests {
 
     #[test]
     fn scheduled_domain_handshake_classification_is_narrow() {
-        let accept = decode(RawPacket {
-            id: play::S_ACCEPT_TELEPORTATION,
-            payload: vec![0],
-        });
+        let accept = decode(RawPacket::new(play::S_ACCEPT_TELEPORTATION, vec![0]));
         let DecodedPlayPacket::Scheduled(accept) = accept else {
             panic!("teleport acknowledgement should be scheduled");
         };
         assert!(accept.is_domain_handshake_packet());
 
-        let client_tick_end = decode(RawPacket {
-            id: play::S_CLIENT_TICK_END,
-            payload: Vec::new(),
-        });
+        let client_tick_end = decode(RawPacket::new(play::S_CLIENT_TICK_END, Vec::new()));
         let DecodedPlayPacket::Scheduled(client_tick_end) = client_tick_end else {
             panic!("client tick end should be scheduled");
         };
@@ -1099,10 +1095,7 @@ mod tests {
 
     #[test]
     fn client_tick_end_is_scheduled_for_the_inter_tick_phase() {
-        let decoded = decode(RawPacket {
-            id: play::S_CLIENT_TICK_END,
-            payload: Vec::new(),
-        });
+        let decoded = decode(RawPacket::new(play::S_CLIENT_TICK_END, Vec::new()));
 
         assert!(matches!(
             decoded,
@@ -1346,10 +1339,10 @@ mod tests {
 
     #[test]
     fn keep_alive_remains_on_the_immediate_connection_path() {
-        let decoded = decode(RawPacket {
-            id: play::S_KEEP_ALIVE,
-            payload: 42_i64.to_be_bytes().to_vec(),
-        });
+        let decoded = decode(RawPacket::new(
+            play::S_KEEP_ALIVE,
+            42_i64.to_be_bytes().to_vec(),
+        ));
 
         assert!(matches!(
             decoded,
@@ -1359,10 +1352,10 @@ mod tests {
 
     #[test]
     fn chunk_batch_ack_uses_the_immediate_connection_path() {
-        let decoded = decode(RawPacket {
-            id: play::S_CHUNK_BATCH_RECEIVED,
-            payload: 12.5_f32.to_be_bytes().to_vec(),
-        });
+        let decoded = decode(RawPacket::new(
+            play::S_CHUNK_BATCH_RECEIVED,
+            12.5_f32.to_be_bytes().to_vec(),
+        ));
 
         assert!(matches!(
             decoded,

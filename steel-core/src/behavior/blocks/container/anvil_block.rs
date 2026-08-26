@@ -2,11 +2,15 @@ use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::{
-    blocks::{BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties},
+    blocks::{
+        BlockRef,
+        block_state_ext::BlockStateExt,
+        properties::{BlockStateProperties, EnumProperty},
+    },
     items::item::BlockHitResult,
     vanilla_blocks,
 };
-use steel_utils::{BlockStateId, translations};
+use steel_utils::{BlockStateId, Direction, translations};
 use text_components::TextComponent;
 
 use crate::{
@@ -21,6 +25,9 @@ use crate::{
 pub struct AnvilBlock {
     block: BlockRef,
 }
+
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 
 impl AnvilBlock {
     /// Creates a new Anvil Block Behavior
@@ -37,13 +44,13 @@ impl AnvilBlock {
             Some(
                 vanilla_blocks::CHIPPED_ANVIL
                     .default_state()
-                    .copy_value(&BlockStateProperties::FACING, &state),
+                    .copy_value(FACING, &state),
             )
         } else if block == &vanilla_blocks::CHIPPED_ANVIL {
             Some(
                 vanilla_blocks::DAMAGED_ANVIL
                     .default_state()
-                    .copy_value(&BlockStateProperties::FACING, &state),
+                    .copy_value(FACING, &state),
             )
         } else {
             None
@@ -54,7 +61,7 @@ impl AnvilBlock {
 impl BlockBehavior for AnvilBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state().set_value(
-            &BlockStateProperties::HORIZONTAL_FACING,
+            HORIZONTAL_FACING,
             context.horizontal_direction().rotate_y_clockwise(),
         ))
     }
