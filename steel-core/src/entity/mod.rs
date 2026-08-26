@@ -199,7 +199,7 @@ fn leash_scan_area(center: DVec3) -> WorldAabb {
 fn transfer_leashables_to_holder(leashables: Vec<SharedEntity>, new_holder: &SharedEntity) -> bool {
     let mut transferred = false;
     for leashable in leashables {
-        let Some(mob) = leashable.as_mob() else {
+        let Some(mob) = leashable.as_leashable() else {
             continue;
         };
         if mob.can_have_a_leash_attached_to(new_holder.as_ref()) {
@@ -781,6 +781,7 @@ pub use callback::{
     PlayerEntityCallback, RemovalReason,
 };
 pub(crate) use entity::apply_entity_look_at;
+pub(crate) use entity::position_rider_default;
 pub use entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
 };
@@ -811,7 +812,7 @@ pub use movement_sync::{
 pub use projectile::{
     EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
     ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
-    compute_margin, get_hit_result_on_view_vector,
+    compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{
@@ -1339,8 +1340,26 @@ pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
         custom_name: None,
         sheep_color: sheep.map(|(color, _)| color),
         sheep_sheared: sheep.map(|(_, sheared)| sheared),
+        chicken_variant: living_entity.and_then(LivingEntity::chicken_loot_variant),
     }
 }
 
+/// Finds the leashable mobs near a position whose holder is `holder`.
+pub fn leashables_leashed_to_holder_in_area_near_position(
+    world: &Arc<World>,
+    pos: DVec3,
+    holder: &dyn Entity,
+) -> Vec<SharedEntity> {
+    let holder_id = holder.id();
+    let scan_area = leash_scan_area(pos);
+    world.get_entities_in_aabb_matching(&scan_area, |entity| {
+        entity.as_leashable().is_some_and(|mob| {
+            mob.leash_holder()
+                .is_some_and(|holder| holder.id() == holder_id)
+        })
+    })
+}
+
+mod leash;
 #[cfg(test)]
 mod tests;

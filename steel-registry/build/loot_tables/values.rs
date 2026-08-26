@@ -351,6 +351,17 @@ pub(super) fn generate_entity_predicate(predicate: &EntityPredicateJson) -> Toke
                 quote! { Some(#color) }
             },
         );
+    let chicken_variant = predicate
+        .components
+        .as_ref()
+        .and_then(|components| components.chicken_variant.as_deref())
+        .map_or_else(
+            || quote! { None },
+            |variant| {
+                let variant = variant.strip_prefix("minecraft:").unwrap_or(variant);
+                quote! { Some(Identifier::vanilla_static(#variant)) }
+            },
+        );
     let sheep_sheared = predicate
         .sheep_type_specific
         .as_ref()
@@ -364,6 +375,7 @@ pub(super) fn generate_entity_predicate(predicate: &EntityPredicateJson) -> Toke
             equipment: #equipment,
             sheep_color: #sheep_color,
             sheep_sheared: #sheep_sheared,
+            chicken_variant: #chicken_variant,
         }
     }
 }

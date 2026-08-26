@@ -853,15 +853,9 @@ mod tests {
         let noise2 = ImprovedNoise::new(&mut rng2);
 
         // Same seed should produce same noise
-        #[expect(
-            clippy::float_cmp,
-            reason = "determinism test: identical seeds must produce bit-identical offsets"
-        )]
-        {
-            assert_eq!(noise1.xo, noise2.xo);
-            assert_eq!(noise1.yo, noise2.yo);
-            assert_eq!(noise1.zo, noise2.zo);
-        }
+        assert_eq!(noise1.xo, noise2.xo);
+        assert_eq!(noise1.yo, noise2.yo);
+        assert_eq!(noise1.zo, noise2.zo);
         assert_eq!(noise1.p, noise2.p);
 
         // Same coordinates should produce same values
@@ -914,14 +908,8 @@ mod tests {
         ];
 
         for &(a, b) in &samples {
-            #[expect(
-                clippy::float_cmp,
-                reason = "zero-axis helpers must be bit-identical to the full scalar path"
-            )]
-            {
-                assert_eq!(noise.noise_xz(a, b), noise.noise(a, 0.0, b));
-                assert_eq!(noise.noise_xy(a, b), noise.noise(a, b, 0.0));
-            }
+            assert_eq!(noise.noise_xz(a, b), noise.noise(a, 0.0, b));
+            assert_eq!(noise.noise_xy(a, b), noise.noise(a, b, 0.0));
         }
     }
 

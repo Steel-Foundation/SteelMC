@@ -279,7 +279,7 @@ mod tests {
             set_permission(&mut config, "default", &global, None),
             Ok(true)
         );
-        assert!(config.groups["default"].allow.is_empty());
+        assert_eq!(config.groups["default"].allow.len(), 0);
         assert_eq!(
             config.groups["default"].deny,
             ["steel.build{domain=survival}"]
@@ -306,7 +306,7 @@ mod tests {
             ),
             Ok(true)
         );
-        assert!(config.groups["default"].allow.is_empty());
+        assert_eq!(config.groups["default"].allow.len(), 0);
         assert_eq!(
             config.groups["default"].deny,
             ["steel.build{domain=survival,plugin:region=spawn}"]
