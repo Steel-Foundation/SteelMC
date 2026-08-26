@@ -85,7 +85,7 @@ impl TurtleBreedGoal {
         partner_animal.reset_love();
 
         if world.get_game_rule(&MOB_DROPS) {
-            let xp = rand::random_range(0..7) + 1;
+            let xp = rand::random_range(1..8);
             ExperienceOrbEntity::award(&world, mob.position(), xp);
         }
     }
