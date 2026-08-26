@@ -125,7 +125,7 @@ pub trait BlockAttachedEntity: Entity {
         source: &DamageSource,
         _amount: f32,
     ) -> bool {
-        if self.default_is_invulnerable_to(source) {
+        if self.is_invulnerable_to_base(source) {
             return false;
         }
 
