@@ -267,7 +267,9 @@ impl BlockBehavior for BellBlock {
         }
 
         let owner = projectile.get_owner();
-        let source = owner.as_deref().filter(|entity| entity.as_player().is_some());
+        let source = owner
+            .as_deref()
+            .filter(|entity| entity.as_player().is_some());
         Self::ring(source, world, hit.block_pos, hit.direction);
     }
 
@@ -330,9 +332,7 @@ mod tests {
     use steel_utils::types::InteractionHand;
 
     use super::*;
-    use crate::behavior::{
-        BLOCK_BEHAVIORS, PlacementOrientation, PlacementSource, init_behaviors,
-    };
+    use crate::behavior::{BLOCK_BEHAVIORS, PlacementOrientation, PlacementSource, init_behaviors};
     use crate::block_entity::init_block_entities;
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
