@@ -769,6 +769,10 @@ impl LevelAccessor for Arc<World> {
         self.set_block(pos, state, flags)
     }
 
+    fn destroy_block(&self, pos: BlockPos, drop_items: bool) -> bool {
+        World::destroy_block(self, pos, drop_items)
+    }
+
     fn play_block_sound(
         &self,
         sound: SoundEventRef,
