@@ -22,13 +22,9 @@ use crate::world::game_event::GameEventContext;
 /// `FlowerPotBlock.POTTED_BY_CONTENT`. Vanilla fills this map from every
 /// flower-pot constructor call; Steel fills it from every generated
 /// behavior registration.
-fn potted_by_content() -> &'static SyncMutex<FxHashMap<Identifier, BlockRef>> {
-    static MAP: OnceLock<SyncMutex<FxHashMap<Identifier, BlockRef>>> = OnceLock::new();
-    MAP.get_or_init(|| SyncMutex::new(FxHashMap::default()))
-}
+pub(crate) static POTTED_BY_CONTENT: OnceLock<SyncMutex<FxHashMap<Identifier, BlockRef>>> =
+    OnceLock::new();
 
-/// Vanilla `FlowerPotBlock`: one shared class behind the empty pot and every
-/// `POTTED_*` variant; the empty pot carries `potted == AIR`.
 #[block_behavior]
 pub struct FlowerPotBlock {
     block: BlockRef,
@@ -39,7 +35,8 @@ pub struct FlowerPotBlock {
 impl FlowerPotBlock {
     /// Creates the behavior for one registered pot block.
     pub fn new(block: BlockRef, potted: BlockRef) -> Self {
-        potted_by_content()
+        POTTED_BY_CONTENT
+            .get_or_init(|| SyncMutex::new(FxHashMap::default()))
             .lock()
             .insert(REGISTRY.items.by_block(potted).key.clone(), block);
         Self { block, potted }
@@ -71,7 +68,11 @@ impl BlockBehavior for FlowerPotBlock {
             if stack.is_empty() {
                 None
             } else {
-                potted_by_content().lock().get(&stack.item().key).copied()
+                POTTED_BY_CONTENT
+                    .get_or_init(|| SyncMutex::new(FxHashMap::default()))
+                    .lock()
+                    .get(&stack.item().key)
+                    .copied()
             }
         });
         let Some(potted_variant) = held_potted else {
