@@ -503,13 +503,16 @@ pub trait Mob: LivingEntity {
             return InteractionResult::Pass;
         }
 
-        let spawn_egg_result = {
-            let mut inventory = player.inventory.lock();
-            let item_stack = inventory.get_item_in_hand_mut(hand);
-            SpawnEggItem::interact_with_mob(item_stack, player, self)
-        };
-        if spawn_egg_result.consumes_action() {
-            return spawn_egg_result;
+        let important_interaction = self.check_and_handle_important_interactions(player, hand);
+        if important_interaction.consumes_action() {
+            if let Some(world) = self.level() {
+                world.game_event(
+                    &vanilla_game_events::ENTITY_INTERACT,
+                    self.block_position(),
+                    &GameEventContext::new(Some(player), None),
+                );
+            }
+            return important_interaction;
         }
 
         let interaction_result = self.interact_entity(player, hand, location);
@@ -529,6 +532,49 @@ pub trait Mob: LivingEntity {
         }
 
         interaction_result
+    }
+
+    /// Handles vanilla `Mob.checkAndHandleImportantInteractions`.
+    fn check_and_handle_important_interactions(
+        &self,
+        player: &Player,
+        hand: InteractionHand,
+    ) -> InteractionResult {
+        let Some(living_entity) = self.as_living_entity() else {
+            return InteractionResult::Pass;
+        };
+
+        let item = {
+            let inventory = player.inventory.lock();
+            inventory.get_item_in_hand(hand).item()
+        };
+
+        if item.key == vanilla_items::NAME_TAG.key {
+            let name_tag_result = {
+                let mut inventory = player.inventory.lock();
+                let item_stack = inventory.get_item_in_hand_mut(hand);
+                ITEM_BEHAVIORS.get_behavior(item).interact_living_entity(
+                    item_stack,
+                    player,
+                    living_entity,
+                    hand,
+                )
+            };
+            if name_tag_result.consumes_action() {
+                return name_tag_result;
+            }
+        }
+
+        let spawn_egg_result = {
+            let mut inventory = player.inventory.lock();
+            let item_stack = inventory.get_item_in_hand_mut(hand);
+            SpawnEggItem::interact_with_mob(item_stack, player, self)
+        };
+        if spawn_egg_result.consumes_action() {
+            return spawn_egg_result;
+        }
+
+        InteractionResult::Pass
     }
 
     /// Handles vanilla `Mob.mobInteract`.

@@ -10,7 +10,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{vanilla_blocks, vanilla_game_events};
-use steel_utils::{BlockPos, types::InteractionHand};
+use steel_utils::BlockPos;
 
 use super::place_on_water_block_item::get_player_pov_hit_result;
 use crate::behavior::{
@@ -18,9 +18,8 @@ use crate::behavior::{
     InventoryAccess, ItemBehavior, UseItemContext, UseOnContext,
 };
 use crate::entity::{
-    AgeableMob, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, LivingEntity, Mob,
-    SharedEntity, add_spawned_entity, apply_item_stack_components, create_entity_instance,
-    spawn_entity,
+    AgeableMob, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, Mob, SharedEntity,
+    add_spawned_entity, apply_item_stack_components, create_entity_instance, spawn_entity,
 };
 use crate::player::Player;
 use crate::world::ClipFluid;
@@ -208,18 +207,5 @@ impl ItemBehavior for SpawnEggItem {
                 .award_stat(&vanilla_stat_types::ITEM_USED, stack.item());
         }
         result
-    }
-
-    fn interact_living_entity(
-        &self,
-        stack: &mut ItemStack,
-        player: &Player,
-        target: &dyn LivingEntity,
-        _hand: InteractionHand,
-    ) -> InteractionResult {
-        let Some(parent) = target.as_mob() else {
-            return InteractionResult::Pass;
-        };
-        Self::interact_with_mob(stack, player, parent)
     }
 }
