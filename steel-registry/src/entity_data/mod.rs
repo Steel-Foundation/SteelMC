@@ -26,15 +26,16 @@
 
 mod serializer;
 mod vanilla_serializers;
+mod math;
 
 pub use serializer::{
     EntityDataSerializerEntry, EntityDataSerializerEntryRef, EntityDataSerializerRegistry,
     EntityDataWriter,
 };
 pub use vanilla_serializers::register_vanilla_entity_data_serializers;
+pub use math::{Vector3f, AxisAngle4f, Quaternionf, Matrix4f};
 
 use std::{io, str::FromStr};
-
 use steel_utils::{
     BlockStateId, Identifier,
     codec::VarInt,
@@ -265,56 +266,6 @@ impl GlobalPos {
     #[must_use]
     pub const fn new(dimension: Identifier, pos: BlockPos) -> Self {
         Self { dimension, pos }
-    }
-}
-
-/// A 3D vector (for display entities).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Vector3f {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
-
-impl Vector3f {
-    pub const ZERO: Self = Self {
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-    };
-
-    pub const ONE: Self = Self {
-        x: 1.0,
-        y: 1.0,
-        z: 1.0,
-    };
-
-    #[must_use]
-    pub const fn new(x: f32, y: f32, z: f32) -> Self {
-        Self { x, y, z }
-    }
-}
-
-/// A quaternion rotation (for display entities).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Quaternionf {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-    pub w: f32,
-}
-
-impl Quaternionf {
-    pub const IDENTITY: Self = Self {
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-        w: 1.0,
-    };
-
-    #[must_use]
-    pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
-        Self { x, y, z, w }
     }
 }
 
