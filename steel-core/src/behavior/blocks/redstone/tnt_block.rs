@@ -9,6 +9,7 @@ use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_game_rules::TNT_EXPLODES;
 use steel_registry::{
     sound_events, vanilla_blocks, vanilla_entities, vanilla_game_events, vanilla_items,
@@ -205,14 +206,16 @@ impl BlockBehavior for TntBlock {
             UpdateFlags::UPDATE_ALL_IMMEDIATE,
         );
         let has_infinite_materials = player.has_infinite_materials();
-        inv.with_item(|item| {
+        let used_item = inv.with_item(|item| {
+            let used_item = item.item();
             if is_flint_and_steel {
                 item.hurt_and_break(FLINT_AND_STEEL_DAMAGE_PER_USE, has_infinite_materials);
             } else if !has_infinite_materials {
                 item.shrink(FIRE_CHARGE_ITEMS_PER_USE);
             }
+            used_item
         });
-        // TODO: Award the ITEM_USED statistic once Steel has shared statistics support.
+        player.award_stat(&vanilla_stat_types::ITEM_USED, used_item);
         InteractionResult::Success
     }
 

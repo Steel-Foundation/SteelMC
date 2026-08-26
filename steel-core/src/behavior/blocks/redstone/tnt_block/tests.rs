@@ -3,6 +3,8 @@ use std::sync::Arc;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::init_vanilla_registry;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::ItemRef;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_game_rules::{MOB_GRIEFING, TNT_EXPLODES};
 use steel_registry::{vanilla_blocks, vanilla_entities, vanilla_items};
 use steel_utils::types::InteractionHand;
@@ -69,6 +71,14 @@ fn block_bottom_center(pos: BlockPos) -> DVec3 {
 
 fn test_player(world: &Arc<World>, name: &'static str) -> Arc<Player> {
     TestPlayerBuilder::new(Arc::clone(world), name, next_entity_id()).build()
+}
+
+fn item_used_stat_count(player: &Player, item: ItemRef) -> Option<i32> {
+    let item_used_stat = vanilla_stat_types::ITEM_USED.get(item);
+    player
+        .stats()
+        .into_iter()
+        .find_map(|(stat, count)| (stat == item_used_stat).then_some(count))
 }
 
 fn hit_result(pos: BlockPos) -> BlockHitResult {
@@ -200,6 +210,10 @@ fn flint_and_steel_primes_tnt_damages_item_and_tracks_owner() {
             .get_damage_value(),
         initial_damage + 1
     );
+    assert_eq!(
+        item_used_stat_count(&player, &vanilla_items::FLINT_AND_STEEL),
+        Some(1)
+    );
     let primed = only_primed_tnt(&world, pos);
     assert_eq!(
         primed.explosion_indirect_source().map(|owner| owner.id()),
@@ -216,7 +230,7 @@ fn fire_charge_primes_tnt_and_consumes_one_item() {
         UpdateFlags::UPDATE_NONE,
     ));
     let player = test_player(&world, "Charger");
-    let initial_charge_count = 2;
+    let initial_charge_count = 1;
     player
         .inventory
         .lock()
@@ -242,6 +256,10 @@ fn fire_charge_primes_tnt_and_consumes_one_item() {
     assert_eq!(
         player.inventory.lock().get_selected_item().count(),
         initial_charge_count - 1
+    );
+    assert_eq!(
+        item_used_stat_count(&player, &vanilla_items::FIRE_CHARGE),
+        Some(1)
     );
     only_primed_tnt(&world, pos);
 }
@@ -288,6 +306,10 @@ fn disabled_tnt_gamerule_preserves_block_and_ignition_item() {
             .get_selected_item()
             .get_damage_value(),
         initial_damage
+    );
+    assert_eq!(
+        item_used_stat_count(&player, &vanilla_items::FLINT_AND_STEEL),
+        None
     );
     assert!(primed_tnt_entities(&world, pos).is_empty());
 }
