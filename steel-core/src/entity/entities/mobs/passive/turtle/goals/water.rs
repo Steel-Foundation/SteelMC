@@ -187,9 +187,9 @@ impl Goal for TurtleTravelGoal {
         };
 
         let position = mob.position();
-        let xt = f64::from(rand::random_range(0..1025) - 512);
-        let mut yt = f64::from(rand::random_range(0..9) - 4);
-        let zt = f64::from(rand::random_range(0..1025) - 512);
+        let xt = f64::from(rand::random_range(-512..=512));
+        let mut yt = f64::from(rand::random_range(-4..=4));
+        let zt = f64::from(rand::random_range(-512..=512));
         if yt + position.y > f64::from(world.sea_level - 1) {
             yt = 0.0;
         }
