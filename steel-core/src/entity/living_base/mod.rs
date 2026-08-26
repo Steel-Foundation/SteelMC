@@ -1122,6 +1122,27 @@ impl LivingEntityBase {
         true
     }
 
+    /// Removes all active mob effects (vanilla `LivingEntity.removeAllEffects`).
+    pub fn clear_active_mob_effects(&self) {
+        let effects: Vec<MobEffectRef> = {
+            let mut active = self.active_mob_effects.lock();
+            let keys: Vec<MobEffectRef> = active.keys().copied().collect();
+            active.clear();
+            keys
+        };
+
+        for effect in &effects {
+            self.remove_effect_attribute_modifiers(effect);
+        }
+
+        if !effects.is_empty() {
+            self.mark_effects_dirty();
+            for effect in effects {
+                self.queue_mob_effect_sync(MobEffectSyncChange::Remove { effect });
+            }
+        }
+    }
+
     /// Ticks one active mob-effect duration after its server behavior has run.
     pub(super) fn tick_mob_effect_duration(&self, effect_key: MobEffectRef) {
         let (updated, removed) = {
