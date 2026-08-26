@@ -750,24 +750,33 @@ impl Player {
         // These stats are expressed in ticks.
         // We batch the stats so that the mutex for stats is only
         // locked once.
-        let mut stats_to_award = Vec::with_capacity(5);
-
-        stats_to_award.push(&vanilla_custom_stats::PLAY_TIME);
-        stats_to_award.push(&vanilla_custom_stats::TOTAL_WORLD_TIME);
+        let mut stats = self.stats.lock();
+        stats.increment(
+            vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::PLAY_TIME),
+            1,
+        );
+        stats.increment(
+            vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::TOTAL_WORLD_TIME),
+            1,
+        );
 
         if Entity::is_alive(self) {
-            stats_to_award.push(&vanilla_custom_stats::TIME_SINCE_DEATH);
+            stats.increment(
+                vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::TIME_SINCE_DEATH),
+                1,
+            );
         }
         if self.is_discrete() {
-            stats_to_award.push(&vanilla_custom_stats::SNEAK_TIME);
+            stats.increment(
+                vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::SNEAK_TIME),
+                1,
+            );
         }
         if !self.is_sleeping() {
-            stats_to_award.push(&vanilla_custom_stats::TIME_SINCE_REST);
-        }
-
-        let mut stats = self.stats.lock();
-        for stat in stats_to_award {
-            stats.increment(vanilla_stat_types::CUSTOM.get(stat), 1);
+            stats.increment(
+                vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::TIME_SINCE_REST),
+                1,
+            );
         }
     }
 
