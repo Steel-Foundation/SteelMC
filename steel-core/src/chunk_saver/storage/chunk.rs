@@ -304,7 +304,7 @@ impl ChunkStorage {
                         .flatten()
                         .flatten()
                         .map(|block_id| palette_indices.get(block_id).copied().unwrap_or(0)),
-                    data.cube.len() * 256,
+                    data.cube.len() * data.cube[0].len() * data.cube[0][0].len(),
                     bits,
                 );
 
@@ -354,7 +354,7 @@ impl ChunkStorage {
                         .flatten()
                         .flatten()
                         .map(|biome_id| palette_indices.get(biome_id).copied().unwrap_or(0)),
-                    data.cube.len() * 64,
+                    data.cube.len() * data.cube[0].len() * data.cube[0][0].len(),
                     bits,
                 );
 

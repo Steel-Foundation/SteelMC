@@ -1,5 +1,8 @@
 use super::*;
 
+use steel_registry::RegistryEntry as _;
+use steel_registry::vanilla_biomes;
+
 #[test]
 #[should_panic(expected = "persisted chunk status must match its Full runtime state")]
 fn chunk_save_rejects_full_status_for_proto_data() {
@@ -310,4 +313,53 @@ fn full_chunk_postprocessing_roundtrips_through_persistent_chunk() {
     };
 
     assert_eq!(prepared.persistent.postprocessing, vec![vec![packed]]);
+}
+
+#[test]
+fn heterogeneous_biome_section_roundtrips_through_persistent_chunk() {
+    init_vanilla_registry();
+
+    let pos = ChunkPos::new(0, 0);
+    let mut section = ChunkSection::new_empty();
+    let desert = vanilla_biomes::DESERT.id() as u16;
+    // Two cells must differ from the homogeneous default so a heterogeneous
+    // palette with >= 2 entries gets persisted.
+    section.biomes.set(0, 0, 0, desert);
+    section.biomes.set(3, 3, 3, desert);
+    let chunk = Chunk::new(
+        Sections::from_owned(vec![section].into_boxed_slice()),
+        pos,
+        0,
+        16,
+        Weak::new(),
+    );
+    let expected = chunk.sections.read_all_biomes();
+    assert!(expected.contains(&desert));
+
+    let Some(prepared) = ChunkStorage::prepare_chunk_save(&chunk, ChunkStatus::Empty, &[], true)
+    else {
+        panic!("forced chunk save should produce a payload");
+    };
+    let Some(section) = prepared.persistent.sections.first() else {
+        panic!("a saved chunk keeps every section");
+    };
+    let biomes = match section {
+        PersistentSection::Homogeneous { biomes, .. }
+        | PersistentSection::Heterogeneous { biomes, .. } => biomes,
+    };
+    assert!(matches!(biomes, PersistentBiomeData::Heterogeneous { .. }));
+
+    let loaded = ChunkStorage::try_persistent_to_chunk(
+        &prepared.persistent,
+        pos,
+        ChunkStatus::Empty,
+        0,
+        16,
+        Weak::new(),
+    );
+    let loaded = loaded.expect("heterogeneous biome data must keep its exact packed entry count");
+    assert_eq!(
+        loaded.chunk.sections.read_all_biomes().as_ref(),
+        expected.as_ref()
+    );
 }
