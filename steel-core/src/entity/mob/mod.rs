@@ -504,19 +504,11 @@ pub trait Mob: LivingEntity {
         }
 
         let spawn_egg_result = {
-            let mut item_stack = player
-                .inventory
-                .lock()
-                .get_item_in_hand(hand)
-                .copy_with_count(1);
-            SpawnEggItem::interact_with_mob(&mut item_stack, player, self)
+            let mut inventory = player.inventory.lock();
+            let item_stack = inventory.get_item_in_hand_mut(hand);
+            SpawnEggItem::interact_with_mob(item_stack, player, self)
         };
         if spawn_egg_result.consumes_action() {
-            if spawn_egg_result == InteractionResult::SuccessServer
-                && !player.has_infinite_materials()
-            {
-                player.inventory.lock().get_item_in_hand_mut(hand).shrink(1);
-            }
             return spawn_egg_result;
         }
 
