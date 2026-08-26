@@ -820,6 +820,7 @@ fn apply_wither_rose_effect(world: &Arc<World>, entity: &dyn Entity) {
 #[test]
 fn wither_rose_effect_ticks_vanilla_wither_damage() {
     let world = test_world();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world);
 
     apply_wither_rose_effect(world, &entity);
@@ -849,6 +850,7 @@ fn wither_rose_effect_ticks_vanilla_wither_damage() {
 #[test]
 fn wither_effect_only_damages_on_its_vanilla_interval() {
     let world = test_world();
+    init_behaviors();
     let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, world);
     assert!(entity.add_mob_effect(MobEffectInstance::with_duration(
         vanilla_mob_effects::WITHER,

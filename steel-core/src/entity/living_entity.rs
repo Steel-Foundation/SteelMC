@@ -1230,6 +1230,13 @@ pub trait LivingEntity: Entity {
     /// Ticks vanilla server-side mob-effect behavior and durations.
     fn tick_mob_effects(&self) {
         let world = self.level();
+        // `apply_effect_tick` dispatches through `MOB_EFFECT_BEHAVIORS`, which
+        // needs a `&dyn LivingEntity`; `Self` can't unsize-coerce to that
+        // generically from a `?Sized` default method, so go through the
+        // existing downcast instead — always `Some` since `Self: LivingEntity`.
+        let dyn_self = self
+            .as_living_entity()
+            .expect("Self implements LivingEntity");
         for effect in self.active_mob_effects() {
             if !effect.has_remaining_duration() {
                 self.living_base().tick_mob_effect_duration(effect.effect());
@@ -1239,7 +1246,7 @@ pub trait LivingEntity: Entity {
             if effect.should_apply_effect_tick_this_tick(self.tick_count())
                 && world
                     .as_deref()
-                    .is_some_and(|world| !effect.apply_effect_tick(world, self))
+                    .is_some_and(|world| !effect.apply_effect_tick(world, dyn_self))
             {
                 self.remove_mob_effect(effect.effect());
                 continue;
