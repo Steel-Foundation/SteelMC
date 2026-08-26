@@ -23,7 +23,7 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
     REGISTRY, RegistryExt, vanilla_attributes, vanilla_damage_types, vanilla_entities,
-    vanilla_game_events,
+    vanilla_game_events, vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
