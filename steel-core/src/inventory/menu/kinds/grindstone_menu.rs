@@ -113,7 +113,7 @@ impl GrindstoneKind {
         };
 
         let [first, second] = input_container.items() else {
-            log::warn!("input_container in anvil menu does not fit expected shape");
+            log::warn!("input_container in grindstone menu does not fit expected shape");
             return;
         };
 
@@ -131,7 +131,6 @@ impl GrindstoneKind {
             } else {
                 let item = if first.is_empty() { second } else { first };
 
-                // TODO: check if item is enchanted, not just enchantable
                 if item
                     .get_enchantments_for_crafting()
                     .is_some_and(|e| !e.is_empty())
@@ -159,11 +158,15 @@ impl GrindstoneKind {
         let mut count = 1;
 
         if !first.is_damageable_item() {
-            if first.max_stack_size() < 2 || !ItemStack::matches(&first, &second) {
-                return ItemStack::empty();
-            }
-
             count = 2;
+
+            if first.max_stack_size() < 2 || !ItemStack::matches(&first, &second) {
+                if first.is(&vanilla_items::ENCHANTED_BOOK) {
+                    count = 1;
+                } else {
+                    return ItemStack::empty();
+                }
+            }
         }
 
         let mut new_item = first.copy_with_count(count);
