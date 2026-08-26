@@ -38,8 +38,8 @@ pub(crate) enum StorageFailure {
     /// Nothing can be persisted any more: the disk is full, or the world
     /// directory cannot be written. Retrying cannot help.
     Fatal,
-    /// The region file's own structure is damaged rather than inaccessible, so
-    /// it can be set aside and rebuilt.
+    /// The region file's header is damaged rather than inaccessible, so nothing
+    /// behind it can be located and the file can be set aside and rebuilt.
     Corrupt,
     /// Transient or environmental -- a bad sector, exhausted file descriptors,
     /// a stalled mount. Worth retrying later.
@@ -141,8 +141,8 @@ impl RegionManager {
                     Err(error)
                 }
                 StorageFailure::Corrupt => {
-                    // The header is unreadable, so every chunk in the region is
-                    // unreachable through it. Keep the bytes and rebuild.
+                    // Damage to individual chunk table entries is handled per
+                    // entry in `open_region_inner`; this is the file header.
                     let path = self.region_path(pos);
                     let backup_path = path.with_extension("srg.corrupt.bak");
                     tracing::error!(
@@ -201,23 +201,26 @@ impl RegionManager {
         // Read chunk table
         let mut table_bytes = vec![0u8; CHUNK_TABLE_SIZE];
         file.read_exact(&mut table_bytes).await?;
-        let header = RegionHeader::from_bytes(&table_bytes).map_err(|index| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("region chunk table entry {index} has an invalid status byte"),
-            )
-        })?;
+        let (mut header, mut damaged) = RegionHeader::from_bytes(&table_bytes);
 
         // Calculate file size in sectors
         let file_size = file.seek(io::SeekFrom::End(0)).await?;
         let file_sectors = file_size.div_ceil(SECTOR_SIZE as u64) as u32;
-        Self::validate_region_entries(&header, file_sectors)?;
+        damaged.extend(Self::clear_invalid_entries(&mut header, file_sectors));
+        if !damaged.is_empty() {
+            tracing::error!(
+                "Region file {} has {} damaged chunk table entries {damaged:?}, those chunks will regenerate",
+                path.display(),
+                damaged.len(),
+            );
+        }
 
         Ok(RegionHandle {
             file,
             header,
             loaded_chunk_count: 0,
-            header_dirty: false,
+            // Persist the emptied entries.
+            header_dirty: !damaged.is_empty(),
             file_sectors,
         })
     }
@@ -311,27 +314,34 @@ impl RegionManager {
         Ok(())
     }
 
-    fn validate_region_entries(header: &RegionHeader, file_sectors: u32) -> io::Result<()> {
+    /// Empties the entries that cannot describe real chunk data, returning their
+    /// indices. Overlaps cannot be told apart, so the lower index keeps the
+    /// sectors.
+    fn clear_invalid_entries(header: &mut RegionHeader, file_sectors: u32) -> Vec<usize> {
+        let mut cleared = Vec::new();
         let mut occupied = vec![false; file_sectors as usize];
         for sector in occupied.iter_mut().take(FIRST_DATA_SECTOR as usize) {
             *sector = true;
         }
-        for (index, &entry) in header.entries.iter().enumerate() {
+        for (index, entry) in header.entries.iter_mut().enumerate() {
             if !entry.exists() {
                 continue;
             }
-            Self::validate_chunk_entry(entry, file_sectors)?;
+            if Self::validate_chunk_entry(*entry, file_sectors).is_err() {
+                *entry = ChunkEntry::empty();
+                cleared.push(index);
+                continue;
+            }
             let start = entry.sector_offset as usize;
             let end = start + entry.sector_count() as usize;
             if occupied[start..end].iter().any(|is_occupied| *is_occupied) {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("chunk table entry {index} overlaps another region allocation"),
-                ));
+                *entry = ChunkEntry::empty();
+                cleared.push(index);
+                continue;
             }
             occupied[start..end].fill(true);
         }
-        Ok(())
+        cleared
     }
 
     async fn clear_corrupt_chunk_if_unchanged(
@@ -730,13 +740,8 @@ impl RegionManager {
         let mut entry_bytes = [0u8; 8];
         file.read_exact(&mut entry_bytes).await?;
 
-        let Some(entry) = super::format::ChunkEntry::from_bytes(entry_bytes) else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "chunk table entry has an invalid status byte",
-            ));
-        };
-        Ok(entry.exists())
+        // An undecodable entry cannot locate its chunk, so the slot reads empty.
+        Ok(ChunkEntry::from_bytes(entry_bytes).is_some_and(|entry| entry.exists()))
     }
 
     /// Flushes all dirty headers to disk.
@@ -820,8 +825,21 @@ mod tests {
         declared_size: u32,
         entry_status: ChunkStatus,
     ) -> io::Result<()> {
+        write_test_region_chunks(directory, &[(pos, entry_status)], payload, declared_size).await
+    }
+
+    /// Writes one entry per given chunk, each with the same payload in a sector
+    /// of its own. All chunks must share a region and the payload must fit a sector.
+    async fn write_test_region_chunks(
+        directory: &Path,
+        chunks: &[(ChunkPos, ChunkStatus)],
+        payload: &[u8],
+        declared_size: u32,
+    ) -> io::Result<()> {
+        assert!(payload.len() <= SECTOR_SIZE);
         fs::create_dir_all(directory).await?;
-        let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
+        let (first, _) = chunks[0];
+        let region_pos = RegionPos::from_chunk(first.0.x, first.0.y);
         let path = directory.join(region_pos.filename());
         let mut file = File::create(path).await?;
         let mut file_header = [0u8; FILE_HEADER_SIZE];
@@ -829,17 +847,43 @@ mod tests {
         file_header[4..6].copy_from_slice(&FORMAT_VERSION.to_le_bytes());
         file.write_all(&file_header).await?;
 
+        let mut header = RegionHeader::new();
+        for (slot, &(pos, entry_status)) in chunks.iter().enumerate() {
+            let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
+            let index = RegionHeader::chunk_index(local_x, local_z);
+            let sector = FIRST_DATA_SECTOR + slot as u32;
+            header.entries[index] = ChunkEntry::new(sector, declared_size, entry_status);
+        }
+        file.write_all(&header.to_bytes()).await?;
+
+        for slot in 0..chunks.len() {
+            let sector = FIRST_DATA_SECTOR + slot as u32;
+            file.seek(io::SeekFrom::Start(u64::from(sector) * SECTOR_SIZE as u64))
+                .await?;
+            file.write_all(payload).await?;
+        }
+        file.flush().await
+    }
+
+    /// Overwrites bytes inside a chunk's table entry to simulate on-disk damage.
+    async fn damage_entry_bytes(directory: &Path, pos: ChunkPos, offset: u64, bytes: &[u8]) {
+        let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
         let (local_x, local_z) = RegionPos::local_chunk_pos(pos.0.x, pos.0.y);
         let index = RegionHeader::chunk_index(local_x, local_z);
-        let mut header = RegionHeader::new();
-        header.entries[index] = ChunkEntry::new(FIRST_DATA_SECTOR, declared_size, entry_status);
-        file.write_all(&header.to_bytes()).await?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .open(directory.join(region_pos.filename()))
+            .await
+            .expect("test region should reopen for corruption");
         file.seek(io::SeekFrom::Start(
-            u64::from(FIRST_DATA_SECTOR) * SECTOR_SIZE as u64,
+            FILE_HEADER_SIZE as u64 + (index * 8) as u64 + offset,
         ))
-        .await?;
-        file.write_all(payload).await?;
-        file.flush().await
+        .await
+        .expect("table entry should be seekable");
+        file.write_all(bytes)
+            .await
+            .expect("table entry should be writable");
+        file.flush().await.expect("table entry should be flushed");
     }
 
     fn test_thread_pool() -> rayon::ThreadPool {
@@ -849,7 +893,7 @@ mod tests {
             .expect("test thread pool should build")
     }
 
-    async fn assert_slot_exists_on_disk(directory: &Path, pos: ChunkPos) {
+    async fn read_slot_entry_on_disk(directory: &Path, pos: ChunkPos) -> Option<ChunkEntry> {
         let region_pos = RegionPos::from_chunk(pos.0.x, pos.0.y);
         let path = directory.join(region_pos.filename());
         let mut file = File::open(path)
@@ -866,7 +910,15 @@ mod tests {
         file.read_exact(&mut bytes)
             .await
             .expect("chunk table entry should be readable");
-        assert!(ChunkEntry::from_bytes(bytes).is_some_and(|entry| entry.exists()));
+        ChunkEntry::from_bytes(bytes)
+    }
+
+    async fn assert_slot_exists_on_disk(directory: &Path, pos: ChunkPos) {
+        assert!(
+            read_slot_entry_on_disk(directory, pos)
+                .await
+                .is_some_and(|entry| entry.exists())
+        );
     }
 
     #[tokio::test]
@@ -1333,12 +1385,102 @@ mod tests {
             .expect("test directory should be removable");
     }
 
-    /// A damaged chunk table makes every chunk in the region unreachable, so the
-    /// file is set aside and rebuilt rather than failing every load forever.
-    /// The original bytes are kept for recovery.
+    /// A damaged entry describes one chunk, so only that chunk is dropped.
     #[tokio::test]
-    async fn invalid_chunk_status_byte_rebuilds_the_region_and_keeps_the_original() {
+    async fn invalid_chunk_status_byte_drops_only_its_own_chunk() {
         let directory = test_directory("invalid-status");
+        let damaged = ChunkPos::new(0, 0);
+        let intact = ChunkPos::new(1, 0);
+        let payload = b"payload must not be decoded";
+        write_test_region_chunks(
+            &directory,
+            &[(damaged, ChunkStatus::Empty), (intact, ChunkStatus::Empty)],
+            payload,
+            payload.len() as u32,
+        )
+        .await
+        .expect("test region should be written");
+        damage_entry_bytes(&directory, damaged, 7, &[u8::MAX]).await;
+
+        assert_damaged_entry_is_dropped(&directory, damaged, intact).await;
+    }
+
+    /// Same handling for a sector range that cannot be inside the file.
+    #[tokio::test]
+    async fn chunk_entry_past_the_region_end_drops_only_its_own_chunk() {
+        let directory = test_directory("entry-past-end");
+        let damaged = ChunkPos::new(0, 0);
+        let intact = ChunkPos::new(1, 0);
+        let payload = b"payload must not be decoded";
+        write_test_region_chunks(
+            &directory,
+            &[(damaged, ChunkStatus::Empty), (intact, ChunkStatus::Empty)],
+            payload,
+            payload.len() as u32,
+        )
+        .await
+        .expect("test region should be written");
+        damage_entry_bytes(&directory, damaged, 0, &1_000_000u32.to_le_bytes()).await;
+
+        assert_damaged_entry_is_dropped(&directory, damaged, intact).await;
+    }
+
+    /// Asserts only `damaged` was given up: `intact` still resolves, the file is
+    /// not set aside, and the emptied entry is persisted.
+    async fn assert_damaged_entry_is_dropped(
+        directory: &Path,
+        damaged: ChunkPos,
+        intact: ChunkPos,
+    ) {
+        let manager = RegionManager::new(directory);
+        assert!(
+            !manager
+                .acquire_chunk(damaged)
+                .await
+                .expect("a damaged entry should be dropped, not surfaced as an error"),
+            "a damaged entry must read as an empty slot"
+        );
+        assert!(
+            manager
+                .acquire_chunk(intact)
+                .await
+                .expect("region should open"),
+            "an intact chunk must survive damage to another entry"
+        );
+
+        let region_pos = RegionPos::from_chunk(damaged.0.x, damaged.0.y);
+        let path = directory.join(region_pos.filename());
+        assert!(
+            !path.with_extension("srg.corrupt.bak").exists(),
+            "one damaged entry must not set the whole region aside"
+        );
+
+        manager
+            .release_chunk(damaged)
+            .await
+            .expect("region should release");
+        manager
+            .release_chunk(intact)
+            .await
+            .expect("region should release");
+
+        assert!(
+            read_slot_entry_on_disk(directory, damaged)
+                .await
+                .is_some_and(|entry| !entry.exists()),
+            "the emptied entry must be persisted"
+        );
+        assert_slot_exists_on_disk(directory, intact).await;
+        fs::remove_dir_all(directory)
+            .await
+            .expect("test directory should be removable");
+    }
+
+    /// A damaged file header leaves nothing locatable, so the file is set aside
+    /// and rebuilt, keeping the original bytes for recovery.
+    #[tokio::test]
+    async fn invalid_region_magic_rebuilds_the_region_and_keeps_the_original() {
+        let directory = test_directory("invalid-magic");
         let pos = ChunkPos::new(0, 0);
         let payload = b"payload must not be decoded";
         write_test_region(&directory, pos, payload, payload.len() as u32)
@@ -1352,13 +1494,10 @@ mod tests {
             .open(&path)
             .await
             .expect("test region should reopen for corruption");
-        file.seek(io::SeekFrom::Start(FILE_HEADER_SIZE as u64 + 7))
+        file.write_all(b"XXXX")
             .await
-            .expect("status byte should be seekable");
-        file.write_all(&[u8::MAX])
-            .await
-            .expect("status byte should be writable");
-        file.flush().await.expect("status byte should be flushed");
+            .expect("magic should be writable");
+        file.flush().await.expect("magic should be flushed");
         drop(file);
 
         let manager = RegionManager::new(&directory);
@@ -1366,7 +1505,7 @@ mod tests {
             !manager
                 .acquire_chunk(pos)
                 .await
-                .expect("a damaged chunk table should be rebuilt, not surfaced as an error"),
+                .expect("a damaged file header should be rebuilt, not surfaced as an error"),
             "the rebuilt region must be empty"
         );
 
@@ -1375,14 +1514,11 @@ mod tests {
         let mut file = File::open(&backup)
             .await
             .expect("damaged region should be preserved");
-        file.seek(io::SeekFrom::Start(FILE_HEADER_SIZE as u64 + 7))
+        let mut magic = [0; 4];
+        file.read_exact(&mut magic)
             .await
-            .expect("status byte should remain seekable");
-        let mut status = [0];
-        file.read_exact(&mut status)
-            .await
-            .expect("status byte should remain readable");
-        assert_eq!(status[0], u8::MAX);
+            .expect("magic should remain readable");
+        assert_eq!(&magic, b"XXXX");
 
         manager
             .release_chunk(pos)
