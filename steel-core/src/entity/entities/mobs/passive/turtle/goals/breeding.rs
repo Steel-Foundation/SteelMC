@@ -6,7 +6,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_rules::MOB_DROPS;
-use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events};
+use steel_registry::{sound_events, vanilla_blocks, vanilla_custom_stats, vanilla_game_events};
 use steel_utils::types::UpdateFlags;
 
 use super::{TurtleEntity, as_turtle, closer_to_center_than};
@@ -71,12 +71,25 @@ impl TurtleBreedGoal {
         })
     }
 
-    /// Vanilla `TurtleBreedGoal.breed`: mark the mother as carrying an egg, age
-    /// both parents back to adulthood, clear love mode, and drop breeding XP.
+    /// Vanilla `TurtleBreedGoal.breed`: award the breeding stat to the love-cause
+    /// player, mark the mother as carrying an egg, age both parents back to
+    /// adulthood, clear love mode, and drop breeding XP.
     fn breed(mob: &dyn PathfinderMob, turtle: &TurtleEntity, partner_animal: &dyn Animal) {
         let Some(world) = mob.level() else {
             return;
         };
+
+        // Vanilla awards the ANIMALS_BRED stat and triggers the BRED_ANIMALS
+        // criterion for the player who caused the breeding.
+        if let Some(love_cause) = turtle
+            .love_cause_uuid()
+            .or_else(|| partner_animal.love_cause_uuid())
+            && let Some(player) = world.players.get_by_uuid(&love_cause)
+        {
+            player.award_custom_stat(&vanilla_custom_stats::ANIMALS_BRED);
+            // TODO(advancements): trigger the BRED_ANIMALS criterion once Steel
+            // has an advancement / criteria-trigger system.
+        }
 
         turtle.set_has_egg(true);
         turtle.set_age(6000);
