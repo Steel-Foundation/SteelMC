@@ -52,23 +52,7 @@ impl World {
 
             // AFTER sending, update the recipient's cache using vanilla's push algorithm
             // This adds all lastSeen signatures + current signature to the cache
-            {
-                let mut chat = recipient.chat.lock();
-                if let Some(signature) = message_signature {
-                    chat.signature_cache
-                        .push(&sender_last_seen, Some(signature));
-
-                    log::debug!("  Added signature to recipient's cache and pending list");
-
-                    // Add to pending messages for acknowledgment tracking
-                    chat.message_validator
-                        .add_pending(Some(Box::new(*signature) as Box<[u8]>));
-                } else {
-                    // Even unsigned messages update the pending tracker
-                    chat.message_validator.add_pending(None);
-                    log::debug!("  Added unsigned message to pending list");
-                }
-            }
+            recipient.track_incoming_signed_message(&sender_last_seen, message_signature);
 
             true
         });

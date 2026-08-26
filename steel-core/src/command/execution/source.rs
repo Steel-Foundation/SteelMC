@@ -27,7 +27,7 @@ use crate::{
     world::World,
 };
 
-use super::{CommandExecutionContext, GameProfileArgument};
+use super::{CommandExecutionContext, CommandSigningContext, GameProfileArgument, SignedArgument};
 
 type CommandResultCallbackFn = dyn Fn(bool, i32) + Send + Sync;
 
@@ -254,6 +254,7 @@ pub(crate) struct CommandSource {
     effective_player_residence: Option<DomainResidenceToken>,
     callback: CommandResultCallback,
     silent: bool,
+    signing_context: Arc<CommandSigningContext>,
 }
 
 impl CommandSource {
@@ -308,7 +309,22 @@ impl CommandSource {
             effective_player_residence,
             callback: CommandResultCallback::empty(),
             silent: false,
+            signing_context: Arc::default(),
         }
+    }
+
+    /// Binds verified command-argument signatures to this source.
+    ///
+    /// Equivalent to `CommandSourceStack.withSigningContext`.
+    pub(crate) fn with_signing_context(&self, signing_context: Arc<CommandSigningContext>) -> Self {
+        let mut source = self.clone();
+        source.signing_context = signing_context;
+        source
+    }
+
+    /// Returns the signature the client bound to the signable argument `name`, if any.
+    pub(crate) fn signed_argument(&self, name: &str) -> Option<&SignedArgument> {
+        self.signing_context.argument(name)
     }
 
     pub(crate) const fn sender(&self) -> &CommandSender {

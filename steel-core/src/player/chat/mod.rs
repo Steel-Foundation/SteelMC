@@ -7,10 +7,12 @@ pub mod message_chain;
 mod message_validator;
 pub mod profile_key;
 mod signature_cache;
+mod signed_command;
 mod spam_throttler;
 
 pub use message_validator::LastSeenMessagesValidator;
 pub use signature_cache::{LastSeen, MessageCache};
+pub use signed_command::{SignedCommandError, SignedCommandPayload};
 
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -151,6 +153,40 @@ impl Player {
         }
     }
 
+    /// Gets the next `messages_sent` index for a message this player originates.
+    ///
+    /// This is the `index` field of `ClientboundPlayerChatPacket`, which recipients use to
+    /// place the message in the sender's signed-message sequence.
+    pub fn next_chat_message_index(&self) -> i32 {
+        let mut chat = self.chat.lock();
+        let index = chat.messages_sent;
+        chat.messages_sent += 1;
+        index
+    }
+
+    /// Records a signed chat message this player just received.
+    ///
+    /// Mirrors vanilla's recipient-side bookkeeping: the sender's acknowledged signatures and
+    /// this message's signature are pushed into the recipient's signature cache, and the
+    /// message is tracked as pending until the client acknowledges it. Must be called *after*
+    /// the packet is sent, because the packet indexes previous messages against the cache as
+    /// it was before this push.
+    pub fn track_incoming_signed_message(
+        &self,
+        sender_last_seen: &LastSeen,
+        signature: Option<&[u8; 256]>,
+    ) {
+        let mut chat = self.chat.lock();
+        match signature {
+            Some(signature) => {
+                chat.signature_cache.push(sender_last_seen, Some(signature));
+                chat.message_validator
+                    .add_pending(Some(Box::new(*signature) as Box<[u8]>));
+            }
+            None => chat.message_validator.add_pending(None),
+        }
+    }
+
     /// Gets the next `messages_received` counter and increments it
     pub fn get_and_increment_messages_received(&self) -> i32 {
         let mut chat = self.chat.lock();
@@ -159,16 +195,11 @@ impl Player {
         val
     }
 
-    fn verify_chat_signature(
-        &self,
-        packet: &SChat,
-    ) -> Result<(message_chain::SignedMessageLink, LastSeen), String> {
-        const MESSAGE_EXPIRES_AFTER: Duration = Duration::from_mins(5);
-
-        let mut chat = self.chat.lock();
+    /// Returns the player's chat session, rejecting an absent or expired profile key.
+    ///
+    /// Mirrors the session checks vanilla applies before decoding any signed message.
+    fn signing_session(chat: &ChatState) -> Result<RemoteChatSession, String> {
         let session = chat.chat_session.clone().ok_or("No chat session")?;
-        let signature = packet.signature.as_ref().ok_or("No signature present")?;
-
         if session
             .profile_public_key
             .data()
@@ -176,37 +207,87 @@ impl Player {
         {
             return Err("Profile key has expired".to_string());
         }
+        Ok(session)
+    }
 
-        let chain = chat.message_chain.as_mut().ok_or("No message chain")?;
-
-        if chain.is_broken() {
-            return Err("Message chain is broken".to_string());
-        }
+    /// Converts a client timestamp and rejects messages older than vanilla's expiry window.
+    fn signing_timestamp(timestamp_millis: i64) -> Result<SystemTime, String> {
+        const MESSAGE_EXPIRES_AFTER: Duration = Duration::from_mins(5);
 
         let timestamp =
-            UNIX_EPOCH + Duration::from_millis(packet.timestamp.try_into().unwrap_or(0));
-
-        let now = SystemTime::now();
-        let message_age = now
+            UNIX_EPOCH + Duration::from_millis(timestamp_millis.try_into().unwrap_or(0));
+        let message_age = SystemTime::now()
             .duration_since(timestamp)
             .unwrap_or(Duration::from_secs(0));
-
         if message_age > MESSAGE_EXPIRES_AFTER {
             return Err(format!(
                 "Message expired (age: {}s, max: 300s)",
                 message_age.as_secs()
             ));
         }
+        Ok(timestamp)
+    }
 
-        let last_seen_signatures = chat
-            .message_validator
-            .apply_update(packet.acknowledged, packet.offset, packet.checksum)
+    /// Applies one client last-seen acknowledgement update to the tracked message window.
+    fn apply_last_seen_update(
+        chat: &mut ChatState,
+        acknowledged: [u8; 3],
+        offset: i32,
+        checksum: u8,
+    ) -> Result<LastSeen, String> {
+        chat.message_validator
+            .apply_update(acknowledged, offset, checksum)
+            .map(LastSeen::new)
             .map_err(|e| {
                 log::error!("Message acknowledgment validation failed: {e}");
                 e
-            })?;
+            })
+    }
 
-        let last_seen = LastSeen::new(last_seen_signatures);
+    /// Advances the signed-message chain by one body and verifies `signature` against it.
+    ///
+    /// Equivalent to `SignedMessageChain.Decoder.unpack`: the chain always advances so a
+    /// rejected message cannot be replayed under the same link.
+    fn decode_signed_body(
+        chat: &mut ChatState,
+        session: &RemoteChatSession,
+        body: &message_chain::SignedMessageBody,
+        signature: &[u8; 256],
+    ) -> Result<message_chain::SignedMessageLink, String> {
+        let chain = chat.message_chain.as_mut().ok_or("No message chain")?;
+        if chain.is_broken() {
+            return Err("Message chain is broken".to_string());
+        }
+        let link = chain
+            .validate_and_advance(body)
+            .map_err(|e| format!("Chain validation failed: {e}"))?;
+
+        let updater = message_chain::MessageSignatureUpdater::new(&link, body);
+        let validator = session.profile_public_key.create_signature_validator();
+        let is_valid = SignatureValidator::validate(&validator, &updater, signature)
+            .map_err(|e| format!("Signature validation error: {e}"))?;
+
+        if is_valid {
+            Ok(link)
+        } else {
+            Err("Invalid signature".to_string())
+        }
+    }
+
+    fn verify_chat_signature(
+        &self,
+        packet: &SChat,
+    ) -> Result<(message_chain::SignedMessageLink, LastSeen), String> {
+        let mut chat = self.chat.lock();
+        let session = Self::signing_session(&chat)?;
+        let signature = packet.signature.as_ref().ok_or("No signature present")?;
+        let timestamp = Self::signing_timestamp(packet.timestamp)?;
+        let last_seen = Self::apply_last_seen_update(
+            &mut chat,
+            packet.acknowledged,
+            packet.offset,
+            packet.checksum,
+        )?;
 
         let body = message_chain::SignedMessageBody::new(
             packet.message.clone(),
@@ -214,23 +295,8 @@ impl Player {
             packet.salt,
             last_seen,
         );
-
-        let chain = chat.message_chain.as_mut().ok_or("No message chain")?;
-        let link = chain
-            .validate_and_advance(&body)
-            .map_err(|e| format!("Chain validation failed: {e}"))?;
-
-        let updater = message_chain::MessageSignatureUpdater::new(&link, &body);
-        let validator = session.profile_public_key.create_signature_validator();
-
-        let is_valid = SignatureValidator::validate(&validator, &updater, signature)
-            .map_err(|e| format!("Signature validation error: {e}"))?;
-
-        if is_valid {
-            Ok((link, body.last_seen.clone()))
-        } else {
-            Err("Invalid signature".to_string())
-        }
+        let link = Self::decode_signed_body(&mut chat, &session, &body, signature)?;
+        Ok((link, body.last_seen.clone()))
     }
 
     /// Handles a chat message from the player.
@@ -275,12 +341,7 @@ impl Player {
             None
         };
 
-        let sender_index = {
-            let mut chat = player.chat.lock();
-            let idx = chat.messages_sent;
-            chat.messages_sent += 1;
-            idx
-        };
+        let sender_index = player.next_chat_message_index();
 
         let registry_id = vanilla_chat_types::CHAT.id() as i32;
 

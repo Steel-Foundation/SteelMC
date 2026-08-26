@@ -44,6 +44,7 @@ use crate::permission::{
     PermissionGroupsConfig, PermissionMetadataExpression, PermissionRuleExpression, PermissionSet,
     PermissionSubjectIndex, PermissionSubjectState,
 };
+use crate::player::chat::SignedCommandPayload;
 use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
 use crate::player::connection::NetworkConnection;
 use crate::player::connection::ScheduledPlayPacket;
@@ -794,9 +795,23 @@ impl Server {
         sender: CommandSender,
         command: String,
     ) -> Result<(), CommandQueueFull> {
+        self.submit_command_with_signatures(sender, command, None)
+    }
+
+    /// Queues a command carrying the secure-chat envelope of a signed command packet.
+    ///
+    /// The envelope is verified on the game tick, once parsing has revealed which arguments
+    /// are signable. Passing `None` is exactly [`Self::submit_command`].
+    pub fn submit_command_with_signatures(
+        &self,
+        sender: CommandSender,
+        command: String,
+        signed: Option<Box<SignedCommandPayload>>,
+    ) -> Result<(), CommandQueueFull> {
         self.command_requests.submit(CommandRequest::Execute {
             owner: CommandExecutionOwner::capture(sender, self),
             command,
+            signed,
         })
     }
 

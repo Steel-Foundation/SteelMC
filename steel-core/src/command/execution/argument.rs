@@ -17,7 +17,7 @@ use super::{
         suggest_entity_selector, try_parse_message_selector,
     },
     structure::{parse_structure_or_tag_key, suggest_structures},
-    text::{CommandTextResolutionSource, validate_component_syntax},
+    text::{CommandTextResolutionSource, join_components, validate_component_syntax},
     world::{parse_world_argument, suggest_worlds},
 };
 use crate::chunk::heightmap::HeightmapType;
@@ -46,7 +46,7 @@ use steel_utils::{
     translations,
     types::GameType,
 };
-use text_components::TextComponent;
+use text_components::{TextComponent, content::Resolvable};
 
 /// Axes selected by vanilla's coordinate swizzle argument.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -530,6 +530,9 @@ argument_value_wrapper!(
     ComponentValue(TextComponent),
     "steel:command/value/component"
 );
+/// Vanilla's `MessageArgument` message length limit, in Java string characters.
+const MAX_MESSAGE_LENGTH: usize = 256;
+
 /// Parsed vanilla message argument: raw text plus the selector parts found
 /// during parsing.
 ///
@@ -565,7 +568,9 @@ impl MessageValue {
             return Ok(TextComponent::plain(self.text.clone()));
         }
 
-        let separator = TextComponent::plain(", ".to_owned());
+        // Vanilla substitutes each selector with `EntitySelector.joinNames`, which formats the
+        // matched display names with `ComponentUtils.DEFAULT_SEPARATOR` (a gray ", ").
+        let separator = *Resolvable::entity_separator();
         let mut result = TextComponent::new();
         let mut read_to = 0;
 
@@ -577,15 +582,9 @@ impl MessageValue {
                     .push(TextComponent::plain(before.to_owned()));
             }
 
-            let mut names = source
-                .selector_display_names(&self.text[part.start..part.end])?
-                .into_iter();
-            if let Some(first) = names.next() {
-                result.children.push(first);
-                for name in names {
-                    result.children.push(separator.clone());
-                    result.children.push(name);
-                }
+            let names = source.selector_display_names(&self.text[part.start..part.end])?;
+            if !names.is_empty() {
+                result.children.push(join_components(names, &separator));
             }
             read_to = part.end;
         }
@@ -598,6 +597,11 @@ impl MessageValue {
         }
 
         Ok(result)
+    }
+
+    /// The raw message text, before any selector substitution.
+    pub(crate) fn text(&self) -> &str {
+        &self.text
     }
 }
 argument_value_wrapper!(NbtPathValue(NbtPath), "steel:command/value/nbt_path");
@@ -1325,14 +1329,21 @@ fn selected_clock(
 
 fn parse_component(reader: &mut StringReader<'_>) -> Result<TextComponent, CommandSyntaxError> {
     let start = reader.checkpoint();
-    let component = if starts_structured_component(reader.remaining()) {
-        parse_structured_component(reader)?
-    } else {
-        // Vanilla message arguments are greedy: multi-word input that does not open a
-        // structured SNBT component is consumed whole as literal text instead of failing
-        // on the first space.
-        TextComponent::plain(reader.read_remaining().to_owned())
-    };
+    let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
+        reader.advance_bytes(error.cursor());
+        component_snbt_error(reader, error.component())
+    })?;
+    if !reader.advance_bytes(consumed) {
+        return Err(component_snbt_error(
+            reader,
+            "Invalid text component cursor",
+        ));
+    }
+
+    let component = TextComponent::try_from_nbt(&tag).map_err(|error| {
+        reader.restore(start);
+        invalid_component(reader, error.to_string())
+    })?;
     validate_component_syntax(&component).map_err(|error| {
         reader.restore(start);
         invalid_component(reader, error)
@@ -1351,9 +1362,11 @@ fn parse_message(
     source: &dyn CommandArgumentSource,
 ) -> Result<MessageValue, CommandSyntaxError> {
     let text = reader.read_remaining().to_owned();
-    if text.len() > 256 {
+    // Vanilla's limit is on Java `String.length()`, i.e. UTF-16 code units, not UTF-8 bytes.
+    let length = java::string_length(&text);
+    if length > MAX_MESSAGE_LENGTH {
         let message = translations::ARGUMENT_MESSAGE_TOO_LONG
-            .message([text.len().to_string(), "256".to_owned()])
+            .message([length.to_string(), MAX_MESSAGE_LENGTH.to_string()])
             .component();
         return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))));
     }
@@ -1369,58 +1382,32 @@ fn parse_message(
     let mut parts = Vec::new();
 
     while scan_reader.can_read() {
-        if scan_reader.peek() == Some('@') {
-            let part_start = scan_reader.cursor();
-            match try_parse_message_selector(&mut scan_reader, source) {
-                Ok(()) => {
-                    parts.push(MessagePart {
-                        start: part_start,
-                        end: scan_reader.cursor(),
-                    });
-                }
-                Err(MessageSelectorError::Skip) => {}
-                Err(MessageSelectorError::Propagate(error)) => return Err(error),
-            }
+        if scan_reader.peek() != Some('@') {
+            scan_reader.skip();
+            continue;
         }
-        scan_reader.skip();
+
+        // Parts index `text` by byte, so track byte offsets: `cursor()` counts UTF-16 units
+        // and would mis-slice any message containing non-ASCII text.
+        let part_start = scan_reader.byte_cursor();
+        match try_parse_message_selector(&mut scan_reader, source) {
+            Ok(()) => {
+                // The reader already sits past the selector; vanilla resumes scanning from
+                // there without skipping, so `@a@a` yields two parts.
+                parts.push(MessagePart {
+                    start: part_start,
+                    end: scan_reader.byte_cursor(),
+                });
+            }
+            // The `@` was not a selector: resume one character past it, as vanilla does.
+            Err(MessageSelectorError::Skip) => {
+                scan_reader.skip();
+            }
+            Err(MessageSelectorError::Propagate(error)) => return Err(error),
+        }
     }
 
     Ok(MessageValue { text, parts })
-}
-
-/// Parses a single structured SNBT component (`{...}`, `[...]`, or a quoted string).
-fn parse_structured_component(
-    reader: &mut StringReader<'_>,
-) -> Result<TextComponent, CommandSyntaxError> {
-    let start = reader.checkpoint();
-
-    let (tag, consumed) = parse_snbt_argument(reader.remaining()).map_err(|error| {
-        reader.advance_bytes(error.cursor());
-        component_snbt_error(reader, error.component())
-    })?;
-
-    if !reader.advance_bytes(consumed) {
-        return Err(component_snbt_error(
-            reader,
-            "Invalid text component cursor",
-        ));
-    }
-
-    TextComponent::try_from_nbt(&tag).map_err(|error| {
-        reader.restore(start);
-        invalid_component(reader, error.to_string())
-    })
-}
-
-/// Whether the argument opens a structured SNBT component (`{...}`, `[...]`, or a quoted
-/// string) rather than greedy plain text.
-fn starts_structured_component(input: &str) -> bool {
-    matches!(
-        input
-            .chars()
-            .find(|character| !java::is_whitespace(*character)),
-        Some('{' | '[' | '"' | '\'')
-    )
 }
 
 fn component_snbt_error(

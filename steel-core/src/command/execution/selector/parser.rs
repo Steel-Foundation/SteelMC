@@ -998,11 +998,67 @@ pub(crate) enum MessageSelectorError {
     Propagate(CommandSyntaxError),
 }
 
+/// Reads the exact span a selector occupies at the reader's position: `@`, the selector type
+/// character, and a balanced `[...]` option list when one follows immediately.
+///
+/// Vanilla's `EntitySelectorParser` consumes exactly this much, which is why `@everyone` is
+/// the selector `@e` followed by the literal text `veryone`. This differs from
+/// [`read_selector_argument`], which reads a whole whitespace-delimited argument and so cannot
+/// be used to scan selectors out of free-form message text.
+fn read_message_selector_span(reader: &mut StringReader<'_>) -> Option<String> {
+    let mut value = String::new();
+    // The caller has already established that the reader sits on '@'.
+    value.push(reader.peek()?);
+    reader.skip();
+    // The selector type must be present; an unknown one is rejected by the parser below.
+    value.push(reader.peek()?);
+    reader.skip();
+
+    if reader.peek() != Some('[') {
+        return Some(value);
+    }
+
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+    while let Some(ch) = reader.peek() {
+        value.push(ch);
+        reader.skip();
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if quote.is_some() {
+            if ch == '\\' {
+                escaped = true;
+            } else if quote == Some(ch) {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    Some(value)
+}
+
 /// Tries to parse a selector at the reader's current position for message arguments.
 ///
 /// Vanilla's message argument scans for `@` and attempts to parse a selector at each one.
 /// Missing or unknown selector types are treated as literal `@` characters; all other
 /// selector syntax errors are fatal to the command.
+///
+/// On success the reader is left just past the selector; on [`MessageSelectorError::Skip`] it
+/// is restored to the `@` so the caller can resume one character later.
 pub(crate) fn try_parse_message_selector<S>(
     reader: &mut StringReader<'_>,
     source: &S,
@@ -1011,7 +1067,10 @@ where
     S: CommandArgumentSource + ?Sized,
 {
     let start = reader.checkpoint();
-    let raw = read_selector_argument(reader).map_err(MessageSelectorError::Propagate)?;
+    let Some(raw) = read_message_selector_span(reader) else {
+        reader.restore(start);
+        return Err(MessageSelectorError::Skip);
+    };
     let allow_selectors = allow_selectors(source);
     let allow_advanced = allow_advanced_selectors(source);
 
@@ -1033,6 +1092,9 @@ where
 }
 
 /// Returns `true` for selector errors that should be treated as literal `@` in messages.
+///
+/// Mirrors vanilla, which swallows only `ERROR_MISSING_SELECTOR_TYPE` and
+/// `ERROR_UNKNOWN_SELECTOR_TYPE`; both are reported at the selector-type character.
 const fn is_skippable_selector_error(error: &SelectorParseError) -> bool {
     matches!(error.kind, SelectorParseErrorKind::Invalid(_)) && error.cursor == 1
 }

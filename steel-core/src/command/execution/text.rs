@@ -46,18 +46,6 @@ impl<'a> CommandTextResolver<'a, CommandSource> {
             default_scoreboard_name: Some(entity.scoreboard_name()),
         }
     }
-
-    /// Resolves selectors and scores relative to the command source itself.
-    #[expect(
-        dead_code,
-        reason = "API kept for command sources that resolve once against the sender"
-    )]
-    pub(crate) const fn for_source(source: &'a CommandSource) -> Self {
-        Self {
-            source,
-            default_scoreboard_name: None,
-        }
-    }
 }
 
 impl<S> TryTextResolutor for CommandTextResolver<'_, S>
@@ -304,7 +292,8 @@ fn parse_resource_identifier(raw: &str) -> Result<Identifier, &'static str> {
     Ok(Identifier::new(namespace.to_owned(), path.to_owned()))
 }
 
-fn join_components(
+/// Joins `values` with `separator` the way vanilla's `ComponentUtils.formatList` does.
+pub(super) fn join_components(
     values: impl IntoIterator<Item = TextComponent>,
     separator: &TextComponent,
 ) -> TextComponent {

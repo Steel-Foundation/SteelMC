@@ -45,6 +45,12 @@ impl<V> ParsedArguments<V> {
             .map(|(_, argument)| &argument.value)
             .ok_or_else(|| missing_argument(name))
     }
+
+    fn iter(&self) -> impl Iterator<Item = (&str, &V)> {
+        self.values
+            .iter()
+            .map(|(name, argument)| (name.as_ref(), &argument.value))
+    }
 }
 
 macro_rules! impl_get_primitive_argument_value {
@@ -392,6 +398,11 @@ where
     /// Returns a parsed runtime argument by name.
     pub(crate) fn argument(&self, name: &str) -> Result<&R::ArgumentValue, CommandSyntaxError> {
         self.arguments.argument(name)
+    }
+
+    /// Returns every argument parsed by this context segment, in parse order.
+    pub(crate) fn arguments(&self) -> impl Iterator<Item = (&str, &R::ArgumentValue)> {
+        self.arguments.iter()
     }
 
     /// Returns the context reached through a redirect.
