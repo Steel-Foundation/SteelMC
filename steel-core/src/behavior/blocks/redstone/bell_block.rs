@@ -25,9 +25,10 @@ use crate::block_entity::entities::BellBlockEntity;
 use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker};
 use crate::entity::Entity;
 use crate::entity::ai::path::PathComputationType;
+use crate::entity::projectile::Projectile;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
-use crate::world::{LevelReader, ScheduledTickAccess, SignalGetter as _, World};
+use crate::world::{ClipHitResult, LevelReader, ScheduledTickAccess, SignalGetter as _, World};
 
 const MAX_HIT_HEIGHT: f64 = 0.8125;
 const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
@@ -92,12 +93,11 @@ impl BellBlock {
         }
     }
 
-    fn is_proper_hit(state: BlockStateId, hit: &BlockHitResult, pos: BlockPos) -> bool {
-        if hit.direction.axis().is_vertical() {
+    fn is_proper_hit(state: BlockStateId, direction: Direction, height: f64) -> bool {
+        if direction.axis().is_vertical() {
             return false;
         }
 
-        let height = hit.location.y - f64::from(pos.y());
         if height > MAX_HIT_HEIGHT {
             return false;
         }
@@ -106,10 +106,10 @@ impl BellBlock {
         let attachment = state.get_value(BELL_ATTACHMENT);
 
         match attachment {
-            BellAttachType::Floor => facing.axis() == hit.direction.axis(),
+            BellAttachType::Floor => facing.axis() == direction.axis(),
             BellAttachType::Ceiling => true,
             BellAttachType::SingleWall | BellAttachType::DoubleWall => {
-                facing.axis() != hit.direction.axis()
+                facing.axis() != direction.axis()
             }
         }
     }
@@ -162,10 +162,19 @@ impl BlockBehavior for BellBlock {
             };
 
             state = state.set_value(BELL_ATTACHMENT, attachment);
-        }
 
-        let powered = context.world.has_neighbor_signal(pos);
-        state = state.set_value(POWERED, powered);
+            if self.can_survive(state, context.world, pos) {
+                return Some(state);
+            }
+
+            let can_attach_below = Self::has_support(context.world, pos, Direction::Down);
+            let fallback = if can_attach_below {
+                BellAttachType::Floor
+            } else {
+                BellAttachType::Ceiling
+            };
+            state = state.set_value(BELL_ATTACHMENT, fallback);
+        }
 
         self.can_survive(state, context.world, pos).then_some(state)
     }
@@ -181,46 +190,39 @@ impl BlockBehavior for BellBlock {
         world: &dyn ScheduledTickAccess,
         pos: BlockPos,
         direction: Direction,
-        _neighbor_pos: BlockPos,
-        _neighbor_state: BlockStateId,
+        neighbor_pos: BlockPos,
+        neighbor_state: BlockStateId,
     ) -> BlockStateId {
         let attachment = state.get_value(BELL_ATTACHMENT);
+        let support_direction = Self::connected_direction(state);
 
-        if attachment != BellAttachType::DoubleWall {
-            let support_direction = Self::connected_direction(state);
-
-            if direction != support_direction {
-                return state;
-            }
-
-            if Self::has_support(world, pos, support_direction) {
-                return state;
-            }
-
+        if support_direction == direction
+            && attachment != BellAttachType::DoubleWall
+            && !Self::has_support(world, pos, support_direction)
+        {
             return vanilla_blocks::AIR.default_state();
         }
 
         let facing = state.get_value(FACING);
-        let opposite = facing.opposite();
 
-        let first_support = Self::has_support(world, pos, facing);
-        let second_support = Self::has_support(world, pos, opposite);
+        if direction.axis() == facing.axis() {
+            if attachment == BellAttachType::DoubleWall
+                && !world.is_face_sturdy(neighbor_state, neighbor_pos, direction)
+            {
+                return state
+                    .set_value(FACING, direction.opposite())
+                    .set_value(BELL_ATTACHMENT, BellAttachType::SingleWall);
+            }
 
-        if first_support && second_support {
-            return state;
+            if attachment == BellAttachType::SingleWall
+                && support_direction.opposite() == direction
+                && world.is_face_sturdy(neighbor_state, neighbor_pos, facing)
+            {
+                return state.set_value(BELL_ATTACHMENT, BellAttachType::DoubleWall);
+            }
         }
 
-        if first_support {
-            return state.set_value(BELL_ATTACHMENT, BellAttachType::SingleWall);
-        }
-
-        if second_support {
-            let new_state = state.set_value(FACING, opposite);
-
-            return new_state.set_value(BELL_ATTACHMENT, BellAttachType::SingleWall);
-        }
-
-        vanilla_blocks::AIR.default_state()
+        state
     }
 
     fn handle_neighbor_changed(
@@ -243,12 +245,30 @@ impl BlockBehavior for BellBlock {
         hit: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        if !Self::is_proper_hit(state, hit, pos) {
+        let height = hit.location.y - f64::from(pos.y());
+        if !Self::is_proper_hit(state, hit.direction, height) {
             return InteractionResult::Pass;
         }
 
         Self::ring(Some(player), world, pos, hit.direction);
         InteractionResult::Success
+    }
+
+    fn on_projectile_hit(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        hit: &ClipHitResult,
+        projectile: &dyn Projectile,
+    ) {
+        let height = hit.location.y - f64::from(hit.block_pos.y());
+        if !Self::is_proper_hit(state, hit.direction, height) {
+            return;
+        }
+
+        let owner = projectile.get_owner();
+        let source = owner.as_deref().filter(|entity| entity.as_player().is_some());
+        Self::ring(source, world, hit.block_pos, hit.direction);
     }
 
     fn new_block_entity(
@@ -302,11 +322,17 @@ impl BlockBehavior for BellBlock {
 
 #[cfg(test)]
 mod tests {
+    use glam::DVec3;
     use steel_registry::init_vanilla_registry;
+    use steel_registry::item_stack::ItemStack;
+    use steel_registry::vanilla_items;
     use steel_utils::ChunkPos;
+    use steel_utils::types::InteractionHand;
 
     use super::*;
-    use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
+    use crate::behavior::{
+        BLOCK_BEHAVIORS, PlacementOrientation, PlacementSource, init_behaviors,
+    };
     use crate::block_entity::init_block_entities;
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
