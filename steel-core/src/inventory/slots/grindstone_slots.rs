@@ -1,6 +1,8 @@
 //! Grindstone Menu
 use std::sync::Arc;
 
+use steel_registry::vanilla_enchantment_tags::EnchantmentTag;
+use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt};
 use steel_registry::{item_stack::ItemStack, level_events};
 use steel_utils::{BlockPos, locks::Shared};
 
@@ -37,6 +39,52 @@ impl GrindstoneResultHandler {
             world,
         }
     }
+
+    /// Experience dropped when the result is taken: roughly half the enchanting
+    /// cost of both inputs, randomised upward. Must be called before the inputs
+    /// are cleared.
+    fn get_experience_amount(&self, guard: &ContainerLockGuard) -> i32 {
+        let Some(input) = guard.get(ContainerId::from_arc(&self.input_container)) else {
+            log::warn!("input container not locked while awarding grindstone experience");
+            return 0;
+        };
+
+        let amount = Self::get_experience_from_item(input.get_item(0))
+            + Self::get_experience_from_item(input.get_item(1));
+
+        if amount > 0 {
+            // Ceiling division; `amount` is positive here so truncation cannot bite.
+            let half_amount = (amount + 1) / 2;
+            half_amount + rand::random_range(0..half_amount)
+        } else {
+            0
+        }
+    }
+
+    fn get_experience_from_item(item: &ItemStack) -> i32 {
+        let mut amount = 0;
+        let Some(enchantments) = item.get_enchantments_for_crafting() else {
+            return 0;
+        };
+
+        enchantments.iter().for_each(|(id, level)| {
+            let Some(enchantment) = REGISTRY.enchantments.by_key(id) else {
+                return;
+            };
+
+            if REGISTRY
+                .enchantments
+                .is_in_tag(enchantment, &EnchantmentTag::CURSE)
+            {
+                return;
+            }
+
+            amount += enchantment.min_cost.base
+                + enchantment.min_cost.per_level_above_first * (*level as i32 - 1);
+        });
+
+        amount
+    }
 }
 
 impl ResultHandler for GrindstoneResultHandler {
@@ -55,9 +103,9 @@ impl ResultHandler for GrindstoneResultHandler {
         guard: &mut ContainerLockGuard,
         _player: &Player,
     ) -> Option<ItemStack> {
-        // TODO: Add offset for orb spawning
-        // TODO: Implement experience orb calculation
-        ExperienceOrbEntity::award(&self.world, self.block_pos.as_dvec3(), 1);
+        // Read before the inputs are cleared below.
+        let experience = self.get_experience_amount(guard);
+        ExperienceOrbEntity::award(&self.world, self.block_pos.get_center().into(), experience);
 
         self.world
             .level_event(level_events::SOUND_GRINDSTONE_USED, self.block_pos, 0, None);
