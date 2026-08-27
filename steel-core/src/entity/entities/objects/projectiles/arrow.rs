@@ -506,6 +506,10 @@ impl Projectile for ArrowEntity {
             .with_direct_entity(self.id())
             .with_causing_entity(self.get_owner().map_or(self.id(), |owner| owner.id()));
 
+        // Save fire ticks before damage check — restored on deflection so the
+        // entity's fire state is unchanged when the arrow bounces off.
+        let remaining_fire_ticks = entity.remaining_fire_ticks();
+
         if entity.hurt(&world, &damage, damage_amount as f32) {
             // Arrow dealt damage — clear any deflection cooldown since the
             // arrow is about to be discarded.
@@ -527,6 +531,9 @@ impl Projectile for ArrowEntity {
             );
             self.set_removed(RemovalReason::Discarded);
         } else {
+            // Vanilla: restore fire ticks on deflection so the entity's fire
+            // state is unchanged when the arrow bounces off.
+            entity.set_remaining_fire_ticks(remaining_fire_ticks);
             // Vanilla deflect path: `REVERSE` + `scale(0.2)`.
             // The arrow was blocked (e.g. shield). Reflect the velocity and
             // push the arrow outside the entity's collision volume so the
