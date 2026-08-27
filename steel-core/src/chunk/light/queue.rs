@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::iter::FusedIterator;
+use std::mem;
 use std::ops::{Deref, DerefMut};
 
 use steel_utils::{BlockPos, Direction};
@@ -476,6 +477,20 @@ impl PackedLightPropagationQueues {
         self.decrease.clear();
     }
 
+    /// Creates an empty queue pair without reserving propagation scratch capacity.
+    fn empty_without_capacity() -> Self {
+        Self {
+            increase: PackedLightPropagationQueue {
+                entries: Vec::new(),
+                read_index: 0,
+            },
+            decrease: PackedLightPropagationQueue {
+                entries: Vec::new(),
+                read_index: 0,
+            },
+        }
+    }
+
     const fn total_capacity(&self) -> usize {
         self.increase.entries.capacity() + self.decrease.entries.capacity()
     }
@@ -499,17 +514,17 @@ thread_local! {
 /// stay safe.
 #[must_use]
 pub struct PooledPackedLightQueues {
-    inner: Option<PackedLightPropagationQueues>,
+    inner: PackedLightPropagationQueues,
 }
 
 impl PooledPackedLightQueues {
     /// Leases empty queues from the worker's pool, allocating on first use.
     pub fn take() -> Self {
-        let mut inner = POOLED_PACKED_QUEUES.with(|pool| pool.borrow_mut().take());
-        match &mut inner {
-            Some(queues) => queues.clear(),
-            None => inner = Some(PackedLightPropagationQueues::new()),
-        }
+        let inner = POOLED_PACKED_QUEUES.with(|pool| match pool.borrow_mut().take() {
+            Some(queues) => queues,
+            None => PackedLightPropagationQueues::new(),
+        });
+
         Self { inner }
     }
 }
@@ -523,24 +538,31 @@ impl Default for PooledPackedLightQueues {
 impl Deref for PooledPackedLightQueues {
     type Target = PackedLightPropagationQueues;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
-        self.inner.as_ref().expect("pool guard always holds queues")
+        &self.inner
     }
 }
 
 impl DerefMut for PooledPackedLightQueues {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.inner.as_mut().expect("pool guard always holds queues")
+        &mut self.inner
     }
 }
 
 impl Drop for PooledPackedLightQueues {
     fn drop(&mut self) {
-        let Some(queues) = self.inner.take() else {
-            return;
-        };
+        let mut queues = mem::replace(
+            &mut self.inner,
+            PackedLightPropagationQueues::empty_without_capacity(),
+        );
+
+        queues.clear();
+
         let recycled =
             (queues.total_capacity() <= POOLED_PACKED_QUEUES_MAX_ENTRIES).then_some(queues);
+
         POOLED_PACKED_QUEUES.with(|pool| {
             *pool.borrow_mut() = recycled;
         });
