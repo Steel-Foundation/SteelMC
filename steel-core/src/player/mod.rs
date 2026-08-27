@@ -265,7 +265,7 @@ pub struct Player {
 
     /// The last action time of this player.
     last_action_time: SyncMutex<Instant>,
-    /// Throttles the player dropping items in creative mode.
+    /// Throttles the player dropping items from the Creative Menu.
     drop_spam_throttler: SyncMutex<TickThrottler>,
 }
 
