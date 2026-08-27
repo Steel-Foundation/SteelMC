@@ -414,7 +414,7 @@ impl Player {
             menu.behavior_mut().broadcast_changes(&self.connection);
         } else if drop && valid_data {
             {
-                let mut throttler = self.drop_spam_throttle.lock();
+                let mut throttler = self.drop_spam_throttler.lock();
                 if throttler.is_under_threshold() {
                     throttler.increment();
                 } else {

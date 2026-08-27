@@ -266,7 +266,7 @@ pub struct Player {
     /// The last action time of this player.
     last_action_time: SyncMutex<Instant>,
     /// Throttles the player dropping items in creative mode.
-    drop_spam_throttle: SyncMutex<TickThrottler>,
+    drop_spam_throttler: SyncMutex<TickThrottler>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -570,7 +570,7 @@ impl Player {
             ender_pearls: SyncMutex::new(Vec::new()),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
-            drop_spam_throttle: SyncMutex::new(TickThrottler::new(20, 1480)),
+            drop_spam_throttler: SyncMutex::new(TickThrottler::new(20, 1480)),
         }
     }
 

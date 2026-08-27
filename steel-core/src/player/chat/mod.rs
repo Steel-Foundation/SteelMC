@@ -114,7 +114,7 @@ impl Player {
         let mut chat = self.chat.lock();
         chat.chat_spam_throttler.tick();
         chat.command_spam_throttler.tick();
-        self.drop_spam_throttle.lock().tick();
+        self.drop_spam_throttler.lock().tick();
     }
 
     const fn should_disconnect_for_rate_spam(
