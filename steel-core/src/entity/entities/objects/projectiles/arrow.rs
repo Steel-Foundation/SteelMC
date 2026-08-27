@@ -16,7 +16,7 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
-use steel_protocol::packets::game::SoundSource;
+use steel_protocol::packets::game::{CTakeItemEntity, SoundSource};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
@@ -47,6 +47,9 @@ struct ArrowRuntime {
     pickup: Pickup,
     /// Vanilla `lastState` — block that held the arrow when it landed.
     last_state: Option<BlockStateId>,
+    /// Entity ID that deflected this arrow last tick, used to suppress
+    /// repeated collision while the arrow exits the entity's bounding box.
+    last_deflected_from: Option<i32>,
 }
 
 impl ArrowRuntime {
@@ -58,6 +61,7 @@ impl ArrowRuntime {
             base_damage: <ArrowEntity as AbstractArrow>::BASE_DAMAGE,
             pickup: Pickup::Disallowed,
             last_state: None,
+            last_deflected_from: None,
         }
     }
 }
@@ -419,8 +423,7 @@ impl Entity for ArrowEntity {
         // TODO: leave the arrow in-world when the inventory cannot fit it
         // (vanilla only picks up when `inventory.add` succeeds fully).
         if let Some(world) = self.level() {
-            let take_packet =
-                steel_protocol::packets::game::CTakeItemEntity::new(self.id(), player.id(), 1);
+            let take_packet = CTakeItemEntity::new(self.id(), player.id(), 1);
             let chunk_pos = steel_utils::ChunkPos::from_entity_pos(self.position());
             world.broadcast_to_nearby(chunk_pos, take_packet, None);
         }
@@ -436,6 +439,13 @@ impl Projectile for ArrowEntity {
 
     /// Vanilla `AbstractArrow.onHitEntity`.
     fn on_hit_entity(&self, entity: &SharedEntity, _location: DVec3) {
+        // Skip if this entity deflected us last tick — gives the arrow one
+        // tick to exit the bounding box before processing another collision.
+        if self.runtime.lock().last_deflected_from == Some(entity.id()) {
+            self.runtime.lock().last_deflected_from = None;
+            return;
+        }
+
         let Some(world) = entity.level() else {
             return;
         };
@@ -453,6 +463,10 @@ impl Projectile for ArrowEntity {
             .with_causing_entity(self.get_owner().map_or(self.id(), |owner| owner.id()));
 
         if entity.hurt(&world, &damage, damage_amount as f32) {
+            // Arrow dealt damage — clear any deflection cooldown since the
+            // arrow is about to be discarded.
+            self.runtime.lock().last_deflected_from = None;
+
             // Vanilla lets arrows pass through endermen without sound or discard.
             if entity.entity_type() == &vanilla_entities::ENDERMAN {
                 return;
@@ -468,8 +482,10 @@ impl Projectile for ArrowEntity {
             );
             self.set_removed(RemovalReason::Discarded);
         } else {
-            // Vanilla deflect path: `REVERSE` + `scale(0.2)` + Y pop to leave
-            // creative hitbox.
+            // Vanilla deflect path: `REVERSE` + `scale(0.2)`.
+            // The arrow was blocked (e.g. shield). Reflect the velocity and
+            // push the arrow outside the entity's collision volume so the
+            // next tick's raycast won't re-detect the same entity.
             self.deflect(
                 ProjectileDeflection::Reverse,
                 Some(entity.as_ref() as &dyn Entity),
@@ -478,9 +494,25 @@ impl Projectile for ArrowEntity {
                 false,
             );
             self.set_velocity(self.velocity() * 0.2);
-            let mut v = self.velocity();
-            v.y += 0.04;
-            self.set_velocity(v);
+
+            // Push the arrow along the reflected direction so it exits the
+            // entity's inflated bounding box (margin can be up to 0.3).
+            let velocity = self.velocity();
+            let push_direction = if velocity.length_squared() > 1.0e-9 {
+                velocity.normalize()
+            } else {
+                let diff = self.position() - entity.position();
+                if diff.length_squared() > 1.0e-9 {
+                    diff.normalize()
+                } else {
+                    DVec3::Y
+                }
+            };
+            let _ = self.try_set_position(self.position() + push_direction * 0.35);
+
+            // Suppress re-collision with this entity on the next tick.
+            self.runtime.lock().last_deflected_from = Some(entity.id());
+
             if self.velocity().length_squared() < 1.0e-7 {
                 if self.runtime.lock().pickup == Pickup::Allowed {
                     world.spawn_item(self.position(), ItemStack::new(&vanilla_items::ARROW));
