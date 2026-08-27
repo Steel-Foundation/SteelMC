@@ -78,6 +78,27 @@ use crate::{enchantment_helper, entity::damage::DamageSource, player::Player};
 
 use entities::ExperienceOrbEntity;
 
+pub(crate) const ENTITY_LOAD_MAX_HORIZONTAL_POSITION: f64 = 3.000_051_2E7;
+pub(crate) const ENTITY_LOAD_MAX_VERTICAL_POSITION: f64 = 2.0E7;
+
+/// Clamps an entity position using vanilla's load-time world-bound limits.
+pub(crate) fn clamp_loaded_entity_position(pos: DVec3) -> DVec3 {
+    DVec3::new(
+        pos.x.clamp(
+            -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+            ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+        ),
+        pos.y.clamp(
+            -ENTITY_LOAD_MAX_VERTICAL_POSITION,
+            ENTITY_LOAD_MAX_VERTICAL_POSITION,
+        ),
+        pos.z.clamp(
+            -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+            ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+        ),
+    )
+}
+
 fn nbt_bool(value: bool) -> NbtTag {
     NbtTag::Byte(i8::from(value))
 }

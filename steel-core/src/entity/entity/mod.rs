@@ -3615,7 +3615,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         if let Some(position) = read_nbt_dvec3(&nbt, "Pos")
             && position.is_finite()
         {
-            self.base().set_position_local(position);
+            self.base()
+                .set_position_local(super::clamp_loaded_entity_position(position));
         }
 
         if let Some(motion) = read_nbt_dvec3(&nbt, "Motion") {
@@ -3692,6 +3693,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         self.load_additional(nbt);
+        self.set_old_position_to_current();
+        self.base().set_old_rotation_to_current();
         self.sync_base_entity_data();
     }
 
