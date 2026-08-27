@@ -1,6 +1,7 @@
 use steel_registry::DyeColor;
 
 use super::*;
+use crate::behavior::MOB_EFFECT_BEHAVIORS;
 
 /// A trait for living entities that can take damage, heal, and die.
 ///
@@ -1232,7 +1233,21 @@ pub trait LivingEntity: Entity {
         if !self.can_be_affected(&effect) {
             return false;
         }
-        self.living_base().add_mob_effect(effect)
+        let (effect_key, amplifier) = (effect.effect(), effect.amplifier());
+        let changed = self.living_base().add_mob_effect(effect);
+        // Mirrors vanilla `newEffect.onEffectStarted(this)`: called
+        // unconditionally at the end of `addEffect`, using the
+        // newly-requested amplifier even when it didn't end up replacing a
+        // stronger existing instance. `Self` can't unsize-coerce to
+        // `&dyn LivingEntity` generically from a `?Sized` default method, so
+        // go through the existing downcast instead (see `tick_mob_effects`).
+        let dyn_self = self
+            .as_living_entity()
+            .expect("Self implements LivingEntity");
+        MOB_EFFECT_BEHAVIORS
+            .get_behavior(effect_key)
+            .on_effect_started(dyn_self, amplifier);
+        changed
     }
 
     /// Sets the presence of a vanilla mob effect.

@@ -99,8 +99,8 @@ use crate::entity::consume_effect::{
     RemoveEffectsBehavior, TeleportRandomlyBehavior,
 };
 use crate::entity::mob_effect::{
-    HealOrHarmBehavior, HungerBehavior, MobEffectBehavior, PoisonBehavior, RegenerationBehavior,
-    SaturationBehavior, WitherBehavior,
+    AbsorptionBehavior, HealOrHarmBehavior, HungerBehavior, MobEffectBehavior, PoisonBehavior,
+    RegenerationBehavior, SaturationBehavior, WitherBehavior,
 };
 use crate::fluid::{FluidBehavior, LavaFluid, WaterFluid};
 
@@ -288,6 +288,9 @@ pub fn init_behaviors() {
 
         let hunger: Box<dyn MobEffectBehavior> = Box::new(HungerBehavior);
         mob_effect_behaviors.set_behavior(vanilla_mob_effects::HUNGER, hunger);
+
+        let absorption: Box<dyn MobEffectBehavior> = Box::new(AbsorptionBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::ABSORPTION, absorption);
 
         mob_effect_behaviors
     });

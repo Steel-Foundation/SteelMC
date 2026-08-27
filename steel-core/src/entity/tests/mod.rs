@@ -976,6 +976,47 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
     );
 }
 
+/// Mirrors vanilla `AbsorptionMobEffect.onEffectStarted`, wired through
+/// `LivingEntity.addEffect` (Steel's `add_mob_effect`): granting the effect
+/// (e.g. from eating a golden apple) must actually set the absorption
+/// hearts, not just the effect icon/attribute-modifier bump to
+/// `MAX_ABSORPTION`.
+#[test]
+fn adding_absorption_effect_grants_absorption_hearts() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    assert_eq!(entity.get_absorption_amount(), 0.0);
+
+    entity.add_mob_effect(ActiveMobEffect::with_duration(
+        vanilla_mob_effects::ABSORPTION,
+        2400,
+        0,
+    ));
+    assert_eq!(
+        entity.get_absorption_amount(),
+        4.0,
+        "amplifier 0 grants 4 absorption hearts, clamped against the effect's own MAX_ABSORPTION bump"
+    );
+
+    // Re-adding the same amplifier must not stack additively.
+    entity.add_mob_effect(ActiveMobEffect::with_duration(
+        vanilla_mob_effects::ABSORPTION,
+        2400,
+        0,
+    ));
+    assert_eq!(entity.get_absorption_amount(), 4.0);
+
+    // A higher amplifier raises the max, matching vanilla's `Math.max`.
+    entity.add_mob_effect(ActiveMobEffect::with_duration(
+        vanilla_mob_effects::ABSORPTION,
+        2400,
+        1,
+    ));
+    assert_eq!(entity.get_absorption_amount(), 8.0);
+}
+
 struct ControlledVehicleTestEntity {
     base: EntityBase,
     controller: Option<SharedEntity>,

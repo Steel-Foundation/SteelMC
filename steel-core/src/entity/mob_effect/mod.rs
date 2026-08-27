@@ -12,6 +12,7 @@
 //! blocks — see [`crate::entity::consume_effect`] for why this is a lookup
 //! instead of vanilla's direct polymorphic call.
 
+mod absorption;
 mod heal_or_harm;
 mod hunger;
 mod poison;
@@ -19,6 +20,7 @@ mod regeneration;
 mod saturation;
 mod wither;
 
+pub use absorption::AbsorptionBehavior;
 pub use heal_or_harm::HealOrHarmBehavior;
 pub use hunger::HungerBehavior;
 pub use poison::PoisonBehavior;
@@ -75,4 +77,12 @@ pub trait MobEffectBehavior: Send + Sync {
         let _ = (direct_entity, causing_entity, scale);
         self.apply_effect_tick(world, user, amplifier);
     }
+
+    /// Mirrors vanilla `MobEffect.onEffectStarted`, called unconditionally
+    /// every time `LivingEntity.addEffect` runs for this effect type — on a
+    /// brand-new effect, a refreshed one, and even one that didn't end up
+    /// replacing a stronger existing instance — always using the
+    /// newly-requested amplifier. Only `AbsorptionMobEffect` overrides this;
+    /// every other effect keeps the empty default.
+    fn on_effect_started(&self, _user: &dyn LivingEntity, _amplifier: i32) {}
 }
