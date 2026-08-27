@@ -1,12 +1,15 @@
 //! Vanilla Fox entity with red/snow variant, behaviour flags, and trusted players.
 
+mod goals;
+
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
-use simdnbt::owned::NbtCompound;
+use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_macros::entity_behavior;
-use steel_protocol::packets::game::SoundSource;
+use steel_protocol::packets::game::{CTakeItemEntity, SoundSource};
+use steel_registry::data_components::vanilla_components::{CONSUMABLE, FOOD};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
@@ -16,10 +19,13 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_biome_tags::BiomeTag;
 use steel_registry::vanilla_entity_data::FoxEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
-use steel_registry::{REGISTRY, TaggedRegistryExt, sound_events, vanilla_attributes};
+use steel_registry::{
+    REGISTRY, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_entities, vanilla_items,
+};
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
-use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
+use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, UuidExt};
+use uuid::Uuid;
 
 use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
@@ -27,14 +33,17 @@ use crate::entity::ai::goal::{
     WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData,
+    PathfinderMob, RemovalReason, SpawnGroupData, next_entity_id,
 };
+use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
+use goals::{FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal};
 
 /// Baby fox render scale (vanilla `Fox.BABY_SCALE`).
 const BABY_SCALE: f32 = 0.6;
@@ -64,6 +73,23 @@ const FLAG_SLEEPING: i8 = 1 << 5;
 const FLAG_FACEPLANTED: i8 = 1 << 6;
 const FLAG_DEFENDING: i8 = 1 << 7;
 
+/// Pickup delay, in ticks, on an item a fox spits out (vanilla `Fox.spitOutItem`).
+const FOX_SPIT_PICKUP_DELAY: i32 = 40;
+
+/// Chance, per ambient-sound roll at night with nobody near, of the fox screech.
+const FOX_SCREECH_CHANCE: f32 = 0.1;
+/// Range, in blocks, within which a player suppresses the fox screech.
+const FOX_SCREECH_PLAYER_RANGE: f64 = 16.0;
+
+/// Chance a naturally spawned fox holds an item (vanilla `populateDefaultEquipmentSlots`).
+const FOX_SPAWN_HELD_ITEM_CHANCE: f32 = 0.2;
+// Cumulative weights of the vanilla spawn held-item roll.
+const FOX_HELD_EMERALD_ODDS: f32 = 0.05;
+const FOX_HELD_EGG_ODDS: f32 = 0.2;
+const FOX_HELD_RABBIT_ODDS: f32 = 0.4;
+const FOX_HELD_WHEAT_ODDS: f32 = 0.6;
+const FOX_HELD_LEATHER_ODDS: f32 = 0.8;
+
 #[entity_behavior(class = "Fox")]
 /// Vanilla fox entity with synced variant, behaviour flags, and trusted players.
 pub struct FoxEntity {
@@ -74,6 +100,8 @@ pub struct FoxEntity {
     ageable_base: AgeableMobBase,
     animal_base: AnimalBase,
     entity_data: SyncMutex<FoxEntityData>,
+    /// Ticks since the fox last ate the food in its mouth (not synced or saved).
+    ticks_since_eaten: SyncMutex<i32>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `FoxEntity`.
@@ -110,17 +138,20 @@ impl FoxEntity {
         living_base.initialize_synced_data(&mut entity_data);
 
         {
-            // INTERIM goal set: enough for a fox that floats, panics, breeds, follows a
-            // parent, wanders, and looks around. The full bespoke fox goal suite (stalk,
-            // pounce, sleep, seek shelter, eat berries, search for items, avoid threats,
-            // defend trusted players) lands in the follow-up goals PR.
+            // Fox goals at their vanilla priorities. The stock panic, breed, follow-parent,
+            // and look-at-player goals stand in for the fox-specific variants, which differ
+            // only in behaviour tied to threats and trust that no entity drives yet. The
+            // hunting, avoid, and defend goals wait for the prey and threat mobs they need.
             let mut goal_selector = mob_base.goal_selector().lock();
             goal_selector.add_goal(0, FloatGoal::new(&mob_base));
             goal_selector.add_goal(2, PanicGoal::new(2.2));
             goal_selector.add_goal(3, BreedGoal::new(1.0));
+            goal_selector.add_goal(7, FoxSleepGoal::new());
             goal_selector.add_goal(8, FollowParentGoal::new(1.25));
             goal_selector.add_goal(11, WaterAvoidingRandomStrollGoal::new(1.0));
+            goal_selector.add_goal(11, FoxSearchForItemsGoal);
             goal_selector.add_goal(12, LookAtPlayerGoal::new(24.0));
+            goal_selector.add_goal(13, PerchAndSearchGoal::new());
         }
 
         let fox = Self {
@@ -131,6 +162,7 @@ impl FoxEntity {
             ageable_base,
             animal_base,
             entity_data: SyncMutex::new(entity_data),
+            ticks_since_eaten: SyncMutex::new(0),
         };
         // Vanilla foxes pick up dropped items (`setCanPickUpLoot(true)`).
         fox.set_can_pick_up_loot(true);
@@ -240,22 +272,39 @@ impl FoxEntity {
         self.set_flag(FLAG_DEFENDING, defending);
     }
 
+    /// Returns vanilla `Fox.canMove`: not sleeping, sitting, or faceplanted.
+    pub(crate) fn can_move(&self) -> bool {
+        !self.is_sleeping() && !self.is_sitting() && !self.is_faceplanted()
+    }
+
     /// Returns whether this fox trusts the given entity uuid (vanilla `Fox.trusts`).
     #[must_use]
-    pub fn trusts(&self, uuid: uuid::Uuid) -> bool {
+    pub fn trusts(&self, uuid: Uuid) -> bool {
         let entity_data = self.entity_data.lock();
         *entity_data.trusted_id_0.get() == Some(uuid)
             || *entity_data.trusted_id_1.get() == Some(uuid)
     }
 
     /// Adds a trusted entity uuid, filling the first free of the two trusted slots.
-    pub fn add_trusted(&self, uuid: uuid::Uuid) {
+    pub fn add_trusted(&self, uuid: Uuid) {
         let mut entity_data = self.entity_data.lock();
         if entity_data.trusted_id_0.get().is_none() {
             entity_data.trusted_id_0.set(Some(uuid));
         } else {
             entity_data.trusted_id_1.set(Some(uuid));
         }
+    }
+
+    /// Returns the uuids this fox trusts (the filled trusted slots).
+    fn trusted_ids(&self) -> Vec<Uuid> {
+        let entity_data = self.entity_data.lock();
+        [
+            *entity_data.trusted_id_0.get(),
+            *entity_data.trusted_id_1.get(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
     }
 
     fn set_variant_by_name(&self, name: &str) -> bool {
@@ -291,6 +340,94 @@ impl FoxEntity {
         REGISTRY
             .items
             .is_in_tag(item_stack.item(), &ItemTag::FOX_FOOD)
+    }
+
+    /// Returns vanilla `Fox.isConsumableFood`: an item the fox can eat from its mouth.
+    fn is_consumable_food(item_stack: &ItemStack) -> bool {
+        item_stack.has(FOOD) && item_stack.has(CONSUMABLE)
+    }
+
+    /// Vanilla `Fox.spitOutItem`: throw an item out just ahead of the fox's head.
+    fn spit_out_item(&self, world: &Arc<World>, item_stack: ItemStack) {
+        if item_stack.is_empty() {
+            return;
+        }
+
+        let look = self.look_angle();
+        let position = self.position();
+        let spawn = DVec3::new(position.x + look.x, position.y + 1.0, position.z + look.z);
+        let item = ItemEntity::with_item(
+            &vanilla_entities::ITEM,
+            next_entity_id(),
+            spawn,
+            item_stack,
+            Arc::downgrade(world),
+        );
+        item.set_pickup_delay(FOX_SPIT_PICKUP_DELAY);
+        item.set_thrower(self.uuid());
+        self.play_sound(&sound_events::ENTITY_FOX_SPIT, 1.0, 1.0);
+        let _ = world.try_add_entity(Arc::new(item));
+    }
+
+    /// Vanilla `Fox.dropItemStack`: drop an item at the fox's feet.
+    fn drop_item_stack(&self, world: &Arc<World>, item_stack: ItemStack) {
+        if item_stack.is_empty() {
+            return;
+        }
+
+        let item = ItemEntity::with_item(
+            &vanilla_entities::ITEM,
+            next_entity_id(),
+            self.position(),
+            item_stack,
+            Arc::downgrade(world),
+        );
+        let _ = world.try_add_entity(Arc::new(item));
+    }
+
+    /// Returns whether no player is close enough to suppress the fox screech.
+    fn no_player_within_screech_range(&self, world: &Arc<World>) -> bool {
+        let search = self.bounding_box().inflate(FOX_SCREECH_PLAYER_RANGE);
+        world
+            .get_entities_in_aabb_matching(&search, |entity| {
+                entity.entity_type() == &vanilla_entities::PLAYER
+            })
+            .is_empty()
+    }
+
+    /// Rolls the vanilla `populateDefaultEquipmentSlots` item a fox spawns holding.
+    fn spawn_held_item() -> ItemStack {
+        let odds = rand::random::<f32>();
+        let item = if odds < FOX_HELD_EMERALD_ODDS {
+            &vanilla_items::EMERALD
+        } else if odds < FOX_HELD_EGG_ODDS {
+            &vanilla_items::EGG
+        } else if odds < FOX_HELD_RABBIT_ODDS {
+            if rand::random::<bool>() {
+                &vanilla_items::RABBIT_FOOT
+            } else {
+                &vanilla_items::RABBIT_HIDE
+            }
+        } else if odds < FOX_HELD_WHEAT_ODDS {
+            &vanilla_items::WHEAT
+        } else if odds < FOX_HELD_LEATHER_ODDS {
+            &vanilla_items::LEATHER
+        } else {
+            &vanilla_items::FEATHER
+        };
+        ItemStack::new(item)
+    }
+
+    /// Advances the vanilla `Fox.ticksSinceEaten` timer that gates item swapping.
+    ///
+    /// Vanilla also finishes eating held food here, but that consumes the item and
+    /// applies its on-use effects (a chorus fruit teleports the fox, for example),
+    /// which needs a mob consume path Steel does not have yet. Only the timer runs
+    /// for now, so a fox picks up and holds food without eating it.
+    fn advance_feeding_timer(&self) {
+        if Entity::is_alive(self) {
+            *self.ticks_since_eaten.lock() += 1;
+        }
     }
 }
 
@@ -345,8 +482,15 @@ impl Entity for FoxEntity {
         nbt.insert("Sleeping", self.is_sleeping());
         nbt.insert("Sitting", self.is_sitting());
         nbt.insert("Crouching", self.is_crouching());
-        // TODO(fox-trust-persistence): persist the "Trusted" uuid list once the
-        // trust-building interaction and defend-trusted goal land in the goals PR.
+
+        let trusted = self.trusted_ids();
+        if !trusted.is_empty() {
+            let ids = trusted
+                .iter()
+                .map(|uuid| uuid.to_int_array().to_vec())
+                .collect();
+            nbt.insert("Trusted", NbtTag::List(NbtList::IntArray(ids)));
+        }
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
@@ -365,6 +509,15 @@ impl Entity for FoxEntity {
         }
         if let Some(crouching) = nbt.byte("Crouching") {
             self.set_crouching(crouching != 0);
+        }
+        if let Some(trusted) = nbt.list("Trusted")
+            && let Some(ids) = trusted.int_arrays()
+        {
+            for id in ids {
+                if let Some(uuid) = Uuid::from_int_array(&id.to_vec()) {
+                    self.add_trusted(uuid);
+                }
+            }
         }
     }
 }
@@ -401,7 +554,8 @@ impl LivingEntity for FoxEntity {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
+        self.advance_feeding_timer();
+        let result = Mob::mob_ai_step(self);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
@@ -478,12 +632,17 @@ impl Mob for FoxEntity {
 
     fn ambient_sound(&self) -> Option<SoundEventRef> {
         if self.is_sleeping() {
-            Some(&sound_events::ENTITY_FOX_SLEEP)
-        } else {
-            // TODO(fox-screech): emit ENTITY_FOX_SCREECH at night when no player is
-            // nearby, per vanilla getAmbientSound.
-            Some(&sound_events::ENTITY_FOX_AMBIENT)
+            return Some(&sound_events::ENTITY_FOX_SLEEP);
         }
+        // A fox occasionally screeches at night when no player is watching.
+        if let Some(world) = self.level()
+            && !world.is_bright_outside()
+            && rand::random::<f32>() < FOX_SCREECH_CHANCE
+            && self.no_player_within_screech_range(&world)
+        {
+            return Some(&sound_events::ENTITY_FOX_SCREECH);
+        }
+        Some(&sound_events::ENTITY_FOX_AMBIENT)
     }
 
     fn finalize_spawn(
@@ -502,8 +661,17 @@ impl Mob for FoxEntity {
                 }
             });
         self.set_variant(variant);
-        // TODO(fox-spawn): share the rolled variant across a spawn group and roll the
-        // vanilla 20% chance to spawn holding an item, once the goals PR needs them.
+
+        // Vanilla `populateDefaultEquipmentSlots`: a fifth of foxes spawn holding an item.
+        // (Vanilla shares the variant across a spawn group; picking it from the biome per
+        // fox gives the same uniform result, since a group shares one spawn biome.)
+        if rand::random::<f32>() < FOX_SPAWN_HELD_ITEM_CHANCE {
+            self.living_base()
+                .equipment()
+                .lock()
+                .set(EquipmentSlot::MainHand, Self::spawn_held_item());
+        }
+
         self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
     }
 
@@ -517,6 +685,54 @@ impl Mob for FoxEntity {
 
     fn set_mob_flags(&self, flags: i8) {
         self.entity_data.lock().mob_mut().mob_flags.set(flags);
+    }
+
+    /// Vanilla `Fox.canHoldItem`: a fox holds an item if its mouth is empty, or it
+    /// will swap a non-food item already held for a food item.
+    fn can_hold_item(&self, item_stack: &ItemStack) -> bool {
+        let equipment = self.living_base().equipment().lock();
+        let held = equipment.get_ref(EquipmentSlot::MainHand);
+        held.is_empty()
+            || (*self.ticks_since_eaten.lock() > 0
+                && Self::is_consumable_food(item_stack)
+                && !Self::is_consumable_food(held))
+    }
+
+    /// Vanilla `Fox.pickUpItem`: hold one of the item in the mouth, spitting out
+    /// whatever was there and dropping any extra count.
+    fn pick_up_item(&self, world: &Arc<World>, item_entity: &ItemEntity) {
+        let mut item_stack = item_entity.get_item();
+        if !self.can_hold_item(&item_stack) {
+            return;
+        }
+
+        let count = item_stack.count();
+        if count > 1 {
+            self.drop_item_stack(world, item_stack.split(count - 1));
+        }
+
+        let held = self
+            .living_base()
+            .equipment()
+            .lock()
+            .take(EquipmentSlot::MainHand);
+        self.spit_out_item(world, held);
+
+        let one = item_stack.split(1);
+        self.living_base()
+            .equipment()
+            .lock()
+            .set(EquipmentSlot::MainHand, one);
+        self.set_guaranteed_drop(EquipmentSlot::MainHand);
+
+        let chunk_pos = ChunkPos::from_entity_pos(item_entity.position());
+        world.broadcast_to_nearby(
+            chunk_pos,
+            CTakeItemEntity::new(item_entity.id(), self.id(), 1),
+            None,
+        );
+        item_entity.set_removed(RemovalReason::Discarded);
+        *self.ticks_since_eaten.lock() = 0;
     }
 }
 
