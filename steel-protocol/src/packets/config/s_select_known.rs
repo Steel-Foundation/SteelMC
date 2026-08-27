@@ -21,7 +21,7 @@ mod tests {
         VarInt(count).write(&mut data).unwrap();
 
         for _ in 0..count {
-            let pack = KnownPack::new("".to_string(), "".to_string(), "".to_string());
+            let pack = KnownPack::new(String::new(), String::new(), String::new());
             pack.write(&mut data).unwrap();
         }
         data
