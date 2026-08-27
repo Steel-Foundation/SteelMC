@@ -7,12 +7,14 @@ mod chiseled_bookshelf;
 mod comparator;
 mod daylight_detector;
 mod end_gateway;
+mod furnace;
 mod end_portal;
 mod jukebox;
 mod piston_moving;
 mod potent_sulfur;
 mod raw;
 mod sign;
+mod spawner;
 
 pub use barrel::{BARREL_SLOTS, BarrelBlockEntity};
 pub use beehive::{
@@ -23,9 +25,11 @@ pub use chiseled_bookshelf::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEnt
 pub use comparator::ComparatorBlockEntity;
 pub use daylight_detector::DaylightDetectorBlockEntity;
 pub use end_gateway::EndGatewayBlockEntity;
+pub use furnace::FurnaceBlockEntity;
 pub use end_portal::EndPortalBlockEntity;
 pub use jukebox::JukeboxBlockEntity;
 pub use piston_moving::PistonMovingBlockEntity;
 pub use potent_sulfur::PotentSulfurBlockEntity;
 pub use raw::RawBlockEntity;
 pub use sign::{SIGN_LINES, SignBlockEntity, SignText};
+pub use spawner::SpawnerBlockEntity;

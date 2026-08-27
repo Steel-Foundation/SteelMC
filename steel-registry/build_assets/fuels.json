@@ -1,0 +1,1122 @@
+[
+  {
+    "item": "minecraft:lava_bucket",
+    "burn_time": 20000
+  },
+  {
+    "item": "minecraft:coal_block",
+    "burn_time": 16000
+  },
+  {
+    "item": "minecraft:blaze_rod",
+    "burn_time": 2400
+  },
+  {
+    "item": "minecraft:coal",
+    "burn_time": 1600
+  },
+  {
+    "item": "minecraft:charcoal",
+    "burn_time": 1600
+  },
+  {
+    "item": "minecraft:dark_oak_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:dark_oak_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_dark_oak_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_dark_oak_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:pale_oak_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:pale_oak_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_pale_oak_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_pale_oak_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:oak_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:oak_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_oak_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_oak_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:acacia_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:acacia_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_acacia_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_acacia_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:birch_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:birch_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_birch_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_birch_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:jungle_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:jungle_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_jungle_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_jungle_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:spruce_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:spruce_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_spruce_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_spruce_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:mangrove_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:mangrove_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_mangrove_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_mangrove_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:cherry_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:cherry_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_cherry_log",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_cherry_wood",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:bamboo_block",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:stripped_bamboo_block",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:oak_planks",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:spruce_planks",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:birch_planks",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:jungle_planks",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:acacia_planks",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:dark_oak_planks",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:pale_oak_planks",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:mangrove_planks",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:bamboo_planks",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:cherry_planks",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:bamboo_mosaic",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:oak_stairs",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:spruce_stairs",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:birch_stairs",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:jungle_stairs",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:acacia_stairs",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:dark_oak_stairs",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:pale_oak_stairs",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:mangrove_stairs",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:bamboo_stairs",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:cherry_stairs",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:bamboo_mosaic_stairs",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:oak_slab",
+    "burn_time": 150
+  },
+  {
+    "item": "minecraft:spruce_slab",
+    "burn_time": 150
+  },
+  {
+    "item": "minecraft:birch_slab",
+    "burn_time": 150
+  },
+  {
+    "item": "minecraft:jungle_slab",
+    "burn_time": 150
+  },
+  {
+    "item": "minecraft:acacia_slab",
+    "burn_time": 150
+  },
+  {
+    "item": "minecraft:dark_oak_slab",
+    "burn_time": 150
+  },
+  {
+    "item": "minecraft:pale_oak_slab",
+    "burn_time": 150
+  },
+  {
+    "item": "minecraft:mangrove_slab",
+    "burn_time": 150
+  },
+  {
+    "item": "minecraft:bamboo_slab",
+    "burn_time": 150
+  },
+  {
+    "item": "minecraft:cherry_slab",
+    "burn_time": 150
+  },
+  {
+    "item": "minecraft:bamboo_mosaic_slab",
+    "burn_time": 150
+  },
+  {
+    "item": "minecraft:acacia_trapdoor",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:birch_trapdoor",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:dark_oak_trapdoor",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:pale_oak_trapdoor",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:jungle_trapdoor",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:oak_trapdoor",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:spruce_trapdoor",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:mangrove_trapdoor",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:bamboo_trapdoor",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:cherry_trapdoor",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:oak_pressure_plate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:spruce_pressure_plate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:birch_pressure_plate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:jungle_pressure_plate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:acacia_pressure_plate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:dark_oak_pressure_plate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:pale_oak_pressure_plate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:mangrove_pressure_plate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:bamboo_pressure_plate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:cherry_pressure_plate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:acacia_shelf",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:bamboo_shelf",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:birch_shelf",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:cherry_shelf",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:dark_oak_shelf",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:jungle_shelf",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:mangrove_shelf",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:oak_shelf",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:pale_oak_shelf",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:spruce_shelf",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:oak_fence",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:acacia_fence",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:dark_oak_fence",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:pale_oak_fence",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:spruce_fence",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:birch_fence",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:jungle_fence",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:mangrove_fence",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:bamboo_fence",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:cherry_fence",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:acacia_fence_gate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:birch_fence_gate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:dark_oak_fence_gate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:pale_oak_fence_gate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:jungle_fence_gate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:oak_fence_gate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:spruce_fence_gate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:mangrove_fence_gate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:bamboo_fence_gate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:cherry_fence_gate",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:note_block",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:bookshelf",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:chiseled_bookshelf",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:lectern",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:jukebox",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:chest",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:trapped_chest",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:crafting_table",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:daylight_detector",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:white_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:orange_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:magenta_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:light_blue_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:yellow_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:lime_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:pink_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:gray_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:light_gray_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:cyan_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:purple_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:blue_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:brown_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:green_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:red_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:black_banner",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:bow",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:fishing_rod",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:ladder",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:oak_sign",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:spruce_sign",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:birch_sign",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:acacia_sign",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:jungle_sign",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:dark_oak_sign",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:pale_oak_sign",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:mangrove_sign",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:bamboo_sign",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:cherry_sign",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:oak_hanging_sign",
+    "burn_time": 800
+  },
+  {
+    "item": "minecraft:spruce_hanging_sign",
+    "burn_time": 800
+  },
+  {
+    "item": "minecraft:birch_hanging_sign",
+    "burn_time": 800
+  },
+  {
+    "item": "minecraft:acacia_hanging_sign",
+    "burn_time": 800
+  },
+  {
+    "item": "minecraft:cherry_hanging_sign",
+    "burn_time": 800
+  },
+  {
+    "item": "minecraft:jungle_hanging_sign",
+    "burn_time": 800
+  },
+  {
+    "item": "minecraft:dark_oak_hanging_sign",
+    "burn_time": 800
+  },
+  {
+    "item": "minecraft:pale_oak_hanging_sign",
+    "burn_time": 800
+  },
+  {
+    "item": "minecraft:mangrove_hanging_sign",
+    "burn_time": 800
+  },
+  {
+    "item": "minecraft:bamboo_hanging_sign",
+    "burn_time": 800
+  },
+  {
+    "item": "minecraft:wooden_shovel",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:wooden_sword",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:wooden_spear",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:wooden_hoe",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:wooden_axe",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:wooden_pickaxe",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:oak_door",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:spruce_door",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:birch_door",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:jungle_door",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:acacia_door",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:dark_oak_door",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:pale_oak_door",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:mangrove_door",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:bamboo_door",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:cherry_door",
+    "burn_time": 200
+  },
+  {
+    "item": "minecraft:oak_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:spruce_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:birch_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:jungle_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:acacia_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:dark_oak_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:pale_oak_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:mangrove_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:bamboo_raft",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:cherry_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:oak_chest_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:spruce_chest_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:birch_chest_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:jungle_chest_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:acacia_chest_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:dark_oak_chest_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:pale_oak_chest_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:mangrove_chest_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:bamboo_chest_raft",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:cherry_chest_boat",
+    "burn_time": 1200
+  },
+  {
+    "item": "minecraft:white_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:orange_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:magenta_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:light_blue_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:yellow_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:lime_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:pink_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:gray_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:light_gray_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:cyan_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:purple_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:blue_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:brown_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:green_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:red_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:black_wool",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:oak_button",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:spruce_button",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:birch_button",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:jungle_button",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:acacia_button",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:dark_oak_button",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:pale_oak_button",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:mangrove_button",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:bamboo_button",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:cherry_button",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:stick",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:oak_sapling",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:spruce_sapling",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:birch_sapling",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:jungle_sapling",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:acacia_sapling",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:dark_oak_sapling",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:pale_oak_sapling",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:azalea",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:flowering_azalea",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:mangrove_propagule",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:cherry_sapling",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:bowl",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:white_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:orange_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:magenta_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:light_blue_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:yellow_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:lime_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:pink_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:gray_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:light_gray_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:cyan_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:purple_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:blue_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:brown_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:green_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:red_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:black_carpet",
+    "burn_time": 67
+  },
+  {
+    "item": "minecraft:dried_kelp_block",
+    "burn_time": 4001
+  },
+  {
+    "item": "minecraft:crossbow",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:bamboo",
+    "burn_time": 50
+  },
+  {
+    "item": "minecraft:dead_bush",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:short_dry_grass",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:tall_dry_grass",
+    "burn_time": 100
+  },
+  {
+    "item": "minecraft:scaffolding",
+    "burn_time": 50
+  },
+  {
+    "item": "minecraft:loom",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:barrel",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:cartography_table",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:fletching_table",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:smithing_table",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:composter",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:mangrove_roots",
+    "burn_time": 300
+  },
+  {
+    "item": "minecraft:leaf_litter",
+    "burn_time": 100
+  }
+]
