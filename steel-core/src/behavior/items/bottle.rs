@@ -4,16 +4,12 @@
 //! `ItemUtils.createFilledResult`. Dragon-breath filling is omitted until
 //! area-effect clouds exist.
 
-use std::ops::{Add, Mul};
-use std::sync::Arc;
-
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::data_components::PotionContents;
 use steel_registry::data_components::vanilla_components::POTION_CONTENTS;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::items::item::BlockHitResult;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     RegistryReference, sound_events, vanilla_game_events, vanilla_items, vanilla_potions,
@@ -21,12 +17,11 @@ use steel_registry::{
 
 use crate::behavior::context::{InteractionResult, UseItemContext};
 use crate::behavior::item::ItemBehavior;
-use crate::behavior::item_utils::create_filled_result;
+use crate::behavior::item_utils::{create_filled_result, get_player_pov_hit_result};
 use crate::entity::Entity;
 use crate::fluid::FluidStateExt;
-use crate::player::Player;
+use crate::world::ClipFluid;
 use crate::world::game_event::GameEventContext;
-use crate::world::{ClipBlockShape, ClipFluid, World};
 
 /// Behavior for the glass bottle item.
 #[item_behavior(class = "BottleItem")]
@@ -90,30 +85,6 @@ fn water_potion_stack() -> ItemStack {
         ),
     );
     stack
-}
-
-/// Vanilla `Item.getPlayerPOVHitResult`.
-fn get_player_pov_hit_result(
-    world: &Arc<World>,
-    player: &Player,
-    fluid: ClipFluid,
-) -> BlockHitResult {
-    let from = player.position().with_y(player.get_eye_y());
-    let (yaw, pitch) = player.rotation();
-    let to = from.add(
-        player
-            .calculate_view_vector(pitch, yaw)
-            .mul(player.block_interaction_range()),
-    );
-    let hit = world.clip(from, to, ClipBlockShape::Outline, fluid);
-    BlockHitResult {
-        location: hit.location,
-        direction: hit.direction,
-        block_pos: hit.block_pos,
-        miss: hit.miss,
-        inside: hit.inside,
-        world_border_hit: hit.world_border_hit,
-    }
 }
 
 #[cfg(test)]
