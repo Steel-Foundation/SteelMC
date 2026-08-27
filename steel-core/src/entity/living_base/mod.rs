@@ -20,12 +20,13 @@ use steel_registry::items::ItemRef;
 use steel_registry::mob_effect::MobEffectRef;
 use steel_registry::vanilla_attributes;
 use steel_registry::vanilla_entity_data::VanillaLivingEntityData;
-use steel_registry::{vanilla_damage_types, vanilla_mob_effects};
+use steel_registry::vanilla_mob_effects;
 use steel_utils::locks::{IntoShared, Shared, SyncMutex};
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Identifier};
 use uuid::Uuid;
 
+use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
 use crate::entity::{LivingEntity, SharedEntity, WeakEntity};
@@ -189,66 +190,15 @@ impl MobEffectInstance {
             self.duration
         };
 
-        if self.effect == vanilla_mob_effects::WITHER {
-            let interval = 40_i32.wrapping_shr(self.amplifier as u32);
-            return interval <= 0 || tick_count % interval == 0;
-        }
-
-        if self.effect == vanilla_mob_effects::POISON {
-            let interval = 25_i32.wrapping_shr(self.amplifier as u32);
-            return interval <= 0 || tick_count % interval == 0;
-        }
-
-        if self.effect == vanilla_mob_effects::REGENERATION {
-            let interval = 50_i32.wrapping_shr(self.amplifier as u32);
-            return interval <= 0 || tick_count % interval == 0;
-        }
-
-        if self.effect == vanilla_mob_effects::HUNGER {
-            return true;
-        }
-
-        // TODO: Add the remaining vanilla effect schedules as their gameplay systems land.
-        false
+        MOB_EFFECT_BEHAVIORS
+            .get_behavior(self.effect)
+            .should_apply_effect_tick_this_tick(tick_count, self.amplifier)
     }
 
-    pub(crate) fn apply_effect_tick<E: LivingEntity + ?Sized>(
-        &self,
-        world: &World,
-        entity: &E,
-    ) -> bool {
-        if self.effect == vanilla_mob_effects::WITHER {
-            entity.hurt(
-                world,
-                &DamageSource::environment(&vanilla_damage_types::WITHER),
-                1.0,
-            );
-        }
-
-        // Poison never kills: mirrors vanilla `PoisonMobEffect.applyEffectTick`.
-        if self.effect == vanilla_mob_effects::POISON && entity.get_health() > 1.0 {
-            entity.hurt(
-                world,
-                &DamageSource::environment(&vanilla_damage_types::MAGIC),
-                1.0,
-            );
-        }
-
-        if self.effect == vanilla_mob_effects::REGENERATION
-            && entity.get_health() < entity.get_max_health()
-        {
-            entity.heal(1.0);
-        }
-
-        if self.effect == vanilla_mob_effects::HUNGER
-            && let Some(player) = entity.as_player()
-        {
-            player.cause_food_exhaustion(0.005 * (self.amplifier + 1) as f32);
-        }
-
-        // Vanilla effect ticks return whether the effect remains active. Wither
-        // always returns true, and unimplemented effect ticks are not scheduled.
-        true
+    pub(crate) fn apply_effect_tick(&self, world: &World, entity: &dyn LivingEntity) -> bool {
+        MOB_EFFECT_BEHAVIORS
+            .get_behavior(self.effect)
+            .apply_effect_tick(world, entity, self.amplifier)
     }
 
     #[must_use]

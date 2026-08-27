@@ -5,184 +5,94 @@
 
 use std::sync::Arc;
 
-use steel_protocol::packets::game::SoundSource;
-use steel_registry::consume_effect::{
-    ApplyStatusEffectsConsumeEffect, ClearAllStatusEffectsConsumeEffect, ConsumeEffectData,
-    PlaySoundConsumeEffect, RemoveStatusEffectsConsumeEffect, TeleportRandomlyConsumeEffect,
-    vanilla_consume_effect_types,
-};
+use steel_registry::MobEffectInstance as RegistryMobEffectInstance;
+use steel_registry::consume_effect::ConsumeEffectData;
 use steel_registry::data_components::PotionContents;
-use steel_registry::{
-    MobEffectInstance as RegistryMobEffectInstance, sound_events, vanilla_damage_types,
-    vanilla_game_events, vanilla_mob_effects,
-};
 
-use crate::entity::damage::DamageSource;
-use crate::entity::{LivingEntity, MobEffectInstance as RuntimeMobEffectInstance};
+use crate::behavior::{CONSUME_EFFECT_BEHAVIORS, MOB_EFFECT_BEHAVIORS};
+use crate::entity::{Entity, LivingEntity, MobEffectInstance as RuntimeMobEffectInstance};
 use crate::world::World;
-use crate::world::game_event::GameEventContext;
 
-/// Mirrors vanilla `PotionContents.applyToLivingEntity(user, 1.0)`.
+/// Mirrors vanilla `PotionContents.applyToLivingEntity(user, durationScale)`.
 pub(crate) fn apply_potion_contents(
     contents: &PotionContents,
     world: &World,
     user: &dyn LivingEntity,
+    duration_scale: f32,
 ) {
+    // Vanilla passes the drinker itself as both `source` and `owner` when it
+    // is a player (`null` otherwise), attributing instantaneous damage to it.
+    let damage_source_entity = user.as_player().map(Entity::id);
     for effect in contents.all_effects() {
-        apply_mob_effect_instance(&effect, world, user);
+        let behavior = MOB_EFFECT_BEHAVIORS.get_behavior(effect.effect());
+        if behavior.is_instantaneous() {
+            // Vanilla always passes `scale = 1.0` from this call site; only a
+            // splash/lingering potion (not yet implemented) passes a
+            // distance-based falloff scale, and a `source` distinct from
+            // `owner`.
+            behavior.apply_instantaneous(
+                world,
+                user,
+                effect.amplifier(),
+                damage_source_entity,
+                damage_source_entity,
+                1.0,
+            );
+            continue;
+        }
+
+        let scaled_duration = scale_effect_duration(effect.duration(), duration_scale);
+        user.add_mob_effect(to_runtime_instance(&effect, scaled_duration));
     }
 }
 
-/// Applies one registry mob-effect instance, dispatching the instantaneous
-/// effects (Instant Health, Instant Damage, Saturation) directly instead of
-/// adding them to the entity's active-effect list, mirroring vanilla
-/// `MobEffect.applyInstantaneousEffect` vs. `LivingEntity.addEffect`.
-fn apply_mob_effect_instance(
-    effect: &RegistryMobEffectInstance,
-    world: &World,
-    user: &dyn LivingEntity,
-) {
-    let effect_ref = effect.effect();
-    // TODO: Mirror vanilla `LivingEntity.isInvertedHealAndHarm()` (undead mobs
-    // swap heal/harm for Instant Health/Instant Damage) once entity-type tags
-    // expose that classification.
-    if effect_ref == vanilla_mob_effects::INSTANT_HEALTH {
-        user.heal(4_i32.wrapping_shl(effect.amplifier() as u32) as f32);
-        return;
+/// Mirrors vanilla `MobEffectInstance.withScaledDuration`: scales `duration`
+/// by `scale`, leaving the infinite-duration sentinel (`-1`) and a zero
+/// duration untouched, and never rounding a finite result below 1 tick.
+fn scale_effect_duration(duration: i32, scale: f32) -> i32 {
+    if duration == -1 || duration == 0 {
+        return duration;
     }
-    if effect_ref == vanilla_mob_effects::INSTANT_DAMAGE {
-        user.hurt(
-            world,
-            &DamageSource::environment(&vanilla_damage_types::MAGIC),
-            6_i32.wrapping_shl(effect.amplifier() as u32) as f32,
-        );
-        return;
-    }
-    if effect_ref == vanilla_mob_effects::SATURATION {
-        if let Some(player) = user.as_player() {
-            player.food_data.lock().eat(effect.amplifier() + 1, 1.0);
-        }
-        return;
-    }
+    ((duration as f32 * scale).floor() as i32).max(1)
+}
 
-    let runtime =
-        RuntimeMobEffectInstance::with_duration(effect_ref, effect.duration(), effect.amplifier())
-            .with_ambient(effect.ambient())
-            .with_visible(effect.show_particles())
-            .with_show_icon(effect.show_icon());
-    user.add_mob_effect(runtime);
+/// Builds the runtime active-effect state for one registry mob-effect
+/// instance, ready to hand to `LivingEntity::add_mob_effect`.
+pub(crate) const fn to_runtime_instance(
+    effect: &RegistryMobEffectInstance,
+    duration: i32,
+) -> RuntimeMobEffectInstance {
+    RuntimeMobEffectInstance::with_duration(effect.effect(), duration, effect.amplifier())
+        .with_ambient(effect.ambient())
+        .with_visible(effect.show_particles())
+        .with_show_icon(effect.show_icon())
 }
 
 /// Applies one `ConsumeEffectData` entry from a `Consumable.on_consume_effects`
-/// list. Mirrors vanilla's `ConsumeEffect` subtypes in
-/// `net/minecraft/world/item/consume_effects`.
+/// list, by looking up its registered behavior. Mirrors vanilla's
+/// `ConsumeEffect.apply(Level, ItemStack, LivingEntity)` — see
+/// [`crate::entity::consume_effect`] for why this is a lookup instead of the
+/// direct polymorphic call vanilla uses.
 pub(crate) fn apply_consume_effect(
     effect: &ConsumeEffectData,
     world: &Arc<World>,
     user: &dyn LivingEntity,
 ) {
-    let effect_type = effect.effect_type();
-    if effect_type == &vanilla_consume_effect_types::APPLY_EFFECTS {
-        let Some(apply) = effect.downcast_ref::<ApplyStatusEffectsConsumeEffect>() else {
-            return;
-        };
-        if rand::random::<f32>() >= apply.probability() {
-            return;
-        }
-        for instance in apply.effects() {
-            apply_mob_effect_instance(instance, world, user);
-        }
-    } else if effect_type == &vanilla_consume_effect_types::REMOVE_EFFECTS {
-        let Some(remove) = effect.downcast_ref::<RemoveStatusEffectsConsumeEffect>() else {
-            return;
-        };
-        for active in user.active_mob_effects() {
-            if remove.effects().contains(active.effect()) {
-                user.remove_mob_effect(active.effect());
-            }
-        }
-    } else if effect_type == &vanilla_consume_effect_types::CLEAR_ALL_EFFECTS {
-        let _ = effect.downcast_ref::<ClearAllStatusEffectsConsumeEffect>();
-        for active in user.active_mob_effects() {
-            user.remove_mob_effect(active.effect());
-        }
-    } else if effect_type == &vanilla_consume_effect_types::PLAY_SOUND {
-        let Some(play_sound) = effect.downcast_ref::<PlaySoundConsumeEffect>() else {
-            return;
-        };
-        if let Some(sound) = play_sound.sound().registry_ref() {
-            user.play_sound(sound, 1.0, 1.0);
-        }
-    } else if effect_type == &vanilla_consume_effect_types::TELEPORT_RANDOMLY {
-        let Some(teleport) = effect.downcast_ref::<TeleportRandomlyConsumeEffect>() else {
-            return;
-        };
-        teleport_randomly(*teleport, world, user);
-    }
-}
-
-/// Mirrors vanilla `TeleportRandomlyConsumeEffect.apply`: tries up to 16
-/// random nearby positions, delegating each attempt to
-/// `LivingEntity::random_teleport` (vanilla `Entity.randomTeleport`), and
-/// stops at the first one that lands.
-fn teleport_randomly(
-    effect: TeleportRandomlyConsumeEffect,
-    world: &Arc<World>,
-    user: &dyn LivingEntity,
-) {
-    let diameter = f64::from(effect.diameter());
-    let min_y = f64::from(world.get_min_y());
-    let max_y = f64::from(world.get_min_y() + world.dimension_type.logical_height - 1);
-
-    for _ in 0..16 {
-        let origin = user.position();
-        let x = origin.x + (rand::random::<f64>() - 0.5) * diameter;
-        let y = (origin.y + (rand::random::<f64>() - 0.5) * diameter).clamp(min_y, max_y);
-        let z = origin.z + (rand::random::<f64>() - 0.5) * diameter;
-
-        if user.is_passenger() {
-            user.stop_riding();
-        }
-
-        let old_pos = user.position();
-        if !user.random_teleport(world, x, y, z, true) {
-            continue;
-        }
-
-        world.game_event_at(
-            &vanilla_game_events::TELEPORT,
-            old_pos,
-            &GameEventContext::new(Some(user.as_entity_event_source()), None),
-        );
-        // TODO: Play `FOX_TELEPORT` on `SoundSource::Neutral` instead once Fox
-        // is implemented, mirroring vanilla `TeleportRandomlyConsumeEffect.apply`.
-        world.play_sound_at(
-            &sound_events::ITEM_CHORUS_FRUIT_TELEPORT,
-            SoundSource::Players,
-            user.position(),
-            1.0,
-            1.0,
-            None,
-        );
-        user.reset_fall_distance();
-        user.reset_current_impulse_context();
-        return;
-    }
+    CONSUME_EFFECT_BEHAVIORS
+        .get_behavior(effect.effect_type())
+        .apply(effect, world, user);
 }
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::consume_effect::TeleportRandomlyConsumeEffect;
     use steel_registry::data_components::PotionContents;
     use steel_registry::{
-        MobEffectInstance as RegistryMobEffectInstance, init_vanilla_registry, vanilla_blocks,
-        vanilla_mob_effects,
+        MobEffectInstance as RegistryMobEffectInstance, init_vanilla_registry, vanilla_mob_effects,
     };
-    use steel_utils::types::UpdateFlags;
-    use steel_utils::{BlockPos, ChunkPos};
+    use steel_utils::ChunkPos;
 
-    use super::{apply_potion_contents, teleport_randomly};
-    use crate::entity::{Entity, LivingEntity};
+    use super::apply_potion_contents;
+    use crate::entity::LivingEntity;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
     /// Vanilla's `int` shift is masked to the low 5 bits (Java `<<` never
@@ -208,75 +118,9 @@ mod tests {
             None,
         );
 
-        apply_potion_contents(&contents, &world, player.as_ref());
+        apply_potion_contents(&contents, &world, player.as_ref(), 1.0);
 
         // 4 << 32 wraps to 4 << (32 % 32) == 4 << 0 == 4, matching Java.
         assert_eq!(player.get_health(), 5.0);
-    }
-
-    /// With no solid ground anywhere in range, every landing attempt must
-    /// fail and the player must stay exactly where they started — mirroring
-    /// vanilla `Entity.randomTeleport` reverting to the original position
-    /// when no candidate lands.
-    #[test]
-    fn teleport_randomly_leaves_the_player_in_place_with_no_valid_landing() {
-        init_vanilla_registry();
-        let world = fresh_test_world("teleport_randomly_no_valid_landing");
-        for x in -1..=0 {
-            for z in -1..=0 {
-                insert_ready_full_chunk(&world, ChunkPos::new(x, z));
-            }
-        }
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
-        let origin = player.position();
-
-        teleport_randomly(
-            TeleportRandomlyConsumeEffect::default_value(),
-            &world,
-            player.as_ref(),
-        );
-
-        assert_eq!(player.position(), origin);
-    }
-
-    /// With solid ground everywhere in range, the player must land on top of
-    /// it, within the effect's diameter of the origin. Mirrors vanilla
-    /// `TeleportRandomlyConsumeEffect.apply` picking the first safe landing.
-    #[test]
-    fn teleport_randomly_lands_on_solid_ground_within_diameter() {
-        init_vanilla_registry();
-        crate::behavior::init_behaviors();
-        let world = fresh_test_world("teleport_randomly_valid_landing");
-        for x in -1..=0 {
-            for z in -1..=0 {
-                insert_ready_full_chunk(&world, ChunkPos::new(x, z));
-            }
-        }
-        for x in -8..8 {
-            for z in -8..8 {
-                world.set_block(
-                    BlockPos::new(x, -1, z),
-                    vanilla_blocks::STONE.default_state(),
-                    UpdateFlags::UPDATE_ALL,
-                );
-            }
-        }
-        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
-        let origin = player.position();
-
-        teleport_randomly(
-            TeleportRandomlyConsumeEffect::default_value(),
-            &world,
-            player.as_ref(),
-        );
-
-        let landed = player.position();
-        assert_ne!(landed, origin);
-        assert!((landed.x - origin.x).abs() <= 8.0);
-        assert!((landed.z - origin.z).abs() <= 8.0);
-        // The landing loop preserves the fractional part of the candidate Y
-        // (see `find_ground_y`), so a floor at block Y = -1 always lands the
-        // player somewhere in [0, 1) above it.
-        assert!((0.0..1.0).contains(&landed.y));
     }
 }
