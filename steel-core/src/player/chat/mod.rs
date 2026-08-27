@@ -109,11 +109,12 @@ impl ChatState {
 }
 
 impl Player {
-    /// Decays the per player chat and command spam counters once per server tick
-    pub fn tick_spam_throttlers(&self) {
+    /// Decays the throttlers of the player once per server tick
+    pub fn tick_throttlers(&self) {
         let mut chat = self.chat.lock();
         chat.chat_spam_throttler.tick();
         chat.command_spam_throttler.tick();
+        self.drop_spam_throttle.lock().tick();
     }
 
     const fn should_disconnect_for_rate_spam(

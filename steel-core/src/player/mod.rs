@@ -584,7 +584,7 @@ impl Player {
         self.advance_tick();
         self.tick_item_cooldowns();
         self.tick_attack_strength();
-        self.tick_spam_throttlers();
+        self.tick_throttlers();
         self.check_idle_timeout();
         self.tick_client_load_timeout();
         self.tick_sleep_counter();
