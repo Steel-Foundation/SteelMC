@@ -478,7 +478,7 @@ impl PackedLightPropagationQueues {
     }
 
     /// Creates an empty queue pair without reserving propagation scratch capacity.
-    fn empty_without_capacity() -> Self {
+    const fn empty_without_capacity() -> Self {
         Self {
             increase: PackedLightPropagationQueue {
                 entries: Vec::new(),
