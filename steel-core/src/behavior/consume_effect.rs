@@ -27,7 +27,7 @@ impl Deref for ConsumeEffectBehaviorLock {
     fn deref(&self) -> &Self::Target {
         self.0
             .get()
-            .expect("Consume-effect behaviors not initialized")
+            .expect("Consume effect behaviors not initialized")
     }
 }
 

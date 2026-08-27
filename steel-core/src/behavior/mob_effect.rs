@@ -22,7 +22,7 @@ impl Deref for MobEffectBehaviorLock {
     type Target = MobEffectBehaviorRegistry;
 
     fn deref(&self) -> &Self::Target {
-        self.0.get().expect("Mob-effect behaviors not initialized")
+        self.0.get().expect("Mob effect behaviors not initialized")
     }
 }
 

@@ -91,9 +91,33 @@ mod tests {
     };
     use steel_utils::ChunkPos;
 
-    use super::apply_potion_contents;
+    use super::{apply_potion_contents, scale_effect_duration};
     use crate::entity::LivingEntity;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+
+    /// Mirrors vanilla `MobEffectInstance.mapDuration`: the infinite-duration
+    /// sentinel (`-1`) and a zero duration are returned unscaled.
+    #[test]
+    fn scale_effect_duration_leaves_infinite_and_zero_durations_untouched() {
+        assert_eq!(scale_effect_duration(-1, 0.5), -1);
+        assert_eq!(scale_effect_duration(0, 0.5), 0);
+        // Even an extreme scale must not touch these sentinels.
+        assert_eq!(scale_effect_duration(-1, 100.0), -1);
+        assert_eq!(scale_effect_duration(0, 0.0), 0);
+    }
+
+    /// Mirrors vanilla `withScaledDuration`: `Math.max(Mth.floor(duration *
+    /// scale), 1)` — a finite duration is floor-scaled and never rounds
+    /// below 1 tick, even when the scale would floor it to 0.
+    #[test]
+    fn scale_effect_duration_floors_and_clamps_finite_durations() {
+        assert_eq!(scale_effect_duration(100, 0.5), 50);
+        // floor(9 * 0.34) == floor(3.06) == 3, not a naive round to 3.
+        assert_eq!(scale_effect_duration(9, 0.34), 3);
+        // A scale that would floor to 0 is clamped up to the 1-tick floor.
+        assert_eq!(scale_effect_duration(1, 0.1), 1);
+        assert_eq!(scale_effect_duration(100, 1.0), 100);
+    }
 
     /// Vanilla's `int` shift is masked to the low 5 bits (Java `<<` never
     /// throws), so an Instant Health/Instant Damage amplifier of 32 or more
