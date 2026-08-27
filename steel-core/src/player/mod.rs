@@ -421,7 +421,9 @@ impl Player {
             return;
         };
         if active.remaining_ticks() <= 0 {
+            let stack_before_finish = item.clone();
             item = behavior.finish_using(&mut item, &world, self);
+            self.apply_item_use_cooldown(&stack_before_finish);
             self.stop_using_item();
         }
 

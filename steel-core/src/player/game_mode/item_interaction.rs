@@ -144,6 +144,8 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
         let item_behaviors = &*ITEM_BEHAVIORS;
         let item_behavior = item_behaviors.get_behavior(item_ref);
 
+        let is_instantly_used = item_behavior.get_use_duration(&stack_before_use, player) <= 0;
+
         let result = item_behavior.use_item(&mut context);
 
         // Restore count for creative mode (infinite materials)
@@ -155,7 +157,7 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
             });
         }
 
-        if result.should_apply_item_use_side_effects() {
+        if is_instantly_used && result.should_apply_item_use_side_effects() {
             player.apply_item_use_cooldown(&stack_before_use);
         }
 

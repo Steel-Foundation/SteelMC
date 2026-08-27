@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use std::borrow::Cow;
+use steel_registry::data_components::Consumable;
 use steel_registry::data_components::vanilla_components::{
     BLOCKS_ATTACKS, CONSUMABLE, FOOD, KINETIC_WEAPON, USE_REMAINDER,
 };
@@ -56,17 +57,30 @@ pub trait ItemBehavior: Send + Sync {
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
         // TODO: Mirror Item.use for BLOCKS_ATTACKS and KINETIC_WEAPON so
         // specialized behaviors inherit the complete Vanilla base path.
-        let (is_consumable, can_eat) = context.inv.with_item(|item| {
+        let (consume_ticks, can_eat) = context.inv.with_item(|item| {
             let can_eat = item
                 .get(FOOD)
                 .is_none_or(|food| context.player.can_eat(food.can_always_eat()));
-            (item.has(CONSUMABLE), can_eat)
+            (item.get(CONSUMABLE).map(Consumable::consume_ticks), can_eat)
         });
-        if is_consumable {
+        if let Some(consume_ticks) = consume_ticks {
             if !can_eat {
                 return InteractionResult::Fail;
             }
-            context.player.start_using_item(context.hand);
+            // Mirrors vanilla `Consumable.startConsuming`: an item with no
+            // consume duration is consumed immediately instead of entering
+            // the timed-use state — `start_using_item` rejects a duration of
+            // 0 outright, so going through it here would silently never
+            // finish and never run the item's effects.
+            if consume_ticks > 0 {
+                context.player.start_using_item(context.hand);
+            } else {
+                let world = context.world;
+                let player = context.player;
+                context
+                    .inv
+                    .with_item(|item| *item = finish_consuming_stack(item, world, player));
+            }
             return InteractionResult::Consume;
         }
 
