@@ -1,15 +1,11 @@
-//! Applies mob-effect consumption logic that cannot live in `steel-registry`
-//! because it needs `LivingEntity`/`World`: `PotionContents`, generic
-//! `Consumable.on_consume_effects`, and the small set of instantaneous mob
-//! effects that bypass the tick loop entirely.
-
-use std::sync::Arc;
+//! Vanilla `PotionContents` behavior extension: the methods that need
+//! `LivingEntity`/`World`, which can't live alongside the data in
+//! `steel_registry::data_components::PotionContents`.
 
 use steel_registry::MobEffectInstance as RegistryMobEffectInstance;
-use steel_registry::consume_effect::ConsumeEffectData;
 use steel_registry::data_components::PotionContents;
 
-use crate::behavior::{CONSUME_EFFECT_BEHAVIORS, MOB_EFFECT_BEHAVIORS};
+use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::{Entity, LivingEntity, MobEffectInstance as RuntimeMobEffectInstance};
 use crate::world::World;
 
@@ -66,21 +62,6 @@ pub(crate) const fn to_runtime_instance(
         .with_ambient(effect.ambient())
         .with_visible(effect.show_particles())
         .with_show_icon(effect.show_icon())
-}
-
-/// Applies one `ConsumeEffectData` entry from a `Consumable.on_consume_effects`
-/// list, by looking up its registered behavior. Mirrors vanilla's
-/// `ConsumeEffect.apply(Level, ItemStack, LivingEntity)` — see
-/// [`crate::entity::consume_effect`] for why this is a lookup instead of the
-/// direct polymorphic call vanilla uses.
-pub(crate) fn apply_consume_effect(
-    effect: &ConsumeEffectData,
-    world: &Arc<World>,
-    user: &dyn LivingEntity,
-) {
-    CONSUME_EFFECT_BEHAVIORS
-        .get_behavior(effect.effect_type())
-        .apply(effect, world, user);
 }
 
 #[cfg(test)]

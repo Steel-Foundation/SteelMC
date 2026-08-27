@@ -17,8 +17,9 @@ use text_components::TextComponent;
 
 use crate::behavior::items::DefaultItemBehavior;
 use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
+use crate::entity::consume_effect::apply_consume_effect;
 use crate::entity::damage::DamageSource;
-use crate::entity::{Entity, LivingEntity, apply_consume_effect};
+use crate::entity::{Entity, LivingEntity};
 use crate::player::{Player, player_inventory::EquipmentSwapResult};
 use crate::world::World;
 
@@ -210,10 +211,6 @@ pub trait ItemBehavior: Send + Sync {
 /// Applies vanilla `Consumable.onConsume`'s shared tail: runs
 /// `on_consume_effects`, plays the consume sound, then shrinks the stack by
 /// one (creative mode leaves it untouched).
-///
-/// Shared between the default [`ItemBehavior::finish_using`] and
-/// `PotionItem::finish_using`, which additionally applies `PotionContents`
-/// before calling this.
 pub(crate) fn finish_consuming_stack(
     stack: &ItemStack,
     world: &Arc<World>,
@@ -263,9 +260,7 @@ pub(crate) fn finish_consuming_stack(
 /// Applies vanilla `UseRemainder.convertIntoRemainder`: if the original stack
 /// had a `use_remainder` and was actually consumed, either swap the fully
 /// emptied stack for the remainder, or — for a stack that still has items
-/// left (e.g. one honey bottle out of several) — hand the remainder off to
-/// [`LivingEntity::handle_extra_items_created_on_use`] instead of discarding
-/// it, and keep the (shrunk) original stack.
+/// left (e.g. one honey bottle out of several)
 fn apply_use_remainder(
     original_stack: &ItemStack,
     used_stack: ItemStack,
@@ -347,7 +342,9 @@ impl Default for ItemBehaviorRegistry {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{init_vanilla_registry, vanilla_items};
+    use steel_registry::item_stack::ItemStack;
+    use steel_registry::stat::vanilla_stat_types;
+    use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
     use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
 
     use super::finish_consuming_stack;
@@ -373,15 +370,11 @@ mod tests {
         {
             let mut inventory = player.inventory.lock();
             for slot in 0..36 {
-                inventory.set_item(
-                    slot,
-                    steel_registry::item_stack::ItemStack::with_count(&vanilla_items::STONE, 64),
-                );
+                inventory.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
             }
         }
 
-        let stack =
-            steel_registry::item_stack::ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 5);
+        let stack = ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 5);
         let result = finish_consuming_stack(&stack, &world, player.as_ref());
 
         assert!(result.is(&vanilla_items::HONEY_BOTTLE));
@@ -389,7 +382,7 @@ mod tests {
 
         let dropped = world.get_entities_in_aabb_matching(
             &WorldAabb::new(-2.0, -1.0, -2.0, 2.0, 3.0, 2.0),
-            |entity| entity.entity_type() == &steel_registry::vanilla_entities::ITEM,
+            |entity| entity.entity_type() == &vanilla_entities::ITEM,
         );
         assert_eq!(dropped.len(), 1);
         let Some(item) = dropped[0].as_ref().downcast_ref::<ItemEntity>() else {
@@ -414,7 +407,7 @@ mod tests {
             food.saturation_level = 0.0;
         }
 
-        let stack = steel_registry::item_stack::ItemStack::new(&vanilla_items::APPLE);
+        let stack = ItemStack::new(&vanilla_items::APPLE);
         let _ = finish_consuming_stack(&stack, &world, player.as_ref());
 
         let food = player.food_data.lock();
@@ -433,11 +426,10 @@ mod tests {
         let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
         player.set_client_loaded(true);
 
-        let stack = steel_registry::item_stack::ItemStack::new(&vanilla_items::APPLE);
+        let stack = ItemStack::new(&vanilla_items::APPLE);
         let _ = finish_consuming_stack(&stack, &world, player.as_ref());
 
-        let apple_used =
-            steel_registry::stat::vanilla_stat_types::ITEM_USED.get(&vanilla_items::APPLE);
+        let apple_used = vanilla_stat_types::ITEM_USED.get(&vanilla_items::APPLE);
         assert_eq!(
             player
                 .stats()

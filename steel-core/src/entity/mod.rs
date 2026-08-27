@@ -756,8 +756,8 @@ mod living_entity;
 mod manager;
 mod mob;
 pub mod mob_effect;
-mod mob_effect_apply;
 mod movement_sync;
+mod potion_contents;
 pub mod projectile;
 mod registry;
 mod spawn;
@@ -805,7 +805,6 @@ pub use manager::{
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,
 };
 pub(crate) use mob::{Mob, MobBase, PathfinderMob};
-pub(crate) use mob_effect_apply::{apply_consume_effect, apply_potion_contents};
 pub use movement_sync::{
     EntityMovementSyncPacket, EntityMovementSyncPackets, EntityMovementSyncState,
     EntityMovementSyncUpdate, EntityPositionRotSyncPacket, EntityPositionSyncDecision,
@@ -813,6 +812,7 @@ pub use movement_sync::{
     EntityRotationSyncState, EntityVelocitySyncState, POSITION_SYNC_THRESHOLD,
     PackedEntityRotation, ServerEntityMovementSyncState, ServerEntityMovementSyncUpdate,
 };
+pub(crate) use potion_contents::apply_potion_contents;
 pub use projectile::{
     EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
     ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,

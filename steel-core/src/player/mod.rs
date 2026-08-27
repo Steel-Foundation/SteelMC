@@ -403,10 +403,6 @@ impl Player {
             self.stop_using_item();
             return;
         }
-        // Vanilla mutates the item in place while it stays resident in the
-        // hand slot, so a use-remainder overflow check triggered mid-behavior
-        // (e.g. `handle_extra_items_created_on_use`) never sees the hand as
-        // vacant.
         let mut item = {
             let inventory = self.inventory.lock();
             let current = inventory.get_item_in_hand(hand);

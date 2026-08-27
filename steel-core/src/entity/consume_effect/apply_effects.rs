@@ -8,7 +8,7 @@ use steel_registry::consume_effect::{ApplyStatusEffectsConsumeEffect, ConsumeEff
 
 use super::ConsumeEffectBehavior;
 use crate::entity::LivingEntity;
-use crate::entity::mob_effect_apply::to_runtime_instance;
+use crate::entity::potion_contents::to_runtime_instance;
 use crate::world::World;
 
 /// Mirrors vanilla `ApplyStatusEffectsConsumeEffect.apply`: unlike drinking a

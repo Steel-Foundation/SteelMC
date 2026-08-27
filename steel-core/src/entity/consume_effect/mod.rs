@@ -17,6 +17,7 @@ pub use play_sound::PlaySoundBehavior;
 pub use remove_effects::RemoveEffectsBehavior;
 pub use teleport_randomly::TeleportRandomlyBehavior;
 
+use crate::behavior::CONSUME_EFFECT_BEHAVIORS;
 use crate::entity::LivingEntity;
 use crate::world::World;
 
@@ -25,4 +26,16 @@ pub trait ConsumeEffectBehavior: Send + Sync {
     /// Applies this effect's behavior to `user`, downcasting `effect` to the
     /// concrete `ConsumeEffectData` payload this behavior expects.
     fn apply(&self, effect: &ConsumeEffectData, world: &Arc<World>, user: &dyn LivingEntity);
+}
+
+/// Applies one `ConsumeEffectData` entry from a `Consumable.on_consume_effects`
+/// list, by looking up its registered behavior.
+pub(crate) fn apply_consume_effect(
+    effect: &ConsumeEffectData,
+    world: &Arc<World>,
+    user: &dyn LivingEntity,
+) {
+    CONSUME_EFFECT_BEHAVIORS
+        .get_behavior(effect.effect_type())
+        .apply(effect, world, user);
 }

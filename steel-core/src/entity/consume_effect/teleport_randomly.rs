@@ -79,6 +79,7 @@ mod tests {
     use steel_utils::{BlockPos, ChunkPos};
 
     use super::teleport_randomly;
+    use crate::behavior::init_behaviors;
     use crate::entity::Entity;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
@@ -113,7 +114,7 @@ mod tests {
     #[test]
     fn teleport_randomly_lands_on_solid_ground_within_diameter() {
         init_vanilla_registry();
-        crate::behavior::init_behaviors();
+        init_behaviors();
         let world = fresh_test_world("teleport_randomly_valid_landing");
         for x in -1..=0 {
             for z in -1..=0 {

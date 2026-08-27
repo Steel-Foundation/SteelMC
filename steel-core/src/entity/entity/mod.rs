@@ -2446,9 +2446,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Moves this entity to `pos`, keeping its current rotation. Mirrors
-    /// vanilla `Entity.teleportTo(x, y, z)`, which `ServerPlayer` overrides
-    /// to also synchronize the move to the client — `Player` does the same
-    /// here via its packet-sending `teleport`.
+    /// vanilla `Entity.teleportTo(x, y, z)`
     ///
     /// // TODO: Recursively reposition this entity's passengers (vanilla
     /// // `Entity.teleportPassengers`, via `getSelfAndPassengers`)

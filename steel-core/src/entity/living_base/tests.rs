@@ -5,6 +5,7 @@ use steel_registry::{
 };
 use steel_utils::{BlockPos, types::InteractionHand};
 
+use crate::behavior::init_behaviors;
 use crate::entity::damage::DamageSource;
 use crate::inventory::equipment::EquipmentSlot;
 
@@ -614,7 +615,7 @@ fn jumping_and_jump_delay_are_shared_living_state() {
 #[test]
 fn poison_and_regeneration_tick_schedules_match_vanilla_interval_formulas() {
     init_vanilla_registry();
-    crate::behavior::init_behaviors();
+    init_behaviors();
 
     // Vanilla `PoisonMobEffect`: interval = 25 >> amplifier, applied when
     // remaining duration is a multiple of the interval.

@@ -945,7 +945,11 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
         .with_entity_type(&vanilla_entities::PIG)
         .with_health(10.0);
     HealOrHarmBehavior { is_harm: false }.apply_effect_tick(&world, &living, 0);
-    assert_eq!(living.get_health(), 14.0, "instant health heals a living mob");
+    assert_eq!(
+        living.get_health(),
+        14.0,
+        "instant health heals a living mob"
+    );
 
     let zombie = LivingFluidTestEntity::new(0.0, 0.0, true)
         .with_entity_type(&vanilla_entities::ZOMBIE)
@@ -961,7 +965,11 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
         .with_entity_type(&vanilla_entities::PIG)
         .with_health(10.0);
     HealOrHarmBehavior { is_harm: true }.apply_effect_tick(&world, &living, 0);
-    assert_eq!(living.get_health(), 4.0, "instant damage hurts a living mob");
+    assert_eq!(
+        living.get_health(),
+        4.0,
+        "instant damage hurts a living mob"
+    );
 
     let zombie = LivingFluidTestEntity::new(0.0, 0.0, true)
         .with_entity_type(&vanilla_entities::ZOMBIE)
