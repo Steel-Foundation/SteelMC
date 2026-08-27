@@ -73,15 +73,15 @@ impl BlockEntity for FurnaceBlockEntity {
         Some(self.container_ref.clone())
     }
 
-    fn tick(&self, _world: &Arc<World>) {
+    fn tick(&self, world: &Arc<World>) {
         let mut container = self.container.lock();
         let mut data = self.data.lock();
 
-        let is_lit = data.lit_time > 0;
+        let was_lit = data.lit_time > 0;
         let mut changed = false;
 
         // Consume fuel time
-        if is_lit {
+        if data.lit_time > 0 {
             data.lit_time -= 1;
         }
 
@@ -98,7 +98,7 @@ impl BlockEntity for FurnaceBlockEntity {
 
         if can_smelt {
             // If not lit and has fuel, light it
-            if !is_lit && !fuel_empty {
+            if data.lit_time == 0 && !fuel_empty {
                 let burn_time = vanilla_fuel_values::burn_duration(fuel_item);
                 if burn_time > 0 {
                     data.lit_time = burn_time;
@@ -112,8 +112,8 @@ impl BlockEntity for FurnaceBlockEntity {
             if data.lit_time > 0 {
                 data.cooking_progress += 1;
                 if data.cooking_progress >= data.cooking_total_time {
-                    // Smelting complete - for now just duplicate the input item
-                    // TODO: Use actual smelting recipes
+                    // TODO: Use actual smelting recipes from RecipeRegistry
+                    // For now just duplicate the input item as output
                     if container.items[2].is_empty() {
                         container.items[2] = ItemStack::with_count(input_item, 1);
                     } else if output_item == input_item {
@@ -126,6 +126,14 @@ impl BlockEntity for FurnaceBlockEntity {
             }
         } else {
             data.cooking_progress = 0;
+        }
+
+        // TODO: Update lit block state property when changed
+        // This requires proper property handling in Steel's block system
+        let _is_lit = data.lit_time > 0;
+        if was_lit != _is_lit {
+            // world.set_block_state(...) - need to figure out proper API
+            changed = true;
         }
 
         if changed {
