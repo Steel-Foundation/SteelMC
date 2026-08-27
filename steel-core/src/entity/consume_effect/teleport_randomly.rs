@@ -26,6 +26,15 @@ impl ConsumeEffectBehavior for TeleportRandomlyBehavior {
 /// Tries up to 16 random nearby positions, delegating each attempt to
 /// `LivingEntity::random_teleport` (vanilla `Entity.randomTeleport`), and
 /// stops at the first one that lands.
+///
+// TODO(26.3): Vanilla snapshot 26.3 adds the block tag
+// `#consumable_does_not_teleport_to` — "blocks that entities do not
+// teleport to when they consume food that teleports randomly when eaten"
+// (empty by default). Once that tag exists in the registry extraction, a
+// landing block tagged with it must be rejected here, the same way an
+// unloaded/non-solid candidate already is — this is specific to this
+// consume-effect path, not the shared `Entity.randomTeleport` primitive
+// (Enderman's own random teleport is unaffected by this tag).
 fn teleport_randomly(
     effect: TeleportRandomlyConsumeEffect,
     world: &Arc<World>,
