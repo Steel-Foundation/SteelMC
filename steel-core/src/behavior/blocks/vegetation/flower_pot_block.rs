@@ -10,7 +10,6 @@ use rustc_hash::FxHashMap;
 use steel_macros::block_behavior;
 use steel_registry::REGISTRY;
 use steel_registry::blocks::BlockRef;
-use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_custom_stats::POT_FLOWER;
 use steel_registry::{vanilla_blocks, vanilla_game_events};
@@ -24,7 +23,7 @@ use crate::behavior::{ITEM_BEHAVIORS, InventoryAccess};
 use crate::entity::ai::path::PathComputationType;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
-use crate::world::{LevelReader, ScheduledTickAccess, World};
+use crate::world::{ScheduledTickAccess, World};
 
 static POTTED_BY_CONTENT: LazyLock<SyncMutex<FxHashMap<Identifier, BlockRef>>> =
     LazyLock::new(|| SyncMutex::new(FxHashMap::default()));
@@ -166,13 +165,13 @@ impl BlockBehavior for FlowerPotBlock {
 #[cfg(test)]
 mod tests {
     use glam::DVec3;
+    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
     use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_items;
     use steel_utils::ChunkPos;
-    use steel_utils::types::InteractionHand;
 
     use crate::behavior::init_behaviors;
-    use crate::entity::Entity;
+    use crate::entity::Entity as _;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
     use super::*;
