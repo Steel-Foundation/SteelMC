@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::slice;
 use std::sync::{Arc, OnceLock};
 
-use steel_registry::blocks::BlockRef;
+use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
 use steel_registry::sound_event::SoundEventRef;
@@ -48,6 +48,18 @@ pub(crate) fn fresh_test_world_in_domain(domain: &'static str, key: &'static str
 }
 
 pub(crate) fn insert_ready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<ChunkHolder> {
+    insert_full_chunk(world, pos, true)
+}
+
+pub(crate) fn insert_unready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<ChunkHolder> {
+    insert_full_chunk(world, pos, false)
+}
+
+pub(crate) fn insert_full_chunk(
+    world: &Arc<World>,
+    pos: ChunkPos,
+    block_ticking_ready: bool,
+) -> Arc<ChunkHolder> {
     let min_y = world.get_min_y();
     let height = world.get_height();
     let sections = (0..height / 16)
@@ -70,10 +82,12 @@ pub(crate) fn insert_ready_full_chunk(world: &Arc<World>, pos: ChunkPos) -> Arc<
         height,
     ));
     holder.insert_chunk(proto, ChunkStatus::Full);
-    assert_eq!(
-        holder.transition_ticking_readiness(TickingReadiness::BlockTicking),
-        Some(TickingReadiness::Unready)
-    );
+    if block_ticking_ready {
+        assert_eq!(
+            holder.transition_ticking_readiness(TickingReadiness::BlockTicking),
+            Some(TickingReadiness::Unready)
+        );
+    }
     let _ = world.chunk_map.chunks.insert_sync(pos, Arc::clone(&holder));
     world.on_entity_chunk_loaded(pos);
     world.update_entity_chunk_visibility(pos, holder.entity_visibility());
@@ -360,6 +374,18 @@ impl LevelAccessor for TestLevel {
             .borrow_mut()
             .push(PlacedBlockState { pos, state, flags });
         true
+    }
+
+    fn destroy_block(&self, pos: BlockPos, _drop_items: bool) -> bool {
+        if self.get_block_state(pos).is_air() {
+            return false;
+        }
+
+        self.set_block_state(
+            pos,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        )
     }
 
     fn play_block_sound(

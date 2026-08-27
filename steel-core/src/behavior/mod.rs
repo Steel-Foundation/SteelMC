@@ -81,7 +81,7 @@ pub use item::{ItemBehavior, ItemBehaviorRegistry, ItemUseAnimation};
 use item_behaviors::register_item_behaviors;
 pub use items::{
     BedItem, BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem,
-    HangingSignItem, ShovelItem, SignItem, StandingAndWallBlockItem,
+    HangingSignItem, ShovelItem, SignItem, SolidBucketItem, StandingAndWallBlockItem,
 };
 pub use mob_effect::{MOB_EFFECT_BEHAVIORS, MobEffectBehaviorRegistry};
 use std::ops::Deref;

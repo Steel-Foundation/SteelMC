@@ -3,14 +3,17 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt as _, shapes::VoxelShape};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt, vanilla_entities, vanilla_game_rules, vanilla_items,
+    REGISTRY, TaggedRegistryExt, sound_events, vanilla_blocks, vanilla_entities,
+    vanilla_game_rules, vanilla_items,
 };
-use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
+use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
+    behavior::block::PickupResult,
     behavior::{
         BlockBehavior, BlockCollisionContext, BlockPlaceContext, EntityFallDamage,
         EntityFallOnContext,
@@ -18,7 +21,8 @@ use crate::{
     entity::ai::path::PathComputationType,
     entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType},
     inventory::equipment::EquipmentSlot,
-    world::{LevelReader, World},
+    player::Player,
+    world::{ConditionalBlockSetResult, LevelReader, World},
 };
 
 const IN_BLOCK_SPEED_MULTIPLIER: DVec3 = DVec3::new(0.9, 1.5, 0.9);
@@ -83,6 +87,31 @@ impl PowderSnowBlock {
 impl BlockBehavior for PowderSnowBlock {
     fn get_state_for_placement(&self, _context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state())
+    }
+
+    fn pickup_block(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+        _player: Option<&Player>,
+    ) -> Option<PickupResult> {
+        if world.set_block_if_unchanged(
+            pos,
+            state,
+            vanilla_blocks::AIR.default_state(),
+            UpdateFlags::UPDATE_ALL_IMMEDIATE,
+        ) != ConditionalBlockSetResult::Changed
+        {
+            return None;
+        }
+
+        world.destroy_block_effect(pos, u32::from(state.0), None);
+
+        Some(PickupResult {
+            filled_bucket: ItemStack::new(&vanilla_items::POWDER_SNOW_BUCKET),
+            sound: Some(&sound_events::ITEM_BUCKET_FILL_POWDER_SNOW),
+        })
     }
 
     fn is_pathfindable(
