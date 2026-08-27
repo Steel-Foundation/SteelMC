@@ -116,7 +116,11 @@ impl ItemBehavior for BowItem {
         // apply through `EnchantmentHelper` on release. Both need enchantment
         // + component-transfer foundations.
         let player_pos = player.position();
-        let spawn_pos = DVec3::new(player_pos.x, player.get_eye_y() - ARROW_SPAWN_Y_OFFSET, player_pos.z);
+        let spawn_pos = DVec3::new(
+            player_pos.x,
+            player.get_eye_y() - ARROW_SPAWN_Y_OFFSET,
+            player_pos.z,
+        );
         let arrow = Arc::new(ArrowEntity::new(
             &vanilla_entities::ARROW,
             next_entity_id(),
@@ -142,7 +146,14 @@ impl ItemBehavior for BowItem {
         }
 
         let (yaw, pitch) = player.rotation();
-        arrow.shoot_from_rotation(user, pitch, yaw, 0.0, power * BOW_POWER_MULTIPLIER, BOW_SHOOT_UNCERTAINTY);
+        arrow.shoot_from_rotation(
+            user,
+            pitch,
+            yaw,
+            0.0,
+            power * BOW_POWER_MULTIPLIER,
+            BOW_SHOOT_UNCERTAINTY,
+        );
 
         let entity: SharedEntity = arrow;
         if let Err(error) = world.try_add_entity(entity.clone()) {
@@ -184,7 +195,11 @@ impl BowItem {
     fn get_power_for_time(ticks: i32) -> f32 {
         let fraction = ticks as f32 / MAX_DRAW_DURATION as f32;
         let power = (fraction * fraction + POWER_CURVE_QUADRATIC * fraction) / POWER_CURVE_DIVISOR;
-        if power > FULL_DRAW_POWER { FULL_DRAW_POWER } else { power }
+        if power > FULL_DRAW_POWER {
+            FULL_DRAW_POWER
+        } else {
+            power
+        }
     }
 }
 

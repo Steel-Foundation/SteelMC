@@ -50,7 +50,7 @@ const DEFLECTION_COLLISION_ESCAPE: f64 = 0.35;
 /// Velocity threshold below which a deflected arrow is considered stopped
 /// and discarded as a dropped item.
 const DEFLECTION_STOP_THRESHOLD: f64 = 1.0e-7;
-/// SteelMC floating-point comparison threshold for near-zero velocity checks
+/// `SteelMC` floating-point comparison threshold for near-zero velocity checks
 /// (stuck detection, push direction fallback). Not a vanilla constant.
 const VELOCITY_EPSILON: f64 = 1.0e-9;
 /// Vanilla `AbstractArrow.shouldFall`: AABB inflate distance used to check
@@ -253,8 +253,8 @@ impl ArrowEntity {
         let _ = self.try_set_position(self.position() - offset);
         self.set_velocity(DVec3::ZERO);
 
-            let pitch = HIT_SOUND_PITCH_NUMERATOR
-                / (rand::random::<f32>() * HIT_SOUND_PITCH_RANDOM_RANGE + HIT_SOUND_PITCH_BASE);
+        let pitch = HIT_SOUND_PITCH_NUMERATOR
+            / (rand::random::<f32>() * HIT_SOUND_PITCH_RANDOM_RANGE + HIT_SOUND_PITCH_BASE);
         world.play_sound_at(
             &sound_events::ENTITY_ARROW_HIT,
             SoundSource::Neutral,
@@ -496,9 +496,8 @@ impl Projectile for ArrowEntity {
         let raw = speed * self.runtime.lock().base_damage as f32;
         let mut damage_amount = raw.ceil().clamp(0.0, i32::MAX as f32) as i32;
         if self.is_crit_arrow() {
-            damage_amount += (rand::random::<u32>()
-                % (damage_amount / 2 + CRIT_DAMAGE_FLOOR) as u32)
-                as i32;
+            damage_amount +=
+                (rand::random::<u32>() % (damage_amount / 2 + CRIT_DAMAGE_FLOOR) as u32) as i32;
         }
 
         // Vanilla `damageSources().arrow(this, owner != null ? owner : this)`.
@@ -519,8 +518,8 @@ impl Projectile for ArrowEntity {
             if entity.entity_type() == &vanilla_entities::ENDERMAN {
                 return;
             }
-        let pitch = HIT_SOUND_PITCH_NUMERATOR
-            / (rand::random::<f32>() * HIT_SOUND_PITCH_RANDOM_RANGE + HIT_SOUND_PITCH_BASE);
+            let pitch = HIT_SOUND_PITCH_NUMERATOR
+                / (rand::random::<f32>() * HIT_SOUND_PITCH_RANDOM_RANGE + HIT_SOUND_PITCH_BASE);
             world.play_sound_at(
                 &sound_events::ENTITY_ARROW_HIT,
                 SoundSource::Neutral,
@@ -560,7 +559,8 @@ impl Projectile for ArrowEntity {
                     DVec3::Y
                 }
             };
-            let _ = self.try_set_position(self.position() + push_direction * DEFLECTION_COLLISION_ESCAPE);
+            let _ = self
+                .try_set_position(self.position() + push_direction * DEFLECTION_COLLISION_ESCAPE);
 
             // Suppress re-collision with this entity on the next tick.
             self.runtime.lock().last_deflected_from = Some(entity.id());
