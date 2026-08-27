@@ -7,11 +7,7 @@ use crate::entity::LivingEntity;
 use crate::entity::damage::DamageSource;
 use crate::world::World;
 
-/// Mirrors vanilla `HealOrHarmMobEffect`. One class backs both Instant
-/// Health (`is_harm = false`) and Instant Damage (`is_harm = true`); the
-/// `is_harm == user.is_inverted_heal_and_harm()` check below mirrors
-/// vanilla's `this.isHarm == mob.isInvertedHealAndHarm()`, swapping heal and
-/// harm for undead-like mobs.
+/// Mirrors vanilla `HealOrHarmMobEffect`
 pub struct HealOrHarmBehavior {
     /// `false` for Instant Health, `true` for Instant Damage.
     pub is_harm: bool,
@@ -40,15 +36,10 @@ impl MobEffectBehavior for HealOrHarmBehavior {
         true
     }
 
-    /// Reached by drinking a potion directly (`PotionContents
-    /// .applyToLivingEntity`) or, once implemented, a splash/lingering
-    /// potion with a distance-based falloff `scale`. Unlike
-    /// `apply_effect_tick`, the heal amount is never clamped to zero, and
-    /// damage is attributed via `indirectMagic(source, owner)` when a
-    /// `direct_entity` is known — `direct_entity` is the potion/thrown
-    /// entity itself (vanilla's `source`) and `causing_entity` is who
-    /// ultimately caused it (vanilla's `owner`); a direct drink passes the
-    /// same entity for both.
+    /// Reached by drinking a potion directly, or a splash/lingering potion
+    /// once implemented. Unlike `apply_effect_tick`, the heal amount is
+    /// never clamped to zero, and damage is attributed via
+    /// `indirectMagic(source, owner)` when `direct_entity` is known.
     fn apply_instantaneous(
         &self,
         world: &World,

@@ -1236,11 +1236,7 @@ pub trait LivingEntity: Entity {
         let (effect_key, amplifier) = (effect.effect(), effect.amplifier());
         let changed = self.living_base().add_mob_effect(effect);
         // Mirrors vanilla `newEffect.onEffectStarted(this)`: called
-        // unconditionally at the end of `addEffect`, using the
-        // newly-requested amplifier even when it didn't end up replacing a
-        // stronger existing instance. `Self` can't unsize-coerce to
-        // `&dyn LivingEntity` generically from a `?Sized` default method, so
-        // go through the existing downcast instead (see `tick_mob_effects`).
+        // unconditionally, even when it didn't replace a stronger instance.
         let dyn_self = self
             .as_living_entity()
             .expect("Self implements LivingEntity");
@@ -1267,10 +1263,6 @@ pub trait LivingEntity: Entity {
     /// Ticks vanilla server-side mob-effect behavior and durations.
     fn tick_mob_effects(&self) {
         let world = self.level();
-        // `apply_effect_tick` dispatches through `MOB_EFFECT_BEHAVIORS`, which
-        // needs a `&dyn LivingEntity`; `Self` can't unsize-coerce to that
-        // generically from a `?Sized` default method, so go through the
-        // existing downcast instead — always `Some` since `Self: LivingEntity`.
         let dyn_self = self
             .as_living_entity()
             .expect("Self implements LivingEntity");

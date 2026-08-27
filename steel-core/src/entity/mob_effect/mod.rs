@@ -1,16 +1,5 @@
 //! Mob-effect behaviors: one small module per vanilla `MobEffect` subtype
 //! under `net/minecraft/world/effect`.
-//!
-//! Vanilla dispatches through plain virtual calls (`this.effect.value()
-//! .applyEffectTick(...)`) — most vanilla effects are just a bare `MobEffect`
-//! instance with no override at all (pure duration/amplifier/attribute-
-//! modifier data), and only a handful of subclasses (`HealOrHarmMobEffect`,
-//! `WitherMobEffect`, ...) override any behavior. Steel looks the right
-//! implementation up by `MobEffectRef` through
-//! [`MOB_EFFECT_BEHAVIORS`](crate::behavior::MOB_EFFECT_BEHAVIORS), the same
-//! registry-of-trait-objects pattern used for consume effects, fluids, and
-//! blocks — see [`crate::entity::consume_effect`] for why this is a lookup
-//! instead of vanilla's direct polymorphic call.
 
 mod absorption;
 mod heal_or_harm;
@@ -41,11 +30,7 @@ pub trait MobEffectBehavior: Send + Sync {
         false
     }
 
-    /// Mirrors vanilla `MobEffect.shouldApplyEffectTickThisTick`. Instantaneous
-    /// effects mirror `InstantaneousMobEffect.shouldApplyEffectTickThisTick`
-    /// (`remainingDuration >= 1`) so they still fire once when added through
-    /// the generic tick loop instead of the direct `applyInstantaneousEffect`
-    /// call; non-instantaneous effects keep the plain `MobEffect` default.
+    /// Mirrors vanilla `MobEffect.shouldApplyEffectTickThisTick`
     fn should_apply_effect_tick_this_tick(&self, tick_count: i32, _amplifier: i32) -> bool {
         self.is_instantaneous() && tick_count >= 1
     }
@@ -57,14 +42,7 @@ pub trait MobEffectBehavior: Send + Sync {
     }
 
     /// Mirrors vanilla `MobEffect.applyInstantaneousEffect(level, source,
-    /// owner, mob, amplification, scale)`, which by default just forwards to
-    /// `applyEffectTick` — most instantaneous effects (e.g. Saturation) never
-    /// override this, only the amount/attribution-scaling ones like
-    /// `HealOrHarmMobEffect` do. `direct_entity` is vanilla's `source` (the
-    /// entity the damage is directly attributed to, e.g. a splash-potion
-    /// entity) and `causing_entity` is vanilla's `owner` (the entity that
-    /// ultimately caused it, e.g. the thrower) — they differ for area-effect
-    /// potions and are always the same single entity for a direct drink.
+    /// owner, mob, amplification, scale)`
     fn apply_instantaneous(
         &self,
         world: &World,
@@ -78,11 +56,6 @@ pub trait MobEffectBehavior: Send + Sync {
         self.apply_effect_tick(world, user, amplifier);
     }
 
-    /// Mirrors vanilla `MobEffect.onEffectStarted`, called unconditionally
-    /// every time `LivingEntity.addEffect` runs for this effect type — on a
-    /// brand-new effect, a refreshed one, and even one that didn't end up
-    /// replacing a stronger existing instance — always using the
-    /// newly-requested amplifier. Only `AbsorptionMobEffect` overrides this;
-    /// every other effect keeps the empty default.
+    /// Mirrors vanilla `MobEffect.onEffectStarted`
     fn on_effect_started(&self, _user: &dyn LivingEntity, _amplifier: i32) {}
 }

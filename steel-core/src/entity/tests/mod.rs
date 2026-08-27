@@ -931,10 +931,8 @@ fn default_mob_effect_eligibility_uses_vanilla_entity_type_tags() {
     )));
 }
 
-/// Mirrors vanilla `HealOrHarmMobEffect`'s `this.isHarm ==
-/// mob.isInvertedHealAndHarm()` check: undead-like mobs (tagged
-/// `EntityTypeTags.INVERTED_HEALING_AND_HARM`) are hurt by Instant Health and
-/// healed by Instant Damage, the opposite of a living mob.
+/// Undead-like mobs are hurt by Instant Health and healed by Instant Damage,
+/// per vanilla `HealOrHarmMobEffect`'s inverted-heal-harm check.
 #[test]
 fn heal_or_harm_behavior_inverts_for_undead_mobs() {
     use crate::entity::mob_effect::{HealOrHarmBehavior, MobEffectBehavior};
@@ -976,11 +974,8 @@ fn heal_or_harm_behavior_inverts_for_undead_mobs() {
     );
 }
 
-/// Mirrors vanilla `AbsorptionMobEffect.onEffectStarted`, wired through
-/// `LivingEntity.addEffect` (Steel's `add_mob_effect`): granting the effect
-/// (e.g. from eating a golden apple) must actually set the absorption
-/// hearts, not just the effect icon/attribute-modifier bump to
-/// `MAX_ABSORPTION`.
+/// Granting the Absorption effect (e.g. eating a golden apple) must actually
+/// set the absorption hearts, not just the icon/attribute-modifier bump.
 #[test]
 fn adding_absorption_effect_grants_absorption_hearts() {
     init_vanilla_registry();
