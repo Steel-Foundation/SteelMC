@@ -14,8 +14,8 @@ use steel_utils::BlockPos;
 
 use super::place_on_water_block_item::get_player_pov_hit_result;
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, InteractionResult,
-    InventoryAccess, ItemBehavior, UseItemContext, UseOnContext,
+    BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, ITEM_BEHAVIORS,
+    InteractionResult, InventoryAccess, ItemBehavior, UseItemContext, UseOnContext,
 };
 use crate::entity::{
     AgeableMob, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, Mob, SharedEntity,
@@ -81,6 +81,13 @@ impl SpawnEggItem {
         player: &Player,
         parent: &M,
     ) -> InteractionResult {
+        if ITEM_BEHAVIORS
+            .get_behavior(stack.item())
+            .as_spawn_egg()
+            .is_none()
+        {
+            return InteractionResult::Pass;
+        }
         if Self::spawn_offspring(stack, parent).is_none() {
             return InteractionResult::Pass;
         }
@@ -130,6 +137,10 @@ impl SpawnEggItem {
 }
 
 impl ItemBehavior for SpawnEggItem {
+    fn as_spawn_egg(&self) -> Option<&SpawnEggItem> {
+        Some(self)
+    }
+
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         let stack = context.inv.with_item(|item| item.clone());
         if Self::entity_type(&stack).is_none() {
@@ -160,7 +171,7 @@ impl ItemBehavior for SpawnEggItem {
             clicked_face.relative(clicked_pos)
         };
 
-        Self::spawn_mob(
+        let result = Self::spawn_mob(
             context.world,
             context.player,
             &context.inv,
@@ -168,7 +179,13 @@ impl ItemBehavior for SpawnEggItem {
             spawn_pos,
             true,
             spawn_pos != clicked_pos && clicked_face == steel_utils::Direction::Up,
-        )
+        );
+        if result == InteractionResult::Success {
+            context
+                .player
+                .award_stat(&vanilla_stat_types::ITEM_USED, stack.item());
+        }
+        result
     }
 
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {

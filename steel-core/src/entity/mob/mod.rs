@@ -556,13 +556,15 @@ pub trait Mob: LivingEntity + Leashable {
             }
         }
 
-        let spawn_egg_result = {
-            let mut inventory = player.inventory.lock();
-            let item_stack = inventory.get_item_in_hand_mut(hand);
-            SpawnEggItem::interact_with_mob(item_stack, player, self)
-        };
-        if spawn_egg_result.consumes_action() {
-            return spawn_egg_result;
+        if ITEM_BEHAVIORS.get_behavior(item).as_spawn_egg().is_some() {
+            let spawn_egg_result = {
+                let mut inventory = player.inventory.lock();
+                let item_stack = inventory.get_item_in_hand_mut(hand);
+                SpawnEggItem::interact_with_mob(item_stack, player, self)
+            };
+            if spawn_egg_result.consumes_action() {
+                return spawn_egg_result;
+            }
         }
 
         InteractionResult::Pass
