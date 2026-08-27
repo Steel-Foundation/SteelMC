@@ -16,7 +16,10 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_math::fast_floor;
 use steel_protocol::packets::game::CTakeItemEntity;
+use steel_registry::attribute::AttributeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::data_components::components::ItemEnchantments;
+use steel_registry::data_components::vanilla_components::CUSTOM_NAME;
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::loot_table::LootTableRef;
@@ -48,6 +51,7 @@ use crate::entity::{
     SpawnGroupData, WeakEntity,
 };
 use crate::inventory::equipment::EquipmentSlot;
+use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
@@ -58,6 +62,9 @@ const MOB_FLAG_AGGRESSIVE: i8 = 4;
 const MOVE_CONTROL_MIN_SPEED_SQR: f64 = 2.500_000_3e-7;
 const MOVE_CONTROL_MAX_TURN: f32 = 90.0;
 const DEFAULT_EQUIPMENT_DROP_CHANCE: f32 = 0.085;
+/// Vanilla bias subtracted from the roll before comparing against a slot's drop
+/// chance when a mob swaps out worn gear it picked something better up over.
+const REPLACED_EQUIPMENT_DROP_BIAS: f32 = 0.1;
 const PRESERVE_ITEM_DROP_CHANCE_THRESHOLD: f32 = 1.0;
 const PRESERVE_ITEM_DROP_CHANCE: f32 = 2.0;
 const BODY_ROTATION_MOVING_DISTANCE_SQR: f64 = 2.500_000_3e-7;
@@ -595,35 +602,228 @@ pub trait Mob: LivingEntity + Leashable {
 
     /// Vanilla `Mob.pickUpItem`: take a dropped item into this mob's equipment.
     ///
-    /// TODO(equip-armor): port the full vanilla `equipItemIfPossible` (armor-slot
-    /// selection via the item's equippable slot, the `canReplaceCurrentItem`
-    /// preference between held and dropped gear, and the drop-chance drop of any
-    /// replaced item) once armor-wearing mobs land. Until then this covers the
-    /// common case of taking an item into an empty main hand.
+    /// Delegates the slot routing and gear-swap decision to
+    /// [`equip_item_if_possible`](Self::equip_item_if_possible), then shrinks the
+    /// source stack by however much was equipped, only removing the item entity
+    /// once nothing is left.
     fn pick_up_item(&self, world: &Arc<World>, item_entity: &ItemEntity) {
-        let item_stack = item_entity.get_item();
-        if item_stack.is_empty()
-            || self.has_item_in_slot(EquipmentSlot::MainHand)
-            || !self.can_hold_item(&item_stack)
-        {
+        let equipped = self.equip_item_if_possible(item_entity.get_item());
+        if equipped.is_empty() {
             return;
         }
 
-        let count = item_stack.count();
-        self.living_base()
-            .equipment()
-            .lock()
-            .set(EquipmentSlot::MainHand, item_stack);
-        self.set_guaranteed_drop(EquipmentSlot::MainHand);
-        self.set_persistence_required();
-
+        let count = equipped.count();
         let chunk_pos = ChunkPos::from_entity_pos(item_entity.position());
         world.broadcast_to_nearby(
             chunk_pos,
             CTakeItemEntity::new(item_entity.id(), self.id(), count),
             None,
         );
-        item_entity.set_removed(RemovalReason::Discarded);
+
+        let mut remaining = item_entity.get_item();
+        remaining.shrink(count);
+        if remaining.is_empty() {
+            item_entity.set_removed(RemovalReason::Discarded);
+        } else {
+            item_entity.set_item(remaining);
+        }
+    }
+
+    /// Vanilla `Mob.equipItemIfPossible`: route `item_stack` to the slot its
+    /// equippable component asks for (main hand otherwise), swap up when the
+    /// target slot already holds worse gear, and drop the replaced piece by its
+    /// drop chance. Returns the stack that was equipped, or empty when nothing
+    /// was taken.
+    fn equip_item_if_possible(&self, mut item_stack: ItemStack) -> ItemStack {
+        let mut slot = self.get_equipment_slot_for_item(&item_stack);
+        if !self.is_equippable_in_slot(&item_stack, slot) {
+            return ItemStack::empty();
+        }
+
+        let mut current = self.equipment_in_slot(slot);
+        let mut can_replace = self.can_replace_current_item(&item_stack, &current, slot);
+        // Armor that would not be an upgrade still gets a chance to be carried in
+        // the main hand instead, provided that hand is free.
+        if slot.is_armor() && !can_replace {
+            slot = EquipmentSlot::MainHand;
+            current = self.equipment_in_slot(slot);
+            can_replace = current.is_empty();
+        }
+
+        if !can_replace || !self.can_hold_item(&item_stack) {
+            return ItemStack::empty();
+        }
+
+        let drop_chance = self.equipment_drop_chance(slot);
+        if !current.is_empty()
+            && (rand::random::<f32>() - REPLACED_EQUIPMENT_DROP_BIAS).max(0.0) < drop_chance
+        {
+            self.spawn_at_location(current, 0.0);
+        }
+
+        let to_equip = slot.limit(&mut item_stack);
+        let equipped = to_equip.copy_with_count(to_equip.count());
+        self.living_base().equipment().lock().set(slot, to_equip);
+        self.set_guaranteed_drop(slot);
+        self.set_persistence_required();
+        equipped
+    }
+
+    /// Vanilla `LivingEntity.getEquipmentSlotForItem`: the slot an item wants to
+    /// occupy, falling back to the main hand when it is not equippable or the mob
+    /// cannot use that slot.
+    fn get_equipment_slot_for_item(&self, item_stack: &ItemStack) -> EquipmentSlot {
+        match item_stack.get_equippable() {
+            Some(equippable) if self.can_use_slot(equippable.slot) => equippable.slot,
+            _ => EquipmentSlot::MainHand,
+        }
+    }
+
+    /// Returns a copy of whatever this mob currently holds in `slot`.
+    fn equipment_in_slot(&self, slot: EquipmentSlot) -> ItemStack {
+        let equipment = self.living_base().equipment().lock();
+        let stack = equipment.get_ref(slot);
+        stack.copy_with_count(stack.count())
+    }
+
+    /// Vanilla `Mob.canReplaceCurrentItem`: whether the freshly picked-up item
+    /// should displace what is already in `slot`.
+    fn can_replace_current_item(
+        &self,
+        new_item_stack: &ItemStack,
+        current_item_stack: &ItemStack,
+        slot: EquipmentSlot,
+    ) -> bool {
+        if current_item_stack.is_empty() {
+            true
+        } else if slot.is_armor() {
+            self.compare_armor(new_item_stack, current_item_stack, slot)
+        } else if slot == EquipmentSlot::MainHand {
+            self.compare_weapons(new_item_stack, current_item_stack, slot)
+        } else {
+            false
+        }
+    }
+
+    /// Vanilla `Mob.compareArmor`: prefer the piece granting more armor, then
+    /// more toughness, then the equal-item tiebreak, unless the worn piece is
+    /// protected against removal.
+    #[expect(
+        clippy::float_cmp,
+        reason = "vanilla compares approximate attribute values for exact equality"
+    )]
+    fn compare_armor(
+        &self,
+        new_item_stack: &ItemStack,
+        current_item_stack: &ItemStack,
+        slot: EquipmentSlot,
+    ) -> bool {
+        if current_item_stack.has_enchantment_effect(EnchantmentEffectComponent::PreventArmorChange)
+        {
+            return false;
+        }
+
+        let new_defense =
+            self.approximate_attribute_with(new_item_stack, vanilla_attributes::ARMOR, slot);
+        let old_defense =
+            self.approximate_attribute_with(current_item_stack, vanilla_attributes::ARMOR, slot);
+        if new_defense != old_defense {
+            return new_defense > old_defense;
+        }
+
+        let new_toughness = self.approximate_attribute_with(
+            new_item_stack,
+            vanilla_attributes::ARMOR_TOUGHNESS,
+            slot,
+        );
+        let old_toughness = self.approximate_attribute_with(
+            current_item_stack,
+            vanilla_attributes::ARMOR_TOUGHNESS,
+            slot,
+        );
+        if new_toughness == old_toughness {
+            self.can_replace_equal_item(new_item_stack, current_item_stack)
+        } else {
+            new_toughness > old_toughness
+        }
+    }
+
+    /// Vanilla `Mob.compareWeapons`: prefer the piece dealing more attack damage,
+    /// then the equal-item tiebreak. The base mob has no preferred weapon type, so
+    /// that branch is omitted here.
+    #[expect(
+        clippy::float_cmp,
+        reason = "vanilla compares approximate attribute values for exact equality"
+    )]
+    fn compare_weapons(
+        &self,
+        new_item_stack: &ItemStack,
+        current_item_stack: &ItemStack,
+        slot: EquipmentSlot,
+    ) -> bool {
+        let new_attack_damage = self.approximate_attribute_with(
+            new_item_stack,
+            vanilla_attributes::ATTACK_DAMAGE,
+            slot,
+        );
+        let old_attack_damage = self.approximate_attribute_with(
+            current_item_stack,
+            vanilla_attributes::ATTACK_DAMAGE,
+            slot,
+        );
+        if new_attack_damage == old_attack_damage {
+            self.can_replace_equal_item(new_item_stack, current_item_stack)
+        } else {
+            new_attack_damage > old_attack_damage
+        }
+    }
+
+    /// Vanilla `Mob.getApproximateAttributeWith`: the value of `attribute` this
+    /// mob would have in `slot` while wearing `item_stack`, taking the mob's base
+    /// value (zero when it lacks the attribute) and folding in the item's
+    /// attribute modifiers.
+    fn approximate_attribute_with(
+        &self,
+        item_stack: &ItemStack,
+        attribute: AttributeRef,
+        slot: EquipmentSlot,
+    ) -> f64 {
+        let base_value = self
+            .attributes()
+            .lock()
+            .get_base_value(attribute)
+            .unwrap_or(0.0);
+        item_stack
+            .get_attribute_modifiers()
+            .map_or(base_value, |modifiers| {
+                modifiers.compute(attribute, base_value, slot)
+            })
+    }
+
+    /// Vanilla `Mob.canReplaceEqualItem`: the tiebreak when two pieces grade out
+    /// equally, favoring more enchantments, then less damage, then a custom name.
+    fn can_replace_equal_item(
+        &self,
+        new_item_stack: &ItemStack,
+        current_item_stack: &ItemStack,
+    ) -> bool {
+        let new_enchantments = new_item_stack
+            .get_enchantments()
+            .map_or(0, ItemEnchantments::len);
+        let current_enchantments = current_item_stack
+            .get_enchantments()
+            .map_or(0, ItemEnchantments::len);
+        if new_enchantments != current_enchantments {
+            return new_enchantments > current_enchantments;
+        }
+
+        let new_damage = new_item_stack.get_damage_value();
+        let current_damage = current_item_stack.get_damage_value();
+        if new_damage == current_damage {
+            new_item_stack.has(CUSTOM_NAME) && !current_item_stack.has(CUSTOM_NAME)
+        } else {
+            new_damage < current_damage
+        }
     }
 
     /// Vanilla `Mob.aiStep` looting loop: while this mob may pick up loot and the
@@ -1187,7 +1387,19 @@ pub trait Mob: LivingEntity + Leashable {
         self.tick_move_control();
         self.tick_look_control();
         self.tick_jump_control();
+    }
+
+    /// Vanilla `Mob.aiStep`: the `LivingEntity.aiStep` movement foundation followed
+    /// by the item-pickup looting loop.
+    ///
+    /// Looting lives here rather than in [`mob_server_ai_step`](Self::mob_server_ai_step)
+    /// because vanilla runs it from `aiStep`, not `serverAiStep`: a mob with
+    /// `NoAI` set still collects loot, so the looting must not sit behind the
+    /// `isEffectiveAi` gate that guards the goal/navigation ticks.
+    fn mob_ai_step(&self) -> Option<MoveResult> {
+        let result = self.default_ai_step();
         self.tick_looting();
+        result
     }
 
     fn tick_path_navigation(&self) {
