@@ -2094,9 +2094,27 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         synced_data.set_base_on_fire_flag(self.is_on_fire() || self.has_visual_fire());
     }
 
+    /// Returns true if this entity is currently under the rain.
+    fn is_in_rain(&self) -> bool {
+        let pos = self.block_position();
+        self.level().map_or(false, |level| {
+            level.is_raining_at(pos)
+                || level.is_raining_at(BlockPos::containing(
+                    pos.x() as f64,
+                    self.bounding_box().max_y(),
+                    pos.z() as f64,
+                ))
+        })
+    }
+
     /// Returns true if this entity is currently touching water.
     fn is_in_water(&self) -> bool {
         self.fluid_contact().water_height() > 0.0
+    }
+
+    /// Returns true if this entity is currently touching water or under the rain.
+    fn is_in_water_or_rain(&self) -> bool {
+        self.is_in_water() || self.is_in_rain()
     }
 
     /// Returns true if this entity is currently touching lava.
@@ -3608,6 +3626,46 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return false;
         };
         living.hurt_server(world, source, amount)
+    }
+
+    /// Returns vanilla `Entity.getLightLevelDependentMagicValue`.
+    fn light_level_dependent_magic_value(&self) -> f32 {
+        self.level().map_or_default(|level| {
+            let pos = self.base().position();
+            let block_pos = BlockPos::containing(pos.x, pos.y, pos.z);
+            if level.has_full_chunk(ChunkPos::new(block_pos.x(), block_pos.z())) {
+                return level.light_level_dependent_magic_value(BlockPos::containing(
+                    pos.x,
+                    self.get_eye_y(),
+                    pos.z,
+                ));
+            };
+            0.0
+        })
+    }
+
+    /// Returns vanilla `Entity.distance_to`: It calculates the distance between
+    /// two entities and then it makes the square to normalize the vector
+    fn distance_to(&self, entity: &dyn Entity) -> f64 {
+        let xd = self.position().x - entity.position().x;
+        let yd = self.position().y - entity.position().y;
+        let zd = self.position().z - entity.position().z;
+        (xd * xd + yd * yd + zd * zd).sqrt()
+    }
+
+    /// Returns vanilla `Entity.distanceToSqr`: It calculates the distance between two entities
+    fn distance_to_sqr(&self, entity: &dyn Entity) -> f64 {
+        let xd = self.position().x - entity.position().x;
+        let yd = self.position().y - entity.position().y;
+        let zd = self.position().z - entity.position().z;
+        xd * xd + yd * yd + zd * zd
+    }
+    /// Returns vanilla `Entity.distanceToSqr`: It calculates the distance between a entity and a position
+    fn distance_to_pos_sqr(&self, entity: DVec3) -> f64 {
+        let xd = self.position().x - entity.x;
+        let yd = self.position().y - entity.y;
+        let zd = self.position().z - entity.z;
+        xd * xd + yd * yd + zd * zd
     }
 }
 

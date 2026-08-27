@@ -10,7 +10,7 @@ use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
-use steel_utils::Identifier;
+use steel_utils::{Identifier, value_providers::IntProvider};
 
 #[derive(Deserialize, Debug)]
 pub struct DimensionTypeJson {
@@ -29,7 +29,7 @@ pub struct DimensionTypeJson {
     logical_height: i32,
     infiniburn: String,
     ambient_light: f32,
-    monster_spawn_light_level: MonsterSpawnLightLevelJson,
+    monster_spawn_light_level: IntProvider,
     monster_spawn_block_light_limit: i32,
     has_ender_dragon_fight: bool,
 
@@ -160,36 +160,87 @@ struct DripstoneParticleJson {
     particle_type: String,
 }
 
-#[derive(Deserialize, Debug)]
-#[serde(untagged)]
-pub enum MonsterSpawnLightLevelJson {
-    Simple(i32),
-    Complex {
-        #[serde(rename = "type")]
-        distribution_type: String,
-        min_inclusive: i32,
-        max_inclusive: i32,
-    },
-}
-
-fn generate_monster_spawn_light_level(level: &MonsterSpawnLightLevelJson) -> TokenStream {
-    match level {
-        MonsterSpawnLightLevelJson::Simple(value) => {
-            quote! { MonsterSpawnLightLevel::Simple(#value) }
+fn generate_monster_spawn_light_level(provider: &IntProvider) -> TokenStream {
+    match provider {
+        IntProvider::Constant(v) => {
+            quote! { IntProvider::Constant(#v) }
         }
-        MonsterSpawnLightLevelJson::Complex {
-            distribution_type,
+        IntProvider::Uniform {
             min_inclusive,
             max_inclusive,
         } => {
-            let dist_type = distribution_type.as_str();
-            quote! {
-                MonsterSpawnLightLevel::Complex {
-                    distribution_type: #dist_type,
-                    min_inclusive: #min_inclusive,
-                    max_inclusive: #max_inclusive,
-                }
+            quote! { IntProvider::Uniform {
+                min_inclusive: #min_inclusive,
+                max_inclusive: #max_inclusive
+            } }
+        }
+        IntProvider::BiasedToBottom {
+            min_inclusive,
+            max_inclusive,
+        } => {
+            quote! { IntProvider::BiasedToBottom {
+                min_inclusive: #min_inclusive,
+                max_inclusive: #max_inclusive
+            } }
+        }
+        IntProvider::VeryBiasedToBottom {
+            min_inclusive,
+            max_inclusive,
+            inner,
+        } => {
+            quote! { IntProvider::VeryBiasedToBottom {
+                min_inclusive: #min_inclusive,
+                max_inclusive: #max_inclusive,
+                inner: #inner
+            } }
+        }
+        IntProvider::Trapezoid { min, max, plateau } => {
+            quote! { IntProvider:: {
+                min: #min,
+                max: #max,
+                plateau: #plateau
+            } }
+        }
+        IntProvider::ClampedNormal {
+            mean,
+            deviation,
+            min_inclusive,
+            max_inclusive,
+        } => {
+            quote! { IntProvider::ClampedNormal {
+                mean: #mean,
+                deviation: #deviation,
+                min_inclusive: #min_inclusive,
+                max_inclusive: #max_inclusive
+            } }
+        }
+        IntProvider::Clamped {
+            source,
+            min_inclusive,
+            max_inclusive,
+        } => {
+            let source = generate_monster_spawn_light_level(source);
+            quote! { IntProvider::Clamped {
+                source: Box::new(#source),
+                min_inclusive: #min_inclusive,
+                max_inclusive: #max_inclusive
+            } }
+        }
+        IntProvider::WeightedList { distribution } => {
+            let mut distribution_stream = TokenStream::new();
+            for provider in distribution {
+                let data = generate_monster_spawn_light_level(&provider.data);
+                let weight = provider.weight;
+                distribution_stream.extend(quote! {
+                    WeightedIntProvider {
+                        data: #data,
+                        weight: #weight
+                    },
+                });
             }
+            quote! { IntProvider::WeightedList {
+                distribution: vec![#distribution_stream]
+            } }
         }
     }
 }
@@ -310,10 +361,10 @@ pub(crate) fn build() -> TokenStream {
 
     stream.extend(quote! {
         use crate::dimension_type::{
-            DimensionType, DimensionTypeRegistry, MonsterSpawnLightLevel,
+            DimensionType, DimensionTypeRegistry,
             BedRule, BedRuleValue, MoodSound, MusicEntry, BackgroundMusic,
         };
-        use steel_utils::Identifier;
+        use steel_utils::{Identifier, value_providers::{IntProvider, WeightedIntProvider}};
         use std::borrow::Cow;
     });
 

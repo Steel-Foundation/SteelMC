@@ -19,6 +19,7 @@ use steel_registry::vanilla_entity_data::FireworkRocketEntityData;
 use steel_registry::{sound_events, vanilla_damage_types, vanilla_game_events, vanilla_items};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
+use steel_utils::random::triangle_random;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::behavior::BLOCK_BEHAVIORS;
@@ -479,10 +480,6 @@ impl FireworkRocketEntity {
     pub fn set_item(&self, item: ItemStack) {
         self.entity_data.lock().id_fireworks_item.set(item);
     }
-}
-
-fn triangle_random(mode: f64, deviation: f64) -> f64 {
-    mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
 }
 
 fn elytra_boosted_velocity(movement: DVec3, look_angle: DVec3) -> DVec3 {

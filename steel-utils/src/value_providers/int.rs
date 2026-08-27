@@ -1,4 +1,8 @@
 use serde::{Deserialize, Deserializer, de::Error as _};
+use simdnbt::{
+    ToNbtTag,
+    owned::{NbtCompound, NbtList, NbtTag},
+};
 
 use crate::random::Random;
 
@@ -402,6 +406,98 @@ impl<'de> Deserialize<'de> for IntProvider {
                 Tagged::WeightedList { distribution } => Self::WeightedList { distribution },
             },
         )
+    }
+}
+
+impl ToNbtTag for &IntProvider {
+    fn to_nbt_tag(self) -> NbtTag {
+        match self {
+            IntProvider::Constant(v) => NbtTag::Int(*v),
+            IntProvider::Uniform {
+                min_inclusive,
+                max_inclusive,
+            } => {
+                let mut inner = NbtCompound::new();
+                inner.insert("type", "minecraft:uniform");
+                inner.insert("min_inclusive", *min_inclusive);
+                inner.insert("max_inclusive", *max_inclusive);
+                NbtTag::Compound(inner)
+            }
+            IntProvider::BiasedToBottom {
+                min_inclusive,
+                max_inclusive,
+            } => {
+                let mut inner = NbtCompound::new();
+                inner.insert("type", "minecraft:biased_to_bottom");
+                inner.insert("min_inclusive", *min_inclusive);
+                inner.insert("max_inclusive", *max_inclusive);
+                NbtTag::Compound(inner)
+            }
+            IntProvider::VeryBiasedToBottom {
+                min_inclusive,
+                max_inclusive,
+                inner,
+            } => {
+                let mut inner_comp = NbtCompound::new();
+                inner_comp.insert("type", "minecraft:very_biased_to_bottom");
+                inner_comp.insert("min_inclusive", *min_inclusive);
+                inner_comp.insert("max_inclusive", *max_inclusive);
+                inner_comp.insert("default_inner", *inner);
+                NbtTag::Compound(inner_comp)
+            }
+            IntProvider::Trapezoid { min, max, plateau } => {
+                let mut inner = NbtCompound::new();
+                inner.insert("type", "minecraft:trapezoid");
+                inner.insert("min", *min);
+                inner.insert("max", *max);
+                inner.insert("plateau", *plateau);
+                NbtTag::Compound(inner)
+            }
+            IntProvider::ClampedNormal {
+                mean,
+                deviation,
+                min_inclusive,
+                max_inclusive,
+            } => {
+                let mut inner = NbtCompound::new();
+                inner.insert("type", "minecraft:clamped_normal");
+                inner.insert("mean", *mean);
+                inner.insert("deviation", *deviation);
+                inner.insert("min_inclusive", *min_inclusive);
+                inner.insert("max_inclusive", *max_inclusive);
+                NbtTag::Compound(inner)
+            }
+            IntProvider::Clamped {
+                source,
+                min_inclusive,
+                max_inclusive,
+            } => {
+                let mut inner = NbtCompound::new();
+                inner.insert("type", "minecraft:clamped");
+                inner.insert("source", source.to_nbt_tag());
+                inner.insert("min_inclusive", *min_inclusive);
+                inner.insert("max_inclusive", *max_inclusive);
+                NbtTag::Compound(inner)
+            }
+            IntProvider::WeightedList { distribution } => {
+                let mut inner = NbtCompound::new();
+                inner.insert("type", "minecraft:weighted_list");
+                let distribution = distribution
+                    .iter()
+                    .map(|p| {
+                        let mut inner = NbtCompound::new();
+                        inner.insert("data", &p.data);
+                        inner.insert("weight", p.weight);
+                        inner
+                    })
+                    .collect::<Vec<_>>();
+                inner.insert(
+                    "distribution",
+                    NbtTag::List(NbtList::Compound(distribution)),
+                );
+                NbtTag::Compound(inner)
+            }
+        }
     }
 }
 

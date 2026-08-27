@@ -25,6 +25,7 @@ use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLO
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
+use steel_utils::random::triangle_random;
 use steel_utils::{UuidExt, WorldAabb};
 use uuid::Uuid;
 
@@ -47,11 +48,6 @@ const MAX_ENTITY_HIT_MARGIN: f64 = 0.3;
 
 /// Vanilla `ThrowableItemProjectile` spawn offset below the shooter's eye.
 const THROWN_ITEM_SPAWN_EYE_OFFSET: f64 = 0.1;
-
-/// Mirrors vanilla `RandomSource.triangle(mode, deviation)`.
-fn triangle_random(mode: f64, deviation: f64) -> f64 {
-    mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
-}
 
 /// Result of a projectile move-vector raycast (vanilla `HitResult`).
 pub enum ProjectileHit {
