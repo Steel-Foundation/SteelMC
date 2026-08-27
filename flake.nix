@@ -46,6 +46,16 @@
         let
           toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
+          # rust-analyzer needs rust-src to load the standard library, and
+          # rust-toolchain.toml pins only the channel. Kept out of the package
+          # toolchain, which does not need either component.
+          devToolchain = toolchain.override {
+            extensions = [
+              "rust-src"
+              "rust-analyzer"
+            ];
+          };
+
           rustPlatform = pkgs.makeRustPlatform {
             cargo = toolchain;
             rustc = toolchain;
@@ -129,7 +139,7 @@
           };
         in
         {
-          inherit pkgs toolchain steel;
+          inherit pkgs toolchain devToolchain steel;
         }
       );
     in
@@ -137,7 +147,7 @@
       devShells = lib.mapAttrs (_: system: {
         default = system.pkgs.mkShell {
           packages = [
-            system.toolchain
+            system.devToolchain
 
             system.pkgs.lld
 
