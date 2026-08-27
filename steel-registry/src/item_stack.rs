@@ -731,9 +731,22 @@ impl ItemStack {
 
     /// Applies furnace smelting to convert this item (e.g., raw iron -> iron ingot).
     pub fn apply_furnace_smelt(&mut self, use_input_count: bool) {
-        if let Some(result) = REGISTRY.recipes.find_smelting_result(self, use_input_count) {
-            *self = result;
-        }
+        let input = crate::recipe::SingleItemRecipeInput::new(self.copy_with_count(self.count()));
+        let Some(recipe) = REGISTRY
+            .recipes
+            .by_type(&crate::recipe::vanilla_recipe_types::SMELTING)
+            .find_match(&input)
+        else {
+            return;
+        };
+        let count = if use_input_count { self.count() } else { 1 };
+        let mut result = recipe.data().result.create();
+        result.set_count(
+            count
+                .saturating_mul(result.count())
+                .min(result.max_stack_size()),
+        );
+        *self = result;
     }
 
     /// Creates an exploration map pointing to a structure.

@@ -12,7 +12,7 @@ use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
 use steel_registry::item_stack::ItemStack;
-use steel_registry::recipe::CraftingInput;
+use steel_registry::recipe::{CraftingInput, vanilla_recipe_types};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_biome_tags;
 use steel_registry::vanilla_entity_data::SheepEntityData;
@@ -38,6 +38,7 @@ use crate::entity::{
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
     PathfinderMob, SpawnGroupData,
 };
+use crate::inventory::recipe_manager;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
@@ -312,10 +313,17 @@ impl SheepEntity {
                     1,
                     vec![ItemStack::new(dye1_item), ItemStack::new(dye2_item)],
                 );
-                let Some(recipe) = REGISTRY.recipes.find_crafting_recipe_2x2(&input) else {
+                let Some(recipe) = REGISTRY
+                    .recipes
+                    .by_type(&vanilla_recipe_types::CRAFTING)
+                    .find_match(&input)
+                else {
                     continue;
                 };
-                if let Some(color) = recipe.assemble().get(DYE).copied() {
+                if let Some(color) = recipe_manager::assemble_recipe(recipe, &input)
+                    .get(DYE)
+                    .copied()
+                {
                     return Some(color);
                 }
             }
