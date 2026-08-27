@@ -891,6 +891,11 @@ impl LivingEntityBase {
         self.state.lock().rotation.y_body_rot = y_body_rot;
     }
 
+    /// Sets vanilla `yBodyRotO`.
+    pub fn set_y_body_rot_o(&self, y_body_rot_o: f32) {
+        self.state.lock().rotation.y_body_rot_o = y_body_rot_o;
+    }
+
     /// Returns vanilla `yHeadRot`.
     #[must_use]
     pub fn y_head_rot(&self) -> f32 {
@@ -900,6 +905,11 @@ impl LivingEntityBase {
     /// Sets vanilla `yHeadRot`.
     pub fn set_y_head_rot(&self, y_head_rot: f32) {
         self.state.lock().rotation.y_head_rot = y_head_rot;
+    }
+
+    /// Sets vanilla `yHeadRotO`.
+    pub fn set_y_head_rot_o(&self, y_head_rot_o: f32) {
+        self.state.lock().rotation.y_head_rot_o = y_head_rot_o;
     }
 
     /// Copies current living head/body rotations to their old-rotation fields.

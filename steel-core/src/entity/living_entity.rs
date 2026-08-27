@@ -431,6 +431,15 @@ pub trait LivingEntity: Entity {
         !self.is_invulnerable() && self.can_be_seen_by_anyone()
     }
 
+    /// Returns vanilla `LivingEntity.attackable()`.
+    ///
+    /// This is the mob-targeting gate (wither, vindicator). It is not
+    /// [`Entity::attackable`], which mirrors `Entity.isAttackable` and is what
+    /// player punches use.
+    fn is_living_attackable(&self) -> bool {
+        true
+    }
+
     /// Returns vanilla `LivingEntity.canAttack()`.
     fn can_attack(&self, target: &dyn LivingEntity) -> bool {
         if target.entity_type() == &vanilla_entities::PLAYER
@@ -1502,6 +1511,20 @@ pub trait LivingEntity: Entity {
         true
     }
 
+    /// Returns vanilla `LivingEntity.getEquipmentSlotForItem`.
+    fn equipment_slot_for_item(&self, item_stack: &ItemStack) -> EquipmentSlot {
+        item_stack
+            .get_equippable()
+            .filter(|equippable| self.can_use_slot(equippable.slot))
+            .map_or(EquipmentSlot::MainHand, |equippable| equippable.slot)
+    }
+
+    /// Runs vanilla `LivingEntity.tickHeadTurn`.
+    ///
+    /// Armor stands replace this with yaw-locked body rotation. Mob body
+    /// control continues to run from [`Self::tick_living_state`].
+    fn tick_head_turn(&self) {}
+
     /// Returns the effective vanilla dispenser slot gate for living entities and mobs.
     fn can_dispenser_equip_into_slot(&self, _slot: EquipmentSlot) -> bool {
         self.as_mob().is_none_or(Mob::can_pick_up_loot)
@@ -1793,6 +1816,7 @@ pub trait LivingEntity: Entity {
 
     /// Ticks living-entity counters after movement.
     fn tick_living_state(&self) {
+        self.tick_head_turn();
         if let Some(mob) = self.as_mob() {
             mob.tick_body_rotation_control();
         }

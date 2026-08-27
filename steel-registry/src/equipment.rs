@@ -107,6 +107,12 @@ impl EquipmentSlot {
         }
     }
 
+    /// Returns vanilla `EquipmentSlot.getFilterBit(offset)`.
+    #[must_use]
+    pub const fn filter_bit(self, offset: i32) -> i32 {
+        self.id() + offset
+    }
+
     /// Returns the equipment slot with the given vanilla protocol ID.
     #[must_use]
     pub const fn by_id(id: i32) -> Self {
@@ -310,6 +316,9 @@ mod tests {
         for (slot, id) in slots {
             assert_eq!(slot.id(), id);
             assert_eq!(EquipmentSlot::by_id(id), slot);
+            assert_eq!(slot.filter_bit(0), id);
+            assert_eq!(slot.filter_bit(8), id + 8);
+            assert_eq!(slot.filter_bit(16), id + 16);
         }
         assert_eq!(EquipmentSlot::by_id(-1), EquipmentSlot::MainHand);
         assert_eq!(EquipmentSlot::by_id(8), EquipmentSlot::MainHand);

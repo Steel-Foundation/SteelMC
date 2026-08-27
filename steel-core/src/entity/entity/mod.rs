@@ -328,8 +328,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns whether this entity can be attacked.
     ///
-    /// Mirrors vanilla `Entity.isAttackable`. Concrete entities that override
-    /// vanilla to reject player attacks should override this method.
+    /// Mirrors vanilla `Entity.isAttackable`, the gate used by
+    /// `Player.cannotAttack`. This is not vanilla `LivingEntity.attackable()`,
+    /// which is the mob-targeting gate on [`LivingEntity::is_living_attackable`].
     fn attackable(&self) -> bool {
         true
     }
