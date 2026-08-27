@@ -7,7 +7,7 @@ use std::f64::consts::TAU;
 use std::sync::Arc;
 
 use glam::DVec3;
-use steel_utils::Downcast as _;
+use steel_utils::{BlockPos, Downcast as _};
 
 use super::FoxEntity;
 use crate::entity::ai::goal::{Goal, GoalControls, reduced_tick_delay};
@@ -128,13 +128,12 @@ impl Goal for PerchAndSearchGoal {
         let Some(fox) = as_fox(mob) else {
             return false;
         };
-        // Vanilla also gates on `!alertable()`, which scans for threatening mobs.
-        // None of those entities exist yet, so a fox is never alertable.
         fox.last_hurt_by_mob().is_none()
             && rand::random::<f32>() < PERCH_CHANCE
             && !fox.is_sleeping()
             && Mob::target(fox).is_none()
             && mob.mob_base().navigation().lock().is_done()
+            && !fox.is_alertable()
             && !fox.is_pouncing()
             && !fox.is_crouching()
     }
@@ -203,18 +202,20 @@ impl FoxSleepGoal {
         let (Some(fox), Some(world)) = (as_fox(mob), mob.level()) else {
             return false;
         };
-        // Vanilla also gates on `!alertable()` (no threatening mob nearby); no such
-        // entities exist yet, so that check is always satisfied.
-        world.is_bright_outside() && has_shelter(mob, &world) && !fox.is_in_powder_snow()
+        world.is_bright_outside()
+            && has_shelter(mob, &world)
+            && !fox.is_alertable()
+            && !fox.is_in_powder_snow()
     }
 }
 
-/// Returns whether the fox is under cover (vanilla `hasShelter`, the sky-light half).
+/// Returns whether the fox is under cover (vanilla `hasShelter`): the block at the
+/// top of its bounding box is hidden from the sky and has a non-negative walk-target
+/// value (it is on grass or bright enough).
 fn has_shelter(mob: &dyn PathfinderMob, world: &Arc<World>) -> bool {
-    // Vanilla also requires `getWalkTargetValue(pos) >= 0`, which rejects hazard
-    // blocks; a resting fox is never standing on one of those, so the sky check
-    // is what matters in practice.
-    !world.can_see_sky(mob.block_position())
+    let position = mob.position();
+    let pos = BlockPos::containing(position.x, mob.bounding_box().max_y(), position.z);
+    !world.can_see_sky(pos) && mob.get_walk_target_value(pos) >= 0.0
 }
 
 impl Goal for FoxSleepGoal {

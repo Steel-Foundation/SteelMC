@@ -11,7 +11,7 @@ use steel_macros::entity_behavior;
 use steel_protocol::packets::game::{CTakeItemEntity, SoundSource};
 use steel_registry::data_components::vanilla_components::{CONSUMABLE, FOOD};
 use steel_registry::entity_type::{
-    EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
+    EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef, MobCategory,
 };
 use steel_registry::entity_variant::FoxVariant;
 use steel_registry::item_stack::ItemStack;
@@ -23,7 +23,7 @@ use steel_registry::{
     REGISTRY, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_entities, vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
-use steel_utils::types::InteractionHand;
+use steel_utils::types::{GameType, InteractionHand};
 use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, UuidExt};
 use uuid::Uuid;
 
@@ -32,6 +32,7 @@ use crate::entity::ai::goal::{
     BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal,
     WaterAvoidingRandomStrollGoal,
 };
+use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
@@ -80,6 +81,12 @@ const FOX_SPIT_PICKUP_DELAY: i32 = 40;
 const FOX_SCREECH_CHANCE: f32 = 0.1;
 /// Range, in blocks, within which a player suppresses the fox screech.
 const FOX_SCREECH_PLAYER_RANGE: f64 = 16.0;
+
+/// Horizontal reach of the fox alert scan (vanilla `alertable` inflates the
+/// bounding box by this on X and Z and uses it as the targeting range).
+const FOX_ALERT_RANGE: f64 = 12.0;
+/// Vertical reach of the fox alert scan (vanilla inflates the box by this on Y).
+const FOX_ALERT_VERTICAL_RANGE: f64 = 6.0;
 
 /// Chance a naturally spawned fox holds an item (vanilla `populateDefaultEquipmentSlots`).
 const FOX_SPAWN_HELD_ITEM_CHANCE: f32 = 0.2;
@@ -139,9 +146,10 @@ impl FoxEntity {
 
         {
             // Fox goals at their vanilla priorities. The stock panic, breed, follow-parent,
-            // and look-at-player goals stand in for the fox-specific variants, which differ
-            // only in behaviour tied to threats and trust that no entity drives yet. The
-            // hunting, avoid, and defend goals wait for the prey and threat mobs they need.
+            // and look-at-player goals stand in for the fox-specific variants.
+            // TODO(fox-goals): swap in the bespoke panic/breed/follow-parent/look variants
+            // (they differ only in threat- and trust-driven behaviour) and add the hunting,
+            // avoid, and defend goals once the prey and threat mobs they need exist.
             let mut goal_selector = mob_base.goal_selector().lock();
             goal_selector.add_goal(0, FloatGoal::new(&mob_base));
             goal_selector.add_goal(2, PanicGoal::new(2.2));
@@ -285,6 +293,31 @@ impl FoxEntity {
             || *entity_data.trusted_id_1.get() == Some(uuid)
     }
 
+    /// Returns vanilla `Fox.FoxBehaviorGoal.alertable`: whether a nearby entity
+    /// the fox treats as a threat or prey is within alert range. A resting or
+    /// perching fox uses this to stay wary. Mirrors vanilla's combat targeting
+    /// (range, no line-of-sight requirement) plus `FoxAlertableEntitiesSelector`.
+    pub(crate) fn is_alertable(&self) -> bool {
+        let Some(world) = self.level() else {
+            return false;
+        };
+        let trusted = self.trusted_ids();
+        let alertable_targeting = TargetingConditions::for_combat()
+            .range(FOX_ALERT_RANGE)
+            .ignore_line_of_sight()
+            .selector(move |target, _world| fox_alertable_selector(target, &trusted));
+        let search_box = self.bounding_box().inflate_xyz(
+            FOX_ALERT_RANGE,
+            FOX_ALERT_VERTICAL_RANGE,
+            FOX_ALERT_RANGE,
+        );
+        world.has_entity_in_aabb_matching(&search_box, |entity| {
+            entity.as_living_entity().is_some_and(|living| {
+                alertable_targeting.test(world.as_ref(), Some(self as &dyn LivingEntity), living)
+            })
+        })
+    }
+
     /// Adds a trusted entity uuid, filling the first free of the two trusted slots.
     pub fn add_trusted(&self, uuid: Uuid) {
         let mut entity_data = self.entity_data.lock();
@@ -420,15 +453,43 @@ impl FoxEntity {
 
     /// Advances the vanilla `Fox.ticksSinceEaten` timer that gates item swapping.
     ///
-    /// Vanilla also finishes eating held food here, but that consumes the item and
-    /// applies its on-use effects (a chorus fruit teleports the fox, for example),
-    /// which needs a mob consume path Steel does not have yet. Only the timer runs
-    /// for now, so a fox picks up and holds food without eating it.
+    /// Only the timer runs for now, so a fox picks up and holds food without eating it.
+    // TODO(fox-eating): finish eating held food here (vanilla consumes the item and
+    // applies its on-use effects, e.g. a chorus fruit teleports the fox) once Steel
+    // has a mob consume path.
     fn advance_feeding_timer(&self) {
         if Entity::is_alive(self) {
             *self.ticks_since_eaten.lock() += 1;
         }
     }
+}
+
+/// Vanilla `Fox.FoxAlertableEntitiesSelector`: which nearby entities make a fox
+/// wary. Foxes ignore other foxes; react to chickens, rabbits, and monsters;
+/// ignore creative or spectating players and anyone they trust; and otherwise
+/// react to any entity that is awake and not sneaking.
+fn fox_alertable_selector(target: &dyn LivingEntity, trusted: &[Uuid]) -> bool {
+    let entity_type = target.entity_type();
+    if entity_type == &vanilla_entities::FOX {
+        return false;
+    }
+    if entity_type == &vanilla_entities::CHICKEN
+        || entity_type == &vanilla_entities::RABBIT
+        || entity_type.mob_category == MobCategory::Monster
+    {
+        return true;
+    }
+    // TODO(tamable-animal): vanilla also alerts on an untamed `TamableAnimal`
+    // (wolf, cat, parrot) here; none exist in Steel yet, so that branch is omitted.
+    if let Some(player) = target.as_player()
+        && (player.is_spectator() || player.game_mode() == GameType::Creative)
+    {
+        return false;
+    }
+    if trusted.contains(&target.uuid()) {
+        return false;
+    }
+    !target.is_sleeping() && !target.is_discrete()
 }
 
 impl Entity for FoxEntity {
