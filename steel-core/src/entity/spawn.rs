@@ -379,7 +379,7 @@ mod tests {
         pig.set_custom_name(Some(TextComponent::plain("Existing")));
 
         let mut payload = NbtCompound::new();
-        payload.insert("Age", -24_000);
+        payload.insert("Age", pig.get_baby_start_age());
         payload.insert("variant", vanilla_pig_variants::WARM.key.to_string());
         let entity_data = EntityData::new(
             &vanilla_entities::PIG,
@@ -391,7 +391,7 @@ mod tests {
         apply_item_stack_components(&entity, &spawn_egg)
             .expect("valid typed entity data should load");
 
-        assert_eq!(pig.get_age(), -24_000);
+        assert_eq!(pig.get_age(), pig.get_baby_start_age());
         assert_eq!(pig.variant().key, vanilla_pig_variants::WARM.key);
         assert!(AgeableMob::is_baby(pig.as_ref()));
         assert_eq!(pig.custom_name(), Some(TextComponent::plain("Existing")));
