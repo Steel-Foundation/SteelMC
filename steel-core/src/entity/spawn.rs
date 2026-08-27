@@ -2,7 +2,7 @@ use std::{io::Cursor, sync::Arc};
 
 use glam::DVec3;
 use simdnbt::borrow::read_compound;
-use steel_registry::data_components::vanilla_components::{CUSTOM_NAME, ENTITY_DATA};
+use steel_registry::data_components::vanilla_components::{CUSTOM_DATA, CUSTOM_NAME, ENTITY_DATA};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::nbt::merge_nbt_compounds;
@@ -138,13 +138,22 @@ pub(crate) fn add_spawned_entity(
 }
 
 /// Applies the implicit entity data carried by an item stack.
+pub(crate) fn apply_implicit_item_stack_components(entity: &SharedEntity, item_stack: &ItemStack) {
+    if let Some(custom_name) = item_stack.get(CUSTOM_NAME) {
+        entity.set_custom_name(Some(custom_name.clone()));
+    }
+
+    if let Some(custom_data) = item_stack.get(CUSTOM_DATA) {
+        entity.set_custom_data(custom_data.copy_tag());
+    }
+}
+
+/// Applies all entity data carried by an item stack during a normal item spawn.
 pub(crate) fn apply_item_stack_components(
     entity: &SharedEntity,
     item_stack: &ItemStack,
 ) -> Result<(), EntitySpawnError> {
-    if let Some(custom_name) = item_stack.get(CUSTOM_NAME) {
-        entity.set_custom_name(Some(custom_name.clone()));
-    }
+    apply_implicit_item_stack_components(entity, item_stack);
 
     let Some(entity_data) = item_stack.get(ENTITY_DATA) else {
         return Ok(());

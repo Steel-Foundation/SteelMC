@@ -19,7 +19,7 @@ use crate::behavior::{
 };
 use crate::entity::{
     AgeableMob, EntitySpawnPlacement, EntitySpawnReason, EntitySpawnRequest, Mob, SharedEntity,
-    add_spawned_entity, apply_item_stack_components, create_entity_instance, spawn_entity,
+    add_spawned_entity, apply_implicit_item_stack_components, create_entity_instance, spawn_entity,
 };
 use crate::player::Player;
 use crate::world::ClipFluid;
@@ -130,7 +130,7 @@ impl SpawnEggItem {
         offspring.set_rotation((0.0, 0.0));
         offspring.set_old_position_to_current();
         offspring.base().set_old_rotation_to_current();
-        apply_item_stack_components(&offspring, stack).ok()?;
+        apply_implicit_item_stack_components(&offspring, stack);
         add_spawned_entity(&world, offspring.clone()).ok()?;
         Some(offspring)
     }

@@ -191,7 +191,7 @@ pub trait ItemBehavior: Send + Sync {
             .map(|weapon| weapon.item_damage_per_attack)
     }
 
-    /// Returns this item behavior as a [`SpawnEggItem`], if applicable.
+    /// Returns this item behavior as a `SpawnEggItem`.
     fn as_spawn_egg(&self) -> Option<&SpawnEggItem> {
         None
     }
