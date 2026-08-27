@@ -6,6 +6,7 @@ use steel_registry::{init_vanilla_registry, vanilla_attributes, vanilla_entities
 use crate::behavior::init_behaviors;
 use crate::entity::SharedEntity;
 use crate::entity::ai::goal::Goal;
+use crate::entity::entities::PigEntity;
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
 use super::*;
@@ -297,6 +298,36 @@ fn fox_sleep_goal_stays_usable_while_sleeping() {
     assert!(
         goal.can_use(fox.as_ref()),
         "a still, already-sleeping fox keeps the sleep goal active"
+    );
+}
+
+#[test]
+fn fox_is_alertable_to_a_nearby_untrusted_entity() {
+    let (world, fox) = world_with_fox("fox_alertable");
+
+    // A lone fox has nothing to be wary of.
+    assert!(!fox.is_alertable(), "a fox alone is not alertable");
+
+    // A nearby awake, non-sneaking entity makes the fox wary (vanilla's else-branch).
+    let pig = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(9.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&pig) as SharedEntity)
+        .expect("pig should attach to the loaded chunk");
+    assert!(
+        fox.is_alertable(),
+        "a nearby untrusted entity makes a fox alertable"
+    );
+
+    // A trusted entity is ignored.
+    fox.add_trusted(pig.uuid());
+    assert!(
+        !fox.is_alertable(),
+        "a trusted entity does not alert the fox"
     );
 }
 
