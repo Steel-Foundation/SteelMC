@@ -1275,6 +1275,22 @@ mod tests {
         encoded_bytes(&[marker])
     }
 
+    fn setup_test_connection() -> (
+        Arc<JavaConnection>,
+        mpsc::UnboundedSender<OutboundPacket>,
+        mpsc::UnboundedReceiver<OutboundPacket>,
+    ) {
+        let (outgoing, receiver) = mpsc::unbounded_channel();
+        let connection = Arc::new(JavaConnection::new(
+            outgoing.clone(),
+            CancellationToken::new(),
+            None,
+            1,
+            Weak::new(),
+        ));
+        (connection, outgoing, receiver)
+    }
+
     #[derive(Default)]
     struct RecordingWriterState {
         bytes: Vec<u8>,
@@ -1490,14 +1506,7 @@ mod tests {
         let writer = RecordingWriter {
             state: Arc::clone(&state),
         };
-        let (outgoing, mut receiver) = mpsc::unbounded_channel();
-        let connection = Arc::new(JavaConnection::new(
-            outgoing.clone(),
-            CancellationToken::new(),
-            None,
-            1,
-            Weak::new(),
-        ));
+        let (connection, outgoing, mut receiver) = setup_test_connection();
         let sender_connection = Arc::clone(&connection);
         let sender = tokio::spawn(async move {
             let mut network_writer = TCPNetworkEncoder::new(writer);
@@ -1622,14 +1631,7 @@ mod tests {
         let (_, server_write) = server.into_split();
 
         let network_writer = TCPNetworkEncoder::new(BufWriter::new(server_write));
-        let (outgoing, receiver) = mpsc::unbounded_channel();
-        let connection = Arc::new(JavaConnection::new(
-            outgoing.clone(),
-            CancellationToken::new(),
-            None,
-            1,
-            Weak::new(),
-        ));
+        let (connection, outgoing, receiver) = setup_test_connection();
         let sender_connection = Arc::clone(&connection);
         let sender = tokio::spawn(async move {
             sender_connection.sender(receiver, network_writer).await;
@@ -1676,14 +1678,7 @@ mod tests {
             pause_at: PausePoint::WriteAfter(1),
         };
         let writer_control = writer.clone();
-        let (outgoing, mut receiver) = mpsc::unbounded_channel();
-        let connection = Arc::new(JavaConnection::new(
-            outgoing.clone(),
-            CancellationToken::new(),
-            None,
-            1,
-            Weak::new(),
-        ));
+        let (connection, outgoing, mut receiver) = setup_test_connection();
         let sender_connection = Arc::clone(&connection);
         let sender = tokio::spawn(async move {
             let mut network_writer = TCPNetworkEncoder::new(writer);
@@ -1760,14 +1755,7 @@ mod tests {
             pause_at: PausePoint::Flush,
         };
         let writer_control = writer.clone();
-        let (outgoing, mut receiver) = mpsc::unbounded_channel();
-        let connection = Arc::new(JavaConnection::new(
-            outgoing.clone(),
-            CancellationToken::new(),
-            None,
-            1,
-            Weak::new(),
-        ));
+        let (connection, outgoing, mut receiver) = setup_test_connection();
         let sender_connection = Arc::clone(&connection);
         let sender = tokio::spawn(async move {
             let mut network_writer = TCPNetworkEncoder::new(writer);
@@ -1835,14 +1823,7 @@ mod tests {
             pause_at: PausePoint::WriteAfter(1),
         };
         let writer_control = writer.clone();
-        let (outgoing, mut receiver) = mpsc::unbounded_channel();
-        let connection = Arc::new(JavaConnection::new(
-            outgoing.clone(),
-            CancellationToken::new(),
-            None,
-            1,
-            Weak::new(),
-        ));
+        let (connection, outgoing, mut receiver) = setup_test_connection();
         let sender_connection = Arc::clone(&connection);
         let sender = tokio::spawn(async move {
             let mut network_writer = TCPNetworkEncoder::new(writer);
@@ -1897,14 +1878,7 @@ mod tests {
             paused: Arc::clone(&paused),
             pause_at: PausePoint::WriteAfter(1),
         };
-        let (outgoing, mut receiver) = mpsc::unbounded_channel();
-        let connection = Arc::new(JavaConnection::new(
-            outgoing.clone(),
-            CancellationToken::new(),
-            None,
-            1,
-            Weak::new(),
-        ));
+        let (connection, outgoing, mut receiver) = setup_test_connection();
         let sender_connection = Arc::clone(&connection);
         let sender = tokio::spawn(async move {
             let mut network_writer = TCPNetworkEncoder::new(writer);
