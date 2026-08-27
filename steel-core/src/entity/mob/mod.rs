@@ -26,8 +26,8 @@ use steel_registry::loot_table::LootTableRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
-    REGISTRY, RegistryExt, vanilla_attributes, vanilla_damage_types, vanilla_entities,
-    vanilla_game_events, vanilla_game_rules,
+    REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_attributes, vanilla_damage_types,
+    vanilla_entities, vanilla_game_events, vanilla_game_rules,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
@@ -748,9 +748,16 @@ pub trait Mob: LivingEntity + Leashable {
         }
     }
 
-    /// Vanilla `Mob.compareWeapons`: prefer the piece dealing more attack damage,
-    /// then the equal-item tiebreak. The base mob has no preferred weapon type, so
-    /// that branch is omitted here.
+    /// Vanilla `Mob.getPreferredWeaponType`: the item tag a mob favors for its
+    /// main hand regardless of raw damage (a skeleton keeps its bow over a
+    /// stronger sword). The base mob has no preference; specific mobs override it.
+    fn get_preferred_weapon_type(&self) -> Option<Identifier> {
+        None
+    }
+
+    /// Vanilla `Mob.compareWeapons`: keep a piece of the mob's preferred weapon
+    /// type over one that is not, otherwise prefer more attack damage, then the
+    /// equal-item tiebreak.
     #[expect(
         clippy::float_cmp,
         reason = "vanilla compares approximate attribute values for exact equality"
@@ -761,6 +768,21 @@ pub trait Mob: LivingEntity + Leashable {
         current_item_stack: &ItemStack,
         slot: EquipmentSlot,
     ) -> bool {
+        if let Some(preferred_weapon_type) = self.get_preferred_weapon_type() {
+            let current_is_preferred = REGISTRY
+                .items
+                .is_in_tag(current_item_stack.item(), &preferred_weapon_type);
+            let new_is_preferred = REGISTRY
+                .items
+                .is_in_tag(new_item_stack.item(), &preferred_weapon_type);
+            if current_is_preferred && !new_is_preferred {
+                return false;
+            }
+            if !current_is_preferred && new_is_preferred {
+                return true;
+            }
+        }
+
         let new_attack_damage = self.approximate_attribute_with(
             new_item_stack,
             vanilla_attributes::ATTACK_DAMAGE,

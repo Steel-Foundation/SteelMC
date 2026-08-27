@@ -4,6 +4,7 @@ use glam::DVec3;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
+use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_items;
 use steel_registry::{
     REGISTRY, init_vanilla_registry, vanilla_attributes, vanilla_blocks, vanilla_damage_types,
@@ -89,6 +90,7 @@ struct DespawnTestMob {
     nearest_player_distance_sqr: Option<f64>,
     remove_when_far_away: bool,
     controlling_passenger: SyncMutex<Option<SharedEntity>>,
+    preferred_weapon_type: SyncMutex<Option<Identifier>>,
 }
 
 impl DespawnTestMob {
@@ -135,7 +137,12 @@ impl DespawnTestMob {
             nearest_player_distance_sqr,
             remove_when_far_away,
             controlling_passenger: SyncMutex::new(None),
+            preferred_weapon_type: SyncMutex::new(None),
         }
+    }
+
+    fn set_preferred_weapon_type(&self, tag: Identifier) {
+        *self.preferred_weapon_type.lock() = Some(tag);
     }
 
     fn set_controlling_passenger(&self, passenger: SharedEntity) {
@@ -247,6 +254,10 @@ impl Mob for DespawnTestMob {
 
     fn nearest_player_distance_sqr(&self) -> Option<f64> {
         self.nearest_player_distance_sqr
+    }
+
+    fn get_preferred_weapon_type(&self) -> Option<Identifier> {
+        self.preferred_weapon_type.lock().clone()
     }
 }
 
@@ -1143,6 +1154,56 @@ fn pick_up_item_takes_one_from_a_stack_and_leaves_the_rest() {
         head_is_helmet,
         "the mob should be wearing exactly one of the helmets"
     );
+}
+
+#[test]
+fn equip_keeps_a_preferred_weapon_over_a_stronger_one() {
+    // A mob that favors a weapon type (like a skeleton with its bow) keeps it
+    // even when a higher-damage weapon of another type is picked up.
+    init_vanilla_registry();
+    let mob = DespawnTestMob::new(None, false);
+    mob.set_preferred_weapon_type(ItemTag::SKELETON_PREFERRED_WEAPONS);
+    mob.living_base()
+        .equipment()
+        .lock()
+        .set(EquipmentSlot::MainHand, ItemStack::new(&vanilla_items::BOW));
+
+    let equipped = Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::DIAMOND_SWORD));
+
+    assert!(
+        equipped.is_empty(),
+        "a stronger sword should not displace the preferred bow"
+    );
+    let mut hand_is_bow = false;
+    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+        hand_is_bow = item_stack.is(&vanilla_items::BOW);
+    });
+    assert!(hand_is_bow, "the bow must stay in the main hand");
+}
+
+#[test]
+fn equip_takes_a_preferred_weapon_over_a_held_non_preferred_one() {
+    // The mirror case: the preferred weapon type wins even when it deals less
+    // damage than what is already held.
+    init_vanilla_registry();
+    let mob = DespawnTestMob::new(None, false);
+    mob.set_preferred_weapon_type(ItemTag::SKELETON_PREFERRED_WEAPONS);
+    mob.living_base().equipment().lock().set(
+        EquipmentSlot::MainHand,
+        ItemStack::new(&vanilla_items::STONE_SWORD),
+    );
+
+    let equipped = Mob::equip_item_if_possible(&mob, ItemStack::new(&vanilla_items::BOW));
+
+    assert!(
+        equipped.is(&vanilla_items::BOW),
+        "the preferred bow should replace the held sword"
+    );
+    let mut hand_is_bow = false;
+    mob.with_equipment_slot(EquipmentSlot::MainHand, &mut |item_stack| {
+        hand_is_bow = item_stack.is(&vanilla_items::BOW);
+    });
+    assert!(hand_is_bow, "the bow should now be held");
 }
 
 #[test]
