@@ -385,6 +385,7 @@ use permissions::validate_player_permission_group_update;
 mod player_admission;
 mod player_lifecycle;
 
+pub use player_admission::{DuplicatePlayerWaitError, PlayerJoinReservation};
 use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQueue};
 
 mod world_changes;
@@ -414,6 +415,10 @@ pub struct Server {
     online_players: PlayerMap,
     /// UUIDs reserved by a join or disconnect/save lifecycle transition.
     player_admissions: SyncMutex<FxHashMap<Uuid, PlayerAdmissionState>>,
+    /// Wakes verified logins waiting for an older session with the same UUID to leave.
+    player_admission_changed: Notify,
+    /// Wakes connection lifecycle work waiting for a specific server tick.
+    server_tick_changed: Notify,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// The number of minutes required for a player to be idle for them to be kicked (timed out) from the server.
@@ -481,6 +486,26 @@ impl Drop for GameTickTaskGuard {
 }
 
 impl Server {
+    /// Returns the current server tick number.
+    pub fn current_tick(&self) -> u64 {
+        self.tick_rate_manager.read().tick_count
+    }
+
+    /// Waits until the server reaches `target_tick`.
+    pub async fn wait_until_tick(&self, target_tick: u64) {
+        loop {
+            let tick_changed = self.server_tick_changed.notified();
+            tokio::pin!(tick_changed);
+            tick_changed.as_mut().enable();
+
+            if self.current_tick() >= target_tick {
+                return;
+            }
+
+            tick_changed.await;
+        }
+    }
+
     pub(crate) fn permission_rule_suggestions(&self) -> Vec<String> {
         let mut suggestions = self
             .command_permission_keys
@@ -710,6 +735,8 @@ impl Server {
             worlds,
             online_players: PlayerMap::new(),
             player_admissions: SyncMutex::new(FxHashMap::default()),
+            player_admission_changed: Notify::new(),
+            server_tick_changed: Notify::new(),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             player_idle_timeout: AtomicI32::new(0),
