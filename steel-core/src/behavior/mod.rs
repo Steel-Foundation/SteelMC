@@ -99,8 +99,9 @@ use crate::entity::consume_effect::{
     RemoveEffectsBehavior, TeleportRandomlyBehavior,
 };
 use crate::entity::mob_effect::{
-    AbsorptionBehavior, HealOrHarmBehavior, HungerBehavior, MobEffectBehavior, PoisonBehavior,
-    RegenerationBehavior, SaturationBehavior, WitherBehavior,
+    AbsorptionBehavior, BadOmenBehavior, HealOrHarmBehavior, HungerBehavior, InfestedBehavior,
+    MobEffectBehavior, OozingBehavior, PoisonBehavior, RaidOmenBehavior, RegenerationBehavior,
+    SaturationBehavior, WeavingBehavior, WindChargedBehavior, WitherBehavior,
 };
 use crate::fluid::{FluidBehavior, LavaFluid, WaterFluid};
 
@@ -291,6 +292,24 @@ pub fn init_behaviors() {
 
         let absorption: Box<dyn MobEffectBehavior> = Box::new(AbsorptionBehavior);
         mob_effect_behaviors.set_behavior(vanilla_mob_effects::ABSORPTION, absorption);
+
+        let bad_omen: Box<dyn MobEffectBehavior> = Box::new(BadOmenBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::BAD_OMEN, bad_omen);
+
+        let raid_omen: Box<dyn MobEffectBehavior> = Box::new(RaidOmenBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::RAID_OMEN, raid_omen);
+
+        let oozing: Box<dyn MobEffectBehavior> = Box::new(OozingBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::OOZING, oozing);
+
+        let weaving: Box<dyn MobEffectBehavior> = Box::new(WeavingBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::WEAVING, weaving);
+
+        let wind_charged: Box<dyn MobEffectBehavior> = Box::new(WindChargedBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::WIND_CHARGED, wind_charged);
+
+        let infested: Box<dyn MobEffectBehavior> = Box::new(InfestedBehavior);
+        mob_effect_behaviors.set_behavior(vanilla_mob_effects::INFESTED, infested);
 
         mob_effect_behaviors
     });

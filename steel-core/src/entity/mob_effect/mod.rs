@@ -2,19 +2,31 @@
 //! under `net/minecraft/world/effect`.
 
 mod absorption;
+mod bad_omen;
 mod heal_or_harm;
 mod hunger;
+mod infested;
+mod oozing;
 mod poison;
+mod raid_omen;
 mod regeneration;
 mod saturation;
+mod weaving;
+mod wind_charged;
 mod wither;
 
 pub use absorption::AbsorptionBehavior;
+pub use bad_omen::BadOmenBehavior;
 pub use heal_or_harm::HealOrHarmBehavior;
 pub use hunger::HungerBehavior;
+pub use infested::InfestedBehavior;
+pub use oozing::OozingBehavior;
 pub use poison::PoisonBehavior;
+pub use raid_omen::RaidOmenBehavior;
 pub use regeneration::RegenerationBehavior;
 pub use saturation::SaturationBehavior;
+pub use weaving::WeavingBehavior;
+pub use wind_charged::WindChargedBehavior;
 pub use wither::WitherBehavior;
 
 use crate::entity::LivingEntity;
