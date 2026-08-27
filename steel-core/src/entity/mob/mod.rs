@@ -613,6 +613,9 @@ pub trait Mob: LivingEntity + Leashable {
         }
 
         let count = equipped.count();
+        // TODO(advancements): vanilla calls LivingEntity.onItemPickup here, before
+        // the take packet, which fires the THROWN_ITEM_PICKED_UP_BY_ENTITY criterion.
+        // Add that once Steel has the advancement-criteria foundation.
         let chunk_pos = ChunkPos::from_entity_pos(item_entity.position());
         world.broadcast_to_nearby(
             chunk_pos,
