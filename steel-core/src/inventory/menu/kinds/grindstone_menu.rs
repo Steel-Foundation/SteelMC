@@ -1,4 +1,4 @@
-//! Grindston menu.
+//! Grindstone menu.
 use std::sync::Arc;
 
 use steel_registry::data_components::vanilla_components::MAX_DAMAGE;
@@ -141,10 +141,12 @@ impl GrindstoneKind {
                     result_container.set_item(0, ItemStack::empty());
                 }
             }
+        } else {
+            result_container.set_item(0, ItemStack::empty());
         }
     }
 
-    ///
+    /// Merges two items and their enchants but gets rid of their non-curse enchants
     #[must_use]
     fn merge_items(first: ItemStack, second: ItemStack) -> ItemStack {
         if !first.is(second.item()) {
@@ -161,11 +163,7 @@ impl GrindstoneKind {
             count = 2;
 
             if first.max_stack_size() < 2 || !ItemStack::matches(&first, &second) {
-                if first.is(&vanilla_items::ENCHANTED_BOOK) {
-                    count = 1;
-                } else {
-                    return ItemStack::empty();
-                }
+                return ItemStack::empty();
             }
         }
 
@@ -233,9 +231,8 @@ impl GrindstoneKind {
         if item.is(&vanilla_items::ENCHANTED_BOOK) {
             if new_enchantments.is_empty() {
                 return ItemStack::new(&vanilla_items::BOOK);
-            } else {
-                item.set(STORED_ENCHANTMENTS, new_enchantments);
             }
+            item.set(STORED_ENCHANTMENTS, new_enchantments);
         } else {
             item.set(ENCHANTMENTS, new_enchantments);
         }

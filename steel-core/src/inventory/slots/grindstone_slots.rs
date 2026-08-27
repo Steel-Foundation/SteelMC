@@ -41,7 +41,7 @@ impl GrindstoneResultHandler {
     }
 
     /// Experience dropped when the result is taken: roughly half the enchanting
-    /// cost of both inputs, randomised upward. Must be called before the inputs
+    /// cost of both inputs, randomized upward. Must be called before the inputs
     /// are cleared.
     fn get_experience_amount(&self, guard: &ContainerLockGuard) -> i32 {
         let Some(input) = guard.get(ContainerId::from_arc(&self.input_container)) else {
@@ -55,10 +55,9 @@ impl GrindstoneResultHandler {
         if amount > 0 {
             // Ceiling division; `amount` is positive here so truncation cannot bite.
             let half_amount = (amount + 1) / 2;
-            half_amount + rand::random_range(0..half_amount)
-        } else {
-            0
+            return half_amount + rand::random_range(0..half_amount);
         }
+        0
     }
 
     fn get_experience_from_item(item: &ItemStack) -> i32 {
