@@ -79,6 +79,14 @@ pub struct MobEffect {
 }
 
 impl MobEffect {
+    /// Vanilla `MobEffect.isInstantaneous`.
+    #[must_use]
+    pub fn is_instantaneous(&self) -> bool {
+        std::ptr::eq(self, crate::vanilla_mob_effects::INSTANT_HEALTH)
+            || std::ptr::eq(self, crate::vanilla_mob_effects::INSTANT_DAMAGE)
+            || std::ptr::eq(self, crate::vanilla_mob_effects::SATURATION)
+    }
+
     /// Creates the particle options synchronized for one effect instance.
     #[must_use]
     pub fn create_particle_options(&self, ambient: bool) -> ParticleData {
@@ -156,6 +164,15 @@ crate::impl_registry!(
 mod tests {
     use crate::particle_type::{ColorParticleOption, SimpleParticleOptions};
     use crate::{vanilla_mob_effects, vanilla_particle_types};
+
+    #[test]
+    fn instantaneous_effects_match_vanilla_subclasses() {
+        assert!(vanilla_mob_effects::INSTANT_HEALTH.is_instantaneous());
+        assert!(vanilla_mob_effects::INSTANT_DAMAGE.is_instantaneous());
+        assert!(vanilla_mob_effects::SATURATION.is_instantaneous());
+        assert!(!vanilla_mob_effects::SPEED.is_instantaneous());
+        assert!(!vanilla_mob_effects::POISON.is_instantaneous());
+    }
 
     #[test]
     fn generated_effect_particles_match_vanilla_factories() {

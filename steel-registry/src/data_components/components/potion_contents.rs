@@ -75,6 +75,69 @@ impl PotionContents {
         self.potion.is_some_and(|p| p.value().key == potion.key) && self.custom_effects.is_empty()
     }
 
+    /// Vanilla `PotionContents.EMPTY` water-bottle fallback color.
+    pub const BASE_POTION_COLOR: i32 = -13_083_194;
+
+    /// Vanilla `PotionContents.hasEffects`.
+    #[must_use]
+    pub fn has_effects(&self) -> bool {
+        !self.custom_effects.is_empty()
+            || self
+                .potion
+                .is_some_and(|potion| !potion.value().effects.is_empty())
+    }
+
+    /// Vanilla `PotionContents.withEffectAdded`.
+    #[must_use]
+    pub fn with_effect_added(&self, effect: MobEffectInstance) -> Self {
+        let mut custom_effects = self.custom_effects.clone();
+        custom_effects.push(effect);
+        Self {
+            custom_effects,
+            ..self.clone()
+        }
+    }
+
+    /// Vanilla `PotionContents.getAllEffects`.
+    #[must_use]
+    pub fn all_effects(&self) -> Vec<MobEffectInstance> {
+        let mut effects = Vec::new();
+        if let Some(potion) = self.potion {
+            for effect in potion.value().effects {
+                effects.push(MobEffectInstance::simple(
+                    effect.effect,
+                    effect.duration,
+                    effect.amplifier,
+                ));
+            }
+        }
+        effects.extend(self.custom_effects.iter().cloned());
+        effects
+    }
+
+    /// Vanilla `PotionContents.forEachEffect` with duration scaling.
+    #[must_use]
+    pub fn effects_with_duration_scale(&self, duration_scale: f32) -> Vec<MobEffectInstance> {
+        self.all_effects()
+            .into_iter()
+            .map(|effect| effect.with_scaled_duration(duration_scale))
+            .collect()
+    }
+
+    /// Vanilla `PotionContents.getColor`.
+    #[must_use]
+    pub fn color(&self) -> i32 {
+        self.color_or(Self::BASE_POTION_COLOR)
+    }
+
+    /// Vanilla `PotionContents.getColorOr`.
+    #[must_use]
+    pub fn color_or(&self, default: i32) -> i32 {
+        self.custom_color
+            .or_else(|| blended_effect_color(self.all_effects()))
+            .unwrap_or(default)
+    }
+
     fn to_nbt_tag_ref(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
         if let Some(potion) = self.potion {
@@ -103,7 +166,9 @@ impl PotionContents {
         NbtTag::Compound(compound)
     }
 
-    fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
+    /// Decodes vanilla `PotionContents.CODEC` NBT.
+    #[must_use]
+    pub fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
         if tag.string().is_some() {
             return registry_reference_from_owned_nbt(tag)
                 .map(|potion| Self::new(Some(potion), None, Vec::new(), None));
@@ -269,6 +334,33 @@ fn read_network_string(data: &mut Cursor<&[u8]>) -> Result<String> {
     Ok(value)
 }
 
+fn blended_effect_color(effects: Vec<MobEffectInstance>) -> Option<i32> {
+    let mut red = 0i32;
+    let mut green = 0i32;
+    let mut blue = 0i32;
+    let mut total_weight = 0i32;
+    for effect in effects {
+        if !effect.show_particles() {
+            continue;
+        }
+        let color = effect.effect().color;
+        let amplifier = effect.amplifier() + 1;
+        red += amplifier * i32::from(color.red());
+        green += amplifier * i32::from(color.green());
+        blue += amplifier * i32::from(color.blue());
+        total_weight += amplifier;
+    }
+    if total_weight == 0 {
+        return None;
+    }
+    Some(
+        (0xFF00_0000u32 as i32)
+            | ((red / total_weight) << 16)
+            | ((green / total_weight) << 8)
+            | (blue / total_weight),
+    )
+}
+
 fn push_hash_entry<T: HashComponent + ?Sized>(entries: &mut Vec<HashEntry>, key: &str, value: &T) {
     let mut key_hasher = ComponentHasher::new();
     key_hasher.put_string(key);
@@ -356,5 +448,27 @@ mod tests {
                 Some(PotionContents::empty())
             );
         }
+    }
+
+    #[test]
+    fn empty_contents_have_no_effects_and_base_color() {
+        init_vanilla_registry();
+        let empty = PotionContents::empty();
+        assert!(!empty.has_effects());
+        assert_eq!(empty.color(), PotionContents::BASE_POTION_COLOR);
+    }
+
+    #[test]
+    fn with_effect_added_and_duration_scale_match_vanilla() {
+        init_vanilla_registry();
+        let contents = PotionContents::empty().with_effect_added(crate::MobEffectInstance::simple(
+            vanilla_mob_effects::SPEED,
+            200,
+            0,
+        ));
+        assert!(contents.has_effects());
+        let scaled = contents.effects_with_duration_scale(0.25);
+        assert_eq!(scaled.len(), 1);
+        assert_eq!(scaled[0].duration(), 50);
     }
 }

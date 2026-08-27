@@ -101,6 +101,22 @@ impl MobEffectInstance {
         self.hidden_effect.as_deref()
     }
 
+    /// Returns whether this instance uses vanilla's infinite-duration sentinel.
+    #[must_use]
+    pub const fn is_infinite_duration(&self) -> bool {
+        self.duration == -1
+    }
+
+    /// Vanilla `MobEffectInstance.withScaledDuration`.
+    #[must_use]
+    pub fn with_scaled_duration(&self, scale: f32) -> Self {
+        let mut copy = self.clone();
+        if !copy.is_infinite_duration() && copy.duration != 0 {
+            copy.duration = ((copy.duration as f32) * scale).floor().max(1.0) as i32;
+        }
+        copy
+    }
+
     fn details(&self) -> MobEffectInstanceDetails {
         MobEffectInstanceDetails {
             amplifier: self.amplifier,
@@ -168,6 +184,36 @@ impl MobEffectInstanceDetails {
             show_icon,
             hidden_effect: hidden_effect.map(Box::new),
         }
+    }
+
+    #[must_use]
+    pub const fn amplifier(&self) -> i32 {
+        self.amplifier
+    }
+
+    #[must_use]
+    pub const fn duration(&self) -> i32 {
+        self.duration
+    }
+
+    #[must_use]
+    pub const fn ambient(&self) -> bool {
+        self.ambient
+    }
+
+    #[must_use]
+    pub const fn show_particles(&self) -> bool {
+        self.show_particles
+    }
+
+    #[must_use]
+    pub const fn show_icon(&self) -> bool {
+        self.show_icon
+    }
+
+    #[must_use]
+    pub fn hidden_effect(&self) -> Option<&Self> {
+        self.hidden_effect.as_deref()
     }
 
     fn to_nbt_compound(&self) -> NbtCompound {

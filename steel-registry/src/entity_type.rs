@@ -215,6 +215,14 @@ impl EntityDimensions {
         }
     }
 
+    /// Vanilla `EntityDimensions.scalable(width, height)`.
+    ///
+    /// Eye height is `height * 0.85`, matching vanilla `defaultEyeHeight`.
+    #[must_use]
+    pub const fn scalable(width: f32, height: f32) -> Self {
+        Self::new(width, height, height * 0.85)
+    }
+
     /// Scale dimensions by a factor (for baby entities, etc.)
     #[must_use]
     pub fn scale(&self, factor: f32) -> Self {
@@ -366,6 +374,14 @@ mod tests {
             diff.length_squared() < 1.0e-12,
             "expected {left:?} to equal {right:?}"
         );
+    }
+
+    #[test]
+    fn scalable_dimensions_use_vanilla_default_eye_height() {
+        let dimensions = EntityDimensions::scalable(6.0, 0.5);
+        assert_eq!(dimensions.width.to_bits(), 6.0_f32.to_bits());
+        assert_eq!(dimensions.height.to_bits(), 0.5_f32.to_bits());
+        assert_eq!(dimensions.eye_height.to_bits(), 0.425_f32.to_bits());
     }
 
     #[test]

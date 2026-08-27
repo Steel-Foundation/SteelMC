@@ -1,9 +1,13 @@
 use std::fmt::{self, Debug, Formatter};
 use std::io::{Cursor, Error, Result, Write};
+use std::str::FromStr;
 
 use glam::DVec3;
 use rustc_hash::FxHashMap;
+use simdnbt::owned::{NbtCompound, NbtTag};
+use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::codec::VarInt;
+use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
 use steel_utils::{
     ArgbColor, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
@@ -134,6 +138,136 @@ impl PartialEq for ParticleData {
     fn eq(&self, other: &Self) -> bool {
         self.particle_type.key == other.particle_type.key
             && self.options.options_eq(other.options.as_ref())
+    }
+}
+
+impl ParticleData {
+    fn write_options_nbt(&self, compound: &mut NbtCompound) {
+        if let Some(color) = self.downcast_ref::<ColorParticleOption>() {
+            compound.insert("color", color.color().raw());
+        } else if let Some(dust) = self.downcast_ref::<DustParticleOptions>() {
+            compound.insert("color", dust.color().raw());
+            compound.insert("scale", dust.scale());
+        } else if let Some(dust) = self.downcast_ref::<DustColorTransitionOptions>() {
+            compound.insert("from_color", dust.source_color().raw());
+            compound.insert("to_color", dust.target_color().raw());
+            compound.insert("scale", dust.scale());
+        } else if let Some(power) = self.downcast_ref::<PowerParticleOption>() {
+            compound.insert("power", power.power());
+        } else if let Some(spell) = self.downcast_ref::<SpellParticleOption>() {
+            compound.insert("color", spell.color().raw());
+            compound.insert("power", spell.power());
+        } else if let Some(sculk) = self.downcast_ref::<SculkChargeParticleOptions>() {
+            compound.insert("roll", sculk.roll());
+        } else if let Some(shriek) = self.downcast_ref::<ShriekParticleOption>() {
+            compound.insert("delay", shriek.delay());
+        } else if let Some(geyser) = self.downcast_ref::<GeyserParticleOptions>() {
+            compound.insert("water_blocks", geyser.water_blocks());
+        } else if let Some(geyser) = self.downcast_ref::<GeyserBaseParticleOptions>() {
+            compound.insert("water_blocks", geyser.water_blocks());
+            compound.insert("burst_impulse_base", geyser.burst_impulse_base());
+        }
+    }
+
+    fn read_options_nbt(
+        particle_type: ParticleTypeRef,
+        compound: &NbtCompound,
+    ) -> Option<Box<dyn ErasedParticleOptions>> {
+        let key = particle_type.expected_type_key;
+        if key == ColorParticleOption::TYPE_KEY {
+            let color = compound.get("color")?.codec_i32()?;
+            Some(Box::new(ColorParticleOption::new(ArgbColor::new(color))))
+        } else if key == SimpleParticleOptions::TYPE_KEY {
+            Some(Box::new(SimpleParticleOptions))
+        } else if key == DustParticleOptions::TYPE_KEY {
+            Some(Box::new(DustParticleOptions::new(
+                RgbColor::new(compound.get("color")?.codec_i32()?),
+                compound.get("scale")?.codec_f32()?,
+            )))
+        } else if key == DustColorTransitionOptions::TYPE_KEY {
+            Some(Box::new(DustColorTransitionOptions::new(
+                RgbColor::new(compound.get("from_color")?.codec_i32()?),
+                RgbColor::new(compound.get("to_color")?.codec_i32()?),
+                compound.get("scale")?.codec_f32()?,
+            )))
+        } else if key == PowerParticleOption::TYPE_KEY {
+            let power = compound
+                .get("power")
+                .and_then(NbtTag::codec_f32)
+                .unwrap_or(1.0);
+            Some(Box::new(PowerParticleOption::new(power)))
+        } else if key == SpellParticleOption::TYPE_KEY {
+            let color = compound
+                .get("color")
+                .and_then(NbtTag::codec_i32)
+                .unwrap_or(-1);
+            let power = compound
+                .get("power")
+                .and_then(NbtTag::codec_f32)
+                .unwrap_or(1.0);
+            Some(Box::new(SpellParticleOption::new(
+                RgbColor::new(color),
+                power,
+            )))
+        } else if key == SculkChargeParticleOptions::TYPE_KEY {
+            Some(Box::new(SculkChargeParticleOptions::new(
+                compound.get("roll")?.codec_f32()?,
+            )))
+        } else if key == ShriekParticleOption::TYPE_KEY {
+            Some(Box::new(ShriekParticleOption::new(
+                compound.get("delay")?.codec_i32()?,
+            )))
+        } else if key == GeyserParticleOptions::TYPE_KEY {
+            Some(Box::new(GeyserParticleOptions::new(
+                compound.get("water_blocks")?.codec_i32()?,
+            )))
+        } else if key == GeyserBaseParticleOptions::TYPE_KEY {
+            Some(Box::new(GeyserBaseParticleOptions::new(
+                compound.get("water_blocks")?.codec_i32()?,
+                compound.get("burst_impulse_base")?.codec_f32()?,
+            )))
+        } else {
+            None
+        }
+    }
+}
+
+impl ToNbtTag for ParticleData {
+    fn to_nbt_tag(self) -> NbtTag {
+        self.to_nbt_tag_ref()
+    }
+}
+
+impl ParticleData {
+    /// Vanilla `ParticleTypes.CODEC` compound shape: `{type, ...options}`.
+    #[must_use]
+    pub fn to_nbt_tag_ref(&self) -> NbtTag {
+        let mut compound = NbtCompound::new();
+        compound.insert("type", self.particle_type.key.to_string());
+        self.write_options_nbt(&mut compound);
+        NbtTag::Compound(compound)
+    }
+}
+
+impl FromNbtTag for ParticleData {
+    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
+        Self::from_owned_nbt(&tag.to_owned())
+    }
+}
+
+impl ParticleData {
+    /// Decodes vanilla `ParticleTypes.CODEC` NBT.
+    #[must_use]
+    pub fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
+        let compound = tag.compound()?;
+        let type_name = compound.get("type")?.string()?;
+        let key = Identifier::from_str(&type_name.to_string()).ok()?;
+        let particle_type = crate::REGISTRY.particle_types.by_key(&key)?;
+        let options = Self::read_options_nbt(particle_type, compound)?;
+        Some(Self {
+            particle_type,
+            options,
+        })
     }
 }
 

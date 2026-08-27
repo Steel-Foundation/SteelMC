@@ -431,6 +431,15 @@ pub trait LivingEntity: Entity {
         !self.is_invulnerable() && self.can_be_seen_by_anyone()
     }
 
+    /// Returns vanilla `LivingEntity.attackable()`.
+    ///
+    /// This is the mob-targeting gate (wither, vindicator). It is not
+    /// [`Entity::attackable`], which mirrors `Entity.isAttackable` and is what
+    /// player punches use.
+    fn is_living_attackable(&self) -> bool {
+        true
+    }
+
     /// Returns vanilla `LivingEntity.canAttack()`.
     fn can_attack(&self, target: &dyn LivingEntity) -> bool {
         if target.entity_type() == &vanilla_entities::PLAYER
@@ -1166,6 +1175,61 @@ pub trait LivingEntity: Entity {
         !self.is_dead_or_dying()
     }
 
+    /// Vanilla `LivingEntity.isInvertedHealAndHarm`.
+    fn is_inverted_heal_and_harm(&self) -> bool {
+        REGISTRY.entity_types.is_in_tag(
+            self.entity_type(),
+            &EntityTypeTag::INVERTED_HEALING_AND_HARM,
+        )
+    }
+
+    /// Vanilla `MobEffect.applyInstantaneousEffect`.
+    fn apply_instantaneous_effect(
+        &self,
+        world: &World,
+        source: Option<&dyn Entity>,
+        owner: Option<&dyn Entity>,
+        effect: MobEffectRef,
+        amplifier: i32,
+        scale: f64,
+    ) {
+        if effect == vanilla_mob_effects::INSTANT_HEALTH
+            || effect == vanilla_mob_effects::INSTANT_DAMAGE
+        {
+            let is_harm = effect == vanilla_mob_effects::INSTANT_DAMAGE;
+            if is_harm == self.is_inverted_heal_and_harm() {
+                let amount = (scale * f64::from(4_i32.wrapping_shl(amplifier as u32)) + 0.5) as i32;
+                self.heal(amount as f32);
+            } else {
+                let amount = (scale * f64::from(6_i32.wrapping_shl(amplifier as u32)) + 0.5) as i32;
+                let damage_source = match source {
+                    None => DamageSource::environment(&vanilla_damage_types::MAGIC),
+                    Some(source) => {
+                        let mut damage_source =
+                            DamageSource::environment(&vanilla_damage_types::INDIRECT_MAGIC)
+                                .with_direct_entity(source.id());
+                        if let Some(owner) = owner {
+                            damage_source = damage_source.with_causing_entity(owner.id());
+                        }
+                        damage_source
+                    }
+                };
+                self.hurt(world, &damage_source, amount as f32);
+            }
+            return;
+        }
+
+        if effect == vanilla_mob_effects::SATURATION {
+            if let Some(player) = self.as_player() {
+                player.food_data.lock().eat(amplifier + 1, 1.0);
+            }
+            return;
+        }
+
+        let _ =
+            MobEffectInstance::with_duration(effect, 1, amplifier).apply_effect_tick(world, self);
+    }
+
     /// Returns vanilla base `LivingEntity.canBeAffected` eligibility.
     fn default_can_be_affected(&self, effect: &MobEffectInstance) -> bool {
         if REGISTRY
@@ -1502,6 +1566,20 @@ pub trait LivingEntity: Entity {
         true
     }
 
+    /// Returns vanilla `LivingEntity.getEquipmentSlotForItem`.
+    fn equipment_slot_for_item(&self, item_stack: &ItemStack) -> EquipmentSlot {
+        item_stack
+            .get_equippable()
+            .filter(|equippable| self.can_use_slot(equippable.slot))
+            .map_or(EquipmentSlot::MainHand, |equippable| equippable.slot)
+    }
+
+    /// Runs vanilla `LivingEntity.tickHeadTurn`.
+    ///
+    /// Armor stands replace this with yaw-locked body rotation. Mob body
+    /// control continues to run from [`Self::tick_living_state`].
+    fn tick_head_turn(&self) {}
+
     /// Returns the effective vanilla dispenser slot gate for living entities and mobs.
     fn can_dispenser_equip_into_slot(&self, _slot: EquipmentSlot) -> bool {
         self.as_mob().is_none_or(Mob::can_pick_up_loot)
@@ -1793,6 +1871,7 @@ pub trait LivingEntity: Entity {
 
     /// Ticks living-entity counters after movement.
     fn tick_living_state(&self) {
+        self.tick_head_turn();
         if let Some(mob) = self.as_mob() {
             mob.tick_body_rotation_control();
         }

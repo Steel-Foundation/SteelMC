@@ -511,6 +511,11 @@ impl EntityBase {
         self.state.lock().tick_count
     }
 
+    /// Sets vanilla `Entity.tickCount`.
+    pub fn set_tick_count(&self, tick_count: i32) {
+        self.state.lock().tick_count = tick_count;
+    }
+
     /// Gets the entity's current bounding box.
     #[inline]
     pub fn bounding_box(&self) -> WorldAabb {
