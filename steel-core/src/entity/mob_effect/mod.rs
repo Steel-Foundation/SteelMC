@@ -39,9 +39,13 @@ pub trait MobEffectBehavior: Send + Sync {
         false
     }
 
-    /// Mirrors vanilla `MobEffect.shouldApplyEffectTickThisTick`.
-    fn should_apply_effect_tick_this_tick(&self, _tick_count: i32, _amplifier: i32) -> bool {
-        false
+    /// Mirrors vanilla `MobEffect.shouldApplyEffectTickThisTick`. Instantaneous
+    /// effects mirror `InstantaneousMobEffect.shouldApplyEffectTickThisTick`
+    /// (`remainingDuration >= 1`) so they still fire once when added through
+    /// the generic tick loop instead of the direct `applyInstantaneousEffect`
+    /// call; non-instantaneous effects keep the plain `MobEffect` default.
+    fn should_apply_effect_tick_this_tick(&self, tick_count: i32, _amplifier: i32) -> bool {
+        self.is_instantaneous() && tick_count >= 1
     }
 
     /// Mirrors vanilla `MobEffect.applyEffectTick`. Returns whether the
@@ -50,19 +54,25 @@ pub trait MobEffectBehavior: Send + Sync {
         true
     }
 
-    /// Mirrors vanilla `MobEffect.applyInstantaneousEffect`, which by default
-    /// just forwards to `applyEffectTick` — most instantaneous effects (e.g.
-    /// Saturation) never override this, only the amount/attribution-scaling
-    /// ones like `HealOrHarmMobEffect` do.
+    /// Mirrors vanilla `MobEffect.applyInstantaneousEffect(level, source,
+    /// owner, mob, amplification, scale)`, which by default just forwards to
+    /// `applyEffectTick` — most instantaneous effects (e.g. Saturation) never
+    /// override this, only the amount/attribution-scaling ones like
+    /// `HealOrHarmMobEffect` do. `direct_entity` is vanilla's `source` (the
+    /// entity the damage is directly attributed to, e.g. a splash-potion
+    /// entity) and `causing_entity` is vanilla's `owner` (the entity that
+    /// ultimately caused it, e.g. the thrower) — they differ for area-effect
+    /// potions and are always the same single entity for a direct drink.
     fn apply_instantaneous(
         &self,
         world: &World,
         user: &dyn LivingEntity,
         amplifier: i32,
-        damage_source_entity: Option<i32>,
+        direct_entity: Option<i32>,
+        causing_entity: Option<i32>,
         scale: f32,
     ) {
-        let _ = (damage_source_entity, scale);
+        let _ = (direct_entity, causing_entity, scale);
         self.apply_effect_tick(world, user, amplifier);
     }
 }

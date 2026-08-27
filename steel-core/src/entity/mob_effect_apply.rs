@@ -28,11 +28,13 @@ pub(crate) fn apply_potion_contents(
         if behavior.is_instantaneous() {
             // Vanilla always passes `scale = 1.0` from this call site; only a
             // splash/lingering potion (not yet implemented) passes a
-            // distance-based falloff scale.
+            // distance-based falloff scale, and a `source` distinct from
+            // `owner`.
             behavior.apply_instantaneous(
                 world,
                 user,
                 effect.amplifier(),
+                damage_source_entity,
                 damage_source_entity,
                 1.0,
             );

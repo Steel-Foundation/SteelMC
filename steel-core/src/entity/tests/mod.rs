@@ -931,6 +931,51 @@ fn default_mob_effect_eligibility_uses_vanilla_entity_type_tags() {
     )));
 }
 
+/// Mirrors vanilla `HealOrHarmMobEffect`'s `this.isHarm ==
+/// mob.isInvertedHealAndHarm()` check: undead-like mobs (tagged
+/// `EntityTypeTags.INVERTED_HEALING_AND_HARM`) are hurt by Instant Health and
+/// healed by Instant Damage, the opposite of a living mob.
+#[test]
+fn heal_or_harm_behavior_inverts_for_undead_mobs() {
+    use crate::entity::mob_effect::{HealOrHarmBehavior, MobEffectBehavior};
+
+    init_vanilla_registry();
+    let world = fresh_test_world("heal_or_harm_inversion");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let living = LivingFluidTestEntity::new(0.0, 0.0, true)
+        .with_entity_type(&vanilla_entities::PIG)
+        .with_health(10.0);
+    HealOrHarmBehavior { is_harm: false }.apply_effect_tick(&world, &living, 0);
+    assert_eq!(living.get_health(), 14.0, "instant health heals a living mob");
+
+    let zombie = LivingFluidTestEntity::new(0.0, 0.0, true)
+        .with_entity_type(&vanilla_entities::ZOMBIE)
+        .with_health(10.0);
+    HealOrHarmBehavior { is_harm: false }.apply_effect_tick(&world, &zombie, 0);
+    assert_eq!(
+        zombie.get_health(),
+        4.0,
+        "instant health hurts an inverted (undead) mob"
+    );
+
+    let living = LivingFluidTestEntity::new(0.0, 0.0, true)
+        .with_entity_type(&vanilla_entities::PIG)
+        .with_health(10.0);
+    HealOrHarmBehavior { is_harm: true }.apply_effect_tick(&world, &living, 0);
+    assert_eq!(living.get_health(), 4.0, "instant damage hurts a living mob");
+
+    let zombie = LivingFluidTestEntity::new(0.0, 0.0, true)
+        .with_entity_type(&vanilla_entities::ZOMBIE)
+        .with_health(10.0);
+    HealOrHarmBehavior { is_harm: true }.apply_effect_tick(&world, &zombie, 0);
+    assert_eq!(
+        zombie.get_health(),
+        14.0,
+        "instant damage heals an inverted (undead) mob"
+    );
+}
+
 struct ControlledVehicleTestEntity {
     base: EntityBase,
     controller: Option<SharedEntity>,

@@ -1153,6 +1153,15 @@ pub trait LivingEntity: Entity {
         !self.is_dead_or_dying()
     }
 
+    /// Returns vanilla `LivingEntity.isInvertedHealAndHarm()`: undead-like
+    /// mobs (per `EntityTypeTags.INVERTED_HEALING_AND_HARM`) are hurt by
+    /// Instant Health and healed by Instant Damage.
+    fn is_inverted_heal_and_harm(&self) -> bool {
+        REGISTRY
+            .entity_types
+            .is_in_tag(self.entity_type(), &EntityTypeTag::INVERTED_HEALING_AND_HARM)
+    }
+
     /// Returns vanilla base `LivingEntity.canBeAffected` eligibility.
     fn default_can_be_affected(&self, effect: &MobEffectInstance) -> bool {
         if REGISTRY
