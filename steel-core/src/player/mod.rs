@@ -22,6 +22,7 @@ pub mod player_inventory;
 mod profile;
 mod sleep;
 mod sleep_state;
+mod spam_throttler;
 pub mod stats_counter;
 mod tick_state;
 
@@ -139,6 +140,7 @@ const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::player::chunk_sender::ChunkSender;
+use crate::player::spam_throttler::TickThrottler;
 use crate::player::stats_counter::StatsCounter;
 use crate::portal::{
     PortalTicketTarget, TeleportPostAction, TeleportPostTransition, TeleportTransition,
@@ -263,6 +265,8 @@ pub struct Player {
 
     /// The last action time of this player.
     last_action_time: SyncMutex<Instant>,
+    /// Throttles the player dropping items in creative mode.
+    drop_spam_throttle: SyncMutex<TickThrottler>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -566,6 +570,7 @@ impl Player {
             ender_pearls: SyncMutex::new(Vec::new()),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
+            drop_spam_throttle: SyncMutex::new(TickThrottler::new(20, 1480)),
         }
     }
 

@@ -7,7 +7,6 @@ pub mod message_chain;
 mod message_validator;
 pub mod profile_key;
 mod signature_cache;
-mod spam_throttler;
 
 pub use message_validator::LastSeenMessagesValidator;
 pub use signature_cache::{LastSeen, MessageCache};
@@ -28,9 +27,9 @@ use text_components::interactivity::{ClickEvent, HoverEvent};
 
 use crate::entity::Entity;
 use crate::player::Player;
+use crate::player::spam_throttler::TickThrottler;
 use message_chain::SignedMessageChain;
 use profile_key::RemoteChatSession;
-use spam_throttler::TickThrottler;
 
 /// All chat-related state for a player.
 ///
