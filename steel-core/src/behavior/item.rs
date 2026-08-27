@@ -7,6 +7,7 @@ use steel_registry::data_components::vanilla_components::{
     BLOCKS_ATTACKS, CONSUMABLE, KINETIC_WEAPON,
 };
 
+use steel_registry::blocks::BlockRef;
 use steel_registry::data_components::vanilla_components::ITEM_NAME;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::items::ItemRef;
@@ -43,6 +44,13 @@ pub trait ItemBehavior: Send + Sync {
         stack
             .get(ITEM_NAME)
             .map_or_else(|| Cow::Owned(TextComponent::new()), Cow::Borrowed)
+    }
+
+    /// Returns the block this item places, if it is a `BlockItem`.
+    ///
+    /// Vanilla `item instanceof BlockItem blockItem ? blockItem.getBlock() : null`.
+    fn placed_block(&self) -> Option<BlockRef> {
+        None
     }
 
     /// Called when this item is used on a block.

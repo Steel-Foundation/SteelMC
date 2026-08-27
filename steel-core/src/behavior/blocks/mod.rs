@@ -55,10 +55,10 @@ pub(crate) use utils::multiface_face_property;
 pub use vegetation::{
     AttachedStemBlock, AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock,
     CactusBlock, CactusFlowerBlock, CarrotBlock, CarvedPumpkinBlock, CocoaBlock, CoralBlock,
-    CropBlock, DoublePlantBlock, FlowerBlock, GrassBlock, MangroveLeavesBlock, MultifaceBlock,
-    MyceliumBlock, NetherSproutsBlock, NetherWartBlock, PitcherCropBlock, PotatoBlock,
-    PumpkinBlock, RootedDirtBlock, SeagrassBlock, SnowyBlock, StemBlock, SugarCaneBlock,
-    SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock, TallSeagrassBlock,
+    CropBlock, DoublePlantBlock, FlowerBlock, FlowerPotBlock, GrassBlock, MangroveLeavesBlock,
+    MultifaceBlock, MyceliumBlock, NetherSproutsBlock, NetherWartBlock, PitcherCropBlock,
+    PotatoBlock, PumpkinBlock, RootedDirtBlock, SeagrassBlock, SnowyBlock, StemBlock,
+    SugarCaneBlock, SweetBerryBushBlock, TallFlowerBlock, TallGrassBlock, TallSeagrassBlock,
     TintedParticleLeavesBlock, TorchflowerCropBlock, UntintedParticleLeavesBlock,
 };
 pub use vegetation::{

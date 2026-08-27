@@ -117,6 +117,10 @@ impl BlockItem {
 }
 
 impl ItemBehavior for BlockItem {
+    fn placed_block(&self) -> Option<BlockRef> {
+        Some(self.block)
+    }
+
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         self.place(context.build_place_context())
     }
