@@ -6,6 +6,7 @@
 pub mod click;
 pub mod container;
 pub mod equipment;
+pub mod fuel_values;
 pub mod lock;
 pub mod menu;
 pub mod prelude;

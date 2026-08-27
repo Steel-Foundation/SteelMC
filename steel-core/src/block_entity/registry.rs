@@ -16,10 +16,11 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
 use super::entities::{
-    BarrelBlockEntity, BeehiveBlockEntity, BrushableBlockEntity, ChiseledBookShelfBlockEntity,
-    ComparatorBlockEntity, DaylightDetectorBlockEntity, EndGatewayBlockEntity,
-    EndPortalBlockEntity, JukeboxBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity,
-    RawBlockEntity, SignBlockEntity,
+    BarrelBlockEntity, BeehiveBlockEntity, BlastFurnaceBlockEntity, BrushableBlockEntity,
+    CampfireBlockEntity, ChiseledBookShelfBlockEntity, ComparatorBlockEntity,
+    DaylightDetectorBlockEntity, EndGatewayBlockEntity, EndPortalBlockEntity, FurnaceBlockEntity,
+    JukeboxBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity, RawBlockEntity,
+    SignBlockEntity, SmokerBlockEntity,
 };
 use crate::world::World;
 
@@ -222,6 +223,24 @@ pub fn init_block_entities() {
         registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
             Arc::new(BarrelBlockEntity::new(level, pos, state))
         });
+
+        registry.register(&vanilla_block_entity_types::FURNACE, |level, pos, state| {
+            Arc::new(FurnaceBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(
+            &vanilla_block_entity_types::BLAST_FURNACE,
+            |level, pos, state| Arc::new(BlastFurnaceBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(&vanilla_block_entity_types::SMOKER, |level, pos, state| {
+            Arc::new(SmokerBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(
+            &vanilla_block_entity_types::CAMPFIRE,
+            |level, pos, state| Arc::new(CampfireBlockEntity::new(level, pos, state)),
+        );
 
         registry.register(
             &vanilla_block_entity_types::CHISELED_BOOKSHELF,

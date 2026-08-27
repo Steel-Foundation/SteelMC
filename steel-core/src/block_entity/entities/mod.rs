@@ -1,8 +1,10 @@
 //! Block entity implementations.
 
+mod abstract_furnace;
 mod barrel;
 mod beehive;
 mod brushable;
+mod campfire;
 mod chiseled_bookshelf;
 mod comparator;
 mod daylight_detector;
@@ -14,11 +16,16 @@ mod potent_sulfur;
 mod raw;
 mod sign;
 
+pub use abstract_furnace::{
+    BlastFurnaceBlockEntity, FurnaceBlockEntity, FurnaceKind, SmokerBlockEntity,
+};
+pub(crate) use abstract_furnace::{FurnaceContainer, pop_furnace_experience};
 pub use barrel::{BARREL_SLOTS, BarrelBlockEntity};
 pub use beehive::{
     BEEHIVE_MAX_OCCUPANTS, BEEHIVE_MIN_OCCUPATION_TICKS_NECTARLESS, BeehiveBlockEntity,
 };
 pub use brushable::BrushableBlockEntity;
+pub use campfire::{CAMPFIRE_SLOTS, CampfireBlockEntity};
 pub use chiseled_bookshelf::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEntity};
 pub use comparator::ComparatorBlockEntity;
 pub use daylight_detector::DaylightDetectorBlockEntity;
