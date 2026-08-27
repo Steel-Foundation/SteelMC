@@ -31,8 +31,30 @@ use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntitySyncedData, Projectile, ProjectileBase,
     ProjectileDeflection, RemovalReason, SharedEntity,
 };
+use crate::inventory::container::Container;
 use crate::player::Player;
 use crate::world::{ClipHitResult, LevelReader as _, World};
+
+/// Vanilla `AbstractArrow.onHitEntity` crit damage minimum added to half the
+/// base roll: `random.nextInt(damage / 2 + CRIT_DAMAGE_FLOOR)`.
+const CRIT_DAMAGE_FLOOR: i32 = 2;
+/// Vanilla `AbstractArrow.getHitGroundSoundEvent` / `onHitEntity` pitch
+/// formula: `NUMERATOR / (random * RANDOM_RANGE + BASE)`.
+const HIT_SOUND_PITCH_NUMERATOR: f32 = 1.2;
+const HIT_SOUND_PITCH_RANDOM_RANGE: f32 = 0.2;
+const HIT_SOUND_PITCH_BASE: f32 = 0.9;
+/// Vanilla `AbstractArrow.onHitEntity` post-deflection velocity scale.
+/// Applied after `deflect(REVERSE)` (which uses ×−0.5), yielding ×−0.1.
+const DEFLECTION_POST_SCALE: f64 = 0.2;
+/// Push distance to move the deflected arrow outside the entity's collision
+/// volume (vanilla inflated bounding-box margin can be up to 0.3).
+const DEFLECTION_COLLISION_ESCAPE: f64 = 0.35;
+/// Velocity threshold below which a deflected arrow is considered stopped
+/// and discarded as a dropped item.
+const DEFLECTION_STOP_THRESHOLD: f64 = 1.0e-7;
+/// SteelMC floating-point comparison threshold for near-zero velocity checks
+/// (stuck detection, push direction fallback). Not a vanilla constant.
+const VELOCITY_EPSILON: f64 = 1.0e-9;
 
 /// Per-tick mutable runtime state mirroring vanilla `AbstractArrow` fields.
 struct ArrowRuntime {
@@ -232,7 +254,8 @@ impl ArrowEntity {
         let _ = self.try_set_position(self.position() - offset);
         self.set_velocity(DVec3::ZERO);
 
-        let pitch = 1.2 / (rand::random::<f32>() * 0.2 + 0.9);
+            let pitch = HIT_SOUND_PITCH_NUMERATOR
+                / (rand::random::<f32>() * HIT_SOUND_PITCH_RANDOM_RANGE + HIT_SOUND_PITCH_BASE);
         world.play_sound_at(
             &sound_events::ENTITY_ARROW_HIT,
             SoundSource::Neutral,
@@ -245,6 +268,10 @@ impl ArrowEntity {
         self.set_in_ground(true);
         let mut runtime = self.runtime.lock();
         runtime.shake_time = <ArrowEntity as AbstractArrow>::SHAKE_TIME;
+        // After the position offset, update last_state to match the block at
+        // the new resting position so the in-ground changed-block check does
+        // not incorrectly detect a block change and restart the flight loop.
+        runtime.last_state = Some(world.get_block_state(self.block_position()));
         drop(runtime);
         self.set_crit_arrow(false);
         self.entity_data.lock().abstract_arrow.pierce_level.set(0);
@@ -279,12 +306,12 @@ impl Entity for ArrowEntity {
         // Resting inside a non-air cell counts as stuck (approximation of the
         // vanilla point-in-collision-shape test; arrows stop inside the shape).
         if !world.get_block_state(self.block_position()).is_air()
-            && self.velocity().length_squared() < 1.0e-9
+            && self.velocity().length_squared() < VELOCITY_EPSILON
         {
             self.set_in_ground(true);
         }
 
-        if self.is_in_ground() {
+        if self.is_in_ground() && !self.no_physics() {
             let current = world.get_block_state(self.block_position());
             // A missing `last_state` (fresh load without persisted block data)
             // counts as changed, like vanilla's null `lastState` check.
@@ -295,6 +322,9 @@ impl Entity for ArrowEntity {
             } else {
                 self.tick_despawn();
                 self.runtime.lock().in_ground_time += 1;
+                if self.is_alive() {
+                    self.apply_effects_from_blocks();
+                }
                 return;
             }
         } else {
@@ -322,18 +352,21 @@ impl Entity for ArrowEntity {
         }
         self.runtime.lock().last_state = Some(world.get_block_state(self.block_position()));
 
+        // Vanilla ordering: hit detection runs BEFORE air drag and gravity.
+        // Deflection changes velocity, so drag/gravity must apply to the
+        // post-deflection velocity, not the pre-hit velocity.
+        if let Some(result) = hit
+            && self.is_alive()
+        {
+            self.hit_target_or_deflect_self(&result);
+        }
+
         if !self.is_in_water() {
             self.set_velocity(self.velocity() * <ArrowEntity as AbstractArrow>::INERTIA);
         }
         // Vanilla skips gravity once this tick's hit has grounded the arrow.
         if !self.is_in_ground() {
             self.apply_gravity();
-        }
-
-        if let Some(result) = hit
-            && self.is_alive()
-        {
-            self.hit_target_or_deflect_self(&result);
         }
 
         // Vanilla runs `super.tick()` at the very end of the flight branch
@@ -412,22 +445,33 @@ impl Entity for ArrowEntity {
         if self.is_removed() || !self.is_in_ground() || self.runtime.lock().shake_time > 0 {
             return;
         }
-        let collected = match self.runtime.lock().pickup {
+
+        // Vanilla tryPickup: check pickup permission and try inventory add.
+        let picked = match self.runtime.lock().pickup {
             Pickup::Disallowed => false,
+            Pickup::Allowed => {
+                let mut item = ItemStack::new(&vanilla_items::ARROW);
+                let added = player.inventory.lock().add(&mut item);
+                // Only succeed if the entire stack was consumed (inventory had space).
+                added && item.is_empty()
+            }
             Pickup::CreativeOnly => player.has_infinite_materials(),
-            Pickup::Allowed => true,
         };
-        if !collected {
+
+        if !picked {
             return;
         }
-        // TODO: leave the arrow in-world when the inventory cannot fit it
-        // (vanilla only picks up when `inventory.add` succeeds fully).
+
+        // Vanilla player.take: send pickup animation to tracking clients.
         if let Some(world) = self.level() {
             let take_packet = CTakeItemEntity::new(self.id(), player.id(), 1);
-            let chunk_pos = steel_utils::ChunkPos::from_entity_pos(self.position());
-            world.broadcast_to_nearby(chunk_pos, take_packet, None);
+            world.broadcast_to_nearby(
+                steel_utils::ChunkPos::from_entity_pos(self.position()),
+                take_packet,
+                None,
+            );
         }
-        player.add_item_or_drop(ItemStack::new(&vanilla_items::ARROW));
+
         self.set_removed(RemovalReason::Discarded);
     }
 }
@@ -454,7 +498,9 @@ impl Projectile for ArrowEntity {
         let raw = speed * self.runtime.lock().base_damage as f32;
         let mut damage_amount = raw.ceil().clamp(0.0, i32::MAX as f32) as i32;
         if self.is_crit_arrow() {
-            damage_amount += (rand::random::<u32>() % (damage_amount / 2 + 2) as u32) as i32;
+            damage_amount += (rand::random::<u32>()
+                % (damage_amount / 2 + CRIT_DAMAGE_FLOOR) as u32)
+                as i32;
         }
 
         // Vanilla `damageSources().arrow(this, owner != null ? owner : this)`.
@@ -471,7 +517,8 @@ impl Projectile for ArrowEntity {
             if entity.entity_type() == &vanilla_entities::ENDERMAN {
                 return;
             }
-            let pitch = 1.2 / (rand::random::<f32>() * 0.2 + 0.9);
+        let pitch = HIT_SOUND_PITCH_NUMERATOR
+            / (rand::random::<f32>() * HIT_SOUND_PITCH_RANDOM_RANGE + HIT_SOUND_PITCH_BASE);
             world.play_sound_at(
                 &sound_events::ENTITY_ARROW_HIT,
                 SoundSource::Neutral,
@@ -493,27 +540,27 @@ impl Projectile for ArrowEntity {
                 self.projectile_owner().as_ref(),
                 false,
             );
-            self.set_velocity(self.velocity() * 0.2);
+            self.set_velocity(self.velocity() * DEFLECTION_POST_SCALE);
 
             // Push the arrow along the reflected direction so it exits the
             // entity's inflated bounding box (margin can be up to 0.3).
             let velocity = self.velocity();
-            let push_direction = if velocity.length_squared() > 1.0e-9 {
+            let push_direction = if velocity.length_squared() > VELOCITY_EPSILON {
                 velocity.normalize()
             } else {
                 let diff = self.position() - entity.position();
-                if diff.length_squared() > 1.0e-9 {
+                if diff.length_squared() > VELOCITY_EPSILON {
                     diff.normalize()
                 } else {
                     DVec3::Y
                 }
             };
-            let _ = self.try_set_position(self.position() + push_direction * 0.35);
+            let _ = self.try_set_position(self.position() + push_direction * DEFLECTION_COLLISION_ESCAPE);
 
             // Suppress re-collision with this entity on the next tick.
             self.runtime.lock().last_deflected_from = Some(entity.id());
 
-            if self.velocity().length_squared() < 1.0e-7 {
+            if self.velocity().length_squared() < DEFLECTION_STOP_THRESHOLD {
                 if self.runtime.lock().pickup == Pickup::Allowed {
                     world.spawn_item(self.position(), ItemStack::new(&vanilla_items::ARROW));
                 }

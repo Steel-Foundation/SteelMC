@@ -34,6 +34,23 @@ const MIN_RELEASE_POWER: f32 = 0.1;
 /// Vanilla `BowItem.releaseUsing`: `pow == 1.0F` marks the shot as a crit.
 /// [`Self::get_power_for_time`] clamps at this value, so `>=` is equivalent.
 const FULL_DRAW_POWER: f32 = 1.0;
+/// Vanilla bow power curve numerator constant: `((t/20)^2 + QUADRATIC * t/20) / DIVISOR`.
+const POWER_CURVE_QUADRATIC: f32 = 2.0;
+/// Vanilla bow power curve divisor.
+const POWER_CURVE_DIVISOR: f32 = 3.0;
+/// Arrow spawn Y offset below the player's eye position.
+const ARROW_SPAWN_Y_OFFSET: f64 = 0.1;
+/// Draw power multiplier applied to the arrow's base speed.
+const BOW_POWER_MULTIPLIER: f32 = 3.0;
+/// Inaccuracy factor (vanilla uses 1.0 for bows — no spread).
+const BOW_SHOOT_UNCERTAINTY: f32 = 1.0;
+/// Vanilla `BowItem.releaseUsing` shoot-sound pitch formula:
+/// `1.0 / (random * RANDOM_RANGE + BASE) + power * POWER_SCALE`.
+const SHOOT_SOUND_PITCH_RANDOM_RANGE: f32 = 0.4;
+const SHOOT_SOUND_PITCH_BASE: f32 = 1.2;
+const SHOOT_SOUND_PITCH_POWER_SCALE: f32 = 0.5;
+/// Durability damage applied to the bow per shot.
+const BOW_DURABILITY_COST: i32 = 1;
 
 /// Behavior for the bow item.
 #[item_behavior(class = "BowItem")]
@@ -99,7 +116,7 @@ impl ItemBehavior for BowItem {
         // apply through `EnchantmentHelper` on release. Both need enchantment
         // + component-transfer foundations.
         let player_pos = player.position();
-        let spawn_pos = DVec3::new(player_pos.x, player.get_eye_y() - 0.1, player_pos.z);
+        let spawn_pos = DVec3::new(player_pos.x, player.get_eye_y() - ARROW_SPAWN_Y_OFFSET, player_pos.z);
         let arrow = Arc::new(ArrowEntity::new(
             &vanilla_entities::ARROW,
             next_entity_id(),
@@ -125,7 +142,7 @@ impl ItemBehavior for BowItem {
         }
 
         let (yaw, pitch) = player.rotation();
-        arrow.shoot_from_rotation(user, pitch, yaw, 0.0, power * 3.0, 1.0);
+        arrow.shoot_from_rotation(user, pitch, yaw, 0.0, power * BOW_POWER_MULTIPLIER, BOW_SHOOT_UNCERTAINTY);
 
         let entity: SharedEntity = arrow;
         if let Err(error) = world.try_add_entity(entity.clone()) {
@@ -145,7 +162,9 @@ impl ItemBehavior for BowItem {
             player.request_inventory_resync([slot]);
         }
 
-        let sound_pitch = 1.0 / (rand::random::<f32>() * 0.4 + 1.2) + power * 0.5;
+        let sound_pitch = 1.0
+            / (rand::random::<f32>() * SHOOT_SOUND_PITCH_RANDOM_RANGE + SHOOT_SOUND_PITCH_BASE)
+            + power * SHOOT_SOUND_PITCH_POWER_SCALE;
         world.play_sound_at(
             &sound_events::ENTITY_ARROW_SHOOT,
             SoundSource::Players,
@@ -154,7 +173,7 @@ impl ItemBehavior for BowItem {
             sound_pitch,
             None,
         );
-        stack.hurt_and_break(1, player.has_infinite_materials());
+        stack.hurt_and_break(BOW_DURABILITY_COST, player.has_infinite_materials());
         // TODO: award ITEM_USED stat for bow
         true
     }
@@ -164,8 +183,8 @@ impl BowItem {
     /// Vanilla `BowItem.getPowerForTime`.
     fn get_power_for_time(ticks: i32) -> f32 {
         let fraction = ticks as f32 / MAX_DRAW_DURATION as f32;
-        let power = (fraction * fraction + 2.0 * fraction) / 3.0;
-        if power > 1.0 { 1.0 } else { power }
+        let power = (fraction * fraction + POWER_CURVE_QUADRATIC * fraction) / POWER_CURVE_DIVISOR;
+        if power > FULL_DRAW_POWER { FULL_DRAW_POWER } else { power }
     }
 }
 
