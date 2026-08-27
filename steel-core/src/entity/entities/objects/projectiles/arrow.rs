@@ -1,14 +1,12 @@
 //! Arrow projectile entity (`net.minecraft.world.entity.projectile.arrow.Arrow`,
 //! backed by `AbstractArrow`).
 //!
-//! Mirrors the vanilla flight model: stick into blocks (`IN_GROUND`), gravity
-//! 0.05, air drag 0.99 (water 0.6), entity-hit damage from impact speed
-//! (`ceil(speed * baseDamage)` with a crit roll at full draw), despawn after
-//! 1200 in-ground ticks, and ground pickup via [`Entity::player_touch`].
+//! Server-authoritative implementation: flight physics, block/entity collision,
+//! damage, pickup rules, and network sync. Client handles rendering, particles,
+//! and sound playback from synced state and server-broadcast events.
 //!
-//! Not implemented yet (missing foundations): enchantment effects
-//! (Power/Punch/Flame/Piercing) and tipped-arrow potion contents/color sync.
-//! Crit/bubble particles are client-local in vanilla, so there is no server work.
+//! Not implemented yet: enchantment effects (Power/Punch/Flame/Piercing) and
+//! tipped-arrow potion contents/color sync.
 
 use std::sync::{Arc, Weak};
 
@@ -55,6 +53,9 @@ const DEFLECTION_STOP_THRESHOLD: f64 = 1.0e-7;
 /// SteelMC floating-point comparison threshold for near-zero velocity checks
 /// (stuck detection, push direction fallback). Not a vanilla constant.
 const VELOCITY_EPSILON: f64 = 1.0e-9;
+/// Vanilla `AbstractArrow.shouldFall`: AABB inflate distance used to check
+/// whether the arrow has free space around its resting position.
+const SHOULD_FALL_INFLATE: f64 = 0.06;
 
 /// Per-tick mutable runtime state mirroring vanilla `AbstractArrow` fields.
 struct ArrowRuntime {
@@ -187,15 +188,13 @@ impl ArrowEntity {
 
     /// Vanilla `AbstractArrow.shouldFall`: free space around the resting point.
     fn should_fall(&self) -> bool {
-        // Vanilla `noCollision(new AABB(pos,pos).inflate(0.06))`
         let Some(world) = self.level() else {
             return false;
         };
         let pos = self.position();
-        // Check 0.06 inflated cube has no solid collision (approx via is_air)
-        for dx in [-0.06, 0.06] {
-            for dy in [-0.06, 0.06] {
-                for dz in [-0.06, 0.06] {
+        for dx in [-SHOULD_FALL_INFLATE, SHOULD_FALL_INFLATE] {
+            for dy in [-SHOULD_FALL_INFLATE, SHOULD_FALL_INFLATE] {
+                for dz in [-SHOULD_FALL_INFLATE, SHOULD_FALL_INFLATE] {
                     let p = DVec3::new(pos.x + dx, pos.y + dy, pos.z + dz);
                     let bpos = steel_utils::BlockPos::new(
                         p.x.floor() as i32,
@@ -331,8 +330,7 @@ impl Entity for ArrowEntity {
             self.runtime.lock().in_ground_time = 0;
         }
 
-        // Flight branch. Water drag applies pre-move; bubble/crit particles are
-        // VANILLA CLIENT-LOCAL so there is no server work for them.
+        // Flight branch: water drag, movement, hit detection, air drag, gravity.
         if self.is_in_water() {
             self.set_velocity(self.velocity() * <ArrowEntity as AbstractArrow>::WATER_INERTIA);
         }
@@ -569,8 +567,8 @@ impl Projectile for ArrowEntity {
         }
     }
 
-    /// Vanilla `AbstractArrow.onHitBlock`: record `lastState` at the hit block,
-    /// run the base dispatch so target blocks etc. can react, then stick.
+    /// Vanilla `AbstractArrow.onHitBlock`: record `lastState`, dispatch to
+    /// target blocks, then stick into the hit block.
     fn on_hit_block(&self, hit: &ClipHitResult) {
         if let Some(world) = self.level() {
             self.runtime.lock().last_state = Some(world.get_block_state(hit.block_pos));
