@@ -112,6 +112,11 @@ impl WorldBlockEntityTickers {
             return;
         };
 
+        if entity.get_type().key.to_string().contains("furnace") {
+            tracing::info!("Reconciling furnace ticker at {:?}, active count: {}, pending count: {}, ticking: {}",
+                pos, state.active.len(), state.pending.len(), state.ticking);
+        }
+
         let binding = Arc::new(BoundBlockEntityTicker::new(holder, entity, ticker));
         if let Some(wrapper) = existing {
             let same_holder = wrapper

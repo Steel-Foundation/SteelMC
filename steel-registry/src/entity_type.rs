@@ -18,6 +18,18 @@ pub enum MobCategory {
 }
 
 impl MobCategory {
+    /// All categories natural spawning iterates over, mirroring vanilla
+    /// `NaturalSpawner.SPAWNING_CATEGORIES` (every category except `Misc`).
+    pub const SPAWNING_CATEGORIES: [Self; 7] = [
+        Self::Monster,
+        Self::Creature,
+        Self::Ambient,
+        Self::Axolotls,
+        Self::UndergroundWaterCreature,
+        Self::WaterCreature,
+        Self::WaterAmbient,
+    ];
+
     #[must_use]
     pub const fn despawn_distance(self) -> i32 {
         match self {
@@ -35,6 +47,34 @@ impl MobCategory {
     #[must_use]
     pub const fn no_despawn_distance(self) -> i32 {
         32
+    }
+
+    /// Returns vanilla `MobCategory.getMaxInstancesPerChunk`.
+    ///
+    /// This is not a literal per-chunk cap; it is used as
+    /// `max * spawnableChunkCount / 289` in the global natural-spawn budget.
+    #[must_use]
+    pub const fn max_instances_per_chunk(self) -> i32 {
+        match self {
+            Self::Monster => 70,
+            Self::Creature => 10,
+            Self::Ambient => 15,
+            Self::Axolotls | Self::UndergroundWaterCreature | Self::WaterCreature => 5,
+            Self::WaterAmbient => 20,
+            Self::Misc => -1,
+        }
+    }
+
+    /// Returns vanilla `MobCategory.isFriendly`.
+    #[must_use]
+    pub const fn is_friendly(self) -> bool {
+        !matches!(self, Self::Monster)
+    }
+
+    /// Returns vanilla `MobCategory.isPersistent`.
+    #[must_use]
+    pub const fn is_persistent(self) -> bool {
+        matches!(self, Self::Creature | Self::Misc)
     }
 }
 

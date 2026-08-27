@@ -59,14 +59,14 @@ impl BlockBehavior for FurnaceBlock {
         let Some(entity) = player.get_world().get_block_entity(pos) else {
             return InteractionResult::Pass;
         };
-        let Some(container) = ContainerRef::from_block_entity(entity) else {
+        let Some(container) = ContainerRef::from_block_entity(entity.clone()) else {
             return InteractionResult::Pass;
         };
 
         let inv = player.inventory.clone();
         player.open_menu(
             TextComponent::translated(translations::CONTAINER_FURNACE.msg()),
-            move |ctx| furnace(inv, ctx.container_id, container),
+            move |ctx| furnace(inv, ctx.container_id, container, entity.clone()),
         );
 
         InteractionResult::Success

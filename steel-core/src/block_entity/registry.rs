@@ -18,8 +18,8 @@ use super::SharedBlockEntity;
 use super::entities::{
     BarrelBlockEntity, BeehiveBlockEntity, BrushableBlockEntity, ChiseledBookShelfBlockEntity,
     ComparatorBlockEntity, DaylightDetectorBlockEntity, EndGatewayBlockEntity,
-    EndPortalBlockEntity, JukeboxBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity,
-    RawBlockEntity, SignBlockEntity,
+    EndPortalBlockEntity, FurnaceBlockEntity, JukeboxBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity,
+    RawBlockEntity, SignBlockEntity, SpawnerBlockEntity,
 };
 use crate::world::World;
 
@@ -222,6 +222,7 @@ pub fn init_block_entities() {
         registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
             Arc::new(BarrelBlockEntity::new(level, pos, state))
         });
+        registry.register(&vanilla_block_entity_types::FURNACE, |level, pos, state| Arc::new(FurnaceBlockEntity::new(level, pos, state)));
 
         registry.register(
             &vanilla_block_entity_types::CHISELED_BOOKSHELF,
@@ -274,6 +275,12 @@ pub fn init_block_entities() {
         registry.register(
             &vanilla_block_entity_types::POTENT_SULFUR,
             |level, pos, state| Arc::new(PotentSulfurBlockEntity::new(level, pos, state)),
+        );
+
+        // Register mob spawner block entity factory
+        registry.register(
+            &vanilla_block_entity_types::MOB_SPAWNER,
+            |level, pos, state| Arc::new(SpawnerBlockEntity::new(level, pos, state)),
         );
 
         registry

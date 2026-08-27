@@ -25,7 +25,7 @@ pub use chiseled_bookshelf::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEnt
 pub use comparator::ComparatorBlockEntity;
 pub use daylight_detector::DaylightDetectorBlockEntity;
 pub use end_gateway::EndGatewayBlockEntity;
-pub use furnace::FurnaceBlockEntity;
+pub use furnace::{FurnaceBlockEntity, FurnaceContainer};
 pub use end_portal::EndPortalBlockEntity;
 pub use jukebox::JukeboxBlockEntity;
 pub use piston_moving::PistonMovingBlockEntity;

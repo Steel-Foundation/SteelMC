@@ -44,7 +44,7 @@ impl WalkNeighbors {
         self.nodes[..self.len].iter().copied().flatten()
     }
 
-    const fn push(&mut self, node: i32) {
+    pub(crate) const fn push(&mut self, node: i32) {
         self.nodes[self.len] = Some(node);
         self.len += 1;
     }

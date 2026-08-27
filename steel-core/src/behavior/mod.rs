@@ -85,6 +85,7 @@ use std::sync::OnceLock;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_fluids;
+use steel_registry::vanilla_blocks;
 use steel_utils::BlockStateId;
 
 use crate::entity::ai::path::PathComputationType;
@@ -190,6 +191,7 @@ pub fn init_behaviors() {
     BLOCK_BEHAVIORS.0.get_or_init(|| {
         let mut block_behaviors = BlockBehaviorRegistry::new();
         register_block_behaviors(&mut block_behaviors);
+        block_behaviors.set_behavior(&vanilla_blocks::FURNACE, Box::new(blocks::FurnaceBlock::new(&vanilla_blocks::FURNACE)));
         block_behaviors
     });
 

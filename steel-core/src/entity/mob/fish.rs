@@ -11,7 +11,6 @@ use crate::physics::{MoveResult, MoverType};
 const TRAVEL_SPEED: f32 = 0.01;
 const DRAG: f64 = 0.9;
 const SINK: f64 = -0.005;
-const BUOYANCY: f64 = 0.005;
 
 static STEEL_FISH_DEBUG: OnceLock<bool> = OnceLock::new();
 
@@ -33,12 +32,6 @@ pub fn tick_move_control<M: Mob + ?Sized>(mob: &M) {
     };
 
     let (op, wanted, speed_modifier) = move_control;
-
-    if mob.is_effective_ai() && mob.is_in_water() && mob.get_eye_y() > mob.position().y {
-        let mut vel = mob.velocity();
-        vel.y += BUOYANCY;
-        mob.set_velocity(vel);
-    }
 
     if matches!(op, MoveControlOperation::MoveTo) && !is_done {
         let movement_speed = mob

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use std::borrow::Cow;
 use steel_registry::data_components::vanilla_components::{
-    BLOCKS_ATTACKS, CONSUMABLE, KINETIC_WEAPON,
+    BLOCKS_ATTACKS, CONSUMABLE, FOOD, KINETIC_WEAPON,
 };
 
 use steel_registry::data_components::vanilla_components::ITEM_NAME;
@@ -52,6 +52,13 @@ pub trait ItemBehavior: Send + Sync {
 
     /// Called when this item is used (e.g. right click in air).
     fn use_item(&self, context: &mut UseItemContext) -> InteractionResult {
+        if let Some(food) = context.inv.with_item(|item| item.get(FOOD).cloned()) {
+            let can_always_eat = food.can_always_eat();
+            if context.player.can_eat(can_always_eat) {
+                context.player.start_using_item(context.hand);
+                return InteractionResult::Consume;
+            }
+        }
         // TODO: Mirror Item.use/finishUsingItem for CONSUMABLE, BLOCKS_ATTACKS, and
         // KINETIC_WEAPON so specialized behaviors inherit the complete Vanilla base path.
         let Some(equippable) = context.inv.with_item(|item| item.get_equippable().cloned()) else {
@@ -134,8 +141,16 @@ pub trait ItemBehavior: Send + Sync {
         &self,
         stack: &mut ItemStack,
         _world: &Arc<World>,
-        _user: &dyn LivingEntity,
+        user: &dyn LivingEntity,
     ) -> ItemStack {
+        if let Some(food) = stack.get(FOOD) {
+            if let Some(player) = user.as_player() {
+                player.food_data.lock().eat(food.nutrition(), food.saturation());
+                if !player.has_infinite_materials() {
+                    stack.shrink(1);
+                }
+            }
+        }
         stack.copy_with_count(stack.count())
     }
 

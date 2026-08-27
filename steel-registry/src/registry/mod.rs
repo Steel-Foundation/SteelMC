@@ -379,6 +379,7 @@ impl Registry {
         vanilla_timelines::register_timelines(&mut registry.timelines);
         vanilla_timeline_tags::TimelineTag::register_timeline_tags(&mut registry.timelines);
         vanilla_recipes::register_recipes(&mut registry.recipes);
+        tracing::info!("Registered {} smelting recipes", registry.recipes.smelting_recipes.len());
         vanilla_entities::register_entity_types(&mut registry.entity_types);
         vanilla_entity_type_tags::EntityTypeTag::register_entity_type_tags(
             &mut registry.entity_types,

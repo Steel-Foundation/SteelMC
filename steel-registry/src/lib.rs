@@ -333,6 +333,11 @@ pub mod vanilla_fluids;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_fuel_values.rs"]
+pub mod vanilla_fuel_values;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_poi_types.rs"]
 pub mod vanilla_poi_types;
 

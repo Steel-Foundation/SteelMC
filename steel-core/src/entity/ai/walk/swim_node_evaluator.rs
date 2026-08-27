@@ -3,11 +3,11 @@ use steel_math::fast_floor;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_utils::{BlockPos, Direction, WorldAabb};
 
-use super::{
-    MobPathSettings, NodeEvaluator, WalkNeighbors, WalkNodeCollision, WalkPathEvaluator,
-};
+use super::{MobPathSettings, NodeEvaluator, WalkNeighbors, WalkNodeCollision, WalkPathEvaluator};
 use crate::entity::ai::node::{Node, NodeStore};
 use crate::entity::ai::path::{PathComputationType, PathType, PathfindingContext};
+use crate::behavior::BlockStateBehaviorExt as _;
+use steel_registry::fluid::FluidStateExt as _;
 
 const HORIZONTAL_DIRECTIONS: [Direction; 4] = [
     Direction::North,
@@ -33,14 +33,29 @@ impl SwimNodeEvaluator {
         }
     }
 
-    fn get_cached_block_type(&mut self, context: &mut PathfindingContext<'_>, x: i32, y: i32, z: i32) -> PathType {
-        let key = BlockPos::new(x, y, z).as_long();
-        *self.path_types_by_pos_cache.entry(key).or_insert_with(|| {
-            self.get_path_type_of_mob(context, x, y, z)
-        })
+    fn get_cached_block_type(
+        &mut self,
+        context: &mut PathfindingContext<'_>,
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> PathType {
+        let key = i64::from(Node::new(x, y, z).hash());
+        if let Some(path_type) = self.path_types_by_pos_cache.get(&key).copied() {
+            return path_type;
+        }
+        let path_type = self.get_path_type_of_mob(context, x, y, z);
+        self.path_types_by_pos_cache.insert(key, path_type);
+        path_type
     }
 
-    fn get_path_type_of_mob(&self, context: &mut PathfindingContext<'_>, x: i32, y: i32, z: i32) -> PathType {
+    fn get_path_type_of_mob(
+        &self,
+        context: &mut PathfindingContext<'_>,
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> PathType {
         let width = self.settings.entity_width();
         let height = self.settings.entity_height();
         let depth = self.settings.entity_depth();
@@ -53,7 +68,10 @@ impl SwimNodeEvaluator {
                     let fluid_state = block_state.get_fluid_state();
                     let below_pos = pos.below();
                     let below_state = context.get_block_state(below_pos);
-                    if fluid_state.is_empty() && below_state.is_pathfindable(PathComputationType::Water) && block_state.is_air() {
+                    if fluid_state.is_empty()
+                        && below_state.is_pathfindable(PathComputationType::Water)
+                        && block_state.is_air()
+                    {
                         return PathType::Breach;
                     }
                     if !fluid_state.is_water() {
@@ -85,7 +103,9 @@ impl SwimNodeEvaluator {
                 let node = self.nodes.get_node(x, y, z);
                 node.path_type = path_type;
                 node.cost_malus = node.cost_malus.max(malus);
-                let fluid_state = context.get_block_state(BlockPos::new(x, y, z)).get_fluid_state();
+                let fluid_state = context
+                    .get_block_state(BlockPos::new(x, y, z))
+                    .get_fluid_state();
                 if fluid_state.is_empty() {
                     node.cost_malus += 8.0;
                 }
@@ -96,11 +116,13 @@ impl SwimNodeEvaluator {
     }
 
     fn is_node_valid(&self, node: Option<i32>) -> bool {
-        node.and_then(|h| self.nodes.get(h)).is_some_and(|n| !n.closed)
+        node.and_then(|h| self.nodes.get(h))
+            .is_some_and(|n| !n.closed)
     }
 
     fn has_malus(node: Option<i32>, nodes: &NodeStore) -> bool {
-        node.and_then(|h| nodes.get(h)).is_some_and(|n| n.cost_malus >= 0.0)
+        node.and_then(|h| nodes.get(h))
+            .is_some_and(|n| n.cost_malus >= 0.0)
     }
 }
 

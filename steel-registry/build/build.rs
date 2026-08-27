@@ -43,6 +43,7 @@ mod entities;
 mod entity_data;
 mod features;
 mod fluids;
+mod fuel_values;
 
 mod cat_sound_variants;
 mod chicken_sound_variants;
@@ -225,6 +226,7 @@ pub fn main() {
         (entities::build(), VANILLA_ENTITIES),
         (entity_data::build(), ENTITY_DATA),
         (fluids::build(), FLUIDS),
+        (fuel_values::build(), "fuel_values"),
         (tags::fluid(), FLUID_TAGS),
         (loot_tables::build(), LOOT_TABLES),
         (block_entity_types::build(), BLOCK_ENTITY_TYPES),

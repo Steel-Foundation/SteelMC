@@ -18,7 +18,9 @@ use crate::{
         BlockBehavior, BlockEntityCreation, BlockHitResult, BlockPlaceContext, InteractionResult,
         InventoryAccess,
     },
-    block_entity::{BLOCK_ENTITIES, BlockEntity as _, entities::SpawnerBlockEntity},
+    block_entity::{
+        BLOCK_ENTITIES, BlockEntity as _, BlockEntityTicker, entities::SpawnerBlockEntity,
+    },
     player::Player,
     world::{World, game_event::GameEventContext},
 };
@@ -38,6 +40,17 @@ impl SpawnerBlock {
 }
 
 impl BlockBehavior for SpawnerBlock {
+    fn get_block_entity_ticker(
+        &self,
+        _world: &Arc<World>,
+        _state: BlockStateId,
+        block_entity_type: steel_registry::block_entity_type::BlockEntityTypeRef,
+    ) -> Option<BlockEntityTicker> {
+        BlockEntityTicker::for_matching_entity_tick(
+            block_entity_type,
+            &vanilla_block_entity_types::MOB_SPAWNER,
+        )
+    }
     fn get_state_for_placement(&self, _context: &BlockPlaceContext) -> Option<BlockStateId> {
         Some(self.block.default_state())
     }

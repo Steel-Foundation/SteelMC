@@ -2,14 +2,17 @@
 
 use std::sync::Weak;
 
+use glam::DVec3;
+
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::vanilla_block_entity_types;
+use steel_registry::{REGISTRY, RegistryExt, vanilla_block_entity_types};
 use steel_utils::locks::SyncMutex;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier, WorldAabb};
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
+use crate::entity::{ENTITIES, Entity as _, EntitySpawnReason, next_entity_id};
 use crate::world::World;
 
 const SPAWN_DATA_TAG: &str = "SpawnData";
@@ -24,6 +27,7 @@ struct SpawnerState {
     /// Spawn delay/count/potentials fields stay unmodeled until spawner
     /// ticking exists; they follow vanilla's load defaults meanwhile.
     next_spawn_entity: Option<NbtCompound>,
+    delay: i32,
 }
 
 /// Mob spawner block entity.
@@ -45,6 +49,7 @@ impl SpawnerBlockEntity {
             base: BlockEntityBase::new(&vanilla_block_entity_types::MOB_SPAWNER, level, pos, state),
             state: SyncMutex::new(SpawnerState {
                 next_spawn_entity: None,
+                delay: 20,
             }),
         }
     }
@@ -60,6 +65,92 @@ impl SpawnerBlockEntity {
         entity.insert("id", entity_type.key.to_string());
         drop(state);
 
+        self.set_changed();
+    }
+
+    /// Runs the vanilla mob-spawner tick for the currently configured entity.
+    pub fn tick_spawner(&self, world: &std::sync::Arc<World>) {
+        let pos = self.get_block_pos();
+        let Some(entity_id) = self
+            .state
+            .lock()
+            .next_spawn_entity
+            .as_ref()
+            .and_then(|entity| entity.string("id"))
+            .map(ToOwned::to_owned)
+        else {
+            return;
+        };
+        if world
+            .nearest_player(
+                DVec3::new(
+                    f64::from(pos.x()) + 0.5,
+                    f64::from(pos.y()) + 0.5,
+                    f64::from(pos.z()) + 0.5,
+                ),
+                16.0,
+                |p| !p.is_spectator(),
+            )
+            .is_none()
+        {
+            return;
+        }
+        let mut state = self.state.lock();
+        if state.delay > 0 {
+            state.delay -= 1;
+            return;
+        }
+        let Ok(key) = entity_id.to_string().parse::<Identifier>() else {
+            return;
+        };
+        let Some(entity_type) = REGISTRY.entity_types.by_key(&key) else {
+            return;
+        };
+        let center = DVec3::new(
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()),
+            f64::from(pos.z()) + 0.5,
+        );
+        let nearby = WorldAabb::new(
+            center.x - 4.0,
+            center.y - 2.0,
+            center.z - 4.0,
+            center.x + 4.0,
+            center.y + 2.0,
+            center.z + 4.0,
+        );
+        if world
+            .get_entities_in_aabb_matching(&nearby, |entity| {
+                entity.entity_type().key == entity_type.key
+            })
+            .len()
+            >= 6
+        {
+            state.delay = 20;
+            return;
+        }
+        let spawn = DVec3::new(
+            center.x + rand::random_range(-3.5..3.5),
+            center.y,
+            center.z + rand::random_range(-3.5..3.5),
+        );
+        let Some(entity) = ENTITIES.create(
+            entity_type,
+            next_entity_id(),
+            spawn,
+            std::sync::Arc::downgrade(world),
+        ) else {
+            state.delay = 20;
+            return;
+        };
+        if entity.try_set_position(spawn).is_ok() {
+            if let Some(mob) = entity.as_mob() {
+                mob.finalize_spawn(world, EntitySpawnReason::Spawner, None);
+            }
+            let _ = world.try_add_entity(entity);
+        }
+        state.delay = rand::random_range(200..=800);
+        drop(state);
         self.set_changed();
     }
 }
@@ -78,6 +169,7 @@ impl BlockEntity for SpawnerBlockEntity {
             spawn_data.insert(ENTITY_TAG, entity.clone());
             nbt.insert(SPAWN_DATA_TAG, spawn_data);
         }
+        nbt.insert("Delay", state.delay);
     }
 
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
@@ -86,7 +178,10 @@ impl BlockEntity for SpawnerBlockEntity {
             .compound(SPAWN_DATA_TAG)
             .and_then(|spawn_data| spawn_data.compound(ENTITY_TAG))
             .map(|entity| entity.to_owned());
-        self.state.lock().next_spawn_entity = next_spawn_entity;
+        let delay = view.int("Delay").unwrap_or(20);
+        let mut state = self.state.lock();
+        state.next_spawn_entity = next_spawn_entity;
+        state.delay = delay;
     }
 
     fn get_update_tag(&self) -> Option<NbtCompound> {
@@ -95,6 +190,10 @@ impl BlockEntity for SpawnerBlockEntity {
         let mut tag = self.save_custom_only();
         tag.remove(SPAWN_POTENTIALS_TAG);
         Some(tag)
+    }
+
+    fn tick(&self, world: &std::sync::Arc<World>) {
+        self.tick_spawner(world);
     }
 }
 

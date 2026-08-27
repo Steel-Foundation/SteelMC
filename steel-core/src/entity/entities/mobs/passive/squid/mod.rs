@@ -16,13 +16,14 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
-    FloatGoal, LookAtPlayerGoal, RandomLookAroundGoal, WaterAvoidingRandomStrollGoal,
+    LookAtPlayerGoal, RandomLookAroundGoal, RandomSwimmingGoal,
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData,
     LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob, SpawnGroupData,
 };
+use crate::entity::mob::{fish_init_mob_base, fish_tick_move_control, fish_travel};
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
@@ -62,10 +63,10 @@ impl SquidEntity {
         let mob_base = MobBase::new();
         let mut entity_data = SquidEntityData::new();
         living_base.initialize_synced_data(&mut entity_data);
+        fish_init_mob_base(&mob_base);
         {
             let mut goal_selector = mob_base.goal_selector().lock();
-            goal_selector.add_goal(0, FloatGoal::new(&mob_base));
-            goal_selector.add_goal(5, WaterAvoidingRandomStrollGoal::new(1.0));
+            goal_selector.add_goal(0, RandomSwimmingGoal::new(1.0, 40));
             goal_selector.add_goal(6, LookAtPlayerGoal::new(6.0));
             goal_selector.add_goal(7, RandomLookAroundGoal::new());
         }
@@ -164,11 +165,23 @@ impl LivingEntity for SquidEntity {
         let r = self.default_ai_step();
         r
     }
+    fn travel_in_water(
+        &self,
+        input: DVec3,
+        _base_gravity: f64,
+        _is_falling: bool,
+        _old_y: f64,
+    ) -> Option<MoveResult> {
+        fish_travel(self, input)
+    }
 }
 
 impl Mob for SquidEntity {
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
+    }
+    fn tick_move_control(&self) {
+        fish_tick_move_control(self);
     }
     fn tick_goal_selectors(&self) {
         PathfinderMob::tick_pathfinder_goal_selectors(self);
