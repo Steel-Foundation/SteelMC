@@ -109,7 +109,7 @@ impl ChatState {
 }
 
 impl Player {
-    /// Decays the throttlers of the player once per server tick
+    /// Decays the throttlers of the player once per server tick.
     pub fn tick_throttlers(&self) {
         let mut chat = self.chat.lock();
         chat.chat_spam_throttler.tick();
