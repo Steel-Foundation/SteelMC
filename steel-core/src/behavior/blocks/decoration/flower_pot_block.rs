@@ -25,6 +25,7 @@ use crate::world::game_event::GameEventContext;
 pub(crate) static POTTED_BY_CONTENT: OnceLock<SyncMutex<FxHashMap<Identifier, BlockRef>>> =
     OnceLock::new();
 
+/// A flower pot block that can hold potted plants.
 #[block_behavior]
 pub struct FlowerPotBlock {
     block: BlockRef,
