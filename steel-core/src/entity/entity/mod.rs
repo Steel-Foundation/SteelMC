@@ -1720,6 +1720,25 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().set_rotation(rotation);
     }
 
+    /// Vanilla `Entity.snapTo(x, y, z, yRot, xRot)`.
+    fn snap_to(&self, pos: DVec3, yaw: f32, pitch: f32) -> Result<(), EntityMoveError> {
+        self.try_set_position(pos)?;
+        self.set_rotation((yaw, pitch));
+        self.set_old_position_to_current();
+        self.base().set_old_rotation_to_current();
+        Ok(())
+    }
+
+    /// Vanilla `Entity.applyComponentsFromItemStack`.
+    fn apply_components_from_item_stack(&self, stack: &ItemStack) {
+        if let Some(custom_name) = stack.get(CUSTOM_NAME) {
+            self.set_custom_name(Some(custom_name.clone()));
+        }
+        if let Some(custom_data) = stack.get(CUSTOM_DATA) {
+            self.set_custom_data(custom_data.copy_tag());
+        }
+    }
+
     /// Gets the nearest horizontal direction to the entity's yaw (horizontal rotation).
     fn direction_yaw(&self) -> Direction {
         let (yaw, _) = self.rotation();

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::data_components::AdventureModePredicate;
-use steel_registry::data_components::vanilla_components::CAN_BREAK;
+use steel_registry::data_components::vanilla_components::{CAN_BREAK, CAN_PLACE_ON};
 use steel_registry::vanilla_attributes;
 use steel_registry::{
     REGISTRY, blocks::properties::Direction, item_stack::ItemStack, vanilla_blocks,
@@ -55,31 +55,49 @@ impl Player {
         let Some(can_break) = can_break else {
             return true;
         };
-        !Self::can_break_block_in_adventure_mode(&can_break, world, pos)
+        !adventure_mode_predicate_matches(&can_break, world, pos)
     }
 
-    fn can_break_block_in_adventure_mode(
-        predicate: &AdventureModePredicate,
-        world: &World,
+    /// Vanilla `Player.mayUseItemAt`.
+    #[must_use]
+    pub fn may_use_item_at(
+        &self,
         pos: BlockPos,
+        direction: Direction,
+        item_stack: &ItemStack,
     ) -> bool {
-        let state = world.get_block_state(pos);
-        // Vanilla's BlockInWorld overload intentionally does not test the
-        // predicate's block-entity component matchers.
-        predicate.predicates().iter().any(|predicate| {
-            if !predicate.matches_state(state) {
-                return false;
-            }
-            let Some(expected_nbt) = predicate.nbt() else {
-                return true;
-            };
-            let Some(block_entity) = world.get_block_entity(pos) else {
-                return false;
-            };
-            let actual_nbt = block_entity.save_with_full_metadata();
-            compare_nbt_compounds(expected_nbt.tag(), &actual_nbt, true)
+        if self.abilities.lock().may_build {
+            return true;
+        }
+
+        let target = pos.relative(direction.opposite());
+        item_stack.get(CAN_PLACE_ON).is_some_and(|predicate| {
+            adventure_mode_predicate_matches(predicate, &self.get_world(), target)
         })
     }
+}
+
+fn adventure_mode_predicate_matches(
+    predicate: &AdventureModePredicate,
+    world: &World,
+    pos: BlockPos,
+) -> bool {
+    let state = world.get_block_state(pos);
+    // Vanilla's BlockInWorld overload intentionally does not test the
+    // predicate's block-entity component matchers.
+    predicate.predicates().iter().any(|predicate| {
+        if !predicate.matches_state(state) {
+            return false;
+        }
+        let Some(expected_nbt) = predicate.nbt() else {
+            return true;
+        };
+        let Some(block_entity) = world.get_block_entity(pos) else {
+            return false;
+        };
+        let actual_nbt = block_entity.save_with_full_metadata();
+        compare_nbt_compounds(expected_nbt.tag(), &actual_nbt, true)
+    })
 }
 
 /// Manages the block breaking state for a player.

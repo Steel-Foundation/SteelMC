@@ -29,6 +29,7 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{BlockPos, Identifier, WorldAabb, axis::Axis};
 
+use crate::behavior::items::SpawnEggItem;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::ai::control::{
@@ -493,7 +494,30 @@ pub trait Mob: LivingEntity + Leashable {
             return InteractionResult::Pass;
         }
 
-        // TODO: Handle name tags and spawn eggs once item-on-entity behavior exists.
+        if ITEM_BEHAVIORS
+            .get_behavior(player.inventory.lock().get_item_in_hand(hand).item())
+            .is_spawn_egg()
+        {
+            let Some(world) = self.level() else {
+                return InteractionResult::Pass;
+            };
+            let spawned = player.inventory.lock().mutate_item_in_hand(hand, |stack| {
+                SpawnEggItem::spawn_offspring_from_spawn_egg(
+                    player,
+                    self,
+                    self.entity_type(),
+                    &world,
+                    self.position(),
+                    stack,
+                )
+            });
+            return if spawned.is_some() {
+                InteractionResult::SuccessServer
+            } else {
+                InteractionResult::Pass
+            };
+        }
+
         let interaction_result = self.interact_entity(player, hand, location);
         if interaction_result != InteractionResult::Pass {
             return interaction_result;

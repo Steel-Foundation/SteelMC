@@ -145,6 +145,10 @@ impl BlockBehavior for LiquidBlock {
         !is_lava_fluid(self.fluid)
     }
 
+    fn is_liquid_block(&self) -> bool {
+        true
+    }
+
     /// Called when the block is placed.
     fn on_place(
         &self,

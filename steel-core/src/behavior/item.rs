@@ -139,6 +139,11 @@ pub trait ItemBehavior: Send + Sync {
         stack.copy_with_count(stack.count())
     }
 
+    /// Returns whether this behavior implements vanilla `SpawnEggItem`.
+    fn is_spawn_egg(&self) -> bool {
+        false
+    }
+
     /// Called by vanilla `ItemStack.interactLivingEntity`.
     fn interact_living_entity(
         &self,

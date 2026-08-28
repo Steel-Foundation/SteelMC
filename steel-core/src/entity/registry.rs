@@ -170,6 +170,22 @@ impl EntityRegistry {
             .map(|f| f(entity_type, entity_id, pos, world))
     }
 
+    /// Creates a new entity, falling back to [`RawEntity`] when no factory is registered.
+    ///
+    /// Vanilla always has a concrete class for every entity type. Steel uses this
+    /// for spawn eggs and similar runtime spawns until the type is implemented.
+    #[must_use]
+    pub fn create_or_raw(
+        &self,
+        entity_type: EntityTypeRef,
+        entity_id: i32,
+        pos: DVec3,
+        world: Weak<World>,
+    ) -> SharedEntity {
+        self.create(entity_type, entity_id, pos, world.clone())
+            .unwrap_or_else(|| Arc::new(RawEntity::new(entity_id, pos, world, entity_type)))
+    }
+
     /// Creates an entity from persisted data, falling back to raw NBT preservation.
     #[must_use]
     pub fn create_and_load_or_raw(

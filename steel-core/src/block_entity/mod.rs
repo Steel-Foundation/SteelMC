@@ -44,7 +44,10 @@ use std::{
     },
 };
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::{block_entity_type::BlockEntityTypeRef, data_components::DataComponentMap};
+use steel_registry::{
+    block_entity_type::BlockEntityTypeRef, data_components::DataComponentMap,
+    entity_type::EntityTypeRef,
+};
 use steel_utils::{
     BlockPos, BlockStateId, ErasedType,
     locks::{SyncMutex, SyncRwLock},
@@ -507,6 +510,18 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     fn game_event_listener(&self) -> Option<SharedGameEventListener> {
         None
     }
+
+    /// Returns this block entity as vanilla `Spawner` when it can be configured
+    /// by spawn eggs.
+    fn as_spawner(&self) -> Option<&dyn Spawner> {
+        None
+    }
+}
+
+/// Vanilla `net.minecraft.world.level.Spawner`.
+pub trait Spawner: Send + Sync {
+    /// Vanilla `Spawner.setEntityId`.
+    fn set_entity_id(&self, entity_type: EntityTypeRef);
 }
 
 /// Final block-entity common-state operations.

@@ -1,10 +1,16 @@
 //! Helpers shared by item behavior implementations.
 
+use std::sync::Arc;
+
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::item::BlockHitResult;
 
 use crate::behavior::UseItemContext;
+use crate::entity::{Entity, LivingEntity};
 use crate::inventory::lock::ContainerId;
+use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;
+use crate::world::{ClipBlockShape, ClipFluid, World};
 
 /// Applies vanilla `ItemUtils.createFilledResult`.
 pub(crate) fn create_filled_result(
@@ -29,5 +35,36 @@ pub(crate) fn create_filled_result(
 
     if !overflow.is_empty() {
         let _ = player.drop_item(overflow, false, false);
+    }
+}
+
+/// Applies vanilla `ItemStack.consume`.
+pub(crate) fn consume_item_stack(
+    stack: &mut ItemStack,
+    owner: Option<&dyn LivingEntity>,
+    amount: i32,
+) {
+    if owner.is_none_or(|owner| !owner.has_infinite_materials()) {
+        stack.shrink(amount);
+    }
+}
+
+/// Vanilla `Item.getPlayerPOVHitResult`.
+pub(crate) fn get_player_pov_hit_result(
+    world: &Arc<World>,
+    player: &Player,
+    fluid: ClipFluid,
+) -> BlockHitResult {
+    let from = player.position().with_y(player.get_eye_y());
+    let look = player.calculate_view_vector(player.rotation().1, player.rotation().0);
+    let to = from + look * player.block_interaction_range();
+    let hit = world.clip(from, to, ClipBlockShape::Outline, fluid);
+    BlockHitResult {
+        location: hit.location,
+        direction: hit.direction,
+        block_pos: hit.block_pos,
+        miss: hit.miss,
+        inside: hit.inside,
+        world_border_hit: hit.world_border_hit,
     }
 }
