@@ -57,36 +57,50 @@ pub enum TextureError {
     JSONError(String),
 }
 
-const MAX_RETRIES: u32 = 3;
+/// One initial attempt plus a single retry for transient transport failures.
+const MAX_ATTEMPTS: u32 = 2;
 
-/// Authenticates a player with the configured session server.
+/// Authenticates a player with the configured session server over the shared HTTP
+/// client.
+///
+/// Deterministic failures (unverified username, unexpected status, malformed JSON) are
+/// returned immediately without retrying.
 pub async fn mojang_authenticate(
+    client: &reqwest::Client,
     username: &str,
     server_hash: &str,
     auth_server: Option<&str>,
 ) -> Result<GameProfile, AuthError> {
     let auth_url = build_auth_url(auth_server, username, server_hash)?;
 
-    let mut last_error = AuthError::FailedResponse;
-
-    for _ in 0..MAX_RETRIES {
-        let Ok(response) = reqwest::get(auth_url.clone()).await else {
-            last_error = AuthError::FailedResponse;
-            continue;
+    for attempt in 1..=MAX_ATTEMPTS {
+        let response = match client.get(auth_url.clone()).send().await {
+            Ok(response) => response,
+            Err(error) => {
+                if attempt == MAX_ATTEMPTS {
+                    log::warn!("Player {username} auth failed: {error}");
+                    return Err(AuthError::FailedResponse);
+                }
+                continue;
+            }
         };
 
         match response.status() {
             StatusCode::OK => {
                 return response.json().await.map_err(|_| AuthError::FailedParse);
             }
-            StatusCode::NO_CONTENT => last_error = AuthError::UnverifiedUsername,
-            other => last_error = AuthError::UnknownStatusCode(other),
+            StatusCode::NO_CONTENT => {
+                log::debug!("Player {username} is not verified by the session server");
+                return Err(AuthError::UnverifiedUsername);
+            }
+            other => {
+                log::warn!("Player {username} auth failed");
+                return Err(AuthError::UnknownStatusCode(other));
+            }
         }
     }
 
-    log::warn!("Player {username} auth failed");
-
-    Err(last_error)
+    Err(AuthError::FailedResponse)
 }
 
 fn build_auth_url(

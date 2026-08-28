@@ -452,8 +452,9 @@ pub struct Server {
     known_players: SyncMutex<KnownPlayerCacheState>,
     /// Wakes shutdown when the single known-player save worker becomes idle.
     known_player_save_idle: Notify,
-    /// HTTP client used by online-mode name-to-profile lookups.
-    profile_lookup_client: reqwest::Client,
+    /// Shared HTTP client used by online-mode name-to-profile lookups and
+    /// session-server authentication.
+    pub profile_lookup_client: reqwest::Client,
     /// Cached Mojang service keys used to validate player-key certificates.
     service_keys: Arc<ServiceKeyStore>,
     /// Player joins prepared by async I/O and finalized at the game tick safe point.
@@ -758,7 +759,11 @@ impl Server {
             player_permission_updates: AsyncMutex::new(()),
             known_players: SyncMutex::new(KnownPlayerCacheState::new(known_players)),
             known_player_save_idle: Notify::new(),
-            profile_lookup_client: reqwest::Client::new(),
+            profile_lookup_client: reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(5))
+                .timeout(Duration::from_secs(10))
+                .build()
+                .map_err(|error| format!("failed to build HTTP client: {error}"))?,
             service_keys,
             pending_player_joins: PlayerJoinQueue::new(),
             pending_player_disconnects: PlayerDisconnectQueue::new(),
