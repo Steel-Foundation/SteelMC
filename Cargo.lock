@@ -445,6 +445,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tinytemplate",
+ "tokio",
  "walkdir",
 ]
 
@@ -2801,6 +2802,7 @@ version = "0.15.2+mc26.2"
 dependencies = [
  "aes",
  "cfb8",
+ "criterion",
  "flate2",
  "glam",
  "log",
