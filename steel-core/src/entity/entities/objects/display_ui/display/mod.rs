@@ -11,6 +11,27 @@ use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_data::Matrix4f;
 use steel_registry::vanilla_entity_data::DisplayEntityData;
 
+pub const DEFAULT_TRANSFORMATION_INTERPOLATION_DURATION: i32 = 0;
+pub const DEFAULT_TRANSFORMATION_INTERPOLATION_DELAY: i32 = 0;
+pub const DEFAULT_POS_ROT_INTERPOLATION_DURATION: i32 = 0;
+pub const DEFAULT_BILLBOARD_CONSTRAINTS: BillboardConstraints = BillboardConstraints::Fixed;
+pub const DEFAULT_VIEW_RANGE: f32 = 1.0;
+pub const DEFAULT_SHADOW_RADIUS: f32 = 0.0;
+pub const DEFAULT_SHADOW_STRENGTH: f32 = 1.0;
+pub const DEFAULT_WIDTH: f32 = 0.0;
+pub const DEFAULT_HEIGHT: f32 = 0.0;
+pub const DEFAULT_GLOW_COLOR_OVERRIDE: i32 = -1;
+
+/*
+view.set_view_range(nbt.float("view_range").unwrap_or(1.0));
+        view.set_shadow_radius(nbt.float("shadow_radius").unwrap_or(0.0));
+        view.set_shadow_strength(nbt.float("shadow_strength").unwrap_or(1.0));
+        view.set_width(nbt.float("width").unwrap_or(0.0));
+        view.set_height(nbt.float("height").unwrap_or(0.0));
+        view.set_synced_glow_color_override(nbt.int("glow_color_override").unwrap_or(-1));
+        view.set_brightness_override(nbt.get("brightness").and_then(Brightness::from_nbt_tag));
+ */
+
 /// The abstract display trait used by all display entities.
 ///
 /// Display entities have:
@@ -63,23 +84,35 @@ pub trait Display: Entity {
         );
 
         view.set_transformation_interpolation_duration(
-            nbt.int("interpolation_duration").unwrap_or(0),
+            nbt.int("interpolation_duration")
+                .unwrap_or(DEFAULT_TRANSFORMATION_INTERPOLATION_DURATION),
         );
-        view.set_transformation_interpolation_delay(nbt.int("start_interpolation").unwrap_or(0));
+        view.set_transformation_interpolation_delay(
+            nbt.int("start_interpolation")
+                .unwrap_or(DEFAULT_TRANSFORMATION_INTERPOLATION_DELAY),
+        );
         view.set_pos_rot_interpolation_duration(
-            nbt.int("teleport_duration").unwrap_or(0).clamp(0, 59),
+            nbt.int("teleport_duration")
+                .unwrap_or(DEFAULT_POS_ROT_INTERPOLATION_DURATION)
+                .clamp(0, 59),
         );
         view.set_billboard_constraints(
             nbt.get("billboard")
                 .and_then(BillboardConstraints::from_nbt_tag)
-                .unwrap_or(BillboardConstraints::Fixed),
+                .unwrap_or(DEFAULT_BILLBOARD_CONSTRAINTS),
         );
-        view.set_view_range(nbt.float("view_range").unwrap_or(1.0));
-        view.set_shadow_radius(nbt.float("shadow_radius").unwrap_or(0.0));
-        view.set_shadow_strength(nbt.float("shadow_strength").unwrap_or(1.0));
-        view.set_width(nbt.float("width").unwrap_or(0.0));
-        view.set_height(nbt.float("height").unwrap_or(0.0));
-        view.set_synced_glow_color_override(nbt.int("glow_color_override").unwrap_or(-1));
+        view.set_view_range(nbt.float("view_range").unwrap_or(DEFAULT_VIEW_RANGE));
+        view.set_shadow_radius(nbt.float("shadow_radius").unwrap_or(DEFAULT_SHADOW_RADIUS));
+        view.set_shadow_strength(
+            nbt.float("shadow_strength")
+                .unwrap_or(DEFAULT_SHADOW_STRENGTH),
+        );
+        view.set_width(nbt.float("width").unwrap_or(DEFAULT_WIDTH));
+        view.set_height(nbt.float("height").unwrap_or(DEFAULT_HEIGHT));
+        view.set_synced_glow_color_override(
+            nbt.int("glow_color_override")
+                .unwrap_or(DEFAULT_GLOW_COLOR_OVERRIDE),
+        );
         view.set_brightness_override(nbt.get("brightness").and_then(Brightness::from_nbt_tag));
     }
 
@@ -106,8 +139,6 @@ pub trait Display: Entity {
             nbt.insert("brightness", brightness);
         }
     }
-
-    // TODO: Add `getTeamColor()` when team foundations exist.
 }
 
 /// A private trait, only used by display entities, to get and set
@@ -214,7 +245,7 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
     /// Gets the billboard constraints of the display entity.
     fn billboard_constraints(&self) -> BillboardConstraints {
         BillboardConstraints::try_from(*self.display_data().billboard_render_constraints.get())
-            .unwrap_or(BillboardConstraints::Fixed)
+            .unwrap_or(DEFAULT_BILLBOARD_CONSTRAINTS)
     }
     /// Sets the display entity's billboard constraints to `constraints`.
     fn set_billboard_constraints(&mut self, constraints: BillboardConstraints) {

@@ -20,6 +20,11 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 use text_components::TextComponent;
 
+
+pub const DEFAULT_LINE_WIDTH: i32 = 200;
+pub const DEFAULT_TEXT_OPACITY: i8 = -1;
+pub const DEFAULT_BACKGROUND_COLOR: i32 = 0x4000_0000;
+
 /// The Vanilla text display entity.
 ///
 /// In addition to having the common display entity properties, this entity
@@ -124,10 +129,9 @@ impl Entity for TextDisplayEntity {
         self.with_view(|mut view| {
             <Self as Display>::load_display(&mut view, nbt);
 
-            view.set_line_width(nbt.int("line_width").unwrap_or(200));
-            view.set_line_width(nbt.int("line_width").unwrap_or(200));
-            view.set_text_opacity(nbt.byte("text_opacity").unwrap_or(-1) as u8);
-            view.set_background_color(nbt.int("background").unwrap_or(0x4000_0000));
+            view.set_line_width(nbt.int("line_width").unwrap_or(DEFAULT_LINE_WIDTH));
+            view.set_text_opacity(nbt.byte("text_opacity").unwrap_or(DEFAULT_TEXT_OPACITY) as u8);
+            view.set_background_color(nbt.int("background").unwrap_or(DEFAULT_BACKGROUND_COLOR));
 
             let mut flags = TextDisplayFlags::empty();
             if view.shadow() {

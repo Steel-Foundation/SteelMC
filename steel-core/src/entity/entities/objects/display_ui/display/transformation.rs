@@ -104,28 +104,43 @@ impl Transformation {
     }
 
     /// Decomposes a [`Matrix4f`] to form a transformation.
+    ///
+    /// This function uses *singular value decomposition* (or SVD) to split the matrix
+    /// into a set of transformation values.
     #[expect(clippy::similar_names, reason = "matches the stages of decomposition")]
     #[must_use]
     pub fn decompose(matrix: Matrix4f) -> Self {
         let scale_factor = 1.0 / matrix.0.col(3)[3];
         let input = matrix.0 * scale_factor;
 
+        // Extract the translation.
+        let translation = input.w_axis.xyz() * scale_factor;
+
         let mat = Mat3::from_mat4(input);
 
-        let mut scratch = mat.transpose() * mat;
+        // Calculate transpose(A) * A.
+        let mut ata = mat.transpose() * mat;
 
+        // Approximate the eigendecomposition of ata.
+        // This is achieved by using 5 Jacobi iterations.
         let mut right_rotation = Quat::IDENTITY;
         for _ in 0..5 {
-            Self::step_jacobi(&mut scratch, &mut right_rotation);
+            Self::step_jacobi(&mut ata, &mut right_rotation);
         }
+        // Use the resulting quaternion to get the right rotation's conjugate.
         right_rotation = right_rotation.normalize();
 
-        let zero_column_0 = scratch.col(0)[0] < 1.0e-6;
-        let zero_column_1 = scratch.col(1)[1] < 1.0e-6;
+        let zero_column_0 = ata.col(0)[0] < 1.0e-6;
+        let zero_column_1 = ata.col(1)[1] < 1.0e-6;
 
+        // Get a matrix that can be reduced to a diagonal form.
         let u012s = mat * Mat3::from_quat(right_rotation);
         let mut left_rotation = Quat::IDENTITY;
 
+        // Now, calculate the 3 Givens rotations.
+        // This gives us the left rotation.
+
+        // 1) Along the Z axis
         let givens = if zero_column_0 {
             Self::qr_givens_quat(u012s.col(1)[1], -u012s.col(1)[0])
         } else {
@@ -135,6 +150,7 @@ impl Transformation {
         left_rotation *= givens.around_z_quat();
         u12s = u12s.transpose() * u012s;
 
+        // 2) Along the Y axis
         let givens = if zero_column_0 {
             Self::qr_givens_quat(u12s.col(2)[2], -u12s.col(2)[0])
         } else {
@@ -145,6 +161,7 @@ impl Transformation {
         left_rotation *= givens.around_y_quat();
         u2s = u2s.transpose() * u12s;
 
+        // 3) Along the X axis
         let givens = if zero_column_1 {
             Self::qr_givens_quat(u2s.col(2)[2], -u2s.col(2)[1])
         } else {
@@ -154,11 +171,11 @@ impl Transformation {
         left_rotation *= givens.around_x_quat();
         sm = sm.transpose() * u2s;
 
+        // Get the scale components from sm, which should approximately be a diagonal matrix.
         let scale = Vec3::new(sm.col(0)[0], sm.col(1)[1], sm.col(2)[2]);
 
+        // Finally, take the conjugate of the right rotation to get its final value.
         right_rotation = right_rotation.conjugate();
-
-        let translation = input.w_axis.xyz() * scale_factor;
 
         Transformation {
             translation: translation.into(),
