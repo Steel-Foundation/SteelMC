@@ -85,6 +85,10 @@ impl Entity for MarkerEntity {
 
     fn tick(&self) {}
 
+    fn no_physics(&self) -> bool {
+        true
+    }
+
     fn hurt(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
         false
     }
