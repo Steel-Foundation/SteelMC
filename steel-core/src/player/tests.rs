@@ -7,7 +7,7 @@ use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
     ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
 };
-use steel_protocol::packets::game::EquipmentSlotItem;
+use steel_protocol::packets::game::{EquipmentSlotItem, SSetCreativeModeSlot};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::data_component_predicate::DataComponentMatchers;
@@ -40,6 +40,7 @@ use crate::inventory::{
     menu::{Menu, MenuBehavior, MenuBuilder, MenuKind, kinds::BasicKind},
 };
 use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
+use crate::player::game_mode::PlayerGameModeState;
 use crate::test_support::{
     TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, hard_damage_test_world,
     insert_ready_full_chunk, test_world,
@@ -47,8 +48,8 @@ use crate::test_support::{
 use crate::world::World;
 
 use super::{
-    ClientInformation, DEATH_DURATION, Player, PlayerConnection, PlayerPermissionState,
-    ResetReason,
+    ClientInformation, DEATH_DURATION, DROP_SPAM_THROTTLER_INCREMENT_STEP,
+    DROP_SPAM_THROTTLER_THRESHOLD, Player, PlayerConnection, PlayerPermissionState, ResetReason,
     connection::NetworkConnection,
     experience::Experience,
     experience::first_point_level_up_sound,
@@ -1365,5 +1366,65 @@ fn block_action_restriction_precedes_redstone_ore_attack() {
         world
             .get_block_state(pos)
             .get_value(&BlockStateProperties::LIT)
+    );
+}
+
+#[test]
+fn throttle_player_dropping_items_from_creative_menu() {
+    const DROPS_ALLOWED_BEFORE_THROTTLE: i32 =
+        DROP_SPAM_THROTTLER_THRESHOLD / DROP_SPAM_THROTTLER_INCREMENT_STEP;
+
+    init_vanilla_registry();
+    let world = test_world();
+    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(world));
+
+    *player.game_modes.lock() = PlayerGameModeState::new(GameType::Creative);
+
+    // Ensure no remainder for easier logic in the test
+    assert_eq!(
+        DROP_SPAM_THROTTLER_INCREMENT_STEP * DROPS_ALLOWED_BEFORE_THROTTLE,
+        DROP_SPAM_THROTTLER_THRESHOLD,
+        "test assumes that threshold is perfectly divisible by increment step, but that is false"
+    );
+
+    let packet = SSetCreativeModeSlot {
+        slot_num: -1,
+        item_stack: ItemStack::new(&vanilla_items::DIAMOND),
+    };
+
+    for _ in 0..=DROPS_ALLOWED_BEFORE_THROTTLE {
+        player.handle_set_creative_mode_slot(packet.clone());
+    }
+
+    assert_eq!(
+        world.entity_manager().count(),
+        DROPS_ALLOWED_BEFORE_THROTTLE as usize
+    );
+
+    // This tick will allow the player to drop one more stack.
+    player.tick();
+    player.handle_set_creative_mode_slot(packet.clone());
+    assert_eq!(
+        world.entity_manager().count(),
+        (DROPS_ALLOWED_BEFORE_THROTTLE + 1) as usize
+    );
+
+    // Tick the throttler enough times to be a tick away from allowing the player drop one more stack.
+    for _ in 0..(DROP_SPAM_THROTTLER_INCREMENT_STEP - 1) {
+        player.tick();
+    }
+    player.handle_set_creative_mode_slot(packet.clone());
+    assert_eq!(
+        world.entity_manager().count(),
+        (DROPS_ALLOWED_BEFORE_THROTTLE + 1) as usize
+    );
+
+    // Decay the Throttler just enough to allow the player drop one more stack.
+    player.tick();
+    player.handle_set_creative_mode_slot(packet);
+    assert_eq!(
+        world.entity_manager().count(),
+        (DROPS_ALLOWED_BEFORE_THROTTLE + 2) as usize
     );
 }

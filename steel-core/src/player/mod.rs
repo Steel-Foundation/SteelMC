@@ -138,6 +138,9 @@ use crate::inventory::container::Container;
 const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
+const DROP_SPAM_THROTTLER_INCREMENT_STEP: i32 = 20;
+const DROP_SPAM_THROTTLER_THRESHOLD: i32 = 1480;
+
 use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::spam_throttler::TickThrottler;
@@ -570,7 +573,10 @@ impl Player {
             ender_pearls: SyncMutex::new(Vec::new()),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
-            drop_spam_throttler: SyncMutex::new(TickThrottler::new(20, 1480)),
+            drop_spam_throttler: SyncMutex::new(TickThrottler::new(
+                DROP_SPAM_THROTTLER_INCREMENT_STEP,
+                DROP_SPAM_THROTTLER_THRESHOLD,
+            )),
         }
     }
 
