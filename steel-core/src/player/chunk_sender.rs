@@ -4,8 +4,10 @@
 //! tick. The three-phase design (prepare → encode → commit) minimizes lock hold
 //! time on the per-player `ChunkSender` mutex so that game-tick operations like
 //! `mark_chunk_pending_to_send` and `drop_chunk` are never blocked for long.
+use glam::IVec2;
 use rayon::{ThreadPool, prelude::*};
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::BinaryHeap;
 use std::sync::{Arc, Weak};
 
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket};
@@ -252,12 +254,18 @@ impl ChunkSender {
         }
         drop(epoch);
 
+        let prepared_by_pos: FxHashMap<ChunkPos, &PreparedChunk> = batch
+            .chunks
+            .iter()
+            .map(|chunk| (chunk.pos, chunk))
+            .collect();
+
         let mut valid_chunks = Vec::with_capacity(encoded_chunks.len());
         for encoded in encoded_chunks {
             if !self.pending_chunks.contains(&encoded.pos) {
                 continue;
             }
-            let Some(prepared) = batch.chunks.iter().find(|chunk| chunk.pos == encoded.pos) else {
+            let Some(prepared) = prepared_by_pos.get(&encoded.pos) else {
                 continue;
             };
             if !encoded.is_current_for(prepared) {
@@ -302,18 +310,38 @@ impl ChunkSender {
         player_chunk_pos: ChunkPos,
     ) -> Vec<PreparedChunk> {
         let max_batch_size = self.batch_quota.floor() as usize;
-        let mut candidates: Vec<ChunkPos> = self.pending_chunks.iter().copied().collect();
+        if max_batch_size == 0 {
+            return Vec::new();
+        }
 
-        // Sort by distance to player
-        candidates.sort_by_key(|pos| Self::chunk_distance_squared(*pos, player_chunk_pos));
+        // Select only the closest pending positions, like vanilla's
+        // `Comparators.least(maxBatchSize, distanceSquared)`, instead of fully sorting
+        // every pending chunk.
+        let mut closest = BinaryHeap::with_capacity(max_batch_size);
+        for pos in &self.pending_chunks {
+            let distance = Self::chunk_distance_squared(*pos, player_chunk_pos);
+            let worst = closest
+                .peek()
+                .map_or(u64::MAX, |(worst_distance, _)| *worst_distance);
+            if closest.len() == max_batch_size && distance >= worst {
+                continue;
+            }
+            closest.push((distance, (pos.0.x, pos.0.y)));
+            if closest.len() > max_batch_size {
+                closest.pop();
+            }
+        }
+
+        let mut candidates: Vec<ChunkPos> = closest
+            .into_vec()
+            .into_iter()
+            .map(|(_, (x, z))| ChunkPos(IVec2::new(x, z)))
+            .collect();
+        candidates.sort_unstable_by_key(|pos| Self::chunk_distance_squared(*pos, player_chunk_pos));
 
         let mut chunks_to_send = Vec::new();
 
         for pos in candidates {
-            if chunks_to_send.len() >= max_batch_size {
-                break;
-            }
-
             if let Some(holder) = world
                 .chunk_map
                 .chunks
