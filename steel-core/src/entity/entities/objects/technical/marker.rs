@@ -10,7 +10,7 @@ use steel_utils::{DowncastType, DowncastTypeKey};
 use uuid::Uuid;
 
 /// An entity that is minimal. It cannot move, take damage, make sounds, and it doesn't
-/// have any functions. They are not sent to the client, and are primarily intended for use
+/// have any gameplay functions. Markers are not sent to the client, and are primarily intended for use
 /// in map-making and in data packs. This entity is purely server-side.
 #[entity_behavior(class = "Marker")]
 pub struct MarkerEntity {
