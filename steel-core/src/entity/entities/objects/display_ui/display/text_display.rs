@@ -2,8 +2,8 @@
 
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::display_ui::Display;
-use crate::entity::entities::objects::display_ui::Transformation;
 use crate::entity::entities::objects::display_ui::display::PrivateDisplay;
+use crate::entity::entities::objects::display_ui::display::Transformation;
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
 use bitflags::bitflags;

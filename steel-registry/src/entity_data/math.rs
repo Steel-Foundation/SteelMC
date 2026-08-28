@@ -36,6 +36,11 @@ impl From<Vector3f> for Vec3 {
         Vec3::new(value.x, value.y, value.z)
     }
 }
+impl From<Vec3> for Vector3f {
+    fn from(value: Vec3) -> Self {
+        Vector3f::new(value.x, value.y, value.z)
+    }
+}
 
 impl ToNbtTag for Vector3f {
     fn to_nbt_tag(self) -> NbtTag {
@@ -114,6 +119,11 @@ impl Quaternionf {
 impl From<Quaternionf> for Quat {
     fn from(value: Quaternionf) -> Self {
         Quat::from_xyzw(value.x, value.y, value.z, value.w)
+    }
+}
+impl From<Quat> for Quaternionf {
+    fn from(value: Quat) -> Self {
+        Quaternionf::new(value.x, value.y, value.z, value.w)
     }
 }
 

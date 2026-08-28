@@ -2,13 +2,12 @@
 
 use crate::entity::Entity;
 use crate::entity::damage::DamageSource;
+pub use crate::entity::entities::objects::display_ui::display::transformation::Transformation;
 use crate::world::World;
-use glam::Mat4;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_registry::blocks::behavior::PushReaction;
-use steel_registry::entity_data::{Matrix4f, Quaternionf, Vector3f};
 
 /// A private trait, only used by display entities, to get and set
 /// some synced entity data.
@@ -479,112 +478,7 @@ impl FromNbtTag for Brightness {
     }
 }
 
-/// A structure describing an affine transformation in 3D space.
-///
-/// Transformations are applied in the following order:
-/// `translation` -> `left_rotation` -> `scale` -> `right_rotation`
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Transformation {
-    /// The translation (displacement) applied by this transformation.
-    pub translation: Vector3f,
-    /// The left rotation applied by this transformation.
-    pub left_rotation: Quaternionf,
-    /// The scale applied by this transformation.
-    pub scale: Vector3f,
-    /// The right rotation applied by this transformation.
-    pub right_rotation: Quaternionf,
-}
-
-impl Transformation {
-    /// The identity [`Transformation`].
-    pub const IDENTITY: Self = Transformation {
-        translation: Vector3f::ZERO,
-        left_rotation: Quaternionf::IDENTITY,
-        scale: Vector3f::ONE,
-        right_rotation: Quaternionf::IDENTITY,
-    };
-
-    /// Composes a [`Matrix4f`] from this transformation.
-    #[must_use]
-    pub fn compose(self) -> Matrix4f {
-        Matrix4f(
-            Mat4::from_translation(self.translation.into())
-                * Mat4::from_quat(self.left_rotation.into())
-                * Mat4::from_scale(self.scale.into())
-                * Mat4::from_quat(self.right_rotation.into()),
-        )
-    }
-}
-
-impl From<Matrix4f> for Transformation {
-    /// Decomposes a [`Matrix4f`] to form a [`Transformation`].
-    fn from(_mat: Matrix4f) -> Self {
-        // TODO: Implement svdDecompose()
-        Transformation::IDENTITY
-    }
-}
-
-impl From<Transformation> for Matrix4f {
-    /// Composes a [`Transformation`] to form a matrix.
-    fn from(t: Transformation) -> Self {
-        Transformation::compose(t)
-    }
-}
-
-struct NormalTransformation(Transformation);
-impl From<Transformation> for NormalTransformation {
-    fn from(t: Transformation) -> Self {
-        Self(t)
-    }
-}
-impl From<NormalTransformation> for Transformation {
-    fn from(t: NormalTransformation) -> Self {
-        t.0
-    }
-}
-
-// Recreates Vanilla's `Transformation.CODEC`.
-impl ToNbtTag for NormalTransformation {
-    fn to_nbt_tag(self) -> NbtTag {
-        let mut compound = NbtCompound::new();
-        compound.insert("translation", self.0.translation.to_nbt_tag());
-        compound.insert("left_rotation", self.0.left_rotation.to_nbt_tag());
-        compound.insert("scale", self.0.scale.to_nbt_tag());
-        compound.insert("right_rotation", self.0.right_rotation.to_nbt_tag());
-        NbtTag::Compound(compound)
-    }
-}
-
-impl FromNbtTag for NormalTransformation {
-    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        let compound = tag.compound()?;
-        Some(Self(Transformation {
-            translation: Vector3f::from_nbt_tag(compound.get("transformation")?)?,
-            left_rotation: Quaternionf::from_nbt_tag(compound.get("left_rotation")?)?,
-            scale: Vector3f::from_nbt_tag(compound.get("scale")?)?,
-            right_rotation: Quaternionf::from_nbt_tag(compound.get("right_rotation")?)?,
-        }))
-    }
-}
-
-// Recreates Vanilla's `Transformation.EXTENDED_CODEC`.
-// This codec prefers using the ordinary codec created above, but it does also accept a matrix.
-impl FromNbtTag for Transformation {
-    fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        if let Some(NormalTransformation(transformation)) = NormalTransformation::from_nbt_tag(tag)
-        {
-            return Some(transformation);
-        }
-        Some(Matrix4f::from_nbt_tag(tag)?.into())
-    }
-}
-
-impl ToNbtTag for Transformation {
-    fn to_nbt_tag(self) -> NbtTag {
-        NormalTransformation(self).to_nbt_tag()
-    }
-}
-
 pub mod block_display;
 pub mod item_display;
 pub mod text_display;
+pub mod transformation;
