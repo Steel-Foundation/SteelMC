@@ -2,7 +2,7 @@
 
 use crate::entity::Entity;
 use crate::entity::damage::DamageSource;
-pub use crate::entity::entities::objects::display_ui::display::transformation::Transformation;
+pub use crate::entity::entities::objects::technical::display::transformation::Transformation;
 use crate::world::World;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
@@ -11,26 +11,28 @@ use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_data::Matrix4f;
 use steel_registry::vanilla_entity_data::DisplayEntityData;
 
+/// The default interpolation duration of a display entity.
 pub const DEFAULT_TRANSFORMATION_INTERPOLATION_DURATION: i32 = 0;
+/// The default delay in interpolation of a display entity.
 pub const DEFAULT_TRANSFORMATION_INTERPOLATION_DELAY: i32 = 0;
+/// The default teleport duration of a display entity.
 pub const DEFAULT_POS_ROT_INTERPOLATION_DURATION: i32 = 0;
+/// The default [`BillboardConstraints`] of a display entity.
 pub const DEFAULT_BILLBOARD_CONSTRAINTS: BillboardConstraints = BillboardConstraints::Fixed;
+/// The default view range of a display entity.
 pub const DEFAULT_VIEW_RANGE: f32 = 1.0;
+/// The default shadow radius of a display entity.
 pub const DEFAULT_SHADOW_RADIUS: f32 = 0.0;
+/// The default shadow strength of a display entity.
 pub const DEFAULT_SHADOW_STRENGTH: f32 = 1.0;
+/// The default width of a display entity.
 pub const DEFAULT_WIDTH: f32 = 0.0;
+/// The default height of a display entity.
 pub const DEFAULT_HEIGHT: f32 = 0.0;
+/// The default glow color override of a display entity.
+///
+/// `-1` corresponds to no override.
 pub const DEFAULT_GLOW_COLOR_OVERRIDE: i32 = -1;
-
-/*
-view.set_view_range(nbt.float("view_range").unwrap_or(1.0));
-        view.set_shadow_radius(nbt.float("shadow_radius").unwrap_or(0.0));
-        view.set_shadow_strength(nbt.float("shadow_strength").unwrap_or(1.0));
-        view.set_width(nbt.float("width").unwrap_or(0.0));
-        view.set_height(nbt.float("height").unwrap_or(0.0));
-        view.set_synced_glow_color_override(nbt.int("glow_color_override").unwrap_or(-1));
-        view.set_brightness_override(nbt.get("brightness").and_then(Brightness::from_nbt_tag));
- */
 
 /// The abstract display trait used by all display entities.
 ///

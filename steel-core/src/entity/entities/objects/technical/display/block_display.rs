@@ -2,8 +2,9 @@
 
 use crate::block_entity::block_state_nbt;
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::objects::display_ui::Display;
-use crate::entity::entities::objects::display_ui::display::{DisplayView, PrivateDisplayView};
+use crate::entity::entities::objects::technical::display::{
+    Display, DisplayView, PrivateDisplayView,
+};
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
 use glam::DVec3;

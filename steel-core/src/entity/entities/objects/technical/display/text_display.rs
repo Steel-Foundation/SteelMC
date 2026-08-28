@@ -1,8 +1,9 @@
 //! Vanilla's text display implementation.
 
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::objects::display_ui::Display;
-use crate::entity::entities::objects::display_ui::display::{DisplayView, PrivateDisplayView};
+use crate::entity::entities::objects::technical::display::{
+    Display, DisplayView, PrivateDisplayView,
+};
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
 use bitflags::bitflags;
@@ -20,9 +21,13 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 use text_components::TextComponent;
 
-
+/// The default line width of text shown by a text display.
 pub const DEFAULT_LINE_WIDTH: i32 = 200;
+/// The default text opacity of text shown by a text display.
+///
+/// `-1` corresponds to full opacity.
 pub const DEFAULT_TEXT_OPACITY: i8 = -1;
+/// The default background color of text shown by a text display.
 pub const DEFAULT_BACKGROUND_COLOR: i32 = 0x4000_0000;
 
 /// The Vanilla text display entity.

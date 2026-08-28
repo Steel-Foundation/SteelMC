@@ -1,3 +1,6 @@
+//! Contains code for transformations, composing and decomposing them,
+//! and to serialize and deserialize them.
+
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4Swizzles};
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};

@@ -1,7 +1,7 @@
 //! Vanilla's item display implementation.
 
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::objects::display_ui::display::{
+use crate::entity::entities::objects::technical::display::{
     Display, DisplayView, PrivateDisplayView,
 };
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
