@@ -284,6 +284,10 @@ pub struct EntityType {
     pub is_projectile: bool,
     /// Whether vanilla class hierarchy makes this entity an `AbstractArrow`.
     pub is_abstract_arrow: bool,
+    /// Whether vanilla class hierarchy makes this entity an `AbstractHorse`.
+    pub is_abstract_horse: bool,
+    /// Whether vanilla class hierarchy makes this entity an `AbstractNautilus`.
+    pub is_abstract_nautilus: bool,
 
     /// Behavioral flags for collision and interaction.
     pub flags: EntityFlags,

@@ -71,8 +71,8 @@ use steel_registry::vanilla_game_rules::{
     SHOW_DEATH_MESSAGES,
 };
 use steel_registry::{
-    level_events, sound_events, vanilla_attributes, vanilla_damage_type_tags, vanilla_entities,
-    vanilla_game_events,
+    level_events, sound_events, vanilla_attributes, vanilla_custom_stats, vanilla_damage_type_tags,
+    vanilla_entities, vanilla_game_events,
 };
 use steel_utils::{entity_events::EntityStatus, locks::Shared, translations};
 use tick_state::PlayerTickState;
@@ -98,7 +98,8 @@ use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
     DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
     EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange,
-    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, start_riding_entities,
+    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, get_kill_credit,
+    start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -129,6 +130,8 @@ use steel_protocol::packets::{
 };
 use steel_registry::RegistryEntry;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::ItemRef;
+use steel_registry::stat::vanilla_stat_types;
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, Identifier, UuidExt as _,
 };
@@ -641,6 +644,8 @@ impl Player {
         self.living_base.decrement_invulnerable_time();
         self.tick_mob_effects();
         self.tick_active_item_use();
+        // TODO: Tick stats even when the player has been dead for more than 20 ticks.
+        self.tick_stats();
 
         if self.get_health() <= 0.0 {
             self.tick_death();
@@ -747,6 +752,41 @@ impl Player {
                 self.remove_all_menus_with_disposition(MenuItemDisposition::Drop),
                 MenuRemovalStatus::Complete,
                 "death removal menu cleanup must run outside a menu callback"
+            );
+        }
+    }
+
+    /// Ticks to award stats that are awarded based on ticks.
+    fn tick_stats(&self) {
+        // These stats are expressed in ticks.
+        // We batch the stats so that the mutex for stats is only
+        // locked once.
+        let mut stats = self.stats.lock();
+        stats.increment(
+            vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::PLAY_TIME),
+            1,
+        );
+        stats.increment(
+            vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::TOTAL_WORLD_TIME),
+            1,
+        );
+
+        if Entity::is_alive(self) {
+            stats.increment(
+                vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::TIME_SINCE_DEATH),
+                1,
+            );
+        }
+        if self.is_discrete() {
+            stats.increment(
+                vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::SNEAK_TIME),
+                1,
+            );
+        }
+        if !self.is_sleeping() {
+            stats.increment(
+                vanilla_stat_types::CUSTOM.get(&vanilla_custom_stats::TIME_SINCE_REST),
+                1,
             );
         }
     }
@@ -868,10 +908,24 @@ impl Player {
         let damage = (damage - self.get_absorption_amount()).max(0.0);
         self.set_absorption_amount(self.get_absorption_amount() - (original_damage - damage));
 
+        let absorbed_damage = original_damage - damage;
+        if (0.0..f32::MAX).contains(&absorbed_damage) {
+            self.award_custom_stat_with_count(
+                &vanilla_custom_stats::DAMAGE_ABSORBED,
+                (absorbed_damage * 10.0).round() as i32,
+            );
+        }
+
         // TODO: combat tracker (getCombatTracker().recordDamage)
         if damage != 0.0 {
             self.cause_food_exhaustion(source.damage_type.exhaustion);
             self.set_health(self.get_health() - damage);
+            if damage < f32::MAX {
+                self.award_custom_stat_with_count(
+                    &vanilla_custom_stats::DAMAGE_TAKEN,
+                    (damage * 10.0).round() as i32,
+                );
+            }
             self.game_event(&vanilla_game_events::ENTITY_DAMAGE);
         }
     }
@@ -947,6 +1001,17 @@ impl Player {
                 ExperienceOrbEntity::award(&world, self.position(), reward);
             }
         }
+
+        // TODO: Increment DEATH_COUNT objective criterion
+        if let Some(killer) = get_kill_credit(self, world.as_ref()) {
+            self.award_stat(&vanilla_stat_types::ENTITY_KILLED_BY, killer.entity_type());
+            killer.award_kill_score(self, source);
+            // TODO: Create wither rose
+        }
+
+        self.award_custom_stat(&vanilla_custom_stats::DEATHS);
+        self.reset_custom_stat(&vanilla_custom_stats::TIME_SINCE_DEATH);
+        self.reset_custom_stat(&vanilla_custom_stats::TIME_SINCE_REST);
 
         self.clear_fire();
         self.set_ticks_frozen(0);
@@ -1351,6 +1416,17 @@ impl Entity for Player {
         }
     }
 
+    fn ride_tick(&self) {
+        let pre = self.position();
+        if self.wants_to_stop_riding() && self.is_passenger() {
+            self.stop_riding();
+        } else {
+            self.default_ride_tick();
+            self.reset_fall_distance();
+        }
+        self.check_riding_statistics(self.position() - pre);
+    }
+
     fn stop_riding(&self) {
         let old_vehicle = self.vehicle();
         self.base().stop_riding();
@@ -1526,7 +1602,13 @@ impl Entity for Player {
             return false;
         }
 
-        // TODO: Award `Stats.FALL_ONE_CM` once player statistics are implemented.
+        if fall_distance >= 2.0 {
+            self.award_custom_stat_with_count(
+                &vanilla_custom_stats::FALL_ONE_CM,
+                (fall_distance * 100.0).round() as i32,
+            );
+        }
+
         LivingEntity::cause_living_fall_damage(self, fall_distance, damage_modifier, source)
     }
 
@@ -1640,6 +1722,30 @@ impl Entity for Player {
         // Delegates to Player's inherent hurt method which handles
         // player-specific prechecks before the shared living hurt path.
         Player::hurt(self, world, source, amount)
+    }
+
+    fn killed_entity(
+        &self,
+        _world: &World,
+        entity: &dyn LivingEntity,
+        _source: &DamageSource,
+    ) -> bool {
+        log::debug!("1");
+        self.award_stat(&vanilla_stat_types::ENTITY_KILLED, entity.entity_type());
+        true
+    }
+
+    fn award_kill_score(&self, victim: &dyn Entity, _killing_blow: &DamageSource) {
+        if self.id() != victim.id() {
+            // TODO: Trigger advancement criteria.
+            // TODO: Increment the score of some objectives of this player.
+            self.award_custom_stat(if victim.as_player().is_some() {
+                &vanilla_custom_stats::PLAYER_KILLS
+            } else {
+                &vanilla_custom_stats::MOB_KILLS
+            });
+            // TODO: Handle team kill
+        }
     }
 }
 
@@ -1872,7 +1978,7 @@ impl LivingEntity for Player {
 
     fn jump_from_ground(&self) {
         self.default_jump_from_ground();
-        // TODO: Award Stats.JUMP once player statistics exist.
+        self.award_custom_stat(&vanilla_custom_stats::JUMP);
         if self.is_sprinting() {
             self.cause_food_exhaustion(0.2);
         } else {
@@ -1939,6 +2045,12 @@ impl LivingEntity for Player {
         } else {
             0.02
         }
+    }
+
+    fn on_equipped_item_broken(&self, item: ItemRef, slot: EquipmentSlot) {
+        self.broadcast_entity_event(slot.into());
+        self.refresh_equipment_attribute_modifiers(slot);
+        self.award_stat(&vanilla_stat_types::ITEM_BROKEN, item);
     }
 }
 
