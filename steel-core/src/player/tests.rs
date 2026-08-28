@@ -1375,9 +1375,9 @@ fn throttle_player_dropping_items_from_creative_menu() {
         DROP_SPAM_THROTTLER_THRESHOLD / DROP_SPAM_THROTTLER_INCREMENT_STEP;
 
     init_vanilla_registry();
-    let world = test_world();
-    insert_ready_full_chunk(world, ChunkPos::new(0, 0));
-    let player = test_player(Arc::clone(world));
+    let world = fresh_test_world("throttle_player_dropping_items_from_creative_menu");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(Arc::clone(&world));
 
     *player.game_modes.lock() = PlayerGameModeState::new(GameType::Creative);
 
