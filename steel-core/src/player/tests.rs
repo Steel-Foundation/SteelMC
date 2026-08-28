@@ -1393,7 +1393,7 @@ fn throttle_player_dropping_items_from_creative_menu() {
         item_stack: ItemStack::new(&vanilla_items::DIAMOND),
     };
 
-    for _ in 0..=DROPS_ALLOWED_BEFORE_THROTTLE {
+    for _ in 0..(DROPS_ALLOWED_BEFORE_THROTTLE + 5) {
         player.handle_set_creative_mode_slot(packet.clone());
     }
 
@@ -1402,7 +1402,7 @@ fn throttle_player_dropping_items_from_creative_menu() {
         DROPS_ALLOWED_BEFORE_THROTTLE as usize
     );
 
-    // This tick will allow the player to drop one more stack.
+    // Decay the Throttler just enough to allow the player drop one more stack.
     player.tick();
     player.handle_set_creative_mode_slot(packet.clone());
     assert_eq!(
@@ -1422,7 +1422,7 @@ fn throttle_player_dropping_items_from_creative_menu() {
 
     // Decay the Throttler just enough to allow the player drop one more stack.
     player.tick();
-    player.handle_set_creative_mode_slot(packet);
+    player.handle_set_creative_mode_slot(packet.clone());
     assert_eq!(
         world.entity_manager().count(),
         (DROPS_ALLOWED_BEFORE_THROTTLE + 2) as usize
