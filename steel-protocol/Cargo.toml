@@ -45,3 +45,10 @@ text_components.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+criterion = { workspace = true, features = ["async_tokio"] }
+
+[[bench]]
+name = "packet_reader_framing"
+harness = false
