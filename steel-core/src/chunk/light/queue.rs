@@ -512,6 +512,9 @@ thread_local! {
 /// worker's previous buffers instead of reallocating ~64 KiB each time. The
 /// guard returns its buffers to the pool on drop, so early returns and panics
 /// stay safe.
+///
+/// Dropping an oversized lease discards its buffers without evicting a pair
+/// that an overlapping lease has already parked.
 #[must_use]
 pub struct PooledPackedLightQueues {
     inner: PackedLightPropagationQueues,
@@ -564,7 +567,9 @@ impl Drop for PooledPackedLightQueues {
             (queues.total_capacity() <= POOLED_PACKED_QUEUES_MAX_ENTRIES).then_some(queues);
 
         POOLED_PACKED_QUEUES.with(|pool| {
-            *pool.borrow_mut() = recycled;
+            if let Some(queues) = recycled {
+                *pool.borrow_mut() = Some(queues);
+            }
         });
     }
 }
@@ -1201,5 +1206,31 @@ mod tests {
             })
         );
         assert!(!queues.has_work());
+    }
+
+    #[test]
+    fn oversized_lease_preserves_parked_pool_entry() {
+        let mut oversized = PooledPackedLightQueues::take();
+        for _ in 0..=POOLED_PACKED_QUEUES_MAX_ENTRIES {
+            oversized.enqueue_increase(packed_entry(15));
+        }
+        assert!(oversized.total_capacity() > POOLED_PACKED_QUEUES_MAX_ENTRIES);
+
+        // Lease a second pair while the oversized one is still open; dropping
+        // it parks buffers that the oversized lease's drop must not evict.
+        let mut parked = PooledPackedLightQueues::take();
+        for _ in 0..=PACKED_LIGHT_QUEUE_MIN_CAPACITY {
+            parked.enqueue_increase(packed_entry(15));
+        }
+        let parked_capacity = parked.total_capacity();
+        assert!(parked_capacity > 2 * PACKED_LIGHT_QUEUE_MIN_CAPACITY);
+        drop(parked);
+
+        drop(oversized);
+
+        assert_eq!(
+            PooledPackedLightQueues::take().total_capacity(),
+            parked_capacity
+        );
     }
 }
