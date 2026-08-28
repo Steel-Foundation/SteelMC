@@ -79,17 +79,11 @@ impl ToNbtTag for AxisAngle4f {
 
 impl FromNbtTag for AxisAngle4f {
     fn from_nbt_tag(tag: BorrowedNbtTag) -> Option<Self> {
-        if let Some(compound) = tag.compound()
-            && let Some(angle) = compound.get("angle")
-            && let Some(axis) = compound.get("axis")
-        {
-            Some(Self {
-                angle: f32::from_nbt_tag(angle)?,
-                axis: Vector3f::from_nbt_tag(axis)?,
-            })
-        } else {
-            None
-        }
+        let compound = tag.compound()?;
+        Some(Self {
+            angle: f32::from_nbt_tag(compound.get("angle")?)?,
+            axis: Vector3f::from_nbt_tag(compound.get("axis")?)?,
+        })
     }
 }
 
