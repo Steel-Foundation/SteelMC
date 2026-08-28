@@ -11,7 +11,7 @@ use steel_registry::blocks::properties::{
 };
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_item_tags::ItemTag;
-use steel_registry::{sound_events, vanilla_game_events};
+use steel_registry::{sound_events, vanilla_custom_stats, vanilla_game_events};
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -212,13 +212,13 @@ impl BlockBehavior for NoteBlock {
         let tuned_state = Self::cycle_note(state);
         world.set_block(pos, tuned_state, UpdateFlags::UPDATE_ALL);
         self.play_note(Some(player), tuned_state, world, pos);
-        // The tune-noteblock stat awaits Steel's shared statistics foundation.
+        player.award_custom_stat(&vanilla_custom_stats::TUNE_NOTEBLOCK);
         InteractionResult::Success
     }
 
     fn attack(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, player: &Player) {
         self.play_note(Some(player), state, world, pos);
-        // The play-noteblock stat awaits Steel's shared statistics foundation.
+        player.award_custom_stat(&vanilla_custom_stats::PLAY_NOTEBLOCK);
     }
 
     fn trigger_event(

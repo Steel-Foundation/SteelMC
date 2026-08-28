@@ -8,7 +8,7 @@ use steel_registry::{
         properties::{BlockStateProperties, IntProperty},
     },
     items::item::BlockHitResult,
-    sound_events, vanilla_blocks,
+    sound_events, vanilla_blocks, vanilla_custom_stats,
     vanilla_item_tags::ItemTag,
 };
 use steel_utils::{
@@ -52,6 +52,7 @@ impl CakeBlock {
         player: &Player,
     ) -> InteractionResult {
         if player.can_eat(false) {
+            player.award_custom_stat(&vanilla_custom_stats::EAT_CAKE_SLICE);
             let mut food_data = player.food_data.lock();
             food_data.eat(2, 0.1);
             let bites = state.get_value(BITES);
