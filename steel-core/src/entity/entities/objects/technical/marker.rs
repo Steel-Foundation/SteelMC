@@ -104,13 +104,15 @@ mod tests {
     use std::sync::Arc;
     use steel_registry::{vanilla_damage_types, vanilla_entities};
 
+    const TEST_POSITION: DVec3 = DVec3::new(-8.0, 128.0, 4.0);
+
     #[test]
     fn markers_cannot_get_hurt() {
         let world = test_world();
         let marker = MarkerEntity::new(
             &vanilla_entities::MARKER,
             0,
-            DVec3::ZERO,
+            TEST_POSITION,
             Arc::downgrade(world),
         );
         assert!(!marker.hurt(
@@ -126,13 +128,13 @@ mod tests {
         let marker = MarkerEntity::new(
             &vanilla_entities::MARKER,
             0,
-            DVec3::ZERO,
+            TEST_POSITION,
             Arc::downgrade(world),
         );
         for _ in 0..100 {
             marker.tick();
         }
-        assert_eq!(marker.position(), DVec3::ZERO);
+        assert_eq!(marker.position(), TEST_POSITION);
     }
 
     #[test]
@@ -141,13 +143,13 @@ mod tests {
         let marker: SharedEntity = Arc::new(MarkerEntity::new(
             &vanilla_entities::MARKER,
             0,
-            DVec3::ZERO,
+            TEST_POSITION,
             Arc::downgrade(world),
         ));
         let passenger: SharedEntity = Arc::new(PigEntity::new(
             &vanilla_entities::PIG,
             1,
-            DVec3::ZERO,
+            TEST_POSITION,
             Arc::downgrade(world),
         ));
         assert!(!start_riding_entities(&passenger, &marker));
