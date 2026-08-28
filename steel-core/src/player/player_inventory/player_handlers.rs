@@ -213,6 +213,7 @@ impl Player {
 
     /// Handles a container click packet (slot interaction).
     pub fn handle_container_click(&self, packet: SContainerClick) {
+        self.reset_last_action_time();
         match self.take_open_menu_for_callback(Some(packet.container_id)) {
             Ok(mut menu) => {
                 self.process_container_click(&mut menu, packet);
@@ -447,6 +448,8 @@ impl Player {
                 "{} tried to set an invalid carried item",
                 self.gameprofile.name
             );
+        } else {
+            self.reset_last_action_time();
         }
     }
 

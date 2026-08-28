@@ -178,11 +178,11 @@ impl RabbitEntity {
             target_selector.add_goal(1, HurtByTargetGoal::new());
             target_selector.add_goal(
                 2,
-                NearestAttackableTargetGoal::new(&vanilla_entities::PLAYER, true),
+                NearestAttackableTargetGoal::new_for_players(true, |_, _| true),
             );
             target_selector.add_goal(
                 2,
-                NearestAttackableTargetGoal::new(&vanilla_entities::WOLF, true),
+                NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::WOLF),
             );
             // Killer bunny melee is wired via MeleeAttackGoal(1.4) once the killer variant is active;
             // game currently handles target acquisition and the existing melee loop handles the swing.

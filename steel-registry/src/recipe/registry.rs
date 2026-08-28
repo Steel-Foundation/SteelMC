@@ -76,13 +76,6 @@ impl RecipeRegistry {
             "Cannot register recipes after the registry has been frozen"
         );
         self.smelting_recipes.push(recipe);
-        if self.smelting_recipes.len() <= 5 || self.smelting_recipes.len() % 20 == 0 {
-            tracing::info!("Registered smelting recipe #{}: {} -> {}",
-                self.smelting_recipes.len(),
-                recipe.ingredient.id(),
-                recipe.result.item().id
-            );
-        }
     }
 
     /// Finds a matching crafting recipe for the given positioned input.

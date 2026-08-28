@@ -31,3 +31,8 @@ pub(crate) mod test_support;
 pub mod villager;
 pub mod world;
 pub mod worldgen;
+
+/// The full hash of the commit this build was made from.
+pub const GIT_HASH: &str = env!("GIT_HASH");
+/// The short hash of the commit this build was made from.
+pub const GIT_HASH_SHORT: &str = env!("GIT_HASH_SHORT");

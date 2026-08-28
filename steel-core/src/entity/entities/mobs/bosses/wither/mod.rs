@@ -71,7 +71,7 @@ impl WitherEntity {
             ts.add_goal(1, HurtByTargetGoal::new());
             ts.add_goal(
                 2,
-                NearestAttackableTargetGoal::new(&steel_registry::vanilla_entities::PLAYER, true),
+                NearestAttackableTargetGoal::new_for_players(true, |_, _| true),
             );
         }
         Self {

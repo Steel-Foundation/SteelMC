@@ -82,15 +82,15 @@ impl SkeletonEntity {
             target_selector.add_goal(1, HurtByTargetGoal::new());
             target_selector.add_goal(
                 2,
-                NearestAttackableTargetGoal::new(&vanilla_entities::PLAYER, true),
+                NearestAttackableTargetGoal::new_for_players(true, |_, _| true),
             );
             target_selector.add_goal(
                 3,
-                NearestAttackableTargetGoal::new(&vanilla_entities::IRON_GOLEM, true),
+                NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::IRON_GOLEM),
             );
             target_selector.add_goal(
                 3,
-                NearestAttackableTargetGoal::new(&vanilla_entities::TURTLE, true),
+                NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::TURTLE),
             );
         }
 

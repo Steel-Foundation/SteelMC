@@ -76,7 +76,7 @@ impl StrayEntity {
             target_selector.add_goal(1, HurtByTargetGoal::new());
             target_selector.add_goal(
                 2,
-                NearestAttackableTargetGoal::new(&vanilla_entities::PLAYER, true),
+                NearestAttackableTargetGoal::new_for_players(true, |_, _| true),
             );
         }
         Self {

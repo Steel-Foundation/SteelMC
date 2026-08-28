@@ -59,34 +59,34 @@ impl IronGolemEntity {
         }
         {
             let mut target_selector = mob_base.target_selector().lock();
-            target_selector.add_goal(1, HurtByTargetGoal::new().alert_same_type());
-            target_selector.add_goal(2, NearestAttackableTargetGoal::new(&vanilla_entities::PLAYER, false));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::ZOMBIE, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::ZOMBIE_VILLAGER, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::ZOMBIFIED_PIGLIN, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::SKELETON, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::WITHER_SKELETON, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::SILVERFISH, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::SPIDER, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::CAVE_SPIDER, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::SLIME, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::MAGMA_CUBE, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::ZOGLIN, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::HOGLIN, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::PILLAGER, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::VINDICATOR, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::EVOKER, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::RAVAGER, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::VEX, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::PHANTOM, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::DROWNED, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::HUSK, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::STRAY, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::BOGGED, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::BREEZE, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::WARDEN, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::CREAKING, true));
-            target_selector.add_goal(3, NearestAttackableTargetGoal::new(&vanilla_entities::WITHER, true));
+            target_selector.add_goal(1, HurtByTargetGoal::new().set_alert_others([]));
+            target_selector.add_goal(2, NearestAttackableTargetGoal::new_for_players(false, |_, _| true));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::ZOMBIE));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::ZOMBIE_VILLAGER));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::ZOMBIFIED_PIGLIN));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::SKELETON));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::WITHER_SKELETON));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::SILVERFISH));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::SPIDER));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::CAVE_SPIDER));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::SLIME));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::MAGMA_CUBE));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::ZOGLIN));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::HOGLIN));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::PILLAGER));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::VINDICATOR));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::EVOKER));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::RAVAGER));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::VEX));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::PHANTOM));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::DROWNED));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::HUSK));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::STRAY));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::BOGGED));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::BREEZE));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::WARDEN));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::CREAKING));
+            target_selector.add_goal(3, NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::WITHER));
         }
         Self { base, entity_type, living_base, mob_base,
             entity_data: SyncMutex::new(entity_data) }
