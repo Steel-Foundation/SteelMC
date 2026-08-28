@@ -89,6 +89,7 @@ pub(crate) struct EntitySpawnRequest<'a> {
     pub finalize_spawn: bool,
     pub play_ambient_sound: bool,
     pub item_stack: Option<&'a ItemStack>,
+    pub user_is_operator: bool,
 }
 
 /// Failure from the shared spawn coordinator.
@@ -154,6 +155,7 @@ pub(crate) fn apply_implicit_item_stack_components(entity: &SharedEntity, item_s
 pub(crate) fn apply_item_stack_components(
     entity: &SharedEntity,
     item_stack: &ItemStack,
+    user_is_operator: bool,
 ) -> Result<(), EntitySpawnError> {
     apply_implicit_item_stack_components(entity, item_stack);
 
@@ -162,6 +164,10 @@ pub(crate) fn apply_item_stack_components(
     };
 
     if entity_data.entity_type() != entity.entity_type() {
+        return Ok(());
+    }
+
+    if only_op_can_set_custom_data(entity.entity_type()) && !user_is_operator {
         return Ok(());
     }
 
@@ -174,6 +180,14 @@ pub(crate) fn apply_item_stack_components(
     let borrowed = read_compound(&mut cursor).map_err(|_| EntitySpawnError::InvalidEntityData)?;
     entity.apply_spawn_data((&borrowed).into());
     Ok(())
+}
+
+fn only_op_can_set_custom_data(entity_type: EntityTypeRef) -> bool {
+    entity_type.key.namespace == "minecraft"
+        && matches!(
+            entity_type.key.path.as_ref(),
+            "falling_block" | "command_block_minecart" | "spawner_minecart"
+        )
 }
 
 /// Mirrors vanilla `EntityType.spawn` for server-side entity creation.
@@ -227,7 +241,7 @@ pub(crate) fn spawn_entity(
     }
 
     if let Some(item_stack) = request.item_stack {
-        apply_item_stack_components(&entity, item_stack)?;
+        apply_item_stack_components(&entity, item_stack, request.user_is_operator)?;
     }
 
     add_spawned_entity(world, Arc::clone(&entity)).map_err(|_| EntitySpawnError::AddEntity)?;
@@ -402,7 +416,7 @@ mod tests {
         let mut spawn_egg = ItemStack::new(&vanilla_items::PIG_SPAWN_EGG);
         spawn_egg.set(ENTITY_DATA, entity_data);
 
-        apply_item_stack_components(&entity, &spawn_egg)
+        apply_item_stack_components(&entity, &spawn_egg, false)
             .expect("valid typed entity data should load");
 
         assert_eq!(pig.get_age(), pig.get_baby_start_age());
@@ -430,7 +444,7 @@ mod tests {
             RegistryReference::new(&vanilla_pig_variants::COLD),
         );
 
-        apply_item_stack_components(&entity, &spawn_egg)
+        apply_item_stack_components(&entity, &spawn_egg, false)
             .expect("valid pig variant component should apply");
 
         assert_eq!(pig.variant().key, vanilla_pig_variants::COLD.key);

@@ -59,6 +59,7 @@ impl SpawnEggItem {
             finalize_spawn: true,
             play_ambient_sound: true,
             item_stack: Some(stack),
+            user_is_operator: player.is_operator(),
         };
         if spawn_entity(world, request).is_err() {
             return InteractionResult::Fail;
