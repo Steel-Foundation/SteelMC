@@ -139,6 +139,8 @@ pub(crate) fn add_spawned_entity(
 
 /// Applies the implicit entity data carried by an item stack.
 pub(crate) fn apply_implicit_item_stack_components(entity: &SharedEntity, item_stack: &ItemStack) {
+    entity.apply_implicit_item_components(item_stack);
+
     if let Some(custom_name) = item_stack.get(CUSTOM_NAME) {
         entity.set_custom_name(Some(custom_name.clone()));
     }
@@ -334,11 +336,14 @@ mod tests {
 
     use glam::DVec3;
     use simdnbt::owned::NbtCompound;
+    use steel_registry::data_components::CustomData;
     use steel_registry::data_components::components::EntityData;
-    use steel_registry::data_components::{CustomData, vanilla_components::ENTITY_DATA};
+    use steel_registry::data_components::vanilla_components::{ENTITY_DATA, PIG_VARIANT};
     use steel_registry::init_vanilla_registry;
     use steel_registry::item_stack::ItemStack;
-    use steel_registry::{vanilla_entities, vanilla_items, vanilla_pig_variants};
+    use steel_registry::{
+        RegistryReference, vanilla_entities, vanilla_items, vanilla_pig_variants,
+    };
     use text_components::TextComponent;
 
     use crate::entity::entities::PigEntity;
@@ -404,5 +409,30 @@ mod tests {
         assert_eq!(pig.variant().key, vanilla_pig_variants::WARM.key);
         assert!(AgeableMob::is_baby(pig.as_ref()));
         assert_eq!(pig.custom_name(), Some(TextComponent::plain("Existing")));
+    }
+
+    #[test]
+    fn item_pig_variant_overrides_spawn_variant() {
+        init_vanilla_registry();
+
+        let pig = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        pig.set_variant(&vanilla_pig_variants::WARM);
+        let entity: SharedEntity = pig.clone();
+
+        let mut spawn_egg = ItemStack::new(&vanilla_items::PIG_SPAWN_EGG);
+        spawn_egg.set(
+            PIG_VARIANT,
+            RegistryReference::new(&vanilla_pig_variants::COLD),
+        );
+
+        apply_item_stack_components(&entity, &spawn_egg)
+            .expect("valid pig variant component should apply");
+
+        assert_eq!(pig.variant().key, vanilla_pig_variants::COLD.key);
     }
 }

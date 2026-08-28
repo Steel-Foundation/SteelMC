@@ -3600,6 +3600,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla's `Entity.readAdditionalSaveData()`.
     fn load_additional(&self, _nbt: BorrowedNbtCompoundView<'_, '_>) {}
 
+    /// Applies entity-specific implicit components carried by an item stack.
+    ///
+    /// Mirrors the overridable part of vanilla's `Entity.applyImplicitComponents`.
+    fn apply_implicit_item_components(&self, _item_stack: &ItemStack) {}
+
     /// Applies the merged entity data used by vanilla `TypedEntityData.loadInto`.
     ///
     /// Spawn-item data is merged into the entity's current save state before it

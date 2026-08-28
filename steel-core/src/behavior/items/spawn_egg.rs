@@ -205,7 +205,11 @@ impl ItemBehavior for SpawnEggItem {
         if !state.is_liquid_block() {
             return InteractionResult::Pass;
         }
-        if !context.world.may_interact(context.player, pos) {
+        if !context.world.may_interact(context.player, pos)
+            || !context
+                .player
+                .may_use_item_at(pos, hit_result.direction, &stack)
+        {
             return InteractionResult::Fail;
         }
 

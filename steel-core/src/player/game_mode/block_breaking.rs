@@ -8,7 +8,7 @@ use std::sync::Arc;
 use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::data_components::AdventureModePredicate;
-use steel_registry::data_components::vanilla_components::CAN_BREAK;
+use steel_registry::data_components::vanilla_components::{CAN_BREAK, CAN_PLACE_ON};
 use steel_registry::vanilla_attributes;
 use steel_registry::{
     REGISTRY, blocks::properties::Direction, item_stack::ItemStack, vanilla_blocks,
@@ -28,6 +28,25 @@ use crate::player::food_data::food_constants;
 use crate::world::{ConditionalBlockSetResult, World, game_event::GameEventContext};
 
 impl Player {
+    /// Mirrors vanilla `Player.mayUseItemAt` for adventure-mode item use.
+    pub(crate) fn may_use_item_at(
+        &self,
+        pos: BlockPos,
+        direction: Direction,
+        item_stack: &ItemStack,
+    ) -> bool {
+        if self.abilities.lock().may_build {
+            return true;
+        }
+
+        let Some(can_place_on) = item_stack.get(CAN_PLACE_ON) else {
+            return false;
+        };
+        let target = pos.relative(direction.opposite());
+        let world = self.get_world();
+        Self::matches_adventure_mode_predicate(can_place_on, &world, target)
+    }
+
     /// Mirrors vanilla `Player.blockActionRestricted` for block breaking.
     pub(super) fn block_action_restricted(&self, world: &World, pos: BlockPos) -> bool {
         let game_mode = self.game_mode();
@@ -55,10 +74,10 @@ impl Player {
         let Some(can_break) = can_break else {
             return true;
         };
-        !Self::can_break_block_in_adventure_mode(&can_break, world, pos)
+        !Self::matches_adventure_mode_predicate(&can_break, world, pos)
     }
 
-    fn can_break_block_in_adventure_mode(
+    fn matches_adventure_mode_predicate(
         predicate: &AdventureModePredicate,
         world: &World,
         pos: BlockPos,
