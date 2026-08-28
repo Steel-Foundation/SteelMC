@@ -93,3 +93,63 @@ impl Entity for MarkerEntity {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::entity::damage::DamageSource;
+    use crate::entity::entities::{MarkerEntity, PigEntity};
+    use crate::entity::{Entity, SharedEntity, start_riding_entities};
+    use crate::test_support::test_world;
+    use glam::DVec3;
+    use std::sync::Arc;
+    use steel_registry::{vanilla_damage_types, vanilla_entities};
+
+    #[test]
+    fn markers_cannot_get_hurt() {
+        let world = test_world();
+        let marker = MarkerEntity::new(
+            &vanilla_entities::MARKER,
+            0,
+            DVec3::ZERO,
+            Arc::downgrade(world),
+        );
+        assert!(!marker.hurt(
+            world,
+            &DamageSource::environment(&vanilla_damage_types::GENERIC),
+            5.0
+        ));
+    }
+
+    #[test]
+    fn markers_cannot_fall() {
+        let world = test_world();
+        let marker = MarkerEntity::new(
+            &vanilla_entities::MARKER,
+            0,
+            DVec3::ZERO,
+            Arc::downgrade(world),
+        );
+        for _ in 0..100 {
+            marker.tick();
+        }
+        assert_eq!(marker.position(), DVec3::ZERO);
+    }
+
+    #[test]
+    fn markers_cannot_have_passenger() {
+        let world = test_world();
+        let marker: SharedEntity = Arc::new(MarkerEntity::new(
+            &vanilla_entities::MARKER,
+            0,
+            DVec3::ZERO,
+            Arc::downgrade(world),
+        ));
+        let passenger: SharedEntity = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            1,
+            DVec3::ZERO,
+            Arc::downgrade(world),
+        ));
+        assert!(!start_riding_entities(&passenger, &marker));
+    }
+}
