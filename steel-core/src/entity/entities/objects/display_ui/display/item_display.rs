@@ -2,11 +2,12 @@
 
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::display_ui::display::{
-    Display, PrivateDisplay, Transformation,
+    Display, DisplayView, PrivateDisplayView,
 };
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
 use glam::DVec3;
+use parking_lot::MutexGuard;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
@@ -15,7 +16,7 @@ use steel_macros::entity_behavior;
 use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::vanilla_entity_data::ItemDisplayEntityData;
+use steel_registry::vanilla_entity_data::{DisplayEntityData, ItemDisplayEntityData};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{DowncastType, DowncastTypeKey};
 
@@ -23,6 +24,10 @@ use steel_utils::{DowncastType, DowncastTypeKey};
 ///
 /// In addition to having the common display entity properties, this entity
 /// also stores an [`ItemStack`] and the context to display it (an [`ItemDisplayContext`]).
+///
+/// Like any display entity, to **access** or **modify** the data of an item display,
+/// you will need to use [`Display::with_view`]. This method takes a function with a
+/// [`ItemDisplayView`] as a parameter, which can be used within the function.
 #[entity_behavior(class = "ItemDisplay")]
 pub struct ItemDisplayEntity {
     base: EntityBase,
@@ -62,27 +67,6 @@ impl ItemDisplayEntity {
             entity_data: SyncMutex::new(ItemDisplayEntityData::new()),
         }
     }
-
-    /// Gets the context to display the item stack of this item display.
-    pub fn item_display_context(&self) -> ItemDisplayContext {
-        ItemDisplayContext::try_from(*self.entity_data.lock().item_display.get())
-            .unwrap_or(ItemDisplayContext::None)
-    }
-
-    /// Sets the context to display the item stack of this item display to `context`.
-    pub fn set_item_display_context(&self, context: ItemDisplayContext) {
-        self.entity_data.lock().item_display.set(context as i8);
-    }
-
-    /// Gets a clone of the item stack used in this item display.
-    pub fn item_stack(&self) -> ItemStack {
-        self.entity_data.lock().item_stack.get().clone()
-    }
-
-    /// Sets the item stack used in this item display to `item`.
-    pub fn set_item_stack(&self, item: ItemStack) {
-        self.entity_data.lock().item_stack.set(item);
-    }
 }
 
 impl Entity for ItemDisplayEntity {
@@ -112,36 +96,91 @@ impl Entity for ItemDisplayEntity {
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
-        self.save_display(nbt);
+        self.with_view(|view| {
+            <Self as Display>::save_display(&view, nbt);
 
-        {
-            let data = self.entity_data.lock();
-            let stack = data.item_stack.get();
+            let stack = view.item_stack_ref();
             if !stack.is_empty() {
                 nbt.insert("item", stack.to_nbt_tag_ref());
             }
-        }
 
-        nbt.insert("item_display", self.item_display_context());
+            nbt.insert("item_display", view.item_display_context());
+        });
     }
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.load_display(nbt);
+        self.with_view(|mut view| {
+            <Self as Display>::load_display(&mut view, nbt);
 
-        self.set_item_stack(
-            nbt.get("item")
-                .and_then(ItemStack::from_nbt_tag)
-                .unwrap_or_else(ItemStack::empty),
-        );
-        self.set_item_display_context(
-            nbt.get("item_display")
-                .and_then(ItemDisplayContext::from_nbt_tag)
-                .unwrap_or(ItemDisplayContext::None),
-        );
+            view.set_item_stack(
+                nbt.get("item")
+                    .and_then(ItemStack::from_nbt_tag)
+                    .unwrap_or_else(ItemStack::empty),
+            );
+            view.set_item_display_context(
+                nbt.get("item_display")
+                    .and_then(ItemDisplayContext::from_nbt_tag)
+                    .unwrap_or(ItemDisplayContext::None),
+            );
+        });
     }
 }
 
-display_impl!(ItemDisplayEntity);
+impl Display for ItemDisplayEntity {
+    type View<'a> = ItemDisplayView<'a>;
+
+    fn with_view(&self, f: impl FnOnce(Self::View<'_>)) {
+        f(ItemDisplayView(self.entity_data.lock()));
+    }
+}
+
+/// A view to the data of an item display.
+///
+/// Along with having the methods in [`DisplayView`], this view also has additional methods
+/// to access and manipulate the item stack and display context of the item display.
+pub struct ItemDisplayView<'a>(MutexGuard<'a, ItemDisplayEntityData>);
+
+impl<'a> PrivateDisplayView<'a> for ItemDisplayView<'a> {
+    fn display_data(&self) -> &DisplayEntityData {
+        self.0.display()
+    }
+
+    fn display_data_mut(&mut self) -> &mut DisplayEntityData {
+        self.0.display_mut()
+    }
+}
+
+impl<'a> DisplayView<'a> for ItemDisplayView<'a> {}
+
+impl ItemDisplayView<'_> {
+    /// Gets the context to display the item stack of this item display.
+    #[must_use]
+    pub fn item_display_context(&self) -> ItemDisplayContext {
+        ItemDisplayContext::try_from(*self.0.item_display.get()).unwrap_or(ItemDisplayContext::None)
+    }
+
+    /// Sets the context to display the item stack of this item display to `context`.
+    pub fn set_item_display_context(&mut self, context: ItemDisplayContext) {
+        self.0.item_display.set(context as i8);
+    }
+
+    /// Gets a clone of the item stack used in this item display.
+    #[must_use]
+    pub fn item_stack(&self) -> ItemStack {
+        self.item_stack_ref().clone()
+    }
+
+    /// Gets a reference to the item stack used in this item display.
+    #[must_use]
+    pub fn item_stack_ref(&self) -> &ItemStack {
+        self.0.item_stack.get()
+    }
+
+    /// Sets the item stack used in this item display to `item`.
+    pub fn set_item_stack(&mut self, item: ItemStack) {
+        self.0.item_stack.set(item);
+    }
+}
 
 /// The *item model transform* to use for displaying the item
 /// of an item display in the client.

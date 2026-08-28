@@ -1,9 +1,8 @@
-use std::f32::consts;
-use std::mem;
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4Swizzles};
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
-use std::ops::Mul;
+use std::f32::consts;
+use std::mem;
 use steel_registry::entity_data::{Matrix4f, Quaternionf, Vector3f};
 
 /// A structure describing an affine transformation in 3D space.
@@ -134,7 +133,7 @@ impl Transformation {
         };
         let mut u12s = givens.around_z_mat();
         left_rotation *= givens.around_z_quat();
-        u12s = u12s.transpose().mul(u012s);
+        u12s = u12s.transpose() * u012s;
 
         let givens = if zero_column_0 {
             Self::qr_givens_quat(u12s.col(2)[2], -u12s.col(2)[0])
@@ -144,7 +143,7 @@ impl Transformation {
         .inverse();
         let mut u2s = givens.around_y_mat();
         left_rotation *= givens.around_y_quat();
-        u2s = u2s.transpose().mul(u12s);
+        u2s = u2s.transpose() * u12s;
 
         let givens = if zero_column_1 {
             Self::qr_givens_quat(u2s.col(2)[2], -u2s.col(2)[1])
@@ -153,7 +152,7 @@ impl Transformation {
         };
         let mut sm = givens.around_x_mat();
         left_rotation *= givens.around_x_quat();
-        sm = sm.transpose().mul(u2s);
+        sm = sm.transpose() * u2s;
 
         let scale = Vec3::new(sm.col(0)[0], sm.col(1)[1], sm.col(2)[2]);
 

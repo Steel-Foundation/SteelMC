@@ -8,19 +8,8 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_registry::blocks::behavior::PushReaction;
-
-/// A private trait, only used by display entities, to get and set
-/// some synced entity data.
-trait PrivateDisplay {
-    fn synced_billboard_constraints(&self) -> i8;
-    fn set_synced_billboard_constraints(&self, constraints: i8);
-
-    fn synced_brightness_override(&self) -> i32;
-    fn set_synced_brightness_override(&self, brightness: i32);
-
-    fn synced_glow_color_override(&self) -> i32;
-    fn set_synced_glow_color_override(&self, glow_color: i32);
-}
+use steel_registry::entity_data::Matrix4f;
+use steel_registry::vanilla_entity_data::DisplayEntityData;
 
 /// The abstract display trait used by all display entities.
 ///
@@ -33,11 +22,13 @@ trait PrivateDisplay {
 ///   of a teleport interpolation.
 /// - A shadow radius and strength.
 /// - A maximum view range.
-#[expect(
-    private_bounds,
-    reason = "outside crates and plugins should not work with raw synced values"
-)]
-pub trait Display: Entity + PrivateDisplay {
+///
+/// To **access** or **modify** the data of a display entity, you will need to use [`Display::with_view`].
+/// This method takes a function with a [`DisplayView`] as a parameter, which can be used within the function.
+pub trait Display: Entity {
+    /// The type of [`DisplayView`] implementation associated with this entity.
+    type View<'a>;
+
     /// The base `tick()` method for display entities.
     fn tick_display(&self) {
         // TODO: Implement dismounting if the vehicle of the display entity is removed.
@@ -55,147 +46,63 @@ pub trait Display: Entity + PrivateDisplay {
         true
     }
 
-    /// Gets the [`Transformation`] of this display entity.
-    fn transformation(&self) -> Transformation;
-    /// Sets the [`Transformation`] of this display entity to `transformation`.
-    fn set_transformation(&self, transformation: Transformation);
+    /// Provides a view to the synced data of this entity, accessible via the function `f`.
+    ///
+    /// This allows accessing and modifying any required data.
+    fn with_view(&self, f: impl FnOnce(Self::View<'_>));
 
-    /// Gets this display entity's *interpolation duration* (the time to interpolate to a new transformation), in ticks.
-    fn transformation_interpolation_duration(&self) -> i32;
-    /// Sets this display entity's *interpolation duration* (the time to interpolate to a new transformation), in ticks, to `duration`.
-    fn set_transformation_interpolation_duration(&self, duration: i32);
-    /// Gets this display entity's *teleport duration* (the time to interpolate to a new position due to a teleport), in ticks.
-    ///
-    /// Values are clamped to be between `0` and `59` ticks, inclusive.
-    ///
-    /// **Note:** This property is not saved to disk.
-    fn transformation_interpolation_delay(&self) -> i32;
-    /// Sets this display entity's *start interpolation delay* (the delay in starting an interpolation), in ticks, to `duration`.
-    ///
-    /// If this is set to `0`, interpolation starts immediately.
-    ///
-    /// **Note:** This property is not saved to disk.
-    fn set_transformation_interpolation_delay(&self, duration: i32);
-    /// Gets this display entity's *start interpolation delay* (the delay in starting an interpolation), in ticks.
-    fn pos_rot_interpolation_duration(&self) -> i32;
-    /// Sets this display entity's *teleport duration* (the time to interpolate to a new position due to a teleport), in ticks, to `duration`.
-    fn set_pos_rot_interpolation_duration(&self, duration: i32);
-
-    /// Gets the billboard constraints of this display entity.
-    fn billboard_constraints(&self) -> BillboardConstraints {
-        BillboardConstraints::try_from(self.synced_billboard_constraints())
-            .unwrap_or(BillboardConstraints::Fixed)
-    }
-    /// Sets this display entity's billboard constraints to `constraints`.
-    fn set_billboard_constraints(&self, constraints: BillboardConstraints) {
-        self.set_synced_billboard_constraints(constraints as i8);
-    }
-
-    /// Gets this display entity's billboard constraints.
-    fn brightness_override(&self) -> Option<Brightness> {
-        let synced = self.synced_brightness_override();
-        (synced != -1).then(|| Brightness::unpack(synced))
-    }
-    /// Sets this display entity's brightness override to `brightness`.
-    fn set_brightness_override(&self, brightness: Option<Brightness>) {
-        self.set_synced_brightness_override(brightness.map_or(-1, Brightness::pack));
-    }
-
-    /// Gets this display entity's maximum view range.
-    fn view_range(&self) -> f32;
-    /// Sets this display entity's maximum view range to `range`.
-    fn set_view_range(&self, range: f32);
-    /// Gets this display entity's shadow radius.
-    ///
-    /// **Note:** This property is interpolated.
-    fn shadow_radius(&self) -> f32;
-    /// Sets this display entity's shadow radius to `size`.
-    ///
-    /// **Note:** This property is interpolated.
-    fn set_shadow_radius(&self, size: f32);
-    /// Sets this display entity's shadow strength (which affects the opacity of the display entity's shadow depending on its distance to the block below).
-    ///
-    /// **Note:** This property is interpolated.
-    fn shadow_strength(&self) -> f32;
-    /// Sets this display entity's shadow strength (which affects the opacity of the display entity's shadow depending on its distance to the block below) to `strength`.
-    ///
-    /// **Note:** This property is interpolated.
-    fn set_shadow_strength(&self, strength: f32);
-    /// Gets this display entity's maximum width.
-    fn width(&self) -> f32;
-    /// Sets this display entity's maximum width to `width`.
-    ///
-    /// Setting this to `0` indicates no culling on the horizontal axis.
-    fn set_width(&self, width: f32);
-    /// Gets this display entity's maximum height.
-    fn height(&self) -> f32;
-    /// Sets this display entity's maximum height to `height`.
-    ///
-    /// Setting this to `0` indicates no culling on the vertical axis.
-    fn set_height(&self, height: f32);
-    /// Gets this display entity's glow color override. If this is `None`, the entity glows according to its team's color.
-    ///
-    /// **Note:** This has no effect on *text displays*.
-    fn glow_color_override(&self) -> Option<i32> {
-        let color = self.synced_glow_color_override();
-        (color != -1).then_some(color)
-    }
-    /// Sets this display entity's glow color override to `value`. If this is `None`, the entity glows according to its team's color.
-    ///
-    /// **Note:** This has no effect on *text displays*.
-    fn set_glow_color_override(&self, value: Option<i32>) {
-        self.set_synced_glow_color_override(value.unwrap_or(-1));
-    }
-
-    /// Loads this display entity's fields common to all display entities from an NBT compound.
-    fn load_display(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.set_transformation(
+    /// Loads a display entity's fields common to all display entities from an NBT compound via a view.
+    fn load_display<'a: 'b, 'b>(
+        view: &'b mut impl DisplayView<'a>,
+        nbt: BorrowedNbtCompoundView<'_, '_>,
+    ) {
+        view.set_transformation(
             nbt.get("transformation")
                 .and_then(Transformation::from_nbt_tag)
                 .unwrap_or(Transformation::IDENTITY),
         );
 
-        self.set_transformation_interpolation_duration(
+        view.set_transformation_interpolation_duration(
             nbt.int("interpolation_duration").unwrap_or(0),
         );
-        self.set_transformation_interpolation_delay(nbt.int("start_interpolation").unwrap_or(0));
-        self.set_pos_rot_interpolation_duration(
+        view.set_transformation_interpolation_delay(nbt.int("start_interpolation").unwrap_or(0));
+        view.set_pos_rot_interpolation_duration(
             nbt.int("teleport_duration").unwrap_or(0).clamp(0, 59),
         );
-        self.set_billboard_constraints(
+        view.set_billboard_constraints(
             nbt.get("billboard")
                 .and_then(BillboardConstraints::from_nbt_tag)
                 .unwrap_or(BillboardConstraints::Fixed),
         );
-        self.set_view_range(nbt.float("view_range").unwrap_or(1.0));
-        self.set_shadow_radius(nbt.float("shadow_radius").unwrap_or(0.0));
-        self.set_shadow_strength(nbt.float("shadow_strength").unwrap_or(1.0));
-        self.set_width(nbt.float("width").unwrap_or(0.0));
-        self.set_height(nbt.float("height").unwrap_or(0.0));
-        self.set_synced_glow_color_override(nbt.int("glow_color_override").unwrap_or(-1));
-        self.set_brightness_override(nbt.get("brightness").and_then(Brightness::from_nbt_tag));
+        view.set_view_range(nbt.float("view_range").unwrap_or(1.0));
+        view.set_shadow_radius(nbt.float("shadow_radius").unwrap_or(0.0));
+        view.set_shadow_strength(nbt.float("shadow_strength").unwrap_or(1.0));
+        view.set_width(nbt.float("width").unwrap_or(0.0));
+        view.set_height(nbt.float("height").unwrap_or(0.0));
+        view.set_synced_glow_color_override(nbt.int("glow_color_override").unwrap_or(-1));
+        view.set_brightness_override(nbt.get("brightness").and_then(Brightness::from_nbt_tag));
     }
 
-    /// Saves this display entity's fields common to all display entities to an NBT compound.
-    fn save_display(&self, nbt: &mut NbtCompound) {
-        nbt.insert("transformation", self.transformation());
+    /// Saves a display entity's fields common to all display entities to an NBT compound via a view.
+    fn save_display<'a>(view: &'a impl DisplayView<'a>, nbt: &mut NbtCompound) {
+        nbt.insert("transformation", view.transformation());
 
-        nbt.insert("billboard", self.billboard_constraints());
+        nbt.insert("billboard", view.billboard_constraints());
         nbt.insert(
             "interpolation_duration",
-            self.transformation_interpolation_duration(),
+            view.transformation_interpolation_duration(),
         );
-        nbt.insert("teleport_duration", self.pos_rot_interpolation_duration());
-        nbt.insert("view_range", self.view_range());
-        nbt.insert("shadow_radius", self.shadow_radius());
-        nbt.insert("shadow_strength", self.shadow_strength());
-        nbt.insert("width", self.width());
-        nbt.insert("height", self.height());
+        nbt.insert("teleport_duration", view.pos_rot_interpolation_duration());
+        nbt.insert("view_range", view.view_range());
+        nbt.insert("shadow_radius", view.shadow_radius());
+        nbt.insert("shadow_strength", view.shadow_strength());
+        nbt.insert("width", view.width());
+        nbt.insert("height", view.height());
         nbt.insert(
             "glow_color_override",
-            self.glow_color_override().unwrap_or(-1),
+            view.glow_color_override().unwrap_or(-1),
         );
-        if let Some(brightness) = self.brightness_override() {
+        if let Some(brightness) = view.brightness_override() {
             nbt.insert("brightness", brightness);
         }
     }
@@ -203,168 +110,194 @@ pub trait Display: Entity + PrivateDisplay {
     // TODO: Add `getTeamColor()` when team foundations exist.
 }
 
-macro_rules! display_impl {
-    ($entity:ident) => {
-        impl PrivateDisplay for $entity {
-            fn synced_billboard_constraints(&self) -> i8 {
-                *self
-                    .entity_data
-                    .lock()
-                    .display
-                    .billboard_render_constraints
-                    .get()
-            }
+/// A private trait, only used by display entities, to get and set
+/// some synced entity data.
+trait PrivateDisplayView<'a> {
+    fn display_data(&self) -> &DisplayEntityData;
+    fn display_data_mut(&mut self) -> &mut DisplayEntityData;
 
-            fn set_synced_billboard_constraints(&self, constraints: i8) {
-                self.entity_data
-                    .lock()
-                    .display
-                    .billboard_render_constraints
-                    .set(constraints)
-            }
+    fn set_synced_brightness_override(&mut self, brightness: i32) {
+        self.display_data_mut().brightness_override.set(brightness);
+    }
 
-            fn synced_brightness_override(&self) -> i32 {
-                *self.entity_data.lock().display.brightness_override.get()
-            }
+    fn set_synced_glow_color_override(&mut self, value: i32) {
+        self.display_data_mut().glow_color_override.set(value);
+    }
+}
 
-            fn set_synced_brightness_override(&self, brightness: i32) {
-                self.entity_data
-                    .lock()
-                    .display
-                    .brightness_override
-                    .set(brightness)
-            }
-
-            fn synced_glow_color_override(&self) -> i32 {
-                *self.entity_data.lock().display.brightness_override.get()
-            }
-
-            fn set_synced_glow_color_override(&self, brightness: i32) {
-                self.entity_data
-                    .lock()
-                    .display
-                    .glow_color_override
-                    .set(brightness)
-            }
+/// A view to the synced data of a [`Display`].
+///
+/// This trait has common methods, for all displays, to access and modify
+/// data specific to display entities. Use [`Display::with_view`] to access a view
+/// for an entity.
+#[expect(
+    private_bounds,
+    reason = "outside crates and plugins should not work with raw synced values"
+)]
+pub trait DisplayView<'a>: PrivateDisplayView<'a> {
+    /// Gets the [`Transformation`] of the display entity.
+    ///
+    /// **Note:** This property is interpolated.
+    fn transformation(&self) -> Transformation {
+        let data = self.display_data().display();
+        Transformation {
+            translation: *data.translation.get(),
+            left_rotation: *data.left_rotation.get(),
+            scale: *data.scale.get(),
+            right_rotation: *data.right_rotation.get(),
         }
+    }
+    /// Sets the [`Transformation`] of the display entity to `transformation`.
+    ///
+    /// **Note:** This property is interpolated.
+    fn set_transformation(&mut self, transformation: Transformation) {
+        let data = self.display_data_mut();
+        data.translation.set(transformation.translation);
+        data.left_rotation.set(transformation.left_rotation);
+        data.scale.set(transformation.scale);
+        data.right_rotation.set(transformation.right_rotation);
+    }
 
-        impl Display for $entity {
-            fn set_transformation(&self, transformation: Transformation) {
-                let mut data = self.entity_data.lock();
-                data.display.translation.set(transformation.translation);
-                data.display.left_rotation.set(transformation.left_rotation);
-                data.display.scale.set(transformation.scale);
-                data.display
-                    .right_rotation
-                    .set(transformation.right_rotation);
-            }
+    /// Sets the transformation matrix of the display entity to `mat`.
+    ///
+    /// **Note:** Since `Mat4` implements `Into<Matrix4f>`, it can also act as
+    /// a valid matrix for this function.
+    fn set_transformation_matrix(&mut self, mat: impl Into<Matrix4f>) {
+        self.set_transformation(Transformation::decompose(mat.into()));
+    }
 
-            fn transformation(&self) -> Transformation {
-                let data = self.entity_data.lock();
-                Transformation {
-                    translation: *data.display.translation.get(),
-                    left_rotation: *data.display.left_rotation.get(),
-                    scale: *data.display.scale.get(),
-                    right_rotation: *data.display.right_rotation.get(),
-                }
-            }
+    /// Gets the display entity's *interpolation duration* (the time to interpolate to a new transformation), in ticks.
+    fn transformation_interpolation_duration(&self) -> i32 {
+        *self
+            .display_data()
+            .transformation_interpolation_duration
+            .get()
+    }
+    /// Sets the display entity's *interpolation duration* (the time to interpolate to a new transformation), in ticks, to `duration`.
+    fn set_transformation_interpolation_duration(&mut self, duration: i32) {
+        self.display_data_mut()
+            .transformation_interpolation_duration
+            .set(duration);
+    }
+    /// Gets the display entity's *teleport duration* (the time to interpolate to a new position due to a teleport), in ticks.
+    ///
+    /// Values are clamped to be between `0` and `59` ticks, inclusive.
+    ///
+    /// **Note:** This property is not saved to disk.
+    fn transformation_interpolation_delay(&self) -> i32 {
+        *self
+            .display_data()
+            .transformation_interpolation_start_delta_ticks
+            .get()
+    }
+    /// Sets the display entity's *start interpolation delay* (the delay in starting an interpolation), in ticks, to `duration`.
+    ///
+    /// If this is set to `0`, interpolation starts immediately.
+    ///
+    /// **Note:** This property is not saved to disk.
+    fn set_transformation_interpolation_delay(&mut self, duration: i32) {
+        self.display_data_mut()
+            .transformation_interpolation_start_delta_ticks
+            .set(duration);
+    }
+    /// Gets the display entity's *start interpolation delay* (the delay in starting an interpolation), in ticks.
+    fn pos_rot_interpolation_duration(&self) -> i32 {
+        *self.display_data().pos_rot_interpolation_duration.get()
+    }
+    /// Sets the display entity's *teleport duration* (the time to interpolate to a new position due to a teleport), in ticks, to `duration`.
+    fn set_pos_rot_interpolation_duration(&mut self, duration: i32) {
+        self.display_data_mut()
+            .pos_rot_interpolation_duration
+            .set(duration);
+    }
 
-            fn transformation_interpolation_duration(&self) -> i32 {
-                *self
-                    .entity_data
-                    .lock()
-                    .display
-                    .transformation_interpolation_duration
-                    .get()
-            }
+    /// Gets the billboard constraints of the display entity.
+    fn billboard_constraints(&self) -> BillboardConstraints {
+        BillboardConstraints::try_from(*self.display_data().billboard_render_constraints.get())
+            .unwrap_or(BillboardConstraints::Fixed)
+    }
+    /// Sets the display entity's billboard constraints to `constraints`.
+    fn set_billboard_constraints(&mut self, constraints: BillboardConstraints) {
+        self.display_data_mut()
+            .billboard_render_constraints
+            .set(constraints as i8);
+    }
 
-            fn set_transformation_interpolation_duration(&self, duration: i32) {
-                self.entity_data
-                    .lock()
-                    .display
-                    .transformation_interpolation_duration
-                    .set(duration)
-            }
+    /// Gets the display entity's billboard constraints.
+    fn brightness_override(&self) -> Option<Brightness> {
+        let synced = *self.display_data().brightness_override.get();
+        (synced != -1).then(|| Brightness::unpack(synced))
+    }
+    /// Sets the display entity's brightness override to `brightness`.
+    fn set_brightness_override(&mut self, brightness: Option<Brightness>) {
+        self.set_synced_brightness_override(brightness.map_or(-1, Brightness::pack));
+    }
 
-            fn transformation_interpolation_delay(&self) -> i32 {
-                *self
-                    .entity_data
-                    .lock()
-                    .display
-                    .transformation_interpolation_start_delta_ticks
-                    .get()
-            }
-
-            fn set_transformation_interpolation_delay(&self, ticks: i32) {
-                self.entity_data
-                    .lock()
-                    .display
-                    .transformation_interpolation_start_delta_ticks
-                    .set(ticks)
-            }
-
-            fn pos_rot_interpolation_duration(&self) -> i32 {
-                *self
-                    .entity_data
-                    .lock()
-                    .display
-                    .pos_rot_interpolation_duration
-                    .get()
-            }
-
-            fn set_pos_rot_interpolation_duration(&self, duration: i32) {
-                self.entity_data
-                    .lock()
-                    .display
-                    .pos_rot_interpolation_duration
-                    .set(duration)
-            }
-
-            fn view_range(&self) -> f32 {
-                *self.entity_data.lock().display.view_range.get()
-            }
-
-            fn set_view_range(&self, range: f32) {
-                self.entity_data.lock().display.view_range.set(range)
-            }
-
-            fn shadow_radius(&self) -> f32 {
-                *self.entity_data.lock().display.shadow_radius.get()
-            }
-
-            fn set_shadow_radius(&self, size: f32) {
-                self.entity_data.lock().display.shadow_radius.set(size)
-            }
-
-            fn shadow_strength(&self) -> f32 {
-                *self.entity_data.lock().display.shadow_strength.get()
-            }
-
-            fn set_shadow_strength(&self, strength: f32) {
-                self.entity_data
-                    .lock()
-                    .display
-                    .shadow_strength
-                    .set(strength)
-            }
-
-            fn width(&self) -> f32 {
-                *self.entity_data.lock().display.width.get()
-            }
-
-            fn set_width(&self, width: f32) {
-                self.entity_data.lock().display.width.set(width)
-            }
-
-            fn height(&self) -> f32 {
-                *self.entity_data.lock().display.height.get()
-            }
-
-            fn set_height(&self, height: f32) {
-                self.entity_data.lock().display.height.set(height)
-            }
-        }
-    };
+    /// Gets the display entity's maximum view range.
+    fn view_range(&self) -> f32 {
+        *self.display_data().view_range.get()
+    }
+    /// Sets the display entity's maximum view range to `range`.
+    fn set_view_range(&mut self, range: f32) {
+        self.display_data_mut().view_range.set(range);
+    }
+    /// Gets the display entity's shadow radius.
+    ///
+    /// **Note:** This property is interpolated.
+    fn shadow_radius(&self) -> f32 {
+        *self.display_data().shadow_radius.get()
+    }
+    /// Sets the display entity's shadow radius to `size`.
+    ///
+    /// **Note:** This property is interpolated.
+    fn set_shadow_radius(&mut self, size: f32) {
+        self.display_data_mut().shadow_radius.set(size);
+    }
+    /// Sets the display entity's shadow strength (which affects the opacity of the display entity's shadow depending on its distance to the block below).
+    ///
+    /// **Note:** This property is interpolated.
+    fn shadow_strength(&self) -> f32 {
+        *self.display_data().shadow_strength.get()
+    }
+    /// Sets the display entity's shadow strength (which affects the opacity of the display entity's shadow depending on its distance to the block below) to `strength`.
+    ///
+    /// **Note:** This property is interpolated.
+    fn set_shadow_strength(&mut self, strength: f32) {
+        self.display_data_mut().shadow_strength.set(strength);
+    }
+    /// Gets the display entity's maximum width.
+    fn width(&self) -> f32 {
+        *self.display_data().width.get()
+    }
+    /// Sets the display entity's maximum width to `width`.
+    ///
+    /// Setting this to `0` indicates no culling on the horizontal axis.
+    fn set_width(&mut self, width: f32) {
+        self.display_data_mut().width.set(width);
+    }
+    /// Gets the display entity's maximum height.
+    fn height(&self) -> f32 {
+        *self.display_data().height.get()
+    }
+    /// Sets the display entity's maximum height to `height`.
+    ///
+    /// Setting this to `0` indicates no culling on the vertical axis.
+    fn set_height(&mut self, height: f32) {
+        self.display_data_mut().height.set(height);
+    }
+    /// Gets the display entity's glow color override. If this is `None`, the entity glows according to its team's color.
+    ///
+    /// **Note:** This has no effect on *text displays*.
+    fn glow_color_override(&self) -> Option<i32> {
+        let color = *self.display_data().glow_color_override.get();
+        (color != -1).then_some(color)
+    }
+    /// Sets the display entity's glow color override to `value`. If this is `None`, the entity glows according to its team's color.
+    ///
+    /// **Note:** This has no effect on *text displays*.
+    fn set_glow_color_override(&mut self, value: Option<i32>) {
+        self.set_synced_glow_color_override(value.unwrap_or(-1));
+    }
 }
 
 /// Controls how a display entity looks at a player (from their client).
