@@ -89,7 +89,7 @@ use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
     CCommandSuggestions, CEntityEvent, CLogin, CPlayerInfoUpdate, CRemovePlayerInfo,
     CSetDefaultSpawnPosition, CSystemChat, CTabList, CTickingState, CTickingStep,
-    CommonPlayerSpawnInfo, RelativeMovement,
+    CommonPlayerSpawnInfo, PLAYER_INFO_INIT_ACTIONS, PlayerInfoEntry, RelativeMovement,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::vanilla_game_rules::{
