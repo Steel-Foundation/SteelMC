@@ -75,11 +75,9 @@ pub trait ItemBehavior: Send + Sync {
             if consume_ticks > 0 {
                 context.player.start_using_item(context.hand);
             } else {
-                let world = context.world;
-                let player = context.player;
-                context
-                    .inv
-                    .with_item(|item| *item = finish_consuming_stack(item, world, player));
+                let stack = context.inv.with_item(|item| item.clone());
+                let result = finish_consuming_stack(&stack, context.world, context.player);
+                context.inv.with_item(|item| *item = result);
             }
             return InteractionResult::Consume;
         }
@@ -356,12 +354,15 @@ impl Default for ItemBehaviorRegistry {
 
 #[cfg(test)]
 mod tests {
+    use steel_registry::data_components::{Consumable, vanilla_components};
     use steel_registry::item_stack::ItemStack;
     use steel_registry::stat::vanilla_stat_types;
     use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
+    use steel_utils::types::InteractionHand;
     use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
 
     use super::finish_consuming_stack;
+    use crate::behavior::{ITEM_BEHAVIORS, InteractionResult, UseItemContext};
     use crate::entity::entities::ItemEntity;
     use crate::inventory::container::Container as _;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
@@ -403,6 +404,63 @@ mod tests {
             panic!("dropped entity should retain its concrete item type");
         };
         assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
+    }
+
+    /// Regression test for a deadlock: `use_item` on a `consume_seconds:
+    /// 0.0` item must finish it immediately (mirroring vanilla `Consumable
+    /// .startConsuming`'s `consumeTicks() > 0` branch) *without* holding the
+    /// inventory lock while doing so — `finish_consuming_stack` can recurse
+    /// into the same lock via `USE_REMAINDER` (honey bottle → glass bottle)
+    /// through `handle_extra_items_created_on_use`, which used to deadlock
+    /// when called from inside the lock `use_item` originally held.
+    #[test]
+    fn instant_consumable_with_use_remainder_finishes_without_deadlocking() {
+        init_vanilla_registry();
+        crate::behavior::init_behaviors();
+        let world = fresh_test_world("instant_consumable_no_deadlock");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();
+        player.set_client_loaded(true);
+
+        let mut stack = ItemStack::with_count(&vanilla_items::HONEY_BOTTLE, 2);
+        let existing = stack
+            .get(vanilla_components::CONSUMABLE)
+            .expect("honey bottle is consumable")
+            .clone();
+        let instant_consumable = Consumable::new(
+            0.0,
+            existing.animation(),
+            existing.sound().clone(),
+            existing.has_consume_particles(),
+            existing.on_consume_effects().to_vec(),
+        )
+        .expect("valid consumable");
+        stack.set(vanilla_components::CONSUMABLE, instant_consumable);
+
+        {
+            let mut inventory = player.inventory.lock();
+            inventory.set_item_in_hand(InteractionHand::MainHand, stack);
+        }
+
+        let behavior = ITEM_BEHAVIORS.get_behavior(&vanilla_items::HONEY_BOTTLE);
+        let mut context = UseItemContext::new(
+            &player,
+            InteractionHand::MainHand,
+            &world,
+            player.inventory.clone(),
+        );
+
+        let result = behavior.use_item(&mut context);
+
+        assert_eq!(result, InteractionResult::Consume);
+        let remaining = {
+            let inventory = player.inventory.lock();
+            inventory
+                .get_item_in_hand(InteractionHand::MainHand)
+                .clone()
+        };
+        assert!(remaining.is(&vanilla_items::HONEY_BOTTLE));
+        assert_eq!(remaining.count(), 1);
     }
 
     /// Eating a food item must restore hunger/saturation by the exact
