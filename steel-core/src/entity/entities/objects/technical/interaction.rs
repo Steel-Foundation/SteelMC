@@ -1,3 +1,4 @@
+use crate::entity::BorrowedNbtCompoundView;
 use std::sync::Weak;
 use glam::DVec3;
 use parking_lot::MutexGuard;
@@ -5,11 +6,17 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use uuid::Uuid;
 use steel_macros::entity_behavior;
-use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::blocks::behavior::PushReaction;
+use steel_registry::entity_data::EntityPose;
+use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::vanilla_entity_data::InteractionEntityData;
-use steel_utils::{DowncastType, DowncastTypeKey, UuidExt};
+use steel_utils::{DowncastType, DowncastTypeKey, UuidExt, WorldAabb};
 use steel_utils::locks::SyncMutex;
+use steel_utils::types::InteractionHand;
+use crate::behavior::InteractionResult;
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
+use crate::entity::damage::DamageSource;
+use crate::player::Player;
 use crate::world::World;
 
 const DEFAULT_WIDTH: f32 = 1.0;
@@ -99,12 +106,68 @@ impl Entity for InteractionEntity {
         self.entity_type
     }
 
+    fn is_pickable(&self) -> bool {
+        true
+    }
+
+    fn skip_attack_interaction(&self, source: &dyn Entity) -> bool {
+        let Some(player) = source.as_player() else {
+            return false;
+        };
+        *self.attack.lock() = Some(PlayerAction {
+            player: player.uuid(),
+            timestamp: player.get_world().game_time()
+        });
+        !self.entity_data.lock().response.get()
+    }
+
+    fn is_ignoring_block_triggers(&self) -> bool {
+        true
+    }
+
+    fn piston_push_reaction(&self) -> PushReaction {
+        PushReaction::Ignore
+    }
+
+    fn can_be_hit_by_projectile(&self) -> bool {
+        false
+    }
+
+    fn make_bounding_box_at(&self, position: DVec3) -> WorldAabb {
+        let guard = self.entity_data.lock();
+        WorldAabb::entity_box(
+            position.x,
+            position.y,
+            position.z,
+            f64::from(*guard.width.get() / 2.0),
+            f64::from(*guard.height.get()),
+        )
+    }
+
+    fn tick(&self) {}
+
+    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
+        Some(&self.entity_data)
+    }
+
+    fn interact(&self, player: &Player, _hand: InteractionHand, _location: DVec3) -> InteractionResult {
+        *self.interaction.lock() = Some(PlayerAction {
+            player: player.uuid(),
+            timestamp: player.get_world().game_time()
+        });
+        InteractionResult::Consume
+    }
+
     fn no_physics(&self) -> bool {
         true
     }
 
-    fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
-        Some(&self.entity_data)
+    fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
+        let guard = self.entity_data.lock();
+        EntityDimensions::with_default_eye_height(
+            *guard.width.get(),
+            *guard.height.get()
+        )
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -122,10 +185,25 @@ impl Entity for InteractionEntity {
         }
         {
             let guard = self.interaction.lock();
-            if let Some(attack) = guard.as_ref() {
-                nbt.insert(TAG_INTERACTION, attack);
+            if let Some(interaction) = guard.as_ref() {
+                nbt.insert(TAG_INTERACTION, interaction);
             }
         }
+    }
+
+    fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        {
+            let mut guard = self.entity_data.lock();
+            guard.width.set(nbt.float(TAG_WIDTH).unwrap_or(DEFAULT_WIDTH));
+            guard.height.set(nbt.float(TAG_HEIGHT).unwrap_or(DEFAULT_HEIGHT));
+            guard.response.set(nbt.byte(TAG_RESPONSE).map(|b| b != 0).unwrap_or(DEFAULT_RESPONSE));
+        }
+        *self.attack.lock() = nbt.get(TAG_ATTACK).and_then(PlayerAction::from_nbt_tag);
+        *self.interaction.lock() = nbt.get(TAG_INTERACTION).and_then(PlayerAction::from_nbt_tag);
+    }
+
+    fn hurt(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
+        false
     }
 }
 
