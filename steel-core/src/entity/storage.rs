@@ -156,22 +156,17 @@ mod tests {
     use steel_registry::vanilla_entities;
 
     use super::*;
-    use crate::entity::entities::RawEntity;
+    use crate::test_support::TestEntity;
 
-    fn raw_item(id: i32) -> SharedEntity {
-        Arc::new(RawEntity::new(
-            id,
-            DVec3::ZERO,
-            Weak::new(),
-            &vanilla_entities::ITEM,
-        ))
+    fn test_item(id: i32) -> SharedEntity {
+        TestEntity::shared(id, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM)
     }
 
     #[test]
     fn saveable_entities_keep_unloaded_to_chunk_removals() {
         let storage = EntityStorage::new();
-        let unloaded = raw_item(1);
-        let discarded = raw_item(2);
+        let unloaded = test_item(1);
+        let discarded = test_item(2);
 
         unloaded.set_removed(RemovalReason::UnloadedToChunk);
         discarded.set_removed(RemovalReason::Discarded);
@@ -196,16 +191,16 @@ mod tests {
         let storage = EntityStorage::new();
 
         assert!(matches!(
-            storage.add(raw_item(1)),
+            storage.add(test_item(1)),
             EntityStorageAddResult::Staged
         ));
-        let _ = storage.add(raw_item(1));
+        let _ = storage.add(test_item(1));
     }
 
     #[test]
     fn close_drains_staged_entities_and_returns_late_adds() {
         let storage = EntityStorage::new();
-        let staged = raw_item(1);
+        let staged = test_item(1);
         assert!(matches!(
             storage.add(Arc::clone(&staged)),
             EntityStorageAddResult::Staged
@@ -217,7 +212,7 @@ mod tests {
         assert!(storage.get_all().is_empty());
         assert!(storage.get_saveable_entities().is_empty());
 
-        let late = raw_item(2);
+        let late = test_item(2);
         let EntityStorageAddResult::Closed(returned) = storage.add(Arc::clone(&late)) else {
             panic!("closed storage must return ownership of a late entity");
         };
@@ -230,7 +225,7 @@ mod tests {
         for id in 0..64 {
             let storage = Arc::new(EntityStorage::new());
             let barrier = Arc::new(Barrier::new(2));
-            let entity = raw_item(id);
+            let entity = test_item(id);
             let add_storage = Arc::clone(&storage);
             let add_barrier = Arc::clone(&barrier);
             let add_entity = Arc::clone(&entity);

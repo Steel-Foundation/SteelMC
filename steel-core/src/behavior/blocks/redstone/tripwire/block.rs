@@ -262,8 +262,7 @@ mod tests {
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
     use crate::entity::SharedEntity;
-    use crate::entity::entities::RawEntity;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestEntity, fresh_test_world, insert_ready_full_chunk};
 
     #[test]
     fn entity_inside_powers_wire_and_attached_hooks() {
@@ -299,12 +298,12 @@ mod tests {
         ));
         TripWireHookBlock::calculate_state(&world, left, left_state, false, false, -1, None);
 
-        let entity: SharedEntity = Arc::new(RawEntity::new(
+        let entity: SharedEntity = TestEntity::shared(
             7_002,
             DVec3::new(6.5, 64.0, 8.5),
             Arc::downgrade(&world),
             &vanilla_entities::PIG,
-        ));
+        );
         let mut effects = InsideBlockEffectCollector::new();
         BLOCK_BEHAVIORS
             .get_behavior(&vanilla_blocks::TRIPWIRE)

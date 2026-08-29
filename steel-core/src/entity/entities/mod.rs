@@ -2,7 +2,6 @@
 
 pub mod mobs;
 pub mod objects;
-mod raw;
 
 pub use mobs::hostile::EndermiteEntity;
 pub use mobs::passive::{ChickenEntity, CowEntity, PigEntity, SheepEntity};
@@ -12,4 +11,3 @@ pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
 pub use objects::projectiles::{EnderPearlEntity, FireworkRocketEntity, ThrownEggEntity};
 pub use objects::technical::MarkerEntity;
 pub use objects::vehicles::ChestMinecartEntity;
-pub use raw::RawEntity;

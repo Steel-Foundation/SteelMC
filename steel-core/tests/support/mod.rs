@@ -1,8 +1,10 @@
 use std::cell::{Cell, RefCell};
 use std::slice;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, Weak};
 
+use glam::DVec3;
 use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidRef;
 use steel_registry::game_events::GameEventRef;
 use steel_registry::sound_event::SoundEventRef;
@@ -19,7 +21,7 @@ use crate::chunk::chunk_holder::{ChunkHolder, TickingReadiness};
 use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use crate::chunk::section::{ChunkSection, Sections};
 use crate::chunk::status::ChunkStatus;
-use crate::entity::Entity;
+use crate::entity::{Entity, EntityBase, SharedEntity};
 use crate::level_data::WorldGenerationSettings;
 use crate::world::game_event::GameEventContext;
 use crate::world::{
@@ -33,6 +35,46 @@ mod player;
 
 pub(crate) use connection::TestConnection;
 pub(crate) use player::{TestPlayerBuilder, test_runtime_config};
+
+pub(crate) struct TestEntity {
+    base: EntityBase,
+    entity_type: EntityTypeRef,
+}
+
+impl TestEntity {
+    pub(crate) fn new(
+        id: i32,
+        position: DVec3,
+        world: Weak<World>,
+        entity_type: EntityTypeRef,
+    ) -> Self {
+        Self {
+            base: EntityBase::new(id, position, entity_type.dimensions, world),
+            entity_type,
+        }
+    }
+
+    pub(crate) fn shared(
+        id: i32,
+        position: DVec3,
+        world: Weak<World>,
+        entity_type: EntityTypeRef,
+    ) -> SharedEntity {
+        Arc::new(Self::new(id, position, world, entity_type))
+    }
+}
+
+crate::entity::impl_test_downcast_type!(TestEntity);
+
+impl Entity for TestEntity {
+    fn base(&self) -> &EntityBase {
+        &self.base
+    }
+
+    fn entity_type(&self) -> EntityTypeRef {
+        self.entity_type
+    }
+}
 
 pub(crate) fn test_world() -> &'static Arc<World> {
     static WORLD: OnceLock<Arc<World>> = OnceLock::new();

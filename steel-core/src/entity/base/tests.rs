@@ -20,9 +20,9 @@ use uuid::Uuid;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityLevelCallback, InsideBlockEffectType, RemovalReason, SharedEntity,
-    entities::RawEntity,
 };
 use crate::portal::PortalKind;
+use crate::test_support::TestEntity;
 use crate::world::World;
 
 fn assert_vec3_close(left: DVec3, right: DVec3) {
@@ -47,13 +47,13 @@ fn assert_f64_close(left: f64, right: f64) {
     );
 }
 
-fn raw_entity(id: i32) -> SharedEntity {
-    Arc::new(RawEntity::new(
+fn test_entity(id: i32) -> SharedEntity {
+    TestEntity::shared(
         id,
         DVec3::ZERO,
         Weak::<World>::new(),
         &vanilla_entities::ITEM,
-    ))
+    )
 }
 
 fn link_vehicle_and_passenger(vehicle: &SharedEntity, passenger: &SharedEntity) {
@@ -716,8 +716,8 @@ fn no_physics_is_stored_on_base_state() {
 
 #[test]
 fn relationship_state_tracks_direct_vehicle_and_passengers() {
-    let vehicle = raw_entity(1);
-    let passenger = raw_entity(2);
+    let vehicle = test_entity(1);
+    let passenger = test_entity(2);
 
     link_vehicle_and_passenger(&vehicle, &passenger);
 
@@ -740,9 +740,9 @@ fn relationship_state_tracks_direct_vehicle_and_passengers() {
 
 #[test]
 fn relationship_queries_follow_indirect_vehicle_chain() {
-    let root = raw_entity(1);
-    let middle = raw_entity(2);
-    let passenger = raw_entity(3);
+    let root = test_entity(1);
+    let middle = test_entity(2);
+    let passenger = test_entity(3);
 
     link_vehicle_and_passenger(&root, &middle);
     link_vehicle_and_passenger(&middle, &passenger);
@@ -757,8 +757,8 @@ fn relationship_queries_follow_indirect_vehicle_chain() {
 
 #[test]
 fn removal_cleans_up_relationship_state() {
-    let vehicle = raw_entity(1);
-    let passenger = raw_entity(2);
+    let vehicle = test_entity(1);
+    let passenger = test_entity(2);
 
     link_vehicle_and_passenger(&vehicle, &passenger);
 
@@ -773,7 +773,7 @@ fn removal_cleans_up_relationship_state() {
 #[test]
 fn base_fall_damage_propagates_to_passengers() {
     init_vanilla_registry();
-    let vehicle = raw_entity(1);
+    let vehicle = test_entity(1);
     let passenger = FallDamageTestEntity::new(2);
     let passenger_entity: SharedEntity = passenger.clone();
 

@@ -410,7 +410,7 @@ impl ChunkStorage {
             return None;
         };
 
-        Some(ENTITIES.create_and_load_or_raw(
+        ENTITIES.create_and_load(
             EntityLoadRequest {
                 entity_type,
                 position: pos,
@@ -430,6 +430,6 @@ impl ChunkStorage {
                 world: Weak::clone(level),
             },
             &nbt,
-        ))
+        )
     }
 }

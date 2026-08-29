@@ -76,7 +76,7 @@ impl BlockEntityRegistry {
         self.entries.get(id)?.factory.map(|f| f(level, pos, state))
     }
 
-    /// Creates a block entity, falling back to an NBT-preserving raw entity.
+    /// Creates a block entity, falling back to an NBT-preserving raw block entity.
     ///
     /// Use this for disk/worldgen paths where an unimplemented block entity type must still
     /// survive save/load. Gameplay paths that require concrete behavior should call

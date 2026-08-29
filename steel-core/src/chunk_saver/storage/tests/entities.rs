@@ -425,12 +425,12 @@ fn runtime_entity_passengers_skip_non_serializable_entities_like_vanilla() {
         DVec3::new(5.5, 6.0, 7.5),
         Weak::new(),
     ));
-    let passenger: SharedEntity = Arc::new(RawEntity::new(
+    let passenger: SharedEntity = TestEntity::shared(
         next_entity_id(),
         DVec3::new(5.5, 8.0, 7.5),
         Weak::new(),
         &vanilla_entities::PLAYER,
-    ));
+    );
     EntityBase::restore_passenger_relationship(&vehicle, &passenger);
     let vehicle_uuid = vehicle.uuid();
 

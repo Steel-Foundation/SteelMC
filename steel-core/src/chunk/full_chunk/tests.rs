@@ -355,7 +355,7 @@ fn concurrent_consumers_cannot_both_claim_the_same_block_state() {
 }
 
 #[test]
-fn block_change_replaces_a_structurally_valid_raw_entity_with_the_new_factory() {
+fn block_change_replaces_a_structurally_valid_raw_block_entity_with_the_new_factory() {
     init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
@@ -392,7 +392,7 @@ fn block_change_replaces_a_structurally_valid_raw_entity_with_the_new_factory() 
 }
 
 #[test]
-fn breaking_an_unimplemented_entity_block_removes_its_raw_entity() {
+fn breaking_an_unimplemented_entity_block_removes_its_raw_block_entity() {
     init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
