@@ -1,4 +1,4 @@
-use steel_registry::DyeColor;
+use steel_registry::{DyeColor, vanilla_custom_stats};
 
 use super::*;
 use crate::behavior::MOB_EFFECT_BEHAVIORS;
@@ -684,7 +684,9 @@ pub trait LivingEntity: Entity {
         let durability_damage = (damage / 4.0).max(1.0) as i32;
         for &slot in slots {
             let mut item_broke = false;
+            let mut item_ref = &*vanilla_items::AIR;
             self.with_equipment_slot_mut(slot, &mut |item| {
+                item_ref = item.item;
                 let damage_on_hurt = item
                     .get_equippable()
                     .is_some_and(|equippable| equippable.damage_on_hurt);
@@ -697,7 +699,7 @@ pub trait LivingEntity: Entity {
                 }
             });
             if item_broke {
-                self.on_equipped_item_broken(slot);
+                self.on_equipped_item_broken(item_ref, slot);
             }
         }
     }
@@ -732,7 +734,27 @@ pub trait LivingEntity: Entity {
         {
             let absorb_value = (resistance.amplifier() + 1) * 5;
             let absorb = 25 - absorb_value;
+            let old_damage = damage;
             damage = (damage * absorb as f32 / 25.0).max(0.0);
+            let damage_resisted = old_damage - damage;
+            if (0.0..f32::MAX).contains(&damage_resisted) {
+                let stats_to_award = (damage_resisted * 10.0).round() as i32;
+                if let Some(player) = self.as_player() {
+                    player.award_custom_stat_with_count(
+                        &vanilla_custom_stats::DAMAGE_RESISTED,
+                        stats_to_award,
+                    );
+                } else if let Some(damage_causer) = source
+                    .causing_entity_id
+                    .and_then(|id| self.level().and_then(|world| world.get_entity_by_id(id)))
+                    && let Some(player) = damage_causer.as_player()
+                {
+                    player.award_custom_stat_with_count(
+                        &vanilla_custom_stats::DAMAGE_DEALT_RESISTED,
+                        stats_to_award,
+                    );
+                }
+            }
         }
 
         if damage <= 0.0 {
@@ -762,6 +784,19 @@ pub trait LivingEntity: Entity {
         let original_damage = damage;
         let damage = (damage - self.get_absorption_amount()).max(0.0);
         self.set_absorption_amount(self.get_absorption_amount() - (original_damage - damage));
+
+        let absorbed_damage = original_damage - damage;
+        if (0.0..f32::MAX).contains(&absorbed_damage)
+            && let Some(damage_causer) = source
+                .causing_entity_id
+                .and_then(|id| world.get_entity_by_id(id))
+            && let Some(player) = damage_causer.as_player()
+        {
+            player.award_custom_stat_with_count(
+                &vanilla_custom_stats::DAMAGE_DEALT_ABSORBED,
+                (absorbed_damage * 10.0).round() as i32,
+            );
+        }
 
         if damage != 0.0 {
             self.set_health(self.get_health() - damage);
@@ -883,8 +918,22 @@ pub trait LivingEntity: Entity {
             return;
         }
 
-        self.game_event(&vanilla_game_events::ENTITY_DIE);
-        self.drop_all_death_loot(source);
+        // Can't directly use &self for &dyn LivingEntity, as the compiler doesn't know if it's Sized.
+        // Using a function meant for getting &dyn LivingEntity directly works well here.
+        if let Some(world) = self.level()
+            && let Some(self_entity) = self.as_living_entity()
+        {
+            let source_entity = source
+                .causing_entity_id
+                .and_then(|id| world.get_entity_by_id(id));
+            if source_entity.is_none_or(|entity| entity.killed_entity(&world, self_entity, source))
+            {
+                self.game_event(&vanilla_game_events::ENTITY_DIE);
+                self.drop_all_death_loot(source);
+                // TODO: Create wither rose for killer
+            }
+        }
+
         self.broadcast_entity_event(EntityStatus::Death);
         self.set_pose(EntityPose::Dying);
     }
@@ -1700,18 +1749,8 @@ pub trait LivingEntity: Entity {
     fn handle_extra_items_created_on_use(&self, _extra: ItemStack) {}
 
     /// Called after an equipped item breaks.
-    fn on_equipped_item_broken(&self, slot: EquipmentSlot) {
-        let event = match slot {
-            EquipmentSlot::MainHand => EntityStatus::MainhandBreak,
-            EquipmentSlot::OffHand => EntityStatus::OffhandBreak,
-            EquipmentSlot::Head => EntityStatus::HeadBreak,
-            EquipmentSlot::Chest => EntityStatus::ChestBreak,
-            EquipmentSlot::Legs => EntityStatus::LegsBreak,
-            EquipmentSlot::Feet => EntityStatus::FeetBreak,
-            EquipmentSlot::Body => EntityStatus::BodyBreak,
-            EquipmentSlot::Saddle => EntityStatus::SaddleBreak,
-        };
-        self.broadcast_entity_event(event);
+    fn on_equipped_item_broken(&self, _item: ItemRef, slot: EquipmentSlot) {
+        self.broadcast_entity_event(slot.into());
         self.refresh_equipment_attribute_modifiers(slot);
     }
 
@@ -1871,11 +1910,13 @@ pub trait LivingEntity: Entity {
         let slot_to_damage = slots_with_gliders[slot_index];
         let has_infinite_materials = self.has_infinite_materials();
         let mut item_broke = false;
+        let mut item_ref = &*vanilla_items::AIR;
         self.with_equipment_slot_mut(slot_to_damage, &mut |item_stack| {
+            item_ref = item_stack.item;
             item_broke = item_stack.hurt_and_break(1, has_infinite_materials);
         });
         if item_broke {
-            self.on_equipped_item_broken(slot_to_damage);
+            self.on_equipped_item_broken(item_ref, slot_to_damage);
         }
     }
 

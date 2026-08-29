@@ -3,6 +3,7 @@ use steel_protocol::packets::game::{AnimateAction, CAnimate};
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt as _, properties::BlockStateProperties},
     dimension_type::BedRuleValue,
+    vanilla_custom_stats,
 };
 use steel_utils::{BlockPos, Direction};
 use text_components::{TextComponent, translation::TranslatedMessage};
@@ -188,6 +189,8 @@ impl Player {
             return Err(BedSleepingProblem::OtherProblem);
         }
         self.sync_entity_data();
+        self.award_custom_stat(&vanilla_custom_stats::SLEEP_IN_BED);
+        // TODO: trigger CriteriaTriggers.SLEPT_IN_BED once the foundation for advancements exist.
         if !world.can_sleep_through_nights() {
             self.send_overlay_message(
                 &TranslatedMessage {
