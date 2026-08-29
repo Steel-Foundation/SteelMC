@@ -47,15 +47,6 @@ fn assert_f64_close(left: f64, right: f64) {
     );
 }
 
-fn test_entity(id: i32) -> SharedEntity {
-    TestEntity::shared(
-        id,
-        DVec3::ZERO,
-        Weak::<World>::new(),
-        &vanilla_entities::ITEM,
-    )
-}
-
 fn link_vehicle_and_passenger(vehicle: &SharedEntity, passenger: &SharedEntity) {
     passenger.base().relationships.lock().vehicle = Some(Arc::downgrade(vehicle));
     vehicle
@@ -716,8 +707,8 @@ fn no_physics_is_stored_on_base_state() {
 
 #[test]
 fn relationship_state_tracks_direct_vehicle_and_passengers() {
-    let vehicle = test_entity(1);
-    let passenger = test_entity(2);
+    let vehicle = TestEntity::shared(1, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
+    let passenger = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
 
     link_vehicle_and_passenger(&vehicle, &passenger);
 
@@ -740,9 +731,9 @@ fn relationship_state_tracks_direct_vehicle_and_passengers() {
 
 #[test]
 fn relationship_queries_follow_indirect_vehicle_chain() {
-    let root = test_entity(1);
-    let middle = test_entity(2);
-    let passenger = test_entity(3);
+    let root = TestEntity::shared(1, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
+    let middle = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
+    let passenger = TestEntity::shared(3, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
 
     link_vehicle_and_passenger(&root, &middle);
     link_vehicle_and_passenger(&middle, &passenger);
@@ -757,8 +748,8 @@ fn relationship_queries_follow_indirect_vehicle_chain() {
 
 #[test]
 fn removal_cleans_up_relationship_state() {
-    let vehicle = test_entity(1);
-    let passenger = test_entity(2);
+    let vehicle = TestEntity::shared(1, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
+    let passenger = TestEntity::shared(2, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
 
     link_vehicle_and_passenger(&vehicle, &passenger);
 
@@ -773,7 +764,7 @@ fn removal_cleans_up_relationship_state() {
 #[test]
 fn base_fall_damage_propagates_to_passengers() {
     init_vanilla_registry();
-    let vehicle = test_entity(1);
+    let vehicle = TestEntity::shared(1, DVec3::ZERO, Weak::new(), &vanilla_entities::ITEM);
     let passenger = FallDamageTestEntity::new(2);
     let passenger_entity: SharedEntity = passenger.clone();
 
