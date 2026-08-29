@@ -362,7 +362,7 @@ mod tests {
     use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
 
     use super::finish_consuming_stack;
-    use crate::behavior::{ITEM_BEHAVIORS, InteractionResult, UseItemContext};
+    use crate::behavior::{ITEM_BEHAVIORS, InteractionResult, UseItemContext, init_behaviors};
     use crate::entity::entities::ItemEntity;
     use crate::inventory::container::Container as _;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
@@ -416,7 +416,7 @@ mod tests {
     #[test]
     fn instant_consumable_with_use_remainder_finishes_without_deadlocking() {
         init_vanilla_registry();
-        crate::behavior::init_behaviors();
+        init_behaviors();
         let world = fresh_test_world("instant_consumable_no_deadlock");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
         let player = TestPlayerBuilder::new(world.clone(), "Test", 1).build();

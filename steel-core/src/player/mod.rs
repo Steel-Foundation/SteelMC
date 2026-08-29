@@ -97,7 +97,7 @@ use crate::entity::{
     DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMoveError,
     EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase,
     LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
-    apply_entity_look_at, start_riding_entities,get_kill_credit
+    apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
