@@ -7,6 +7,9 @@ use super::{
     World, WorldAabb, enchantment_helper, piercing_ray_hit_t, vanilla_attributes,
     vanilla_damage_types, vanilla_entities,
 };
+use std::ops::Add;
+use steel_registry::particle_type::ParticleData;
+use steel_registry::{vanilla_custom_stats, vanilla_particle_types};
 
 const fn sound_holder_ref(holder: &SoundEventHolder) -> Option<SoundEventRef> {
     match holder {
@@ -420,7 +423,11 @@ impl Player {
             return false;
         }
 
-        // TODO: Apply crits, sweep attacks, damage stats, and sounds.
+        let old_entity_living_health = entity
+            .as_living_entity()
+            .map_or(0.0, LivingEntity::get_health);
+
+        // TODO: Apply crits, sweep attacks, and sounds.
         let old_movement = entity.velocity();
         let Some(target_world) = entity.level() else {
             return false;
@@ -436,6 +443,7 @@ impl Player {
                 old_movement,
             );
             self.item_attack_interaction(entity, &damage_source, true);
+            self.damage_stats_and_hearts(entity, old_entity_living_health);
             self.cause_food_exhaustion(0.1);
         }
 
@@ -673,5 +681,34 @@ impl Player {
             self.swing(packet.hand, true);
         }
         self.broadcast_inventory_changes();
+    }
+
+    /// Awards stats and sends particles when an entity gets attacked by this player.
+    pub fn damage_stats_and_hearts(&self, entity: &dyn Entity, old_entity_living_health: f32) {
+        const PARTICLES_PER_HEALTH: f32 = 0.5;
+        const PARTICLE_SPREAD_XZ: f64 = 0.1;
+        const PARTICLE_SPEED: f64 = 0.2;
+
+        if let Some(entity) = entity.as_living_entity() {
+            let actual_damage = old_entity_living_health - entity.get_health();
+            self.award_custom_stat_with_count(
+                &vanilla_custom_stats::DAMAGE_DEALT,
+                (actual_damage * 10.0).round() as i32,
+            );
+
+            let count = (actual_damage * 0.5).round() as i32;
+            let offset = DVec3::new(
+                0.0,
+                f64::from(entity.base().dimensions().height * PARTICLES_PER_HEALTH),
+                0.0,
+            );
+            self.get_world().send_particles(
+                ParticleData::simple(&vanilla_particle_types::DAMAGE_INDICATOR),
+                entity.position().add(offset),
+                count,
+                DVec3::new(PARTICLE_SPREAD_XZ, 0.0, PARTICLE_SPREAD_XZ),
+                PARTICLE_SPEED,
+            );
+        }
     }
 }

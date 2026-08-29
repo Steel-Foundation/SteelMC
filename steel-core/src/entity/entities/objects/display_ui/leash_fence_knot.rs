@@ -305,9 +305,7 @@ impl Entity for LeashFenceKnotEntity {
             return false;
         }
 
-        let causing_entity = source
-            .causing_entity_id
-            .and_then(|id| world.get_entity_by_id(id));
+        let causing_entity = source.causing_entity(world);
 
         if !world.get_game_rule(&MOB_GRIEFING)
             && let Some(causing_entity) = causing_entity
