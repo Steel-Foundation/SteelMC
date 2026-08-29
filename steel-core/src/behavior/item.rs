@@ -461,6 +461,20 @@ mod tests {
         };
         assert!(remaining.is(&vanilla_items::HONEY_BOTTLE));
         assert_eq!(remaining.count(), 1);
+
+        let glass_bottle_count: i32 = {
+            let inventory = player.inventory.lock();
+            inventory
+                .items()
+                .iter()
+                .filter(|item| item.is(&vanilla_items::GLASS_BOTTLE))
+                .map(ItemStack::count)
+                .sum()
+        };
+        assert_eq!(
+            glass_bottle_count, 1,
+            "USE_REMAINDER glass bottle should land in the player's inventory"
+        );
     }
 
     /// Eating a food item must restore hunger/saturation by the exact
