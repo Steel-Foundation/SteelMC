@@ -268,7 +268,8 @@ impl Entity for InteractionEntity {
     }
 }
 
-/// Represents an action of a player.
+/// Represents an action of a player. It contains the UUID of the player who executed this action
+/// and the timestamp (based on game time, expressed in ticks) when it was executed.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PlayerAction {
     /// The player who executed the action.
@@ -280,11 +281,13 @@ pub struct PlayerAction {
 
 impl PlayerAction {
     /// Returns the unique ID of the player who executed this action.
+    #[must_use]
     pub const fn player(&self) -> Uuid {
         self.player
     }
 
     /// Returns the game time (in ticks) when the player executed the action.
+    #[must_use]
     pub const fn timestamp(&self) -> i64 {
         self.timestamp
     }
@@ -321,6 +324,7 @@ pub struct InteractionEntityDataView<'a> {
 
 impl InteractionEntityDataView<'_> {
     /// Gets the width of the bounding box of the interaction entity.
+    #[must_use]
     pub fn width(&self) -> f32 {
         *self.guard.width.get()
     }
@@ -334,6 +338,7 @@ impl InteractionEntityDataView<'_> {
     }
 
     /// Gets the height of the bounding box of the interaction entity.
+    #[must_use]
     pub fn height(&self) -> f32 {
         *self.guard.height.get()
     }
@@ -350,6 +355,7 @@ impl InteractionEntityDataView<'_> {
     /// from the player. If `true`, this means that
     /// - for left clicks, a punching sound will play, and
     /// - for right clicks, the player's hand will swing.
+    #[must_use]
     pub fn response(&self) -> bool {
         *self.guard.response.get()
     }

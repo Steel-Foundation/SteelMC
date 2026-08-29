@@ -3,5 +3,5 @@
 mod interaction;
 mod marker;
 
-pub use interaction::InteractionEntity;
+pub use interaction::{InteractionEntity, InteractionEntityDataView, PlayerAction};
 pub use marker::MarkerEntity;
