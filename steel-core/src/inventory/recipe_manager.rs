@@ -39,8 +39,7 @@ pub fn find_recipe(crafting: &CraftingContainer) -> Option<CraftingRecipeRef> {
     let positioned = crafting.as_positioned_input();
     REGISTRY
         .recipes
-        .by_type(&vanilla_recipe_types::CRAFTING)
-        .find_match(&positioned.input)
+        .find_match(&vanilla_recipe_types::CRAFTING, &positioned.input)
 }
 
 /// Finds and interprets the output for the current crafting container.
@@ -428,8 +427,7 @@ mod tests {
         );
         let Some(recipe) = REGISTRY
             .recipes
-            .by_type(&vanilla_recipe_types::CRAFTING)
-            .find_match(&input)
+            .find_match(&vanilla_recipe_types::CRAFTING, &input)
         else {
             panic!("red and blue dye should match the purple dye recipe");
         };

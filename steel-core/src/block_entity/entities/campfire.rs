@@ -72,8 +72,7 @@ impl CampfireBlockEntity {
         let input = SingleItemRecipeInput::new(stack.clone());
         let Some(recipe) = REGISTRY
             .recipes
-            .by_type(&vanilla_recipe_types::CAMPFIRE_COOKING)
-            .find_match(&input)
+            .find_match(&vanilla_recipe_types::CAMPFIRE_COOKING, &input)
         else {
             return false;
         };
@@ -121,8 +120,7 @@ impl CampfireBlockEntity {
                 let input = SingleItemRecipeInput::new(item.clone());
                 let result = REGISTRY
                     .recipes
-                    .by_type(&vanilla_recipe_types::CAMPFIRE_COOKING)
-                    .find_match(&input)
+                    .find_match(&vanilla_recipe_types::CAMPFIRE_COOKING, &input)
                     .map_or(item, |recipe| recipe.data().result.create());
                 completed.push(result);
             }

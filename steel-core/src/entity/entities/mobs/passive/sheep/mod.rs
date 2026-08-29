@@ -315,8 +315,7 @@ impl SheepEntity {
                 );
                 let Some(recipe) = REGISTRY
                     .recipes
-                    .by_type(&vanilla_recipe_types::CRAFTING)
-                    .find_match(&input)
+                    .find_match(&vanilla_recipe_types::CRAFTING, &input)
                 else {
                     continue;
                 };

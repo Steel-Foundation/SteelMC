@@ -121,8 +121,10 @@ impl BlockBehavior for CampfireBlock {
         let accepted = inv.with_item(|stack| {
             REGISTRY
                 .recipes
-                .by_type(&vanilla_recipe_types::CAMPFIRE_COOKING)
-                .find_match(&SingleItemRecipeInput::new(stack.clone()))
+                .find_match(
+                    &vanilla_recipe_types::CAMPFIRE_COOKING,
+                    &SingleItemRecipeInput::new(stack.clone()),
+                )
                 .is_some()
         });
         if !accepted {

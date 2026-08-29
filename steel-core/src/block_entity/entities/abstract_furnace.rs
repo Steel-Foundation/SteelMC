@@ -119,10 +119,7 @@ impl FurnaceContainer {
 
     fn recipe_for_input(&self) -> Option<TypedRecipeRef<CookingRecipe, SingleItemRecipeInput>> {
         let input = SingleItemRecipeInput::new(self.items[SLOT_INPUT].clone());
-        REGISTRY
-            .recipes
-            .by_type(self.kind.recipe_type())
-            .find_match(&input)
+        REGISTRY.recipes.find_match(self.kind.recipe_type(), &input)
     }
 
     fn reset_cooking_for_input(&mut self) {

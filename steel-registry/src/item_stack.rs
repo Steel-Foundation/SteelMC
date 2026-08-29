@@ -734,8 +734,7 @@ impl ItemStack {
         let input = crate::recipe::SingleItemRecipeInput::new(self.copy_with_count(self.count()));
         let Some(recipe) = REGISTRY
             .recipes
-            .by_type(&crate::recipe::vanilla_recipe_types::SMELTING)
-            .find_match(&input)
+            .find_match(&crate::recipe::vanilla_recipe_types::SMELTING, &input)
         else {
             return;
         };

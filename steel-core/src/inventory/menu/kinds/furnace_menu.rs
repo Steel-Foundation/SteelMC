@@ -91,8 +91,10 @@ impl FurnaceMenuKind {
     fn can_smelt(&self, stack: &ItemStack) -> bool {
         REGISTRY
             .recipes
-            .by_type(self.kind.recipe_type())
-            .find_match(&SingleItemRecipeInput::new(stack.clone()))
+            .find_match(
+                self.kind.recipe_type(),
+                &SingleItemRecipeInput::new(stack.clone()),
+            )
             .is_some()
     }
 }
@@ -232,8 +234,10 @@ mod tests {
             assert!(
                 REGISTRY
                     .recipes
-                    .by_type(kind.recipe_type())
-                    .find_match(&SingleItemRecipeInput::new(stack.clone()))
+                    .find_match(
+                        kind.recipe_type(),
+                        &SingleItemRecipeInput::new(stack.clone()),
+                    )
                     .is_none()
             );
 

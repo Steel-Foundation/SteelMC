@@ -5,7 +5,7 @@ use steel_utils::{DowncastType, DowncastTypeKey};
 use crate::item_stack::ItemStack;
 use crate::item_stack_template::ItemStackTemplate;
 
-use super::{Ingredient, RecipeData, RecipeInput, RecipeProperties};
+use super::{Ingredient, RecipeData, RecipeInput, RecipeMatches, RecipeProperties};
 
 /// Input shared by cooking and stonecutting recipe types.
 #[derive(Debug, Clone)]
@@ -71,17 +71,14 @@ impl RecipeData for StonecuttingRecipe {
     }
 }
 
-pub(crate) fn cooking_matches(recipe: &CookingRecipe, input: &SingleItemRecipeInput) -> bool {
-    ingredient_matches(&recipe.ingredient, input)
+impl RecipeMatches<SingleItemRecipeInput> for CookingRecipe {
+    fn matches(&self, input: &SingleItemRecipeInput) -> bool {
+        self.ingredient.test(&input.item)
+    }
 }
 
-pub(crate) fn stonecutting_matches(
-    recipe: &StonecuttingRecipe,
-    input: &SingleItemRecipeInput,
-) -> bool {
-    ingredient_matches(&recipe.ingredient, input)
-}
-
-fn ingredient_matches(ingredient: &Ingredient, input: &SingleItemRecipeInput) -> bool {
-    ingredient.test(&input.item)
+impl RecipeMatches<SingleItemRecipeInput> for StonecuttingRecipe {
+    fn matches(&self, input: &SingleItemRecipeInput) -> bool {
+        self.ingredient.test(&input.item)
+    }
 }

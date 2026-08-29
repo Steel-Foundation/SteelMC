@@ -26,8 +26,8 @@ pub use smithing::{
     SmithingRecipe, SmithingRecipeInput, SmithingTransformRecipe, SmithingTrimRecipe,
 };
 pub use types::{
-    Recipe, RecipeData, RecipeInput, RecipeType, RecipeTypeEntry, RecipeTypeEntryRef,
-    RecipeTypeRegistry, vanilla_recipe_types,
+    Recipe, RecipeData, RecipeInput, RecipeMatches, RecipeType, RecipeTypeEntry,
+    RecipeTypeEntryRef, RecipeTypeRegistry, vanilla_recipe_types,
 };
 
 pub(crate) use types::ErasedRecipe;

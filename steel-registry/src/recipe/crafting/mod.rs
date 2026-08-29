@@ -2,15 +2,13 @@
 
 mod matching;
 
-pub(crate) use matching::matches;
-
 use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::data_components::vanilla_components::FireworkExplosionShape;
 use crate::item_stack::ItemStack;
 use crate::item_stack_template::ItemStackTemplate;
 
-use super::{Ingredient, RecipeData, RecipeInput, RecipeProperties};
+use super::{Ingredient, RecipeData, RecipeInput, RecipeMatches, RecipeProperties};
 
 /// A shaped recipe pattern.
 #[derive(Debug)]
@@ -409,6 +407,12 @@ unsafe impl DowncastType for CraftingInput {
 impl RecipeInput for CraftingInput {
     fn is_empty(&self) -> bool {
         self.ingredient_count == 0
+    }
+}
+
+impl RecipeMatches<CraftingInput> for CraftingRecipe {
+    fn matches(&self, input: &CraftingInput) -> bool {
+        matching::matches(self, input)
     }
 }
 

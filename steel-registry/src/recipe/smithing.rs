@@ -6,7 +6,7 @@ use crate::item_stack::ItemStack;
 use crate::item_stack_template::ItemStackTemplate;
 use crate::trim_pattern::TrimPatternRef;
 
-use super::{Ingredient, RecipeData, RecipeInput, RecipeProperties};
+use super::{Ingredient, RecipeData, RecipeInput, RecipeMatches, RecipeProperties};
 
 #[derive(Debug)]
 pub struct SmithingTransformRecipe {
@@ -83,20 +83,20 @@ impl RecipeInput for SmithingRecipeInput {
     }
 }
 
-pub(crate) fn matches(recipe: &SmithingRecipe, input: &SmithingRecipeInput) -> bool {
-    let (template, base, addition) = match recipe {
-        SmithingRecipe::Transform(recipe) => (
-            recipe.template.as_ref(),
-            &recipe.base,
-            recipe.addition.as_ref(),
-        ),
-        SmithingRecipe::Trim(recipe) => {
-            (Some(&recipe.template), &recipe.base, Some(&recipe.addition))
-        }
-    };
-    optional_ingredient_matches(template, &input.template)
-        && base.test(&input.base)
-        && optional_ingredient_matches(addition, &input.addition)
+impl RecipeMatches<SmithingRecipeInput> for SmithingRecipe {
+    fn matches(&self, input: &SmithingRecipeInput) -> bool {
+        let (template, base, addition) = match self {
+            Self::Transform(recipe) => (
+                recipe.template.as_ref(),
+                &recipe.base,
+                recipe.addition.as_ref(),
+            ),
+            Self::Trim(recipe) => (Some(&recipe.template), &recipe.base, Some(&recipe.addition)),
+        };
+        optional_ingredient_matches(template, &input.template)
+            && base.test(&input.base)
+            && optional_ingredient_matches(addition, &input.addition)
+    }
 }
 
 fn optional_ingredient_matches(ingredient: Option<&Ingredient>, stack: &ItemStack) -> bool {

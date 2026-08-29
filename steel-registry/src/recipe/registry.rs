@@ -1,12 +1,10 @@
 //! Heterogeneous recipe storage with typed per-type views.
 
-use std::marker::PhantomData;
-
 use rustc_hash::FxHashMap;
 use steel_utils::{Downcast as _, DowncastType, Identifier};
 
 use super::{
-    ErasedRecipe, Recipe, RecipeData, RecipeInput, RecipeType, RecipeTypeEntryRef,
+    ErasedRecipe, Recipe, RecipeData, RecipeInput, RecipeMatches, RecipeType, RecipeTypeEntryRef,
     RecipeTypeRegistry,
 };
 
@@ -38,7 +36,7 @@ impl UntypedRecipeRef {
         self.recipe.data().downcast_ref::<D>()
     }
 
-    fn typed<D: RecipeData + DowncastType, I: RecipeInput>(
+    fn typed<D: RecipeMatches<I> + DowncastType, I: RecipeInput>(
         self,
         recipe_type: &'static RecipeType<D, I>,
     ) -> Option<TypedRecipeRef<D, I>> {
@@ -65,21 +63,21 @@ impl std::fmt::Debug for UntypedRecipeRef {
 }
 
 /// Recipe reference with its concrete data and input types restored.
-pub struct TypedRecipeRef<D: RecipeData + DowncastType, I: RecipeInput> {
+pub struct TypedRecipeRef<D: RecipeMatches<I> + DowncastType, I: RecipeInput> {
     key: &'static Identifier,
     data: &'static D,
     recipe_type: &'static RecipeType<D, I>,
 }
 
-impl<D: RecipeData + DowncastType, I: RecipeInput> Copy for TypedRecipeRef<D, I> {}
+impl<D: RecipeMatches<I> + DowncastType, I: RecipeInput> Copy for TypedRecipeRef<D, I> {}
 
-impl<D: RecipeData + DowncastType, I: RecipeInput> Clone for TypedRecipeRef<D, I> {
+impl<D: RecipeMatches<I> + DowncastType, I: RecipeInput> Clone for TypedRecipeRef<D, I> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<D: RecipeData + DowncastType, I: RecipeInput> TypedRecipeRef<D, I> {
+impl<D: RecipeMatches<I> + DowncastType, I: RecipeInput> TypedRecipeRef<D, I> {
     #[must_use]
     pub const fn key(self) -> &'static Identifier {
         self.key
@@ -96,7 +94,7 @@ impl<D: RecipeData + DowncastType, I: RecipeInput> TypedRecipeRef<D, I> {
     }
 }
 
-impl<D: RecipeData + DowncastType, I: RecipeInput> std::fmt::Debug for TypedRecipeRef<D, I> {
+impl<D: RecipeMatches<I> + DowncastType, I: RecipeInput> std::fmt::Debug for TypedRecipeRef<D, I> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("TypedRecipeRef")
@@ -108,14 +106,13 @@ impl<D: RecipeData + DowncastType, I: RecipeInput> std::fmt::Debug for TypedReci
 }
 
 /// Typed recipes belonging to one operational recipe type.
-pub struct TypedRecipeSet<'a, D: RecipeData + DowncastType, I: RecipeInput> {
+pub struct TypedRecipeSet<'a, D: RecipeMatches<I> + DowncastType, I: RecipeInput> {
     registry: &'a RecipeRegistry,
     recipe_type: &'static RecipeType<D, I>,
     indices: &'a [usize],
-    _marker: PhantomData<fn(&D, &I)>,
 }
 
-impl<D: RecipeData + DowncastType, I: RecipeInput> TypedRecipeSet<'_, D, I> {
+impl<D: RecipeMatches<I> + DowncastType, I: RecipeInput> TypedRecipeSet<'_, D, I> {
     pub fn iter(&self) -> impl Iterator<Item = TypedRecipeRef<D, I>> + '_ {
         self.indices.iter().filter_map(|index| {
             self.registry
@@ -124,31 +121,6 @@ impl<D: RecipeData + DowncastType, I: RecipeInput> TypedRecipeSet<'_, D, I> {
                 .copied()
                 .and_then(|recipe| recipe.typed(self.recipe_type))
         })
-    }
-
-    /// Returns whether one typed recipe matches the input.
-    #[must_use]
-    pub fn matches(&self, recipe: TypedRecipeRef<D, I>, input: &I) -> bool {
-        std::ptr::eq(recipe.recipe_type, self.recipe_type)
-            && self.recipe_type.matches(recipe.data, input)
-    }
-
-    /// Iterates every matching recipe in deterministic key order.
-    pub fn matching<'input>(
-        &'input self,
-        input: &'input I,
-    ) -> impl Iterator<Item = TypedRecipeRef<D, I>> + 'input {
-        self.iter()
-            .filter(move |recipe| !input.is_empty() && self.matches(*recipe, input))
-    }
-
-    /// Finds the first matching recipe in deterministic key order.
-    #[must_use]
-    pub fn find_match(&self, input: &I) -> Option<TypedRecipeRef<D, I>> {
-        if input.is_empty() {
-            return None;
-        }
-        self.matching(input).next()
     }
 
     #[must_use]
@@ -182,7 +154,7 @@ impl RecipeRegistry {
     }
 
     /// Registers a concrete static recipe.
-    pub fn register<D: RecipeData + DowncastType, I: RecipeInput>(
+    pub fn register<D: RecipeMatches<I> + DowncastType, I: RecipeInput>(
         &mut self,
         recipe: &'static Recipe<D, I>,
     ) {
@@ -206,7 +178,7 @@ impl RecipeRegistry {
     }
 
     /// Replaces an entry with the same persistent key before freeze.
-    pub fn replace<D: RecipeData + DowncastType, I: RecipeInput>(
+    pub fn replace<D: RecipeMatches<I> + DowncastType, I: RecipeInput>(
         &mut self,
         recipe: &'static Recipe<D, I>,
     ) -> Option<UntypedRecipeRef> {
@@ -264,7 +236,6 @@ impl RecipeRegistry {
                 .or_default()
                 .push(index);
         }
-
         self.allows_registering = false;
     }
 
@@ -281,7 +252,7 @@ impl RecipeRegistry {
     }
 
     #[must_use]
-    pub fn by_type<D: RecipeData + DowncastType, I: RecipeInput>(
+    pub fn by_type<D: RecipeMatches<I> + DowncastType, I: RecipeInput>(
         &self,
         recipe_type: &'static RecipeType<D, I>,
     ) -> TypedRecipeSet<'_, D, I> {
@@ -292,8 +263,36 @@ impl RecipeRegistry {
                 .by_type
                 .get(recipe_type.key())
                 .map_or(&[], Vec::as_slice),
-            _marker: PhantomData,
         }
+    }
+
+    /// Iterates every matching recipe in deterministic key order.
+    pub fn matching<'registry, D: RecipeMatches<I> + DowncastType, I: RecipeInput>(
+        &'registry self,
+        recipe_type: &'static RecipeType<D, I>,
+        input: &'registry I,
+    ) -> impl Iterator<Item = TypedRecipeRef<D, I>> + 'registry {
+        let indices = self
+            .by_type
+            .get(recipe_type.key())
+            .map_or(&[][..], Vec::as_slice);
+        indices.iter().filter_map(move |index| {
+            let recipe = self.recipes.get(*index).copied()?.typed(recipe_type)?;
+            (!input.is_empty() && recipe.data.matches(input)).then_some(recipe)
+        })
+    }
+
+    /// Finds the first matching recipe in deterministic registry order.
+    #[must_use]
+    pub fn find_match<D: RecipeMatches<I> + DowncastType, I: RecipeInput>(
+        &self,
+        recipe_type: &'static RecipeType<D, I>,
+        input: &I,
+    ) -> Option<TypedRecipeRef<D, I>> {
+        if input.is_empty() {
+            return None;
+        }
+        self.matching(recipe_type, input).next()
     }
 
     #[must_use]
@@ -321,8 +320,8 @@ mod tests {
 
     use crate::item_stack::ItemStack;
     use crate::recipe::{
-        CraftingInput, CraftingRecipe, Ingredient, Recipe, RecipeData, RecipeInput, RecipeRegistry,
-        RecipeType, RecipeTypeRegistry, vanilla_recipe_types,
+        CraftingInput, CraftingRecipe, Ingredient, Recipe, RecipeData, RecipeInput, RecipeMatches,
+        RecipeRegistry, RecipeType, RecipeTypeRegistry, vanilla_recipe_types,
     };
     use crate::{REGISTRY, init_vanilla_registry, vanilla_items, vanilla_recipes};
 
@@ -385,8 +384,7 @@ mod tests {
 
         let Some(found) = REGISTRY
             .recipes
-            .by_type(&vanilla_recipe_types::CRAFTING)
-            .find_match(&input)
+            .find_match(&vanilla_recipe_types::CRAFTING, &input)
         else {
             panic!("iron pickaxe input should match a crafting recipe");
         };
@@ -479,10 +477,14 @@ mod tests {
         }
     }
 
-    static PLUGIN_TYPE: RecipeType<PluginData, PluginInput> = RecipeType::new(
-        Identifier::new_static("test_plugin", "pulverizing"),
-        |recipe, input| recipe.required == input.0,
-    );
+    impl RecipeMatches<PluginInput> for PluginData {
+        fn matches(&self, input: &PluginInput) -> bool {
+            self.required == input.0
+        }
+    }
+
+    static PLUGIN_TYPE: RecipeType<PluginData, PluginInput> =
+        RecipeType::new(Identifier::new_static("test_plugin", "pulverizing"));
     static PLUGIN_RECIPE: LazyLock<Recipe<PluginData, PluginInput>> = LazyLock::new(|| {
         Recipe::new(
             Identifier::new_static("test_plugin", "pulverize_ore"),
@@ -500,7 +502,7 @@ mod tests {
         recipes.register(&PLUGIN_RECIPE);
         recipes.freeze(&types);
 
-        let Some(found) = recipes.by_type(&PLUGIN_TYPE).find_match(&PluginInput(7)) else {
+        let Some(found) = recipes.find_match(&PLUGIN_TYPE, &PluginInput(7)) else {
             panic!("plugin recipe should match its custom input");
         };
         assert_eq!(found.data().required, 7);
@@ -537,6 +539,6 @@ mod tests {
             crate::item_stack_template::ItemStackTemplate::new(&vanilla_items::PURPLE_DYE),
         ));
 
-        assert!(crate::recipe::crafting::matches(&recipe, &input));
+        assert!(recipe.matches(&input));
     }
 }

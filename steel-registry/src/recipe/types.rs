@@ -21,6 +21,13 @@ pub trait RecipeInput: DowncastType + Debug + Send + Sync + 'static {
     fn is_empty(&self) -> bool;
 }
 
+/// Matching behavior implemented by one recipe data type for its input snapshot.
+pub trait RecipeMatches<I: RecipeInput>: RecipeData {
+    /// Returns whether this recipe accepts the provided input.
+    #[must_use]
+    fn matches(&self, input: &I) -> bool;
+}
+
 /// Type-erased registered recipe discriminator.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RecipeTypeEntry {
@@ -44,22 +51,20 @@ impl RecipeTypeEntry {
 pub type RecipeTypeEntryRef = &'static RecipeTypeEntry;
 
 /// Typed handle for an operational recipe type.
-pub struct RecipeType<D: RecipeData + DowncastType, I: RecipeInput> {
+pub struct RecipeType<D: RecipeMatches<I> + DowncastType, I: RecipeInput> {
     entry: RecipeTypeEntry,
-    matcher: fn(&D, &I) -> bool,
     _marker: PhantomData<fn(&D, &I)>,
 }
 
-impl<D: RecipeData + DowncastType, I: RecipeInput> RecipeType<D, I> {
+impl<D: RecipeMatches<I> + DowncastType, I: RecipeInput> RecipeType<D, I> {
     #[must_use]
-    pub const fn new(key: Identifier, matcher: fn(&D, &I) -> bool) -> Self {
+    pub const fn new(key: Identifier) -> Self {
         Self {
             entry: RecipeTypeEntry {
                 key,
                 data_type_key: D::TYPE_KEY,
                 input_type_key: I::TYPE_KEY,
             },
-            matcher,
             _marker: PhantomData,
         }
     }
@@ -73,13 +78,9 @@ impl<D: RecipeData + DowncastType, I: RecipeInput> RecipeType<D, I> {
     pub const fn key(&self) -> &Identifier {
         &self.entry.key
     }
-
-    pub(crate) fn matches(&self, data: &D, input: &I) -> bool {
-        (self.matcher)(data, input)
-    }
 }
 
-impl<D: RecipeData + DowncastType, I: RecipeInput> Debug for RecipeType<D, I> {
+impl<D: RecipeMatches<I> + DowncastType, I: RecipeInput> Debug for RecipeType<D, I> {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("RecipeType")
@@ -91,13 +92,13 @@ impl<D: RecipeData + DowncastType, I: RecipeInput> Debug for RecipeType<D, I> {
 }
 
 /// A keyed recipe with concrete passive data and input types.
-pub struct Recipe<D: RecipeData + DowncastType, I: RecipeInput> {
+pub struct Recipe<D: RecipeMatches<I> + DowncastType, I: RecipeInput> {
     key: Identifier,
     recipe_type: &'static RecipeType<D, I>,
     data: D,
 }
 
-impl<D: RecipeData + DowncastType, I: RecipeInput> Recipe<D, I> {
+impl<D: RecipeMatches<I> + DowncastType, I: RecipeInput> Recipe<D, I> {
     #[must_use]
     pub const fn new(key: Identifier, recipe_type: &'static RecipeType<D, I>, data: D) -> Self {
         Self {
@@ -123,7 +124,7 @@ impl<D: RecipeData + DowncastType, I: RecipeInput> Recipe<D, I> {
     }
 }
 
-impl<D: RecipeData + DowncastType, I: RecipeInput> Debug for Recipe<D, I> {
+impl<D: RecipeMatches<I> + DowncastType, I: RecipeInput> Debug for Recipe<D, I> {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("Recipe")
@@ -140,7 +141,7 @@ pub(crate) trait ErasedRecipe: Debug + Send + Sync {
     fn data(&self) -> &dyn RecipeData;
 }
 
-impl<D: RecipeData + DowncastType, I: RecipeInput> ErasedRecipe for Recipe<D, I> {
+impl<D: RecipeMatches<I> + DowncastType, I: RecipeInput> ErasedRecipe for Recipe<D, I> {
     fn key(&self) -> &Identifier {
         self.key()
     }
@@ -171,7 +172,7 @@ impl RecipeTypeRegistry {
         }
     }
 
-    pub fn register<D: RecipeData + DowncastType, I: RecipeInput>(
+    pub fn register<D: RecipeMatches<I> + DowncastType, I: RecipeInput>(
         &mut self,
         recipe_type: &'static RecipeType<D, I>,
     ) {
@@ -206,7 +207,7 @@ impl RecipeTypeRegistry {
     }
 
     #[must_use]
-    pub fn contains<D: RecipeData + DowncastType, I: RecipeInput>(
+    pub fn contains<D: RecipeMatches<I> + DowncastType, I: RecipeInput>(
         &self,
         recipe_type: &'static RecipeType<D, I>,
     ) -> bool {
@@ -242,18 +243,15 @@ pub mod vanilla_recipe_types {
     use super::{RecipeType, RecipeTypeRegistry};
     use crate::recipe::{
         CookingRecipe, CraftingInput, CraftingRecipe, SingleItemRecipeInput, SmithingRecipe,
-        SmithingRecipeInput, StonecuttingRecipe, crafting, single_item, smithing,
+        SmithingRecipeInput, StonecuttingRecipe,
     };
 
     const fn cooking_type(key: &'static str) -> RecipeType<CookingRecipe, SingleItemRecipeInput> {
-        RecipeType::new(
-            Identifier::vanilla_static(key),
-            single_item::cooking_matches,
-        )
+        RecipeType::new(Identifier::vanilla_static(key))
     }
 
     pub static CRAFTING: RecipeType<CraftingRecipe, CraftingInput> =
-        RecipeType::new(Identifier::vanilla_static("crafting"), crafting::matches);
+        RecipeType::new(Identifier::vanilla_static("crafting"));
     pub static SMELTING: RecipeType<CookingRecipe, SingleItemRecipeInput> =
         cooking_type("smelting");
     pub static BLASTING: RecipeType<CookingRecipe, SingleItemRecipeInput> =
@@ -262,12 +260,9 @@ pub mod vanilla_recipe_types {
     pub static CAMPFIRE_COOKING: RecipeType<CookingRecipe, SingleItemRecipeInput> =
         cooking_type("campfire_cooking");
     pub static STONECUTTING: RecipeType<StonecuttingRecipe, SingleItemRecipeInput> =
-        RecipeType::new(
-            Identifier::vanilla_static("stonecutting"),
-            single_item::stonecutting_matches,
-        );
+        RecipeType::new(Identifier::vanilla_static("stonecutting"));
     pub static SMITHING: RecipeType<SmithingRecipe, SmithingRecipeInput> =
-        RecipeType::new(Identifier::vanilla_static("smithing"), smithing::matches);
+        RecipeType::new(Identifier::vanilla_static("smithing"));
 
     pub(crate) fn register(registry: &mut RecipeTypeRegistry) {
         registry.register(&CRAFTING);
