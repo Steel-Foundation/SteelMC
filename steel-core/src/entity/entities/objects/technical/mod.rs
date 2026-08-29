@@ -1,6 +1,6 @@
 //! Technical entity implementations.
 
-pub mod display;
+mod display;
 mod interaction;
 mod marker;
 
