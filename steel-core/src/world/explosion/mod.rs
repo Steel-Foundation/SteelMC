@@ -20,9 +20,10 @@ use crate::entity::Entity;
 use crate::entity::damage::DamageSource;
 use crate::world::World;
 
+pub(crate) use damage_source::default_explosion_damage_source_with_references;
 use server::ServerExplosion;
-pub(crate) use server::default_explosion_damage_source_with_references;
 
+mod damage_source;
 mod server;
 
 const MAX_PACKET_DISTANCE_SQUARED: f64 = 64.0 * 64.0;

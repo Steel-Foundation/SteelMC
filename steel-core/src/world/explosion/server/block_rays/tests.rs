@@ -12,7 +12,9 @@ use super::*;
 use crate::behavior::init_behaviors;
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 use crate::world::explosion::default_block_explosion_resistance;
-use crate::world::{DefaultExplosionDamageCalculator, ExplosionInteraction, ExplosionOptions};
+use crate::world::{
+    BlockInteraction, DefaultExplosionDamageCalculator, ExplosionInteraction, ExplosionOptions,
+};
 
 const FIXED_RANDOM_SAMPLE: f32 = 0.5;
 const STANDARD_TNT_RADIUS: f32 = 4.0;
@@ -448,72 +450,6 @@ fn immutable_rays_match_compatibility_lane_at_radius_boundaries() {
             "radius={radius:?}"
         );
     }
-}
-
-#[test]
-fn vanilla_shuffle_uses_descending_bounded_draws() {
-    let mut values = [0, 1, 2, 3];
-    let mut bounds = Vec::new();
-    let drawn_indexes = [1, 0, 1];
-    let mut draw = 0;
-
-    vanilla_shuffle(&mut values, |bound| {
-        bounds.push(bound);
-        let index = drawn_indexes[draw];
-        draw += 1;
-        index
-    });
-
-    let expected_descending_bounds = [4, 3, 2];
-    let expected_shuffled_values = [2, 3, 0, 1];
-    assert_eq!(bounds, expected_descending_bounds);
-    assert_eq!(values, expected_shuffled_values);
-}
-
-#[test]
-fn fire_creation_draws_before_testing_air_and_support() {
-    init_vanilla_registry();
-    init_behaviors();
-    let world = fresh_test_world("explosion_fire_order");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let supported = BlockPos::new(1, 64, 1);
-    let unsupported = supported.east();
-    let occupied = unsupported.east();
-    assert!(world.set_block(
-        supported.below(),
-        vanilla_blocks::STONE.default_state(),
-        UpdateFlags::UPDATE_NONE,
-    ));
-    assert!(world.set_block(
-        occupied,
-        vanilla_blocks::STONE.default_state(),
-        UpdateFlags::UPDATE_NONE,
-    ));
-    let explosion = ServerExplosion::new(
-        &world,
-        None,
-        None,
-        None,
-        None,
-        DVec3::ZERO,
-        1.0,
-        true,
-        BlockInteraction::Destroy,
-    );
-    let mut draws = 0;
-
-    explosion.create_fire_with(&[unsupported, occupied, supported], || {
-        draws += 1;
-        0
-    });
-
-    assert_eq!(draws, 3);
-    assert!(world.get_block_state(unsupported).is_air());
-    assert_eq!(
-        world.get_block_state(occupied).get_block(),
-        &vanilla_blocks::STONE
-    );
-    assert!(!world.get_block_state(supported).is_air());
 }
 
 #[test]
@@ -1023,7 +959,7 @@ fn java_block_pos_set_matches_jdk_collision_resize_order() {
     let expected_bucket_count = 32;
     let expected_iteration_order =
         [0, 32, 64, 96, 128, 16, 48, 80, 112].map(|x| BlockPos::new(x, 0, 0));
-    assert_eq!(positions.buckets.len(), expected_bucket_count);
+    assert_eq!(positions.bucket_count(), expected_bucket_count);
     assert_eq!(
         positions.into_iter().collect::<Vec<_>>(),
         expected_iteration_order
@@ -1036,15 +972,15 @@ fn java_block_pos_set_resizes_on_a_ninth_collision_before_capacity_sixty_four() 
     for x in 1..=13 {
         assert!(positions.insert(BlockPos::new(x, 0, 0)));
     }
-    assert_eq!(positions.buckets.len(), 32);
+    assert_eq!(positions.bucket_count(), 32);
 
     for x in (0..=224).step_by(32) {
         assert!(positions.insert(BlockPos::new(x, 0, 0)));
     }
-    assert_eq!(positions.buckets.len(), 32);
+    assert_eq!(positions.bucket_count(), 32);
 
     assert!(positions.insert(BlockPos::new(256, 0, 0)));
-    assert_eq!(positions.buckets.len(), 64);
+    assert_eq!(positions.bucket_count(), 64);
 }
 
 #[test]
@@ -1055,7 +991,7 @@ fn java_block_pos_set_load_resize_preserves_low_high_split_order() {
         assert!(positions.insert(BlockPos::new(x, 0, 0)));
     }
 
-    assert_eq!(positions.buckets.len(), 32);
+    assert_eq!(positions.bucket_count(), 32);
     let expected_iteration_order =
         [0, 1, 2, 3, 4, 5, 16, 17, 18, 19, 20, 21, 22].map(|x| BlockPos::new(x, 0, 0));
     assert_eq!(

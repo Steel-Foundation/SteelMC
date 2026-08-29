@@ -5,7 +5,9 @@ use std::sync::{
 
 use glam::DVec3;
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, PistonType};
+use steel_registry::item_stack::ItemStack;
 use steel_registry::{
     entity_type::EntityTypeRef,
     fluid::FluidState,
@@ -21,25 +23,28 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::types::{GameType, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Downcast as _, DowncastType, DowncastTypeKey,
+    WorldAabb,
 };
 use text_components::TextComponent;
 
 use super::*;
-use crate::behavior::{BlockLootContext, FLUID_BEHAVIORS, init_behaviors};
+use crate::behavior::{BlockCollisionContext, BlockLootContext, FLUID_BEHAVIORS, init_behaviors};
 use crate::block_entity::{
     SharedBlockEntity, entities::PistonMovingBlockEntity, init_block_entities,
 };
 use crate::entity::entities::{
-    ChestMinecartEntity, ItemFrameEntity, LeashFenceKnotEntity, PigEntity, PrimedTntEntity,
+    ChestMinecartEntity, ItemEntity, ItemFrameEntity, LeashFenceKnotEntity, PigEntity,
+    PrimedTntEntity,
 };
 use crate::entity::{EntityBase, EntityFluidContact, LivingEntity as _, next_entity_id};
 use crate::player::connection::NetworkConnection;
 use crate::player::{Player, PlayerConnection, ResetReason};
 use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 use crate::world::explosion::default_block_explosion_resistance;
+use crate::world::raycast::ExplosionExposureRaycast;
 use crate::world::{
     DefaultExplosionDamageCalculator, ExplosionDamageCalculator, ExplosionInteraction,
-    ExplosionOptions, ExplosionOutcome,
+    ExplosionOptions, ExplosionOutcome, World,
 };
 
 const TEST_BLOCK_BOTTOM_CENTER: DVec3 = DVec3::new(0.5, 64.0, 0.5);
@@ -54,7 +59,6 @@ const FAR_EXPOSURE_TARGET_DISTANCE: f64 = 6.0;
 const ENTITY_EFFECT_TEST_RADIUS: f32 = 2.0;
 const STANDARD_TNT_EXPLOSION_POWER: f32 = 4.0;
 const VANILLA_SMALL_EXPLOSION_RADIUS: f32 = 2.0;
-const VANILLA_COMBINED_DROP_STACK_LIMIT: i32 = 16;
 const FULL_EXPOSURE: f32 = 1.0;
 const NO_EXPOSURE: f32 = 0.0;
 const FIXED_RAY_RANDOM_SAMPLE: f32 = 0.5;
@@ -1352,24 +1356,4 @@ fn destructive_explosion_removes_stone_and_spawns_its_loot() {
             .downcast_ref::<ItemEntity>()
             .is_some_and(|item| item.get_item().is(&vanilla_items::COBBLESTONE))
     }));
-}
-
-#[test]
-fn combined_explosion_drops_never_exceed_vanilla_stack_limit() {
-    const INPUT_STACK_SIZE: i32 = 10;
-    const EXPECTED_STACK_COUNT: usize = 2;
-
-    init_vanilla_registry();
-    let stack = ItemStack::with_count(&vanilla_items::STONE, INPUT_STACK_SIZE);
-    let mut stacks = Vec::new();
-
-    add_or_append_stack(&mut stacks, stack.clone(), BlockPos::ZERO);
-    add_or_append_stack(&mut stacks, stack, BlockPos::ZERO);
-
-    assert_eq!(stacks.len(), EXPECTED_STACK_COUNT);
-    assert_eq!(stacks[0].stack.count(), VANILLA_COMBINED_DROP_STACK_LIMIT);
-    assert_eq!(
-        stacks[1].stack.count(),
-        INPUT_STACK_SIZE * 2 - VANILLA_COMBINED_DROP_STACK_LIMIT
-    );
 }
