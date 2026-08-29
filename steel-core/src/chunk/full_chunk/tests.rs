@@ -13,7 +13,7 @@ use steel_utils::{ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, locks:
 use super::*;
 use crate::behavior::init_behaviors;
 use crate::block_entity::entities::ComparatorBlockEntity;
-use crate::block_entity::{BlockEntityBase, SharedBlockEntity, entities::RawBlockEntity};
+use crate::block_entity::{BlockEntityBase, SharedBlockEntity, entities::UnimplementedBlockEntity};
 use crate::chunk::{
     Chunk,
     chunk_ticket_manager::ChunkTicketLevel,
@@ -355,7 +355,7 @@ fn concurrent_consumers_cannot_both_claim_the_same_block_state() {
 }
 
 #[test]
-fn block_change_replaces_a_structurally_valid_raw_block_entity_with_the_new_factory() {
+fn block_change_replaces_a_structurally_valid_unimplemented_entity_with_the_new_factory() {
     init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
@@ -368,7 +368,7 @@ fn block_change_replaces_a_structurally_valid_raw_block_entity_with_the_new_fact
             .set_block_state(pos, chest, UpdateFlags::UPDATE_NONE)
             .is_some()
     );
-    let old: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+    let old: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::new(
         &vanilla_block_entity_types::CHEST,
         Weak::new(),
         pos,
@@ -392,7 +392,7 @@ fn block_change_replaces_a_structurally_valid_raw_block_entity_with_the_new_fact
 }
 
 #[test]
-fn breaking_an_unimplemented_entity_block_removes_its_raw_block_entity() {
+fn breaking_an_unimplemented_entity_block_removes_its_unimplemented_entity() {
     init_vanilla_registry();
     init_behaviors();
     let chunk_owner = test_chunk();
@@ -404,7 +404,7 @@ fn breaking_an_unimplemented_entity_block_removes_its_raw_block_entity() {
             .set_block_state(pos, chest, UpdateFlags::UPDATE_NONE)
             .is_some()
     );
-    let old: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+    let old: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::new(
         &vanilla_block_entity_types::CHEST,
         Weak::new(),
         pos,
@@ -440,7 +440,7 @@ fn copper_chest_transformation_preserves_entity_identity() {
     );
     let mut data = NbtCompound::new();
     data.insert("test_marker", 37_i32);
-    let original: SharedBlockEntity = Arc::new(RawBlockEntity::with_data(
+    let original: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::with_data(
         &vanilla_block_entity_types::CHEST,
         Weak::new(),
         pos,
@@ -512,7 +512,7 @@ fn shared_entity_type_does_not_imply_cross_block_preservation() {
             .set_block_state(pos, chest, UpdateFlags::UPDATE_NONE)
             .is_some()
     );
-    let original: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+    let original: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::new(
         &vanilla_block_entity_types::CHEST,
         Weak::new(),
         pos,
@@ -546,7 +546,7 @@ fn insertion_rejects_an_entity_owned_by_another_chunk() {
             .set_block_state(local_pos, chest, UpdateFlags::UPDATE_NONE)
             .is_some()
     );
-    let foreign: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+    let foreign: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::new(
         &vanilla_block_entity_types::CHEST,
         Weak::new(),
         foreign_pos,
@@ -572,7 +572,7 @@ fn insertion_below_world_does_not_alias_the_bottom_section() {
             .set_block_state(bottom_section_pos, chest, UpdateFlags::UPDATE_NONE)
             .is_some()
     );
-    let below_world: SharedBlockEntity = Arc::new(RawBlockEntity::new(
+    let below_world: SharedBlockEntity = Arc::new(UnimplementedBlockEntity::new(
         &vanilla_block_entity_types::CHEST,
         Weak::new(),
         below_world_pos,

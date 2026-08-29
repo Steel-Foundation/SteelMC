@@ -12,8 +12,8 @@ mod end_portal;
 mod jukebox;
 mod piston_moving;
 mod potent_sulfur;
-mod raw;
 mod sign;
+mod unimplemented;
 
 pub use barrel::{BARREL_SLOTS, BarrelBlockEntity};
 pub use beehive::{
@@ -29,5 +29,5 @@ pub use end_portal::EndPortalBlockEntity;
 pub use jukebox::JukeboxBlockEntity;
 pub use piston_moving::PistonMovingBlockEntity;
 pub use potent_sulfur::PotentSulfurBlockEntity;
-pub use raw::RawBlockEntity;
 pub use sign::{SIGN_LINES, SignBlockEntity, SignText};
+pub use unimplemented::UnimplementedBlockEntity;

@@ -484,7 +484,7 @@ fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
     let mut nbt = NbtCompound::new();
     nbt.insert("LootTable", "minecraft:chests/simple_dungeon");
     nbt.insert("LootTableSeed", 42_i64);
-    let entity = BLOCK_ENTITIES.create_and_load_owned_or_raw(
+    let entity = BLOCK_ENTITIES.create_and_load_owned_or_unimplemented(
         &vanilla_block_entity_types::MOB_SPAWNER,
         proto.level_weak(),
         block_pos,
@@ -511,7 +511,7 @@ fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
     );
     let loaded_proto = loaded.chunk;
     let Some(loaded_entity) = loaded_proto.get_block_entity(block_pos) else {
-        panic!("raw block entity should survive chunk load");
+        panic!("unimplemented block entity should survive chunk load");
     };
 
     let mut saved = NbtCompound::new();

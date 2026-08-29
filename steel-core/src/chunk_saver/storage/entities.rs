@@ -268,7 +268,7 @@ impl ChunkStorage {
         // Parse and load NBT data
         if persistent.nbt_data.is_empty() {
             // No NBT data, just create the entity without loading
-            Some(BLOCK_ENTITIES.create_or_raw(block_entity_type, level, pos, state))
+            Some(BLOCK_ENTITIES.create_or_unimplemented(block_entity_type, level, pos, state))
         } else {
             // Parse NBT from bytes as borrowed
             let Ok(nbt) = read_borrowed_compound(&mut Cursor::new(&persistent.nbt_data)) else {
@@ -280,7 +280,13 @@ impl ChunkStorage {
             };
 
             // Create the block entity and load NBT
-            Some(BLOCK_ENTITIES.create_and_load_or_raw(block_entity_type, level, pos, state, &nbt))
+            Some(BLOCK_ENTITIES.create_and_load_or_unimplemented(
+                block_entity_type,
+                level,
+                pos,
+                state,
+                &nbt,
+            ))
         }
     }
 

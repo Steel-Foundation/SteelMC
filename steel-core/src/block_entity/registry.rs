@@ -19,7 +19,7 @@ use super::entities::{
     BarrelBlockEntity, BeehiveBlockEntity, BellBlockEntity, BrushableBlockEntity,
     ChiseledBookShelfBlockEntity, ComparatorBlockEntity, DaylightDetectorBlockEntity,
     EndGatewayBlockEntity, EndPortalBlockEntity, JukeboxBlockEntity, PistonMovingBlockEntity,
-    PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity,
+    PotentSulfurBlockEntity, SignBlockEntity, UnimplementedBlockEntity,
 };
 use crate::world::World;
 
@@ -76,13 +76,13 @@ impl BlockEntityRegistry {
         self.entries.get(id)?.factory.map(|f| f(level, pos, state))
     }
 
-    /// Creates a block entity, falling back to an NBT-preserving raw block entity.
+    /// Creates a block entity, falling back to an NBT-preserving unimplemented entity.
     ///
     /// Use this for disk/worldgen paths where an unimplemented block entity type must still
     /// survive save/load. Gameplay paths that require concrete behavior should call
     /// [`Self::create`] and handle `None`.
     #[must_use]
-    pub fn create_or_raw(
+    pub fn create_or_unimplemented(
         &self,
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
@@ -93,13 +93,18 @@ impl BlockEntityRegistry {
         if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
             factory(level, pos, state)
         } else {
-            Arc::new(RawBlockEntity::new(block_entity_type, level, pos, state))
+            Arc::new(UnimplementedBlockEntity::new(
+                block_entity_type,
+                level,
+                pos,
+                state,
+            ))
         }
     }
 
-    /// Creates a block entity and loads borrowed NBT, falling back to raw preservation.
+    /// Creates and loads a block entity, falling back to an unimplemented entity.
     #[must_use]
-    pub fn create_and_load_or_raw(
+    pub fn create_and_load_or_unimplemented(
         &self,
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
@@ -114,7 +119,7 @@ impl BlockEntityRegistry {
             entity
         } else {
             let nbt_view: BorrowedRootNbtCompound<'_, '_> = nbt.into();
-            Arc::new(RawBlockEntity::with_data(
+            Arc::new(UnimplementedBlockEntity::with_data(
                 block_entity_type,
                 level,
                 pos,
@@ -124,9 +129,9 @@ impl BlockEntityRegistry {
         }
     }
 
-    /// Creates a block entity and loads owned NBT, falling back to raw preservation.
+    /// Creates and loads owned block entity NBT, falling back to an unimplemented entity.
     #[must_use]
-    pub fn create_and_load_owned_or_raw(
+    pub fn create_and_load_owned_or_unimplemented(
         &self,
         block_entity_type: BlockEntityTypeRef,
         level: Weak<World>,
@@ -149,7 +154,7 @@ impl BlockEntityRegistry {
             }
             entity
         } else {
-            Arc::new(RawBlockEntity::with_data(
+            Arc::new(UnimplementedBlockEntity::with_data(
                 block_entity_type,
                 level,
                 pos,
