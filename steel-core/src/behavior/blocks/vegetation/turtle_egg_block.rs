@@ -10,7 +10,6 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
-use steel_registry::blocks::shapes::VoxelShape;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
@@ -18,9 +17,8 @@ use steel_registry::{
     vanilla_items, vanilla_world_clocks,
 };
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId};
 
-use crate::behavior::BlockCollisionContext;
 use crate::behavior::block::{
     BlockBehavior, EntityFallDamage, EntityFallOnContext, default_can_be_replaced,
 };
@@ -28,8 +26,8 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
 use crate::player::Player;
+use crate::world::World;
 use crate::world::game_event::GameEventContext;
-use crate::world::{LevelReader, World};
 
 /// Cracking stages a turtle egg passes through before it hatches.
 const MAX_HATCH_LEVEL: u8 = 2;
@@ -50,20 +48,17 @@ const STEP_TRAMPLE_ODDS: i32 = 100;
 /// One in this many chance to trample an egg by falling onto it.
 const FALL_TRAMPLE_ODDS: i32 = 3;
 
+/// Particle count for the "egg placed on sand" effect.
+const TURTLE_EGG_PLACEMENT_PARTICLE_COUNT: i32 = 15;
+
+/// Dimension timeline tag that carries the day timeline. Only dimensions on this
+/// tag (the overworld and its caves variant) apply the pre-dawn hatch boost;
+/// nether and end eggs stay at the base chance, matching vanilla's per-dimension
+/// resolution of the `gameplay/turtle_egg_hatch_chance` attribute.
+const OVERWORLD_TIMELINE_TAG: &str = "#minecraft:in_overworld";
+
 const HATCH: &IntProperty = &BlockStateProperties::HATCH;
 const EGGS: &IntProperty = &BlockStateProperties::EGGS;
-
-/// Collision/outline shape for a lone egg. Vanilla `Block.box(3, 0, 3, 12, 7, 12)`.
-const SHAPE_SINGLE_BOXES: &[BlockLocalAabb] =
-    &[BlockLocalAabb::new(0.1875, 0.0, 0.1875, 0.75, 0.4375, 0.75)];
-const SHAPE_SINGLE: VoxelShape = VoxelShape::from_boxes(SHAPE_SINGLE_BOXES);
-
-/// Collision/outline shape for a cluster of two or more eggs. Vanilla
-/// `Block.column(14, 0, 7)`.
-const SHAPE_MULTIPLE_BOXES: &[BlockLocalAabb] = &[BlockLocalAabb::new(
-    0.0625, 0.0, 0.0625, 0.9375, 0.4375, 0.9375,
-)];
-const SHAPE_MULTIPLE: VoxelShape = VoxelShape::from_boxes(SHAPE_MULTIPLE_BOXES);
 
 /// Behavior for vanilla turtle eggs.
 #[block_behavior]
@@ -92,10 +87,14 @@ impl TurtleEggBlock {
     /// In 26.2 this chance comes from the `gameplay/turtle_egg_hatch_chance`
     /// environment attribute: base 0.002, raised to 1.0 by a day-timeline
     /// `maximum` modifier during the pre-dawn window (ticks 21062 to 21904).
+    /// Vanilla resolves the attribute per dimension, and only dimensions tagged
+    /// `#minecraft:in_overworld` include that day timeline, so eggs in the nether
+    /// or end keep the 0.002 base regardless of the overworld time of day.
+    ///
     /// Steel's timeline sampler in `world::environment` only handles
     /// `multiply`/replace modifiers and exposes sky light and sun angle, so it
     /// cannot resolve this attribute yet; the turtle curve is reproduced inline
-    /// off the overworld day clock.
+    /// off the overworld day clock, gated on the same timeline tag.
     // TODO(environment-attributes): replace this inline curve with a single
     // attribute lookup once the timeline sampler learns the `maximum` modifier
     // and exposes a public environment-attribute getter.
@@ -105,7 +104,9 @@ impl TurtleEggBlock {
             .unwrap_or(0)
             .rem_euclid(TICKS_PER_DAY);
 
-        let chance = if (HATCH_WINDOW_START..HATCH_WINDOW_END).contains(&day_time) {
+        let in_hatch_window = (HATCH_WINDOW_START..HATCH_WINDOW_END).contains(&day_time)
+            && world.dimension_type.timelines == Some(OVERWORLD_TIMELINE_TAG);
+        let chance = if in_hatch_window {
             1.0
         } else {
             BASE_HATCH_CHANCE
@@ -170,7 +171,7 @@ impl TurtleEggBlock {
             world.game_event(
                 &vanilla_game_events::BLOCK_DESTROY,
                 pos,
-                &GameEventContext::default(),
+                &GameEventContext::new(None, Some(state)),
             );
             world.level_event(
                 level_events::PARTICLES_DESTROY_BLOCK,
@@ -180,29 +181,9 @@ impl TurtleEggBlock {
             );
         }
     }
-
-    /// Vanilla `TurtleEggBlock.getShape`: a lone egg has a smaller footprint than
-    /// a cluster of two or more.
-    const fn collision_shape_for(eggs: u8) -> VoxelShape {
-        if eggs == 1 {
-            SHAPE_SINGLE
-        } else {
-            SHAPE_MULTIPLE
-        }
-    }
 }
 
 impl BlockBehavior for TurtleEggBlock {
-    fn get_collision_shape(
-        &self,
-        state: BlockStateId,
-        _world: &dyn LevelReader,
-        _pos: BlockPos,
-        _context: BlockCollisionContext,
-    ) -> VoxelShape {
-        Self::collision_shape_for(state.get_value(EGGS))
-    }
-
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let existing = context.world.get_block_state(context.place_pos());
         if existing.get_block() == self.block {
@@ -234,7 +215,12 @@ impl BlockBehavior for TurtleEggBlock {
     ) {
         // Play the "placed on sand" particle effect (data is the particle count).
         if Self::on_sand(world, pos) {
-            world.level_event(level_events::PARTICLES_TURTLE_EGG_PLACEMENT, pos, 15, None);
+            world.level_event(
+                level_events::PARTICLES_TURTLE_EGG_PLACEMENT,
+                pos,
+                TURTLE_EGG_PLACEMENT_PARTICLE_COUNT,
+                None,
+            );
         }
     }
 
@@ -260,7 +246,7 @@ impl BlockBehavior for TurtleEggBlock {
             world.game_event(
                 &vanilla_game_events::BLOCK_CHANGE,
                 pos,
-                &GameEventContext::default(),
+                &GameEventContext::new(None, Some(state)),
             );
         } else {
             world.play_block_sound(
@@ -274,7 +260,7 @@ impl BlockBehavior for TurtleEggBlock {
             world.game_event(
                 &vanilla_game_events::BLOCK_DESTROY,
                 pos,
-                &GameEventContext::default(),
+                &GameEventContext::new(None, Some(state)),
             );
 
             let eggs = state.get_value(EGGS);
@@ -408,19 +394,5 @@ mod tests {
 
         behavior.random_tick(world.get_block_state(pos), &world, pos);
         assert_eq!(world.get_block_state(pos).get_value(HATCH), 0);
-    }
-
-    #[test]
-    fn collision_shape_depends_on_egg_count() {
-        assert_eq!(TurtleEggBlock::collision_shape_for(1), SHAPE_SINGLE);
-        assert_eq!(TurtleEggBlock::collision_shape_for(2), SHAPE_MULTIPLE);
-        assert_eq!(
-            TurtleEggBlock::collision_shape_for(MAX_EGGS),
-            SHAPE_MULTIPLE
-        );
-        assert_ne!(
-            TurtleEggBlock::collision_shape_for(1),
-            TurtleEggBlock::collision_shape_for(2),
-        );
     }
 }
