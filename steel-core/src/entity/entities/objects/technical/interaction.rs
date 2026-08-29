@@ -24,7 +24,7 @@ const DEFAULT_HEIGHT: f32 = 1.0;
 const DEFAULT_RESPONSE: bool = false;
 
 const DEFAULT_DIMENSIONS: EntityDimensions =
-    InteractionEntity::dimensions_for_width_height(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+    EntityDimensions::with_default_eye_height(DEFAULT_WIDTH, DEFAULT_HEIGHT);
 
 const TAG_WIDTH: &str = "width";
 const TAG_HEIGHT: &str = "height";
@@ -129,10 +129,6 @@ impl InteractionEntity {
     pub fn last_interaction(&self) -> Option<PlayerAction> {
         *self.interaction.lock()
     }
-
-    const fn dimensions_for_width_height(width: f32, height: f32) -> EntityDimensions {
-        EntityDimensions::with_default_eye_height(width, height)
-    }
 }
 
 impl Entity for InteractionEntity {
@@ -212,7 +208,7 @@ impl Entity for InteractionEntity {
 
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
         let guard = self.entity_data.lock();
-        Self::dimensions_for_width_height(*guard.width.get(), *guard.height.get())
+        EntityDimensions::with_default_eye_height(*guard.width.get(), *guard.height.get())
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

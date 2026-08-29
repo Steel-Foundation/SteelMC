@@ -4,7 +4,7 @@ use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
 use crate::{RegistryTags, blocks::behavior::PushReaction};
 
-pub const DEFAULT_EYE_HEIGHT_FACTOR: f32 = 0.85;
+const DEFAULT_EYE_HEIGHT_FACTOR: f32 = 0.85;
 
 /// Mob category for spawn classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
