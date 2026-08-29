@@ -1,7 +1,7 @@
 //! Technical entity implementations.
 
-mod marker;
 mod interaction;
+mod marker;
 
-pub use marker::MarkerEntity;
 pub use interaction::InteractionEntity;
+pub use marker::MarkerEntity;

@@ -1,23 +1,23 @@
+use crate::behavior::InteractionResult;
 use crate::entity::BorrowedNbtCompoundView;
-use std::sync::Weak;
+use crate::entity::damage::DamageSource;
+use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
+use crate::player::Player;
+use crate::world::World;
 use glam::DVec3;
 use parking_lot::MutexGuard;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
-use uuid::Uuid;
+use std::sync::Weak;
 use steel_macros::entity_behavior;
 use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::vanilla_entity_data::InteractionEntityData;
-use steel_utils::{DowncastType, DowncastTypeKey, UuidExt, WorldAabb};
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
-use crate::behavior::InteractionResult;
-use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
-use crate::entity::damage::DamageSource;
-use crate::player::Player;
-use crate::world::World;
+use steel_utils::{DowncastType, DowncastTypeKey, UuidExt, WorldAabb};
+use uuid::Uuid;
 
 const DEFAULT_WIDTH: f32 = 1.0;
 const DEFAULT_HEIGHT: f32 = 1.0;
@@ -32,15 +32,18 @@ const TAG_RESPONSE: &str = "response";
 const TAG_PLAYER: &str = "player";
 const TAG_TIMESTAMP: &str = "timestamp";
 
-/// An invisible, invincible, interactable entity which records when a player clicks in its bounding
+/// An invisible, invincible, interactable entity which records when a player clicks on its bounding
 /// box. It is used in map-making or data packs, and its bounding box is customizable.
+///
+/// The dimensions of its bounding box (`width` and `height`) and whether it triggers a response from
+/// the player (`response`) can be accessed and/or modified with [`InteractionEntity::with_entity_data`].
 #[entity_behavior(class = "Interaction")]
 pub struct InteractionEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
     entity_data: SyncMutex<InteractionEntityData>,
     interaction: SyncMutex<Option<PlayerAction>>,
-    attack: SyncMutex<Option<PlayerAction>>
+    attack: SyncMutex<Option<PlayerAction>>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `InteractionEntity`.
@@ -79,7 +82,7 @@ impl InteractionEntity {
         }
     }
 
-    /// Creates a interaction entity from saved data.
+    /// Creates an interaction entity from saved data.
     #[must_use]
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self {
@@ -91,9 +94,37 @@ impl InteractionEntity {
         }
     }
 
-    /// Gets a reference to the entity data for reading/modifying synced state.
-    pub const fn entity_data(&self) -> &SyncMutex<InteractionEntityData> {
-        &self.entity_data
+    /// Provides an exclusive view to the synced entity data to the given closure, which includes
+    /// the dimensions of its bounding box (`width` and `height`), and whether it triggers a response
+    /// from the player (`response`).
+    ///
+    /// Do not attempt to lock entity data within the closure provided.
+    pub fn with_entity_data<R>(
+        &self,
+        f: impl FnOnce(&mut InteractionEntityDataView<'_>) -> R,
+    ) -> R {
+        let (value, dimensions_changed) = {
+            let mut view = InteractionEntityDataView {
+                guard: self.entity_data.lock(),
+                dimensions_changed: false,
+            };
+            let value = f(&mut view);
+            (value, view.dimensions_changed)
+        };
+        if dimensions_changed {
+            self.refresh_dimensions();
+        }
+        value
+    }
+
+    /// Provides the latest attack (right-click) on this entity.
+    pub fn last_attack(&self) -> Option<PlayerAction> {
+        *self.attack.lock()
+    }
+
+    /// Provides the latest interaction (right-click) on this entity.
+    pub fn last_interaction(&self) -> Option<PlayerAction> {
+        *self.interaction.lock()
     }
 }
 
@@ -114,10 +145,12 @@ impl Entity for InteractionEntity {
         let Some(player) = source.as_player() else {
             return false;
         };
-        *self.attack.lock() = Some(PlayerAction {
-            player: player.uuid(),
-            timestamp: player.get_world().game_time()
-        });
+        if let Some(world) = self.level() {
+            *self.attack.lock() = Some(PlayerAction {
+                player: player.uuid(),
+                timestamp: world.game_time(),
+            });
+        }
         !self.entity_data.lock().response.get()
     }
 
@@ -150,11 +183,18 @@ impl Entity for InteractionEntity {
         Some(&self.entity_data)
     }
 
-    fn interact(&self, player: &Player, _hand: InteractionHand, _location: DVec3) -> InteractionResult {
-        *self.interaction.lock() = Some(PlayerAction {
-            player: player.uuid(),
-            timestamp: player.get_world().game_time()
-        });
+    fn interact(
+        &self,
+        player: &Player,
+        _hand: InteractionHand,
+        _location: DVec3,
+    ) -> InteractionResult {
+        if let Some(world) = self.level() {
+            *self.interaction.lock() = Some(PlayerAction {
+                player: player.uuid(),
+                timestamp: world.game_time(),
+            });
+        }
         InteractionResult::Consume
     }
 
@@ -164,10 +204,7 @@ impl Entity for InteractionEntity {
 
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
         let guard = self.entity_data.lock();
-        EntityDimensions::with_default_eye_height(
-            *guard.width.get(),
-            *guard.height.get()
-        )
+        EntityDimensions::with_default_eye_height(*guard.width.get(), *guard.height.get())
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
@@ -194,12 +231,20 @@ impl Entity for InteractionEntity {
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         {
             let mut guard = self.entity_data.lock();
-            guard.width.set(nbt.float(TAG_WIDTH).unwrap_or(DEFAULT_WIDTH));
-            guard.height.set(nbt.float(TAG_HEIGHT).unwrap_or(DEFAULT_HEIGHT));
-            guard.response.set(nbt.byte(TAG_RESPONSE).map(|b| b != 0).unwrap_or(DEFAULT_RESPONSE));
+            guard
+                .width
+                .set(nbt.float(TAG_WIDTH).unwrap_or(DEFAULT_WIDTH));
+            guard
+                .height
+                .set(nbt.float(TAG_HEIGHT).unwrap_or(DEFAULT_HEIGHT));
+            guard
+                .response
+                .set(nbt.byte(TAG_RESPONSE).map_or(DEFAULT_RESPONSE, |b| b != 0));
         }
         *self.attack.lock() = nbt.get(TAG_ATTACK).and_then(PlayerAction::from_nbt_tag);
-        *self.interaction.lock() = nbt.get(TAG_INTERACTION).and_then(PlayerAction::from_nbt_tag);
+        *self.interaction.lock() = nbt
+            .get(TAG_INTERACTION)
+            .and_then(PlayerAction::from_nbt_tag);
     }
 
     fn hurt(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
@@ -208,37 +253,100 @@ impl Entity for InteractionEntity {
 }
 
 /// Represents an action of a player.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PlayerAction {
-    /// The player who did the action.
+    /// The player who executed the action.
     player: Uuid,
 
-    /// The game time (in ticks) when the player did the action.
-    timestamp: i64
+    /// The game time (in ticks) when the player executed the action.
+    timestamp: i64,
+}
+
+impl PlayerAction {
+    /// Returns the unique ID of the player who executed this action.
+    pub const fn player(&self) -> Uuid {
+        self.player
+    }
+
+    /// Returns the game time (in ticks) when the player executed the action.
+    pub const fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
 }
 
 impl FromNbtTag for PlayerAction {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
-        Some(
-            Self {
-                player: Uuid::from_int_array(&*compound.int_array(TAG_PLAYER)?)?,
-                timestamp: compound.long(TAG_TIMESTAMP)?
-            }
-        )
+        Some(Self {
+            player: Uuid::from_int_array(&compound.int_array(TAG_PLAYER)?)?,
+            timestamp: compound.long(TAG_TIMESTAMP)?,
+        })
     }
 }
 
 impl ToNbtTag for &PlayerAction {
     fn to_nbt_tag(self) -> NbtTag {
         let mut compound = NbtCompound::new();
-        compound.insert(TAG_PLAYER, NbtTag::IntArray(self.player.to_int_array().to_vec()));
+        compound.insert(
+            TAG_PLAYER,
+            NbtTag::IntArray(self.player.to_int_array().to_vec()),
+        );
         compound.insert(TAG_TIMESTAMP, self.timestamp);
         NbtTag::Compound(compound)
     }
 }
 
-/// Provides the view of an interaction entity.
-pub struct InteractionEntityView<'a> {
-    guard: MutexGuard<'a, InteractionEntityData>
+/// Provides an exclusive view of the synchronized entity data of an interaction entity.
+/// This includes its `width`, its `height`, and the `response` boolean.
+pub struct InteractionEntityDataView<'a> {
+    guard: MutexGuard<'a, InteractionEntityData>,
+    dimensions_changed: bool,
+}
+
+impl InteractionEntityDataView<'_> {
+    /// Gets the width of the bounding box of the interaction entity.
+    pub fn width(&self) -> f32 {
+        *self.guard.width.get()
+    }
+
+    /// Sets the width of the bounding box of the interaction entity to the provided value.
+    pub fn set_width(&mut self, width: f32) {
+        self.guard.width.set(width);
+        if self.guard.width.is_dirty() {
+            self.dimensions_changed = true;
+        }
+    }
+
+    /// Gets the height of the bounding box of the interaction entity.
+    pub fn height(&self) -> f32 {
+        *self.guard.height.get()
+    }
+
+    /// Sets the height of the bounding box of the interaction entity to the provided value.
+    pub fn set_height(&mut self, height: f32) {
+        self.guard.height.set(height);
+        if self.guard.height.is_dirty() {
+            self.dimensions_changed = true;
+        }
+    }
+
+    /// Gets whether interacting with the interaction entity will trigger a response
+    /// from the player. If `true`, this means that
+    /// - for left clicks, the player will play an attack animation, and
+    /// - for right clicks, the player's hand will swing.
+    ///
+    /// If `false`, no animation plays.
+    pub fn response(&self) -> bool {
+        *self.guard.response.get()
+    }
+
+    /// Sets whether interacting with the interaction entity will trigger a response
+    /// from the player. If set to `true`, this means that
+    /// - for left clicks, the player will play an attack animation, and
+    /// - for right clicks, the player's hand will swing.
+    ///
+    /// If set to `false`, no animation plays.
+    pub fn set_response(&mut self, response: bool) {
+        self.guard.response.set(response);
+    }
 }
