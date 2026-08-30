@@ -1,4 +1,5 @@
 use super::*;
+use steel_utils::types::UpdateFlags;
 
 #[test]
 fn fall_damage_sound_selects_vanilla_small_and_big_sounds() {
@@ -77,16 +78,31 @@ fn stop_fall_flying_toggles_shared_state_back_to_false() {
 
 #[test]
 fn lava_contact_is_ignored_until_after_first_tick() {
-    let entity = TypedTestEntity::new(1, &vanilla_entities::PIG);
-    entity
-        .base()
-        .set_fluid_contact(EntityFluidContact::from_parts(0.0, 0.25, false, false));
+    init_vanilla_registry();
+    init_behaviors();
 
+    let world = fresh_test_world("first_tick_lava_contact");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    let block_pos = BlockPos::new(8, 80, 8);
+    assert!(world.set_block(
+        block_pos,
+        vanilla_blocks::LAVA.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+
+    let entity = LivingFluidTestEntity::new_in_world(0.0, 0.0, true, &world);
+    entity.base().set_position_local(DVec3::new(8.5, 80.0, 8.5));
+
+    let contact = entity.refresh_fluid_contact();
+
+    assert!(contact.lava_height() > 0.0);
     assert!(entity.is_first_tick());
     assert!(!entity.is_in_lava());
 
-    entity.set_first_tick(false);
+    entity.tick();
 
+    assert!(!entity.is_first_tick());
     assert!(entity.is_in_lava());
 }
 
