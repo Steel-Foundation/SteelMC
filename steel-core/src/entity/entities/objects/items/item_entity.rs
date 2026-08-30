@@ -35,6 +35,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_utils::BlockPos;
+use steel_utils::nbt::NbtValueInput as _;
 
 /// Maximum age in ticks before despawn (5 minutes = 6000 ticks).
 const LIFETIME: i32 = 6000;
@@ -742,13 +743,13 @@ impl Entity for ItemEntity {
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         // Match vanilla's ItemEntity.readAdditionalSaveData
         let mut state = self.item_state.lock();
-        if let Some(health) = nbt.short("Health") {
+        if let Some(health) = nbt.get_i16("Health") {
             state.health = i32::from(health);
         }
-        if let Some(age) = nbt.short("Age") {
+        if let Some(age) = nbt.get_i16("Age") {
             state.age = i32::from(age);
         }
-        if let Some(pickup_delay) = nbt.short("PickupDelay") {
+        if let Some(pickup_delay) = nbt.get_i16("PickupDelay") {
             state.pickup_delay = i32::from(pickup_delay);
         }
 

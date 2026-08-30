@@ -1,6 +1,9 @@
+use std::io::Cursor;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
+use simdnbt::borrow::read_compound as read_borrowed_compound;
+use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entities;
@@ -12,7 +15,8 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::{
-    can_attempt_equipment_drop, find_ground_path_target_surface, path_end_node_can_reach_target,
+    DEFAULT_EQUIPMENT_DROP_CHANCE, DropChances, can_attempt_equipment_drop,
+    find_ground_path_target_surface, path_end_node_can_reach_target,
 };
 use crate::behavior::init_behaviors;
 use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MAX_ROT_SPEED};
@@ -25,6 +29,7 @@ use crate::entity::mob::{Mob, MobBase};
 use crate::entity::{
     Entity, EntityBase, LivingEntity, LivingEntityBase, PathfinderMob, SharedEntity,
 };
+use crate::inventory::equipment::EquipmentSlot;
 use crate::test_support::test_world;
 use crate::world::{LevelReader, World};
 
@@ -34,6 +39,30 @@ fn equipment_drop_attempt_gate_matches_vanilla_conditions() {
     assert!(!can_attempt_equipment_drop(0.085, false, false));
     assert!(can_attempt_equipment_drop(0.085, false, true));
     assert!(can_attempt_equipment_drop(2.0, true, false));
+}
+
+#[test]
+fn non_finite_loaded_drop_chance_falls_back_to_vanilla_defaults() {
+    let mut drop_chances = NbtCompound::new();
+    drop_chances.insert(EquipmentSlot::Head.name(), f64::MAX);
+    drop_chances.insert(EquipmentSlot::Saddle.name(), 2_i16);
+    let mut nbt = NbtCompound::new();
+    nbt.insert("drop_chances", NbtTag::Compound(drop_chances));
+    let mut bytes = Vec::new();
+    nbt.write(&mut bytes);
+    let borrowed = read_borrowed_compound(&mut Cursor::new(bytes.as_slice()))
+        .unwrap_or_else(|error| panic!("drop chance test NBT should reborrow: {error}"));
+
+    let loaded = DropChances::load((&borrowed).into());
+
+    assert_eq!(
+        loaded.by_equipment(EquipmentSlot::Head),
+        DEFAULT_EQUIPMENT_DROP_CHANCE
+    );
+    assert_eq!(
+        loaded.by_equipment(EquipmentSlot::Saddle),
+        DEFAULT_EQUIPMENT_DROP_CHANCE
+    );
 }
 
 struct SurfaceLevel {

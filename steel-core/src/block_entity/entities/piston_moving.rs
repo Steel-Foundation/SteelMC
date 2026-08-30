@@ -23,6 +23,7 @@ use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt 
 use crate::entity::Entity;
 use crate::physics::MoverType;
 use crate::world::{LevelReader, World};
+use steel_utils::nbt::NbtValueInput as _;
 
 const PUSH_OFFSET: f64 = 0.01;
 
@@ -609,12 +610,11 @@ impl BlockEntity for PistonMovingBlockEntity {
             .compound("blockState")
             .and_then(block_state_nbt::load)
             .unwrap_or_else(|| vanilla_blocks::AIR.default_state());
-        moving.direction =
-            PistonMovingState::direction_from_legacy_id(view.byte("facing").unwrap_or(0));
-        moving.progress = view.float("progress").unwrap_or(0.0);
+        moving.direction = PistonMovingState::direction_from_legacy_id(view.get_i8_or("facing", 0));
+        moving.progress = view.get_f32_or("progress", 0.0);
         moving.progress_o = moving.progress;
-        moving.extending = view.byte("extending").is_some_and(|value| value != 0);
-        moving.source_piston = view.byte("source").is_some_and(|value| value != 0);
+        moving.extending = view.get_bool_or("extending", false);
+        moving.source_piston = view.get_bool_or("source", false);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

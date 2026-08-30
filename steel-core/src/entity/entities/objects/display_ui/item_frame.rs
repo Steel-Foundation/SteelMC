@@ -18,6 +18,7 @@ use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityBaseState, EntitySyncedData, ItemFrame,
 };
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 /// Item frame state needed by end-city structure markers.
 ///
@@ -283,7 +284,7 @@ impl Entity for ItemFrameEntity {
             self.set_item_with_update(item, false);
         }
 
-        if let Some(item_rotation) = nbt.byte("ItemRotation") {
+        if let Some(item_rotation) = nbt.get_i8("ItemRotation") {
             self.entity_data
                 .lock()
                 .rotation
@@ -291,9 +292,8 @@ impl Entity for ItemFrameEntity {
         }
 
         let facing = nbt
-            .byte("Facing")
-            .and_then(|value| direction_from_3d_data_value(i32::from(value)))
-            .or_else(|| nbt.int("Facing").and_then(direction_from_3d_data_value));
+            .get_i8("Facing")
+            .and_then(|value| direction_from_3d_data_value(i32::from(value)));
         if let Some(direction) = facing {
             self.set_direction(direction);
         }

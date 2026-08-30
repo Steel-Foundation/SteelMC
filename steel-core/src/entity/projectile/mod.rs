@@ -35,6 +35,7 @@ use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
+use steel_utils::nbt::NbtValueInput as _;
 
 pub use throwable::ThrowableProjectile;
 pub use throwable_item::ThrowableItemProjectile;
@@ -644,8 +645,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
         {
             state.owner = Some(uuid);
         }
-        state.left_owner = nbt.byte("LeftOwner").is_some_and(|value| value != 0);
-        state.has_been_shot = nbt.byte("HasBeenShot").is_some_and(|value| value != 0);
+        state.left_owner = nbt.get_bool_or("LeftOwner", false);
+        state.has_been_shot = nbt.get_bool_or("HasBeenShot", false);
     }
 }
 

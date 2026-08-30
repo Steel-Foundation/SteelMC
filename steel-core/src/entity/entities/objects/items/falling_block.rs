@@ -34,6 +34,7 @@ use crate::entity::{
 use crate::fluid::fluid_state_to_block;
 use crate::physics::MoverType;
 use crate::world::{ClipBlockShape, ClipFluid, World};
+use steel_utils::nbt::NbtValueInput as _;
 
 const DEFAULT_FALL_DAMAGE_PER_DISTANCE: f32 = 0.0;
 const DEFAULT_MAX_FALL_DAMAGE: i32 = 40;
@@ -539,18 +540,17 @@ impl Entity for FallingBlockEntity {
             .unwrap_or_else(|| vanilla_blocks::SAND.default_state());
         let mut state = self.state.lock();
         state.block_state = block_state;
-        state.time = nbt.int("Time").unwrap_or(0);
-        state.hurt_entities = nbt.byte("HurtEntities").map_or_else(
-            || block_state.get_block().has_tag(&BlockTag::ANVIL),
-            |value| value != 0,
+        state.time = nbt.get_i32_or("Time", 0);
+        state.hurt_entities = nbt.get_bool_or(
+            "HurtEntities",
+            block_state.get_block().has_tag(&BlockTag::ANVIL),
         );
-        state.fall_damage_per_distance = nbt
-            .float("FallHurtAmount")
-            .unwrap_or(DEFAULT_FALL_DAMAGE_PER_DISTANCE);
-        state.fall_damage_max = nbt.int("FallHurtMax").unwrap_or(DEFAULT_MAX_FALL_DAMAGE);
-        state.drop_item = nbt.byte("DropItem").is_none_or(|value| value != 0);
+        state.fall_damage_per_distance =
+            nbt.get_f32_or("FallHurtAmount", DEFAULT_FALL_DAMAGE_PER_DISTANCE);
+        state.fall_damage_max = nbt.get_i32_or("FallHurtMax", DEFAULT_MAX_FALL_DAMAGE);
+        state.drop_item = nbt.get_bool_or("DropItem", true);
         state.block_data = nbt.compound("TileEntityData").map(|data| data.to_owned());
-        state.cancel_drop = nbt.byte("CancelDrop").is_some_and(|value| value != 0);
+        state.cancel_drop = nbt.get_bool_or("CancelDrop", false);
     }
 }
 

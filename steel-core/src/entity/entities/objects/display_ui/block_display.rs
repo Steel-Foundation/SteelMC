@@ -18,6 +18,7 @@ use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 /// A block display entity that renders a block state at its position.
 ///
@@ -119,7 +120,7 @@ impl Entity for BlockDisplayEntity {
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         // Load block state ID
-        if let Some(state_id) = nbt.int("block_state") {
+        if let Some(state_id) = nbt.get_i32("block_state") {
             self.entity_data
                 .lock()
                 .block_state

@@ -22,6 +22,7 @@ use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _};
 use crate::fluid::FluidStateExt as _;
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 const GEYSER_SALT: i64 = -904_011_478;
 const COUNTDOWN_FREQUENCY_TICKS: i64 = 20;
@@ -251,7 +252,7 @@ impl BlockEntity for PotentSulfurBlockEntity {
 
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
-        if let Some(countdown) = nbt.int("countdown") {
+        if let Some(countdown) = nbt.get_i32("countdown") {
             self.sulfur.lock().waiting_countdown = countdown;
         }
     }

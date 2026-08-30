@@ -42,6 +42,7 @@ use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
+use steel_utils::nbt::NbtValueInput as _;
 
 const SHEEP_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.5625, 0.0)];
@@ -401,8 +402,8 @@ impl Entity for SheepEntity {
         self.load_mob(nbt);
         self.load_ageable_mob(nbt);
         self.load_animal(nbt);
-        self.set_sheared(nbt.byte("Sheared").is_some_and(|value| value != 0));
-        self.set_color(DyeColor::by_id(i32::from(nbt.byte("Color").unwrap_or(0))));
+        self.set_sheared(nbt.get_bool_or("Sheared", false));
+        self.set_color(DyeColor::by_id(i32::from(nbt.get_i8_or("Color", 0))));
     }
 }
 

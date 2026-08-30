@@ -19,6 +19,7 @@ use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 /// Number of slots in a barrel (3 rows of 9).
 pub const BARREL_SLOTS: usize = 27;
@@ -99,7 +100,7 @@ impl BlockEntity for BarrelBlockEntity {
         {
             for compound in compounds {
                 // Each item has a "Slot" byte and item data
-                if let Some(slot) = compound.byte("Slot") {
+                if let Some(slot) = compound.get_i8("Slot") {
                     let slot = slot as usize;
                     if slot < BARREL_SLOTS {
                         // Parse item directly from the borrowed compound

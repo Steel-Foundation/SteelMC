@@ -24,6 +24,7 @@ use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::entity::{LivingEntity as _, entity_loot_ref};
 use crate::player::Player;
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 const BRUSH_COOLDOWN_TICKS: i64 = 10;
 const BRUSH_RESET_TICKS: i64 = 40;
@@ -325,7 +326,7 @@ impl BlockEntity for BrushableBlockEntity {
         state.loot_table = nbt_view
             .string("LootTable")
             .and_then(|value| Identifier::from_str(&value.to_str()).ok());
-        state.loot_table_seed = nbt_view.long("LootTableSeed").unwrap_or(0);
+        state.loot_table_seed = nbt_view.get_i64_or("LootTableSeed", 0);
 
         // Vanilla: LootTable and item are mutually exclusive on load.
         if state.loot_table.is_some() {
@@ -339,7 +340,7 @@ impl BlockEntity for BrushableBlockEntity {
 
         // Vanilla Direction.LEGACY_ID_CODEC: byte 3D data value.
         state.hit_direction = nbt_view
-            .byte("hit_direction")
+            .get_i8("hit_direction")
             .map(|value| Direction::from_3d_data_value(i32::from(value)));
     }
 

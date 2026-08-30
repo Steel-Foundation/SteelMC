@@ -9,6 +9,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 struct ComparatorState {
     output_signal: i32,
@@ -54,7 +55,7 @@ impl BlockEntity for ComparatorBlockEntity {
 
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
-        self.state.lock().output_signal = nbt.int("OutputSignal").unwrap_or(0);
+        self.state.lock().output_signal = nbt.get_i32_or("OutputSignal", 0);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

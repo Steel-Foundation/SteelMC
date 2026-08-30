@@ -7,7 +7,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::{
     BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView,
-    NbtTag as BorrowedNbtTag, read_compound as read_borrowed_compound,
+    read_compound as read_borrowed_compound,
 };
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -20,7 +20,7 @@ use steel_registry::{
     RegistryEntry, level_events, vanilla_block_entity_types, vanilla_game_events,
     vanilla_particle_types,
 };
-use steel_utils::nbt::{merge_nbt_compounds, nbt_compounds_equal};
+use steel_utils::nbt::{NbtNumericTag as _, merge_nbt_compounds, nbt_compounds_equal};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
@@ -95,17 +95,6 @@ impl JukeboxBlockEntity {
         // the padding addition as a wrapping Java `int` before widening.
         let length_in_ticks = (song.length_in_seconds * TICKS_PER_SECOND).ceil() as i32;
         ticks_elapsed >= i64::from(length_in_ticks.wrapping_add(SONG_END_PADDING_TICKS))
-    }
-
-    fn value_input_long(tag: BorrowedNbtTag<'_, '_>) -> Option<i64> {
-        tag.byte()
-            .map(i64::from)
-            .or_else(|| tag.short().map(i64::from))
-            .or_else(|| tag.int().map(i64::from))
-            .or_else(|| tag.long())
-            .or_else(|| tag.float().map(|value| value as i64))
-            // Vanilla's DoubleTag.longValue floors before narrowing.
-            .or_else(|| tag.double().map(|value| value.floor() as i64))
     }
 
     fn on_song_changed(&self, world: &Arc<World>) {
@@ -274,7 +263,7 @@ impl BlockEntity for JukeboxBlockEntity {
             .unwrap_or_else(ItemStack::empty);
         let saved_ticks = nbt
             .get(TICKS_SINCE_SONG_STARTED_TAG)
-            .and_then(Self::value_input_long);
+            .and_then(|tag| tag.numeric_i64());
 
         let should_stop = {
             let state = self.state.lock();
@@ -513,29 +502,6 @@ mod tests {
                 .try_id()
                 .and_then(|id| i32::try_from(id).ok())
                 .unwrap_or(UNKNOWN_SONG_REGISTRY_ID)
-        );
-    }
-
-    #[test]
-    fn value_input_long_uses_each_numeric_tag_long_value() {
-        let mut nbt = NbtCompound::new();
-        nbt.insert("double", -0.5_f64);
-        nbt.insert("float", -0.5_f32);
-        let mut bytes = Vec::new();
-        nbt.write(&mut bytes);
-        let borrowed = read_compound(&mut Cursor::new(bytes.as_slice()))
-            .expect("numeric test NBT should reborrow");
-        let view: NbtCompoundView<'_, '_> = (&borrowed).into();
-
-        assert_eq!(
-            view.get("double")
-                .and_then(JukeboxBlockEntity::value_input_long),
-            Some(-1)
-        );
-        assert_eq!(
-            view.get("float")
-                .and_then(JukeboxBlockEntity::value_input_long),
-            Some(0)
         );
     }
 }

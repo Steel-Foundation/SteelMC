@@ -14,6 +14,7 @@ use crate::behavior::InteractionResult;
 use crate::entity::{AgeableMobGroupData, Entity, EntitySpawnReason, Mob, SpawnGroupData};
 use crate::player::Player;
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 const BABY_START_AGE: i32 = -24_000;
 const AGE_LOCK_COOLDOWN_TICKS: i32 = 40;
@@ -326,9 +327,9 @@ pub trait AgeableMob: Mob {
 
     /// Loads vanilla ageable mob fields.
     fn load_ageable_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.set_age(nbt.int("Age").unwrap_or(0));
-        self.set_forced_age(nbt.int("ForcedAge").unwrap_or(0));
-        self.set_age_locked(nbt.byte("AgeLocked").is_some_and(|value| value != 0));
+        self.set_age(nbt.get_i32_or("Age", 0));
+        self.set_forced_age(nbt.get_i32_or("ForcedAge", 0));
+        self.set_age_locked(nbt.get_bool_or("AgeLocked", false));
     }
 }
 

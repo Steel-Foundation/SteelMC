@@ -31,6 +31,7 @@ use crate::entity::{
 use crate::physics::MoverType;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipBlockShape, ClipFluid, ClipHitResult, World};
+use steel_utils::nbt::NbtValueInput as _;
 
 const INITIAL_VERTICAL_VELOCITY: f64 = 0.05;
 const INITIAL_HORIZONTAL_DEVIATION: f64 = 0.002_297;
@@ -425,15 +426,15 @@ impl Entity for FireworkRocketEntity {
         self.load_projectile(nbt);
         {
             let mut state = self.state.lock();
-            state.life = nbt.int("Life").unwrap_or(0);
-            state.lifetime = nbt.int("LifeTime").unwrap_or(0);
+            state.life = nbt.get_i32_or("Life", 0);
+            state.lifetime = nbt.get_i32_or("LifeTime", 0);
         }
         let item = nbt
             .compound("FireworksItem")
             .and_then(|item| ItemStack::from_borrowed_compound(&item))
             .unwrap_or_else(|| ItemStack::new(&vanilla_items::FIREWORK_ROCKET));
         self.set_item(item);
-        self.set_shot_at_angle(nbt.byte("ShotAtAngle").is_some_and(|value| value != 0));
+        self.set_shot_at_angle(nbt.get_bool_or("ShotAtAngle", false));
     }
 }
 

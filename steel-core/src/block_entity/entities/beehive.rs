@@ -9,6 +9,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 /// Maximum number of occupants in a vanilla beehive.
 pub const BEEHIVE_MAX_OCCUPANTS: usize = 3;
@@ -36,10 +37,9 @@ impl BeeOccupant {
             .map_or_else(default_bee_entity_data, |entity_data| {
                 entity_data.to_owned()
             });
-        let ticks_in_hive = nbt.int("ticks_in_hive").unwrap_or(0);
-        let min_ticks_in_hive = nbt
-            .int("min_ticks_in_hive")
-            .unwrap_or(BEEHIVE_MIN_OCCUPATION_TICKS_NECTARLESS);
+        let ticks_in_hive = nbt.get_i32_or("ticks_in_hive", 0);
+        let min_ticks_in_hive =
+            nbt.get_i32_or("min_ticks_in_hive", BEEHIVE_MIN_OCCUPATION_TICKS_NECTARLESS);
 
         Self {
             entity_data,

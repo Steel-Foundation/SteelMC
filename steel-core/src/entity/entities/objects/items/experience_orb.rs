@@ -24,6 +24,7 @@ use crate::fluid::get_fluid_state;
 use crate::physics::{MoverType, WorldCollisionProvider};
 use crate::player::Player;
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 const LIFETIME: i32 = 6000;
 const ENTITY_SCAN_PERIOD: i32 = 20;
@@ -513,16 +514,16 @@ impl Entity for ExperienceOrbEntity {
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         let mut state = self.state.lock();
-        state.health = i32::from(nbt.short("Health").unwrap_or(DEFAULT_HEALTH as i16));
-        state.age = i32::from(nbt.short("Age").unwrap_or(0));
-        if let Some(count) = nbt.int("Count")
+        state.health = i32::from(nbt.get_i16_or("Health", DEFAULT_HEALTH as i16));
+        state.age = i32::from(nbt.get_i16_or("Age", 0));
+        if let Some(count) = nbt.get_i32("Count")
             && count > 0
         {
             state.count = count;
         }
         drop(state);
 
-        self.set_value(i32::from(nbt.short("Value").unwrap_or(0)));
+        self.set_value(i32::from(nbt.get_i16_or("Value", 0)));
     }
 }
 

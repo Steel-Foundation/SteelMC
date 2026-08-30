@@ -19,6 +19,7 @@ use uuid::Uuid;
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::entity::Entity;
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 /// Maximum distance (in blocks) a player can be from a sign while editing.
 /// If they move further away, the edit lock is released.
@@ -102,8 +103,8 @@ impl SignText {
         }
 
         // Load glow
-        if let Some(glow) = nbt.byte("has_glowing_text") {
-            self.has_glowing_text = glow != 0;
+        if let Some(glow) = nbt.get_bool("has_glowing_text") {
+            self.has_glowing_text = glow;
         }
     }
 
@@ -281,8 +282,8 @@ impl BlockEntity for SignBlockEntity {
         }
 
         // Load waxed state
-        if let Some(waxed) = nbt_view.byte("is_waxed") {
-            sign.is_waxed = waxed != 0;
+        if let Some(waxed) = nbt_view.get_bool("is_waxed") {
+            sign.is_waxed = waxed;
         }
     }
 

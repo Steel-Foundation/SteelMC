@@ -15,6 +15,7 @@ use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::vanilla_entity_data::InteractionEntityData;
 use steel_utils::locks::SyncMutex;
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::InteractionHand;
 use steel_utils::{DowncastType, DowncastTypeKey, UuidExt, WorldAabb};
 use uuid::Uuid;
@@ -236,15 +237,11 @@ impl Entity for InteractionEntity {
         let dimensions_changed = {
             let mut guard = self.entity_data.lock();
 
-            guard
-                .width
-                .set(nbt.float(TAG_WIDTH).unwrap_or(DEFAULT_WIDTH));
-            guard
-                .height
-                .set(nbt.float(TAG_HEIGHT).unwrap_or(DEFAULT_HEIGHT));
+            guard.width.set(nbt.get_f32_or(TAG_WIDTH, DEFAULT_WIDTH));
+            guard.height.set(nbt.get_f32_or(TAG_HEIGHT, DEFAULT_HEIGHT));
             guard
                 .response
-                .set(nbt.byte(TAG_RESPONSE).map_or(DEFAULT_RESPONSE, |b| b != 0));
+                .set(nbt.get_bool_or(TAG_RESPONSE, DEFAULT_RESPONSE));
 
             guard.width.is_dirty() || guard.height.is_dirty()
         };
@@ -294,7 +291,7 @@ impl FromNbtTag for PlayerAction {
         let compound = tag.compound()?;
         Some(Self {
             player: Uuid::from_int_array(&compound.int_array(TAG_PLAYER)?)?,
-            timestamp: compound.long(TAG_TIMESTAMP)?,
+            timestamp: compound.get_i64(TAG_TIMESTAMP)?,
         })
     }
 }
@@ -370,14 +367,14 @@ mod tests {
     use crate::entity::Entity;
     use crate::entity::entities::InteractionEntity;
     use crate::entity::entities::objects::technical::interaction::{
-        DEFAULT_HEIGHT, DEFAULT_WIDTH, PlayerAction, TAG_HEIGHT, TAG_WIDTH,
+        DEFAULT_HEIGHT, DEFAULT_WIDTH, PlayerAction, TAG_HEIGHT, TAG_RESPONSE, TAG_WIDTH,
     };
     use crate::test_support::{TestPlayerBuilder, fresh_test_world};
     use glam::DVec3;
     use simdnbt::borrow::read_compound;
     use simdnbt::owned::NbtCompound;
     use std::io::Cursor;
-    use std::sync::Arc;
+    use std::sync::{Arc, Weak};
     use steel_registry::vanilla_entities;
     use steel_utils::types::InteractionHand;
 
@@ -517,5 +514,33 @@ mod tests {
             .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
         interaction.load_additional((&borrowed).into());
         check_dimensions_and_bounding_box(2.0, DEFAULT_HEIGHT);
+    }
+
+    #[test]
+    fn loads_dimensions_and_response_from_any_numeric_tag() {
+        let interaction = InteractionEntity::new(
+            &vanilla_entities::INTERACTION,
+            0,
+            TEST_POSITION,
+            Weak::new(),
+        );
+        interaction.with_entity_data(|data| data.set_response(true));
+
+        let mut compound = NbtCompound::new();
+        compound.insert(TAG_WIDTH, 2_i16);
+        compound.insert(TAG_HEIGHT, 3_f64);
+        compound.insert(TAG_RESPONSE, 0.7_f64);
+        let mut bytes = Vec::new();
+        compound.write(&mut bytes);
+        let borrowed = read_compound(&mut Cursor::new(&bytes))
+            .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
+
+        interaction.load_additional((&borrowed).into());
+
+        interaction.with_entity_data(|data| {
+            assert_eq!(data.width(), 2.0);
+            assert_eq!(data.height(), 3.0);
+            assert!(!data.response());
+        });
     }
 }

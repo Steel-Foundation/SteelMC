@@ -10,6 +10,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::
 
 use crate::block_entity::{BlockEntity, BlockEntityBase, BlockEntityLifecycleExt as _};
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 const SPAWN_TIME: i64 = 200;
 const COOLDOWN_TIME: i32 = 40;
@@ -126,9 +127,9 @@ impl BlockEntity for EndGatewayBlockEntity {
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         let nbt: NbtCompoundView<'_, '_> = nbt.into();
         let mut gateway = self.gateway.lock();
-        gateway.age = nbt.long("Age").unwrap_or(0);
+        gateway.age = nbt.get_i64_or("Age", 0);
         gateway.exit_portal = Self::load_exit_portal(&nbt);
-        gateway.exact_teleport = nbt.byte("ExactTeleport").is_some_and(|value| value != 0);
+        gateway.exact_teleport = nbt.get_bool_or("ExactTeleport", false);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

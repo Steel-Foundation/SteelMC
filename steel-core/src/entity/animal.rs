@@ -24,6 +24,7 @@ use crate::entity::{
 };
 use crate::player::Player;
 use crate::world::{LevelReader, World};
+use steel_utils::nbt::NbtValueInput as _;
 
 const PARENT_AGE_AFTER_BREEDING: i32 = 6000;
 const IN_LOVE_TIME: i32 = 600;
@@ -391,7 +392,7 @@ pub trait Animal: AgeableMob {
 
     /// Loads vanilla animal fields.
     fn load_animal(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.set_in_love_time(nbt.int("InLove").unwrap_or(0));
+        self.set_in_love_time(nbt.get_i32_or("InLove", 0));
         if let Some(love_cause) = nbt.int_array("LoveCause")
             && let Some(uuid) = Uuid::from_int_array(&love_cause)
         {

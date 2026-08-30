@@ -49,6 +49,7 @@ use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
+use steel_utils::nbt::NbtValueInput as _;
 
 const MOB_FLAG_NO_AI: i8 = 1;
 const MOB_FLAG_LEFT_HANDED: i8 = 2;
@@ -86,7 +87,7 @@ impl DropChances {
     }
 
     fn set_equipment_chance(&mut self, slot: EquipmentSlot, chance: f32) -> bool {
-        if chance < 0.0 {
+        if !chance.is_finite() || chance < 0.0 {
             return false;
         }
 
@@ -122,7 +123,7 @@ impl DropChances {
 
         let mut loaded = Self::DEFAULT;
         for slot in EquipmentSlot::ALL {
-            let Some(chance) = drop_chances.float(slot.name()) else {
+            let Some(chance) = drop_chances.get_f32(slot.name()) else {
                 continue;
             };
             if !loaded.set_equipment_chance(slot, chance) {
@@ -661,13 +662,12 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     fn load_mob(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.set_can_pick_up_loot(nbt.byte("CanPickUpLoot").is_some_and(|value| value != 0));
-        *self.mob_base().persistence_required().lock() = nbt
-            .byte("PersistenceRequired")
-            .is_some_and(|value| value != 0);
+        self.set_can_pick_up_loot(nbt.get_bool_or("CanPickUpLoot", false));
+        *self.mob_base().persistence_required().lock() =
+            nbt.get_bool_or("PersistenceRequired", false);
         *self.mob_base().drop_chances().lock() = DropChances::load(nbt);
         *self.mob_base().leash_data().lock() = LeashData::load(nbt);
-        let home_radius = nbt.int("home_radius").unwrap_or(-1);
+        let home_radius = nbt.get_i32_or("home_radius", -1);
         if home_radius >= 0 {
             let home_position = nbt
                 .int_array("home_pos")
@@ -680,14 +680,13 @@ pub trait Mob: LivingEntity + Leashable {
             self.clear_home();
         }
 
-        self.set_left_handed(nbt.byte("LeftHanded").is_some_and(|value| value != 0));
+        self.set_left_handed(nbt.get_bool_or("LeftHanded", false));
         let death_loot_table = nbt
             .string("DeathLootTable")
             .and_then(|loot_table| loot_table.to_str().as_ref().parse().ok());
         *self.mob_base().death_loot_table().lock() = death_loot_table;
-        *self.mob_base().death_loot_table_seed().lock() =
-            nbt.long("DeathLootTableSeed").unwrap_or(0);
-        self.set_no_ai(nbt.byte("NoAI").is_some_and(|value| value != 0));
+        *self.mob_base().death_loot_table_seed().lock() = nbt.get_i64_or("DeathLootTableSeed", 0);
+        self.set_no_ai(nbt.get_bool_or("NoAI", false));
     }
 
     fn set_death_loot_table(&self, loot_table: Option<Identifier>) {

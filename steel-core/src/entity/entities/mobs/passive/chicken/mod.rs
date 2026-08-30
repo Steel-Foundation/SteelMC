@@ -42,6 +42,7 @@ use crate::entity::{
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 const CHICKEN_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.375, 0.0)];
@@ -464,8 +465,8 @@ impl Entity for ChickenEntity {
         self.load_ageable_mob(nbt);
         self.load_animal(nbt);
 
-        self.set_chicken_jockey(nbt.byte("IsChickenJockey").is_some_and(|value| value != 0));
-        if let Some(egg_time) = nbt.int("EggLayTime") {
+        self.set_chicken_jockey(nbt.get_bool_or("IsChickenJockey", false));
+        if let Some(egg_time) = nbt.get_i32("EggLayTime") {
             self.set_egg_time(egg_time);
         }
         if let Some(variant) = nbt.string("variant")

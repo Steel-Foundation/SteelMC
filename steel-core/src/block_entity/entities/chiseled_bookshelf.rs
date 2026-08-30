@@ -15,6 +15,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{vanilla_blocks, vanilla_game_events};
+use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
 
@@ -251,7 +252,7 @@ impl BlockEntity for ChiseledBookShelfBlockEntity {
             && let Some(compounds) = items.compounds()
         {
             for compound in compounds {
-                let Some(slot) = compound.byte(ITEM_SLOT_NBT_KEY) else {
+                let Some(slot) = compound.get_i8(ITEM_SLOT_NBT_KEY) else {
                     continue;
                 };
                 let Ok(slot) = usize::try_from(slot) else {
@@ -264,9 +265,8 @@ impl BlockEntity for ChiseledBookShelfBlockEntity {
                 }
             }
         }
-        container.last_interacted_slot = nbt
-            .int(LAST_INTERACTED_SLOT_NBT_KEY)
-            .unwrap_or(DEFAULT_LAST_INTERACTED_SLOT);
+        container.last_interacted_slot =
+            nbt.get_i32_or(LAST_INTERACTED_SLOT_NBT_KEY, DEFAULT_LAST_INTERACTED_SLOT);
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {

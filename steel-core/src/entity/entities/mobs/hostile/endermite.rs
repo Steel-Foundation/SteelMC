@@ -24,6 +24,7 @@ use crate::entity::{
 };
 use crate::physics::MoveResult;
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 const DEFAULT_STEP_HEIGHT: f32 = 0.6;
 const MAX_LIFETIME: i32 = 2400;
@@ -189,8 +190,8 @@ impl Entity for EndermiteEntity {
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.load_mob(nbt);
-        *self.lifetime.lock() = nbt.int("Lifetime").unwrap_or(0);
-        *self.player_spawned.lock() = nbt.byte("PlayerSpawned").is_some_and(|b| b != 0);
+        *self.lifetime.lock() = nbt.get_i32_or("Lifetime", 0);
+        *self.player_spawned.lock() = nbt.get_bool_or("PlayerSpawned", false);
     }
 }
 

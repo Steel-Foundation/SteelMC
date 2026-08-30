@@ -19,6 +19,7 @@ use crate::entity::{
 };
 use crate::portal::portal_shape::PortalShape;
 use crate::world::World;
+use steel_utils::nbt::NbtValueInput as _;
 
 /// Chest minecart entity state used by mineshaft generation.
 ///
@@ -139,11 +140,11 @@ impl Entity for ChestMinecartEntity {
             .string("LootTable")
             .and_then(|value| Identifier::from_str(&value.to_string()).ok());
         let mut state = self.state.lock();
-        if let Some(first_tick) = nbt.byte("HasTicked") {
-            state.first_tick = first_tick != 0;
+        if let Some(first_tick) = nbt.get_bool("HasTicked") {
+            state.first_tick = first_tick;
         }
         state.loot_table = loot_table;
-        state.loot_table_seed = nbt.long("LootTableSeed").unwrap_or(0);
+        state.loot_table_seed = nbt.get_i64_or("LootTableSeed", 0);
     }
 }
 

@@ -3,6 +3,7 @@
 mod codec;
 mod path;
 mod snbt;
+mod value_input;
 
 use rustc_hash::FxHashSet;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
@@ -16,6 +17,7 @@ pub use snbt::{
     SnbtError, SnbtErrorKind, SnbtNumberType, parse_snbt, parse_snbt_argument, parse_snbt_compound,
     parse_snbt_compound_argument, to_canonical_snbt,
 };
+pub use value_input::{NbtNumber, NbtNumericTag, NbtValueInput};
 
 /// Mirrors vanilla `NbtUtils.compareNbt`.
 #[must_use]
