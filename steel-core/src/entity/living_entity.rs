@@ -1,4 +1,10 @@
 use steel_registry::DyeColor;
+use steel_registry::consume_effect::vanilla_consume_effect_types;
+use steel_registry::consume_effect::{
+    ApplyStatusEffectsConsumeEffect, PlaySoundConsumeEffect, RemoveStatusEffectsConsumeEffect,
+};
+use steel_registry::data_components::vanilla_components::DEATH_PROTECTION;
+use steel_registry::stat::vanilla_stat_types;
 
 use super::*;
 
@@ -648,7 +654,7 @@ pub trait LivingEntity: Entity {
         }
 
         if self.is_dead_or_dying() {
-            if self.check_totem_death_protection(source) {
+            if self.apply_totem_death_protection(source) {
                 // Totem saved the entity — skip death.
             } else {
                 if took_full_damage {
@@ -877,59 +883,35 @@ pub trait LivingEntity: Entity {
         );
     }
 
-    /// Checks whether a held death-protection item (e.g. totem of undying)
-    /// prevents lethal damage. Returns `true` if the item saved the entity.
+    /// Applies a held death-protection item (e.g. totem of undying) to prevent
+    /// lethal damage. Returns `true` if an item saved the entity.
     ///
-    /// Mirrors vanilla `LivingEntity.checkTotemDeathProtection`:
-    /// - Scans main hand then off hand for an item with `DEATH_PROTECTION`.
-    /// - Consumes one item from the found hand.
-    /// - Restores health to 1.
-    /// - Applies the item's `death_effects` list (data-driven).
-    /// - Broadcasts entity event 35 (client plays sound + particles).
-    fn check_totem_death_protection(&self, source: &DamageSource) -> bool {
-        use steel_registry::consume_effect::vanilla_consume_effect_types;
-        use steel_registry::consume_effect::{
-            ApplyStatusEffectsConsumeEffect, PlaySoundConsumeEffect,
-            RemoveStatusEffectsConsumeEffect,
-        };
-        use steel_registry::data_components::vanilla_components::DEATH_PROTECTION;
-
+    /// Mirrors vanilla `LivingEntity.checkTotemDeathProtection`.
+    fn apply_totem_death_protection(&self, source: &DamageSource) -> bool {
         if source.bypasses_invulnerability() {
             return false;
         }
 
-        // Scan hands for a death-protection item (main hand first, then off hand).
-        let mut protection = None;
-        let mut found_slot = None;
-        {
-            let equipment = self.living_base().equipment().lock();
-            for &slot in &[EquipmentSlot::MainHand, EquipmentSlot::OffHand] {
-                let item = equipment.get_ref(slot);
-                if item.is_empty() {
-                    continue;
-                }
-                if let Some(dp) = item.get(DEATH_PROTECTION) {
-                    protection = Some(dp.clone());
-                    found_slot = Some(slot);
-                    break;
+        // Scan hands for a death-protection item (main hand first, then off hand),
+        // consuming it in the same pass once found.
+        let (protection, item_type) = 'scan: {
+            let mut equipment = self.living_base().equipment().lock();
+            for slot in [EquipmentSlot::MainHand, EquipmentSlot::OffHand] {
+                let item = equipment.get_mut(slot);
+                if let Some(protection) = item.get(DEATH_PROTECTION).cloned() {
+                    let item_type = item.item();
+                    item.shrink(1);
+                    break 'scan (protection, item_type);
                 }
             }
-        }
-
-        let Some(slot) = found_slot else {
-            return false;
-        };
-        let Some(protection) = protection else {
             return false;
         };
 
-        // Consume one item from the hand.
-        {
-            let mut equipment = self.living_base().equipment().lock();
-            equipment.get_mut(slot).shrink(1);
+        if let Some(player) = self.as_player() {
+            player.award_stat(&vanilla_stat_types::ITEM_USED, item_type);
         }
 
-        self.set_health(2.0);
+        self.set_health(1.0);
 
         // Apply the item's death effects (data-driven, not hardcoded).
         for effect in protection.death_effects() {
@@ -938,7 +920,7 @@ pub trait LivingEntity: Entity {
                 self.living_base().clear_active_mob_effects();
             } else if let Some(apply) = effect.downcast_ref::<ApplyStatusEffectsConsumeEffect>() {
                 for registry_effect in apply.effects() {
-                    let effect = living_base::MobEffectInstance::with_duration(
+                    let effect = MobEffectInstance::with_duration(
                         registry_effect.effect(),
                         registry_effect.duration(),
                         registry_effect.amplifier(),
