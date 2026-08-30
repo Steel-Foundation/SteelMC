@@ -9,8 +9,8 @@ use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId};
 
 use crate::{
     behavior::{
-        BlockBehavior, BlockCollisionContext, BlockPlaceContext, EntityFallDamage,
-        EntityFallOnContext,
+        BlockBehavior, BlockBehaviorDefaults, BlockCollisionContext, BlockPlaceContext,
+        EntityFallDamage, EntityFallOnContext,
     },
     entity::{Entity, InsideBlockEffectCollector, damage::DamageSource},
     world::{LevelReader, World},
@@ -203,7 +203,15 @@ impl BlockBehavior for HoneyBlock {
             Self::maybe_do_slide_effects(world, entity);
         }
 
-        self.default_entity_inside(state, world, pos, entity, effect_collector, is_precise);
+        BlockBehaviorDefaults::entity_inside(
+            self,
+            state,
+            world,
+            pos,
+            entity,
+            effect_collector,
+            is_precise,
+        );
     }
 }
 

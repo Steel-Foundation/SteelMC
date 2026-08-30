@@ -27,8 +27,8 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::ChickenEntity;
 use crate::entity::{
     AgeableMob, Entity, EntityBase, EntityBaseLoad, EntitySyncedData, Projectile, ProjectileBase,
-    ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile, ThrowableProjectile,
-    next_entity_id,
+    ProjectileDefaults, ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile,
+    ThrowableProjectile, next_entity_id,
 };
 use crate::world::World;
 
@@ -222,7 +222,7 @@ impl Projectile for ThrownEggEntity {
 
     fn on_hit(&self, hit: &ProjectileHit) {
         // Vanilla `ThrownEgg.onHit`: super.onHit() then the server-side hatch.
-        self.projectile_on_hit(hit);
+        ProjectileDefaults::on_hit(self, hit);
 
         let Some(world) = self.level() else {
             return;

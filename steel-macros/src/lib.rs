@@ -3,12 +3,35 @@
 //! Macros for the Steel Minecraft server.
 
 mod behavior;
+mod default_methods;
 mod packet;
 mod read_from;
 mod strategy;
 mod write_to;
 
 use proc_macro::TokenStream;
+
+/// Makes a trait's overridden default implementations explicitly callable.
+///
+/// For a trait named `Entity`, this macro generates an `EntityDefaults` trait.
+/// An implementation can call the original body with
+/// `EntityDefaults::method(self, ...)`.
+#[proc_macro_attribute]
+pub fn default_methods(attributes: TokenStream, item: TokenStream) -> TokenStream {
+    if !attributes.is_empty() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "`default_methods` does not accept arguments",
+        )
+        .into_compile_error()
+        .into();
+    }
+
+    let mut original = syn::parse_macro_input!(item as syn::ItemTrait);
+    default_methods::expand(&mut original)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
 
 /// Marks a struct as a block behavior for auto-registration.
 ///

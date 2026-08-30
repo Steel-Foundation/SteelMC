@@ -7,8 +7,8 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::{
     behavior::{
-        BlockBehavior, BlockPlaceContext, EntityFallDamage, EntityFallOnContext,
-        EntityLandingContext,
+        BlockBehavior, BlockBehaviorDefaults, BlockPlaceContext, EntityFallDamage,
+        EntityFallOnContext, EntityLandingContext,
     },
     entity::{Entity, damage::DamageSource},
     world::World,
@@ -84,7 +84,9 @@ impl BlockBehavior for SlimeBlock {
         context: EntityLandingContext,
     ) -> DVec3 {
         if context.suppresses_bounce {
-            return self.default_update_entity_movement_after_fall_on(state, world, pos, context);
+            return BlockBehaviorDefaults::update_entity_movement_after_fall_on(
+                self, state, world, pos, context,
+            );
         }
 
         Self::velocity_after_fall(context)
@@ -96,7 +98,7 @@ impl BlockBehavior for SlimeBlock {
             entity.is_stepping_carefully(),
         ));
 
-        self.default_step_on(state, world, pos, entity);
+        BlockBehaviorDefaults::step_on(self, state, world, pos, entity);
     }
 }
 

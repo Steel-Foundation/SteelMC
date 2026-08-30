@@ -18,6 +18,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_macros::default_methods;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
@@ -188,6 +189,7 @@ impl<T: Projectile> ProjectileEventSource for T {
 }
 
 /// Vanilla-shaped behavior shared by entities that extend `Projectile`.
+#[default_methods]
 pub trait Projectile: Entity + ProjectileEventSource {
     /// Returns shared projectile runtime state.
     fn projectile_base(&self) -> &ProjectileBase;
@@ -524,15 +526,8 @@ pub trait Projectile: Entity + ProjectileEventSource {
         ProjectileDeflection::None
     }
 
-    /// Vanilla `Projectile.onHit`. Subclasses override this and call
-    /// [`Projectile::projectile_on_hit`] for the base dispatch (`super.onHit()`).
+    /// Vanilla `Projectile.onHit`.
     fn on_hit(&self, hit: &ProjectileHit) {
-        self.projectile_on_hit(hit);
-    }
-
-    /// The base `Projectile.onHit` dispatch to block/entity handlers. Not meant to
-    /// be overridden — override [`Projectile::on_hit`] and delegate here instead.
-    fn projectile_on_hit(&self, hit: &ProjectileHit) {
         let world = self.level();
         match hit {
             ProjectileHit::Entity(entity_hit) => {
@@ -579,12 +574,6 @@ pub trait Projectile: Entity + ProjectileEventSource {
 
     /// Vanilla `Projectile.onHitBlock`.
     fn on_hit_block(&self, hit: &ClipHitResult) {
-        self.projectile_on_hit_block(hit);
-    }
-
-    /// The base `Projectile.onHitBlock` implementation. Concrete projectiles
-    /// that override the hook call this to preserve the Java `super` dispatch.
-    fn projectile_on_hit_block(&self, hit: &ClipHitResult) {
         let Some(world) = self.level() else {
             return;
         };
@@ -1059,14 +1048,17 @@ mod tests {
                     Arc::downgrade(&world),
                 );
                 firework.set_remaining_fire_ticks(1);
-                firework.projectile_on_hit_block(&ClipHitResult {
-                    location: firework.position(),
-                    direction: Direction::Up,
-                    block_pos: pos,
-                    miss: false,
-                    inside: false,
-                    world_border_hit: false,
-                });
+                ProjectileDefaults::on_hit_block(
+                    &firework,
+                    &ClipHitResult {
+                        location: firework.position(),
+                        direction: Direction::Up,
+                        block_pos: pos,
+                        miss: false,
+                        inside: false,
+                        world_border_hit: false,
+                    },
+                );
 
                 assert!(
                     world
@@ -1082,14 +1074,17 @@ mod tests {
                 assert!(
                     world.set_block(campfire_pos, unlit_campfire, UpdateFlags::UPDATE_CLIENTS,)
                 );
-                firework.projectile_on_hit_block(&ClipHitResult {
-                    location: firework.position(),
-                    direction: Direction::Up,
-                    block_pos: campfire_pos,
-                    miss: false,
-                    inside: false,
-                    world_border_hit: false,
-                });
+                ProjectileDefaults::on_hit_block(
+                    &firework,
+                    &ClipHitResult {
+                        location: firework.position(),
+                        direction: Direction::Up,
+                        block_pos: campfire_pos,
+                        miss: false,
+                        inside: false,
+                        world_border_hit: false,
+                    },
+                );
                 assert!(
                     world
                         .get_block_state(campfire_pos)
@@ -1102,14 +1097,17 @@ mod tests {
                     vanilla_blocks::BIG_DRIPLEAF.default_state(),
                     UpdateFlags::UPDATE_CLIENTS,
                 ));
-                firework.projectile_on_hit_block(&ClipHitResult {
-                    location: firework.position(),
-                    direction: Direction::Up,
-                    block_pos: dripleaf_pos,
-                    miss: false,
-                    inside: false,
-                    world_border_hit: false,
-                });
+                ProjectileDefaults::on_hit_block(
+                    &firework,
+                    &ClipHitResult {
+                        location: firework.position(),
+                        direction: Direction::Up,
+                        block_pos: dripleaf_pos,
+                        miss: false,
+                        inside: false,
+                        world_border_hit: false,
+                    },
+                );
                 assert_eq!(
                     world
                         .get_block_state(dripleaf_pos)
@@ -1123,14 +1121,17 @@ mod tests {
                     vanilla_blocks::CHORUS_FLOWER.default_state(),
                     UpdateFlags::UPDATE_CLIENTS,
                 ));
-                firework.projectile_on_hit_block(&ClipHitResult {
-                    location: firework.position(),
-                    direction: Direction::Up,
-                    block_pos: chorus_pos,
-                    miss: false,
-                    inside: false,
-                    world_border_hit: false,
-                });
+                ProjectileDefaults::on_hit_block(
+                    &firework,
+                    &ClipHitResult {
+                        location: firework.position(),
+                        direction: Direction::Up,
+                        block_pos: chorus_pos,
+                        miss: false,
+                        inside: false,
+                        world_border_hit: false,
+                    },
+                );
                 assert!(world.get_block_state(chorus_pos).is_air());
             });
         let result = chunk_map.chunk_runtime.block_on(block_callback_test);

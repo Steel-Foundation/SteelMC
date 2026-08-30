@@ -6,7 +6,7 @@ use steel_registry::vanilla_damage_types;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext},
+    behavior::{BlockBehavior, BlockBehaviorDefaults, BlockPlaceContext},
     entity::{Entity, damage::DamageSource},
     world::World,
 };
@@ -53,7 +53,7 @@ impl BlockBehavior for MagmaBlock {
             );
         }
 
-        self.default_step_on(state, world, pos, entity);
+        BlockBehaviorDefaults::step_on(self, state, world, pos, entity);
     }
 }
 

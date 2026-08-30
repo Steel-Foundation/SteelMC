@@ -25,8 +25,8 @@ use crate::behavior::BLOCK_BEHAVIORS;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityEventSource, EntitySyncedData,
-    InsideBlockEffectCollector, LivingEntity, Projectile, ProjectileBase, ProjectileHit,
-    RemovalReason, SharedEntity,
+    InsideBlockEffectCollector, LivingEntity, Projectile, ProjectileBase, ProjectileDefaults,
+    ProjectileHit, RemovalReason, SharedEntity,
 };
 use crate::physics::MoverType;
 use crate::world::game_event::GameEventContext;
@@ -464,7 +464,7 @@ impl Projectile for FireworkRocketEntity {
                 self.explode(&world);
             }
         }
-        self.projectile_on_hit_block(hit);
+        ProjectileDefaults::on_hit_block(self, hit);
     }
 }
 

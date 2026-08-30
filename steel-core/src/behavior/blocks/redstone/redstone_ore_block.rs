@@ -13,8 +13,8 @@ use steel_utils::value_providers::IntProvider;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::{
-    BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
-    PlacementSource, try_drop_experience,
+    BlockBehavior, BlockBehaviorDefaults, BlockHitResult, BlockPlaceContext, InteractionResult,
+    InventoryAccess, PlacementSource, try_drop_experience,
 };
 use crate::entity::Entity;
 use crate::player::Player;
@@ -57,7 +57,7 @@ impl BlockBehavior for RedStoneOreBlock {
         if !entity.is_stepping_carefully() {
             Self::interact(state, world, pos);
         }
-        self.default_step_on(state, world, pos, entity);
+        BlockBehaviorDefaults::step_on(self, state, world, pos, entity);
     }
 
     fn use_item_on(

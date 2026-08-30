@@ -15,8 +15,8 @@ use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Direction, types::Upda
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::block::{
-    BlockBehavior, BlockCollisionContext, EntityFallDamage, EntityFallOnContext, push_entities_up,
-    schedule_water_tick_if_waterlogged,
+    BlockBehavior, BlockBehaviorDefaults, BlockCollisionContext, EntityFallDamage,
+    EntityFallOnContext, push_entities_up, schedule_water_tick_if_waterlogged,
 };
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::damage::DamageSource;
@@ -112,7 +112,7 @@ impl BlockBehavior for PointedDripstoneBlock {
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
         Self::fall_damage_for_state(state, context.fall_distance)
-            .or_else(|| self.default_fall_on(state, world, pos, context))
+            .or_else(|| BlockBehaviorDefaults::fall_on(self, state, world, pos, context))
     }
 
     fn on_projectile_hit(

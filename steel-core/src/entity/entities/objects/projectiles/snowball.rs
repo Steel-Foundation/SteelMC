@@ -24,7 +24,8 @@ use steel_utils::{DowncastType, DowncastTypeKey};
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntitySyncedData, Projectile, ProjectileBase,
-    ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile, ThrowableProjectile,
+    ProjectileDefaults, ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile,
+    ThrowableProjectile,
 };
 use crate::world::World;
 
@@ -158,7 +159,7 @@ impl Projectile for SnowballEntity {
 
     fn on_hit(&self, hit: &ProjectileHit) {
         // Vanilla `Snowball.onHit`: super.onHit() then the server-side break.
-        self.projectile_on_hit(hit);
+        ProjectileDefaults::on_hit(self, hit);
 
         // VANILLA CLIENT-LOCAL: entity event 3 renders the snowball break
         // particles on clients via `Snowball.handleEntityEvent`; the server

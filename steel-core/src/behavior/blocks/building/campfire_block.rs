@@ -12,7 +12,9 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::block::schedule_water_tick_if_waterlogged;
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, block::schedule_placed_liquid_tick},
+    behavior::{
+        BlockBehavior, BlockBehaviorDefaults, BlockPlaceContext, block::schedule_placed_liquid_tick,
+    },
     entity::{Entity, InsideBlockEffectCollector, damage::DamageSource, projectile::Projectile},
     world::{
         ClipHitResult, LevelAccessor, ScheduledTickAccess, World, game_event::GameEventContext,
@@ -146,7 +148,15 @@ impl BlockBehavior for CampfireBlock {
             );
         }
 
-        self.default_entity_inside(state, world, pos, entity, effect_collector, is_precise);
+        BlockBehaviorDefaults::entity_inside(
+            self,
+            state,
+            world,
+            pos,
+            entity,
+            effect_collector,
+            is_precise,
+        );
     }
 
     fn place_liquid(
