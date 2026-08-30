@@ -8,6 +8,8 @@ mod java;
 pub use java::{BundleBuilder, JavaConnection, JavaNetworkWriter, OutboundPacket};
 pub(crate) use java::{ScheduledPacketExecution, ScheduledPlayPacket};
 
+use std::time::Duration;
+
 use enum_dispatch::enum_dispatch;
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket};
 use steel_protocol::packet_writer::TCPNetworkEncoder;
@@ -19,48 +21,79 @@ use steel_protocol::utils::{ConnectionProtocol, PacketError};
 use steel_utils::locks::AsyncMutex;
 use text_components::TextComponent;
 use tokio::io::AsyncWrite;
+use tokio::time::timeout;
 
 use crate::player::Player;
 
 /// Maximum number of outbound packets drained from the channel per write batch.
 pub const OUTBOUND_BATCH_SIZE: usize = 128;
 
+/// Maximum time an outbound batch write may stay pending on the socket before the
+/// encoder is discarded and the connection is treated as failed.
+///
+/// A client that stops reading fills its socket buffer and leaves the write pending
+/// indefinitely; without a deadline the sender task would hold the encoder and the
+/// writer lock until the connection dies, wedging kicks, keepalive timeouts, and
+/// shutdown. Healthy clients drain a batch in microseconds, so only a stalled peer
+/// ever hits this; 30 s matches vanilla's disconnect-timeout scale.
+pub const OUTBOUND_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Writes a drained batch of outbound packets under a single writer lock, keeping
 /// bundles contiguous and stopping at a disconnect. Returns whether a disconnect was
 /// written, in which case the connection should close afterwards.
 ///
 /// The encoder is taken out of the shared writer slot and only restored on success:
-/// a batch that fails partway leaves the CFB8 cipher state mid-packet, so the encoder
-/// is dropped instead of being reused for later packets.
+/// a batch that fails or stalls partway leaves the CFB8 cipher state mid-packet, so
+/// the encoder is dropped instead of being reused for later packets. The write is
+/// bounded by [`OUTBOUND_WRITE_TIMEOUT`] so a client that stops reading cannot wedge
+/// the sender task.
 pub async fn write_outbound_batch<W: AsyncWrite + Unpin>(
     network_writer: &AsyncMutex<Option<TCPNetworkEncoder<W>>>,
     batch: &mut Vec<OutboundPacket>,
 ) -> Result<bool, PacketError> {
-    let mut writer_guard = network_writer.lock().await;
-    let Some(mut writer) = writer_guard.take() else {
-        return Err(PacketError::ConnectionClosed);
-    };
+    write_outbound_batch_within(network_writer, batch, OUTBOUND_WRITE_TIMEOUT).await
+}
 
-    let mut close_after_write = false;
-    for outbound in batch.drain(..) {
-        match outbound {
-            OutboundPacket::Packet(packet) => writer.write_packet_buffered(&packet).await?,
-            OutboundPacket::Bundle(bundle) => {
-                for packet in bundle {
+/// [`write_outbound_batch`] with an explicit stall deadline; tests use a small one.
+async fn write_outbound_batch_within<W: AsyncWrite + Unpin>(
+    network_writer: &AsyncMutex<Option<TCPNetworkEncoder<W>>>,
+    batch: &mut Vec<OutboundPacket>,
+    write_timeout: Duration,
+) -> Result<bool, PacketError> {
+    let write = async {
+        let mut writer_guard = network_writer.lock().await;
+        let Some(mut writer) = writer_guard.take() else {
+            return Err(PacketError::ConnectionClosed);
+        };
+
+        let mut close_after_write = false;
+        for outbound in batch.drain(..) {
+            match outbound {
+                OutboundPacket::Packet(packet) => writer.write_packet_buffered(&packet).await?,
+                OutboundPacket::Bundle(bundle) => {
+                    for packet in bundle {
+                        writer.write_packet_buffered(&packet).await?;
+                    }
+                }
+                OutboundPacket::Disconnect(packet) => {
                     writer.write_packet_buffered(&packet).await?;
+                    close_after_write = true;
+                    break;
                 }
             }
-            OutboundPacket::Disconnect(packet) => {
-                writer.write_packet_buffered(&packet).await?;
-                close_after_write = true;
-                break;
-            }
         }
-    }
 
-    writer.flush().await?;
-    *writer_guard = Some(writer);
-    Ok(close_after_write)
+        writer.flush().await?;
+        *writer_guard = Some(writer);
+        Ok(close_after_write)
+    };
+
+    // Timing out drops the in-flight write together with the taken encoder and the
+    // lock guard, poisoning the writer slot by absence.
+    match timeout(write_timeout, write).await {
+        Ok(result) => result,
+        Err(_) => Err(PacketError::WriteTimeout),
+    }
 }
 
 /// Client-side settings sent via `SClientInformation` packet.
@@ -389,5 +422,46 @@ mod tests {
             Ok(true)
         ));
         assert!(network_writer.lock().await.is_some());
+    }
+
+    /// Writer that never accepts data: simulates a client that stopped reading.
+    struct StalledWriter;
+
+    impl AsyncWrite for StalledWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Poll::Pending
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Pending
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Pending
+        }
+    }
+
+    #[tokio::test]
+    async fn stalled_batch_write_times_out_and_discards_the_encoder() {
+        let network_writer = AsyncMutex::new(Some(TCPNetworkEncoder::new(StalledWriter)));
+        network_writer
+            .lock()
+            .await
+            .as_mut()
+            .expect("encoder present")
+            .set_encryption(&[0x42; 16]);
+
+        let mut batch = vec![OutboundPacket::Packet(encoded_keep_alive(1))];
+        let result =
+            write_outbound_batch_within(&network_writer, &mut batch, Duration::from_millis(10))
+                .await;
+
+        assert!(matches!(result, Err(PacketError::WriteTimeout)));
+        // A stalled write leaves mid-packet cipher state; the encoder must be gone.
+        assert!(network_writer.lock().await.is_none());
     }
 }
