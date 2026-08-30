@@ -190,6 +190,29 @@ fn configured_profile_server_flows_to_runtime_config() {
 }
 
 #[test]
+fn configured_services_server_flows_to_runtime_config() {
+    let services_server = "https://services.example.com/publickeys";
+    let config_toml = DEFAULT_CONFIG.replace(
+        "online_mode = true",
+        &format!("online_mode = true\nservices_server = \"{services_server}\""),
+    );
+    let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+    assert_eq!(
+        config.server.services_server.as_deref(),
+        Some(services_server)
+    );
+    assert_eq!(
+        config
+            .server
+            .into_runtime_config()
+            .services_server
+            .as_deref(),
+        Some(services_server)
+    );
+}
+
+#[test]
 fn configured_thread_counts_parse_and_flow_to_runtime_config() {
     let config_toml = DEFAULT_CONFIG
         .replace("main_runtime = 0", "main_runtime = 3")
@@ -311,6 +334,20 @@ fn validate_rejects_unsupported_auth_server_scheme() {
     assert_eq!(
         validate(&config.server),
         Err("auth_server must use http or https")
+    );
+}
+
+#[test]
+fn validate_rejects_invalid_services_server_url() {
+    let config_toml = DEFAULT_CONFIG.replace(
+        "online_mode = true",
+        "online_mode = true\nservices_server = \"not a url\"",
+    );
+    let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+    assert_eq!(
+        validate(&config.server),
+        Err("services_server must be an absolute URL")
     );
 }
 

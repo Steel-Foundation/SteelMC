@@ -679,6 +679,7 @@ fn data_struct_ident(simple_name: &str) -> Ident {
 fn sanitize_field_name(name: &str) -> String {
     let field_name = name.trim_end_matches("_id").to_snake_case();
     match field_name.as_str() {
+        "player_mode_customisation" => "player_mode_customization".to_string(),
         "type" => "variant_type".to_string(),
         "self" => "self_ref".to_string(),
         "super" => "super_ref".to_string(),

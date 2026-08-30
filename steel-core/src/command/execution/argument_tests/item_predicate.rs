@@ -11,7 +11,7 @@ fn item_predicate_argument_matches_targets_boolean_terms_and_count_ranges() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("vanilla item predicate grammar should parse");
     };
-    let Some(predicate) = chain.top_context().item_predicate("value") else {
+    let Ok(predicate) = chain.top_context().item_predicate("value") else {
         panic!("item predicate should be retained");
     };
 
@@ -28,7 +28,7 @@ fn item_predicate_argument_decodes_exact_components_before_matching() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("numeric component value should use the registered codec");
     };
-    let Some(predicate) = chain.top_context().item_predicate("value") else {
+    let Ok(predicate) = chain.top_context().item_predicate("value") else {
         panic!("item predicate should be retained");
     };
 
@@ -44,7 +44,7 @@ fn item_predicate_argument_supports_damage_and_enchantment_predicates() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("implemented data component predicates should parse");
     };
-    let Some(predicate) = chain.top_context().item_predicate("value") else {
+    let Ok(predicate) = chain.top_context().item_predicate("value") else {
         panic!("item predicate should be retained");
     };
     let mut sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
@@ -67,7 +67,7 @@ fn item_predicate_argument_supports_partial_custom_data_matching() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("custom data predicate should parse");
     };
-    let Some(predicate) = chain.top_context().item_predicate("value") else {
+    let Ok(predicate) = chain.top_context().item_predicate("value") else {
         panic!("item predicate should be retained");
     };
 
@@ -109,7 +109,7 @@ fn item_predicate_argument_decodes_every_registered_vanilla_partial_predicate() 
         let Ok(chain) = dispatcher.context_chain(parse) else {
             panic!("registered data component predicate should parse: {expression}");
         };
-        assert!(chain.top_context().item_predicate("value").is_some());
+        assert!(chain.top_context().item_predicate("value").is_ok());
     }
 }
 
@@ -124,7 +124,7 @@ fn item_predicate_argument_matches_registered_firework_explosion_predicate() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("firework explosion predicate should parse");
     };
-    let Some(predicate) = chain.top_context().item_predicate("value") else {
+    let Ok(predicate) = chain.top_context().item_predicate("value") else {
         panic!("item predicate should be retained");
     };
     let mut stack = ItemStack::new(&vanilla_items::FIREWORK_STAR);
@@ -155,7 +155,7 @@ fn item_predicate_argument_matches_stream_only_nested_template_without_materiali
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("nested container predicate should parse");
     };
-    let Some(predicate) = chain.top_context().item_predicate("value") else {
+    let Ok(predicate) = chain.top_context().item_predicate("value") else {
         panic!("item predicate should be retained");
     };
 
@@ -193,7 +193,7 @@ fn item_predicate_argument_supports_attribute_modifier_collection_predicates() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("attribute modifier collection predicate should parse");
     };
-    let Some(predicate) = chain.top_context().item_predicate("value") else {
+    let Ok(predicate) = chain.top_context().item_predicate("value") else {
         panic!("item predicate should be retained");
     };
     let mut stack = ItemStack::new(&vanilla_items::STONE);
@@ -251,7 +251,7 @@ fn item_predicate_argument_uses_map_codec_for_component_existence_predicates() {
         let Ok(chain) = dispatcher.context_chain(parse) else {
             panic!("transient component existence predicate should accept a compound");
         };
-        let Some(predicate) = chain.top_context().item_predicate("value") else {
+        let Ok(predicate) = chain.top_context().item_predicate("value") else {
             panic!("item predicate should be retained");
         };
         let mut stack = ItemStack::new(&vanilla_items::STONE);

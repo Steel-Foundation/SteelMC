@@ -7,8 +7,8 @@ use std::sync::{Arc, Weak};
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::vanilla_block_entity_types;
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
+use steel_registry::{vanilla_block_entity_types, vanilla_custom_stats};
 use steel_utils::{BlockPos, BlockStateId, translations};
 use text_components::TextComponent;
 
@@ -31,6 +31,8 @@ pub struct BarrelBlock {
     block: BlockRef,
 }
 
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
+
 impl BarrelBlock {
     /// Creates a new barrel block behavior.
     #[must_use]
@@ -44,11 +46,7 @@ impl BlockBehavior for BarrelBlock {
         // Barrel faces opposite to the player's look direction (all 6 directions).
         let facing = context.get_nearest_looking_direction().opposite();
 
-        Some(
-            self.block
-                .default_state()
-                .set_value(&BlockStateProperties::FACING, facing),
-        )
+        Some(self.block.default_state().set_value(FACING, facing))
     }
 
     fn use_without_item(
@@ -77,7 +75,7 @@ impl BlockBehavior for BarrelBlock {
             move |context| chest(inventory, context.container_id, container_ref, 3),
         );
 
-        // TODO: Award stat OPEN_BARREL
+        player.award_custom_stat(&vanilla_custom_stats::OPEN_BARREL);
         // TODO: Anger nearby piglins (PiglinAi.angerNearbyPiglins)
         // TODO: Implement ContainerOpenersCounter to track open state, play sounds,
         //       and update OPEN block property. Requires scheduled block ticks (scheduleTick)

@@ -117,11 +117,7 @@ fn selected_clock(
                     .component();
                 CommandSyntaxError::dynamic(message)
             }),
-        ClockSelection::Argument(name) => context.world_clock(name).ok_or_else(|| {
-            CommandSyntaxError::dynamic(format!(
-                "Parsed world clock {name} is missing from the command context"
-            ))
-        }),
+        ClockSelection::Argument(name) => context.world_clock(name),
     }
 }
 
@@ -141,9 +137,7 @@ fn set_total_ticks(
     selection: ClockSelection,
 ) -> Result<i32, CommandSyntaxError> {
     let clock = selected_clock(context, selection)?;
-    let Some(total_ticks) = context.time("time") else {
-        return Err(missing_argument("time"));
-    };
+    let total_ticks = context.time("time")?;
     context
         .source()
         .world()
@@ -161,9 +155,7 @@ fn add_time(
     selection: ClockSelection,
 ) -> Result<i32, CommandSyntaxError> {
     let clock = selected_clock(context, selection)?;
-    let Some(ticks) = context.time("time") else {
-        return Err(missing_argument("time"));
-    };
+    let ticks = context.time("time")?;
     let total_ticks = context
         .source()
         .world()
@@ -181,9 +173,7 @@ fn set_time_marker(
     selection: ClockSelection,
 ) -> Result<i32, CommandSyntaxError> {
     let clock = selected_clock(context, selection)?;
-    let Some(marker) = context.identifier("timemarker") else {
-        return Err(missing_argument("timemarker"));
-    };
+    let marker = context.identifier("timemarker")?;
     match context
         .source()
         .world()
@@ -230,9 +220,7 @@ fn set_rate(
     selection: ClockSelection,
 ) -> Result<i32, CommandSyntaxError> {
     let clock = selected_clock(context, selection)?;
-    let Some(rate) = context.float("rate") else {
-        return Err(missing_argument("rate"));
-    };
+    let rate = context.float("rate")?;
     context
         .source()
         .world()
@@ -277,9 +265,7 @@ fn selected_timeline(
     context: &SteelCommandContext<CommandSource>,
     clock: WorldClockRef,
 ) -> Result<TimelineRef, CommandSyntaxError> {
-    let Some(timeline) = context.timeline("timeline") else {
-        return Err(missing_argument("timeline"));
-    };
+    let timeline = context.timeline("timeline")?;
     if timeline.clock != clock {
         let message = wrong_timeline_for_clock_message(clock, timeline);
         return Err(CommandSyntaxError::dynamic(message));
@@ -325,12 +311,6 @@ fn query_timeline_repetitions(
         .component();
     context.source().send_success(&message, false);
     Ok(wrap_time(i64::from(repetitions)))
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
 }
 
 fn missing_clock(clock: WorldClockRef) -> CommandSyntaxError {

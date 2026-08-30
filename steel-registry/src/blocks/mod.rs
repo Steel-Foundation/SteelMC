@@ -21,7 +21,7 @@ use crate::blocks::properties::Property;
 use crate::blocks::shapes::ShapeChannel;
 use crate::fluid::{FluidRef, FluidState};
 use crate::{RegistryExt, RegistryTags, TaggedRegistryExt};
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
 pub type ShapeFn = fn(u16) -> shapes::VoxelShape;
@@ -464,6 +464,11 @@ pub struct BlockRegistry {
     pub next_state_id: u16,
 }
 
+// SAFETY: This Steel-owned key uniquely identifies the block registry.
+unsafe impl DowncastType for BlockRegistry {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:registry/block");
+}
+
 impl Default for BlockRegistry {
     fn default() -> Self {
         Self::new()
@@ -644,6 +649,40 @@ impl BlockRegistry {
         Some(BlockStateId(
             base_state_id + Self::encode_property_indices(block, &property_indices),
         ))
+    }
+
+    /// Applies one dynamically named property value to an existing state.
+    ///
+    /// Returns `None` when the state is invalid or the state's block does not
+    /// define the named property/value pair. This mirrors Vanilla's
+    /// `StateHolder.trySetValue` path used by parsed command block inputs.
+    #[must_use]
+    pub fn try_set_property_by_name(
+        &self,
+        id: BlockStateId,
+        name: &str,
+        value: &str,
+    ) -> Option<BlockStateId> {
+        let block = self.by_state_id(id)?;
+        let block_id = *self.state_to_block_id.get(id.0 as usize)?;
+        let base_state_id = *self.block_to_base_state.get(block_id)?;
+        let property_index = block
+            .properties
+            .iter()
+            .position(|property| property.get_name() == name)?;
+        let property = block.properties[property_index];
+        let new_value_index = (0..property.value_count())
+            .find(|&index| property.value_name_from_index(index) == value)?;
+        let relative_index = id.0.checked_sub(base_state_id)?;
+        let stride = Self::property_stride(block, property_index);
+        let old_value_index = usize::from(relative_index / stride % property.value_count() as u16);
+        let new_relative_index = if new_value_index >= old_value_index {
+            relative_index.checked_add((new_value_index - old_value_index) as u16 * stride)?
+        } else {
+            relative_index.checked_sub((old_value_index - new_value_index) as u16 * stride)?
+        };
+
+        Some(BlockStateId(base_state_id + new_relative_index))
     }
 
     /// Returns every state id of `block` whose properties match all `(name, value)` pairs
@@ -1261,6 +1300,30 @@ mod tests {
     }
 
     #[test]
+    fn dynamically_named_property_update_preserves_other_state_values() {
+        let registry = create_test_registry();
+        let wire = registry
+            .state_id_from_block_defaulted_properties(
+                &vanilla_blocks::REDSTONE_WIRE,
+                [("east", "side"), ("power", "7")],
+            )
+            .expect("redstone wire state should exist");
+
+        let updated = registry
+            .try_set_property_by_name(wire, "east", "up")
+            .expect("dynamic property should update");
+
+        let properties = registry.get_properties(updated);
+        assert!(properties.contains(&("east", "up")));
+        assert!(properties.contains(&("power", "7")));
+        assert!(
+            registry
+                .try_set_property_by_name(updated, "missing", "value")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn test_state_id_from_block_defaulted_properties_keeps_missing_defaults() {
         let registry = create_test_registry();
         let key = Identifier::vanilla_static("redstone_wire");
@@ -1398,7 +1461,7 @@ mod tests {
             .expect("Should find state");
 
         let retrieved = registry.get_properties(state_id);
-        assert!(retrieved.is_empty());
+        assert_eq!(retrieved.len(), 0);
     }
 
     #[test]

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, IntProperty};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -13,11 +13,14 @@ use crate::world::{
 };
 
 use crate::behavior::blocks::redstone::java_hash::sort_small_map_positions;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 
 /// Persistent evaluator used by `RedStoneWireBlock` when redstone experiments are disabled.
 pub(super) struct DefaultRedstoneWireEvaluator {
     wire_block: BlockRef,
 }
+
+const POWER: &IntProperty = &BlockStateProperties::POWER;
 
 impl DefaultRedstoneWireEvaluator {
     pub(super) const fn new(wire_block: BlockRef) -> Self {
@@ -31,14 +34,14 @@ impl DefaultRedstoneWireEvaluator {
         state: BlockStateId,
     ) {
         let target_strength = self.calculate_target_strength(world.as_ref(), pos);
-        if i32::from(state.get_value(&BlockStateProperties::POWER)) == target_strength {
+        if i32::from(state.get_value(POWER)) == target_strength {
             return;
         }
 
         if world.get_block_state(pos) == state {
             world.set_block(
                 pos,
-                state.set_value(&BlockStateProperties::POWER, target_strength as u8),
+                state.set_value(POWER, target_strength as u8),
                 UpdateFlags::UPDATE_CLIENTS,
             );
         }
@@ -51,14 +54,14 @@ impl DefaultRedstoneWireEvaluator {
     fn calculate_target_strength(&self, level: &dyn LevelReader, pos: BlockPos) -> i32 {
         let block_signal =
             get_best_neighbor_signal(level, pos, SignalQueryContext::without_wire_signals());
-        if block_signal == 15 {
+        if block_signal == MAX_REDSTONE_SIGNAL {
             return block_signal;
         }
         block_signal.max(self.get_incoming_wire_signal(level, pos))
     }
 
     fn get_incoming_wire_signal(&self, level: &dyn LevelReader, pos: BlockPos) -> i32 {
-        let mut wire_signal = 0;
+        let mut wire_signal = MIN_REDSTONE_SIGNAL;
 
         for direction in Direction::HORIZONTAL {
             let neighbor_pos = pos.relative(direction);
@@ -79,12 +82,12 @@ impl DefaultRedstoneWireEvaluator {
             }
         }
 
-        0.max(wire_signal - 1)
+        MIN_REDSTONE_SIGNAL.max(wire_signal - 1)
     }
 
     fn get_wire_signal(&self, state: BlockStateId) -> i32 {
         if state.get_block() == self.wire_block {
-            i32::from(state.get_value(&BlockStateProperties::POWER))
+            i32::from(state.get_value(POWER))
         } else {
             0
         }
@@ -122,6 +125,8 @@ mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::test_support::TestLevel;
+
+    const POWER: &IntProperty = &BlockStateProperties::POWER;
 
     fn expected_positions(pos: BlockPos, labels: [&str; 7]) -> [BlockPos; 7] {
         labels.map(|label| match label {
@@ -180,7 +185,7 @@ mod tests {
         let pos = BlockPos::new(0, 64, 0);
         let powered_neighbor = vanilla_blocks::REDSTONE_WIRE
             .default_state()
-            .set_value(&BlockStateProperties::POWER, 15);
+            .set_value(POWER, 15);
         let level = TestLevel::default().with_block(pos.east(), powered_neighbor);
         let evaluator = DefaultRedstoneWireEvaluator::new(&vanilla_blocks::REDSTONE_WIRE);
 

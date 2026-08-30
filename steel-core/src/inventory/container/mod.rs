@@ -117,8 +117,17 @@ pub trait Container: ErasedType + Send + Sync {
         true
     }
 
-    /// Returns true if the specified item can be taken from the specified slot.
-    fn can_take_item(&self, _slot: usize, _stack: &ItemStack) -> bool {
+    /// Returns true if the specified item can be taken from this slot into `destination`.
+    ///
+    /// The destination is part of Vanilla's `Container.canTakeItem` contract. Most
+    /// containers ignore it, while specialized containers such as chiseled
+    /// bookshelves use it to reject transfers that cannot fit at the destination.
+    fn can_take_item(
+        &self,
+        _destination: &dyn Container,
+        _slot: usize,
+        _stack: &ItemStack,
+    ) -> bool {
         true
     }
 

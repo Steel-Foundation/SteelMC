@@ -30,8 +30,6 @@ use steel_utils::serial::ReadFrom;
 use steel_utils::types::UpdateFlags;
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 use text_components::TextComponent;
-use uuid::Uuid;
-
 struct RecordingConnection {
     packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
 }
@@ -69,7 +67,7 @@ fn recording_player(world: &Arc<World>) -> (Arc<Player>, Arc<SyncMutex<Vec<Encod
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
         packets: Arc::clone(&packets),
     })));
-    let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(1), "TestPlayer", 1)
+    let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1)
         .connection(connection)
         .build();
     (player, packets)

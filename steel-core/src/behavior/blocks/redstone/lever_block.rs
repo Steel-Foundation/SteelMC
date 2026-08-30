@@ -5,12 +5,13 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::{sound_events, vanilla_game_events};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::face_attached_horizontal_directional_block::FaceAttachedHorizontalDirectionalBlock;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{
     BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
 };
@@ -23,6 +24,8 @@ use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, SignalQueryC
 pub struct LeverBlock {
     face_attached: FaceAttachedHorizontalDirectionalBlock,
 }
+
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
 
 impl LeverBlock {
     /// Creates lever behavior for `block`.
@@ -41,8 +44,8 @@ impl LeverBlock {
     }
 
     fn pull(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        let powered = !state.get_value(&BlockStateProperties::POWERED);
-        let next_state = state.set_value(&BlockStateProperties::POWERED, powered);
+        let powered = !state.get_value(POWERED);
+        let next_state = state.set_value(POWERED, powered);
         world.set_block(pos, next_state, UpdateFlags::UPDATE_ALL);
         self.update_neighbors(next_state, world, pos);
         Self::emit_transition_effects(world, pos, powered);
@@ -109,7 +112,7 @@ impl BlockBehavior for LeverBlock {
         pos: BlockPos,
         moved_by_piston: bool,
     ) {
-        if !moved_by_piston && state.get_value(&BlockStateProperties::POWERED) {
+        if !moved_by_piston && state.get_value(POWERED) {
             self.update_neighbors(state, world, pos);
         }
     }
@@ -125,10 +128,10 @@ impl BlockBehavior for LeverBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
-        if state.get_value(&BlockStateProperties::POWERED) {
-            15
+        if state.get_value(POWERED) {
+            MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
@@ -140,12 +143,12 @@ impl BlockBehavior for LeverBlock {
         direction: Direction,
         _context: SignalQueryContext,
     ) -> i32 {
-        if state.get_value(&BlockStateProperties::POWERED)
+        if state.get_value(POWERED)
             && FaceAttachedHorizontalDirectionalBlock::connected_direction(state) == direction
         {
-            15
+            MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
@@ -155,19 +158,22 @@ impl BlockBehavior for LeverBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::blocks::properties::AttachFace;
+    use steel_registry::blocks::properties::{AttachFace, EnumProperty};
     use steel_registry::init_vanilla_registry;
     use steel_registry::{sound_events, vanilla_blocks, vanilla_game_events};
 
     use super::*;
     use crate::test_support::TestLevel;
 
+    const ATTACH_FACE: &EnumProperty<AttachFace> = &BlockStateProperties::ATTACH_FACE;
+    const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+
     fn lever_state(facing: Direction, face: AttachFace, powered: bool) -> BlockStateId {
         vanilla_blocks::LEVER
             .default_state()
-            .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing)
-            .set_value(&BlockStateProperties::ATTACH_FACE, face)
-            .set_value(&BlockStateProperties::POWERED, powered)
+            .set_value(HORIZONTAL_FACING, facing)
+            .set_value(ATTACH_FACE, face)
+            .set_value(POWERED, powered)
     }
 
     #[test]

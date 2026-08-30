@@ -54,15 +54,11 @@ fn set_block(
     mode: SetBlockMode,
 ) -> Result<i32, CommandSyntaxError> {
     // Block pos
-    let Some(coordinates) = context.coordinates("pos") else {
-        return Err(missing_argument("pos"));
-    };
+    let coordinates = context.coordinates("pos")?;
     let block_pos = coordinates.block_pos(context.source());
 
     // Block predicate into block state
-    let Some(block_predicate) = context.block_predicate("block") else {
-        return Err(missing_argument("block"));
-    };
+    let block_predicate = context.block_predicate("block")?;
 
     let (block_state, nbt) = match block_predicate {
         BlockPredicate::Block {
@@ -94,15 +90,15 @@ fn set_block(
     // World the player is in
     let level = context.source().world();
 
-    // Keep mode throw an error when you try to replace an air block
-    if matches!(mode, SetBlockMode::Keep) && level.get_block_state(block_pos).is_air() {
+    // Keep mode only places into air; fail if the target is occupied
+    if matches!(mode, SetBlockMode::Keep) && !level.get_block_state(block_pos).is_air() {
         return Ok(set_block_failed(context.source()));
     }
 
     let place_needed = if matches!(mode, SetBlockMode::Destroy) {
         level.destroy_block(block_pos, true);
 
-        !block_state.is_air() || level.get_block_state(block_pos).is_air()
+        !block_state.is_air() || !level.get_block_state(block_pos).is_air()
     } else {
         true
     };
@@ -164,12 +160,6 @@ fn set_block(
     );
 
     Ok(1)
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
 }
 
 fn set_block_failed(source: &CommandSource) -> i32 {

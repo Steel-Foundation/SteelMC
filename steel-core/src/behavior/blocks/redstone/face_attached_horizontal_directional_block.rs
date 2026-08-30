@@ -2,13 +2,18 @@
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{AttachFace, BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{
+    AttachFace, BlockStateProperties, Direction, EnumProperty,
+};
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::axis::Axis;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::BlockPlaceContext;
 use crate::world::LevelReader;
+
+const ATTACH_FACE: &EnumProperty<AttachFace> = &BlockStateProperties::ATTACH_FACE;
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 
 /// Shared behavior inherited from vanilla's `FaceAttachedHorizontalDirectionalBlock`.
 pub(super) struct FaceAttachedHorizontalDirectionalBlock {
@@ -22,10 +27,10 @@ impl FaceAttachedHorizontalDirectionalBlock {
     }
 
     pub(super) fn connected_direction(state: BlockStateId) -> Direction {
-        match state.get_value(&BlockStateProperties::ATTACH_FACE) {
+        match state.get_value(ATTACH_FACE) {
             AttachFace::Ceiling => Direction::Down,
             AttachFace::Floor => Direction::Up,
-            AttachFace::Wall => state.get_value(&BlockStateProperties::HORIZONTAL_FACING),
+            AttachFace::Wall => state.get_value(HORIZONTAL_FACING),
         }
     }
 
@@ -51,25 +56,19 @@ impl FaceAttachedHorizontalDirectionalBlock {
                 self.block
                     .default_state()
                     .set_value(
-                        &BlockStateProperties::ATTACH_FACE,
+                        ATTACH_FACE,
                         if direction == Direction::Up {
                             AttachFace::Ceiling
                         } else {
                             AttachFace::Floor
                         },
                     )
-                    .set_value(
-                        &BlockStateProperties::HORIZONTAL_FACING,
-                        context.horizontal_direction(),
-                    )
+                    .set_value(HORIZONTAL_FACING, context.horizontal_direction())
             } else {
                 self.block
                     .default_state()
-                    .set_value(&BlockStateProperties::ATTACH_FACE, AttachFace::Wall)
-                    .set_value(
-                        &BlockStateProperties::HORIZONTAL_FACING,
-                        direction.opposite(),
-                    )
+                    .set_value(ATTACH_FACE, AttachFace::Wall)
+                    .set_value(HORIZONTAL_FACING, direction.opposite())
             };
 
             if Self::can_survive(state, context.world.as_ref(), context.place_pos()) {

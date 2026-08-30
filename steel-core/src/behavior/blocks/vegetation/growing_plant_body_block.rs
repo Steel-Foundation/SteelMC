@@ -13,7 +13,7 @@ use crate::{
         block::default_can_be_replaced,
         blocks::vegetation::{
             bonemealable::{BonemealAction, Bonemealable},
-            get_top_connected_block, growing_plant_can_survive,
+            get_top_connected_block, growing_plant_block,
             growing_plant_head_block::GrowingPlantHeadBlock,
         },
     },
@@ -93,7 +93,7 @@ impl BlockBehavior for GrowingPlantBodyBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        growing_plant_can_survive(
+        growing_plant_block::can_survive(
             world,
             pos,
             self.growth_direction,

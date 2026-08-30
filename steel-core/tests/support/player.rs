@@ -17,6 +17,7 @@ pub(crate) fn test_runtime_config(max_players: u32) -> Arc<RuntimeConfig> {
         online_mode: false,
         auth_server: None,
         profile_server: None,
+        services_server: None,
         encryption: false,
         allow_flight: false,
         motd: String::new(),
@@ -39,6 +40,7 @@ pub(crate) struct TestPlayerBuilder {
     world: Arc<World>,
     context: TestPlayerContext,
     entity_id: i32,
+    client_information: ClientInformation,
 }
 
 enum TestPlayerContext {
@@ -50,15 +52,10 @@ enum TestPlayerContext {
 }
 
 impl TestPlayerBuilder {
-    pub(crate) fn new(
-        world: Arc<World>,
-        uuid: Uuid,
-        name: impl Into<String>,
-        entity_id: i32,
-    ) -> Self {
+    pub(crate) fn new(world: Arc<World>, name: impl Into<String>, entity_id: i32) -> Self {
         Self {
             profile: GameProfile {
-                id: uuid,
+                id: Uuid::new_v4(),
                 name: name.into(),
                 properties: Vec::new(),
                 profile_actions: None,
@@ -67,7 +64,13 @@ impl TestPlayerBuilder {
             world,
             context: TestPlayerContext::Detached(test_runtime_config(1)),
             entity_id,
+            client_information: ClientInformation::default(),
         }
+    }
+
+    pub(crate) fn uuid(mut self, uuid: Uuid) -> Self {
+        self.profile.id = uuid;
+        self
     }
 
     pub(crate) fn connection(mut self, connection: Arc<PlayerConnection>) -> Self {
@@ -88,6 +91,11 @@ impl TestPlayerBuilder {
         self
     }
 
+    pub(crate) fn client_information(mut self, client_information: ClientInformation) -> Self {
+        self.client_information = client_information;
+        self
+    }
+
     pub(crate) fn build(self) -> Arc<Player> {
         let (server, config) = match self.context {
             TestPlayerContext::Detached(config) => (Weak::new(), config),
@@ -100,7 +108,7 @@ impl TestPlayerBuilder {
             server,
             config,
             self.entity_id,
-            ClientInformation::default(),
+            self.client_information,
         ))
     }
 }

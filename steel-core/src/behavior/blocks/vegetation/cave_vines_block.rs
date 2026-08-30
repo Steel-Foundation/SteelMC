@@ -28,16 +28,28 @@ use super::BlockRef;
 /// Vanilla `CaveVinesBlock` (head) survival.
 #[block_behavior]
 pub struct CaveVinesBlock {
-    block: BlockRef,
+    base: GrowingPlantHeadBlock,
 }
 
-const BERRIES: BoolProperty = BlockStateProperties::BERRIES;
+const BERRIES: &BoolProperty = &BlockStateProperties::BERRIES;
 
 impl CaveVinesBlock {
     /// Creates a new cave vines (head) block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
-        Self { block }
+        Self {
+            base: GrowingPlantHeadBlock::new(
+                block,
+                Direction::Down,
+                false,
+                0.1,
+                &vanilla_blocks::CAVE_VINES_PLANT,
+                None,
+                Self::can_grow_into,
+            )
+            .with_update_body_after_converted_from_head(Self::update_body_after_converted_from_head)
+            .with_update_grow_into_state(Self::update_grow_into_state),
+        }
     }
 
     /// Cave Vines `canGrowInto()`
@@ -46,29 +58,15 @@ impl CaveVinesBlock {
         state.is_air()
     }
 
-    const fn growing_plant_head_block(&self) -> GrowingPlantHeadBlock {
-        GrowingPlantHeadBlock::new(
-            self.block,
-            Direction::Down,
-            false,
-            0.1,
-            &vanilla_blocks::CAVE_VINES_PLANT,
-            None,
-            Self::can_grow_into,
-        )
-        .with_update_body_after_converted_from_head(Self::update_body_after_converted_from_head)
-        .with_update_grow_into_state(Self::update_grow_into_state)
-    }
-
     fn update_body_after_converted_from_head(
         head_state: BlockStateId,
         body_state: BlockStateId,
     ) -> BlockStateId {
-        body_state.set_value(&BERRIES, head_state.get_value(&BERRIES))
+        body_state.set_value(BERRIES, head_state.get_value(BERRIES))
     }
 
     fn update_grow_into_state(state: BlockStateId, rng: &mut dyn Rng) -> BlockStateId {
-        state.set_value(&BERRIES, rng.random::<f32>() < 0.11)
+        state.set_value(BERRIES, rng.random::<f32>() < 0.11)
     }
 
     /// Shared behavior use block between cave vine block and plant
@@ -78,7 +76,7 @@ impl CaveVinesBlock {
         world: &Arc<World>,
         pos: BlockPos,
     ) -> InteractionResult {
-        if !state.get_value(&BERRIES) {
+        if !state.get_value(BERRIES) {
             return InteractionResult::Pass;
         }
         let mut rng = rand::rng();
@@ -99,7 +97,7 @@ impl CaveVinesBlock {
             pitch,
             None,
         );
-        let new_state = state.set_value(&BERRIES, false);
+        let new_state = state.set_value(BERRIES, false);
         world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
@@ -123,13 +121,11 @@ impl BlockBehavior for CaveVinesBlock {
         CaveVinesBlock::use_block(player, state, world, pos)
     }
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        self.growing_plant_head_block()
-            .can_survive(state, world, pos)
+        self.base.can_survive(state, world, pos)
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_head_block()
-            .random_tick(state, world, pos);
+        self.base.random_tick(state, world, pos);
     }
 
     fn update_shape(
@@ -141,22 +137,15 @@ impl BlockBehavior for CaveVinesBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        self.growing_plant_head_block().update_shape(
-            state,
-            world,
-            pos,
-            direction,
-            neighbor_pos,
-            neighbor_state,
-        )
+        self.base
+            .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_head_block().tick(state, world, pos);
+        self.base.tick(state, world, pos);
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        self.growing_plant_head_block()
-            .get_state_for_placement(context)
+        self.base.get_state_for_placement(context)
     }
 
     fn get_clone_item_stack(
@@ -179,7 +168,7 @@ impl Bonemealable for CaveVinesBlock {
         _world: &dyn LevelReader,
         _pos: BlockPos,
     ) -> bool {
-        !state.get_value(&BERRIES)
+        !state.get_value(BERRIES)
     }
 
     fn perform_bonemeal(
@@ -191,7 +180,7 @@ impl Bonemealable for CaveVinesBlock {
     ) {
         world.set_block(
             pos,
-            state.set_value(&BERRIES, true),
+            state.set_value(BERRIES, true),
             UpdateFlags::UPDATE_CLIENTS,
         );
     }
@@ -216,7 +205,7 @@ mod tests {
         let behavior = CaveVinesBlock::new(&vanilla_blocks::CAVE_VINES);
         let state = vanilla_blocks::CAVE_VINES
             .default_state()
-            .set_value(&BERRIES, true);
+            .set_value(BERRIES, true);
         let level = TestLevel::default();
 
         let converted = behavior.update_shape(
@@ -229,7 +218,7 @@ mod tests {
         );
 
         assert_eq!(converted.get_block(), &vanilla_blocks::CAVE_VINES_PLANT);
-        assert!(converted.get_value(&BERRIES));
+        assert!(converted.get_value(BERRIES));
     }
 
     #[test]
@@ -239,7 +228,7 @@ mod tests {
         let state = vanilla_blocks::CAVE_VINES.default_state();
         let mut rng = StdRng::seed_from_u64(1);
         let berry_states = (0..256)
-            .filter(|_| CaveVinesBlock::update_grow_into_state(state, &mut rng).get_value(&BERRIES))
+            .filter(|_| CaveVinesBlock::update_grow_into_state(state, &mut rng).get_value(BERRIES))
             .count();
 
         assert!(berry_states > 0);

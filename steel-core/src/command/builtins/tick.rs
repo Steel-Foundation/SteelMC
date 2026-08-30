@@ -32,9 +32,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                 .then(literal("stop").executes(stop_step))
                 .then(
                     argument("time", SteelArgumentType::time(1)).executes(|context| {
-                        let Some(ticks) = context.time("time") else {
-                            return Err(missing_argument("time"));
-                        };
+                        let ticks = context.time("time")?;
                         step(context, ticks)
                     }),
                 ),
@@ -44,9 +42,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                 .then(literal("stop").executes(stop_sprint))
                 .then(
                     argument("time", SteelArgumentType::time(1)).executes(|context| {
-                        let Some(ticks) = context.time("time") else {
-                            return Err(missing_argument("time"));
-                        };
+                        let ticks = context.time("time")?;
                         sprint(context, ticks)
                     }),
                 ),
@@ -150,9 +146,7 @@ fn query_tick(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comma
     reason = "the bounded tick rate intentionally returns its truncated command result"
 )]
 fn set_tick_rate(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
-    let Some(rate) = context.float("rate") else {
-        return Err(missing_argument("rate"));
-    };
+    let rate = context.float("rate")?;
     context
         .source()
         .server()
@@ -314,12 +308,6 @@ fn stop_sprint(context: &SteelCommandContext<CommandSource>) -> Result<i32, Comm
         ));
         Ok(0)
     }
-}
-
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed `{name}` is missing from the tick command context"
-    ))
 }
 
 #[cfg(test)]

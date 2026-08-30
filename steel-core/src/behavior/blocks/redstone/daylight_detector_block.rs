@@ -8,11 +8,12 @@ use steel_math::trig;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, IntProperty};
 use steel_registry::{vanilla_block_entity_types, vanilla_game_events};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{
     BlockBehavior, BlockEntityCreation, BlockHitResult, BlockPlaceContext, InteractionResult,
     InventoryAccess,
@@ -31,6 +32,9 @@ pub struct DaylightDetectorBlock {
     block: BlockRef,
 }
 
+const INVERTED: &BoolProperty = &BlockStateProperties::INVERTED;
+const POWER: &IntProperty = &BlockStateProperties::POWER;
+
 impl DaylightDetectorBlock {
     /// Creates daylight-detector behavior.
     #[must_use]
@@ -43,32 +47,29 @@ impl DaylightDetectorBlock {
         Self::calculate_signal_strength(
             sky_brightness,
             world.sun_angle_degrees(),
-            state.get_value(&BlockStateProperties::INVERTED),
+            state.get_value(INVERTED),
         )
     }
 
     fn calculate_signal_strength(sky_brightness: u8, sun_angle_degrees: f32, inverted: bool) -> u8 {
         if inverted {
-            return 15 - sky_brightness;
+            return MAX_REDSTONE_SIGNAL as u8 - sky_brightness;
         }
         if sky_brightness == 0 {
-            return 0;
+            return MIN_REDSTONE_SIGNAL as u8;
         }
 
         let mut sun_angle = sun_angle_degrees * DEGREES_TO_RADIANS;
         let offset = if sun_angle < PI { 0.0 } else { TAU };
         sun_angle += (offset - sun_angle) * 0.2;
-        java_round(f32::from(sky_brightness) * trig::cos(f64::from(sun_angle))).clamp(0, 15) as u8
+        java_round(f32::from(sky_brightness) * trig::cos(f64::from(sun_angle)))
+            .clamp(MIN_REDSTONE_SIGNAL, MAX_REDSTONE_SIGNAL) as u8
     }
 
     fn update_signal_strength(world: &Arc<World>, pos: BlockPos, state: BlockStateId) {
         let target = Self::signal_strength(world, pos, state);
-        if state.get_value(&BlockStateProperties::POWER) != target {
-            world.set_block(
-                pos,
-                state.set_value(&BlockStateProperties::POWER, target),
-                UpdateFlags::UPDATE_ALL,
-            );
+        if state.get_value(POWER) != target {
+            world.set_block(pos, state.set_value(POWER, target), UpdateFlags::UPDATE_ALL);
         }
     }
 }
@@ -99,10 +100,7 @@ impl BlockBehavior for DaylightDetectorBlock {
             return InteractionResult::Pass;
         }
 
-        let new_state = state.set_value(
-            &BlockStateProperties::INVERTED,
-            !state.get_value(&BlockStateProperties::INVERTED),
-        );
+        let new_state = state.set_value(INVERTED, !state.get_value(INVERTED));
         world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
@@ -124,7 +122,7 @@ impl BlockBehavior for DaylightDetectorBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
-        i32::from(state.get_value(&BlockStateProperties::POWER))
+        i32::from(state.get_value(POWER))
     }
 
     fn new_block_entity(
