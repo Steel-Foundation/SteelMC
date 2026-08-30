@@ -1,5 +1,7 @@
 //! Shared equipment slot definitions.
 
+use steel_utils::entity_events::EntityStatus;
+
 /// Equipment slot types for categorization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EquipmentSlotType {
@@ -159,6 +161,21 @@ impl EquipmentSlot {
             EquipmentSlot::Head => "head",
             EquipmentSlot::Body => "body",
             EquipmentSlot::Saddle => "saddle",
+        }
+    }
+}
+
+impl From<EquipmentSlot> for EntityStatus {
+    fn from(value: EquipmentSlot) -> Self {
+        match value {
+            EquipmentSlot::MainHand => EntityStatus::MainhandBreak,
+            EquipmentSlot::OffHand => EntityStatus::OffhandBreak,
+            EquipmentSlot::Head => EntityStatus::HeadBreak,
+            EquipmentSlot::Chest => EntityStatus::ChestBreak,
+            EquipmentSlot::Legs => EntityStatus::LegsBreak,
+            EquipmentSlot::Feet => EntityStatus::FeetBreak,
+            EquipmentSlot::Body => EntityStatus::BodyBreak,
+            EquipmentSlot::Saddle => EntityStatus::SaddleBreak,
         }
     }
 }
