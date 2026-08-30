@@ -3118,3 +3118,55 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
         }
     });
 }
+
+#[test]
+fn load_favicon_rejects_invalid_pngs_like_vanilla() {
+    // `fs` at module scope is `tokio::fs`; the loader under test runs sync.
+    use std::{fs, process};
+
+    let header = |width: u32, height: u32| -> Vec<u8> {
+        let mut bytes = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+        bytes.extend_from_slice(&13u32.to_be_bytes());
+        bytes.extend_from_slice(b"IHDR");
+        bytes.extend_from_slice(&width.to_be_bytes());
+        bytes.extend_from_slice(&height.to_be_bytes());
+        bytes
+    };
+
+    let mut config = Arc::unwrap_or_clone(test_runtime_config());
+    config.use_favicon = true;
+
+    // A valid 64x64 icon is cached as a data URL.
+    let path = temp_dir().join(format!("steel-favicon-64-{}", process::id()));
+    fs::write(&path, header(64, 64)).expect("test favicon should be writable");
+    config.favicon = path.display().to_string();
+    let favicon = super::load_favicon(&config).expect("a 64x64 PNG should load");
+    assert!(favicon.starts_with("data:image/png;base64,"));
+    let _ = fs::remove_file(&path);
+
+    // Wrong dimensions, a bad signature, and a truncated file are all rejected, like
+    // vanilla `loadStatusIcon` via `PngInfo`.
+    let cases = [
+        ("wrong-size", header(63, 64)),
+        ("bad-signature", {
+            let mut bytes = header(64, 64);
+            bytes[0] = 0x00;
+            bytes
+        }),
+        ("truncated", vec![0x89, b'P', b'N', b'G']),
+    ];
+    for (name, contents) in cases {
+        let path = temp_dir().join(format!("steel-favicon-{name}-{}", process::id()));
+        fs::write(&path, contents).expect("test favicon should be writable");
+        config.favicon = path.display().to_string();
+        assert!(
+            super::load_favicon(&config).is_none(),
+            "{name} should be rejected"
+        );
+        let _ = fs::remove_file(&path);
+    }
+
+    // Disabled favicons never load, even when the file is valid.
+    config.use_favicon = false;
+    assert!(super::load_favicon(&config).is_none());
+}

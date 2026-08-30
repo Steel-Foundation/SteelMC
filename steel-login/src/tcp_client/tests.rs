@@ -5,12 +5,16 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     task::Poll,
+    time::{Duration, Instant},
 };
 
 use crossbeam::atomic::AtomicCell;
 use tokio_util::sync::CancellationToken;
 
-use super::{LoginDeadline, LoginOperationResult, await_login_operation};
+use super::{
+    KeepAliveDecision, LoginDeadline, LoginOperationResult, PrePlayKeepAliveTracker,
+    await_login_operation,
+};
 
 struct DropSignal(Arc<AtomicBool>);
 
@@ -73,4 +77,58 @@ async fn configuration_handoff_disables_ready_login_deadline() {
     let result = await_login_operation(&cancel_token, &login_deadline, operation, ready(())).await;
 
     assert!(matches!(result, LoginOperationResult::Completed(())));
+}
+
+#[test]
+fn keepalive_decisions_match_vanilla_boundaries() {
+    let now = Instant::now();
+    let mut tracker = PrePlayKeepAliveTracker {
+        last_sent: now,
+        pending: None,
+        latency: 0,
+    };
+
+    // Fresh phase: nothing is due before a full interval.
+    assert!(matches!(
+        tracker.tick(now + Duration::from_secs(14)),
+        KeepAliveDecision::None
+    ));
+
+    // One interval after entering the phase: a challenge goes out and re-anchors the
+    // send cadence, like vanilla `keepConnectionAlive`.
+    let KeepAliveDecision::Send(challenge) = tracker.tick(now + Duration::from_secs(15)) else {
+        panic!("a challenge is due after one interval");
+    };
+    assert_eq!(tracker.pending, Some(challenge));
+    assert_eq!(tracker.last_sent, now + Duration::from_secs(15));
+
+    // A challenge left unanswered for a full interval is a timeout kick.
+    assert!(matches!(
+        tracker.tick(tracker.last_sent + Duration::from_secs(15)),
+        KeepAliveDecision::Timeout
+    ));
+}
+
+#[test]
+fn keepalive_answer_smooths_latency_and_rejects_out_of_order() {
+    let now = Instant::now();
+    let mut tracker = PrePlayKeepAliveTracker {
+        last_sent: now,
+        pending: Some(1234),
+        latency: 100,
+    };
+
+    // A wrong id is out of order and changes nothing (vanilla kicks with a timeout).
+    assert!(!tracker.answer(999, now + Duration::from_millis(40)));
+    assert_eq!(tracker.pending, Some(1234));
+    assert_eq!(tracker.latency, 100);
+
+    // The matching id is accepted and smooths the latency like vanilla `handleKeepAlive`:
+    // (100 * 3 + 40) / 4 = 85.
+    assert!(tracker.answer(1234, now + Duration::from_millis(40)));
+    assert_eq!(tracker.pending, None);
+    assert_eq!(tracker.latency, 85);
+
+    // A duplicate answer without a pending challenge is out of order too.
+    assert!(!tracker.answer(1234, now + Duration::from_millis(50)));
 }

@@ -397,13 +397,15 @@ pub struct JavaConnection {
 }
 
 impl JavaConnection {
-    /// Creates a new `JavaConnection`.
+    /// Creates a new `JavaConnection`, seeding the smoothed latency measured during the
+    /// configuration phase (vanilla carries it in `CommonListenerCookie`).
     pub const fn new(
         outgoing_packets: UnboundedSender<OutboundPacket>,
         cancel_token: CancellationToken,
         compression: Option<CompressionInfo>,
         network_writer: JavaNetworkWriter,
         id: u64,
+        latency: u32,
         player: Weak<Player>,
     ) -> Self {
         Self {
@@ -418,7 +420,7 @@ impl JavaConnection {
                 alive_pending: false,
                 alive_id: 0,
             }),
-            latency: SyncMutex::new(0),
+            latency: SyncMutex::new(latency),
         }
     }
 
