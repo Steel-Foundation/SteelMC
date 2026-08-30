@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::worldgen::template::{
     StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
 };
@@ -122,7 +120,7 @@ impl FeatureDecorationRunner {
         true
     }
 
-    fn load_fossil_template(registry: &Registry, key: &Identifier) -> Arc<StructureTemplate> {
+    fn load_fossil_template(registry: &Registry, key: &Identifier) -> StructureTemplate {
         match StructureTemplate::load_vanilla(registry, key) {
             Ok(template) => template,
             Err(err) => panic!("{err}"),

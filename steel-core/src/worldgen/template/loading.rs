@@ -1,34 +1,11 @@
-use std::sync::{Arc, LazyLock};
-
-use parking_lot::RwLockUpgradableReadGuard;
-use rustc_hash::FxHashMap;
-use steel_utils::locks::SyncRwLock;
-
 use super::*;
 
-/// Process-wide cache of parsed vanilla structure templates.
-///
-/// Bundled template NBT is immutable, so each template is decompressed and
-/// parsed at most once; every placement afterwards shares the parsed result.
-static VANILLA_TEMPLATE_CACHE: LazyLock<SyncRwLock<FxHashMap<Identifier, Arc<StructureTemplate>>>> =
-    LazyLock::new(|| SyncRwLock::new(FxHashMap::default()));
-
 impl StructureTemplate {
-    pub(crate) fn load_vanilla(registry: &Registry, key: &Identifier) -> Result<Arc<Self>, String> {
-        // Upgradable read keeps cache hits reader-parallel and still makes the
-        // miss path exclusive before parsing, so the map is looked up exactly
-        // once per call and no interleaving writer can double-insert.
-        let cache = VANILLA_TEMPLATE_CACHE.upgradable_read();
-        if let Some(template) = cache.get(key) {
-            return Ok(Arc::clone(template));
-        }
-
-        let mut cache = RwLockUpgradableReadGuard::upgrade(cache);
-        let bytes = vanilla_template_pools::vanilla_template_nbt_bytes(key)
-            .ok_or_else(|| format!("vanilla structure template {key} is not bundled"))?;
-        let template = Arc::new(Self::load_gzip_nbt(registry, bytes, &key.to_string())?);
-        cache.insert(key.clone(), Arc::clone(&template));
-        Ok(template)
+    pub(crate) fn load_vanilla(registry: &Registry, key: &Identifier) -> Result<Self, String> {
+        let Some(bytes) = vanilla_template_pools::vanilla_template_nbt_bytes(key) else {
+            return Err(format!("vanilla structure template {key} is not bundled"));
+        };
+        Self::load_gzip_nbt(registry, bytes, &key.to_string())
     }
 
     pub(super) fn load_gzip_nbt(
