@@ -24,6 +24,7 @@ use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::translations;
 use text_components::Modifier;
 use text_components::TextComponent;
+use text_components::format::Color;
 use text_components::interactivity::{ClickEvent, HoverEvent};
 
 use crate::entity::Entity;
@@ -350,6 +351,15 @@ impl Player {
     /// Sends an overlay system message to the player
     pub fn send_overlay_message(&self, text: &TextComponent) {
         self.send_packet(CSystemChat::new(text, true, self));
+    }
+
+    /// Sends vanilla's red upper build-height limit overlay.
+    pub(crate) fn send_build_limit_too_high_message(&self, limit: i32) {
+        let limit = TextComponent::plain(limit.to_string());
+        let message = translations::BUILD_TOO_HIGH
+            .message([limit])
+            .color(Color::Red);
+        self.send_overlay_message(&message);
     }
 
     /// Updates the player's chat session and initializes the message chain.
