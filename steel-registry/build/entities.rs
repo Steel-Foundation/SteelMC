@@ -196,6 +196,14 @@ pub(crate) fn build() -> TokenStream {
             .class_hierarchy
             .iter()
             .any(|class| class.simple_name == "AbstractArrow");
+        let is_abstract_horse = entity_type
+            .class_hierarchy
+            .iter()
+            .any(|class| class.simple_name == "AbstractHorse");
+        let is_abstract_nautilus = entity_type
+            .class_hierarchy
+            .iter()
+            .any(|class| class.simple_name == "AbstractNautilus");
 
         // Flags (with defaults for entities that don't have them, like fishing_bobber)
         let flags = entity_type.flags.as_ref();
@@ -257,6 +265,8 @@ pub(crate) fn build() -> TokenStream {
                 is_abstract_minecart: #is_abstract_minecart,
                 is_projectile: #is_projectile,
                 is_abstract_arrow: #is_abstract_arrow,
+                is_abstract_horse: #is_abstract_horse,
+                is_abstract_nautilus: #is_abstract_nautilus,
                 flags: EntityFlags {
                     is_pushable: #is_pushable,
                     is_attackable: #is_attackable,

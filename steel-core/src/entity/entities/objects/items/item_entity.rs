@@ -10,8 +10,8 @@ use glam::DVec3;
 use steel_macros::entity_behavior;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::vanilla_damage_types;
 use steel_registry::vanilla_entity_data::ItemEntityData;
+use steel_registry::{vanilla_custom_stats, vanilla_damage_types};
 use steel_utils::UuidExt;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
@@ -32,6 +32,8 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::CTakeItemEntity;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::stat::vanilla_stat_types;
+use steel_registry::vanilla_item_tags::ItemTag;
 use steel_utils::BlockPos;
 
 /// Maximum age in ticks before despawn (5 minutes = 6000 ticks).
@@ -332,6 +334,19 @@ impl ItemEntity {
 
         // Calculate how many items were picked up
         let picked_up_count = original_count - item.count();
+
+        // Vanilla uses the stack's count to award the stat that many items picked up, which is
+        // wrong if not all the items get picked up by the player. This could be considered
+        // buggy, but it's possible that people depend on this behavior.
+        player.award_stat_with_count(
+            &vanilla_stat_types::ITEM_PICKED_UP,
+            item.item,
+            original_count,
+        );
+
+        if item.item.has_tag(&ItemTag::FISHES) {
+            player.award_custom_stat(&vanilla_custom_stats::FISH_CAUGHT);
+        }
 
         // Send the take animation packet to nearby players
         if let Some(world) = self.level() {

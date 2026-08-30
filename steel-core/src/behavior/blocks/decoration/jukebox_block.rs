@@ -8,7 +8,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::data_components::vanilla_components;
-use steel_registry::{vanilla_block_entity_types, vanilla_game_events};
+use steel_registry::{vanilla_block_entity_types, vanilla_custom_stats, vanilla_game_events};
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId, Downcast as _};
 
@@ -126,7 +126,7 @@ impl BlockBehavior for JukeboxBlock {
                 &GameEventContext::new(Some(player as &dyn Entity), Some(state)),
             );
         }
-        // TODO: Award Stats.PLAY_RECORD once Steel has a statistics foundation.
+        player.award_custom_stat(&vanilla_custom_stats::PLAY_RECORD);
         InteractionResult::Success
     }
 
