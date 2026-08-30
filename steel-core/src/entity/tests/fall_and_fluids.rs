@@ -76,6 +76,21 @@ fn stop_fall_flying_toggles_shared_state_back_to_false() {
 }
 
 #[test]
+fn lava_contact_is_ignored_until_after_first_tick() {
+    let entity = TypedTestEntity::new(1, &vanilla_entities::PIG);
+    entity
+        .base()
+        .set_fluid_contact(EntityFluidContact::from_parts(0.0, 0.25, false, false));
+
+    assert!(entity.is_first_tick());
+    assert!(!entity.is_in_lava());
+
+    entity.set_first_tick(false);
+
+    assert!(entity.is_in_lava());
+}
+
+#[test]
 fn fluid_falling_adjustment_matches_vanilla_special_falling_case() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
