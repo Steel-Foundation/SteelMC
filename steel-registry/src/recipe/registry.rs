@@ -105,6 +105,45 @@ impl<D: RecipeMatches<I> + DowncastType, I: RecipeInput> std::fmt::Debug for Typ
     }
 }
 
+/// Caches the last successful recipe for one operational recipe type.
+///
+/// This mirrors Vanilla's `RecipeManager.CachedCheck`: the cached recipe is
+/// tested first, then matching falls back to the registry's deterministic scan.
+pub struct CachedRecipeCheck<D: RecipeMatches<I> + DowncastType, I: RecipeInput> {
+    recipe_type: &'static RecipeType<D, I>,
+    last_recipe: Option<TypedRecipeRef<D, I>>,
+}
+
+impl<D: RecipeMatches<I> + DowncastType, I: RecipeInput> CachedRecipeCheck<D, I> {
+    /// Creates an empty cache for one recipe type.
+    #[must_use]
+    pub const fn new(recipe_type: &'static RecipeType<D, I>) -> Self {
+        Self {
+            recipe_type,
+            last_recipe: None,
+        }
+    }
+
+    /// Finds a matching recipe, testing the last successful recipe first.
+    pub fn find_match(
+        &mut self,
+        registry: &RecipeRegistry,
+        input: &I,
+    ) -> Option<TypedRecipeRef<D, I>> {
+        if input.is_empty() {
+            return None;
+        }
+        if let Some(recipe) = self.last_recipe
+            && recipe.data.matches(input)
+        {
+            return Some(recipe);
+        }
+        let recipe = registry.find_match(self.recipe_type, input)?;
+        self.last_recipe = Some(recipe);
+        Some(recipe)
+    }
+}
+
 /// Typed recipes belonging to one operational recipe type.
 pub struct TypedRecipeSet<'a, D: RecipeMatches<I> + DowncastType, I: RecipeInput> {
     registry: &'a RecipeRegistry,
@@ -315,13 +354,15 @@ impl Default for RecipeRegistry {
 #[cfg(test)]
 mod tests {
     use std::sync::LazyLock;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 
     use crate::item_stack::ItemStack;
     use crate::recipe::{
-        CraftingInput, CraftingRecipe, Ingredient, Recipe, RecipeData, RecipeInput, RecipeMatches,
-        RecipeRegistry, RecipeType, RecipeTypeRegistry, vanilla_recipe_types,
+        CachedRecipeCheck, CraftingInput, CraftingRecipe, Ingredient, Recipe, RecipeData,
+        RecipeInput, RecipeMatches, RecipeRegistry, RecipeType, RecipeTypeRegistry,
+        vanilla_recipe_types,
     };
     use crate::{REGISTRY, init_vanilla_registry, vanilla_items, vanilla_recipes};
 
@@ -516,6 +557,99 @@ mod tests {
                 .map(|data| data.required),
             Some(7)
         );
+    }
+
+    static CACHE_MATCH_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    #[derive(Debug)]
+    struct CacheData {
+        required: i32,
+    }
+
+    // SAFETY: This test-only key uniquely identifies cached recipe data.
+    unsafe impl DowncastType for CacheData {
+        const TYPE_KEY: DowncastTypeKey =
+            DowncastTypeKey::new("steel:test/recipe_data/cached_check");
+    }
+
+    impl RecipeData for CacheData {}
+
+    #[derive(Debug)]
+    struct CacheInput(i32);
+
+    // SAFETY: This test-only key uniquely identifies cached recipe input.
+    unsafe impl DowncastType for CacheInput {
+        const TYPE_KEY: DowncastTypeKey =
+            DowncastTypeKey::new("steel:test/recipe_input/cached_check");
+    }
+
+    impl RecipeInput for CacheInput {
+        fn is_empty(&self) -> bool {
+            false
+        }
+    }
+
+    impl RecipeMatches<CacheInput> for CacheData {
+        fn matches(&self, input: &CacheInput) -> bool {
+            CACHE_MATCH_CALLS.fetch_add(1, Ordering::Relaxed);
+            self.required == input.0
+        }
+    }
+
+    static CACHE_TYPE: RecipeType<CacheData, CacheInput> =
+        RecipeType::new(Identifier::new_static("test_plugin", "cached_machine"));
+    static CACHE_NON_MATCH: LazyLock<Recipe<CacheData, CacheInput>> = LazyLock::new(|| {
+        Recipe::new(
+            Identifier::new_static("test_plugin", "a_non_match"),
+            &CACHE_TYPE,
+            CacheData { required: 3 },
+        )
+    });
+    static CACHE_MATCH: LazyLock<Recipe<CacheData, CacheInput>> = LazyLock::new(|| {
+        Recipe::new(
+            Identifier::new_static("test_plugin", "b_match"),
+            &CACHE_TYPE,
+            CacheData { required: 7 },
+        )
+    });
+
+    #[test]
+    fn cached_check_tests_the_last_successful_recipe_before_scanning() {
+        let mut types = RecipeTypeRegistry::new();
+        types.register(&CACHE_TYPE);
+        types.freeze();
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(&CACHE_NON_MATCH);
+        recipes.register(&CACHE_MATCH);
+        recipes.freeze(&types);
+        let mut cache = CachedRecipeCheck::new(&CACHE_TYPE);
+        CACHE_MATCH_CALLS.store(0, Ordering::Relaxed);
+
+        assert_eq!(
+            cache
+                .find_match(&recipes, &CacheInput(7))
+                .map(super::TypedRecipeRef::key),
+            Some(CACHE_MATCH.key())
+        );
+        assert_eq!(CACHE_MATCH_CALLS.load(Ordering::Relaxed), 2);
+
+        assert_eq!(
+            cache
+                .find_match(&recipes, &CacheInput(7))
+                .map(super::TypedRecipeRef::key),
+            Some(CACHE_MATCH.key())
+        );
+        assert_eq!(CACHE_MATCH_CALLS.load(Ordering::Relaxed), 3);
+
+        assert!(cache.find_match(&recipes, &CacheInput(9)).is_none());
+        assert_eq!(CACHE_MATCH_CALLS.load(Ordering::Relaxed), 6);
+        assert_eq!(
+            cache
+                .find_match(&recipes, &CacheInput(7))
+                .map(super::TypedRecipeRef::key),
+            Some(CACHE_MATCH.key())
+        );
+        assert_eq!(CACHE_MATCH_CALLS.load(Ordering::Relaxed), 7);
     }
 
     #[test]

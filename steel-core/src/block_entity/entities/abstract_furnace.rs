@@ -14,7 +14,8 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Direction};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::recipe::{
-    CookingRecipe, RecipeType, SingleItemRecipeInput, TypedRecipeRef, vanilla_recipe_types,
+    CachedRecipeCheck, CookingRecipe, RecipeType, SingleItemRecipeInput, TypedRecipeRef,
+    vanilla_recipe_types,
 };
 use steel_registry::{REGISTRY, vanilla_block_entity_types, vanilla_items};
 use steel_utils::{
@@ -81,6 +82,7 @@ pub(crate) struct FurnaceContainer {
     cooking_timer: i32,
     cooking_total_time: i32,
     recipes_used: FxHashMap<Identifier, i32>,
+    quick_check: CachedRecipeCheck<CookingRecipe, SingleItemRecipeInput>,
 }
 
 struct FurnaceTickResult {
@@ -104,6 +106,7 @@ impl FurnaceContainer {
             cooking_timer: 0,
             cooking_total_time: 0,
             recipes_used: FxHashMap::default(),
+            quick_check: CachedRecipeCheck::new(kind.recipe_type()),
         }
     }
 
@@ -117,9 +120,9 @@ impl FurnaceContainer {
         ]
     }
 
-    fn recipe_for_input(&self) -> Option<TypedRecipeRef<CookingRecipe, SingleItemRecipeInput>> {
+    fn recipe_for_input(&mut self) -> Option<TypedRecipeRef<CookingRecipe, SingleItemRecipeInput>> {
         let input = SingleItemRecipeInput::new(self.items[SLOT_INPUT].clone());
-        REGISTRY.recipes.find_match(self.kind.recipe_type(), &input)
+        self.quick_check.find_match(&REGISTRY.recipes, &input)
     }
 
     fn reset_cooking_for_input(&mut self) {

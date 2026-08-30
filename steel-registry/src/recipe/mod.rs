@@ -20,7 +20,9 @@ pub use properties::{
     RecipeBookCategoryKind, RecipeBookCategoryRef, RecipeBookCategoryRegistry,
     RecipeBookProperties, RecipeProperties, vanilla_recipe_book_categories,
 };
-pub use registry::{RecipeRegistry, TypedRecipeRef, TypedRecipeSet, UntypedRecipeRef};
+pub use registry::{
+    CachedRecipeCheck, RecipeRegistry, TypedRecipeRef, TypedRecipeSet, UntypedRecipeRef,
+};
 pub use single_item::{CookingRecipe, SingleItemRecipeInput, StonecuttingRecipe};
 pub use smithing::{
     SmithingRecipe, SmithingRecipeInput, SmithingTransformRecipe, SmithingTrimRecipe,
