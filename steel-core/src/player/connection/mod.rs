@@ -10,14 +10,58 @@ pub(crate) use java::{ScheduledPacketExecution, ScheduledPlayPacket};
 
 use enum_dispatch::enum_dispatch;
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket};
+use steel_protocol::packet_writer::TCPNetworkEncoder;
 use steel_protocol::packets::common::{
     ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
 };
 use steel_protocol::packets::game::CPlayerInfoUpdate;
-use steel_protocol::utils::ConnectionProtocol;
+use steel_protocol::utils::{ConnectionProtocol, PacketError};
+use steel_utils::locks::AsyncMutex;
 use text_components::TextComponent;
+use tokio::io::AsyncWrite;
 
 use crate::player::Player;
+
+/// Maximum number of outbound packets drained from the channel per write batch.
+pub const OUTBOUND_BATCH_SIZE: usize = 128;
+
+/// Writes a drained batch of outbound packets under a single writer lock, keeping
+/// bundles contiguous and stopping at a disconnect. Returns whether a disconnect was
+/// written, in which case the connection should close afterwards.
+///
+/// The encoder is taken out of the shared writer slot and only restored on success:
+/// a batch that fails partway leaves the CFB8 cipher state mid-packet, so the encoder
+/// is dropped instead of being reused for later packets.
+pub async fn write_outbound_batch<W: AsyncWrite + Unpin>(
+    network_writer: &AsyncMutex<Option<TCPNetworkEncoder<W>>>,
+    batch: &mut Vec<OutboundPacket>,
+) -> Result<bool, PacketError> {
+    let mut writer_guard = network_writer.lock().await;
+    let Some(mut writer) = writer_guard.take() else {
+        return Err(PacketError::ConnectionClosed);
+    };
+
+    let mut close_after_write = false;
+    for outbound in batch.drain(..) {
+        match outbound {
+            OutboundPacket::Packet(packet) => writer.write_packet_buffered(&packet).await?,
+            OutboundPacket::Bundle(bundle) => {
+                for packet in bundle {
+                    writer.write_packet_buffered(&packet).await?;
+                }
+            }
+            OutboundPacket::Disconnect(packet) => {
+                writer.write_packet_buffered(&packet).await?;
+                close_after_write = true;
+                break;
+            }
+        }
+    }
+
+    writer.flush().await?;
+    *writer_guard = Some(writer);
+    Ok(close_after_write)
+}
 
 /// Client-side settings sent via `SClientInformation` packet.
 /// This is stored separately from the packet struct to allow default initialization.
@@ -258,5 +302,92 @@ impl Player {
     pub fn view_distance(&self) -> u8 {
         let client_view_distance = self.client_information.lock().view_distance;
         client_view_distance.min(self.world.load().view_distance)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use steel_protocol::packets::common::CKeepAlive;
+    use tokio::io::AsyncWrite;
+
+    use super::*;
+
+    fn encoded_keep_alive(id: i64) -> EncodedPacket {
+        EncodedPacket::from_bare(CKeepAlive::new(id), None, ConnectionProtocol::Play)
+            .expect("keep alive should encode")
+    }
+
+    /// Writer that accepts a single poll, then fails: forces a batch to fail partway.
+    struct FailAfterFirstPoll {
+        first: bool,
+    }
+
+    impl AsyncWrite for FailAfterFirstPoll {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            let this = self.get_mut();
+            if this.first {
+                this.first = false;
+                Poll::Ready(Ok(buf.len()))
+            } else {
+                Poll::Ready(Err(io::Error::other("write failed")))
+            }
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_batch_write_discards_the_encoder() {
+        let network_writer = AsyncMutex::new(Some(TCPNetworkEncoder::new(FailAfterFirstPoll {
+            first: true,
+        })));
+        network_writer
+            .lock()
+            .await
+            .as_mut()
+            .expect("encoder present")
+            .set_encryption(&[0x42; 16]);
+
+        let mut batch = vec![
+            OutboundPacket::Packet(encoded_keep_alive(1)),
+            OutboundPacket::Packet(encoded_keep_alive(2)),
+        ];
+
+        assert!(
+            write_outbound_batch(&network_writer, &mut batch)
+                .await
+                .is_err()
+        );
+        // The encoder held mid-packet cipher state; it must be gone, not reused.
+        assert!(network_writer.lock().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn successful_batch_write_restores_the_encoder() {
+        let network_writer = AsyncMutex::new(Some(TCPNetworkEncoder::new(Vec::new())));
+
+        let mut batch = vec![
+            OutboundPacket::Packet(encoded_keep_alive(1)),
+            OutboundPacket::Disconnect(encoded_keep_alive(2)),
+        ];
+        assert!(matches!(
+            write_outbound_batch(&network_writer, &mut batch).await,
+            Ok(true)
+        ));
+        assert!(network_writer.lock().await.is_some());
     }
 }

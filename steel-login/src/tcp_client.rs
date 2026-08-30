@@ -16,7 +16,7 @@ use std::{
 use crossbeam::atomic::AtomicCell;
 use steel_core::player::{
     ClientInformation, PlayerConnection,
-    connection::{JavaNetworkWriter, OutboundPacket},
+    connection::{JavaNetworkWriter, OUTBOUND_BATCH_SIZE, OutboundPacket, write_outbound_batch},
 };
 use steel_core::server::Server;
 use steel_protocol::{
@@ -120,8 +120,6 @@ where
         }
     }
 }
-/// Maximum number of outbound packets drained from the channel per write batch.
-const OUTBOUND_BATCH_SIZE: usize = 128;
 
 /// Represents updates to the connection state.
 #[derive(Clone)]
@@ -329,39 +327,6 @@ impl JavaTcpClient {
         }
     }
 
-    /// Writes a drained batch of outbound packets under a single writer lock, keeping
-    /// bundles contiguous and stopping at a disconnect. Returns whether a disconnect was
-    /// written, in which case the connection should close afterwards.
-    async fn write_outbound_batch(
-        network_writer: &JavaNetworkWriter,
-        batch: &mut Vec<OutboundPacket>,
-    ) -> Result<bool, PacketError> {
-        let mut writer_guard = network_writer.lock().await;
-        let Some(writer) = writer_guard.as_mut() else {
-            return Err(PacketError::ConnectionClosed);
-        };
-
-        let mut close_after_write = false;
-        for outbound in batch.drain(..) {
-            match outbound {
-                OutboundPacket::Packet(packet) => writer.write_packet_buffered(&packet).await?,
-                OutboundPacket::Bundle(bundle) => {
-                    for packet in bundle {
-                        writer.write_packet_buffered(&packet).await?;
-                    }
-                }
-                OutboundPacket::Disconnect(packet) => {
-                    writer.write_packet_buffered(&packet).await?;
-                    close_after_write = true;
-                    break;
-                }
-            }
-        }
-
-        writer.flush().await?;
-        Ok(close_after_write)
-    }
-
     async fn release_network_writer(network_writer: &JavaNetworkWriter) {
         network_writer.lock().await.take();
     }
@@ -413,7 +378,7 @@ impl JavaTcpClient {
                         // Bundles stay contiguous, and everything up to (and including)
                         // a disconnect is written under a single writer lock, in order. The
                         // batch is drained by value, so it is empty once written.
-                        match Self::write_outbound_batch(&network_writer, &mut batch).await {
+                        match write_outbound_batch(&network_writer, &mut batch).await {
                             Ok(close_after_write) => {
                                 if close_after_write {
                                     cancel_token.cancel();

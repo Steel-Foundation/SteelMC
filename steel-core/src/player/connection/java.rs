@@ -38,11 +38,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::command::{handle_client_request, sender::CommandSender};
 use crate::player::Player;
-use crate::player::connection::NetworkConnection;
+use crate::player::connection::{NetworkConnection, OUTBOUND_BATCH_SIZE, write_outbound_batch};
 use crate::server::Server;
-
-/// Maximum number of outbound packets drained from the channel per write batch.
-const OUTBOUND_BATCH_SIZE: usize = 128;
 
 /// Shared Java socket writer.
 pub type JavaNetworkWriter = Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>>;
@@ -450,39 +447,6 @@ impl JavaConnection {
                 self.id
             ),
         }
-    }
-
-    /// Writes a drained batch of outbound packets under a single writer lock, keeping
-    /// bundles contiguous and stopping at a disconnect. Returns whether a disconnect was
-    /// written, in which case the connection should close afterwards.
-    async fn write_outbound_batch(
-        &self,
-        batch: &mut Vec<OutboundPacket>,
-    ) -> Result<bool, PacketError> {
-        let mut writer_guard = self.network_writer.lock().await;
-        let Some(writer) = writer_guard.as_mut() else {
-            return Err(PacketError::ConnectionClosed);
-        };
-
-        let mut close_after_write = false;
-        for outbound in batch.drain(..) {
-            match outbound {
-                OutboundPacket::Packet(packet) => writer.write_packet_buffered(&packet).await?,
-                OutboundPacket::Bundle(bundle) => {
-                    for packet in bundle {
-                        writer.write_packet_buffered(&packet).await?;
-                    }
-                }
-                OutboundPacket::Disconnect(packet) => {
-                    writer.write_packet_buffered(&packet).await?;
-                    close_after_write = true;
-                    break;
-                }
-            }
-        }
-
-        writer.flush().await?;
-        Ok(close_after_write)
     }
 
     /// Ticks the connection.
@@ -900,7 +864,7 @@ impl JavaConnection {
                     // Bundles stay contiguous, and everything up to (and including) a
                     // disconnect is written under a single writer lock, in order. The batch
                     // is drained by value, so it is empty once written.
-                    match self.write_outbound_batch(&mut batch).await {
+                    match write_outbound_batch(&self.network_writer, &mut batch).await {
                         Ok(close_after_write) => {
                             if close_after_write {
                                 self.close();
