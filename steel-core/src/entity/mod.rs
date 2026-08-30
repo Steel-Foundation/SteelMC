@@ -750,6 +750,7 @@ mod generated_entities;
 mod inside_block_effects;
 mod item_based_steering;
 mod item_frame;
+mod leash;
 mod living_base;
 mod living_entity;
 mod manager;
@@ -1356,6 +1357,20 @@ pub fn leashables_leashed_to_holder_in_area_near_position(
     })
 }
 
-mod leash;
+/// Returns the living entity that will be credited with killing this entity.
+pub(crate) fn get_kill_credit<E: LivingEntity + ?Sized>(
+    entity: &E,
+    world: &World,
+) -> Option<SharedEntity> {
+    if let Some(uuid) = entity.last_hurt_by_player_uuid() {
+        world
+            .players
+            .get_by_uuid(&uuid)
+            .and_then(|player| world.get_entity_by_id(player.id()))
+    } else {
+        entity.last_hurt_by_mob()
+    }
+}
+
 #[cfg(test)]
 mod tests;
