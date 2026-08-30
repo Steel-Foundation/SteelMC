@@ -283,6 +283,40 @@ fn proto_entities_roundtrip_and_promote_to_full_chunk() {
 }
 
 #[test]
+fn unsupported_persistent_entity_is_dropped_after_load_and_resave() {
+    init_globals_once();
+
+    let pos = ChunkPos::new(0, 0);
+    let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
+    let Some(mut prepared) =
+        ChunkStorage::prepare_chunk_save(&proto, ChunkStatus::Features, &[], true)
+    else {
+        panic!("forced proto chunk save should prepare");
+    };
+    let mut unsupported = test_persistent_end_crystal(DVec3::new(5.5, 6.0, 7.5));
+    unsupported.entity_type = vanilla_entities::VILLAGER.key.clone();
+    prepared.persistent.entities.push(unsupported);
+
+    let loaded = ChunkStorage::persistent_to_chunk(
+        &prepared.persistent,
+        pos,
+        ChunkStatus::Features,
+        0,
+        16,
+        Weak::new(),
+    );
+    assert!(loaded.pending_entities.is_empty());
+    assert!(loaded.chunk.get_entities().is_empty());
+
+    let Some(resaved) =
+        ChunkStorage::prepare_chunk_save(&loaded.chunk, ChunkStatus::Features, &[], true)
+    else {
+        panic!("forced loaded chunk save should prepare");
+    };
+    assert!(resaved.persistent.entities.is_empty());
+}
+
+#[test]
 fn prepared_save_reports_handled_runtime_entity_ids() {
     init_globals_once();
 

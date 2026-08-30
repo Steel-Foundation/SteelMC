@@ -396,3 +396,26 @@ impl StructurePiecePlacer {
             || block == &vanilla_blocks::IRON_BARS
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use steel_registry::vanilla_entities;
+
+    use super::*;
+    use crate::bootstrap::init_globals_once;
+
+    #[test]
+    fn unsupported_structure_mob_is_skipped() {
+        init_globals_once();
+
+        assert!(
+            StructurePiecePlacer::create_mob(
+                &vanilla_entities::WITCH,
+                DVec3::ZERO,
+                Weak::new(),
+                true,
+            )
+            .is_none()
+        );
+    }
+}
