@@ -19,4 +19,5 @@ pub use objects::technical::{
     ItemDisplayContext, ItemDisplayEntity, ItemDisplayView, TextDisplayEntity, TextDisplayView,
     Transformation,
 };
+pub use objects::technical::{InteractionEntity, MarkerEntity};
 pub use objects::vehicles::{ChestMinecartEntity, MinecartEntity, SpawnerMinecartEntity};
