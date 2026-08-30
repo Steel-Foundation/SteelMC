@@ -1,4 +1,7 @@
 use super::*;
+use crate::behavior::init_behaviors;
+use crate::test_support::insert_ready_full_chunk;
+use steel_utils::{ChunkPos, types::UpdateFlags};
 
 #[test]
 fn pig_breeding_offspring_inherits_parent_variant() {
@@ -168,6 +171,54 @@ fn pig_age_boundary_refreshes_dimensions() {
     assert_eq!(
         pig.bounding_box().height().to_bits(),
         f64::from(adult_dimensions.height).to_bits()
+    );
+}
+
+#[test]
+fn pig_growth_skips_position_fudging_until_after_first_tick() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let world = fresh_test_world("first_tick_refresh_dimensions");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+    assert!(world.set_block(
+        BlockPos::new(9, 80, 8),
+        vanilla_blocks::STONE.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+
+    let initial_position = DVec3::new(8.75, 80.0, 8.5);
+    let pig = PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        initial_position,
+        Arc::downgrade(&world),
+    );
+    pig.set_no_ai(true);
+    pig.set_age(-1);
+
+    assert!(pig.is_first_tick());
+    assert!(AgeableMob::is_baby(&pig));
+
+    pig.set_age(0);
+
+    assert_eq!(pig.base().dimensions(), vanilla_entities::PIG.dimensions);
+    assert_eq!(pig.position(), initial_position);
+
+    pig.tick();
+
+    assert!(!pig.is_first_tick());
+    assert_eq!(pig.position(), initial_position);
+
+    pig.set_age(-1);
+    let position_before_growth = pig.position();
+    pig.set_age(0);
+
+    assert_eq!(pig.base().dimensions(), vanilla_entities::PIG.dimensions);
+    assert!(
+        pig.position().x < position_before_growth.x,
+        "adult pig should be moved away from the neighboring solid block"
     );
 }
 
