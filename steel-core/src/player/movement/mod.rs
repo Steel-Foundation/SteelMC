@@ -11,13 +11,15 @@ pub use input::PlayerInput;
 pub(super) use state::MovementState;
 pub(super) use teleport::TeleportState;
 
-use glam::DVec3;
+use glam::{DVec3, Vec3Swizzles};
 use steel_protocol::packets::game::{
     CMoveVehicle, CPlayerPosition, PlayerCommandAction, RelativeMovement, SAcceptTeleportation,
     SMovePlayer, SMoveVehicle, SPlayerCommand, SPlayerInput,
 };
+use steel_registry::entity_type::EntityTypeRef;
+use steel_registry::stat::custom::CustomStatRef;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
-use steel_registry::vanilla_mob_effects;
+use steel_registry::{vanilla_custom_stats, vanilla_entities, vanilla_mob_effects};
 use steel_utils::translations;
 use steel_utils::types::GameType;
 
@@ -70,6 +72,29 @@ pub(crate) fn wrap_degrees(mut degrees: f32) -> f32 {
         degrees += 360.0;
     }
     degrees
+}
+
+#[must_use]
+pub(crate) fn custom_stat_from_riding_vehicle(
+    vehicle_entity_type: EntityTypeRef,
+) -> Option<CustomStatRef> {
+    if vehicle_entity_type.is_abstract_minecart {
+        Some(&vanilla_custom_stats::MINECART_ONE_CM)
+    } else if vehicle_entity_type.is_abstract_boat {
+        Some(&vanilla_custom_stats::BOAT_ONE_CM)
+    } else if vehicle_entity_type == &vanilla_entities::PIG {
+        Some(&vanilla_custom_stats::PIG_ONE_CM)
+    } else if vehicle_entity_type.is_abstract_horse {
+        Some(&vanilla_custom_stats::HORSE_ONE_CM)
+    } else if vehicle_entity_type == &vanilla_entities::STRIDER {
+        Some(&vanilla_custom_stats::STRIDER_ONE_CM)
+    } else if vehicle_entity_type == &vanilla_entities::HAPPY_GHAST {
+        Some(&vanilla_custom_stats::HAPPY_GHAST_ONE_CM)
+    } else if vehicle_entity_type.is_abstract_nautilus {
+        Some(&vanilla_custom_stats::NAUTILUS_ONE_CM)
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -418,6 +443,8 @@ impl Player {
                 return;
             }
         }
+
+        self.check_movement_statistics(client_delta);
         world.chunk_map.update_player_status(self);
 
         if let Some((player_stands_on_something, y_dist)) = floating_check {
@@ -599,6 +626,7 @@ impl Player {
             }
         }
         self.handle_player_known_movement(client_delta);
+        self.check_movement_statistics(client_delta);
         world.chunk_map.update_player_status(self);
         self.record_client_vehicle_floating(
             &world,
@@ -921,6 +949,126 @@ impl Player {
         }
 
         // Dirty shared flags are synced once per tick by sync_entity_data().
+    }
+
+    /// Checks new player non-riding movement provided to award stats for it,
+    /// and also causes food exhaustion in some cases.
+    ///
+    /// Mirrors Vanilla's `ServerPlayer.checkMovementStatistics`.
+    pub fn check_movement_statistics(&self, delta_movement: DVec3) {
+        if self.is_passenger() || delta_movement == DVec3::ZERO {
+            return;
+        }
+        if self.is_swimming() {
+            self.award_3d_distance_stat(&vanilla_custom_stats::SWIM_ONE_CM, delta_movement, 0.01);
+        } else if self.is_eye_in_water() {
+            self.award_3d_distance_stat(
+                &vanilla_custom_stats::WALK_UNDER_WATER_ONE_CM,
+                delta_movement,
+                0.01,
+            );
+        } else if self.is_in_water() {
+            self.award_horizontal_distance_stat(
+                &vanilla_custom_stats::WALK_ON_WATER_ONE_CM,
+                delta_movement,
+                0.01,
+            );
+        } else if self.on_climbable() && delta_movement.y > 0.0 {
+            self.award_custom_stat_with_count(
+                &vanilla_custom_stats::CLIMB_ONE_CM,
+                (delta_movement.y * 100.0).round() as i32,
+            );
+        } else if self.on_ground() {
+            if self.is_sprinting() {
+                self.award_horizontal_distance_stat(
+                    &vanilla_custom_stats::SPRINT_ONE_CM,
+                    delta_movement,
+                    0.1,
+                );
+            } else if self.is_crouching() {
+                self.award_horizontal_distance_stat(
+                    &vanilla_custom_stats::CROUCH_ONE_CM,
+                    delta_movement,
+                    0.0,
+                );
+            } else {
+                self.award_horizontal_distance_stat(
+                    &vanilla_custom_stats::WALK_ONE_CM,
+                    delta_movement,
+                    0.0,
+                );
+            }
+        } else if self.is_fall_flying() {
+            self.award_3d_distance_stat(&vanilla_custom_stats::AVIATE_ONE_CM, delta_movement, 0.0);
+        } else {
+            self.award_horizontal_distance_stat_with_lower_bound(
+                &vanilla_custom_stats::FLY_ONE_CM,
+                delta_movement,
+                0.0,
+                25,
+            );
+        }
+    }
+
+    /// Checks new player riding movement provided to award stats for it,
+    /// and also causes food exhaustion in some cases.
+    ///
+    /// Mirrors Vanilla's `ServerPlayer.checkRidingStatistics`.
+    pub fn check_riding_statistics(&self, delta_movement: DVec3) {
+        if delta_movement == DVec3::ZERO {
+            return;
+        }
+        let Some(vehicle) = self.vehicle() else {
+            return;
+        };
+
+        if let Some(stat) = custom_stat_from_riding_vehicle(vehicle.entity_type()) {
+            let distance = (delta_movement.length() as f32 * 100.0).round() as i32;
+            self.award_custom_stat_with_count(stat, distance);
+        }
+    }
+
+    fn award_3d_distance_stat(
+        &self,
+        stat: CustomStatRef,
+        delta_movement: DVec3,
+        exhaust_multiplier: f32,
+    ) {
+        let distance = (delta_movement.length() as f32 * 100.0).round() as i32;
+        if distance > 0 {
+            self.award_custom_stat_with_count(stat, distance);
+            self.cause_food_exhaustion(exhaust_multiplier * distance as f32 * 0.01);
+        }
+    }
+
+    fn award_horizontal_distance_stat(
+        &self,
+        stat: CustomStatRef,
+        delta_movement: DVec3,
+        exhaust_multiplier: f32,
+    ) {
+        self.award_horizontal_distance_stat_with_lower_bound(
+            stat,
+            delta_movement,
+            exhaust_multiplier,
+            0,
+        );
+    }
+
+    fn award_horizontal_distance_stat_with_lower_bound(
+        &self,
+        stat: CustomStatRef,
+        delta_movement: DVec3,
+        exhaust_multiplier: f32,
+        lower_bound: i32,
+    ) {
+        let horizontal_distance = (delta_movement.xz().length() as f32 * 100.0).round() as i32;
+        if horizontal_distance > lower_bound {
+            self.award_custom_stat_with_count(stat, horizontal_distance);
+            if exhaust_multiplier != 0.0 {
+                self.cause_food_exhaustion(exhaust_multiplier * horizontal_distance as f32 * 0.01);
+            }
+        }
     }
 }
 

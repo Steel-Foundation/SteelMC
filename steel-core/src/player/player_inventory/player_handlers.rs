@@ -1,19 +1,5 @@
 use std::{f32::consts::TAU, mem, sync::Arc};
 
-use glam::DVec3;
-use steel_protocol::packets::game::{
-    CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
-    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetCarriedItem,
-    SSetCreativeModeSlot,
-};
-use steel_registry::item_stack::ItemStack;
-use steel_utils::{
-    Downcast as _,
-    locks::Shared,
-    types::{GameType, InteractionHand},
-};
-use text_components::TextComponent;
-
 use crate::{
     entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity},
     inventory::{
@@ -28,6 +14,21 @@ use crate::{
     },
     player::{Player, connection::NetworkConnection as _},
 };
+use glam::DVec3;
+use steel_protocol::packets::game::{
+    CContainerClose, COpenScreen, CSetPlayerInventory, ClickType, SContainerButtonClick,
+    SContainerClick, SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetCarriedItem,
+    SSetCreativeModeSlot,
+};
+use steel_registry::item_stack::ItemStack;
+use steel_registry::stat::vanilla_stat_types;
+use steel_registry::vanilla_custom_stats;
+use steel_utils::{
+    Downcast as _,
+    locks::Shared,
+    types::{GameType, InteractionHand},
+};
+use text_components::TextComponent;
 
 use super::{
     DeferredMenuAction, MenuItemDisposition, MenuOpenContext, MenuRemovalStatus, OpenMenuDispatch,
@@ -994,12 +995,17 @@ impl Player {
 
         let spawn_pos = DVec3::new(pos.x, spawn_y, pos.z);
 
+        let item_ref = item.item;
+        let item_count = item.count;
+
         let entity = self
             .get_world()
             .spawn_item_with_velocity(spawn_pos, item, velocity)?;
         entity.set_pickup_delay(40);
         if thrown_from_hand {
             entity.set_thrower(self.gameprofile.id);
+            self.award_stat_with_count(&vanilla_stat_types::ITEM_DROPPED, item_ref, item_count);
+            self.award_custom_stat(&vanilla_custom_stats::DROP);
         }
         Some(entity)
     }
