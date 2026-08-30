@@ -527,6 +527,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
     }
 
     /// Vanilla `Projectile.onHit`.
+    #[default_method]
     fn on_hit(&self, hit: &ProjectileHit) {
         let world = self.level();
         match hit {
@@ -573,6 +574,7 @@ pub trait Projectile: Entity + ProjectileEventSource {
     fn on_hit_entity(&self, _entity: &SharedEntity, _location: DVec3) {}
 
     /// Vanilla `Projectile.onHitBlock`.
+    #[default_method]
     fn on_hit_block(&self, hit: &ClipHitResult) {
         let Some(world) = self.level() else {
             return;

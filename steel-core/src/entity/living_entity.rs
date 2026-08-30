@@ -1,3 +1,4 @@
+use steel_macros::default_methods;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
 use super::*;
@@ -9,6 +10,7 @@ use super::*;
 ///
 /// **Note:** All methods take `&self` (not `&mut self`) because living entities
 /// are shared via `Arc` and use interior mutability (`SyncMutex`, etc.).
+#[default_methods]
 pub trait LivingEntity: Entity {
     /// Returns a reference to the shared [`LivingEntityBase`] that holds
     /// living runtime state such as attributes, cached movement speed,
@@ -575,14 +577,10 @@ pub trait LivingEntity: Entity {
         world.clip(start, end, block_shape, fluid).is_miss()
     }
 
-    /// Returns vanilla base living-entity invulnerability.
-    fn default_is_invulnerable_to(&self, source: &DamageSource) -> bool {
-        self.is_invulnerable_to_base(source)
-    }
-
     /// Returns whether this living entity ignores a damage source.
+    #[default_method]
     fn is_invulnerable_to(&self, world: &World, source: &DamageSource) -> bool {
-        self.default_is_invulnerable_to(source)
+        self.is_invulnerable_to_base(source)
             || enchantment_helper::is_immune_to_damage(world, self, source)
     }
 
@@ -1215,8 +1213,11 @@ pub trait LivingEntity: Entity {
         !self.is_dead_or_dying()
     }
 
-    /// Returns vanilla base `LivingEntity.canBeAffected` eligibility.
-    fn default_can_be_affected(&self, effect: &MobEffectInstance) -> bool {
+    /// Returns whether this entity accepts a mob-effect instance.
+    ///
+    /// Concrete entities override this for vanilla class-specific immunities.
+    #[default_method]
+    fn can_be_affected(&self, effect: &MobEffectInstance) -> bool {
         if REGISTRY
             .entity_types
             .is_in_tag(self.entity_type(), &EntityTypeTag::IMMUNE_TO_INFESTED)
@@ -1239,14 +1240,6 @@ pub trait LivingEntity: Entity {
 
         true
     }
-
-    /// Returns whether this entity accepts a mob-effect instance.
-    ///
-    /// Concrete entities override this for vanilla class-specific immunities.
-    fn can_be_affected(&self, effect: &MobEffectInstance) -> bool {
-        self.default_can_be_affected(effect)
-    }
-
     /// Returns vanilla `LivingEntity.hasEffect()`.
     fn has_mob_effect(&self, effect: MobEffectRef) -> bool {
         self.living_base().has_mob_effect(effect)
@@ -1891,19 +1884,15 @@ pub trait LivingEntity: Entity {
         }
     }
 
-    /// Default vanilla `LivingEntity.canGlide()` implementation for overrides.
-    fn default_can_glide(&self) -> bool {
+    /// Mirrors vanilla `LivingEntity.canGlide()`.
+    #[default_method]
+    fn can_glide(&self) -> bool {
         !self.on_ground()
             && !self.is_passenger()
             && !self.has_mob_effect(vanilla_mob_effects::LEVITATION)
             && EquipmentSlot::ALL
                 .iter()
                 .any(|&slot| self.can_glide_using_equipment_slot(slot))
-    }
-
-    /// Mirrors vanilla `LivingEntity.canGlide()`.
-    fn can_glide(&self) -> bool {
-        self.default_can_glide()
     }
 
     /// Mirrors vanilla `Player.startFallFlying()`.
@@ -2010,13 +1999,9 @@ pub trait LivingEntity: Entity {
     }
 
     /// Returns vanilla `LivingEntity.isImmobile()`.
-    fn default_is_immobile(&self) -> bool {
-        self.is_dead_or_dying()
-    }
-
-    /// Returns vanilla `LivingEntity.isImmobile()`.
+    #[default_method]
     fn is_immobile(&self) -> bool {
-        self.default_is_immobile()
+        self.is_dead_or_dying()
     }
 
     /// Applies vanilla `LivingEntity.aiStep()` velocity thresholds.
@@ -2071,8 +2056,9 @@ pub trait LivingEntity: Entity {
         self.get_jump_power_with_multiplier(1.0)
     }
 
-    /// Default vanilla `LivingEntity.jumpFromGround()` implementation for overrides.
-    fn default_jump_from_ground(&self) {
+    /// Mirrors vanilla `LivingEntity.jumpFromGround()`.
+    #[default_method]
+    fn jump_from_ground(&self) {
         let jump_power = self.get_jump_power();
         if jump_power <= 1.0E-5 {
             return;
@@ -2097,11 +2083,6 @@ pub trait LivingEntity: Entity {
         }
 
         self.mark_velocity_sync();
-    }
-
-    /// Mirrors vanilla `LivingEntity.jumpFromGround()`.
-    fn jump_from_ground(&self) {
-        self.default_jump_from_ground();
     }
 
     /// Mirrors vanilla `LivingEntity.goDownInWater()`.
@@ -2173,11 +2154,12 @@ pub trait LivingEntity: Entity {
         None
     }
 
-    /// Default vanilla-shaped `LivingEntity.aiStep()` movement foundation for overrides.
+    /// Mirrors vanilla `LivingEntity.aiStep()`.
     ///
     /// This covers the shared travel state Steel currently has; mob AI and
     /// equipment ticking are still separate follow-up work.
-    fn default_ai_step(&self) -> Option<MoveResult> {
+    #[default_method]
+    fn ai_step(&self) -> Option<MoveResult> {
         self.tick_no_jump_delay();
         if !self.can_simulate_movement() {
             self.set_velocity(self.velocity() * 0.98);
@@ -2226,11 +2208,6 @@ pub trait LivingEntity: Entity {
         self.tick_freezing();
         self.push_entities();
         result
-    }
-
-    /// Mirrors vanilla `LivingEntity.aiStep()`.
-    fn ai_step(&self) -> Option<MoveResult> {
-        self.default_ai_step()
     }
 
     /// Mirrors vanilla `LivingEntity.pushEntities()`.
@@ -2706,8 +2683,9 @@ pub trait LivingEntity: Entity {
         result
     }
 
-    /// Default vanilla `LivingEntity.travel()` implementation for overrides.
-    fn default_travel(&self, input: DVec3) -> Option<MoveResult> {
+    /// Mirrors vanilla `LivingEntity.travel()`.
+    #[default_method]
+    fn travel(&self, input: DVec3) -> Option<MoveResult> {
         let world = self.level()?;
         let fluid_state = get_fluid_state(&world, self.block_position());
         if self.should_travel_in_fluid(fluid_state) {
@@ -2718,11 +2696,6 @@ pub trait LivingEntity: Entity {
         }
 
         self.travel_in_air(input)
-    }
-
-    /// Mirrors vanilla `LivingEntity.travel()`.
-    fn travel(&self, input: DVec3) -> Option<MoveResult> {
-        self.default_travel(input)
     }
 
     /// Returns the bed position that makes this living entity sleeping.
@@ -2788,8 +2761,9 @@ pub trait LivingEntity: Entity {
         Ok(())
     }
 
-    /// Shared body for overrides that need vanilla `super.stopSleeping()`.
-    fn default_stop_sleeping(&self) {
+    /// Stops the entity from sleeping.
+    #[default_method]
+    fn stop_sleeping(&self) {
         if let Some(bed_position) = self.sleeping_pos()
             && let Some(world) = self.level()
         {
@@ -2836,11 +2810,6 @@ pub trait LivingEntity: Entity {
 
         self.set_pose(EntityPose::Standing);
         self.clear_sleeping_pos();
-    }
-
-    /// Stops the entity from sleeping.
-    fn stop_sleeping(&self) {
-        self.default_stop_sleeping();
     }
 
     /// Checks if the entity is sprinting.

@@ -11,11 +11,11 @@ mod write_to;
 
 use proc_macro::TokenStream;
 
-/// Makes a trait's overridden default implementations explicitly callable.
+/// Makes selected trait default implementations explicitly callable.
 ///
 /// For a trait named `Entity`, this macro generates an `EntityDefaults` trait.
-/// An implementation can call the original body with
-/// `EntityDefaults::method(self, ...)`.
+/// Mark a provided method with `#[default_method]` to expose its original body;
+/// an implementation can then call it with `EntityDefaults::method(self, ...)`.
 #[proc_macro_attribute]
 pub fn default_methods(attributes: TokenStream, item: TokenStream) -> TokenStream {
     if !attributes.is_empty() {

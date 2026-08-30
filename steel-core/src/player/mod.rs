@@ -91,14 +91,13 @@ use text_components::{content::Resolvable, custom::CustomData};
 use crate::behavior::{BlockStateBehaviorExt as _, ITEM_BEHAVIORS, InteractionResult};
 use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
-use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
-    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
-    EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntitySyncedData, MobEffectSyncChange,
-    MobEffectSyncPacket, RemovalReason, SharedEntity, apply_entity_look_at, get_kill_credit,
-    start_riding_entities,
+    DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityDefaults, EntityEventSource,
+    EntityMovementEmission, EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntityDefaults,
+    LivingEntitySyncedData, MobEffectSyncChange, MobEffectSyncPacket, RemovalReason, SharedEntity,
+    apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -1401,7 +1400,7 @@ impl Entity for Player {
         if self.is_flying() {
             self.set_shared_swimming(false);
         } else {
-            self.default_update_swimming();
+            EntityDefaults::update_swimming(self);
         }
     }
 
@@ -1410,8 +1409,7 @@ impl Entity for Player {
         if self.wants_to_stop_riding() && self.is_passenger() {
             self.stop_riding();
         } else {
-            self.default_ride_tick();
-            self.reset_fall_distance();
+            EntityDefaults::ride_tick(self);
         }
         self.check_riding_statistics(self.position() - pre);
     }
@@ -1531,7 +1529,7 @@ impl Entity for Player {
 
     fn make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
         if !self.is_flying() {
-            self.default_make_stuck_in_block(state, speed_multiplier);
+            EntityDefaults::make_stuck_in_block(self, state, speed_multiplier);
         }
 
         // TODO: Reset current impulse context once vehicle/player impulse contexts exist.
@@ -1789,9 +1787,7 @@ impl LivingEntity for Player {
     }
 
     fn is_invulnerable_to(&self, world: &World, source: &DamageSource) -> bool {
-        if self.default_is_invulnerable_to(source)
-            || enchantment_helper::is_immune_to_damage(world, self, source)
-        {
+        if LivingEntityDefaults::is_invulnerable_to(self, world, source) {
             return true;
         }
 
@@ -1954,11 +1950,11 @@ impl LivingEntity for Player {
     }
 
     fn can_glide(&self) -> bool {
-        !self.is_flying() && self.default_can_glide()
+        !self.is_flying() && LivingEntityDefaults::can_glide(self)
     }
 
     fn is_immobile(&self) -> bool {
-        self.default_is_immobile() || self.is_sleeping()
+        LivingEntityDefaults::is_immobile(self) || self.is_sleeping()
     }
 
     fn stop_sleeping(&self) {
@@ -1966,7 +1962,7 @@ impl LivingEntity for Player {
     }
 
     fn jump_from_ground(&self) {
-        self.default_jump_from_ground();
+        LivingEntityDefaults::jump_from_ground(self);
         self.award_custom_stat(&vanilla_custom_stats::JUMP);
         if self.is_sprinting() {
             self.cause_food_exhaustion(0.2);
@@ -1980,14 +1976,14 @@ impl LivingEntity for Player {
             self.reset_fall_distance();
         }
 
-        let result = self.default_ai_step();
+        let result = LivingEntityDefaults::ai_step(self);
         self.set_y_head_rot(self.rotation().0);
         result
     }
 
     fn travel(&self, input: DVec3) -> Option<MoveResult> {
         if self.is_passenger() {
-            return self.default_travel(input);
+            return LivingEntityDefaults::travel(self, input);
         }
 
         if self.is_swimming() {
@@ -2008,7 +2004,7 @@ impl LivingEntity for Player {
 
         if self.is_flying() {
             let original_movement_y = self.velocity().y;
-            let result = self.default_travel(input);
+            let result = LivingEntityDefaults::travel(self, input);
             let velocity = self.velocity();
             self.set_velocity(DVec3::new(
                 velocity.x,
@@ -2017,7 +2013,7 @@ impl LivingEntity for Player {
             ));
             result
         } else {
-            self.default_travel(input)
+            LivingEntityDefaults::travel(self, input)
         }
     }
 

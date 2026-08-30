@@ -6,23 +6,31 @@ use steel_macros::default_methods;
 
 #[default_methods]
 trait Example {
+    #[default_method]
     #[expect(unused_variables, reason = "the default ignores the argument")]
     fn borrowed<'a>(&self, other: &'a str) -> &str {
         "default"
     }
 
+    #[default_method]
     fn changed(&self, mut value: i32) -> i32 {
         value += 1;
         value
     }
 
+    #[default_method]
     fn ignored(&self, _value: i32) {}
 
+    #[default_method]
     fn generic<T, const N: usize>(&self, value: T) -> (T, usize)
     where
         Self: Sized,
     {
         (value, N)
+    }
+
+    fn ordinary(&self) -> i32 {
+        7
     }
 }
 
@@ -37,6 +45,7 @@ impl Example for Override {
 #[test]
 fn defaults_are_callable_for_concrete_and_erased_implementors() {
     let value = Override;
+    assert_eq!(value.ordinary(), 7);
     assert_eq!(value.changed(2), 6);
     value.ignored(1);
     assert_eq!(ExampleDefaults::borrowed(&value, "other"), "default");

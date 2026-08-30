@@ -35,9 +35,10 @@ use crate::entity::ai::goal::{
 use crate::entity::ai::path::PathType;
 use crate::entity::damage::DamageSource;
 use crate::entity::{
-    AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
-    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, SpawnGroupData, entity_loot_ref, position_rider_default,
+    AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad,
+    EntityDefaults, EntityPose, EntitySpawnReason, EntitySyncedData, LivingEntity,
+    LivingEntityBase, LivingEntityDefaults, Mob, MobBase, PathfinderMob, SpawnGroupData,
+    entity_loot_ref,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -443,7 +444,7 @@ impl Entity for ChickenEntity {
     }
 
     fn position_rider(&self, passenger: &dyn Entity) {
-        position_rider_default(self, passenger);
+        EntityDefaults::position_rider(self, passenger);
         if let Some(living) = passenger.as_living_entity() {
             living.set_y_body_rot(self.y_body_rot());
         }
@@ -525,7 +526,7 @@ impl LivingEntity for ChickenEntity {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
+        let result = LivingEntityDefaults::ai_step(self);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);

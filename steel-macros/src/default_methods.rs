@@ -1,9 +1,10 @@
 use proc_macro2::{Group, Ident as TokenIdent, Span, TokenStream, TokenTree};
 use quote::{format_ident, quote};
+use syn::spanned::Spanned;
 use syn::visit_mut::{self, VisitMut};
 use syn::{
-    FnArg, GenericParam, Ident, ItemTrait, Lifetime, Pat, ReceiverKind, ReturnType, TraitItem,
-    TraitItemFn, Type, TypeReference, parse_quote,
+    Attribute, FnArg, GenericParam, Ident, ItemTrait, Lifetime, Meta, Pat, ReceiverKind,
+    ReturnType, TraitItem, TraitItemFn, Type, TypeReference, parse_quote,
 };
 
 pub fn expand(original: &mut ItemTrait) -> syn::Result<TokenStream> {
@@ -25,8 +26,14 @@ pub fn expand(original: &mut ItemTrait) -> syn::Result<TokenStream> {
         let TraitItem::Fn(method) = item else {
             continue;
         };
-        if method.default.is_none() {
+        if !take_default_method_marker(&mut method.attrs)? {
             continue;
+        }
+        if method.default.is_none() {
+            return Err(syn::Error::new_spanned(
+                method,
+                "`default_method` requires a provided trait method",
+            ));
         }
 
         default_methods.push(default_method(method)?);
@@ -75,6 +82,35 @@ pub fn expand(original: &mut ItemTrait) -> syn::Result<TokenStream> {
             #blanket_where_clause
         {}
     })
+}
+
+fn take_default_method_marker(attributes: &mut Vec<Attribute>) -> syn::Result<bool> {
+    let mut marker = None;
+    let mut error = None;
+    attributes.retain(|attribute| {
+        if !attribute.path().is_ident("default_method") {
+            return true;
+        }
+
+        if !matches!(attribute.meta, Meta::Path(_)) {
+            error = Some(syn::Error::new_spanned(
+                attribute,
+                "`default_method` does not accept arguments",
+            ));
+        } else if marker.is_some() {
+            error = Some(syn::Error::new_spanned(
+                attribute,
+                "duplicate `default_method` marker",
+            ));
+        } else {
+            marker = Some(attribute.span());
+        }
+        false
+    });
+    if let Some(error) = error {
+        return Err(error);
+    }
+    Ok(marker.is_some())
 }
 
 fn default_method(method: &TraitItemFn) -> syn::Result<TraitItemFn> {

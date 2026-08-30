@@ -10,7 +10,7 @@ use text_components::{TextComponent, translation::TranslatedMessage};
 
 use super::{Player, PlayerRespawnConfig};
 use crate::{
-    entity::{Entity, LivingEntity as _},
+    entity::{Entity, LivingEntity as _, LivingEntityDefaults},
     level_data::RespawnData,
     world::World,
 };
@@ -118,7 +118,7 @@ impl Player {
             self.send_packet(packet);
         }
 
-        self.default_stop_sleeping();
+        LivingEntityDefaults::stop_sleeping(self);
         if update_level_list {
             self.get_world().update_sleeping_player_list();
         }

@@ -81,7 +81,7 @@ fn default_ai_step_resets_idle_jump_delay_and_dampens_input_before_travel() {
     entity.set_no_jump_delay(2);
     entity.set_travel_input(LivingTravelInput::new(1.0, 0.5, -1.0));
 
-    assert!(entity.default_ai_step().is_none());
+    assert!(LivingEntityDefaults::ai_step(&entity).is_none());
 
     assert_eq!(entity.no_jump_delay(), 0);
     assert_eq!(
@@ -97,14 +97,14 @@ fn default_ai_step_resets_fall_distance_for_slow_falling_and_levitation() {
     let slow_falling = LivingFluidTestEntity::new(0.0, 0.0, true);
     slow_falling.set_fall_distance(7.0);
     slow_falling.set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
-    slow_falling.default_ai_step();
+    LivingEntityDefaults::ai_step(&slow_falling);
 
     assert_f64_close(slow_falling.fall_distance(), 0.0);
 
     let levitating = LivingFluidTestEntity::new(0.0, 0.0, true);
     levitating.set_fall_distance(7.0);
     levitating.set_mob_effect_active(vanilla_mob_effects::LEVITATION, true);
-    levitating.default_ai_step();
+    LivingEntityDefaults::ai_step(&levitating);
 
     assert_f64_close(levitating.fall_distance(), 0.0);
 }
@@ -117,7 +117,7 @@ fn default_ai_step_jumps_from_ground_and_sets_vanilla_cooldown() {
     entity.set_on_ground(true);
     entity.set_jumping(true);
 
-    assert!(entity.default_ai_step().is_none());
+    assert!(LivingEntityDefaults::ai_step(&entity).is_none());
 
     assert_vec3_close(entity.velocity(), DVec3::new(0.0, jump_strength, 0.0));
     assert_eq!(entity.no_jump_delay(), 10);

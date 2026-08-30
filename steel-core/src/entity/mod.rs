@@ -782,9 +782,9 @@ pub use callback::{
     PlayerEntityCallback, RemovalReason,
 };
 pub(crate) use entity::apply_entity_look_at;
-pub(crate) use entity::position_rider_default;
 pub use entity::{
-    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
+    AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityDefaults,
+    EntityEventSource,
 };
 pub use fluid_contact::EntityFluidContact;
 pub use inside_block_effects::{
@@ -797,7 +797,7 @@ pub use living_base::{
     LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
     MobEffectSyncChange, MobEffectSyncPacket,
 };
-pub use living_entity::LivingEntity;
+pub use living_entity::{LivingEntity, LivingEntityDefaults};
 pub use manager::{
     AddEntityError, ChunkEntityLoadResult, EntityLifecycleChanges, EntityMoveError,
     EntityMoveUpdate, EntityOwnership, EntityVisibility, WorldEntityManager,

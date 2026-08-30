@@ -20,7 +20,7 @@ use crate::entity::ai::goal::{
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySyncedData, LivingEntity,
-    LivingEntityBase, Mob, MobBase, PathfinderMob, RemovalReason,
+    LivingEntityBase, LivingEntityDefaults, Mob, MobBase, PathfinderMob, RemovalReason,
 };
 use crate::physics::MoveResult;
 use crate::world::World;
@@ -230,7 +230,7 @@ impl LivingEntity for EndermiteEntity {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
+        let result = LivingEntityDefaults::ai_step(self);
         if self.level().is_some() && !self.is_persistence_required() {
             let mut lifetime = self.lifetime.lock();
             *lifetime += 1;

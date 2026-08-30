@@ -646,6 +646,7 @@ pub trait BlockBehavior: Send + Sync {
         unused_variables,
         reason = "default trait implementation uses static registry shape"
     )]
+    #[default_method]
     fn get_collision_shape(
         &self,
         state: BlockStateId,
@@ -772,6 +773,7 @@ pub trait BlockBehavior: Send + Sync {
         unused_variables,
         reason = "vanilla default is a full block independent of state, world, position, and entity"
     )]
+    #[default_method]
     fn get_entity_inside_collision_shape(
         &self,
         state: BlockStateId,
@@ -837,6 +839,7 @@ pub trait BlockBehavior: Send + Sync {
         unused_variables,
         reason = "default trait implementation ignores all params"
     )]
+    #[default_method]
     fn entity_inside(
         &self,
         state: BlockStateId,
@@ -855,6 +858,7 @@ pub trait BlockBehavior: Send + Sync {
         unused_variables,
         reason = "default trait implementation ignores state, world, and pos"
     )]
+    #[default_method]
     fn fall_on(
         &self,
         state: BlockStateId,
@@ -897,6 +901,7 @@ pub trait BlockBehavior: Send + Sync {
         unused_variables,
         reason = "default trait implementation ignores state, world, and pos"
     )]
+    #[default_method]
     fn update_entity_movement_after_fall_on(
         &self,
         state: BlockStateId,
@@ -914,6 +919,7 @@ pub trait BlockBehavior: Send + Sync {
         unused_variables,
         reason = "default trait implementation ignores all params"
     )]
+    #[default_method]
     fn step_on(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, entity: &dyn Entity) {
     }
 
