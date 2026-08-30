@@ -146,7 +146,8 @@ impl From<io::Error> for PacketError {
 ///
 /// Whole buffers are encrypted at once (mirroring vanilla `CipherBase.encipher`) and then
 /// written with as few underlying writes as possible; partially written encrypted bytes are
-/// retained and flushed before new data is encrypted.
+/// retained and flushed before new data is encrypted. A partial write must be retried
+/// with its continuation and `Pending` with the whole buffer (`write_all` semantics).
 pub struct StreamEncryptor<W: AsyncWrite + Unpin> {
     cipher: Aes128Cfb8Enc,
     write: W,
@@ -178,8 +179,9 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for StreamEncryptor<W> {
         let this = self.get_mut();
 
         // Continue flushing encrypted bytes left over from a previous partial write.
-        // Callers retry the same (or the continuation) buffer after a partial write or
-        // `Pending`, so once the leftover is fully drained that buffer is written too.
+        // After a partial write the caller retries with the continuation buffer; after
+        // `Pending` with the whole buffer. Either way the leftover is the encryption of
+        // exactly that retry, so once it is fully drained the retry is consumed too.
         if this.written < this.output.len() {
             loop {
                 match Pin::new(&mut this.write).poll_write(cx, &this.output[this.written..]) {
@@ -253,6 +255,8 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for StreamEncryptor<W> {
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        // Bytes retained from a partial write stay buffered until the caller retries the
+        // write; this only flushes the inner stream (`output` is empty for in-tree callers).
         let ref_self = self.get_mut();
         let write = Pin::new(&mut ref_self.write);
         write.poll_flush(cx)
