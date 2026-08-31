@@ -390,6 +390,29 @@ pub(crate) enum TickSchedulerError {
     MissingContainer(ChunkPos),
     /// The world index and chunk refer to different containers at the same position.
     ContainerMismatch(ChunkPos),
+    /// A ticking layout listed the same chunk more than once.
+    DuplicateLayoutChunk(ChunkPos),
+    /// An incremental update referred to an obsolete ticking layout.
+    StaleLayout,
+    /// An incremental update disagreed with a chunk's rank in the ticking layout.
+    LayoutRankMismatch(ChunkPos),
+    /// An incremental update disagreed with the scheduler's active state.
+    ActiveStateMismatch(ChunkPos),
+    /// An active chunk's sparse deadline index disagreed with its stored state.
+    ActiveDeadlineMismatch(ChunkPos),
+}
+
+/// Identifies the ticking-chunk layout whose sparse ranks the scheduler stores.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ScheduledTickLayoutGeneration(u64);
+
+/// One validated block-ticking membership transition within a stable layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ScheduledTickActiveChunkChange {
+    pub(crate) pos: ChunkPos,
+    pub(crate) layout_rank: usize,
+    pub(crate) was_active: bool,
+    pub(crate) is_active: bool,
 }
 
 /// Ready ticks and the active containers whose persisted delays changed.

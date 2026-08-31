@@ -19,6 +19,14 @@ pub mod heightmap;
 pub mod light;
 /// Tracks the chunks that are visible to a player.
 pub mod player_chunk_view;
+mod simulation_ticket_manager;
+
+/// Internal chunk simulation APIs exposed only to benchmark targets.
+#[cfg(feature = "benchmark-support")]
+#[doc(hidden)]
+pub mod simulation_benchmark_support {
+    pub use super::simulation_ticket_manager::SimulationTicketManager;
+}
 
 pub mod full_chunk;
 pub mod paletted_container;

@@ -26,9 +26,6 @@ impl WorldTickWorker {
             .name(format!("world-tick-{index}"))
             .spawn(move || {
                 while let Ok(request) = request_receiver.recv() {
-                    if request.runs_normally {
-                        world.chunk_map.tick_timed_tickets();
-                    }
                     let timings = world.tick_game(request.tick_count, request.runs_normally);
                     let _ = request.response.send(timings);
                 }

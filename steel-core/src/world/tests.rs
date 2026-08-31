@@ -22,6 +22,7 @@ static SPLIT_BLOCK: &[BlockLocalAabb] = &[FIRST_HALF, SECOND_HALF];
 
 fn advance_scheduling_until(world: &Arc<World>, mut ready: impl FnMut() -> bool) {
     for _ in 0..10_000 {
+        world.chunk_map.flush_simulation_updates();
         world.chunk_map.advance_scheduling();
         if ready() {
             return;
@@ -323,7 +324,7 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     advance_scheduling_until(&world, || {
         world
             .chunk_map
-            .is_ticket_revision_committed(simulation_revision)
+            .is_ticket_receipt_committed(simulation_revision)
             && world.chunk_map.with_full_chunk(chunk_pos, |_| ()).is_some()
             && world
                 .chunk_map
@@ -408,10 +409,10 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     advance_scheduling_until(&world, || {
         world
             .chunk_map
-            .is_ticket_revision_committed(loading_revision)
+            .is_ticket_receipt_committed(loading_revision)
             && world
                 .chunk_map
-                .is_ticket_revision_committed(removal_revision)
+                .is_ticket_receipt_committed(removal_revision)
     });
 
     assert!(
@@ -438,10 +439,10 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     advance_scheduling_until(&world, || {
         world
             .chunk_map
-            .is_ticket_revision_committed(full_only_revision)
+            .is_ticket_receipt_committed(full_only_revision)
             && world
                 .chunk_map
-                .is_ticket_revision_committed(loading_removal_revision)
+                .is_ticket_receipt_committed(loading_removal_revision)
     });
 
     assert!(
