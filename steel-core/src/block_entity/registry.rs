@@ -15,12 +15,14 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
-use super::entities::{
-    BarrelBlockEntity, BeehiveBlockEntity, BellBlockEntity, BrushableBlockEntity,
-    ChiseledBookShelfBlockEntity, ComparatorBlockEntity, DaylightDetectorBlockEntity,
-    EndGatewayBlockEntity, EndPortalBlockEntity, JukeboxBlockEntity, PistonMovingBlockEntity,
-    PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity,
-};
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::wildcard_imports,
+        reason = "the registry intentionally imports every block entity implementation"
+    )
+)]
+use super::entities::*;
 use crate::world::World;
 
 /// Factory function type for creating block entities.
