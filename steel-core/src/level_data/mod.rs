@@ -17,7 +17,7 @@ use steel_utils::types::Difficulty;
 use steel_utils::{BlockPos, GlobalPos, Identifier};
 use tokio::fs;
 
-use crate::world::clock::WorldClockManager;
+use crate::world::{MAX_SIZE, clock::WorldClockManager};
 
 /// Persistent world border data stored with Steel level data.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -52,7 +52,7 @@ impl Default for WorldBorderData {
             safe_zone: 5.0,
             warning_blocks: 5,
             warning_time: 300,
-            size: f64::from(5.999_997E7_f32),
+            size: MAX_SIZE,
             lerp_time: 0,
             lerp_target: 0.0,
         }
