@@ -39,9 +39,11 @@ use crate::chunk::chunk_scheduler::{
     SimulationTicketRevision,
 };
 use crate::chunk::chunk_ticket_manager::{
-    ChunkTicket, ChunkTicketLevel, ENDER_PEARL_TICKET_TIMEOUT_TICKS, LoadLevelChange,
-    LoadTicketManager, PersistentChunkTickets, TimedChunkTickets, generation_status,
+    ChunkTicket, ChunkTicketLevel, LoadLevelChange, LoadTicketManager, generation_status,
     is_block_ticking, is_entity_ticking, is_full,
+};
+use crate::chunk::chunk_ticket_storage::{
+    ChunkTicketStorage, ENDER_PEARL_TICKET_TIMEOUT_TICKS, PersistentChunkTickets,
 };
 use crate::chunk::full_chunk_readiness::{
     FullNeighborhoodCounts, FullNeighborhoodError, FullNeighborhoodIndex, FullPublication,
@@ -346,8 +348,6 @@ pub struct ChunkMap {
     ticking_chunks: ArcSwap<TickingChunkSnapshot>,
     /// Final-unload callbacks waiting for the serialized lifecycle boundary.
     finalized_block_entity_unloads: SyncMutex<Vec<FinalizedBlockEntityUnload>>,
-    /// Timed gameplay ticket owners that expire through the game tick.
-    timed_chunk_tickets: SyncMutex<TimedChunkTickets>,
     /// The world generation context.
     pub world_gen_context: Arc<WorldGenContext>,
     /// The thread pool to use for chunk generation (throughput-oriented).
@@ -438,7 +438,7 @@ impl ChunkMap {
         generation_pool: Arc<ThreadPool>,
     ) -> Self {
         let chunk_encoding_pool = Arc::clone(&generation_pool);
-        Self::new_with_storage_and_timed_tickets(
+        Self::new_with_storage_and_ticket_storage(
             chunk_runtime,
             world,
             dimension_type,
@@ -447,8 +447,7 @@ impl ChunkMap {
             generator,
             generation_pool,
             chunk_encoding_pool,
-            TimedChunkTickets::default(),
-            0,
+            ChunkTicketStorage::new(0),
         )
     }
 
@@ -457,7 +456,7 @@ impl ChunkMap {
         clippy::too_many_arguments,
         reason = "extends ChunkMap::new_with_storage with restored runtime ticket state"
     )]
-    pub(crate) fn new_with_storage_and_timed_tickets(
+    pub(crate) fn new_with_storage_and_ticket_storage(
         chunk_runtime: Arc<Runtime>,
         world: Weak<World>,
         dimension_type: DimensionTypeRef,
@@ -466,16 +465,13 @@ impl ChunkMap {
         generator: Arc<ChunkGeneratorType>,
         generation_pool: Arc<ThreadPool>,
         chunk_encoding_pool: Arc<ThreadPool>,
-        timed_chunk_tickets: TimedChunkTickets,
-        simulation_distance: u8,
+        ticket_storage: ChunkTicketStorage,
     ) -> Self {
         let mut load_tickets = LoadTicketManager::new();
-        timed_chunk_tickets.activate_load_tickets(&mut load_tickets);
+        load_tickets.apply_source_updates(ticket_storage.initial_load_sources());
         let mut simulation_tickets = SimulationTicketManager::new();
-        for (pos, ticket) in timed_chunk_tickets.active_tickets() {
-            simulation_tickets.add_ticket(pos, ticket);
-        }
-        simulation_tickets.run_all_updates(simulation_distance);
+        simulation_tickets.apply_source_updates(ticket_storage.initial_simulation_sources());
+        simulation_tickets.run_all_updates();
         let initial_changes = simulation_tickets.take_changes();
         simulation_tickets.recycle_changes(initial_changes);
         let full_publications = Arc::new(FullPublicationQueue::default());
@@ -486,7 +482,7 @@ impl ChunkMap {
             deferred_revivals: SyncMutex::new(FxHashMap::default()),
             pending_generation_tasks: SyncMutex::new(Vec::new()),
             task_tracker: TaskTracker::new(),
-            scheduling: ChunkSchedulingCoordinator::new(load_tickets),
+            scheduling: ChunkSchedulingCoordinator::new(ticket_storage, load_tickets),
             simulation_tickets: SyncMutex::new(SimulationTicketState {
                 manager: simulation_tickets,
                 applied_revision: SimulationTicketRevision::default(),
@@ -495,7 +491,6 @@ impl ChunkMap {
             full_neighborhood: SyncMutex::new(FullNeighborhoodIndex::default()),
             ticking_chunks: ArcSwap::from_pointee(TickingChunkSnapshot::default()),
             finalized_block_entity_unloads: SyncMutex::new(Vec::new()),
-            timed_chunk_tickets: SyncMutex::new(timed_chunk_tickets),
             world_gen_context: Arc::new(WorldGenContext::new(
                 generator,
                 world,
@@ -739,26 +734,21 @@ impl ChunkMap {
     /// Adds or refreshes vanilla's post-portal chunk ticket.
     pub(crate) fn place_portal_ticket(&self, ticket_position: BlockPos) {
         let center = ChunkPos::from_block_pos(ticket_position);
-        let mut timed_tickets = self.timed_chunk_tickets.lock();
-        let ticket = timed_tickets.add_portal_ticket(center);
-        if let Some(ticket) = ticket {
-            self.add_chunk_ticket(center, ticket);
-        }
+        self.scheduling.add_or_refresh_portal_ticket(center);
     }
 
     /// Advances gameplay-owned timed chunk tickets by one server tick.
     pub(crate) fn tick_timed_tickets(&self) {
-        let mut timed_tickets = self.timed_chunk_tickets.lock();
-        let expired = timed_tickets.tick(|pos| self.can_timed_ticket_expire(pos));
-        let _ = self.scheduling.queue_ticket_operations(
-            expired
-                .into_iter()
-                .map(|(pos, ticket)| ChunkTicketOperation::Remove { pos, ticket }),
-        );
+        // Holder readiness is checked without holding the ticket-ingress lock.
+        let mut expirations = self.scheduling.timed_ticket_expirations();
+        expirations.retain(|expiration| {
+            expiration.can_expire_if_unloaded() || self.can_timed_ticket_expire(expiration.pos())
+        });
+        self.scheduling.tick_timed_tickets(&expirations);
     }
 
     pub(crate) fn persistent_chunk_tickets(&self) -> PersistentChunkTickets {
-        self.timed_chunk_tickets.lock().to_persistent()
+        self.scheduling.persistent_chunk_tickets()
     }
 
     fn can_timed_ticket_expire(&self, pos: ChunkPos) -> bool {
@@ -1116,11 +1106,13 @@ impl ChunkMap {
         let (applied_revision, changes) = {
             let mut state = self.simulation_tickets.lock();
             let previous_revision = state.applied_revision;
-            let applied_revision = self
-                .scheduling
-                .apply_pending_simulation_ticket_operations(&mut state.manager, previous_revision);
             let simulation_distance = self.world_gen_context.world().simulation_distance;
-            state.manager.run_all_updates(simulation_distance);
+            let applied_revision = self.scheduling.apply_pending_simulation_projection(
+                &mut state.manager,
+                previous_revision,
+                simulation_distance,
+            );
+            state.manager.run_all_updates();
             let changes = state.manager.take_changes();
             state.applied_revision = applied_revision;
             (applied_revision, changes)
@@ -1332,7 +1324,7 @@ impl ChunkMap {
             let start = Instant::now();
             let revision = self
                 .scheduling
-                .apply_pending_load_ticket_operations(&mut ticket_manager, applied_revision);
+                .apply_pending_load_projection(&mut ticket_manager, applied_revision);
             ticket_manager.run_all_updates();
             timings.ticket_updates = start.elapsed();
             revision
@@ -1549,11 +1541,7 @@ impl ChunkMap {
     // (`resetEmptyTime`/`shouldKeepDimensionActive`); SteelMC has no idle-dimension
     // unload concept yet, so that flag has no analog here.
     pub fn place_ender_pearl_ticket(&self, chunk: ChunkPos) {
-        let mut timed_tickets = self.timed_chunk_tickets.lock();
-        let ticket = timed_tickets.add_ender_pearl_ticket(chunk);
-        if let Some(ticket) = ticket {
-            self.add_chunk_ticket(chunk, ticket);
-        }
+        self.scheduling.add_or_refresh_ender_pearl_ticket(chunk);
     }
 }
 

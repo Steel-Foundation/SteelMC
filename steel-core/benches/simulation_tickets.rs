@@ -4,7 +4,7 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, SamplingMode, criterion_group, criterion_main};
-use steel_core::chunk::simulation_benchmark_support::SimulationTicketManager;
+use steel_core::chunk::simulation_benchmark_support::SimulationTicketBenchmarkScenario;
 use steel_utils::ChunkPos;
 use uuid::Uuid;
 
@@ -45,7 +45,7 @@ impl SourceLayout {
 }
 
 struct MoveScenario {
-    manager: SimulationTicketManager,
+    benchmark: SimulationTicketBenchmarkScenario,
     player_id: Uuid,
     original_pos: ChunkPos,
     moved_pos: ChunkPos,
@@ -54,15 +54,11 @@ struct MoveScenario {
 
 impl MoveScenario {
     fn new(layout: SourceLayout, source_count: usize, simulation_distance: u8) -> Self {
-        let mut manager = SimulationTicketManager::new();
-        for index in 0..source_count {
-            let player_id = player_id(index);
-            assert!(manager.add_player(layout.position(index), player_id));
-        }
-        black_box(manager.run_all_updates(simulation_distance));
+        let players = (0..source_count).map(|index| (player_id(index), layout.position(index)));
+        let benchmark = SimulationTicketBenchmarkScenario::new(simulation_distance, players);
 
         Self {
-            manager,
+            benchmark,
             player_id: player_id(0),
             original_pos: layout.position(0),
             moved_pos: layout.moved_position(),
@@ -70,18 +66,16 @@ impl MoveScenario {
         }
     }
 
-    fn move_player_and_rebuild(&mut self, simulation_distance: u8) -> usize {
+    fn move_player_and_propagate(&mut self) -> usize {
         let (old_pos, new_pos) = if self.player_is_moved {
             (self.moved_pos, self.original_pos)
         } else {
             (self.original_pos, self.moved_pos)
         };
 
-        assert!(self.manager.remove_player(old_pos, self.player_id));
-        assert!(self.manager.add_player(new_pos, self.player_id));
         self.player_is_moved = !self.player_is_moved;
 
-        self.manager.run_all_updates(simulation_distance).len()
+        self.benchmark.move_player(self.player_id, old_pos, new_pos)
     }
 }
 
@@ -89,11 +83,11 @@ const fn player_id(index: usize) -> Uuid {
     Uuid::from_u128(index as u128 + 1)
 }
 
-fn bench_simulation_ticket_updates(c: &mut Criterion) {
+fn bench_simulation_ticket_pipeline(c: &mut Criterion) {
     for layout in [SourceLayout::Clustered, SourceLayout::Dispersed] {
         for simulation_distance in SIMULATION_DISTANCES {
             let mut group = c.benchmark_group(format!(
-                "simulation_ticket_updates/{}/distance_{simulation_distance}",
+                "simulation_ticket_pipeline/{}/distance_{simulation_distance}",
                 layout.name()
             ));
             group.sample_size(10);
@@ -108,7 +102,7 @@ fn bench_simulation_ticket_updates(c: &mut Criterion) {
                     &source_count,
                     |b, _| {
                         b.iter(|| {
-                            black_box(scenario.move_player_and_rebuild(simulation_distance));
+                            black_box(scenario.move_player_and_propagate());
                         });
                     },
                 );
@@ -119,5 +113,5 @@ fn bench_simulation_ticket_updates(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, bench_simulation_ticket_updates);
+criterion_group!(benches, bench_simulation_ticket_pipeline);
 criterion_main!(benches);

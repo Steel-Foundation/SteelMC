@@ -1,5 +1,5 @@
 use super::*;
-use crate::chunk::chunk_ticket_manager::PORTAL_TICKET_RADIUS;
+use crate::chunk::chunk_ticket_storage::PORTAL_TICKET_RADIUS;
 use crate::level_data::WorldGenerationSettings;
 use crate::world::{WorldConfig, WorldStorageConfig};
 use std::{
@@ -62,9 +62,13 @@ fn restored_portal_ticket_initializes_loading_and_simulation_before_first_flush(
     let directory = TemporaryWorldDirectory::new("restored-portal-ticket");
     let runtime = Arc::new(Runtime::new().expect("test runtime should initialize"));
     let center = ChunkPos::new(-4, 7);
-    let mut timed_tickets = TimedChunkTickets::default();
-    assert!(timed_tickets.add_portal_ticket(center).is_some());
-    let persistent_tickets = timed_tickets.to_persistent();
+    let mut ticket_storage = ChunkTicketStorage::new(0);
+    assert!(
+        ticket_storage
+            .add_or_refresh_portal_ticket(center)
+            .load_domain_affected
+    );
+    let persistent_tickets = ticket_storage.to_persistent();
     runtime
         .block_on(
             SavedDataManager::new(Some(&directory.0))

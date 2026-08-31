@@ -6,19 +6,25 @@ use std::{
     time::Duration,
 };
 
+use rustc_hash::FxHashSet;
 use steel_utils::{ChunkPos, locks::SyncMutex};
-use uuid::Uuid;
 
 use crate::chunk::gameplay_chunk_lookup_cache::GameplayChunkLookupCacheStats;
 use crate::chunk::{
-    chunk_ticket_manager::{ChunkTicket, ChunkTicketLevel, LoadLevelChange, LoadTicketManager},
+    chunk_ticket_manager::{LoadLevelChange, LoadTicketManager},
+    chunk_ticket_storage::{
+        ChunkTicketStorage, PersistentChunkTickets, SourceLevelUpdate, SourceProjectionChanges,
+        TimedTicketExpiration,
+    },
     simulation_ticket_manager::SimulationTicketManager,
 };
+
+pub(crate) use crate::chunk::chunk_ticket_storage::ChunkTicketOperation;
 
 /// Timing information for one background epoch and its boundary commit.
 #[derive(Debug, Default)]
 pub struct ChunkMapSchedulingTimings {
-    /// Time spent applying queued ticket operations and propagating their levels.
+    /// Time spent applying queued source projections and propagating their levels.
     pub ticket_updates: Duration,
     /// Time spent finalizing block-entity unloads before the boundary commit.
     pub block_entity_unloads: Duration,
@@ -125,203 +131,60 @@ impl ChunkTicketReceipt {
     }
 }
 
-/// One source-level ticket mutation submitted by gameplay.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ChunkTicketOperation {
-    Add {
-        pos: ChunkPos,
-        ticket: ChunkTicket,
-    },
-    Remove {
-        pos: ChunkPos,
-        ticket: ChunkTicket,
-    },
-    AddPlayer {
-        pos: ChunkPos,
-        player_id: Uuid,
-        load_level: ChunkTicketLevel,
-    },
-    RemovePlayer {
-        pos: ChunkPos,
-        player_id: Uuid,
-    },
-}
-
-impl ChunkTicketOperation {
-    const fn load_operation(self) -> LoadTicketOperation {
-        match self {
-            Self::Add { pos, ticket } => LoadTicketOperation::Add { pos, ticket },
-            Self::Remove { pos, ticket } => LoadTicketOperation::Remove { pos, ticket },
-            Self::AddPlayer {
-                pos,
-                player_id,
-                load_level,
-            } => LoadTicketOperation::AddPlayer {
-                pos,
-                player_id,
-                load_level,
-            },
-            Self::RemovePlayer { pos, player_id } => {
-                LoadTicketOperation::RemovePlayer { pos, player_id }
-            }
-        }
-    }
-
-    const fn simulation_operation(self) -> Option<SimulationTicketOperation> {
-        match self {
-            Self::Add { pos, ticket } if ticket.simulation_level().is_some() => {
-                Some(SimulationTicketOperation::Add { pos, ticket })
-            }
-            Self::Remove { pos, ticket } if ticket.simulation_level().is_some() => {
-                Some(SimulationTicketOperation::Remove { pos, ticket })
-            }
-            Self::Add { .. } | Self::Remove { .. } => None,
-            Self::AddPlayer {
-                pos,
-                player_id,
-                load_level: _,
-            } => Some(SimulationTicketOperation::AddPlayer { pos, player_id }),
-            Self::RemovePlayer { pos, player_id } => {
-                Some(SimulationTicketOperation::RemovePlayer { pos, player_id })
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LoadTicketOperation {
-    Add {
-        pos: ChunkPos,
-        ticket: ChunkTicket,
-    },
-    Remove {
-        pos: ChunkPos,
-        ticket: ChunkTicket,
-    },
-    AddPlayer {
-        pos: ChunkPos,
-        player_id: Uuid,
-        load_level: ChunkTicketLevel,
-    },
-    RemovePlayer {
-        pos: ChunkPos,
-        player_id: Uuid,
-    },
-}
-
-impl LoadTicketOperation {
-    fn apply(self, ticket_manager: &mut LoadTicketManager) {
-        match self {
-            Self::Add { pos, ticket } => ticket_manager.add_ticket(pos, ticket),
-            Self::Remove { pos, ticket } => {
-                ticket_manager.remove_ticket(pos, ticket);
-            }
-            Self::AddPlayer {
-                pos,
-                player_id,
-                load_level,
-            } => {
-                ticket_manager.add_player(pos, player_id, load_level);
-            }
-            Self::RemovePlayer { pos, player_id } => {
-                ticket_manager.remove_player(pos, player_id);
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SimulationTicketOperation {
-    Add { pos: ChunkPos, ticket: ChunkTicket },
-    Remove { pos: ChunkPos, ticket: ChunkTicket },
-    AddPlayer { pos: ChunkPos, player_id: Uuid },
-    RemovePlayer { pos: ChunkPos, player_id: Uuid },
-}
-
-impl SimulationTicketOperation {
-    fn apply(self, ticket_manager: &mut SimulationTicketManager) {
-        match self {
-            Self::Add { pos, ticket } => {
-                ticket_manager.add_ticket(pos, ticket);
-            }
-            Self::Remove { pos, ticket } => {
-                ticket_manager.remove_ticket(pos, ticket);
-            }
-            Self::AddPlayer { pos, player_id } => {
-                ticket_manager.add_player(pos, player_id);
-            }
-            Self::RemovePlayer { pos, player_id } => {
-                ticket_manager.remove_player(pos, player_id);
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct QueuedTicketOperation<R, O> {
-    revision: R,
-    operation: O,
-}
-
 #[derive(Debug)]
-struct PendingTicketOperations<R, O> {
-    next_revision: R,
-    operations: Vec<QueuedTicketOperation<R, O>>,
-    recycled_operations: Vec<QueuedTicketOperation<R, O>>,
+struct PendingSourceProjection<R> {
+    latest_revision: R,
+    dirty_positions: FxHashSet<ChunkPos>,
 }
 
-impl<R: Copy, O> PendingTicketOperations<R, O> {
-    const fn new(initial_revision: R) -> Self {
+impl<R: Copy> PendingSourceProjection<R> {
+    fn new(initial_revision: R) -> Self {
         Self {
-            next_revision: initial_revision,
-            operations: Vec::new(),
-            recycled_operations: Vec::new(),
+            latest_revision: initial_revision,
+            dirty_positions: FxHashSet::default(),
         }
     }
 
-    fn push(&mut self, revision: R, operation: O) {
-        self.operations.push(QueuedTicketOperation {
-            revision,
-            operation,
-        });
+    fn allocate_revision(&mut self, next: impl FnOnce(R) -> R) -> R {
+        let revision = next(self.latest_revision);
+        self.latest_revision = revision;
+        revision
     }
 
-    fn take(&mut self) -> Vec<QueuedTicketOperation<R, O>> {
-        mem::replace(
-            &mut self.operations,
-            mem::take(&mut self.recycled_operations),
-        )
+    fn mark_positions(&mut self, positions: impl IntoIterator<Item = ChunkPos>) {
+        self.dirty_positions.extend(positions);
     }
 
-    fn recycle(&mut self, mut operations: Vec<QueuedTicketOperation<R, O>>) {
-        operations.clear();
-        self.recycled_operations = operations;
+    fn take_positions(&mut self) -> Vec<ChunkPos> {
+        let mut positions: Vec<_> = mem::take(&mut self.dirty_positions).into_iter().collect();
+        positions.sort_unstable_by_key(|pos| (pos.0.x, pos.0.y));
+        positions
     }
 }
-
-type PendingLoadTicketOperations = PendingTicketOperations<LoadTicketRevision, LoadTicketOperation>;
-type PendingSimulationTicketOperations =
-    PendingTicketOperations<SimulationTicketRevision, SimulationTicketOperation>;
 
 #[derive(Debug)]
 struct TicketOperationIngress {
-    load: PendingLoadTicketOperations,
-    simulation: PendingSimulationTicketOperations,
-}
-
-impl Default for TicketOperationIngress {
-    fn default() -> Self {
-        Self {
-            load: PendingTicketOperations::new(LoadTicketRevision::INITIAL),
-            simulation: PendingTicketOperations::new(SimulationTicketRevision::INITIAL),
-        }
-    }
+    storage: ChunkTicketStorage,
+    load: PendingSourceProjection<LoadTicketRevision>,
+    simulation: PendingSourceProjection<SimulationTicketRevision>,
 }
 
 impl TicketOperationIngress {
+    fn new(storage: ChunkTicketStorage) -> Self {
+        Self {
+            storage,
+            load: PendingSourceProjection::new(LoadTicketRevision::INITIAL),
+            simulation: PendingSourceProjection::new(SimulationTicketRevision::INITIAL),
+        }
+    }
+
     fn push(&mut self, operation: ChunkTicketOperation) -> ChunkTicketReceipt {
-        let mut receipt = ChunkTicketReceipt::default();
-        self.push_operation(operation, &mut receipt);
+        let changes = self.storage.apply(operation);
+        let receipt = self.record_changes(changes);
+        assert!(
+            receipt.load.is_some(),
+            "every submitted ticket operation must affect loading"
+        );
         receipt
     }
 
@@ -329,35 +192,66 @@ impl TicketOperationIngress {
         &mut self,
         operations: impl IntoIterator<Item = ChunkTicketOperation>,
     ) -> Option<ChunkTicketReceipt> {
-        let mut receipt = None;
-        for operation in operations {
-            let receipt = receipt.get_or_insert_with(ChunkTicketReceipt::default);
-            self.push_operation(operation, receipt);
+        let changes = self.storage.apply_operations(operations);
+        if !changes.load_domain_affected {
+            return None;
         }
-        receipt
+
+        Some(self.record_changes(changes))
     }
 
-    fn push_operation(
-        &mut self,
-        operation: ChunkTicketOperation,
-        receipt: &mut ChunkTicketReceipt,
-    ) {
-        let load_operation = operation.load_operation();
-        let revision = *receipt.load.get_or_insert_with(|| {
-            let revision = self.load.next_revision.next();
-            self.load.next_revision = revision;
-            revision
-        });
-        self.load.push(revision, load_operation);
+    fn record_changes(&mut self, changes: SourceProjectionChanges) -> ChunkTicketReceipt {
+        let SourceProjectionChanges {
+            load_positions,
+            simulation_positions,
+            load_domain_affected,
+            simulation_domain_affected,
+        } = changes;
 
-        if let Some(simulation_operation) = operation.simulation_operation() {
-            let revision = *receipt.simulation.get_or_insert_with(|| {
-                let revision = self.simulation.next_revision.next();
-                self.simulation.next_revision = revision;
-                revision
-            });
-            self.simulation.push(revision, simulation_operation);
+        let load = load_domain_affected.then(|| {
+            self.load.mark_positions(load_positions);
+            self.load.allocate_revision(LoadTicketRevision::next)
+        });
+        let simulation = simulation_domain_affected.then(|| {
+            self.simulation.mark_positions(simulation_positions);
+            self.simulation
+                .allocate_revision(SimulationTicketRevision::next)
+        });
+
+        ChunkTicketReceipt { load, simulation }
+    }
+
+    fn take_load_projection(&mut self) -> (Vec<SourceLevelUpdate>, LoadTicketRevision) {
+        let positions = self.load.take_positions();
+        let updates = positions
+            .into_iter()
+            .map(|pos| self.storage.load_source_update(pos))
+            .collect();
+        (updates, self.load.latest_revision)
+    }
+
+    fn take_simulation_projection(
+        &mut self,
+        simulation_distance: u8,
+    ) -> (Vec<SourceLevelUpdate>, SimulationTicketRevision) {
+        let distance_changes = self.storage.set_simulation_distance(simulation_distance);
+        self.simulation
+            .mark_positions(distance_changes.simulation_positions);
+
+        let positions = self.simulation.take_positions();
+        let updates = positions
+            .into_iter()
+            .map(|pos| self.storage.simulation_source_update(pos))
+            .collect();
+        (updates, self.simulation.latest_revision)
+    }
+
+    fn record_if_affected(&mut self, changes: SourceProjectionChanges) {
+        if !changes.load_domain_affected && !changes.simulation_domain_affected {
+            return;
         }
+
+        self.record_changes(changes);
     }
 }
 
@@ -386,20 +280,21 @@ pub(crate) enum ChunkSchedulingBoundaryStep {
     Commit(PreparedChunkSchedulingEpoch),
 }
 
-/// Owns the short ticket-ingress lock and the non-blocking epoch handoff.
-/// The propagation manager moves between epochs instead of being cloned or
-/// locked by gameplay.
+/// Owns authoritative ticket sources and the non-blocking epoch handoff.
+///
+/// Gameplay mutates source ownership under the ingress lock. Loading and
+/// simulation propagation consume coalesced level projections outside it.
 pub(crate) struct ChunkSchedulingCoordinator {
-    ticket_operation_ingress: SyncMutex<TicketOperationIngress>,
+    ticket_ingress: SyncMutex<TicketOperationIngress>,
     state: SyncMutex<ChunkSchedulingState>,
     committed_load_revision: AtomicU64,
     committed_simulation_revision: AtomicU64,
 }
 
 impl ChunkSchedulingCoordinator {
-    pub fn new(ticket_manager: LoadTicketManager) -> Self {
+    pub fn new(ticket_storage: ChunkTicketStorage, ticket_manager: LoadTicketManager) -> Self {
         Self {
-            ticket_operation_ingress: SyncMutex::new(TicketOperationIngress::default()),
+            ticket_ingress: SyncMutex::new(TicketOperationIngress::new(ticket_storage)),
             state: SyncMutex::new(ChunkSchedulingState::Idle {
                 ticket_manager,
                 applied_revision: LoadTicketRevision::INITIAL,
@@ -410,50 +305,77 @@ impl ChunkSchedulingCoordinator {
     }
 
     pub fn queue_ticket_operation(&self, operation: ChunkTicketOperation) -> ChunkTicketReceipt {
-        self.ticket_operation_ingress.lock().push(operation)
+        self.ticket_ingress.lock().push(operation)
     }
 
     pub fn queue_ticket_operations(
         &self,
         operations: impl IntoIterator<Item = ChunkTicketOperation>,
     ) -> Option<ChunkTicketReceipt> {
-        self.ticket_operation_ingress.lock().push_batch(operations)
+        self.ticket_ingress.lock().push_batch(operations)
     }
 
-    pub fn apply_pending_load_ticket_operations(
+    pub fn apply_pending_load_projection(
         &self,
         ticket_manager: &mut LoadTicketManager,
         applied_revision: LoadTicketRevision,
     ) -> LoadTicketRevision {
-        let mut operations = self.ticket_operation_ingress.lock().load.take();
-        let mut latest_revision = applied_revision;
-        for queued in operations.drain(..) {
-            queued.operation.apply(ticket_manager);
-            latest_revision = queued.revision;
-        }
-        self.ticket_operation_ingress
-            .lock()
-            .load
-            .recycle(operations);
-        latest_revision
+        let (updates, through_revision) = self.ticket_ingress.lock().take_load_projection();
+        assert!(
+            through_revision >= applied_revision,
+            "load projection revision moved backwards"
+        );
+        ticket_manager.apply_source_updates(updates);
+        through_revision
     }
 
-    pub fn apply_pending_simulation_ticket_operations(
+    pub fn apply_pending_simulation_projection(
         &self,
         ticket_manager: &mut SimulationTicketManager,
         applied_revision: SimulationTicketRevision,
+        simulation_distance: u8,
     ) -> SimulationTicketRevision {
-        let mut operations = self.ticket_operation_ingress.lock().simulation.take();
-        let mut latest_revision = applied_revision;
-        for queued in operations.drain(..) {
-            queued.operation.apply(ticket_manager);
-            latest_revision = queued.revision;
-        }
-        self.ticket_operation_ingress
+        let (updates, through_revision) = self
+            .ticket_ingress
             .lock()
-            .simulation
-            .recycle(operations);
-        latest_revision
+            .take_simulation_projection(simulation_distance);
+        assert!(
+            through_revision >= applied_revision,
+            "simulation projection revision moved backwards"
+        );
+        ticket_manager.apply_source_updates(updates);
+        through_revision
+    }
+
+    pub(crate) fn add_or_refresh_portal_ticket(&self, pos: ChunkPos) {
+        let mut ingress = self.ticket_ingress.lock();
+        let changes = ingress.storage.add_or_refresh_portal_ticket(pos);
+        ingress.record_if_affected(changes);
+    }
+
+    pub(crate) fn add_or_refresh_ender_pearl_ticket(&self, pos: ChunkPos) {
+        let mut ingress = self.ticket_ingress.lock();
+        let changes = ingress.storage.add_or_refresh_ender_pearl_ticket(pos);
+        ingress.record_if_affected(changes);
+    }
+
+    #[must_use]
+    pub(crate) fn timed_ticket_expirations(&self) -> Vec<TimedTicketExpiration> {
+        self.ticket_ingress
+            .lock()
+            .storage
+            .timed_ticket_expirations()
+    }
+
+    pub(crate) fn tick_timed_tickets(&self, expirations: &[TimedTicketExpiration]) {
+        let mut ingress = self.ticket_ingress.lock();
+        let changes = ingress.storage.tick_timed_tickets(expirations);
+        ingress.record_if_affected(changes);
+    }
+
+    #[must_use]
+    pub(crate) fn persistent_chunk_tickets(&self) -> PersistentChunkTickets {
+        self.ticket_ingress.lock().storage.to_persistent()
     }
 
     pub fn take_boundary_step(&self) -> ChunkSchedulingBoundaryStep {
@@ -514,260 +436,131 @@ impl ChunkSchedulingCoordinator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chunk::chunk_ticket_manager::{ChunkTicket, ChunkTicketLevel};
+    use uuid::Uuid;
 
-    #[derive(Clone, Copy)]
-    struct MixedBatchFixture {
-        first_pos: ChunkPos,
-        second_pos: ChunkPos,
-        player_id: Uuid,
-        player_load_level: ChunkTicketLevel,
-        load_only: ChunkTicket,
-        simulated: ChunkTicket,
-    }
-
-    fn assert_mixed_load_projection(
-        operations: &[QueuedTicketOperation<LoadTicketRevision, LoadTicketOperation>],
-        revision: LoadTicketRevision,
-        fixture: MixedBatchFixture,
-    ) {
-        assert_eq!(
-            operations,
-            [
-                QueuedTicketOperation {
-                    revision,
-                    operation: LoadTicketOperation::Add {
-                        pos: fixture.first_pos,
-                        ticket: fixture.load_only,
-                    },
-                },
-                QueuedTicketOperation {
-                    revision,
-                    operation: LoadTicketOperation::AddPlayer {
-                        pos: fixture.first_pos,
-                        player_id: fixture.player_id,
-                        load_level: fixture.player_load_level,
-                    },
-                },
-                QueuedTicketOperation {
-                    revision,
-                    operation: LoadTicketOperation::Add {
-                        pos: fixture.second_pos,
-                        ticket: fixture.simulated,
-                    },
-                },
-                QueuedTicketOperation {
-                    revision,
-                    operation: LoadTicketOperation::RemovePlayer {
-                        pos: fixture.first_pos,
-                        player_id: fixture.player_id,
-                    },
-                },
-                QueuedTicketOperation {
-                    revision,
-                    operation: LoadTicketOperation::Remove {
-                        pos: fixture.second_pos,
-                        ticket: fixture.simulated,
-                    },
-                },
-            ]
-        );
-    }
-
-    fn assert_mixed_simulation_projection(
-        operations: &[QueuedTicketOperation<SimulationTicketRevision, SimulationTicketOperation>],
-        revision: SimulationTicketRevision,
-        fixture: MixedBatchFixture,
-    ) {
-        assert_eq!(
-            operations,
-            [
-                QueuedTicketOperation {
-                    revision,
-                    operation: SimulationTicketOperation::AddPlayer {
-                        pos: fixture.first_pos,
-                        player_id: fixture.player_id,
-                    },
-                },
-                QueuedTicketOperation {
-                    revision,
-                    operation: SimulationTicketOperation::Add {
-                        pos: fixture.second_pos,
-                        ticket: fixture.simulated,
-                    },
-                },
-                QueuedTicketOperation {
-                    revision,
-                    operation: SimulationTicketOperation::RemovePlayer {
-                        pos: fixture.first_pos,
-                        player_id: fixture.player_id,
-                    },
-                },
-                QueuedTicketOperation {
-                    revision,
-                    operation: SimulationTicketOperation::Remove {
-                        pos: fixture.second_pos,
-                        ticket: fixture.simulated,
-                    },
-                },
-            ]
-        );
+    fn coordinator(simulation_distance: u8) -> ChunkSchedulingCoordinator {
+        ChunkSchedulingCoordinator::new(
+            ChunkTicketStorage::new(simulation_distance),
+            LoadTicketManager::new(),
+        )
     }
 
     #[test]
-    fn mixed_batch_fans_out_in_source_order() {
-        let load_only = ChunkTicket::full_chunks(0);
-        let simulated = ChunkTicket::simulated_full_chunks(1);
-        let player_load_level = ChunkTicketLevel::ENTITY_TICKING_CHUNK;
-        let first_pos = ChunkPos::new(3, -2);
-        let second_pos = ChunkPos::new(-4, 5);
-        let player_id = Uuid::from_u128(1);
-        let fixture = MixedBatchFixture {
-            first_pos,
-            second_pos,
-            player_id,
-            player_load_level,
-            load_only,
-            simulated,
-        };
-        let mut ingress = TicketOperationIngress::default();
+    fn operations_coalesce_to_one_final_projection_per_position() {
+        let pos = ChunkPos::new(3, -2);
+        let weaker = ChunkTicket::simulated_full_chunks(3);
+        let stronger = ChunkTicket::simulated_full_chunks(1);
+        let mut ingress = TicketOperationIngress::new(ChunkTicketStorage::new(4));
 
         let receipt = ingress
             .push_batch([
                 ChunkTicketOperation::Add {
-                    pos: first_pos,
-                    ticket: load_only,
-                },
-                ChunkTicketOperation::AddPlayer {
-                    pos: first_pos,
-                    player_id,
-                    load_level: player_load_level,
+                    pos,
+                    ticket: weaker,
                 },
                 ChunkTicketOperation::Add {
-                    pos: second_pos,
-                    ticket: simulated,
-                },
-                ChunkTicketOperation::RemovePlayer {
-                    pos: first_pos,
-                    player_id,
+                    pos,
+                    ticket: stronger,
                 },
                 ChunkTicketOperation::Remove {
-                    pos: second_pos,
-                    ticket: simulated,
+                    pos,
+                    ticket: weaker,
                 },
             ])
             .expect("non-empty batch should produce a receipt");
-        let load_revision = receipt.load().expect("batch affects loading");
-        let simulation_revision = receipt.simulation().expect("batch affects simulation");
+        let (load_updates, load_revision) = ingress.take_load_projection();
+        let (simulation_updates, simulation_revision) = ingress.take_simulation_projection(4);
 
-        assert_mixed_load_projection(&ingress.load.operations, load_revision, fixture);
-        assert_mixed_simulation_projection(
-            &ingress.simulation.operations,
-            simulation_revision,
-            fixture,
+        assert_eq!(receipt.load(), Some(load_revision));
+        assert_eq!(receipt.simulation(), Some(simulation_revision));
+        assert_eq!(
+            load_updates,
+            [SourceLevelUpdate {
+                pos,
+                level: Some(stronger.load_level()),
+            }]
+        );
+        assert_eq!(
+            simulation_updates,
+            [SourceLevelUpdate {
+                pos,
+                level: stronger.simulation_level(),
+            }]
         );
     }
 
     #[test]
-    fn batches_keep_independent_domain_order() {
-        let load_only = ChunkTicket::full_chunks(0);
-        let simulated = ChunkTicket::simulated_full_chunks(0);
-        let pos = ChunkPos::new(3, -2);
-        let player_id = Uuid::from_u128(2);
-        let player_load_level = ChunkTicketLevel::ENTITY_TICKING_CHUNK;
-        let mut ingress = TicketOperationIngress::default();
-
-        let first_load = ingress.push(ChunkTicketOperation::Add {
-            pos,
-            ticket: load_only,
-        });
-        let first_player = ingress.push(ChunkTicketOperation::AddPlayer {
-            pos,
-            player_id,
-            load_level: player_load_level,
-        });
-        let shared = ingress.push(ChunkTicketOperation::Add {
-            pos,
-            ticket: simulated,
-        });
-
-        assert_eq!(first_load.load(), Some(LoadTicketRevision(1)));
-        assert_eq!(first_load.simulation(), None);
-        assert_eq!(first_player.load(), Some(LoadTicketRevision(2)));
-        assert_eq!(first_player.simulation(), Some(SimulationTicketRevision(1)));
-        assert_eq!(shared.load(), Some(LoadTicketRevision(3)));
-        assert_eq!(shared.simulation(), Some(SimulationTicketRevision(2)));
-        assert_eq!(
-            ingress
-                .load
-                .operations
-                .iter()
-                .map(|queued| queued.revision)
-                .collect::<Vec<_>>(),
-            [
-                LoadTicketRevision(1),
-                LoadTicketRevision(2),
-                LoadTicketRevision(3)
-            ]
-        );
-        assert_eq!(
-            ingress
-                .simulation
-                .operations
-                .iter()
-                .map(|queued| queued.revision)
-                .collect::<Vec<_>>(),
-            [SimulationTicketRevision(1), SimulationTicketRevision(2)]
-        );
-    }
-
-    #[test]
-    fn player_mutations_advance_both_domain_revisions() {
-        let coordinator = ChunkSchedulingCoordinator::new(LoadTicketManager::new());
+    fn no_op_receipts_advance_when_both_projections_are_drained() {
+        let coordinator = coordinator(4);
         let pos = ChunkPos::new(0, 0);
-        let player_id = Uuid::from_u128(3);
-        let load_ticket = ChunkTicket::full_chunks(0);
-        let player_load_level = ChunkTicketLevel::ENTITY_TICKING_CHUNK;
-        let first_load = coordinator.queue_ticket_operation(ChunkTicketOperation::Add {
+        let receipt = coordinator.queue_ticket_operation(ChunkTicketOperation::Remove {
             pos,
-            ticket: load_ticket,
+            ticket: ChunkTicket::simulated_full_chunks(0),
         });
-        let player_add = coordinator.queue_ticket_operation(ChunkTicketOperation::AddPlayer {
-            pos,
-            player_id,
-            load_level: player_load_level,
-        });
-        let player_remove = coordinator
-            .queue_ticket_operation(ChunkTicketOperation::RemovePlayer { pos, player_id });
-        let second_load = coordinator.queue_ticket_operation(ChunkTicketOperation::Remove {
-            pos,
-            ticket: load_ticket,
-        });
+        let mut load_manager = LoadTicketManager::new();
+        let mut simulation_manager = SimulationTicketManager::new();
 
-        assert_eq!(first_load.load(), Some(LoadTicketRevision(1)));
-        assert_eq!(player_add.load(), Some(LoadTicketRevision(2)));
-        assert_eq!(player_remove.load(), Some(LoadTicketRevision(3)));
-        assert_eq!(second_load.load(), Some(LoadTicketRevision(4)));
-        assert_eq!(player_add.simulation(), Some(SimulationTicketRevision(1)));
-        assert_eq!(
-            player_remove.simulation(),
-            Some(SimulationTicketRevision(2))
+        let load_revision = coordinator
+            .apply_pending_load_projection(&mut load_manager, LoadTicketRevision::INITIAL);
+        let simulation_revision = coordinator.apply_pending_simulation_projection(
+            &mut simulation_manager,
+            SimulationTicketRevision::INITIAL,
+            4,
         );
+
+        assert_eq!(receipt.load(), Some(load_revision));
+        assert_eq!(receipt.simulation(), Some(simulation_revision));
+        assert_eq!(load_manager.run_all_updates(), []);
+        assert_eq!(simulation_manager.run_all_updates(), []);
+        assert!(!coordinator.is_receipt_committed(receipt));
+
+        coordinator.publish_committed_load_revision(load_revision);
+        coordinator.publish_committed_simulation_revision(simulation_revision);
+        assert!(coordinator.is_receipt_committed(receipt));
     }
 
     #[test]
-    fn player_identity_semantics_are_delegated_to_each_manager() {
-        let coordinator = ChunkSchedulingCoordinator::new(LoadTicketManager::new());
+    fn domains_converge_when_a_submission_lands_between_projection_drains() {
+        let coordinator = coordinator(4);
+        let pos = ChunkPos::new(0, 0);
+        let ticket = ChunkTicket::simulated_full_chunks(0);
+        let _ = coordinator.queue_ticket_operation(ChunkTicketOperation::Add { pos, ticket });
+        let mut load_manager = LoadTicketManager::new();
+        let mut simulation_manager = SimulationTicketManager::new();
+
+        let first_load = coordinator
+            .apply_pending_load_projection(&mut load_manager, LoadTicketRevision::INITIAL);
+        load_manager.run_all_updates();
+        assert!(load_manager.get_level(pos).is_some());
+
+        let removal =
+            coordinator.queue_ticket_operation(ChunkTicketOperation::Remove { pos, ticket });
+        let simulation = coordinator.apply_pending_simulation_projection(
+            &mut simulation_manager,
+            SimulationTicketRevision::INITIAL,
+            4,
+        );
+        let load = coordinator.apply_pending_load_projection(&mut load_manager, first_load);
+        simulation_manager.run_all_updates();
+        load_manager.run_all_updates();
+
+        assert_eq!(removal.load(), Some(load));
+        assert_eq!(removal.simulation(), Some(simulation));
+        assert_eq!(load_manager.get_level(pos), None);
+        assert_eq!(simulation_manager.get_level(pos), None);
+    }
+
+    #[test]
+    fn player_moves_and_stale_removals_use_one_authoritative_source() {
+        let simulation_distance = 4;
+        let coordinator = coordinator(simulation_distance);
         let old_pos = ChunkPos::new(0, 0);
         let new_pos = ChunkPos::new(100, 0);
         let player_id = Uuid::from_u128(4);
         let load_level = ChunkTicketLevel::ENTITY_TICKING_CHUNK;
         let receipt = coordinator
             .queue_ticket_operations([
-                ChunkTicketOperation::AddPlayer {
-                    pos: old_pos,
-                    player_id,
-                    load_level,
-                },
                 ChunkTicketOperation::AddPlayer {
                     pos: old_pos,
                     player_id,
@@ -788,13 +581,14 @@ mod tests {
         let mut simulation_manager = SimulationTicketManager::new();
 
         let applied_load = coordinator
-            .apply_pending_load_ticket_operations(&mut load_manager, LoadTicketRevision::INITIAL);
-        let applied_simulation = coordinator.apply_pending_simulation_ticket_operations(
+            .apply_pending_load_projection(&mut load_manager, LoadTicketRevision::INITIAL);
+        let applied_simulation = coordinator.apply_pending_simulation_projection(
             &mut simulation_manager,
             SimulationTicketRevision::INITIAL,
+            simulation_distance,
         );
         load_manager.run_all_updates();
-        simulation_manager.run_all_updates(0);
+        simulation_manager.run_all_updates();
 
         assert_eq!(receipt.load(), Some(applied_load));
         assert_eq!(receipt.simulation(), Some(applied_simulation));
@@ -803,13 +597,15 @@ mod tests {
         assert_eq!(simulation_manager.get_level(old_pos), None);
         assert_eq!(
             simulation_manager.get_level(new_pos),
-            Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK)
+            Some(ChunkTicketLevel::for_entity_ticking_radius(
+                simulation_distance
+            ))
         );
     }
 
     #[test]
-    fn receipt_commit_checks_only_affected_domains() {
-        let coordinator = ChunkSchedulingCoordinator::new(LoadTicketManager::new());
+    fn load_and_simulation_domains_commit_independently() {
+        let coordinator = coordinator(4);
         let pos = ChunkPos::new(0, 0);
         let load_only = coordinator.queue_ticket_operation(ChunkTicketOperation::Add {
             pos,
@@ -835,8 +631,50 @@ mod tests {
     }
 
     #[test]
+    fn simulation_distance_change_reprojects_players_without_a_new_revision() {
+        let initial_distance = 2;
+        let updated_distance = 6;
+        let coordinator = coordinator(initial_distance);
+        let pos = ChunkPos::new(5, -3);
+        let receipt = coordinator.queue_ticket_operation(ChunkTicketOperation::AddPlayer {
+            pos,
+            player_id: Uuid::from_u128(5),
+            load_level: ChunkTicketLevel::ENTITY_TICKING_CHUNK,
+        });
+        let mut simulation_manager = SimulationTicketManager::new();
+        let applied_revision = coordinator.apply_pending_simulation_projection(
+            &mut simulation_manager,
+            SimulationTicketRevision::INITIAL,
+            initial_distance,
+        );
+        simulation_manager.run_all_updates();
+        assert_eq!(receipt.simulation(), Some(applied_revision));
+        assert_eq!(
+            simulation_manager.get_level(pos),
+            Some(ChunkTicketLevel::for_entity_ticking_radius(
+                initial_distance
+            ))
+        );
+
+        let unchanged_revision = coordinator.apply_pending_simulation_projection(
+            &mut simulation_manager,
+            applied_revision,
+            updated_distance,
+        );
+        simulation_manager.run_all_updates();
+
+        assert_eq!(unchanged_revision, applied_revision);
+        assert_eq!(
+            simulation_manager.get_level(pos),
+            Some(ChunkTicketLevel::for_entity_ticking_radius(
+                updated_distance
+            ))
+        );
+    }
+
+    #[test]
     fn prepared_load_revision_is_not_visible_before_boundary_publication() {
-        let coordinator = ChunkSchedulingCoordinator::new(LoadTicketManager::new());
+        let coordinator = coordinator(4);
         let receipt = coordinator
             .queue_ticket_operations([ChunkTicketOperation::Add {
                 pos: ChunkPos::new(0, 0),
@@ -856,7 +694,7 @@ mod tests {
             ChunkSchedulingBoundaryStep::Running
         ));
         let applied =
-            coordinator.apply_pending_load_ticket_operations(&mut ticket_manager, applied_revision);
+            coordinator.apply_pending_load_projection(&mut ticket_manager, applied_revision);
         ticket_manager.run_all_updates();
         let changes = ticket_manager.take_changes();
         coordinator.finish_epoch(PreparedChunkSchedulingEpoch {
