@@ -127,6 +127,7 @@ pub use flower_bed_block::FlowerBedBlock;
 pub use flower_block::FlowerBlock;
 pub use glow_lichen_block::GlowLichenBlock;
 pub use grass_block::GrassBlock;
+pub use growing_plant_head_block::{GrowingPlantHeadBehavior, MAX_AGE};
 pub use hanging_moss_block::HangingMossBlock;
 pub use hanging_roots_block::HangingRootsBlock;
 pub use huge_mushroom_block::HugeMushroomBlock;
