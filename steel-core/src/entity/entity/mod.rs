@@ -1986,7 +1986,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             4.0,
         ) && self.should_play_lava_hurt_sound()
         {
-            let pitch = 2.0 + rand::random::<f32>() * 0.4;
+            let pitch = rand::random_range(2.0..2.4);
             self.play_sound(&sound_events::ENTITY_GENERIC_BURN, 0.4, pitch);
         }
     }
@@ -2323,7 +2323,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 is_shape_full_block(collision_shape)
             });
 
-        let speed = f64::from(rand::random::<f32>().mul_add(0.2, 0.1));
+        let speed = f64::from(rand::random_range(0.1f32..0.3));
         let step = direction_step(closest_direction);
         let scaled_velocity = self.velocity() * 0.75;
         let next_velocity = match closest_direction.axis() {

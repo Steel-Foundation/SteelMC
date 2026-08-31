@@ -1293,7 +1293,7 @@ impl EntityBase {
             progress.crystal_sound_intensity
         };
 
-        let pitch = 0.5 + intensity * rand::random::<f32>() * 1.2;
+        let pitch = rand::random_range(0.5..0.5 + intensity * 1.2);
         let volume = 0.1 + intensity * 1.2;
         Some(EntityAmethystStepSound { volume, pitch })
     }

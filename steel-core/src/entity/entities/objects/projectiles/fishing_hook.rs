@@ -764,7 +764,7 @@ impl FishingHookEntity {
 
                 self.base.set_velocity(DVec3::new(
                     velocity.x * 0.9,
-                    velocity.y - force * rng().random::<f64>() * 0.2,
+                    velocity.y - force * rng().random_range(0.0..0.2),
                     velocity.z * 0.9,
                 ));
 
