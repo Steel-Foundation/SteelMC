@@ -381,7 +381,11 @@ impl SimulationTicketManager {
         let dz = (i64::from(source_pos.0.y) - i64::from(pos.0.y)).abs();
         let distance = dx.max(dz);
         let radius = i64::from(ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw() - source_level);
-        (distance <= radius).then_some(source_level + distance as u8)
+        if distance > radius {
+            return None;
+        }
+
+        Some(source_level + distance as u8)
     }
 
     fn ticket_level(raw_level: Option<u8>) -> Option<ChunkTicketLevel> {
@@ -881,6 +885,19 @@ mod tests {
         run_and_compare_with_reference(&mut manager, &mut previous_levels);
 
         manager.apply_source_updates([source(old_pos, None), source(new_pos, Some(96))]);
+        run_and_compare_with_reference(&mut manager, &mut previous_levels);
+    }
+
+    #[test]
+    fn distant_isolated_move_matches_reference() {
+        let mut manager = SimulationTicketManager::new();
+        let mut previous_levels = FxHashMap::default();
+        let old_pos = ChunkPos::new(0, 0);
+        let new_pos = ChunkPos::new(500, 0);
+        manager.apply_source_update(source(old_pos, Some(122)));
+        run_and_compare_with_reference(&mut manager, &mut previous_levels);
+
+        manager.apply_source_updates([source(old_pos, None), source(new_pos, Some(122))]);
         run_and_compare_with_reference(&mut manager, &mut previous_levels);
     }
 
