@@ -25,7 +25,7 @@ pub const CAMPFIRE_SLOTS: usize = 4;
 const BURN_COOL_SPEED: i32 = 2;
 const LIT: &BoolProperty = &BlockStateProperties::LIT;
 
-struct CampfireCookingState {
+pub struct CampfireCookingState {
     items: [ItemStack; CAMPFIRE_SLOTS],
     cooking_progress: [i32; CAMPFIRE_SLOTS],
     cooking_time: [i32; CAMPFIRE_SLOTS],

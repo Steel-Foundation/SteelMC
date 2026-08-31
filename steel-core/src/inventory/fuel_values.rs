@@ -9,9 +9,6 @@ use steel_registry::{REGISTRY, RegistryEntry as _, RegistryExt as _, TaggedRegis
 use steel_utils::Identifier;
 
 /// Fuel durations indexed by item registry ID.
-///
-/// The builder is public so a future server registry assembly phase can apply
-/// plugin additions before publishing its process-wide values.
 pub struct FuelValues {
     burn_durations: Vec<i32>,
 }
