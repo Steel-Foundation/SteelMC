@@ -18,6 +18,7 @@ use steel_registry::recipe::{
     vanilla_recipe_types,
 };
 use steel_registry::{REGISTRY, vanilla_block_entity_types, vanilla_items};
+use steel_utils::locks::IntoShared;
 use steel_utils::{
     BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier, locks::SyncMutex,
     types::UpdateFlags,
@@ -74,7 +75,7 @@ impl FurnaceKind {
 }
 
 /// Independently lockable furnace inventory and progress data.
-pub(crate) struct FurnaceContainer {
+pub struct FurnaceContainer {
     kind: FurnaceKind,
     items: [ItemStack; FURNACE_SLOTS],
     lit_time_remaining: i32,
