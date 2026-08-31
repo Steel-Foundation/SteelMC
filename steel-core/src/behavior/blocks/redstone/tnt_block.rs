@@ -21,7 +21,7 @@ use crate::behavior::{
     BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
 };
 use crate::entity::projectile::Projectile;
-use crate::entity::{Entity, SharedEntity, entities::PrimedTntEntity, next_entity_id};
+use crate::entity::{Entity, entities::PrimedTntEntity, next_entity_id};
 use crate::player::Player;
 use crate::world::game_event::GameEventContext;
 use crate::world::{ClipHitResult, Explosion, SignalGetter as _, World};
@@ -59,16 +59,7 @@ impl TntBlock {
         ))
     }
 
-    fn try_add_primed(world: &Arc<World>, entity: Arc<PrimedTntEntity>) -> bool {
-        let entity: SharedEntity = entity;
-        if let Err(error) = world.try_add_entity(entity) {
-            log::debug!("failed to add primed TNT: {error}");
-            return false;
-        }
-        true
-    }
-
-    /// Primes TNT at `pos`, returning whether a primed entity was created.
+    /// Primes TNT at `pos`, returning whether a primed entity was added to the world.
     ///
     /// This is crate-visible so shared fire burn ticking can call the same entry point when that
     /// foundation is implemented.
@@ -79,7 +70,8 @@ impl TntBlock {
 
         let entity = Self::primed_entity(world, pos, owner);
         let position = entity.position();
-        if !Self::try_add_primed(world, entity) {
+        if let Err(error) = world.try_add_entity(entity) {
+            log::debug!("failed to add primed TNT: {error}");
             return false;
         }
         world.play_sound_at(
@@ -165,7 +157,9 @@ impl BlockBehavior for TntBlock {
 
         let entity = Self::primed_entity(world, pos, explosion.indirect_source_entity());
         entity.set_fuse(PrimedTntEntity::get_random_short_fuse(world, entity.fuse()));
-        Self::try_add_primed(world, entity);
+        if let Err(error) = world.try_add_entity(entity) {
+            log::debug!("failed to add primed TNT: {error}");
+        }
     }
 
     fn use_item_on(

@@ -61,9 +61,9 @@ impl PrimedTntState {
     }
 }
 
-struct UsedPortalDamageCalculator;
+struct NetherPortalPreservingExplosionDamageCalculator;
 
-impl ExplosionDamageCalculator for UsedPortalDamageCalculator {
+impl ExplosionDamageCalculator for NetherPortalPreservingExplosionDamageCalculator {
     fn block_explosion_resistance(
         &self,
         explosion: &dyn Explosion,
@@ -94,7 +94,7 @@ impl ExplosionDamageCalculator for UsedPortalDamageCalculator {
     }
 }
 
-impl ImmutableExplosionBlockCalculator for UsedPortalDamageCalculator {
+impl ImmutableExplosionBlockCalculator for NetherPortalPreservingExplosionDamageCalculator {
     fn bounded_block_read_radius(&self) -> Option<u32> {
         Some(0)
     }
@@ -142,7 +142,8 @@ impl ImmutableExplosionBlockCalculator for UsedPortalDamageCalculator {
     }
 }
 
-static USED_PORTAL_DAMAGE_CALCULATOR: UsedPortalDamageCalculator = UsedPortalDamageCalculator;
+static USED_PORTAL_DAMAGE_CALCULATOR: NetherPortalPreservingExplosionDamageCalculator =
+    NetherPortalPreservingExplosionDamageCalculator;
 static DEFAULT_TNT_BLOCK_CALCULATOR: DefaultExplosionDamageCalculator =
     DefaultExplosionDamageCalculator;
 

@@ -11,34 +11,41 @@ const CLIP_EPSILON: f64 = 1.0e-7;
 const CORNER_HIT_EPSILON: f64 = 1.0e-5;
 const ENTITY_INSIDE_SWEEP_INFLATE_EPSILON: f64 = 1.0e-7;
 
-/// Allocation-free visited-position set for ordinary single-tick movement,
-/// with a hashed fallback for unusually large entities or movement segments.
-#[derive(Default)]
-struct MovementVisitedBlocks {
-    inline: SmallVec<[BlockPos; 16]>,
-    overflow: Option<FxHashSet<BlockPos>>,
+/// Deduplicates candidate positions within one geometric sweep of one movement segment.
+/// Ordinary sweeps use inline storage; unusually large sweeps switch to a hash set.
+enum MovementVisitedBlocks {
+    Inline(SmallVec<[BlockPos; 16]>),
+    Hashed(FxHashSet<BlockPos>),
+}
+
+impl Default for MovementVisitedBlocks {
+    fn default() -> Self {
+        Self::Inline(SmallVec::new())
+    }
 }
 
 impl MovementVisitedBlocks {
     fn insert(&mut self, pos: BlockPos) -> bool {
-        if let Some(overflow) = &mut self.overflow {
-            return overflow.insert(pos);
-        }
-        if self.inline.contains(&pos) {
-            return false;
-        }
-        if self.inline.len() < self.inline.inline_size() {
-            self.inline.push(pos);
-            return true;
-        }
+        match self {
+            Self::Hashed(visited) => visited.insert(pos),
+            Self::Inline(inline) => {
+                if inline.contains(&pos) {
+                    return false;
+                }
+                if inline.len() < inline.inline_size() {
+                    inline.push(pos);
+                    return true;
+                }
 
-        let mut overflow = FxHashSet::default();
-        overflow.reserve(self.inline.len() + 1);
-        overflow.extend(self.inline.drain(..));
-        let inserted = overflow.insert(pos);
-        debug_assert!(inserted, "inline duplicate check must precede the fallback");
-        self.overflow = Some(overflow);
-        true
+                let mut visited = FxHashSet::default();
+                visited.reserve(inline.len() + 1);
+                visited.extend(inline.drain(..));
+                let inserted = visited.insert(pos);
+                debug_assert!(inserted, "inline duplicate check must precede the fallback");
+                *self = Self::Hashed(visited);
+                true
+            }
+        }
     }
 }
 

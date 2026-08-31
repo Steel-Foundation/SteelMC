@@ -12,8 +12,8 @@ use steel_utils::{ChunkPos, Direction, Downcast as _, WorldAabb};
 
 use super::*;
 use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
-use crate::entity::Entity;
 use crate::entity::entities::{EnderPearlEntity, FireworkRocketEntity, PigEntity, PrimedTntEntity};
+use crate::entity::{Entity, SharedEntity};
 use crate::player::ResetReason;
 use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 use crate::world::{ExplosionInteraction, ExplosionOptions};

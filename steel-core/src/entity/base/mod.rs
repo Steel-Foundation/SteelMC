@@ -83,6 +83,9 @@ pub(crate) struct EntityPhysicsStateInput {
 
 #[derive(Debug, Default)]
 struct EntityMovementTrace {
+    // One segment is the common per-tick case. `EntityMovement` is large and both buffers live on
+    // every entity, so larger inline capacities would optimize uncommon multi-movement ticks at a
+    // persistent per-entity memory cost.
     movement_this_tick: SmallVec<[EntityMovement; 1]>,
     final_movements_this_tick: SmallVec<[EntityMovement; 1]>,
 }
