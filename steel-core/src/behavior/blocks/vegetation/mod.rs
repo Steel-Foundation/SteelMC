@@ -51,6 +51,7 @@ mod leaf_litter_block;
 mod leaves_block;
 mod lily_pad_block;
 mod mangrove_propagule_block;
+mod mangrove_roots_block;
 mod mossy_carpet_block;
 pub(crate) mod multiface_block;
 mod mushroom_block;
@@ -137,6 +138,7 @@ pub use leaves_block::{
 };
 pub use lily_pad_block::LilyPadBlock;
 pub use mangrove_propagule_block::MangrovePropaguleBlock;
+pub use mangrove_roots_block::MangroveRootsBlock;
 pub use mossy_carpet_block::MossyCarpetBlock;
 pub use multiface_block::MultifaceBlock;
 pub(crate) use multiface_block::{MultifaceSpreadPos, MultifaceSpreadType, multiface_spread_pos};
@@ -154,7 +156,7 @@ pub use pointed_dripstone_block::{
 pub use potato::PotatoBlock;
 pub use pumpkin_block::PumpkinBlock;
 pub use rooted_dirt_block::RootedDirtBlock;
-pub use sapling_block::SaplingBlock;
+pub use sapling_block::{SaplingBlock, TreeGrower};
 pub use sculk_vein_block::SculkVeinBlock;
 pub use sea_pickle_block::SeaPickleBlock;
 pub use seagrass_block::SeagrassBlock;

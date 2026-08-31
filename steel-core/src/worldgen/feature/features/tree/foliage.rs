@@ -9,7 +9,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
-use super::{FoliageAttachment, TreePlacement, abs_i32};
+use super::{FoliageAttachment, TreeLevel, TreePlacement, abs_i32};
 
 impl FeatureDecorationRunner {
     pub(super) fn tree_foliage_height(
@@ -57,7 +57,7 @@ impl FeatureDecorationRunner {
     }
 
     pub(super) fn create_tree_foliage(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -184,7 +184,7 @@ impl FeatureDecorationRunner {
     }
 
     fn create_fancy_tree_foliage(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -215,7 +215,7 @@ impl FeatureDecorationRunner {
     }
 
     fn create_jungle_tree_foliage(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -248,7 +248,7 @@ impl FeatureDecorationRunner {
     }
 
     fn create_random_spread_tree_foliage(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -269,7 +269,7 @@ impl FeatureDecorationRunner {
     }
 
     fn create_cherry_tree_foliage(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -348,7 +348,7 @@ impl FeatureDecorationRunner {
     }
 
     fn create_dark_oak_tree_foliage(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -432,7 +432,7 @@ impl FeatureDecorationRunner {
     }
 
     fn create_mega_pine_tree_foliage(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -474,7 +474,7 @@ impl FeatureDecorationRunner {
     }
 
     fn create_bush_tree_foliage(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -501,7 +501,7 @@ impl FeatureDecorationRunner {
     }
 
     fn create_pine_tree_foliage(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -533,7 +533,7 @@ impl FeatureDecorationRunner {
     }
 
     fn create_spruce_tree_foliage(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -570,7 +570,7 @@ impl FeatureDecorationRunner {
     }
 
     fn create_blob_tree_foliage(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -598,7 +598,7 @@ impl FeatureDecorationRunner {
     }
 
     fn create_acacia_tree_foliage(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -661,7 +661,7 @@ impl FeatureDecorationRunner {
     }
 
     fn place_tree_leaves_row(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -696,7 +696,7 @@ impl FeatureDecorationRunner {
         reason = "mirrors vanilla foliage row helper"
     )]
     fn place_tree_leaves_row_with_hanging_leaves_below(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -768,7 +768,7 @@ impl FeatureDecorationRunner {
     }
 
     fn try_place_hanging_leaf_extension(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
@@ -949,7 +949,7 @@ impl FeatureDecorationRunner {
     }
 
     fn try_place_tree_leaf(
-        region: &mut WorldGenRegion<'_>,
+        region: &mut impl TreeLevel,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &TreeConfiguration,
