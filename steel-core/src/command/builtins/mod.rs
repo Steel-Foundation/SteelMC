@@ -23,6 +23,7 @@ mod seed;
 mod setblock;
 mod setidletimeout;
 mod setworldspawn;
+mod spawnpoint;
 mod stop;
 mod summon;
 mod teleport;
@@ -82,6 +83,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(return_command::registration())?;
     builder.register(seed::registration())?;
     builder.register(setblock::registration())?;
+    builder.register(spawnpoint::registration())?;
     builder.register(setidletimeout::registration())?;
     builder.register(setworldspawn::registration())?;
     builder.register(stop::registration())?;
@@ -158,6 +160,7 @@ mod tests {
                 "return",
                 "seed",
                 "setblock",
+                "spawnpoint",
                 "setidletimeout",
                 "setworldspawn",
                 "stop",
