@@ -5,9 +5,9 @@ use std::sync::Arc;
 use crate::entity::Entity;
 use crate::worldgen::generator::ChunkGenerator;
 use steel_macros::item_behavior;
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_protocol::packets::game::SoundSource;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     REGISTRY, level_events, sound_events, vanilla_blocks, vanilla_entities, vanilla_game_events,
@@ -101,7 +101,9 @@ impl ItemBehavior for EnderEyeItem {
 
         let hit = get_player_pov_hit_result(world, context.player, ClipFluid::None);
         if !hit.miss
-            && let Some(hit_block) = REGISTRY.blocks.by_state_id(world.get_block_state(hit.block_pos))
+            && let Some(hit_block) = REGISTRY
+                .blocks
+                .by_state_id(world.get_block_state(hit.block_pos))
             && hit_block.key == vanilla_blocks::END_PORTAL_FRAME.key
         {
             return InteractionResult::Pass;
