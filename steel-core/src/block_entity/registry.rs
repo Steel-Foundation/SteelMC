@@ -15,7 +15,7 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
-#[expect(wildcard_import, reason = "simplify merge conflict")]
+#[expect(clippy::wildcard_imports, reason = "simplify merge conflict")]
 use super::entities::*;
 use crate::world::World;
 
