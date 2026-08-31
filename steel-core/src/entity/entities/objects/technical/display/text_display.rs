@@ -126,7 +126,7 @@ impl Entity for TextDisplayEntity {
                     .contains(TextDisplayFlags::USE_DEFAULT_BACKGROUND),
             );
 
-            nbt.insert("alignment", view.text_opacity());
+            nbt.insert("alignment", view.alignment());
         });
     }
 
@@ -155,7 +155,7 @@ impl Entity for TextDisplayEntity {
                 view.set_alignment(alignment);
             }
 
-            // TODO: resolve text component
+            // TODO: Resolve the text component with this display entity's world.
             let text = nbt.get("text").and_then(TextComponent::from_nbt_tag);
             if let Some(text) = text {
                 view.set_text(text);
@@ -254,7 +254,7 @@ impl TextDisplayView<'_> {
     ///
     /// **Note:** This property is interpolated.
     pub fn set_background_color(&mut self, color: i32) {
-        self.0.line_width.set(color);
+        self.0.background_color.set(color);
     }
 
     /// Gets whether a shadow is present for the text in this text display.

@@ -223,7 +223,8 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
             .transformation_interpolation_start_delta_ticks
             .get()
     }
-    /// Sets the display entity's *start interpolation delay* (the delay in starting an interpolation), in ticks, to `duration`.
+    /// Sets the display entity's *start interpolation delay* (the delay in starting an interpolation), in ticks, to `duration`,
+    /// and restarts the transformation animation (regardless of what `duration` is).
     ///
     /// If this is set to `0`, interpolation starts immediately.
     ///
@@ -231,7 +232,7 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
     fn set_transformation_interpolation_delay(&mut self, duration: i32) {
         self.display_data_mut()
             .transformation_interpolation_start_delta_ticks
-            .set(duration);
+            .set_and_force_dirty(duration, true);
     }
     /// Gets the display entity's *start interpolation delay* (the delay in starting an interpolation), in ticks.
     fn pos_rot_interpolation_duration(&self) -> i32 {

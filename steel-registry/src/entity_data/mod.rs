@@ -96,7 +96,13 @@ impl<T: Clone + PartialEq> SyncedValue<T> {
     /// Set the value. Only marks as dirty if the value actually changed.
     #[inline]
     pub fn set(&mut self, value: T) {
-        if self.value != value {
+        self.set_and_force_dirty(value, false);
+    }
+
+    /// Set the value, and force-marks this data to be dirty if `force_dirty` is `true`.
+    #[inline]
+    pub fn set_and_force_dirty(&mut self, value: T, force_dirty: bool) {
+        if force_dirty || self.value != value {
             self.value = value;
             self.dirty = true;
         }

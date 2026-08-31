@@ -306,7 +306,7 @@ impl FromNbtTag for NormalTransformation {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
         Some(Self(Transformation {
-            translation: Vector3f::from_nbt_tag(compound.get("transformation")?)?,
+            translation: Vector3f::from_nbt_tag(compound.get("translation")?)?,
             left_rotation: Quaternionf::from_nbt_tag(compound.get("left_rotation")?)?,
             scale: Vector3f::from_nbt_tag(compound.get("scale")?)?,
             right_rotation: Quaternionf::from_nbt_tag(compound.get("right_rotation")?)?,
