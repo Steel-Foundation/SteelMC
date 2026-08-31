@@ -1,7 +1,9 @@
 //! Primed TNT entity behavior.
 
-use std::f64::consts::TAU;
-use std::sync::{Arc, Weak};
+use std::{
+    f32::consts::TAU,
+    sync::{Arc, Weak},
+};
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
@@ -30,7 +32,6 @@ use crate::world::{
     ExplosionInteraction, ExplosionOptions, ImmutableExplosionBlockCalculator, World,
 };
 
-const DEFAULT_FUSE_TIME: i32 = 80;
 const DEFAULT_EXPLOSION_POWER: f32 = 4.0;
 const MAX_EXPLOSION_POWER: f32 = 128.0;
 const GRAVITY: f64 = 0.04;
@@ -161,7 +162,7 @@ unsafe impl DowncastType for PrimedTntEntity {
 
 impl PrimedTntEntity {
     /// Default fuse duration in ticks.
-    pub const DEFAULT_FUSE_TIME: i32 = DEFAULT_FUSE_TIME;
+    pub const DEFAULT_FUSE_TIME: i32 = 80;
     /// Sentinel used by Vanilla callers for an absent fuse.
     pub const NO_FUSE: i32 = -1;
 
@@ -186,7 +187,8 @@ impl PrimedTntEntity {
         owner: Option<&dyn Entity>,
     ) -> Self {
         let entity = Self::new(entity_type, id, position, Arc::downgrade(world));
-        let angle = world.with_random(Random::next_f64) * TAU;
+        // Vanilla narrows 2π to `float` before Java widens it for this multiplication.
+        let angle = world.with_random(Random::next_f64) * f64::from(TAU);
         entity.set_velocity(DVec3::new(
             -angle.sin() * INITIAL_HORIZONTAL_SPEED,
             f64::from(INITIAL_VERTICAL_SPEED),
@@ -403,7 +405,7 @@ impl Entity for PrimedTntEntity {
 
     fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.set_fuse(i32::from(
-            nbt.short("fuse").unwrap_or(DEFAULT_FUSE_TIME as i16),
+            nbt.short("fuse").unwrap_or(Self::DEFAULT_FUSE_TIME as i16),
         ));
         self.set_block_state(
             nbt.compound("block_state")

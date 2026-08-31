@@ -195,7 +195,10 @@ impl<'a> SectionWriteGuard<'a> {
         }
     }
 
-    /// Sets one block while keeping all section-derived metadata current.
+    /// Sets one block through the tracked mutation path.
+    ///
+    /// This updates section counters and stable-air occupancy without triggering the conservative
+    /// invalidation used for arbitrary mutable access.
     pub fn set_block_state(
         &mut self,
         x: usize,
@@ -1151,6 +1154,36 @@ mod tests {
         assert!(!entire_section_is_stable_air(&holder.read()));
 
         holder.write().recalculate_counts();
+        assert!(entire_section_is_stable_air(&holder.read()));
+    }
+
+    #[test]
+    fn write_guard_setter_keeps_stable_air_occupancy_tracked() {
+        const LOCAL_X: usize = 2;
+        const LOCAL_Y: usize = 3;
+        const LOCAL_Z: usize = 4;
+
+        init_test_behaviors();
+        let holder = SectionHolder::new(ChunkSection::new_empty());
+
+        holder.write().set_block_state(
+            LOCAL_X,
+            LOCAL_Y,
+            LOCAL_Z,
+            vanilla_blocks::STONE.default_state(),
+        );
+        assert!(
+            !holder
+                .read()
+                .stable_air_box_is_clear(LOCAL_X, LOCAL_X, LOCAL_Y, LOCAL_Y, LOCAL_Z, LOCAL_Z,)
+        );
+
+        holder.write().set_block_state(
+            LOCAL_X,
+            LOCAL_Y,
+            LOCAL_Z,
+            vanilla_blocks::AIR.default_state(),
+        );
         assert!(entire_section_is_stable_air(&holder.read()));
     }
 

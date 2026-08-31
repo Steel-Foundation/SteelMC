@@ -1,17 +1,14 @@
-use std::{
-    sync::atomic::{AtomicUsize, Ordering},
-    thread,
-};
+use std::{sync::atomic::AtomicUsize, thread};
 
 use super::*;
 
-struct SourceAwareHardCollisionEntity {
+// Models Vanilla targets such as Happy Ghasts whose collision eligibility depends on the source.
+struct SourceSelectiveHardCollisionTarget {
     base: EntityBase,
     accepted_source_id: i32,
-    callback_count: AtomicUsize,
 }
 
-impl SourceAwareHardCollisionEntity {
+impl SourceSelectiveHardCollisionTarget {
     fn shared(id: i32, uuid: Uuid, position: DVec3, accepted_source_id: i32) -> Arc<Self> {
         Arc::new(Self {
             base: EntityBase::with_uuid(
@@ -22,14 +19,13 @@ impl SourceAwareHardCollisionEntity {
                 Weak::new(),
             ),
             accepted_source_id,
-            callback_count: AtomicUsize::new(0),
         })
     }
 }
 
-crate::entity::impl_test_downcast_type!(SourceAwareHardCollisionEntity);
+crate::entity::impl_test_downcast_type!(SourceSelectiveHardCollisionTarget);
 
-impl Entity for SourceAwareHardCollisionEntity {
+impl Entity for SourceSelectiveHardCollisionTarget {
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -39,7 +35,6 @@ impl Entity for SourceAwareHardCollisionEntity {
     }
 
     fn can_be_collided_with(&self, other: Option<&dyn Entity>) -> bool {
-        self.callback_count.fetch_add(1, Ordering::Relaxed);
         other.is_some_and(|source| source.id() == self.accepted_source_id)
     }
 }
@@ -157,19 +152,19 @@ fn hard_collision_broad_phase_matches_full_scan_with_source_dependent_targets() 
         );
     }
 
-    let later_section = SourceAwareHardCollisionEntity::shared(
+    let later_section = SourceSelectiveHardCollisionTarget::shared(
         LATER_SECTION_ENTITY_ID,
         Uuid::from_u128(LATER_SECTION_ENTITY_ID as u128),
         DVec3::new(1.0, 64.0, NEXT_CHUNK_INTERIOR_Z),
         source.id(),
     );
-    let first_same_section = SourceAwareHardCollisionEntity::shared(
+    let first_same_section = SourceSelectiveHardCollisionTarget::shared(
         FIRST_SAME_SECTION_ENTITY_ID,
         Uuid::from_u128(FIRST_SAME_SECTION_ENTITY_ID as u128),
         DVec3::new(1.0, 64.0, 1.0),
         source.id(),
     );
-    let second_same_section = SourceAwareHardCollisionEntity::shared(
+    let second_same_section = SourceSelectiveHardCollisionTarget::shared(
         SECOND_SAME_SECTION_ENTITY_ID,
         Uuid::from_u128(SECOND_SAME_SECTION_ENTITY_ID as u128),
         DVec3::new(2.0, 64.0, 1.0),

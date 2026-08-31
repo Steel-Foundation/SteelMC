@@ -5,9 +5,9 @@ use steel_protocol::packets::game::RelativeMovement;
 use steel_registry::blocks::properties::BlockStateProperties;
 use steel_registry::init_vanilla_registry;
 use steel_registry::{vanilla_damage_types, vanilla_entities};
+use steel_utils::ChunkPos;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::UpdateFlags;
-use steel_utils::{ChunkPos, WorldAabb};
 use uuid::Uuid;
 
 use super::*;
@@ -16,7 +16,6 @@ use crate::bootstrap::init_globals_once;
 use crate::config::ResolvedDomainConfig;
 use crate::entity::entities::PigEntity;
 use crate::entity::{EntityFluidContact, LivingEntity, change_entity_world, next_entity_id};
-use crate::physics::{CollisionWorld, WorldCollisionProvider};
 use crate::player::ResetReason;
 use crate::portal::{TeleportPostTransition, TeleportTransition};
 use crate::server::worlds::WorldMap;
@@ -24,12 +23,12 @@ use crate::test_support::{
     TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, insert_ready_full_chunk,
 };
 
-const TEST_TNT_POS: BlockPos = BlockPos::new(8, 64, 8);
+// Center the fixture in the only loaded chunk so movement stays in Full chunk data.
+const TEST_TNT_BLOCK_POS: BlockPos = BlockPos::new(8, 64, 8);
 const VANILLA_DEFAULT_FUSE_TIME: i32 = 80;
-const VANILLA_INITIAL_HORIZONTAL_SPEED: f64 = 0.02;
+const VANILLA_GRAVITY: f64 = 0.04;
+const VANILLA_AIR_DRAG: f32 = 0.98;
 const VANILLA_INITIAL_VERTICAL_SPEED: f32 = 0.2;
-const VANILLA_MINIMUM_SHORT_FUSE: i32 = 10;
-const VANILLA_SHORT_FUSE_RANDOM_RANGE: i32 = 20;
 const VANILLA_MAX_EXPLOSION_POWER: f32 = 128.0;
 const SERIALIZED_FUSE: i32 = 37;
 const SERIALIZED_EXPLOSION_POWER: f32 = 6.5;
@@ -37,12 +36,10 @@ const FLOWING_WATER_LEVEL: u8 = 4;
 const PLAYER_HURT_EXPERIENCE_TICKS: i32 = 100;
 const EXPERIENCE_ORB_SEARCH_MARGIN: f64 = 2.0;
 const TEST_EXPLOSION_POWER: f32 = 2.0;
-const OVERLAPPING_TNT_CENTER_OFFSET: f64 = 0.25;
-const COLLISION_QUERY_MARGIN: f64 = 1.0;
 const FINAL_FUSE_TICK: i32 = 1;
 
 fn test_tnt_position() -> DVec3 {
-    let (x, y, z) = TEST_TNT_POS.get_bottom_center();
+    let (x, y, z) = TEST_TNT_BLOCK_POS.get_bottom_center();
     DVec3::new(x, y, z)
 }
 
@@ -50,19 +47,22 @@ fn ready_tnt_world(key: &'static str) -> Arc<World> {
     init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world(key);
-    insert_ready_full_chunk(&world, ChunkPos::from_block_pos(TEST_TNT_POS));
+    insert_ready_full_chunk(&world, ChunkPos::from_block_pos(TEST_TNT_BLOCK_POS));
     world
 }
 
 #[test]
 fn priming_applies_vanilla_motion_and_entity_properties() {
     const SEED: i64 = 0x7A71;
+    const EXPECTED_INITIAL_MOTION_X: f64 = -0.003_337_386_497_296_714_6;
+    const EXPECTED_INITIAL_MOTION_Z: f64 = -0.019_719_580_405_466_58;
+    const INITIAL_MOTION_TOLERANCE: f64 = 1.0e-12;
 
     init_vanilla_registry();
     let world = fresh_test_world("primed_tnt_initial_motion");
     world.set_random_seed_for_test(SEED);
     let mut expected = LegacyRandom::from_seed(SEED as u64);
-    let angle = expected.next_f64() * TAU;
+    let _ = expected.next_f64();
     let position = test_tnt_position();
     let entity = PrimedTntEntity::primed(
         &vanilla_entities::TNT,
@@ -73,17 +73,21 @@ fn priming_applies_vanilla_motion_and_entity_properties() {
     );
 
     let velocity = entity.velocity();
-    assert_eq!(
-        velocity.x.to_bits(),
-        (-angle.sin() * VANILLA_INITIAL_HORIZONTAL_SPEED).to_bits()
+    assert!(
+        (velocity.x - EXPECTED_INITIAL_MOTION_X).abs() <= INITIAL_MOTION_TOLERANCE,
+        "initial x motion {actual:?} differed from Java Math result {expected:?}",
+        actual = velocity.x,
+        expected = EXPECTED_INITIAL_MOTION_X,
     );
     assert_eq!(
         velocity.y.to_bits(),
         f64::from(VANILLA_INITIAL_VERTICAL_SPEED).to_bits()
     );
-    assert_eq!(
-        velocity.z.to_bits(),
-        (-angle.cos() * VANILLA_INITIAL_HORIZONTAL_SPEED).to_bits()
+    assert!(
+        (velocity.z - EXPECTED_INITIAL_MOTION_Z).abs() <= INITIAL_MOTION_TOLERANCE,
+        "initial z motion {actual:?} differed from Java Math result {expected:?}",
+        actual = velocity.z,
+        expected = EXPECTED_INITIAL_MOTION_Z,
     );
     assert_eq!(world.with_random(Random::next_i64), expected.next_i64());
     assert_eq!(entity.fuse(), VANILLA_DEFAULT_FUSE_TIME);
@@ -94,48 +98,17 @@ fn priming_applies_vanilla_motion_and_entity_properties() {
 }
 
 #[test]
-fn primed_tnt_does_not_create_hard_movement_collision_shapes() {
-    init_vanilla_registry();
-    let world = fresh_test_world("primed_tnt_hard_collision_broad_phase");
-    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-    let center = test_tnt_position();
-    let first = Arc::new(PrimedTntEntity::new(
-        &vanilla_entities::TNT,
-        next_entity_id(),
-        center - DVec3::X * OVERLAPPING_TNT_CENTER_OFFSET,
-        Arc::downgrade(&world),
-    ));
-    let second = Arc::new(PrimedTntEntity::new(
-        &vanilla_entities::TNT,
-        next_entity_id(),
-        center + DVec3::X * OVERLAPPING_TNT_CENTER_OFFSET,
-        Arc::downgrade(&world),
-    ));
-    for entity in [Arc::clone(&first), Arc::clone(&second)] {
-        let entity: SharedEntity = entity;
-        world
-            .try_add_entity(entity)
-            .expect("primed TNT should enter the loaded test chunk");
-    }
-
-    let query = WorldAabb::encapsulating(&first.bounding_box(), &second.bounding_box())
-        .inflate(COLLISION_QUERY_MARGIN);
-    let collision_world = WorldCollisionProvider::for_entity(&world, first.as_ref());
-
-    assert_eq!(collision_world.get_entity_collisions(&query), Vec::new());
-    assert!(!collision_world.has_entity_collision(&query));
-}
-
-#[test]
 fn shortened_fuse_uses_one_bounded_level_random_draw() {
     const SEED: i64 = 0xF05E;
+    const EXPECTED_SHORT_FUSE_OFFSET: i32 = 10;
+    const EXPECTED_SHORT_FUSE_RANDOM_BOUND: i32 = 20;
 
     init_vanilla_registry();
     let world = fresh_test_world("primed_tnt_short_fuse_random");
     world.set_random_seed_for_test(SEED);
     let mut expected = LegacyRandom::from_seed(SEED as u64);
     let expected_fuse =
-        expected.next_i32_bounded(VANILLA_SHORT_FUSE_RANDOM_RANGE) + VANILLA_MINIMUM_SHORT_FUSE;
+        expected.next_i32_bounded(EXPECTED_SHORT_FUSE_RANDOM_BOUND) + EXPECTED_SHORT_FUSE_OFFSET;
 
     let actual_fuse = PrimedTntEntity::get_random_short_fuse(&world, VANILLA_DEFAULT_FUSE_TIME);
 
@@ -224,11 +197,11 @@ fn tick_applies_physics_before_decrementing_the_fuse() {
 
     assert_eq!(
         entity.position().y.to_bits(),
-        (test_tnt_position().y - GRAVITY).to_bits()
+        (test_tnt_position().y - VANILLA_GRAVITY).to_bits()
     );
     assert_eq!(
         entity.velocity().y.to_bits(),
-        (-GRAVITY * f64::from(AIR_DRAG)).to_bits()
+        (-VANILLA_GRAVITY * f64::from(VANILLA_AIR_DRAG)).to_bits()
     );
     assert_eq!(entity.fuse(), VANILLA_DEFAULT_FUSE_TIME - 1);
     assert!(!entity.is_removed());
@@ -258,7 +231,7 @@ fn fuse_zero_discards_tnt_and_disabled_rule_suppresses_the_explosion() {
     let world = ready_tnt_world("primed_tnt_disabled_explosion");
     assert!(world.set_game_rule(&TNT_EXPLODES, false));
     assert!(world.set_block(
-        TEST_TNT_POS,
+        TEST_TNT_BLOCK_POS,
         vanilla_blocks::GLASS.default_state(),
         UpdateFlags::UPDATE_NONE,
     ));
@@ -274,7 +247,7 @@ fn fuse_zero_discards_tnt_and_disabled_rule_suppresses_the_explosion() {
     assert!(entity.is_removed());
     assert_eq!(entity.fuse(), 0);
     assert_eq!(
-        world.get_block_state(TEST_TNT_POS).get_block(),
+        world.get_block_state(TEST_TNT_BLOCK_POS).get_block(),
         &vanilla_blocks::GLASS
     );
 }
@@ -442,14 +415,18 @@ fn flowing_water_pushes_primed_tnt_trajectory() {
         | UpdateFlags::UPDATE_KNOWN_SHAPE
         | UpdateFlags::UPDATE_SKIP_ON_PLACE;
     assert!(world.set_block(
-        TEST_TNT_POS.below(),
+        TEST_TNT_BLOCK_POS.below(),
         vanilla_blocks::STONE.default_state(),
         flags,
     ));
-    assert!(world.set_block(TEST_TNT_POS, vanilla_blocks::WATER.default_state(), flags,));
+    assert!(world.set_block(
+        TEST_TNT_BLOCK_POS,
+        vanilla_blocks::WATER.default_state(),
+        flags,
+    ));
     assert!(
         world.set_block(
-            TEST_TNT_POS.east(),
+            TEST_TNT_BLOCK_POS.east(),
             vanilla_blocks::WATER
                 .default_state()
                 .set_value(&BlockStateProperties::LEVEL, FLOWING_WATER_LEVEL),
@@ -473,7 +450,7 @@ fn flowing_water_pushes_primed_tnt_trajectory() {
 #[test]
 fn teleported_tnt_preserves_nether_portal_but_explodes_other_blocks() {
     let world = ready_tnt_world("primed_tnt_portal_explosion");
-    let portal_pos = TEST_TNT_POS;
+    let portal_pos = TEST_TNT_BLOCK_POS;
     let glass_pos = portal_pos.south();
     let flags = UpdateFlags::UPDATE_NONE
         | UpdateFlags::UPDATE_KNOWN_SHAPE

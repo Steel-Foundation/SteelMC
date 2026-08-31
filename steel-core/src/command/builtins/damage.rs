@@ -50,29 +50,31 @@ fn damage(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSy
     let target = context.entity("target")?;
     let amount = context.float("amount")?;
 
-    // The base damage type for this command is generic
-    let damage_type = context
-        .damage_type("damageType")
-        .unwrap_or(&vanilla_damage_types::GENERIC);
+    let damage_type = if context.argument("damageType").is_ok() {
+        context.damage_type("damageType")?
+    } else {
+        &vanilla_damage_types::GENERIC
+    };
 
-    // Create the DamageSource to apply modifiers after
-    let mut damage_source = DamageSource::environment(damage_type);
-
-    // If we can get "location" from the context, it's from "at"
-    if let Ok(coordinates) = context.coordinates("location") {
-        damage_source = damage_source.with_source_position(coordinates.position(context.source()));
-    }
-
-    // Else, it's from the "by", or maybe it's nothing
-    if context.argument("entity").is_ok() {
-        let entity = context.entity("entity")?;
+    let damage_source = if context.argument("location").is_ok() {
+        let coordinates = context.coordinates("location")?;
+        DamageSource::environment(damage_type)
+            .with_source_position(coordinates.position(context.source()))
+    } else if context.argument("entity").is_ok() {
+        let direct = context.entity("entity")?;
         let cause = if context.argument("cause").is_ok() {
             Some(context.entity("cause")?)
         } else {
             None
         };
-        damage_source = with_damage_entities(damage_source, &entity, cause.as_ref());
-    }
+        with_damage_entities(
+            DamageSource::environment(damage_type),
+            &direct,
+            cause.as_ref(),
+        )
+    } else {
+        DamageSource::environment(damage_type)
+    };
 
     if target.hurt(context.source().world(), &damage_source, amount) {
         context.source().send_success(

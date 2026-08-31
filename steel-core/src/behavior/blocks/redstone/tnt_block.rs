@@ -1,6 +1,5 @@
 //! TNT block behavior and priming entry points.
 
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -15,9 +14,8 @@ use steel_registry::{
     sound_events, vanilla_blocks, vanilla_entities, vanilla_game_events, vanilla_items,
 };
 use steel_utils::types::{InteractionHand, UpdateFlags};
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, translations};
 use text_components::TextComponent;
-use text_components::translation::TranslatedMessage;
 
 use crate::behavior::{
     BlockBehavior, BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
@@ -101,11 +99,9 @@ impl TntBlock {
     }
 
     fn send_disabled_message(player: &Player) {
-        player.send_overlay_message(&TextComponent::translated(TranslatedMessage {
-            key: Cow::Borrowed("block.minecraft.tnt.disabled"),
-            fallback: None,
-            args: None,
-        }));
+        player.send_overlay_message(&TextComponent::translated(
+            translations::BLOCK_MINECRAFT_TNT_DISABLED.msg(),
+        ));
     }
 }
 
