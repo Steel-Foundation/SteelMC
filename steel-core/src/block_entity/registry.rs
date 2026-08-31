@@ -19,7 +19,7 @@ use super::entities::{
     BarrelBlockEntity, BeehiveBlockEntity, BellBlockEntity, BrushableBlockEntity,
     ChiseledBookShelfBlockEntity, ComparatorBlockEntity, DaylightDetectorBlockEntity,
     EndGatewayBlockEntity, EndPortalBlockEntity, JukeboxBlockEntity, PistonMovingBlockEntity,
-    PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity,
+    PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity, SkullBlockEntity,
 };
 use crate::world::World;
 
@@ -279,6 +279,11 @@ pub fn init_block_entities() {
             &vanilla_block_entity_types::POTENT_SULFUR,
             |level, pos, state| Arc::new(PotentSulfurBlockEntity::new(level, pos, state)),
         );
+
+        // Register skull block entity factory
+        registry.register(&vanilla_block_entity_types::SKULL, |level, pos, state| {
+            Arc::new(SkullBlockEntity::new(level, pos, state))
+        });
 
         registry
     });
