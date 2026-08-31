@@ -10,6 +10,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumPr
 use steel_registry::data_components::vanilla_components::CONTAINER;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
     sound_events, vanilla_block_entity_types, vanilla_game_events, vanilla_items,
@@ -175,6 +176,7 @@ impl BlockBehavior for ChiseledBookShelfBlock {
 
         let inserted = inv.with_item(|item| item.copy_with_count(Self::BOOKS_PER_INTERACTION));
         let insert_sound = Self::insert_sound(&inserted);
+        let item = inserted.item;
         if !bookshelf.insert_book(slot, inserted) {
             return InteractionResult::Pass;
         }
@@ -188,7 +190,7 @@ impl BlockBehavior for ChiseledBookShelfBlock {
             Self::SOUND_PITCH,
             None,
         );
-        // Steel does not yet have the item-used stat foundation.
+        player.award_stat(&vanilla_stat_types::ITEM_USED, item);
         InteractionResult::Success
     }
 
@@ -370,13 +372,9 @@ mod tests {
     }
 
     fn test_player(world: &Arc<World>) -> Arc<Player> {
-        TestPlayerBuilder::new(
-            Arc::clone(world),
-            TEST_PLAYER_UUID,
-            "BookshelfTester",
-            TEST_PLAYER_ENTITY_ID,
-        )
-        .build()
+        TestPlayerBuilder::new(Arc::clone(world), "BookshelfTester", TEST_PLAYER_ENTITY_ID)
+            .uuid(TEST_PLAYER_UUID)
+            .build()
     }
 
     fn assert_hit_targets_slot(

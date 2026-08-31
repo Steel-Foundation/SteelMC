@@ -1,7 +1,7 @@
 use super::{
     BorrowedNbtTag, Component, ComponentData, ComponentHasher, ComponentPatchEntry,
-    DataComponentPatch, DataComponentType, DowncastType, EmbeddedNbtCodec, FromNbtTag,
-    HashComponent, HashEntry, Identifier, NbtCompound, OwnedNbtTag, Result, ToNbtTag,
+    DataComponentMap, DataComponentPatch, DataComponentType, DowncastType, EmbeddedNbtCodec,
+    FromNbtTag, HashComponent, HashEntry, Identifier, NbtCompound, OwnedNbtTag, Result, ToNbtTag,
     sort_map_entries,
 };
 
@@ -107,9 +107,32 @@ impl DataComponentPatch {
     pub fn to_nbt_tag_ref(&self) -> OwnedNbtTag {
         let (tag, errors) = self.encode_nbt(false);
         for error in errors {
-            log::warn!("Item component serialization error: {error}");
+            log::warn!("Data component serialization error: {error}");
         }
         tag
+    }
+}
+
+impl DataComponentMap {
+    fn as_patch(&self) -> DataComponentPatch {
+        DataComponentPatch {
+            entries: self
+                .map
+                .iter()
+                .map(|(key, value)| (key.clone(), ComponentPatchEntry::Set(value.clone())))
+                .collect(),
+        }
+    }
+
+    /// Strictly encodes this component map through its persistent codecs.
+    pub fn try_to_nbt_tag_ref(&self) -> Result<OwnedNbtTag> {
+        self.as_patch().try_to_nbt_tag_ref()
+    }
+
+    /// Encodes this component map while reporting and omitting invalid values.
+    #[must_use]
+    pub fn to_nbt_tag_ref(&self) -> OwnedNbtTag {
+        self.as_patch().to_nbt_tag_ref()
     }
 }
 
@@ -168,6 +191,20 @@ impl FromNbtTag for DataComponentPatch {
         }
 
         Some(patch)
+    }
+}
+
+impl FromNbtTag for DataComponentMap {
+    fn from_nbt_tag(tag: BorrowedNbtTag) -> Option<Self> {
+        let patch = DataComponentPatch::from_nbt_tag(tag)?;
+        let mut map = rustc_hash::FxHashMap::default();
+        for (key, entry) in patch.entries {
+            let ComponentPatchEntry::Set(value) = entry else {
+                return None;
+            };
+            map.insert(key, value);
+        }
+        Some(Self { map })
     }
 }
 

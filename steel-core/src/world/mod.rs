@@ -140,6 +140,7 @@ use block_event::BlockEventQueue;
 pub(crate) use block_region::{BlockRegionBounds, MAX_BLOCK_REGION_WORKSET_SLOTS};
 use block_updates::CollectingNeighborUpdater;
 pub use border::WorldBorderError;
+pub(crate) use border::{MAX_CENTER_COORDINATE, MAX_SIZE};
 use border::{WorldBorder, WorldBorderSnapshot};
 use entity_management::NavigatingMobTracker;
 #[cfg(test)]
@@ -767,6 +768,10 @@ impl ScheduledTickAccess for Arc<World> {
 impl LevelAccessor for Arc<World> {
     fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool {
         self.set_block(pos, state, flags)
+    }
+
+    fn destroy_block(&self, pos: BlockPos, drop_items: bool) -> bool {
+        World::destroy_block(self, pos, drop_items)
     }
 
     fn play_block_sound(

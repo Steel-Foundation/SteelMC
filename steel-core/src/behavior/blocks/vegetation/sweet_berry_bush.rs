@@ -388,7 +388,7 @@ mod tests {
 
         SweetBerryBushBlock::apply_contact_damage(test_world(), state_with_age(0), &entity);
 
-        assert!(entity.damage_events().is_empty());
+        assert_eq!(entity.damage_events().len(), 0);
     }
 
     #[test]
@@ -399,7 +399,7 @@ mod tests {
 
         SweetBerryBushBlock::apply_contact_damage(test_world(), state_with_age(1), &entity);
 
-        assert!(entity.damage_events().is_empty());
+        assert_eq!(entity.damage_events().len(), 0);
     }
 
     #[test]

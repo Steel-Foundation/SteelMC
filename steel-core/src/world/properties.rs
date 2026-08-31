@@ -54,6 +54,12 @@ impl World {
             && self.is_in_valid_bounds_horizontal(block_pos)
     }
 
+    /// Returns whether a block position is within vanilla's absolute world bounds.
+    pub const fn is_in_world_bounds(&self, block_pos: BlockPos) -> bool {
+        !self.is_outside_build_height(block_pos.0.y)
+            && Self::is_in_world_bounds_horizontal(block_pos)
+    }
+
     /// Returns whether the block position is within vanilla spawnable bounds.
     #[must_use]
     pub const fn is_in_spawnable_bounds(block_pos: BlockPos) -> bool {

@@ -16,10 +16,10 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
 use super::entities::{
-    BarrelBlockEntity, BeehiveBlockEntity, BrushableBlockEntity, ChiseledBookShelfBlockEntity,
-    ComparatorBlockEntity, DaylightDetectorBlockEntity, EndGatewayBlockEntity,
-    EndPortalBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity, RawBlockEntity,
-    SignBlockEntity,
+    BarrelBlockEntity, BeehiveBlockEntity, BellBlockEntity, BrushableBlockEntity,
+    ChiseledBookShelfBlockEntity, ComparatorBlockEntity, DaylightDetectorBlockEntity,
+    EndGatewayBlockEntity, EndPortalBlockEntity, JukeboxBlockEntity, PistonMovingBlockEntity,
+    PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity,
 };
 use crate::world::World;
 
@@ -228,9 +228,18 @@ pub fn init_block_entities() {
             |level, pos, state| Arc::new(ChiseledBookShelfBlockEntity::new(level, pos, state)),
         );
 
+        // Register jukebox block entity factory
+        registry.register(&vanilla_block_entity_types::JUKEBOX, |level, pos, state| {
+            Arc::new(JukeboxBlockEntity::new(level, pos, state))
+        });
+
         // Register beehive block entity factory
         registry.register(&vanilla_block_entity_types::BEEHIVE, |level, pos, state| {
             Arc::new(BeehiveBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(&vanilla_block_entity_types::BELL, |level, pos, state| {
+            Arc::new(BellBlockEntity::new(level, pos, state))
         });
 
         // Register comparator block entity factory

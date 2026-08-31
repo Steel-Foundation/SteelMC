@@ -28,20 +28,27 @@ pub mod entities;
 mod registry;
 mod storage;
 
+use simdnbt::FromNbtTag;
+use simdnbt::borrow::{
+    BaseNbtCompound as BorrowedNbtCompound, NbtCompound as BorrowedNbtCompoundView,
+    read_compound as read_borrowed_compound,
+};
+use simdnbt::owned::NbtCompound;
+use smallvec::SmallVec;
 use std::{
+    io::Cursor,
     ptr,
     sync::{
         Arc, Weak,
         atomic::{AtomicBool, Ordering},
     },
 };
-
-use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
-use simdnbt::owned::NbtCompound;
-use smallvec::SmallVec;
-use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_utils::{BlockPos, BlockStateId, ErasedType, locks::SyncMutex};
+use steel_registry::{block_entity_type::BlockEntityTypeRef, data_components::DataComponentMap};
+use steel_utils::{
+    BlockPos, BlockStateId, ErasedType,
+    locks::{SyncMutex, SyncRwLock},
+};
 
 pub use registry::{BLOCK_ENTITIES, BlockEntityFactory, BlockEntityRegistry, init_block_entities};
 pub(crate) use storage::{
@@ -144,6 +151,7 @@ pub struct BlockEntityBase {
     /// Lock-free removal snapshot; lifecycle writers remain serialized below.
     removed: AtomicBool,
     lifecycle: SyncMutex<BlockEntityLifecycle>,
+    components: SyncRwLock<DataComponentMap>,
 }
 
 struct BlockEntityLifecycleDispatchGuard<'a> {
@@ -191,6 +199,7 @@ impl BlockEntityBase {
                 events: SmallVec::new(),
                 dispatching_events: false,
             }),
+            components: SyncRwLock::new(DataComponentMap::new()),
         }
     }
 
@@ -281,6 +290,26 @@ impl BlockEntityBase {
         if !state.is_air() {
             world.update_neighbor_for_output_signal(self.pos, state.get_block());
         }
+    }
+
+    fn load_components(&self, nbt: &BorrowedNbtCompound<'_>) {
+        let nbt_view: BorrowedNbtCompoundView<'_, '_> = nbt.into();
+        let components = match nbt_view.get("components") {
+            Some(tag) => DataComponentMap::from_nbt_tag(tag).unwrap_or_else(|| {
+                log::warn!(
+                    "Discarding malformed stored components for block entity {} at {:?}",
+                    self.block_entity_type.key,
+                    self.pos,
+                );
+                DataComponentMap::new()
+            }),
+            None => DataComponentMap::new(),
+        };
+        *self.components.write() = components;
+    }
+
+    fn stored_components(&self) -> DataComponentMap {
+        self.components.read().clone()
     }
 
     pub(crate) fn is_valid_container_for(&self, player: &Player) -> bool {
@@ -390,6 +419,25 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     /// chunk data from the server.
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>);
 
+    /// Loads entity-specific data and the base block-entity component map.
+    fn load_with_components(&self, nbt: &BorrowedNbtCompound<'_>) {
+        self.load_additional(nbt);
+        self.base().load_components(nbt);
+    }
+
+    /// Loads entity data from an owned command/runtime compound.
+    ///
+    /// `simdnbt` keeps its read-facing representation borrowed, so this
+    /// performs a checked in-memory encode/decode bridge rather than making
+    /// every command caller duplicate that conversion.
+    fn load_with_owned_components(&self, nbt: &NbtCompound) -> Result<(), simdnbt::Error> {
+        let mut encoded = Vec::new();
+        nbt.write(&mut encoded);
+        let borrowed = read_borrowed_compound(&mut Cursor::new(encoded.as_slice()))?;
+        self.load_with_components(&borrowed);
+        Ok(())
+    }
+
     /// Saves additional data to NBT.
     ///
     /// Called when saving the block entity to disk.
@@ -402,6 +450,16 @@ pub trait BlockEntity: ErasedType + Send + Sync {
         for key in ["id", "x", "y", "z"] {
             while nbt.remove(key).is_some() {}
         }
+        nbt
+    }
+
+    /// Saves entity-specific data and stored components without position/type metadata.
+    fn save_without_metadata(&self) -> NbtCompound {
+        let mut nbt = self.save_custom_only();
+        nbt.insert(
+            "components",
+            self.base().stored_components().to_nbt_tag_ref(),
+        );
         nbt
     }
 

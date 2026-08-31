@@ -82,7 +82,7 @@ fn set_int_rule(
     context: &SteelCommandContext<CommandSource>,
     rule: ErasedGameRuleRef,
 ) -> Result<i32, CommandSyntaxError> {
-    let value = context.boolean("value")?;
+    let value = context.integer("value")?;
     set_rule(context, rule, GameRuleValue::new(value))
 }
 
