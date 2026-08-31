@@ -753,33 +753,13 @@ mod tests {
             storage.simulation_source_level(pos),
             simulated.simulation_level()
         );
-    }
-
-    #[test]
-    fn removing_strongest_ticket_reveals_the_weaker_source() {
-        let mut storage = ChunkTicketStorage::new(5);
-        let pos = ChunkPos::new(2, -3);
-        let weaker = ChunkTicket::full_chunks(1);
-        let stronger = ChunkTicket::full_chunks(4);
-        let _ = storage.apply_operations([
-            ChunkTicketOperation::Add {
-                pos,
-                ticket: weaker,
-            },
-            ChunkTicketOperation::Add {
-                pos,
-                ticket: stronger,
-            },
-        ]);
-
-        assert_eq!(storage.load_source_level(pos), Some(stronger.load_level()));
 
         let _ = storage.apply(ChunkTicketOperation::Remove {
             pos,
-            ticket: stronger,
+            ticket: stronger_loading,
         });
-
-        assert_eq!(storage.load_source_level(pos), Some(weaker.load_level()));
+        assert_eq!(storage.untimed_ticket_count(), 1);
+        assert_eq!(storage.load_source_level(pos), Some(simulated.load_level()));
     }
 
     #[test]

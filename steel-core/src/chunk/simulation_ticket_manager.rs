@@ -741,10 +741,11 @@ mod tests {
         manager.apply_source_update(source(pos, None));
 
         assert_eq!(manager.run_all_updates(), []);
+        assert_eq!(manager.run_all_updates(), []);
         assert_eq!(manager.get_level(pos), None);
 
-        manager.apply_source_update(source(pos, Some(126)));
-        manager.run_all_updates();
+        manager.apply_source_updates([source(pos, None), source(pos, Some(126))]);
+        assert_ne!(manager.run_all_updates(), []);
         manager.apply_source_update(source(pos, Some(128)));
         manager.apply_source_update(source(pos, Some(126)));
 
@@ -765,21 +766,6 @@ mod tests {
         assert!(has_change(changes, pos, ChunkTicketLevel::new(128)));
         assert!(has_change(changes, ChunkPos::new(2, 0), None));
         assert_eq!(manager.get_level(pos).map(ChunkTicketLevel::raw), Some(128));
-    }
-
-    #[test]
-    fn ordered_no_op_updates_do_not_report_changes() {
-        let mut manager = SimulationTicketManager::new();
-        let pos = ChunkPos::new(0, 0);
-
-        manager.apply_source_updates([source(pos, Some(127)), source(pos, None)]);
-
-        assert_eq!(manager.run_all_updates(), []);
-        assert_eq!(manager.run_all_updates(), []);
-
-        manager.apply_source_updates([source(pos, None), source(pos, Some(127))]);
-        assert_ne!(manager.run_all_updates(), []);
-        assert_eq!(manager.get_level(pos).map(ChunkTicketLevel::raw), Some(127));
     }
 
     #[test]

@@ -361,24 +361,7 @@ fn removing_simulation_ticket_keeps_holder_with_load_only_ticket() {
 }
 
 #[test]
-fn simulation_ticket_for_absent_chunk_does_not_create_holder() {
-    let world = fresh_test_world("simulation_ticket_absent_chunk");
-    let pos = ChunkPos::new(12, 14);
-    let ticket = ChunkTicket::full_chunks_with_entity_ticking(0, 0);
-
-    let receipt = world.chunk_map.add_chunk_ticket(pos, ticket);
-    world.chunk_map.flush_simulation_updates();
-
-    assert!(!world.chunk_map.chunks.contains_sync(&pos));
-    assert!(!world.chunk_map.unloading_chunks.contains_sync(&pos));
-    assert!(
-        !world.chunk_map.is_ticket_receipt_committed(receipt),
-        "simulation propagation must leave the load operation for a background epoch"
-    );
-}
-
-#[test]
-fn later_holder_creation_samples_latest_simulation_level() {
+fn simulation_ticket_waits_for_load_epoch_before_holder_creation() {
     let world = fresh_test_world("load_creation_samples_simulation");
     let pos = ChunkPos::new(-13, -9);
     let ticket = ChunkTicket::full_chunks_with_entity_ticking(0, 0);
@@ -386,6 +369,11 @@ fn later_holder_creation_samples_latest_simulation_level() {
     let receipt = world.chunk_map.add_chunk_ticket(pos, ticket);
     world.chunk_map.flush_simulation_updates();
     assert!(!world.chunk_map.chunks.contains_sync(&pos));
+    assert!(!world.chunk_map.unloading_chunks.contains_sync(&pos));
+    assert!(
+        !world.chunk_map.is_ticket_receipt_committed(receipt),
+        "simulation propagation must leave the load operation for a background epoch"
+    );
 
     advance_until_receipt(&world.chunk_map, receipt);
 
