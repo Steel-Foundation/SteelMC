@@ -12,7 +12,7 @@ use steel_utils::BlockPos;
 
 use super::*;
 use crate::entity::{
-    EntityBase, LivingEntity, LivingEntityBase, Mob,
+    EntityBase, LivingEntity, LivingEntityBase,
     entities::{LeashFenceKnotEntity, PigEntity},
 };
 use crate::inventory::equipment::EquipmentSlot;

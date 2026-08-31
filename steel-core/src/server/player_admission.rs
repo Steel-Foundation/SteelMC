@@ -1,8 +1,10 @@
+use steel_utils::translations;
+
 use super::{
-    Arc, CPlayerInfoUpdate, CRemovePlayerInfo, ClientPacket, ConnectionProtocol, DomainPlayerState,
-    EncodedPacket, Entity, GlobalPlayerData, Instant, JoinSet, NetworkConnection,
-    PendingWorldChangeToken, PersistentPlayerData, Player, ResetReason, SegQueue, Server,
-    SyncMutex, Uuid, mpsc,
+    Arc, CPlayerInfoUpdate, CRemovePlayerInfo, CancellationToken, ClientPacket, ConnectionProtocol,
+    DomainPlayerState, EncodedPacket, Entity, GlobalPlayerData, Instant, JoinSet,
+    NetworkConnection, PendingWorldChangeToken, PersistentPlayerData, Player, ResetReason,
+    SegQueue, Server, SyncMutex, Uuid, mpsc,
 };
 
 pub(super) struct PendingPlayerJoin {
@@ -21,6 +23,53 @@ pub(super) enum PlayerAdmissionState {
     Joining,
     Relocating,
     Disconnecting,
+}
+
+/// A duplicate-session wait ended before the old session finished leaving.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum DuplicatePlayerWaitError {
+    /// The replacement connection or server stopped while waiting.
+    #[error("duplicate-player wait was cancelled")]
+    Cancelled,
+    /// Vanilla's total login deadline elapsed while the old session was leaving.
+    #[error("duplicate-player wait exceeded the login deadline")]
+    TimedOut,
+}
+
+/// Exclusive ownership of one UUID's pending join pipeline.
+///
+/// Dropping an unconsumed reservation releases the UUID immediately.
+pub struct PlayerJoinReservation {
+    server: Arc<Server>,
+    uuid: Uuid,
+    queued: bool,
+}
+
+impl PlayerJoinReservation {
+    /// Transfers this reservation to the asynchronous player-join pipeline.
+    pub fn queue_player_join(mut self, player: Arc<Player>) {
+        if player.gameprofile.id != self.uuid {
+            log::error!(
+                "Player join reservation UUID mismatch: reserved {}, got {}",
+                self.uuid,
+                player.gameprofile.id
+            );
+            player.connection.close();
+            return;
+        }
+
+        self.queued = true;
+        self.server.queue_reserved_player_join(player);
+    }
+}
+
+impl Drop for PlayerJoinReservation {
+    fn drop(&mut self) {
+        if !self.queued {
+            self.server
+                .release_player_admission(self.uuid, PlayerAdmissionState::Joining);
+        }
+    }
 }
 
 pub(super) struct PlayerJoinQueue {
@@ -91,6 +140,53 @@ impl PlayerDisconnectQueue {
 }
 
 impl Server {
+    /// Disconnects an older session with the same UUID and waits for its full admission lifecycle.
+    ///
+    /// Steel keeps the disconnect admission until asynchronous persistence finishes, preventing
+    /// the replacement from loading stale player data after the old player leaves the online map.
+    /// `login_deadline_tick` is the absolute deadline established when Login began.
+    pub async fn disconnect_duplicate_player_and_wait(
+        &self,
+        uuid: Uuid,
+        connection_cancel: &CancellationToken,
+        login_deadline_tick: u64,
+    ) -> Result<(), DuplicatePlayerWaitError> {
+        loop {
+            let admission_changed = self.player_admission_changed.notified();
+            tokio::pin!(admission_changed);
+            admission_changed.as_mut().enable();
+
+            let existing = {
+                let admissions = self.player_admissions.lock();
+                let existing = self.online_players.get_by_uuid(&uuid);
+                if existing.is_none() && !admissions.contains_key(&uuid) {
+                    return Ok(());
+                }
+                existing
+            };
+
+            if let Some(existing) = existing
+                && !existing.connection.closed()
+            {
+                existing.disconnect(translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg());
+            }
+
+            tokio::select! {
+                biased;
+                () = connection_cancel.cancelled() => {
+                    return Err(DuplicatePlayerWaitError::Cancelled);
+                }
+                () = self.cancel_token.cancelled() => {
+                    return Err(DuplicatePlayerWaitError::Cancelled);
+                }
+                () = &mut admission_changed => {}
+                () = self.wait_until_tick(login_deadline_tick) => {
+                    return Err(DuplicatePlayerWaitError::TimedOut);
+                }
+            }
+        }
+    }
+
     /// Queues initial player join work.
     ///
     /// Persistent data is loaded asynchronously, then world insertion is finalized at the
@@ -99,24 +195,37 @@ impl Server {
         if player.connection.closed() {
             return;
         }
-        if !self.reserve_player_join(&player) {
-            player.disconnect("You are already connected to this server");
+        let Some(reservation) = self.try_reserve_player_join(player.gameprofile.id) else {
+            player.disconnect(translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg());
+            return;
+        };
+
+        reservation.queue_player_join(player);
+    }
+
+    fn queue_reserved_player_join(self: &Arc<Self>, player: Arc<Player>) {
+        let uuid = player.gameprofile.id;
+        if player.connection.closed() {
+            self.release_player_admission(uuid, PlayerAdmissionState::Joining);
             return;
         }
 
         let server = Arc::clone(self);
-        tokio::spawn(async move {
-            let state = server.prepare_player_join(&player).await;
-            server
-                .pending_player_joins
-                .send(PendingPlayerJoin { player, state });
-        });
+        tokio::spawn(Self::prepare_and_queue_player_join(server, player));
     }
 
-    async fn prepare_player_join(&self, player: &Player) -> Result<DomainPlayerState, String> {
-        let target_domain = self.load_join_domain(player).await?;
-        self.load_domain_player_state(player, &target_domain, None)
-            .await
+    async fn prepare_and_queue_player_join(server: Arc<Self>, player: Arc<Player>) {
+        let state = match server.load_join_domain(&player).await {
+            Ok(target_domain) => {
+                server
+                    .load_domain_player_state(&player, &target_domain, None)
+                    .await
+            }
+            Err(error) => Err(error),
+        };
+        server
+            .pending_player_joins
+            .send(PendingPlayerJoin { player, state });
     }
 
     pub(super) fn process_player_joins(self: &Arc<Self>) {
@@ -147,7 +256,7 @@ impl Server {
         };
 
         if !self.admit_reserved_player(Arc::clone(&player)) {
-            player.disconnect("You are already connected to this server");
+            player.disconnect(translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg());
             return;
         }
 
@@ -165,7 +274,7 @@ impl Server {
                 "Initial admission lost its domain residence before restore installation"
             );
             player.connection.close();
-            self.remove_online_player_sync(&player);
+            let _ = self.remove_online_player_sync(&player);
             return;
         }
         let pos = player.position();
@@ -176,7 +285,7 @@ impl Server {
         self.sync_tab_list(&player);
         let admitted = player.spawn(pos, rotation, ResetReason::InitialJoin);
         if !admitted {
-            self.remove_online_player_sync(&player);
+            let _ = self.remove_online_player_sync(&player);
             self.broadcast_to_online(CRemovePlayerInfo { uuids: vec![uuid] });
             return;
         }
@@ -191,13 +300,29 @@ impl Server {
         }
     }
 
+    /// Atomically reserves a UUID after configuration's duplicate-session recheck.
+    pub fn try_reserve_player_join(self: &Arc<Self>, uuid: Uuid) -> Option<PlayerJoinReservation> {
+        let mut admissions = self.player_admissions.lock();
+        if admissions.contains_key(&uuid) {
+            return None;
+        }
+        if self.online_players.get_by_uuid(&uuid).is_some() {
+            return None;
+        }
+        let previous = admissions.insert(uuid, PlayerAdmissionState::Joining);
+        debug_assert!(previous.is_none());
+        Some(PlayerJoinReservation {
+            server: Arc::clone(self),
+            uuid,
+            queued: false,
+        })
+    }
+
+    #[cfg(test)]
     pub(super) fn reserve_player_join(&self, player: &Player) -> bool {
         let uuid = player.gameprofile.id;
         let mut admissions = self.player_admissions.lock();
-        if admissions.contains_key(&uuid) {
-            return false;
-        }
-        if self.online_players.get_by_uuid(&uuid).is_some() {
+        if admissions.contains_key(&uuid) || self.online_players.get_by_uuid(&uuid).is_some() {
             return false;
         }
         admissions
@@ -214,6 +339,8 @@ impl Server {
 
         let admitted = self.online_players.insert(player);
         let _ = admissions.remove(&uuid);
+        drop(admissions);
+        self.player_admission_changed.notify_waiters();
         admitted
     }
 
@@ -274,11 +401,17 @@ impl Server {
         let mut admissions = self.player_admissions.lock();
         if admissions.get(&uuid) == Some(&state) {
             let _ = admissions.remove(&uuid);
+            drop(admissions);
+            self.player_admission_changed.notify_waiters();
         }
     }
 
-    fn remove_online_player_sync(&self, player: &Arc<Player>) {
-        let _ = self.online_players.remove_player_sync(player);
+    fn remove_online_player_sync(&self, player: &Arc<Player>) -> Option<Arc<Player>> {
+        let removed = self.online_players.remove_player_sync(player);
+        if removed.is_some() {
+            self.player_admission_changed.notify_waiters();
+        }
+        removed
     }
 
     pub(crate) fn queue_player_disconnect(&self, player: Arc<Player>) {
@@ -321,7 +454,7 @@ impl Server {
         }
 
         self.broadcast_player_leave_message(&player);
-        self.remove_online_player_sync(&player);
+        let _ = self.remove_online_player_sync(&player);
         self.broadcast_to_online(CRemovePlayerInfo { uuids: vec![uuid] });
         self.pending_player_disconnects
             .send_prepared(PendingPlayerDisconnect {
@@ -367,7 +500,7 @@ impl Server {
         }
 
         self.broadcast_player_leave_message(&player);
-        self.remove_online_player_sync(&player);
+        let _ = self.remove_online_player_sync(&player);
         self.broadcast_to_online(CRemovePlayerInfo { uuids: vec![uuid] });
         self.pending_player_disconnects
             .send_prepared(PendingPlayerDisconnect {
@@ -378,6 +511,14 @@ impl Server {
     }
 
     pub(super) fn process_player_disconnects(&self) -> Vec<PendingPlayerDisconnect> {
+        // Connection implementations report transport state; the server owns player removal.
+        self.online_players.iter_players(|_, player| {
+            if player.connection.closed() {
+                self.queue_player_disconnect(Arc::clone(player));
+            }
+            true
+        });
+
         let mut pending = Vec::new();
         while let Some(player) = self.pending_player_disconnects.pop() {
             if let Some(disconnect) = self.process_player_disconnect(player) {
@@ -411,7 +552,7 @@ impl Server {
 
         // Vanilla broadcasts before removing the player from its global player list.
         self.broadcast_player_leave_message(&player);
-        let player = self.online_players.remove_player_sync(&player);
+        let player = self.remove_online_player_sync(&player);
 
         let Some(player) = player else {
             self.release_player_admission(uuid, PlayerAdmissionState::Disconnecting);
@@ -513,7 +654,7 @@ impl Server {
                 existing_player.game_mode().into(),
                 existing_player.connection.latency(),
                 None,
-                true,
+                existing_player.shows_hat(),
             );
             player.send_packet(add_existing);
 
@@ -536,7 +677,7 @@ impl Server {
             player.game_mode().into(),
             player.connection.latency(),
             None,
-            true,
+            player.shows_hat(),
         );
         self.broadcast_to_online(player_info_packet);
     }

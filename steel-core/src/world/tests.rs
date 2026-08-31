@@ -174,11 +174,7 @@ fn entity_breaker_is_available_to_chorus_flower_loot() {
     assert_eq!(drops.len(), 1);
     assert_eq!(drops[0].item(), &*vanilla_items::CHORUS_FLOWER);
     assert_eq!(drops[0].count(), 1);
-    assert!(
-        BlockLootContext::new(&world, pos)
-            .get_drops(state)
-            .is_empty()
-    );
+    assert_eq!(BlockLootContext::new(&world, pos).get_drops(state).len(), 0);
 }
 
 fn assert_vec3_close(left: DVec3, right: DVec3) {
@@ -273,6 +269,24 @@ fn spawnable_bounds_match_vanilla_teleport_command_bounds() {
     assert!(!World::is_in_spawnable_bounds(BlockPos::new(
         0, 20_000_000, 0
     )));
+}
+
+#[test]
+fn absolute_world_bounds_use_the_vanilla_limit_instead_of_chunk_storage_bounds() {
+    const VANILLA_HORIZONTAL_LIMIT: i32 = 30_000_000;
+
+    let world = test_world();
+    let edge = BlockPos::new(
+        VANILLA_HORIZONTAL_LIMIT - 1,
+        world.get_max_y(),
+        -VANILLA_HORIZONTAL_LIMIT,
+    );
+    let outside_vanilla = BlockPos::new(VANILLA_HORIZONTAL_LIMIT, world.get_max_y(), 0);
+
+    assert!(world.is_in_world_bounds(edge));
+    assert!(world.is_in_valid_bounds(outside_vanilla));
+    assert!(!world.is_in_world_bounds(outside_vanilla));
+    assert!(!world.is_in_world_bounds(BlockPos::new(0, world.get_max_y() + 1, 0,)));
 }
 
 #[test]
@@ -497,14 +511,14 @@ fn navigating_mob_tracker_tracks_only_pathfinder_mobs() {
     ));
 
     tracker.track(&non_pathfinder);
-    assert!(tracker.ids().is_empty());
+    assert_eq!(tracker.ids().len(), 0);
 
     tracker.track(&pig);
     tracker.track(&pig);
     assert_eq!(tracker.ids(), [2]);
 
     tracker.untrack(2);
-    assert!(tracker.ids().is_empty());
+    assert_eq!(tracker.ids().len(), 0);
 }
 
 #[test]

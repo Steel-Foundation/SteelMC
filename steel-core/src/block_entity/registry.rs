@@ -15,13 +15,7 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
-use super::entities::{
-    BarrelBlockEntity, BeehiveBlockEntity, BlastFurnaceBlockEntity, BrushableBlockEntity,
-    CampfireBlockEntity, ChiseledBookShelfBlockEntity, ComparatorBlockEntity,
-    DaylightDetectorBlockEntity, EndGatewayBlockEntity, EndPortalBlockEntity, FurnaceBlockEntity,
-    JukeboxBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity, RawBlockEntity,
-    SignBlockEntity, SmokerBlockEntity,
-};
+use super::entities::*;
 use crate::world::World;
 
 /// Factory function type for creating block entities.
@@ -255,6 +249,10 @@ pub fn init_block_entities() {
         // Register beehive block entity factory
         registry.register(&vanilla_block_entity_types::BEEHIVE, |level, pos, state| {
             Arc::new(BeehiveBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(&vanilla_block_entity_types::BELL, |level, pos, state| {
+            Arc::new(BellBlockEntity::new(level, pos, state))
         });
 
         // Register comparator block entity factory

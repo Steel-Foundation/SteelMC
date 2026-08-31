@@ -3,6 +3,7 @@
 mod abstract_furnace;
 mod barrel;
 mod beehive;
+mod bell;
 mod brushable;
 mod campfire;
 mod chiseled_bookshelf;
@@ -24,6 +25,7 @@ pub use barrel::{BARREL_SLOTS, BarrelBlockEntity};
 pub use beehive::{
     BEEHIVE_MAX_OCCUPANTS, BEEHIVE_MIN_OCCUPATION_TICKS_NECTARLESS, BeehiveBlockEntity,
 };
+pub use bell::BellBlockEntity;
 pub use brushable::BrushableBlockEntity;
 pub use campfire::{CAMPFIRE_SLOTS, CampfireBlockEntity};
 pub use chiseled_bookshelf::{CHISELED_BOOKSHELF_SLOTS, ChiseledBookShelfBlockEntity};
