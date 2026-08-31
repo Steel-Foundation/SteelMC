@@ -7,7 +7,7 @@ use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::biome::BiomeRef;
-use steel_registry::data_components::vanilla_components::DYE;
+use steel_registry::data_components::vanilla_components::{DYE, SHEEP_COLOR};
 use steel_registry::entity_type::{
     EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
 };
@@ -359,6 +359,12 @@ impl Entity for SheepEntity {
 
     fn entity_type(&self) -> EntityTypeRef {
         self.entity_type
+    }
+
+    fn apply_implicit_item_components(&self, item_stack: &ItemStack) {
+        if let Some(color) = item_stack.get(SHEEP_COLOR) {
+            self.set_color(*color);
+        }
     }
 
     fn base_tick(&self) {

@@ -1,10 +1,11 @@
-use std::{io::Cursor, sync::Arc};
+use std::{io::Cursor, ptr, sync::Arc};
 
 use glam::DVec3;
 use simdnbt::borrow::read_compound;
 use steel_registry::data_components::vanilla_components::{CUSTOM_DATA, CUSTOM_NAME, ENTITY_DATA};
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_entities;
 use steel_utils::nbt::merge_nbt_compounds;
 use steel_utils::{BlockPos, WorldAabb, axis::Axis, types::Difficulty, wrap_degrees};
 
@@ -183,11 +184,9 @@ pub(crate) fn apply_item_stack_components(
 }
 
 fn only_op_can_set_custom_data(entity_type: EntityTypeRef) -> bool {
-    entity_type.key.namespace == "minecraft"
-        && matches!(
-            entity_type.key.path.as_ref(),
-            "falling_block" | "command_block_minecart" | "spawner_minecart"
-        )
+    ptr::eq(entity_type, &vanilla_entities::FALLING_BLOCK)
+        || ptr::eq(entity_type, &vanilla_entities::COMMAND_BLOCK_MINECART)
+        || ptr::eq(entity_type, &vanilla_entities::SPAWNER_MINECART)
 }
 
 /// Mirrors vanilla `EntityType.spawn` for server-side entity creation.
@@ -352,15 +351,20 @@ mod tests {
     use simdnbt::owned::NbtCompound;
     use steel_registry::data_components::CustomData;
     use steel_registry::data_components::components::EntityData;
-    use steel_registry::data_components::vanilla_components::{ENTITY_DATA, PIG_VARIANT};
+    use steel_registry::data_components::vanilla_components::{
+        CHICKEN_SOUND_VARIANT, CHICKEN_VARIANT, COW_SOUND_VARIANT, COW_VARIANT, ENTITY_DATA,
+        PIG_VARIANT, SHEEP_COLOR,
+    };
     use steel_registry::init_vanilla_registry;
     use steel_registry::item_stack::ItemStack;
     use steel_registry::{
-        RegistryReference, vanilla_entities, vanilla_items, vanilla_pig_variants,
+        DyeColor, RegistryReference, vanilla_chicken_sound_variants, vanilla_chicken_variants,
+        vanilla_cow_sound_variants, vanilla_cow_variants, vanilla_entities, vanilla_items,
+        vanilla_pig_variants,
     };
     use text_components::TextComponent;
 
-    use crate::entity::entities::PigEntity;
+    use crate::entity::entities::{ChickenEntity, CowEntity, PigEntity, SheepEntity};
     use crate::entity::{AgeableMob, Entity, SharedEntity};
 
     use super::{AgeableMobGroupData, apply_item_stack_components};
@@ -448,5 +452,90 @@ mod tests {
             .expect("valid pig variant component should apply");
 
         assert_eq!(pig.variant().key, vanilla_pig_variants::COLD.key);
+    }
+
+    #[test]
+    fn item_cow_components_override_spawn_state() {
+        init_vanilla_registry();
+
+        let cow = Arc::new(CowEntity::new(
+            &vanilla_entities::COW,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let entity: SharedEntity = cow.clone();
+
+        let mut spawn_egg = ItemStack::new(&vanilla_items::COW_SPAWN_EGG);
+        spawn_egg.set(
+            COW_VARIANT,
+            RegistryReference::new(&vanilla_cow_variants::COLD),
+        );
+        spawn_egg.set(
+            COW_SOUND_VARIANT,
+            RegistryReference::new(&vanilla_cow_sound_variants::MOODY),
+        );
+
+        apply_item_stack_components(&entity, &spawn_egg, false)
+            .expect("valid cow components should apply");
+
+        assert_eq!(cow.variant().key, vanilla_cow_variants::COLD.key);
+        assert_eq!(
+            cow.sound_variant().key,
+            vanilla_cow_sound_variants::MOODY.key
+        );
+    }
+
+    #[test]
+    fn item_chicken_components_override_spawn_state() {
+        init_vanilla_registry();
+
+        let chicken = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let entity: SharedEntity = chicken.clone();
+
+        let mut spawn_egg = ItemStack::new(&vanilla_items::CHICKEN_SPAWN_EGG);
+        spawn_egg.set(
+            CHICKEN_VARIANT,
+            RegistryReference::new(&vanilla_chicken_variants::COLD),
+        );
+        spawn_egg.set(
+            CHICKEN_SOUND_VARIANT,
+            RegistryReference::new(&vanilla_chicken_sound_variants::PICKY),
+        );
+
+        apply_item_stack_components(&entity, &spawn_egg, false)
+            .expect("valid chicken components should apply");
+
+        assert_eq!(chicken.variant().key, vanilla_chicken_variants::COLD.key);
+        assert_eq!(
+            chicken.sound_variant().key,
+            vanilla_chicken_sound_variants::PICKY.key
+        );
+    }
+
+    #[test]
+    fn item_sheep_color_overrides_spawn_state() {
+        init_vanilla_registry();
+
+        let sheep = Arc::new(SheepEntity::new(
+            &vanilla_entities::SHEEP,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let entity: SharedEntity = sheep.clone();
+
+        let mut spawn_egg = ItemStack::new(&vanilla_items::SHEEP_SPAWN_EGG);
+        spawn_egg.set(SHEEP_COLOR, DyeColor::Pink);
+
+        apply_item_stack_components(&entity, &spawn_egg, false)
+            .expect("valid sheep color should apply");
+
+        assert_eq!(sheep.color(), DyeColor::Pink);
     }
 }
