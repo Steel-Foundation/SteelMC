@@ -75,7 +75,7 @@ impl ItemBehavior for EnderEyeItem {
             .world
             .level_event(level_events::END_PORTAL_FRAME_FILL, clicked_pos, 0, None);
 
-        context.inv.with_item(|item| item.shrink(1));
+        context.inv.with_item(|item| item.shrink_one());
 
         if let Some(portal_origin) = find_completed_end_portal_origin(context.world, clicked_pos) {
             spawn_end_portal(context.world, portal_origin);

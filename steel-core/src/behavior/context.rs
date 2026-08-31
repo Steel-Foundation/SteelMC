@@ -734,7 +734,7 @@ mod tests {
         };
 
         assert!(source.with_item(|item| item.get(BLOCK_STATE).is_some()));
-        source.with_item_mut(|item| item.shrink(1));
+        source.with_item_mut(|item| item.shrink_one());
         assert_eq!(
             inventory
                 .lock()
@@ -797,7 +797,7 @@ mod tests {
                 false,
             );
             assert!(source.with_item(|item| item.get(BLOCK_STATE).is_some()));
-            source.with_item_mut(|item| item.shrink(1));
+            source.with_item_mut(|item| item.shrink_one());
         }
         assert_eq!(stack.count(), 1);
     }
@@ -836,7 +836,7 @@ mod tests {
         assert_eq!(shifted.click_location(), DVec3::new(5.0, 90.5, 7.5));
         assert!(!shifted.is_inside());
         assert!(shifted.with_item(|item| item.is(&vanilla_items::STONE)));
-        shifted.with_item_mut(|item| item.shrink(1));
+        shifted.with_item_mut(|item| item.shrink_one());
         drop(shifted);
         assert!(stack.is_empty());
     }

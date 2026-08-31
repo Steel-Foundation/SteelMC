@@ -147,7 +147,7 @@ impl BlockItem {
             ),
         );
 
-        context.with_item_mut(|item| item.shrink(1));
+        context.with_item_mut(|item| item.shrink_one());
 
         InteractionResult::Success
     }

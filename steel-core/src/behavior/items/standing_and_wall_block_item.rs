@@ -174,7 +174,7 @@ impl ItemBehavior for StandingAndWallBlockItem {
             &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
-        place_context.with_item_mut(|item| item.shrink(1));
+        place_context.with_item_mut(|item| item.shrink_one());
 
         InteractionResult::Success
     }

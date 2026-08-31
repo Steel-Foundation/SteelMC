@@ -212,7 +212,7 @@ impl PlayerInventory {
 
         let to_equip = in_hand.copy_with_count(1);
         if !has_infinite_materials {
-            self.get_item_in_hand_mut(hand).shrink(1);
+            self.get_item_in_hand_mut(hand).shrink_one();
         }
         let mut overflow = EntityEquipment::set(self, slot, to_equip);
         if !overflow.is_empty() && self.add(&mut overflow) {

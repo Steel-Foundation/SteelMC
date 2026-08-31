@@ -27,7 +27,7 @@ impl ItemBehavior for HoneycombItem {
         // Try block waxing first
         let old_block_state = context.world.get_block_state(pos);
         if let Some(waxed_block) = get_waxed_from_normal_variant(old_block_state.get_block()) {
-            context.inv.with_item(|item| item.shrink(1));
+            context.inv.with_item(|item| item.shrink_one());
             // TODO: trigger CriteriaTriggers.ITEM_USED_ON_BLOCK advancement
             let waxed_state = REGISTRY
                 .blocks
@@ -70,7 +70,7 @@ impl ItemBehavior for HoneycombItem {
         }
 
         sign.set_changed();
-        context.inv.with_item(|item| item.shrink(1));
+        context.inv.with_item(|item| item.shrink_one());
         context.world.level_event(
             level_events::PARTICLES_AND_SOUND_WAX_ON,
             pos,

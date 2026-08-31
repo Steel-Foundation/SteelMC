@@ -62,7 +62,7 @@ impl ItemBehavior for EnderPearlItem {
 
         player.award_stat(&vanilla_stat_types::ITEM_USED, thrown_item.item);
         if !player.has_infinite_materials() {
-            context.inv.with_item(|item| item.shrink(1));
+            context.inv.with_item(|item| item.shrink_one());
         }
 
         InteractionResult::Success

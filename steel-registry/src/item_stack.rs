@@ -133,6 +133,11 @@ impl ItemStack {
         self.count -= amount;
     }
 
+    /// Decreases the count by one.
+    pub const fn shrink_one(&mut self) {
+        self.count -= 1;
+    }
+
     /// Splits off the specified amount from this stack and returns it as a new stack.
     ///
     /// If the amount is greater than or equal to the current count, this stack becomes
@@ -258,7 +263,7 @@ impl ItemStack {
             // TODO: Call onEquippedItemBroken callback which:
             // - Broadcasts entity event (byte 47 for mainhand) for break sound/particles
             // - Stops location-based effects (removes attribute modifiers)
-            self.shrink(1);
+            self.shrink_one();
             return true;
         }
 

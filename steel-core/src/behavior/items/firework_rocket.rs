@@ -70,7 +70,7 @@ impl ItemBehavior for FireworkRocketItem {
                 rocket.as_ref(),
                 Some(context.player),
             );
-            item.shrink(1);
+            item.shrink_one();
         });
 
         InteractionResult::Success
@@ -109,7 +109,7 @@ impl ItemBehavior for FireworkRocketItem {
                 rocket.as_ref(),
                 Some(context.player),
             );
-            itemstack.shrink(1);
+            itemstack.shrink_one();
             context
                 .player
                 .award_stat(&vanilla_stat_types::ITEM_USED, item);

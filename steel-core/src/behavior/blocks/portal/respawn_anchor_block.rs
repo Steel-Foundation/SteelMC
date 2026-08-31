@@ -150,7 +150,7 @@ impl RespawnAnchorBlock {
 
     const fn consume_respawn_fuel(item_stack: &mut ItemStack, has_infinite_materials: bool) {
         if !has_infinite_materials {
-            item_stack.shrink(1);
+            item_stack.shrink_one();
         }
     }
 

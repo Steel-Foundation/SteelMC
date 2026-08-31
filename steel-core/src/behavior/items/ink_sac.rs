@@ -67,7 +67,7 @@ fn apply_glow(context: &mut UseOnContext, glowing: bool) -> InteractionResult {
     );
 
     let item_used = context.inv.with_item(|item| {
-        item.shrink(1);
+        item.shrink_one();
         item.item
     });
     context
