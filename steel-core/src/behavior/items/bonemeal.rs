@@ -115,7 +115,7 @@ impl BoneMealItem {
 impl ItemBehavior for BoneMealItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         if Self::grow(context.world, context.hit_result.block_pos) {
-            context.inv.with_item(|item| item.shrink(1));
+            context.inv.with_item(|item| item.shrink_one());
             Self::cause_finish_use_vibration(context);
             context.world.level_event(
                 level_events::PARTICLES_AND_SOUND_PLANT_GROWTH,
@@ -141,7 +141,7 @@ impl ItemBehavior for BoneMealItem {
                 context.hit_result.direction,
             )
         {
-            context.inv.with_item(|item| item.shrink(1));
+            context.inv.with_item(|item| item.shrink_one());
             Self::cause_finish_use_vibration(context);
             context.world.level_event(
                 level_events::PARTICLES_AND_SOUND_PLANT_GROWTH,

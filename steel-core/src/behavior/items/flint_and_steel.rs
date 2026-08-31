@@ -88,7 +88,7 @@ impl ItemBehavior for FireChargeItem {
             &sound_events::ITEM_FIRECHARGE_USE,
             fire_charge_pitch(),
         ) {
-            context.inv.with_item(|item| item.shrink(1));
+            context.inv.with_item(|item| item.shrink_one());
             return InteractionResult::Success;
         }
 
@@ -118,7 +118,7 @@ impl ItemBehavior for FireChargeItem {
             &GameEventContext::new(Some(context.player), None),
         );
 
-        context.inv.with_item(|item| item.shrink(1));
+        context.inv.with_item(|item| item.shrink_one());
 
         InteractionResult::Success
     }
