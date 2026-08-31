@@ -63,6 +63,7 @@ impl ResultHandler for CraftingHandler {
     }
 
     fn update_result(&self, guard: &mut ContainerLockGuard) {
+        // TODO: Enforce limited crafting and retain the recipe once player recipe books exist.
         let crafting = guard
             .get_typed::<CraftingContainer>(self.crafting_id())
             .expect("crafting container not locked");
@@ -82,6 +83,7 @@ impl ResultHandler for CraftingHandler {
         guard: &mut ContainerLockGuard,
         player: &Player,
     ) -> Option<ItemStack> {
+        // TODO: Unlock the recipe and trigger RECIPE_CRAFTED once their foundations exist.
         let mut remainder_overflow: Vec<ItemStack> = Vec::new();
 
         let remainders_and_positioned = {

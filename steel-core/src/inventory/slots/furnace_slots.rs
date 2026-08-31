@@ -132,6 +132,7 @@ impl Slot for FurnaceResultSlot {
         _stack: &ItemStack,
         player: &Player,
     ) -> Option<ItemStack> {
+        // TODO: Award crafted stats/recipes and trigger RECIPE_CRAFTED once supported.
         let (container, _) = self.storage().physical_backing()?;
         let container_id = container.container_id();
         let recipes = guard
