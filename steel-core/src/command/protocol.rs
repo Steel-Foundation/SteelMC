@@ -641,6 +641,10 @@ mod tests {
         assert!(matches!(vec3, ProtocolArgumentType::Vec3));
         assert!(vec3_suggestions.is_none());
 
+        let (vec2, vec2_suggestions) = SteelArgumentType::vec2(true).protocol_argument();
+        assert!(matches!(vec2, ProtocolArgumentType::Vec2));
+        assert!(vec2_suggestions.is_none());
+
         let (rotation, rotation_suggestions) = SteelArgumentType::rotation().protocol_argument();
         assert!(matches!(rotation, ProtocolArgumentType::Rotation));
         assert!(rotation_suggestions.is_none());

@@ -5,7 +5,9 @@ use super::{
     ItemPredicate, ScoreHolderArgument, StructureOrTagKey, WorldArgument,
     biome::{parse_biome_or_tag, suggest_biomes},
     block::{parse_block_input, parse_block_predicate, suggest_block_inputs, suggest_blocks},
-    coordinates::{parse_block_pos, parse_rotation, parse_vec3, suggest_coordinates},
+    coordinates::{
+        parse_block_pos, parse_rotation, parse_vec2, parse_vec3, suggest_coordinates, suggest_vec2,
+    },
     item::{parse_item_stack, suggest_item_stack},
     item_predicate::{parse_item_predicate, suggest_item_predicate},
     nbt::parse_nbt_path,
@@ -173,6 +175,10 @@ impl SteelArgumentType {
 
     pub(crate) fn vec3(center_integers: bool) -> Self {
         Self::new(Vec3Parser { center_integers })
+    }
+
+    pub(crate) fn vec2(center_integers: bool) -> Self {
+        Self::new(Vec2Parser { center_integers })
     }
 
     pub(crate) fn rotation() -> Self {
@@ -673,6 +679,37 @@ impl SteelArgumentParser for Vec3Parser {
 
     fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
         (ProtocolArgumentType::Vec3, None)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Vec2Parser {
+    center_integers: bool,
+}
+
+impl_downcast_type!(Vec2Parser, "steel:command/parser/vec2");
+
+impl SteelArgumentParser for Vec2Parser {
+    type Value = Coordinates;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        _source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        parse_vec2(reader, self.center_integers)
+    }
+
+    fn list_suggestions(
+        &self,
+        _context: &dyn SteelArgumentSuggestionContext,
+        builder: &mut SuggestionsBuilder<'_>,
+    ) {
+        suggest_vec2(builder, |reader| parse_vec2(reader, self.center_integers));
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (ProtocolArgumentType::Vec2, None)
     }
 }
 
