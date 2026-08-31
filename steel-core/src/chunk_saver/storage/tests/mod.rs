@@ -5,11 +5,9 @@ use std::sync::Arc;
 
 use crate::bootstrap::init_globals_once;
 use crate::entity::{
-    DEFAULT_MAX_AIR_SUPPLY, Entity, SharedEntity,
-    entities::{EndCrystalEntity, RawEntity},
-    next_entity_id,
+    DEFAULT_MAX_AIR_SUPPLY, Entity, SharedEntity, entities::EndCrystalEntity, next_entity_id,
 };
-use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+use crate::test_support::{TestEntity, fresh_test_world, insert_ready_full_chunk};
 use glam::DVec3;
 use rustc_hash::FxHashMap;
 use steel_registry::init_vanilla_registry;

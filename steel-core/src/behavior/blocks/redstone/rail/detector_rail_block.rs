@@ -248,9 +248,8 @@ mod tests {
 
     use super::*;
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
-    use crate::entity::entities::RawEntity;
     use crate::entity::{InsideBlockEffectCollector, RemovalReason, SharedEntity};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestEntity, fresh_test_world, insert_ready_full_chunk};
 
     #[test]
     fn minecart_powers_detector_and_schedules_relative_tick() {
@@ -267,12 +266,12 @@ mod tests {
         let state = vanilla_blocks::DETECTOR_RAIL.default_state();
         world.set_block(pos, state, UpdateFlags::UPDATE_NONE);
 
-        let minecart: SharedEntity = Arc::new(RawEntity::new(
+        let minecart: SharedEntity = TestEntity::shared(
             8_001,
             DVec3::new(8.5, 64.0, 8.5),
             Arc::downgrade(&world),
             &vanilla_entities::MINECART,
-        ));
+        );
         world
             .try_add_entity(Arc::clone(&minecart))
             .expect("test minecart should enter loaded chunk");

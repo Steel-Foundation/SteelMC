@@ -359,8 +359,8 @@ mod tests {
     use super::*;
     use crate::{
         behavior::{BLOCK_BEHAVIORS, init_behaviors},
-        entity::{InsideBlockEffectCollector, entities::RawEntity},
-        test_support::{fresh_test_world, insert_ready_full_chunk},
+        entity::InsideBlockEffectCollector,
+        test_support::{TestEntity, fresh_test_world, insert_ready_full_chunk},
     };
 
     #[test]
@@ -391,12 +391,12 @@ mod tests {
         );
         assert_eq!(world.get_block_state(pos).get_value(TILT), Tilt::None,);
 
-        let entity = Arc::new(RawEntity::new(
+        let entity = TestEntity::shared(
             7_003,
             DVec3::new(8.5, 65.0, 8.5),
             Arc::downgrade(&world),
             &vanilla_entities::PIG,
-        ));
+        );
         entity.set_on_ground(true);
         let mut effects = InsideBlockEffectCollector::new();
         behavior.entity_inside(
