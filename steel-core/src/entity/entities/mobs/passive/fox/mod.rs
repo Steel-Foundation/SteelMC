@@ -29,8 +29,8 @@ use uuid::Uuid;
 
 use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
-    BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal,
-    WaterAvoidingRandomStrollGoal,
+    BreedGoal, ClimbOnTopOfPowderSnowGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal,
+    PanicGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
@@ -145,21 +145,42 @@ impl FoxEntity {
         living_base.initialize_synced_data(&mut entity_data);
 
         {
-            // Fox goals at their vanilla priorities. The stock panic, breed, follow-parent,
-            // and look-at-player goals stand in for the fox-specific variants.
-            // TODO(fox-goals): swap in the bespoke panic/breed/follow-parent/look variants
-            // (they differ only in threat- and trust-driven behaviour) and add the hunting,
-            // avoid, and defend goals once the prey and threat mobs they need exist.
+            // Fox goals at their vanilla priorities. The stock float, panic, breed,
+            // follow-parent, and look-at-player goals stand in for the fox-specific
+            // variants, which differ only in threat- and trust-driven behaviour.
+            //
+            // The goals vanilla registers that Steel cannot support yet are listed as
+            // TODOs at the priority they belong at, each blocked on a foundation that
+            // is not in the tree today (a missing mob, a control hook, or the held-item
+            // eating path).
             let mut goal_selector = mob_base.goal_selector().lock();
             goal_selector.add_goal(0, FloatGoal::new(&mob_base));
+            goal_selector.add_goal(0, ClimbOnTopOfPowderSnowGoal::new());
+            // TODO(fox-goals): 1 FaceplantGoal (needs faceplant physics via a custom FoxMoveControl)
             goal_selector.add_goal(2, PanicGoal::new(2.2));
             goal_selector.add_goal(3, BreedGoal::new(1.0));
+            // TODO(fox-goals): 4 AvoidEntityGoal<Player> (needs the trust/defend gate)
+            // TODO(fox-goals): 4 AvoidEntityGoal<Wolf> (needs the Wolf mob)
+            // TODO(fox-goals): 4 AvoidEntityGoal<PolarBear> (needs the PolarBear mob)
+            // TODO(fox-goals): 5 StalkPreyGoal (needs prey mobs and the pounce move control)
+            // TODO(fox-goals): 6 FoxPounceGoal (needs pounce/jump physics)
+            // TODO(fox-goals): 6 SeekShelterGoal (needs a FleeSunGoal move target)
+            // TODO(fox-goals): 7 FoxMeleeAttackGoal (needs an attack target)
             goal_selector.add_goal(7, FoxSleepGoal::new());
             goal_selector.add_goal(8, FollowParentGoal::new(1.25));
+            // TODO(fox-goals): 9 StrollThroughVillageGoal (needs village POI)
+            // TODO(fox-goals): 10 FoxEatBerriesGoal (deferred with the held-item eating path)
+            // TODO(fox-goals): 10 LeapAtTargetGoal (needs an attack target)
             goal_selector.add_goal(11, WaterAvoidingRandomStrollGoal::new(1.0));
             goal_selector.add_goal(11, FoxSearchForItemsGoal);
             goal_selector.add_goal(12, LookAtPlayerGoal::new(24.0));
             goal_selector.add_goal(13, PerchAndSearchGoal::new());
+
+            // Target-selector goals, none registered yet:
+            // TODO(fox-goals): target 3 DefendTrustedTargetGoal (needs the trust/defend gate)
+            // TODO(fox-goals): target NearestAttackableTarget for chickens/rabbits (needs the Rabbit mob)
+            // TODO(fox-goals): target NearestAttackableTarget for baby turtles on land (needs the Turtle entity, #490)
+            // TODO(fox-goals): target NearestAttackableTarget for schooling fish (needs the fish mobs)
         }
 
         let fox = Self {
