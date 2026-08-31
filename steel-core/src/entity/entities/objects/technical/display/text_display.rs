@@ -1,9 +1,7 @@
 //! Vanilla's text display implementation.
 
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::objects::technical::display::{
-    Display, DisplayView, PrivateDisplayView,
-};
+use crate::entity::entities::objects::technical::display::{modify_display_entity_base, Display, DisplayView, PrivateDisplayView};
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
 use bitflags::bitflags;
@@ -73,7 +71,7 @@ impl TextDisplayEntity {
     #[must_use]
     fn new_with_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {
-            base,
+            base: modify_display_entity_base(base),
             entity_type,
             entity_data: SyncMutex::new(TextDisplayEntityData::new()),
         }
@@ -127,6 +125,10 @@ impl Entity for TextDisplayEntity {
             );
 
             nbt.insert("alignment", view.alignment());
+
+            self.with_view(|view| {
+
+            })
         });
     }
 

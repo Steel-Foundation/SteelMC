@@ -1,9 +1,7 @@
 //! Vanilla's item display implementation.
 
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::objects::technical::display::{
-    Display, DisplayView, PrivateDisplayView,
-};
+use crate::entity::entities::objects::technical::display::{modify_display_entity_base, Display, DisplayView, PrivateDisplayView};
 use crate::entity::{Entity, EntityBase, EntityBaseLoad, EntitySyncedData};
 use crate::world::World;
 use glam::DVec3;
@@ -62,7 +60,7 @@ impl ItemDisplayEntity {
     #[must_use]
     fn new_with_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         Self {
-            base,
+            base: modify_display_entity_base(base),
             entity_type,
             entity_data: SyncMutex::new(ItemDisplayEntityData::new()),
         }
@@ -104,7 +102,7 @@ impl Entity for ItemDisplayEntity {
                 nbt.insert("item", stack.to_nbt_tag_ref());
             }
 
-            nbt.insert("item_display", view.item_display_context());
+            nbt.insert("item_display", view.item_transform());
         });
     }
 
@@ -117,13 +115,15 @@ impl Entity for ItemDisplayEntity {
                     .and_then(ItemStack::from_nbt_tag)
                     .unwrap_or_else(ItemStack::empty),
             );
-            view.set_item_display_context(
+            view.set_item_transform(
                 nbt.get("item_display")
                     .and_then(ItemDisplayContext::from_nbt_tag)
                     .unwrap_or(ItemDisplayContext::None),
             );
         });
     }
+
+    // TODO: Add `getItemStack` and `setItemStack` overrides.
 }
 
 impl Display for ItemDisplayEntity {
@@ -155,12 +155,12 @@ impl<'a> DisplayView<'a> for ItemDisplayView<'a> {}
 impl ItemDisplayView<'_> {
     /// Gets the context to display the item stack of this item display.
     #[must_use]
-    pub fn item_display_context(&self) -> ItemDisplayContext {
+    pub fn item_transform(&self) -> ItemDisplayContext {
         ItemDisplayContext::try_from(*self.0.item_display.get()).unwrap_or(ItemDisplayContext::None)
     }
 
     /// Sets the context to display the item stack of this item display to `context`.
-    pub fn set_item_display_context(&mut self, context: ItemDisplayContext) {
+    pub fn set_item_transform(&mut self, context: ItemDisplayContext) {
         self.0.item_display.set(context as i8);
     }
 

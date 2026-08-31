@@ -1,6 +1,6 @@
 //! Vanilla's abstract `Display` implementation.
-
-use crate::entity::Entity;
+//!
+use crate::entity::{Entity, EntityBase};
 use crate::entity::damage::DamageSource;
 pub use crate::entity::entities::objects::technical::display::transformation::Transformation;
 use crate::world::World;
@@ -54,7 +54,9 @@ pub trait Display: Entity {
 
     /// The base `tick()` method for display entities.
     fn tick_display(&self) {
-        // TODO: Implement dismounting if the vehicle of the display entity is removed.
+        if self.vehicle().is_some_and(|v| v.is_removed()) {
+            self.stop_riding()
+        }
     }
     /// The base `hurtServer()` method for display entities.
     fn hurt_display(&self, _world: &World, _source: &DamageSource, _amount: f32) -> bool {
@@ -72,6 +74,9 @@ pub trait Display: Entity {
     /// Provides a view to the synced data of this entity, accessible via the function `f`.
     ///
     /// This allows accessing and modifying any required data.
+    ///
+    /// **Warning:** Because this function locks the synced entity data associated with this display entity,
+    /// if this method is called again in `f`, it will cause a deadlock to occur.
     fn with_view(&self, f: impl FnOnce(Self::View<'_>));
 
     /// Loads a display entity's fields common to all display entities from an NBT compound via a view.
@@ -443,6 +448,11 @@ impl FromNbtTag for Brightness {
         }
         Some(Self { block, sky })
     }
+}
+
+fn modify_display_entity_base(base: EntityBase) -> EntityBase {
+    base.set_no_physics(true);
+    base
 }
 
 pub mod block_display;
