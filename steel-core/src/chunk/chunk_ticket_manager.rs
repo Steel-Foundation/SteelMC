@@ -1,4 +1,4 @@
-//! Chunk ticket management for tracking chunk levels and propagation.
+//! Chunk ticket management for tracking load levels and propagation.
 #![expect(missing_docs, reason = "internal module; items are self-explanatory")]
 
 use std::mem;
@@ -7,6 +7,7 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use steel_utils::ChunkPos;
+use uuid::Uuid;
 
 use crate::chunk::{chunk_pyramid::GENERATION_PYRAMID, status::ChunkStatus};
 
@@ -110,13 +111,6 @@ impl ChunkTicketLevel {
     const fn distance_to_max(self) -> u8 {
         MAX_LEVEL_RAW - self.0
     }
-
-    #[must_use]
-    const fn distance_to_block_ticking(self) -> u8 {
-        ChunkTicketLevel::BLOCK_TICKING_CHUNK
-            .0
-            .saturating_sub(self.0)
-    }
 }
 
 /// Vanilla full-chunk accessibility and ticking status.
@@ -188,25 +182,13 @@ impl ChunkTicket {
         }
     }
 
-    /// Creates a player ticket with Vanilla's two-chunk loading moat.
+    /// Creates a loading-only player ticket with Vanilla's two-chunk loading moat.
     ///
     /// Loading is entity-ticking through `view_distance`, block-ticking one
-    /// chunk farther, and full one chunk beyond that. Simulation is capped to
-    /// the view distance.
+    /// chunk farther, and full one chunk beyond that.
     #[must_use]
-    pub const fn player(view_distance: u8, simulation_radius: u8) -> Self {
-        let simulation_radius = if simulation_radius > view_distance {
-            view_distance
-        } else {
-            simulation_radius
-        };
-
-        Self {
-            load_level: ChunkTicketLevel::for_entity_ticking_radius(view_distance),
-            simulation_level: Some(ChunkTicketLevel::for_entity_ticking_radius(
-                simulation_radius,
-            )),
-        }
+    pub const fn player_loading(view_distance: u8) -> Self {
+        Self::loading(ChunkTicketLevel::for_entity_ticking_radius(view_distance))
     }
 
     #[must_use]
@@ -340,11 +322,18 @@ impl TimedChunkTickets {
         }
     }
 
-    /// Inserts restored timed ticket sources into the active ticket manager.
-    pub(crate) fn activate_all(&self, ticket_manager: &mut ChunkTicketManager) {
+    /// Inserts restored timed ticket sources into the load ticket manager.
+    pub(crate) fn activate_load_tickets(&self, load_manager: &mut LoadTicketManager) {
         for ticket in &self.tickets {
-            ticket_manager.add_ticket(ticket.pos, ticket.ticket);
+            load_manager.add_ticket(ticket.pos, ticket.ticket);
         }
+    }
+
+    /// Iterates active timed ticket sources for simulation initialization.
+    pub(crate) fn active_tickets(&self) -> impl Iterator<Item = (ChunkPos, ChunkTicket)> + '_ {
+        self.tickets
+            .iter()
+            .map(|ticket| (ticket.pos, ticket.ticket))
     }
 
     /// Adds or refreshes vanilla's portal ticket.
@@ -496,41 +485,41 @@ const fn ender_pearl_ticket() -> ChunkTicket {
     ChunkTicket::simulated_full_chunks(ENDER_PEARL_TICKET_RADIUS)
 }
 
-/// A level change for a chunk position.
+/// A load level change for a chunk position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LevelChange {
+pub struct LoadLevelChange {
     pub pos: ChunkPos,
     /// `Some(level)` if level changed or added, `None` if removed.
     pub new_level: Option<ChunkTicketLevel>,
-    /// `Some(level)` if simulation changed or added, `None` if removed.
-    pub new_simulation_level: Option<ChunkTicketLevel>,
 }
 
-/// Chunk ticket propagation.
+/// Load ticket propagation.
 /// Lower levels = higher priority. Multiple tickets per position supported.
 #[derive(Debug)]
-pub struct ChunkTicketManager {
+pub struct LoadTicketManager {
     tickets: FxHashMap<ChunkPos, TicketLevels>,
+    players: FxHashMap<ChunkPos, FxHashMap<Uuid, ChunkTicketLevel>>,
+    player_positions: FxHashMap<Uuid, ChunkPos>,
     levels: FxHashMap<ChunkPos, ChunkTicketLevel>,
-    simulation_levels: FxHashMap<ChunkPos, ChunkTicketLevel>,
     dirty: bool,
     /// Tracks changes from the last `run_all_updates()` call.
-    changes: Vec<LevelChange>,
+    changes: Vec<LoadLevelChange>,
 }
 
-impl Default for ChunkTicketManager {
+impl Default for LoadTicketManager {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ChunkTicketManager {
+impl LoadTicketManager {
     #[must_use]
     pub fn new() -> Self {
         Self {
             tickets: FxHashMap::default(),
+            players: FxHashMap::default(),
+            player_positions: FxHashMap::default(),
             levels: FxHashMap::default(),
-            simulation_levels: FxHashMap::default(),
             dirty: false,
             changes: Vec::new(),
         }
@@ -557,8 +546,101 @@ impl ChunkTicketManager {
         false
     }
 
-    /// Removes all tickets at position. Returns true if any were present.
-    pub fn remove_all_tickets_at(&mut self, pos: ChunkPos) -> bool {
+    /// Adds or moves a UUID-keyed player loading source.
+    ///
+    /// `load_level` must come from the world's fixed player loading distance.
+    /// Repeating the same UUID, position, and level is idempotent. An add at a
+    /// new position moves the canonical membership, so a later removal for the
+    /// old position cannot remove the new source.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the UUID-to-position index and source membership disagree.
+    pub fn add_player(
+        &mut self,
+        pos: ChunkPos,
+        player_id: Uuid,
+        load_level: ChunkTicketLevel,
+    ) -> bool {
+        if let Some(current_pos) = self.player_positions.get(&player_id).copied() {
+            if current_pos == pos {
+                let old_source_level = self.get_ticket(pos);
+                let Some(players) = self.players.get_mut(&pos) else {
+                    panic!("player position index references a missing load source");
+                };
+                let Some(current_level) = players.get_mut(&player_id) else {
+                    panic!("player position index disagrees with load source membership");
+                };
+                if *current_level == load_level {
+                    return false;
+                }
+
+                *current_level = load_level;
+                self.mark_dirty_if_source_changed(pos, old_source_level);
+                return true;
+            }
+
+            let old_source_level = self.get_ticket(current_pos);
+            self.remove_player_from_source(current_pos, player_id);
+            self.mark_dirty_if_source_changed(current_pos, old_source_level);
+        }
+
+        let old_source_level = self.get_ticket(pos);
+        let replaced = self
+            .players
+            .entry(pos)
+            .or_default()
+            .insert(player_id, load_level);
+        assert!(
+            replaced.is_none(),
+            "player position index disagrees with load source membership"
+        );
+        self.player_positions.insert(player_id, pos);
+        self.mark_dirty_if_source_changed(pos, old_source_level);
+        true
+    }
+
+    /// Removes the player's loading source membership at `pos`.
+    ///
+    /// Returns false for duplicates and stale removals after the player moved.
+    pub fn remove_player(&mut self, pos: ChunkPos, player_id: Uuid) -> bool {
+        if self.player_positions.get(&player_id).copied() != Some(pos) {
+            return false;
+        }
+
+        let old_source_level = self.get_ticket(pos);
+        self.remove_player_from_source(pos, player_id);
+        self.player_positions.remove(&player_id);
+        self.mark_dirty_if_source_changed(pos, old_source_level);
+        true
+    }
+
+    fn remove_player_from_source(&mut self, pos: ChunkPos, player_id: Uuid) {
+        let Some(players) = self.players.get_mut(&pos) else {
+            panic!("player position index references a missing load source");
+        };
+        assert!(
+            players.remove(&player_id).is_some(),
+            "player position index disagrees with load source membership"
+        );
+
+        if players.is_empty() {
+            self.players.remove(&pos);
+        }
+    }
+
+    fn mark_dirty_if_source_changed(
+        &mut self,
+        pos: ChunkPos,
+        old_source_level: Option<ChunkTicketLevel>,
+    ) {
+        if self.get_ticket(pos) != old_source_level {
+            self.dirty = true;
+        }
+    }
+
+    /// Removes all generic tickets at a position without changing player ownership.
+    pub fn remove_all_generic_tickets_at(&mut self, pos: ChunkPos) -> bool {
         let removed = self.tickets.remove(&pos).is_some();
         if removed {
             self.dirty = true;
@@ -569,9 +651,15 @@ impl ChunkTicketManager {
     /// Returns the minimum ticket level at position.
     #[must_use]
     pub fn get_ticket(&self, pos: ChunkPos) -> Option<ChunkTicketLevel> {
-        self.tickets
+        let ticket_level = self
+            .tickets
             .get(&pos)
-            .and_then(|tickets| tickets.iter().map(|ticket| ticket.load_level()).min())
+            .and_then(|tickets| tickets.iter().map(|ticket| ticket.load_level()).min());
+        let player_level = self
+            .players
+            .get(&pos)
+            .and_then(|players| players.values().copied().min());
+        ticket_level.into_iter().chain(player_level).min()
     }
 
     /// Iterator over the tickets currently held at `pos`.
@@ -580,32 +668,49 @@ impl ChunkTicketManager {
             .get(&pos)
             .into_iter()
             .flat_map(|tickets| tickets.iter().copied())
+            .chain(
+                self.players
+                    .get(&pos)
+                    .and_then(|players| players.values().copied().min())
+                    .map(ChunkTicket::loading),
+            )
     }
 
     /// Iterator over (position, `min_level`) for all ticket sources.
     pub fn tickets(&self) -> impl Iterator<Item = (ChunkPos, ChunkTicketLevel)> + '_ {
-        self.tickets.iter().filter_map(|(&pos, tickets)| {
-            tickets
-                .iter()
-                .map(|ticket| ticket.load_level())
-                .min()
-                .map(|level| (pos, level))
-        })
+        self.tickets
+            .keys()
+            .filter_map(|&pos| self.get_ticket(pos).map(|level| (pos, level)))
+            .chain(
+                self.players
+                    .keys()
+                    .filter(|pos| !self.tickets.contains_key(pos))
+                    .filter_map(|&pos| self.get_ticket(pos).map(|level| (pos, level))),
+            )
     }
 
     #[must_use]
     pub fn ticket_count(&self) -> usize {
-        self.tickets.values().map(smallvec::SmallVec::len).sum()
+        self.tickets
+            .values()
+            .map(smallvec::SmallVec::len)
+            .sum::<usize>()
+            + self.players.len()
     }
 
     #[must_use]
     pub fn ticket_position_count(&self) -> usize {
         self.tickets.len()
+            + self
+                .players
+                .keys()
+                .filter(|pos| !self.tickets.contains_key(pos))
+                .count()
     }
 
     /// Propagates all tickets. Only runs if dirty.
     /// Returns a slice of changes (added/updated/removed levels).
-    pub fn run_all_updates(&mut self) -> &[LevelChange] {
+    pub fn run_all_updates(&mut self) -> &[LoadLevelChange] {
         self.changes.clear();
 
         if !self.dirty {
@@ -618,72 +723,40 @@ impl ChunkTicketManager {
             &mut self.levels,
             FxHashMap::with_capacity_and_hasher(old_capacity, FxBuildHasher),
         );
-        let old_simulation_capacity = self.simulation_levels.capacity();
-        let old_simulation_levels = mem::replace(
-            &mut self.simulation_levels,
-            FxHashMap::with_capacity_and_hasher(old_simulation_capacity, FxBuildHasher),
-        );
-
         self.dirty = false;
 
-        // Propagate each ticket source
+        // Propagate positions with at least one generic ticket. Include any
+        // overlapping player source in the source minimum.
         for (&source_pos, tickets) in &self.tickets {
-            let Some(source_level) = tickets.iter().map(|ticket| ticket.load_level()).min() else {
+            let ticket_level = tickets.iter().map(|ticket| ticket.load_level()).min();
+            let player_level = self
+                .players
+                .get(&source_pos)
+                .and_then(|players| players.values().copied().min());
+            let Some(source_level) = ticket_level.into_iter().chain(player_level).min() else {
                 continue;
             };
+            Self::propagate_source(&mut self.levels, source_pos, source_level);
+        }
 
-            let radius = i32::from(source_level.distance_to_max());
-            let sx = source_pos.0.x;
-            let sy = source_pos.0.y;
-
-            for dy in -radius..=radius {
-                for dx in -radius..=radius {
-                    let distance = dx.abs().max(dy.abs()) as u8;
-                    let Some(level) = source_level.with_distance(distance) else {
-                        continue;
-                    };
-
-                    let pos = ChunkPos::new(sx + dx, sy + dy);
-                    self.levels
-                        .entry(pos)
-                        .and_modify(|e| *e = (*e).min(level))
-                        .or_insert(level);
-                }
+        // Propagate player-only positions not visited above.
+        for (&source_pos, players) in &self.players {
+            if self.tickets.contains_key(&source_pos) {
+                continue;
             }
-
-            let Some(simulation_level) = tickets
-                .iter()
-                .filter_map(|ticket| ticket.simulation_level())
-                .min()
-            else {
+            let Some(source_level) = players.values().copied().min() else {
                 continue;
             };
-
-            let radius = i32::from(simulation_level.distance_to_block_ticking());
-            for dy in -radius..=radius {
-                for dx in -radius..=radius {
-                    let distance = dx.abs().max(dy.abs()) as u8;
-                    let Some(level) = simulation_level.with_distance(distance) else {
-                        continue;
-                    };
-
-                    let pos = ChunkPos::new(sx + dx, sy + dy);
-                    self.simulation_levels
-                        .entry(pos)
-                        .and_modify(|e| *e = (*e).min(level))
-                        .or_insert(level);
-                }
-            }
+            Self::propagate_source(&mut self.levels, source_pos, source_level);
         }
 
         // Find changed/added levels
         for (&pos, &new_level) in &self.levels {
             match old_levels.get(&pos) {
                 Some(&old_level) if old_level == new_level => {} // No change
-                _ => self.changes.push(LevelChange {
+                _ => self.changes.push(LoadLevelChange {
                     pos,
                     new_level: Some(new_level),
-                    new_simulation_level: self.simulation_levels.get(&pos).copied(),
                 }),
             }
         }
@@ -691,76 +764,57 @@ impl ChunkTicketManager {
         // Find removed levels
         for &pos in old_levels.keys() {
             if !self.levels.contains_key(&pos) {
-                self.changes.push(LevelChange {
+                self.changes.push(LoadLevelChange {
                     pos,
                     new_level: None,
-                    new_simulation_level: None,
                 });
             }
         }
 
-        self.record_simulation_only_changes(&old_levels, &old_simulation_levels);
-
         &self.changes
     }
 
+    fn propagate_source(
+        levels: &mut FxHashMap<ChunkPos, ChunkTicketLevel>,
+        source_pos: ChunkPos,
+        source_level: ChunkTicketLevel,
+    ) {
+        let radius = i32::from(source_level.distance_to_max());
+        let source_x = source_pos.0.x;
+        let source_z = source_pos.0.y;
+
+        for dz in -radius..=radius {
+            for dx in -radius..=radius {
+                let distance = dx.abs().max(dz.abs()) as u8;
+                let Some(level) = source_level.with_distance(distance) else {
+                    continue;
+                };
+
+                let pos = ChunkPos::new(source_x + dx, source_z + dz);
+                levels
+                    .entry(pos)
+                    .and_modify(|current| *current = (*current).min(level))
+                    .or_insert(level);
+            }
+        }
+    }
+
     /// Takes the change list produced by the last propagation pass.
-    pub(crate) fn take_changes(&mut self) -> Vec<LevelChange> {
+    pub(crate) fn take_changes(&mut self) -> Vec<LoadLevelChange> {
         mem::take(&mut self.changes)
     }
 
     /// Returns a drained change buffer for reuse by the next propagation pass.
-    pub(crate) fn recycle_changes(&mut self, mut changes: Vec<LevelChange>) {
+    pub(crate) fn recycle_changes(&mut self, mut changes: Vec<LoadLevelChange>) {
         debug_assert_eq!(self.changes, []);
         changes.clear();
         self.changes = changes;
-    }
-
-    fn record_simulation_only_changes(
-        &mut self,
-        old_levels: &FxHashMap<ChunkPos, ChunkTicketLevel>,
-        old_simulation_levels: &FxHashMap<ChunkPos, ChunkTicketLevel>,
-    ) {
-        for (&pos, &new_level) in &self.simulation_levels {
-            let load_changed = old_levels.get(&pos) != self.levels.get(&pos);
-            if load_changed {
-                continue;
-            }
-
-            match old_simulation_levels.get(&pos) {
-                Some(&old_level) if old_level == new_level => {}
-                _ => self.changes.push(LevelChange {
-                    pos,
-                    new_level: self.levels.get(&pos).copied(),
-                    new_simulation_level: Some(new_level),
-                }),
-            }
-        }
-
-        for &pos in old_simulation_levels.keys() {
-            let load_changed = old_levels.get(&pos) != self.levels.get(&pos);
-            if load_changed || self.simulation_levels.contains_key(&pos) {
-                continue;
-            }
-
-            self.changes.push(LevelChange {
-                pos,
-                new_level: self.levels.get(&pos).copied(),
-                new_simulation_level: None,
-            });
-        }
     }
 
     /// Returns the propagated level at position. Call `run_all_updates()` first.
     #[must_use]
     pub fn get_level(&self, pos: ChunkPos) -> Option<ChunkTicketLevel> {
         self.levels.get(&pos).copied()
-    }
-
-    /// Returns the propagated simulation level at position. Call `run_all_updates()` first.
-    #[must_use]
-    pub fn get_simulation_level(&self, pos: ChunkPos) -> Option<ChunkTicketLevel> {
-        self.simulation_levels.get(&pos).copied()
     }
 
     #[cfg(test)]
@@ -772,8 +826,9 @@ impl ChunkTicketManager {
     #[expect(dead_code, reason = "utility method for tests and future use")]
     fn clear(&mut self) {
         self.tickets.clear();
+        self.players.clear();
+        self.player_positions.clear();
         self.levels.clear();
-        self.simulation_levels.clear();
         self.dirty = false;
         self.changes.clear();
     }
@@ -781,22 +836,18 @@ impl ChunkTicketManager {
     pub fn iter_levels(&self) -> impl Iterator<Item = (ChunkPos, ChunkTicketLevel)> + '_ {
         self.levels.iter().map(|(&pos, &level)| (pos, level))
     }
-
-    pub fn iter_simulation_levels(
-        &self,
-    ) -> impl Iterator<Item = (ChunkPos, ChunkTicketLevel)> + '_ {
-        self.simulation_levels
-            .iter()
-            .map(|(&pos, &level)| (pos, level))
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn player_id(value: u128) -> Uuid {
+        Uuid::from_u128(value)
+    }
+
     fn add_portal_ticket(
-        manager: &mut ChunkTicketManager,
+        manager: &mut LoadTicketManager,
         timed_tickets: &mut TimedChunkTickets,
         pos: ChunkPos,
     ) {
@@ -806,7 +857,7 @@ mod tests {
     }
 
     fn add_ender_pearl_ticket(
-        manager: &mut ChunkTicketManager,
+        manager: &mut LoadTicketManager,
         timed_tickets: &mut TimedChunkTickets,
         pos: ChunkPos,
     ) {
@@ -816,7 +867,7 @@ mod tests {
     }
 
     fn tick_timed_tickets(
-        manager: &mut ChunkTicketManager,
+        manager: &mut LoadTicketManager,
         timed_tickets: &mut TimedChunkTickets,
         can_expire: impl FnMut(ChunkPos) -> bool,
     ) {
@@ -827,7 +878,7 @@ mod tests {
 
     #[test]
     fn test_single_ticket_propagation() {
-        let mut manager = ChunkTicketManager::new();
+        let mut manager = LoadTicketManager::new();
         manager.add_ticket(
             ChunkPos::new(0, 0),
             ChunkTicket::loading(ChunkTicketLevel::STRONGEST),
@@ -858,7 +909,7 @@ mod tests {
 
     #[test]
     fn test_deferred_updates() {
-        let mut manager = ChunkTicketManager::new();
+        let mut manager = LoadTicketManager::new();
         manager.add_ticket(
             ChunkPos::new(0, 0),
             ChunkTicket::loading(ChunkTicketLevel::STRONGEST),
@@ -877,7 +928,7 @@ mod tests {
 
     #[test]
     fn test_multiple_tickets_same_position() {
-        let mut manager = ChunkTicketManager::new();
+        let mut manager = LoadTicketManager::new();
         manager.add_ticket(
             ChunkPos::new(0, 0),
             ChunkTicket::loading(ChunkTicketLevel::new(2).expect("test level is valid")),
@@ -904,7 +955,7 @@ mod tests {
 
     #[test]
     fn test_overlapping_propagation() {
-        let mut manager = ChunkTicketManager::new();
+        let mut manager = LoadTicketManager::new();
         manager.add_ticket(
             ChunkPos::new(0, 0),
             ChunkTicket::loading(ChunkTicketLevel::STRONGEST),
@@ -927,7 +978,7 @@ mod tests {
 
     #[test]
     fn test_remove_ticket() {
-        let mut manager = ChunkTicketManager::new();
+        let mut manager = LoadTicketManager::new();
         let ticket = ChunkTicket::loading(ChunkTicketLevel::STRONGEST);
         manager.add_ticket(ChunkPos::new(0, 0), ticket);
         manager.add_ticket(ChunkPos::new(5, 0), ticket);
@@ -957,7 +1008,7 @@ mod tests {
 
     #[test]
     fn test_remove_all_tickets_at_position() {
-        let mut manager = ChunkTicketManager::new();
+        let mut manager = LoadTicketManager::new();
         let ticket = ChunkTicket::loading(ChunkTicketLevel::STRONGEST);
         manager.add_ticket(ChunkPos::new(0, 0), ticket);
         manager.run_all_updates();
@@ -970,7 +1021,7 @@ mod tests {
 
     #[test]
     fn test_multiple_tickets_same_position_with_removal() {
-        let mut manager = ChunkTicketManager::new();
+        let mut manager = LoadTicketManager::new();
         let level_0 = ChunkTicket::loading(ChunkTicketLevel::STRONGEST);
         let level_1 = ChunkTicket::loading(ChunkTicketLevel::new(1).expect("test level is valid"));
         let level_2 = ChunkTicket::loading(ChunkTicketLevel::new(2).expect("test level is valid"));
@@ -1002,7 +1053,7 @@ mod tests {
 
     #[test]
     fn test_duplicate_tickets_same_level() {
-        let mut manager = ChunkTicketManager::new();
+        let mut manager = LoadTicketManager::new();
         let ticket = ChunkTicket::loading(ChunkTicketLevel::STRONGEST);
         manager.add_ticket(ChunkPos::new(0, 0), ticket);
         manager.add_ticket(ChunkPos::new(0, 0), ticket);
@@ -1025,8 +1076,8 @@ mod tests {
     }
 
     #[test]
-    fn portal_timed_ticket_loads_simulates_resets_and_expires_like_vanilla() {
-        let mut manager = ChunkTicketManager::new();
+    fn portal_timed_ticket_loads_resets_and_expires_like_vanilla() {
+        let mut manager = LoadTicketManager::new();
         let mut timed_tickets = TimedChunkTickets::default();
         let center = ChunkPos::new(0, 0);
 
@@ -1039,17 +1090,6 @@ mod tests {
         assert!(is_full(
             manager.get_level(center).expect("ticket should load")
         ));
-        assert!(is_entity_ticking(manager.get_simulation_level(center)));
-        assert!(is_entity_ticking(
-            manager.get_simulation_level(ChunkPos::new(1, 0))
-        ));
-        assert!(is_block_ticking(
-            manager.get_simulation_level(ChunkPos::new(2, 0))
-        ));
-        assert!(!is_entity_ticking(
-            manager.get_simulation_level(ChunkPos::new(2, 0))
-        ));
-        assert_eq!(manager.get_simulation_level(ChunkPos::new(3, 0)), None);
         assert!(is_full(
             manager
                 .get_level(ChunkPos::new(3, 0))
@@ -1067,12 +1107,11 @@ mod tests {
         manager.run_all_updates();
         assert_eq!(manager.ticket_count(), 0);
         assert_eq!(manager.get_level(center), None);
-        assert_eq!(manager.get_simulation_level(center), None);
     }
 
     #[test]
     fn timed_ticket_does_not_age_until_chunk_can_expire() {
-        let mut manager = ChunkTicketManager::new();
+        let mut manager = LoadTicketManager::new();
         let mut timed_tickets = TimedChunkTickets::default();
         let center = ChunkPos::new(0, 0);
 
@@ -1153,7 +1192,7 @@ mod tests {
 
     #[test]
     fn test_no_recalculation_when_clean() {
-        let mut manager = ChunkTicketManager::new();
+        let mut manager = LoadTicketManager::new();
         manager.add_ticket(
             ChunkPos::new(0, 0),
             ChunkTicket::loading(ChunkTicketLevel::STRONGEST),
@@ -1166,18 +1205,11 @@ mod tests {
     }
 
     #[test]
-    fn simulated_full_ticket_propagates_simulation_only_to_block_ticking_area() {
-        let mut manager = ChunkTicketManager::new();
+    fn simulated_full_ticket_loads_its_full_radius() {
+        let mut manager = LoadTicketManager::new();
         manager.add_ticket(ChunkPos::new(0, 0), ChunkTicket::simulated_full_chunks(1));
         manager.run_all_updates();
 
-        assert!(is_block_ticking(
-            manager.get_simulation_level(ChunkPos::new(0, 0))
-        ));
-        assert!(!is_entity_ticking(
-            manager.get_simulation_level(ChunkPos::new(0, 0))
-        ));
-        assert_eq!(manager.get_simulation_level(ChunkPos::new(1, 1)), None);
         assert!(is_full(
             manager
                 .get_level(ChunkPos::new(1, 1))
@@ -1190,10 +1222,14 @@ mod tests {
     }
 
     #[test]
-    fn player_ticket_keeps_full_loading_moat_and_caps_simulation_radius() {
-        let mut manager = ChunkTicketManager::new();
+    fn player_loading_ticket_keeps_full_loading_moat() {
+        let mut manager = LoadTicketManager::new();
         let center = ChunkPos::new(0, 0);
-        manager.add_ticket(center, ChunkTicket::player(1, 3));
+        manager.add_player(
+            center,
+            player_id(1),
+            ChunkTicket::player_loading(1).load_level(),
+        );
         manager.run_all_updates();
 
         assert!(is_entity_ticking(manager.get_level(center)));
@@ -1209,32 +1245,101 @@ mod tests {
             manager.get_level(ChunkPos::new(3, 0)),
             Some(ChunkTicketLevel::FULL_CHUNK)
         );
+    }
 
-        assert!(is_entity_ticking(manager.get_simulation_level(center)));
-        assert!(is_entity_ticking(
-            manager.get_simulation_level(ChunkPos::new(1, 0))
-        ));
-        assert!(is_block_ticking(
-            manager.get_simulation_level(ChunkPos::new(2, 0))
-        ));
-        assert!(!is_entity_ticking(
-            manager.get_simulation_level(ChunkPos::new(2, 0))
-        ));
-        assert_eq!(manager.get_simulation_level(ChunkPos::new(3, 0)), None);
+    #[test]
+    fn players_in_one_chunk_share_one_loading_source() {
+        let mut manager = LoadTicketManager::new();
+        let center = ChunkPos::new(4, -3);
+        let load_level = ChunkTicket::player_loading(2).load_level();
+
+        assert!(manager.add_player(center, player_id(1), load_level));
+        assert!(manager.add_player(center, player_id(2), load_level));
+        manager.run_all_updates();
+        assert_eq!(manager.ticket_count(), 1);
+
+        assert!(manager.remove_player(center, player_id(1)));
+        assert!(!manager.is_dirty());
+        assert_eq!(manager.get_level(center), Some(load_level));
+
+        assert!(manager.remove_player(center, player_id(2)));
+        assert!(manager.is_dirty());
+        manager.run_all_updates();
+        assert_eq!(manager.get_level(center), None);
+    }
+
+    #[test]
+    fn moving_player_preserves_an_occupied_old_source() {
+        let mut manager = LoadTicketManager::new();
+        let old_pos = ChunkPos::new(0, 0);
+        let new_pos = ChunkPos::new(20, 0);
+        let load_level = ChunkTicket::player_loading(1).load_level();
+
+        manager.add_player(old_pos, player_id(1), load_level);
+        manager.add_player(old_pos, player_id(2), load_level);
+        manager.run_all_updates();
+
+        assert!(manager.add_player(new_pos, player_id(1), load_level));
+        manager.run_all_updates();
+        assert_eq!(manager.get_level(old_pos), Some(load_level));
+        assert_eq!(manager.get_level(new_pos), Some(load_level));
+        assert_eq!(manager.ticket_count(), 2);
+    }
+
+    #[test]
+    fn duplicate_add_and_stale_remove_leave_canonical_player_source_intact() {
+        let mut manager = LoadTicketManager::new();
+        let old_pos = ChunkPos::new(0, 0);
+        let new_pos = ChunkPos::new(20, 0);
+        let player = player_id(1);
+        let load_level = ChunkTicket::player_loading(1).load_level();
+
+        assert!(manager.add_player(old_pos, player, load_level));
+        assert!(!manager.add_player(old_pos, player, load_level));
+        assert!(manager.add_player(new_pos, player, load_level));
+        assert!(!manager.remove_player(old_pos, player));
+        manager.run_all_updates();
+
+        assert_eq!(manager.get_level(old_pos), None);
+        assert_eq!(manager.get_level(new_pos), Some(load_level));
+        assert!(manager.remove_player(new_pos, player));
+        assert!(!manager.remove_player(new_pos, player));
+    }
+
+    #[test]
+    fn generic_and_player_sources_share_the_same_position_minimum() {
+        let mut manager = LoadTicketManager::new();
+        let pos = ChunkPos::new(0, 0);
+        let generic = ChunkTicket::loading(ChunkTicketLevel::STRONGEST);
+        let player_level = ChunkTicket::player_loading(1).load_level();
+        let player = player_id(1);
+
+        manager.add_ticket(pos, generic);
+        manager.run_all_updates();
+        assert!(manager.add_player(pos, player, player_level));
+        assert!(!manager.is_dirty());
+        assert_eq!(manager.get_ticket(pos), Some(ChunkTicketLevel::STRONGEST));
+        assert_eq!(manager.ticket_count(), 2);
+
+        assert!(manager.remove_ticket(pos, generic));
+        manager.run_all_updates();
+        assert_eq!(manager.get_ticket(pos), Some(player_level));
+        assert_eq!(manager.get_level(pos), Some(player_level));
+
+        assert!(manager.remove_player(pos, player));
+        manager.run_all_updates();
+        assert_eq!(manager.get_level(pos), None);
     }
 
     #[test]
     fn maximum_player_view_distance_fits_ticket_level() {
-        let ticket = ChunkTicket::player(MAX_SUPPORTED_VIEW_DISTANCE, MAX_SUPPORTED_VIEW_DISTANCE);
+        let ticket = ChunkTicket::player_loading(MAX_SUPPORTED_VIEW_DISTANCE);
 
         assert_eq!(ChunkTicketLevel::ENTITY_TICKING_CHUNK.raw(), 128);
         assert_eq!(ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw(), 129);
         assert_eq!(ChunkTicketLevel::FULL_CHUNK.raw(), 130);
         assert_eq!(ticket.load_level().raw(), 0);
-        assert_eq!(
-            ticket.simulation_level().map(ChunkTicketLevel::raw),
-            Some(0)
-        );
+        assert_eq!(ticket.simulation_level(), None);
     }
 
     #[test]
@@ -1296,8 +1401,8 @@ mod tests {
     }
 
     #[test]
-    fn ender_pearl_timed_ticket_loads_simulates_resets_and_expires_like_vanilla() {
-        let mut manager = ChunkTicketManager::new();
+    fn ender_pearl_timed_ticket_loads_resets_and_expires_like_vanilla() {
+        let mut manager = LoadTicketManager::new();
         let mut timed_tickets = TimedChunkTickets::default();
         let center = ChunkPos::new(0, 0);
 
@@ -1331,12 +1436,11 @@ mod tests {
         manager.run_all_updates();
         assert_eq!(manager.ticket_count(), 0);
         assert_eq!(manager.get_level(center), None);
-        assert_eq!(manager.get_simulation_level(center), None);
     }
 
     #[test]
     fn ender_pearl_timed_ticket_does_not_age_until_chunk_can_expire() {
-        let mut manager = ChunkTicketManager::new();
+        let mut manager = LoadTicketManager::new();
         let mut timed_tickets = TimedChunkTickets::default();
         let center = ChunkPos::new(0, 0);
 
@@ -1355,10 +1459,10 @@ mod tests {
     }
 
     #[test]
-    fn ender_pearl_timed_ticket_propagates_like_a_manual_simulated_ticket() {
-        let mut timed = ChunkTicketManager::new();
+    fn ender_pearl_timed_ticket_loads_like_a_manual_simulated_ticket() {
+        let mut timed = LoadTicketManager::new();
         let mut timed_tickets = TimedChunkTickets::default();
-        let mut manual = ChunkTicketManager::new();
+        let mut manual = LoadTicketManager::new();
         let pos = ChunkPos::new(0, 0);
         add_ender_pearl_ticket(&mut timed, &mut timed_tickets, pos);
         manual.add_ticket(
@@ -1372,17 +1476,13 @@ mod tests {
             for dz in -i32::from(ENDER_PEARL_TICKET_RADIUS)..=i32::from(ENDER_PEARL_TICKET_RADIUS) {
                 let p = ChunkPos::new(dx, dz);
                 assert_eq!(timed.get_level(p), manual.get_level(p));
-                assert_eq!(
-                    timed.get_simulation_level(p),
-                    manual.get_simulation_level(p)
-                );
             }
         }
     }
 
     #[test]
     fn ender_pearl_timed_ticket_is_not_persisted() {
-        let mut manager = ChunkTicketManager::new();
+        let mut manager = LoadTicketManager::new();
         let mut timed_tickets = TimedChunkTickets::default();
 
         add_portal_ticket(&mut manager, &mut timed_tickets, ChunkPos::new(0, 0));

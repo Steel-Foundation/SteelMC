@@ -26,7 +26,7 @@ fn revival_during_save_preparation_is_retried_at_the_next_lifecycle_boundary() {
     let chunk_pos = ChunkPos::new(0, 0);
     let original = insert_ready_full_chunk(&world, chunk_pos);
 
-    world.chunk_map.update_chunk_level(chunk_pos, None, None);
+    world.chunk_map.update_chunk_level(chunk_pos, None);
     let preparation = original
         .try_begin_save_preparation()
         .expect("the unloading holder should reserve save preparation");
@@ -34,11 +34,7 @@ fn revival_during_save_preparation_is_retried_at_the_next_lifecycle_boundary() {
     assert!(
         world
             .chunk_map
-            .update_chunk_level(
-                chunk_pos,
-                Some(ChunkTicketLevel::FULL_CHUNK),
-                Some(ChunkTicketLevel::FULL_CHUNK),
-            )
+            .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::FULL_CHUNK))
             .is_none(),
         "revival must be staged instead of blocking the lifecycle thread"
     );
@@ -51,11 +47,10 @@ fn revival_during_save_preparation_is_retried_at_the_next_lifecycle_boundary() {
     world.chunk_map.merge_deferred_revivals(&mut changes);
     assert_eq!(changes.len(), 1);
     let change = changes[0];
-    let Some(revived) = world.chunk_map.update_chunk_level(
-        change.pos,
-        change.new_level,
-        change.new_simulation_level,
-    ) else {
+    let Some(revived) = world
+        .chunk_map
+        .update_chunk_level(change.pos, change.new_level)
+    else {
         panic!("revival should retry after save preparation releases the holder");
     };
 
@@ -72,26 +67,21 @@ fn newer_ticket_change_replaces_a_deferred_revival() {
     let chunk_pos = ChunkPos::new(0, 0);
     let holder = insert_ready_full_chunk(&world, chunk_pos);
 
-    world.chunk_map.update_chunk_level(chunk_pos, None, None);
+    world.chunk_map.update_chunk_level(chunk_pos, None);
     let preparation = holder
         .try_begin_save_preparation()
         .expect("the unloading holder should reserve save preparation");
     assert!(
         world
             .chunk_map
-            .update_chunk_level(
-                chunk_pos,
-                Some(ChunkTicketLevel::FULL_CHUNK),
-                Some(ChunkTicketLevel::FULL_CHUNK),
-            )
+            .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::FULL_CHUNK))
             .is_none()
     );
     drop(preparation);
 
-    let removal = LevelChange {
+    let removal = LoadLevelChange {
         pos: chunk_pos,
         new_level: None,
-        new_simulation_level: None,
     };
     let mut changes = vec![removal];
     world.chunk_map.merge_deferred_revivals(&mut changes);
@@ -126,7 +116,7 @@ fn final_full_chunk_unload_finalizes_chunk_owned_tick_queues() {
     assert!(world.has_indexed_scheduled_tick_head(chunk_pos));
     assert_eq!(world.block_entity_tickers().registered_len(), 1);
 
-    world.chunk_map.update_chunk_level(chunk_pos, None, None);
+    world.chunk_map.update_chunk_level(chunk_pos, None);
     world.chunk_map.rebuild_ticking_chunk_snapshot();
     drop(holder);
     let _runtime_guard = world.chunk_map.chunk_runtime.enter();
@@ -144,6 +134,42 @@ fn final_full_chunk_unload_finalizes_chunk_owned_tick_queues() {
 }
 
 #[test]
+fn replaced_layout_releases_inactive_ready_holder_after_readers_finish() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("inactive_ready_layout_unload");
+    let chunk_pos = ChunkPos::new(0, 0);
+    let holder = insert_ready_full_chunk(&world, chunk_pos);
+    holder.set_simulation_level(None);
+    world.chunk_map.rebuild_ticking_chunk_snapshot();
+    let old_snapshot = world.chunk_map.ticking_chunks.load_full();
+    let slot = old_snapshot.layout.slot_by_pos[&chunk_pos];
+    assert!(!old_snapshot.block.contains(slot));
+    let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
+        panic!("inserted test chunk must remain Full");
+    };
+    chunk.take_dirty();
+
+    world.chunk_map.update_chunk_level(chunk_pos, None);
+    world.chunk_map.rebuild_ticking_chunk_snapshot();
+    drop(holder);
+    let _runtime_guard = world.chunk_map.chunk_runtime.enter();
+
+    world.chunk_map.process_unloads(&FxHashSet::default());
+    assert!(
+        world.chunk_map.unloading_chunks.contains_sync(&chunk_pos),
+        "a reader retaining the old immutable layout must keep its holder alive"
+    );
+
+    drop(old_snapshot);
+    world.chunk_map.process_unloads(&FxHashSet::default());
+    assert!(
+        !world.chunk_map.unloading_chunks.contains_sync(&chunk_pos),
+        "the replacement layout must not retain an inactive unloaded holder"
+    );
+}
+
+#[test]
 fn unloading_full_chunk_revival_keeps_chunk_owned_tick_queues() {
     init_vanilla_registry();
     init_behaviors();
@@ -158,13 +184,12 @@ fn unloading_full_chunk_revival_keeps_chunk_owned_tick_queues() {
     };
     let block_entity = add_test_comparator(chunk, block_pos);
 
-    world.chunk_map.update_chunk_level(chunk_pos, None, None);
+    world.chunk_map.update_chunk_level(chunk_pos, None);
     assert!(world.has_registered_full_chunk_ticks(chunk_pos));
-    let Some(revived) = world.chunk_map.update_chunk_level(
-        chunk_pos,
-        Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-        Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-    ) else {
+    let Some(revived) = world
+        .chunk_map
+        .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK))
+    else {
         panic!("restored ticket level must revive the unloading holder");
     };
     world.chunk_map.rebuild_ticking_chunk_snapshot();
@@ -191,11 +216,10 @@ fn weak_revival_stays_dormant_until_the_same_holder_returns_to_full() {
     let sign_pos = BlockPos::new(1, 64, 1);
     let original = insert_ready_full_chunk(&world, chunk_pos);
 
-    world.chunk_map.update_chunk_level(chunk_pos, None, None);
-    let Some(revived) =
-        world
-            .chunk_map
-            .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::MAX), None)
+    world.chunk_map.update_chunk_level(chunk_pos, None);
+    let Some(revived) = world
+        .chunk_map
+        .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::MAX))
     else {
         panic!("a weak load level should revive the unloading holder");
     };
@@ -227,11 +251,10 @@ fn weak_revival_stays_dormant_until_the_same_holder_returns_to_full() {
         "another holder's publication must not activate a weakly loaded chunk"
     );
 
-    world.chunk_map.update_chunk_level(
-        chunk_pos,
-        Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-        Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-    );
+    world
+        .chunk_map
+        .update_chunk_level(chunk_pos, Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK));
+    revived.set_simulation_level(Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK));
     world
         .chunk_map
         .reconcile_ticking_readiness(&[])

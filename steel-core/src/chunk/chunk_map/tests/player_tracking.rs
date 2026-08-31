@@ -1,4 +1,97 @@
 use super::*;
+use uuid::Uuid;
+
+#[test]
+fn players_at_same_position_share_one_loading_source() {
+    let world = fresh_test_world("shared_player_loading_source");
+    let pos = ChunkPos::new(0, 0);
+    let load_level = ChunkTicketLevel::for_entity_ticking_radius(world.view_distance);
+    let first_player = Uuid::from_u128(1);
+    let second_player = Uuid::from_u128(2);
+
+    world
+        .chunk_map
+        .scheduling
+        .queue_ticket_operation(ChunkTicketOperation::AddPlayer {
+            pos,
+            player_id: first_player,
+            load_level,
+        });
+    let second_addition =
+        world
+            .chunk_map
+            .scheduling
+            .queue_ticket_operation(ChunkTicketOperation::AddPlayer {
+                pos,
+                player_id: second_player,
+                load_level,
+            });
+    advance_until_receipt(&world.chunk_map, second_addition);
+
+    let holder = world
+        .chunk_map
+        .chunks
+        .read_sync(&pos, |_, holder| Arc::clone(holder))
+        .expect("the shared player source should keep its center active");
+    assert_eq!(holder.load_level(), Some(load_level));
+
+    let first_removal =
+        world
+            .chunk_map
+            .scheduling
+            .queue_ticket_operation(ChunkTicketOperation::RemovePlayer {
+                pos,
+                player_id: first_player,
+            });
+    advance_until_receipt(&world.chunk_map, first_removal);
+
+    assert!(
+        world
+            .chunk_map
+            .chunks
+            .read_sync(&pos, |_, active| Arc::ptr_eq(active, &holder))
+            .unwrap_or(false),
+        "removing one player must not weaken the remaining source"
+    );
+    assert_eq!(holder.load_level(), Some(load_level));
+
+    let second_removal =
+        world
+            .chunk_map
+            .scheduling
+            .queue_ticket_operation(ChunkTicketOperation::RemovePlayer {
+                pos,
+                player_id: second_player,
+            });
+    advance_until_receipt(&world.chunk_map, second_removal);
+
+    assert!(!world.chunk_map.chunks.contains_sync(&pos));
+}
+
+#[test]
+fn player_simulation_removal_applies_at_the_next_world_tick() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("synchronous_player_simulation_removal");
+    let center = ChunkPos::new(0, 0);
+    let holder = insert_ready_full_chunk(&world, center);
+    holder.set_simulation_level(None);
+    holder.swap_load_level(ChunkTicketLevel::ENTITY_TICKING_CHUNK);
+    holder.transition_ticking_readiness(TickingReadiness::EntityTicking);
+    world.chunk_map.rebuild_ticking_chunk_snapshot();
+
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "SimulationPlayer", 1).build();
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    world.tick_game(1, false);
+    assert_eq!(world.chunk_map.tickable_full_chunk_positions(), [center]);
+
+    world.remove_player_for_world_change(&player);
+    world.tick_game(2, false);
+
+    assert_eq!(world.chunk_map.tickable_full_chunk_positions(), []);
+    assert_eq!(holder.simulation_level(), None);
+    assert!(world.chunk_map.chunks.contains_sync(&center));
+}
 
 #[test]
 fn light_changed_does_not_broadcast_unloading_full_chunk() {

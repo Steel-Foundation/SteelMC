@@ -63,7 +63,8 @@ fn scheduler_with_block_lists(
                     container,
                     block_head,
                     fluid_head: None,
-                    active: None,
+                    layout_rank: None,
+                    active: false,
                 },
             );
         }
@@ -77,10 +78,12 @@ fn begin_block_tick_at(
     active_chunks: &[ChunkPos],
     max_ticks: usize,
 ) -> ScheduledTickBatch<BlockRef> {
-    if let Err(error) = scheduler.reconcile_active_chunks(active_chunks.iter().copied()) {
-        panic!("test scheduler invariant failed: {error:?}");
-    }
-    scheduler.begin_tick(current_tick, max_ticks)
+    let generation = scheduler
+        .reconcile_active_chunks(active_chunks.iter().copied())
+        .expect("test active layout should be valid");
+    scheduler
+        .begin_tick(generation, current_tick, max_ticks)
+        .expect("test snapshot generation should remain current")
 }
 
 fn registered_container(scheduler: &WorldTickScheduler, pos: ChunkPos) -> Arc<ChunkTickContainer> {
@@ -412,11 +415,15 @@ fn block_and_fluid_collection_use_the_same_absolute_time() {
         }
     }
 
-    if let Err(error) = scheduler.reconcile_active_chunks([chunk_pos].into_iter()) {
-        panic!("test scheduler invariant failed: {error:?}");
-    }
-    let blocks = scheduler.begin_tick(20, 2);
-    let fluids = scheduler.collect_fluid_ticks(20, 2);
+    let generation = scheduler
+        .reconcile_active_chunks([chunk_pos].into_iter())
+        .expect("test active layout should be valid");
+    let blocks = scheduler
+        .begin_tick(generation, 20, 2)
+        .expect("test snapshot generation should remain current");
+    let fluids = scheduler
+        .collect_fluid_ticks(generation, 20, 2)
+        .expect("test snapshot generation should remain current");
     assert_eq!(
         fluids.ticks.iter().map(|tick| tick.pos).collect::<Vec<_>>(),
         [fluid_pos]
@@ -586,9 +593,9 @@ fn ineligible_live_head_stays_indexed_until_reentry() {
     ));
     let scheduler = scheduler_with_block_lists([(registered_pos, pending)]);
 
-    if let Err(error) = scheduler.reconcile_active_chunks([registered_pos].into_iter()) {
-        panic!("test scheduler invariant failed: {error:?}");
-    }
+    scheduler
+        .reconcile_active_chunks([registered_pos].into_iter())
+        .expect("test active layout should be valid");
     assert!(
         scheduler
             .state
@@ -597,17 +604,19 @@ fn ineligible_live_head_stays_indexed_until_reentry() {
             .contains(&(3, PackedChunkPos::from(registered_pos)))
     );
 
-    if let Err(error) = scheduler.reconcile_active_chunks([].into_iter()) {
-        panic!("test scheduler invariant failed: {error:?}");
-    }
+    let inactive_generation = scheduler
+        .reconcile_active_chunks([].into_iter())
+        .expect("empty test layout should be valid");
     assert!(scheduler.state.lock().active_block_deadlines.is_empty());
-    let inactive_batch = scheduler.begin_tick(100, 1);
+    let inactive_batch = scheduler
+        .begin_tick(inactive_generation, 100, 1)
+        .expect("test snapshot generation should remain current");
     assert!(inactive_batch.ticks.is_empty());
     assert_eq!(block_head(&scheduler, registered_pos), Some(3));
 
-    if let Err(error) = scheduler.reconcile_active_chunks([registered_pos].into_iter()) {
-        panic!("test scheduler invariant failed: {error:?}");
-    }
+    let active_generation = scheduler
+        .reconcile_active_chunks([registered_pos].into_iter())
+        .expect("test active layout should be valid");
     assert!(
         scheduler
             .state
@@ -615,7 +624,9 @@ fn ineligible_live_head_stays_indexed_until_reentry() {
             .active_block_deadlines
             .contains(&(3, PackedChunkPos::from(registered_pos)))
     );
-    let selected = scheduler.begin_tick(100, 1);
+    let selected = scheduler
+        .begin_tick(active_generation, 100, 1)
+        .expect("test snapshot generation should remain current");
     assert_eq!(selected.ticks.len(), 1);
     assert_eq!(selected.changed_containers, [0]);
 }
@@ -657,6 +668,309 @@ fn failed_active_reconciliation_preserves_the_published_index() {
             .and_then(|registered| registered.active_rank(generation)),
         Some(0)
     );
+}
+
+#[test]
+fn incremental_activation_preserves_sparse_layout_ranks() {
+    let first_chunk = ChunkPos::new(0, 0);
+    let middle_chunk = ChunkPos::new(1, 0);
+    let last_chunk = ChunkPos::new(2, 0);
+    let middle_tick = BlockPos::new(16, 0, 0);
+    let middle_fluid_tick = BlockPos::new(17, 0, 0);
+    let mut middle_ticks = BlockTickList::new();
+    assert!(schedule(
+        &mut middle_ticks,
+        test_block(),
+        middle_tick,
+        3,
+        TickPriority::Normal,
+        0
+    ));
+    let scheduler = scheduler_with_block_lists([
+        (first_chunk, BlockTickList::new()),
+        (middle_chunk, middle_ticks),
+        (last_chunk, BlockTickList::new()),
+    ]);
+    let middle_container = registered_container(&scheduler, middle_chunk);
+    let fluid_head = {
+        let mut container_state = middle_container.state.lock();
+        assert!(container_state.lists.fluid_mut().schedule(
+            &vanilla_fluids::WATER,
+            middle_fluid_tick,
+            3,
+            TickPriority::Normal,
+            1
+        ));
+        container_state
+            .lists
+            .fluid()
+            .peek()
+            .map(|tick| tick.trigger_tick)
+    };
+    scheduler
+        .state
+        .lock()
+        .set_head(middle_chunk, TickKind::Fluid, fluid_head)
+        .expect("test fluid head should be valid");
+    let generation = scheduler
+        .replace_active_chunk_layout(
+            [
+                (first_chunk, true),
+                (middle_chunk, false),
+                (last_chunk, true),
+            ]
+            .into_iter(),
+        )
+        .expect("test layout should be valid");
+
+    assert!(
+        scheduler
+            .begin_tick(generation, 100, 1)
+            .expect("test snapshot generation should remain current")
+            .ticks
+            .is_empty()
+    );
+    assert!(
+        scheduler
+            .collect_fluid_ticks(generation, 100, 1)
+            .expect("test snapshot generation should remain current")
+            .ticks
+            .is_empty()
+    );
+    scheduler
+        .apply_active_chunk_changes(
+            generation,
+            &[ScheduledTickActiveChunkChange {
+                pos: middle_chunk,
+                layout_rank: 1,
+                was_active: false,
+                is_active: true,
+            }],
+        )
+        .expect("middle chunk activation should be valid");
+
+    let selected = scheduler
+        .begin_tick(generation, 100, 1)
+        .expect("test snapshot generation should remain current");
+    assert_eq!(selected.ticks[0].pos, middle_tick);
+    assert_eq!(selected.changed_containers, [1]);
+    let selected = scheduler
+        .collect_fluid_ticks(generation, 100, 1)
+        .expect("test snapshot generation should remain current");
+    assert_eq!(selected.ticks[0].pos, middle_fluid_tick);
+    assert_eq!(selected.changed_containers, [1]);
+}
+
+#[test]
+fn incremental_deactivation_keeps_overdue_head_for_reactivation() {
+    let chunk_pos = ChunkPos::new(0, 0);
+    let tick_pos = BlockPos::new(0, 0, 0);
+    let mut ticks = BlockTickList::new();
+    assert!(schedule(
+        &mut ticks,
+        test_block(),
+        tick_pos,
+        3,
+        TickPriority::Normal,
+        0
+    ));
+    let scheduler = scheduler_with_block_lists([(chunk_pos, ticks)]);
+    let generation = scheduler
+        .replace_active_chunk_layout([(chunk_pos, true)].into_iter())
+        .expect("test layout should be valid");
+
+    scheduler
+        .apply_active_chunk_changes(
+            generation,
+            &[ScheduledTickActiveChunkChange {
+                pos: chunk_pos,
+                layout_rank: 0,
+                was_active: true,
+                is_active: false,
+            }],
+        )
+        .expect("deactivation should be valid");
+    assert!(
+        scheduler
+            .begin_tick(generation, 100, 1)
+            .expect("test snapshot generation should remain current")
+            .ticks
+            .is_empty()
+    );
+    assert_eq!(block_head(&scheduler, chunk_pos), Some(3));
+
+    scheduler
+        .apply_active_chunk_changes(
+            generation,
+            &[ScheduledTickActiveChunkChange {
+                pos: chunk_pos,
+                layout_rank: 0,
+                was_active: false,
+                is_active: true,
+            }],
+        )
+        .expect("reactivation should be valid");
+    let selected = scheduler
+        .begin_tick(generation, 100, 1)
+        .expect("test snapshot generation should remain current");
+    assert_eq!(selected.ticks[0].pos, tick_pos);
+    assert_eq!(selected.changed_containers, [0]);
+}
+
+#[test]
+fn invalid_incremental_batch_does_not_partially_mutate_scheduler() {
+    let active_pos = ChunkPos::new(0, 0);
+    let inactive_pos = ChunkPos::new(1, 0);
+    let missing_pos = ChunkPos::new(2, 0);
+    let mut active_ticks = BlockTickList::new();
+    assert!(schedule(
+        &mut active_ticks,
+        test_block(),
+        BlockPos::new(0, 0, 0),
+        3,
+        TickPriority::Normal,
+        0
+    ));
+    let scheduler = scheduler_with_block_lists([
+        (active_pos, active_ticks),
+        (inactive_pos, BlockTickList::new()),
+    ]);
+    let generation = scheduler
+        .replace_active_chunk_layout([(active_pos, true), (inactive_pos, false)].into_iter())
+        .expect("test layout should be valid");
+
+    assert_eq!(
+        scheduler.apply_active_chunk_changes(
+            generation,
+            &[
+                ScheduledTickActiveChunkChange {
+                    pos: active_pos,
+                    layout_rank: 0,
+                    was_active: true,
+                    is_active: false,
+                },
+                ScheduledTickActiveChunkChange {
+                    pos: missing_pos,
+                    layout_rank: 2,
+                    was_active: false,
+                    is_active: true,
+                },
+            ],
+        ),
+        Err(TickSchedulerError::MissingContainer(missing_pos))
+    );
+
+    let state = scheduler.state.lock();
+    assert_eq!(
+        state
+            .chunks
+            .get(&active_pos)
+            .and_then(|registered| registered.active_rank(generation.0)),
+        Some(0)
+    );
+    assert!(
+        state
+            .active_block_deadlines
+            .contains(&(3, PackedChunkPos::from(active_pos)))
+    );
+}
+
+#[test]
+fn replacing_layout_reassigns_ranks_and_rejects_old_generation() {
+    let first_pos = ChunkPos::new(0, 0);
+    let second_pos = ChunkPos::new(1, 0);
+    let scheduler = scheduler_with_block_lists([
+        (first_pos, BlockTickList::new()),
+        (second_pos, BlockTickList::new()),
+    ]);
+    let old_generation = scheduler
+        .replace_active_chunk_layout([(first_pos, true), (second_pos, false)].into_iter())
+        .expect("first layout should be valid");
+    let new_generation = scheduler
+        .replace_active_chunk_layout([(second_pos, true), (first_pos, false)].into_iter())
+        .expect("replacement layout should be valid");
+
+    assert_eq!(
+        scheduler.apply_active_chunk_changes(old_generation, &[]),
+        Err(TickSchedulerError::StaleLayout)
+    );
+    assert_eq!(
+        scheduler.apply_active_chunk_changes(
+            old_generation,
+            &[ScheduledTickActiveChunkChange {
+                pos: first_pos,
+                layout_rank: 1,
+                was_active: true,
+                is_active: false,
+            }],
+        ),
+        Err(TickSchedulerError::StaleLayout)
+    );
+    assert_eq!(
+        scheduler.apply_active_chunk_changes(
+            new_generation,
+            &[ScheduledTickActiveChunkChange {
+                pos: second_pos,
+                layout_rank: 1,
+                was_active: true,
+                is_active: false,
+            }],
+        ),
+        Err(TickSchedulerError::LayoutRankMismatch(second_pos))
+    );
+    let state = scheduler.state.lock();
+    assert_eq!(
+        state
+            .chunks
+            .get(&second_pos)
+            .and_then(|registered| registered.active_rank(new_generation.0)),
+        Some(0)
+    );
+    assert_eq!(
+        state
+            .chunks
+            .get(&first_pos)
+            .and_then(|registered| registered.layout_rank(new_generation.0)),
+        Some(1)
+    );
+}
+
+#[test]
+fn stale_layout_collection_is_rejected_before_draining() {
+    let chunk_pos = ChunkPos::new(0, 0);
+    let tick_pos = BlockPos::new(0, 0, 0);
+    let mut ticks = BlockTickList::new();
+    assert!(schedule(
+        &mut ticks,
+        test_block(),
+        tick_pos,
+        3,
+        TickPriority::Normal,
+        0
+    ));
+    let scheduler = scheduler_with_block_lists([(chunk_pos, ticks)]);
+    let old_generation = scheduler
+        .replace_active_chunk_layout([(chunk_pos, true)].into_iter())
+        .expect("first layout should be valid");
+    let current_generation = scheduler
+        .replace_active_chunk_layout([(chunk_pos, true)].into_iter())
+        .expect("replacement layout should be valid");
+
+    let result = scheduler.begin_tick(old_generation, 100, 1);
+    assert!(matches!(result, Err(TickSchedulerError::StaleLayout)));
+    assert_eq!(block_head(&scheduler, chunk_pos), Some(3));
+    assert!(
+        scheduler
+            .state
+            .lock()
+            .active_block_deadlines
+            .contains(&(3, PackedChunkPos::from(chunk_pos)))
+    );
+
+    let selected = scheduler
+        .begin_tick(current_generation, 100, 1)
+        .expect("current layout should collect normally");
+    assert_eq!(selected.ticks[0].pos, tick_pos);
 }
 
 #[test]

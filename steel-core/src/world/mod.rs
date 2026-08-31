@@ -404,6 +404,7 @@ impl World {
                 generation_pool,
                 chunk_encoding_pool,
                 timed_chunk_tickets,
+                simulation_distance,
             ));
             chunk_map.start_generation_refill_loop();
 

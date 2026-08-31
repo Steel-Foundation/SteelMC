@@ -8,7 +8,7 @@ use steel_utils::ChunkPos;
 use crate::chunk::{
     chunk_holder::ChunkHolder,
     chunk_map::ChunkMap,
-    chunk_scheduler::ChunkTicketRevision,
+    chunk_scheduler::ChunkTicketReceipt,
     chunk_ticket_manager::{ChunkTicket, ticket_level_for_status},
     status::ChunkStatus,
 };
@@ -72,7 +72,7 @@ struct ChunkRequestInner {
     status: ChunkStatus,
     ticket_kind: ChunkTicketKind,
     ticket: ChunkTicket,
-    submission_revision: Option<ChunkTicketRevision>,
+    submission_receipt: Option<ChunkTicketReceipt>,
 }
 
 /// Handle for a ticketed chunk request.
@@ -96,7 +96,7 @@ impl ChunkRequestHandle {
         ticket: ChunkTicket,
     ) -> Self {
         let positions = dedupe_positions(request.positions);
-        let submission_revision = chunk_map.add_chunk_tickets(&positions, ticket);
+        let submission_receipt = chunk_map.add_chunk_tickets(&positions, ticket);
 
         Self {
             inner: Some(ChunkRequestInner {
@@ -105,7 +105,7 @@ impl ChunkRequestHandle {
                 status: request.status,
                 ticket_kind: request.ticket_kind,
                 ticket,
-                submission_revision,
+                submission_receipt,
             }),
         }
     }
@@ -140,9 +140,9 @@ impl ChunkRequestHandle {
         if inner.positions.is_empty() {
             return ChunkRequestState::Ready;
         }
-        let ticket_revision_committed = inner
-            .submission_revision
-            .is_none_or(|revision| inner.chunk_map.is_ticket_revision_committed(revision));
+        let ticket_receipt_committed = inner
+            .submission_receipt
+            .is_none_or(|receipt| inner.chunk_map.is_ticket_receipt_committed(receipt));
 
         let mut ready = 0;
         for &pos in &inner.positions {
@@ -159,7 +159,7 @@ impl ChunkRequestHandle {
             }
         }
 
-        if ticket_revision_committed && ready == inner.positions.len() {
+        if ticket_receipt_committed && ready == inner.positions.len() {
             ChunkRequestState::Ready
         } else {
             ChunkRequestState::Pending {
@@ -174,8 +174,8 @@ impl ChunkRequestHandle {
     pub fn ready_chunks(&self) -> Option<ReadyChunks> {
         let inner = self.inner.as_ref()?;
         if inner
-            .submission_revision
-            .is_some_and(|revision| !inner.chunk_map.is_ticket_revision_committed(revision))
+            .submission_receipt
+            .is_some_and(|receipt| !inner.chunk_map.is_ticket_receipt_committed(receipt))
         {
             return None;
         }

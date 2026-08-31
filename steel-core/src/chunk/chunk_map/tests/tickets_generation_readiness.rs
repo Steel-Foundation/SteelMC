@@ -6,7 +6,7 @@ fn ticket_changes_move_the_same_holder_only_at_boundary_commit() {
     let pos = ChunkPos::new(9, -11);
     let ticket = ChunkTicket::loading(ChunkTicketLevel::MAX);
     let addition_revision = world.chunk_map.add_chunk_ticket(pos, ticket);
-    advance_until_revision(&world.chunk_map, addition_revision);
+    advance_until_receipt(&world.chunk_map, addition_revision);
     let holder = world
         .chunk_map
         .chunks
@@ -18,7 +18,7 @@ fn ticket_changes_move_the_same_holder_only_at_boundary_commit() {
     assert!(world.chunk_map.chunks.contains_sync(&pos));
     assert!(!world.chunk_map.unloading_chunks.contains_sync(&pos));
 
-    advance_until_revision(&world.chunk_map, removal_revision);
+    advance_until_receipt(&world.chunk_map, removal_revision);
 
     assert!(!world.chunk_map.chunks.contains_sync(&pos));
     assert!(
@@ -33,7 +33,7 @@ fn ticket_changes_move_the_same_holder_only_at_boundary_commit() {
     assert!(!world.chunk_map.chunks.contains_sync(&pos));
     assert!(world.chunk_map.unloading_chunks.contains_sync(&pos));
 
-    advance_until_revision(&world.chunk_map, revival_revision);
+    advance_until_receipt(&world.chunk_map, revival_revision);
 
     assert!(
         world
@@ -55,10 +55,10 @@ fn staged_revival_keeps_map_only_unloading_holder_until_commit() {
     let ticket = ChunkTicket::loading(level);
     let holder = world
         .chunk_map
-        .update_chunk_level(pos, Some(level), None)
+        .update_chunk_level(pos, Some(level))
         .expect("loaded level should create a holder");
 
-    world.chunk_map.update_chunk_level(pos, None, None);
+    world.chunk_map.update_chunk_level(pos, None);
     let weak_holder = Arc::downgrade(&holder);
     drop(holder);
 
@@ -73,8 +73,8 @@ fn staged_revival_keeps_map_only_unloading_holder_until_commit() {
 
     world.chunk_map.add_chunk_ticket(pos, ticket);
     let epoch = world.chunk_map.prepare_scheduling_epoch(
-        ChunkTicketManager::new(),
-        ChunkTicketRevision::default(),
+        LoadTicketManager::new(),
+        LoadTicketRevision::default(),
         Vec::new(),
     );
 
@@ -91,7 +91,7 @@ fn staged_revival_keeps_map_only_unloading_holder_until_commit() {
         .expect("ticket propagation should stage the holder revival");
     let active = world
         .chunk_map
-        .update_chunk_level(change.pos, change.new_level, change.new_simulation_level)
+        .update_chunk_level(change.pos, change.new_level)
         .expect("revival commit should reactivate the holder");
     let original = weak_holder
         .upgrade()
@@ -309,10 +309,9 @@ fn full_publications_drive_block_and_entity_readiness_incrementally() {
 
     world
         .chunk_map
-        .prepare_ticking_readiness_demotions(&[LevelChange {
+        .prepare_ticking_readiness_demotions(&[LoadLevelChange {
             pos: ChunkPos::new(-2, -2),
             new_level: None,
-            new_simulation_level: None,
         }])
         .expect("removing an indexed outer contributor should reconcile");
     assert_eq!(
@@ -324,10 +323,9 @@ fn full_publications_drive_block_and_entity_readiness_incrementally() {
 
     world
         .chunk_map
-        .prepare_ticking_readiness_demotions(&[LevelChange {
+        .prepare_ticking_readiness_demotions(&[LoadLevelChange {
             pos: ChunkPos::new(-1, -1),
             new_level: None,
-            new_simulation_level: None,
         }])
         .expect("removing an indexed inner contributor should reconcile");
     assert_eq!(
@@ -424,7 +422,8 @@ fn ticking_snapshot_preserves_scc_order_and_distinct_readiness_gates() {
     });
     assert_eq!(
         snapshot
-            .block
+            .layout
+            .entries
             .iter()
             .map(|chunk| chunk.pos)
             .collect::<Vec<_>>(),
@@ -432,60 +431,20 @@ fn ticking_snapshot_preserves_scc_order_and_distinct_readiness_gates() {
     );
 
     let random_positions = snapshot
-        .random_chunk_indices
-        .iter()
-        .map(|&index| snapshot.block[index].pos)
+        .random
+        .indices()
+        .map(|index| snapshot.layout.entries[index].pos)
         .collect::<FxHashSet<_>>();
     assert_eq!(
         random_positions,
         FxHashSet::from_iter([random_pos, entity_pos])
     );
     let entity_positions = snapshot
-        .entity_indices
-        .iter()
-        .map(|&index| snapshot.block[index].pos)
+        .entity
+        .indices()
+        .map(|index| snapshot.layout.entries[index].pos)
         .collect::<Vec<_>>();
     assert_eq!(entity_positions, [entity_pos]);
-}
-
-#[test]
-fn simulation_changes_rebuild_only_eligible_snapshot_membership() {
-    init_vanilla_registry();
-    init_behaviors();
-    let world = fresh_test_world("simulation_snapshot_membership");
-    let pos = ChunkPos::new(0, 0);
-    let holder = insert_ready_full_chunk(&world, pos);
-
-    let entity_ticking = LevelChange {
-        pos,
-        new_level: Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-        new_simulation_level: Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK),
-    };
-    assert!(
-        world
-            .chunk_map
-            .simulation_changes_ticking_snapshot(&[entity_ticking]),
-        "entering the random-tick set must republish the snapshot"
-    );
-
-    let unchanged = LevelChange {
-        new_simulation_level: Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
-        ..entity_ticking
-    };
-    assert!(
-        !world
-            .chunk_map
-            .simulation_changes_ticking_snapshot(&[unchanged]),
-        "an unchanged simulation class must retain the snapshot"
-    );
-
-    holder.transition_ticking_readiness(TickingReadiness::Unready);
-    assert!(
-        !world
-            .chunk_map
-            .simulation_changes_ticking_snapshot(&[entity_ticking]),
-        "simulation changes cannot add an unready holder to the snapshot"
-    );
 }
 
 #[test]

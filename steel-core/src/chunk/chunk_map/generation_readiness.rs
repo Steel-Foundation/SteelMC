@@ -1,11 +1,12 @@
 use super::{
-    Arc, ChunkGenerationTask, ChunkHolder, ChunkMap, ChunkPos, ChunkStatus, ChunkTicketLevel,
-    DeferredChunkRevival, FullNeighborhoodCounts, FullNeighborhoodError, FullNeighborhoodIndex,
-    FullPublication, FxHashMap, FxHashSet, GENERATION_THREAD_MULTIPLE, GenerationTaskPriority,
-    Instant, LevelChange, Ordering, PackedChunkPos, PostProcessGenerationError,
-    ReadinessReconcileResult, RunningGenerationTaskPermit, TickableChunk, TickingChunkSnapshot,
-    TickingReadiness, TickingReadinessCandidate, instrument, is_block_ticking, is_entity_ticking,
-    is_full,
+    Arc, ChunkGenerationTask, ChunkHolder, ChunkMap, ChunkMembershipMask, ChunkPos, ChunkStatus,
+    ChunkTicketLevel, DeferredChunkRevival, FullNeighborhoodCounts, FullNeighborhoodError,
+    FullNeighborhoodIndex, FullPublication, FxHashMap, FxHashSet, GENERATION_THREAD_MULTIPLE,
+    GenerationTaskPriority, Instant, LoadLevelChange, Ordering, PackedChunkPos,
+    PostProcessGenerationError, ReadinessReconcileResult, RunningGenerationTaskPermit,
+    ScheduledTickActiveChunkChange, TickableChunk, TickingChunkLayout, TickingChunkMembership,
+    TickingChunkMembershipChange, TickingChunkSnapshot, TickingReadiness,
+    TickingReadinessCandidate, instrument, is_block_ticking, is_entity_ticking, is_full,
 };
 
 impl ChunkMap {
@@ -105,16 +106,15 @@ impl ChunkMap {
         self: &Arc<Self>,
         pos: ChunkPos,
         new_level: Option<ChunkTicketLevel>,
-        new_simulation_level: Option<ChunkTicketLevel>,
     ) -> Option<Arc<ChunkHolder>> {
         if new_level.is_none() {
             self.deferred_revivals.lock().remove(&pos);
         }
 
         // Recover from unloading if possible, else create new holder.
-        let chunk_holder =
+        let (chunk_holder, initialize_simulation) =
             if let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) {
-                holder
+                (holder, false)
             } else {
                 let level = new_level?;
 
@@ -122,34 +122,32 @@ impl ChunkMap {
                     let holder = entry.1;
                     if !holder.try_revive_from_unloading() {
                         let _ = self.unloading_chunks.insert_sync(pos, Arc::clone(&holder));
-                        self.deferred_revivals.lock().insert(
-                            pos,
-                            DeferredChunkRevival {
-                                load_level: level,
-                                simulation_level: new_simulation_level,
-                            },
-                        );
+                        self.deferred_revivals
+                            .lock()
+                            .insert(pos, DeferredChunkRevival { load_level: level });
                         return None;
                     }
                     let _ = self.chunks.insert_sync(pos, Arc::clone(&holder));
-                    holder
+                    (holder, true)
                 } else {
                     let holder = Arc::new(ChunkHolder::new_with_full_publications(
                         pos,
                         level,
-                        new_simulation_level,
+                        None,
                         self.world_gen_context.min_y(),
                         self.world_gen_context.height(),
                         Arc::downgrade(&self.full_publications),
                     ));
                     let _ = self.chunks.insert_sync(pos, holder.clone());
-                    holder
+                    (holder, true)
                 }
             };
 
         if let Some(level) = new_level {
             let old = chunk_holder.swap_load_level(level);
-            chunk_holder.set_simulation_level(new_simulation_level);
+            if initialize_simulation {
+                chunk_holder.set_simulation_level(self.simulation_level_at(pos));
+            }
             if old != Some(level) {
                 chunk_holder.update_highest_allowed_status(Some(level));
             }
@@ -195,7 +193,7 @@ impl ChunkMap {
         }
     }
 
-    pub(super) fn merge_deferred_revivals(&self, changes: &mut Vec<LevelChange>) {
+    pub(super) fn merge_deferred_revivals(&self, changes: &mut Vec<LoadLevelChange>) {
         let changed_positions = changes
             .iter()
             .map(|change| change.pos)
@@ -204,16 +202,15 @@ impl ChunkMap {
         for pos in &changed_positions {
             deferred.remove(pos);
         }
-        changes.extend(deferred.drain().map(|(pos, revival)| LevelChange {
+        changes.extend(deferred.drain().map(|(pos, revival)| LoadLevelChange {
             pos,
             new_level: Some(revival.load_level),
-            new_simulation_level: revival.simulation_level,
         }));
     }
 
     pub(super) fn prepare_ticking_readiness_demotions(
         &self,
-        changes: &[LevelChange],
+        changes: &[LoadLevelChange],
     ) -> Result<bool, FullNeighborhoodError> {
         if changes.is_empty() {
             return Ok(false);
@@ -308,16 +305,14 @@ impl ChunkMap {
     /// bookkeeping. The published snapshot owns holders but never component guards,
     /// so callbacks cannot retain section or chunk-component locks.
     pub(crate) fn rebuild_ticking_chunk_snapshot(&self) -> usize {
-        let mut block = Vec::new();
-        let mut random_chunk_indices = Vec::new();
-        let mut entity_indices = Vec::new();
+        let mut entries = Vec::with_capacity(self.chunks.len());
+        let mut slot_by_pos = FxHashMap::default();
+        slot_by_pos.reserve(self.chunks.len());
+        let mut memberships = Vec::with_capacity(self.chunks.len());
 
         self.chunks.iter_sync(|pos, holder| {
-            let Some(simulation_level) = holder.simulation_level() else {
-                return true;
-            };
             let readiness = holder.ticking_readiness_snapshot();
-            if !simulation_level.is_block_ticking() || !readiness.is_block_ticking() {
+            if !readiness.is_block_ticking() {
                 return true;
             }
             let Some(full) = holder.try_full_chunk() else {
@@ -326,36 +321,121 @@ impl ChunkMap {
             let randomly_ticking_sections =
                 Arc::clone(full.common().sections.random_tick_sections());
 
-            let index = block.len();
-            block.push(TickableChunk {
+            let slot = entries.len();
+            let previous = slot_by_pos.insert(*pos, slot);
+            assert!(
+                previous.is_none(),
+                "ticking layout contained a duplicate chunk"
+            );
+            entries.push(TickableChunk {
                 pos: *pos,
                 holder: Arc::clone(holder),
                 randomly_ticking_sections,
             });
-            if simulation_level.is_entity_ticking() {
-                random_chunk_indices.push(index);
-                if readiness.is_entity_ticking() {
-                    entity_indices.push(index);
-                }
-            }
+            memberships.push(Self::ticking_snapshot_membership(
+                readiness.readiness(),
+                holder.simulation_level(),
+            ));
             true
         });
 
-        if let Err(error) = self
+        let mut block = ChunkMembershipMask::new(entries.len());
+        let mut random = ChunkMembershipMask::new(entries.len());
+        let mut entity = ChunkMembershipMask::new(entries.len());
+        for (slot, membership) in memberships.into_iter().enumerate() {
+            block.set(slot, membership.block);
+            random.set(slot, membership.random);
+            entity.set(slot, membership.entity);
+        }
+
+        let scheduler_generation = match self
             .world_gen_context
             .world()
-            .reconcile_active_scheduled_tick_chunks(block.iter().map(|chunk| chunk.pos))
+            .replace_scheduled_tick_layout(
+                entries
+                    .iter()
+                    .enumerate()
+                    .map(|(slot, chunk)| (chunk.pos, block.contains(slot))),
+            ) {
+            Ok(generation) => generation,
+            Err(error) => panic!(
+                "Full chunk scheduled-tick ownership invariant failed during ticking snapshot rebuild: {error:?}"
+            ),
+        };
+        let ticking_chunk_count = block.len();
+        self.ticking_chunks.store(Arc::new(TickingChunkSnapshot {
+            layout: Arc::new(TickingChunkLayout {
+                scheduler_generation,
+                entries: entries.into_boxed_slice(),
+                slot_by_pos,
+            }),
+            block,
+            random,
+            entity,
+        }));
+        ticking_chunk_count
+    }
+
+    /// Publishes simulation-only membership changes against a stable SCC layout.
+    pub(super) fn update_ticking_chunk_snapshot(
+        &self,
+        changes: &[TickingChunkMembershipChange],
+    ) -> usize {
+        let current = self.ticking_chunks.load_full();
+        let mut block = current.block.clone();
+        let mut random = current.random.clone();
+        let mut entity = current.entity.clone();
+        let mut active_changes = Vec::new();
+
+        for change in changes {
+            let Some(&slot) = current.layout.slot_by_pos.get(&change.pos) else {
+                return self.rebuild_ticking_chunk_snapshot();
+            };
+            let Some(layout_chunk) = current.layout.entries.get(slot) else {
+                return self.rebuild_ticking_chunk_snapshot();
+            };
+            let previous = TickingChunkMembership {
+                block: current.block.contains(slot),
+                random: current.random.contains(slot),
+                entity: current.entity.contains(slot),
+            };
+            if !Arc::ptr_eq(&layout_chunk.holder, &change.holder) || previous != change.previous {
+                return self.rebuild_ticking_chunk_snapshot();
+            }
+
+            block.set(slot, change.current.block);
+            random.set(slot, change.current.random);
+            entity.set(slot, change.current.entity);
+            if change.previous.block != change.current.block {
+                active_changes.push(ScheduledTickActiveChunkChange {
+                    pos: change.pos,
+                    layout_rank: slot,
+                    was_active: change.previous.block,
+                    is_active: change.current.block,
+                });
+            }
+        }
+
+        if !active_changes.is_empty()
+            && let Err(error) = self
+                .world_gen_context
+                .world()
+                .apply_active_scheduled_tick_chunk_changes(
+                    current.layout.scheduler_generation,
+                    &active_changes,
+                )
         {
             panic!(
-                "Full chunk scheduled-tick ownership invariant failed during ticking snapshot rebuild: {error:?}"
+                "Full chunk scheduled-tick ownership invariant failed during ticking snapshot update: {error:?}"
             );
         }
 
         let ticking_chunk_count = block.len();
         self.ticking_chunks.store(Arc::new(TickingChunkSnapshot {
-            block: block.into_boxed_slice(),
-            random_chunk_indices: random_chunk_indices.into_boxed_slice(),
-            entity_indices: entity_indices.into_boxed_slice(),
+            layout: Arc::clone(&current.layout),
+            block,
+            random,
+            entity,
         }));
         ticking_chunk_count
     }
@@ -363,24 +443,16 @@ impl ChunkMap {
     pub(super) fn ticking_snapshot_membership(
         readiness: TickingReadiness,
         simulation_level: Option<ChunkTicketLevel>,
-    ) -> (bool, bool, bool) {
+    ) -> TickingChunkMembership {
         let block = simulation_level.is_some_and(ChunkTicketLevel::is_block_ticking)
             && readiness != TickingReadiness::Unready;
         let random = block && simulation_level.is_some_and(ChunkTicketLevel::is_entity_ticking);
         let entity = random && readiness == TickingReadiness::EntityTicking;
-        (block, random, entity)
-    }
-
-    pub(super) fn simulation_changes_ticking_snapshot(&self, changes: &[LevelChange]) -> bool {
-        changes.iter().any(|change| {
-            self.chunks
-                .read_sync(&change.pos, |_, holder| {
-                    let readiness = holder.ticking_readiness_snapshot().readiness();
-                    Self::ticking_snapshot_membership(readiness, holder.simulation_level())
-                        != Self::ticking_snapshot_membership(readiness, change.new_simulation_level)
-                })
-                .unwrap_or(false)
-        })
+        TickingChunkMembership {
+            block,
+            random,
+            entity,
+        }
     }
 
     // Readiness bookkeeping scans candidates once. Keep these lookups uncached so the
@@ -491,8 +563,10 @@ impl ChunkMap {
                 continue;
             };
             let simulation_level = candidate.holder.simulation_level();
-            snapshot_changed |= Self::ticking_snapshot_membership(previous, simulation_level)
-                != Self::ticking_snapshot_membership(candidate.target, simulation_level);
+            snapshot_changed |= (previous != TickingReadiness::Unready)
+                != (candidate.target != TickingReadiness::Unready)
+                || Self::ticking_snapshot_membership(previous, simulation_level)
+                    != Self::ticking_snapshot_membership(candidate.target, simulation_level);
             world.update_entity_chunk_visibility(
                 candidate.pos,
                 candidate.holder.entity_visibility(),
@@ -554,8 +628,9 @@ impl ChunkMap {
                 continue;
             };
             let simulation_level = candidate.holder.simulation_level();
-            result.snapshot_changed |=
-                Self::ticking_snapshot_membership(previous, simulation_level)
+            result.snapshot_changed |= (previous != TickingReadiness::Unready)
+                != (candidate.target != TickingReadiness::Unready)
+                || Self::ticking_snapshot_membership(previous, simulation_level)
                     != Self::ticking_snapshot_membership(candidate.target, simulation_level);
             world.update_entity_chunk_visibility(
                 candidate.pos,
