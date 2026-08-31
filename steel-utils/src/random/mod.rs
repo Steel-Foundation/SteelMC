@@ -1,4 +1,6 @@
 //! This module contains utilities for random number generation.
+use core::convert::Infallible;
+
 use enum_dispatch::enum_dispatch;
 
 use crate::random::{
@@ -92,6 +94,29 @@ pub enum RandomSplitter {
     Xoroshiro(XoroshiroSplitter),
     /// A legacy Minecraft random number generator splitter.
     Legacy(LegacyRandomSplitter),
+}
+
+/// Adapts a [`Random`] source to `rand`'s RNG traits for rand-based consumers.
+pub struct RandBridge<R: Random>(pub R);
+
+impl<R: Random> rand::TryRng for RandBridge<R> {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(self.0.next_i32() as u32)
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        Ok(self.0.next_i64() as u64)
+    }
+
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+        for chunk in dst.chunks_mut(8) {
+            let bytes = self.0.next_i64().to_le_bytes();
+            chunk.copy_from_slice(&bytes[..chunk.len()]);
+        }
+        Ok(())
+    }
 }
 
 /// Gets a seed from a position.

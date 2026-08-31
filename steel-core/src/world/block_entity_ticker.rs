@@ -204,7 +204,7 @@ impl WorldBlockEntityTickers {
                 self.remove_if_same(wrapper, binding);
                 return false;
             }
-            if runs_normally {
+            if runs_normally && binding.ticker.should_tick(binding.entity.as_ref()) {
                 tick_binding(binding);
             }
             drop(binding_guard);
@@ -287,7 +287,7 @@ impl WorldBlockEntityTickers {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "benchmark-support"))]
     pub(crate) fn registered_len(&self) -> usize {
         self.state.lock().by_pos.len()
     }
@@ -309,6 +309,9 @@ impl WorldBlockEntityTickers {
     }
 }
 
+#[cfg(feature = "benchmark-support")]
+pub mod benchmark_support;
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Weak};
@@ -318,7 +321,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        block_entity::entities::SignBlockEntity,
+        block_entity::{BlockEntity, entities::SignBlockEntity},
         chunk::{chunk_holder::ChunkHolder, chunk_ticket_manager::ChunkTicketLevel},
     };
 
@@ -342,6 +345,36 @@ mod tests {
 
     fn sign_ticker() -> BlockEntityTicker {
         BlockEntityTicker::for_entity_tick(&vanilla_block_entity_types::SIGN)
+    }
+
+    fn never_tick(_block_entity: &dyn BlockEntity) -> bool {
+        false
+    }
+
+    #[test]
+    fn filtered_ticker_stays_registered_without_reaching_full_validation() {
+        init_vanilla_registry();
+        let manager = WorldBlockEntityTickers::new();
+        let holder = holder();
+        let dormant = sign(BlockPos::new(1, 2, 3));
+        let active = sign(BlockPos::new(2, 2, 3));
+        let filtered = BlockEntityTicker::for_matching_filtered_entity_tick(
+            &vanilla_block_entity_types::SIGN,
+            &vanilla_block_entity_types::SIGN,
+            never_tick,
+        )
+        .expect("matching block-entity types should produce a ticker");
+        manager.reconcile(&holder, Arc::clone(&dormant), Some(filtered));
+        manager.reconcile(&holder, Arc::clone(&active), Some(sign_ticker()));
+
+        let mut observed = Vec::new();
+        manager.tick_phase(true, |binding| {
+            observed.push(Arc::clone(&binding.entity));
+        });
+
+        assert_eq!(manager.registered_len(), 2);
+        assert_eq!(observed.len(), 1);
+        assert!(Arc::ptr_eq(&observed[0], &active));
     }
 
     #[test]
