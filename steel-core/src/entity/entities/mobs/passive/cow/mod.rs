@@ -34,8 +34,8 @@ use crate::entity::ai::goal::{
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
-    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, LivingEntityDefaults, Mob,
-    MobBase, PathfinderMob, SpawnGroupData,
+    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
+    PathfinderMob, SpawnGroupData,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
@@ -347,7 +347,7 @@ impl LivingEntity for CowEntity {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        let result = LivingEntityDefaults::ai_step(self);
+        let result = Mob::mob_ai_step(self);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);

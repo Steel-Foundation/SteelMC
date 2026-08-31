@@ -1029,10 +1029,13 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "keeping the vanilla block callback cases together makes the dispatch coverage readable"
+    )]
     fn base_block_hit_dispatches_vanilla_block_callbacks() {
         init_vanilla_registry();
         init_behaviors();
-
         let world = Arc::clone(test_world());
         let chunk_map = Arc::clone(&world.chunk_map);
         let pos = BlockPos::new(1_136, 64, 1_136);
@@ -1137,7 +1140,6 @@ mod tests {
                 assert!(world.get_block_state(chorus_pos).is_air());
             });
         let result = chunk_map.chunk_runtime.block_on(block_callback_test);
-
         assert_eq!(result, Some(()));
     }
 

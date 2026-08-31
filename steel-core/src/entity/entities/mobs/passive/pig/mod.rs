@@ -36,8 +36,8 @@ use crate::entity::damage::DamageSource;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, ItemBasedSteering, ItemSteerable, LivingEntity,
-    LivingEntityBase, LivingEntityDefaults, LivingEntitySyncedData, Mob, MobBase, MoveResult,
-    PathfinderMob, SharedEntity, SpawnGroupData,
+    LivingEntityBase, LivingEntitySyncedData, Mob, MobBase, MoveResult, PathfinderMob,
+    SharedEntity, SpawnGroupData,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::player::Player;
@@ -371,7 +371,7 @@ impl LivingEntity for PigEntity {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        let result = LivingEntityDefaults::ai_step(self);
+        let result = Mob::mob_ai_step(self);
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
         result
