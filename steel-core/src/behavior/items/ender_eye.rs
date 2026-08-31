@@ -7,9 +7,10 @@ use crate::worldgen::generator::ChunkGenerator;
 use steel_macros::item_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
-    REGISTRY, level_events, vanilla_blocks, vanilla_entities, vanilla_game_events,
+    REGISTRY, level_events, sound_events, vanilla_blocks, vanilla_entities, vanilla_game_events,
     vanilla_structure_tags,
 };
 use steel_registry::{TaggedRegistryExt, vanilla_items};
@@ -152,6 +153,16 @@ impl ItemBehavior for EnderEyeItem {
             &vanilla_game_events::PROJECTILE_SHOOT,
             spawn_pos,
             &GameEventContext::new(Some(context.player), None),
+        );
+
+        let pitch = 0.4 / (rand::random::<f32>() * 0.4 + 0.8);
+        world.play_sound_at(
+            &sound_events::ENTITY_ENDER_EYE_LAUNCH,
+            SoundSource::Neutral,
+            player_pos,
+            1.0,
+            pitch,
+            None,
         );
 
         let eye = EyeOfEnderEntity::new(
