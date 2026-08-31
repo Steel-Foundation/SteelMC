@@ -13,6 +13,7 @@ mod queue;
 mod runtime;
 mod score;
 mod selector;
+mod signing;
 mod source;
 mod structure;
 mod text;
@@ -47,6 +48,9 @@ pub(crate) use runtime::{
 pub(crate) use score::{IntRange, ScoreHolderArgument, ScoreHolderWildcard};
 #[cfg(test)]
 pub(crate) use selector::parse_entity_selector_text;
+pub(crate) use signing::{
+    CommandSigningContext, SignableArgument, SignedArgument, signable_arguments,
+};
 pub(crate) use source::{
     CommandArgumentSource, CommandPermissionSource, CommandResultCallback, CommandSource,
     ExecutionCommandSource,

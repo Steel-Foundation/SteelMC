@@ -64,6 +64,11 @@ where
         &self.contexts[self.position]
     }
 
+    /// Returns every remaining context, from the current stage through the executable one.
+    pub(crate) fn remaining_contexts(&self) -> impl Iterator<Item = &CommandContext<S, R>> {
+        self.contexts[self.position..].iter().map(Arc::as_ref)
+    }
+
     /// Advances to the next redirect or executable stage.
     pub(crate) fn next_stage(&self) -> Option<Self> {
         let position = self.position + 1;

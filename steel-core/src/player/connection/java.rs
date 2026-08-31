@@ -13,8 +13,8 @@ use steel_protocol::packets::common::{
 use steel_protocol::packets::game::{
     CBundleDelimiter, CCommandSuggestions, ClientCommandAction, PlayerAction, PlayerCommandAction,
     SAcceptTeleportation, SAttack, SChangeDifficulty, SChangeGameMode, SChat, SChatAck,
-    SChatCommand, SChatSessionUpdate, SChunkBatchReceived, SClientCommand, SClientTickEnd,
-    SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
+    SChatCommand, SChatCommandSigned, SChatSessionUpdate, SChunkBatchReceived, SClientCommand,
+    SClientTickEnd, SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
     SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
     SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem, SSetCarriedItem,
@@ -38,6 +38,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::command::{handle_client_request, sender::CommandSender};
 use crate::player::Player;
+use crate::player::chat::SignedCommandPayload;
 use crate::player::connection::NetworkConnection;
 use crate::server::Server;
 
@@ -86,6 +87,7 @@ enum ScheduledPlayPacketKind {
     MoveVehicle(SMoveVehicle),
     PlayerLoaded,
     ChatCommand(SChatCommand),
+    ChatCommandSigned(Box<SChatCommandSigned>),
     CommandSuggestion(SCommandSuggestion),
     ContainerButtonClick(SContainerButtonClick),
     ContainerClick(SContainerClick),
@@ -160,6 +162,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::ClientTickEnd
             | ScheduledPlayPacketKind::PlayerLoaded
             | ScheduledPlayPacketKind::ChatCommand(_)
+            | ScheduledPlayPacketKind::ChatCommandSigned(_)
             | ScheduledPlayPacketKind::CommandSuggestion(_)
             | ScheduledPlayPacketKind::ContainerClose(_)
             | ScheduledPlayPacketKind::SetCreativeModeSlot(_)
@@ -234,6 +237,30 @@ impl ScheduledPlayPacket {
         )
     }
 
+    /// Queues a player-issued command, applying the same activity and spam accounting to both
+    /// the unsigned and signed command packets.
+    fn submit_player_command(
+        player: &Arc<Player>,
+        server: &Arc<Server>,
+        command: String,
+        signed: Option<Box<SignedCommandPayload>>,
+    ) {
+        player.reset_last_action_time();
+        if server
+            .submit_command_with_signatures(
+                CommandSender::Player(Arc::clone(player)),
+                command,
+                signed,
+            )
+            .is_err()
+        {
+            player.send_message(
+                &TextComponent::const_plain("Command queue is full").color(Color::Red),
+            );
+        }
+        player.detect_command_rate_spam();
+    }
+
     pub(crate) fn handle(self, player: Arc<Player>, server: &Arc<Server>) {
         if !player.has_joined_world() && !self.can_process_before_join() {
             return;
@@ -267,16 +294,18 @@ impl ScheduledPlayPacket {
                 }
             }
             ScheduledPlayPacketKind::ChatCommand(packet) => {
-                player.reset_last_action_time();
-                if server
-                    .submit_command(CommandSender::Player(Arc::clone(&player)), packet.command)
-                    .is_err()
-                {
-                    player.send_message(
-                        &TextComponent::const_plain("Command queue is full").color(Color::Red),
-                    );
-                }
-                player.detect_command_rate_spam();
+                Self::submit_player_command(&player, server, packet.command, None);
+            }
+            ScheduledPlayPacketKind::ChatCommandSigned(packet) => {
+                // The secure-chat envelope travels with the request; it is verified on the
+                // game tick, once parsing has revealed which arguments are signable.
+                let payload = SignedCommandPayload::from_packet(&packet);
+                Self::submit_player_command(
+                    &player,
+                    server,
+                    packet.command,
+                    Some(Box::new(payload)),
+                );
             }
             ScheduledPlayPacketKind::CommandSuggestion(packet) => {
                 if server
@@ -724,6 +753,9 @@ impl JavaConnection {
             }
             play::S_CHAT_COMMAND => scheduled(ScheduledPlayPacketKind::ChatCommand(
                 SChatCommand::read_packet(data)?,
+            )),
+            play::S_CHAT_COMMAND_SIGNED => scheduled(ScheduledPlayPacketKind::ChatCommandSigned(
+                Box::new(SChatCommandSigned::read_packet(data)?),
             )),
             play::S_COMMAND_SUGGESTION => scheduled(ScheduledPlayPacketKind::CommandSuggestion(
                 SCommandSuggestion::read_packet(data)?,
@@ -1231,6 +1263,67 @@ mod tests {
             })),
             ScheduledPacketExecution::Serialized
         );
+    }
+
+    /// Encodes a `ServerboundChatCommandSignedPacket` payload with one argument signature.
+    fn signed_command_payload(command: &str, argument: &str) -> Vec<u8> {
+        let mut payload = vec![command.len() as u8];
+        payload.extend_from_slice(command.as_bytes());
+        payload.extend_from_slice(&7i64.to_be_bytes()); // timestamp
+        payload.extend_from_slice(&11i64.to_be_bytes()); // salt
+        payload.push(1); // one argument signature
+        payload.push(argument.len() as u8);
+        payload.extend_from_slice(argument.as_bytes());
+        payload.extend_from_slice(&[3u8; 256]); // signature
+        payload.push(0); // last-seen offset
+        payload.extend_from_slice(&[0u8; 3]); // acknowledged bitset
+        payload
+    }
+
+    #[test]
+    fn signed_chat_commands_decode_and_route_like_ordinary_commands() {
+        let decoded = decode(RawPacket::new(
+            play::S_CHAT_COMMAND_SIGNED,
+            signed_command_payload("say hello", "message"),
+        ));
+
+        let DecodedPlayPacket::Scheduled(scheduled) = decoded else {
+            panic!("a signed chat command must be scheduled, not handled as an unknown packet");
+        };
+        let ScheduledPlayPacketKind::ChatCommandSigned(packet) = &scheduled.0 else {
+            panic!("a signed chat command must decode to its own scheduled variant");
+        };
+
+        assert_eq!(packet.command, "say hello");
+        assert_eq!(packet.timestamp, 7);
+        assert_eq!(packet.salt, 11);
+        assert_eq!(packet.argument_signatures.len(), 1);
+        assert_eq!(packet.argument_signatures[0].name, "message");
+        assert_eq!(packet.argument_signatures[0].signature, [3u8; 256]);
+
+        // Signed commands share the unsigned command packet's concurrency class.
+        assert_eq!(
+            scheduled.execution(),
+            execution(ScheduledPlayPacketKind::ChatCommand(SChatCommand {
+                command: "say hello".to_owned(),
+            }))
+        );
+        assert!(!scheduled.can_process_before_join());
+    }
+
+    #[test]
+    fn unsigned_chat_commands_still_decode_on_their_own_packet_id() {
+        let mut payload = vec![4];
+        payload.extend_from_slice(b"help");
+        let decoded = decode(RawPacket::new(play::S_CHAT_COMMAND, payload));
+
+        let DecodedPlayPacket::Scheduled(scheduled) = decoded else {
+            panic!("an unsigned chat command must still be scheduled");
+        };
+        let ScheduledPlayPacketKind::ChatCommand(packet) = &scheduled.0 else {
+            panic!("an unsigned chat command must keep its own scheduled variant");
+        };
+        assert_eq!(packet.command, "help");
     }
 
     #[test]

@@ -12,9 +12,12 @@ use super::{
     permission::{PermissionGroupParser, PermissionMetadataParser, PermissionRuleParser},
     profile::{GameProfileParser, GameProfileSuggestionMode},
     score::{parse_int_range, parse_score_holder, suggest_score_holders},
-    selector::{EntitySelector, parse_entity_selector, suggest_entity_selector},
+    selector::{
+        EntitySelector, MessageSelectorError, allow_selectors, parse_entity_selector,
+        suggest_entity_selector, try_parse_message_selector,
+    },
     structure::{parse_structure_or_tag_key, suggest_structures},
-    text::validate_component_syntax,
+    text::{CommandTextResolutionSource, join_components, validate_component_syntax},
     world::{parse_world_argument, suggest_worlds},
 };
 use crate::chunk::heightmap::HeightmapType;
@@ -38,12 +41,12 @@ use steel_registry::{
     world_clock::WorldClockRef,
 };
 use steel_utils::{
-    Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier,
+    Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Identifier, java,
     nbt::{NbtPath, parse_snbt_argument},
     translations,
     types::GameType,
 };
-use text_components::TextComponent;
+use text_components::{TextComponent, content::Resolvable};
 
 /// Axes selected by vanilla's coordinate swizzle argument.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -329,6 +332,10 @@ impl SteelArgumentType {
         Self::new(ComponentParser)
     }
 
+    pub(crate) fn message() -> Self {
+        Self::new(MessageParser)
+    }
+
     pub(crate) fn nbt_path() -> Self {
         Self::new(NbtPathParser)
     }
@@ -523,6 +530,80 @@ argument_value_wrapper!(
     ComponentValue(TextComponent),
     "steel:command/value/component"
 );
+/// Vanilla's `MessageArgument` message length limit, in Java string characters.
+const MAX_MESSAGE_LENGTH: usize = 256;
+
+/// Parsed vanilla message argument: raw text plus the selector parts found
+/// during parsing.
+///
+/// Vanilla's `MessageArgument` defers selector resolution to message delivery
+/// time (`MessageArgument.Message.toComponent`), so selectors are only resolved
+/// against the sender when the message is actually built.
+#[derive(Debug)]
+pub(crate) struct MessageValue {
+    text: String,
+    parts: Vec<MessagePart>,
+}
+
+/// A selector reference found within a message argument's text.
+///
+/// `start`/`end` are byte offsets into the raw message text. If parsing
+/// produced no selector parts, the message is delivered as plain text.
+#[derive(Debug)]
+pub(crate) struct MessagePart {
+    start: usize,
+    end: usize,
+}
+
+impl_downcast_type!(MessageValue, "steel:command/value/message");
+
+impl MessageValue {
+    /// Resolves the message into a component, substituting each selector part
+    /// with the comma-separated display names of the entities it matches.
+    pub(crate) fn resolve(
+        &self,
+        source: &dyn CommandTextResolutionSource,
+    ) -> Result<TextComponent, CommandSyntaxError> {
+        if self.parts.is_empty() {
+            return Ok(TextComponent::plain(self.text.clone()));
+        }
+
+        // Vanilla substitutes each selector with `EntitySelector.joinNames`, which formats the
+        // matched display names with `ComponentUtils.DEFAULT_SEPARATOR` (a gray ", ").
+        let separator = *Resolvable::entity_separator();
+        let mut result = TextComponent::new();
+        let mut read_to = 0;
+
+        for part in &self.parts {
+            let before = &self.text[read_to..part.start];
+            if !before.is_empty() {
+                result
+                    .children
+                    .push(TextComponent::plain(before.to_owned()));
+            }
+
+            let names = source.selector_display_names(&self.text[part.start..part.end])?;
+            if !names.is_empty() {
+                result.children.push(join_components(names, &separator));
+            }
+            read_to = part.end;
+        }
+
+        let remaining = &self.text[read_to..];
+        if !remaining.is_empty() {
+            result
+                .children
+                .push(TextComponent::plain(remaining.to_owned()));
+        }
+
+        Ok(result)
+    }
+
+    /// The raw message text, before any selector substitution.
+    pub(crate) fn text(&self) -> &str {
+        &self.text
+    }
+}
 argument_value_wrapper!(NbtPathValue(NbtPath), "steel:command/value/nbt_path");
 argument_value_wrapper!(
     IdentifierValue(Identifier),
@@ -1057,6 +1138,33 @@ unit_argument_parser!(
     _builder | {},
     protocol(ProtocolArgumentType::Component, None)
 );
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MessageParser;
+
+impl_downcast_type!(MessageParser, "steel:command/parser/message");
+
+impl SteelArgumentParser for MessageParser {
+    type Value = MessageValue;
+
+    fn parse(
+        &self,
+        reader: &mut StringReader<'_>,
+        source: &dyn CommandArgumentSource,
+    ) -> Result<Self::Value, CommandSyntaxError> {
+        parse_message(reader, source)
+    }
+
+    fn list_suggestions(
+        &self,
+        _context: &dyn SteelArgumentSuggestionContext,
+        _builder: &mut SuggestionsBuilder<'_>,
+    ) {
+    }
+
+    fn protocol_argument(&self) -> (ProtocolArgumentType, Option<ProtocolSuggestionType>) {
+        (ProtocolArgumentType::Message, None)
+    }
+}
 unit_argument_parser!(
     NbtPathParser,
     "steel:command/parser/nbt_path",
@@ -1241,6 +1349,65 @@ fn parse_component(reader: &mut StringReader<'_>) -> Result<TextComponent, Comma
         invalid_component(reader, error)
     })?;
     Ok(component)
+}
+
+/// Parses a vanilla message argument: the entire remaining input, scanning for
+/// entity selectors (`@a`, `@p`, `@r`, `@s`, `@e`) when the source allows them.
+///
+/// Mirrors `MessageArgument.parseText`: selectors are parsed at argument-parse time
+/// but resolved to entity names only when the message is delivered. The 256-character
+/// length limit applies to the raw text.
+fn parse_message(
+    reader: &mut StringReader<'_>,
+    source: &dyn CommandArgumentSource,
+) -> Result<MessageValue, CommandSyntaxError> {
+    let text = reader.read_remaining().to_owned();
+    // Vanilla's limit is on Java `String.length()`, i.e. UTF-16 code units, not UTF-8 bytes.
+    let length = java::string_length(&text);
+    if length > MAX_MESSAGE_LENGTH {
+        let message = translations::ARGUMENT_MESSAGE_TOO_LONG
+            .message([length.to_string(), MAX_MESSAGE_LENGTH.to_string()])
+            .component();
+        return Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(message))));
+    }
+
+    if !allow_selectors(source) {
+        return Ok(MessageValue {
+            text,
+            parts: Vec::new(),
+        });
+    }
+
+    let mut scan_reader = StringReader::new(&text);
+    let mut parts = Vec::new();
+
+    while scan_reader.can_read() {
+        if scan_reader.peek() != Some('@') {
+            scan_reader.skip();
+            continue;
+        }
+
+        // Parts index `text` by byte, so track byte offsets: `cursor()` counts UTF-16 units
+        // and would slice incorrectly for any message containing non-ASCII text.
+        let part_start = scan_reader.byte_cursor();
+        match try_parse_message_selector(&mut scan_reader, source) {
+            Ok(()) => {
+                // The reader already sits past the selector; vanilla resumes scanning from
+                // there without skipping, so `@a@a` yields two parts.
+                parts.push(MessagePart {
+                    start: part_start,
+                    end: scan_reader.byte_cursor(),
+                });
+            }
+            // The `@` was not a selector: resume one character past it, as vanilla does.
+            Err(MessageSelectorError::Skip) => {
+                scan_reader.skip();
+            }
+            Err(MessageSelectorError::Propagate(error)) => return Err(error),
+        }
+    }
+
+    Ok(MessageValue { text, parts })
 }
 
 fn component_snbt_error(

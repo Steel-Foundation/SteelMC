@@ -27,6 +27,16 @@ pub const fn is_space_char(character: char) -> bool {
     )
 }
 
+/// Returns Java's `String.length()` for `value`: the number of UTF-16 code units.
+///
+/// Rust's `str::len` counts UTF-8 bytes, so vanilla limits expressed in Java string
+/// characters (for example the 256-character message-argument limit) must use this
+/// instead to avoid rejecting non-ASCII input too early.
+#[must_use]
+pub fn string_length(value: &str) -> usize {
+    value.encode_utf16().count()
+}
+
 /// Mirrors vanilla `StringUtil.isBlank`.
 #[must_use]
 pub fn is_blank(value: &str) -> bool {
@@ -37,7 +47,7 @@ pub fn is_blank(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_blank, is_space_char, is_whitespace};
+    use super::{is_blank, is_space_char, is_whitespace, string_length};
 
     #[test]
     fn matches_java_whitespace_exclusions() {
@@ -62,5 +72,18 @@ mod tests {
         assert!(is_blank("\u{001c}\u{00a0}\u{202f}"));
         assert!(!is_blank("\u{0085}"));
         assert!(!is_blank(" text "));
+    }
+
+    #[test]
+    fn string_length_counts_utf16_code_units() {
+        assert_eq!(string_length("hello"), 5);
+        // Two-byte UTF-8, one UTF-16 code unit.
+        assert_eq!("é".len(), 2);
+        assert_eq!(string_length("é"), 1);
+        // Three-byte UTF-8, one UTF-16 code unit.
+        assert_eq!(string_length("中"), 1);
+        // Outside the BMP: one `char`, but a surrogate pair in Java.
+        assert_eq!("\u{1f600}".chars().count(), 1);
+        assert_eq!(string_length("\u{1f600}"), 2);
     }
 }

@@ -10,6 +10,9 @@ use super::{
     ThreadPool, World, command_suggestions_packet, configured_packet_workers, sleep,
     spawn_blocking,
 };
+use crate::command::execution::{SteelContextChain, signable_arguments};
+use crate::player::chat::{SignedCommandError, SignedCommandPayload};
+use text_components::{Modifier as _, TextComponent, format::Color};
 
 impl Server {
     pub(super) fn advance_server_tick(&self) -> (u64, bool) {
@@ -289,11 +292,15 @@ impl Server {
             handled += 1;
 
             match request {
-                CommandRequest::Execute { owner, command } => {
+                CommandRequest::Execute {
+                    owner,
+                    command,
+                    signed,
+                } => {
                     if !owner.is_current(self) {
                         continue;
                     }
-                    self.execute_command_request(pending, owner, &command);
+                    self.execute_command_request(pending, owner, &command, signed.as_deref());
                 }
                 CommandRequest::Suggestions {
                     owner,
@@ -322,6 +329,7 @@ impl Server {
         pending: &mut PendingCommandExecutionQueue<CommandSource>,
         owner: CommandExecutionOwner,
         command: &str,
+        signed: Option<&SignedCommandPayload>,
     ) {
         let source = CommandSource::new(owner.sender().clone(), Arc::clone(self));
         let command = command.strip_prefix('/').unwrap_or(command);
@@ -338,12 +346,57 @@ impl Server {
             }
         };
 
+        // Vanilla verifies argument signatures once the parse has revealed which arguments are
+        // signable, then runs the command with the signatures bound to the source
+        // (`Commands.mapSource(parse, s -> s.withSigningContext(...))`).
+        let source = match Self::bind_signed_arguments(&source, &chain, signed) {
+            Ok(source) => source,
+            Err(error) => {
+                tracing::warn!(%error, "rejected signed command packet");
+                if let Some(player) = source.player() {
+                    // Vanilla `handleMessageDecodeFailure`: kick only when secure chat is
+                    // enforced, otherwise tell the player and drop the command.
+                    if error.should_disconnect() {
+                        player.disconnect(format!("Command signature validation failed: {error}"));
+                    } else {
+                        player.send_message(
+                            &TextComponent::plain(format!(
+                                "Command signature validation failed: {error}"
+                            ))
+                            .color(Color::Red),
+                        );
+                    }
+                }
+                return;
+            }
+        };
+
         let mut execution = CommandExecutionContext::for_source(&source);
         execution.queue_initial_command(chain, source, CommandResultCallback::empty());
         if execution.run() == ExecutionStop::Suspended && !pending.push_suspended(owner, execution)
         {
             tracing::error!("suspended command execution could not be retained");
         }
+    }
+
+    /// Verifies a signed command packet's argument signatures against the parsed command.
+    ///
+    /// Returns the source unchanged when the request carried no secure-chat envelope, which is
+    /// the case for console, RCON, and ordinary `ServerboundChatCommandPacket` commands.
+    fn bind_signed_arguments(
+        source: &CommandSource,
+        chain: &SteelContextChain<CommandSource>,
+        signed: Option<&SignedCommandPayload>,
+    ) -> Result<CommandSource, SignedCommandError> {
+        let Some(payload) = signed else {
+            return Ok(source.clone());
+        };
+        let Some(player) = source.player() else {
+            return Ok(source.clone());
+        };
+        let arguments = signable_arguments(chain);
+        let signing_context = player.verify_signed_command(payload, &arguments)?;
+        Ok(source.with_signing_context(Arc::new(signing_context)))
     }
 
     fn send_command_suggestions(

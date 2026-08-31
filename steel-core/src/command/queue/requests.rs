@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use steel_utils::locks::SyncMutex;
 
 use crate::command::sender::{CommandExecutionOwner, CommandSuggestionKey};
+use crate::player::chat::SignedCommandPayload;
 
 const DEFAULT_COMMAND_REQUEST_CAPACITY: usize = 1024;
 const DEFAULT_SUGGESTION_REQUEST_CAPACITY: usize = 1024;
@@ -15,6 +16,8 @@ pub(crate) enum CommandRequest {
     Execute {
         owner: CommandExecutionOwner,
         command: String,
+        /// Secure-chat envelope, present only for `ServerboundChatCommandSignedPacket`.
+        signed: Option<Box<SignedCommandPayload>>,
     },
     Suggestions {
         owner: CommandExecutionOwner,

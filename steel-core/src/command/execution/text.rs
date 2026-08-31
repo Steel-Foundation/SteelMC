@@ -292,7 +292,8 @@ fn parse_resource_identifier(raw: &str) -> Result<Identifier, &'static str> {
     Ok(Identifier::new(namespace.to_owned(), path.to_owned()))
 }
 
-fn join_components(
+/// Joins `values` with `separator` the way vanilla's `ComponentUtils.formatList` does.
+pub(super) fn join_components(
     values: impl IntoIterator<Item = TextComponent>,
     separator: &TextComponent,
 ) -> TextComponent {

@@ -42,19 +42,32 @@ use super::argument::SteelArgumentParser;
 
 struct TestSource {
     callback: CommandResultCallback,
+    allows_selectors: bool,
 }
 
 impl TestSource {
     const fn new() -> Self {
         Self {
             callback: CommandResultCallback::empty(),
+            allows_selectors: true,
+        }
+    }
+
+    /// A source without the permission to use entity selectors.
+    const fn without_selectors() -> Self {
+        Self {
+            callback: CommandResultCallback::empty(),
+            allows_selectors: false,
         }
     }
 }
 
 impl ExecutionCommandSource for TestSource {
     fn with_callback(&self, callback: CommandResultCallback) -> Self {
-        Self { callback }
+        Self {
+            callback,
+            allows_selectors: self.allows_selectors,
+        }
     }
 
     fn callback(&self) -> CommandResultCallback {
@@ -145,11 +158,11 @@ impl CommandArgumentSource for TestSource {
     }
 
     fn allows_entity_selectors(&self) -> bool {
-        true
+        self.allows_selectors
     }
 
     fn allows_advanced_entity_selectors(&self) -> bool {
-        true
+        self.allows_selectors
     }
 }
 
@@ -176,5 +189,6 @@ mod core_permissions;
 mod general;
 mod item_predicate;
 mod item_stack;
+mod message;
 mod resources_world;
 mod selector_time;
