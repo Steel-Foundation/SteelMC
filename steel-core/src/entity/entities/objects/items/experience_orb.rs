@@ -195,11 +195,11 @@ impl ExperienceOrbEntity {
     }
 
     fn initialize_spawn_movement(&self) {
-        let yaw = rand::random::<f32>() * 360.0;
+        let yaw = rand::random_range(0.0..360.0);
         let velocity = DVec3::new(
-            (f64::from(rand::random::<f32>()) * 0.2 - 0.1) * 2.0,
-            f64::from(rand::random::<f32>()) * 0.2 * 2.0,
-            (f64::from(rand::random::<f32>()) * 0.2 - 0.1) * 2.0,
+            f64::from(rand::random_range(-0.1f32..0.1)) * 2.0,
+            f64::from(rand::random_range(0.0f32..0.2)) * 2.0,
+            f64::from(rand::random_range(-0.1f32..0.1)) * 2.0,
         );
         self.base.set_rotation((yaw, 0.0));
         self.base.set_velocity(velocity);

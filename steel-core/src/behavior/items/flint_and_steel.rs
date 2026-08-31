@@ -49,7 +49,7 @@ impl ItemBehavior for FlintAndSteelItem {
             &sound_events::ITEM_FLINTANDSTEEL_USE,
             fire_pos,
             1.0,
-            rand::random::<f32>() * 0.4 + 0.8,
+            rand::random_range(0.8..1.2),
             Some(context.player.id()),
         );
 
@@ -173,7 +173,7 @@ fn can_light(state: BlockStateId) -> bool {
 }
 
 fn flint_and_steel_pitch() -> f32 {
-    rand::random::<f32>() * 0.4 + 0.8
+    rand::random_range(0.8..1.2)
 }
 
 fn fire_charge_pitch() -> f32 {

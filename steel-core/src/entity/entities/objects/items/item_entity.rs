@@ -166,7 +166,7 @@ impl ItemEntity {
         world: Weak<World>,
     ) -> Self {
         // Random yaw rotation for visual variety
-        let yaw = rand::random::<f32>() * 360.0;
+        let yaw = rand::random_range(0.0..360.0);
 
         let mut entity_data = ItemEntityData::new();
         entity_data.item.set(item);
@@ -187,9 +187,9 @@ impl ItemEntity {
 
     fn default_spawn_velocity() -> DVec3 {
         DVec3::new(
-            rand::random::<f64>() * 0.2 - 0.1,
+            rand::random_range(-0.1..0.1),
             0.2,
-            rand::random::<f64>() * 0.2 - 0.1,
+            rand::random_range(-0.1..0.1),
         )
     }
 

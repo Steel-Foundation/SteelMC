@@ -302,9 +302,9 @@ impl World {
     /// Returns `None` if the item stack is empty.
     pub fn spawn_item(self: &Arc<Self>, pos: DVec3, item: ItemStack) -> Option<Arc<ItemEntity>> {
         // Default ItemEntity velocity: random horizontal scatter + upward pop
-        let vx = rand::random::<f64>() * 0.2 - 0.1;
+        let vx = rand::random_range(-0.1..0.1);
         let vy = 0.2;
-        let vz = rand::random::<f64>() * 0.2 - 0.1;
+        let vz = rand::random_range(-0.1..0.1);
         self.spawn_item_with_velocity(pos, item, DVec3::new(vx, vy, vz))
     }
 
@@ -364,9 +364,9 @@ impl World {
         let half_height = f64::from(vanilla_entities::ITEM.dimensions.height) / 2.0;
 
         // Random offset within block (vanilla: nextDouble(-0.25, 0.25))
-        let x = f64::from(pos.x()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5;
-        let y = f64::from(pos.y()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5 - half_height;
-        let z = f64::from(pos.z()) + 0.5 + (rand::random::<f64>() - 0.5) * 0.5;
+        let x = f64::from(pos.x()) + 0.5 + rand::random_range(-0.25..0.25);
+        let y = f64::from(pos.y()) + 0.5 + rand::random_range(-0.25..0.25) - half_height;
+        let z = f64::from(pos.z()) + 0.5 + rand::random_range(-0.25..0.25);
 
         let entity = self.spawn_item(DVec3::new(x, y, z), item)?;
         entity.set_default_pickup_delay();
@@ -421,14 +421,14 @@ impl World {
         let x = f64::from(pos.x())
             + 0.5
             + if step_x == 0 {
-                (rand::random::<f64>() - 0.5) * 0.5
+                rand::random_range(-0.25..0.25)
             } else {
                 f64::from(step_x) * (0.5 + half_width)
             };
         let y = f64::from(pos.y())
             + 0.5
             + if step_y == 0 {
-                (rand::random::<f64>() - 0.5) * 0.5
+                rand::random_range(-0.25..0.25)
             } else {
                 f64::from(step_y) * (0.5 + half_height)
             }
@@ -436,24 +436,24 @@ impl World {
         let z = f64::from(pos.z())
             + 0.5
             + if step_z == 0 {
-                (rand::random::<f64>() - 0.5) * 0.5
+                rand::random_range(-0.25..0.25)
             } else {
                 f64::from(step_z) * (0.5 + half_width)
             };
 
         // Velocity in direction of face
         let delta_x = if step_x == 0 {
-            (rand::random::<f64>() - 0.5) * 0.2
+            rand::random_range(-0.1..0.1)
         } else {
             f64::from(step_x) * 0.1
         };
         let delta_y = if step_y == 0 {
-            rand::random::<f64>() * 0.1
+            rand::random_range(0.0..0.1)
         } else {
             f64::from(step_y) * 0.1 + 0.1
         };
         let delta_z = if step_z == 0 {
-            (rand::random::<f64>() - 0.5) * 0.2
+            rand::random_range(-0.1..0.1)
         } else {
             f64::from(step_z) * 0.1
         };

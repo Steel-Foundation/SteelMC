@@ -266,7 +266,7 @@ impl SheepEntity {
             };
             let jitter = DVec3::new(
                 (rand::random::<f64>() - rand::random::<f64>()) * 0.1,
-                rand::random::<f64>() * 0.05,
+                rand::random_range(0.0..0.05),
                 (rand::random::<f64>() - rand::random::<f64>()) * 0.1,
             );
             item_entity.set_velocity(item_entity.velocity() + jitter);
