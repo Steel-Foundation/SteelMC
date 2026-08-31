@@ -21,7 +21,7 @@ use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::G
 use text_components::TextComponent;
 
 use super::{
-    BiomeOrTag, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
+    BiomeOrTag, BlockInput, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
     Coordinates, ExecutionCommandSource, ExecutionControl, GameProfileArgument, IntRange,
     ItemPredicate, PermissionGroupName, ScoreHolderArgument, ScoreHolderWildcard,
     SteelArgumentType, StructureOrTagKey, WorldArgument,
@@ -287,6 +287,10 @@ where
         &self,
         name: &str,
     ) -> Result<&BlockPredicate, CommandSyntaxError> {
+        self.typed_argument(name)
+    }
+
+    pub(crate) fn block_input(&self, name: &str) -> Result<&BlockInput, CommandSyntaxError> {
         self.typed_argument(name)
     }
 
