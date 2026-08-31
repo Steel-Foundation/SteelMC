@@ -103,7 +103,7 @@ impl ItemBehavior for EnderEyeItem {
             .generator
             .structure_generator()
         else {
-            log::debug!("World generator not found");
+            log::warn!("World generator not found");
             return InteractionResult::Consume;
         };
 
