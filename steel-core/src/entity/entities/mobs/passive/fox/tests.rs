@@ -412,3 +412,41 @@ fn fox_drops_its_mouth_item_on_death_regardless_of_loot_rules() {
         .any(|stack| stack.is(&vanilla_items::SWEET_BERRIES));
     assert!(dropped, "the mouth item is dropped into the world");
 }
+
+#[test]
+fn fox_move_and_look_controls_gate_on_state() {
+    init_vanilla_registry();
+    let fox = new_fox();
+
+    // Awake and idle: both controls run (vanilla canMove and not sleeping).
+    assert!(Mob::can_move_control_tick(&fox));
+    assert!(Mob::can_look_control_tick(&fox));
+
+    // Sitting stops movement but the fox still turns its head.
+    fox.set_sitting(true);
+    assert!(!Mob::can_move_control_tick(&fox));
+    assert!(Mob::can_look_control_tick(&fox));
+    fox.set_sitting(false);
+
+    // Sleeping stops both.
+    fox.set_sleeping(true);
+    assert!(!Mob::can_move_control_tick(&fox));
+    assert!(!Mob::can_look_control_tick(&fox));
+}
+
+#[test]
+fn fox_faceplant_goal_runs_while_faceplanted_and_stands_up_on_stop() {
+    let (_world, fox) = world_with_fox("fox_faceplant");
+    let mut goal = FaceplantGoal::new();
+
+    // Not faceplanted: the goal does not run.
+    assert!(!goal.can_use(fox.as_ref()));
+
+    // Faceplanted: the goal runs, and stopping stands the fox back up.
+    fox.set_faceplanted(true);
+    assert!(goal.can_use(fox.as_ref()));
+    goal.start(fox.as_ref());
+    assert!(goal.can_continue_to_use(fox.as_ref()));
+    goal.stop(fox.as_ref());
+    assert!(!fox.is_faceplanted());
+}

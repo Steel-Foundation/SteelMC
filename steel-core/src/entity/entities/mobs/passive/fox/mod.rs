@@ -44,7 +44,7 @@ use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
-use goals::{FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal};
+use goals::{FaceplantGoal, FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal};
 
 /// Baby fox render scale (vanilla `Fox.BABY_SCALE`).
 const BABY_SCALE: f32 = 0.6;
@@ -160,14 +160,14 @@ impl FoxEntity {
             let mut goal_selector = mob_base.goal_selector().lock();
             goal_selector.add_goal(0, FloatGoal::new(&mob_base));
             goal_selector.add_goal(0, ClimbOnTopOfPowderSnowGoal::new());
-            // TODO(fox-goals): 1 FaceplantGoal (needs faceplant physics via a custom FoxMoveControl)
+            goal_selector.add_goal(1, FaceplantGoal::new());
             goal_selector.add_goal(2, PanicGoal::new(2.2));
             goal_selector.add_goal(3, BreedGoal::new(1.0));
             // TODO(fox-goals): 4 AvoidEntityGoal<Player> (needs the trust/defend gate)
             // TODO(fox-goals): 4 AvoidEntityGoal<Wolf> (needs the Wolf mob)
             // TODO(fox-goals): 4 AvoidEntityGoal<PolarBear> (needs the PolarBear mob)
             // TODO(fox-goals): 5 StalkPreyGoal (needs prey mobs and the pounce move control)
-            // TODO(fox-goals): 6 FoxPounceGoal (needs pounce/jump physics)
+            // TODO(fox-goals): 6 FoxPounceGoal (needs the attack-target system; the FoxMoveControl gate is in place, and the pounce leap/faceplant physics plus the FoxLookControl.resetXRotOnTick tilt ride on it)
             // TODO(fox-goals): 6 SeekShelterGoal (needs a FleeSunGoal move target)
             // TODO(fox-goals): 7 FoxMeleeAttackGoal (needs an attack target)
             goal_selector.add_goal(7, FoxSleepGoal::new());
@@ -751,6 +751,16 @@ impl Mob for FoxEntity {
 
     fn custom_server_ai_step(&self) {
         Animal::custom_server_ai_step_animal(self);
+    }
+
+    fn can_move_control_tick(&self) -> bool {
+        // Vanilla Fox.FoxMoveControl: a fox does not drift while it cannot move.
+        self.can_move()
+    }
+
+    fn can_look_control_tick(&self) -> bool {
+        // Vanilla Fox.FoxLookControl: a sleeping fox does not turn its head.
+        !self.is_sleeping()
     }
 
     fn ambient_sound(&self) -> Option<SoundEventRef> {
