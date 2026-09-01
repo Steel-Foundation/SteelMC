@@ -47,7 +47,7 @@ pub use redstone::{
     BellBlock, ButtonBlock, ComparatorBlock, CopperBulbBlock, DaylightDetectorBlock,
     DetectorRailBlock, LeverBlock, MovingPistonBlock, NoteBlock, ObserverBlock, PistonBaseBlock,
     PistonHeadBlock, PoweredBlock, PoweredRailBlock, PressurePlateBlock, PressurePlateSensitivity,
-    RailBlock, RedStoneOreBlock, RedStoneWireBlock, RedstoneLampBlock, RedstoneTorchBlock,
+    RailBlock, RedStoneOreBlock, RedstoneWireBlock, RedstoneLampBlock, RedstoneTorchBlock,
     RedstoneWallTorchBlock, RepeaterBlock, TargetBlock, TripWireBlock, TripWireHookBlock,
     WeatheringCopperBulbBlock, WeightedPressurePlateBlock,
 };

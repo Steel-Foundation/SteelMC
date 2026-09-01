@@ -44,4 +44,4 @@ pub use redstone_ore_block::RedStoneOreBlock;
 pub use redstone_torch_block::{RedstoneTorchBlock, RedstoneWallTorchBlock};
 pub use target_block::TargetBlock;
 pub use tripwire::{TripWireBlock, TripWireHookBlock};
-pub use wire::RedStoneWireBlock;
+pub use wire::RedstoneWireBlock;
