@@ -1122,27 +1122,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().set_removed(reason);
     }
 
-    /// Emits a vanilla game event from this entity's exact position.
-    fn game_event(&self, event: GameEventRef) {
+    /// Emits a vanilla game event from this entity's exact position with an explicit source entity.
+    fn game_event_with_source_entity(
+        &self,
+        event: GameEventRef,
+        source_entity: Option<&dyn Entity>,
+    ) {
         let Some(world) = self.level() else {
             return;
         };
+
         world.game_event_at(
             event,
             self.position(),
-            &GameEventContext::new(Some(self.as_entity_event_source()), None),
+            &GameEventContext::new(source_entity, None),
         );
     }
 
-    /// Emits a vanilla game event from this entity's exact position with a player.
-    fn game_event_with_player(&self, event: GameEventRef, player: &Player) {
-        if let Some(world) = self.level() {
-            world.game_event_at(
-                event,
-                self.position(),
-                &GameEventContext::new(Some(player), None),
-            );
-        }
+    /// Emits a vanilla game event from this entity's exact position.
+    fn game_event(&self, event: GameEventRef) {
+        self.game_event_with_source_entity(event, Some(self.as_entity_event_source()));
     }
 
     /// Kills this entity using vanilla's living/non-living class split.
