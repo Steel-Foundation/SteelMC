@@ -10,7 +10,7 @@ use glam::DVec3;
 use steel_utils::{BlockPos, Downcast as _};
 
 use super::FoxEntity;
-use crate::entity::ai::goal::{Goal, GoalControls, reduced_tick_delay};
+use crate::entity::ai::goal::{FleeSunGoal, Goal, GoalControls, reduced_tick_delay};
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{Entity, LivingEntity, Mob, PathfinderMob};
 use crate::inventory::equipment::EquipmentSlot;
@@ -34,6 +34,11 @@ const PERCH_EXTRA_LOOK_TICKS: i32 = 20;
 
 /// Randomized delay, in ticks, before a fox may fall asleep (vanilla 140).
 const SLEEP_WAIT_TICKS: i32 = reduced_tick_delay(140);
+
+/// Interval, in ticks, between a fox's shelter checks: vanilla starts at
+/// `reducedTickDelay(100)`, then resets to a flat 100 after each check.
+const SHELTER_INITIAL_INTERVAL: i32 = reduced_tick_delay(100);
+const SHELTER_INTERVAL: i32 = 100;
 
 fn as_fox(mob: &dyn PathfinderMob) -> Option<&FoxEntity> {
     mob.downcast_ref::<FoxEntity>()
@@ -252,5 +257,67 @@ impl Goal for FoxSleepGoal {
             fox.set_sleeping(false);
             fox.set_sitting(false);
         }
+    }
+}
+
+/// Vanilla `Fox.SeekShelterGoal`: an awake, untargeted fox heads for cover from the
+/// sun, or immediately during a thunderstorm. It reuses the flee-sun hide-position
+/// search and movement, so it composes a `FleeSunGoal` rather than duplicating it.
+pub(crate) struct FoxSeekShelterGoal {
+    flee_sun: FleeSunGoal,
+    interval: i32,
+}
+
+impl FoxSeekShelterGoal {
+    pub(crate) const fn new(speed_modifier: f64) -> Self {
+        Self {
+            flee_sun: FleeSunGoal::new(speed_modifier),
+            interval: SHELTER_INITIAL_INTERVAL,
+        }
+    }
+}
+
+impl Goal for FoxSeekShelterGoal {
+    fn controls(&self) -> GoalControls {
+        GoalControls::MOVE
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        let Some(fox) = as_fox(mob) else {
+            return false;
+        };
+        if fox.is_sleeping() || Mob::target(fox).is_some() {
+            return false;
+        }
+        let Some(level) = mob.level() else {
+            return false;
+        };
+        let pos = mob.block_position();
+
+        // A thunderstorm sends the fox for cover right away.
+        if level.is_thundering() && level.can_see_sky(pos) {
+            return self.flee_sun.set_wanted_pos(mob, &level);
+        }
+        if self.interval > 0 {
+            self.interval -= 1;
+            return false;
+        }
+        self.interval = SHELTER_INTERVAL;
+        // TODO(village-poi): vanilla also requires the spot not be in a village
+        // (`!isVillage(pos)`); village POI is not in the tree yet (#249).
+        level.is_bright_outside()
+            && level.can_see_sky(pos)
+            && self.flee_sun.set_wanted_pos(mob, &level)
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.flee_sun.can_continue_to_use(mob)
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        if let Some(fox) = as_fox(mob) {
+            fox.clear_states();
+        }
+        self.flee_sun.start(mob);
     }
 }

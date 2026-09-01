@@ -44,7 +44,7 @@ use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
-use goals::{FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal};
+use goals::{FoxSearchForItemsGoal, FoxSeekShelterGoal, FoxSleepGoal, PerchAndSearchGoal};
 
 /// Baby fox render scale (vanilla `Fox.BABY_SCALE`).
 const BABY_SCALE: f32 = 0.6;
@@ -168,7 +168,7 @@ impl FoxEntity {
             // TODO(fox-goals): 4 AvoidEntityGoal<PolarBear> (needs the PolarBear mob)
             // TODO(fox-goals): 5 StalkPreyGoal (needs prey mobs and the pounce move control)
             // TODO(fox-goals): 6 FoxPounceGoal (needs pounce/jump physics)
-            // TODO(fox-goals): 6 SeekShelterGoal (needs a FleeSunGoal move target)
+            goal_selector.add_goal(6, FoxSeekShelterGoal::new(1.25));
             // TODO(fox-goals): 7 FoxMeleeAttackGoal (needs an attack target)
             goal_selector.add_goal(7, FoxSleepGoal::new());
             goal_selector.add_goal(8, FollowParentGoal::new(1.25));
@@ -303,6 +303,17 @@ impl FoxEntity {
     /// Sets vanilla `Fox.setDefending`.
     pub fn set_defending(&self, defending: bool) {
         self.set_flag(FLAG_DEFENDING, defending);
+    }
+
+    /// Vanilla `Fox.clearStates`: clears the interested, crouching, sitting,
+    /// sleeping, defending, and faceplanted flags.
+    pub(crate) fn clear_states(&self) {
+        self.set_interested(false);
+        self.set_crouching(false);
+        self.set_sitting(false);
+        self.set_sleeping(false);
+        self.set_defending(false);
+        self.set_faceplanted(false);
     }
 
     /// Returns vanilla `Fox.canMove`: not sleeping, sitting, or faceplanted.

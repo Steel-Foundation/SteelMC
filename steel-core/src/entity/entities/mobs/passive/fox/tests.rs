@@ -348,6 +348,40 @@ fn fox_kit_inherits_a_parent_variant() {
 }
 
 #[test]
+fn fox_clear_states_resets_all_pose_flags() {
+    init_vanilla_registry();
+
+    let fox = new_fox();
+    fox.set_sitting(true);
+    fox.set_crouching(true);
+    fox.set_interested(true);
+    fox.set_sleeping(true);
+    fox.set_defending(true);
+    fox.set_faceplanted(true);
+
+    fox.clear_states();
+
+    assert!(!fox.is_sitting());
+    assert!(!fox.is_crouching());
+    assert!(!fox.is_interested());
+    assert!(!fox.is_sleeping());
+    assert!(!fox.is_defending());
+    assert!(!fox.is_faceplanted());
+}
+
+#[test]
+fn fox_seek_shelter_skips_a_sleeping_fox() {
+    let (_world, fox) = world_with_fox("fox_shelter");
+    fox.set_sleeping(true);
+
+    let mut goal = FoxSeekShelterGoal::new(1.25);
+    assert!(
+        !goal.can_use(fox.as_ref()),
+        "a sleeping fox does not go looking for shelter"
+    );
+}
+
+#[test]
 fn fox_kit_trusts_both_parents_love_cause_players() {
     init_vanilla_registry();
 
