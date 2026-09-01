@@ -380,3 +380,35 @@ fn fox_kit_trusts_the_only_feeding_player() {
 
     assert!(offspring.trusts(feeder));
 }
+
+#[test]
+fn fox_drops_its_mouth_item_on_death_regardless_of_loot_rules() {
+    let (world, fox) = world_with_fox("fox_death_drop");
+    fox.living_base().equipment().lock().set(
+        EquipmentSlot::MainHand,
+        ItemStack::new(&vanilla_items::SWEET_BERRIES),
+    );
+
+    // The unconditional death-equipment drop runs before the loot-rules gate.
+    LivingEntity::drop_custom_death_equipment(fox.as_ref(), &world);
+
+    // The mouth is emptied...
+    let mut mouth_empty = false;
+    fox.with_equipment_slot(EquipmentSlot::MainHand, &mut |held| {
+        mouth_empty = held.is_empty();
+    });
+    assert!(mouth_empty, "the fox drops the held mouth item on death");
+
+    // ...and the berry is now a dropped item in the world.
+    let search = fox.bounding_box().inflate(4.0);
+    let dropped = world
+        .get_entities_in_aabb(&search)
+        .into_iter()
+        .filter_map(|entity| {
+            entity
+                .downcast_ref::<ItemEntity>()
+                .map(ItemEntity::get_item)
+        })
+        .any(|stack| stack.is(&vanilla_items::SWEET_BERRIES));
+    assert!(dropped, "the mouth item is dropped into the world");
+}
