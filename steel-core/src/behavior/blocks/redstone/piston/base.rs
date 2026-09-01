@@ -210,7 +210,7 @@ impl PistonBaseBlock {
                 PushReaction::Block => return false,
                 PushReaction::Destroy => return allow_destroyable,
                 PushReaction::PushOnly => return direction == connection_direction,
-                PushReaction::Normal | PushReaction::Ignore => {}
+                PushReaction::PushPull | PushReaction::Ignore => {}
             }
         } else if state.get_value(EXTENDED) {
             return false;
@@ -468,7 +468,7 @@ impl PistonBaseBlock {
                         false,
                         direction,
                     )
-                    || (reaction != PushReaction::Normal && !piston)
+                    || (reaction != PushReaction::PushPull && !piston)
                 {
                     world.remove_block(arm_pos, false);
                 } else {

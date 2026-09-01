@@ -504,7 +504,7 @@ impl PistonMovingState {
         let aabb = self.move_by_position_and_progress(pos, local);
         let entities = world.get_entities_in_aabb_matching(&aabb, |entity| {
             let position = entity.position();
-            entity.piston_push_reaction() == PushReaction::Normal
+            entity.piston_push_reaction() == PushReaction::PushPull
                 && entity.on_ground()
                 && (entity.is_supported_by(pos)
                     || (position.x >= aabb.min_x()

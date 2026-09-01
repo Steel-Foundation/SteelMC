@@ -55,7 +55,7 @@ impl BlockConfig {
             is_randomly_ticking: false,
             force_solid_off: false,
             force_solid_on: false,
-            push_reaction: Cow::Borrowed("NORMAL"),
+            push_reaction: Cow::Borrowed("PUSH_PULL"),
             friction: 0.6,
             speed_factor: 1.0,
             jump_factor: 1.0,
@@ -185,11 +185,11 @@ pub struct BlockAssets {
 /// Converts a push reaction string to a `TokenStream` representing the enum variant
 fn push_reaction_to_tokens(reaction: &str) -> TokenStream {
     match reaction {
-        "NORMAL" => quote! { PushReaction::Normal },
-        "DESTROY" => quote! { PushReaction::Destroy },
-        "BLOCK" => quote! { PushReaction::Block },
-        "IGNORE" => quote! { PushReaction::Ignore },
-        "PUSH_ONLY" => quote! { PushReaction::PushOnly },
+        "PUSH_PULL" => quote! { PushReaction::PushPull },
+        "POPPED" => quote! { PushReaction::Destroy },
+        "IMMOVEABLE" => quote! { PushReaction::Block },
+        "IGNORE_ENTITY" => quote! { PushReaction::Ignore },
+        "PUSH" => quote! { PushReaction::PushOnly },
         _ => panic!("Unknown push reaction: {reaction}"),
     }
 }
