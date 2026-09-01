@@ -76,6 +76,8 @@ const FLAG_DEFENDING: i8 = 1 << 7;
 
 /// Pickup delay, in ticks, on an item a fox spits out (vanilla `Fox.spitOutItem`).
 const FOX_SPIT_PICKUP_DELAY: i32 = 40;
+/// Height above the fox, in blocks, a spat-out item spawns (vanilla `getY() + 1.0`).
+const FOX_SPIT_SPAWN_HEIGHT: f64 = 1.0;
 
 /// Chance, per ambient-sound roll at night with nobody near, of the fox screech.
 const FOX_SCREECH_CHANCE: f32 = 0.1;
@@ -411,7 +413,11 @@ impl FoxEntity {
 
         let look = self.look_angle();
         let position = self.position();
-        let spawn = DVec3::new(position.x + look.x, position.y + 1.0, position.z + look.z);
+        let spawn = DVec3::new(
+            position.x + look.x,
+            position.y + FOX_SPIT_SPAWN_HEIGHT,
+            position.z + look.z,
+        );
         let item = ItemEntity::with_item(
             &vanilla_entities::ITEM,
             next_entity_id(),
