@@ -20,6 +20,7 @@ mod consumables;
 mod kinetic;
 mod metadata;
 mod weapons;
+mod block_transformer;
 
 use attributes::{generate_allowed_entities, generate_attribute_modifiers_component};
 use basic_components::{

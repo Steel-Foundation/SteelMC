@@ -1,3 +1,4 @@
+use crate::items::block_transformer::{block_transformer_component_token, pottery_pattern_component_token};
 use super::{
     FromStr, Ident, Identifier, Item, Span, ToShoutySnakeCase, TokenStream, Value,
     banner_pattern_ref_token, block_state_component_token, blocks_attacks_component_token,
@@ -43,6 +44,21 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
         let component_ident = get_component_ident(key);
 
         match key.as_str() {
+            "minecraft:block_transformer" => {
+                let transformer = block_transformer_component_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(vanilla_components::BLOCK_TRANSFORMER, Some(#transformer))
+                });
+            }
+            "minecraft:provides_pottery_pattern" => {
+                let pottery_pattern = pottery_pattern_component_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(
+                        vanilla_components::PROVIDES_POTTERY_PATTERN,
+                        Some(#pottery_pattern),
+                    )
+                });
+            }
             "minecraft:item_name" => {
                 item_name_component_token(value);
             }
