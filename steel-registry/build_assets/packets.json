@@ -1,5 +1,5 @@
 {
-  "version": 776,
+  "version": 1073742157,
   "serverbound": {
     "handshake": [
       "intention"
@@ -74,6 +74,7 @@
       "player_input",
       "player_loaded",
       "pong",
+      "punch",
       "recipe_book_change_settings",
       "recipe_book_seen_recipe",
       "rename_item",
@@ -91,7 +92,6 @@
       "set_test_block",
       "sign_update",
       "spectator_action",
-      "swing",
       "teleport_to_entity",
       "test_instance_block_action",
       "use_item_on",
@@ -123,6 +123,7 @@
       "registry_data",
       "resource_pack_pop",
       "resource_pack_push",
+      "post_effects",
       "store_cookie",
       "transfer",
       "update_enabled_features",
@@ -217,6 +218,7 @@
       "reset_score",
       "resource_pack_pop",
       "resource_pack_push",
+      "post_effects",
       "respawn",
       "rotate_head",
       "section_blocks_update",
@@ -256,6 +258,7 @@
       "start_configuration",
       "stop_sound",
       "store_cookie",
+      "swing_animation",
       "system_chat",
       "tab_list",
       "tag_query",

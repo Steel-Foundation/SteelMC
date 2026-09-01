@@ -62,6 +62,7 @@
         "dark_oak_sign",
         "pale_oak_sign",
         "mangrove_sign",
+        "poplar_sign",
         "bamboo_sign",
         "oak_wall_sign",
         "spruce_wall_sign",
@@ -72,6 +73,7 @@
         "dark_oak_wall_sign",
         "pale_oak_wall_sign",
         "mangrove_wall_sign",
+        "poplar_wall_sign",
         "bamboo_wall_sign",
         "crimson_sign",
         "warped_sign",
@@ -93,6 +95,7 @@
         "crimson_hanging_sign",
         "warped_hanging_sign",
         "mangrove_hanging_sign",
+        "poplar_hanging_sign",
         "bamboo_hanging_sign",
         "oak_wall_hanging_sign",
         "spruce_wall_hanging_sign",
@@ -103,6 +106,7 @@
         "dark_oak_wall_hanging_sign",
         "pale_oak_wall_hanging_sign",
         "mangrove_wall_hanging_sign",
+        "poplar_wall_hanging_sign",
         "crimson_wall_hanging_sign",
         "warped_wall_hanging_sign",
         "bamboo_wall_hanging_sign"
@@ -365,6 +369,7 @@
         "mangrove_shelf",
         "oak_shelf",
         "pale_oak_shelf",
+        "poplar_shelf",
         "spruce_shelf",
         "warped_shelf"
       ]

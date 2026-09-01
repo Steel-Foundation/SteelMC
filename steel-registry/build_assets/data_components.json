@@ -242,427 +242,493 @@
     },
     {
       "id": 40,
-      "key": "minecraft:swing_animation",
+      "key": "minecraft:attack_animation",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 41,
+      "key": "minecraft:interact_animation",
+      "persistent": true,
+      "ignore_swap_animation": false
+    },
+    {
+      "id": 42,
       "key": "minecraft:additional_trade_cost",
       "persistent": false,
       "ignore_swap_animation": false
     },
     {
-      "id": 42,
-      "key": "minecraft:stored_enchantments",
-      "persistent": true,
-      "ignore_swap_animation": false
-    },
-    {
       "id": 43,
-      "key": "minecraft:dye",
+      "key": "minecraft:block_transformer",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 44,
-      "key": "minecraft:dyed_color",
+      "key": "minecraft:villager_food",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 45,
-      "key": "minecraft:map_color",
+      "key": "minecraft:stored_enchantments",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 46,
-      "key": "minecraft:map_id",
+      "key": "minecraft:dye",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 47,
-      "key": "minecraft:map_decorations",
+      "key": "minecraft:dyed_color",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 48,
-      "key": "minecraft:map_post_processing",
-      "persistent": false,
+      "key": "minecraft:map_id",
+      "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 49,
-      "key": "minecraft:charged_projectiles",
+      "key": "minecraft:map_decorations",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 50,
-      "key": "minecraft:bundle_contents",
-      "persistent": true,
+      "key": "minecraft:map_post_processing",
+      "persistent": false,
       "ignore_swap_animation": false
     },
     {
       "id": 51,
-      "key": "minecraft:potion_contents",
+      "key": "minecraft:charged_projectiles",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 52,
-      "key": "minecraft:potion_duration_scale",
+      "key": "minecraft:bundle_contents",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 53,
-      "key": "minecraft:suspicious_stew_effects",
+      "key": "minecraft:potion_contents",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 54,
-      "key": "minecraft:writable_book_content",
+      "key": "minecraft:potion_duration_scale",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 55,
-      "key": "minecraft:written_book_content",
+      "key": "minecraft:suspicious_stew_effects",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 56,
-      "key": "minecraft:trim",
+      "key": "minecraft:writable_book_content",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 57,
-      "key": "minecraft:debug_stick_state",
+      "key": "minecraft:written_book_content",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 58,
-      "key": "minecraft:entity_data",
+      "key": "minecraft:trim",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 59,
-      "key": "minecraft:bucket_entity_data",
+      "key": "minecraft:debug_stick_state",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 60,
-      "key": "minecraft:block_entity_data",
+      "key": "minecraft:entity_data",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 61,
-      "key": "minecraft:instrument",
+      "key": "minecraft:bucket_entity_data",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 62,
-      "key": "minecraft:provides_trim_material",
+      "key": "minecraft:block_entity_data",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 63,
-      "key": "minecraft:ominous_bottle_amplifier",
+      "key": "minecraft:instrument",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 64,
-      "key": "minecraft:jukebox_playable",
+      "key": "minecraft:provides_trim_material",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 65,
-      "key": "minecraft:provides_banner_patterns",
+      "key": "minecraft:ominous_bottle_amplifier",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 66,
-      "key": "minecraft:recipes",
+      "key": "minecraft:jukebox_playable",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 67,
-      "key": "minecraft:lodestone_tracker",
+      "key": "minecraft:provides_banner_patterns",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 68,
-      "key": "minecraft:firework_explosion",
+      "key": "minecraft:recipes",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 69,
-      "key": "minecraft:fireworks",
+      "key": "minecraft:lodestone_tracker",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 70,
-      "key": "minecraft:profile",
+      "key": "minecraft:firework_explosion",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 71,
-      "key": "minecraft:note_block_sound",
+      "key": "minecraft:fireworks",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 72,
-      "key": "minecraft:banner_patterns",
+      "key": "minecraft:profile",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 73,
-      "key": "minecraft:base_color",
+      "key": "minecraft:note_block_sound",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 74,
-      "key": "minecraft:pot_decorations",
+      "key": "minecraft:banner_patterns",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 75,
-      "key": "minecraft:container",
+      "key": "minecraft:base_color",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 76,
-      "key": "minecraft:block_state",
+      "key": "minecraft:pot_decorations",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 77,
-      "key": "minecraft:bees",
+      "key": "minecraft:container",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 78,
-      "key": "minecraft:sulfur_cube_content",
+      "key": "minecraft:block_state",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 79,
-      "key": "minecraft:lock",
+      "key": "minecraft:bees",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 80,
-      "key": "minecraft:container_loot",
+      "key": "minecraft:sulfur_cube_content",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 81,
-      "key": "minecraft:break_sound",
+      "key": "minecraft:lock",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 82,
-      "key": "minecraft:villager/variant",
+      "key": "minecraft:container_loot",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 83,
-      "key": "minecraft:wolf/variant",
+      "key": "minecraft:break_sound",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 84,
-      "key": "minecraft:wolf/sound_variant",
+      "key": "minecraft:compostable",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 85,
-      "key": "minecraft:wolf/collar",
+      "key": "minecraft:cooking_fuel",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 86,
-      "key": "minecraft:fox/variant",
+      "key": "minecraft:brewing_fuel",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 87,
-      "key": "minecraft:salmon/size",
+      "key": "minecraft:mob_visibility",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 88,
-      "key": "minecraft:parrot/variant",
+      "key": "minecraft:villager/variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 89,
-      "key": "minecraft:tropical_fish/pattern",
+      "key": "minecraft:wolf/variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 90,
-      "key": "minecraft:tropical_fish/base_color",
+      "key": "minecraft:wolf/sound_variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 91,
-      "key": "minecraft:tropical_fish/pattern_color",
+      "key": "minecraft:wolf/collar",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 92,
-      "key": "minecraft:mooshroom/variant",
+      "key": "minecraft:fox/variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 93,
-      "key": "minecraft:rabbit/variant",
+      "key": "minecraft:salmon/size",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 94,
-      "key": "minecraft:pig/variant",
+      "key": "minecraft:parrot/variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 95,
-      "key": "minecraft:pig/sound_variant",
+      "key": "minecraft:tropical_fish/pattern",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 96,
-      "key": "minecraft:cow/variant",
+      "key": "minecraft:tropical_fish/base_color",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 97,
-      "key": "minecraft:cow/sound_variant",
+      "key": "minecraft:tropical_fish/pattern_color",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 98,
-      "key": "minecraft:chicken/variant",
+      "key": "minecraft:mooshroom/variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 99,
-      "key": "minecraft:chicken/sound_variant",
+      "key": "minecraft:rabbit/variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 100,
-      "key": "minecraft:zombie_nautilus/variant",
+      "key": "minecraft:pig/variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 101,
-      "key": "minecraft:frog/variant",
+      "key": "minecraft:pig/sound_variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 102,
-      "key": "minecraft:horse/variant",
+      "key": "minecraft:cow/variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 103,
-      "key": "minecraft:painting/variant",
+      "key": "minecraft:cow/sound_variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 104,
-      "key": "minecraft:llama/variant",
+      "key": "minecraft:chicken/variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 105,
-      "key": "minecraft:axolotl/variant",
+      "key": "minecraft:chicken/sound_variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 106,
-      "key": "minecraft:cat/variant",
+      "key": "minecraft:zombie_nautilus/variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 107,
-      "key": "minecraft:cat/sound_variant",
+      "key": "minecraft:frog/variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 108,
-      "key": "minecraft:cat/collar",
+      "key": "minecraft:horse/variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 109,
-      "key": "minecraft:sheep/color",
+      "key": "minecraft:painting/variant",
       "persistent": true,
       "ignore_swap_animation": false
     },
     {
       "id": 110,
+      "key": "minecraft:llama/variant",
+      "persistent": true,
+      "ignore_swap_animation": false
+    },
+    {
+      "id": 111,
+      "key": "minecraft:axolotl/variant",
+      "persistent": true,
+      "ignore_swap_animation": false
+    },
+    {
+      "id": 112,
+      "key": "minecraft:cat/variant",
+      "persistent": true,
+      "ignore_swap_animation": false
+    },
+    {
+      "id": 113,
+      "key": "minecraft:cat/sound_variant",
+      "persistent": true,
+      "ignore_swap_animation": false
+    },
+    {
+      "id": 114,
+      "key": "minecraft:cat/collar",
+      "persistent": true,
+      "ignore_swap_animation": false
+    },
+    {
+      "id": 115,
+      "key": "minecraft:sheep/color",
+      "persistent": true,
+      "ignore_swap_animation": false
+    },
+    {
+      "id": 116,
       "key": "minecraft:shulker/color",
+      "persistent": true,
+      "ignore_swap_animation": false
+    },
+    {
+      "id": 117,
+      "key": "minecraft:provides_pottery_pattern",
+      "persistent": true,
+      "ignore_swap_animation": false
+    },
+    {
+      "id": 118,
+      "key": "minecraft:sign_text_front",
+      "persistent": true,
+      "ignore_swap_animation": false
+    },
+    {
+      "id": 119,
+      "key": "minecraft:sign_text_back",
+      "persistent": true,
+      "ignore_swap_animation": false
+    },
+    {
+      "id": 120,
+      "key": "minecraft:waxed",
+      "persistent": true,
+      "ignore_swap_animation": false
+    },
+    {
+      "id": 121,
+      "key": "minecraft:cushion/color",
       "persistent": true,
       "ignore_swap_animation": false
     }
