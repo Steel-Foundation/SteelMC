@@ -57,7 +57,7 @@ pub struct EnderPearlEntity {
     /// Shared `Projectile` state (owner / left-owner / has-been-shot).
     projectile_base: ProjectileBase,
     /// Countdown until the chunk-loading ticket is refreshed (vanilla `ticketTimer`).
-    ticket_timer: SyncMutex<i32>,
+    ticket_timer: SyncMutex<i64>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `EnderPearlEntity`.
@@ -125,7 +125,7 @@ impl EnderPearlEntity {
 
         world.chunk_map.place_ender_pearl_ticket(current_chunk);
         // Vanilla `registerAndUpdateEnderPearlTicket` returns `timeout - 1`.
-        *timer = ENDER_PEARL_TICKET_TIMEOUT as i32 - 1;
+        *timer = ENDER_PEARL_TICKET_TIMEOUT - 1;
     }
 
     /// Vanilla `ThrownEnderpearl.tick` owner-death short-circuit: a pearl whose

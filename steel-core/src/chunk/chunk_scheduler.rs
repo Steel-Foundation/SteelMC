@@ -1,4 +1,4 @@
-//! Sequencing between gameplay ticket changes and background chunk scheduling.
+//! Coordinates authoritative ticket storage and chunk-level propagation.
 
 use std::{
     mem,
@@ -6,27 +6,35 @@ use std::{
     time::Duration,
 };
 
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
+use steel_registry::steel_ticket_types::CHUNK_REQUEST;
 use steel_utils::{ChunkPos, locks::SyncMutex};
+use uuid::Uuid;
 
 use crate::chunk::gameplay_chunk_lookup_cache::GameplayChunkLookupCacheStats;
 use crate::chunk::{
-    chunk_ticket_manager::{LoadLevelChange, LoadTicketManager},
+    chunk_ticket::ChunkTicket,
+    chunk_ticket_manager::{ChunkTicketLevel, LoadLevelChange, LoadTicketManager},
     chunk_ticket_storage::{
         ChunkTicketStorage, PersistentChunkTickets, SourceLevelUpdate, SourceProjectionChanges,
         TimedTicketExpiration,
     },
-    simulation_ticket_manager::SimulationTicketManager,
+    player_ticket_tracker::PlayerTicketTracker,
+    simulation_ticket_manager::{SimulationLevelChange, SimulationTicketManager},
 };
 
-pub(crate) use crate::chunk::chunk_ticket_storage::ChunkTicketOperation;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlayerTicketOperation {
+    Add { pos: ChunkPos, player_id: Uuid },
+    Remove { pos: ChunkPos, player_id: Uuid },
+}
 
-/// Timing information for one background epoch and its boundary commit.
+/// Timing information for one chunk-source update and its lifecycle commit.
 #[derive(Debug, Default)]
 pub struct ChunkMapSchedulingTimings {
     /// Time spent applying queued source projections and propagating their levels.
     pub ticket_updates: Duration,
-    /// Time spent finalizing block-entity unloads before the boundary commit.
+    /// Time spent finalizing block-entity unloads before lifecycle updates.
     pub block_entity_unloads: Duration,
     /// Time spent revoking ticking readiness before holder lifecycle changes.
     pub readiness_demotions: Duration,
@@ -44,7 +52,7 @@ pub struct ChunkMapSchedulingTimings {
     pub readiness_candidate_count: usize,
     /// Time spent rebuilding the published ticking-chunk snapshot.
     pub ticking_snapshot_rebuild: Duration,
-    /// Number of block-ticking chunks in a snapshot rebuilt during this epoch.
+    /// Number of block-ticking chunks in a snapshot rebuilt during this phase.
     pub rebuilt_ticking_chunk_count: usize,
     /// Scoped holder-cache activity during readiness reconciliation.
     pub lookup_cache: GameplayChunkLookupCacheStats,
@@ -58,305 +66,318 @@ pub struct ChunkMapSchedulingTimings {
     pub process_unloads: Duration,
 }
 
-/// Timing information produced by the background half of a scheduling epoch.
-///
-/// Boundary-only fields stay out of `PreparedChunkSchedulingEpoch` so the
-/// cross-thread scheduling state does not grow with game-thread observability.
-#[derive(Debug, Default)]
-pub(crate) struct ChunkMapPreparationTimings {
-    pub(crate) ticket_updates: Duration,
-    pub(crate) schedule_generation: Duration,
-    pub(crate) scheduled_count: usize,
-    pub(crate) run_generation: Duration,
-    pub(crate) process_unloads: Duration,
-}
-
-impl ChunkMapPreparationTimings {
-    pub(crate) fn into_scheduling_timings(self) -> ChunkMapSchedulingTimings {
-        ChunkMapSchedulingTimings {
-            ticket_updates: self.ticket_updates,
-            schedule_generation: self.schedule_generation,
-            scheduled_count: self.scheduled_count,
-            run_generation: self.run_generation,
-            process_unloads: self.process_unloads,
-            ..ChunkMapSchedulingTimings::default()
-        }
-    }
-}
-
-/// Revision assigned to an ordered batch of load-ticket operations.
+/// Barrier assigned to one ordered, non-empty ticket-operation submission.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct LoadTicketRevision(u64);
-
-impl LoadTicketRevision {
-    const INITIAL: Self = Self(0);
-
-    fn next(self) -> Self {
-        assert_ne!(self.0, u64::MAX, "load ticket revision exhausted");
-        Self(self.0 + 1)
-    }
-}
-
-/// Revision assigned to an ordered batch of simulation-ticket operations.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct SimulationTicketRevision(u64);
-
-impl SimulationTicketRevision {
-    const INITIAL: Self = Self(0);
-
-    fn next(self) -> Self {
-        assert_ne!(self.0, u64::MAX, "simulation ticket revision exhausted");
-        Self(self.0 + 1)
-    }
-}
-
-/// Revisions assigned to the domains affected by one ingress submission.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ChunkTicketReceipt {
-    load: Option<LoadTicketRevision>,
-    simulation: Option<SimulationTicketRevision>,
-}
+pub(crate) struct ChunkTicketReceipt(u64);
 
 impl ChunkTicketReceipt {
-    #[must_use]
-    #[cfg(test)]
-    pub(crate) const fn load(self) -> Option<LoadTicketRevision> {
-        self.load
-    }
+    const INITIAL: Self = Self(0);
 
-    #[must_use]
-    #[cfg(test)]
-    pub(crate) const fn simulation(self) -> Option<SimulationTicketRevision> {
-        self.simulation
+    fn next(self) -> Self {
+        assert_ne!(self.0, u64::MAX, "chunk ticket receipt exhausted");
+        Self(self.0 + 1)
     }
+}
+
+/// Coherent loading and simulation changes through one ingress barrier.
+#[must_use = "chunk scheduling changes must be applied before publishing the receipt"]
+#[derive(Debug, Default)]
+pub(crate) struct ChunkSchedulingUpdateBatch {
+    pub(crate) through_receipt: ChunkTicketReceipt,
+    pub(crate) load_changes: Vec<LoadLevelChange>,
+    pub(crate) simulation_changes: Vec<SimulationLevelChange>,
 }
 
 #[derive(Debug)]
-struct PendingSourceProjection<R> {
-    latest_revision: R,
-    dirty_positions: FxHashSet<ChunkPos>,
+struct SourceProjectionBatch {
+    through_receipt: ChunkTicketReceipt,
+    load_updates: Vec<SourceLevelUpdate>,
+    simulation_updates: Vec<SourceLevelUpdate>,
 }
 
-impl<R: Copy> PendingSourceProjection<R> {
-    fn new(initial_revision: R) -> Self {
+#[derive(Debug)]
+struct TicketOperationIngress {
+    storage: ChunkTicketStorage,
+    player_tickets: PlayerTicketTracker,
+    chunk_request_leases: FxHashMap<(ChunkPos, ChunkTicketLevel), usize>,
+    latest_receipt: ChunkTicketReceipt,
+    dirty_load_positions: FxHashSet<ChunkPos>,
+    dirty_simulation_positions: FxHashSet<ChunkPos>,
+}
+
+impl TicketOperationIngress {
+    fn new(storage: ChunkTicketStorage, view_distance: u8, simulation_distance: u8) -> Self {
         Self {
-            latest_revision: initial_revision,
-            dirty_positions: FxHashSet::default(),
+            storage,
+            player_tickets: PlayerTicketTracker::new(view_distance, simulation_distance),
+            chunk_request_leases: FxHashMap::default(),
+            latest_receipt: ChunkTicketReceipt::INITIAL,
+            dirty_load_positions: FxHashSet::default(),
+            dirty_simulation_positions: FxHashSet::default(),
         }
     }
 
-    fn allocate_revision(&mut self, next: impl FnOnce(R) -> R) -> R {
-        let revision = next(self.latest_revision);
-        self.latest_revision = revision;
-        revision
+    fn push_player(&mut self, operation: PlayerTicketOperation) -> ChunkTicketReceipt {
+        let changes = self.apply_player_operation(operation);
+        self.record_changes(changes);
+        self.allocate_receipt()
     }
 
-    fn mark_positions(&mut self, positions: impl IntoIterator<Item = ChunkPos>) {
-        self.dirty_positions.extend(positions);
+    fn push_player_batch(
+        &mut self,
+        operations: impl IntoIterator<Item = PlayerTicketOperation>,
+    ) -> Option<ChunkTicketReceipt> {
+        let mut operations = operations.into_iter().peekable();
+        operations.peek()?;
+        for operation in operations {
+            let changes = self.apply_player_operation(operation);
+            self.record_changes(changes);
+        }
+        Some(self.allocate_receipt())
     }
 
-    fn take_positions(&mut self) -> Vec<ChunkPos> {
-        let mut positions: Vec<_> = mem::take(&mut self.dirty_positions).into_iter().collect();
+    fn apply_player_operation(
+        &mut self,
+        operation: PlayerTicketOperation,
+    ) -> SourceProjectionChanges {
+        match operation {
+            PlayerTicketOperation::Add { pos, player_id } => {
+                self.player_tickets
+                    .add_player(&mut self.storage, pos, player_id)
+            }
+            PlayerTicketOperation::Remove { pos, player_id } => {
+                self.player_tickets
+                    .remove_player(&mut self.storage, pos, player_id)
+            }
+        }
+    }
+
+    fn acquire_chunk_request_leases(
+        &mut self,
+        positions: impl IntoIterator<Item = ChunkPos>,
+        ticket_level: ChunkTicketLevel,
+    ) -> Option<ChunkTicketReceipt> {
+        let mut positions = positions.into_iter().peekable();
+        positions.peek()?;
+
+        for pos in positions {
+            let lease_count = self
+                .chunk_request_leases
+                .entry((pos, ticket_level))
+                .or_default();
+            assert_ne!(
+                *lease_count,
+                usize::MAX,
+                "chunk request lease count exhausted"
+            );
+            let needs_ticket = *lease_count == 0;
+            *lease_count += 1;
+
+            if needs_ticket {
+                let ticket = ChunkTicket::new(&CHUNK_REQUEST, ticket_level);
+                let changes = self.storage.add_ticket(pos, ticket);
+                self.record_changes(changes);
+            }
+        }
+
+        Some(self.allocate_receipt())
+    }
+
+    fn release_chunk_request_leases(
+        &mut self,
+        positions: impl IntoIterator<Item = ChunkPos>,
+        ticket_level: ChunkTicketLevel,
+    ) -> Option<ChunkTicketReceipt> {
+        let mut positions = positions.into_iter().peekable();
+        positions.peek()?;
+
+        for pos in positions {
+            let key = (pos, ticket_level);
+            let Some(lease_count) = self.chunk_request_leases.get_mut(&key) else {
+                panic!("released an unowned chunk request lease at {pos:?}");
+            };
+            let remove_ticket = *lease_count == 1;
+            if remove_ticket {
+                self.chunk_request_leases.remove(&key);
+                let ticket = ChunkTicket::new(&CHUNK_REQUEST, ticket_level);
+                let changes = self.storage.remove_ticket(pos, ticket);
+                self.record_changes(changes);
+            } else {
+                *lease_count -= 1;
+            }
+        }
+
+        Some(self.allocate_receipt())
+    }
+
+    fn record_changes(&mut self, changes: SourceProjectionChanges) {
+        let SourceProjectionChanges {
+            load_positions,
+            simulation_positions,
+        } = changes;
+
+        self.dirty_load_positions.extend(load_positions);
+        self.dirty_simulation_positions.extend(simulation_positions);
+    }
+
+    fn allocate_receipt(&mut self) -> ChunkTicketReceipt {
+        self.latest_receipt = self.latest_receipt.next();
+        self.latest_receipt
+    }
+
+    fn take_source_projections(
+        &mut self,
+        view_distance: u8,
+        simulation_distance: u8,
+    ) -> SourceProjectionBatch {
+        let view_distance_changes = self
+            .player_tickets
+            .set_view_distance(&mut self.storage, view_distance);
+        self.record_changes(view_distance_changes);
+        let simulation_distance_changes = self
+            .player_tickets
+            .set_simulation_distance(&mut self.storage, simulation_distance);
+        self.record_changes(simulation_distance_changes);
+
+        let load_positions = Self::take_sorted_positions(&mut self.dirty_load_positions);
+        let simulation_positions =
+            Self::take_sorted_positions(&mut self.dirty_simulation_positions);
+        let load_updates = load_positions
+            .into_iter()
+            .map(|pos| self.storage.load_source_update(pos))
+            .collect();
+        let simulation_updates = simulation_positions
+            .into_iter()
+            .map(|pos| self.storage.simulation_source_update(pos))
+            .collect();
+
+        SourceProjectionBatch {
+            through_receipt: self.latest_receipt,
+            load_updates,
+            simulation_updates,
+        }
+    }
+
+    fn take_sorted_positions(positions: &mut FxHashSet<ChunkPos>) -> Vec<ChunkPos> {
+        let mut positions: Vec<_> = mem::take(positions).into_iter().collect();
         positions.sort_unstable_by_key(|pos| (pos.0.x, pos.0.y));
         positions
     }
 }
 
 #[derive(Debug)]
-struct TicketOperationIngress {
-    storage: ChunkTicketStorage,
-    load: PendingSourceProjection<LoadTicketRevision>,
-    simulation: PendingSourceProjection<SimulationTicketRevision>,
+struct ChunkSchedulingTrackers {
+    load: LoadTicketManager,
+    simulation: SimulationTicketManager,
 }
 
-impl TicketOperationIngress {
-    fn new(storage: ChunkTicketStorage) -> Self {
-        Self {
-            storage,
-            load: PendingSourceProjection::new(LoadTicketRevision::INITIAL),
-            simulation: PendingSourceProjection::new(SimulationTicketRevision::INITIAL),
-        }
-    }
-
-    fn push(&mut self, operation: ChunkTicketOperation) -> ChunkTicketReceipt {
-        let changes = self.storage.apply(operation);
-        let receipt = self.record_changes(changes);
-        assert!(
-            receipt.load.is_some(),
-            "every submitted ticket operation must affect loading"
-        );
-        receipt
-    }
-
-    fn push_batch(
-        &mut self,
-        operations: impl IntoIterator<Item = ChunkTicketOperation>,
-    ) -> Option<ChunkTicketReceipt> {
-        let changes = self.storage.apply_operations(operations);
-        if !changes.load_domain_affected {
-            return None;
-        }
-
-        Some(self.record_changes(changes))
-    }
-
-    fn record_changes(&mut self, changes: SourceProjectionChanges) -> ChunkTicketReceipt {
-        let SourceProjectionChanges {
-            load_positions,
-            simulation_positions,
-            load_domain_affected,
-            simulation_domain_affected,
-        } = changes;
-
-        let load = load_domain_affected.then(|| {
-            self.load.mark_positions(load_positions);
-            self.load.allocate_revision(LoadTicketRevision::next)
-        });
-        let simulation = simulation_domain_affected.then(|| {
-            self.simulation.mark_positions(simulation_positions);
-            self.simulation
-                .allocate_revision(SimulationTicketRevision::next)
-        });
-
-        ChunkTicketReceipt { load, simulation }
-    }
-
-    fn take_load_projection(&mut self) -> (Vec<SourceLevelUpdate>, LoadTicketRevision) {
-        let positions = self.load.take_positions();
-        let updates = positions
-            .into_iter()
-            .map(|pos| self.storage.load_source_update(pos))
-            .collect();
-        (updates, self.load.latest_revision)
-    }
-
-    fn take_simulation_projection(
-        &mut self,
-        simulation_distance: u8,
-    ) -> (Vec<SourceLevelUpdate>, SimulationTicketRevision) {
-        let distance_changes = self.storage.set_simulation_distance(simulation_distance);
-        self.simulation
-            .mark_positions(distance_changes.simulation_positions);
-
-        let positions = self.simulation.take_positions();
-        let updates = positions
-            .into_iter()
-            .map(|pos| self.storage.simulation_source_update(pos))
-            .collect();
-        (updates, self.simulation.latest_revision)
-    }
-
-    fn record_if_affected(&mut self, changes: SourceProjectionChanges) {
-        if !changes.load_domain_affected && !changes.simulation_domain_affected {
-            return;
-        }
-
-        self.record_changes(changes);
-    }
-}
-
-pub(crate) struct PreparedChunkSchedulingEpoch {
-    pub ticket_manager: LoadTicketManager,
-    pub applied_revision: LoadTicketRevision,
-    pub changes: Vec<LoadLevelChange>,
-    pub timings: ChunkMapPreparationTimings,
-}
-
-enum ChunkSchedulingState {
-    Idle {
-        ticket_manager: LoadTicketManager,
-        applied_revision: LoadTicketRevision,
-    },
-    Running,
-    Ready(PreparedChunkSchedulingEpoch),
-}
-
-pub(crate) enum ChunkSchedulingBoundaryStep {
-    Running,
-    Start {
-        ticket_manager: LoadTicketManager,
-        applied_revision: LoadTicketRevision,
-    },
-    Commit(PreparedChunkSchedulingEpoch),
-}
-
-/// Owns authoritative ticket sources and the non-blocking epoch handoff.
+/// Owns authoritative ticket sources and their two propagation trackers.
 ///
-/// Gameplay mutates source ownership under the ingress lock. Loading and
-/// simulation propagation consume coalesced level projections outside it.
+/// Gameplay submissions only lock ingress. Update propagation locks trackers
+/// first, snapshots both source projections under ingress, then releases
+/// ingress before either tracker propagates.
 pub(crate) struct ChunkSchedulingCoordinator {
     ticket_ingress: SyncMutex<TicketOperationIngress>,
-    state: SyncMutex<ChunkSchedulingState>,
-    committed_load_revision: AtomicU64,
-    committed_simulation_revision: AtomicU64,
+    trackers: SyncMutex<ChunkSchedulingTrackers>,
+    committed_receipt: AtomicU64,
 }
 
 impl ChunkSchedulingCoordinator {
-    pub fn new(ticket_storage: ChunkTicketStorage, ticket_manager: LoadTicketManager) -> Self {
+    pub fn new(
+        ticket_storage: ChunkTicketStorage,
+        view_distance: u8,
+        simulation_distance: u8,
+    ) -> Self {
+        let initial_load_sources = ticket_storage.initial_load_sources();
+        let initial_simulation_sources = ticket_storage.initial_simulation_sources();
+        let mut load = LoadTicketManager::new();
+        load.apply_source_updates(initial_load_sources);
+        let mut simulation = SimulationTicketManager::new();
+        simulation.apply_source_updates(initial_simulation_sources);
+
         Self {
-            ticket_ingress: SyncMutex::new(TicketOperationIngress::new(ticket_storage)),
-            state: SyncMutex::new(ChunkSchedulingState::Idle {
-                ticket_manager,
-                applied_revision: LoadTicketRevision::INITIAL,
-            }),
-            committed_load_revision: AtomicU64::new(LoadTicketRevision::INITIAL.0),
-            committed_simulation_revision: AtomicU64::new(SimulationTicketRevision::INITIAL.0),
+            ticket_ingress: SyncMutex::new(TicketOperationIngress::new(
+                ticket_storage,
+                view_distance,
+                simulation_distance,
+            )),
+            trackers: SyncMutex::new(ChunkSchedulingTrackers { load, simulation }),
+            committed_receipt: AtomicU64::new(ChunkTicketReceipt::INITIAL.0),
         }
     }
 
-    pub fn queue_ticket_operation(&self, operation: ChunkTicketOperation) -> ChunkTicketReceipt {
-        self.ticket_ingress.lock().push(operation)
+    pub(crate) fn queue_player_ticket_operation(
+        &self,
+        operation: PlayerTicketOperation,
+    ) -> ChunkTicketReceipt {
+        self.ticket_ingress.lock().push_player(operation)
     }
 
-    pub fn queue_ticket_operations(
+    pub(crate) fn queue_player_ticket_operations(
         &self,
-        operations: impl IntoIterator<Item = ChunkTicketOperation>,
+        operations: impl IntoIterator<Item = PlayerTicketOperation>,
     ) -> Option<ChunkTicketReceipt> {
-        self.ticket_ingress.lock().push_batch(operations)
+        self.ticket_ingress.lock().push_player_batch(operations)
     }
 
-    pub fn apply_pending_load_projection(
+    pub(crate) fn acquire_chunk_request_leases(
         &self,
-        ticket_manager: &mut LoadTicketManager,
-        applied_revision: LoadTicketRevision,
-    ) -> LoadTicketRevision {
-        let (updates, through_revision) = self.ticket_ingress.lock().take_load_projection();
-        assert!(
-            through_revision >= applied_revision,
-            "load projection revision moved backwards"
-        );
-        ticket_manager.apply_source_updates(updates);
-        through_revision
-    }
-
-    pub fn apply_pending_simulation_projection(
-        &self,
-        ticket_manager: &mut SimulationTicketManager,
-        applied_revision: SimulationTicketRevision,
-        simulation_distance: u8,
-    ) -> SimulationTicketRevision {
-        let (updates, through_revision) = self
-            .ticket_ingress
+        positions: impl IntoIterator<Item = ChunkPos>,
+        ticket_level: ChunkTicketLevel,
+    ) -> Option<ChunkTicketReceipt> {
+        self.ticket_ingress
             .lock()
-            .take_simulation_projection(simulation_distance);
-        assert!(
-            through_revision >= applied_revision,
-            "simulation projection revision moved backwards"
-        );
-        ticket_manager.apply_source_updates(updates);
-        through_revision
+            .acquire_chunk_request_leases(positions, ticket_level)
+    }
+
+    pub(crate) fn release_chunk_request_leases(
+        &self,
+        positions: impl IntoIterator<Item = ChunkPos>,
+        ticket_level: ChunkTicketLevel,
+    ) -> Option<ChunkTicketReceipt> {
+        self.ticket_ingress
+            .lock()
+            .release_chunk_request_leases(positions, ticket_level)
+    }
+
+    pub fn run_all_updates(
+        &self,
+        view_distance: u8,
+        simulation_distance: u8,
+    ) -> ChunkSchedulingUpdateBatch {
+        let mut trackers = self.trackers.lock();
+        let projections = {
+            let mut ingress = self.ticket_ingress.lock();
+            ingress.take_source_projections(view_distance, simulation_distance)
+        };
+
+        trackers
+            .simulation
+            .apply_source_updates(projections.simulation_updates);
+        trackers.simulation.run_all_updates();
+        let simulation_changes = trackers.simulation.take_changes();
+
+        trackers.load.apply_source_updates(projections.load_updates);
+        trackers.load.run_all_updates();
+        let load_changes = trackers.load.take_changes();
+
+        ChunkSchedulingUpdateBatch {
+            through_receipt: projections.through_receipt,
+            load_changes,
+            simulation_changes,
+        }
     }
 
     pub(crate) fn add_or_refresh_portal_ticket(&self, pos: ChunkPos) {
         let mut ingress = self.ticket_ingress.lock();
         let changes = ingress.storage.add_or_refresh_portal_ticket(pos);
-        ingress.record_if_affected(changes);
+        ingress.record_changes(changes);
     }
 
     pub(crate) fn add_or_refresh_ender_pearl_ticket(&self, pos: ChunkPos) {
         let mut ingress = self.ticket_ingress.lock();
         let changes = ingress.storage.add_or_refresh_ender_pearl_ticket(pos);
-        ingress.record_if_affected(changes);
+        ingress.record_changes(changes);
     }
 
     #[must_use]
@@ -370,7 +391,7 @@ impl ChunkSchedulingCoordinator {
     pub(crate) fn tick_timed_tickets(&self, expirations: &[TimedTicketExpiration]) {
         let mut ingress = self.ticket_ingress.lock();
         let changes = ingress.storage.tick_timed_tickets(expirations);
-        ingress.record_if_affected(changes);
+        ingress.record_changes(changes);
     }
 
     #[must_use]
@@ -378,344 +399,233 @@ impl ChunkSchedulingCoordinator {
         self.ticket_ingress.lock().storage.to_persistent()
     }
 
-    pub fn take_boundary_step(&self) -> ChunkSchedulingBoundaryStep {
-        let mut state = self.state.lock();
-        match mem::replace(&mut *state, ChunkSchedulingState::Running) {
-            ChunkSchedulingState::Idle {
-                ticket_manager,
-                applied_revision,
-            } => ChunkSchedulingBoundaryStep::Start {
-                ticket_manager,
-                applied_revision,
-            },
-            ChunkSchedulingState::Running => ChunkSchedulingBoundaryStep::Running,
-            ChunkSchedulingState::Ready(epoch) => ChunkSchedulingBoundaryStep::Commit(epoch),
-        }
-    }
-
-    pub fn finish_epoch(&self, epoch: PreparedChunkSchedulingEpoch) {
-        let mut state = self.state.lock();
-        assert!(
-            matches!(*state, ChunkSchedulingState::Running),
-            "chunk scheduling epoch finished while another epoch was not running"
-        );
-        *state = ChunkSchedulingState::Ready(epoch);
-    }
-
-    pub fn publish_committed_load_revision(&self, revision: LoadTicketRevision) {
-        self.committed_load_revision
-            .store(revision.0, Ordering::Release);
-    }
-
-    pub fn publish_committed_simulation_revision(&self, revision: SimulationTicketRevision) {
-        self.committed_simulation_revision
-            .store(revision.0, Ordering::Release);
-    }
-
     #[must_use]
-    pub fn is_load_revision_committed(&self, revision: LoadTicketRevision) -> bool {
-        self.committed_load_revision.load(Ordering::Acquire) >= revision.0
+    pub fn simulation_level(&self, pos: ChunkPos) -> Option<ChunkTicketLevel> {
+        self.trackers.lock().simulation.get_level(pos)
     }
 
-    #[must_use]
-    pub fn is_simulation_revision_committed(&self, revision: SimulationTicketRevision) -> bool {
-        self.committed_simulation_revision.load(Ordering::Acquire) >= revision.0
+    pub fn recycle_update_batch(&self, batch: ChunkSchedulingUpdateBatch) {
+        let mut trackers = self.trackers.lock();
+        trackers.load.recycle_changes(batch.load_changes);
+        trackers
+            .simulation
+            .recycle_changes(batch.simulation_changes);
+    }
+
+    pub fn publish_committed(&self, receipt: ChunkTicketReceipt) {
+        let _ = self
+            .committed_receipt
+            .fetch_max(receipt.0, Ordering::Release);
     }
 
     #[must_use]
     pub fn is_receipt_committed(&self, receipt: ChunkTicketReceipt) -> bool {
-        receipt
-            .load
-            .is_none_or(|revision| self.is_load_revision_committed(revision))
-            && receipt
-                .simulation
-                .is_none_or(|revision| self.is_simulation_revision_committed(revision))
+        self.committed_receipt.load(Ordering::Acquire) >= receipt.0
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::iter;
+
     use super::*;
-    use crate::chunk::chunk_ticket_manager::{ChunkTicket, ChunkTicketLevel};
+    use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
     use uuid::Uuid;
 
+    const TEST_VIEW_DISTANCE_CHUNKS: u8 = 4;
     const TEST_SIMULATION_DISTANCE_CHUNKS: u8 = 4;
 
     fn coordinator(simulation_distance: u8) -> ChunkSchedulingCoordinator {
         ChunkSchedulingCoordinator::new(
-            ChunkTicketStorage::new(simulation_distance),
-            LoadTicketManager::new(),
+            ChunkTicketStorage::new(),
+            TEST_VIEW_DISTANCE_CHUNKS,
+            simulation_distance,
         )
     }
 
+    fn has_load_change(
+        changes: &[LoadLevelChange],
+        pos: ChunkPos,
+        new_level: Option<ChunkTicketLevel>,
+    ) -> bool {
+        changes
+            .iter()
+            .any(|change| change.pos == pos && change.new_level == new_level)
+    }
+
+    fn has_simulation_change(
+        changes: &[SimulationLevelChange],
+        pos: ChunkPos,
+        new_level: Option<ChunkTicketLevel>,
+    ) -> bool {
+        changes
+            .iter()
+            .any(|change| change.pos == pos && change.new_level == new_level)
+    }
+
     #[test]
-    fn operations_coalesce_to_one_final_projection_per_position() {
-        let pos = ChunkPos::new(3, -2);
-        let weaker = ChunkTicket::simulated_full_chunks(3);
-        let stronger = ChunkTicket::simulated_full_chunks(1);
-        let mut ingress =
-            TicketOperationIngress::new(ChunkTicketStorage::new(TEST_SIMULATION_DISTANCE_CHUNKS));
+    fn chunk_request_leases_share_one_ticket_and_keep_ordered_receipts() {
+        let pos = ChunkPos::new(6, -9);
+        let level = ChunkTicketLevel::FULL_CHUNK;
+        let mut ingress = TicketOperationIngress::new(
+            ChunkTicketStorage::new(),
+            TEST_VIEW_DISTANCE_CHUNKS,
+            TEST_SIMULATION_DISTANCE_CHUNKS,
+        );
 
-        let receipt = ingress
-            .push_batch([
-                ChunkTicketOperation::Add {
-                    pos,
-                    ticket: weaker,
-                },
-                ChunkTicketOperation::Add {
-                    pos,
-                    ticket: stronger,
-                },
-                ChunkTicketOperation::Remove {
-                    pos,
-                    ticket: weaker,
-                },
-            ])
-            .expect("non-empty batch should produce a receipt");
-        let (load_updates, load_revision) = ingress.take_load_projection();
-        let (simulation_updates, simulation_revision) =
-            ingress.take_simulation_projection(TEST_SIMULATION_DISTANCE_CHUNKS);
+        let first_acquire = ingress
+            .acquire_chunk_request_leases([pos], level)
+            .expect("non-empty acquisition should produce a receipt");
+        let second_acquire = ingress
+            .acquire_chunk_request_leases([pos], level)
+            .expect("non-empty acquisition should produce a receipt");
+        let additions = ingress
+            .take_source_projections(TEST_VIEW_DISTANCE_CHUNKS, TEST_SIMULATION_DISTANCE_CHUNKS);
 
-        assert_eq!(receipt.load(), Some(load_revision));
-        assert_eq!(receipt.simulation(), Some(simulation_revision));
+        assert!(second_acquire > first_acquire);
+        assert_eq!(additions.through_receipt, second_acquire);
         assert_eq!(
-            load_updates,
+            additions.load_updates,
             [SourceLevelUpdate {
                 pos,
-                level: Some(stronger.load_level()),
+                level: Some(level),
             }]
         );
+
+        let first_release = ingress
+            .release_chunk_request_leases([pos], level)
+            .expect("non-empty release should produce a receipt");
+        let retained = ingress
+            .take_source_projections(TEST_VIEW_DISTANCE_CHUNKS, TEST_SIMULATION_DISTANCE_CHUNKS);
+        assert!(first_release > second_acquire);
+        assert_eq!(retained.through_receipt, first_release);
+        assert_eq!(retained.load_updates, []);
+
+        let final_release = ingress
+            .release_chunk_request_leases([pos], level)
+            .expect("non-empty release should produce a receipt");
+        let removal = ingress
+            .take_source_projections(TEST_VIEW_DISTANCE_CHUNKS, TEST_SIMULATION_DISTANCE_CHUNKS);
+        assert!(final_release > first_release);
+        assert_eq!(removal.through_receipt, final_release);
         assert_eq!(
-            simulation_updates,
-            [SourceLevelUpdate {
-                pos,
-                level: stronger.simulation_level(),
-            }]
+            removal.load_updates,
+            [SourceLevelUpdate { pos, level: None }]
         );
     }
 
     #[test]
-    fn no_op_receipts_advance_when_both_projections_are_drained() {
+    fn empty_batches_have_no_receipt_and_true_no_ops_are_barriers() {
         let coordinator = coordinator(TEST_SIMULATION_DISTANCE_CHUNKS);
-        let pos = ChunkPos::new(0, 0);
-        let receipt = coordinator.queue_ticket_operation(ChunkTicketOperation::Remove {
-            pos,
-            ticket: ChunkTicket::simulated_full_chunks(0),
-        });
-        let mut load_manager = LoadTicketManager::new();
-        let mut simulation_manager = SimulationTicketManager::new();
-
-        let load_revision = coordinator
-            .apply_pending_load_projection(&mut load_manager, LoadTicketRevision::INITIAL);
-        let simulation_revision = coordinator.apply_pending_simulation_projection(
-            &mut simulation_manager,
-            SimulationTicketRevision::INITIAL,
-            TEST_SIMULATION_DISTANCE_CHUNKS,
+        assert_eq!(
+            coordinator.queue_player_ticket_operations(iter::empty()),
+            None
         );
 
-        assert_eq!(receipt.load(), Some(load_revision));
-        assert_eq!(receipt.simulation(), Some(simulation_revision));
-        assert_eq!(load_manager.run_all_updates(), []);
-        assert_eq!(simulation_manager.run_all_updates(), []);
+        let pos = ChunkPos::new(0, 0);
+        let receipt = coordinator.queue_player_ticket_operation(PlayerTicketOperation::Remove {
+            pos,
+            player_id: Uuid::from_u128(1),
+        });
+        let batch =
+            coordinator.run_all_updates(TEST_VIEW_DISTANCE_CHUNKS, TEST_SIMULATION_DISTANCE_CHUNKS);
+
+        assert_eq!(receipt, ChunkTicketReceipt(1));
+        assert_eq!(batch.through_receipt, receipt);
+        assert_eq!(batch.load_changes, []);
+        assert_eq!(batch.simulation_changes, []);
         assert!(!coordinator.is_receipt_committed(receipt));
 
-        coordinator.publish_committed_load_revision(load_revision);
-        coordinator.publish_committed_simulation_revision(simulation_revision);
+        coordinator.publish_committed(batch.through_receipt);
         assert!(coordinator.is_receipt_committed(receipt));
     }
 
     #[test]
-    fn domains_converge_when_a_submission_lands_between_projection_drains() {
+    fn unified_batch_and_receipt_commit_atomically() {
         let coordinator = coordinator(TEST_SIMULATION_DISTANCE_CHUNKS);
         let pos = ChunkPos::new(0, 0);
-        let ticket = ChunkTicket::simulated_full_chunks(0);
-        let _ = coordinator.queue_ticket_operation(ChunkTicketOperation::Add { pos, ticket });
-        let mut load_manager = LoadTicketManager::new();
-        let mut simulation_manager = SimulationTicketManager::new();
-
-        let first_load = coordinator
-            .apply_pending_load_projection(&mut load_manager, LoadTicketRevision::INITIAL);
-        load_manager.run_all_updates();
-        assert!(load_manager.get_level(pos).is_some());
-
-        let removal =
-            coordinator.queue_ticket_operation(ChunkTicketOperation::Remove { pos, ticket });
-        let simulation = coordinator.apply_pending_simulation_projection(
-            &mut simulation_manager,
-            SimulationTicketRevision::INITIAL,
-            TEST_SIMULATION_DISTANCE_CHUNKS,
-        );
-        let load = coordinator.apply_pending_load_projection(&mut load_manager, first_load);
-        simulation_manager.run_all_updates();
-        load_manager.run_all_updates();
-
-        assert_eq!(removal.load(), Some(load));
-        assert_eq!(removal.simulation(), Some(simulation));
-        assert_eq!(load_manager.get_level(pos), None);
-        assert_eq!(simulation_manager.get_level(pos), None);
-    }
-
-    #[test]
-    fn player_moves_and_stale_removals_use_one_authoritative_source() {
-        let simulation_distance = TEST_SIMULATION_DISTANCE_CHUNKS;
-        let coordinator = coordinator(simulation_distance);
-        let old_pos = ChunkPos::new(0, 0);
-        let new_pos = ChunkPos::new(100, 0);
-        let player_id = Uuid::from_u128(4);
-        let load_level = ChunkTicketLevel::ENTITY_TICKING_CHUNK;
+        let player_id = Uuid::from_u128(2);
         let receipt = coordinator
-            .queue_ticket_operations([
-                ChunkTicketOperation::AddPlayer {
-                    pos: old_pos,
-                    player_id,
-                    load_level,
-                },
-                ChunkTicketOperation::AddPlayer {
-                    pos: new_pos,
-                    player_id,
-                    load_level,
-                },
-                ChunkTicketOperation::RemovePlayer {
-                    pos: old_pos,
-                    player_id,
-                },
-            ])
-            .expect("non-empty batch should produce a receipt");
-        let mut load_manager = LoadTicketManager::new();
-        let mut simulation_manager = SimulationTicketManager::new();
+            .queue_player_ticket_operation(PlayerTicketOperation::Add { pos, player_id });
 
-        let applied_load = coordinator
-            .apply_pending_load_projection(&mut load_manager, LoadTicketRevision::INITIAL);
-        let applied_simulation = coordinator.apply_pending_simulation_projection(
-            &mut simulation_manager,
-            SimulationTicketRevision::INITIAL,
-            simulation_distance,
-        );
-        load_manager.run_all_updates();
-        simulation_manager.run_all_updates();
+        let batch =
+            coordinator.run_all_updates(TEST_VIEW_DISTANCE_CHUNKS, TEST_SIMULATION_DISTANCE_CHUNKS);
 
-        assert_eq!(receipt.load(), Some(applied_load));
-        assert_eq!(receipt.simulation(), Some(applied_simulation));
-        assert_eq!(load_manager.get_level(old_pos), None);
-        assert_eq!(load_manager.get_level(new_pos), Some(load_level));
-        assert_eq!(simulation_manager.get_level(old_pos), None);
-        assert_eq!(
-            simulation_manager.get_level(new_pos),
+        assert_eq!(batch.through_receipt, receipt);
+        assert!(has_load_change(
+            &batch.load_changes,
+            pos,
+            Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK)
+        ));
+        assert!(has_simulation_change(
+            &batch.simulation_changes,
+            pos,
             Some(ChunkTicketLevel::for_entity_ticking_radius(
-                simulation_distance
+                TEST_SIMULATION_DISTANCE_CHUNKS
+            ))
+        ));
+        assert_eq!(
+            coordinator.simulation_level(pos),
+            Some(ChunkTicketLevel::for_entity_ticking_radius(
+                TEST_SIMULATION_DISTANCE_CHUNKS
             ))
         );
+        assert!(!coordinator.is_receipt_committed(receipt));
+
+        coordinator.publish_committed(batch.through_receipt);
+        assert!(coordinator.is_receipt_committed(receipt));
+        coordinator.recycle_update_batch(batch);
+
+        let removal = coordinator
+            .queue_player_ticket_operation(PlayerTicketOperation::Remove { pos, player_id });
+        let batch =
+            coordinator.run_all_updates(TEST_VIEW_DISTANCE_CHUNKS, TEST_SIMULATION_DISTANCE_CHUNKS);
+        assert_eq!(removal, ChunkTicketReceipt(2));
+        assert_eq!(batch.through_receipt, removal);
+        assert!(has_load_change(&batch.load_changes, pos, None));
+        assert!(has_simulation_change(&batch.simulation_changes, pos, None));
+        assert!(!coordinator.is_receipt_committed(removal));
+
+        coordinator.publish_committed(batch.through_receipt);
+        assert!(coordinator.is_receipt_committed(removal));
     }
 
     #[test]
-    fn load_and_simulation_domains_commit_independently() {
-        let coordinator = coordinator(TEST_SIMULATION_DISTANCE_CHUNKS);
-        let pos = ChunkPos::new(0, 0);
-        let load_only = coordinator.queue_ticket_operation(ChunkTicketOperation::Add {
-            pos,
-            ticket: ChunkTicket::full_chunks(0),
-        });
-        let shared = coordinator.queue_ticket_operation(ChunkTicketOperation::Add {
-            pos,
-            ticket: ChunkTicket::simulated_full_chunks(0),
-        });
-
-        coordinator
-            .publish_committed_load_revision(load_only.load().expect("ticket affects loading"));
-        assert!(coordinator.is_receipt_committed(load_only));
-        assert!(!coordinator.is_receipt_committed(shared));
-
-        coordinator.publish_committed_load_revision(shared.load().expect("ticket affects loading"));
-        assert!(!coordinator.is_receipt_committed(shared));
-
-        coordinator.publish_committed_simulation_revision(
-            shared.simulation().expect("ticket affects simulation"),
-        );
-        assert!(coordinator.is_receipt_committed(shared));
-    }
-
-    #[test]
-    fn simulation_distance_change_reprojects_players_without_a_new_revision() {
+    fn simulation_distance_reprojects_players_without_allocating_a_receipt() {
         let initial_distance = 2;
-        let updated_distance = 6;
+        let updated_distance = 3;
         let coordinator = coordinator(initial_distance);
         let pos = ChunkPos::new(5, -3);
-        let receipt = coordinator.queue_ticket_operation(ChunkTicketOperation::AddPlayer {
+        let receipt = coordinator.queue_player_ticket_operation(PlayerTicketOperation::Add {
             pos,
             player_id: Uuid::from_u128(5),
-            load_level: ChunkTicketLevel::ENTITY_TICKING_CHUNK,
         });
-        let mut simulation_manager = SimulationTicketManager::new();
-        let applied_revision = coordinator.apply_pending_simulation_projection(
-            &mut simulation_manager,
-            SimulationTicketRevision::INITIAL,
-            initial_distance,
-        );
-        simulation_manager.run_all_updates();
-        assert_eq!(receipt.simulation(), Some(applied_revision));
+
+        let initial = coordinator.run_all_updates(TEST_VIEW_DISTANCE_CHUNKS, initial_distance);
+        assert_eq!(initial.through_receipt, receipt);
         assert_eq!(
-            simulation_manager.get_level(pos),
+            coordinator.simulation_level(pos),
             Some(ChunkTicketLevel::for_entity_ticking_radius(
                 initial_distance
             ))
         );
 
-        let unchanged_revision = coordinator.apply_pending_simulation_projection(
-            &mut simulation_manager,
-            applied_revision,
-            updated_distance,
-        );
-        simulation_manager.run_all_updates();
+        let updated = coordinator.run_all_updates(TEST_VIEW_DISTANCE_CHUNKS, updated_distance);
 
-        assert_eq!(unchanged_revision, applied_revision);
+        assert_eq!(updated.through_receipt, receipt);
+        assert_eq!(updated.load_changes, []);
+        assert!(has_simulation_change(
+            &updated.simulation_changes,
+            pos,
+            Some(ChunkTicketLevel::for_entity_ticking_radius(
+                updated_distance
+            ))
+        ));
         assert_eq!(
-            simulation_manager.get_level(pos),
+            coordinator.simulation_level(pos),
             Some(ChunkTicketLevel::for_entity_ticking_radius(
                 updated_distance
             ))
         );
-    }
-
-    #[test]
-    fn prepared_load_revision_is_not_visible_before_boundary_publication() {
-        let coordinator = coordinator(TEST_SIMULATION_DISTANCE_CHUNKS);
-        let receipt = coordinator
-            .queue_ticket_operations([ChunkTicketOperation::Add {
-                pos: ChunkPos::new(0, 0),
-                ticket: ChunkTicket::full_chunks(0),
-            }])
-            .expect("non-empty batch should produce a receipt");
-        let revision = receipt.load().expect("ticket affects loading");
-        let ChunkSchedulingBoundaryStep::Start {
-            mut ticket_manager,
-            applied_revision,
-        } = coordinator.take_boundary_step()
-        else {
-            panic!("idle coordinator should start its first epoch");
-        };
-        assert!(matches!(
-            coordinator.take_boundary_step(),
-            ChunkSchedulingBoundaryStep::Running
-        ));
-        let applied =
-            coordinator.apply_pending_load_projection(&mut ticket_manager, applied_revision);
-        ticket_manager.run_all_updates();
-        let changes = ticket_manager.take_changes();
-        coordinator.finish_epoch(PreparedChunkSchedulingEpoch {
-            ticket_manager,
-            applied_revision: applied,
-            changes,
-            timings: ChunkMapPreparationTimings::default(),
-        });
-
-        assert_eq!(applied, revision);
-        assert!(!coordinator.is_load_revision_committed(revision));
-
-        let ChunkSchedulingBoundaryStep::Commit(epoch) = coordinator.take_boundary_step() else {
-            panic!("finished epoch should be committed at the next boundary");
-        };
-        coordinator.publish_committed_load_revision(epoch.applied_revision);
-
-        assert!(coordinator.is_load_revision_committed(revision));
     }
 }

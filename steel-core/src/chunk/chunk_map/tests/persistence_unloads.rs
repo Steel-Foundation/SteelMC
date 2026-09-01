@@ -1,4 +1,30 @@
 use super::*;
+use std::thread;
+
+#[test]
+fn world_tick_spawns_dirty_unload_save_on_the_chunk_runtime() {
+    let world = fresh_test_world("world_tick_dirty_unload");
+    let pos = ChunkPos::new(2, 3);
+    let holder = unloaded_light_holder(pos);
+    let Some(chunk) = holder.try_chunk(ChunkStatus::Light) else {
+        panic!("test holder should contain a light-status chunk");
+    };
+    chunk.mark_dirty();
+    let _ = world
+        .chunk_map
+        .unloading_chunks
+        .insert_sync(pos, Arc::clone(&holder));
+    drop(holder);
+
+    let tick_world = Arc::clone(&world);
+    let tick = thread::spawn(move || tick_world.tick_game(1, false));
+    assert!(
+        tick.join().is_ok(),
+        "a world tick outside Tokio must still enqueue unload saves"
+    );
+
+    stop_chunk_tasks(&world);
+}
 
 #[test]
 fn save_retry_marks_same_unloading_holder_dirty() {
@@ -57,6 +83,41 @@ fn revival_during_save_preparation_is_retried_at_the_next_lifecycle_boundary() {
     assert!(Arc::ptr_eq(&original, &revived));
     assert!(world.chunk_map.chunks.contains_sync(&chunk_pos));
     assert!(!world.chunk_map.unloading_chunks.contains_sync(&chunk_pos));
+}
+
+#[test]
+fn ticket_receipt_waits_for_deferred_holder_revival() {
+    let world = fresh_test_world("deferred_revival_receipt");
+    let pos = ChunkPos::new(0, 0);
+    let holder = insert_ready_full_chunk(&world, pos);
+    world.chunk_map.update_chunk_level(pos, None);
+    let preparation = holder
+        .try_begin_save_preparation()
+        .expect("the unloading holder should reserve save preparation");
+
+    let receipt = world
+        .chunk_map
+        .acquire_chunk_request_leases(&[pos], ChunkTicketLevel::MAX)
+        .expect("one request lease should produce a receipt");
+    world.chunk_map.advance_scheduling();
+
+    assert!(!world.chunk_map.is_ticket_receipt_committed(receipt));
+    assert!(!world.chunk_map.chunks.contains_sync(&pos));
+
+    drop(preparation);
+    world.chunk_map.advance_scheduling();
+
+    assert!(world.chunk_map.is_ticket_receipt_committed(receipt));
+    assert!(
+        world
+            .chunk_map
+            .chunks
+            .read_sync(&pos, |_, active| Arc::ptr_eq(active, &holder))
+            .unwrap_or(false),
+        "the receipt should publish only after the original holder revives"
+    );
+
+    stop_chunk_tasks(&world);
 }
 
 #[test]
@@ -131,42 +192,6 @@ fn final_full_chunk_unload_finalizes_chunk_owned_tick_queues() {
 
     world.chunk_map.finish_block_entity_unloads();
     assert_eq!(world.block_entity_tickers().registered_len(), 0);
-}
-
-#[test]
-fn replaced_layout_releases_inactive_ready_holder_after_readers_finish() {
-    init_vanilla_registry();
-    init_behaviors();
-    let world = fresh_test_world("inactive_ready_layout_unload");
-    let chunk_pos = ChunkPos::new(0, 0);
-    let holder = insert_ready_full_chunk(&world, chunk_pos);
-    holder.set_simulation_level(None);
-    world.chunk_map.rebuild_ticking_chunk_snapshot();
-    let old_snapshot = world.chunk_map.ticking_chunks.load_full();
-    let slot = old_snapshot.layout.slot_by_pos[&chunk_pos];
-    assert!(!old_snapshot.block.contains(slot));
-    let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
-        panic!("inserted test chunk must remain Full");
-    };
-    chunk.take_dirty();
-
-    world.chunk_map.update_chunk_level(chunk_pos, None);
-    world.chunk_map.rebuild_ticking_chunk_snapshot();
-    drop(holder);
-    let _runtime_guard = world.chunk_map.chunk_runtime.enter();
-
-    world.chunk_map.process_unloads(&FxHashSet::default());
-    assert!(
-        world.chunk_map.unloading_chunks.contains_sync(&chunk_pos),
-        "a reader retaining the old immutable layout must keep its holder alive"
-    );
-
-    drop(old_snapshot);
-    world.chunk_map.process_unloads(&FxHashSet::default());
-    assert!(
-        !world.chunk_map.unloading_chunks.contains_sync(&chunk_pos),
-        "the replacement layout must not retain an inactive unloaded holder"
-    );
 }
 
 #[test]

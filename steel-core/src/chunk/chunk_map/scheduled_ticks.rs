@@ -11,18 +11,10 @@ impl ChunkMap {
         tickable_chunks: &TickingChunkSnapshot,
         current_tick: i64,
     ) -> Vec<BlockTick> {
-        let collected = match world.begin_scheduled_tick_phase(
-            tickable_chunks.layout.scheduler_generation,
-            current_tick,
-            MAX_SCHEDULED_TICKS_PER_TICK,
-        ) {
-            Ok(collected) => collected,
-            Err(error) => {
-                panic!("scheduled block-tick collection used a stale ticking snapshot: {error:?}")
-            }
-        };
+        let collected =
+            world.begin_scheduled_tick_phase(current_tick, MAX_SCHEDULED_TICKS_PER_TICK);
         for index in collected.changed_containers {
-            let tickable = &tickable_chunks.layout.entries[index];
+            let tickable = &tickable_chunks.block[index];
             let Some(chunk) = tickable.holder.try_chunk(ChunkStatus::Full) else {
                 panic!("published ticking snapshot lost a Full chunk");
             };
@@ -38,18 +30,10 @@ impl ChunkMap {
         tickable_chunks: &TickingChunkSnapshot,
         current_tick: i64,
     ) -> Vec<FluidTick> {
-        let collected = match world.collect_scheduled_fluid_tick_batch(
-            tickable_chunks.layout.scheduler_generation,
-            current_tick,
-            MAX_SCHEDULED_TICKS_PER_TICK,
-        ) {
-            Ok(collected) => collected,
-            Err(error) => {
-                panic!("scheduled fluid-tick collection used a stale ticking snapshot: {error:?}")
-            }
-        };
+        let collected =
+            world.collect_scheduled_fluid_tick_batch(current_tick, MAX_SCHEDULED_TICKS_PER_TICK);
         for index in collected.changed_containers {
-            let tickable = &tickable_chunks.layout.entries[index];
+            let tickable = &tickable_chunks.block[index];
             let Some(chunk) = tickable.holder.try_chunk(ChunkStatus::Full) else {
                 panic!("published ticking snapshot lost a Full chunk");
             };

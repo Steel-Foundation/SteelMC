@@ -24,8 +24,7 @@ impl Server {
         (tick_count, runs_normally)
     }
 
-    /// Runs gameplay packets, game ticks, and chunk sending. Game-tick boundaries
-    /// fork background chunk-scheduling epochs through each world's task tracker.
+    /// Runs gameplay packets, game ticks, and chunk sending.
     pub async fn run(self: Arc<Self>, cancel_token: CancellationToken) {
         self.packet_processor.open_after_tick();
         let packet_worker_count = configured_packet_workers(self.config.packet_workers);
@@ -134,7 +133,6 @@ impl Server {
 
             let tick_start = Instant::now();
             self.packet_processor.close_for_tick().await;
-            self.advance_chunk_scheduling();
             self.start_player_disconnect_saves(&mut player_disconnect_saves);
 
             let (tick_count, runs_normally) = self.advance_server_tick();
@@ -486,54 +484,6 @@ impl Server {
             .update_player(player, &view, |chunk| sent_chunks.contains(&chunk));
     }
 
-    /// Commits ready chunk lifecycle epochs and forks the next background work.
-    fn advance_chunk_scheduling(&self) {
-        for (i, world) in self.worlds.values().enumerate() {
-            let timings = world.chunk_map.advance_scheduling();
-
-            let background_elapsed = timings.ticket_updates
-                + timings.schedule_generation
-                + timings.run_generation
-                + timings.process_unloads;
-            let boundary_elapsed = timings.block_entity_unloads
-                + timings.readiness_demotions
-                + timings.lifecycle_commit
-                + timings.readiness_reconcile
-                + timings.ticking_snapshot_rebuild;
-            let work_elapsed = background_elapsed + boundary_elapsed;
-
-            if work_elapsed >= SLOW_CHUNK_TICK_THRESHOLD {
-                tracing::warn!(
-                    world = i,
-                    work_elapsed = ?work_elapsed,
-                    background_elapsed = ?background_elapsed,
-                    boundary_elapsed = ?boundary_elapsed,
-                    ticket_updates = ?timings.ticket_updates,
-                    block_entity_unloads = ?timings.block_entity_unloads,
-                    readiness_demotions = ?timings.readiness_demotions,
-                    lifecycle_commit = ?timings.lifecycle_commit,
-                    readiness_reconcile = ?timings.readiness_reconcile,
-                    post_process_generation = ?timings.post_process_generation,
-                    post_process_chunk_count = timings.post_process_chunk_count,
-                    post_process_position_count = timings.post_process_position_count,
-                    readiness_candidate_count = timings.readiness_candidate_count,
-                    ticking_snapshot_rebuild = ?timings.ticking_snapshot_rebuild,
-                    rebuilt_ticking_chunk_count = timings.rebuilt_ticking_chunk_count,
-                    lookup_cache_holder_hits = timings.lookup_cache.holder_hits,
-                    lookup_cache_missing_hits = timings.lookup_cache.missing_hits,
-                    lookup_cache_scc_lookups = timings.lookup_cache.scc_lookups,
-                    lookup_cache_foreign_map_bypasses = timings.lookup_cache.foreign_map_bypasses,
-                    lookup_cache_evictions = timings.lookup_cache.evictions,
-                    schedule_generation = ?timings.schedule_generation,
-                    scheduled_count = timings.scheduled_count,
-                    run_generation = ?timings.run_generation,
-                    process_unloads = ?timings.process_unloads,
-                    "Chunk scheduling epoch slow"
-                );
-            }
-        }
-    }
-
     #[tracing::instrument(level = "trace", skip(self, workers), name = "tick_worlds")]
     async fn tick_worlds_game(
         &self,
@@ -547,14 +497,27 @@ impl Server {
                 continue;
             }
             let cm = &timings.chunk_map;
+            let scheduling = &cm.scheduling;
             tracing::warn!(
                 world = i,
                 elapsed = ?timings.elapsed,
                 tick_count,
                 entity_tick = ?timings.entity_tick,
-                simulation_ticket_updates = ?cm.simulation_ticket_updates,
-                simulation_snapshot_rebuild = ?cm.simulation_snapshot_rebuild,
-                simulation_rebuilt_chunk_count = cm.simulation_rebuilt_chunk_count,
+                ticket_updates = ?scheduling.ticket_updates,
+                block_entity_unloads = ?scheduling.block_entity_unloads,
+                readiness_demotions = ?scheduling.readiness_demotions,
+                lifecycle_commit = ?scheduling.lifecycle_commit,
+                readiness_reconcile = ?scheduling.readiness_reconcile,
+                post_process_generation = ?scheduling.post_process_generation,
+                post_process_chunk_count = scheduling.post_process_chunk_count,
+                post_process_position_count = scheduling.post_process_position_count,
+                readiness_candidate_count = scheduling.readiness_candidate_count,
+                ticking_snapshot_rebuild = ?scheduling.ticking_snapshot_rebuild,
+                rebuilt_ticking_chunk_count = scheduling.rebuilt_ticking_chunk_count,
+                schedule_generation = ?scheduling.schedule_generation,
+                scheduled_count = scheduling.scheduled_count,
+                run_generation = ?scheduling.run_generation,
+                process_unloads = ?scheduling.process_unloads,
                 broadcast_changes = ?cm.broadcast_changes,
                 collect_tickable = ?cm.collect_tickable,
                 tick_chunks = ?cm.tick_chunks,

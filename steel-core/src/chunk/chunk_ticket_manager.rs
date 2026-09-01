@@ -125,79 +125,6 @@ impl FullChunkStatus {
     }
 }
 
-/// A chunk ticket's load and optional simulation strength.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ChunkTicket {
-    load_level: ChunkTicketLevel,
-    simulation_level: Option<ChunkTicketLevel>,
-}
-
-impl ChunkTicket {
-    /// Creates a loading-only ticket.
-    #[must_use]
-    pub const fn loading(load_level: ChunkTicketLevel) -> Self {
-        Self {
-            load_level,
-            simulation_level: None,
-        }
-    }
-
-    /// Creates a loading-only ticket that makes chunks full within `radius`.
-    #[must_use]
-    pub const fn full_chunks(radius: u8) -> Self {
-        Self::loading(ChunkTicketLevel::for_full_chunk_radius(radius))
-    }
-
-    /// Creates a vanilla simulation ticket whose source level is `FULL - radius`.
-    #[must_use]
-    pub const fn simulated_full_chunks(radius: u8) -> Self {
-        let level = ChunkTicketLevel::for_full_chunk_radius(radius);
-        Self {
-            load_level: level,
-            simulation_level: Some(level),
-        }
-    }
-
-    /// Creates a ticket with separate full-load and entity-ticking radii.
-    #[must_use]
-    pub const fn full_chunks_with_entity_ticking(
-        load_radius: u8,
-        entity_ticking_radius: u8,
-    ) -> Self {
-        let entity_ticking_radius = if entity_ticking_radius > load_radius {
-            load_radius
-        } else {
-            entity_ticking_radius
-        };
-
-        Self {
-            load_level: ChunkTicketLevel::for_full_chunk_radius(load_radius),
-            simulation_level: Some(ChunkTicketLevel::for_entity_ticking_radius(
-                entity_ticking_radius,
-            )),
-        }
-    }
-
-    /// Creates a loading-only player ticket with Vanilla's two-chunk loading moat.
-    ///
-    /// Loading is entity-ticking through `view_distance`, block-ticking one
-    /// chunk farther, and full one chunk beyond that.
-    #[must_use]
-    pub const fn player_loading(view_distance: u8) -> Self {
-        Self::loading(ChunkTicketLevel::for_entity_ticking_radius(view_distance))
-    }
-
-    #[must_use]
-    pub const fn load_level(self) -> ChunkTicketLevel {
-        self.load_level
-    }
-
-    #[must_use]
-    pub const fn simulation_level(self) -> Option<ChunkTicketLevel> {
-        self.simulation_level
-    }
-}
-
 #[must_use]
 pub const fn is_full(level: ChunkTicketLevel) -> bool {
     level.is_full()
@@ -422,18 +349,6 @@ impl LoadTicketManager {
     const fn is_dirty(&self) -> bool {
         self.dirty
     }
-
-    #[expect(dead_code, reason = "utility method for tests and future use")]
-    fn clear(&mut self) {
-        self.source_levels.clear();
-        self.levels.clear();
-        self.dirty = false;
-        self.changes.clear();
-    }
-
-    pub fn iter_levels(&self) -> impl Iterator<Item = (ChunkPos, ChunkTicketLevel)> + '_ {
-        self.levels.iter().map(|(&pos, &level)| (pos, level))
-    }
 }
 
 #[cfg(test)]
@@ -583,7 +498,7 @@ mod tests {
     fn full_chunk_source_keeps_the_loading_moat() {
         let mut manager = LoadTicketManager::new();
         let center = ChunkPos::new(0, 0);
-        let source_level = ChunkTicket::player_loading(1).load_level();
+        let source_level = ChunkTicketLevel::for_entity_ticking_radius(1);
         manager.apply_source_update(source(center, Some(source_level)));
         manager.run_all_updates();
 
@@ -604,13 +519,13 @@ mod tests {
 
     #[test]
     fn maximum_player_view_distance_fits_ticket_level() {
-        let ticket = ChunkTicket::player_loading(MAX_SUPPORTED_VIEW_DISTANCE);
-
         assert_eq!(ChunkTicketLevel::ENTITY_TICKING_CHUNK.raw(), 128);
         assert_eq!(ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw(), 129);
         assert_eq!(ChunkTicketLevel::FULL_CHUNK.raw(), 130);
-        assert_eq!(ticket.load_level().raw(), 0);
-        assert_eq!(ticket.simulation_level(), None);
+        assert_eq!(
+            ChunkTicketLevel::for_entity_ticking_radius(MAX_SUPPORTED_VIEW_DISTANCE).raw(),
+            0
+        );
     }
 
     #[test]

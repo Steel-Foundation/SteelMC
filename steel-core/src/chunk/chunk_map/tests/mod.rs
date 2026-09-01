@@ -16,7 +16,6 @@ use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full
 use crate::world::tick_scheduler::{BlockTickList, FluidTickList, SavedTick, TickPriority};
 use crate::worldgen::EmptyChunkGenerator;
 use std::io::Cursor;
-use std::thread;
 use steel_protocol::packet_traits::CompressionInfo;
 use steel_registry::{
     init_vanilla_registry,
@@ -32,8 +31,7 @@ use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 use text_components::TextComponent;
 
 const TEST_SIMULATION_DISTANCE_CHUNKS: u8 = 0;
-const CHUNK_SCHEDULING_POLL_ATTEMPTS: usize = 10_000;
-const CHUNK_SCHEDULING_POLL_INTERVAL: Duration = Duration::from_millis(1);
+const TEST_VIEW_DISTANCE_CHUNKS: u8 = 0;
 
 struct RecordingConnection {
     packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
@@ -91,15 +89,12 @@ fn packet_id(packet: &EncodedPacket) -> i32 {
 }
 
 fn advance_until_receipt(chunk_map: &Arc<ChunkMap>, receipt: ChunkTicketReceipt) {
-    for _ in 0..CHUNK_SCHEDULING_POLL_ATTEMPTS {
-        chunk_map.flush_simulation_updates();
-        chunk_map.advance_scheduling();
-        if chunk_map.is_ticket_receipt_committed(receipt) {
-            return;
-        }
-        thread::sleep(CHUNK_SCHEDULING_POLL_INTERVAL);
-    }
-    panic!("chunk ticket receipt did not commit");
+    let _runtime_guard = chunk_map.chunk_runtime.enter();
+    chunk_map.advance_scheduling();
+    assert!(
+        chunk_map.is_ticket_receipt_committed(receipt),
+        "the unified source phase should commit its drained receipt"
+    );
 }
 
 fn stop_chunk_tasks(world: &Arc<World>) {
@@ -222,6 +217,7 @@ fn test_chunk_map() -> Arc<ChunkMap> {
         Weak::new(),
         &OVERWORLD,
         63,
+        TEST_VIEW_DISTANCE_CHUNKS,
         TEST_SIMULATION_DISTANCE_CHUNKS,
         Arc::new(ChunkStorage::RamOnly(RamOnlyStorage::empty_world())),
         Arc::new(ChunkGeneratorType::Empty(EmptyChunkGenerator::new())),

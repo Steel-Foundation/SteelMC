@@ -158,54 +158,31 @@ impl World {
         self.scheduled_ticks.unpack_chunk(pos, self.game_time())
     }
 
-    #[cfg(test)]
     pub(crate) fn reconcile_active_scheduled_tick_chunks<I>(
         &self,
         active_chunks: I,
-    ) -> Result<super::ScheduledTickLayoutGeneration, super::TickSchedulerError>
+    ) -> Result<(), super::TickSchedulerError>
     where
         I: Iterator<Item = ChunkPos> + Clone,
     {
         self.scheduled_ticks.reconcile_active_chunks(active_chunks)
     }
 
-    pub(crate) fn replace_scheduled_tick_layout<I>(
-        &self,
-        layout: I,
-    ) -> Result<super::ScheduledTickLayoutGeneration, super::TickSchedulerError>
-    where
-        I: Iterator<Item = (ChunkPos, bool)> + Clone,
-    {
-        self.scheduled_ticks.replace_active_chunk_layout(layout)
-    }
-
-    pub(crate) fn apply_active_scheduled_tick_chunk_changes(
-        &self,
-        generation: super::ScheduledTickLayoutGeneration,
-        changes: &[super::ScheduledTickActiveChunkChange],
-    ) -> Result<(), super::TickSchedulerError> {
-        self.scheduled_ticks
-            .apply_active_chunk_changes(generation, changes)
-    }
-
     pub(crate) fn begin_scheduled_tick_phase(
         &self,
-        layout_generation: super::ScheduledTickLayoutGeneration,
         current_tick: i64,
         max_ticks: usize,
-    ) -> Result<super::ScheduledTickBatch<BlockRef>, super::TickSchedulerError> {
-        self.scheduled_ticks
-            .begin_tick(layout_generation, current_tick, max_ticks)
+    ) -> super::ScheduledTickBatch<BlockRef> {
+        self.scheduled_ticks.begin_tick(current_tick, max_ticks)
     }
 
     pub(crate) fn collect_scheduled_fluid_tick_batch(
         &self,
-        layout_generation: super::ScheduledTickLayoutGeneration,
         current_tick: i64,
         max_ticks: usize,
-    ) -> Result<super::ScheduledTickBatch<FluidRef>, super::TickSchedulerError> {
+    ) -> super::ScheduledTickBatch<FluidRef> {
         self.scheduled_ticks
-            .collect_fluid_ticks(layout_generation, current_tick, max_ticks)
+            .collect_fluid_ticks(current_tick, max_ticks)
     }
 
     /// Returns whether a selected block tick at `(pos, block)` has not started yet.

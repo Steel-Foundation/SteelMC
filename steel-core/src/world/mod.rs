@@ -373,8 +373,8 @@ impl World {
         let persistent_chunk_tickets: PersistentChunkTickets = saved_data
             .load_or_default(saved_data_names::CHUNK_TICKETS)
             .await?;
-        let ticket_storage =
-            ChunkTicketStorage::from_persistent(persistent_chunk_tickets, simulation_distance);
+        let ticket_storage = ChunkTicketStorage::from_persistent(persistent_chunk_tickets)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         let world_border = WorldBorder::new(level_data.data().world_border)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         // let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
@@ -405,6 +405,8 @@ impl World {
                 config.generator,
                 generation_pool,
                 chunk_encoding_pool,
+                view_distance,
+                simulation_distance,
                 ticket_storage,
             ));
             chunk_map.start_generation_refill_loop();

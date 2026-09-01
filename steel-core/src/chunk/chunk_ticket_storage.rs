@@ -1,20 +1,21 @@
 //! Authoritative chunk ticket source storage.
-use rustc_hash::{FxHashMap, FxHashSet};
-use serde::{Deserialize, Serialize};
-use smallvec::SmallVec;
-use steel_utils::ChunkPos;
-use uuid::Uuid;
 
-use super::chunk_ticket_manager::{ChunkTicket, ChunkTicketLevel};
+use std::cmp::Ordering;
+
+use rustc_hash::FxHashMap;
+use serde::{Deserialize, Serialize};
+use steel_registry::{REGISTRY, RegistryExt, ticket_type::TicketTypeRef, vanilla_ticket_types};
+use steel_utils::{ChunkPos, Identifier};
+use thiserror::Error;
+
+use super::{chunk_ticket::ChunkTicket, chunk_ticket_manager::ChunkTicketLevel};
 
 pub(crate) const PORTAL_TICKET_RADIUS: u8 = 3;
-const PORTAL_TICKET_TIMEOUT_TICKS: i64 = 300;
-pub(crate) const ENDER_PEARL_TICKET_TIMEOUT_TICKS: u32 = 40;
+pub(crate) const ENDER_PEARL_TICKET_TIMEOUT_TICKS: i64 =
+    vanilla_ticket_types::ENDER_PEARL.timeout();
 const ENDER_PEARL_TICKET_RADIUS: u8 = 2;
-const INLINE_TICKET_CAPACITY_PER_CHUNK: usize = 4;
-const INLINE_PROJECTION_POSITION_CAPACITY: usize = 2;
 
-type StoredTickets = SmallVec<[StoredChunkTicket; INLINE_TICKET_CAPACITY_PER_CHUNK]>;
+type StoredTickets = Vec<StoredChunkTicket>;
 
 /// Persistent chunk ticket saved data.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,93 +24,58 @@ pub(crate) struct PersistentChunkTickets {
     tickets: Vec<PersistentChunkTicket>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct PersistentChunkTicket {
     #[serde(rename = "type")]
-    kind: PersistentChunkTicketKind,
+    ticket_type: Identifier,
     chunk_x: i32,
     chunk_z: i32,
+    level: u8,
+    #[serde(default)]
     ticks_left: i64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum PersistentChunkTicketKind {
-    Portal,
+/// A recoverable invalid value in persisted chunk ticket data.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub(crate) enum ChunkTicketStorageLoadError {
+    #[error("unknown chunk ticket type `{0}`")]
+    UnknownTicketType(Identifier),
+    #[error("invalid chunk ticket level {level} for type `{ticket_type}`")]
+    InvalidTicketLevel { ticket_type: Identifier, level: u8 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct StoredChunkTicket {
     ticket: ChunkTicket,
-    lifetime: TicketLifetime,
+    timed_generation: Option<u64>,
 }
 
 impl StoredChunkTicket {
-    const fn untimed(ticket: ChunkTicket) -> Self {
+    const fn new(ticket: ChunkTicket, timed_generation: Option<u64>) -> Self {
         Self {
             ticket,
-            lifetime: TicketLifetime::Untimed,
+            timed_generation,
         }
     }
 
-    const fn timed(
-        ticket: ChunkTicket,
-        kind: TimedChunkTicketKind,
-        ticks_left: i64,
-        generation: u64,
-    ) -> Self {
-        Self {
-            ticket,
-            lifetime: TicketLifetime::Timed {
-                kind,
-                ticks_left,
-                generation,
-            },
-        }
+    fn to_persistent(self, pos: ChunkPos) -> Option<PersistentChunkTicket> {
+        let ticket_type = self.ticket.ticket_type();
+        ticket_type.persist().then(|| PersistentChunkTicket {
+            // Saved data owns its registry identifier snapshot.
+            ticket_type: ticket_type.key.clone(),
+            chunk_x: pos.0.x,
+            chunk_z: pos.0.y,
+            level: self.ticket.ticket_level().raw(),
+            ticks_left: self.ticket.ticks_left(),
+        })
     }
-
-    const fn to_persistent(self, pos: ChunkPos) -> Option<PersistentChunkTicket> {
-        match self.lifetime {
-            TicketLifetime::Timed {
-                kind: TimedChunkTicketKind::Portal,
-                ticks_left,
-                ..
-            } => Some(PersistentChunkTicket {
-                kind: PersistentChunkTicketKind::Portal,
-                chunk_x: pos.0.x,
-                chunk_z: pos.0.y,
-                ticks_left,
-            }),
-            TicketLifetime::Untimed
-            | TicketLifetime::Timed {
-                kind: TimedChunkTicketKind::EnderPearl,
-                ..
-            } => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TicketLifetime {
-    Untimed,
-    Timed {
-        kind: TimedChunkTicketKind,
-        ticks_left: i64,
-        generation: u64,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TimedChunkTicketKind {
-    Portal,
-    EnderPearl,
 }
 
 /// One timed entry observed for the current world-tick expiration pass.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TimedTicketExpiration {
     pos: ChunkPos,
-    kind: TimedChunkTicketKind,
+    ticket: ChunkTicket,
     generation: u64,
 }
 
@@ -121,56 +87,21 @@ impl TimedTicketExpiration {
 
     #[must_use]
     pub(crate) const fn can_expire_if_unloaded(self) -> bool {
-        matches!(self.kind, TimedChunkTicketKind::EnderPearl)
+        self.ticket.ticket_type().can_expire_if_unloaded()
     }
 }
 
 #[must_use]
 const fn portal_ticket() -> ChunkTicket {
-    ChunkTicket::simulated_full_chunks(PORTAL_TICKET_RADIUS)
+    ChunkTicket::for_full_chunk_radius(&vanilla_ticket_types::PORTAL, PORTAL_TICKET_RADIUS)
 }
 
 #[must_use]
 const fn ender_pearl_ticket() -> ChunkTicket {
-    ChunkTicket::simulated_full_chunks(ENDER_PEARL_TICKET_RADIUS)
-}
-
-/// One ticket source mutation submitted by gameplay.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ChunkTicketOperation {
-    Add {
-        pos: ChunkPos,
-        ticket: ChunkTicket,
-    },
-    /// Removes one matching untimed ticket submitted through `Add`.
-    ///
-    /// Timed portal and ender-pearl entries have separate ownership and expire
-    /// only through the timed-ticket path.
-    Remove {
-        pos: ChunkPos,
-        ticket: ChunkTicket,
-    },
-    AddPlayer {
-        pos: ChunkPos,
-        player_id: Uuid,
-        load_level: ChunkTicketLevel,
-    },
-    RemovePlayer {
-        pos: ChunkPos,
-        player_id: Uuid,
-    },
-}
-
-impl ChunkTicketOperation {
-    #[must_use]
-    pub(crate) const fn affects_simulation(self) -> bool {
-        match self {
-            Self::Add { ticket, .. } | Self::Remove { ticket, .. } => {
-                ticket.simulation_level().is_some()
-            }
-            Self::AddPlayer { .. } | Self::RemovePlayer { .. } => true,
-        }
-    }
+    ChunkTicket::for_full_chunk_radius(
+        &vanilla_ticket_types::ENDER_PEARL,
+        ENDER_PEARL_TICKET_RADIUS,
+    )
 }
 
 /// One materialized source level for a propagation domain.
@@ -182,150 +113,118 @@ pub(crate) struct SourceLevelUpdate {
 
 /// Source positions dirtied by one or more storage mutations.
 ///
-/// Domain flags describe submitted work, including idempotent or missing
-/// removals. Dirty positions are only present when stored source data changed
-/// and may repeat when multiple operations are combined.
+/// Positions are present only when canonical source membership changed and may
+/// repeat when several mutations are merged.
 #[must_use = "dirty source positions must be forwarded to the propagation domains"]
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct SourceProjectionChanges {
-    pub(crate) load_positions: SmallVec<[ChunkPos; INLINE_PROJECTION_POSITION_CAPACITY]>,
-    pub(crate) simulation_positions: SmallVec<[ChunkPos; INLINE_PROJECTION_POSITION_CAPACITY]>,
-    pub(crate) load_domain_affected: bool,
-    pub(crate) simulation_domain_affected: bool,
+    pub(crate) load_positions: Vec<ChunkPos>,
+    pub(crate) simulation_positions: Vec<ChunkPos>,
 }
 
 impl SourceProjectionChanges {
-    fn for_operation(operation: ChunkTicketOperation) -> Self {
-        Self {
-            load_domain_affected: true,
-            simulation_domain_affected: operation.affects_simulation(),
-            ..Self::default()
+    fn for_ticket(pos: ChunkPos, ticket: ChunkTicket) -> Self {
+        let mut changes = Self::default();
+        if ticket.loading_level().is_some() {
+            changes.load_positions.push(pos);
         }
-    }
-
-    fn mark_ticket_membership(&mut self, pos: ChunkPos, ticket: ChunkTicket) {
-        self.load_positions.push(pos);
         if ticket.simulation_level().is_some() {
-            self.simulation_positions.push(pos);
+            changes.simulation_positions.push(pos);
         }
+        changes
     }
 
-    fn append(&mut self, mut other: Self) {
+    pub(crate) fn merge(&mut self, mut other: Self) {
         self.load_positions.append(&mut other.load_positions);
         self.simulation_positions
             .append(&mut other.simulation_positions);
-        self.load_domain_affected |= other.load_domain_affected;
-        self.simulation_domain_affected |= other.simulation_domain_affected;
     }
 }
 
-/// Owns ticket multiplicity, timed tickets, and player source membership once.
-#[derive(Debug)]
+/// Owns one logical ticket for each canonical type identity and level.
+#[derive(Debug, Default)]
 pub(crate) struct ChunkTicketStorage {
     tickets: FxHashMap<ChunkPos, StoredTickets>,
-    timed_positions: FxHashSet<ChunkPos>,
-    players_by_pos: FxHashMap<ChunkPos, FxHashMap<Uuid, ChunkTicketLevel>>,
-    player_positions: FxHashMap<Uuid, ChunkPos>,
-    last_projected_simulation_distance: u8,
     timed_generation: u64,
 }
 
 impl ChunkTicketStorage {
     #[must_use]
-    pub(crate) fn new(simulation_distance: u8) -> Self {
-        Self {
-            tickets: FxHashMap::default(),
-            timed_positions: FxHashSet::default(),
-            players_by_pos: FxHashMap::default(),
-            player_positions: FxHashMap::default(),
-            last_projected_simulation_distance: simulation_distance,
-            timed_generation: 0,
-        }
+    pub(crate) fn new() -> Self {
+        Self::default()
     }
 
-    /// Restores Vanilla's persistent timed ticket sources.
-    #[must_use]
+    /// Restores registered ticket types from saved data.
     pub(crate) fn from_persistent(
         persistent: PersistentChunkTickets,
-        simulation_distance: u8,
-    ) -> Self {
-        let mut storage = Self::new(simulation_distance);
-        for ticket in persistent.tickets {
-            storage.add_loaded_persistent_ticket(ticket);
+    ) -> Result<Self, ChunkTicketStorageLoadError> {
+        let mut storage = Self::new();
+        for persistent_ticket in persistent.tickets {
+            storage.add_loaded_persistent_ticket(persistent_ticket)?;
         }
-        storage
+        Ok(storage)
     }
 
-    /// Applies one source mutation exactly once.
-    pub(crate) fn apply(&mut self, operation: ChunkTicketOperation) -> SourceProjectionChanges {
-        let mut changes = SourceProjectionChanges::for_operation(operation);
-        match operation {
-            ChunkTicketOperation::Add { pos, ticket } => {
-                self.tickets
-                    .entry(pos)
-                    .or_default()
-                    .push(StoredChunkTicket::untimed(ticket));
-                changes.mark_ticket_membership(pos, ticket);
-            }
-            ChunkTicketOperation::Remove { pos, ticket } => {
-                if self.remove_untimed_ticket(pos, ticket) {
-                    changes.mark_ticket_membership(pos, ticket);
-                }
-            }
-            ChunkTicketOperation::AddPlayer {
-                pos,
-                player_id,
-                load_level,
-            } => self.add_player(pos, player_id, load_level, &mut changes),
-            ChunkTicketOperation::RemovePlayer { pos, player_id } => {
-                self.remove_player(pos, player_id, &mut changes);
-            }
-        }
-        changes
-    }
-
-    /// Applies source mutations in iterator order without duplicating ownership.
-    pub(crate) fn apply_operations(
+    /// Adds one canonical ticket or refreshes an existing matching type and level.
+    pub(crate) fn add_ticket(
         &mut self,
-        operations: impl IntoIterator<Item = ChunkTicketOperation>,
+        pos: ChunkPos,
+        ticket: ChunkTicket,
     ) -> SourceProjectionChanges {
-        let mut combined = SourceProjectionChanges::default();
-        for operation in operations {
-            combined.append(self.apply(operation));
+        let timed_generation = self.generation_for(ticket.ticket_type());
+        let tickets = self.tickets.entry(pos).or_default();
+
+        if let Some(stored) = tickets.iter_mut().find(|stored| stored.ticket == ticket) {
+            stored.ticket.reset_ticks_left();
+            stored.timed_generation = timed_generation;
+            return SourceProjectionChanges::default();
         }
-        combined
+
+        tickets.push(StoredChunkTicket::new(ticket, timed_generation));
+        SourceProjectionChanges::for_ticket(pos, ticket)
     }
 
-    /// Returns the effective loading source at `pos`.
+    /// Removes the canonical ticket matching `ticket`'s type identity and level.
+    pub(crate) fn remove_ticket(
+        &mut self,
+        pos: ChunkPos,
+        ticket: ChunkTicket,
+    ) -> SourceProjectionChanges {
+        let Some(tickets) = self.tickets.get_mut(&pos) else {
+            return SourceProjectionChanges::default();
+        };
+        let Some(index) = tickets.iter().position(|stored| stored.ticket == ticket) else {
+            return SourceProjectionChanges::default();
+        };
+
+        let removed = tickets.swap_remove(index).ticket;
+        if tickets.is_empty() {
+            self.tickets.remove(&pos);
+        }
+        SourceProjectionChanges::for_ticket(pos, removed)
+    }
+
+    /// Returns the strongest loading ticket at `pos`.
     #[must_use]
     pub(crate) fn load_source_level(&self, pos: ChunkPos) -> Option<ChunkTicketLevel> {
-        let ticket_level = self
-            .tickets
-            .get(&pos)
-            .and_then(|tickets| tickets.iter().map(|entry| entry.ticket.load_level()).min());
-        let player_level = self
-            .players_by_pos
-            .get(&pos)
-            .and_then(|players| players.values().copied().min());
-
-        ticket_level.into_iter().chain(player_level).min()
-    }
-
-    /// Returns the effective simulation source at `pos`.
-    #[must_use]
-    pub(crate) fn simulation_source_level(&self, pos: ChunkPos) -> Option<ChunkTicketLevel> {
-        let ticket_level = self.tickets.get(&pos).and_then(|tickets| {
+        self.tickets.get(&pos).and_then(|tickets| {
             tickets
                 .iter()
-                .filter_map(|entry| entry.ticket.simulation_level())
+                .filter_map(|stored| stored.ticket.loading_level())
+                .min()
+        })
+    }
+
+    /// Returns the strongest simulation ticket supported by Steel's tracker at `pos`.
+    #[must_use]
+    pub(crate) fn simulation_source_level(&self, pos: ChunkPos) -> Option<ChunkTicketLevel> {
+        self.tickets.get(&pos).and_then(|tickets| {
+            tickets
+                .iter()
+                .filter_map(|stored| stored.ticket.simulation_level())
                 .filter(|level| level.is_block_ticking())
                 .min()
-        });
-        let player_level = self.players_by_pos.contains_key(&pos).then(|| {
-            ChunkTicketLevel::for_entity_ticking_radius(self.last_projected_simulation_distance)
-        });
-
-        ticket_level.into_iter().chain(player_level).min()
+        })
     }
 
     #[must_use]
@@ -360,12 +259,10 @@ impl ChunkTicketStorage {
         &self,
         source_update: fn(&Self, ChunkPos) -> SourceLevelUpdate,
     ) -> Vec<SourceLevelUpdate> {
-        let mut positions = FxHashSet::default();
-        positions.extend(self.tickets.keys().copied());
-        positions.extend(self.players_by_pos.keys().copied());
-
-        let mut sources: Vec<_> = positions
-            .into_iter()
+        let mut sources: Vec<_> = self
+            .tickets
+            .keys()
+            .copied()
             .map(|pos| source_update(self, pos))
             .filter(|update| update.level.is_some())
             .collect();
@@ -378,12 +275,7 @@ impl ChunkTicketStorage {
         &mut self,
         pos: ChunkPos,
     ) -> SourceProjectionChanges {
-        self.add_or_refresh_timed_ticket(
-            pos,
-            TimedChunkTicketKind::Portal,
-            portal_ticket(),
-            PORTAL_TICKET_TIMEOUT_TICKS,
-        )
+        self.add_ticket(pos, portal_ticket())
     }
 
     /// Adds or refreshes Vanilla's in-flight ender pearl ticket.
@@ -391,40 +283,25 @@ impl ChunkTicketStorage {
         &mut self,
         pos: ChunkPos,
     ) -> SourceProjectionChanges {
-        self.add_or_refresh_timed_ticket(
-            pos,
-            TimedChunkTicketKind::EnderPearl,
-            ender_pearl_ticket(),
-            i64::from(ENDER_PEARL_TICKET_TIMEOUT_TICKS),
-        )
+        self.add_ticket(pos, ender_pearl_ticket())
     }
 
     /// Snapshots the exact timed entries eligible for this world-tick pass.
     #[must_use]
     pub(crate) fn timed_ticket_expirations(&self) -> Vec<TimedTicketExpiration> {
-        let mut expirations = Vec::with_capacity(self.timed_positions.len());
-        for &pos in &self.timed_positions {
-            let Some(tickets) = self.tickets.get(&pos) else {
-                panic!("timed position index references a missing ticket list");
-            };
-            expirations.extend(tickets.iter().filter_map(|entry| match entry.lifetime {
-                TicketLifetime::Timed {
-                    kind, generation, ..
-                } => Some(TimedTicketExpiration {
-                    pos,
-                    kind,
-                    generation,
-                }),
-                TicketLifetime::Untimed => None,
+        let mut expirations = Vec::new();
+        for (&pos, tickets) in &self.tickets {
+            expirations.extend(tickets.iter().filter_map(|stored| {
+                stored
+                    .timed_generation
+                    .map(|generation| TimedTicketExpiration {
+                        pos,
+                        ticket: stored.ticket,
+                        generation,
+                    })
             }));
         }
-        expirations.sort_unstable_by_key(|expiration| {
-            (
-                expiration.pos.0.x,
-                expiration.pos.0.y,
-                matches!(expiration.kind, TimedChunkTicketKind::EnderPearl),
-            )
-        });
+        expirations.sort_unstable_by(Self::compare_expirations);
         expirations
     }
 
@@ -439,242 +316,82 @@ impl ChunkTicketStorage {
             let Some(tickets) = self.tickets.get_mut(&expiration.pos) else {
                 continue;
             };
-            let Some(index) = tickets.iter().position(|entry| {
-                matches!(
-                    entry.lifetime,
-                    TicketLifetime::Timed {
-                        kind,
-                        generation,
-                        ..
-                    } if kind == expiration.kind && generation == expiration.generation
-                )
+            let Some(index) = tickets.iter().position(|stored| {
+                stored.ticket == expiration.ticket
+                    && stored.timed_generation == Some(expiration.generation)
             }) else {
                 continue;
             };
-            let TicketLifetime::Timed { ticks_left, .. } = &mut tickets[index].lifetime else {
-                unreachable!("the selected ticket was checked as timed");
-            };
-            *ticks_left -= 1;
-            if *ticks_left >= 0 {
+
+            tickets[index].ticket.decrease_ticks_left();
+            if !tickets[index].ticket.is_timed_out() {
                 continue;
             }
 
-            let expired = tickets.swap_remove(index);
-            let remove_position = tickets.is_empty();
-            let has_timed_ticket = tickets
-                .iter()
-                .any(|entry| matches!(entry.lifetime, TicketLifetime::Timed { .. }));
-            if remove_position {
+            let expired = tickets.swap_remove(index).ticket;
+            if tickets.is_empty() {
                 self.tickets.remove(&expiration.pos);
             }
-            if !has_timed_ticket {
-                self.timed_positions.remove(&expiration.pos);
-            }
-            changes.load_positions.push(expiration.pos);
-            changes.load_domain_affected = true;
-            if expired.ticket.simulation_level().is_some() {
-                changes.simulation_positions.push(expiration.pos);
-                changes.simulation_domain_affected = true;
-            }
+            changes.merge(SourceProjectionChanges::for_ticket(expiration.pos, expired));
         }
 
         changes
     }
 
-    /// Converts active persistent timed tickets to saved data.
+    /// Converts every active ticket whose type has Vanilla's persist flag.
     #[must_use]
     pub(crate) fn to_persistent(&self) -> PersistentChunkTickets {
         let mut tickets = Vec::new();
-        for &pos in &self.timed_positions {
-            let Some(entries) = self.tickets.get(&pos) else {
-                panic!("timed position index references a missing ticket list");
-            };
+        for (&pos, entries) in &self.tickets {
             tickets.extend(
                 entries
                     .iter()
-                    .filter_map(|ticket| ticket.to_persistent(pos)),
+                    .filter_map(|stored| stored.to_persistent(pos)),
             );
         }
-        tickets.sort_unstable_by_key(|ticket| (ticket.chunk_x, ticket.chunk_z, ticket.kind));
+        tickets.sort_unstable_by(Self::compare_persistent_tickets);
         PersistentChunkTickets { tickets }
     }
 
-    /// Reprojects every occupied player source when simulation distance changes.
-    pub(crate) fn set_simulation_distance(
+    fn add_loaded_persistent_ticket(
         &mut self,
-        simulation_distance: u8,
-    ) -> SourceProjectionChanges {
-        if self.last_projected_simulation_distance == simulation_distance {
-            return SourceProjectionChanges::default();
-        }
-
-        self.last_projected_simulation_distance = simulation_distance;
-        SourceProjectionChanges {
-            simulation_positions: self.players_by_pos.keys().copied().collect(),
-            simulation_domain_affected: true,
-            ..SourceProjectionChanges::default()
-        }
-    }
-
-    fn remove_untimed_ticket(&mut self, pos: ChunkPos, ticket: ChunkTicket) -> bool {
-        let Some(tickets) = self.tickets.get_mut(&pos) else {
-            return false;
+        persistent: PersistentChunkTicket,
+    ) -> Result<(), ChunkTicketStorageLoadError> {
+        let PersistentChunkTicket {
+            ticket_type,
+            chunk_x,
+            chunk_z,
+            level,
+            ticks_left,
+        } = persistent;
+        let Some(ticket_type_ref) = REGISTRY.ticket_types.by_key(&ticket_type) else {
+            return Err(ChunkTicketStorageLoadError::UnknownTicketType(ticket_type));
         };
-        let Some(index) = tickets.iter().position(|stored| {
-            stored.ticket == ticket && matches!(stored.lifetime, TicketLifetime::Untimed)
-        }) else {
-            return false;
+        let Some(ticket_level) = ChunkTicketLevel::new(level) else {
+            return Err(ChunkTicketStorageLoadError::InvalidTicketLevel { ticket_type, level });
         };
 
-        tickets.swap_remove(index);
-        if tickets.is_empty() {
-            self.tickets.remove(&pos);
-        }
-        true
+        let ticket = ChunkTicket::from_saved(ticket_type_ref, ticket_level, ticks_left);
+        self.add_loaded_ticket(ChunkPos::new(chunk_x, chunk_z), ticket);
+        Ok(())
     }
 
-    fn add_player(
-        &mut self,
-        pos: ChunkPos,
-        player_id: Uuid,
-        load_level: ChunkTicketLevel,
-        changes: &mut SourceProjectionChanges,
-    ) {
-        if let Some(current_pos) = self.player_positions.get(&player_id).copied() {
-            if current_pos == pos {
-                let Some(players) = self.players_by_pos.get_mut(&pos) else {
-                    panic!("player position index references a missing source");
-                };
-                let Some(current_level) = players.get_mut(&player_id) else {
-                    panic!("player position index disagrees with source membership");
-                };
-                if *current_level != load_level {
-                    *current_level = load_level;
-                    changes.load_positions.push(pos);
-                }
-                return;
-            }
-
-            self.remove_player_membership(current_pos, player_id);
-            changes.load_positions.push(current_pos);
-            changes.simulation_positions.push(current_pos);
-        }
-
-        let replaced = self
-            .players_by_pos
-            .entry(pos)
-            .or_default()
-            .insert(player_id, load_level);
-        assert!(
-            replaced.is_none(),
-            "player position index disagrees with source membership"
-        );
-        self.player_positions.insert(player_id, pos);
-        changes.load_positions.push(pos);
-        changes.simulation_positions.push(pos);
-    }
-
-    fn remove_player(
-        &mut self,
-        pos: ChunkPos,
-        player_id: Uuid,
-        changes: &mut SourceProjectionChanges,
-    ) {
-        if self.player_positions.get(&player_id).copied() != Some(pos) {
+    fn add_loaded_ticket(&mut self, pos: ChunkPos, ticket: ChunkTicket) {
+        let timed_generation = self.generation_for(ticket.ticket_type());
+        let tickets = self.tickets.entry(pos).or_default();
+        if let Some(stored) = tickets.iter_mut().find(|stored| stored.ticket == ticket) {
+            stored.ticket.reset_ticks_left();
+            stored.timed_generation = timed_generation;
             return;
         }
 
-        self.remove_player_membership(pos, player_id);
-        self.player_positions.remove(&player_id);
-        changes.load_positions.push(pos);
-        changes.simulation_positions.push(pos);
+        tickets.push(StoredChunkTicket::new(ticket, timed_generation));
     }
 
-    fn remove_player_membership(&mut self, pos: ChunkPos, player_id: Uuid) {
-        let Some(players) = self.players_by_pos.get_mut(&pos) else {
-            panic!("player position index references a missing source");
-        };
-        assert!(
-            players.remove(&player_id).is_some(),
-            "player position index disagrees with source membership"
-        );
-        if players.is_empty() {
-            self.players_by_pos.remove(&pos);
-        }
-    }
-
-    fn add_or_refresh_timed_ticket(
-        &mut self,
-        pos: ChunkPos,
-        kind: TimedChunkTicketKind,
-        ticket: ChunkTicket,
-        ticks_left: i64,
-    ) -> SourceProjectionChanges {
-        let generation = self.allocate_timed_generation();
-        let tickets = self.tickets.entry(pos).or_default();
-        if let Some((existing_ticks_left, existing_generation)) =
-            Self::timed_state_mut(tickets, ticket, kind)
-        {
-            *existing_ticks_left = ticks_left;
-            *existing_generation = generation;
-            return SourceProjectionChanges::default();
-        }
-
-        tickets.push(StoredChunkTicket::timed(
-            ticket, kind, ticks_left, generation,
-        ));
-        self.timed_positions.insert(pos);
-        let mut changes = SourceProjectionChanges {
-            load_domain_affected: true,
-            simulation_domain_affected: ticket.simulation_level().is_some(),
-            ..SourceProjectionChanges::default()
-        };
-        changes.mark_ticket_membership(pos, ticket);
-        changes
-    }
-
-    fn add_loaded_persistent_ticket(&mut self, persistent: PersistentChunkTicket) {
-        match persistent.kind {
-            PersistentChunkTicketKind::Portal => {
-                let pos = ChunkPos::new(persistent.chunk_x, persistent.chunk_z);
-                let generation = self.allocate_timed_generation();
-                let tickets = self.tickets.entry(pos).or_default();
-                if let Some((existing_ticks_left, existing_generation)) =
-                    Self::timed_state_mut(tickets, portal_ticket(), TimedChunkTicketKind::Portal)
-                {
-                    *existing_ticks_left = PORTAL_TICKET_TIMEOUT_TICKS;
-                    *existing_generation = generation;
-                } else {
-                    tickets.push(StoredChunkTicket::timed(
-                        portal_ticket(),
-                        TimedChunkTicketKind::Portal,
-                        persistent.ticks_left,
-                        generation,
-                    ));
-                    self.timed_positions.insert(pos);
-                }
-            }
-        }
-    }
-
-    fn timed_state_mut(
-        tickets: &mut StoredTickets,
-        ticket: ChunkTicket,
-        kind: TimedChunkTicketKind,
-    ) -> Option<(&mut i64, &mut u64)> {
-        tickets.iter_mut().find_map(|entry| {
-            if entry.ticket != ticket {
-                return None;
-            }
-            match &mut entry.lifetime {
-                TicketLifetime::Timed {
-                    kind: stored_kind,
-                    ticks_left,
-                    generation,
-                } if *stored_kind == kind => Some((ticks_left, generation)),
-                TicketLifetime::Untimed | TicketLifetime::Timed { .. } => None,
-            }
-        })
+    fn generation_for(&mut self, ticket_type: TicketTypeRef) -> Option<u64> {
+        ticket_type
+            .has_timeout()
+            .then(|| self.allocate_timed_generation())
     }
 
     fn allocate_timed_generation(&mut self) -> u64 {
@@ -687,338 +404,267 @@ impl ChunkTicketStorage {
         self.timed_generation
     }
 
-    #[cfg(test)]
-    fn untimed_ticket_count(&self) -> usize {
-        self.tickets
-            .values()
-            .flatten()
-            .filter(|entry| matches!(entry.lifetime, TicketLifetime::Untimed))
-            .count()
+    fn compare_expirations(
+        left: &TimedTicketExpiration,
+        right: &TimedTicketExpiration,
+    ) -> Ordering {
+        (left.pos.0.x, left.pos.0.y)
+            .cmp(&(right.pos.0.x, right.pos.0.y))
+            .then_with(|| {
+                left.ticket
+                    .ticket_type()
+                    .key
+                    .cmp(&right.ticket.ticket_type().key)
+            })
+            .then_with(|| left.ticket.ticket_level().cmp(&right.ticket.ticket_level()))
+    }
+
+    fn compare_persistent_tickets(
+        left: &PersistentChunkTicket,
+        right: &PersistentChunkTicket,
+    ) -> Ordering {
+        (left.chunk_x, left.chunk_z)
+            .cmp(&(right.chunk_x, right.chunk_z))
+            .then_with(|| left.ticket_type.cmp(&right.ticket_type))
+            .then_with(|| left.level.cmp(&right.level))
     }
 
     #[cfg(test)]
-    fn timed_ticket_count(&self) -> usize {
-        self.tickets
-            .values()
-            .flatten()
-            .filter(|entry| matches!(entry.lifetime, TicketLifetime::Timed { .. }))
-            .count()
+    fn ticket_count(&self) -> usize {
+        self.tickets.values().map(Vec::len).sum()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::ptr;
+
+    use steel_registry::{init_vanilla_registry, steel_ticket_types};
+
     use super::*;
 
-    const TEST_SIMULATION_DISTANCE_CHUNKS: u8 = 5;
-
-    fn player_id(value: u128) -> Uuid {
-        Uuid::from_u128(value)
+    fn init_registry() {
+        let _ = init_vanilla_registry();
     }
 
     #[test]
-    fn untimed_ticket_multiplicity_and_domain_minima_are_independent() {
-        let mut storage = ChunkTicketStorage::new(TEST_SIMULATION_DISTANCE_CHUNKS);
+    fn duplicate_add_refreshes_timeout_without_adding_multiplicity() {
+        let mut storage = ChunkTicketStorage::new();
         let pos = ChunkPos::new(2, -3);
-        let simulated = ChunkTicket::simulated_full_chunks(2);
-        let stronger_loading = ChunkTicket::full_chunks(4);
-
-        let _ = storage.apply_operations([
-            ChunkTicketOperation::Add {
-                pos,
-                ticket: simulated,
-            },
-            ChunkTicketOperation::Add {
-                pos,
-                ticket: simulated,
-            },
-            ChunkTicketOperation::Add {
-                pos,
-                ticket: stronger_loading,
-            },
-        ]);
-
-        assert_eq!(storage.untimed_ticket_count(), 3);
-        assert_eq!(
-            storage.load_source_level(pos),
-            Some(stronger_loading.load_level())
-        );
-        assert_eq!(
-            storage.simulation_source_level(pos),
-            simulated.simulation_level()
-        );
-
-        let _ = storage.apply(ChunkTicketOperation::Remove {
-            pos,
-            ticket: simulated,
-        });
-        assert_eq!(storage.untimed_ticket_count(), 2);
-        assert_eq!(
-            storage.simulation_source_level(pos),
-            simulated.simulation_level()
-        );
-
-        let _ = storage.apply(ChunkTicketOperation::Remove {
-            pos,
-            ticket: stronger_loading,
-        });
-        assert_eq!(storage.untimed_ticket_count(), 1);
-        assert_eq!(storage.load_source_level(pos), Some(simulated.load_level()));
-    }
-
-    #[test]
-    fn equal_untimed_ticket_survives_timed_expiry_and_index_cleans_up() {
-        let mut storage = ChunkTicketStorage::new(TEST_SIMULATION_DISTANCE_CHUNKS);
-        let pos = ChunkPos::new(0, 0);
         let ticket = portal_ticket();
 
-        let _ = storage.add_or_refresh_portal_ticket(pos);
-        let expirations = storage.timed_ticket_expirations();
-        assert_eq!(expirations.len(), 1);
-        assert_eq!(expirations[0].pos(), pos);
-        let missing_remove = storage.apply(ChunkTicketOperation::Remove { pos, ticket });
-
-        assert!(missing_remove.load_domain_affected);
-        assert!(missing_remove.simulation_domain_affected);
-        assert!(missing_remove.load_positions.is_empty());
-        assert_eq!(storage.timed_ticket_count(), 1);
-        assert_eq!(storage.load_source_level(pos), Some(ticket.load_level()));
-
-        let _ = storage.apply(ChunkTicketOperation::Add { pos, ticket });
-        for _ in 0..=PORTAL_TICKET_TIMEOUT_TICKS {
-            let _ = storage.tick_timed_tickets(&expirations);
-        }
-
-        assert_eq!(storage.timed_ticket_count(), 0);
-        assert_eq!(storage.timed_ticket_expirations(), []);
-        assert_eq!(storage.untimed_ticket_count(), 1);
-        assert_eq!(storage.load_source_level(pos), Some(ticket.load_level()));
-    }
-
-    #[test]
-    fn refreshed_timed_ticket_rejects_a_stale_expiration_snapshot() {
-        let mut storage = ChunkTicketStorage::new(TEST_SIMULATION_DISTANCE_CHUNKS);
-        let pos = ChunkPos::new(0, 0);
-        let _ = storage.add_or_refresh_portal_ticket(pos);
+        let first = storage.add_ticket(pos, ticket);
         let stale_expirations = storage.timed_ticket_expirations();
-
-        let _ = storage.add_or_refresh_portal_ticket(pos);
         let _ = storage.tick_timed_tickets(&stale_expirations);
+        let duplicate = storage.add_ticket(pos, ticket);
+
+        assert_eq!(first.load_positions, vec![pos]);
+        assert_eq!(first.simulation_positions, vec![pos]);
+        assert_eq!(duplicate, SourceProjectionChanges::default());
+        assert_eq!(storage.ticket_count(), 1);
+        assert_eq!(storage.timed_ticket_expirations().len(), 1);
+
+        let _ = storage.tick_timed_tickets(&stale_expirations);
+        assert_eq!(
+            storage.tickets[&pos][0].ticket.ticks_left(),
+            vanilla_ticket_types::PORTAL.timeout()
+        );
+
+        let removal = storage.remove_ticket(pos, ticket);
+        assert_eq!(removal.load_positions, vec![pos]);
+        assert_eq!(removal.simulation_positions, vec![pos]);
+        assert_eq!(storage.ticket_count(), 0);
+    }
+
+    #[test]
+    fn type_flags_control_projections_persistence_and_expiration() {
+        init_registry();
+        let mut storage = ChunkTicketStorage::new();
+        let load_pos = ChunkPos::new(0, 0);
+        let simulation_pos = ChunkPos::new(1, 0);
+        let unknown_pos = ChunkPos::new(2, 0);
+        let level = ChunkTicketLevel::BLOCK_TICKING_CHUNK;
+
+        let loading = ChunkTicket::new(&vanilla_ticket_types::PLAYER_LOADING, level);
+        let simulation = ChunkTicket::new(&vanilla_ticket_types::PLAYER_SIMULATION, level);
+        let forced = ChunkTicket::new(&vanilla_ticket_types::FORCED, level);
+        let unknown = ChunkTicket::new(&vanilla_ticket_types::UNKNOWN, level);
 
         assert_eq!(
-            storage.to_persistent().tickets[0].ticks_left,
-            PORTAL_TICKET_TIMEOUT_TICKS
+            storage.add_ticket(load_pos, loading).simulation_positions,
+            Vec::new()
         );
-    }
+        assert_eq!(storage.load_source_level(load_pos), Some(level));
+        assert_eq!(storage.simulation_source_level(load_pos), None);
 
-    #[test]
-    fn player_moves_are_canonical_and_stale_removals_do_not_remove_new_sources() {
-        let simulation_distance = 4;
-        let player_view_distance = 8;
-        let mut storage = ChunkTicketStorage::new(simulation_distance);
-        let old_pos = ChunkPos::new(0, 0);
-        let new_pos = ChunkPos::new(1, 0);
-        let first = player_id(1);
-        let second = player_id(2);
-        let load_level = ChunkTicket::player_loading(player_view_distance).load_level();
-
-        let _ = storage.apply(ChunkTicketOperation::AddPlayer {
-            pos: old_pos,
-            player_id: first,
-            load_level,
-        });
-        let _ = storage.apply(ChunkTicketOperation::AddPlayer {
-            pos: old_pos,
-            player_id: second,
-            load_level,
-        });
-        let moved = storage.apply(ChunkTicketOperation::AddPlayer {
-            pos: new_pos,
-            player_id: first,
-            load_level,
-        });
-
-        assert_eq!(moved.load_positions.as_slice(), &[old_pos, new_pos]);
-        assert_eq!(moved.simulation_positions.as_slice(), &[old_pos, new_pos]);
-        assert!(storage.simulation_source_level(old_pos).is_some());
-        assert!(storage.simulation_source_level(new_pos).is_some());
-
-        let stale = storage.apply(ChunkTicketOperation::RemovePlayer {
-            pos: old_pos,
-            player_id: first,
-        });
-        assert!(stale.load_positions.is_empty());
-        assert!(stale.simulation_positions.is_empty());
-        assert!(storage.simulation_source_level(new_pos).is_some());
-
-        let _ = storage.apply(ChunkTicketOperation::RemovePlayer {
-            pos: old_pos,
-            player_id: second,
-        });
-        assert_eq!(storage.simulation_source_level(old_pos), None);
-    }
-
-    #[test]
-    fn simulation_distance_reprojects_only_occupied_player_positions() {
-        let initial_simulation_distance = 2;
-        let updated_simulation_distance = 6;
-        let player_view_distance = 8;
-        let mut storage = ChunkTicketStorage::new(initial_simulation_distance);
-        let first_pos = ChunkPos::new(-2, 4);
-        let second_pos = ChunkPos::new(7, 1);
-        let load_level = ChunkTicket::player_loading(player_view_distance).load_level();
-        let _ = storage.apply_operations([
-            ChunkTicketOperation::AddPlayer {
-                pos: first_pos,
-                player_id: player_id(1),
-                load_level,
-            },
-            ChunkTicketOperation::AddPlayer {
-                pos: second_pos,
-                player_id: player_id(2),
-                load_level,
-            },
-        ]);
-
-        let old_level = storage.simulation_source_level(first_pos);
-        let changes = storage.set_simulation_distance(updated_simulation_distance);
-        let mut positions = changes.simulation_positions.into_vec();
-        positions.sort_unstable_by_key(|pos| (pos.0.x, pos.0.y));
-
-        assert!(!changes.load_domain_affected);
-        assert!(changes.simulation_domain_affected);
-        assert_eq!(positions, vec![first_pos, second_pos]);
-        assert_ne!(storage.simulation_source_level(first_pos), old_level);
-        assert!(
+        assert_eq!(
             storage
-                .set_simulation_distance(updated_simulation_distance)
-                .simulation_positions
-                .is_empty()
+                .add_ticket(simulation_pos, simulation)
+                .load_positions,
+            Vec::new()
         );
-    }
+        assert_eq!(storage.load_source_level(simulation_pos), None);
+        assert_eq!(storage.simulation_source_level(simulation_pos), Some(level));
 
-    #[test]
-    fn timed_tickets_refresh_wait_for_expiration_and_persist_only_portals() {
-        let mut storage = ChunkTicketStorage::new(TEST_SIMULATION_DISTANCE_CHUNKS);
-        let portal_pos = ChunkPos::new(-4, 7);
-        let pearl_pos = ChunkPos::new(3, 9);
+        let _ = storage.add_ticket(load_pos, forced);
+        let _ = storage.add_ticket(unknown_pos, unknown);
+        assert_eq!(storage.to_persistent().tickets.len(), 1);
 
-        assert!(
-            !storage
-                .add_or_refresh_portal_ticket(portal_pos)
-                .load_positions
-                .is_empty()
-        );
-        assert!(
-            storage
-                .add_or_refresh_portal_ticket(portal_pos)
-                .load_positions
-                .is_empty()
-        );
-        let _ = storage.add_or_refresh_ender_pearl_ticket(pearl_pos);
         let expirations = storage.timed_ticket_expirations();
-        assert_eq!(
-            expirations
-                .iter()
-                .map(|expiration| expiration.pos())
-                .collect::<Vec<_>>(),
-            vec![portal_pos, pearl_pos]
-        );
-        let pearl_expirations: Vec<_> = expirations
-            .into_iter()
-            .filter(|expiration| expiration.can_expire_if_unloaded())
-            .collect();
+        let unknown_expiration = expirations
+            .iter()
+            .find(|expiration| expiration.pos() == unknown_pos)
+            .copied()
+            .expect("unknown ticket should be timed");
+        assert!(unknown_expiration.can_expire_if_unloaded());
 
-        for _ in 0..=PORTAL_TICKET_TIMEOUT_TICKS {
-            let _ = storage.tick_timed_tickets(&pearl_expirations);
-        }
-        assert_eq!(storage.timed_ticket_count(), 1);
-        assert_eq!(storage.load_source_level(pearl_pos), None);
-        assert_eq!(
-            storage.load_source_level(portal_pos),
-            Some(portal_ticket().load_level())
-        );
+        let portal_pos = ChunkPos::new(3, 0);
+        let _ = storage.add_or_refresh_portal_ticket(portal_pos);
+        let portal_expiration = storage
+            .timed_ticket_expirations()
+            .into_iter()
+            .find(|expiration| expiration.pos() == portal_pos)
+            .expect("portal ticket should be timed");
+        assert!(!portal_expiration.can_expire_if_unloaded());
+
+        let pearl_pos = ChunkPos::new(4, 0);
+        let _ = storage.add_or_refresh_ender_pearl_ticket(pearl_pos);
+        let pearl_expiration = storage
+            .timed_ticket_expirations()
+            .into_iter()
+            .find(|expiration| expiration.pos() == pearl_pos)
+            .expect("ender pearl ticket should be timed");
+        assert!(!pearl_expiration.can_expire_if_unloaded());
+    }
+
+    #[test]
+    fn persistence_resolves_registered_type_and_rejects_invalid_values() {
+        init_registry();
+        let pos = ChunkPos::new(-8, 12);
+        let level = ChunkTicketLevel::BLOCK_TICKING_CHUNK;
+        let mut storage = ChunkTicketStorage::new();
+        let portal = ChunkTicket::from_saved(&vanilla_ticket_types::PORTAL, level, 123);
+        let forced = ChunkTicket::new(&vanilla_ticket_types::FORCED, level);
+        let internal = ChunkTicket::new(&steel_ticket_types::CHUNK_REQUEST, level);
+        let _ = storage.add_ticket(pos, portal);
+        let _ = storage.add_ticket(pos, forced);
+        let _ = storage.add_ticket(pos, internal);
 
         let persistent = storage.to_persistent();
-        assert_eq!(
-            persistent,
-            PersistentChunkTickets {
-                tickets: vec![PersistentChunkTicket {
-                    kind: PersistentChunkTicketKind::Portal,
-                    chunk_x: -4,
-                    chunk_z: 7,
-                    ticks_left: PORTAL_TICKET_TIMEOUT_TICKS,
-                }],
-            }
-        );
+        assert_eq!(persistent.tickets.len(), 2);
+        let restored = ChunkTicketStorage::from_persistent(persistent)
+            .expect("registered persistent ticket types should restore");
+        assert_eq!(restored.ticket_count(), 2);
+        let restored_tickets = &restored.tickets[&pos];
+        let forced_ticks_left = restored_tickets
+            .iter()
+            .find(|stored| {
+                ptr::eq(
+                    stored.ticket.ticket_type(),
+                    &raw const vanilla_ticket_types::FORCED,
+                )
+            })
+            .map(|stored| stored.ticket.ticks_left());
+        let portal_ticks_left = restored_tickets
+            .iter()
+            .find(|stored| {
+                ptr::eq(
+                    stored.ticket.ticket_type(),
+                    &raw const vanilla_ticket_types::PORTAL,
+                )
+            })
+            .map(|stored| stored.ticket.ticks_left());
+        assert_eq!(forced_ticks_left, Some(0));
+        assert_eq!(portal_ticks_left, Some(123));
 
-        let portal_expirations = storage.timed_ticket_expirations();
-        for _ in 0..PORTAL_TICKET_TIMEOUT_TICKS {
-            let _ = storage.tick_timed_tickets(&portal_expirations);
-        }
-        assert!(storage.load_source_level(portal_pos).is_some());
-        let expired = storage.tick_timed_tickets(&portal_expirations);
-        assert_eq!(expired.load_positions.as_slice(), &[portal_pos]);
-        assert_eq!(storage.load_source_level(portal_pos), None);
-    }
-
-    #[test]
-    fn persistent_duplicate_portal_resets_to_vanilla_timeout() {
-        let persistent = PersistentChunkTickets {
-            tickets: vec![
-                PersistentChunkTicket {
-                    kind: PersistentChunkTicketKind::Portal,
-                    chunk_x: 2,
-                    chunk_z: 3,
-                    ticks_left: 10,
-                },
-                PersistentChunkTicket {
-                    kind: PersistentChunkTicketKind::Portal,
-                    chunk_x: 2,
-                    chunk_z: 3,
-                    ticks_left: 20,
-                },
-            ],
-        };
-
-        let restored =
-            ChunkTicketStorage::from_persistent(persistent, TEST_SIMULATION_DISTANCE_CHUNKS);
-
-        assert_eq!(restored.timed_ticket_count(), 1);
-        let expirations = restored.timed_ticket_expirations();
-        assert_eq!(expirations.len(), 1);
-        assert_eq!(expirations[0].pos(), ChunkPos::new(2, 3));
-        assert_eq!(
-            restored.to_persistent(),
-            PersistentChunkTickets {
-                tickets: vec![PersistentChunkTicket {
-                    kind: PersistentChunkTicketKind::Portal,
-                    chunk_x: 2,
-                    chunk_z: 3,
-                    ticks_left: PORTAL_TICKET_TIMEOUT_TICKS,
-                }],
-            }
-        );
-        assert_eq!(restored.initial_load_sources().len(), 1);
-        assert_eq!(restored.initial_simulation_sources().len(), 1);
-    }
-
-    #[test]
-    fn persistent_portal_preserves_remaining_ticks() {
-        let persistent = PersistentChunkTickets {
+        let unknown = PersistentChunkTickets {
             tickets: vec![PersistentChunkTicket {
-                kind: PersistentChunkTicketKind::Portal,
-                chunk_x: -8,
-                chunk_z: 12,
-                ticks_left: 123,
+                ticket_type: Identifier::new_static("test", "missing"),
+                chunk_x: 0,
+                chunk_z: 0,
+                level: level.raw(),
+                ticks_left: 0,
             }],
         };
-
-        let restored = ChunkTicketStorage::from_persistent(
-            persistent.clone(),
-            TEST_SIMULATION_DISTANCE_CHUNKS,
+        let error = ChunkTicketStorage::from_persistent(unknown)
+            .expect_err("unknown ticket type should be rejected");
+        assert_eq!(
+            error,
+            ChunkTicketStorageLoadError::UnknownTicketType(Identifier::new_static(
+                "test", "missing"
+            ))
         );
 
-        assert_eq!(restored.to_persistent(), persistent);
+        let invalid_level = ChunkTicketLevel::MAX.raw() + 1;
+        let invalid = PersistentChunkTickets {
+            tickets: vec![PersistentChunkTicket {
+                ticket_type: Identifier::vanilla_static("forced"),
+                chunk_x: 0,
+                chunk_z: 0,
+                level: invalid_level,
+                ticks_left: 0,
+            }],
+        };
+        let error = ChunkTicketStorage::from_persistent(invalid)
+            .expect_err("out-of-range ticket level should be rejected");
+        assert_eq!(
+            error,
+            ChunkTicketStorageLoadError::InvalidTicketLevel {
+                ticket_type: Identifier::vanilla_static("forced"),
+                level: invalid_level,
+            }
+        );
+    }
+
+    #[test]
+    fn persistence_defaults_ticks_and_duplicate_activation_refreshes_timeout() {
+        init_registry();
+        let pos = ChunkPos::new(2, 3);
+        let level = ChunkTicketLevel::FULL_CHUNK;
+        let encoded = format!(
+            "tickets = [{{ type = \"minecraft:portal\", chunk_x = 2, chunk_z = 3, level = {} }}]",
+            level.raw()
+        );
+        let mut persistent: PersistentChunkTickets =
+            toml::from_str(&encoded).expect("ticket data without ticks_left should decode");
+        assert_eq!(persistent.tickets[0].ticks_left, 0);
+
+        persistent.tickets.push(PersistentChunkTicket {
+            ticket_type: Identifier::vanilla_static("portal"),
+            chunk_x: pos.0.x,
+            chunk_z: pos.0.y,
+            level: level.raw(),
+            ticks_left: 20,
+        });
+        let restored = ChunkTicketStorage::from_persistent(persistent)
+            .expect("duplicate registered tickets should restore");
+
+        assert_eq!(restored.ticket_count(), 1);
+        assert_eq!(
+            restored.tickets[&pos][0].ticket.ticks_left(),
+            vanilla_ticket_types::PORTAL.timeout()
+        );
+    }
+
+    #[test]
+    fn timed_decrement_wraps_like_java_long() {
+        init_registry();
+        let pos = ChunkPos::new(4, 5);
+        let persistent = PersistentChunkTickets {
+            tickets: vec![PersistentChunkTicket {
+                ticket_type: Identifier::vanilla_static("portal"),
+                chunk_x: pos.0.x,
+                chunk_z: pos.0.y,
+                level: ChunkTicketLevel::FULL_CHUNK.raw(),
+                ticks_left: i64::MIN,
+            }],
+        };
+        let mut storage =
+            ChunkTicketStorage::from_persistent(persistent).expect("portal ticket should restore");
+
+        let expirations = storage.timed_ticket_expirations();
+        let _ = storage.tick_timed_tickets(&expirations);
+
+        assert_eq!(storage.tickets[&pos][0].ticket.ticks_left(), i64::MAX);
     }
 }

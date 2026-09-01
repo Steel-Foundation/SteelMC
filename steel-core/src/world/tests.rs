@@ -12,7 +12,7 @@ use steel_registry::{
 use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
-use crate::chunk::chunk_ticket_manager::{ChunkTicket, ChunkTicketLevel};
+use crate::chunk::chunk_ticket_manager::ChunkTicketLevel;
 use crate::entity::{EntityBase, entities::PigEntity};
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
 
@@ -21,8 +21,8 @@ const SECOND_HALF: BlockLocalAabb = BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0,
 static SPLIT_BLOCK: &[BlockLocalAabb] = &[FIRST_HALF, SECOND_HALF];
 
 fn advance_scheduling_until(world: &Arc<World>, mut ready: impl FnMut() -> bool) {
+    let _runtime_guard = world.chunk_map.chunk_runtime.enter();
     for _ in 0..10_000 {
-        world.chunk_map.flush_simulation_updates();
         world.chunk_map.advance_scheduling();
         if ready() {
             return;
@@ -317,14 +317,14 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     let world = fresh_test_world("set_block_publication_gates");
     let pos = BlockPos::new(1_504, 64, 1_504);
     let chunk_pos = ChunkPos::from_block_pos(pos);
-    let simulation_ticket = ChunkTicket::simulated_full_chunks(1);
-    let simulation_revision = world
+    let player_id = Uuid::from_u128(1);
+    let simulation_receipt = world
         .chunk_map
-        .add_chunk_ticket(chunk_pos, simulation_ticket);
+        .queue_test_player_ticket_add(chunk_pos, player_id);
     advance_scheduling_until(&world, || {
         world
             .chunk_map
-            .is_ticket_receipt_committed(simulation_revision)
+            .is_ticket_receipt_committed(simulation_receipt)
             && world.chunk_map.with_full_chunk(chunk_pos, |_| ()).is_some()
             && world
                 .chunk_map
@@ -401,18 +401,17 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     assert!(world.get_block_state(unsupported_fire_pos).is_air());
     assert_eq!(holder.packet_content_revision(), publication_revision + 3);
 
-    let loading_ticket = ChunkTicket::loading(ChunkTicketLevel::BLOCK_TICKING_CHUNK);
-    let loading_revision = world.chunk_map.add_chunk_ticket(chunk_pos, loading_ticket);
-    let removal_revision = world
+    let loading_level = ChunkTicketLevel::BLOCK_TICKING_CHUNK;
+    let loading_receipt = world
         .chunk_map
-        .remove_chunk_ticket(chunk_pos, simulation_ticket);
+        .acquire_chunk_request_leases(&[chunk_pos], loading_level)
+        .expect("one request lease should produce a receipt");
+    let removal_receipt = world
+        .chunk_map
+        .queue_test_player_ticket_remove(chunk_pos, player_id);
     advance_scheduling_until(&world, || {
-        world
-            .chunk_map
-            .is_ticket_receipt_committed(loading_revision)
-            && world
-                .chunk_map
-                .is_ticket_receipt_committed(removal_revision)
+        world.chunk_map.is_ticket_receipt_committed(loading_receipt)
+            && world.chunk_map.is_ticket_receipt_committed(removal_receipt)
     });
 
     assert!(
@@ -429,20 +428,22 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     ));
     assert_eq!(holder.packet_content_revision(), load_only_revision + 1);
 
-    let full_only_ticket = ChunkTicket::full_chunks(0);
-    let full_only_revision = world
+    let full_only_level = ChunkTicketLevel::FULL_CHUNK;
+    let full_only_receipt = world
         .chunk_map
-        .add_chunk_ticket(chunk_pos, full_only_ticket);
-    let loading_removal_revision = world
+        .acquire_chunk_request_leases(&[chunk_pos], full_only_level)
+        .expect("one request lease should produce a receipt");
+    let loading_removal_receipt = world
         .chunk_map
-        .remove_chunk_ticket(chunk_pos, loading_ticket);
+        .release_chunk_request_leases(&[chunk_pos], loading_level)
+        .expect("one request lease release should produce a receipt");
     advance_scheduling_until(&world, || {
         world
             .chunk_map
-            .is_ticket_receipt_committed(full_only_revision)
+            .is_ticket_receipt_committed(full_only_receipt)
             && world
                 .chunk_map
-                .is_ticket_receipt_committed(loading_removal_revision)
+                .is_ticket_receipt_committed(loading_removal_receipt)
     });
 
     assert!(
@@ -461,9 +462,9 @@ fn set_block_matches_vanilla_update_limit_and_client_publication_gates() {
     world.send_block_updated(pos);
     assert_eq!(holder.packet_content_revision(), non_ticking_revision);
 
-    world
+    let _ = world
         .chunk_map
-        .remove_chunk_ticket(chunk_pos, full_only_ticket);
+        .release_chunk_request_leases(&[chunk_pos], full_only_level);
     world.chunk_map.advance_scheduling();
     world
         .chunk_map

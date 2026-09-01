@@ -1,30 +1,30 @@
 use super::*;
+use crate::chunk::chunk_scheduler::PlayerTicketOperation;
 use uuid::Uuid;
 
 #[test]
-fn players_at_same_position_share_one_loading_source() {
-    let world = fresh_test_world("shared_player_loading_source");
+fn players_at_same_position_share_loading_and_simulation_sources() {
+    let world = fresh_test_world("shared_player_ticket_sources");
     let pos = ChunkPos::new(0, 0);
-    let load_level = ChunkTicketLevel::for_entity_ticking_radius(world.view_distance);
+    let load_level = ChunkTicketLevel::ENTITY_TICKING_CHUNK;
+    let simulation_level = ChunkTicketLevel::for_entity_ticking_radius(world.simulation_distance);
     let first_player = Uuid::from_u128(1);
     let second_player = Uuid::from_u128(2);
 
     world
         .chunk_map
         .scheduling
-        .queue_ticket_operation(ChunkTicketOperation::AddPlayer {
+        .queue_player_ticket_operation(PlayerTicketOperation::Add {
             pos,
             player_id: first_player,
-            load_level,
         });
     let second_addition =
         world
             .chunk_map
             .scheduling
-            .queue_ticket_operation(ChunkTicketOperation::AddPlayer {
+            .queue_player_ticket_operation(PlayerTicketOperation::Add {
                 pos,
                 player_id: second_player,
-                load_level,
             });
     advance_until_receipt(&world.chunk_map, second_addition);
 
@@ -34,12 +34,13 @@ fn players_at_same_position_share_one_loading_source() {
         .read_sync(&pos, |_, holder| Arc::clone(holder))
         .expect("the shared player source should keep its center active");
     assert_eq!(holder.load_level(), Some(load_level));
+    assert_eq!(holder.simulation_level(), Some(simulation_level));
 
     let first_removal =
         world
             .chunk_map
             .scheduling
-            .queue_ticket_operation(ChunkTicketOperation::RemovePlayer {
+            .queue_player_ticket_operation(PlayerTicketOperation::Remove {
                 pos,
                 player_id: first_player,
             });
@@ -54,18 +55,20 @@ fn players_at_same_position_share_one_loading_source() {
         "removing one player must not weaken the remaining source"
     );
     assert_eq!(holder.load_level(), Some(load_level));
+    assert_eq!(holder.simulation_level(), Some(simulation_level));
 
     let second_removal =
         world
             .chunk_map
             .scheduling
-            .queue_ticket_operation(ChunkTicketOperation::RemovePlayer {
+            .queue_player_ticket_operation(PlayerTicketOperation::Remove {
                 pos,
                 player_id: second_player,
             });
     advance_until_receipt(&world.chunk_map, second_removal);
 
     assert!(!world.chunk_map.chunks.contains_sync(&pos));
+    assert_eq!(world.chunk_map.scheduling.simulation_level(pos), None);
     stop_chunk_tasks(&world);
 }
 
@@ -75,11 +78,19 @@ fn player_simulation_removal_applies_at_the_next_world_tick() {
     init_behaviors();
     let world = fresh_test_world("synchronous_player_simulation_removal");
     let center = ChunkPos::new(0, 0);
-    let holder = insert_ready_full_chunk(&world, center);
-    holder.set_simulation_level(None);
-    holder.swap_load_level(ChunkTicketLevel::ENTITY_TICKING_CHUNK);
-    holder.transition_ticking_readiness(TickingReadiness::EntityTicking);
-    world.chunk_map.rebuild_ticking_chunk_snapshot();
+    let mut holder = None;
+    for z in -2..=2 {
+        for x in -2..=2 {
+            let inserted = insert_ready_full_chunk(&world, ChunkPos::new(x, z));
+            if x == 0 && z == 0 {
+                holder = Some(inserted);
+            }
+        }
+    }
+    let holder = holder.expect("the center holder should be inserted");
+    let _ = world
+        .chunk_map
+        .acquire_chunk_request_leases(&[center], ChunkTicketLevel::FULL_CHUNK);
 
     let player = TestPlayerBuilder::new(Arc::clone(&world), "SimulationPlayer", 1).build();
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
@@ -92,6 +103,10 @@ fn player_simulation_removal_applies_at_the_next_world_tick() {
     assert_eq!(world.chunk_map.tickable_full_chunk_positions(), []);
     assert_eq!(holder.simulation_level(), None);
     assert!(world.chunk_map.chunks.contains_sync(&center));
+    let _ = world
+        .chunk_map
+        .release_chunk_request_leases(&[center], ChunkTicketLevel::FULL_CHUNK);
+    stop_chunk_tasks(&world);
 }
 
 #[test]
@@ -144,6 +159,8 @@ fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() 
 
     let (player, packets) = recording_player(&world);
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    // Keep player-ticket generation from competing with the light-work fixture.
+    world.chunk_map.stop_generation_refill_loop();
     let _ = player.mark_joined_world();
     player.set_client_loaded(true);
     player.chunk_sender.lock().mark_chunk_sent_for_test(center);
@@ -186,6 +203,7 @@ fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() 
     assert!(!world.chunk_map.light_update_touches_chunk(center));
     assert!(world.chunk_map.chunks_to_broadcast.lock().is_empty());
     world.remove_player_for_world_change(&player);
+    stop_chunk_tasks(&world);
 }
 
 #[test]
@@ -232,4 +250,5 @@ fn frozen_tick_broadcasts_block_changes_before_acknowledging_them() {
         .collect::<Vec<_>>();
     assert_eq!(relevant_packet_ids, [C_BLOCK_UPDATE, C_BLOCK_CHANGED_ACK]);
     world.remove_player_for_world_change(&player);
+    stop_chunk_tasks(&world);
 }

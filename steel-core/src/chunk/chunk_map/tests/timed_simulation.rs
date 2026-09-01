@@ -1,4 +1,6 @@
 use super::*;
+use std::time::Duration;
+use tokio::{task::yield_now, time::timeout};
 
 #[test]
 fn timed_simulation_expiration_follows_its_final_scheduled_tick() {
@@ -7,13 +9,33 @@ fn timed_simulation_expiration_follows_its_final_scheduled_tick() {
     let world = fresh_test_world("timed_simulation_expiration");
     let chunk_pos = ChunkPos::new(0, 0);
     let block_pos = BlockPos::new(1, 64, 1);
-    let holder = insert_ready_full_chunk(&world, chunk_pos);
+    let mut holder = None;
+    for z in -2..=2 {
+        for x in -2..=2 {
+            let inserted = insert_ready_full_chunk(&world, ChunkPos::new(x, z));
+            if x == 0 && z == 0 {
+                holder = Some(inserted);
+            }
+        }
+    }
+    let holder = holder.expect("the center holder should be inserted");
 
     let load_receipt = world
         .chunk_map
-        .add_chunk_ticket(chunk_pos, ChunkTicket::full_chunks(0));
+        .acquire_chunk_request_leases(&[chunk_pos], ChunkTicketLevel::FULL_CHUNK)
+        .expect("non-empty lease acquisition should produce a receipt");
     world.chunk_map.place_ender_pearl_ticket(chunk_pos);
-    world.chunk_map.flush_simulation_updates();
+    advance_until_receipt(&world.chunk_map, load_receipt);
+
+    world.chunk_map.chunk_runtime.block_on(async {
+        timeout(Duration::from_secs(5), async {
+            while !holder.is_ready_for_saving() {
+                yield_now().await;
+            }
+        })
+        .await
+        .expect("generation should release its save dependencies");
+    });
 
     assert_eq!(
         holder.simulation_level(),
@@ -28,7 +50,7 @@ fn timed_simulation_expiration_follows_its_final_scheduled_tick() {
     for _ in 0..ENDER_PEARL_TICKET_TIMEOUT {
         world.chunk_map.tick_timed_tickets();
     }
-    world.chunk_map.flush_simulation_updates();
+    world.chunk_map.advance_scheduling();
     assert_eq!(
         holder.simulation_level(),
         Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK),
@@ -66,9 +88,6 @@ fn timed_simulation_expiration_follows_its_final_scheduled_tick() {
             .contains(&chunk_pos),
         "the published ticking snapshot must exclude the expired chunk"
     );
-
-    advance_until_receipt(&world.chunk_map, load_receipt);
-
     assert_eq!(holder.load_level(), Some(ChunkTicketLevel::FULL_CHUNK));
     assert!(
         world
@@ -78,5 +97,8 @@ fn timed_simulation_expiration_follows_its_final_scheduled_tick() {
             .unwrap_or(false),
         "the overlapping load-only ticket should keep the same holder active"
     );
+    let _ = world
+        .chunk_map
+        .release_chunk_request_leases(&[chunk_pos], ChunkTicketLevel::FULL_CHUNK);
     stop_chunk_tasks(&world);
 }

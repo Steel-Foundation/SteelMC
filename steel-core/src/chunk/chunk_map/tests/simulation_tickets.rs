@@ -15,6 +15,7 @@ use steel_utils::{
     types::{Difficulty, GameType},
 };
 use toml::map::Map;
+use uuid::Uuid;
 
 const TEST_WORLD_SEED: i64 = 0;
 const TEST_VIEW_AND_SIMULATION_DISTANCE_CHUNKS: u8 = 2;
@@ -45,36 +46,15 @@ impl Drop for TemporaryWorldDirectory {
     }
 }
 
-fn snapshot_membership(chunk_map: &ChunkMap, pos: ChunkPos) -> (bool, bool, bool) {
-    let snapshot = chunk_map.ticking_chunks.load();
-    let Some(&index) = snapshot.layout.slot_by_pos.get(&pos) else {
-        return (false, false, false);
-    };
-
-    (
-        snapshot.block.contains(index),
-        snapshot.random.contains(index),
-        snapshot.entity.contains(index),
-    )
-}
-
-const fn full_and_entity_ticking_ticket(radius: u8) -> ChunkTicket {
-    ChunkTicket::full_chunks_with_entity_ticking(radius, radius)
-}
-
 #[test]
-fn restored_portal_ticket_initializes_loading_and_simulation_before_first_flush() {
+fn restored_portal_ticket_initializes_both_levels_in_the_first_source_phase() {
     init_vanilla_registry();
     init_behaviors();
     let directory = TemporaryWorldDirectory::new("restored-portal-ticket");
     let runtime = Arc::new(Runtime::new().expect("test runtime should initialize"));
     let center = ChunkPos::new(-4, 7);
-    let mut ticket_storage = ChunkTicketStorage::new(TEST_VIEW_AND_SIMULATION_DISTANCE_CHUNKS);
-    assert!(
-        ticket_storage
-            .add_or_refresh_portal_ticket(center)
-            .load_domain_affected
-    );
+    let mut ticket_storage = ChunkTicketStorage::new();
+    let _ = ticket_storage.add_or_refresh_portal_ticket(center);
     let persistent_tickets = ticket_storage.to_persistent();
     runtime
         .block_on(
@@ -121,19 +101,12 @@ fn restored_portal_ticket_initializes_loading_and_simulation_before_first_flush(
         ))
         .expect("world should restore persisted portal tickets");
 
-    let mut holder = None;
-    for _ in 0..CHUNK_SCHEDULING_POLL_ATTEMPTS {
-        world.chunk_map.advance_scheduling();
-        holder = world
-            .chunk_map
-            .chunks
-            .read_sync(&center, |_, holder| Arc::clone(holder));
-        if holder.is_some() {
-            break;
-        }
-        thread::sleep(CHUNK_SCHEDULING_POLL_INTERVAL);
-    }
-    let holder = holder.expect("restored portal ticket should load its center holder");
+    world.chunk_map.advance_scheduling();
+    let holder = world
+        .chunk_map
+        .chunks
+        .read_sync(&center, |_, holder| Arc::clone(holder))
+        .expect("restored portal ticket should load its center holder");
     let expected_level = ChunkTicketLevel::for_full_chunk_radius(PORTAL_TICKET_RADIUS);
     assert_eq!(holder.load_level(), Some(expected_level));
     assert_eq!(
@@ -141,198 +114,64 @@ fn restored_portal_ticket_initializes_loading_and_simulation_before_first_flush(
         Some(expected_level),
         "restored simulation must be authoritative when loading creates the holder"
     );
-
-    world.chunk_map.flush_simulation_updates();
-    assert_eq!(holder.simulation_level(), Some(expected_level));
     stop_chunk_tasks(&world);
 }
 
 #[test]
-fn simulation_level_classes_publish_immutable_masks_on_a_shared_layout() {
-    let world = fresh_test_world("simulation_snapshot_class_transitions");
-    let pos = ChunkPos::new(0, 0);
-    let adjacent = ChunkPos::new(1, 0);
-    let holder = insert_ready_full_chunk(&world, pos);
-    holder.swap_load_level(ChunkTicketLevel::ENTITY_TICKING_CHUNK);
-    holder.set_simulation_level(None);
-    assert_eq!(
-        holder.transition_ticking_readiness(TickingReadiness::EntityTicking),
-        Some(TickingReadiness::BlockTicking)
-    );
-    world.chunk_map.rebuild_ticking_chunk_snapshot();
+fn unified_source_phase_updates_an_existing_holder_and_commits_its_receipt() {
+    let world = fresh_test_world("unified_ticket_source_phase");
+    let pos = ChunkPos::new(7, -5);
+    let holder = insert_active_full_holder(&world, pos, ChunkTicketLevel::FULL_CHUNK, Vec::new());
+    let player_id = Uuid::from_u128(1);
 
-    let wide_ticket = full_and_entity_ticking_ticket(1);
-    let center_ticket = full_and_entity_ticking_ticket(0);
-    let _ = world.chunk_map.add_chunk_ticket(pos, center_ticket);
-    let _ = world.chunk_map.add_chunk_ticket(pos, wide_ticket);
-    let before_initial = world.chunk_map.ticking_chunks.load_full();
-    let initial_slot = *before_initial
-        .layout
-        .slot_by_pos
-        .get(&pos)
-        .expect("ready holder should have a stable layout slot");
-    assert!(!before_initial.block.contains(initial_slot));
-    let initial = world.chunk_map.flush_simulation_updates();
-    let after_initial = world.chunk_map.ticking_chunks.load_full();
+    let receipt = world.chunk_map.queue_test_player_ticket_add(pos, player_id);
+    assert_eq!(holder.simulation_level(), None);
+    assert!(!world.chunk_map.is_ticket_receipt_committed(receipt));
+
+    advance_until_receipt(&world.chunk_map, receipt);
+
     assert_eq!(
         holder.simulation_level(),
-        Some(ChunkTicketLevel::for_entity_ticking_radius(1))
+        Some(ChunkTicketLevel::for_entity_ticking_radius(
+            TEST_VIEW_AND_SIMULATION_DISTANCE_CHUNKS
+        ))
     );
     assert_eq!(
-        snapshot_membership(&world.chunk_map, pos),
-        (true, true, true)
-    );
-    assert!(!Arc::ptr_eq(&before_initial, &after_initial));
-    assert!(Arc::ptr_eq(&before_initial.layout, &after_initial.layout));
-    assert!(
-        !before_initial.block.contains(initial_slot),
-        "publishing new masks must not mutate a retained snapshot"
-    );
-    assert_eq!(initial.rebuilt_ticking_chunk_count, 1);
-
-    let _ = world.chunk_map.remove_chunk_ticket(pos, wide_ticket);
-    let before_same_class = world.chunk_map.ticking_chunks.load_full();
-    let same_class = world.chunk_map.flush_simulation_updates();
-    let after_same_class = world.chunk_map.ticking_chunks.load_full();
-    assert_eq!(
-        holder.simulation_level(),
+        holder.load_level(),
         Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK)
     );
-    assert_eq!(
-        snapshot_membership(&world.chunk_map, pos),
-        (true, true, true)
-    );
-    assert!(Arc::ptr_eq(&before_same_class, &after_same_class));
-    assert_eq!(same_class.ticking_snapshot_rebuild, Duration::ZERO);
-    assert_eq!(same_class.rebuilt_ticking_chunk_count, 0);
-
-    let _ = world.chunk_map.remove_chunk_ticket(pos, center_ticket);
-    let _ = world.chunk_map.add_chunk_ticket(adjacent, center_ticket);
-    let before_entity_to_block = world.chunk_map.ticking_chunks.load_full();
-    let entity_to_block = world.chunk_map.flush_simulation_updates();
-    let after_entity_to_block = world.chunk_map.ticking_chunks.load_full();
-    assert_eq!(
-        holder.simulation_level(),
-        Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK)
-    );
-    assert_eq!(
-        snapshot_membership(&world.chunk_map, pos),
-        (true, false, false)
-    );
-    assert!(!Arc::ptr_eq(
-        &before_entity_to_block,
-        &after_entity_to_block
-    ));
-    assert!(Arc::ptr_eq(
-        &before_entity_to_block.layout,
-        &after_entity_to_block.layout
-    ));
-    let old_slot = before_entity_to_block.layout.slot_by_pos[&pos];
-    assert!(before_entity_to_block.random.contains(old_slot));
-    assert!(before_entity_to_block.entity.contains(old_slot));
-    assert_eq!(entity_to_block.rebuilt_ticking_chunk_count, 1);
-
-    let _ = world.chunk_map.remove_chunk_ticket(adjacent, center_ticket);
-    let before_block_to_absent = world.chunk_map.ticking_chunks.load_full();
-    let block_to_absent = world.chunk_map.flush_simulation_updates();
-    let after_block_to_absent = world.chunk_map.ticking_chunks.load_full();
-    assert_eq!(holder.simulation_level(), None);
-    assert_eq!(
-        snapshot_membership(&world.chunk_map, pos),
-        (false, false, false)
-    );
-    assert!(!Arc::ptr_eq(
-        &before_block_to_absent,
-        &after_block_to_absent
-    ));
-    assert!(Arc::ptr_eq(
-        &before_block_to_absent.layout,
-        &after_block_to_absent.layout
-    ));
-    let old_slot = before_block_to_absent.layout.slot_by_pos[&pos];
-    assert!(before_block_to_absent.block.contains(old_slot));
-    assert_eq!(block_to_absent.rebuilt_ticking_chunk_count, 0);
+    assert!(world.chunk_map.chunks.contains_sync(&pos));
+    stop_chunk_tasks(&world);
 }
 
 #[test]
-fn only_layout_eligibility_changes_replace_the_shared_layout() {
-    let world = fresh_test_world("ticking_layout_membership_boundaries");
-    let ticking_pos = ChunkPos::new(0, 0);
-    let unready_pos = ChunkPos::new(8, 8);
-    let ticking_holder = insert_ready_full_chunk(&world, ticking_pos);
-    ticking_holder.set_simulation_level(None);
-    world.chunk_map.rebuild_ticking_chunk_snapshot();
-    let initial = world.chunk_map.ticking_chunks.load_full();
-
-    let unready_holder = world
-        .chunk_map
-        .update_chunk_level(unready_pos, Some(ChunkTicketLevel::MAX))
-        .expect("load churn should create an Unready holder");
-    assert_eq!(
-        unready_holder.ticking_readiness_snapshot().readiness(),
-        TickingReadiness::Unready
-    );
-    world.chunk_map.update_chunk_level(unready_pos, None);
+fn simulation_changes_do_not_create_holders() {
+    let world = fresh_test_world("simulation_change_without_load");
+    let pos = ChunkPos::new(11, -3);
 
     let _ = world
         .chunk_map
-        .add_chunk_ticket(ticking_pos, full_and_entity_ticking_ticket(0));
-    world.chunk_map.flush_simulation_updates();
-    let after_unready_churn = world.chunk_map.ticking_chunks.load_full();
-    assert!(Arc::ptr_eq(&initial.layout, &after_unready_churn.layout));
+        .apply_simulation_changes(&[SimulationLevelChange {
+            pos,
+            new_level: Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK),
+        }]);
 
-    let candidate = TickingReadinessCandidate {
-        pos: ticking_pos,
-        holder: Arc::clone(&ticking_holder),
-        desired: TickingReadiness::Unready,
-        target: TickingReadiness::Unready,
-    };
-    assert!(world.chunk_map.apply_readiness_demotions(&[candidate]));
-    world.chunk_map.rebuild_ticking_chunk_snapshot();
-    let after_eligibility_change = world.chunk_map.ticking_chunks.load_full();
-    assert!(!Arc::ptr_eq(
-        &after_unready_churn.layout,
-        &after_eligibility_change.layout
-    ));
-    assert!(
-        !after_eligibility_change
-            .layout
-            .slot_by_pos
-            .contains_key(&ticking_pos)
-    );
-}
-
-#[test]
-fn simulation_ticket_updates_existing_holder_before_load_epoch_commits() {
-    let world = fresh_test_world("simulation_ticket_before_load_epoch");
-    let pos = ChunkPos::new(7, -5);
-    let holder = insert_active_full_holder(&world, pos, ChunkTicketLevel::FULL_CHUNK, Vec::new());
-    let ticket = full_and_entity_ticking_ticket(0);
-
-    let receipt = world.chunk_map.add_chunk_ticket(pos, ticket);
-    world.chunk_map.flush_simulation_updates();
-
-    assert_eq!(
-        holder.simulation_level(),
-        Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK)
-    );
-    assert_eq!(holder.load_level(), Some(ChunkTicketLevel::FULL_CHUNK));
-    assert!(world.chunk_map.chunks.contains_sync(&pos));
-    assert!(
-        !world.chunk_map.is_ticket_receipt_committed(receipt),
-        "simulation propagation must not wait for or commit the load epoch"
-    );
+    assert!(!world.chunk_map.chunks.contains_sync(&pos));
+    assert!(!world.chunk_map.unloading_chunks.contains_sync(&pos));
+    stop_chunk_tasks(&world);
 }
 
 #[test]
 fn removing_simulation_ticket_keeps_holder_with_load_only_ticket() {
     let world = fresh_test_world("simulation_ticket_removal_keeps_loaded");
     let pos = ChunkPos::new(-8, 6);
-    let load_only_ticket = ChunkTicket::full_chunks(0);
-    let simulation_ticket = full_and_entity_ticking_ticket(0);
+    let load_level = ChunkTicketLevel::FULL_CHUNK;
+    let player_id = Uuid::from_u128(2);
 
-    world.chunk_map.add_chunk_ticket(pos, load_only_ticket);
-    let addition_receipt = world.chunk_map.add_chunk_ticket(pos, simulation_ticket);
+    let _ = world
+        .chunk_map
+        .acquire_chunk_request_leases(&[pos], load_level);
+    let addition_receipt = world.chunk_map.queue_test_player_ticket_add(pos, player_id);
     advance_until_receipt(&world.chunk_map, addition_receipt);
 
     let holder = world
@@ -342,15 +181,14 @@ fn removing_simulation_ticket_keeps_holder_with_load_only_ticket() {
         .expect("committed tickets should create an active holder");
     assert_eq!(
         holder.simulation_level(),
-        Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK)
+        Some(ChunkTicketLevel::for_entity_ticking_radius(
+            TEST_VIEW_AND_SIMULATION_DISTANCE_CHUNKS
+        ))
     );
 
-    let removal_receipt = world.chunk_map.remove_chunk_ticket(pos, simulation_ticket);
-    world.chunk_map.flush_simulation_updates();
-
-    assert_eq!(holder.simulation_level(), None);
-    assert!(world.chunk_map.chunks.contains_sync(&pos));
-
+    let removal_receipt = world
+        .chunk_map
+        .queue_test_player_ticket_remove(pos, player_id);
     advance_until_receipt(&world.chunk_map, removal_receipt);
 
     assert!(
@@ -363,34 +201,8 @@ fn removing_simulation_ticket_keeps_holder_with_load_only_ticket() {
     );
     assert_eq!(holder.load_level(), Some(ChunkTicketLevel::FULL_CHUNK));
     assert_eq!(holder.simulation_level(), None);
-    stop_chunk_tasks(&world);
-}
-
-#[test]
-fn simulation_ticket_waits_for_load_epoch_before_holder_creation() {
-    let world = fresh_test_world("load_creation_samples_simulation");
-    let pos = ChunkPos::new(-13, -9);
-    let ticket = full_and_entity_ticking_ticket(0);
-
-    let receipt = world.chunk_map.add_chunk_ticket(pos, ticket);
-    world.chunk_map.flush_simulation_updates();
-    assert!(!world.chunk_map.chunks.contains_sync(&pos));
-    assert!(!world.chunk_map.unloading_chunks.contains_sync(&pos));
-    assert!(
-        !world.chunk_map.is_ticket_receipt_committed(receipt),
-        "simulation propagation must leave the load operation for a background epoch"
-    );
-
-    advance_until_receipt(&world.chunk_map, receipt);
-
-    let holder = world
+    let _ = world
         .chunk_map
-        .chunks
-        .read_sync(&pos, |_, holder| Arc::clone(holder))
-        .expect("the committed load ticket should create a holder");
-    assert_eq!(
-        holder.simulation_level(),
-        Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK)
-    );
+        .release_chunk_request_leases(&[pos], load_level);
     stop_chunk_tasks(&world);
 }

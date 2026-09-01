@@ -1,5 +1,5 @@
-use super::{CSetChunkCenter, ChunkMap, ChunkPos, ChunkTicket, Entity, Player, PlayerChunkView};
-use crate::chunk::chunk_scheduler::ChunkTicketOperation;
+use super::{CSetChunkCenter, ChunkMap, ChunkPos, Entity, Player, PlayerChunkView};
+use crate::chunk::chunk_scheduler::PlayerTicketOperation;
 use crate::player::chunk_sender::ChunkSender;
 
 impl ChunkMap {
@@ -11,22 +11,20 @@ impl ChunkMap {
 
         let new_view = PlayerChunkView::new(current_chunk_pos, view_distance);
         let world = self.world_gen_context.world();
-        let player_load_level = ChunkTicket::player_loading(world.view_distance).load_level();
         let player_id = player.gameprofile.id;
         let mut last_view_guard = player.last_tracking_view.lock();
 
         if last_view_guard.as_ref() != Some(&new_view) {
             if let Some(last_view) = last_view_guard.as_ref() {
                 if last_view.center != new_view.center {
-                    let _ = self.scheduling.queue_ticket_operations([
-                        ChunkTicketOperation::RemovePlayer {
+                    let _ = self.scheduling.queue_player_ticket_operations([
+                        PlayerTicketOperation::Remove {
                             pos: last_view.center,
                             player_id,
                         },
-                        ChunkTicketOperation::AddPlayer {
+                        PlayerTicketOperation::Add {
                             pos: new_view.center,
                             player_id,
-                            load_level: player_load_level,
                         },
                     ]);
 
@@ -66,10 +64,9 @@ impl ChunkMap {
                 );
             } else {
                 self.scheduling
-                    .queue_ticket_operation(ChunkTicketOperation::AddPlayer {
+                    .queue_player_ticket_operation(PlayerTicketOperation::Add {
                         pos: new_view.center,
                         player_id,
-                        load_level: player_load_level,
                     });
 
                 // Send initial chunk cache center to client
@@ -118,7 +115,7 @@ impl ChunkMap {
         if let Some(removed_view) = removed_view {
             let player_id = player.gameprofile.id;
             self.scheduling
-                .queue_ticket_operation(ChunkTicketOperation::RemovePlayer {
+                .queue_player_ticket_operation(PlayerTicketOperation::Remove {
                     pos: removed_view.center,
                     player_id,
                 });
