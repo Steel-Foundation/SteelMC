@@ -355,6 +355,18 @@ fn fox_pounce_goal_commits_once_it_starts() {
 }
 
 #[test]
+fn fox_melee_goal_skips_a_resting_fox() {
+    let (_world, fox) = world_with_fox("fox_melee");
+    fox.set_sleeping(true);
+
+    let mut goal = FoxMeleeAttackGoal::new(1.2);
+    assert!(
+        !goal.can_use(fox.as_ref()),
+        "a sleeping fox does not lunge at prey"
+    );
+}
+
+#[test]
 fn fox_kit_trusts_both_parents_love_cause_players() {
     init_vanilla_registry();
 

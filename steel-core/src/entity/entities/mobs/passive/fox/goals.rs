@@ -8,11 +8,11 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::{vanilla_blocks, vanilla_entities};
+use steel_registry::{sound_events, vanilla_blocks, vanilla_entities};
 use steel_utils::{BlockPos, Downcast as _, wrap_degrees};
 
 use super::FoxEntity;
-use crate::entity::ai::goal::{Goal, GoalControls, reduced_tick_delay};
+use crate::entity::ai::goal::{Goal, GoalControls, MeleeAttackGoal, reduced_tick_delay};
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{Entity, LivingEntity, Mob, PathfinderMob, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
@@ -554,6 +554,58 @@ impl Goal for StalkPreyGoal {
         } else {
             mob.move_to_pos(target.position(), STALK_SPEED);
         }
+    }
+}
+
+/// Vanilla `Fox.FoxMeleeAttackGoal`: the fox closes on and bites its target. It
+/// composes the shared melee goal, adding the fox bite sound and the pose gates
+/// that keep a resting or crouched fox from lunging.
+pub(crate) struct FoxMeleeAttackGoal {
+    inner: MeleeAttackGoal,
+}
+
+impl FoxMeleeAttackGoal {
+    pub(crate) fn new(speed_modifier: f64) -> Self {
+        Self {
+            inner: MeleeAttackGoal::new(speed_modifier, true)
+                .with_attack_sound(&sound_events::ENTITY_FOX_BITE),
+        }
+    }
+}
+
+impl Goal for FoxMeleeAttackGoal {
+    fn controls(&self) -> GoalControls {
+        self.inner.controls()
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        let Some(fox) = as_fox(mob) else {
+            return false;
+        };
+        !fox.is_sitting()
+            && !fox.is_sleeping()
+            && !fox.is_crouching()
+            && !fox.is_faceplanted()
+            && self.inner.can_use(mob)
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.inner.can_continue_to_use(mob)
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        if let Some(fox) = as_fox(mob) {
+            fox.set_interested(false);
+        }
+        self.inner.start(mob);
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.stop(mob);
+    }
+
+    fn tick(&mut self, mob: &dyn PathfinderMob) {
+        self.inner.tick(mob);
     }
 }
 

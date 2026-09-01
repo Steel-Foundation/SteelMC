@@ -45,7 +45,8 @@ use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
 use goals::{
-    FoxPounceGoal, FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal, StalkPreyGoal,
+    FoxMeleeAttackGoal, FoxPounceGoal, FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal,
+    StalkPreyGoal,
 };
 
 /// Baby fox render scale (vanilla `Fox.BABY_SCALE`).
@@ -183,7 +184,7 @@ impl FoxEntity {
             goal_selector.add_goal(5, StalkPreyGoal);
             goal_selector.add_goal(6, FoxPounceGoal);
             // TODO(fox-goals): 6 SeekShelterGoal (needs a FleeSunGoal move target)
-            // TODO(fox-goals): 7 FoxMeleeAttackGoal (needs an attack target)
+            goal_selector.add_goal(7, FoxMeleeAttackGoal::new(1.2));
             goal_selector.add_goal(7, FoxSleepGoal::new());
             goal_selector.add_goal(8, FollowParentGoal::new(1.25));
             // TODO(fox-goals): 9 StrollThroughVillageGoal (needs village POI)
