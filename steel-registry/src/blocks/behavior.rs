@@ -14,7 +14,7 @@ use crate::sound_types::SoundType;
 pub enum PushReaction {
     PushPull,
     Popped,
-    Block,
+    Immoveable,
     Ignore,
     PushOnly,
 }
