@@ -46,8 +46,8 @@ use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 use goals::{
-    FoxBreedGoal, FoxFloatGoal, FoxFollowParentGoal, FoxLookAtPlayerGoal, FoxPanicGoal,
-    FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal,
+    FaceplantGoal, FoxBreedGoal, FoxFloatGoal, FoxFollowParentGoal, FoxLookAtPlayerGoal,
+    FoxPanicGoal, FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal,
 };
 
 const FACEPLANT_PARTICLE_CHANCE: f32 = 0.2;
@@ -146,14 +146,14 @@ impl FoxEntity {
             let mut goal_selector = mob_base.goal_selector().lock();
             goal_selector.add_goal(0, FoxFloatGoal::new(&mob_base));
             goal_selector.add_goal(0, ClimbOnTopOfPowderSnowGoal::new());
-            // TODO(fox-goals): 1 FaceplantGoal (needs faceplant physics via a custom FoxMoveControl)
+            goal_selector.add_goal(1, FaceplantGoal::new());
             goal_selector.add_goal(2, FoxPanicGoal::new(2.2));
             goal_selector.add_goal(3, FoxBreedGoal::new(1.0));
             // TODO(fox-goals): 4 AvoidEntityGoal<Player> (needs the trust/defend gate)
             // TODO(fox-goals): 4 AvoidEntityGoal<Wolf> (needs the Wolf mob)
             // TODO(fox-goals): 4 AvoidEntityGoal<PolarBear> (needs the PolarBear mob)
             // TODO(fox-goals): 5 StalkPreyGoal (needs prey mobs and the pounce move control)
-            // TODO(fox-goals): 6 FoxPounceGoal (needs pounce/jump physics)
+            // TODO(fox-goals): 6 FoxPounceGoal (needs the attack-target system)
             // TODO(fox-goals): 6 SeekShelterGoal (needs a FleeSunGoal move target)
             // TODO(fox-goals): 7 FoxMeleeAttackGoal (needs an attack target)
             goal_selector.add_goal(7, FoxSleepGoal::new());
@@ -803,6 +803,14 @@ impl Mob for FoxEntity {
 
     fn custom_server_ai_step(&self) {
         Animal::custom_server_ai_step_animal(self);
+    }
+
+    fn can_move_control_tick(&self) -> bool {
+        self.can_move()
+    }
+
+    fn can_look_control_tick(&self) -> bool {
+        !self.is_sleeping()
     }
 
     fn ambient_sound(&self) -> Option<SoundEventRef> {

@@ -29,6 +29,8 @@ const PERCH_EXTRA_LOOK_TICKS: i32 = 20;
 pub(super) const FOX_FLOAT_WATER_DEPTH: f64 = 0.25;
 const SLEEP_WAIT_TICKS: i32 = reduced_tick_delay(140);
 
+const FACEPLANT_TICKS: i32 = reduced_tick_delay(40);
+
 fn as_fox(mob: &dyn PathfinderMob) -> Option<&FoxEntity> {
     mob.downcast_ref::<FoxEntity>()
 }
@@ -466,5 +468,44 @@ impl Goal for FoxLookAtPlayerGoal {
 
     fn tick(&mut self, mob: &dyn PathfinderMob) {
         self.inner.tick(mob);
+    }
+}
+
+/// A fox that has faceplanted lies still for a moment before getting back up.
+pub(crate) struct FaceplantGoal {
+    countdown: i32,
+}
+
+impl FaceplantGoal {
+    pub(crate) const fn new() -> Self {
+        Self { countdown: 0 }
+    }
+}
+
+impl Goal for FaceplantGoal {
+    fn controls(&self) -> GoalControls {
+        GoalControls::MOVE | GoalControls::LOOK | GoalControls::JUMP
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        as_fox(mob).is_some_and(FoxEntity::is_faceplanted)
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.countdown > 0 && self.can_use(mob)
+    }
+
+    fn start(&mut self, _mob: &dyn PathfinderMob) {
+        self.countdown = FACEPLANT_TICKS;
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        if let Some(fox) = as_fox(mob) {
+            fox.set_faceplanted(false);
+        }
+    }
+
+    fn tick(&mut self, _mob: &dyn PathfinderMob) {
+        self.countdown -= 1;
     }
 }

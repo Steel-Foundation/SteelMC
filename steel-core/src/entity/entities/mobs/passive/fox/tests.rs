@@ -677,3 +677,36 @@ fn a_fox_fixed_on_something_does_not_turn_to_watch_a_player() {
     fox.set_faceplanted(true);
     assert!(!FoxLookAtPlayerGoal::new(24.0).can_use(fox.as_ref()));
 }
+
+#[test]
+fn fox_move_and_look_controls_gate_on_state() {
+    init_vanilla_registry();
+    let fox = new_fox();
+
+    assert!(Mob::can_move_control_tick(&fox));
+    assert!(Mob::can_look_control_tick(&fox));
+
+    fox.set_sitting(true);
+    assert!(!Mob::can_move_control_tick(&fox));
+    assert!(Mob::can_look_control_tick(&fox));
+    fox.set_sitting(false);
+
+    fox.set_sleeping(true);
+    assert!(!Mob::can_move_control_tick(&fox));
+    assert!(!Mob::can_look_control_tick(&fox));
+}
+
+#[test]
+fn fox_faceplant_goal_runs_while_faceplanted_and_stands_up_on_stop() {
+    let (_world, fox) = world_with_fox("fox_faceplant");
+    let mut goal = FaceplantGoal::new();
+
+    assert!(!goal.can_use(fox.as_ref()));
+
+    fox.set_faceplanted(true);
+    assert!(goal.can_use(fox.as_ref()));
+    goal.start(fox.as_ref());
+    assert!(goal.can_continue_to_use(fox.as_ref()));
+    goal.stop(fox.as_ref());
+    assert!(!fox.is_faceplanted());
+}

@@ -350,6 +350,16 @@ pub trait Mob: LivingEntity + Leashable {
 
     fn custom_server_ai_step(&self) {}
 
+    /// Whether the move control should run this tick.
+    fn can_move_control_tick(&self) -> bool {
+        true
+    }
+
+    /// Whether the look control should run this tick.
+    fn can_look_control_tick(&self) -> bool {
+        true
+    }
+
     /// Runs vanilla `Mob.ate`, invoked after an eating goal resolves a block.
     fn ate(&self) {}
 
@@ -1489,6 +1499,9 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     fn tick_move_control(&self) {
+        if !self.can_move_control_tick() {
+            return;
+        }
         let move_control = {
             let mut controls = self.mob_base().controls().lock();
             let move_control = controls.move_control;
@@ -1618,6 +1631,9 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     fn tick_look_control(&self) {
+        if !self.can_look_control_tick() {
+            return;
+        }
         let look_control = {
             let mut controls = self.mob_base().controls().lock();
             let look_control = controls.look_control;
