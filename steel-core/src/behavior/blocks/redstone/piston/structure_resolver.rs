@@ -68,7 +68,7 @@ impl<'a> PistonStructureResolver<'a> {
             self.piston_direction,
         ) {
             if self.extending
-                && next_state.get_block().config.push_reaction == PushReaction::Destroy
+                && next_state.get_block().config.push_reaction == PushReaction::Popped
             {
                 self.to_destroy.push(self.start_pos);
                 return true;
@@ -199,7 +199,7 @@ impl<'a> PistonStructureResolver<'a> {
             {
                 return false;
             }
-            if next_state.get_block().config.push_reaction == PushReaction::Destroy {
+            if next_state.get_block().config.push_reaction == PushReaction::Popped {
                 self.to_destroy.push(pos);
                 return true;
             }

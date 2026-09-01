@@ -186,7 +186,7 @@ pub struct BlockAssets {
 fn push_reaction_to_tokens(reaction: &str) -> TokenStream {
     match reaction {
         "PUSH_PULL" => quote! { PushReaction::PushPull },
-        "POPPED" => quote! { PushReaction::Destroy },
+        "POPPED" => quote! { PushReaction::Popped },
         "IMMOVEABLE" => quote! { PushReaction::Block },
         "IGNORE_ENTITY" => quote! { PushReaction::Ignore },
         "PUSH" => quote! { PushReaction::PushOnly },

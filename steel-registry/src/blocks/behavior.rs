@@ -13,7 +13,7 @@ use crate::sound_types::SoundType;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PushReaction {
     PushPull,
-    Destroy,
+    Popped,
     Block,
     Ignore,
     PushOnly,

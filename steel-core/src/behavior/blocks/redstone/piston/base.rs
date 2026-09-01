@@ -208,7 +208,7 @@ impl PistonBaseBlock {
             }
             match block.config.push_reaction {
                 PushReaction::Block => return false,
-                PushReaction::Destroy => return allow_destroyable,
+                PushReaction::Popped => return allow_destroyable,
                 PushReaction::PushOnly => return direction == connection_direction,
                 PushReaction::PushPull | PushReaction::Ignore => {}
             }
