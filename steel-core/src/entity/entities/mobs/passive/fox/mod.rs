@@ -47,7 +47,7 @@ use crate::player::Player;
 use crate::world::{LevelReader, World};
 use goals::{
     FoxBreedGoal, FoxFloatGoal, FoxFollowParentGoal, FoxLookAtPlayerGoal, FoxPanicGoal,
-    FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal,
+    FoxPounceGoal, FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal,
 };
 
 const FACEPLANT_PARTICLE_CHANCE: f32 = 0.2;
@@ -89,6 +89,9 @@ const FOX_SCREECH_VOLUME: f32 = 2.0;
 const FOX_ALERT_RANGE: f64 = 12.0;
 const FOX_ALERT_VERTICAL_RANGE: f64 = 6.0;
 
+const CROUCH_STEP: f32 = 0.2;
+const FULLY_CROUCHED: f32 = 5.0;
+
 const FOX_SPAWN_HELD_ITEM_CHANCE: f32 = 0.2;
 const FOX_HELD_EMERALD_ODDS: f32 = 0.05;
 const FOX_HELD_EGG_ODDS: f32 = 0.2;
@@ -107,6 +110,10 @@ pub struct FoxEntity {
     animal_base: AnimalBase,
     entity_data: SyncMutex<FoxEntityData>,
     ticks_since_eaten: SyncMutex<i32>,
+    /// Server-side crouch progress (0 to 5), climbed while crouching and read by
+    /// the pounce goal via `is_fully_crouched`. Recomputed from the synced
+    /// crouching flag each tick, so it is not synced or saved.
+    crouch_amount: SyncMutex<f32>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `FoxEntity`.
@@ -153,7 +160,7 @@ impl FoxEntity {
             // TODO(fox-goals): 4 AvoidEntityGoal<Wolf> (needs the Wolf mob)
             // TODO(fox-goals): 4 AvoidEntityGoal<PolarBear> (needs the PolarBear mob)
             // TODO(fox-goals): 5 StalkPreyGoal (needs prey mobs and the pounce move control)
-            // TODO(fox-goals): 6 FoxPounceGoal (needs pounce/jump physics)
+            goal_selector.add_goal(6, FoxPounceGoal);
             // TODO(fox-goals): 6 SeekShelterGoal (needs a FleeSunGoal move target)
             // TODO(fox-goals): 7 FoxMeleeAttackGoal (needs an attack target)
             goal_selector.add_goal(7, FoxSleepGoal::new());
@@ -182,6 +189,7 @@ impl FoxEntity {
             animal_base,
             entity_data: SyncMutex::new(entity_data),
             ticks_since_eaten: SyncMutex::new(0),
+            crouch_amount: SyncMutex::new(0.0),
         };
         fox.set_can_pick_up_loot(true);
         fox
@@ -274,6 +282,29 @@ impl FoxEntity {
 
     pub(crate) fn set_defending(&self, defending: bool) {
         self.set_flag(FLAG_DEFENDING, defending);
+    }
+
+    pub(crate) fn is_fully_crouched(&self) -> bool {
+        *self.crouch_amount.lock() >= FULLY_CROUCHED
+    }
+
+    pub(crate) fn reset_crouch_amount(&self) {
+        *self.crouch_amount.lock() = 0.0;
+    }
+
+    fn tick_pounce_state(&self) {
+        let target_alive = Mob::target(self).is_some_and(|target| target.is_alive());
+        if !target_alive {
+            self.set_crouching(false);
+            self.set_interested(false);
+        }
+
+        let mut crouch = self.crouch_amount.lock();
+        if self.is_crouching() {
+            *crouch = (*crouch + CROUCH_STEP).min(FULLY_CROUCHED);
+        } else {
+            *crouch = 0.0;
+        }
     }
 
     pub(crate) fn clear_states(&self) {
@@ -704,6 +735,7 @@ impl LivingEntity for FoxEntity {
 
     fn ai_step(&self) -> Option<MoveResult> {
         self.tick_eating();
+        self.tick_pounce_state();
         let result = Mob::mob_ai_step(self);
 
         AgeableMob::tick_ageable_mob(self);
