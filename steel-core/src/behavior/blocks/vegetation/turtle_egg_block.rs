@@ -84,7 +84,7 @@ impl TurtleEggBlock {
 
     /// Rolls whether an egg should advance its cracking stage this random tick.
     ///
-    /// In 26.2 this chance comes from the `gameplay/turtle_egg_hatch_chance`
+    /// In vanilla this chance comes from the `gameplay/turtle_egg_hatch_chance`
     /// environment attribute: base 0.002, raised to 1.0 by a day-timeline
     /// `maximum` modifier during the pre-dawn window (ticks 21062 to 21904).
     /// Vanilla resolves the attribute per dimension, and only dimensions tagged

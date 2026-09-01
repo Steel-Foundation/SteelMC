@@ -166,7 +166,7 @@ impl World {
 
     /// Sets this world's weather timers and flags.
     ///
-    /// Minecraft 26.2 owns this state at server scope. Steel intentionally owns
+    /// Vanilla owns this state at server scope. Steel intentionally owns
     /// it per world so multiple worlds in one domain can have independent weather.
     pub(crate) fn set_weather_parameters(
         &self,

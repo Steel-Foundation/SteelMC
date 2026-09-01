@@ -55,7 +55,7 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                 assert_eq!(
                     model,
                     Identifier::vanilla(item.name.clone()),
-                    "vanilla 26.2 item model must default to its item key"
+                    "vanilla item model must default to its item key"
                 );
             }
             "minecraft:bucket_entity_data" => {

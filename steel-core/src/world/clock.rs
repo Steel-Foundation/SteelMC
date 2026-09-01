@@ -41,7 +41,7 @@ pub(crate) enum WorldClockLoadError {
 
 /// Per-world clock instances.
 ///
-/// Vanilla 26.2 owns one clock manager at server scope and every loaded level
+/// Vanilla owns one clock manager at server scope and every loaded level
 /// delegates to it. Steel intentionally persists one manager in each world's
 /// level data instead: equal clock keys are not shared, so two overworlds in the
 /// same domain can advance and be configured independently.
