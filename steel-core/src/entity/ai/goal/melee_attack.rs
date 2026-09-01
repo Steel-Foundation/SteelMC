@@ -1,4 +1,5 @@
 use glam::DVec3;
+use steel_registry::sound_event::SoundEventRef;
 use steel_utils::types::InteractionHand;
 
 use super::reduced_tick_delay;
@@ -26,6 +27,9 @@ pub(crate) struct MeleeAttackGoal {
     ticks_until_next_path_recalculation: i32,
     ticks_until_next_attack: i32,
     last_can_use_check: i64,
+    /// Optional sound played on a landed hit (e.g. the fox's bite), matching mobs
+    /// whose melee goal emits a bespoke attack sound.
+    attack_sound: Option<SoundEventRef>,
 }
 
 impl MeleeAttackGoal {
@@ -39,7 +43,15 @@ impl MeleeAttackGoal {
             ticks_until_next_path_recalculation: 0,
             ticks_until_next_attack: 0,
             last_can_use_check: 0,
+            attack_sound: None,
         }
+    }
+
+    /// Sets a sound to play on each landed hit (the fox uses this for its bite).
+    #[must_use]
+    pub(crate) const fn with_attack_sound(mut self, attack_sound: SoundEventRef) -> Self {
+        self.attack_sound = Some(attack_sound);
+        self
     }
 
     fn check_and_perform_attack(&mut self, mob: &dyn PathfinderMob, target: &SharedEntity) {
@@ -54,6 +66,9 @@ impl MeleeAttackGoal {
         mob.swing(InteractionHand::MainHand, false);
         if let Some(world) = mob.level() {
             let _ = mob.do_hurt_target(&world, target);
+        }
+        if let Some(sound) = self.attack_sound {
+            mob.play_sound(sound, 1.0, 1.0);
         }
     }
 
