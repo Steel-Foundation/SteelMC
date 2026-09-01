@@ -32,7 +32,9 @@ use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeK
 use uuid::Uuid;
 
 use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
-use crate::entity::ai::goal::{ClimbOnTopOfPowderSnowGoal, WaterAvoidingRandomStrollGoal};
+use crate::entity::ai::goal::{
+    AvoidEntityGoal, ClimbOnTopOfPowderSnowGoal, WaterAvoidingRandomStrollGoal,
+};
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
@@ -88,6 +90,10 @@ const FOX_SCREECH_VOLUME: f32 = 2.0;
 
 const FOX_ALERT_RANGE: f64 = 12.0;
 const FOX_ALERT_VERTICAL_RANGE: f64 = 6.0;
+
+const FOX_AVOID_PLAYER_RANGE: f32 = 16.0;
+const FOX_AVOID_WALK_SPEED: f64 = 1.6;
+const FOX_AVOID_SPRINT_SPEED: f64 = 1.4;
 
 const FOX_SPAWN_HELD_ITEM_CHANCE: f32 = 0.2;
 const FOX_HELD_EMERALD_ODDS: f32 = 0.05;
@@ -149,7 +155,7 @@ impl FoxEntity {
             // TODO(fox-goals): 1 FaceplantGoal (needs faceplant physics via a custom FoxMoveControl)
             goal_selector.add_goal(2, FoxPanicGoal::new(2.2));
             goal_selector.add_goal(3, FoxBreedGoal::new(1.0));
-            // TODO(fox-goals): 4 AvoidEntityGoal<Player> (needs the trust/defend gate)
+            goal_selector.add_goal(4, avoid_untrusted_players());
             // TODO(fox-goals): 4 AvoidEntityGoal<Wolf> (needs the Wolf mob)
             // TODO(fox-goals): 4 AvoidEntityGoal<PolarBear> (needs the PolarBear mob)
             // TODO(fox-goals): 5 StalkPreyGoal (needs prey mobs and the pounce move control)
@@ -562,6 +568,27 @@ fn fox_alertable_selector(target: &dyn LivingEntity, trusted: &[Uuid]) -> bool {
         return false;
     }
     !target.is_sleeping() && !target.is_discrete()
+}
+
+/// A fox flees a nearby survival player it does not trust.
+fn avoid_untrusted_players() -> AvoidEntityGoal {
+    AvoidEntityGoal::with_mob_selector(
+        FOX_AVOID_PLAYER_RANGE,
+        FOX_AVOID_WALK_SPEED,
+        FOX_AVOID_SPRINT_SPEED,
+        |mob, target, _world| {
+            let Some(player) = target.as_player() else {
+                return false;
+            };
+            if target.is_discrete() || player.is_spectator() || player.has_infinite_materials() {
+                return false;
+            }
+            // TODO(fox-defend): also skip while the fox is defending a trusted
+            // target, once the defend/attack-target system exists.
+            mob.downcast_ref::<FoxEntity>()
+                .is_some_and(|fox| !fox.trusts(target.uuid()))
+        },
+    )
 }
 
 impl Entity for FoxEntity {
