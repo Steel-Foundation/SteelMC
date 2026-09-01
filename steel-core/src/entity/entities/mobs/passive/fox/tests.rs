@@ -346,3 +346,37 @@ fn fox_kit_inherits_a_parent_variant() {
     // Both parents are snow foxes, so the random pick is snow either way.
     assert_eq!(offspring.variant(), FoxVariant::Snow);
 }
+
+#[test]
+fn fox_kit_trusts_both_parents_love_cause_players() {
+    init_vanilla_registry();
+
+    let parent = new_fox();
+    let partner = new_fox();
+    let fed_parent = Uuid::from_u128(0xa11ce);
+    let fed_partner = Uuid::from_u128(0xb0b);
+    parent.set_love_cause_uuid(Some(fed_parent));
+    partner.set_love_cause_uuid(Some(fed_partner));
+
+    let offspring = new_fox();
+    parent.initialize_breed_offspring(&partner, &offspring);
+
+    assert!(offspring.trusts(fed_parent));
+    assert!(offspring.trusts(fed_partner));
+}
+
+#[test]
+fn fox_kit_trusts_the_only_feeding_player() {
+    init_vanilla_registry();
+
+    let parent = new_fox();
+    let partner = new_fox();
+    let feeder = Uuid::from_u128(0xfeed);
+    // Only one parent was bred by a player.
+    partner.set_love_cause_uuid(Some(feeder));
+
+    let offspring = new_fox();
+    parent.initialize_breed_offspring(&partner, &offspring);
+
+    assert!(offspring.trusts(feeder));
+}

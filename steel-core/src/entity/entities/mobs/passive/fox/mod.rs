@@ -689,8 +689,21 @@ impl Animal for FoxEntity {
                 .downcast_ref::<FoxEntity>()
                 .map_or_else(|| self.variant(), FoxEntity::variant)
         };
-        if let Some(offspring) = offspring.downcast_ref::<FoxEntity>() {
-            offspring.set_variant(variant);
+        let Some(offspring) = offspring.downcast_ref::<FoxEntity>() else {
+            return;
+        };
+        offspring.set_variant(variant);
+
+        // Vanilla FoxBreedGoal.breed: the kit trusts each parent's love-cause
+        // player, skipping the partner's when both were bred by the same player.
+        let own_cause = self.love_cause_uuid();
+        if let Some(own_cause) = own_cause {
+            offspring.add_trusted(own_cause);
+        }
+        if let Some(partner_cause) = partner.love_cause_uuid()
+            && own_cause != Some(partner_cause)
+        {
+            offspring.add_trusted(partner_cause);
         }
     }
 }
