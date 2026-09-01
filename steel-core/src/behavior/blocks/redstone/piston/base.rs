@@ -210,7 +210,7 @@ impl PistonBaseBlock {
                 PushReaction::Immoveable => return false,
                 PushReaction::Popped => return allow_destroyable,
                 PushReaction::PushOnly => return direction == connection_direction,
-                PushReaction::PushPull | PushReaction::Ignore => {}
+                PushReaction::PushPull | PushReaction::IgnoreEntity => {}
             }
         } else if state.get_value(EXTENDED) {
             return false;

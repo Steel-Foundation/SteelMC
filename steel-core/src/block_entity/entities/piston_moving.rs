@@ -190,7 +190,7 @@ impl PistonMovingState {
     // `EntitySelector.NO_SPECTATORS` before the piston loop.
     fn can_move_collided_entity(entity: &dyn Entity, cause_bounce: bool) -> bool {
         !entity.is_spectator()
-            && entity.piston_push_reaction() != PushReaction::Ignore
+            && entity.piston_push_reaction() != PushReaction::IgnoreEntity
             && (!cause_bounce || entity.as_player().is_none())
     }
 

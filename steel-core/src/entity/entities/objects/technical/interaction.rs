@@ -163,7 +163,7 @@ impl Entity for InteractionEntity {
     }
 
     fn piston_push_reaction(&self) -> PushReaction {
-        PushReaction::Ignore
+        PushReaction::IgnoreEntity
     }
 
     fn can_be_hit_by_projectile(&self) -> bool {

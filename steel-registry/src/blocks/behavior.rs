@@ -15,7 +15,7 @@ pub enum PushReaction {
     PushPull,
     Popped,
     Immoveable,
-    Ignore,
+    IgnoreEntity,
     PushOnly,
 }
 
