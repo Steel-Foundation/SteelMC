@@ -134,13 +134,14 @@ impl BlockBehavior for CakeBlock {
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
         if state.get_value(BITES) == 0 {
+            let has_infinite_materials = player.has_infinite_materials();
             let candle_cake = inv.with_item(|item_stack| {
                 let item = item_stack.item();
                 if !item.has_tag(&ItemTag::CANDLES) {
                     return None;
                 }
                 let candle_cake = candle_cakes::candle_to_candle_cake(item)?;
-                item_stack.consume(1, player.has_infinite_materials());
+                item_stack.consume(1, has_infinite_materials);
                 Some(candle_cake)
             });
             let Some(candle_cake) = candle_cake else {

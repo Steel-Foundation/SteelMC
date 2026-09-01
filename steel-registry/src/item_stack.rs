@@ -136,8 +136,7 @@ impl ItemStack {
     /// Decreases the count by the given amount, unless the user has infinite
     /// materials.
     ///
-    /// Pass `has_infinite_materials()` from the using entity rather than a
-    /// literal; `false` is correct when there is no user, such as a dispenser.
+    /// See: `Player::has_infinite_materials`
     #[inline]
     pub const fn consume(&mut self, amount: i32, has_infinite_materials: bool) {
         if !has_infinite_materials {
