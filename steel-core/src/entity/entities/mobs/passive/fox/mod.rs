@@ -32,7 +32,9 @@ use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeK
 use uuid::Uuid;
 
 use crate::behavior::{ITEM_BEHAVIORS, InteractionResult};
-use crate::entity::ai::goal::{ClimbOnTopOfPowderSnowGoal, WaterAvoidingRandomStrollGoal};
+use crate::entity::ai::goal::{
+    ClimbOnTopOfPowderSnowGoal, NearestAttackableTargetGoal, WaterAvoidingRandomStrollGoal,
+};
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
@@ -47,7 +49,7 @@ use crate::player::Player;
 use crate::world::{LevelReader, World};
 use goals::{
     FoxBreedGoal, FoxFloatGoal, FoxFollowParentGoal, FoxLookAtPlayerGoal, FoxPanicGoal,
-    FoxPounceGoal, FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal,
+    FoxPounceGoal, FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal, StalkPreyGoal,
 };
 
 const FACEPLANT_PARTICLE_CHANCE: f32 = 0.2;
@@ -91,6 +93,8 @@ const FOX_ALERT_VERTICAL_RANGE: f64 = 6.0;
 
 const CROUCH_STEP: f32 = 0.2;
 const FULLY_CROUCHED: f32 = 5.0;
+
+const FOX_PREY_TARGET_INTERVAL: i32 = 10;
 
 const FOX_SPAWN_HELD_ITEM_CHANCE: f32 = 0.2;
 const FOX_HELD_EMERALD_ODDS: f32 = 0.05;
@@ -156,7 +160,7 @@ impl FoxEntity {
             // TODO(fox-goals): 4 AvoidEntityGoal<Player> (needs the trust/defend gate)
             // TODO(fox-goals): 4 AvoidEntityGoal<Wolf> (needs the Wolf mob)
             // TODO(fox-goals): 4 AvoidEntityGoal<PolarBear> (needs the PolarBear mob)
-            // TODO(fox-goals): 5 StalkPreyGoal (needs prey mobs and the pounce move control)
+            goal_selector.add_goal(5, StalkPreyGoal);
             goal_selector.add_goal(6, FoxPounceGoal);
             // TODO(fox-goals): 6 SeekShelterGoal (needs a FleeSunGoal move target)
             // TODO(fox-goals): 7 FoxMeleeAttackGoal (needs an attack target)
@@ -171,8 +175,9 @@ impl FoxEntity {
             goal_selector.add_goal(12, FoxLookAtPlayerGoal::new(24.0));
             goal_selector.add_goal(13, PerchAndSearchGoal::new());
 
+            let mut target_selector = mob_base.target_selector().lock();
             // TODO(fox-goals): target 3 DefendTrustedTargetGoal (needs the trust/defend gate)
-            // TODO(fox-goals): target NearestAttackableTarget for chickens/rabbits (needs the Rabbit mob)
+            target_selector.add_goal(4, target_stalkable_prey());
             // TODO(fox-goals): target NearestAttackableTarget for baby turtles on land (needs the Turtle entity, #490)
             // TODO(fox-goals): target NearestAttackableTarget for schooling fish (needs the fish mobs)
         }
@@ -589,6 +594,15 @@ fn fox_alertable_selector(target: &dyn LivingEntity, trusted: &[Uuid]) -> bool {
         return false;
     }
     !target.is_sleeping() && !target.is_discrete()
+}
+
+fn target_stalkable_prey() -> NearestAttackableTargetGoal {
+    NearestAttackableTargetGoal::new_with_interval(
+        FOX_PREY_TARGET_INTERVAL,
+        false,
+        false,
+        |target, _| target.entity_type() == &vanilla_entities::CHICKEN,
+    )
 }
 
 impl Entity for FoxEntity {
