@@ -1,8 +1,9 @@
 use super::{
-    ATTRIBUTE_MODIFIERS, BREAK_SOUND, Component, ComponentData, DataComponentType, Debug,
-    DowncastType, ENCHANTMENTS, FxHashMap, Identifier, ItemAttributeModifiers, ItemEnchantments,
-    ItemLore, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST, Rarity, SWING_ANIMATION, SoundEventHolder,
-    SwingAnimation, TOOLTIP_DISPLAY, TooltipDisplay, USE_EFFECTS, UseEffects, sound_events,
+    ATTACK_ANIMATION, ATTRIBUTE_MODIFIERS, BREAK_SOUND, Component, ComponentData,
+    DataComponentType, Debug, DowncastType, ENCHANTMENTS, FxHashMap, Identifier,
+    INTERACT_ANIMATION, ItemAttributeModifiers, ItemEnchantments, ItemLore, LORE, MAX_STACK_SIZE,
+    RARITY, REPAIR_COST, Rarity, SoundEventHolder, SwingAnimation, TOOLTIP_DISPLAY,
+    TooltipDisplay, USE_EFFECTS, UseEffects, sound_events,
 };
 
 /// Storage for component values.
@@ -56,7 +57,11 @@ impl DataComponentMap {
             ComponentData::new(TooltipDisplay::DEFAULT),
         );
         map.insert(
-            SWING_ANIMATION.key.clone(),
+            ATTACK_ANIMATION.key.clone(),
+            ComponentData::new(SwingAnimation::DEFAULT),
+        );
+        map.insert(
+            INTERACT_ANIMATION.key.clone(),
             ComponentData::new(SwingAnimation::DEFAULT),
         );
         Self { map }

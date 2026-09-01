@@ -566,11 +566,21 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     "vanilla item prototypes currently require the default tooltip display, got {value}"
                 );
             }
-            "minecraft:swing_animation" => {
+            "minecraft:attack_animation" => {
                 if let Some(swing_animation) = swing_animation_component_token(value) {
                     builder_calls.push(quote! {
                         .builder_set(
-                            vanilla_components::SWING_ANIMATION,
+                            vanilla_components::ATTACK_ANIMATION,
+                            Some(#swing_animation),
+                        )
+                    });
+                }
+            }
+            "minecraft:interact_animation" => {
+                if let Some(swing_animation) = swing_animation_component_token(value) {
+                    builder_calls.push(quote! {
+                        .builder_set(
+                            vanilla_components::INTERACT_ANIMATION,
                             Some(#swing_animation),
                         )
                     });

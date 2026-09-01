@@ -7,8 +7,8 @@ use crate::{
         ADDITIONAL_TRADE_COST, BREAK_SOUND, BUCKET_ENTITY_DATA, CHICKEN_VARIANT,
         CREATIVE_SLOT_LOCK, CUSTOM_NAME, DYE, ENCHANTABLE, ENCHANTMENT_GLINT_OVERRIDE, ITEM_MODEL,
         ITEM_NAME, LORE, MAP_COLOR, MAP_POST_PROCESSING, MAX_STACK_SIZE, OMINOUS_BOTTLE_AMPLIFIER,
-        POTION_DURATION_SCALE, RARITY, STORED_ENCHANTMENTS, SWING_ANIMATION, SwingAnimationType,
-        TOOLTIP_DISPLAY, USE_EFFECTS,
+        ATTACK_ANIMATION, INTERACT_ANIMATION, POTION_DURATION_SCALE, RARITY, STORED_ENCHANTMENTS,
+        SwingAnimationType, TOOLTIP_DISPLAY, USE_EFFECTS,
     },
     init_vanilla_registry,
     item_stack::ItemStack,
@@ -192,7 +192,7 @@ fn common_defaults_and_extracted_item_overrides_match_vanilla() {
     init_vanilla_registry();
 
     let common = DataComponentMap::common_item_components();
-    assert_eq!(common.len(), 10);
+    assert_eq!(common.len(), 11);
     assert_eq!(common.get_ref(LORE), Some(&ItemLore::empty()));
     assert_eq!(common.get_ref(USE_EFFECTS), Some(&UseEffects::DEFAULT));
     assert_eq!(common.get_ref(RARITY), Some(&Rarity::Common));
@@ -207,7 +207,11 @@ fn common_defaults_and_extracted_item_overrides_match_vanilla() {
         Some(&TooltipDisplay::DEFAULT)
     );
     assert_eq!(
-        common.get_ref(SWING_ANIMATION),
+        common.get_ref(ATTACK_ANIMATION),
+        Some(&SwingAnimation::DEFAULT)
+    );
+    assert_eq!(
+        common.get_ref(INTERACT_ANIMATION),
         Some(&SwingAnimation::DEFAULT)
     );
 
@@ -217,8 +221,12 @@ fn common_defaults_and_extracted_item_overrides_match_vanilla() {
         Some(&UseEffects::new(true, false, 1.0))
     );
     assert_eq!(
-        wooden_spear.get(SWING_ANIMATION),
+        wooden_spear.get(ATTACK_ANIMATION),
         Some(&SwingAnimation::new(SwingAnimationType::Stab, 13))
+    );
+    assert_eq!(
+        wooden_spear.get(INTERACT_ANIMATION),
+        Some(&SwingAnimation::DEFAULT)
     );
 
     let heavy_core = ItemStack::new(&vanilla_items::HEAVY_CORE);
