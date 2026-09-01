@@ -279,13 +279,13 @@ impl SimulationTicketManager {
         source_changes: &[SourceChange],
         sources: &[(ChunkPos, u8)],
     ) -> Option<(SourceChange, SourceChange)> {
-        if source_changes.len() != 2 {
+        let &[first_change, second_change] = source_changes else {
             return None;
-        }
+        };
 
         let mut removed_source = None;
         let mut added_source = None;
-        for &change in source_changes {
+        for change in [first_change, second_change] {
             if change.old_level != ABSENT_LEVEL && change.new_level == ABSENT_LEVEL {
                 removed_source = Some(change);
             } else if change.old_level == ABSENT_LEVEL && change.new_level != ABSENT_LEVEL {
@@ -890,14 +890,19 @@ mod tests {
 
     #[test]
     fn distant_isolated_move_matches_reference() {
+        const SIMULATION_DISTANCE_CHUNKS: u8 = 6;
+
         let mut manager = SimulationTicketManager::new();
         let mut previous_levels = FxHashMap::default();
         let old_pos = ChunkPos::new(0, 0);
-        let new_pos = ChunkPos::new(500, 0);
-        manager.apply_source_update(source(old_pos, Some(122)));
+        let source_level =
+            ChunkTicketLevel::for_entity_ticking_radius(SIMULATION_DISTANCE_CHUNKS).raw();
+        let first_overflowing_distance_chunks = i32::from(u8::MAX - source_level) + 1;
+        let new_pos = ChunkPos::new(first_overflowing_distance_chunks, 0);
+        manager.apply_source_update(source(old_pos, Some(source_level)));
         run_and_compare_with_reference(&mut manager, &mut previous_levels);
 
-        manager.apply_source_updates([source(old_pos, None), source(new_pos, Some(122))]);
+        manager.apply_source_updates([source(old_pos, None), source(new_pos, Some(source_level))]);
         run_and_compare_with_reference(&mut manager, &mut previous_levels);
     }
 
