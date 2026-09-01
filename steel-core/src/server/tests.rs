@@ -3278,3 +3278,68 @@ fn title_command_delivers_vanilla_packets_to_recorded_connections() {
         }
     });
 }
+
+#[test]
+fn setblock_command_places_blocks_and_keep_mode_skips_occupied_positions() {
+    use crate::block_entity::init_block_entities;
+    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+    use steel_registry::init_vanilla_registry;
+
+    init_vanilla_registry();
+    init_behaviors();
+    init_block_entities();
+    let world = fresh_test_world("setblock-command");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let storage_root = test_storage_root("setblock-command");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let run = |command: &str| {
+            let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
+            let chain = {
+                let dispatcher = server.command_dispatcher.read();
+                let parse = dispatcher.parse(command, source.clone());
+                dispatcher.context_chain(parse)
+            };
+            let chain = match chain {
+                Ok(chain) => chain,
+                Err(error) => panic!("{command} should parse: {error}"),
+            };
+            let mut execution = CommandExecutionContext::for_source(&source);
+            execution.queue_initial_command(chain, source, CommandResultCallback::empty());
+            assert!(matches!(execution.run(), ExecutionStop::Completed));
+        };
+
+        let pos = BlockPos::new(8, 64, 8);
+        run("setblock 8 64 8 minecraft:stone");
+        assert_eq!(
+            world.get_block_state(pos).get_block(),
+            &vanilla_blocks::STONE,
+            "setblock must place the requested block"
+        );
+
+        run("setblock 8 64 8 minecraft:dirt keep");
+        assert_eq!(
+            world.get_block_state(pos).get_block(),
+            &vanilla_blocks::STONE,
+            "keep mode must not replace an occupied position"
+        );
+
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
