@@ -95,16 +95,16 @@ struct FlagsEntry {
 }
 
 fn default_piston_push_reaction() -> String {
-    "NORMAL".to_owned()
+    "PUSH_PULL".to_owned()
 }
 
 fn piston_push_reaction_variant(reaction: &str) -> TokenStream {
     match reaction {
-        "NORMAL" => quote! { PushReaction::Normal },
-        "DESTROY" => quote! { PushReaction::Destroy },
-        "BLOCK" => quote! { PushReaction::Block },
-        "IGNORE" => quote! { PushReaction::Ignore },
-        "PUSH_ONLY" => quote! { PushReaction::PushOnly },
+        "PUSH_PULL" => quote! { PushReaction::PushPull },
+        "POPPED" => quote! { PushReaction::Popped },
+        "IMMOVEABLE" => quote! { PushReaction::Immoveable },
+        "IGNORE_ENTITY" => quote! { PushReaction::IgnoreEntity },
+        "PUSH" => quote! { PushReaction::Push },
         _ => panic!("Unknown piston push reaction: {reaction}"),
     }
 }
@@ -218,7 +218,7 @@ pub(crate) fn build() -> TokenStream {
         let can_breathe_underwater = flags.is_some_and(|f| f.can_breathe_underwater);
         let can_be_seen_as_enemy = flags.is_some_and(|f| f.can_be_seen_as_enemy);
         let piston_push_reaction = flags.map_or_else(
-            || quote! { PushReaction::Normal },
+            || quote! { PushReaction::PushPull },
             |flags| piston_push_reaction_variant(&flags.piston_push_reaction),
         );
 
