@@ -10,7 +10,12 @@ use uuid::Uuid;
 
 const SOURCE_COUNTS: [usize; 4] = [1, 10, 100, 500];
 const SIMULATION_DISTANCES: [u8; 3] = [2, 10, 32];
+const SOURCE_GRID_WIDTH: i32 = 25;
+const CLUSTERED_SOURCE_SPACING: i32 = 1;
 const DISPERSED_SOURCE_SPACING: i32 = 80;
+const BENCHMARK_SAMPLE_SIZE: usize = 10;
+const BENCHMARK_WARM_UP: Duration = Duration::from_millis(250);
+const BENCHMARK_MEASUREMENT: Duration = Duration::from_millis(750);
 
 #[derive(Clone, Copy)]
 enum SourceLayout {
@@ -26,21 +31,22 @@ impl SourceLayout {
         }
     }
 
-    const fn position(self, index: usize) -> ChunkPos {
-        let column = index as i32 % 25;
-        let row = index as i32 / 25;
-        let spacing = match self {
-            Self::Clustered => 1,
+    fn position(self, index: usize) -> ChunkPos {
+        let index = i32::try_from(index).expect("benchmark source index must fit in i32");
+        let column = index % SOURCE_GRID_WIDTH;
+        let row = index / SOURCE_GRID_WIDTH;
+        ChunkPos::new(column * self.spacing(), row * self.spacing())
+    }
+
+    const fn spacing(self) -> i32 {
+        match self {
+            Self::Clustered => CLUSTERED_SOURCE_SPACING,
             Self::Dispersed => DISPERSED_SOURCE_SPACING,
-        };
-        ChunkPos::new(column * spacing, row * spacing)
+        }
     }
 
     const fn moved_position(self) -> ChunkPos {
-        match self {
-            Self::Clustered => ChunkPos::new(-1, 0),
-            Self::Dispersed => ChunkPos::new(-DISPERSED_SOURCE_SPACING, 0),
-        }
+        ChunkPos::new(-self.spacing(), 0)
     }
 }
 
@@ -79,8 +85,9 @@ impl MoveScenario {
     }
 }
 
-const fn player_id(index: usize) -> Uuid {
-    Uuid::from_u128(index as u128 + 1)
+fn player_id(index: usize) -> Uuid {
+    let index = u128::try_from(index).expect("benchmark source index must fit in u128");
+    Uuid::from_u128(index + 1)
 }
 
 fn bench_simulation_ticket_pipeline(c: &mut Criterion) {
@@ -90,10 +97,10 @@ fn bench_simulation_ticket_pipeline(c: &mut Criterion) {
                 "simulation_ticket_pipeline/{}/distance_{simulation_distance}",
                 layout.name()
             ));
-            group.sample_size(10);
+            group.sample_size(BENCHMARK_SAMPLE_SIZE);
             group.sampling_mode(SamplingMode::Flat);
-            group.warm_up_time(Duration::from_millis(250));
-            group.measurement_time(Duration::from_millis(750));
+            group.warm_up_time(BENCHMARK_WARM_UP);
+            group.measurement_time(BENCHMARK_MEASUREMENT);
 
             for source_count in SOURCE_COUNTS {
                 let mut scenario = MoveScenario::new(layout, source_count, simulation_distance);

@@ -630,7 +630,9 @@ impl SimulationTicketManager {
 mod tests {
     use super::*;
 
-    const REFERENCE_BLOCK_TICKING_LEVEL: u8 = 129;
+    const REFERENCE_BLOCK_TICKING_LEVEL: u8 = ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw();
+    const DETERMINISTIC_SEQUENCE_MULTIPLIER: u64 = 6_364_136_223_846_793_005;
+    const DETERMINISTIC_SEQUENCE_INCREMENT: u64 = 1_442_695_040_888_963_407;
 
     struct DeterministicSequence(u64);
 
@@ -638,20 +640,23 @@ mod tests {
         fn next(&mut self, bound: usize) -> usize {
             self.0 = self
                 .0
-                .wrapping_mul(6_364_136_223_846_793_005)
-                .wrapping_add(1_442_695_040_888_963_407);
+                .wrapping_mul(DETERMINISTIC_SEQUENCE_MULTIPLIER)
+                .wrapping_add(DETERMINISTIC_SEQUENCE_INCREMENT);
             let bound = u64::try_from(bound).expect("test bound must fit in u64");
             let value = (self.0 >> u32::BITS) % bound;
             usize::try_from(value).expect("bounded test value must fit in usize")
         }
     }
 
-    fn source(pos: ChunkPos, level: Option<u8>) -> SourceLevelUpdate {
-        SourceLevelUpdate {
+    const fn source(pos: ChunkPos, level: Option<ChunkTicketLevel>) -> SourceLevelUpdate {
+        SourceLevelUpdate { pos, level }
+    }
+
+    const fn entity_ticking_source(pos: ChunkPos, radius: u8) -> SourceLevelUpdate {
+        source(
             pos,
-            level: level
-                .map(|raw| ChunkTicketLevel::new(raw).expect("test source level must be valid")),
-        }
+            Some(ChunkTicketLevel::for_entity_ticking_radius(radius)),
+        )
     }
 
     fn has_change(
@@ -743,28 +748,22 @@ mod tests {
     fn overlapping_sources_keep_the_strongest_propagated_level() {
         let mut manager = SimulationTicketManager::new();
         manager.apply_source_updates([
-            source(ChunkPos::new(0, 0), Some(126)),
-            source(ChunkPos::new(4, 0), Some(128)),
+            entity_ticking_source(ChunkPos::new(0, 0), 2),
+            entity_ticking_source(ChunkPos::new(4, 0), 0),
         ]);
         manager.run_all_updates();
 
         assert_eq!(
-            manager
-                .get_level(ChunkPos::new(2, 0))
-                .map(ChunkTicketLevel::raw),
-            Some(128)
+            manager.get_level(ChunkPos::new(2, 0)),
+            Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK)
         );
         assert_eq!(
-            manager
-                .get_level(ChunkPos::new(3, 0))
-                .map(ChunkTicketLevel::raw),
-            Some(129)
+            manager.get_level(ChunkPos::new(3, 0)),
+            Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK)
         );
         assert_eq!(
-            manager
-                .get_level(ChunkPos::new(4, 0))
-                .map(ChunkTicketLevel::raw),
-            Some(128)
+            manager.get_level(ChunkPos::new(4, 0)),
+            Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK)
         );
     }
 
@@ -772,21 +771,24 @@ mod tests {
     fn repeated_updates_coalesce_to_the_original_level() {
         let mut manager = SimulationTicketManager::new();
         let pos = ChunkPos::new(0, 0);
-        manager.apply_source_update(source(pos, Some(126)));
-        manager.apply_source_update(source(pos, Some(128)));
+        manager.apply_source_update(entity_ticking_source(pos, 2));
+        manager.apply_source_update(entity_ticking_source(pos, 0));
         manager.apply_source_update(source(pos, None));
 
         assert_eq!(manager.run_all_updates(), []);
         assert_eq!(manager.run_all_updates(), []);
         assert_eq!(manager.get_level(pos), None);
 
-        manager.apply_source_updates([source(pos, None), source(pos, Some(126))]);
+        manager.apply_source_updates([source(pos, None), entity_ticking_source(pos, 2)]);
         assert_ne!(manager.run_all_updates(), []);
-        manager.apply_source_update(source(pos, Some(128)));
-        manager.apply_source_update(source(pos, Some(126)));
+        manager.apply_source_update(entity_ticking_source(pos, 0));
+        manager.apply_source_update(entity_ticking_source(pos, 2));
 
         assert_eq!(manager.run_all_updates(), []);
-        assert_eq!(manager.get_level(pos).map(ChunkTicketLevel::raw), Some(126));
+        assert_eq!(
+            manager.get_level(pos),
+            Some(ChunkTicketLevel::for_entity_ticking_radius(2))
+        );
     }
 
     #[test]
@@ -803,15 +805,22 @@ mod tests {
     fn weakening_a_source_removes_its_old_outer_levels() {
         let mut manager = SimulationTicketManager::new();
         let pos = ChunkPos::new(0, 0);
-        manager.apply_source_update(source(pos, Some(126)));
+        manager.apply_source_update(entity_ticking_source(pos, 2));
         manager.run_all_updates();
 
-        manager.apply_source_update(source(pos, Some(128)));
+        manager.apply_source_update(entity_ticking_source(pos, 0));
         let changes = manager.run_all_updates();
 
-        assert!(has_change(changes, pos, ChunkTicketLevel::new(128)));
+        assert!(has_change(
+            changes,
+            pos,
+            Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK)
+        ));
         assert!(has_change(changes, ChunkPos::new(2, 0), None));
-        assert_eq!(manager.get_level(pos).map(ChunkTicketLevel::raw), Some(128));
+        assert_eq!(
+            manager.get_level(pos),
+            Some(ChunkTicketLevel::ENTITY_TICKING_CHUNK)
+        );
     }
 
     #[test]
@@ -822,7 +831,12 @@ mod tests {
             ChunkPos::new(-3, 2),
             ChunkPos::new(4, -2),
         ];
-        let levels = [Some(124), Some(127), Some(126), Some(128)];
+        let levels = [
+            Some(ChunkTicketLevel::for_entity_ticking_radius(4)),
+            Some(ChunkTicketLevel::for_entity_ticking_radius(1)),
+            Some(ChunkTicketLevel::for_entity_ticking_radius(2)),
+            Some(ChunkTicketLevel::for_entity_ticking_radius(0)),
+        ];
         let mut forwards = SimulationTicketManager::new();
         let mut backwards = SimulationTicketManager::new();
 
@@ -849,14 +863,19 @@ mod tests {
         let mut manager = SimulationTicketManager::new();
         let mut previous_levels = FxHashMap::default();
         manager.apply_source_updates([
-            source(ChunkPos::new(0, 0), Some(124)),
-            source(ChunkPos::new(6, 1), Some(127)),
-            source(ChunkPos::new(-3, 2), Some(126)),
-            source(ChunkPos::new(4, -2), Some(128)),
+            entity_ticking_source(ChunkPos::new(0, 0), 4),
+            entity_ticking_source(ChunkPos::new(6, 1), 1),
+            entity_ticking_source(ChunkPos::new(-3, 2), 2),
+            entity_ticking_source(ChunkPos::new(4, -2), 0),
         ]);
         run_and_compare_with_reference(&mut manager, &mut previous_levels);
 
-        for level in [Some(128), Some(127), Some(125), Some(129)] {
+        for level in [
+            Some(ChunkTicketLevel::for_entity_ticking_radius(0)),
+            Some(ChunkTicketLevel::for_entity_ticking_radius(1)),
+            Some(ChunkTicketLevel::for_entity_ticking_radius(3)),
+            Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
+        ] {
             manager.apply_source_update(source(ChunkPos::new(-3, 2), level));
             run_and_compare_with_reference(&mut manager, &mut previous_levels);
         }
@@ -864,7 +883,7 @@ mod tests {
         manager.apply_source_updates([
             source(ChunkPos::new(0, 0), None),
             source(ChunkPos::new(-3, 2), None),
-            source(ChunkPos::new(9, 3), Some(125)),
+            entity_ticking_source(ChunkPos::new(9, 3), 3),
             source(ChunkPos::new(4, -2), None),
             source(ChunkPos::new(6, 1), None),
         ]);
@@ -876,7 +895,13 @@ mod tests {
         let mut manager = SimulationTicketManager::new();
         let mut previous_levels = FxHashMap::default();
         let mut sequence = DeterministicSequence(0x5eed_cafe_d00d_f00d);
-        let source_levels = [None, Some(124), Some(126), Some(128), Some(129)];
+        let source_levels = [
+            None,
+            Some(ChunkTicketLevel::for_entity_ticking_radius(4)),
+            Some(ChunkTicketLevel::for_entity_ticking_radius(2)),
+            Some(ChunkTicketLevel::for_entity_ticking_radius(0)),
+            Some(ChunkTicketLevel::BLOCK_TICKING_CHUNK),
+        ];
 
         for _ in 0..200 {
             for _ in 0..=sequence.next(3) {
@@ -896,25 +921,25 @@ mod tests {
         let mut manager = SimulationTicketManager::new();
         let mut previous_levels = FxHashMap::default();
         manager.apply_source_updates([
-            source(ChunkPos::new(0, 0), Some(124)),
-            source(ChunkPos::new(3, 0), Some(125)),
-            source(ChunkPos::new(2, 2), Some(126)),
+            entity_ticking_source(ChunkPos::new(0, 0), 4),
+            entity_ticking_source(ChunkPos::new(3, 0), 3),
+            entity_ticking_source(ChunkPos::new(2, 2), 2),
         ]);
         run_and_compare_with_reference(&mut manager, &mut previous_levels);
 
         manager.apply_source_updates([
             source(ChunkPos::new(0, 0), None),
             source(ChunkPos::new(3, 0), None),
-            source(ChunkPos::new(5, 0), Some(125)),
+            entity_ticking_source(ChunkPos::new(5, 0), 3),
             source(ChunkPos::new(2, 2), None),
-            source(ChunkPos::new(-30, 0), Some(126)),
+            entity_ticking_source(ChunkPos::new(-30, 0), 2),
         ]);
         run_and_compare_with_reference(&mut manager, &mut previous_levels);
 
         manager.apply_source_updates([
             source(ChunkPos::new(5, 0), None),
-            source(ChunkPos::new(6, 0), Some(125)),
-            source(ChunkPos::new(7, 0), Some(124)),
+            entity_ticking_source(ChunkPos::new(6, 0), 3),
+            entity_ticking_source(ChunkPos::new(7, 0), 4),
         ]);
         run_and_compare_with_reference(&mut manager, &mut previous_levels);
     }
@@ -925,10 +950,10 @@ mod tests {
         let mut previous_levels = FxHashMap::default();
         let old_pos = ChunkPos::new(0, 0);
         let new_pos = ChunkPos::new(-1, 0);
-        manager.apply_source_update(source(old_pos, Some(96)));
+        manager.apply_source_update(entity_ticking_source(old_pos, 32));
         run_and_compare_with_reference(&mut manager, &mut previous_levels);
 
-        manager.apply_source_updates([source(old_pos, None), source(new_pos, Some(96))]);
+        manager.apply_source_updates([source(old_pos, None), entity_ticking_source(new_pos, 32)]);
         run_and_compare_with_reference(&mut manager, &mut previous_levels);
     }
 
@@ -939,9 +964,8 @@ mod tests {
         let mut manager = SimulationTicketManager::new();
         let mut previous_levels = FxHashMap::default();
         let old_pos = ChunkPos::new(0, 0);
-        let source_level =
-            ChunkTicketLevel::for_entity_ticking_radius(SIMULATION_DISTANCE_CHUNKS).raw();
-        let first_overflowing_distance_chunks = i32::from(u8::MAX - source_level) + 1;
+        let source_level = ChunkTicketLevel::for_entity_ticking_radius(SIMULATION_DISTANCE_CHUNKS);
+        let first_overflowing_distance_chunks = i32::from(u8::MAX - source_level.raw()) + 1;
         let new_pos = ChunkPos::new(first_overflowing_distance_chunks, 0);
         manager.apply_source_update(source(old_pos, Some(source_level)));
         run_and_compare_with_reference(&mut manager, &mut previous_levels);
@@ -957,12 +981,12 @@ mod tests {
         let old_pos = ChunkPos::new(0, 0);
         let new_pos = ChunkPos::new(-1, 0);
         manager.apply_source_updates([
-            source(old_pos, Some(124)),
-            source(ChunkPos::new(3, 0), Some(124)),
+            entity_ticking_source(old_pos, 4),
+            entity_ticking_source(ChunkPos::new(3, 0), 4),
         ]);
         run_and_compare_with_reference(&mut manager, &mut previous_levels);
 
-        manager.apply_source_updates([source(old_pos, None), source(new_pos, Some(124))]);
+        manager.apply_source_updates([source(old_pos, None), entity_ticking_source(new_pos, 4)]);
         run_and_compare_with_reference(&mut manager, &mut previous_levels);
     }
 }

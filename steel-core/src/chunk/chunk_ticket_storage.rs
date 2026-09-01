@@ -11,8 +11,10 @@ pub(crate) const PORTAL_TICKET_RADIUS: u8 = 3;
 const PORTAL_TICKET_TIMEOUT_TICKS: i64 = 300;
 pub(crate) const ENDER_PEARL_TICKET_TIMEOUT_TICKS: u32 = 40;
 const ENDER_PEARL_TICKET_RADIUS: u8 = 2;
+const INLINE_TICKET_CAPACITY_PER_CHUNK: usize = 4;
+const INLINE_PROJECTION_POSITION_CAPACITY: usize = 2;
 
-type StoredTickets = SmallVec<[StoredChunkTicket; 4]>;
+type StoredTickets = SmallVec<[StoredChunkTicket; INLINE_TICKET_CAPACITY_PER_CHUNK]>;
 
 /// Persistent chunk ticket saved data.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -186,8 +188,8 @@ pub(crate) struct SourceLevelUpdate {
 #[must_use = "dirty source positions must be forwarded to the propagation domains"]
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct SourceProjectionChanges {
-    pub(crate) load_positions: SmallVec<[ChunkPos; 2]>,
-    pub(crate) simulation_positions: SmallVec<[ChunkPos; 2]>,
+    pub(crate) load_positions: SmallVec<[ChunkPos; INLINE_PROJECTION_POSITION_CAPACITY]>,
+    pub(crate) simulation_positions: SmallVec<[ChunkPos; INLINE_PROJECTION_POSITION_CAPACITY]>,
     pub(crate) load_domain_affected: bool,
     pub(crate) simulation_domain_affected: bool,
 }
@@ -708,13 +710,15 @@ impl ChunkTicketStorage {
 mod tests {
     use super::*;
 
+    const TEST_SIMULATION_DISTANCE_CHUNKS: u8 = 5;
+
     fn player_id(value: u128) -> Uuid {
         Uuid::from_u128(value)
     }
 
     #[test]
     fn untimed_ticket_multiplicity_and_domain_minima_are_independent() {
-        let mut storage = ChunkTicketStorage::new(5);
+        let mut storage = ChunkTicketStorage::new(TEST_SIMULATION_DISTANCE_CHUNKS);
         let pos = ChunkPos::new(2, -3);
         let simulated = ChunkTicket::simulated_full_chunks(2);
         let stronger_loading = ChunkTicket::full_chunks(4);
@@ -764,7 +768,7 @@ mod tests {
 
     #[test]
     fn equal_untimed_ticket_survives_timed_expiry_and_index_cleans_up() {
-        let mut storage = ChunkTicketStorage::new(5);
+        let mut storage = ChunkTicketStorage::new(TEST_SIMULATION_DISTANCE_CHUNKS);
         let pos = ChunkPos::new(0, 0);
         let ticket = portal_ticket();
 
@@ -793,7 +797,7 @@ mod tests {
 
     #[test]
     fn refreshed_timed_ticket_rejects_a_stale_expiration_snapshot() {
-        let mut storage = ChunkTicketStorage::new(5);
+        let mut storage = ChunkTicketStorage::new(TEST_SIMULATION_DISTANCE_CHUNKS);
         let pos = ChunkPos::new(0, 0);
         let _ = storage.add_or_refresh_portal_ticket(pos);
         let stale_expirations = storage.timed_ticket_expirations();
@@ -809,12 +813,14 @@ mod tests {
 
     #[test]
     fn player_moves_are_canonical_and_stale_removals_do_not_remove_new_sources() {
-        let mut storage = ChunkTicketStorage::new(4);
+        let simulation_distance = 4;
+        let player_view_distance = 8;
+        let mut storage = ChunkTicketStorage::new(simulation_distance);
         let old_pos = ChunkPos::new(0, 0);
         let new_pos = ChunkPos::new(1, 0);
         let first = player_id(1);
         let second = player_id(2);
-        let load_level = ChunkTicket::player_loading(8).load_level();
+        let load_level = ChunkTicket::player_loading(player_view_distance).load_level();
 
         let _ = storage.apply(ChunkTicketOperation::AddPlayer {
             pos: old_pos,
@@ -854,10 +860,13 @@ mod tests {
 
     #[test]
     fn simulation_distance_reprojects_only_occupied_player_positions() {
-        let mut storage = ChunkTicketStorage::new(2);
+        let initial_simulation_distance = 2;
+        let updated_simulation_distance = 6;
+        let player_view_distance = 8;
+        let mut storage = ChunkTicketStorage::new(initial_simulation_distance);
         let first_pos = ChunkPos::new(-2, 4);
         let second_pos = ChunkPos::new(7, 1);
-        let load_level = ChunkTicket::player_loading(8).load_level();
+        let load_level = ChunkTicket::player_loading(player_view_distance).load_level();
         let _ = storage.apply_operations([
             ChunkTicketOperation::AddPlayer {
                 pos: first_pos,
@@ -872,7 +881,7 @@ mod tests {
         ]);
 
         let old_level = storage.simulation_source_level(first_pos);
-        let changes = storage.set_simulation_distance(6);
+        let changes = storage.set_simulation_distance(updated_simulation_distance);
         let mut positions = changes.simulation_positions.into_vec();
         positions.sort_unstable_by_key(|pos| (pos.0.x, pos.0.y));
 
@@ -882,7 +891,7 @@ mod tests {
         assert_ne!(storage.simulation_source_level(first_pos), old_level);
         assert!(
             storage
-                .set_simulation_distance(6)
+                .set_simulation_distance(updated_simulation_distance)
                 .simulation_positions
                 .is_empty()
         );
@@ -890,7 +899,7 @@ mod tests {
 
     #[test]
     fn timed_tickets_refresh_wait_for_expiration_and_persist_only_portals() {
-        let mut storage = ChunkTicketStorage::new(5);
+        let mut storage = ChunkTicketStorage::new(TEST_SIMULATION_DISTANCE_CHUNKS);
         let portal_pos = ChunkPos::new(-4, 7);
         let pearl_pos = ChunkPos::new(3, 9);
 
@@ -972,7 +981,8 @@ mod tests {
             ],
         };
 
-        let restored = ChunkTicketStorage::from_persistent(persistent, 5);
+        let restored =
+            ChunkTicketStorage::from_persistent(persistent, TEST_SIMULATION_DISTANCE_CHUNKS);
 
         assert_eq!(restored.timed_ticket_count(), 1);
         let expirations = restored.timed_ticket_expirations();
@@ -1004,7 +1014,10 @@ mod tests {
             }],
         };
 
-        let restored = ChunkTicketStorage::from_persistent(persistent.clone(), 5);
+        let restored = ChunkTicketStorage::from_persistent(
+            persistent.clone(),
+            TEST_SIMULATION_DISTANCE_CHUNKS,
+        );
 
         assert_eq!(restored.to_persistent(), persistent);
     }

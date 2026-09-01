@@ -16,6 +16,9 @@ use steel_utils::{
 };
 use toml::map::Map;
 
+const TEST_WORLD_SEED: i64 = 0;
+const TEST_VIEW_AND_SIMULATION_DISTANCE_CHUNKS: u8 = 2;
+
 struct TemporaryWorldDirectory(PathBuf);
 
 impl TemporaryWorldDirectory {
@@ -55,6 +58,10 @@ fn snapshot_membership(chunk_map: &ChunkMap, pos: ChunkPos) -> (bool, bool, bool
     )
 }
 
+const fn full_and_entity_ticking_ticket(radius: u8) -> ChunkTicket {
+    ChunkTicket::full_chunks_with_entity_ticking(radius, radius)
+}
+
 #[test]
 fn restored_portal_ticket_initializes_loading_and_simulation_before_first_flush() {
     init_vanilla_registry();
@@ -62,7 +69,7 @@ fn restored_portal_ticket_initializes_loading_and_simulation_before_first_flush(
     let directory = TemporaryWorldDirectory::new("restored-portal-ticket");
     let runtime = Arc::new(Runtime::new().expect("test runtime should initialize"));
     let center = ChunkPos::new(-4, 7);
-    let mut ticket_storage = ChunkTicketStorage::new(0);
+    let mut ticket_storage = ChunkTicketStorage::new(TEST_VIEW_AND_SIMULATION_DISTANCE_CHUNKS);
     assert!(
         ticket_storage
             .add_or_refresh_portal_ticket(center)
@@ -95,14 +102,14 @@ fn restored_portal_ticket_initializes_loading_and_simulation_before_first_flush(
             Arc::clone(&runtime),
             Identifier::vanilla_static("restored_portal_ticket"),
             &OVERWORLD,
-            0,
+            TEST_WORLD_SEED,
             WorldConfig {
                 storage: WorldStorageConfig::RamOnly,
                 level_data_path: Some(directory.path_string()),
                 generator,
                 generation_settings,
-                view_distance: 2,
-                simulation_distance: 2,
+                view_distance: TEST_VIEW_AND_SIMULATION_DISTANCE_CHUNKS,
+                simulation_distance: TEST_VIEW_AND_SIMULATION_DISTANCE_CHUNKS,
                 max_chained_neighbor_updates: 1_000_000,
                 compression: None,
                 is_flat: false,
@@ -115,7 +122,7 @@ fn restored_portal_ticket_initializes_loading_and_simulation_before_first_flush(
         .expect("world should restore persisted portal tickets");
 
     let mut holder = None;
-    for _ in 0..10_000 {
+    for _ in 0..CHUNK_SCHEDULING_POLL_ATTEMPTS {
         world.chunk_map.advance_scheduling();
         holder = world
             .chunk_map
@@ -124,7 +131,7 @@ fn restored_portal_ticket_initializes_loading_and_simulation_before_first_flush(
         if holder.is_some() {
             break;
         }
-        thread::sleep(Duration::from_millis(1));
+        thread::sleep(CHUNK_SCHEDULING_POLL_INTERVAL);
     }
     let holder = holder.expect("restored portal ticket should load its center holder");
     let expected_level = ChunkTicketLevel::for_full_chunk_radius(PORTAL_TICKET_RADIUS);
@@ -154,10 +161,10 @@ fn simulation_level_classes_publish_immutable_masks_on_a_shared_layout() {
     );
     world.chunk_map.rebuild_ticking_chunk_snapshot();
 
-    let entity_a = ChunkTicket::full_chunks_with_entity_ticking(1, 1);
-    let entity_b = ChunkTicket::full_chunks_with_entity_ticking(0, 0);
-    let _ = world.chunk_map.add_chunk_ticket(pos, entity_b);
-    let _ = world.chunk_map.add_chunk_ticket(pos, entity_a);
+    let wide_ticket = full_and_entity_ticking_ticket(1);
+    let center_ticket = full_and_entity_ticking_ticket(0);
+    let _ = world.chunk_map.add_chunk_ticket(pos, center_ticket);
+    let _ = world.chunk_map.add_chunk_ticket(pos, wide_ticket);
     let before_initial = world.chunk_map.ticking_chunks.load_full();
     let initial_slot = *before_initial
         .layout
@@ -183,7 +190,7 @@ fn simulation_level_classes_publish_immutable_masks_on_a_shared_layout() {
     );
     assert_eq!(initial.rebuilt_ticking_chunk_count, 1);
 
-    let _ = world.chunk_map.remove_chunk_ticket(pos, entity_a);
+    let _ = world.chunk_map.remove_chunk_ticket(pos, wide_ticket);
     let before_same_class = world.chunk_map.ticking_chunks.load_full();
     let same_class = world.chunk_map.flush_simulation_updates();
     let after_same_class = world.chunk_map.ticking_chunks.load_full();
@@ -199,8 +206,8 @@ fn simulation_level_classes_publish_immutable_masks_on_a_shared_layout() {
     assert_eq!(same_class.ticking_snapshot_rebuild, Duration::ZERO);
     assert_eq!(same_class.rebuilt_ticking_chunk_count, 0);
 
-    let _ = world.chunk_map.remove_chunk_ticket(pos, entity_b);
-    let _ = world.chunk_map.add_chunk_ticket(adjacent, entity_b);
+    let _ = world.chunk_map.remove_chunk_ticket(pos, center_ticket);
+    let _ = world.chunk_map.add_chunk_ticket(adjacent, center_ticket);
     let before_entity_to_block = world.chunk_map.ticking_chunks.load_full();
     let entity_to_block = world.chunk_map.flush_simulation_updates();
     let after_entity_to_block = world.chunk_map.ticking_chunks.load_full();
@@ -225,7 +232,7 @@ fn simulation_level_classes_publish_immutable_masks_on_a_shared_layout() {
     assert!(before_entity_to_block.entity.contains(old_slot));
     assert_eq!(entity_to_block.rebuilt_ticking_chunk_count, 1);
 
-    let _ = world.chunk_map.remove_chunk_ticket(adjacent, entity_b);
+    let _ = world.chunk_map.remove_chunk_ticket(adjacent, center_ticket);
     let before_block_to_absent = world.chunk_map.ticking_chunks.load_full();
     let block_to_absent = world.chunk_map.flush_simulation_updates();
     let after_block_to_absent = world.chunk_map.ticking_chunks.load_full();
@@ -267,10 +274,9 @@ fn only_layout_eligibility_changes_replace_the_shared_layout() {
     );
     world.chunk_map.update_chunk_level(unready_pos, None);
 
-    let _ = world.chunk_map.add_chunk_ticket(
-        ticking_pos,
-        ChunkTicket::full_chunks_with_entity_ticking(0, 0),
-    );
+    let _ = world
+        .chunk_map
+        .add_chunk_ticket(ticking_pos, full_and_entity_ticking_ticket(0));
     world.chunk_map.flush_simulation_updates();
     let after_unready_churn = world.chunk_map.ticking_chunks.load_full();
     assert!(Arc::ptr_eq(&initial.layout, &after_unready_churn.layout));
@@ -301,7 +307,7 @@ fn simulation_ticket_updates_existing_holder_before_load_epoch_commits() {
     let world = fresh_test_world("simulation_ticket_before_load_epoch");
     let pos = ChunkPos::new(7, -5);
     let holder = insert_active_full_holder(&world, pos, ChunkTicketLevel::FULL_CHUNK, Vec::new());
-    let ticket = ChunkTicket::full_chunks_with_entity_ticking(0, 0);
+    let ticket = full_and_entity_ticking_ticket(0);
 
     let receipt = world.chunk_map.add_chunk_ticket(pos, ticket);
     world.chunk_map.flush_simulation_updates();
@@ -323,7 +329,7 @@ fn removing_simulation_ticket_keeps_holder_with_load_only_ticket() {
     let world = fresh_test_world("simulation_ticket_removal_keeps_loaded");
     let pos = ChunkPos::new(-8, 6);
     let load_only_ticket = ChunkTicket::full_chunks(0);
-    let simulation_ticket = ChunkTicket::full_chunks_with_entity_ticking(0, 0);
+    let simulation_ticket = full_and_entity_ticking_ticket(0);
 
     world.chunk_map.add_chunk_ticket(pos, load_only_ticket);
     let addition_receipt = world.chunk_map.add_chunk_ticket(pos, simulation_ticket);
@@ -364,7 +370,7 @@ fn removing_simulation_ticket_keeps_holder_with_load_only_ticket() {
 fn simulation_ticket_waits_for_load_epoch_before_holder_creation() {
     let world = fresh_test_world("load_creation_samples_simulation");
     let pos = ChunkPos::new(-13, -9);
-    let ticket = ChunkTicket::full_chunks_with_entity_ticking(0, 0);
+    let ticket = full_and_entity_ticking_ticket(0);
 
     let receipt = world.chunk_map.add_chunk_ticket(pos, ticket);
     world.chunk_map.flush_simulation_updates();

@@ -428,11 +428,16 @@ impl ChunkMap {
     ///
     /// This allows using different storage implementations (disk, RAM, etc.).
     #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "chunk-map construction requires its world and scheduling configuration"
+    )]
     pub fn new_with_storage(
         chunk_runtime: Arc<Runtime>,
         world: Weak<World>,
         dimension_type: DimensionTypeRef,
         sea_level: i32,
+        simulation_distance: u8,
         storage: Arc<ChunkStorage>,
         generator: Arc<ChunkGeneratorType>,
         generation_pool: Arc<ThreadPool>,
@@ -447,7 +452,7 @@ impl ChunkMap {
             generator,
             generation_pool,
             chunk_encoding_pool,
-            ChunkTicketStorage::new(0),
+            ChunkTicketStorage::new(simulation_distance),
         )
     }
 

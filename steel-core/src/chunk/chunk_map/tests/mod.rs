@@ -30,6 +30,11 @@ use steel_utils::serial::ReadFrom;
 use steel_utils::types::UpdateFlags;
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 use text_components::TextComponent;
+
+const TEST_SIMULATION_DISTANCE_CHUNKS: u8 = 0;
+const CHUNK_SCHEDULING_POLL_ATTEMPTS: usize = 10_000;
+const CHUNK_SCHEDULING_POLL_INTERVAL: Duration = Duration::from_millis(1);
+
 struct RecordingConnection {
     packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
 }
@@ -86,13 +91,13 @@ fn packet_id(packet: &EncodedPacket) -> i32 {
 }
 
 fn advance_until_receipt(chunk_map: &Arc<ChunkMap>, receipt: ChunkTicketReceipt) {
-    for _ in 0..10_000 {
+    for _ in 0..CHUNK_SCHEDULING_POLL_ATTEMPTS {
         chunk_map.flush_simulation_updates();
         chunk_map.advance_scheduling();
         if chunk_map.is_ticket_receipt_committed(receipt) {
             return;
         }
-        thread::sleep(Duration::from_millis(1));
+        thread::sleep(CHUNK_SCHEDULING_POLL_INTERVAL);
     }
     panic!("chunk ticket receipt did not commit");
 }
@@ -217,6 +222,7 @@ fn test_chunk_map() -> Arc<ChunkMap> {
         Weak::new(),
         &OVERWORLD,
         63,
+        TEST_SIMULATION_DISTANCE_CHUNKS,
         Arc::new(ChunkStorage::RamOnly(RamOnlyStorage::empty_world())),
         Arc::new(ChunkGeneratorType::Empty(EmptyChunkGenerator::new())),
         Arc::new(

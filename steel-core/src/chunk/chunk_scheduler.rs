@@ -439,6 +439,8 @@ mod tests {
     use crate::chunk::chunk_ticket_manager::{ChunkTicket, ChunkTicketLevel};
     use uuid::Uuid;
 
+    const TEST_SIMULATION_DISTANCE_CHUNKS: u8 = 4;
+
     fn coordinator(simulation_distance: u8) -> ChunkSchedulingCoordinator {
         ChunkSchedulingCoordinator::new(
             ChunkTicketStorage::new(simulation_distance),
@@ -451,7 +453,8 @@ mod tests {
         let pos = ChunkPos::new(3, -2);
         let weaker = ChunkTicket::simulated_full_chunks(3);
         let stronger = ChunkTicket::simulated_full_chunks(1);
-        let mut ingress = TicketOperationIngress::new(ChunkTicketStorage::new(4));
+        let mut ingress =
+            TicketOperationIngress::new(ChunkTicketStorage::new(TEST_SIMULATION_DISTANCE_CHUNKS));
 
         let receipt = ingress
             .push_batch([
@@ -470,7 +473,8 @@ mod tests {
             ])
             .expect("non-empty batch should produce a receipt");
         let (load_updates, load_revision) = ingress.take_load_projection();
-        let (simulation_updates, simulation_revision) = ingress.take_simulation_projection(4);
+        let (simulation_updates, simulation_revision) =
+            ingress.take_simulation_projection(TEST_SIMULATION_DISTANCE_CHUNKS);
 
         assert_eq!(receipt.load(), Some(load_revision));
         assert_eq!(receipt.simulation(), Some(simulation_revision));
@@ -492,7 +496,7 @@ mod tests {
 
     #[test]
     fn no_op_receipts_advance_when_both_projections_are_drained() {
-        let coordinator = coordinator(4);
+        let coordinator = coordinator(TEST_SIMULATION_DISTANCE_CHUNKS);
         let pos = ChunkPos::new(0, 0);
         let receipt = coordinator.queue_ticket_operation(ChunkTicketOperation::Remove {
             pos,
@@ -506,7 +510,7 @@ mod tests {
         let simulation_revision = coordinator.apply_pending_simulation_projection(
             &mut simulation_manager,
             SimulationTicketRevision::INITIAL,
-            4,
+            TEST_SIMULATION_DISTANCE_CHUNKS,
         );
 
         assert_eq!(receipt.load(), Some(load_revision));
@@ -522,7 +526,7 @@ mod tests {
 
     #[test]
     fn domains_converge_when_a_submission_lands_between_projection_drains() {
-        let coordinator = coordinator(4);
+        let coordinator = coordinator(TEST_SIMULATION_DISTANCE_CHUNKS);
         let pos = ChunkPos::new(0, 0);
         let ticket = ChunkTicket::simulated_full_chunks(0);
         let _ = coordinator.queue_ticket_operation(ChunkTicketOperation::Add { pos, ticket });
@@ -539,7 +543,7 @@ mod tests {
         let simulation = coordinator.apply_pending_simulation_projection(
             &mut simulation_manager,
             SimulationTicketRevision::INITIAL,
-            4,
+            TEST_SIMULATION_DISTANCE_CHUNKS,
         );
         let load = coordinator.apply_pending_load_projection(&mut load_manager, first_load);
         simulation_manager.run_all_updates();
@@ -553,7 +557,7 @@ mod tests {
 
     #[test]
     fn player_moves_and_stale_removals_use_one_authoritative_source() {
-        let simulation_distance = 4;
+        let simulation_distance = TEST_SIMULATION_DISTANCE_CHUNKS;
         let coordinator = coordinator(simulation_distance);
         let old_pos = ChunkPos::new(0, 0);
         let new_pos = ChunkPos::new(100, 0);
@@ -605,7 +609,7 @@ mod tests {
 
     #[test]
     fn load_and_simulation_domains_commit_independently() {
-        let coordinator = coordinator(4);
+        let coordinator = coordinator(TEST_SIMULATION_DISTANCE_CHUNKS);
         let pos = ChunkPos::new(0, 0);
         let load_only = coordinator.queue_ticket_operation(ChunkTicketOperation::Add {
             pos,
@@ -674,7 +678,7 @@ mod tests {
 
     #[test]
     fn prepared_load_revision_is_not_visible_before_boundary_publication() {
-        let coordinator = coordinator(4);
+        let coordinator = coordinator(TEST_SIMULATION_DISTANCE_CHUNKS);
         let receipt = coordinator
             .queue_ticket_operations([ChunkTicketOperation::Add {
                 pos: ChunkPos::new(0, 0),
