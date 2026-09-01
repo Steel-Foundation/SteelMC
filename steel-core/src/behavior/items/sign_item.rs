@@ -33,7 +33,6 @@ use crate::world::{LevelReader as _, World};
 /// The `_standing_block`, `_wall_block`, and `_attachment_direction` fields are read by the
 /// build script via `#[json_arg]` to generate constructor calls from `classes.json`.
 /// The actual values are forwarded into `inner` — the fields themselves are not used at runtime.
-#[item_behavior]
 pub struct SignItem {
     #[json_arg(vanilla_blocks, json = "block")]
     _standing_block: BlockRef,

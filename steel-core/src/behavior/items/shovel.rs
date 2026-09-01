@@ -30,7 +30,6 @@ const FLATTENABLES: [&Block; 6] = [
 const LIT_PROPERTY: BoolProperty = BlockStateProperties::LIT;
 
 /// Behavior for Shovels, extinguishes campfires and turns grass blocks into paths
-#[item_behavior]
 pub struct ShovelItem;
 
 impl ItemBehavior for ShovelItem {
