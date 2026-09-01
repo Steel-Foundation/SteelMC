@@ -631,6 +631,19 @@ impl LivingEntity for FoxEntity {
         Some(&sound_events::ENTITY_FOX_DEATH)
     }
 
+    fn drop_custom_death_equipment(&self, world: &Arc<World>) {
+        // Vanilla Fox.dropAllDeathLoot: spit the held mouth item out on death,
+        // before the loot rules, so it drops even for a baby or with mob loot off.
+        let held = self
+            .living_base()
+            .equipment()
+            .lock()
+            .take(EquipmentSlot::MainHand);
+        if !held.is_empty() {
+            self.drop_item_stack(world, held);
+        }
+    }
+
     fn server_ai_step(&self) {
         Mob::mob_server_ai_step(self);
     }
