@@ -3042,6 +3042,9 @@ fn death_respawn_replaces_the_live_player_incarnation() {
 
         world.remove_player_for_world_change(&replacement);
         assert!(server.remove_online_player_sync(&replacement).is_some());
+        world.chunk_map.stop_generation_refill_loop();
+        world.chunk_map.task_tracker.close();
+        world.chunk_map.task_tracker.wait().await;
         drop((old_player, replacement, server));
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");
@@ -3144,6 +3147,14 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         target_world.remove_player_for_world_change(&replacement);
         assert!(server.remove_online_player_sync(&replacement).is_some());
         pearl.set_removed(RemovalReason::Discarded);
+        source_world.chunk_map.stop_generation_refill_loop();
+        target_world.chunk_map.stop_generation_refill_loop();
+        source_world.chunk_map.task_tracker.close();
+        target_world.chunk_map.task_tracker.close();
+        tokio::join!(
+            source_world.chunk_map.task_tracker.wait(),
+            target_world.chunk_map.task_tracker.wait(),
+        );
         drop((old_player, replacement, shared_pearl, pearl, server));
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");

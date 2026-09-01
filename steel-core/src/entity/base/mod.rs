@@ -19,7 +19,6 @@ use relationships::{EntityLifecycleState, EntityRelationshipState};
 
 use std::{
     collections::VecDeque,
-    mem,
     sync::{Arc, Weak},
 };
 
@@ -879,46 +878,6 @@ impl EntityBase {
         if save_data.portal_cooldown > 0 {
             save_data.portal_cooldown -= 1;
         }
-    }
-
-    /// Resets state that vanilla gets from constructing a fresh player entity for death respawn.
-    pub fn reset_for_player_respawn(&self, dimensions: EntityDimensions) {
-        let bounding_box = {
-            let mut state = self.state.lock();
-            let position = state.position;
-            state.old_position = position;
-            state.last_known_position = None;
-            state.last_known_speed = DVec3::ZERO;
-            state.velocity = DVec3::ZERO;
-            state.old_rotation = state.rotation;
-            state.pose = EntityPose::Standing;
-            state.dimensions = dimensions;
-            state.bounding_box = EntityBaseState::make_bounding_box(position, dimensions);
-            state.movement_flags = EntityMovementFlags::new();
-            state.ground_contact = EntityGroundContact::airborne();
-            state.movement_progress = EntityMovementProgress::new();
-            state.fire_freeze = EntityFireFreezeState::new();
-            state.in_block_state = None;
-            state.fluid_contact = EntityFluidContact::default();
-            state.was_eye_in_water = false;
-            state.piston_movement = EntityPistonMovement::new();
-            state.fall_distance = 0.0;
-            state.stuck_speed_multiplier = DVec3::ZERO;
-            state.no_physics = false;
-            state.needs_velocity_sync = false;
-            state.hurt_marked = false;
-            state.bounding_box
-        };
-        self.notify_bounding_box_changed(bounding_box);
-
-        self.movement_trace.lock().reset();
-        *self.portal_process.lock() = None;
-        self.lifecycle.lock().pending_world_change = None;
-
-        let mut save_data = self.save_data.lock();
-        let tags = mem::take(&mut save_data.tags);
-        *save_data = EntityBaseSaveData::new();
-        save_data.tags = tags;
     }
 
     /// Updates the world reference used by this entity.

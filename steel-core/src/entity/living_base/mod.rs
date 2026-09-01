@@ -1659,55 +1659,6 @@ impl LivingEntityBase {
     pub fn reset_death_state(&self) {
         self.state.lock().reset_death_state();
     }
-
-    /// Resets state that vanilla gets from constructing a fresh living player for death respawn.
-    pub fn reset_for_player_respawn(&self) {
-        self.set_sprinting(false);
-
-        // A newly constructed `LivingEntity` starts with empty equipment snapshots
-        // and runtime bookkeeping.
-        *self.last_equipment_items.lock() = array::from_fn(|_| ItemStack::empty());
-        *self.pending_equipment_changes.lock() = array::from_fn(|_| None);
-        {
-            let mut attributes = self.attributes.lock();
-            let mut installed_modifiers = self.equipment_attribute_modifiers.lock();
-            for modifiers in installed_modifiers.iter_mut() {
-                for key in modifiers.drain(..) {
-                    attributes.remove_modifier(key.attribute, &key.id);
-                }
-            }
-        }
-
-        let removed_effects = {
-            let mut effects = self.active_mob_effects.lock();
-            let removed_effects = effects.keys().copied().collect::<Vec<_>>();
-            effects.clear();
-            removed_effects
-        };
-
-        for effect in removed_effects.iter().copied() {
-            self.remove_effect_attribute_modifiers(effect);
-        }
-
-        {
-            let mut dirty_effects = self.dirty_mob_effects.lock();
-            dirty_effects.clear();
-            dirty_effects.extend(
-                removed_effects
-                    .into_iter()
-                    .map(|effect| MobEffectSyncChange::Remove { effect }),
-            );
-        }
-
-        let speed = self
-            .attributes
-            .lock()
-            .required_value(vanilla_attributes::MOVEMENT_SPEED) as f32;
-
-        let mut state = self.state.lock();
-        *state = LivingEntityState::new(speed);
-        state.effects_dirty = true;
-    }
 }
 
 fn weak_living_entity(target: Option<&SharedEntity>) -> Option<WeakEntity> {
