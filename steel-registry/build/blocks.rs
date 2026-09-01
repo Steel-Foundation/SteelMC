@@ -189,7 +189,7 @@ fn push_reaction_to_tokens(reaction: &str) -> TokenStream {
         "POPPED" => quote! { PushReaction::Popped },
         "IMMOVEABLE" => quote! { PushReaction::Immoveable },
         "IGNORE_ENTITY" => quote! { PushReaction::IgnoreEntity },
-        "PUSH" => quote! { PushReaction::PushOnly },
+        "PUSH" => quote! { PushReaction::Push },
         _ => panic!("Unknown push reaction: {reaction}"),
     }
 }

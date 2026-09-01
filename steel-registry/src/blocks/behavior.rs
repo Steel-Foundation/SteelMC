@@ -16,7 +16,7 @@ pub enum PushReaction {
     Popped,
     Immoveable,
     IgnoreEntity,
-    PushOnly,
+    Push,
 }
 
 /// Vanilla `BlockBehavior.OffsetType`.
