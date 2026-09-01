@@ -1,14 +1,15 @@
 //! Vanilla's abstract `Display` implementation.
 //!
-use crate::entity::{Entity, EntityBase};
+
 use crate::entity::damage::DamageSource;
 pub use crate::entity::entities::objects::technical::display::transformation::Transformation;
+use crate::entity::{Entity, EntityBase};
 use crate::world::World;
+use glam::Mat4;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_registry::blocks::behavior::PushReaction;
-use steel_registry::entity_data::Matrix4f;
 use steel_registry::vanilla_entity_data::DisplayEntityData;
 
 /// The default interpolation duration of a display entity.
@@ -55,7 +56,7 @@ pub trait Display: Entity {
     /// The base `tick()` method for display entities.
     fn tick_display(&self) {
         if self.vehicle().is_some_and(|v| v.is_removed()) {
-            self.stop_riding()
+            self.stop_riding();
         }
     }
     /// The base `hurtServer()` method for display entities.
@@ -197,10 +198,7 @@ pub trait DisplayView<'a>: PrivateDisplayView<'a> {
     }
 
     /// Sets the transformation matrix of the display entity to `mat`.
-    ///
-    /// **Note:** Since `Mat4` implements `Into<Matrix4f>`, it can also act as
-    /// a valid matrix for this function.
-    fn set_transformation_matrix(&mut self, mat: impl Into<Matrix4f>) {
+    fn set_transformation_matrix(&mut self, mat: impl Into<Mat4>) {
         self.set_transformation(Transformation::decompose(mat.into()));
     }
 

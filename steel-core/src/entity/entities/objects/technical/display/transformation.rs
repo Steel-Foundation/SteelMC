@@ -6,7 +6,9 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use std::f32::consts;
 use std::mem;
-use steel_registry::entity_data::{Matrix4f, Quaternionf, Vector3f};
+use steel_utils::nbt::{
+    mat4_from_nbt_tag, quat_from_nbt_tag, quat_to_nbt_tag, vec3_from_nbt_tag, vec3_to_nbt_tag,
+};
 
 /// A structure describing an affine transformation in 3D space.
 ///
@@ -15,33 +17,31 @@ use steel_registry::entity_data::{Matrix4f, Quaternionf, Vector3f};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transformation {
     /// The translation (displacement) applied by this transformation.
-    pub translation: Vector3f,
+    pub translation: Vec3,
     /// The left rotation applied by this transformation.
-    pub left_rotation: Quaternionf,
+    pub left_rotation: Quat,
     /// The scale applied by this transformation.
-    pub scale: Vector3f,
+    pub scale: Vec3,
     /// The right rotation applied by this transformation.
-    pub right_rotation: Quaternionf,
+    pub right_rotation: Quat,
 }
 
 impl Transformation {
     /// The identity [`Transformation`].
     pub const IDENTITY: Self = Transformation {
-        translation: Vector3f::ZERO,
-        left_rotation: Quaternionf::IDENTITY,
-        scale: Vector3f::ONE,
-        right_rotation: Quaternionf::IDENTITY,
+        translation: Vec3::ZERO,
+        left_rotation: Quat::IDENTITY,
+        scale: Vec3::ONE,
+        right_rotation: Quat::IDENTITY,
     };
 
-    /// Composes a [`Matrix4f`] from this transformation.
+    /// Composes a [`Mat4`] from this transformation.
     #[must_use]
-    pub fn compose(self) -> Matrix4f {
-        Matrix4f(
-            Mat4::from_translation(self.translation.into())
-                * Mat4::from_quat(self.left_rotation.into())
-                * Mat4::from_scale(self.scale.into())
-                * Mat4::from_quat(self.right_rotation.into()),
-        )
+    pub fn compose(self) -> Mat4 {
+        Mat4::from_translation(self.translation)
+            * Mat4::from_quat(self.left_rotation)
+            * Mat4::from_scale(self.scale)
+            * Mat4::from_quat(self.right_rotation)
     }
 
     fn approx_givens_quat(a11: f32, a12: f32, a22: f32) -> Givens {
@@ -112,9 +112,9 @@ impl Transformation {
     /// into a set of transformation values.
     #[expect(clippy::similar_names, reason = "matches the stages of decomposition")]
     #[must_use]
-    pub fn decompose(matrix: Matrix4f) -> Self {
-        let scale_factor = 1.0 / matrix.0.col(3)[3];
-        let input = matrix.0 * scale_factor;
+    pub fn decompose(matrix: Mat4) -> Self {
+        let scale_factor = 1.0 / matrix.col(3)[3];
+        let input = matrix * scale_factor;
 
         // Extract the translation.
         let translation = input.w_axis.xyz() * scale_factor;
@@ -181,10 +181,10 @@ impl Transformation {
         right_rotation = right_rotation.conjugate();
 
         Transformation {
-            translation: translation.into(),
-            left_rotation: left_rotation.into(),
-            scale: scale.into(),
-            right_rotation: right_rotation.into(),
+            translation,
+            left_rotation,
+            scale,
+            right_rotation,
         }
     }
 }
@@ -264,14 +264,14 @@ impl Givens {
     }
 }
 
-impl From<Matrix4f> for Transformation {
+impl From<Mat4> for Transformation {
     /// Decomposes a [`Matrix4f`] to form a [`Transformation`].
-    fn from(matrix: Matrix4f) -> Self {
+    fn from(matrix: Mat4) -> Self {
         Transformation::decompose(matrix)
     }
 }
 
-impl From<Transformation> for Matrix4f {
+impl From<Transformation> for Mat4 {
     /// Composes a [`Transformation`] to form a matrix.
     fn from(t: Transformation) -> Self {
         Transformation::compose(t)
@@ -294,10 +294,10 @@ impl From<NormalTransformation> for Transformation {
 impl ToNbtTag for NormalTransformation {
     fn to_nbt_tag(self) -> NbtTag {
         let mut compound = NbtCompound::new();
-        compound.insert("translation", self.0.translation.to_nbt_tag());
-        compound.insert("left_rotation", self.0.left_rotation.to_nbt_tag());
-        compound.insert("scale", self.0.scale.to_nbt_tag());
-        compound.insert("right_rotation", self.0.right_rotation.to_nbt_tag());
+        compound.insert("translation", vec3_to_nbt_tag(self.0.translation));
+        compound.insert("left_rotation", quat_to_nbt_tag(self.0.left_rotation));
+        compound.insert("scale", vec3_to_nbt_tag(self.0.scale));
+        compound.insert("right_rotation", quat_to_nbt_tag(self.0.right_rotation));
         NbtTag::Compound(compound)
     }
 }
@@ -306,10 +306,10 @@ impl FromNbtTag for NormalTransformation {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
         Some(Self(Transformation {
-            translation: Vector3f::from_nbt_tag(compound.get("translation")?)?,
-            left_rotation: Quaternionf::from_nbt_tag(compound.get("left_rotation")?)?,
-            scale: Vector3f::from_nbt_tag(compound.get("scale")?)?,
-            right_rotation: Quaternionf::from_nbt_tag(compound.get("right_rotation")?)?,
+            translation: vec3_from_nbt_tag(compound.get("translation")?)?,
+            left_rotation: quat_from_nbt_tag(compound.get("left_rotation")?)?,
+            scale: vec3_from_nbt_tag(compound.get("scale")?)?,
+            right_rotation: quat_from_nbt_tag(compound.get("right_rotation")?)?,
         }))
     }
 }
@@ -322,7 +322,7 @@ impl FromNbtTag for Transformation {
         {
             return Some(transformation);
         }
-        Some(Matrix4f::from_nbt_tag(tag)?.into())
+        Some(mat4_from_nbt_tag(tag)?.into())
     }
 }
 
@@ -343,16 +343,13 @@ mod tests {
     fn check_transformation(transformation: Transformation, given_mat: Mat4) {
         let new = Transformation::decompose(transformation.compose());
         assert!(
-            transformation
-                .compose()
-                .0
-                .abs_diff_eq(new.compose().0, 1.0e-4),
+            transformation.compose().abs_diff_eq(new.compose(), 1.0e-4),
             "Transformation matrices are not approximately equal: {transformation:?} {new:?}"
         );
         assert!(
-            transformation.compose().0.abs_diff_eq(given_mat, 1.0e-2),
+            transformation.compose().abs_diff_eq(given_mat, 1.0e-2),
             "The new matrix and the given matrix are not approximately equal: {:?} {given_mat:?}",
-            transformation.compose().0
+            transformation.compose()
         );
     }
 
@@ -373,12 +370,10 @@ mod tests {
 
         check_transformation(
             Transformation {
-                translation: Vector3f::new(1.0, 2.0, 3.0),
-                left_rotation: Quat::from_axis_angle(Vec3::new(4.0, 5.0, 6.0).normalize(), 0.45)
-                    .into(),
-                scale: Vector3f::new(3.0, 3.0, 3.0),
-                right_rotation: Quat::from_axis_angle(Vec3::new(7.0, 8.0, 9.0).normalize(), 0.22)
-                    .into(),
+                translation: Vec3::new(1.0, 2.0, 3.0),
+                left_rotation: Quat::from_axis_angle(Vec3::new(4.0, 5.0, 6.0).normalize(), 0.45),
+                scale: Vec3::new(3.0, 3.0, 3.0),
+                right_rotation: Quat::from_axis_angle(Vec3::new(7.0, 8.0, 9.0).normalize(), 0.22),
             },
             Mat4::from_cols(
                 Vec4::new(2.495, 1.423, -0.8674, 0.0),
@@ -390,15 +385,13 @@ mod tests {
 
         check_transformation(
             Transformation {
-                translation: Vector3f::new(-99.0, 25.0, 3000.0),
-                left_rotation: Quat::from_axis_angle(Vec3::new(4.0, -55.0, 6.0).normalize(), 0.2)
-                    .into(),
-                scale: Vector3f::new(33.0, 32.0, 31.0),
+                translation: Vec3::new(-99.0, 25.0, 3000.0),
+                left_rotation: Quat::from_axis_angle(Vec3::new(4.0, -55.0, 6.0).normalize(), 0.2),
+                scale: Vec3::new(33.0, 32.0, 31.0),
                 right_rotation: Quat::from_axis_angle(
                     Vec3::new(7.0, 8.0, -99.0).normalize(),
                     -1.24,
-                )
-                .into(),
+                ),
             },
             Mat4::from_cols(
                 Vec4::new(9.746, 30.41, 3.378, 0.0),
