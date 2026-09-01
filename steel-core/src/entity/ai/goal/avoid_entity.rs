@@ -7,6 +7,12 @@ use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::{LivingEntity, PathfinderMob, SharedEntity};
 use crate::world::World;
 
+/// Optional mob-aware avoid predicate: it receives the fleeing mob as well as the
+/// candidate target, so per-entity state (like a fox's trusted players) can be read
+/// live, matching vanilla predicates that capture the mob.
+type MobAvoidSelector =
+    Box<dyn Fn(&dyn PathfinderMob, &dyn LivingEntity, &World) -> bool + Send + Sync>;
+
 pub struct AvoidEntityGoal {
     to_avoid: Option<SharedEntity>,
     path: Option<Path>,
@@ -14,6 +20,7 @@ pub struct AvoidEntityGoal {
     walk_speed_modifier: f64,
     sprint_speed_modifier: f64,
     avoid_entity_targeting: TargetingConditions,
+    mob_selector: Option<MobAvoidSelector>,
 }
 
 impl AvoidEntityGoal {
@@ -43,6 +50,31 @@ impl AvoidEntityGoal {
             avoid_entity_targeting: TargetingConditions::for_combat()
                 .range(f64::from(max_dist))
                 .selector(selector),
+            mob_selector: None,
+        }
+    }
+
+    /// Like [`Self::with_selector`], but the predicate also receives the fleeing
+    /// mob, so it can read the mob's live state (vanilla `Fox` avoids untrusted
+    /// players via `this.trusts(...)`). Range and line-of-sight are still applied.
+    #[must_use]
+    pub(crate) fn with_mob_selector(
+        max_dist: f32,
+        walk_speed_modifier: f64,
+        sprint_speed_modifier: f64,
+        mob_selector: impl Fn(&dyn PathfinderMob, &dyn LivingEntity, &World) -> bool
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self {
+            to_avoid: None,
+            path: None,
+            max_dist,
+            walk_speed_modifier,
+            sprint_speed_modifier,
+            avoid_entity_targeting: TargetingConditions::for_combat().range(f64::from(max_dist)),
+            mob_selector: Some(Box::new(mob_selector)),
         }
     }
 }
@@ -65,6 +97,10 @@ impl Goal for AvoidEntityGoal {
                 entity.as_living_entity().is_some_and(|living| {
                     self.avoid_entity_targeting
                         .test(world.as_ref(), Some(mob), living)
+                        && self
+                            .mob_selector
+                            .as_ref()
+                            .is_none_or(|selector| selector(mob, living, world.as_ref()))
                 })
             })
         else {
@@ -140,6 +176,17 @@ mod tests {
     fn avoid_entity_goal_uses_move_control() {
         let goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
 
+        assert_eq!(goal.controls(), GoalControls::MOVE);
+    }
+
+    #[test]
+    fn avoid_entity_goal_with_mob_selector_stores_the_predicate() {
+        let goal = AvoidEntityGoal::with_mob_selector(16.0, 1.6, 1.4, |_mob, _target, _world| true);
+
+        assert!(
+            goal.mob_selector.is_some(),
+            "the mob-aware selector is retained for can_use to apply"
+        );
         assert_eq!(goal.controls(), GoalControls::MOVE);
     }
 
