@@ -22,7 +22,9 @@ impl FleeSunGoal {
         }
     }
 
-    fn set_wanted_pos(&mut self, mob: &dyn PathfinderMob, level: &World) -> bool {
+    /// Picks a shaded position and stores it as the goal's move target, returning
+    /// whether one was found.
+    pub(crate) fn set_wanted_pos(&mut self, mob: &dyn PathfinderMob, level: &World) -> bool {
         let Some(pos) = get_hide_pos(mob, level) else {
             return false;
         };
