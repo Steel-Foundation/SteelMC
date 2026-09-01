@@ -81,6 +81,8 @@ const FOX_SPIT_PICKUP_DELAY: i32 = 40;
 const FOX_SCREECH_CHANCE: f32 = 0.1;
 /// Range, in blocks, within which a player suppresses the fox screech.
 const FOX_SCREECH_PLAYER_RANGE: f64 = 16.0;
+/// Volume the fox screech plays at (vanilla plays it louder than other sounds).
+const FOX_SCREECH_VOLUME: f32 = 2.0;
 
 /// Horizontal reach of the fox alert scan (vanilla `alertable` inflates the
 /// bounding box by this on X and Z and uses it as the targeting range).
@@ -758,6 +760,20 @@ impl Mob for FoxEntity {
             return Some(&sound_events::ENTITY_FOX_SCREECH);
         }
         Some(&sound_events::ENTITY_FOX_AMBIENT)
+    }
+
+    fn play_ambient_sound(&self) {
+        // Vanilla Fox.playAmbientSound plays the screech louder than other sounds.
+        let ambient = self.ambient_sound();
+        if ambient.is_some_and(|sound| sound.key == sound_events::ENTITY_FOX_SCREECH.key) {
+            self.play_sound(
+                &sound_events::ENTITY_FOX_SCREECH,
+                FOX_SCREECH_VOLUME,
+                self.voice_pitch(),
+            );
+        } else {
+            self.make_sound(ambient);
+        }
     }
 
     fn finalize_spawn(
