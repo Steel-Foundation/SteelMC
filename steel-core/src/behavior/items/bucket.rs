@@ -22,6 +22,7 @@ use steel_registry::fluid::FluidState;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
 use steel_registry::sound_events;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_fluids;
 use steel_registry::vanilla_game_events;
@@ -100,6 +101,11 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
     if let Some(result) =
         block_behavior.pickup_block(context.world, hit_pos, hit_state, Some(context.player))
     {
+        context.inv.with_item(|item| {
+            context
+                .player
+                .award_stat(&vanilla_stat_types::ITEM_USED, item.item());
+        });
         // Apply sound
         if let Some(sound) = result.sound {
             // Vanilla `BucketItem.use`: `bucketPickupBlock.getPickupSound()...player.playSound(...)`.
@@ -125,6 +131,11 @@ fn use_empty_bucket(context: &mut UseItemContext) -> InteractionResult {
         hit_state,
         Some(context.player),
     ) {
+        context.inv.with_item(|item| {
+            context
+                .player
+                .award_stat(&vanilla_stat_types::ITEM_USED, item.item());
+        });
         if let Some(sound) = result.sound {
             // Vanilla `BucketItem.use`: `bucketPickupBlock.getPickupSound()...player.playSound(...)`.
             context.player.play_sound(sound, 1.0, 1.0);

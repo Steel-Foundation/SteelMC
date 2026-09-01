@@ -5,7 +5,7 @@ use steel_registry::enchantment_effect::{
 };
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_entities};
+use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_entities, vanilla_items};
 
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity, MobEffectInstance};
@@ -224,7 +224,9 @@ pub(crate) fn do_post_attack_effects_with_item_source(
     if let Some(living_victim) = victim.as_living_entity() {
         for slot in EquipmentSlot::ALL {
             let mut item_broke = false;
+            let mut item_ref = &*vanilla_items::AIR;
             living_victim.with_equipment_slot_mut(slot, &mut |item| {
+                item_ref = item.item;
                 item_broke = apply_post_attack_effects(
                     world,
                     item,
@@ -234,7 +236,7 @@ pub(crate) fn do_post_attack_effects_with_item_source(
                 );
             });
             if item_broke {
-                living_victim.on_equipped_item_broken(slot);
+                living_victim.on_equipped_item_broken(item_ref, slot);
             }
         }
     }
@@ -442,6 +444,7 @@ pub(crate) fn do_post_piercing_attack_effects(world: &World, user: &dyn LivingEn
         return;
     };
 
+    let item_ref = item_stack.item;
     for (key, level) in enchantments.iter() {
         if *level == 0 {
             continue;
@@ -459,7 +462,7 @@ pub(crate) fn do_post_piercing_attack_effects(world: &World, user: &dyn LivingEn
                 continue;
             }
             if apply_post_piercing_entity_effect(world, &effect.effect, level, user) {
-                user.on_equipped_item_broken(EquipmentSlot::MainHand);
+                user.on_equipped_item_broken(item_ref, EquipmentSlot::MainHand);
             }
         }
     }
@@ -1074,7 +1077,7 @@ mod tests {
 
         fn set_absorption_amount(&self, _amount: f32) {}
 
-        fn on_equipped_item_broken(&self, slot: EquipmentSlot) {
+        fn on_equipped_item_broken(&self, _item: ItemRef, slot: EquipmentSlot) {
             self.broken_slots.lock().push(slot);
         }
     }

@@ -9,8 +9,43 @@ impl FeatureDecorationRunner {
         config: &HugeFungusConfiguration,
         origin: BlockPos,
     ) -> bool {
+        Self::place_huge_fungus(
+            region,
+            registry,
+            random,
+            config,
+            origin,
+            region.generation_height(),
+        )
+    }
+
+    pub(crate) fn place_planted_huge_fungus_feature(
+        level: &impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        config: &HugeFungusConfiguration,
+        origin: BlockPos,
+    ) -> bool {
+        Self::place_huge_fungus(
+            level,
+            registry,
+            random,
+            config,
+            origin,
+            level.max_y_exclusive(),
+        )
+    }
+
+    fn place_huge_fungus(
+        level: &impl LevelAccessor,
+        registry: &Registry,
+        random: &mut WorldgenRandom,
+        config: &HugeFungusConfiguration,
+        origin: BlockPos,
+        generation_height: i32,
+    ) -> bool {
         let valid_base_state = Self::block_state_from_data(registry, &config.valid_base_block);
-        if region.block_state(origin.below()).get_block() != valid_base_state.get_block() {
+        if level.get_block_state(origin.below()).get_block() != valid_base_state.get_block() {
             return false;
         }
 
@@ -19,7 +54,7 @@ impl FeatureDecorationRunner {
             total_height *= 2;
         }
 
-        if !config.planted && origin.y() + total_height + 1 >= region.generation_height() {
+        if !config.planted && origin.y() + total_height + 1 >= generation_height {
             return false;
         }
 
@@ -27,14 +62,14 @@ impl FeatureDecorationRunner {
         let hat_state = Self::block_state_from_data(registry, &config.hat_state);
         let decor_state = Self::block_state_from_data(registry, &config.decor_state);
         let is_huge = !config.planted && random.next_f32() < 0.06;
-        let _ = region.set_block_state(
+        let _ = level.set_block_state(
             origin,
             vanilla_blocks::AIR.default_state(),
             UpdateFlags::UPDATE_NONE,
         );
 
         Self::place_huge_fungus_stem(
-            region,
+            level,
             registry,
             random,
             config,
@@ -44,7 +79,7 @@ impl FeatureDecorationRunner {
             is_huge,
         );
         Self::place_huge_fungus_hat(
-            region,
+            level,
             registry,
             random,
             config,
@@ -62,7 +97,7 @@ impl FeatureDecorationRunner {
         reason = "mirrors vanilla HugeFungusFeature.placeStem state"
     )]
     fn place_huge_fungus_stem(
-        region: &mut WorldGenRegion<'_>,
+        level: &impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &HugeFungusConfiguration,
@@ -80,27 +115,22 @@ impl FeatureDecorationRunner {
 
                 for dy in 0..total_height {
                     let pos = origin.offset(dx, dy, dz);
-                    if !Self::huge_fungus_is_replaceable(region, registry, pos, config, true) {
+                    if !Self::huge_fungus_is_replaceable(level, registry, pos, config, true) {
                         continue;
                     }
 
                     if config.planted {
-                        if !region.block_state(pos.below()).is_air() {
-                            let _ = region.set_block_state(
-                                pos,
-                                vanilla_blocks::AIR.default_state(),
-                                UpdateFlags::UPDATE_NONE,
-                            );
+                        if !level.get_block_state(pos.below()).is_air() {
+                            let _ = level.destroy_block(pos, true);
                         }
 
-                        let _ = region.set_block_state(pos, stem_state, UpdateFlags::UPDATE_ALL);
+                        let _ = level.set_block_state(pos, stem_state, UpdateFlags::UPDATE_ALL);
                     } else if corner_of_huge_stem {
                         if random.next_f32() < 0.1 {
-                            let _ =
-                                region.set_block_state(pos, stem_state, UpdateFlags::UPDATE_ALL);
+                            let _ = level.set_block_state(pos, stem_state, UpdateFlags::UPDATE_ALL);
                         }
                     } else {
-                        let _ = region.set_block_state(pos, stem_state, UpdateFlags::UPDATE_ALL);
+                        let _ = level.set_block_state(pos, stem_state, UpdateFlags::UPDATE_ALL);
                     }
                 }
             }
@@ -112,7 +142,7 @@ impl FeatureDecorationRunner {
         reason = "mirrors vanilla HugeFungusFeature.placeHat state"
     )]
     fn place_huge_fungus_hat(
-        region: &mut WorldGenRegion<'_>,
+        level: &impl LevelAccessor,
         registry: &Registry,
         random: &mut WorldgenRandom,
         config: &HugeFungusConfiguration,
@@ -149,22 +179,18 @@ impl FeatureDecorationRunner {
                     let is_hat_bottom = dy < hat_start_y + 3;
                     let pos = origin.offset(dx, dy, dz);
 
-                    if !Self::huge_fungus_is_replaceable(region, registry, pos, config, false) {
+                    if !Self::huge_fungus_is_replaceable(level, registry, pos, config, false) {
                         continue;
                     }
 
-                    if config.planted && !region.block_state(pos.below()).is_air() {
-                        let _ = region.set_block_state(
-                            pos,
-                            vanilla_blocks::AIR.default_state(),
-                            UpdateFlags::UPDATE_NONE,
-                        );
+                    if config.planted && !level.get_block_state(pos.below()).is_air() {
+                        let _ = level.destroy_block(pos, true);
                     }
 
                     if is_hat_bottom {
                         if !inside {
                             Self::place_huge_fungus_hat_drop_block(
-                                region,
+                                level,
                                 random,
                                 pos,
                                 hat_state,
@@ -173,7 +199,7 @@ impl FeatureDecorationRunner {
                         }
                     } else if inside {
                         Self::place_huge_fungus_hat_block(
-                            region,
+                            level,
                             random,
                             pos,
                             hat_state,
@@ -184,7 +210,7 @@ impl FeatureDecorationRunner {
                         );
                     } else if corner {
                         Self::place_huge_fungus_hat_block(
-                            region,
+                            level,
                             random,
                             pos,
                             hat_state,
@@ -195,7 +221,7 @@ impl FeatureDecorationRunner {
                         );
                     } else {
                         Self::place_huge_fungus_hat_block(
-                            region,
+                            level,
                             random,
                             pos,
                             hat_state,
@@ -215,7 +241,7 @@ impl FeatureDecorationRunner {
         reason = "vanilla hat placement uses three independent probabilities"
     )]
     fn place_huge_fungus_hat_block(
-        region: &mut WorldGenRegion<'_>,
+        level: &impl LevelAccessor,
         random: &mut WorldgenRandom,
         pos: BlockPos,
         hat_state: BlockStateId,
@@ -225,39 +251,39 @@ impl FeatureDecorationRunner {
         vines_probability: f32,
     ) {
         if random.next_f32() < decor_block_probability {
-            let _ = region.set_block_state(pos, decor_state, UpdateFlags::UPDATE_ALL);
+            let _ = level.set_block_state(pos, decor_state, UpdateFlags::UPDATE_ALL);
         } else if random.next_f32() < hat_block_probability {
-            let _ = region.set_block_state(pos, hat_state, UpdateFlags::UPDATE_ALL);
+            let _ = level.set_block_state(pos, hat_state, UpdateFlags::UPDATE_ALL);
             if random.next_f32() < vines_probability {
-                Self::try_place_huge_fungus_weeping_vines(region, random, pos);
+                Self::try_place_huge_fungus_weeping_vines(level, random, pos);
             }
         }
     }
 
     fn place_huge_fungus_hat_drop_block(
-        region: &mut WorldGenRegion<'_>,
+        level: &impl LevelAccessor,
         random: &mut WorldgenRandom,
         pos: BlockPos,
         hat_state: BlockStateId,
         place_vines: bool,
     ) {
-        if region.block_state(pos.below()).get_block() == hat_state.get_block() {
-            let _ = region.set_block_state(pos, hat_state, UpdateFlags::UPDATE_ALL);
+        if level.get_block_state(pos.below()).get_block() == hat_state.get_block() {
+            let _ = level.set_block_state(pos, hat_state, UpdateFlags::UPDATE_ALL);
         } else if random.next_f32() < 0.15 {
-            let _ = region.set_block_state(pos, hat_state, UpdateFlags::UPDATE_ALL);
+            let _ = level.set_block_state(pos, hat_state, UpdateFlags::UPDATE_ALL);
             if place_vines && random.next_i32_bounded(11) == 0 {
-                Self::try_place_huge_fungus_weeping_vines(region, random, pos);
+                Self::try_place_huge_fungus_weeping_vines(level, random, pos);
             }
         }
     }
 
     fn try_place_huge_fungus_weeping_vines(
-        region: &mut WorldGenRegion<'_>,
+        level: &impl LevelAccessor,
         random: &mut WorldgenRandom,
         hat_pos: BlockPos,
     ) {
         let place_pos = hat_pos.below();
-        if !region.block_state(place_pos).is_air() {
+        if !level.get_block_state(place_pos).is_air() {
             return;
         }
 
@@ -266,21 +292,21 @@ impl FeatureDecorationRunner {
             goal_vine_height *= 2;
         }
 
-        Self::place_weeping_vines_column(region, random, place_pos, goal_vine_height, 23, 25);
+        Self::place_weeping_vines_column(level, random, place_pos, goal_vine_height, 23, 25);
     }
 
     fn huge_fungus_is_replaceable(
-        region: &WorldGenRegion<'_>,
+        level: &impl LevelReader,
         registry: &Registry,
         pos: BlockPos,
         config: &HugeFungusConfiguration,
         check_non_replaceable_plants: bool,
     ) -> bool {
-        if region.block_state(pos).is_replaceable() {
+        if level.get_block_state(pos).is_replaceable() {
             return true;
         }
 
         check_non_replaceable_plants
-            && Self::test_block_predicate(region, registry, &config.replaceable_blocks, pos)
+            && Self::test_block_predicate(level, registry, &config.replaceable_blocks, pos)
     }
 }
