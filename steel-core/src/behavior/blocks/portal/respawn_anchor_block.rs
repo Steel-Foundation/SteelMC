@@ -277,8 +277,7 @@ impl BlockBehavior for RespawnAnchorBlock {
 mod tests {
     use super::*;
     use steel_registry::blocks::block_state_ext::BlockStateExt;
-    use steel_registry::item_stack::ItemStack;
-    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::BlockPos;
 
     #[test]
