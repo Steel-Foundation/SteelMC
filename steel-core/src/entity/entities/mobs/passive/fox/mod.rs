@@ -37,8 +37,8 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
-    EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, RemovalReason, SpawnGroupData, next_entity_id,
+    EntitySpawnReason, EntitySyncedData, FoxGroupData, LivingEntity, LivingEntityBase, Mob,
+    MobBase, PathfinderMob, RemovalReason, SpawnGroupData, next_entity_id,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -100,6 +100,10 @@ const FOX_HELD_EGG_ODDS: f32 = 0.2;
 const FOX_HELD_RABBIT_ODDS: f32 = 0.4;
 const FOX_HELD_WHEAT_ODDS: f32 = 0.6;
 const FOX_HELD_LEATHER_ODDS: f32 = 0.8;
+
+/// The third and later foxes in a spawn group are kits (vanilla checks the group
+/// size, which counts the foxes spawned before this one, against this).
+const FOX_GROUP_BABY_THRESHOLD: i32 = 2;
 
 #[entity_behavior(class = "Fox")]
 /// Vanilla fox entity with synced variant, behaviour flags, and trusted players.
@@ -458,6 +462,19 @@ impl FoxEntity {
             .is_empty()
     }
 
+    /// Vanilla `Fox.Variant.byBiome`: a snow coat in snowy biomes, red elsewhere.
+    fn biome_variant(&self, world: &Arc<World>) -> FoxVariant {
+        world
+            .biome_at(self.block_position())
+            .map_or(FoxVariant::Red, |biome| {
+                if biome.has_tag(&BiomeTag::SPAWNS_SNOW_FOXES) {
+                    FoxVariant::Snow
+                } else {
+                    FoxVariant::Red
+                }
+            })
+    }
+
     /// Rolls the vanilla `populateDefaultEquipmentSlots` item a fox spawns holding.
     fn spawn_held_item() -> ItemStack {
         let odds = rand::random::<f32>();
@@ -788,20 +805,23 @@ impl Mob for FoxEntity {
         spawn_reason: EntitySpawnReason,
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
-        let variant = world
-            .biome_at(self.block_position())
-            .map_or(FoxVariant::Red, |biome| {
-                if biome.has_tag(&BiomeTag::SPAWNS_SNOW_FOXES) {
-                    FoxVariant::Snow
-                } else {
-                    FoxVariant::Red
-                }
-            });
-        self.set_variant(variant);
+        // Vanilla shares one coat across a fox spawn group and makes the third and
+        // later members kits. The group also disables the generic baby roll, so a
+        // fox spawns as a kit only by this rule.
+        let mut group = match group_data {
+            Some(SpawnGroupData::Fox(existing)) => existing,
+            _ => FoxGroupData::new(self.biome_variant(world)),
+        };
+        let is_baby = group.group_size() >= FOX_GROUP_BABY_THRESHOLD;
+
+        self.set_variant(group.variant());
+        if is_baby {
+            self.set_age(self.get_baby_start_age());
+        }
+        // TODO(fox-goals): vanilla calls setTargetGoals() here; the fox target goals
+        // are still blocked on the attack-target foundation (see new_with_base).
 
         // Vanilla `populateDefaultEquipmentSlots`: a fifth of foxes spawn holding an item.
-        // (Vanilla shares the variant across a spawn group; picking it from the biome per
-        // fox gives the same uniform result, since a group shares one spawn biome.)
         if rand::random::<f32>() < FOX_SPAWN_HELD_ITEM_CHANCE {
             self.living_base()
                 .equipment()
@@ -809,7 +829,9 @@ impl Mob for FoxEntity {
                 .set(EquipmentSlot::MainHand, Self::spawn_held_item());
         }
 
-        self.finalize_spawn_ageable_mob(world, spawn_reason, group_data)
+        // Vanilla `super.finalizeSpawn`: grow the shared group after this fox.
+        group.advance_group(rand::random::<f32>);
+        self.finalize_spawn_mob_base(world, spawn_reason, Some(SpawnGroupData::Fox(group)))
     }
 
     fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {

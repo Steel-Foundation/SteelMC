@@ -412,3 +412,36 @@ fn fox_drops_its_mouth_item_on_death_regardless_of_loot_rules() {
         .any(|stack| stack.is(&vanilla_items::SWEET_BERRIES));
     assert!(dropped, "the mouth item is dropped into the world");
 }
+
+#[test]
+fn fox_group_shares_variant_and_babies_the_third_member() {
+    let (world, _seed) = world_with_fox("fox_group");
+
+    let spawn = || {
+        Arc::new(FoxEntity::new(
+            &vanilla_entities::FOX,
+            next_entity_id(),
+            DVec3::new(8.0, 65.0, 8.0),
+            Arc::downgrade(&world),
+        ))
+    };
+    let (first, second, third) = (spawn(), spawn(), spawn());
+
+    let group = Mob::finalize_spawn(first.as_ref(), &world, EntitySpawnReason::Natural, None);
+    let group = Mob::finalize_spawn(second.as_ref(), &world, EntitySpawnReason::Natural, group);
+    let group = Mob::finalize_spawn(third.as_ref(), &world, EntitySpawnReason::Natural, group);
+
+    let Some(SpawnGroupData::Fox(fox_group)) = group else {
+        panic!("a fox spawn returns fox group data");
+    };
+    assert_eq!(fox_group.group_size(), 3);
+
+    // The whole group wears the first fox's coat.
+    assert_eq!(first.variant(), second.variant());
+    assert_eq!(second.variant(), third.variant());
+
+    // Only the third and later foxes are kits; the generic baby roll is disabled.
+    assert!(!AgeableMob::is_baby(first.as_ref()));
+    assert!(!AgeableMob::is_baby(second.as_ref()));
+    assert!(AgeableMob::is_baby(third.as_ref()));
+}
