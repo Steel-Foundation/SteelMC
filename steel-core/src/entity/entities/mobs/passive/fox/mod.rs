@@ -44,7 +44,7 @@ use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
-use goals::{FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal};
+use goals::{FoxPounceGoal, FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal};
 
 /// Baby fox render scale (vanilla `Fox.BABY_SCALE`).
 const BABY_SCALE: f32 = 0.6;
@@ -92,6 +92,11 @@ const FOX_ALERT_RANGE: f64 = 12.0;
 /// Vertical reach of the fox alert scan (vanilla inflates the box by this on Y).
 const FOX_ALERT_VERTICAL_RANGE: f64 = 6.0;
 
+/// Crouch progress climbed per tick while crouching, and the fully-crouched value
+/// the pounce goal waits for (vanilla `crouchAmount` rises by 0.2 up to 5.0).
+const CROUCH_STEP: f32 = 0.2;
+const FULLY_CROUCHED: f32 = 5.0;
+
 /// Chance a naturally spawned fox holds an item (vanilla `populateDefaultEquipmentSlots`).
 const FOX_SPAWN_HELD_ITEM_CHANCE: f32 = 0.2;
 // Cumulative weights of the vanilla spawn held-item roll.
@@ -113,6 +118,10 @@ pub struct FoxEntity {
     entity_data: SyncMutex<FoxEntityData>,
     /// Ticks since the fox last ate the food in its mouth (not synced or saved).
     ticks_since_eaten: SyncMutex<i32>,
+    /// Server-side crouch progress (0 to 5), climbed while crouching and read by
+    /// the pounce goal via `is_fully_crouched`. Recomputed from the synced
+    /// crouching flag each tick, so it is not synced or saved.
+    crouch_amount: SyncMutex<f32>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `FoxEntity`.
@@ -167,7 +176,7 @@ impl FoxEntity {
             // TODO(fox-goals): 4 AvoidEntityGoal<Wolf> (needs the Wolf mob)
             // TODO(fox-goals): 4 AvoidEntityGoal<PolarBear> (needs the PolarBear mob)
             // TODO(fox-goals): 5 StalkPreyGoal (needs prey mobs and the pounce move control)
-            // TODO(fox-goals): 6 FoxPounceGoal (needs pounce/jump physics)
+            goal_selector.add_goal(6, FoxPounceGoal);
             // TODO(fox-goals): 6 SeekShelterGoal (needs a FleeSunGoal move target)
             // TODO(fox-goals): 7 FoxMeleeAttackGoal (needs an attack target)
             goal_selector.add_goal(7, FoxSleepGoal::new());
@@ -196,6 +205,7 @@ impl FoxEntity {
             animal_base,
             entity_data: SyncMutex::new(entity_data),
             ticks_since_eaten: SyncMutex::new(0),
+            crouch_amount: SyncMutex::new(0.0),
         };
         // Vanilla foxes pick up dropped items (`setCanPickUpLoot(true)`).
         fox.set_can_pick_up_loot(true);
@@ -303,6 +313,35 @@ impl FoxEntity {
     /// Sets vanilla `Fox.setDefending`.
     pub fn set_defending(&self, defending: bool) {
         self.set_flag(FLAG_DEFENDING, defending);
+    }
+
+    /// Vanilla `Fox.isFullyCrouched`: the crouch has reached full, so the pounce
+    /// goal may launch.
+    pub(crate) fn is_fully_crouched(&self) -> bool {
+        *self.crouch_amount.lock() >= FULLY_CROUCHED
+    }
+
+    /// Snaps the crouch progress back to zero (vanilla pounce `stop` zeroes it).
+    pub(crate) fn reset_crouch_amount(&self) {
+        *self.crouch_amount.lock() = 0.0;
+    }
+
+    /// Vanilla `Fox.aiStep`/`tick` crouch bookkeeping: drop the crouch and interest
+    /// once the target is gone, then advance the crouch progress from the crouching
+    /// flag so `is_fully_crouched` can gate the pounce.
+    fn tick_pounce_state(&self) {
+        let target_alive = Mob::target(self).is_some_and(|target| target.is_alive());
+        if !target_alive {
+            self.set_crouching(false);
+            self.set_interested(false);
+        }
+
+        let mut crouch = self.crouch_amount.lock();
+        if self.is_crouching() {
+            *crouch = (*crouch + CROUCH_STEP).min(FULLY_CROUCHED);
+        } else {
+            *crouch = 0.0;
+        }
     }
 
     /// Returns vanilla `Fox.canMove`: not sleeping, sitting, or faceplanted.
@@ -659,6 +698,7 @@ impl LivingEntity for FoxEntity {
 
     fn ai_step(&self) -> Option<MoveResult> {
         self.advance_feeding_timer();
+        self.tick_pounce_state();
         let result = Mob::mob_ai_step(self);
 
         AgeableMob::tick_ageable_mob(self);

@@ -3,16 +3,18 @@
 //! These reach the concrete `FoxEntity` from the goal's `&dyn PathfinderMob` the
 //! same way the sheep and turtle goals do, via `downcast_ref`.
 
-use std::f64::consts::TAU;
+use std::f64::consts::{PI, TAU};
 use std::sync::Arc;
 
 use glam::DVec3;
-use steel_utils::{BlockPos, Downcast as _};
+use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::vanilla_blocks;
+use steel_utils::{BlockPos, Downcast as _, wrap_degrees};
 
 use super::FoxEntity;
 use crate::entity::ai::goal::{Goal, GoalControls, reduced_tick_delay};
 use crate::entity::entities::objects::items::ItemEntity;
-use crate::entity::{Entity, LivingEntity, Mob, PathfinderMob};
+use crate::entity::{Entity, LivingEntity, Mob, PathfinderMob, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
 
@@ -34,6 +36,31 @@ const PERCH_EXTRA_LOOK_TICKS: i32 = 20;
 
 /// Randomized delay, in ticks, before a fox may fall asleep (vanilla 140).
 const SLEEP_WAIT_TICKS: i32 = reduced_tick_delay(140);
+
+/// Pounce arc: horizontal reach toward the target and the upward kick added to
+/// the fox's velocity when it launches (vanilla `deltaMovement.add(uv*0.8, 0.9, ..)`).
+const POUNCE_LEAP_HORIZONTAL: f64 = 0.8;
+const POUNCE_LEAP_VERTICAL: f64 = 0.9;
+/// Distance, in blocks, at which a pouncing fox strikes its target.
+const POUNCE_HIT_DISTANCE: f64 = 2.0;
+/// Head-turn speeds (yaw, then pitch) the pounce turns the fox's head at.
+const POUNCE_LOOK_Y_SPEED: f32 = 60.0;
+const POUNCE_LOOK_X_SPEED: f32 = 30.0;
+/// Pitch the fox snaps to when it faceplants into snow after a missed pounce.
+const POUNCE_FACEPLANT_PITCH: f32 = 60.0;
+/// The pounce is over once vertical speed, pitch, and ground contact all settle.
+const POUNCE_LANDED_Y_SPEED_SQ: f64 = 0.05;
+const POUNCE_LEVEL_PITCH: f32 = 15.0;
+/// While still airborne, once vertical speed nearly stops the pitch eases to level.
+const POUNCE_SETTLE_Y_SPEED_SQ: f64 = 0.03;
+const POUNCE_PITCH_SETTLE_LERP: f32 = 0.2;
+/// Extra weight given to upward motion when computing the mid-pounce tilt.
+const POUNCE_UPWARD_TILT_BIAS: f64 = 6.5;
+/// Minimum motion magnitude before the tilt angle is recomputed.
+const POUNCE_TILT_EPSILON: f64 = 1.0e-5;
+/// Clear-path scan for a pounce: horizontal steps and the head-height range checked.
+const PATH_CLEAR_STEPS: i32 = 6;
+const PATH_CLEAR_HEIGHT: i32 = 4;
 
 fn as_fox(mob: &dyn PathfinderMob) -> Option<&FoxEntity> {
     mob.downcast_ref::<FoxEntity>()
@@ -252,5 +279,199 @@ impl Goal for FoxSleepGoal {
             fox.set_sleeping(false);
             fox.set_sitting(false);
         }
+    }
+}
+
+/// Vanilla `Mth.rotLerp`: eases `from` toward `to` by `delta`, wrapping the angle.
+fn rot_lerp(delta: f32, from: f32, to: f32) -> f32 {
+    from + delta * wrap_degrees(to - from)
+}
+
+/// Vanilla `Fox.isPathClear`: whether the space between the fox and its target, at
+/// head height and above, is all replaceable, so a pounce arc is unobstructed.
+fn is_path_clear(mob: &dyn PathfinderMob, target: &SharedEntity) -> bool {
+    let Some(world) = mob.level() else {
+        return false;
+    };
+    let fox_pos = mob.position();
+    let target_pos = target.position();
+    let zdiff = target_pos.z - fox_pos.z;
+    let xdiff = target_pos.x - fox_pos.x;
+    let slope = zdiff / xdiff;
+
+    for i in 0..PATH_CLEAR_STEPS {
+        let fraction = f64::from(i) / f64::from(PATH_CLEAR_STEPS);
+        let (x, z) = if slope == 0.0 {
+            (xdiff * fraction, 0.0)
+        } else {
+            let z = zdiff * fraction;
+            (z / slope, z)
+        };
+        for j in 1..PATH_CLEAR_HEIGHT {
+            let pos = BlockPos::containing(fox_pos.x + x, fox_pos.y + f64::from(j), fox_pos.z + z);
+            if !world.get_block_state(pos).is_replaceable() {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Vanilla `Fox.FoxPounceGoal`: a fully-crouched fox with a clear line to its target
+/// leaps at it, striking on contact or faceplanting into snow on a hard miss.
+pub(crate) struct FoxPounceGoal;
+
+impl Goal for FoxPounceGoal {
+    fn controls(&self) -> GoalControls {
+        GoalControls::JUMP
+    }
+
+    fn is_interruptable(&self) -> bool {
+        false
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        let Some(fox) = as_fox(mob) else {
+            return false;
+        };
+        if !fox.is_fully_crouched() {
+            return false;
+        }
+        let Some(target) = Mob::target(fox).filter(|target| target.is_alive()) else {
+            return false;
+        };
+        // Vanilla also skips when the target's motion direction differs from its
+        // facing, but getMotionDirection equals getDirection for the fox's prey, so
+        // that guard never fires and is dropped.
+        let has_clear_path = is_path_clear(mob, &target);
+        if !has_clear_path {
+            // Vanilla nudges the navigation toward the target here; the fox just
+            // stands down from the pounce and leaves the approach to other goals.
+            fox.set_crouching(false);
+            fox.set_interested(false);
+        }
+        has_clear_path
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        let Some(fox) = as_fox(mob) else {
+            return false;
+        };
+        if !Mob::target(fox).is_some_and(|target| target.is_alive()) {
+            return false;
+        }
+        let y_speed = mob.velocity().y;
+        let (_, pitch) = mob.rotation();
+        let landed = y_speed * y_speed < POUNCE_LANDED_Y_SPEED_SQ
+            && pitch.abs() < POUNCE_LEVEL_PITCH
+            && mob.on_ground();
+        !landed && !fox.is_faceplanted()
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        let Some(fox) = as_fox(mob) else {
+            return;
+        };
+        mob.set_jumping(true);
+        fox.set_pouncing(true);
+        fox.set_interested(false);
+        if let Some(target) = Mob::target(fox) {
+            let target_pos = target.position();
+            mob.mob_base().controls().lock().look_control.set_look_at(
+                target_pos,
+                POUNCE_LOOK_Y_SPEED,
+                POUNCE_LOOK_X_SPEED,
+            );
+            let toward = (target_pos - mob.position()).normalize_or_zero();
+            let leap = DVec3::new(
+                toward.x * POUNCE_LEAP_HORIZONTAL,
+                POUNCE_LEAP_VERTICAL,
+                toward.z * POUNCE_LEAP_HORIZONTAL,
+            );
+            mob.set_velocity(mob.velocity() + leap);
+        }
+        mob.mob_base().navigation().lock().stop();
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        if let Some(fox) = as_fox(mob) {
+            fox.set_crouching(false);
+            fox.reset_crouch_amount();
+            fox.set_interested(false);
+            fox.set_pouncing(false);
+        }
+    }
+
+    fn requires_update_every_tick(&self) -> bool {
+        true
+    }
+
+    fn tick(&mut self, mob: &dyn PathfinderMob) {
+        let Some(fox) = as_fox(mob) else {
+            return;
+        };
+        let target = Mob::target(fox);
+        if let Some(target) = &target {
+            mob.mob_base().controls().lock().look_control.set_look_at(
+                target.position(),
+                POUNCE_LOOK_Y_SPEED,
+                POUNCE_LOOK_X_SPEED,
+            );
+        }
+
+        if !fox.is_faceplanted() {
+            let movement = mob.velocity();
+            let (yaw, pitch) = mob.rotation();
+            if movement.y * movement.y < POUNCE_SETTLE_Y_SPEED_SQ && pitch != 0.0 {
+                mob.set_rotation((yaw, rot_lerp(POUNCE_PITCH_SETTLE_LERP, pitch, 0.0)));
+            } else {
+                let horizontal = movement.x.hypot(movement.z);
+                let upward_bias = if mob.is_jumping() && movement.y > 0.0 {
+                    POUNCE_UPWARD_TILT_BIAS
+                } else {
+                    1.0
+                };
+                let biased_y = movement.y * upward_bias;
+                let len = horizontal.hypot(biased_y);
+                if len > POUNCE_TILT_EPSILON {
+                    let tilt = (-biased_y).signum() * (horizontal / len).acos() * 180.0 / PI;
+                    mob.set_rotation((yaw, tilt as f32));
+                }
+            }
+        }
+
+        if let Some(target) = &target
+            && mob.position().distance(target.position()) <= POUNCE_HIT_DISTANCE
+        {
+            if let Some(world) = mob.level() {
+                let _ = Mob::do_hurt_target(fox, &world, target);
+            }
+            return;
+        }
+
+        let (yaw, pitch) = mob.rotation();
+        if pitch > 0.0
+            && mob.on_ground()
+            && mob.velocity().y != 0.0
+            && let Some(world) = mob.level()
+            && world.get_block_state(mob.block_position()).get_block() == &vanilla_blocks::SNOW
+        {
+            mob.set_rotation((yaw, POUNCE_FACEPLANT_PITCH));
+            Mob::set_target(fox, None);
+            fox.set_faceplanted(true);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rot_lerp;
+
+    #[test]
+    fn rot_lerp_eases_toward_the_target_angle() {
+        // Eases 10 degrees toward 0 by 0.2, landing at 8.
+        assert!((rot_lerp(0.2, 10.0, 0.0) - 8.0).abs() < 1.0e-4);
+        // Takes the short way across the -180/180 seam: 170 toward -170 is +20.
+        assert!((rot_lerp(0.5, 170.0, -170.0) - 180.0).abs() < 1.0e-4);
     }
 }
