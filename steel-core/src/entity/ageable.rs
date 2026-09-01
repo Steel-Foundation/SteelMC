@@ -239,7 +239,7 @@ pub trait AgeableMob: Mob {
         group_data: Option<SpawnGroupData>,
     ) -> Option<SpawnGroupData> {
         let mut group_data = match group_data {
-            Some(SpawnGroupData::AgeableMob(group_data)) => group_data,
+            Some(data) => data.ageable_group_data(),
             None => AgeableMobGroupData::with_should_spawn_baby(true),
         };
         if group_data.finalize_ageable_spawn(rand::random::<f32>) {

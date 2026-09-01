@@ -677,3 +677,34 @@ fn a_fox_fixed_on_something_does_not_turn_to_watch_a_player() {
     fox.set_faceplanted(true);
     assert!(!FoxLookAtPlayerGoal::new(24.0).can_use(fox.as_ref()));
 }
+
+#[test]
+fn fox_group_shares_variant_and_babies_the_third_member() {
+    let (world, _seed) = world_with_fox("fox_group");
+
+    let spawn = || {
+        Arc::new(FoxEntity::new(
+            &vanilla_entities::FOX,
+            next_entity_id(),
+            DVec3::new(8.0, 65.0, 8.0),
+            Arc::downgrade(&world),
+        ))
+    };
+    let (first, second, third) = (spawn(), spawn(), spawn());
+
+    let group = Mob::finalize_spawn(first.as_ref(), &world, EntitySpawnReason::Natural, None);
+    let group = Mob::finalize_spawn(second.as_ref(), &world, EntitySpawnReason::Natural, group);
+    let group = Mob::finalize_spawn(third.as_ref(), &world, EntitySpawnReason::Natural, group);
+
+    let Some(SpawnGroupData::Fox(fox_group)) = group else {
+        panic!("a fox spawn returns fox group data");
+    };
+    assert_eq!(fox_group.group_size(), 3);
+
+    assert_eq!(first.variant(), second.variant());
+    assert_eq!(second.variant(), third.variant());
+
+    assert!(!AgeableMob::is_baby(first.as_ref()));
+    assert!(!AgeableMob::is_baby(second.as_ref()));
+    assert!(AgeableMob::is_baby(third.as_ref()));
+}
