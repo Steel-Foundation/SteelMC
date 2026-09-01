@@ -13,6 +13,11 @@ pub struct HealOrHarmBehavior {
     pub is_harm: bool,
 }
 
+/// Base heal amount at amplifier 0, before the `<< amplifier` scaling (vanilla `4`).
+const BASE_HEAL_AMOUNT: i32 = 4;
+/// Base harm amount at amplifier 0, before the `<< amplifier` scaling (vanilla `6`).
+const BASE_HARM_AMOUNT: i32 = 6;
+
 impl MobEffectBehavior for HealOrHarmBehavior {
     fn is_instantaneous(&self) -> bool {
         true
@@ -24,13 +29,13 @@ impl MobEffectBehavior for HealOrHarmBehavior {
         if self.is_harm == user.is_inverted_heal_and_harm() {
             // Mirrors vanilla's `Math.max(4 << amplification, 0)` clamp
             // against Java's signed-int overflow at extreme amplifiers.
-            let amount = 4_i32.wrapping_shl(amplifier as u32).max(0);
+            let amount = BASE_HEAL_AMOUNT.wrapping_shl(amplifier as u32).max(0);
             user.heal(amount as f32);
         } else {
             user.hurt(
                 world,
                 &DamageSource::environment(&vanilla_damage_types::MAGIC),
-                6_i32.wrapping_shl(amplifier as u32) as f32,
+                BASE_HARM_AMOUNT.wrapping_shl(amplifier as u32) as f32,
             );
         }
         true
@@ -50,7 +55,8 @@ impl MobEffectBehavior for HealOrHarmBehavior {
         scale: f32,
     ) {
         if self.is_harm == user.is_inverted_heal_and_harm() {
-            let amount = (scale * (4_i32.wrapping_shl(amplifier as u32) as f32) + 0.5) as i32;
+            let amount =
+                (scale * (BASE_HEAL_AMOUNT.wrapping_shl(amplifier as u32) as f32) + 0.5) as i32;
             user.heal(amount as f32);
         } else {
             let mut source = DamageSource::environment(if direct_entity.is_some() {
@@ -66,7 +72,8 @@ impl MobEffectBehavior for HealOrHarmBehavior {
             }
             // Vanilla truncates via a Java `(int)` cast; `as i32` on a
             // non-negative f32 truncates the same way.
-            let amount = (scale * (6_i32.wrapping_shl(amplifier as u32) as f32) + 0.5) as i32;
+            let amount =
+                (scale * (BASE_HARM_AMOUNT.wrapping_shl(amplifier as u32) as f32) + 0.5) as i32;
             user.hurt(world, &source, amount as f32);
         }
     }

@@ -9,8 +9,7 @@ use crate::world::World;
 // TODO: `applyEffectTick` checks the mob is a non-spectator `ServerPlayer`
 // with a pending raid-omen position, then calls `level.getRaids()
 // .createOrExtendRaid(player, pos)` and clears the position, removing this
-// effect (returns `false`). The raid system doesn't exist yet, so this just
-// expires on its own duration timer without ever starting a raid.
+// effect (returns `false`).
 pub struct RaidOmenBehavior;
 
 impl MobEffectBehavior for RaidOmenBehavior {

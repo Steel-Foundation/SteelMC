@@ -1427,13 +1427,9 @@ fn extra_items_created_on_use_are_dropped_when_inventory_is_full() {
     assert!(item.get_item().is(&vanilla_items::GLASS_BOTTLE));
 }
 
-/// Drinking a honey bottle out of a stack, through the real active-use tick
-/// loop (`start_using_item` + `tick_active_item_use`), with a full inventory,
-/// must not lose the empty glass bottle. This is a regression test for the
-/// hand slot being emptied up front: a `use_remainder` overflow check that
-/// runs mid-`finish_using` would otherwise see that emptied hand slot as free
-/// room, place the bottle there, and then have it silently overwritten when
-/// the final (shrunk) stack is written back to the same slot.
+/// Regression test: drinking a honey bottle from a full inventory, through
+/// the real tick loop, must not lose the glass bottle remainder to the
+/// emptied hand slot being seen as free room and then overwritten.
 #[test]
 fn drinking_honey_bottle_from_full_inventory_drops_the_remainder_through_the_tick_loop() {
     init_vanilla_registry();
