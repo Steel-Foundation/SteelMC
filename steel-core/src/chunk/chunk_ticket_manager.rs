@@ -97,8 +97,9 @@ impl ChunkTicketLevel {
     }
 
     #[must_use]
-    const fn with_distance(self, distance: u8) -> Option<Self> {
-        let level = self.0.saturating_add(distance);
+    pub(super) fn with_distance(self, distance: u32) -> Option<Self> {
+        let distance = u8::try_from(distance).ok()?;
+        let level = self.0.checked_add(distance)?;
         Self::new(level)
     }
 
@@ -384,9 +385,9 @@ impl LoadTicketManager {
 
         for dz in -radius..=radius {
             for dx in -radius..=radius {
-                let distance = dx.abs().max(dz.abs()) as u8;
+                let distance = dx.unsigned_abs().max(dz.unsigned_abs());
                 let Some(level) = source_level.with_distance(distance) else {
-                    continue;
+                    panic!("bounded source offset produced an invalid load level");
                 };
 
                 let pos = ChunkPos::new(source_x + dx, source_z + dz);

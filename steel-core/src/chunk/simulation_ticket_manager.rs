@@ -7,34 +7,33 @@ use steel_utils::ChunkPos;
 use super::{chunk_ticket_manager::ChunkTicketLevel, chunk_ticket_storage::SourceLevelUpdate};
 
 const ABSENT_LEVEL: u8 = ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw() + 1;
-const LEVEL_COUNT: usize = ABSENT_LEVEL as usize + 1;
+const LEVEL_COUNT: u8 = ABSENT_LEVEL + 1;
 
 /// Vanilla-style level buckets for pending graph corrections.
 #[derive(Debug)]
 struct LeveledPropagationQueue {
     buckets: Vec<Vec<ChunkPos>>,
-    first_queued_level: usize,
+    first_queued_level: u8,
 }
 
 impl LeveledPropagationQueue {
     fn new() -> Self {
         Self {
-            buckets: (0..LEVEL_COUNT).map(|_| Vec::new()).collect(),
+            buckets: (0..usize::from(LEVEL_COUNT)).map(|_| Vec::new()).collect(),
             first_queued_level: LEVEL_COUNT,
         }
     }
 
     fn enqueue(&mut self, pos: ChunkPos, level: u8) {
-        let level = usize::from(level);
-        self.buckets[level].push(pos);
+        self.buckets[usize::from(level)].push(pos);
         self.first_queued_level = self.first_queued_level.min(level);
     }
 
     fn pop(&mut self) -> Option<(ChunkPos, u8)> {
         while self.first_queued_level < LEVEL_COUNT {
-            let bucket = &mut self.buckets[self.first_queued_level];
+            let bucket = &mut self.buckets[usize::from(self.first_queued_level)];
             if let Some(pos) = bucket.pop() {
-                return Some((pos, self.first_queued_level as u8));
+                return Some((pos, self.first_queued_level));
             }
             self.first_queued_level += 1;
         }
@@ -94,7 +93,10 @@ impl SimulationTicketManager {
 
     /// Applies the latest effective simulation source level at one position.
     pub(crate) fn apply_source_update(&mut self, update: SourceLevelUpdate) {
-        debug_assert!(update.level.is_none_or(ChunkTicketLevel::is_block_ticking));
+        assert!(
+            update.level.is_none_or(ChunkTicketLevel::is_block_ticking),
+            "simulation source level must be block-ticking or stronger"
+        );
         let new_level = update.level.map_or(ABSENT_LEVEL, ChunkTicketLevel::raw);
 
         let old_level = self.source_level(update.pos);
@@ -266,12 +268,12 @@ impl SimulationTicketManager {
         source_level: u8,
         sources: &[(ChunkPos, u8)],
     ) -> bool {
-        let source_radius = ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw() - source_level;
+        let source_level = Self::validated_source_level(source_level);
         sources.iter().all(|&(other_pos, other_level)| {
             if other_pos == source_pos {
                 return true;
             }
-            !Self::source_footprints_overlap(source_pos, source_radius, other_pos, other_level)
+            !Self::source_footprints_overlap(source_pos, source_level, other_pos, other_level)
         })
     }
 
@@ -302,50 +304,54 @@ impl SimulationTicketManager {
             return None;
         }
 
-        let radius = ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw() - removed_source.old_level;
+        let source_level = Self::validated_source_level(removed_source.old_level);
         let is_isolated = sources.iter().all(|&(other_pos, other_level)| {
             if other_pos == removed_source.pos || other_pos == added_source.pos {
                 return true;
             }
 
-            !Self::source_footprints_overlap(removed_source.pos, radius, other_pos, other_level)
-                && !Self::source_footprints_overlap(
-                    added_source.pos,
-                    radius,
-                    other_pos,
-                    other_level,
-                )
+            !Self::source_footprints_overlap(
+                removed_source.pos,
+                source_level,
+                other_pos,
+                other_level,
+            ) && !Self::source_footprints_overlap(
+                added_source.pos,
+                source_level,
+                other_pos,
+                other_level,
+            )
         });
         is_isolated.then_some((removed_source, added_source))
     }
 
     fn source_footprints_overlap(
         source_pos: ChunkPos,
-        source_radius: u8,
+        source_level: ChunkTicketLevel,
         other_pos: ChunkPos,
         other_level: u8,
     ) -> bool {
-        let dx = (i64::from(source_pos.0.x) - i64::from(other_pos.0.x)).abs();
-        let dz = (i64::from(source_pos.0.y) - i64::from(other_pos.0.y)).abs();
-        let other_radius = ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw() - other_level;
-        let minimum_separation = i64::from(source_radius) + i64::from(other_radius);
+        let dx = source_pos.0.x.abs_diff(other_pos.0.x);
+        let dz = source_pos.0.y.abs_diff(other_pos.0.y);
+        let source_radius = Self::source_radius(source_level);
+        let other_radius = Self::source_radius(Self::validated_source_level(other_level));
+        let minimum_separation = u32::from(source_radius) + u32::from(other_radius);
         dx.max(dz) <= minimum_separation
     }
 
     fn apply_isolated_move(&mut self, removed_source: SourceChange, added_source: SourceChange) {
-        let source_level = removed_source.old_level;
-        let radius = i32::from(ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw() - source_level);
+        let source_level = Self::validated_source_level(removed_source.old_level);
+        let radius = i32::from(Self::source_radius(source_level));
 
         for dz in -radius..=radius {
             for dx in -radius..=radius {
                 let pos = ChunkPos::new(removed_source.pos.0.x + dx, removed_source.pos.0.y + dz);
-                let old_raw_level = source_level + dx.abs().max(dz.abs()) as u8;
-                let new_raw_level = Self::level_from_source(added_source.pos, pos, source_level);
-                if new_raw_level == Some(old_raw_level) {
+                let old_level = Self::level_at_offset(source_level, dx, dz);
+                let new_level = Self::level_from_source(added_source.pos, pos, source_level);
+                if new_level == Some(old_level) {
                     continue;
                 }
 
-                let new_level = Self::ticket_level(new_raw_level);
                 if let Some(level) = new_level {
                     self.levels.insert(pos, level);
                 } else {
@@ -362,11 +368,7 @@ impl SimulationTicketManager {
                     continue;
                 }
 
-                let raw_level = source_level + dx.abs().max(dz.abs()) as u8;
-                let new_level = Self::ticket_level(Some(raw_level));
-                let Some(level) = new_level else {
-                    panic!("isolated move produced an invalid simulation level");
-                };
+                let level = Self::level_at_offset(source_level, dx, dz);
                 self.levels.insert(pos, level);
                 self.changes.push(SimulationLevelChange {
                     pos,
@@ -376,24 +378,49 @@ impl SimulationTicketManager {
         }
     }
 
-    fn level_from_source(source_pos: ChunkPos, pos: ChunkPos, source_level: u8) -> Option<u8> {
-        let dx = (i64::from(source_pos.0.x) - i64::from(pos.0.x)).abs();
-        let dz = (i64::from(source_pos.0.y) - i64::from(pos.0.y)).abs();
+    fn level_from_source(
+        source_pos: ChunkPos,
+        pos: ChunkPos,
+        source_level: ChunkTicketLevel,
+    ) -> Option<ChunkTicketLevel> {
+        let dx = source_pos.0.x.abs_diff(pos.0.x);
+        let dz = source_pos.0.y.abs_diff(pos.0.y);
         let distance = dx.max(dz);
-        let radius = i64::from(ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw() - source_level);
+        let radius = u32::from(Self::source_radius(source_level));
         if distance > radius {
             return None;
         }
 
-        Some(source_level + distance as u8)
+        source_level.with_distance(distance)
     }
 
-    fn ticket_level(raw_level: Option<u8>) -> Option<ChunkTicketLevel> {
-        let raw_level = raw_level?;
-        let Some(level) = ChunkTicketLevel::new(raw_level) else {
-            panic!("source produced an invalid simulation level");
+    fn level_at_offset(source_level: ChunkTicketLevel, dx: i32, dz: i32) -> ChunkTicketLevel {
+        let distance = dx.unsigned_abs().max(dz.unsigned_abs());
+        let Some(level) = source_level.with_distance(distance) else {
+            panic!("bounded source offset produced an invalid simulation level");
         };
-        Some(level)
+        level
+    }
+
+    fn validated_source_level(raw_level: u8) -> ChunkTicketLevel {
+        let Some(level) = ChunkTicketLevel::new(raw_level) else {
+            panic!("simulation source level exceeds ChunkTicketLevel::MAX");
+        };
+        assert!(
+            level.is_block_ticking(),
+            "simulation source level must be block-ticking or stronger"
+        );
+        level
+    }
+
+    fn source_radius(source_level: ChunkTicketLevel) -> u8 {
+        let Some(radius) = ChunkTicketLevel::BLOCK_TICKING_CHUNK
+            .raw()
+            .checked_sub(source_level.raw())
+        else {
+            panic!("simulation source level must be block-ticking or stronger");
+        };
+        radius
     }
 
     fn apply_isolated_source(
@@ -403,12 +430,13 @@ impl SimulationTicketManager {
         add: bool,
         original_levels: &mut FxHashMap<ChunkPos, Option<ChunkTicketLevel>>,
     ) {
-        let radius = i32::from(ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw() - source_level);
+        let source_level = Self::validated_source_level(source_level);
+        let radius = i32::from(Self::source_radius(source_level));
         for dz in -radius..=radius {
             for dx in -radius..=radius {
                 let pos = ChunkPos::new(source_pos.0.x + dx, source_pos.0.y + dz);
                 let level = if add {
-                    source_level + dx.abs().max(dz.abs()) as u8
+                    Self::level_at_offset(source_level, dx, dz).raw()
                 } else {
                     ABSENT_LEVEL
                 };
@@ -418,7 +446,8 @@ impl SimulationTicketManager {
     }
 
     fn remove_isolated_source(&mut self, source_pos: ChunkPos, source_level: u8) {
-        let radius = i32::from(ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw() - source_level);
+        let source_level = Self::validated_source_level(source_level);
+        let radius = i32::from(Self::source_radius(source_level));
         for dz in -radius..=radius {
             for dx in -radius..=radius {
                 let pos = ChunkPos::new(source_pos.0.x + dx, source_pos.0.y + dz);
@@ -433,14 +462,12 @@ impl SimulationTicketManager {
     }
 
     fn add_isolated_source(&mut self, source_pos: ChunkPos, source_level: u8) {
-        let radius = i32::from(ChunkTicketLevel::BLOCK_TICKING_CHUNK.raw() - source_level);
+        let source_level = Self::validated_source_level(source_level);
+        let radius = i32::from(Self::source_radius(source_level));
         for dz in -radius..=radius {
             for dx in -radius..=radius {
                 let pos = ChunkPos::new(source_pos.0.x + dx, source_pos.0.y + dz);
-                let raw_level = source_level + dx.abs().max(dz.abs()) as u8;
-                let Some(level) = ChunkTicketLevel::new(raw_level) else {
-                    panic!("isolated source produced an invalid simulation level");
-                };
+                let level = Self::level_at_offset(source_level, dx, dz);
                 let old_level = self.levels.insert(pos, level);
                 debug_assert!(old_level.is_none());
                 self.changes.push(SimulationLevelChange {
@@ -608,12 +635,14 @@ mod tests {
     struct DeterministicSequence(u64);
 
     impl DeterministicSequence {
-        fn next(&mut self, bound: u32) -> u32 {
+        fn next(&mut self, bound: usize) -> usize {
             self.0 = self
                 .0
                 .wrapping_mul(6_364_136_223_846_793_005)
                 .wrapping_add(1_442_695_040_888_963_407);
-            (self.0 >> 32) as u32 % bound
+            let bound = u64::try_from(bound).expect("test bound must fit in u64");
+            let value = (self.0 >> u32::BITS) % bound;
+            usize::try_from(value).expect("bounded test value must fit in usize")
         }
     }
 
@@ -645,8 +674,11 @@ mod tests {
         let radius = i32::from(REFERENCE_BLOCK_TICKING_LEVEL - source_level);
         for dz in -radius..=radius {
             for dx in -radius..=radius {
-                let distance = dx.abs().max(dz.abs()) as u8;
-                let raw_level = source_level + distance;
+                let distance = u8::try_from(dx.unsigned_abs().max(dz.unsigned_abs()))
+                    .expect("reference distance must fit in u8");
+                let raw_level = source_level
+                    .checked_add(distance)
+                    .expect("reference level must fit in u8");
                 let Some(level) = ChunkTicketLevel::new(raw_level) else {
                     panic!("reference produced an invalid simulation level");
                 };
@@ -758,6 +790,16 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "simulation source level must be block-ticking or stronger")]
+    fn load_only_level_cannot_alias_an_absent_simulation_source() {
+        let mut manager = SimulationTicketManager::new();
+        manager.apply_source_update(SourceLevelUpdate {
+            pos: ChunkPos::new(0, 0),
+            level: Some(ChunkTicketLevel::FULL_CHUNK),
+        });
+    }
+
+    #[test]
     fn weakening_a_source_removes_its_old_outer_levels() {
         let mut manager = SimulationTicketManager::new();
         let pos = ChunkPos::new(0, 0);
@@ -838,8 +880,10 @@ mod tests {
 
         for _ in 0..200 {
             for _ in 0..=sequence.next(3) {
-                let pos = ChunkPos::new(sequence.next(13) as i32 - 6, sequence.next(13) as i32 - 6);
-                let level = source_levels[sequence.next(source_levels.len() as u32) as usize];
+                let x = i32::try_from(sequence.next(13)).expect("test x must fit in i32") - 6;
+                let z = i32::try_from(sequence.next(13)).expect("test z must fit in i32") - 6;
+                let pos = ChunkPos::new(x, z);
+                let level = source_levels[sequence.next(source_levels.len())];
                 manager.apply_source_update(source(pos, level));
             }
 
