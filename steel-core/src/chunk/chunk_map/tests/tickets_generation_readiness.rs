@@ -45,6 +45,7 @@ fn ticket_changes_move_the_same_holder_only_at_boundary_commit() {
     assert!(!world.chunk_map.unloading_chunks.contains_sync(&pos));
 
     world.chunk_map.remove_chunk_ticket(pos, ticket);
+    stop_chunk_tasks(&world);
 }
 
 #[test]

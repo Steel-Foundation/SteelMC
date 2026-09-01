@@ -66,6 +66,7 @@ fn players_at_same_position_share_one_loading_source() {
     advance_until_receipt(&world.chunk_map, second_removal);
 
     assert!(!world.chunk_map.chunks.contains_sync(&pos));
+    stop_chunk_tasks(&world);
 }
 
 #[test]
