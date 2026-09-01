@@ -34,6 +34,17 @@ pub struct GrowingPlantHeadBlock {
     can_grow_into: fn(BlockStateId) -> bool,
 }
 const AGE: &IntProperty = &BlockStateProperties::AGE_25;
+/// Maximum age for vanilla growing plant heads.
+pub const MAX_AGE: u8 = 25;
+
+/// Shared behavior exposed by blocks in vanilla's `GrowingPlantHeadBlock` hierarchy.
+pub trait GrowingPlantHeadBehavior: Send + Sync {
+    /// Vanilla `GrowingPlantHeadBlock.isMaxAge`.
+    fn is_max_age(&self, state: BlockStateId) -> bool;
+
+    /// Vanilla `GrowingPlantHeadBlock.getMaxAgeState`.
+    fn get_max_age_state(&self, state: BlockStateId) -> BlockStateId;
+}
 
 impl GrowingPlantHeadBlock {
     /// Creates a new growing plant head behavior.
@@ -107,7 +118,7 @@ impl GrowingPlantHeadBlock {
     pub fn get_head_state(block: BlockRef, rng: &mut dyn Rng) -> BlockStateId {
         block
             .default_state()
-            .set_value(AGE, rng.random_range(0..25))
+            .set_value(AGE, rng.random_range(0..MAX_AGE))
     }
 
     fn state_for_placement(
@@ -138,7 +149,7 @@ impl BlockBehavior for GrowingPlantHeadBlock {
     }
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let mut rng = rng();
-        if state.get_value(AGE) < 25 && rng.random::<f64>() < self.grow_per_tick_probability {
+        if state.get_value(AGE) < MAX_AGE && rng.random::<f64>() < self.grow_per_tick_probability {
             let growth_pos = pos.relative(self.growth_direction);
             if (self.can_grow_into)(world.get_block_state(growth_pos)) {
                 let grown_state = (self.update_grow_into_state)(Self::cycle_age(state), &mut rng);
@@ -197,7 +208,22 @@ impl BlockBehavior for GrowingPlantHeadBlock {
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }
+
+    fn as_growing_plant_head(&self) -> Option<&dyn GrowingPlantHeadBehavior> {
+        Some(self)
+    }
 }
+
+impl GrowingPlantHeadBehavior for GrowingPlantHeadBlock {
+    fn is_max_age(&self, state: BlockStateId) -> bool {
+        state.get_value(AGE) == MAX_AGE
+    }
+
+    fn get_max_age_state(&self, state: BlockStateId) -> BlockStateId {
+        state.set_value(AGE, MAX_AGE)
+    }
+}
+
 impl Bonemealable for GrowingPlantHeadBlock {
     fn is_valid_bonemeal_target(
         &self,
@@ -228,7 +254,7 @@ impl Bonemealable for GrowingPlantHeadBlock {
         pos: BlockPos,
     ) {
         let mut forward_pos = pos.relative(self.growth_direction);
-        let mut next_age = (state.get_value(AGE) + 1).min(25);
+        let mut next_age = (state.get_value(AGE) + 1).min(MAX_AGE);
         let Some(get_blocks_to_grow) = self.get_blocks_to_grow_when_bonemealed else {
             return;
         };
@@ -247,7 +273,7 @@ impl Bonemealable for GrowingPlantHeadBlock {
                 UpdateFlags::UPDATE_ALL,
             );
             forward_pos = forward_pos.relative(self.growth_direction);
-            next_age = 25.min(next_age + 1);
+            next_age = MAX_AGE.min(next_age + 1);
         }
     }
 
