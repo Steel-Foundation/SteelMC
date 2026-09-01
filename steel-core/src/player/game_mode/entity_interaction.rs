@@ -3,9 +3,9 @@ use super::{
     DamageType, ENTITY_INTERACTION_RANGE_BUFFER, EnchantmentDamageContext,
     EnchantmentPostAttackContext, Entity, EntityTypeRef, GameType, ITEM_BEHAVIORS, InteractionHand,
     InteractionResult, InventoryAccess, ItemStack, LivingEntity, PiercingWeapon, Player, SAttack,
-    SInteract, SharedEntity, SoundEventHolder, SoundEventRef, TextComponent, TranslatedMessage,
-    World, WorldAabb, enchantment_helper, piercing_ray_hit_t, vanilla_attributes,
-    vanilla_damage_types, vanilla_entities,
+    SInteract, SPickItemFromEntity, SharedEntity, SoundEventHolder, SoundEventRef, TextComponent,
+    TranslatedMessage, World, WorldAabb, enchantment_helper, piercing_ray_hit_t,
+    vanilla_attributes, vanilla_damage_types, vanilla_entities,
 };
 use std::ops::Add;
 use steel_registry::particle_type::ParticleData;
@@ -689,26 +689,48 @@ impl Player {
         const PARTICLE_SPREAD_XZ: f64 = 0.1;
         const PARTICLE_SPEED: f64 = 0.2;
 
-        if let Some(entity) = entity.as_living_entity() {
-            let actual_damage = old_entity_living_health - entity.get_health();
+        if let Some(living_entity) = entity.as_living_entity() {
+            let actual_damage = old_entity_living_health - living_entity.get_health();
             self.award_custom_stat_with_count(
                 &vanilla_custom_stats::DAMAGE_DEALT,
                 (actual_damage * 10.0).round() as i32,
             );
 
-            let count = (actual_damage * 0.5).round() as i32;
-            let offset = DVec3::new(
-                0.0,
-                f64::from(entity.base().dimensions().height * PARTICLES_PER_HEALTH),
-                0.0,
-            );
-            self.get_world().send_particles(
-                ParticleData::simple(&vanilla_particle_types::DAMAGE_INDICATOR),
-                entity.position().add(offset),
-                count,
-                DVec3::new(PARTICLE_SPREAD_XZ, 0.0, PARTICLE_SPREAD_XZ),
-                PARTICLE_SPEED,
-            );
+            if actual_damage > 2.0 {
+                let count = (actual_damage * 0.5) as i32;
+                let offset = DVec3::new(
+                    0.0,
+                    f64::from(entity.base().dimensions().height * PARTICLES_PER_HEALTH),
+                    0.0,
+                );
+                self.get_world().send_particles(
+                    ParticleData::simple(&vanilla_particle_types::DAMAGE_INDICATOR),
+                    entity.position().add(offset),
+                    count,
+                    DVec3::new(PARTICLE_SPREAD_XZ, 0.0, PARTICLE_SPREAD_XZ),
+                    PARTICLE_SPEED,
+                );
+            }
         }
+    }
+
+    /// Handles the pick item action (middle click) on an entity.
+    ///
+    /// Mirrors vanilla `ServerGamePacketListenerImpl.handlePickItemFromEntity`.
+    pub fn handle_pick_item_from_entity(&self, packet: SPickItemFromEntity) {
+        let world = self.get_world();
+        let Some(entity) = world.get_entity_by_id(packet.id) else {
+            return;
+        };
+
+        if !self.is_within_entity_interaction_range(entity.bounding_box(), 3.0) {
+            return;
+        }
+
+        let Some(item_stack) = entity.get_pick_result() else {
+            return;
+        };
+
+        self.try_pick_item(item_stack);
     }
 }

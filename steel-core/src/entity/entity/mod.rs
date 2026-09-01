@@ -1043,6 +1043,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().is_removed()
     }
 
+    /// Returns the item stack produced when middle-clicking this entity in-game.
+    ///
+    /// Mirrors vanilla `Entity.getPickResult`.
+    fn get_pick_result(&self) -> Option<ItemStack> {
+        None
+    }
+
     /// Returns whether this entity is alive for vanilla generic entity checks.
     fn is_alive(&self) -> bool {
         let Some(living) = self.as_living_entity() else {

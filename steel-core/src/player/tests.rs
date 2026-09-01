@@ -1367,3 +1367,25 @@ fn block_action_restriction_precedes_redstone_ore_attack() {
             .get_value(&BlockStateProperties::LIT)
     );
 }
+
+#[test]
+fn player_damage_stats_and_hearts_ignores_low_damage_and_armor_stand() {
+    use std::sync::Weak;
+
+    use crate::entity::entities::ArmorStandEntity;
+
+    init_vanilla_registry();
+    let player = TestPlayerBuilder::new(test_world().clone(), "damage_hearts_tester", 1).build();
+    let armor_stand = ArmorStandEntity::new(
+        &vanilla_entities::ARMOR_STAND,
+        100,
+        DVec3::ZERO,
+        Weak::new(),
+    );
+
+    // Armor stand does not lose health on punch -> actual damage = 0.0 -> no particles
+    player.damage_stats_and_hearts(&armor_stand, 20.0);
+
+    // Low damage (<= 2.0) on living entity -> no damage indicator particles
+    player.damage_stats_and_hearts(&armor_stand, 21.5);
+}

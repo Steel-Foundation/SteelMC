@@ -197,11 +197,16 @@ impl Player {
             return;
         };
 
+        self.try_pick_item(item_stack);
+    }
+
+    /// Tries to pick an item stack into the player's hotbar, selecting or swapping slots.
+    ///
+    /// Mirrors vanilla `ServerGamePacketListenerImpl.tryPickItem`.
+    pub fn try_pick_item(&self, item_stack: ItemStack) {
         if item_stack.is_empty() {
             return;
         }
-
-        // TODO: If include_data, copy the block entity data into the picked item stack.
 
         let mut inventory = self.inventory.lock();
 

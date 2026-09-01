@@ -251,6 +251,26 @@ pub(crate) fn do_post_attack_effects_with_item_source(
     );
 }
 
+/// Returns whether an item stack has any enchantment with the specified effect component.
+#[must_use]
+pub fn has_component(item: &ItemStack, component: EnchantmentEffectComponent) -> bool {
+    let Some(enchantments) = item.get_enchantments() else {
+        return false;
+    };
+    for (key, level) in enchantments.iter() {
+        if *level == 0 {
+            continue;
+        }
+        let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+            continue;
+        };
+        if enchantment.effects.has(component) {
+            return true;
+        }
+    }
+    false
+}
+
 fn apply_value_effects(
     item: &ItemStack,
     component: EnchantmentEffectComponent,

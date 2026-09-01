@@ -477,3 +477,14 @@ fn item_stack_argument_suggests_items_and_supported_component_operations() {
             == "stone[use_cooldown={seconds:1.0f,cooldown_group:'minecraft:test'},minecraft:weapon="
     }));
 }
+
+#[test]
+fn item_stack_argument_parses_armor_stand_entity_data() {
+    init_vanilla_registry();
+    let dispatcher = resource_dispatcher(SteelArgumentType::item_stack());
+    let input = "resource armor_stand[custom_name='{\"text\":\"Steel Champion\",\"color\":\"gold\",\"bold\":true}',entity_data={id:\"minecraft:armor_stand\",ShowArms:1b,Small:1b,NoBasePlate:1b,Pose:{Head:[15.0f,20.0f,0.0f],Body:[0.0f,10.0f,0.0f],LeftArm:[270.0f,0.0f,15.0f],RightArm:[270.0f,0.0f,-15.0f],LeftLeg:[-20.0f,0.0f,-10.0f],RightLeg:[20.0f,0.0f,10.0f]}}]";
+    let parse = dispatcher.parse(input, TestSource::new());
+    if let Err(err) = dispatcher.context_chain(parse) {
+        panic!("armor stand item components failed to parse: {err:?}");
+    }
+}

@@ -76,6 +76,7 @@ mod s_interact;
 mod s_move_player;
 mod s_move_vehicle;
 mod s_pick_item_from_block;
+pub mod s_pick_item_from_entity;
 mod s_player_abilities;
 mod s_player_action;
 mod s_player_command;
@@ -191,6 +192,7 @@ pub use s_move_player::{
 };
 pub use s_move_vehicle::SMoveVehicle;
 pub use s_pick_item_from_block::SPickItemFromBlock;
+pub use s_pick_item_from_entity::SPickItemFromEntity;
 pub use s_player_abilities::SPlayerAbilities;
 pub use s_player_action::{PlayerAction, SPlayerAction};
 pub use s_player_command::{PlayerCommandAction, SPlayerCommand};
