@@ -147,7 +147,10 @@ impl BlockItem {
             ),
         );
 
-        context.with_item_mut(|item| item.shrink(1));
+        let has_infinite_materials = context
+            .player()
+            .is_some_and(|player| player.has_infinite_materials());
+        context.with_item_mut(|item| item.consume(1, has_infinite_materials));
 
         InteractionResult::Success
     }

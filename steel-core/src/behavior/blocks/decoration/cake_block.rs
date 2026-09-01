@@ -140,9 +140,7 @@ impl BlockBehavior for CakeBlock {
                     return None;
                 }
                 let candle_cake = candle_cakes::candle_to_candle_cake(item)?;
-                if !player.has_infinite_materials() {
-                    item_stack.shrink(1);
-                }
+                item_stack.consume(1, player.has_infinite_materials());
                 Some(candle_cake)
             });
             let Some(candle_cake) = candle_cake else {

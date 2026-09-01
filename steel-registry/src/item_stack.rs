@@ -133,6 +133,27 @@ impl ItemStack {
         self.count -= amount;
     }
 
+    /// Decreases the count by the given amount, unless the user has infinite
+    /// materials.
+    ///
+    /// Pass `has_infinite_materials()` from the using entity rather than a
+    /// literal; `false` is correct when there is no user, such as a dispenser.
+    #[inline]
+    pub const fn consume(&mut self, amount: i32, has_infinite_materials: bool) {
+        if !has_infinite_materials {
+            self.shrink(amount);
+        }
+    }
+
+    /// Splits off the given amount and [consumes](Self::consume) it from this stack.
+    #[inline]
+    #[must_use]
+    pub fn consume_and_return(&mut self, amount: i32, has_infinite_materials: bool) -> Self {
+        let split = self.copy_with_count(amount);
+        self.consume(amount, has_infinite_materials);
+        split
+    }
+
     /// Splits off the specified amount from this stack and returns it as a new stack.
     ///
     /// If the amount is greater than or equal to the current count, this stack becomes
@@ -1282,6 +1303,40 @@ fn decode_persistent_count(tag: Option<BorrowedNbtTag<'_, '_>>) -> Option<i32> {
         None => 1,
     };
     (1..=99).contains(&count).then_some(count)
+}
+
+#[cfg(test)]
+mod consume_tests {
+    use super::ItemStack;
+    use crate::{init_vanilla_registry, vanilla_items};
+
+    #[test]
+    fn consume_shrinks_only_without_infinite_materials() {
+        init_vanilla_registry();
+
+        let mut survival = ItemStack::with_count(&vanilla_items::GLOWSTONE, 2);
+        survival.consume(1, false);
+        assert_eq!(survival.count(), 1);
+
+        let mut creative = ItemStack::with_count(&vanilla_items::GLOWSTONE, 2);
+        creative.consume(1, true);
+        assert_eq!(creative.count(), 2);
+    }
+
+    #[test]
+    fn consume_and_return_splits_before_shrinking() {
+        init_vanilla_registry();
+
+        let mut survival = ItemStack::with_count(&vanilla_items::GLOWSTONE, 2);
+        let taken = survival.consume_and_return(1, false);
+        assert_eq!(taken.count(), 1);
+        assert_eq!(survival.count(), 1);
+
+        let mut creative = ItemStack::with_count(&vanilla_items::GLOWSTONE, 2);
+        let taken = creative.consume_and_return(1, true);
+        assert_eq!(taken.count(), 1);
+        assert_eq!(creative.count(), 2);
+    }
 }
 
 #[cfg(test)]
