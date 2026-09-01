@@ -693,6 +693,12 @@ impl Animal for FoxEntity {
         FoxEntity::is_food(item_stack)
     }
 
+    fn play_eating_sound(&self) {
+        // Vanilla Fox plays ENTITY_FOX_EAT when it eats; the Animal feed path
+        // calls this hook for an adult or a growing kit.
+        self.play_sound(&sound_events::ENTITY_FOX_EAT, 1.0, 1.0);
+    }
+
     fn initialize_breed_offspring(&self, partner: &dyn Animal, offspring: &dyn Animal) {
         // Vanilla: the kit inherits one random parent's variant.
         let variant = if rand::random::<bool>() {
