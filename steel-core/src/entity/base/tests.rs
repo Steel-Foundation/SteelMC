@@ -72,10 +72,11 @@ struct FallDamageTestEntity {
 }
 
 impl FallDamageTestEntity {
-    fn new(id: i32) -> Arc<Self> {
+    fn new(id: i32, uuid: Uuid) -> Arc<Self> {
         Arc::new(Self {
-            base: EntityBase::new(
+            base: EntityBase::with_uuid(
                 id,
+                uuid,
                 DVec3::ZERO,
                 vanilla_entities::ITEM.dimensions,
                 Weak::<World>::new(),
@@ -83,6 +84,17 @@ impl FallDamageTestEntity {
             fall_damage_calls: SyncMutex::new(Vec::new()),
         })
     }
+}
+
+#[test]
+fn instance_id_distinguishes_reconstructed_entity_identity() {
+    let uuid = Uuid::nil();
+    let first = FallDamageTestEntity::new(1, uuid);
+    let reincarnated = FallDamageTestEntity::new(1, uuid);
+
+    assert_eq!(first.id(), reincarnated.id());
+    assert_eq!(first.uuid(), reincarnated.uuid());
+    assert_ne!(first.instance_id(), reincarnated.instance_id());
 }
 
 crate::entity::impl_test_downcast_type!(FallDamageTestEntity);
@@ -328,18 +340,19 @@ fn lifecycle_state_tracks_pending_world_change_tokens() {
 }
 
 #[test]
-fn killed_player_respawn_can_retain_admission_ownership() {
-    let dimensions = EntityDimensions::new(0.6, 1.8, 1.62);
-    let base = EntityBase::new(1, DVec3::ZERO, dimensions, Weak::<World>::new());
+fn killed_player_can_reserve_respawn_transition() {
+    let base = EntityBase::new(
+        1,
+        DVec3::ZERO,
+        EntityDimensions::new(0.6, 1.8, 1.62),
+        Weak::<World>::new(),
+    );
     base.set_removed(RemovalReason::Killed);
 
     assert_eq!(base.begin_pending_world_change(), None);
     let Some(pending_token) = base.begin_pending_player_respawn() else {
         panic!("a killed player should be able to reserve respawn preparation");
     };
-    assert!(base.clear_removed());
-    base.reset_for_player_respawn_during_world_change(dimensions, pending_token);
-
     assert!(base.is_world_change_token_pending(pending_token));
     assert!(base.finish_pending_world_change(pending_token));
 }
@@ -774,7 +787,7 @@ fn removal_cleans_up_relationship_state() {
 fn base_fall_damage_propagates_to_passengers() {
     init_vanilla_registry();
     let vehicle = raw_entity(1);
-    let passenger = FallDamageTestEntity::new(2);
+    let passenger = FallDamageTestEntity::new(2, Uuid::new_v4());
     let passenger_entity: SharedEntity = passenger.clone();
 
     link_vehicle_and_passenger(&vehicle, &passenger_entity);

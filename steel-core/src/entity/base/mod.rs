@@ -35,8 +35,8 @@ use uuid::Uuid;
 
 use crate::entity::fluid_contact::EntityFluidContact;
 use crate::entity::{
-    EntityLevelCallback, EntityMoveError, InsideBlockEffectType, NullEntityCallback, RemovalReason,
-    SharedEntity,
+    EntityInstanceId, EntityLevelCallback, EntityMoveError, InsideBlockEffectType,
+    NullEntityCallback, RemovalReason, SharedEntity,
 };
 use crate::physics::EntityPhysicsState;
 use crate::portal::{PortalKind, PortalProcessResult, PortalProcessor};
@@ -375,6 +375,8 @@ impl EntityBaseState {
 /// }
 /// ```
 pub struct EntityBase {
+    /// Identity of this runtime construction of the entity.
+    instance_id: EntityInstanceId,
     /// Unique network ID for this entity (session-local).
     id: i32,
     /// Persistent UUID for this entity.
@@ -444,6 +446,7 @@ impl EntityBase {
         world: Weak<World>,
     ) -> Self {
         Self {
+            instance_id: EntityInstanceId::next(),
             id,
             uuid,
             world: SyncMutex::new(world),
@@ -473,6 +476,12 @@ impl EntityBase {
         );
         base.replace_save_data(load.save_data);
         base
+    }
+
+    /// Gets the identity of this runtime construction of the entity.
+    #[inline]
+    pub const fn instance_id(&self) -> EntityInstanceId {
+        self.instance_id
     }
 
     /// Gets the entity's unique network ID.
@@ -874,23 +883,6 @@ impl EntityBase {
 
     /// Resets state that vanilla gets from constructing a fresh player entity for death respawn.
     pub fn reset_for_player_respawn(&self, dimensions: EntityDimensions) {
-        self.reset_for_player_respawn_inner(dimensions, None);
-    }
-
-    /// Resets death-respawn state while retaining the relocation that owns admission.
-    pub(crate) fn reset_for_player_respawn_during_world_change(
-        &self,
-        dimensions: EntityDimensions,
-        pending_token: PendingWorldChangeToken,
-    ) {
-        self.reset_for_player_respawn_inner(dimensions, Some(pending_token));
-    }
-
-    fn reset_for_player_respawn_inner(
-        &self,
-        dimensions: EntityDimensions,
-        pending_world_change: Option<PendingWorldChangeToken>,
-    ) {
         let bounding_box = {
             let mut state = self.state.lock();
             let position = state.position;
@@ -921,7 +913,7 @@ impl EntityBase {
 
         self.movement_trace.lock().reset();
         *self.portal_process.lock() = None;
-        self.lifecycle.lock().pending_world_change = pending_world_change;
+        self.lifecycle.lock().pending_world_change = None;
 
         let mut save_data = self.save_data.lock();
         let tags = mem::take(&mut save_data.tags);
@@ -1084,9 +1076,7 @@ impl EntityBase {
 
     /// Clears the removed flag and returns whether the entity had been removed.
     ///
-    /// Steel reuses the same `Player` instance across respawn while vanilla
-    /// constructs a fresh `ServerPlayer`, so player respawn needs an explicit
-    /// way to reset this base lifecycle flag.
+    /// Vanilla uses this when an entity instance itself survives a world change.
     pub fn clear_removed(&self) -> bool {
         let mut lifecycle = self.lifecycle.lock();
         let was_removed = lifecycle.removal_reason.is_some();
@@ -1325,6 +1315,11 @@ impl EntityBase {
         self.portal_process.lock().as_mut().map(|process| {
             process.process_portal_teleportation(allowed_to_teleport, transition_time)
         })
+    }
+
+    /// Replaces active portal timing state during vanilla player restoration.
+    pub(crate) fn set_portal_process(&self, portal_process: Option<PortalProcessor>) {
+        *self.portal_process.lock() = portal_process;
     }
 
     /// Clears the active vanilla portal process.

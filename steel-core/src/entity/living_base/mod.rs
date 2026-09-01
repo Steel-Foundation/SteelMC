@@ -703,9 +703,9 @@ impl LivingEntityState {
 /// **Deviation from vanilla:** Vanilla calls this guard `LivingEntity.dead`,
 /// but it means death side effects have been processed, not health is zero.
 /// `ServerPlayer.die()` does NOT call `super.die()` and never sets that field.
-/// Steel uses this guard for players too because it reuses the same `Player`
-/// instance; health remains the source of truth for dead-or-dying checks such
-/// as client respawn requests.
+/// Steel uses this guard for players too so repeated callbacks cannot duplicate
+/// death side effects. Health remains the source of truth for dead-or-dying
+/// checks such as client respawn requests.
 pub struct LivingEntityBase {
     state: SyncMutex<LivingEntityState>,
     attributes: SyncMutex<AttributeMap>,
@@ -1664,9 +1664,8 @@ impl LivingEntityBase {
     pub fn reset_for_player_respawn(&self) {
         self.set_sprinting(false);
 
-        // Vanilla respawns with a newly constructed `LivingEntity`, whose
-        // equipment snapshots and related runtime bookkeeping start empty.
-        // Steel reuses the same `Player`, so reset those fields explicitly.
+        // A newly constructed `LivingEntity` starts with empty equipment snapshots
+        // and runtime bookkeeping.
         *self.last_equipment_items.lock() = array::from_fn(|_| ItemStack::empty());
         *self.pending_equipment_changes.lock() = array::from_fn(|_| None);
         {

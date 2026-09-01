@@ -100,6 +100,12 @@ pub struct ChunkSender {
 }
 
 impl ChunkSender {
+    /// Clears chunk membership from the previous world while preserving connection pacing.
+    pub(crate) fn clear_world_chunks(&mut self) {
+        self.pending_chunks.clear();
+        self.sent_chunks.clear();
+    }
+
     /// Marks a chunk as pending to be sent to the client.
     pub fn mark_chunk_pending_to_send(&mut self, pos: ChunkPos) {
         self.sent_chunks.remove(&pos);
@@ -603,6 +609,33 @@ mod tests {
             MIN_CHUNKS_PER_TICK.to_bits()
         );
         assert_eq!(sender.batch_quota.to_bits(), 1.0_f32.to_bits());
+        assert_eq!(
+            sender.max_unacknowledged_batches,
+            MAX_UNACKNOWLEDGED_BATCHES
+        );
+    }
+
+    #[test]
+    fn clearing_world_chunks_preserves_connection_pacing() {
+        let pending = ChunkPos::new(2, -3);
+        let sent = ChunkPos::new(-5, 7);
+        let mut sender = ChunkSender {
+            unacknowledged_batches: 3,
+            desired_chunks_per_tick: 12.5,
+            batch_quota: 4.5,
+            max_unacknowledged_batches: MAX_UNACKNOWLEDGED_BATCHES,
+            ..ChunkSender::default()
+        };
+        sender.mark_chunk_pending_to_send(pending);
+        sender.mark_chunk_sent_for_test(sent);
+
+        sender.clear_world_chunks();
+
+        assert!(sender.pending_chunks.is_empty());
+        assert!(sender.sent_chunks.is_empty());
+        assert_eq!(sender.unacknowledged_batches, 3);
+        assert_eq!(sender.desired_chunks_per_tick.to_bits(), 12.5_f32.to_bits());
+        assert_eq!(sender.batch_quota.to_bits(), 4.5_f32.to_bits());
         assert_eq!(
             sender.max_unacknowledged_batches,
             MAX_UNACKNOWLEDGED_BATCHES

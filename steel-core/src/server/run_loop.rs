@@ -449,7 +449,7 @@ impl Server {
 
         // Phase 1: prepare (brief lock)
         let prepared = {
-            let mut sender = player.chunk_sender.lock();
+            let mut sender = player.chunk_sender().lock();
             sender.prepare_batch(world, chunk_pos, &player.chunk_send_epoch)
         };
 
@@ -472,7 +472,7 @@ impl Server {
             return;
         }
         let sent_chunks = {
-            let mut sender = player.chunk_sender.lock();
+            let mut sender = player.chunk_sender().lock();
             sender.commit_batch(&batch, encoded, connection, &player.chunk_send_epoch)
         };
 
@@ -480,7 +480,7 @@ impl Server {
             return;
         }
 
-        let sent_chunks = player.chunk_sender.lock().sent_chunks_snapshot();
+        let sent_chunks = player.chunk_sender().lock().sent_chunks_snapshot();
         world
             .entity_tracker()
             .update_player(player, &view, |chunk| sent_chunks.contains(&chunk));
@@ -612,7 +612,7 @@ mod tests {
         let mut encode_cache = FxHashMap::default();
         Server::send_chunks_for_player(&player, &world, &mut encode_cache, &encoding_pool);
 
-        let sender = player.chunk_sender.lock();
+        let sender = player.chunk_sender().lock();
         assert!(sender.pending_chunks.contains(&center));
         assert!(!sender.is_chunk_sent(center));
         assert_eq!(sender.unacknowledged_batches, 0);
