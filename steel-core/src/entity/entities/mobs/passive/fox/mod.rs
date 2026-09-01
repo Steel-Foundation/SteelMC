@@ -47,7 +47,7 @@ use crate::player::Player;
 use crate::world::{LevelReader, World};
 use goals::{
     FoxBreedGoal, FoxFloatGoal, FoxFollowParentGoal, FoxLookAtPlayerGoal, FoxPanicGoal,
-    FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal,
+    FoxSearchForItemsGoal, FoxSeekShelterGoal, FoxSleepGoal, PerchAndSearchGoal,
 };
 
 const FACEPLANT_PARTICLE_CHANCE: f32 = 0.2;
@@ -154,7 +154,7 @@ impl FoxEntity {
             // TODO(fox-goals): 4 AvoidEntityGoal<PolarBear> (needs the PolarBear mob)
             // TODO(fox-goals): 5 StalkPreyGoal (needs prey mobs and the pounce move control)
             // TODO(fox-goals): 6 FoxPounceGoal (needs pounce/jump physics)
-            // TODO(fox-goals): 6 SeekShelterGoal (needs a FleeSunGoal move target)
+            goal_selector.add_goal(6, FoxSeekShelterGoal::new(1.25));
             // TODO(fox-goals): 7 FoxMeleeAttackGoal (needs an attack target)
             goal_selector.add_goal(7, FoxSleepGoal::new());
             goal_selector.add_goal(8, FoxFollowParentGoal::new(1.25));

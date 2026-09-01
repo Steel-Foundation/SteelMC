@@ -8,8 +8,8 @@ use steel_utils::{BlockPos, Downcast as _};
 
 use super::FoxEntity;
 use crate::entity::ai::goal::{
-    BreedGoal, FloatGoal, FollowParentGoal, Goal, GoalControls, LookAtPlayerGoal, PanicGoal,
-    reduced_tick_delay,
+    BreedGoal, FleeSunGoal, FloatGoal, FollowParentGoal, Goal, GoalControls, LookAtPlayerGoal,
+    PanicGoal, reduced_tick_delay,
 };
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{Entity, LivingEntity, Mob, MobBase, PathfinderMob};
@@ -27,6 +27,8 @@ const PERCH_MIN_LOOK_TICKS: i32 = 80;
 const PERCH_EXTRA_LOOK_TICKS: i32 = 20;
 
 pub(super) const FOX_FLOAT_WATER_DEPTH: f64 = 0.25;
+const SHELTER_INITIAL_INTERVAL: i32 = reduced_tick_delay(100);
+const SHELTER_INTERVAL: i32 = 100;
 const SLEEP_WAIT_TICKS: i32 = reduced_tick_delay(140);
 
 fn as_fox(mob: &dyn PathfinderMob) -> Option<&FoxEntity> {
@@ -466,5 +468,64 @@ impl Goal for FoxLookAtPlayerGoal {
 
     fn tick(&mut self, mob: &dyn PathfinderMob) {
         self.inner.tick(mob);
+    }
+}
+
+/// An awake, untargeted fox heads for cover from the sun, or immediately during
+/// a thunderstorm.
+pub(crate) struct FoxSeekShelterGoal {
+    flee_sun: FleeSunGoal,
+    interval: i32,
+}
+
+impl FoxSeekShelterGoal {
+    pub(crate) const fn new(speed_modifier: f64) -> Self {
+        Self {
+            flee_sun: FleeSunGoal::new(speed_modifier),
+            interval: SHELTER_INITIAL_INTERVAL,
+        }
+    }
+}
+
+impl Goal for FoxSeekShelterGoal {
+    fn controls(&self) -> GoalControls {
+        GoalControls::MOVE
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        let Some(fox) = as_fox(mob) else {
+            return false;
+        };
+        if fox.is_sleeping() || Mob::target(fox).is_some() {
+            return false;
+        }
+        let Some(level) = mob.level() else {
+            return false;
+        };
+        let pos = mob.block_position();
+
+        if level.is_thundering() && level.can_see_sky(pos) {
+            return self.flee_sun.set_wanted_pos(mob, &level);
+        }
+        if self.interval > 0 {
+            self.interval -= 1;
+            return false;
+        }
+        self.interval = SHELTER_INTERVAL;
+        // TODO(village-poi): vanilla also requires the spot not be in a village (#249).
+        level.is_bright_outside()
+            && level.can_see_sky(pos)
+            && self.flee_sun.set_wanted_pos(mob, &level)
+    }
+
+    fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        self.flee_sun.can_continue_to_use(mob)
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        if let Some(fox) = as_fox(mob) {
+            fox.clear_states();
+        }
+        self.flee_sun.start(mob);
     }
 }
