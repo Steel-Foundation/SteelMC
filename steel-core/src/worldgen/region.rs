@@ -4,11 +4,10 @@
 //! stay inside the stage's block-state write radius. `WorldGenRegion` centralizes that
 //! contract so feature, structure, and vegetation code cannot bypass the chunk pyramid.
 
-use rustc_hash::FxHashMap;
-
 use std::{
     cell::RefCell,
-    collections::hash_map::Entry,
+    collections::{HashMap, hash_map::Entry},
+    hash::{BuildHasherDefault, Hasher},
     sync::{Arc, Weak},
     time::Instant,
 };
@@ -22,7 +21,8 @@ use steel_registry::{
 };
 use steel_utils::random::RandomSource;
 use steel_utils::{
-    BlockPos, BlockStateId, ChunkPos, PackedSectionBlockPos, SectionPos, types::UpdateFlags,
+    BlockPos, BlockStateId, ChunkPos, PackedChunkPos, PackedSectionBlockPos, SectionPos,
+    types::UpdateFlags,
 };
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
@@ -61,6 +61,13 @@ pub struct WorldGenRegion<'a> {
     random: RandomSource,
 }
 
+#[expect(
+    clippy::disallowed_types,
+    reason = "this cache intentionally uses a custom identity hasher for packed integer keys"
+)]
+type BulkSectionChunkMap<'region> =
+    HashMap<i64, CachedWorldGenChunk<'region>, BuildHasherDefault<BulkSectionChunkHasher>>;
+
 /// Cached section-level access for feature code that mirrors vanilla `BulkSectionAccess`.
 ///
 /// Vanilla exposes acquired `LevelChunkSection`s and lets some features mutate section-local
@@ -72,9 +79,27 @@ pub(crate) struct WorldGenBulkSectionAccess<'region, 'world, 'profile> {
     chunk_cache_radius: i32,
     /// Sparse per-chunk cache. Features only touch the few chunks around their
     /// origin, so a map avoids materializing the full radius² grid per placement.
-    chunks: FxHashMap<(i32, i32), CachedWorldGenChunk<'region>>,
+    chunks: BulkSectionChunkMap<'region>,
     air: BlockStateId,
     ore_profile: Option<&'profile RefCell<OreFeatureStats>>,
+}
+
+/// Identity hasher for packed chunk positions used only by the bulk-section cache.
+#[derive(Default)]
+struct BulkSectionChunkHasher(u64);
+
+impl Hasher for BulkSectionChunkHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, _bytes: &[u8]) {
+        panic!("BulkSectionChunkHasher only supports i64 keys");
+    }
+
+    fn write_i64(&mut self, value: i64) {
+        self.0 = value.cast_unsigned();
+    }
 }
 
 struct CachedWorldGenChunk<'region> {
@@ -913,7 +938,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         Self {
             region,
             chunk_cache_radius: region.chunk_cache_radius,
-            chunks: FxHashMap::default(),
+            chunks: BulkSectionChunkMap::default(),
             air: REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR),
             ore_profile,
         }
@@ -1330,7 +1355,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         }
     }
 
-    fn chunk_cache_key(&self, chunk_x: i32, chunk_z: i32) -> Option<(i32, i32)> {
+    fn chunk_cache_key(&self, chunk_x: i32, chunk_z: i32) -> Option<i64> {
         let radius = self.chunk_cache_radius;
         let rel_x = chunk_x.checked_sub(self.region.center.0.x)?;
         let rel_z = chunk_z.checked_sub(self.region.center.0.y)?;
@@ -1338,7 +1363,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             return None;
         }
 
-        Some((rel_x, rel_z))
+        Some(PackedChunkPos::from(ChunkPos::new(rel_x, rel_z)).as_raw())
     }
 
     fn section_index(min_y: i32, height: i32, y: i32) -> Option<usize> {
