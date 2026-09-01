@@ -30,7 +30,7 @@ use uuid::Uuid;
 use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
     BreedGoal, ClimbOnTopOfPowderSnowGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal,
-    PanicGoal, WaterAvoidingRandomStrollGoal,
+    NearestAttackableTargetGoal, PanicGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::ai::targeting::TargetingConditions;
 use crate::entity::damage::DamageSource;
@@ -44,7 +44,9 @@ use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
-use goals::{FoxPounceGoal, FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal};
+use goals::{
+    FoxPounceGoal, FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal, StalkPreyGoal,
+};
 
 /// Baby fox render scale (vanilla `Fox.BABY_SCALE`).
 const BABY_SCALE: f32 = 0.6;
@@ -96,6 +98,9 @@ const FOX_ALERT_VERTICAL_RANGE: f64 = 6.0;
 /// the pounce goal waits for (vanilla `crouchAmount` rises by 0.2 up to 5.0).
 const CROUCH_STEP: f32 = 0.2;
 const FULLY_CROUCHED: f32 = 5.0;
+
+/// How often, in ticks, a fox re-scans for prey to hunt (vanilla target interval).
+const FOX_PREY_TARGET_INTERVAL: i32 = 10;
 
 /// Chance a naturally spawned fox holds an item (vanilla `populateDefaultEquipmentSlots`).
 const FOX_SPAWN_HELD_ITEM_CHANCE: f32 = 0.2;
@@ -175,7 +180,7 @@ impl FoxEntity {
             // TODO(fox-goals): 4 AvoidEntityGoal<Player> (needs the trust/defend gate)
             // TODO(fox-goals): 4 AvoidEntityGoal<Wolf> (needs the Wolf mob)
             // TODO(fox-goals): 4 AvoidEntityGoal<PolarBear> (needs the PolarBear mob)
-            // TODO(fox-goals): 5 StalkPreyGoal (needs prey mobs and the pounce move control)
+            goal_selector.add_goal(5, StalkPreyGoal);
             goal_selector.add_goal(6, FoxPounceGoal);
             // TODO(fox-goals): 6 SeekShelterGoal (needs a FleeSunGoal move target)
             // TODO(fox-goals): 7 FoxMeleeAttackGoal (needs an attack target)
@@ -189,9 +194,10 @@ impl FoxEntity {
             goal_selector.add_goal(12, LookAtPlayerGoal::new(24.0));
             goal_selector.add_goal(13, PerchAndSearchGoal::new());
 
-            // Target-selector goals, none registered yet:
+            // Target-selector goals.
+            let mut target_selector = mob_base.target_selector().lock();
             // TODO(fox-goals): target 3 DefendTrustedTargetGoal (needs the trust/defend gate)
-            // TODO(fox-goals): target NearestAttackableTarget for chickens/rabbits (needs the Rabbit mob)
+            target_selector.add_goal(4, target_stalkable_prey());
             // TODO(fox-goals): target NearestAttackableTarget for baby turtles on land (needs the Turtle entity, #490)
             // TODO(fox-goals): target NearestAttackableTarget for schooling fish (needs the fish mobs)
         }
@@ -559,6 +565,17 @@ fn fox_alertable_selector(target: &dyn LivingEntity, trusted: &[Uuid]) -> bool {
         return false;
     }
     !target.is_sleeping() && !target.is_discrete()
+}
+
+/// Vanilla `Fox` land target goal: a fox hunts nearby chickens (and, once they
+/// exist, rabbits).
+fn target_stalkable_prey() -> NearestAttackableTargetGoal {
+    NearestAttackableTargetGoal::new_with_interval(
+        FOX_PREY_TARGET_INTERVAL,
+        false,
+        false,
+        |target, _| target.entity_type() == &vanilla_entities::CHICKEN,
+    )
 }
 
 impl Entity for FoxEntity {

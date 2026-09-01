@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::vanilla_blocks;
+use steel_registry::{vanilla_blocks, vanilla_entities};
 use steel_utils::{BlockPos, Downcast as _, wrap_degrees};
 
 use super::FoxEntity;
@@ -61,6 +61,12 @@ const POUNCE_TILT_EPSILON: f64 = 1.0e-5;
 /// Clear-path scan for a pounce: horizontal steps and the head-height range checked.
 const PATH_CLEAR_STEPS: i32 = 6;
 const PATH_CLEAR_HEIGHT: i32 = 4;
+
+/// Distance squared within which a stalking fox stops and crouches to pounce
+/// (vanilla `36.0`, i.e. six blocks).
+const STALK_CROUCH_DISTANCE_SQ: f64 = 36.0;
+/// Speed a fox creeps toward its prey while stalking (vanilla `1.5`).
+const STALK_SPEED: f64 = 1.5;
 
 fn as_fox(mob: &dyn PathfinderMob) -> Option<&FoxEntity> {
     mob.downcast_ref::<FoxEntity>()
@@ -463,9 +469,104 @@ impl Goal for FoxPounceGoal {
     }
 }
 
+/// Vanilla `Fox.STALKABLE_PREY`: what a fox will stalk and pounce.
+fn is_stalkable_prey(target: &SharedEntity) -> bool {
+    // TODO(fox-prey): vanilla also stalks rabbits; the Rabbit mob is not in the tree yet.
+    target.entity_type() == &vanilla_entities::CHICKEN
+}
+
+/// Vanilla `Fox.StalkPreyGoal`: a fox creeps toward distant prey, then crouches
+/// within pouncing range so the pounce goal can launch.
+pub(crate) struct StalkPreyGoal;
+
+impl Goal for StalkPreyGoal {
+    fn controls(&self) -> GoalControls {
+        GoalControls::MOVE | GoalControls::LOOK
+    }
+
+    fn can_use(&mut self, mob: &dyn PathfinderMob) -> bool {
+        let Some(fox) = as_fox(mob) else {
+            return false;
+        };
+        if fox.is_sleeping() {
+            return false;
+        }
+        let Some(target) =
+            Mob::target(fox).filter(|target| target.is_alive() && is_stalkable_prey(target))
+        else {
+            return false;
+        };
+        mob.position().distance_squared(target.position()) > STALK_CROUCH_DISTANCE_SQ
+            && !fox.is_crouching()
+            && !fox.is_interested()
+            && !mob.is_jumping()
+    }
+
+    fn start(&mut self, mob: &dyn PathfinderMob) {
+        if let Some(fox) = as_fox(mob) {
+            fox.set_sitting(false);
+            fox.set_faceplanted(false);
+        }
+    }
+
+    fn stop(&mut self, mob: &dyn PathfinderMob) {
+        let Some(fox) = as_fox(mob) else {
+            return;
+        };
+        let target = Mob::target(fox);
+        if let Some(target) = &target
+            && is_path_clear(mob, target)
+        {
+            fox.set_interested(true);
+            fox.set_crouching(true);
+            mob.mob_base().navigation().lock().stop();
+            mob.mob_base().controls().lock().look_control.set_look_at(
+                target.position(),
+                mob.max_head_y_rot(),
+                mob.max_head_x_rot(),
+            );
+        } else {
+            fox.set_interested(false);
+            fox.set_crouching(false);
+        }
+    }
+
+    fn requires_update_every_tick(&self) -> bool {
+        true
+    }
+
+    fn tick(&mut self, mob: &dyn PathfinderMob) {
+        let Some(fox) = as_fox(mob) else {
+            return;
+        };
+        let Some(target) = Mob::target(fox) else {
+            return;
+        };
+        mob.mob_base().controls().lock().look_control.set_look_at(
+            target.position(),
+            mob.max_head_y_rot(),
+            mob.max_head_x_rot(),
+        );
+        if mob.position().distance_squared(target.position()) <= STALK_CROUCH_DISTANCE_SQ {
+            fox.set_interested(true);
+            fox.set_crouching(true);
+            mob.mob_base().navigation().lock().stop();
+        } else {
+            mob.move_to_pos(target.position(), STALK_SPEED);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::rot_lerp;
+    use std::sync::{Arc, Weak};
+
+    use glam::DVec3;
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
+
+    use super::{is_stalkable_prey, rot_lerp};
+    use crate::entity::SharedEntity;
+    use crate::entity::entities::{ChickenEntity, PigEntity};
 
     #[test]
     fn rot_lerp_eases_toward_the_target_angle() {
@@ -473,5 +574,25 @@ mod tests {
         assert!((rot_lerp(0.2, 10.0, 0.0) - 8.0).abs() < 1.0e-4);
         // Takes the short way across the -180/180 seam: 170 toward -170 is +20.
         assert!((rot_lerp(0.5, 170.0, -170.0) - 180.0).abs() < 1.0e-4);
+    }
+
+    #[test]
+    fn fox_stalks_chickens_but_not_other_animals() {
+        init_vanilla_registry();
+        let chicken: SharedEntity = Arc::new(ChickenEntity::new(
+            &vanilla_entities::CHICKEN,
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+        let pig: SharedEntity = Arc::new(PigEntity::new(
+            &vanilla_entities::PIG,
+            2,
+            DVec3::ZERO,
+            Weak::new(),
+        ));
+
+        assert!(is_stalkable_prey(&chicken));
+        assert!(!is_stalkable_prey(&pig));
     }
 }
