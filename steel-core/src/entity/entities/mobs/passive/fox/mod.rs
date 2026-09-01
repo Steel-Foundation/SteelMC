@@ -444,7 +444,8 @@ impl FoxEntity {
         let search = self.bounding_box().inflate(FOX_SCREECH_PLAYER_RANGE);
         world
             .get_entities_in_aabb_matching(&search, |entity| {
-                entity.entity_type() == &vanilla_entities::PLAYER
+                // Vanilla `EntitySelector.NO_SPECTATORS`: a spectator does not count.
+                entity.entity_type() == &vanilla_entities::PLAYER && !entity.is_spectator()
             })
             .is_empty()
     }
