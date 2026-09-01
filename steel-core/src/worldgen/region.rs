@@ -4,6 +4,10 @@
 //! stay inside the stage's block-state write radius. `WorldGenRegion` centralizes that
 //! contract so feature, structure, and vegetation code cannot bypass the chunk pyramid.
 
+#[expect(
+    clippy::disallowed_types,
+    reason = "The HashMap are with a custom Hasher for performance"
+)]
 use std::{
     cell::RefCell,
     collections::{HashMap, hash_map::Entry},
