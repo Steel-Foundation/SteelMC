@@ -172,6 +172,8 @@ impl Player {
             return;
         }
 
+        self.reset_last_action_time();
+
         log::debug!(
             "Player {} used {:?} (sequence: {}, yaw: {}, pitch: {})",
             self.gameprofile.name,
