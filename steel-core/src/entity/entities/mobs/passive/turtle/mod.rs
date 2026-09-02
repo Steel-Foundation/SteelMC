@@ -18,7 +18,8 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::TurtleEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt, vanilla_game_events, vanilla_game_rules, vanilla_loot_tables,
+    REGISTRY, TaggedRegistryExt, level_events, vanilla_game_events, vanilla_game_rules,
+    vanilla_loot_tables,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey};
@@ -40,9 +41,8 @@ use crate::world::game_event::GameEventContext;
 /// Baby turtles render and collide at 0.3 of the adult size.
 const BABY_SCALE: f32 = 0.3;
 const DEFAULT_STEP_HEIGHT: f32 = 1.0;
-/// Vanilla level event 2001: the block-break dust and sound shown as a turtle
-/// kicks up sand while laying an egg.
-const LAYING_EGG_PARTICLES: i32 = 2001;
+/// Vanilla `Turtle.aiStep`: while laying, kick up sand particles every fifth tick.
+const LAYING_EGG_EMIT_INTERVAL: i32 = 5;
 
 #[entity_behavior(class = "Turtle")]
 /// Vanilla turtle entity.
@@ -258,7 +258,7 @@ impl TurtleEntity {
         if !LivingEntity::is_alive(self)
             || !self.is_laying_egg()
             || self.lay_egg_counter() < 1
-            || self.lay_egg_counter() % 5 != 0
+            || self.lay_egg_counter() % LAYING_EGG_EMIT_INTERVAL != 0
         {
             return;
         }
@@ -272,7 +272,12 @@ impl TurtleEntity {
             return;
         }
 
-        world.level_event(LAYING_EGG_PARTICLES, pos, i32::from(below.0), None);
+        world.level_event(
+            level_events::PARTICLES_DESTROY_BLOCK,
+            pos,
+            level_events::encode_block_state_data(u32::from(below.0)),
+            None,
+        );
         world.game_event(
             &vanilla_game_events::ENTITY_ACTION,
             pos,

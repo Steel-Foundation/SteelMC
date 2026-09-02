@@ -7,12 +7,30 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::{vanilla_blocks, vanilla_damage_type_tags};
 use steel_utils::BlockPos;
 
-use super::{as_turtle, bottom_center};
+use super::{
+    TOWARD_TARGET_FALLBACK_H, TOWARD_TARGET_FALLBACK_V, TOWARD_TARGET_H, TOWARD_TARGET_V,
+    as_turtle, bottom_center,
+};
 use crate::entity::ai::goal::{
     Goal, GoalControls, MoveToBlockGoal, default_random_pos, default_random_pos_towards,
     look_for_water,
 };
 use crate::entity::{AgeableMob, Animal, PathfinderMob};
+
+/// Vanilla `TurtlePanicGoal`: horizontal range searched for water to flee into.
+const PANIC_WATER_SEARCH_RANGE: i32 = 7;
+/// Vanilla `TurtlePanicGoal`: horizontal and vertical radius for the random
+/// escape position used when no water is close.
+const PANIC_ESCAPE_H: i32 = 5;
+const PANIC_ESCAPE_V: i32 = 4;
+/// Vanilla `TurtleGoToWaterGoal`: search range handed to `MoveToBlockGoal`.
+const GO_TO_WATER_SEARCH_RANGE: i32 = 24;
+/// Vanilla `TurtleGoToWaterGoal.shouldRecalculatePath`: recalc every N `tryTicks`.
+const GO_TO_WATER_RECALC_INTERVAL: i32 = 160;
+/// Vanilla `TurtleTravelGoal`: half-width of the box a far swim target is drawn
+/// from, horizontally and vertically (`random.nextInt(1025) - 512`, `nextInt(9) - 4`).
+const TRAVEL_RANGE_XZ: i32 = 512;
+const TRAVEL_RANGE_Y: i32 = 4;
 
 /// Vanilla `Turtle.TurtlePanicGoal`: always try to reach water when panicking,
 /// not only while on fire, then fall back to a random escape position.
@@ -51,7 +69,7 @@ impl Goal for TurtlePanicGoal {
             return false;
         }
 
-        if let Some(water) = look_for_water(mob, 7) {
+        if let Some(water) = look_for_water(mob, PANIC_WATER_SEARCH_RANGE) {
             self.wanted_position = Some(DVec3::new(
                 f64::from(water.x()),
                 f64::from(water.y()),
@@ -60,7 +78,7 @@ impl Goal for TurtlePanicGoal {
             return true;
         }
 
-        let Some(position) = default_random_pos(mob, 5, 4) else {
+        let Some(position) = default_random_pos(mob, PANIC_ESCAPE_H, PANIC_ESCAPE_V) else {
             return false;
         };
         self.wanted_position = Some(position);
@@ -91,11 +109,11 @@ pub(crate) struct TurtleGoToWaterGoal {
 impl TurtleGoToWaterGoal {
     pub(crate) fn new(speed_modifier: f64) -> Self {
         Self {
-            inner: MoveToBlockGoal::new(speed_modifier, 24, |level, pos| {
+            inner: MoveToBlockGoal::new(speed_modifier, GO_TO_WATER_SEARCH_RANGE, |level, pos| {
                 level.get_block_state(pos).get_block() == &vanilla_blocks::WATER
             })
             .with_vertical_search_start(-1)
-            .with_recalculate_path_interval(160),
+            .with_recalculate_path_interval(GO_TO_WATER_RECALC_INTERVAL),
         }
     }
 }
@@ -187,9 +205,9 @@ impl Goal for TurtleTravelGoal {
         };
 
         let position = mob.position();
-        let xt = f64::from(rand::random_range(-512..=512));
-        let mut yt = f64::from(rand::random_range(-4..=4));
-        let zt = f64::from(rand::random_range(-512..=512));
+        let xt = f64::from(rand::random_range(-TRAVEL_RANGE_XZ..=TRAVEL_RANGE_XZ));
+        let mut yt = f64::from(rand::random_range(-TRAVEL_RANGE_Y..=TRAVEL_RANGE_Y));
+        let zt = f64::from(rand::random_range(-TRAVEL_RANGE_XZ..=TRAVEL_RANGE_XZ));
         if yt + position.y > f64::from(world.sea_level - 1) {
             yt = 0.0;
         }
@@ -222,8 +240,17 @@ impl Goal for TurtleTravelGoal {
         }
 
         let target = bottom_center(travel_pos);
-        let next = default_random_pos_towards(mob, 16, 3, target, PI / 10.0)
-            .or_else(|| default_random_pos_towards(mob, 8, 7, target, FRAC_PI_2));
+        let next =
+            default_random_pos_towards(mob, TOWARD_TARGET_H, TOWARD_TARGET_V, target, PI / 10.0)
+                .or_else(|| {
+                    default_random_pos_towards(
+                        mob,
+                        TOWARD_TARGET_FALLBACK_H,
+                        TOWARD_TARGET_FALLBACK_V,
+                        target,
+                        FRAC_PI_2,
+                    )
+                });
 
         let Some(next) = next else {
             self.stuck = true;
