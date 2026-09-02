@@ -3,7 +3,6 @@ use std::{collections::BTreeMap, str::FromStr};
 use serde::{Deserialize, Deserializer, de::Error as _};
 use steel_utils::Identifier;
 
-
 #[derive(Debug, Clone)]
 pub struct BlockStateData {
     pub name: Identifier,

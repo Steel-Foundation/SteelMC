@@ -761,10 +761,7 @@ fn generate_spawn_bounding_box(bounding_box: &str) -> TokenStream {
     }
 }
 
-fn generate_spawn_overrides(
-    overrides: &[SpawnOverrideData],
-    context: &str,
-) -> Vec<TokenStream> {
+fn generate_spawn_overrides(overrides: &[SpawnOverrideData], context: &str) -> Vec<TokenStream> {
     overrides
         .iter()
         .map(|override_data| {
@@ -777,8 +774,7 @@ fn generate_spawn_overrides(
                     let entity_type = generate_identifier(&spawn.entity_type);
                     let weight = spawn.weight;
                     let spawn_context = format!("{context}.spawn_overrides.{category}.spawns");
-                    let (min_count, max_count) =
-                        parse_spawner_count(&spawn.count, &spawn_context);
+                    let (min_count, max_count) = parse_spawner_count(&spawn.count, &spawn_context);
                     quote! {
                         StructureSpawnerData {
                             entity_type: #entity_type,
