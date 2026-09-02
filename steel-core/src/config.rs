@@ -309,6 +309,8 @@ pub struct ResolvedWorldsConfig {
 pub struct ResolvedDomainConfig {
     /// Domain name.
     pub name: String,
+    /// Logical-server seed used by domain-scoped deterministic systems.
+    pub seed: i64,
     /// Default world identifier in this domain.
     pub default_world: Identifier,
     /// World identifiers in this domain.
@@ -477,6 +479,7 @@ fn resolve_domain_config(
     Ok((
         ResolvedDomainConfig {
             name: domain_name.to_owned(),
+            seed: domain_defaults.seed,
             default_world,
             worlds: domain_world_ids,
         },
@@ -859,6 +862,7 @@ difficulty = "hard"
         .expect("valid worlds config should resolve");
 
         assert_eq!(resolved.default_domain, "minecraft");
+        assert_eq!(resolved.domains[0].seed, 2);
         assert_eq!(resolved.worlds.len(), 2);
         let overworld = resolved
             .worlds

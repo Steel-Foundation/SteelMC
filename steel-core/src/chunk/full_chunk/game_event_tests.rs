@@ -9,8 +9,8 @@ use std::{
 use glam::DVec3;
 use simdnbt::{borrow::BaseNbtCompound as BorrowedNbtCompound, owned::NbtCompound};
 use steel_registry::{
-    game_events::GameEventRef, init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks,
-    vanilla_game_events,
+    block_entity_type::BlockEntityTypeRef, game_events::GameEventRef, init_vanilla_registry,
+    vanilla_block_entity_types, vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, DowncastType, DowncastTypeKey, locks::SyncMutex,
@@ -87,6 +87,7 @@ impl BlockEntity for ListenerBlockEntity {
 
 fn listener_block_entity(
     world: &Arc<World>,
+    block_entity_type: BlockEntityTypeRef,
     pos: BlockPos,
     state: BlockStateId,
     id: u8,
@@ -103,12 +104,7 @@ fn listener_block_entity(
         events: Arc::clone(events),
     });
     Arc::new(ListenerBlockEntity {
-        base: BlockEntityBase::new(
-            &vanilla_block_entity_types::CHEST,
-            Arc::downgrade(world),
-            pos,
-            state,
-        ),
+        base: BlockEntityBase::new(block_entity_type, Arc::downgrade(world), pos, state),
         listener,
         selections: Arc::clone(selections),
     })
@@ -121,10 +117,18 @@ fn active_block_entity_listener_uses_stored_selection_for_removal() {
     let world = fresh_test_world("active_block_entity_listener");
     let pos = BlockPos::new(1, 64, 1);
     let holder = insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
-    let state = vanilla_blocks::CHEST.default_state();
+    let state = vanilla_blocks::SPAWNER.default_state();
     let events = Arc::new(SyncMutex::new(Vec::new()));
     let selections = Arc::new(AtomicUsize::new(0));
-    let block_entity = listener_block_entity(&world, pos, state, 1, &events, &selections);
+    let block_entity = listener_block_entity(
+        &world,
+        &vanilla_block_entity_types::MOB_SPAWNER,
+        pos,
+        state,
+        1,
+        &events,
+        &selections,
+    );
 
     {
         let Some(chunk) = holder.try_full_chunk() else {
@@ -183,7 +187,7 @@ fn full_activation_registers_listener_without_block_ticking_readiness() {
         Arc::downgrade(&world),
     );
     let full = proto.promote_to_full().chunk;
-    let state = vanilla_blocks::CHEST.default_state();
+    let state = vanilla_blocks::SPAWNER.default_state();
     let events = Arc::new(SyncMutex::new(Vec::new()));
     let selections = Arc::new(AtomicUsize::new(0));
     assert!(
@@ -192,6 +196,7 @@ fn full_activation_registers_listener_without_block_ticking_readiness() {
     );
     assert!(full.add_and_register_block_entity(listener_block_entity(
         &world,
+        &vanilla_block_entity_types::MOB_SPAWNER,
         pos,
         state,
         1,
@@ -235,7 +240,7 @@ fn full_demotion_hides_listener_without_reordering_on_revival() {
     let second_pos = BlockPos::new(2, 64, 1);
     let chunk_pos = ChunkPos::from_block_pos(first_pos);
     let holder = insert_ready_full_chunk(&world, chunk_pos);
-    let state = vanilla_blocks::CHEST.default_state();
+    let state = vanilla_blocks::SPAWNER.default_state();
     let events = Arc::new(SyncMutex::new(Vec::new()));
     let first_selections = Arc::new(AtomicUsize::new(0));
     let second_selections = Arc::new(AtomicUsize::new(0));
@@ -254,7 +259,13 @@ fn full_demotion_hides_listener_without_reordering_on_revival() {
                     .is_some()
             );
             assert!(chunk.add_and_register_block_entity(listener_block_entity(
-                &world, pos, state, id, &events, selections,
+                &world,
+                &vanilla_block_entity_types::MOB_SPAWNER,
+                pos,
+                state,
+                id,
+                &events,
+                selections,
             )));
         }
     }
@@ -345,6 +356,7 @@ fn retained_block_entity_state_does_not_reselect_listener() {
         );
         assert!(chunk.add_and_register_block_entity(listener_block_entity(
             &world,
+            &vanilla_block_entity_types::CHEST,
             pos,
             copper,
             1,

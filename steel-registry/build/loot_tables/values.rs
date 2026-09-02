@@ -1,8 +1,8 @@
 use super::{
     BlockPredicateJson, DamageSourcePredicateJson, EnchantmentOptionsJson, EntityEquipmentJson,
-    EntityFlagsJson, EntityPredicateJson, EquipmentSlotJson, FromStr, Ident, Identifier,
-    LocationPredicateJson, NumberProviderJson, PredicateJson, Span, ToShoutySnakeCase, TokenStream,
-    quote,
+    EntityFlagsJson, EntityPredicateJson, EquipmentSlotJson, FromStr, HolderSetJson, Ident,
+    Identifier, LocationPredicateJson, NumberProviderJson, PredicateJson, Span,
+    StatePropertyValueMatcherJson, ToShoutySnakeCase, TokenStream, quote,
 };
 
 pub(super) fn generate_number_provider(value: &NumberProviderJson) -> TokenStream {
@@ -167,11 +167,17 @@ pub(super) fn generate_enchantment_options(
     options: &Option<EnchantmentOptionsJson>,
 ) -> TokenStream {
     match options {
-        Some(EnchantmentOptionsJson::Tag(s)) => {
+        Some(EnchantmentOptionsJson::Tag(s)) if s.starts_with('#') => {
             let tag = s
                 .strip_prefix("#minecraft:")
                 .unwrap_or(s.strip_prefix("minecraft:").unwrap_or(s));
             quote! { EnchantmentOptions::Tag(Identifier::vanilla_static(#tag)) }
+        }
+        Some(EnchantmentOptionsJson::Tag(s)) => {
+            let enchantment = s.strip_prefix("minecraft:").unwrap_or(s);
+            quote! {
+                EnchantmentOptions::List(&[Identifier::vanilla_static(#enchantment)])
+            }
         }
         Some(EnchantmentOptionsJson::List(arr)) => {
             let enchants: Vec<TokenStream> = arr
@@ -433,35 +439,52 @@ pub(super) fn generate_damage_source_predicate(
 }
 
 pub(super) fn generate_block_predicate(predicate: &BlockPredicateJson) -> TokenStream {
-    let blocks = if let Some(b) = &predicate.blocks {
-        let b = b.strip_prefix("minecraft:").unwrap_or(b);
-        quote! { Some(Identifier::vanilla_static(#b)) }
-    } else {
-        quote! { None }
-    };
-
-    let state: Vec<TokenStream> = predicate
-        .state
+    let blocks = predicate
+        .blocks
         .as_ref()
-        .map(|props| {
-            props
-                .iter()
-                .map(|(name, value)| {
-                    quote! { (#name, #value) }
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+        .map_or_else(|| quote! { None }, generate_block_holder_set);
+
+    let state = predicate.state.as_ref().map_or_else(
+        || quote! { None },
+        |properties| {
+            let properties = properties.iter().map(|(name, value)| {
+                let value = match value {
+                    StatePropertyValueMatcherJson::Exact(value) => {
+                        quote! { StatePropertyValueMatcher::borrowed_exact(#value) }
+                    }
+                    StatePropertyValueMatcherJson::Range(range) => {
+                        let min = range
+                            .min
+                            .as_ref()
+                            .map_or_else(|| quote! { None }, |value| quote! { Some(#value) });
+                        let max = range
+                            .max
+                            .as_ref()
+                            .map_or_else(|| quote! { None }, |value| quote! { Some(#value) });
+                        quote! { StatePropertyValueMatcher::borrowed_range(#min, #max) }
+                    }
+                };
+                quote! { StatePropertyMatcher::borrowed(#name, #value) }
+            });
+            quote! {
+                Some(StatePropertiesPredicate::borrowed({
+                    static PROPERTIES: &[StatePropertyMatcher] = &[#(#properties),*];
+                    PROPERTIES
+                }))
+            }
+        },
+    );
 
     quote! {
-        BlockPredicate {
-            blocks: #blocks,
-            state: &[#(#state),*],
-        }
+        BlockPredicate::new(#blocks, #state, None, DataComponentMatchers::ANY)
     }
 }
 
 pub(super) fn generate_location_predicate(predicate: &LocationPredicateJson) -> TokenStream {
+    let biomes = predicate
+        .biomes
+        .as_ref()
+        .map_or_else(|| quote! { None }, generate_biome_holder_set);
     let block = if let Some(b) = &predicate.block {
         let block_pred = generate_block_predicate(b);
         quote! { Some(#block_pred) }
@@ -471,7 +494,68 @@ pub(super) fn generate_location_predicate(predicate: &LocationPredicateJson) -> 
 
     quote! {
         LocationPredicate {
+            biomes: #biomes,
             block: #block,
         }
+    }
+}
+
+fn generate_block_holder_set(options: &HolderSetJson) -> TokenStream {
+    if let HolderSetJson::Single(value) = options
+        && let Some(tag) = value.strip_prefix('#')
+    {
+        let tag = generate_static_identifier(tag);
+        return quote! { Some(RegistryHolderSet::Tag(#tag)) };
+    }
+
+    let values = direct_holder_values(options).iter().map(|value| {
+        let identifier = Identifier::from_str(value)
+            .unwrap_or_else(|error| panic!("invalid block holder {value}: {error}"));
+        assert_eq!(
+            identifier.namespace.as_ref(),
+            Identifier::VANILLA_NAMESPACE,
+            "vanilla loot table references non-vanilla block {identifier}"
+        );
+        let ident = Ident::new(&identifier.path.to_shouty_snake_case(), Span::call_site());
+        quote! { &vanilla_blocks::#ident }
+    });
+    quote! { Some(RegistryHolderSet::borrowed_direct(&[#(#values),*])) }
+}
+
+fn generate_biome_holder_set(options: &HolderSetJson) -> TokenStream {
+    if let HolderSetJson::Single(value) = options
+        && let Some(tag) = value.strip_prefix('#')
+    {
+        let tag = generate_static_identifier(tag);
+        return quote! { Some(BiomeOptions::Tag(#tag)) };
+    }
+
+    let values = direct_holder_values(options)
+        .iter()
+        .map(|value| generate_static_identifier(value));
+    quote! { Some(BiomeOptions::List(&[#(#values),*])) }
+}
+
+fn direct_holder_values(options: &HolderSetJson) -> &[String] {
+    let values = match options {
+        HolderSetJson::Single(value) => std::slice::from_ref(value),
+        HolderSetJson::List(values) => values.as_slice(),
+    };
+    assert!(
+        values.iter().all(|value| !value.starts_with('#')),
+        "holder-set tags must use the single-string codec form"
+    );
+    values
+}
+
+fn generate_static_identifier(value: &str) -> TokenStream {
+    let identifier = Identifier::from_str(value)
+        .unwrap_or_else(|error| panic!("invalid holder-set identifier {value}: {error}"));
+    let namespace = identifier.namespace.as_ref();
+    let path = identifier.path.as_ref();
+    if namespace == Identifier::VANILLA_NAMESPACE {
+        quote! { Identifier::vanilla_static(#path) }
+    } else {
+        quote! { Identifier::new_static(#namespace, #path) }
     }
 }

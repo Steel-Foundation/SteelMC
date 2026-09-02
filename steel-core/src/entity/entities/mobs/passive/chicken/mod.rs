@@ -379,14 +379,21 @@ impl ChickenEntity {
     /// Mirrors vanilla `LivingEntity.dropFromGiftLootTable` for the
     /// `gameplay/chicken_lay` table, returning whether any item was dropped.
     fn drop_gift_loot_table(&self, loot_table: LootTableRef) -> bool {
+        let Some(world) = self.level() else {
+            return false;
+        };
         let position = self.position();
-        let mut rng = rand::rng();
         // Vanilla `LootContextParamSets.GIFT` carries only ORIGIN and THIS_ENTITY.
-        let mut context = LootContext::new(&mut rng)
-            .with_origin(position.x, position.y, position.z)
-            .with_this_entity(entity_loot_ref(self));
-
-        let items = loot_table.get_random_items(&mut context);
+        let items = world.with_loot_random(0, loot_table.random_sequence.as_ref(), |random| {
+            let mut context = LootContext::new(random)
+                .with_origin(position.x, position.y, position.z)
+                .with_this_entity(entity_loot_ref(self));
+            loot_table.get_random_items(&mut context)
+        });
+        let items = items.unwrap_or_else(|error| {
+            log::error!("Failed to evaluate chicken gift loot table: {error}");
+            Vec::new()
+        });
         let dropped_any = !items.is_empty();
         for item in items {
             self.spawn_at_location(item, EGG_LAY_SPAWN_Y_OFFSET);

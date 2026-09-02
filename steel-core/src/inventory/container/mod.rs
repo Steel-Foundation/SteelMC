@@ -11,13 +11,87 @@ pub use crafting::CraftingContainer;
 pub use result::ResultContainer;
 pub use simple::SimpleContainer;
 
-use std::mem;
+use std::{mem, sync::Arc};
 
 use steel_registry::item_stack::ItemStack;
-use steel_utils::ErasedType;
+use steel_utils::{BlockPos, ErasedType};
+
+use crate::{inventory::lock::ContainerRef, player::Player, world::World};
 
 /// Default distance buffer for container interaction range checks.
 pub const DEFAULT_DISTANCE_BUFFER: f32 = 4.0;
+
+/// Owned world and player data supplied to deferred container preparation.
+pub struct ContainerAccessContext {
+    pub(crate) world: Arc<World>,
+    pub(crate) pos: BlockPos,
+    pub(crate) player: Option<Arc<Player>>,
+}
+
+impl ContainerAccessContext {
+    /// Returns the world containing the accessed block container.
+    #[must_use]
+    pub fn world(&self) -> &World {
+        &self.world
+    }
+
+    /// Returns the block position of the accessed container.
+    #[must_use]
+    pub const fn pos(&self) -> BlockPos {
+        self.pos
+    }
+
+    /// Returns the player opening the menu, when this access came from a menu open.
+    #[must_use]
+    pub fn player(&self) -> Option<&Player> {
+        self.player.as_deref()
+    }
+}
+
+/// Current readiness of a container's deferred contents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContainerReadiness {
+    /// Contents can be accessed now.
+    Ready,
+    /// Preparation has started and will finish on a later server tick.
+    Pending,
+    /// Deferred contents exist, but no preparation task is currently running.
+    NeedsPreparation,
+}
+
+/// Result of requesting access to a container.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContainerAccessResult {
+    /// Contents can be accessed now.
+    Ready,
+    /// Contents are being prepared on later server ticks.
+    Pending,
+    /// Preparation could not be started or completed.
+    Failed,
+}
+
+/// Storage-local first step of preparing deferred container contents.
+pub enum ContainerPreparation {
+    /// No task is needed.
+    Ready {
+        /// Whether the owning block entity must be marked changed after unlocking.
+        changed: bool,
+    },
+    /// A previously claimed task is still running.
+    Pending,
+    /// This task was claimed while locked and must be started after unlocking.
+    Start(Box<dyn ContainerPreparationTask>),
+}
+
+/// Work returned while a container is locked and started after the lock is released.
+pub trait ContainerPreparationTask: Send {
+    /// Starts claimed preparation after the container lock has been released.
+    fn start(
+        self: Box<Self>,
+        container: ContainerRef,
+        context: ContainerAccessContext,
+    ) -> ContainerAccessResult;
+}
 
 /// Something that contains items.
 /// I also use container interchangeably with inventory as they mean approximately the same thing.
@@ -37,6 +111,16 @@ pub const DEFAULT_DISTANCE_BUFFER: f32 = 4.0;
 /// [`crate::inventory::lock::ContainerRef::owned_by_block_entity`], which runs
 /// only after every container lock has been released.
 pub trait Container: ErasedType + Send + Sync {
+    /// Claims any deferred preparation work without leaving container storage.
+    fn begin_prepare_access(&mut self) -> ContainerPreparation {
+        ContainerPreparation::Ready { changed: false }
+    }
+
+    /// Reports whether contents are ready without starting work.
+    fn preparation_readiness(&self) -> ContainerReadiness {
+        ContainerReadiness::Ready
+    }
+
     /// Returns the items in this container
     fn items(&self) -> &[ItemStack];
     /// Returns mutable references to the items in this container.
@@ -340,18 +424,28 @@ fn matching_item_count(
 /// Signal strength from 0 to 15
 #[must_use]
 pub fn calculate_redstone_signal_from_container(container: &dyn Container) -> i32 {
-    let size = container.get_container_size();
+    calculate_redstone_signal_from_containers(&[container])
+}
+
+/// Calculates one comparator signal across an ordered compound container.
+#[must_use]
+pub fn calculate_redstone_signal_from_containers(containers: &[&dyn Container]) -> i32 {
+    let size = containers
+        .iter()
+        .map(|container| container.get_container_size())
+        .sum::<usize>();
     if size == 0 {
         return 0;
     }
 
     let mut total_percent: f32 = 0.0;
 
-    for i in 0..size {
-        let item = container.get_item(i);
-        if !item.is_empty() {
-            let max_stack = container.get_max_stack_size_for_item(item);
-            total_percent += item.count() as f32 / max_stack as f32;
+    for container in containers {
+        for item in container.items() {
+            if !item.is_empty() {
+                let max_stack = container.get_max_stack_size_for_item(item);
+                total_percent += item.count() as f32 / max_stack as f32;
+            }
         }
     }
 
@@ -536,6 +630,21 @@ mod tests {
             container.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
         }
         assert_eq!(calculate_redstone_signal_from_container(&container), 15);
+    }
+
+    #[test]
+    fn compound_comparator_signal_uses_the_total_slot_count() {
+        init_vanilla_registry();
+        let mut first = TestContainer::new(27);
+        let second = TestContainer::new(27);
+        for slot in 0..first.get_container_size() {
+            first.set_item(slot, ItemStack::with_count(&vanilla_items::STONE, 64));
+        }
+
+        assert_eq!(
+            calculate_redstone_signal_from_containers(&[&first, &second]),
+            8
+        );
     }
 
     #[test]

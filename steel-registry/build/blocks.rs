@@ -125,6 +125,18 @@ pub struct StateBooleanData {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct MapColorOverwrite {
+    pub offset: u16,
+    pub value: u8,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct StateMapColorData {
+    pub default: u8,
+    pub overwrites: Vec<MapColorOverwrite>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct StateFluidValue {
     pub fluid: String,
     pub amount: u8,
@@ -165,6 +177,7 @@ pub struct Block {
     pub visual_shapes: ShapeData,
     pub light_properties: LightPropertiesData,
     pub fluid_state: StateFluidData,
+    pub map_color: StateMapColorData,
     pub randomly_ticking: StateBooleanData,
     pub suffocating: StateBooleanData,
     pub redstone_conductor: StateBooleanData,
@@ -877,6 +890,19 @@ pub(crate) fn build() -> TokenStream {
                 quote! { StateBooleanOverwrite::new(#offset, #value) }
             })
             .collect::<Vec<_>>();
+        let map_color_default = block.map_color.default;
+        let map_color_overwrites = block
+            .map_color
+            .overwrites
+            .iter()
+            .map(|overwrite| {
+                let offset = overwrite.offset;
+                let value = overwrite.value;
+                quote! {
+                    StateMapColorOverwrite::new(#offset, MapColor::new(#value))
+                }
+            })
+            .collect::<Vec<_>>();
         let default_fluid = Ident::new(
             &block.fluid_state.default.fluid.to_shouty_snake_case(),
             Span::call_site(),
@@ -994,6 +1020,11 @@ pub(crate) fn build() -> TokenStream {
                     #randomly_ticking_default,
                     &[#(#randomly_ticking_overwrites),*],
                 ),
+            ).with_map_color(
+                StateMapColorData::new(
+                    MapColor::new(#map_color_default),
+                    &[#(#map_color_overwrites),*],
+                ),
             ) #shape_offsets #default_state;
         });
     }
@@ -1014,10 +1045,12 @@ pub(crate) fn build() -> TokenStream {
                 behavior::{BlockConfig, OffsetType, PushReaction},
                 shapes::ShapeOffsetFlags,
                 Block, BlockLightProperties, BlockRegistry, StateBooleanData,
-                StateBooleanOverwrite, StateFluidData, StateFluidOverwrite, offset,
+                StateBooleanOverwrite, StateFluidData, StateFluidOverwrite,
+                StateMapColorData, StateMapColorOverwrite, offset,
             },
             blocks::properties::{self, BlockStateProperties, NoteBlockInstrument},
             blocks::shapes::VoxelShape,
+            map_color::MapColor,
             fluid::FluidState,
             vanilla_fluids,
         };

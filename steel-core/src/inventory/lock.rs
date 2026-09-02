@@ -16,7 +16,10 @@ use steel_utils::{Downcast as _, DowncastType, locks::SyncMutex};
 
 use crate::{
     block_entity::{BlockEntityBase, SharedBlockEntity},
-    inventory::container::Container,
+    inventory::container::{
+        Container, ContainerAccessContext, ContainerAccessResult, ContainerPreparation,
+        ContainerReadiness,
+    },
     player::{Player, player_inventory::PlayerInventory},
 };
 use steel_registry::item_stack::ItemStack;
@@ -166,6 +169,67 @@ impl ContainerRef {
         self.owner
             .as_ref()
             .is_none_or(|owner| owner.block_entity.is_valid_container_for(player))
+    }
+
+    /// Realizes deferred block-container contents before inventory access.
+    ///
+    /// Player context is supplied by menu opening; other callers use `None`,
+    /// matching Vanilla's direct inventory-access overloads.
+    pub(crate) fn prepare_access(&self, player: Option<&Player>) -> ContainerAccessResult {
+        let Some(owner) = &self.owner else {
+            return ContainerAccessResult::Ready;
+        };
+        let Some(world) = owner.block_entity.level() else {
+            return ContainerAccessResult::Failed;
+        };
+        let player = match player {
+            Some(player) => {
+                let Some(player) = player.shared_in_world(&world) else {
+                    return ContainerAccessResult::Failed;
+                };
+                Some(player)
+            }
+            None => None,
+        };
+        let context = ContainerAccessContext {
+            world,
+            pos: owner.block_entity.pos(),
+            player,
+        };
+        let preparation = {
+            let mut container = self.lock();
+            container.begin_prepare_access()
+        };
+        match preparation {
+            ContainerPreparation::Ready { changed } => {
+                if changed {
+                    owner.block_entity.set_changed();
+                }
+                ContainerAccessResult::Ready
+            }
+            ContainerPreparation::Pending => ContainerAccessResult::Pending,
+            ContainerPreparation::Start(task) => task.start(self.clone(), context),
+        }
+    }
+
+    /// Reports readiness without starting deferred preparation.
+    pub(crate) fn preparation_readiness(&self) -> ContainerReadiness {
+        self.lock().preparation_readiness()
+    }
+
+    /// Runs a storage-local callback while this one container is locked.
+    pub(crate) fn with_locked_mut<T>(&self, operation: impl FnOnce(&mut dyn Container) -> T) -> T {
+        operation(&mut *self.lock())
+    }
+
+    /// Marks the owning block entity changed after container locks are released.
+    pub(crate) fn notify_owner_changed(&self) {
+        if let Some(owner) = &self.owner {
+            owner.block_entity.set_changed();
+            if let Some(after_changed) = &owner.after_changed {
+                after_changed();
+            }
+        }
     }
 
     /// Locks this container and returns a guard.
@@ -453,8 +517,9 @@ mod tests {
     };
     use steel_utils::types::UpdateFlags;
     use steel_utils::{BlockPos, ChunkPos, locks::SyncMutex};
+    use uuid::Uuid;
 
-    use super::{ContainerId, ContainerLockGuard, ContainerRef};
+    use super::{ContainerAccessResult, ContainerId, ContainerLockGuard, ContainerRef};
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
     use crate::block_entity::{
         SharedBlockEntity,
@@ -463,7 +528,7 @@ mod tests {
     };
     use crate::inventory::container::{Container, CraftingContainer, ResultContainer};
     use crate::inventory::slots::{NormalSlot, Slot as _};
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
     #[test]
     fn erased_container_ref_preserves_id_and_typed_access() {
@@ -511,6 +576,35 @@ mod tests {
         ));
 
         assert!(ContainerRef::from_block_entity(block_entity).is_none());
+    }
+
+    #[test]
+    fn explicit_unregistered_player_cannot_prepare_container_access() {
+        init_vanilla_registry();
+        init_behaviors();
+        init_block_entities();
+        let world = fresh_test_world("stale_container_player");
+        let pos = BlockPos::new(1, 64, 1);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::BARREL.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+        let container_ref = ContainerRef::from_block_entity(
+            world
+                .get_block_entity(pos)
+                .expect("barrel should create its block entity"),
+        )
+        .expect("barrel should expose a container capability");
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Stale", 91)
+            .uuid(Uuid::from_u128(0x0053_5441_4c45))
+            .build();
+
+        assert_eq!(
+            container_ref.prepare_access(Some(&player)),
+            ContainerAccessResult::Failed
+        );
     }
 
     #[test]

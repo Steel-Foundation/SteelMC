@@ -20,6 +20,27 @@ impl BlockEntityType {
             .iter()
             .any(|valid_block| std::ptr::eq(*valid_block, block))
     }
+
+    /// Returns whether only game masters may place this type with custom block-entity data.
+    ///
+    /// Mirrors Vanilla's hardcoded `BlockEntityTypes.OP_ONLY_CUSTOM_DATA` set.
+    #[must_use]
+    pub fn only_op_can_set_nbt(&self) -> bool {
+        use crate::vanilla_block_entity_types::{
+            COMMAND_BLOCK, HANGING_SIGN, LECTERN, MOB_SPAWNER, SIGN, TRIAL_SPAWNER,
+        };
+
+        [
+            &COMMAND_BLOCK,
+            &LECTERN,
+            &SIGN,
+            &HANGING_SIGN,
+            &MOB_SPAWNER,
+            &TRIAL_SPAWNER,
+        ]
+        .into_iter()
+        .any(|op_only| std::ptr::eq(op_only, self))
+    }
 }
 
 pub type BlockEntityTypeRef = &'static BlockEntityType;

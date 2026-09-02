@@ -5,6 +5,9 @@
 //!
 //! Vanilla: `ServerPlayer.lastSentHealth`, `lastSentFood`, `lastFoodSaturationZero`.
 
+use steel_protocol::packets::game::CSetHealth;
+
+use crate::entity::LivingEntity;
 use crate::player::Player;
 
 /// Tracks the last health/food/saturation values sent to the client.
@@ -66,5 +69,26 @@ impl Player {
     /// `CSetHealth` to the client (vanilla: `resetSentInfo`).
     pub fn reset_sent_info(&self) {
         self.health_sync.lock().invalidate();
+    }
+
+    /// Sends `CSetHealth` when health, food, or zero-saturation changed since the last packet.
+    pub(super) fn synchronize_health(&self) {
+        let health = self.get_health();
+        let (food, saturation) = {
+            let food_data = self.food_data.lock();
+            (food_data.food_level, food_data.saturation_level)
+        };
+
+        let saturation_zero = saturation == 0.0;
+
+        let mut sync = self.health_sync.lock();
+        if sync.needs_update(health, food, saturation_zero) {
+            self.send_packet(CSetHealth {
+                health,
+                food,
+                food_saturation: saturation,
+            });
+            sync.record_sent(health, food, saturation_zero);
+        }
     }
 }

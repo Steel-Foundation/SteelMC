@@ -31,6 +31,7 @@ use super::components::{
     ItemAttributeModifiers, ItemEnchantments, ItemLore, Rarity, SwingAnimation, TooltipDisplay,
     UseEffects,
 };
+use super::getter::DataComponentGetter;
 use super::vanilla_components::{
     ATTRIBUTE_MODIFIERS, BREAK_SOUND, ENCHANTMENTS, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST,
     SWING_ANIMATION, TOOLTIP_DISPLAY, USE_EFFECTS,
@@ -39,6 +40,7 @@ use crate::{sound_event::SoundEventHolder, sound_events};
 
 mod codecs;
 mod component_map;
+mod map_persistence;
 mod patch;
 mod patch_network;
 mod patch_persistence;
@@ -48,7 +50,7 @@ pub use codecs::{
     ComponentEntry, ComponentEntryRef, NbtReader, NbtWriter, NetworkReader, NetworkWriter,
 };
 pub use component_map::DataComponentMap;
-pub use patch::{ComponentPatchEntry, DataComponentPatch};
+pub use patch::{ComponentPatchEntry, DataComponentPatch, SplitResult};
 pub use patch_persistence::component_try_into;
 
 use codecs::{

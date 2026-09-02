@@ -1,9 +1,10 @@
 //! Vanilla `minecraft:map_decorations` item component.
 
-use std::collections::BTreeMap;
 use std::io::{Cursor, Error, Result, Write};
 use std::str::FromStr;
 
+use indexmap::IndexMap;
+use rustc_hash::FxBuildHasher;
 use simdnbt::owned::{NbtCompound, NbtTag, read_tag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::Identifier;
@@ -114,8 +115,11 @@ impl HashComponent for MapDecorationEntry {
 /// Decorations keyed by their arbitrary map-local IDs.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct MapDecorations {
-    decorations: BTreeMap<String, MapDecorationEntry>,
+    decorations: MapDecorationEntries,
 }
+
+/// Insertion-ordered entries used by Vanilla map decorations.
+pub type MapDecorationEntries = IndexMap<String, MapDecorationEntry, FxBuildHasher>;
 
 impl MapDecorations {
     pub const EMPTY: Self = Self::empty();
@@ -123,17 +127,17 @@ impl MapDecorations {
     #[must_use]
     pub const fn empty() -> Self {
         Self {
-            decorations: BTreeMap::new(),
+            decorations: IndexMap::with_hasher(FxBuildHasher),
         }
     }
 
     #[must_use]
-    pub const fn new(decorations: BTreeMap<String, MapDecorationEntry>) -> Self {
+    pub const fn new(decorations: MapDecorationEntries) -> Self {
         Self { decorations }
     }
 
     #[must_use]
-    pub const fn decorations(&self) -> &BTreeMap<String, MapDecorationEntry> {
+    pub const fn decorations(&self) -> &MapDecorationEntries {
         &self.decorations
     }
 
@@ -168,7 +172,7 @@ impl MapDecorations {
                     MapDecorationEntry::from_owned_nbt(entry)?,
                 ))
             })
-            .collect::<Option<BTreeMap<_, _>>>()?;
+            .collect::<Option<MapDecorationEntries>>()?;
         Some(Self::new(decorations))
     }
 }
@@ -248,7 +252,6 @@ const fn java_float_equals(left: f32, right: f32) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
     use std::io::Cursor;
 
     use simdnbt::owned::{NbtCompound, NbtTag};
@@ -256,7 +259,7 @@ mod tests {
     use steel_utils::hash::HashComponent as _;
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 
-    use super::{MapDecorationEntry, MapDecorations};
+    use super::{MapDecorationEntries, MapDecorationEntry, MapDecorations};
     use crate::data_components::vanilla_components::MAP_DECORATIONS;
     use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt, RegistryReference, vanilla_items};
@@ -275,7 +278,7 @@ mod tests {
             .map_decoration_types
             .by_key(&steel_utils::Identifier::vanilla_static("player"))
             .expect("player decoration should be registered");
-        let value = MapDecorations::new(BTreeMap::from([(
+        let value = MapDecorations::new(MapDecorationEntries::from_iter([(
             "home".to_owned(),
             MapDecorationEntry::new(RegistryReference::new(player), 12.5, -3.0, 45.0),
         )]));
@@ -314,6 +317,42 @@ mod tests {
         assert_eq!(
             filled_map.components.get(MAP_DECORATIONS),
             Some(MapDecorations::EMPTY)
+        );
+    }
+
+    #[test]
+    fn decoration_codec_preserves_non_lexicographic_insertion_order() {
+        init_vanilla_registry();
+        let player = REGISTRY
+            .map_decoration_types
+            .by_key(&steel_utils::Identifier::vanilla_static("player"))
+            .expect("player decoration should be registered");
+        let entry = MapDecorationEntry::new(RegistryReference::new(player), 0.0, 0.0, 0.0);
+        let value = MapDecorations::EMPTY
+            .with_decoration("z-last-lexically".to_owned(), entry.clone())
+            .with_decoration("a-first-lexically".to_owned(), entry);
+        assert_eq!(
+            value
+                .decorations()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["z-last-lexically", "a-first-lexically"]
+        );
+
+        let mut network = Vec::new();
+        value
+            .write(&mut network)
+            .expect("decorations should encode");
+        let decoded = MapDecorations::read(&mut Cursor::new(network.as_slice()))
+            .expect("decorations should decode");
+        assert_eq!(
+            decoded
+                .decorations()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["z-last-lexically", "a-first-lexically"]
         );
     }
 

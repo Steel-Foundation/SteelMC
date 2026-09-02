@@ -76,6 +76,7 @@ pub trait PositionalRandom {
 }
 
 /// A source of random numbers.
+#[derive(Clone)]
 #[enum_dispatch(Random)]
 pub enum RandomSource {
     /// A xoroshiro random number generator.

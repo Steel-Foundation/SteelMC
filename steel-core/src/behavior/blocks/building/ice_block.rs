@@ -10,7 +10,7 @@ use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
-use crate::block_entity::SharedBlockEntity;
+use crate::block_entity::BlockEntity;
 use crate::chunk::light::LightLayer;
 use crate::player::Player;
 use crate::world::World;
@@ -73,14 +73,15 @@ impl BlockBehavior for IceBlock {
 
     fn player_destroy(
         &self,
+        state: BlockStateId,
         world: &Arc<World>,
-        _player: &Player,
         pos: BlockPos,
-        _state: BlockStateId,
-        _block_entity: Option<&SharedBlockEntity>,
-        tool: &ItemStack,
+        player: &Player,
+        block_entity: Option<&dyn BlockEntity>,
+        destroyed_with: &ItemStack,
     ) {
-        if !Self::prevents_ice_melting(tool) {
+        world.drop_resources_for_player(state, pos, player, block_entity, destroyed_with);
+        if !Self::prevents_ice_melting(destroyed_with) {
             if world.dimension_type.water_evaporates {
                 world.set_block(
                     pos,

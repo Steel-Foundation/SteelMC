@@ -167,6 +167,7 @@ impl World {
         self: &Arc<Self>,
         player: Arc<Player>,
     ) -> (Arc<Player>, String, PersistentPlayerData) {
+        self.map_data().remove_player_tracking(player.uuid());
         assert_eq!(
             player.remove_all_menus(),
             MenuRemovalStatus::Complete,
@@ -207,6 +208,7 @@ impl World {
         let Some(player) = self.take_player_for_removal(player) else {
             return;
         };
+        self.map_data().clear_player_terrain_requests(player.uuid());
         player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
         self.unride_player_for_removal(&player, false);
         self.unregister_player_entity(&player);
@@ -221,7 +223,7 @@ impl World {
         player: &Arc<Player>,
     ) -> Option<(PersistentPlayerData, DomainResidenceToken)> {
         let player = self.take_player_for_removal(player)?;
-
+        self.map_data().remove_player_tracking(player.uuid());
         player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
         let player_data = PersistentPlayerData::from_player(&player);
 

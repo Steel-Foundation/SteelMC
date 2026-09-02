@@ -1,8 +1,9 @@
 use super::{
-    ATTRIBUTE_MODIFIERS, BREAK_SOUND, Component, ComponentData, DataComponentType, Debug,
-    DowncastType, ENCHANTMENTS, FxHashMap, Identifier, ItemAttributeModifiers, ItemEnchantments,
-    ItemLore, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST, Rarity, SWING_ANIMATION, SoundEventHolder,
-    SwingAnimation, TOOLTIP_DISPLAY, TooltipDisplay, USE_EFFECTS, UseEffects, sound_events,
+    ATTRIBUTE_MODIFIERS, BREAK_SOUND, Component, ComponentData, DataComponentGetter,
+    DataComponentType, Debug, DowncastType, ENCHANTMENTS, FxHashMap, Identifier,
+    ItemAttributeModifiers, ItemEnchantments, ItemLore, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST,
+    Rarity, SWING_ANIMATION, SoundEventHolder, SwingAnimation, TOOLTIP_DISPLAY, TooltipDisplay,
+    USE_EFFECTS, UseEffects, sound_events,
 };
 
 /// Storage for component values.
@@ -10,7 +11,7 @@ use super::{
 /// Maps component keys to their values. Used on items to store their data components.
 #[derive(Debug, Clone)]
 pub struct DataComponentMap {
-    pub(super) map: FxHashMap<Identifier, ComponentData>,
+    map: FxHashMap<Identifier, ComponentData>,
 }
 
 impl Default for DataComponentMap {
@@ -130,9 +131,33 @@ impl DataComponentMap {
         self.map.keys()
     }
 
-    /// Iterates over component keys and their erased values.
+    /// Iterates over component keys and their raw values.
     pub fn iter(&self) -> impl Iterator<Item = (&Identifier, &ComponentData)> {
         self.map.iter()
+    }
+
+    /// Returns the components whose keys are accepted by `predicate`.
+    ///
+    /// Mirrors Vanilla `DataComponentMap.filter`.
+    #[must_use]
+    pub fn filter(&self, predicate: impl Fn(&Identifier) -> bool) -> Self {
+        Self {
+            map: self
+                .map
+                .iter()
+                .filter(|(key, _)| predicate(key))
+                .map(|(key, data)| (key.clone(), data.clone()))
+                .collect(),
+        }
+    }
+
+    /// Copies every component of `other` into this map, replacing existing values.
+    ///
+    /// Mirrors Vanilla `DataComponentMap.Builder.addAll`.
+    pub fn add_all(&mut self, other: &Self) {
+        for (key, data) in &other.map {
+            self.map.insert(key.clone(), data.clone());
+        }
     }
 
     /// Gets raw component data by key (for plugin use).
@@ -164,5 +189,11 @@ impl DataComponentMap {
     /// Removes a component by key.
     pub fn remove(&mut self, key: &Identifier) -> Option<ComponentData> {
         self.map.remove(key)
+    }
+}
+
+impl DataComponentGetter for DataComponentMap {
+    fn get_raw(&self, key: &Identifier) -> Option<&ComponentData> {
+        self.map.get(key)
     }
 }

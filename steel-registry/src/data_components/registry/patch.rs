@@ -32,6 +32,15 @@ pub struct DataComponentPatch {
     pub(super) entries: FxHashMap<Identifier, ComponentPatchEntry>,
 }
 
+/// The set and removed halves of a patch.
+///
+/// Mirrors Vanilla `DataComponentPatch.SplitResult`.
+#[derive(Debug, Default, Clone)]
+pub struct SplitResult {
+    pub added: DataComponentMap,
+    pub removed: Vec<Identifier>,
+}
+
 impl DataComponentPatch {
     #[must_use]
     pub fn new() -> Self {
@@ -137,6 +146,38 @@ impl DataComponentPatch {
     /// Iterates over all entries.
     pub fn iter(&self) -> impl Iterator<Item = (&Identifier, &ComponentPatchEntry)> {
         self.entries.iter()
+    }
+
+    /// Returns this patch without the entries whose keys are accepted by `predicate`.
+    ///
+    /// Mirrors Vanilla `DataComponentPatch.forget`.
+    #[must_use]
+    pub fn forget(&self, predicate: impl Fn(&Identifier) -> bool) -> Self {
+        Self {
+            entries: self
+                .entries
+                .iter()
+                .filter(|(key, _)| !predicate(key))
+                .map(|(key, entry)| (key.clone(), entry.clone()))
+                .collect(),
+        }
+    }
+
+    /// Separates set values from removals.
+    ///
+    /// Mirrors Vanilla `DataComponentPatch.split`.
+    #[must_use]
+    pub fn split(&self) -> SplitResult {
+        let mut result = SplitResult::default();
+        for (key, entry) in &self.entries {
+            match entry {
+                ComponentPatchEntry::Set(data) => {
+                    result.added.set_raw(key.clone(), data.clone());
+                }
+                ComponentPatchEntry::Removed => result.removed.push(key.clone()),
+            }
+        }
+        result
     }
 
     pub(crate) fn sanitize_against(&mut self, prototype: &DataComponentMap) {

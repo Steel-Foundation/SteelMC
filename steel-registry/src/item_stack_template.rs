@@ -15,8 +15,10 @@ use text_components::{EncodedNbt, interactivity::HoverEvent};
 
 use crate::data_components::vanilla_components::MAX_STACK_SIZE;
 use crate::data_components::{
-    Component, ComponentData, ComponentPatchEntry, DataComponentPatch, DataComponentType,
+    Component, ComponentData, ComponentPatchEntry, DataComponentGetter, DataComponentPatch,
+    DataComponentType,
 };
+use crate::item_instance::ItemInstance;
 use crate::item_stack::ItemStack;
 use crate::items::ItemRef;
 use crate::{REGISTRY, RegistryEntry, RegistryExt, vanilla_items};
@@ -231,6 +233,22 @@ impl ItemStackTemplate {
 
     pub(crate) fn max_stack_size(&self) -> i32 {
         self.get(MAX_STACK_SIZE).copied().unwrap_or(1)
+    }
+}
+
+impl DataComponentGetter for ItemStackTemplate {
+    fn get_raw(&self, key: &Identifier) -> Option<&ComponentData> {
+        self.get_effective_value_raw(key)
+    }
+}
+
+impl ItemInstance for ItemStackTemplate {
+    fn item(&self) -> ItemRef {
+        self.item
+    }
+
+    fn count(&self) -> i32 {
+        self.count
     }
 }
 

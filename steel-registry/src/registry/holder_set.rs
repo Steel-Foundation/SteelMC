@@ -1,5 +1,6 @@
 //! Registry-backed holder sets used by vanilla codecs.
 
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::io::{Cursor, Error, Result, Write};
 use std::str::FromStr;
@@ -56,7 +57,7 @@ pub enum RegistryHolderSet<T: RegistryHolderSetEntry> {
     /// A named registry tag.
     Tag(Identifier),
     /// An ordered list of direct registry references.
-    Direct(Vec<&'static T>),
+    Direct(Cow<'static, [&'static T]>),
 }
 
 impl<T: RegistryHolderSetEntry> Clone for RegistryHolderSet<T> {
@@ -69,6 +70,18 @@ impl<T: RegistryHolderSetEntry> Clone for RegistryHolderSet<T> {
 }
 
 impl<T: RegistryHolderSetEntry> RegistryHolderSet<T> {
+    /// Creates a direct holder set backed by owned registry references.
+    #[must_use]
+    pub const fn direct(entries: Vec<&'static T>) -> Self {
+        Self::Direct(Cow::Owned(entries))
+    }
+
+    /// Creates a direct holder set backed by a generated static slice.
+    #[must_use]
+    pub const fn borrowed_direct(entries: &'static [&'static T]) -> Self {
+        Self::Direct(Cow::Borrowed(entries))
+    }
+
     /// Returns whether this holder set contains `entry`.
     #[must_use]
     pub fn contains(&self, entry: &'static T) -> bool {
@@ -90,12 +103,12 @@ impl<T: RegistryHolderSetEntry> RegistryHolderSet<T> {
             }
 
             let key = Identifier::from_str(&value).ok()?;
-            return Some(Self::Direct(vec![T::holder_set_by_key(&key)?]));
+            return Some(Self::direct(vec![T::holder_set_by_key(&key)?]));
         }
 
         let list = tag.list()?;
         if list.as_nbt_tags().is_empty() {
-            return Some(Self::Direct(Vec::new()));
+            return Some(Self::direct(Vec::new()));
         }
         let values = list.strings()?;
         let mut entries = Vec::with_capacity(values.len());
@@ -103,7 +116,7 @@ impl<T: RegistryHolderSetEntry> RegistryHolderSet<T> {
             let key = Identifier::from_str(&value.to_string()).ok()?;
             entries.push(T::holder_set_by_key(&key)?);
         }
-        Some(Self::Direct(entries))
+        Some(Self::direct(entries))
     }
 }
 
@@ -135,7 +148,7 @@ impl<T: RegistryHolderSetEntry> WriteTo for RegistryHolderSet<T> {
                     ))
                 })?;
                 VarInt(encoded_count).write(writer)?;
-                for entry in entries {
+                for entry in entries.iter() {
                     let id = entry.try_id().ok_or_else(|| {
                         Error::other(format!("Unknown {}: {}", T::REGISTRY_NAME, entry.key()))
                     })?;
@@ -185,7 +198,7 @@ impl<T: RegistryHolderSetEntry> ReadFrom for RegistryHolderSet<T> {
                 .ok_or_else(|| Error::other(format!("Unknown {} id: {id}", T::REGISTRY_NAME)))?;
             entries.push(entry);
         }
-        Ok(Self::Direct(entries))
+        Ok(Self::direct(entries))
     }
 }
 
@@ -199,7 +212,7 @@ impl<T: RegistryHolderSetEntry> ToNbtTag for RegistryHolderSet<T> {
             }
             Self::Direct(entries) => NbtTag::List(NbtList::String(
                 entries
-                    .into_iter()
+                    .iter()
                     .map(|entry| entry.key().to_string().into())
                     .collect(),
             )),
@@ -222,7 +235,7 @@ impl<T: RegistryHolderSetEntry> HashComponent for RegistryHolderSet<T> {
             }
             Self::Direct(entries) => {
                 hasher.start_list();
-                for entry in entries {
+                for entry in entries.iter() {
                     hasher.put_component_hash(&entry.key().to_string());
                 }
                 hasher.end_list();
@@ -282,10 +295,11 @@ mod tests {
     use steel_utils::serial::{ReadFrom, WriteTo};
 
     use super::RegistryHolderSet;
+    use crate::blocks::Block;
     use crate::init_vanilla_registry;
     use crate::items::Item;
     use crate::vanilla_item_tags::ItemTag;
-    use crate::vanilla_items;
+    use crate::{vanilla_blocks, vanilla_items};
 
     fn with_borrowed_tag<R>(tag: NbtTag, visitor: impl FnOnce(BorrowedNbtTag<'_, '_>) -> R) -> R {
         let mut bytes = Vec::new();
@@ -317,7 +331,7 @@ mod tests {
         );
 
         let singleton: RegistryHolderSet<Item> =
-            RegistryHolderSet::Direct(vec![&vanilla_items::STICK]);
+            RegistryHolderSet::direct(vec![&vanilla_items::STICK]);
         assert_eq!(
             singleton.clone().to_nbt_tag(),
             NbtTag::String("minecraft:stick".into())
@@ -331,7 +345,7 @@ mod tests {
         );
 
         let direct: RegistryHolderSet<Item> =
-            RegistryHolderSet::Direct(vec![&vanilla_items::STICK, &vanilla_items::DIAMOND]);
+            RegistryHolderSet::direct(vec![&vanilla_items::STICK, &vanilla_items::DIAMOND]);
         assert_eq!(
             with_borrowed_tag(
                 direct.clone().to_nbt_tag(),
@@ -344,7 +358,7 @@ mod tests {
             direct.clone().to_nbt_tag().compute_hash()
         );
 
-        let empty = RegistryHolderSet::<Item>::Direct(Vec::new());
+        let empty = RegistryHolderSet::<Item>::direct(Vec::new());
         assert_eq!(empty.clone().to_nbt_tag(), NbtTag::List(NbtList::Empty));
         assert_eq!(
             with_borrowed_tag(
@@ -361,8 +375,8 @@ mod tests {
 
         for holder_set in [
             RegistryHolderSet::<Item>::Tag(ItemTag::WOOL),
-            RegistryHolderSet::Direct(vec![&vanilla_items::STICK, &vanilla_items::DIAMOND]),
-            RegistryHolderSet::Direct(Vec::new()),
+            RegistryHolderSet::direct(vec![&vanilla_items::STICK, &vanilla_items::DIAMOND]),
+            RegistryHolderSet::direct(Vec::new()),
         ] {
             let mut bytes = Vec::new();
             holder_set
@@ -418,9 +432,31 @@ mod tests {
         assert!(!tag.contains(&vanilla_items::STICK));
 
         let direct: RegistryHolderSet<Item> =
-            RegistryHolderSet::Direct(vec![&vanilla_items::STICK]);
+            RegistryHolderSet::direct(vec![&vanilla_items::STICK]);
         assert!(direct.contains(&vanilla_items::STICK));
         assert!(!direct.contains(&vanilla_items::DIAMOND));
+    }
+
+    #[test]
+    fn borrowed_direct_uses_the_same_codec_shape_as_owned_direct() {
+        static BLOCKS: [&Block; 2] = [&vanilla_blocks::STONE, &vanilla_blocks::DIAMOND_BLOCK];
+
+        init_vanilla_registry();
+        let borrowed = RegistryHolderSet::borrowed_direct(&BLOCKS);
+        let owned = RegistryHolderSet::direct(BLOCKS.to_vec());
+        assert!(borrowed.contains(&vanilla_blocks::STONE));
+        assert!(!borrowed.contains(&vanilla_blocks::DIRT));
+        assert_eq!(borrowed.clone().to_nbt_tag(), owned.clone().to_nbt_tag());
+
+        let mut borrowed_bytes = Vec::new();
+        borrowed
+            .write(&mut borrowed_bytes)
+            .expect("borrowed holder set should write");
+        let mut owned_bytes = Vec::new();
+        owned
+            .write(&mut owned_bytes)
+            .expect("owned holder set should write");
+        assert_eq!(borrowed_bytes, owned_bytes);
     }
 
     #[test]

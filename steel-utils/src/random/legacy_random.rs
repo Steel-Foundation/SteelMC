@@ -12,6 +12,7 @@ const LCG_MASK: u64 = 0xFFFF_FFFF_FFFF;
 
 /// Legacy Minecraft random number generator based on a Linear Congruential Generator (LCG).
 /// This implementation mirrors Java's `java.util.Random` which Minecraft originally used.
+#[derive(Clone)]
 pub struct LegacyRandom {
     seed: i64,
     next_gaussian: f64,

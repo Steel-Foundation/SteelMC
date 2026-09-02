@@ -223,7 +223,7 @@ pub(super) fn holder_set_token(
         }
         Value::String(value) => {
             let entry = direct_ref(value);
-            quote! { crate::RegistryHolderSet::Direct(vec![#entry]) }
+            quote! { crate::RegistryHolderSet::direct(vec![#entry]) }
         }
         Value::Array(values) => {
             let entries = values
@@ -239,7 +239,7 @@ pub(super) fn holder_set_token(
                     direct_ref(value)
                 })
                 .collect::<Vec<_>>();
-            quote! { crate::RegistryHolderSet::Direct(vec![#(#entries),*]) }
+            quote! { crate::RegistryHolderSet::direct(vec![#(#entries),*]) }
         }
         _ => panic!("{component} holder set must be a string or string array"),
     }

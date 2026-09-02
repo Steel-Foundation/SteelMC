@@ -8,8 +8,12 @@
 use steel_registry::menu_type::MenuTypeRef;
 use steel_registry::vanilla_menu_types;
 
+use crate::block_entity::{ContainerOpeners, SharedBlockEntity};
 use crate::inventory::prelude::*;
 use crate::player::player_inventory::PlayerInventory;
+
+/// Slots per row in a chest menu.
+pub const SLOTS_PER_ROW: usize = 9;
 
 /// Builds a chest-like menu with `rows` rows of 9 slots plus the player inventory.
 ///
@@ -23,19 +27,68 @@ pub fn chest(
     rows: usize,
 ) -> Menu {
     let container = container.into();
+    chest_with_openers(
+        inventory,
+        container_id,
+        vec![(container, rows * SLOTS_PER_ROW)],
+        rows,
+        Vec::new(),
+    )
+}
+
+/// Builds a chest-like menu backed by one or more independently locked sections.
+///
+/// `openers` contains the block entities whose viewer counters this menu owns.
+///
+/// # Panics
+///
+/// Panics when `rows` is outside 1 through 6 or the sections do not contain
+/// exactly `rows * 9` slots.
+#[must_use]
+pub fn chest_with_openers(
+    inventory: Shared<PlayerInventory>,
+    container_id: u8,
+    containers: Vec<(ContainerRef, usize)>,
+    rows: usize,
+    openers: Vec<SharedBlockEntity>,
+) -> Menu {
     assert!(
         (1..=6).contains(&rows),
         "Chest rows must be between 1 and 6"
     );
+    assert_eq!(
+        containers.iter().map(|(_, size)| size).sum::<usize>(),
+        rows * SLOTS_PER_ROW,
+        "Chest sections must cover every container slot"
+    );
 
     let mut builder = MenuBuilder::new(menu_type_for_rows(rows), container_id);
-    let chest = builder.section(&container, rows * 9);
+    let chest = containers
+        .iter()
+        .map(|(container, size)| builder.section(container, *size))
+        .collect::<Vec<_>>();
     let player = builder.player_inventory(&inventory);
 
-    builder.route(chest, player.all(), FillDirection::Backward);
-    builder.route(player.all(), chest, FillDirection::Forward);
+    let opener_container_ids = openers
+        .iter()
+        .filter_map(|block_entity| block_entity.container_openers())
+        .map(ContainerOpeners::opener_container_id)
+        .collect();
 
-    builder.build(ChestKind { container })
+    for section in &chest {
+        builder.route(*section, [player.all()], FillDirection::Backward);
+    }
+    builder.route(player.all(), chest.as_slice(), FillDirection::Forward);
+
+    builder.build(ChestKind {
+        containers: containers
+            .into_iter()
+            .map(|(container, _)| container)
+            .collect(),
+        openers,
+        opener_container_ids,
+        opened: false,
+    })
 }
 
 /// Menu type for a chest of `rows` rows.
@@ -55,10 +108,12 @@ pub fn menu_type_for_rows(rows: usize) -> MenuTypeRef {
     }
 }
 
-/// Per-menu chest state: just the backing container for the validity check.
+/// Per-menu chest state and viewer-count ownership.
 pub struct ChestKind {
-    /// The backing container.
-    container: ContainerRef,
+    containers: Vec<ContainerRef>,
+    openers: Vec<SharedBlockEntity>,
+    opener_container_ids: Vec<ContainerId>,
+    opened: bool,
 }
 
 // SAFETY: This Steel-owned key uniquely identifies the concrete menu kind
@@ -69,9 +124,43 @@ unsafe impl steel_utils::DowncastType for ChestKind {
 }
 
 impl MenuKind for ChestKind {
-    /// Returns true if the backing container is still valid for the player.
+    fn opener_container_ids(&self) -> &[ContainerId] {
+        &self.opener_container_ids
+    }
+
+    fn on_open(
+        &mut self,
+        _behavior: &mut MenuBehavior,
+        guard: &mut ContainerLockGuard,
+        player: &Player,
+    ) {
+        self.opened = true;
+        guard.run_unlocked(|| {
+            for block_entity in &self.openers {
+                if let Some(openers) = block_entity.container_openers() {
+                    openers.start_open(player);
+                }
+            }
+        });
+    }
+
+    fn removed(&mut self, _behavior: &mut MenuBehavior, player: &Player) {
+        if !self.opened {
+            return;
+        }
+        self.opened = false;
+        for block_entity in &self.openers {
+            if let Some(openers) = block_entity.container_openers() {
+                openers.stop_open(player);
+            }
+        }
+    }
+
+    /// Returns true if every backing container is still valid for the player.
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
-        self.container.still_valid(player)
+        self.containers
+            .iter()
+            .all(|container| container.still_valid(player))
     }
 }
 

@@ -2,6 +2,27 @@ use super::{
     LimitJson, LootFunctionJson, TokenStream, generate_condition, generate_enchantment_options,
     generate_instrument_options, generate_number_provider, quote,
 };
+use heck::ToShoutySnakeCase;
+use proc_macro2::{Ident, Span};
+use serde_json::Value;
+
+fn generate_loot_text(value: Option<&Value>) -> TokenStream {
+    let value = value.unwrap_or_else(|| panic!("set_name loot function is missing name"));
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("set_name name must be a text-component object: {value}"));
+    assert_eq!(
+        object.len(),
+        1,
+        "set_name contains an unsupported text-component shape: {value}"
+    );
+    let translation = object
+        .get("translate")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("set_name currently requires a translate string: {value}"));
+    let translation = Ident::new(&translation.to_shouty_snake_case(), Span::call_site());
+    quote! { LootText::Translation(|| steel_utils::translations::#translation.msg().into()) }
+}
 
 pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
     let func_body = match function.function.as_str() {
@@ -146,23 +167,24 @@ pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
                 _ => quote! { CopySource::BlockEntity },
             };
 
-            let include: Vec<TokenStream> = function
-                .include
-                .as_ref()
-                .map(|inc| {
-                    inc.iter()
+            let include = function.include.as_ref().map_or_else(
+                || quote! { None },
+                |include| {
+                    let include: Vec<TokenStream> = include
+                        .iter()
                         .map(|s| {
                             let s = s.strip_prefix("minecraft:").unwrap_or(s);
                             quote! { Identifier::vanilla_static(#s) }
                         })
-                        .collect()
-                })
-                .unwrap_or_default();
+                        .collect();
+                    quote! { Some(&[#(#include),*]) }
+                },
+            );
 
             quote! {
                 LootFunction::CopyComponents {
                     source: #source,
-                    include: &[#(#include),*],
+                    include: #include,
                 }
             }
         }
@@ -198,15 +220,19 @@ pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
             let destination = function
                 .destination
                 .as_deref()
-                .unwrap_or("minecraft:buried_treasure");
+                .unwrap_or("minecraft:on_treasure_maps");
             let destination = destination
                 .strip_prefix("minecraft:")
                 .unwrap_or(destination);
 
-            let decoration = function.decoration.as_deref().unwrap_or("minecraft:red_x");
+            let decoration = function
+                .decoration
+                .as_deref()
+                .unwrap_or("minecraft:woodland_mansion");
             let decoration = decoration.strip_prefix("minecraft:").unwrap_or(decoration);
 
             let zoom = function.zoom.unwrap_or(2);
+            let search_radius = function.search_radius.unwrap_or(50);
             let skip_existing_chunks = function.skip_existing_chunks.unwrap_or(true);
 
             quote! {
@@ -214,15 +240,13 @@ pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
                     destination: Identifier::vanilla_static(#destination),
                     decoration: Identifier::vanilla_static(#decoration),
                     zoom: #zoom,
+                    search_radius: #search_radius,
                     skip_existing_chunks: #skip_existing_chunks,
                 }
             }
         }
         "minecraft:set_name" => {
-            let name_str = function
-                .name
-                .as_ref()
-                .map_or_else(|| "\"\"".to_string(), std::string::ToString::to_string);
+            let name = generate_loot_text(function.name.as_ref());
 
             let target = match function.target.as_deref() {
                 Some("custom_name") => quote! { NameTarget::CustomName },
@@ -232,7 +256,7 @@ pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
 
             quote! {
                 LootFunction::SetName {
-                    name: #name_str,
+                    name: #name,
                     target: #target,
                 }
             }

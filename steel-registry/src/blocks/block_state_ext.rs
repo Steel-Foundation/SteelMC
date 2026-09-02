@@ -7,6 +7,7 @@ use crate::{
         shapes::{OffsetVoxelShape, SupportType},
     },
     fluid::FluidState,
+    map_color::MapColor,
 };
 use glam::DVec3;
 use steel_utils::BlockPos;
@@ -23,6 +24,8 @@ pub trait BlockStateExt {
     fn has_fluid(&self) -> bool;
     /// Mirrors Vanilla's cached `BlockState.isRandomlyTicking()` for the block callback.
     fn is_randomly_ticking(&self) -> bool;
+    /// Mirrors Vanilla's cached `BlockState.getMapColor`.
+    fn get_map_color(&self) -> MapColor;
     /// Returns whether this block structurally supports a block entity.
     ///
     /// Extracted Vanilla type memberships match `EntityBlock` exactly. Steel extends that into a
@@ -122,6 +125,13 @@ impl BlockStateExt for BlockStateId {
 
     fn is_randomly_ticking(&self) -> bool {
         self.get_ticking_metadata().randomly_ticking_block()
+    }
+
+    fn get_map_color(&self) -> MapColor {
+        let Some(color) = REGISTRY.blocks.get_map_color(*self) else {
+            panic!("invalid block state id {}", self.0);
+        };
+        color
     }
 
     fn has_block_entity(&self) -> bool {
@@ -285,6 +295,7 @@ mod tests {
     use crate::blocks::behavior::OffsetType;
     use crate::blocks::properties::BlockStateProperties;
     use crate::blocks::shapes::{ShapeChannel, SupportType};
+    use crate::map_color::MapColor;
     use crate::{init_vanilla_registry, vanilla_fluids};
     use steel_utils::Direction;
 
@@ -484,6 +495,19 @@ mod tests {
                 .set_value(&BlockStateProperties::AGE_7, 7)
                 .is_randomly_ticking()
         );
+    }
+
+    #[test]
+    fn map_color_uses_extracted_state_overrides() {
+        init_vanilla_registry();
+
+        let young = vanilla_blocks::WHEAT
+            .default_state()
+            .set_value(&BlockStateProperties::AGE_7, 5);
+        let mature = young.set_value(&BlockStateProperties::AGE_7, 7);
+
+        assert_eq!(young.get_map_color(), MapColor::PLANT);
+        assert_eq!(mature.get_map_color(), MapColor::COLOR_YELLOW);
     }
 
     #[test]

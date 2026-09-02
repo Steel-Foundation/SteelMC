@@ -13,6 +13,7 @@ use super::Bees;
 use crate::ItemStackTemplate;
 use crate::data_components::registry::ValidatePersistentComponent;
 use crate::data_components::vanilla_components::{BEES, BUNDLE_CONTENTS};
+use crate::item_stack::ItemStack;
 
 macro_rules! impl_template_wrapper_codecs {
     ($type:ty, $field:ident) => {
@@ -364,6 +365,40 @@ impl ItemContainerContents {
     #[must_use]
     pub fn items(&self) -> &[Option<ItemStackTemplate>] {
         &self.items
+    }
+
+    /// Captures container slots up to the last non-empty stack.
+    ///
+    /// Mirrors Vanilla `fromItems`; fails only when a stack cannot be
+    /// represented by Steel's validated persistent template.
+    pub fn from_items(items: &[ItemStack]) -> Result<Self> {
+        let Some(last_non_empty) = items.iter().rposition(|item| !item.is_empty()) else {
+            return Ok(Self::empty());
+        };
+        let items = items[..=last_non_empty]
+            .iter()
+            .map(|item| {
+                if item.is_empty() {
+                    Ok(None)
+                } else {
+                    ItemStackTemplate::from_stack(item).map(Some)
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Self::new(items)
+    }
+
+    /// Fills every destination slot from this component, clearing slots without an item.
+    ///
+    /// Mirrors Vanilla `copyInto`.
+    pub fn copy_into(&self, destination: &mut [ItemStack]) {
+        for (slot, stack) in destination.iter_mut().enumerate() {
+            *stack = self
+                .items
+                .get(slot)
+                .and_then(Option::as_ref)
+                .map_or_else(ItemStack::empty, ItemStackTemplate::create);
+        }
     }
 
     fn from_slots(slots: Vec<ContainerSlot>) -> Option<Self> {

@@ -74,11 +74,18 @@ pub struct MobEffect {
     pub key: Identifier,
     pub category: MobEffectCategory,
     pub color: RgbColor,
+    /// Whether Vanilla applies this effect immediately instead of ticking it.
+    pub instantaneous: bool,
     pub particle: MobEffectParticle,
     pub attribute_modifiers: &'static [MobEffectAttributeModifier],
 }
 
 impl MobEffect {
+    #[must_use]
+    pub const fn is_instantaneous(&self) -> bool {
+        self.instantaneous
+    }
+
     /// Creates the particle options synchronized for one effect instance.
     #[must_use]
     pub fn create_particle_options(&self, ambient: bool) -> ParticleData {
@@ -191,6 +198,14 @@ mod tests {
                 .downcast_ref::<SimpleParticleOptions>()
                 .is_some()
         );
+    }
+
+    #[test]
+    fn generated_effects_preserve_instantaneous_behavior() {
+        assert!(vanilla_mob_effects::INSTANT_HEALTH.is_instantaneous());
+        assert!(vanilla_mob_effects::INSTANT_DAMAGE.is_instantaneous());
+        assert!(vanilla_mob_effects::SATURATION.is_instantaneous());
+        assert!(!vanilla_mob_effects::REGENERATION.is_instantaneous());
     }
 }
 

@@ -30,8 +30,8 @@ use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionContext, BlockHitResult, ITEM_BEHAVIORS, InteractionResult,
     InventoryAccess, UseOnContext,
 };
-use crate::block_entity::BlockEntity;
 use crate::block_entity::entities::SignBlockEntity;
+use crate::block_entity::{BlockEntity, BlockEntityComponentsExt as _};
 use crate::command::player_can_change_difficulty;
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};

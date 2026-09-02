@@ -1,5 +1,5 @@
 use std::{
-    ptr,
+    ptr, slice,
     sync::{
         Arc, Barrier,
         atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
@@ -13,7 +13,7 @@ use crate::{
         click::{Click, ClickOutcome, DragKind, MouseButton, QuickCraft},
         container::{Container, SimpleContainer},
         equipment::{EntityEquipment, EquipmentSlot},
-        lock::ContainerLockGuard,
+        lock::{ContainerId, ContainerLockGuard},
         menu::{Menu, MenuBehavior, MenuBuilder, MenuKind, kinds::BasicKind},
     },
     player::{Player, PlayerConnection, ResetReason, connection::NetworkConnection},
@@ -1089,6 +1089,42 @@ struct BlockTerminalMenuRemoval {
     returned_to_inventory: Arc<AtomicBool>,
 }
 
+struct ObserveOpenerOwnership {
+    container_id: ContainerId,
+    saw_open_dispatch: Arc<AtomicBool>,
+    saw_closed_dispatch: Arc<AtomicBool>,
+}
+
+impl_test_menu_kind_downcast!(
+    ObserveOpenerOwnership,
+    "steel:test/menu/player_inventory/observe_opener_ownership"
+);
+
+impl MenuKind for ObserveOpenerOwnership {
+    fn opener_container_ids(&self) -> &[ContainerId] {
+        slice::from_ref(&self.container_id)
+    }
+
+    fn on_open(
+        &mut self,
+        _behavior: &mut MenuBehavior,
+        _guard: &mut ContainerLockGuard,
+        player: &Player,
+    ) {
+        self.saw_open_dispatch.store(
+            player.has_open_container(self.container_id),
+            Ordering::Relaxed,
+        );
+    }
+
+    fn removed(&mut self, _behavior: &mut MenuBehavior, player: &Player) {
+        self.saw_closed_dispatch.store(
+            !player.has_open_container(self.container_id),
+            Ordering::Relaxed,
+        );
+    }
+}
+
 impl_test_menu_kind_downcast!(
     BlockTerminalMenuRemoval,
     "steel:test/menu/player_inventory/block_terminal_menu_removal"
@@ -1109,6 +1145,51 @@ fn empty_test_menu(player: &Player, container_id: u8, kind: impl MenuKind + 'sta
     builder.player_inventory(&player.inventory);
     builder.build(kind)
 }
+
+#[test]
+fn opener_ownership_is_explicit_and_visible_during_menu_dispatch() {
+    init_vanilla_registry();
+    let world = fresh_test_world("explicit_opener_ownership");
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    let player = test_player(world);
+    let container = SimpleContainer::new(9).into_shared();
+    let container_id = ContainerId::from_arc(&container);
+
+    let shape_only_container = Arc::clone(&container);
+    let shape_only_inventory = Arc::clone(&player.inventory);
+    player.open_menu("Shape only", move |context| {
+        let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
+        builder.section(shape_only_container, 9);
+        builder.player_inventory(&shape_only_inventory);
+        builder.build(BasicKind {})
+    });
+    assert!(!player.has_open_container(container_id));
+    player.close_container();
+
+    let saw_open_dispatch = Arc::new(AtomicBool::new(false));
+    let saw_closed_dispatch = Arc::new(AtomicBool::new(false));
+    let explicit_container = Arc::clone(&container);
+    let explicit_inventory = Arc::clone(&player.inventory);
+    let open_observation = Arc::clone(&saw_open_dispatch);
+    let close_observation = Arc::clone(&saw_closed_dispatch);
+    player.open_menu("Explicit opener", move |context| {
+        let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
+        builder.section(explicit_container, 9);
+        builder.player_inventory(&explicit_inventory);
+        builder.build(ObserveOpenerOwnership {
+            container_id,
+            saw_open_dispatch: open_observation,
+            saw_closed_dispatch: close_observation,
+        })
+    });
+
+    assert!(saw_open_dispatch.load(Ordering::Relaxed));
+    assert!(player.has_open_container(container_id));
+    player.close_container();
+    assert!(saw_closed_dispatch.load(Ordering::Relaxed));
+    assert!(!player.has_open_container(container_id));
+}
+
 #[test]
 fn disconnected_menu_removal_drops_transient_items() {
     init_vanilla_registry();

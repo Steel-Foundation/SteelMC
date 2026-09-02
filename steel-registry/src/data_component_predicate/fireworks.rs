@@ -1,7 +1,10 @@
 use super::{
-    CollectionPredicate, ComponentHasher, DataComponentPredicateCodec, Debug, DowncastType,
-    DowncastTypeKey, HashComponent, IntBounds, NbtCompound, NbtNumeric, NbtTag, decode_optional,
-    hash_entries, push_hash_entry,
+    CollectionPredicate, ComponentHasher, DataComponentGetter, DataComponentPredicateCodec, Debug,
+    DowncastType, DowncastTypeKey, HashComponent, IntBounds, NbtCompound, NbtNumeric, NbtTag,
+    decode_optional, hash_entries, push_hash_entry,
+};
+use crate::data_components::vanilla_components::{
+    FIREWORK_EXPLOSION, FIREWORKS, FireworkExplosion,
 };
 
 /// Fields matched within one firework explosion.
@@ -41,6 +44,18 @@ impl FireworkPredicate {
     #[must_use]
     pub const fn has_trail(&self) -> Option<bool> {
         self.has_trail
+    }
+
+    /// Mirrors Vanilla `FireworkExplosionPredicate.FireworkPredicate.test`.
+    #[must_use]
+    pub fn matches(&self, explosion: &FireworkExplosion) -> bool {
+        self.shape.is_none_or(|shape| shape == explosion.shape())
+            && self
+                .has_twinkle
+                .is_none_or(|twinkle| twinkle == explosion.has_twinkle())
+            && self
+                .has_trail
+                .is_none_or(|trail| trail == explosion.has_trail())
     }
 
     fn from_nbt_value(tag: &NbtTag) -> Option<Self> {
@@ -126,6 +141,12 @@ impl DataComponentPredicateCodec for FireworkExplosionPredicate {
     fn to_nbt_value(&self) -> NbtTag {
         self.0.to_nbt_value()
     }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .get(FIREWORK_EXPLOSION)
+            .is_some_and(|explosion| self.0.matches(explosion))
+    }
 }
 
 impl HashComponent for FireworkExplosionPredicate {
@@ -194,6 +215,14 @@ impl DataComponentPredicateCodec for FireworksPredicate {
             compound.insert("flight_duration", self.flight_duration.as_nbt_tag());
         }
         NbtTag::Compound(compound)
+    }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components.get(FIREWORKS).is_some_and(|fireworks| {
+            self.explosions.as_ref().is_none_or(|explosions| {
+                explosions.matches(fireworks.explosions(), FireworkPredicate::matches)
+            }) && self.flight_duration.matches(fireworks.flight_duration())
+        })
     }
 }
 

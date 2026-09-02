@@ -39,6 +39,7 @@ use crate::entity::{
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
+use crate::map::DomainMapData;
 use crate::permission::{
     OP_GROUP, PermissionGroupManager, PermissionGroupManagerError, PermissionGroupUpdateError,
     PermissionGroupsConfig, PermissionMetadataExpression, PermissionRuleExpression, PermissionSet,
@@ -60,6 +61,7 @@ use crate::portal::{
     PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, end_gateway,
     end_portal, nether_portal,
 };
+use crate::random_sequences::DomainRandomSequences;
 use crate::scoreboard::DomainScoreboards;
 use crate::server::jobs::{FnServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::packet_processor::PacketProcessor;
@@ -411,6 +413,10 @@ pub struct Server {
     pub registry_cache: RegistryCache,
     /// A list of all the worlds on the server.
     pub worlds: WorldMap,
+    /// Persistent named-random-sequence maps isolated by Steel domain.
+    random_sequences: DomainRandomSequences,
+    /// Persistent filled-map data isolated by Steel domain.
+    map_data: DomainMapData,
     /// Players currently connected to the server, independent of world membership.
     online_players: PlayerMap,
     /// UUIDs reserved by a join or disconnect/save lifecycle transition.
@@ -439,7 +445,7 @@ pub struct Server {
     /// Dedicated worker pool for CPU-heavy chunk persistence and packet encoding.
     chunk_encoding_pool: Arc<ThreadPool>,
     /// Jobs resumed from a known point in the server game tick.
-    pub jobs: ServerJobQueue,
+    pub jobs: Arc<ServerJobQueue>,
     /// Player data storage for saving/loading player state.
     pub player_data_storage: PlayerDataStorage,
     /// Persisted permission state indexed by player UUID.
@@ -702,11 +708,39 @@ impl Server {
             )
             .await
             .map_err(|e| format!("failed to create world {}: {e}", world_entry.key))?;
-            world
-                .initialize_spawn_if_needed()
-                .await
-                .map_err(|e| format!("failed to initialize spawn for {}: {e}", world_entry.key))?;
             worlds.insert(world_entry.key.clone(), world);
+        }
+
+        let random_sequences = DomainRandomSequences::load(&resolved_worlds.domains, &worlds)
+            .await
+            .map_err(|error| format!("failed to load random sequences: {error}"))?;
+        let map_data = DomainMapData::load(&resolved_worlds.domains, &worlds)
+            .await
+            .map_err(|error| format!("failed to load map data: {error}"))?;
+        let jobs = Arc::new(ServerJobQueue::new());
+        for world in worlds.values() {
+            let Some(sequences) = random_sequences.get(world.domain()) else {
+                return Err(format!(
+                    "loaded world {} has no random-sequence owner for domain {}",
+                    world.key,
+                    world.domain()
+                ));
+            };
+            world.bind_random_sequences(Arc::clone(sequences));
+            let Some(maps) = map_data.get(world.domain()) else {
+                return Err(format!(
+                    "loaded world {} has no map-data owner for domain {}",
+                    world.key,
+                    world.domain()
+                ));
+            };
+            world.bind_map_data(Arc::clone(maps));
+            world.bind_server_jobs(Arc::downgrade(&jobs));
+        }
+        for world in worlds.values() {
+            world.initialize_spawn_if_needed().await.map_err(|error| {
+                format!("failed to initialize spawn for {}: {error}", world.key)
+            })?;
         }
 
         let scoreboards = DomainScoreboards::load(&worlds)
@@ -733,6 +767,8 @@ impl Server {
             cancel_token,
             key_store: KeyStore::create(),
             worlds,
+            random_sequences,
+            map_data,
             online_players: PlayerMap::new(),
             player_admissions: SyncMutex::new(FxHashMap::default()),
             player_admission_changed: Notify::new(),
@@ -747,7 +783,7 @@ impl Server {
             command_requests: CommandRequestQueue::new(),
             packet_processor: PacketProcessor::new(),
             chunk_encoding_pool,
-            jobs: ServerJobQueue::new(),
+            jobs,
             player_data_storage,
             player_permission_states: SyncRwLock::new(player_permission_states),
             player_permission_updates: AsyncMutex::new(()),
@@ -786,6 +822,19 @@ impl Server {
             scoreboards: self.scoreboards.save(&self.worlds).await,
             storage: self.save_command_storage().await,
         }
+    }
+
+    /// Saves one domain's named random sequences when they advanced.
+    ///
+    /// This must run after dirty chunks in a coordinated save cycle so sequence
+    /// state cannot get ahead of deferred loot-table NBT.
+    pub async fn save_random_sequences(&self, domain: &str) -> io::Result<bool> {
+        self.random_sequences.save(domain).await
+    }
+
+    /// Saves one domain's filled-map data when it changed.
+    pub async fn save_map_data(&self, domain: &str) -> io::Result<bool> {
+        self.map_data.save(domain).await
     }
 
     /// Queues a command for execution at the start of the next game tick.

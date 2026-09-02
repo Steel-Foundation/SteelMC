@@ -1,5 +1,6 @@
 //! Core chunk adapter for the worldgen structure engine.
 
+pub(crate) mod locate;
 pub(crate) mod piece_placer;
 
 use crate::chunk::Chunk;

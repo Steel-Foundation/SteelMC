@@ -17,23 +17,26 @@ use steel_utils::{
 use text_components::TextComponent;
 
 use crate::{
-    REGISTRY, RegistryEntry, RegistryExt,
+    REGISTRY, RegistryEntry, RegistryExt, RegistryReference,
     damage_type::DamageTypeRef,
     data_components::{
-        Component, ComponentData, ComponentPatchEntry, CustomData, DataComponentMap,
-        DataComponentPatch, DataComponentType,
+        Component, ComponentData, ComponentPatchEntry, CustomData, DataComponentGetter,
+        DataComponentMap, DataComponentPatch, DataComponentType,
         vanilla_components::{
             ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, BUNDLE_CONTENTS, CHARGED_PROJECTILES,
             CONTAINER, CUSTOM_DATA, CUSTOM_NAME, DAMAGE, DAMAGE_RESISTANT, DAMAGE_TYPE,
             ENCHANTABLE, ENCHANTMENTS, EQUIPPABLE, Equippable, ITEM_NAME, ItemAttributeModifiers,
             ItemEnchantments, MAX_DAMAGE, MAX_STACK_SIZE, MINIMUM_ATTACK_CHARGE,
-            OMINOUS_BOTTLE_AMPLIFIER, OminousBottleAmplifier, PIERCING_WEAPON, PiercingWeapon,
-            REPAIRABLE, STORED_ENCHANTMENTS, TOOL, Tool, UNBREAKABLE, WEAPON, WRITTEN_BOOK_CONTENT,
-            Weapon,
+            OMINOUS_BOTTLE_AMPLIFIER, OminousBottleAmplifier, PIERCING_WEAPON, POTION_CONTENTS,
+            PiercingWeapon, PotionContents, REPAIRABLE, STORED_ENCHANTMENTS,
+            SUSPICIOUS_STEW_EFFECTS, SuspiciousStewEffect, SuspiciousStewEffects, TOOL, Tool,
+            UNBREAKABLE, WEAPON, WRITTEN_BOOK_CONTENT, Weapon,
         },
     },
+    enchantment::{Enchantment, EnchantmentRef},
     enchantment_effect::EnchantmentEffectComponent,
     equipment::EquipmentSlot,
+    item_instance::ItemInstance,
     item_stack_template::ItemStackTemplate,
     items::{Item, ItemRef},
     vanilla_items,
@@ -53,6 +56,22 @@ pub struct ItemStack {
 impl Default for ItemStack {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+impl DataComponentGetter for ItemStack {
+    fn get_raw(&self, key: &Identifier) -> Option<&ComponentData> {
+        self.get_effective_value_raw(key)
+    }
+}
+
+impl ItemInstance for ItemStack {
+    fn item(&self) -> ItemRef {
+        Self::item(self)
+    }
+
+    fn count(&self) -> i32 {
+        Self::count(self)
     }
 }
 
@@ -117,6 +136,34 @@ impl ItemStack {
     #[must_use]
     pub const fn components_patch(&self) -> &DataComponentPatch {
         &self.patch
+    }
+
+    /// Applies every set/removal entry from `patch` to this stack.
+    ///
+    /// This mirrors Vanilla's `ItemStack.applyComponents` behavior while
+    /// retaining this stack's item identity and count.
+    pub fn apply_components_patch(&mut self, patch: &DataComponentPatch) {
+        for (key, entry) in patch.iter() {
+            match entry {
+                ComponentPatchEntry::Set(data) => {
+                    self.patch.set_component_data(key.clone(), data.clone());
+                }
+                ComponentPatchEntry::Removed => {
+                    self.patch.remove_raw(key.clone());
+                }
+            }
+        }
+        self.patch.sanitize_against(&self.item.components);
+    }
+
+    /// Sets every component of `components` on this stack.
+    ///
+    /// Mirrors Vanilla's `ItemStack.applyComponents(DataComponentMap)` overload.
+    pub fn apply_components(&mut self, components: &DataComponentMap) {
+        for (key, data) in components.iter() {
+            self.patch.set_component_data(key.clone(), data.clone());
+        }
+        self.patch.sanitize_against(&self.item.components);
     }
 
     pub const fn set_count(&mut self, count: i32) {
@@ -655,44 +702,137 @@ impl ItemStack {
 
     /// Sets the damage/durability as a fraction (0.0 = broken, 1.0 = full).
     /// If `add` is true, adds to current damage instead of setting.
-    pub const fn set_damage_fraction(&mut self, _fraction: f32, _add: bool) {
-        // TODO: Implement when damage component system is ready
-        // let max_damage = self.get_max_damage();
-        // let damage_value = ((1.0 - fraction) * max_damage as f32) as i32;
-        // self.set_component(DAMAGE, damage_value);
+    pub fn set_damage_fraction(&mut self, fraction: f32, add: bool) {
+        if !self.is_damageable_item() {
+            return;
+        }
+        let max_damage = self.get_max_damage();
+        let base = if add {
+            1.0 - self.get_damage_value() as f32 / max_damage as f32
+        } else {
+            0.0
+        };
+        let remaining = 1.0 - (fraction + base).clamp(0.0, 1.0);
+        self.set_damage_value((remaining * max_damage as f32).floor() as i32);
     }
 
     /// Enchants this item randomly with enchantments from the given options.
-    pub const fn enchant_randomly<R: rand::Rng>(
+    pub fn enchant_randomly<R: Random>(
         &mut self,
-        _options: &crate::loot_table::EnchantmentOptions,
-        _rng: &mut R,
-    ) {
-        // TODO: Implement when enchantment registry and system are ready
-        // 1. Get list of valid enchantments from options (tag or list)
-        // 2. Filter to enchantments that can apply to this item
-        // 3. Pick one randomly
-        // 4. Pick a random level for that enchantment
-        // 5. Add to ENCHANTMENTS component
+        options: &crate::loot_table::EnchantmentOptions,
+        rng: &mut R,
+    ) -> crate::loot_table::LootResult<()> {
+        let is_book = self.is(&vanilla_items::BOOK);
+        let candidates = options
+            .resolve()?
+            .into_iter()
+            .filter(|enchantment| is_book || enchantment.can_enchant(self.item))
+            .collect::<Vec<_>>();
+        let Some(enchantment) = Self::random_enchantment(&candidates, rng) else {
+            return Ok(());
+        };
+        let level = rng.next_i32_between(1, enchantment.max_level as i32) as u32;
+        if is_book {
+            *self = Self::new(&vanilla_items::ENCHANTED_BOOK);
+        }
+        self.upgrade_enchantment(enchantment.key.clone(), level);
+        Ok(())
     }
 
     /// Enchants this item as if using an enchanting table at the given level.
-    pub const fn enchant_with_levels<R: rand::Rng>(
+    pub fn enchant_with_levels<R: Random>(
         &mut self,
-        _level: i32,
-        _options: &crate::loot_table::EnchantmentOptions,
-        _rng: &mut R,
-    ) {
-        // TODO: Implement when enchantment registry and system are ready
-        // This simulates the enchanting table algorithm:
-        // 1. Calculate modified level based on item enchantability
-        // 2. Generate list of possible enchantments for that level
-        // 3. Filter by options (tag or list)
-        // 4. Apply enchantments with proper weights
+        mut cost: i32,
+        options: &crate::loot_table::EnchantmentOptions,
+        rng: &mut R,
+    ) -> crate::loot_table::LootResult<()> {
+        let is_book = self.is(&vanilla_items::BOOK);
+        let Some(enchantability) = self.get(ENCHANTABLE).copied() else {
+            if is_book {
+                *self = Self::new(&vanilla_items::ENCHANTED_BOOK);
+            }
+            return Ok(());
+        };
+
+        let bound = enchantability.value() / 4 + 1;
+        cost += 1 + rng.next_i32_bounded(bound) + rng.next_i32_bounded(bound);
+        let span = (rng.next_f32() + rng.next_f32() - 1.0) * 0.15;
+        cost = ((cost as f32 + cost as f32 * span) + 0.5).floor() as i32;
+        cost = cost.max(1);
+
+        let mut available = Vec::new();
+        for enchantment in options.resolve()? {
+            if !is_book && !enchantment.is_primary_item(self.item) {
+                continue;
+            }
+            for level in (1..=enchantment.max_level).rev() {
+                if cost >= enchantment.min_cost(level) && cost <= enchantment.max_cost(level) {
+                    available.push((enchantment, level));
+                    break;
+                }
+            }
+        }
+
+        let mut selected = Vec::new();
+        if let Some(enchantment) = Self::weighted_enchantment(&available, rng) {
+            selected.push(enchantment);
+            while rng.next_i32_bounded(50) <= cost {
+                let last = selected[selected.len() - 1].0;
+                available.retain(|(candidate, _)| Enchantment::are_compatible(last, candidate));
+                let Some(enchantment) = Self::weighted_enchantment(&available, rng) else {
+                    break;
+                };
+                selected.push(enchantment);
+                cost /= 2;
+            }
+        }
+
+        if is_book {
+            *self = Self::new(&vanilla_items::ENCHANTED_BOOK);
+        }
+        for (enchantment, level) in selected {
+            self.upgrade_enchantment(enchantment.key.clone(), level);
+        }
+        Ok(())
+    }
+
+    fn random_enchantment<R: Random>(
+        enchantments: &[EnchantmentRef],
+        rng: &mut R,
+    ) -> Option<EnchantmentRef> {
+        let bound = i32::try_from(enchantments.len()).ok()?;
+        if bound == 0 {
+            return None;
+        }
+        let index = usize::try_from(rng.next_i32_bounded(bound)).ok()?;
+        enchantments.get(index).copied()
+    }
+
+    fn weighted_enchantment<R: Random>(
+        enchantments: &[(EnchantmentRef, u32)],
+        rng: &mut R,
+    ) -> Option<(EnchantmentRef, u32)> {
+        let total_weight = enchantments
+            .iter()
+            .try_fold(0_i32, |total, (enchantment, _)| {
+                let weight = i32::try_from(enchantment.weight).ok()?;
+                total.checked_add(weight)
+            })?;
+        if total_weight == 0 {
+            return None;
+        }
+        let mut selected = rng.next_i32_bounded(total_weight);
+        for &(enchantment, level) in enchantments {
+            selected -= i32::try_from(enchantment.weight).ok()?;
+            if selected < 0 {
+                return Some((enchantment, level));
+            }
+        }
+        None
     }
 
     /// Copies components from a source (block entity, attacker, etc.) to this item.
-    pub const fn copy_components<R: rand::Rng>(
+    pub const fn copy_components<R: Random>(
         &mut self,
         _source: crate::loot_table::CopySource,
         _include: &[Identifier],
@@ -704,7 +844,7 @@ impl ItemStack {
     }
 
     /// Copies block state properties to this item (for blocks like `note_block`).
-    pub const fn copy_block_state<R: rand::Rng>(
+    pub const fn copy_block_state<R: Random>(
         &mut self,
         _block: &Identifier,
         _properties: &[&str],
@@ -742,25 +882,12 @@ impl ItemStack {
         }
     }
 
-    /// Creates an exploration map pointing to a structure.
-    pub const fn create_exploration_map(
-        &mut self,
-        _destination: &Identifier,
-        _decoration: &Identifier,
-        _zoom: i32,
-        _skip_existing_chunks: bool,
-    ) {
-        // TODO: Implement exploration map creation
-        // 1. Change item to filled_map
-        // 2. Set MAP_DECORATIONS component
-        // 3. Set destination structure tag
-        // This requires world access to find the structure
-    }
-
     /// Sets the custom name or item name of this item.
-    pub const fn set_name(&mut self, _name: &str, _target: crate::loot_table::NameTarget) {
-        // TODO: Implement name setting
-        // Parse the name as a text component and set CUSTOM_NAME or ITEM_NAME
+    pub fn set_name(&mut self, name: TextComponent, target: crate::loot_table::NameTarget) {
+        match target {
+            crate::loot_table::NameTarget::CustomName => self.set(CUSTOM_NAME, name),
+            crate::loot_table::NameTarget::ItemName => self.set(ITEM_NAME, name),
+        }
     }
 
     /// Sets the ominous bottle amplifier component.
@@ -772,20 +899,61 @@ impl ItemStack {
     }
 
     /// Sets the potion type for this item.
-    pub const fn set_potion(&mut self, _id: &Identifier) {
-        // TODO: Implement potion type setting
-        // Set the POTION_CONTENTS component with the potion ID
+    pub fn set_potion(&mut self, id: &Identifier) -> crate::loot_table::LootResult<()> {
+        let potion = REGISTRY.potions.by_key(id).ok_or_else(|| {
+            crate::loot_table::LootError::UnknownRegistryValue {
+                registry: "potion",
+                key: id.clone(),
+            }
+        })?;
+        let contents = self
+            .get(POTION_CONTENTS)
+            .cloned()
+            .unwrap_or_else(PotionContents::empty)
+            .with_potion(RegistryReference::new(potion));
+        self.set(POTION_CONTENTS, contents);
+        Ok(())
     }
 
     /// Sets the suspicious stew effects for this item.
-    pub const fn set_stew_effects<R: rand::Rng>(
+    pub fn set_stew_effects<R: Random>(
         &mut self,
-        _effects: &[crate::loot_table::StewEffect],
-        _rng: &mut R,
-    ) {
-        // TODO: Implement stew effect setting
-        // Set the SUSPICIOUS_STEW_EFFECTS component
-        // Duration is determined by each effect's NumberProvider
+        effects: &[crate::loot_table::StewEffect],
+        ctx: &mut crate::loot_table::LootContext<'_, R>,
+    ) -> crate::loot_table::LootResult<()> {
+        if !self.is(&vanilla_items::SUSPICIOUS_STEW) || effects.is_empty() {
+            return Ok(());
+        }
+        let bound = i32::try_from(effects.len()).map_err(|_| {
+            crate::loot_table::LootError::UnsupportedFunction("set_stew_effect list is too large")
+        })?;
+        let index = usize::try_from(ctx.rng.next_i32_bounded(bound)).map_err(|_| {
+            crate::loot_table::LootError::UnsupportedFunction("invalid set_stew_effect index")
+        })?;
+        let selected = &effects[index];
+        let effect = REGISTRY
+            .mob_effects
+            .by_key(&selected.effect_type)
+            .ok_or_else(|| crate::loot_table::LootError::UnknownRegistryValue {
+                registry: "mob effect",
+                key: selected.effect_type.clone(),
+            })?;
+        let context = crate::loot_table::LootContextRef { tool: ctx.tool };
+        let mut duration = selected
+            .duration
+            .get_int_with_ctx(ctx.rng, Some(&context))?;
+        if !effect.is_instantaneous() {
+            duration = duration.wrapping_mul(20);
+        }
+        let current = self
+            .get(SUSPICIOUS_STEW_EFFECTS)
+            .cloned()
+            .unwrap_or_else(SuspiciousStewEffects::empty);
+        self.set(
+            SUSPICIOUS_STEW_EFFECTS,
+            current.with_effect_added(SuspiciousStewEffect::new(effect, duration)),
+        );
+        Ok(())
     }
 
     pub fn set_enchantments(&mut self, enchantments: &[(Identifier, u32)], add: bool) {
@@ -797,7 +965,7 @@ impl ItemStack {
         for (key, level) in enchantments {
             if add {
                 let existing = current.get_level(key);
-                current.set(key.clone(), existing + *level);
+                current.set(key.clone(), existing.saturating_add(*level).min(255));
             } else {
                 current.set(key.clone(), *level);
             }
@@ -825,7 +993,7 @@ impl ItemStack {
     }
 
     /// Copies the name from a source entity/block to this item.
-    pub const fn copy_name<R: rand::Rng>(
+    pub const fn copy_name<R: Random>(
         &mut self,
         _source: crate::loot_table::CopySource,
         _ctx: &crate::loot_table::LootContext<'_, R>,
@@ -843,7 +1011,7 @@ impl ItemStack {
     }
 
     /// Sets container inventory contents.
-    pub const fn set_contents<R: rand::Rng>(
+    pub const fn set_contents<R: Random>(
         &mut self,
         _entries: &[crate::loot_table::LootEntry],
         _component_type: &Identifier,
@@ -854,7 +1022,7 @@ impl ItemStack {
     }
 
     /// Modifies existing container contents.
-    pub const fn modify_contents<R: rand::Rng>(
+    pub const fn modify_contents<R: Random>(
         &mut self,
         _modifier: &[crate::loot_table::ConditionalLootFunction],
         _component_type: &Identifier,
@@ -871,7 +1039,7 @@ impl ItemStack {
     }
 
     /// Sets attribute modifiers on this item.
-    pub const fn set_attributes<R: rand::Rng>(
+    pub const fn set_attributes<R: Random>(
         &mut self,
         _modifiers: &[crate::loot_table::AttributeModifier],
         _replace: bool,
@@ -882,7 +1050,7 @@ impl ItemStack {
     }
 
     /// Fills a player head with texture from an entity.
-    pub const fn fill_player_head<R: rand::Rng>(
+    pub const fn fill_player_head<R: Random>(
         &mut self,
         _entity: crate::loot_table::LootContextEntity,
         _ctx: &crate::loot_table::LootContext<'_, R>,
@@ -892,7 +1060,7 @@ impl ItemStack {
     }
 
     /// Copies custom NBT data from a source.
-    pub const fn copy_custom_data<R: rand::Rng>(
+    pub const fn copy_custom_data<R: Random>(
         &mut self,
         _source: crate::loot_table::CopySource,
         _operations: &[crate::loot_table::CopyDataOperation],

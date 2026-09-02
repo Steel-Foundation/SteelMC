@@ -27,6 +27,7 @@
 
 mod component_data;
 pub mod components;
+mod getter;
 mod registry;
 pub mod vanilla_components;
 
@@ -42,6 +43,7 @@ pub use components::{
     PotDecorations, PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial, Recipes,
     SulfurCubeContent, Tool, ToolRule, ToolRuleBlocks, UseRemainder,
 };
+pub use getter::DataComponentGetter;
 pub use registry::{
     ComponentEntry,
     ComponentEntryRef,
@@ -55,5 +57,6 @@ pub use registry::{
     // Type aliases for reader/writer functions
     NetworkReader,
     NetworkWriter,
+    SplitResult,
     component_try_into,
 };

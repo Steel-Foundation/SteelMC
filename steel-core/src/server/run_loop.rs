@@ -233,6 +233,9 @@ impl Server {
             Ok(saved) => tracing::debug!(saved, "Domain command-storage autosave completed"),
             Err(error) => tracing::error!(%error, "Domain command-storage autosave failed"),
         }
+        // TODO: Add random-sequence persistence after this autosave also saves
+        // dirty chunks; saving sequence state alone can get ahead of unopened
+        // container NBT after a crash.
     }
 
     fn tick_command_data_autosave(

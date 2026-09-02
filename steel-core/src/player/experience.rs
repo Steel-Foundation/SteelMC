@@ -1,4 +1,4 @@
-use steel_protocol::packets::game::SoundSource;
+use steel_protocol::packets::game::{CSetExperience, SoundSource};
 use steel_registry::sound_events;
 
 use crate::entity::Entity;
@@ -237,6 +237,26 @@ impl Player {
         let mut entity_data = self.entity_data.lock();
         let score = entity_data.score.get().wrapping_add(amount);
         entity_data.score.set(score);
+    }
+
+    /// Sends `CSetExperience` when the client's experience display is dirty.
+    pub(super) fn synchronize_experience(&self) {
+        let experience_packet = {
+            let mut experience = self.experience.lock();
+            if experience.dirty {
+                experience.dirty = false;
+                Some(CSetExperience {
+                    progress: experience.progress(),
+                    level: experience.level(),
+                    total_experience: experience.total_points(),
+                })
+            } else {
+                None
+            }
+        };
+        if let Some(packet) = experience_packet {
+            self.send_packet(packet);
+        }
     }
 
     /// Gives raw experience points to this player.

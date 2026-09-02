@@ -1,8 +1,12 @@
+use steel_utils::random::Random;
+use text_components::TextComponent;
+
 use super::{
     DyeColor, EquipmentSlotGroup, Identifier, InstrumentRef, ItemStack, LootCondition, LootContext,
-    LootContextEntity, LootEntry, NumberProvider, REGISTRY, RngExt, TaggedRegistryExt,
-    ToolPredicate,
+    LootContextEntity, LootEntry, LootError, LootResult, NumberProvider, REGISTRY, RegistryExt,
+    TaggedRegistryExt, ToolPredicate, test_all,
 };
+use crate::enchantment::EnchantmentRef;
 
 /// Options for selecting enchantments - either a tag reference or explicit list.
 #[derive(Debug, Clone)]
@@ -13,6 +17,33 @@ pub enum EnchantmentOptions {
     List(&'static [Identifier]),
 }
 
+impl EnchantmentOptions {
+    pub(crate) fn resolve(&self) -> LootResult<Vec<EnchantmentRef>> {
+        match self {
+            Self::Tag(tag) => {
+                REGISTRY
+                    .enchantments
+                    .get_tag(tag)
+                    .ok_or_else(|| LootError::UnknownRegistryTag {
+                        registry: "enchantment",
+                        key: tag.clone(),
+                    })
+            }
+            Self::List(keys) => keys
+                .iter()
+                .map(|key| {
+                    REGISTRY.enchantments.by_key(key).ok_or_else(|| {
+                        LootError::UnknownRegistryValue {
+                            registry: "enchantment",
+                            key: key.clone(),
+                        }
+                    })
+                })
+                .collect(),
+        }
+    }
+}
+
 /// Options for selecting an instrument from a registry tag or explicit list.
 #[derive(Debug, Clone)]
 pub enum InstrumentOptions {
@@ -21,20 +52,39 @@ pub enum InstrumentOptions {
 }
 
 impl InstrumentOptions {
-    fn get_random<R: rand::Rng>(&self, rng: &mut R) -> Option<InstrumentRef> {
-        match self {
+    fn get_random<R: Random>(&self, rng: &mut R) -> LootResult<Option<InstrumentRef>> {
+        Ok(match self {
             Self::Tag(tag) => {
-                let instruments = REGISTRY.instruments.get_tag(tag)?;
-                (!instruments.is_empty()).then(|| {
-                    let index = rng.random_range(0..instruments.len());
-                    instruments[index]
-                })
+                let instruments = REGISTRY.instruments.get_tag(tag).ok_or_else(|| {
+                    LootError::UnknownRegistryTag {
+                        registry: "instrument",
+                        key: tag.clone(),
+                    }
+                })?;
+                let Ok(bound) = i32::try_from(instruments.len()) else {
+                    return Ok(None);
+                };
+                if bound == 0 {
+                    return Ok(None);
+                }
+                let Ok(index) = usize::try_from(rng.next_i32_bounded(bound)) else {
+                    return Ok(None);
+                };
+                instruments.get(index).copied()
             }
-            Self::Direct(instruments) => (!instruments.is_empty()).then(|| {
-                let index = rng.random_range(0..instruments.len());
-                instruments[index]
-            }),
-        }
+            Self::Direct(instruments) => {
+                let Ok(bound) = i32::try_from(instruments.len()) else {
+                    return Ok(None);
+                };
+                if bound == 0 {
+                    return Ok(None);
+                }
+                let Ok(index) = usize::try_from(rng.next_i32_bounded(bound)) else {
+                    return Ok(None);
+                };
+                instruments.get(index).copied()
+            }
+        })
     }
 }
 
@@ -74,10 +124,12 @@ pub enum LootFunction {
         levels: NumberProvider,
         options: EnchantmentOptions,
     },
-    /// Copy components from the block entity to the item.
+    /// Copy components from the source to the item.
+    ///
+    /// `None` copies every component, mirroring Vanilla's optional `include` list.
     CopyComponents {
         source: CopySource,
-        include: &'static [Identifier],
+        include: Option<&'static [Identifier]>,
     },
     /// Copy block state properties to the item.
     CopyState {
@@ -97,13 +149,11 @@ pub enum LootFunction {
         destination: Identifier,
         decoration: Identifier,
         zoom: i32,
+        search_radius: i32,
         skip_existing_chunks: bool,
     },
     /// Set the custom name of the item.
-    SetName {
-        name: &'static str,
-        target: NameTarget,
-    },
+    SetName { name: LootText, target: NameTarget },
     /// Set the ominous bottle amplifier.
     SetOminousBottleAmplifier { amplifier: NumberProvider },
     /// Set the potion type.
@@ -304,6 +354,21 @@ pub enum NameTarget {
     ItemName,
 }
 
+/// Text forms validated and compiled from Vanilla loot-table data.
+#[derive(Debug, Clone, Copy)]
+pub enum LootText {
+    Translation(fn() -> TextComponent),
+}
+
+impl LootText {
+    #[must_use]
+    pub fn component(self) -> TextComponent {
+        match self {
+            Self::Translation(factory) => factory(),
+        }
+    }
+}
+
 /// A stew effect for suspicious stew.
 #[derive(Debug, Clone)]
 pub struct StewEffect {
@@ -321,13 +386,18 @@ impl LootFunction {
     /// - Components/NBT (`CopyComponents`, `SetComponents`, `CopyState`)
     /// - Item type (`FurnaceSmelt`)
     /// - And more...
-    pub fn apply<R: rand::Rng>(&self, item: &mut ItemStack, ctx: &mut LootContext<'_, R>) {
+    pub fn apply<R: Random>(
+        &self,
+        item: &mut ItemStack,
+        ctx: &mut LootContext<'_, R>,
+    ) -> LootResult<()> {
         match self {
             LootFunction::SetCount {
                 count: provider,
                 add,
             } => {
-                let value = provider.get_int(ctx.rng);
+                let context = super::LootContextRef { tool: ctx.tool };
+                let value = provider.get_int_with_ctx(ctx.rng, Some(&context))?;
                 if *add {
                     item.count += value;
                 } else {
@@ -340,7 +410,7 @@ impl LootFunction {
                     let probability = 1.0 / radius;
                     let mut result_count = 0;
                     for _ in 0..item.count {
-                        if ctx.rng.random::<f32>() <= probability {
+                        if ctx.rng.next_f32() <= probability {
                             result_count += 1;
                         }
                     }
@@ -361,7 +431,9 @@ impl LootFunction {
             } => {
                 let level = ctx.get_enchantment_level_by_id(enchantment);
                 if level > 0 {
-                    let bonus = (provider.get_simple(ctx.rng) * level as f32).round() as i32;
+                    let context = super::LootContextRef { tool: ctx.tool };
+                    let sampled = provider.get(ctx.rng, Some(&context))? * level as f32;
+                    let bonus = (sampled + 0.5).floor() as i32;
                     let bonus = if *limit > 0 { bonus.min(*limit) } else { bonus };
                     item.count += bonus;
                 }
@@ -375,28 +447,56 @@ impl LootFunction {
                 }
             }
             LootFunction::SetDamage { damage, add } => {
-                item.set_damage_fraction(damage.get_simple(ctx.rng), *add);
+                let context = super::LootContextRef { tool: ctx.tool };
+                item.set_damage_fraction(damage.get(ctx.rng, Some(&context))?, *add);
             }
             LootFunction::EnchantRandomly { options } => {
-                // TODO: Implement when enchantment system is ready
-                item.enchant_randomly(options, ctx.rng);
+                item.enchant_randomly(options, ctx.rng)?;
             }
             LootFunction::EnchantWithLevels { levels, options } => {
-                // TODO: Implement when enchantment system is ready
-                let level = levels.get_int(ctx.rng);
-                item.enchant_with_levels(level, options, ctx.rng);
+                let context = super::LootContextRef { tool: ctx.tool };
+                let level = levels.get_int_with_ctx(ctx.rng, Some(&context))?;
+                item.enchant_with_levels(level, options, ctx.rng)?;
             }
             LootFunction::CopyComponents { source, include } => {
-                // TODO: Implement when block entity system is ready
-                item.copy_components(*source, include, ctx);
+                // Vanilla treats an absent optional source as a no-op.
+                match source {
+                    CopySource::BlockEntity => {
+                        let Some(components) = ctx
+                            .block_entity
+                            .and_then(|block_entity| block_entity.components)
+                        else {
+                            return Ok(());
+                        };
+                        item.apply_components(
+                            &components
+                                .filter(|key| include.is_none_or(|include| include.contains(key))),
+                        );
+                    }
+                    // TODO: Copy entity components once Steel entities expose a
+                    // `DataComponentGetter` view like Vanilla `Entity`.
+                    CopySource::This => {
+                        if ctx.this_entity.is_some() {
+                            return Err(LootError::UnsupportedFunction("copy_components"));
+                        }
+                    }
+                    CopySource::Attacker => {
+                        if ctx.killer_entity.is_some() {
+                            return Err(LootError::UnsupportedFunction("copy_components"));
+                        }
+                    }
+                    CopySource::DirectAttacker => {
+                        if ctx.direct_killer_entity.is_some() {
+                            return Err(LootError::UnsupportedFunction("copy_components"));
+                        }
+                    }
+                }
             }
-            LootFunction::CopyState { block, properties } => {
-                // TODO: Implement block state copying
-                item.copy_block_state(block, properties, ctx);
+            LootFunction::CopyState { .. } => {
+                return Err(LootError::UnsupportedFunction("copy_state"));
             }
-            LootFunction::SetComponents { components } => {
-                // TODO: Implement component setting from JSON
-                item.set_components_from_json(components);
+            LootFunction::SetComponents { .. } => {
+                return Err(LootError::UnsupportedFunction("set_components"));
             }
             LootFunction::SetCustomData { tag } => {
                 item.set_custom_data(&tag());
@@ -408,30 +508,44 @@ impl LootFunction {
                 destination,
                 decoration,
                 zoom,
+                search_radius,
                 skip_existing_chunks,
             } => {
-                // TODO: Implement exploration map creation
-                item.create_exploration_map(destination, decoration, *zoom, *skip_existing_chunks);
+                if item.is(&crate::vanilla_items::MAP) && ctx.origin.is_some() {
+                    let request = super::ExplorationMapRequest {
+                        destination: destination.clone(),
+                        decoration: decoration.clone(),
+                        zoom: *zoom,
+                        search_radius: *search_radius,
+                        skip_existing_chunks: *skip_existing_chunks,
+                    };
+                    let Some(resolver) = ctx.exploration_maps.as_deref_mut() else {
+                        return Err(LootError::ExplorationMapRequired(request));
+                    };
+                    if let Some(map) = resolver.resolve(&request, item)? {
+                        *item = map;
+                    }
+                }
             }
             LootFunction::SetName { name, target } => {
-                // TODO: Implement name setting
-                item.set_name(name, *target);
+                item.set_name(name.component(), *target);
             }
             LootFunction::SetOminousBottleAmplifier { amplifier } => {
-                let amp = amplifier.get_int(ctx.rng).clamp(
+                let context = super::LootContextRef { tool: ctx.tool };
+                let amp = amplifier.get_int_with_ctx(ctx.rng, Some(&context))?.clamp(
                     crate::data_components::OminousBottleAmplifier::MIN_AMPLIFIER,
                     crate::data_components::OminousBottleAmplifier::MAX_AMPLIFIER,
                 );
                 item.set_ominous_bottle_amplifier(amp);
             }
             LootFunction::SetPotion { id } => {
-                item.set_potion(id);
+                item.set_potion(id)?;
             }
             LootFunction::SetStewEffect { effects } => {
-                item.set_stew_effects(effects, ctx.rng);
+                item.set_stew_effects(effects, ctx)?;
             }
             LootFunction::SetInstrument { options } => {
-                if let Some(instrument) = options.get_random(ctx.rng) {
+                if let Some(instrument) = options.get_random(ctx.rng)? {
                     item.set(
                         crate::data_components::vanilla_components::INSTRUMENT,
                         crate::data_components::InstrumentComponent::new(
@@ -441,83 +555,95 @@ impl LootFunction {
                 }
             }
             LootFunction::SetEnchantments { enchantments, add } => {
-                let resolved: Vec<(Identifier, u32)> = enchantments
-                    .iter()
-                    .map(|(key, provider)| (key.clone(), provider.get_int(ctx.rng).max(0) as u32))
-                    .collect();
-                item.set_enchantments(&resolved, *add);
+                if item.is(&crate::vanilla_items::BOOK) {
+                    item.set_item(&crate::vanilla_items::ENCHANTED_BOOK.key);
+                }
+                let mut resolved = Vec::with_capacity(enchantments.len());
+                for (key, provider) in *enchantments {
+                    if REGISTRY.enchantments.by_key(key).is_none() {
+                        return Err(LootError::UnknownRegistryValue {
+                            registry: "enchantment",
+                            key: key.clone(),
+                        });
+                    }
+                    let context = super::LootContextRef { tool: ctx.tool };
+                    let provided = provider.get_int_with_ctx(ctx.rng, Some(&context))?;
+                    let level = if *add {
+                        let existing = item
+                            .get_enchantments_for_crafting()
+                            .map_or(0, |enchantments| enchantments.get_level(key));
+                        (existing as i32).wrapping_add(provided)
+                    } else {
+                        provided
+                    };
+                    resolved.push((key.clone(), level.clamp(0, 255) as u32));
+                }
+                item.set_enchantments(&resolved, false);
             }
             LootFunction::SetItem { item: new_item } => {
+                if REGISTRY.items.by_key(new_item).is_none() {
+                    return Err(LootError::UnknownRegistryValue {
+                        registry: "item",
+                        key: new_item.clone(),
+                    });
+                }
                 item.set_item(new_item);
             }
-            LootFunction::CopyName { source } => {
-                item.copy_name(*source, ctx);
+            LootFunction::CopyName { .. } => {
+                return Err(LootError::UnsupportedFunction("copy_name"));
             }
-            LootFunction::SetLore { lore, mode } => {
-                item.set_lore(lore, *mode);
+            LootFunction::SetLore { .. } => {
+                return Err(LootError::UnsupportedFunction("set_lore"));
             }
-            LootFunction::SetContents {
-                entries,
-                component_type,
-            } => {
-                item.set_contents(entries, component_type, ctx);
+            LootFunction::SetContents { .. } => {
+                return Err(LootError::UnsupportedFunction("set_contents"));
             }
-            LootFunction::ModifyContents {
-                modifier,
-                component_type,
-            } => {
-                item.modify_contents(modifier, component_type, ctx);
+            LootFunction::ModifyContents { .. } => {
+                return Err(LootError::UnsupportedFunction("modify_contents"));
             }
-            LootFunction::SetLootTable { loot_table, seed } => {
-                item.set_loot_table(loot_table, *seed);
+            LootFunction::SetLootTable { .. } => {
+                return Err(LootError::UnsupportedFunction("set_loot_table"));
             }
-            LootFunction::SetAttributes { modifiers, replace } => {
-                item.set_attributes(modifiers, *replace, ctx.rng);
+            LootFunction::SetAttributes { .. } => {
+                return Err(LootError::UnsupportedFunction("set_attributes"));
             }
-            LootFunction::FillPlayerHead { entity } => {
-                item.fill_player_head(*entity, ctx);
+            LootFunction::FillPlayerHead { .. } => {
+                return Err(LootError::UnsupportedFunction("fill_player_head"));
             }
-            LootFunction::CopyCustomData { source, operations } => {
-                item.copy_custom_data(*source, operations, ctx);
+            LootFunction::CopyCustomData { .. } => {
+                return Err(LootError::UnsupportedFunction("copy_custom_data"));
             }
-            LootFunction::SetBannerPattern { patterns, append } => {
-                item.set_banner_pattern(patterns, *append);
+            LootFunction::SetBannerPattern { .. } => {
+                return Err(LootError::UnsupportedFunction("set_banner_pattern"));
             }
-            LootFunction::SetFireworks {
-                explosions,
-                flight_duration,
-            } => {
-                item.set_fireworks(*explosions, *flight_duration);
+            LootFunction::SetFireworks { .. } => {
+                return Err(LootError::UnsupportedFunction("set_fireworks"));
             }
-            LootFunction::SetFireworkExplosion { explosion } => {
-                item.set_firework_explosion(explosion);
+            LootFunction::SetFireworkExplosion { .. } => {
+                return Err(LootError::UnsupportedFunction("set_firework_explosion"));
             }
-            LootFunction::SetBookCover {
-                title,
-                author,
-                generation,
-            } => {
-                item.set_book_cover(*title, *author, *generation);
+            LootFunction::SetBookCover { .. } => {
+                return Err(LootError::UnsupportedFunction("set_book_cover"));
             }
-            LootFunction::SetWrittenBookPages { pages, mode } => {
-                item.set_written_book_pages(pages, *mode);
+            LootFunction::SetWrittenBookPages { .. } => {
+                return Err(LootError::UnsupportedFunction("set_written_book_pages"));
             }
-            LootFunction::SetWritableBookPages { pages, mode } => {
-                item.set_writable_book_pages(pages, *mode);
+            LootFunction::SetWritableBookPages { .. } => {
+                return Err(LootError::UnsupportedFunction("set_writable_book_pages"));
             }
-            LootFunction::ToggleTooltips { toggles } => {
-                item.toggle_tooltips(toggles);
+            LootFunction::ToggleTooltips { .. } => {
+                return Err(LootError::UnsupportedFunction("toggle_tooltips"));
             }
             LootFunction::Discard => {
                 item.count = 0;
             }
-            LootFunction::Reference(_name) => {
-                // TODO: Implement function registry lookup
+            LootFunction::Reference(_) => {
+                return Err(LootError::UnsupportedFunction("reference"));
             }
             LootFunction::Sequence { functions } => {
                 for cond_func in *functions {
-                    if cond_func.conditions.iter().all(|c| c.test(ctx)) {
-                        cond_func.function.apply(item, ctx);
+                    if test_all(cond_func.conditions, ctx)? {
+                        cond_func.function.apply(item, ctx)?;
                     }
                 }
             }
@@ -525,22 +651,23 @@ impl LootFunction {
                 item_filter,
                 modifier,
             } => {
-                if item_filter.test(item, ctx) && modifier.conditions.iter().all(|c| c.test(ctx)) {
-                    modifier.function.apply(item, ctx);
+                if item_filter.test(item, ctx) && test_all(modifier.conditions, ctx)? {
+                    modifier.function.apply(item, ctx)?;
                 }
             }
         }
+        Ok(())
     }
 }
 
 impl BonusFormula {
     /// Apply the bonus formula to calculate new count.
-    pub fn apply<R: rand::Rng>(&self, count: i32, level: i32, rng: &mut R) -> i32 {
+    pub fn apply<R: Random>(&self, count: i32, level: i32, rng: &mut R) -> i32 {
         match self {
             BonusFormula::OreDrops => {
                 if level > 0 {
                     // Vanilla: count * (max(0, random(0..level+2) - 1) + 1)
-                    let bonus = rng.random_range(0..level + 2) - 1;
+                    let bonus = rng.next_i32_bounded(level + 2) - 1;
                     let multiplier = bonus.max(0) + 1;
                     count * multiplier
                 } else {
@@ -550,7 +677,7 @@ impl BonusFormula {
             BonusFormula::UniformBonusCount { bonus_multiplier } => {
                 // Vanilla: count + random(0..bonusMultiplier * level + 1)
                 if level > 0 {
-                    count + rng.random_range(0..bonus_multiplier * level + 1)
+                    count + rng.next_i32_bounded(bonus_multiplier * level + 1)
                 } else {
                     count
                 }
@@ -560,7 +687,7 @@ impl BonusFormula {
                 let trials = level + extra;
                 let mut bonus = 0;
                 for _ in 0..trials {
-                    if rng.random::<f32>() < *probability {
+                    if rng.next_f32() < *probability {
                         bonus += 1;
                     }
                 }

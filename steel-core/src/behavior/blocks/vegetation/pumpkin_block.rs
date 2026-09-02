@@ -60,12 +60,12 @@ impl BlockBehavior for PumpkinBlock {
             }
 
             Some(drop_from_block_interact_loot_table(
+                world,
                 &vanilla_loot_tables::CARVE_PUMPKIN,
                 state,
                 world.get_block_entity(pos),
                 Some(item_stack),
                 Some(player),
-                &mut rng,
             ))
         }) else {
             return InteractionResult::TryEmptyHandInteraction;

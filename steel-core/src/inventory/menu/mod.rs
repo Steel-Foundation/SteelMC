@@ -6,6 +6,7 @@ mod grid;
 mod kind;
 pub mod kinds;
 mod layout;
+mod provider;
 
 use crate::inventory::container::Container as _;
 pub use behavior::MenuBehavior;
@@ -16,6 +17,7 @@ pub use builder::{
 pub use grid::{ColSpan, GridPlacer, PlacementBuilder, Rect, Region, RowSpan, SpanBounds};
 pub use kind::MenuKind;
 pub(crate) use layout::MenuLayout;
+pub use provider::{MenuCreation, MenuProvider};
 #[cfg(test)]
 use steel_utils::locks::Shared;
 
@@ -110,6 +112,17 @@ impl Menu {
     #[must_use]
     pub const fn overrides_player_slots(&self) -> bool {
         self.overrides_player_slots
+    }
+
+    /// Returns whether this menu owns the opener lifecycle for the container.
+    #[must_use]
+    pub(crate) fn opens_container(&self, container_id: ContainerId) -> bool {
+        self.kind.opener_container_ids().contains(&container_id)
+    }
+
+    /// Snapshots the identities whose opener lifecycle this menu owns.
+    pub(crate) fn opener_container_ids(&self) -> Vec<ContainerId> {
+        self.kind.opener_container_ids().to_vec()
     }
 
     /// Returns true if this menu is still valid for the player.

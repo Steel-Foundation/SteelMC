@@ -1,12 +1,13 @@
-//! Per-world saved data storage.
+//! Typed saved-data storage rooted under an owning save directory.
 //!
-//! Vanilla stores world-level saved data under each dimension's `data/`
-//! directory. Steel uses the same per-world saved-data boundary for both its
-//! human-readable TOML data and versioned binary data.
+//! Steel uses this for both per-world data and server-global data. Entries are
+//! stored beneath the supplied owner's `data/` directory as human-readable
+//! TOML or versioned binary data.
 
 use std::{
     fmt::Display,
     fs as sync_fs, io,
+    io::Write as _,
     path::{Path, PathBuf},
 };
 
@@ -27,9 +28,14 @@ pub mod names {
     pub const SCOREBOARD: SavedDataName = SavedDataName::trusted("scoreboard");
     /// Domain command storage, persisted through the domain default world.
     pub const COMMAND_STORAGE: SavedDataName = SavedDataName::trusted("command_storage");
+    /// Vanilla server-global named random sequences.
+    pub const RANDOM_SEQUENCES: SavedDataName = SavedDataName::trusted("random_sequences");
+    /// Domain-scoped map index and map saved data.
+    pub const MAP_DATA: WincodeSavedDataName =
+        WincodeSavedDataName::trusted("map_data", *b"STMP", 1);
 }
 
-/// Name of a per-world saved data entry.
+/// Name of a saved-data entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SavedDataName(&'static str);
 
@@ -54,7 +60,7 @@ impl SavedDataName {
     }
 }
 
-/// Name and format header of a wincode-encoded per-world saved data entry.
+/// Name and format header of a wincode-encoded saved-data entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WincodeSavedDataName {
     name: &'static str,
@@ -98,16 +104,16 @@ fn is_valid_saved_data_name(name: &str) -> bool {
         && crate::Identifier::validate_path(name)
 }
 
-/// Typed saved-data storage for a loaded world.
+/// Typed saved-data storage for a world or server save root.
 #[derive(Debug, Clone)]
 pub struct SavedDataManager {
     data_dir: Option<PathBuf>,
 }
 
 impl SavedDataManager {
-    /// Creates saved-data storage rooted at `world_dir/data`.
+    /// Creates saved-data storage rooted at `save_root/data`.
     ///
-    /// `None` means the world is ephemeral, matching Steel's RAM-only storage.
+    /// `None` means the owner is ephemeral, matching Steel's RAM-only storage.
     #[must_use]
     pub fn new(world_dir: Option<&Path>) -> Self {
         Self {
@@ -198,7 +204,7 @@ impl SavedDataManager {
         bytes.extend_from_slice(&name.magic);
         bytes.extend_from_slice(&name.version.to_le_bytes());
         bytes.extend_from_slice(&payload);
-        sync_fs::write(path, bytes)
+        sync_write_atomically(&path, &bytes)
     }
 
     /// Saves a typed saved-data value.
@@ -229,6 +235,32 @@ impl SavedDataManager {
             .as_ref()
             .map(|data_dir| data_dir.join(name.file_name()))
     }
+}
+
+fn sync_write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let mut temp_name = path.as_os_str().to_os_string();
+    temp_name.push(".tmp");
+    let temp_path = PathBuf::from(temp_name);
+    let result = (|| {
+        let mut file = sync_fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&temp_path)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        sync_fs::rename(&temp_path, path)?;
+        #[cfg(unix)]
+        if let Some(parent) = path.parent() {
+            sync_fs::File::open(parent)?.sync_all()?;
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = sync_fs::remove_file(temp_path);
+    }
+    result
 }
 
 fn invalid_binary_data(path: &Path, message: impl Display) -> io::Error {
@@ -350,6 +382,7 @@ mod tests {
         let bytes = sync_fs::read(dir.join("data").join("test_binary_data.bin"))
             .expect("binary saved data file should exist");
         assert_eq!(&bytes[..6], b"TEST\x03\x00");
+        assert!(!dir.join("data").join("test_binary_data.bin.tmp").exists());
 
         let newer_format = WincodeSavedDataName::trusted("test_binary_data", *b"TEST", 4);
         let error = manager

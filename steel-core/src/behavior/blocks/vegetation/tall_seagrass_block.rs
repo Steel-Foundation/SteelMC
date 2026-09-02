@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
@@ -13,10 +15,12 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::BlockPlaceContext;
+use crate::block_entity::BlockEntity;
 use crate::fluid::get_fluid_state_from_block;
-use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess};
+use crate::player::Player;
+use crate::world::{LevelAccessor, LevelReader, ScheduledTickAccess, World};
 
-use super::{BlockRef, water_source_fluid_state};
+use super::{BlockRef, DoublePlantBlock, water_source_fluid_state};
 
 /// Behavior for tall seagrass blocks.
 #[block_behavior]
@@ -35,6 +39,28 @@ impl TallSeagrassBlock {
 }
 
 impl BlockBehavior for TallSeagrassBlock {
+    fn player_will_destroy(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+    ) -> BlockStateId {
+        DoublePlantBlock::player_will_destroy_base(state, world, pos, player)
+    }
+
+    fn player_destroy(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        _block_entity: Option<&dyn BlockEntity>,
+        destroyed_with: &ItemStack,
+    ) {
+        DoublePlantBlock::player_destroy_base(world, pos, player, destroyed_with);
+    }
+
     fn update_shape(
         &self,
         state: BlockStateId,

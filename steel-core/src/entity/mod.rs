@@ -7,7 +7,6 @@ use std::{
 };
 
 use glam::DVec3;
-use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
@@ -51,8 +50,8 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Downcast as _, ErasedType, Identifier,
-    UuidExt as _, WorldAabb, axis::Axis, block_util::FoundRectangle, text::DisplayResolutor,
-    wrap_degrees,
+    UuidExt as _, WorldAabb, axis::Axis, block_util::FoundRectangle, random::Random,
+    text::DisplayResolutor, wrap_degrees,
 };
 use text_components::{
     Modifier as _, TextComponent, interactivity::HoverEvent, translation::TranslatedMessage,

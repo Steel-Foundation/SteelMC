@@ -17,17 +17,8 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::{
-    chunk::{
-        chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
-        status::ChunkStatus,
-    },
-    world::World,
-    worldgen::{
-        generator::ChunkGenerator,
-        structure::{StructureLocateCandidate, StructureLocatePlan, squared_distance},
-    },
-};
+use crate::worldgen::generator::ChunkGenerator as _;
+use crate::worldgen::structure::locate::{LocatedStructure, StructureLocatePoll, StructureLocator};
 
 const MAX_STRUCTURE_SEARCH_RADIUS: i32 = 100;
 
@@ -79,230 +70,49 @@ fn start_structure_search(
 
     Ok(LocateStructureSearch {
         source: context.source().clone(),
-        world: Arc::clone(world),
         query: query.clone(),
-        plan,
+        locator: StructureLocator::new(
+            Arc::clone(world),
+            plan,
+            BlockPos::from(context.source().position()),
+            MAX_STRUCTURE_SEARCH_RADIUS,
+            false,
+        ),
         origin: BlockPos::from(context.source().position()),
-        phase: LocatePhase::Start,
-        pending: None,
-        candidates: Vec::new(),
-        best: None,
-        random_radius: 0,
         started_at: Instant::now(),
     })
 }
 
-enum LocatePhase {
-    Start,
-    WaitingRings,
-    RandomSpread,
-    WaitingRandomSpread,
-}
-
-struct LocatedStructure {
-    candidate: StructureLocateCandidate,
-    found_structure: Identifier,
-    distance_sqr: i64,
-}
-
 struct LocateStructureSearch {
     source: CommandSource,
-    world: Arc<World>,
     query: StructureOrTagKey,
-    plan: StructureLocatePlan,
+    locator: StructureLocator,
     origin: BlockPos,
-    phase: LocatePhase,
-    pending: Option<ChunkRequestHandle>,
-    candidates: Vec<StructureLocateCandidate>,
-    best: Option<LocatedStructure>,
-    random_radius: i32,
     started_at: Instant,
 }
 
 impl CommandResultSuspension for LocateStructureSearch {
     fn poll(&mut self) -> CommandResultSuspensionPoll {
-        loop {
-            match self.phase {
-                LocatePhase::Start => {
-                    self.candidates = self.plan.ring_candidates(self.origin);
-                    if self.candidates.is_empty() {
-                        self.phase = LocatePhase::RandomSpread;
-                        continue;
-                    }
-                    self.pending = Some(self.request_current_candidates());
-                    self.phase = LocatePhase::WaitingRings;
-                    return CommandResultSuspensionPoll::Pending;
-                }
-                LocatePhase::WaitingRings => match self.poll_pending_request() {
-                    PendingRequest::Pending => return CommandResultSuspensionPoll::Pending,
-                    PendingRequest::Cancelled => return Self::cancelled_result(),
-                    PendingRequest::Ready => {
-                        self.best = self.first_valid_candidate();
-                        self.clear_request();
-
-                        if self.best.is_some() && !self.plan.has_random_spread() {
-                            return self.success_result();
-                        }
-
-                        self.phase = LocatePhase::RandomSpread;
-                    }
-                },
-                LocatePhase::RandomSpread => {
-                    if self.random_radius > MAX_STRUCTURE_SEARCH_RADIUS {
-                        return self.finished_result();
-                    }
-
-                    self.candidates = self
-                        .plan
-                        .random_spread_candidates_at_radius(self.origin, self.random_radius);
-                    self.random_radius += 1;
-
-                    if self.candidates.is_empty() {
-                        continue;
-                    }
-
-                    self.pending = Some(self.request_current_candidates());
-                    self.phase = LocatePhase::WaitingRandomSpread;
-                    return CommandResultSuspensionPoll::Pending;
-                }
-                LocatePhase::WaitingRandomSpread => match self.poll_pending_request() {
-                    PendingRequest::Pending => return CommandResultSuspensionPoll::Pending,
-                    PendingRequest::Cancelled => return Self::cancelled_result(),
-                    PendingRequest::Ready => {
-                        if self.update_best_after_random_radius() {
-                            return self.success_result();
-                        }
-
-                        self.clear_request();
-                        self.phase = LocatePhase::RandomSpread;
-                    }
-                },
+        match self.locator.poll() {
+            StructureLocatePoll::Pending => CommandResultSuspensionPoll::Pending,
+            StructureLocatePoll::Cancelled => Self::cancelled_result(),
+            StructureLocatePoll::Ready(Some(found)) => self.success_result(found),
+            StructureLocatePoll::Ready(None) => {
+                CommandResultSuspensionPoll::Ready(Err(structure_not_found(&self.query)))
             }
         }
     }
 
     fn cancel(&mut self) {
-        if let Some(pending) = &mut self.pending {
-            pending.cancel();
-        }
+        self.locator.cancel();
     }
 }
 
 impl LocateStructureSearch {
-    fn request_current_candidates(&self) -> ChunkRequestHandle {
-        let positions = self
-            .candidates
-            .iter()
-            .map(|candidate| candidate.chunk_pos)
-            .collect();
-        self.world.chunk_map.request_chunks(ChunkRequest {
-            status: ChunkStatus::StructureStarts,
-            positions,
-            ticket_kind: ChunkTicketKind::StructureLocate,
-        })
-    }
-
-    fn poll_pending_request(&self) -> PendingRequest {
-        let Some(pending) = &self.pending else {
-            return PendingRequest::Cancelled;
-        };
-
-        match pending.poll() {
-            ChunkRequestState::Pending { .. } => PendingRequest::Pending,
-            ChunkRequestState::Ready => PendingRequest::Ready,
-            ChunkRequestState::Cancelled => PendingRequest::Cancelled,
-        }
-    }
-
-    fn clear_request(&mut self) {
-        self.pending = None;
-        self.candidates.clear();
-    }
-
-    fn first_valid_candidate(&self) -> Option<LocatedStructure> {
-        self.candidates.iter().copied().find_map(|candidate| {
-            self.generated_structure_at_candidate(candidate)
-                .map(|found_structure| LocatedStructure {
-                    candidate,
-                    found_structure,
-                    distance_sqr: squared_distance(candidate.locate_pos, self.origin),
-                })
-        })
-    }
-
-    fn update_best_after_random_radius(&mut self) -> bool {
-        let mut best = self.best.take();
-        let mut current_scan = None;
-        let mut found_current_scan = false;
-        let mut found_in_this_radius = false;
-
-        for candidate in &self.candidates {
-            if current_scan != Some(candidate.scan_id()) {
-                current_scan = Some(candidate.scan_id());
-                found_current_scan = false;
-            }
-
-            if found_current_scan {
-                continue;
-            }
-
-            let Some(found_structure) = self.generated_structure_at_candidate(*candidate) else {
-                continue;
-            };
-            found_current_scan = true;
-            found_in_this_radius = true;
-            let located = LocatedStructure {
-                candidate: *candidate,
-                found_structure,
-                distance_sqr: squared_distance(candidate.locate_pos, self.origin),
-            };
-            if best
-                .as_ref()
-                .is_none_or(|current| located.distance_sqr < current.distance_sqr)
-            {
-                best = Some(located);
-            }
-        }
-
-        self.best = best;
-        found_in_this_radius
-    }
-
-    fn generated_structure_at_candidate(
-        &self,
-        candidate: StructureLocateCandidate,
-    ) -> Option<Identifier> {
-        let holder = self
-            .world
-            .chunk_map
-            .chunks
-            .read_sync(&candidate.chunk_pos, |_, holder| Arc::clone(holder))?;
-        let chunk = holder.try_chunk(ChunkStatus::StructureStarts)?;
-        let starts = chunk.structure_starts();
-        let structures = self.plan.structures_for_candidate(candidate)?;
-        structures.iter().find_map(|structure| {
-            starts
-                .get(structure)
-                .is_some_and(|start| !start.pieces.is_empty())
-                .then(|| structure.clone())
-        })
-    }
-
-    fn finished_result(&self) -> CommandResultSuspensionPoll {
-        if self.best.is_some() {
-            self.success_result()
-        } else {
-            CommandResultSuspensionPoll::Ready(Err(structure_not_found(&self.query)))
-        }
-    }
-
-    fn success_result(&self) -> CommandResultSuspensionPoll {
-        let Some(best) = &self.best else {
-            return CommandResultSuspensionPoll::Ready(Err(structure_not_found(&self.query)));
-        };
-        let pos = best.candidate.locate_pos;
+    fn success_result(&self, found: LocatedStructure) -> CommandResultSuspensionPoll {
+        let pos = found.pos;
         let distance = horizontal_distance(self.origin, pos);
-        let structure_name = self.query.found_name(&best.found_structure);
+        let structure_name = self.query.found_name(&found.structure);
         self.source.send_success(
             &locate_success_component(structure_name.clone(), pos, distance),
             false,
@@ -320,12 +130,6 @@ impl LocateStructureSearch {
             "Structure search was cancelled",
         )))
     }
-}
-
-enum PendingRequest {
-    Pending,
-    Ready,
-    Cancelled,
 }
 
 fn invalid_structure(query: &StructureOrTagKey) -> CommandSyntaxError {

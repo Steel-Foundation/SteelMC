@@ -1,11 +1,18 @@
+use std::io;
+
 use super::{
-    Arc, Chunk, ChunkHolder, ChunkMap, ChunkPos, ChunkSaveDependency, ChunkStatus, ChunkStorage,
-    ClearedBlockEntities, FinalizedBlockEntityUnload, FxHashSet, instrument, io, mem,
+    Arc, Chunk, ChunkHolder, ChunkMap, ChunkPos, ChunkSaveDependency, ChunkSaveOutcome,
+    ChunkStatus, ChunkStorage, ClearedBlockEntities, FinalizedBlockEntityUnload, FxHashSet,
+    instrument, mem,
 };
 use crate::chunk_saver::PreparedChunkSave;
 use tokio::sync::oneshot;
 
 impl ChunkMap {
+    pub(crate) async fn close_storage_without_saving(&self) -> io::Result<()> {
+        self.storage.close_all().await
+    }
+
     async fn prepare_chunk_save_on_pool(
         self: &Arc<Self>,
         chunk_holder: &Arc<ChunkHolder>,
@@ -215,14 +222,15 @@ impl ChunkMap {
     /// 2. All chunks pending unload in the `unloading_chunks` map
     /// 3. Closes all region file handles (flushing headers)
     ///
-    /// Returns the number of chunks saved.
+    /// Returns successful writes and failures after attempting the complete pass.
     #[instrument(level = "info", skip(self), name = "save_all_chunks")]
     #[expect(
         clippy::too_many_lines,
         reason = "shutdown persistence keeps chunk coverage and entity auditing in one pass"
     )]
-    pub async fn save_all_chunks(self: &Arc<Self>) -> io::Result<usize> {
+    pub async fn save_all_chunks(self: &Arc<Self>) -> ChunkSaveOutcome {
         let mut saved_count = 0;
+        let mut failure_count = 0;
 
         self.flush_queued_light_changes_for_save().await;
 
@@ -294,8 +302,16 @@ impl ChunkMap {
                     covered_chunk_positions.insert(chunk_pos);
                     saved_count += 1;
                 }
-                Ok(false) => Self::mark_chunk_dirty_for_save_retry(holder),
+                Ok(false) => {
+                    failure_count += 1;
+                    tracing::error!(
+                        chunk = ?holder.get_pos(),
+                        "Chunk storage did not accept a prepared shutdown save"
+                    );
+                    Self::mark_chunk_dirty_for_save_retry(holder);
+                }
                 Err(e) => {
+                    failure_count += 1;
                     tracing::error!(chunk = ?holder.get_pos(), "Failed to save chunk: {e}");
                     Self::mark_chunk_dirty_for_save_retry(holder);
                 }
@@ -329,6 +345,7 @@ impl ChunkMap {
 
         // Close all region files (flushes headers and releases file handles)
         if let Err(e) = self.storage.close_all().await {
+            failure_count += 1;
             tracing::error!("Failed to close region files: {e}");
         }
 
@@ -338,6 +355,9 @@ impl ChunkMap {
             "Chunk save complete"
         );
 
-        Ok(saved_count)
+        ChunkSaveOutcome {
+            saved: saved_count,
+            failures: failure_count,
+        }
     }
 }

@@ -11,7 +11,7 @@ use steel_registry::{
     sound_events, vanilla_blocks, vanilla_game_events, vanilla_items, vanilla_loot_tables,
 };
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId, Direction};
+use steel_utils::{BlockPos, BlockStateId, Direction, random::Random as _};
 
 use crate::behavior::blocks::vegetation::bonemealable::BonemealAction;
 use crate::behavior::blocks::vegetation::growing_plant_head_block::{
@@ -81,16 +81,22 @@ impl CaveVinesBlock {
         if !state.get_value(BERRIES) {
             return InteractionResult::Pass;
         }
-        let mut rng = rand::rng();
-        let mut ctx = LootContext::new(&mut rng)
-            .with_block_state(state)
-            .with_interacting_entity(entity_loot_ref(source_entity));
-
-        let items = vanilla_loot_tables::HARVEST_CAVE_VINE.get_random_items(&mut ctx);
+        let loot_table = &vanilla_loot_tables::HARVEST_CAVE_VINE;
+        let items = world.with_loot_random(0, loot_table.random_sequence.as_ref(), |random| {
+            let mut ctx = LootContext::new(random)
+                .with_level(world.as_ref())
+                .with_block_state(state)
+                .with_interacting_entity(entity_loot_ref(source_entity));
+            loot_table.get_random_items(&mut ctx)
+        });
+        let items = items.unwrap_or_else(|error| {
+            log::error!("Failed to evaluate cave-vine harvest loot: {error}");
+            Vec::new()
+        });
         for item in items {
             world.pop_resource(pos, item);
         }
-        let pitch = rng.random_range(0.8..1.2);
+        let pitch = world.with_loot_random(0, None, |random| random.next_f32() * (1.2 - 0.8) + 0.8);
         world.play_sound(
             &sound_events::BLOCK_CAVE_VINES_PICK_BERRIES,
             SoundSource::Blocks,

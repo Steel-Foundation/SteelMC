@@ -2825,6 +2825,7 @@ dependencies = [
  "flate2",
  "glam",
  "heck",
+ "indexmap",
  "log",
  "proc-macro2",
  "quote",
@@ -2835,6 +2836,7 @@ dependencies = [
  "simdnbt",
  "steel-utils",
  "text_components",
+ "thiserror",
  "tracing",
  "uuid",
 ]

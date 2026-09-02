@@ -18,6 +18,8 @@ use crate::chunk::{
 pub enum ChunkTicketKind {
     /// Player-visible chunk loading.
     Player,
+    /// Terrain sampled while a player holds an unlocked map.
+    Map,
     /// Initial chunks around a joining player's spawn.
     PlayerSpawn,
     /// Candidate chunks loaded while searching for a valid spawn position.

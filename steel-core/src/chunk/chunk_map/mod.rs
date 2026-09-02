@@ -2,7 +2,7 @@ use arc_swap::ArcSwap;
 use rayon::ThreadPool;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::{
-    io, mem,
+    mem,
     sync::{
         Arc, Weak,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -71,6 +71,16 @@ use crate::world::World;
 use crate::world::tick_scheduler::{BlockTick, FluidTick, ScheduledTickRunBatch};
 use crate::worldgen::{ChunkGeneratorType, WorldGenContext};
 use crate::{entity::Entity, player::Player};
+
+/// Result of attempting to persist every dirty chunk during shutdown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
+pub struct ChunkSaveOutcome {
+    /// Chunks successfully written during this pass.
+    pub saved: usize,
+    /// Chunk or storage-finalization operations that failed.
+    pub failures: usize,
+}
 
 mod generation_readiness;
 mod light_update_state;

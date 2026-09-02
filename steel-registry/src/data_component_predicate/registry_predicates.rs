@@ -1,4 +1,5 @@
 use super::*;
+use crate::data_components::vanilla_components::{JUKEBOX_PLAYABLE, TRIM, VILLAGER_VARIANT};
 
 /// Predicate over armor trim material and pattern holders.
 #[derive(Debug, Clone, PartialEq)]
@@ -46,6 +47,20 @@ impl DataComponentPredicateCodec for TrimPredicate {
         }
         NbtTag::Compound(compound)
     }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components.get(TRIM).is_some_and(|trim| {
+            self.material.as_ref().is_none_or(|materials| {
+                trim.material()
+                    .as_reference()
+                    .is_some_and(|material| materials.contains(material))
+            }) && self.pattern.as_ref().is_none_or(|patterns| {
+                trim.pattern()
+                    .as_reference()
+                    .is_some_and(|pattern| patterns.contains(pattern))
+            })
+        })
+    }
 }
 
 impl HashComponent for TrimPredicate {
@@ -92,6 +107,17 @@ impl DataComponentPredicateCodec for JukeboxPlayablePredicate {
         }
         NbtTag::Compound(compound)
     }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components.get(JUKEBOX_PLAYABLE).is_some_and(|playable| {
+            self.0.as_ref().is_none_or(|songs| {
+                playable
+                    .song()
+                    .as_reference()
+                    .is_some_and(|song| songs.contains(song))
+            })
+        })
+    }
 }
 
 impl HashComponent for JukeboxPlayablePredicate {
@@ -132,6 +158,12 @@ impl DataComponentPredicateCodec for VillagerTypePredicate {
 
     fn to_nbt_value(&self) -> NbtTag {
         self.0.clone().to_nbt_tag()
+    }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .get(VILLAGER_VARIANT)
+            .is_some_and(|villager_type| self.0.contains(villager_type.value()))
     }
 }
 

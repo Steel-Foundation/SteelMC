@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use glam::DVec3;
-use rand::RngExt;
 use steel_macros::block_behavior;
 use steel_registry::{
     blocks::{
@@ -16,6 +15,7 @@ use steel_registry::{
 };
 use steel_utils::{
     BlockPos, BlockStateId,
+    random::Random as _,
     types::{InteractionHand, UpdateFlags},
 };
 
@@ -142,27 +142,24 @@ impl BlockBehavior for SweetBerryBushBlock {
         if age <= 1 {
             return InteractionResult::Pass;
         }
-
-        let mut rng = rand::rng();
-
         let items = drop_from_block_interact_loot_table(
+            world,
             &vanilla_loot_tables::HARVEST_SWEET_BERRY_BUSH,
             state,
             world.get_block_entity(pos),
             None,
             Some(player),
-            &mut rng,
         );
-
         for item in items {
             world.pop_resource(pos, item);
         }
 
+        let pitch = world.with_loot_random(0, None, |random| 0.8 + random.next_f32() * 0.4);
         world.play_block_sound(
             &sound_events::BLOCK_SWEET_BERRY_BUSH_PICK_BERRIES,
             pos,
             1.0,
-            0.8 + rng.random::<f32>() * 0.4,
+            pitch,
             Some(player.id()),
         );
 

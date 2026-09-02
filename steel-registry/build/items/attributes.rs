@@ -54,7 +54,7 @@ pub(super) fn generate_allowed_entities(value: &Value) -> TokenStream {
         Some(Value::String(s)) => {
             if let Some(entity_type) = entity_type_ref_token(s) {
                 quote! {
-                    Some(vanilla_components::EquippableAllowedEntities::Direct(vec![#entity_type]))
+                    Some(vanilla_components::EquippableAllowedEntities::direct(vec![#entity_type]))
                 }
             } else {
                 quote! { None }
@@ -67,7 +67,7 @@ pub(super) fn generate_allowed_entities(value: &Value) -> TokenStream {
                 .filter_map(entity_type_ref_token)
                 .collect::<Vec<_>>();
             quote! {
-                Some(vanilla_components::EquippableAllowedEntities::Direct(vec![#(#entity_types),*]))
+                Some(vanilla_components::EquippableAllowedEntities::direct(vec![#(#entity_types),*]))
             }
         }
         _ => quote! { None },

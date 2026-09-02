@@ -70,7 +70,7 @@ pub use item_lore::{ItemLore, ItemLoreTooLong};
 pub use jukebox_playable::JukeboxPlayable;
 pub use kinetic_weapon::{KineticWeapon, KineticWeaponCondition};
 pub use lodestone_tracker::{GlobalPos, LodestoneTracker};
-pub use map_decorations::{MapDecorationEntry, MapDecorations};
+pub use map_decorations::{MapDecorationEntries, MapDecorationEntry, MapDecorations};
 pub use map_post_processing::MapPostProcessing;
 pub use ominous_bottle_amplifier::OminousBottleAmplifier;
 pub use painting_variant::PaintingVariantComponent;

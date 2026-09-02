@@ -19,6 +19,7 @@
     clippy::unused_self,
     reason = "registry model code mirrors vanilla/generated data and keeps existing panic-heavy registry invariants"
 )]
+
 pub mod attribute;
 pub mod banner_pattern;
 pub mod biome;
@@ -51,6 +52,7 @@ pub mod frog_variant;
 pub mod game_events;
 pub mod game_rules;
 pub mod instrument;
+pub mod item_instance;
 pub mod item_predicate;
 pub mod item_stack;
 pub mod item_stack_template;
@@ -58,6 +60,7 @@ pub mod items;
 pub mod jukebox_song;
 pub mod loot_table;
 mod macros;
+pub mod map_color;
 pub mod map_decoration_type;
 pub mod menu_type;
 pub mod mob_effect;
@@ -98,6 +101,7 @@ pub use entity_variant::{
     AxolotlVariant, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant, ParrotVariant,
     RabbitVariant, SalmonVariant, TropicalFishBase, TropicalFishPattern,
 };
+pub use item_instance::ItemInstance;
 pub use item_stack_template::ItemStackTemplate;
 pub use mob_effect_instance::{MobEffectInstance, MobEffectInstanceDetails};
 pub use potion::{Potion, PotionEffect, PotionRef};

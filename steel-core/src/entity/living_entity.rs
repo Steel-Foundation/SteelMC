@@ -1048,27 +1048,16 @@ pub trait LivingEntity: Entity {
         };
 
         let seed = self.death_loot_table_seed();
-        let drops = if seed == 0 {
-            let mut rng = rand::rng();
+        let drops = world.with_loot_random(seed, loot_table.random_sequence.as_ref(), |random| {
             death_loot_items_with_rng(
                 self,
                 loot_table,
                 world.as_ref(),
                 source,
                 killed_by_player,
-                &mut rng,
+                random,
             )
-        } else {
-            let mut rng = StdRng::seed_from_u64(seed as u64);
-            death_loot_items_with_rng(
-                self,
-                loot_table,
-                world.as_ref(),
-                source,
-                killed_by_player,
-                &mut rng,
-            )
-        };
+        });
 
         if has_custom_death_loot_table && let Some(mob) = self.as_mob() {
             mob.clear_custom_death_loot_table();
@@ -2939,7 +2928,7 @@ pub trait LivingEntity: Entity {
     }
 }
 
-fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
+fn death_loot_items_with_rng<R: Random, E: LivingEntity + ?Sized>(
     entity: &E,
     loot_table: LootTableRef,
     world: &World,
@@ -2973,6 +2962,7 @@ fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
     };
 
     let mut context = LootContext::new(rng)
+        .with_level(world)
         .with_origin(position.x, position.y, position.z)
         .with_game_time(world.game_time())
         .with_killed_by_player(killed_by_player)
@@ -2988,7 +2978,15 @@ fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
         context = context.with_last_damage_player(entity);
     }
 
-    loot_table.get_random_items(&mut context)
+    loot_table
+        .get_random_items(&mut context)
+        .unwrap_or_else(|error| {
+            log::error!(
+                "Failed to evaluate entity loot table {}: {error}",
+                loot_table.key
+            );
+            Vec::new()
+        })
 }
 
 fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_> {
@@ -3013,7 +3011,7 @@ fn living_entity_loot_ref<E: LivingEntity + ?Sized>(entity: &E) -> EntityRef<'_>
 
 /// Runs vanilla `LivingEntity.dropFromShearingLootTable` for `loot_table`, returning the
 /// drops resolved with the vanilla shearing loot params (origin, entity, tool).
-pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(
+pub(crate) fn shearing_loot_items_with_rng<R: Random, E: LivingEntity + ?Sized>(
     entity: &E,
     loot_table: LootTableRef,
     tool: &ItemStack,
@@ -3027,5 +3025,10 @@ pub(crate) fn shearing_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Size
     if let Some(level) = entity.level() {
         context = context.with_game_time(level.game_time());
     }
-    loot_table.get_random_items(&mut context)
+    loot_table
+        .get_random_items(&mut context)
+        .unwrap_or_else(|error| {
+            log::error!("Failed to evaluate shearing loot table: {error}");
+            Vec::new()
+        })
 }

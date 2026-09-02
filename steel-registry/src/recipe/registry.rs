@@ -139,10 +139,26 @@ impl RecipeRegistry {
         input: &ItemStack,
         use_input_count: bool,
     ) -> Option<ItemStack> {
+        self.find_smelting_recipe(input)
+            .map(|recipe| recipe.assemble_result(input.count(), use_input_count))
+    }
+
+    /// Finds the first furnace smelting recipe matching `input`.
+    #[must_use]
+    pub fn find_smelting_recipe(&self, input: &ItemStack) -> Option<&'static SmeltingRecipe> {
         self.smelting_recipes
             .iter()
             .find(|recipe| recipe.matches(input))
-            .map(|recipe| recipe.assemble_result(input.count(), use_input_count))
+            .copied()
+    }
+
+    /// Finds a furnace smelting recipe by its identifier.
+    #[must_use]
+    pub fn get_smelting(&self, id: &Identifier) -> Option<&'static SmeltingRecipe> {
+        self.smelting_recipes
+            .iter()
+            .find(|recipe| &recipe.id == id)
+            .copied()
     }
 
     /// Returns the number of shaped recipes.

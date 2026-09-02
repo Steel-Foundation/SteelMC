@@ -4,7 +4,6 @@ use std::str::FromStr as _;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
-use rand::{SeedableRng as _, rngs::StdRng};
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -14,6 +13,8 @@ use steel_registry::loot_table::{LootContext, LootTableRef};
 use steel_registry::{
     REGISTRY, RegistryExt as _, vanilla_block_entity_types, vanilla_blocks, vanilla_entities,
 };
+use steel_utils::random::Random;
+use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{
     BlockPos, BlockStateId, Direction, DowncastType, DowncastTypeKey, Identifier, locks::SyncMutex,
@@ -204,16 +205,16 @@ impl BrushableBlockEntity {
         let loot_table = REGISTRY.loot_tables.by_key(&loot_table_key);
 
         if state.loot_table_seed == 0 {
-            let mut rng = rand::rng();
+            let mut rng = LegacyRandom::from_seed(rand::random());
             self.unpack_loot_items(state, loot_table, &loot_table_key, &mut rng, player, brush);
         } else {
-            let mut rng = StdRng::seed_from_u64(state.loot_table_seed as u64);
+            let mut rng = LegacyRandom::from_seed(state.loot_table_seed as u64);
             self.unpack_loot_items(state, loot_table, &loot_table_key, &mut rng, player, brush);
         }
         self.set_changed();
     }
 
-    fn unpack_loot_items<R: rand::Rng>(
+    fn unpack_loot_items<R: Random>(
         &self,
         state: &mut BrushableState,
         loot_table: Option<LootTableRef>,
@@ -233,7 +234,12 @@ impl BrushableBlockEntity {
                         f64::from(self.get_block_pos().z()) + 0.5,
                     )
                     .with_this_entity(entity_loot_ref(player));
-                table.get_random_items(&mut ctx)
+                table.get_random_items(&mut ctx).unwrap_or_else(|error| {
+                    log::error!(
+                        "Failed to evaluate brushable loot table {loot_table_key}: {error}"
+                    );
+                    Vec::new()
+                })
             }
             None => Vec::new(),
         };

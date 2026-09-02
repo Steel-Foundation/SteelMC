@@ -26,6 +26,20 @@ impl World {
             .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
     }
 
+    /// Gets a block state only when its full chunk is loaded.
+    ///
+    /// Vanilla block predicates fail for unloaded positions rather than treating them as air.
+    pub(crate) fn get_loaded_block_state(&self, pos: BlockPos) -> Option<BlockStateId> {
+        if !self.is_in_valid_bounds(pos) {
+            return None;
+        }
+
+        self.chunk_map
+            .with_full_chunk(Self::chunk_pos_for_block(pos), |chunk| {
+                chunk.get_block_state(pos)
+            })
+    }
+
     ///Vanilla equivalent: `level.getBrightness()`
     pub fn light_value_at(&self, layer: LightLayer, pos: BlockPos) -> u8 {
         if layer == LightLayer::Sky && !self.dimension_type.has_skylight {

@@ -11,10 +11,8 @@ use steel_registry::data_components::AdventureModePredicate;
 use steel_registry::data_components::vanilla_components::CAN_BREAK;
 use steel_registry::equipment::EquipmentSlot;
 use steel_registry::stat::vanilla_stat_types;
-use steel_registry::vanilla_attributes;
 use steel_registry::{
-    REGISTRY, blocks::properties::Direction, item_stack::ItemStack, vanilla_blocks,
-    vanilla_game_events,
+    REGISTRY, blocks::properties::Direction, vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::{
     BlockPos, BlockStateId,
@@ -22,8 +20,8 @@ use steel_utils::{
     types::{GameType, InteractionHand, UpdateFlags},
 };
 
-use crate::behavior::{BLOCK_BEHAVIORS, BlockLootContext};
-use crate::entity::{Entity, LivingEntity};
+use crate::behavior::BLOCK_BEHAVIORS;
+use crate::entity::{Entity, LivingEntity as _};
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
 use crate::player::food_data::food_constants;
@@ -353,6 +351,7 @@ impl BlockBreakingManager {
         // TODO: Check for GameMasterBlock (command blocks, etc.)
         // TODO: Check blockActionRestricted
 
+        let block_entity = world.get_block_entity(pos);
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
         let adjusted_state = behavior.player_will_destroy(state, world, pos, player);
         world.game_event(
@@ -444,14 +443,12 @@ impl BlockBreakingManager {
                 player.award_stat(&vanilla_stat_types::BLOCK_MINED, state.get_block());
                 player.cause_food_exhaustion(food_constants::EXHAUSTION_MINE);
 
-                drop_block_loot(player, world, pos, adjusted_state, &destroyed_with);
-                let block_entity = world.get_block_entity(pos);
                 behavior.player_destroy(
-                    world,
-                    player,
-                    pos,
                     adjusted_state,
-                    block_entity.as_ref(),
+                    world,
+                    pos,
+                    player,
+                    block_entity.as_deref(),
                     &destroyed_with,
                 );
             }
@@ -546,35 +543,4 @@ fn get_destroy_progress(player: &Player, block_state: BlockStateId) -> f32 {
     };
 
     speed / destroy_time / divisor
-}
-
-/// Drops loot for a destroyed block using its loot table.
-fn drop_block_loot(
-    player: &Player,
-    world: &Arc<World>,
-    pos: BlockPos,
-    state: BlockStateId,
-    tool: &ItemStack,
-) {
-    let luck = player
-        .attributes()
-        .lock()
-        .get_value(vanilla_attributes::LUCK)
-        .unwrap_or(0.0) as f32;
-
-    let drops = BlockLootContext::new(world, pos)
-        .with_luck(luck)
-        .with_tool(tool)
-        .get_drops(state);
-
-    // Spawn each dropped item using the player's world reference (Arc<World>)
-    for item in drops {
-        if !item.is_empty() {
-            player.get_world().pop_resource(pos, item);
-        }
-    }
-
-    BLOCK_BEHAVIORS
-        .get_behavior(state.get_block())
-        .spawn_after_break(state, world, pos, tool, true);
 }

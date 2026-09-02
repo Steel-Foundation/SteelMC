@@ -136,7 +136,7 @@ pub(super) fn generate_tool_rule(rule: &Value) -> TokenStream {
         }
         Some(Value::String(value)) => {
             let block = block_ref_token(value);
-            quote! { vanilla_components::ToolRuleBlocks::Direct(vec![#block]) }
+            quote! { vanilla_components::ToolRuleBlocks::direct(vec![#block]) }
         }
         Some(Value::Array(values)) => {
             let blocks = values
@@ -152,7 +152,7 @@ pub(super) fn generate_tool_rule(rule: &Value) -> TokenStream {
                     block_ref_token(value)
                 })
                 .collect::<Vec<_>>();
-            quote! { vanilla_components::ToolRuleBlocks::Direct(vec![#(#blocks),*]) }
+            quote! { vanilla_components::ToolRuleBlocks::direct(vec![#(#blocks),*]) }
         }
         _ => panic!("tool rule must contain blocks as a string or string array"),
     };

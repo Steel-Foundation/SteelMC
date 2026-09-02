@@ -386,7 +386,7 @@ mod tests {
                     correct_for_drops: Some(true),
                 },
                 ToolRule {
-                    blocks: ToolRuleBlocks::Direct(vec![&COBWEB, &STONE]),
+                    blocks: ToolRuleBlocks::direct(vec![&COBWEB, &STONE]),
                     speed: Some(15.0),
                     correct_for_drops: None,
                 },
@@ -425,7 +425,7 @@ mod tests {
 
         assert_eq!(
             parsed.rules[0].blocks,
-            ToolRuleBlocks::Direct(vec![&COBWEB])
+            ToolRuleBlocks::direct(vec![&COBWEB])
         );
         assert_eq!(parsed.rules[0].speed, Some(5.5));
         assert_eq!(parsed.rules[0].correct_for_drops, Some(true));
@@ -472,7 +472,7 @@ mod tests {
         init_vanilla_registry();
         let tool = Tool {
             rules: vec![ToolRule {
-                blocks: ToolRuleBlocks::Direct(vec![&COBWEB]),
+                blocks: ToolRuleBlocks::direct(vec![&COBWEB]),
                 speed: Some(4.0),
                 correct_for_drops: None,
             }],

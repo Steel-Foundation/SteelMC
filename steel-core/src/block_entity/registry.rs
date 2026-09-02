@@ -15,14 +15,12 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
-#[cfg_attr(
-    not(test),
-    expect(
-        clippy::wildcard_imports,
-        reason = "the registry intentionally imports every block entity implementation"
-    )
-)]
-use super::entities::*;
+use super::entities::{
+    BarrelBlockEntity, BeehiveBlockEntity, BellBlockEntity, BrushableBlockEntity, ChestBlockEntity,
+    ChiseledBookShelfBlockEntity, ComparatorBlockEntity, DaylightDetectorBlockEntity,
+    EndGatewayBlockEntity, EndPortalBlockEntity, FurnaceBlockEntity, JukeboxBlockEntity,
+    PistonMovingBlockEntity, PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity,
+};
 use crate::world::World;
 
 /// Factory function type for creating block entities.
@@ -99,6 +97,23 @@ impl BlockEntityRegistry {
         }
     }
 
+    /// Creates a new block entity and loads NBT data into it.
+    ///
+    /// Returns `None` if no factory is registered for the given type.
+    #[must_use]
+    pub fn create_and_load(
+        &self,
+        block_entity_type: BlockEntityTypeRef,
+        level: Weak<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+        nbt: &BorrowedNbtCompound<'_>,
+    ) -> Option<SharedBlockEntity> {
+        let entity = self.create(block_entity_type, level, pos, state)?;
+        entity.load_with_components(nbt);
+        Some(entity)
+    }
+
     /// Creates a block entity and loads borrowed NBT, falling back to raw preservation.
     #[must_use]
     pub fn create_and_load_or_raw(
@@ -112,7 +127,7 @@ impl BlockEntityRegistry {
         let id = block_entity_type.id();
         if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
             let entity = factory(level, pos, state);
-            entity.load_additional(nbt);
+            entity.load_with_components(nbt);
             entity
         } else {
             let nbt_view: BorrowedRootNbtCompound<'_, '_> = nbt.into();
@@ -142,7 +157,7 @@ impl BlockEntityRegistry {
             let mut nbt_bytes = Vec::new();
             nbt.write(&mut nbt_bytes);
             if let Ok(borrowed) = read_borrowed_compound(&mut Cursor::new(&nbt_bytes)) {
-                entity.load_additional(&borrowed);
+                entity.load_with_components(&borrowed);
             } else {
                 log::warn!(
                     "failed to reborrow owned NBT for block entity {}",
@@ -223,6 +238,14 @@ pub fn init_block_entities() {
         // Register barrel block entity factory
         registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
             Arc::new(BarrelBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(&vanilla_block_entity_types::CHEST, |level, pos, state| {
+            Arc::new(ChestBlockEntity::new(level, pos, state))
+        });
+
+        registry.register(&vanilla_block_entity_types::FURNACE, |level, pos, state| {
+            Arc::new(FurnaceBlockEntity::new(level, pos, state))
         });
 
         registry.register(

@@ -1,8 +1,14 @@
+use steel_utils::random::Random;
+use steel_utils::{BlockPos, BlockStateId};
+
 use super::{
     BlockStateExt, DamageSourceInfo, DyeColor, EntityEquipmentRef, EntityRef, EntityRefFlags,
-    Identifier, ItemStack, LootContext, LootContextEntity, NumberProvider, NumberProviderRange,
-    REGISTRY, RegistryExt, RngExt, TaggedRegistryExt,
+    Identifier, ItemStack, LootContext, LootContextEntity, LootError, LootResult, NumberProvider,
+    NumberProviderRange, REGISTRY, RegistryExt, TaggedRegistryExt,
 };
+use crate::RegistryHolderSet;
+use crate::biome::BiomeRef;
+use crate::item_predicate::BlockPredicate;
 
 /// A property check for block state conditions.
 #[derive(Debug, Clone)]
@@ -123,14 +129,104 @@ pub enum ToolPredicate {
 /// Predicate for checking location/block properties.
 #[derive(Debug, Clone)]
 pub struct LocationPredicate {
+    pub biomes: Option<BiomeOptions>,
+    /// Canonical Vanilla block predicate. Loot evaluation currently supports
+    /// its holder-set and state-property portions; preflight rejects NBT and
+    /// component matchers until location access exposes block-entity data.
     pub block: Option<BlockPredicate>,
 }
 
-/// Predicate for checking block properties.
+/// Biomes accepted by a location predicate.
 #[derive(Debug, Clone)]
-pub struct BlockPredicate {
-    pub blocks: Option<Identifier>,
-    pub state: &'static [(&'static str, &'static str)],
+pub enum BiomeOptions {
+    Tag(Identifier),
+    List(&'static [Identifier]),
+}
+
+impl BiomeOptions {
+    pub(crate) fn validate(&self) -> LootResult<()> {
+        match self {
+            Self::Tag(tag) => REGISTRY.biomes.get_tag(tag).map(|_| ()).ok_or_else(|| {
+                LootError::UnknownRegistryTag {
+                    registry: "biome",
+                    key: tag.clone(),
+                }
+            }),
+            Self::List(keys) => {
+                for key in *keys {
+                    if REGISTRY.biomes.by_key(key).is_none() {
+                        return Err(LootError::UnknownRegistryValue {
+                            registry: "biome",
+                            key: key.clone(),
+                        });
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn contains(&self, biome: BiomeRef) -> LootResult<bool> {
+        match self {
+            Self::Tag(tag) => REGISTRY.biomes.get_tag(tag).map_or_else(
+                || {
+                    Err(LootError::UnknownRegistryTag {
+                        registry: "biome",
+                        key: tag.clone(),
+                    })
+                },
+                |biomes| {
+                    Ok(biomes
+                        .iter()
+                        .any(|candidate| std::ptr::eq(*candidate, biome)))
+                },
+            ),
+            Self::List(keys) => Ok(keys.contains(&biome.key)),
+        }
+    }
+}
+
+pub(crate) fn validate_block_predicate(predicate: &BlockPredicate) -> LootResult<()> {
+    if predicate.nbt().is_some() {
+        return Err(LootError::UnsupportedCondition(
+            "location_check block NBT predicate",
+        ));
+    }
+    if !predicate.components().is_empty() {
+        return Err(LootError::UnsupportedCondition(
+            "location_check block component predicate",
+        ));
+    }
+
+    match predicate.blocks() {
+        Some(RegistryHolderSet::Tag(tag)) if REGISTRY.blocks.get_tag(tag).is_none() => {
+            return Err(LootError::UnknownRegistryTag {
+                registry: "block",
+                key: tag.clone(),
+            });
+        }
+        Some(RegistryHolderSet::Direct(blocks)) => {
+            for block in blocks.iter() {
+                if REGISTRY
+                    .blocks
+                    .by_key(&block.key)
+                    .is_none_or(|registered| !std::ptr::eq(registered, *block))
+                {
+                    return Err(LootError::UnknownRegistryValue {
+                        registry: "block",
+                        key: block.key.clone(),
+                    });
+                }
+            }
+        }
+        Some(RegistryHolderSet::Tag(_)) | None => {}
+    }
+    Ok(())
+}
+
+fn block_predicate_matches(predicate: &BlockPredicate, state: BlockStateId) -> LootResult<bool> {
+    validate_block_predicate(predicate)?;
+    Ok(predicate.matches_state(state))
 }
 
 /// Predicate for checking entity properties.
@@ -190,12 +286,12 @@ pub struct DamageTagPredicate {
 
 impl LootCondition {
     /// Test if this condition passes given the loot context.
-    pub fn test<R: rand::Rng>(&self, ctx: &mut LootContext<'_, R>) -> bool {
-        match self {
+    pub fn test<R: Random>(&self, ctx: &mut LootContext<'_, R>) -> LootResult<bool> {
+        Ok(match self {
             LootCondition::SurvivesExplosion => {
                 if let Some(radius) = ctx.explosion_radius {
                     // Vanilla: 1/radius chance to survive
-                    ctx.rng.random::<f32>() <= (1.0 / radius)
+                    ctx.rng.next_f32() <= (1.0 / radius)
                 } else {
                     true // No explosion, always survives
                 }
@@ -205,16 +301,16 @@ impl LootCondition {
                     let state_block = state.get_block();
                     // Check block matches
                     if state_block.key != *block {
-                        return false;
+                        return Ok(false);
                     }
                     // Check all properties match
                     for prop in *properties {
                         if let Some(value) = state.get_property_str(prop.name) {
                             if value != prop.value {
-                                return false;
+                                return Ok(false);
                             }
                         } else {
-                            return false; // Property doesn't exist
+                            return Ok(false); // Property doesn't exist
                         }
                     }
                     true
@@ -222,7 +318,7 @@ impl LootCondition {
                     false // No block state in context
                 }
             }
-            LootCondition::RandomChance(chance) => ctx.rng.random::<f32>() < *chance,
+            LootCondition::RandomChance(chance) => ctx.rng.next_f32() < *chance,
             LootCondition::RandomChanceWithEnchantedBonus {
                 enchantment,
                 unenchanted_chance,
@@ -240,7 +336,7 @@ impl LootCondition {
                 } else {
                     *unenchanted_chance
                 };
-                ctx.rng.random::<f32>() < effective_chance
+                ctx.rng.next_f32() < effective_chance
             }
             LootCondition::MatchTool(predicate) => {
                 if let Some(tool) = ctx.tool {
@@ -257,21 +353,64 @@ impl LootCondition {
                 let level = ctx.get_enchantment_level_by_id(enchantment);
                 let index = (level as usize).min(chances.len().saturating_sub(1));
                 let chance = chances.get(index).copied().unwrap_or(0.0);
-                ctx.rng.random::<f32>() < chance
+                ctx.rng.next_f32() < chance
             }
-            LootCondition::Inverted(inner) => !inner.test(ctx),
-            LootCondition::AnyOf(conditions) => conditions.iter().any(|c| c.test(ctx)),
-            LootCondition::AllOf(conditions) => conditions.iter().all(|c| c.test(ctx)),
+            LootCondition::Inverted(inner) => !inner.test(ctx)?,
+            LootCondition::AnyOf(conditions) => {
+                let mut matched = false;
+                for condition in *conditions {
+                    if condition.test(ctx)? {
+                        matched = true;
+                        break;
+                    }
+                }
+                matched
+            }
+            LootCondition::AllOf(conditions) => test_all(conditions, ctx)?,
             LootCondition::KilledByPlayer => ctx.killed_by_player,
             LootCondition::EntityProperties { entity, predicate } => {
                 let Some(entity) = ctx.get_entity(*entity) else {
-                    return false;
+                    return Ok(false);
                 };
                 predicate.test(entity, ctx)
             }
             LootCondition::DamageSourceProperties { predicate } => predicate.test(ctx),
-            LootCondition::LocationCheck { .. } => {
-                // TODO: Implement when world position data is available in context
+            LootCondition::LocationCheck {
+                offset_x,
+                offset_y,
+                offset_z,
+                predicate,
+            } => {
+                let Some((x, y, z)) = ctx.origin else {
+                    return Ok(false);
+                };
+                let pos = BlockPos::new(
+                    (x.floor() as i32).wrapping_add(*offset_x),
+                    (y.floor() as i32).wrapping_add(*offset_y),
+                    (z.floor() as i32).wrapping_add(*offset_z),
+                );
+                if let Some(biomes) = &predicate.biomes {
+                    let level = ctx
+                        .level
+                        .ok_or(LootError::MissingLevel("location_check biome predicate"))?;
+                    let Some(biome) = level.biome_at(pos) else {
+                        return Ok(false);
+                    };
+                    if !biomes.contains(biome)? {
+                        return Ok(false);
+                    }
+                }
+                if let Some(block) = &predicate.block {
+                    let level = ctx
+                        .level
+                        .ok_or(LootError::MissingLevel("location_check block predicate"))?;
+                    let Some(state) = level.block_state_at(pos) else {
+                        return Ok(false);
+                    };
+                    if !block_predicate_matches(block, state)? {
+                        return Ok(false);
+                    }
+                }
                 true
             }
             LootCondition::WeatherCheck {
@@ -289,11 +428,13 @@ impl LootCondition {
                 } else {
                     game_time
                 };
-                value.test(time as f32, ctx.rng)
+                let context = super::LootContextRef { tool: ctx.tool };
+                value.test(time as f32, ctx.rng, Some(&context))?
             }
             LootCondition::ValueCheck { value, range } => {
-                let v = value.get_simple(ctx.rng);
-                range.test(v, ctx.rng)
+                let context = super::LootContextRef { tool: ctx.tool };
+                let value = value.get(ctx.rng, Some(&context))?;
+                range.test(value, ctx.rng, Some(&context))?
             }
             LootCondition::EnchantmentActiveCheck {
                 enchantment,
@@ -304,22 +445,31 @@ impl LootCondition {
                 is_active == *active
             }
             LootCondition::EntityScores { .. } => {
-                // TODO: Implement when scoreboard system is available
-                true
+                return Err(LootError::UnsupportedCondition("entity_scores"));
             }
-            LootCondition::Reference(_name) => {
-                // TODO: Implement condition registry lookup
-                // For now, return true (permissive)
-                true
+            LootCondition::Reference(_) => {
+                return Err(LootError::UnsupportedCondition("reference"));
             }
+        })
+    }
+}
+
+pub(super) fn test_all<R: Random>(
+    conditions: &[LootCondition],
+    ctx: &mut LootContext<'_, R>,
+) -> LootResult<bool> {
+    for condition in conditions {
+        if !condition.test(ctx)? {
+            return Ok(false);
         }
     }
+    Ok(true)
 }
 
 impl ToolPredicate {
     /// Test if the tool matches this predicate.
     #[must_use]
-    pub fn test<R: rand::Rng>(&self, tool: &ItemStack, _ctx: &LootContext<'_, R>) -> bool {
+    pub fn test<R: Random>(&self, tool: &ItemStack, _ctx: &LootContext<'_, R>) -> bool {
         match self {
             ToolPredicate::Item(item_id) => tool.item.key == *item_id,
             ToolPredicate::HasEnchantment {
@@ -367,7 +517,7 @@ fn tool_enchantment_matches(
 }
 
 impl EntityPredicate {
-    fn test<R: rand::Rng>(&self, entity: EntityRef<'_>, ctx: &LootContext<'_, R>) -> bool {
+    fn test<R: Random>(&self, entity: EntityRef<'_>, ctx: &LootContext<'_, R>) -> bool {
         if let Some(entity_type) = &self.entity_type
             && entity.entity_type != Some(entity_type)
         {
@@ -428,7 +578,7 @@ impl EntityFlags {
 }
 
 impl EntityEquipment {
-    fn test<R: rand::Rng>(
+    fn test<R: Random>(
         &self,
         equipment: Option<&EntityEquipmentRef<'_>>,
         ctx: &LootContext<'_, R>,
@@ -456,7 +606,7 @@ impl EntityEquipment {
     }
 }
 
-fn slot_predicate_matches<R: rand::Rng>(
+fn slot_predicate_matches<R: Random>(
     predicate: &Option<ToolPredicate>,
     item_stack: Option<&ItemStack>,
     ctx: &LootContext<'_, R>,
@@ -471,7 +621,7 @@ fn slot_predicate_matches<R: rand::Rng>(
 }
 
 impl DamageSourcePredicate {
-    fn test<R: rand::Rng>(&self, ctx: &LootContext<'_, R>) -> bool {
+    fn test<R: Random>(&self, ctx: &LootContext<'_, R>) -> bool {
         let Some(damage_source) = ctx.damage_source else {
             return false;
         };

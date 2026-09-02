@@ -1,3 +1,5 @@
+use steel_registry::loot_table::BlockEntityRef;
+
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockLootContext, BlockPos, BlockStateExt, BlockStateId, CLevelEvent,
     CLevelParticles, CSound, ChunkPos, ConnectionProtocol, DVec3, EncodedPacket, Entity,
@@ -6,7 +8,7 @@ use super::{
     UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block, level_events,
     vanilla_blocks, vanilla_game_events,
 };
-use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
+use crate::block_entity::{BlockEntity, BlockEntityComponentsExt};
 
 pub(super) fn sound_is_within_range(
     sound: SoundEventRef,
@@ -284,25 +286,8 @@ impl World {
         }
 
         if drop_items {
-            self.drop_resources_with_entity(state, pos, entity);
-            // TODO: This only covers the `drop_items` path. In vanilla, container
-            // content dropping runs unconditionally on any block-entity removal
-            // (BlockEntity.preRemoveSideEffects via LevelChunk.setBlockState) —
-            // independent of drop_items — so explosions, pistons, etc. still need
-            // a similar hook once Steel's block-update pipeline has one.
-            if let Some(block_entity) = self.get_block_entity(pos)
-                && let Some(container_ref) = ContainerRef::from_block_entity(block_entity)
-            {
-                let mut guard = ContainerLockGuard::lock_all(&[&container_ref]);
-                if let Some(container) = guard.get_mut(container_ref.container_id()) {
-                    for slot in 0..container.get_container_size() {
-                        let item = container.remove_item_no_update(slot);
-                        if !item.is_empty() {
-                            self.pop_resource(pos, item);
-                        }
-                    }
-                }
-            }
+            let block_entity = self.get_block_entity(pos);
+            self.drop_resources_with_entity(state, pos, entity, block_entity.as_deref());
         }
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
@@ -323,11 +308,10 @@ impl World {
     /// Drops the loot for a block using its loot table.
     ///
     /// This is the no-tool/no-entity overload. Player block breaking uses
-    /// `block_breaking::drop_block_loot` which includes tool context for
-    /// fortune/silk touch.
-    // TODO: block entity and entity drops
+    /// [`BlockBehavior::player_destroy`](crate::behavior::BlockBehavior::player_destroy),
+    /// which includes player and tool context.
     pub fn drop_resources(self: &Arc<Self>, state: BlockStateId, pos: BlockPos) {
-        self.drop_resources_with_entity(state, pos, None);
+        self.drop_resources_with_entity(state, pos, None, None);
     }
 
     pub(super) fn drop_resources_with_entity(
@@ -335,16 +319,45 @@ impl World {
         state: BlockStateId,
         pos: BlockPos,
         entity: Option<&dyn Entity>,
+        block_entity: Option<&dyn BlockEntity>,
     ) {
-        let context = BlockLootContext::new(self, pos).with_entity(entity);
+        let context = BlockLootContext::new(self, pos)
+            .with_entity(entity)
+            .with_block_entity(block_entity);
+        self.drop_resources_from_context(state, &context);
+    }
+
+    /// Drops block resources using Vanilla's player-destruction loot parameters.
+    pub(crate) fn drop_resources_for_player(
+        self: &Arc<Self>,
+        state: BlockStateId,
+        pos: BlockPos,
+        player: &Player,
+        block_entity: Option<&dyn BlockEntity>,
+        tool: &ItemStack,
+    ) {
+        let context = BlockLootContext::new(self, pos)
+            .with_entity(Some(player))
+            .with_block_entity(block_entity)
+            .with_tool(tool);
+        self.drop_resources_from_context(state, &context);
+    }
+
+    pub(crate) fn drop_resources_from_context(
+        self: &Arc<Self>,
+        state: BlockStateId,
+        context: &BlockLootContext<'_>,
+    ) {
         for item in context.get_drops(state) {
             if !item.is_empty() {
-                self.pop_resource(pos, item);
+                self.pop_resource(context.pos(), item);
             }
         }
+        let empty_tool = ItemStack::empty();
+        let tool = context.tool().unwrap_or(&empty_tool);
         BLOCK_BEHAVIORS
             .get_behavior(state.get_block())
-            .spawn_after_break(state, self, pos, &ItemStack::empty(), true);
+            .spawn_after_break(state, self, context.pos(), tool, true);
     }
 
     pub(crate) fn block_drops(
@@ -368,23 +381,45 @@ impl World {
             return Vec::new();
         };
 
-        let mut rng = rand::rng();
-        let mut ctx = LootContext::new(&mut rng)
-            .with_luck(context.luck())
-            .with_block_state(state)
-            .with_origin(
-                f64::from(context.pos().x()),
-                f64::from(context.pos().y()),
-                f64::from(context.pos().z()),
-            );
-        if let Some(tool) = context.tool() {
-            ctx = ctx.with_tool(tool);
-        }
-        if let Some(entity) = context.entity() {
-            ctx = ctx.with_this_entity(entity_loot_ref(entity));
-        }
+        let block_entity_components = context
+            .block_entity()
+            .map(BlockEntityComponentsExt::collect_components);
+        let result =
+            context
+                .world()
+                .with_loot_random(0, loot_table.random_sequence.as_ref(), |random| {
+                    let mut ctx = LootContext::new(random)
+                        .with_luck(context.luck())
+                        .with_block_state(state)
+                        .with_level(context.world().as_ref())
+                        .with_origin(
+                            f64::from(context.pos().x()) + 0.5,
+                            f64::from(context.pos().y()) + 0.5,
+                            f64::from(context.pos().z()) + 0.5,
+                        );
+                    if let Some(tool) = context.tool() {
+                        ctx = ctx.with_tool(tool);
+                    }
+                    if let Some(entity) = context.entity() {
+                        ctx = ctx.with_this_entity(entity_loot_ref(entity));
+                    }
+                    if let Some((block_entity, components)) =
+                        context.block_entity().zip(block_entity_components.as_ref())
+                    {
+                        ctx = ctx.with_block_entity(BlockEntityRef {
+                            block_entity_type: Some(&block_entity.get_type().key),
+                            custom_name: None,
+                            inventory: None,
+                            components: Some(components),
+                        });
+                    }
 
-        loot_table.get_random_items(&mut ctx)
+                    loot_table.get_random_items(&mut ctx)
+                });
+        result.unwrap_or_else(|error| {
+            log::error!("Failed to evaluate block loot table {loot_key}: {error}");
+            Vec::new()
+        })
     }
 
     /// Plays a sound at a specific position, broadcasting to nearby players.

@@ -198,7 +198,7 @@ mod tests {
         assert!(wooden.is_valid_repair_item(&ItemStack::new(&vanilla_items::OAK_PLANKS)));
         assert!(!wooden.is_valid_repair_item(&ItemStack::new(&vanilla_items::DIAMOND)));
 
-        let direct = Repairable::new(RegistryHolderSet::Direct(vec![
+        let direct = Repairable::new(RegistryHolderSet::direct(vec![
             &vanilla_items::PHANTOM_MEMBRANE,
         ]));
         assert!(direct.is_valid_repair_item(&ItemStack::new(&vanilla_items::PHANTOM_MEMBRANE)));

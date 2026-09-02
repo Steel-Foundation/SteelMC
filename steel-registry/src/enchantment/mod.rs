@@ -104,6 +104,16 @@ fn parse_tag_ref(tag_ref: &str) -> Option<Identifier> {
 }
 
 impl Enchantment {
+    #[must_use]
+    pub const fn min_cost(&self, level: u32) -> i32 {
+        self.min_cost.base + self.min_cost.per_level_above_first * (level.saturating_sub(1) as i32)
+    }
+
+    #[must_use]
+    pub const fn max_cost(&self, level: u32) -> i32 {
+        self.max_cost.base + self.max_cost.per_level_above_first * (level.saturating_sub(1) as i32)
+    }
+
     /// Vanilla `Enchantment::matchingSlot`.
     #[must_use]
     pub fn matching_slot(&self, slot: EquipmentSlot) -> bool {
@@ -113,6 +123,21 @@ impl Enchantment {
     /// Checks if this enchantment can be applied to the given item via `supported_items` tag.
     pub fn can_enchant(&self, item: ItemRef) -> bool {
         let Some(tag) = parse_tag_ref(self.supported_items) else {
+            return false;
+        };
+        REGISTRY.items.is_in_tag(item, &tag)
+    }
+
+    /// Vanilla `Enchantment::isPrimaryItem`.
+    #[must_use]
+    pub fn is_primary_item(&self, item: ItemRef) -> bool {
+        if !self.can_enchant(item) {
+            return false;
+        }
+        let Some(primary_items) = self.primary_items else {
+            return true;
+        };
+        let Some(tag) = parse_tag_ref(primary_items) else {
             return false;
         };
         REGISTRY.items.is_in_tag(item, &tag)

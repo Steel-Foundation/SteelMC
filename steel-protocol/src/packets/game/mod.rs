@@ -23,6 +23,7 @@ mod c_hurt_animation;
 mod c_level_event;
 mod c_level_particles;
 mod c_login;
+mod c_map_item_data;
 mod c_move_entity;
 mod c_move_vehicle;
 mod c_open_screen;
@@ -122,6 +123,7 @@ pub use c_level_event::CLevelEvent;
 pub use c_level_particles::CLevelParticles;
 pub use c_login::CLogin;
 pub use c_login::CommonPlayerSpawnInfo;
+pub use c_map_item_data::{CMapItemData, MapDecoration, MapPatch};
 pub use c_move_entity::{
     CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, PackedEntityDelta, calc_delta, to_angle_byte,
 };

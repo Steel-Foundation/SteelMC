@@ -19,6 +19,7 @@ serde_json.workspace = true
 
 # Data structures
 glam.workspace = true
+indexmap.workspace = true
 rustc-hash.workspace = true
 
 # Logging
@@ -26,6 +27,7 @@ log.workspace = true
 # Utils
 rand.workspace = true
 text_components.workspace = true
+thiserror.workspace = true
 # NBT
 simdnbt.workspace = true
 tracing.workspace = true

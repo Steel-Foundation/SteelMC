@@ -4,14 +4,17 @@ use std::{
     thread,
 };
 
+use steel_registry::blocks::properties::DoubleBlockHalf;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::{
     init_vanilla_registry, sound_events, vanilla_entities, vanilla_fluids, vanilla_game_rules,
     vanilla_items,
 };
+use steel_utils::random::{Random, legacy_random::LegacyRandom, xoroshiro::Xoroshiro};
 use uuid::Uuid;
 
 use crate::behavior::init_behaviors;
+use crate::chunk::chunk_holder::TickingReadiness;
 use crate::chunk::chunk_ticket_manager::{ChunkTicket, ChunkTicketLevel};
 use crate::entity::{EntityBase, entities::PigEntity};
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world};
@@ -19,6 +22,23 @@ use crate::test_support::{fresh_test_world, insert_ready_full_chunk, test_world}
 const FIRST_HALF: BlockLocalAabb = BlockLocalAabb::new(0.0, 0.0, 0.0, 0.5, 1.0, 1.0);
 const SECOND_HALF: BlockLocalAabb = BlockLocalAabb::new(0.5, 0.0, 0.0, 1.0, 1.0, 1.0);
 static SPLIT_BLOCK: &[BlockLocalAabb] = &[FIRST_HALF, SECOND_HALF];
+
+#[test]
+fn loot_random_uses_explicit_seed_before_named_sequence() {
+    let world = fresh_test_world("loot_random_precedence");
+    let sequence = Identifier::vanilla_static("chests/simple_dungeon");
+
+    let explicit = world.with_loot_random(12_345, Some(&sequence), Random::next_i64);
+    let mut expected_explicit = LegacyRandom::from_seed(12_345);
+    assert_eq!(explicit, expected_explicit.next_i64());
+
+    let first_named = world.with_loot_random(0, Some(&sequence), Random::next_i64);
+    let second_named = world.with_loot_random(0, Some(&sequence), Random::next_i64);
+    let mut expected_named =
+        Xoroshiro::from_seed_with_key(world.seed() as u64, &sequence.to_string());
+    assert_eq!(first_named, expected_named.next_i64());
+    assert_eq!(second_named, expected_named.next_i64());
+}
 
 fn advance_scheduling_until(world: &Arc<World>, mut ready: impl FnMut() -> bool) {
     for _ in 0..10_000 {
@@ -175,6 +195,57 @@ fn entity_breaker_is_available_to_chorus_flower_loot() {
     assert_eq!(drops[0].item(), &*vanilla_items::CHORUS_FLOWER);
     assert_eq!(drops[0].count(), 1);
     assert_eq!(BlockLootContext::new(&world, pos).get_drops(state).len(), 0);
+}
+
+#[test]
+fn block_loot_location_predicate_reads_full_chunk_before_ticking_readiness() {
+    init_vanilla_registry();
+    init_behaviors();
+
+    let world = fresh_test_world("block_loot_location_predicate");
+    let lower_pos = BlockPos::new(8, 64, 8);
+    let upper_pos = lower_pos.above();
+    let chunk_pos = ChunkPos::from_block_pos(lower_pos);
+    let holder = insert_ready_full_chunk(&world, chunk_pos);
+    assert_eq!(
+        holder.transition_ticking_readiness(TickingReadiness::Unready),
+        Some(TickingReadiness::BlockTicking)
+    );
+    assert!(
+        !world
+            .chunk_map
+            .is_block_ticking_full_chunk_loaded(chunk_pos)
+    );
+    let lower = vanilla_blocks::TALL_GRASS.default_state().set_value(
+        &BlockStateProperties::DOUBLE_BLOCK_HALF,
+        DoubleBlockHalf::Lower,
+    );
+    let upper = vanilla_blocks::TALL_GRASS.default_state().set_value(
+        &BlockStateProperties::DOUBLE_BLOCK_HALF,
+        DoubleBlockHalf::Upper,
+    );
+    let placement_flags = UpdateFlags::UPDATE_NONE | UpdateFlags::UPDATE_KNOWN_SHAPE;
+    assert!(world.set_block(lower_pos, lower, placement_flags));
+    assert!(world.set_block(upper_pos, upper, placement_flags));
+
+    let shears = ItemStack::new(&vanilla_items::SHEARS);
+    for (state, pos) in [(lower, lower_pos), (upper, upper_pos)] {
+        let drops = BlockLootContext::new(&world, pos)
+            .with_tool(&shears)
+            .get_drops(state);
+        assert_eq!(drops.len(), 1);
+        assert!(drops[0].is(&vanilla_items::SHORT_GRASS));
+        assert_eq!(drops[0].count(), 2);
+    }
+
+    let orphan_pos = BlockPos::new(10, 64, 8);
+    assert!(world.set_block(orphan_pos, lower, placement_flags));
+    assert_eq!(
+        BlockLootContext::new(&world, orphan_pos)
+            .with_tool(&shears)
+            .get_drops(lower),
+        vec![]
+    );
 }
 
 fn assert_vec3_close(left: DVec3, right: DVec3) {

@@ -37,6 +37,7 @@ tracing.workspace = true
 
 # Cryptography
 crc32c = "0.6.8"
+md5.workspace = true
 
 # Utilities
 enum_dispatch.workspace = true
@@ -47,7 +48,6 @@ unicode_names2.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
-md5.workspace = true
 
 [build-dependencies]
 # Serialization

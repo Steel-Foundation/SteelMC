@@ -1,5 +1,6 @@
 //! Vanilla item, block, state, and NBT predicate codec values.
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::io::{Cursor, Error, Result, Write};
@@ -17,6 +18,8 @@ use steel_utils::serial::{ReadFrom, WriteTo};
 
 use crate::blocks::{Block, properties::Property};
 use crate::data_component_predicate::DataComponentMatchers;
+use crate::item_instance::ItemInstance;
+use crate::item_stack::ItemStack;
 use crate::items::Item;
 use crate::{REGISTRY, RegistryHolderSet};
 
@@ -65,6 +68,12 @@ impl IntBounds {
     #[must_use]
     pub const fn is_any(&self) -> bool {
         self.min.is_none() && self.max.is_none()
+    }
+
+    /// Mirrors Vanilla `MinMaxBounds.Ints.matches`.
+    #[must_use]
+    pub fn matches(self, value: i32) -> bool {
+        self.min.is_none_or(|min| value >= min) && self.max.is_none_or(|max| value <= max)
     }
 
     pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
@@ -146,6 +155,16 @@ impl DoubleBounds {
     #[must_use]
     pub const fn is_any(&self) -> bool {
         self.min.is_none() && self.max.is_none()
+    }
+
+    /// Mirrors Vanilla `MinMaxBounds.Doubles.matches`, so `NaN` bounds never reject.
+    #[must_use]
+    pub fn matches(self, value: f64) -> bool {
+        self.min
+            .is_none_or(|min| min.partial_cmp(&value) != Some(Ordering::Greater))
+            && self
+                .max
+                .is_none_or(|max| max.partial_cmp(&value) != Some(Ordering::Less))
     }
 
     pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
@@ -233,14 +252,35 @@ const fn java_double_bits(value: f64) -> i64 {
 /// One exact or ranged block-state property matcher.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StatePropertyValueMatcher {
-    Exact(String),
+    Exact(Cow<'static, str>),
     Range {
-        min: Option<String>,
-        max: Option<String>,
+        min: Option<Cow<'static, str>>,
+        max: Option<Cow<'static, str>>,
     },
 }
 
 impl StatePropertyValueMatcher {
+    /// Creates an exact matcher backed by generated static data.
+    #[must_use]
+    pub const fn borrowed_exact(value: &'static str) -> Self {
+        Self::Exact(Cow::Borrowed(value))
+    }
+
+    /// Creates a ranged matcher backed by generated static data.
+    #[must_use]
+    pub const fn borrowed_range(min: Option<&'static str>, max: Option<&'static str>) -> Self {
+        Self::Range {
+            min: match min {
+                Some(value) => Some(Cow::Borrowed(value)),
+                None => None,
+            },
+            max: match max {
+                Some(value) => Some(Cow::Borrowed(value)),
+                None => None,
+            },
+        }
+    }
+
     fn matches(&self, property: &dyn Property, actual: &str) -> bool {
         match self {
             Self::Exact(expected) => {
@@ -268,25 +308,25 @@ impl StatePropertyValueMatcher {
 
     pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
         if let Some(value) = tag.string() {
-            return Some(Self::Exact(value.to_string()));
+            return Some(Self::Exact(Cow::Owned(value.to_string())));
         }
         let compound = tag.compound()?;
         Some(Self::Range {
-            min: optional_string(compound, "min")?,
-            max: optional_string(compound, "max")?,
+            min: optional_string(compound, "min")?.map(Cow::Owned),
+            max: optional_string(compound, "max")?.map(Cow::Owned),
         })
     }
 
     pub(crate) fn to_nbt_tag_ref(&self) -> NbtTag {
         match self {
-            Self::Exact(value) => NbtTag::String(value.clone().into()),
+            Self::Exact(value) => NbtTag::String(value.as_ref().into()),
             Self::Range { min, max } => {
                 let mut compound = NbtCompound::new();
                 if let Some(min) = min {
-                    compound.insert("min", min.as_str());
+                    compound.insert("min", min.as_ref());
                 }
                 if let Some(max) = max {
-                    compound.insert("max", max.as_str());
+                    compound.insert("max", max.as_ref());
                 }
                 NbtTag::Compound(compound)
             }
@@ -309,11 +349,11 @@ impl StatePropertyValueMatcher {
 
     fn read_network(data: &mut Cursor<&[u8]>) -> Result<Self> {
         if bool::read(data)? {
-            Ok(Self::Exact(read_utf(data)?))
+            Ok(Self::Exact(Cow::Owned(read_utf(data)?)))
         } else {
             Ok(Self::Range {
-                min: read_optional_utf(data)?,
-                max: read_optional_utf(data)?,
+                min: read_optional_utf(data)?.map(Cow::Owned),
+                max: read_optional_utf(data)?.map(Cow::Owned),
             })
         }
     }
@@ -328,14 +368,26 @@ impl HashComponent for StatePropertyValueMatcher {
 /// A named state property and its value matcher.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatePropertyMatcher {
-    name: String,
+    name: Cow<'static, str>,
     value: StatePropertyValueMatcher,
 }
 
 impl StatePropertyMatcher {
     #[must_use]
     pub const fn new(name: String, value: StatePropertyValueMatcher) -> Self {
-        Self { name, value }
+        Self {
+            name: Cow::Owned(name),
+            value,
+        }
+    }
+
+    /// Creates a property matcher backed by generated static data.
+    #[must_use]
+    pub const fn borrowed(name: &'static str, value: StatePropertyValueMatcher) -> Self {
+        Self {
+            name: Cow::Borrowed(name),
+            value,
+        }
     }
 
     #[must_use]
@@ -352,17 +404,32 @@ impl StatePropertyMatcher {
 /// Vanilla state-properties predicate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatePropertiesPredicate {
-    properties: Vec<StatePropertyMatcher>,
+    properties: Cow<'static, [StatePropertyMatcher]>,
 }
 
 impl StatePropertiesPredicate {
     #[must_use]
     pub fn new(properties: Vec<StatePropertyMatcher>) -> Option<Self> {
-        let mut names = rustc_hash::FxHashSet::default();
-        properties
-            .iter()
-            .all(|property| names.insert(property.name.clone()))
-            .then_some(Self { properties })
+        let names_are_unique = {
+            let mut names = rustc_hash::FxHashSet::default();
+            properties
+                .iter()
+                .all(|property| names.insert(property.name.as_ref()))
+        };
+        names_are_unique.then_some(Self {
+            properties: Cow::Owned(properties),
+        })
+    }
+
+    /// Creates a predicate backed by generated static data.
+    ///
+    /// Generated callers must ensure property names are unique, matching the
+    /// map-shaped Vanilla codec. Runtime data should use [`Self::new`].
+    #[must_use]
+    pub const fn borrowed(properties: &'static [StatePropertyMatcher]) -> Self {
+        Self {
+            properties: Cow::Borrowed(properties),
+        }
     }
 
     #[must_use]
@@ -406,8 +473,8 @@ impl StatePropertiesPredicate {
 
     pub(crate) fn to_nbt_tag_ref(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
-        for property in &self.properties {
-            compound.insert(property.name.clone(), property.value.to_nbt_tag_ref());
+        for property in self.properties.iter() {
+            compound.insert(property.name.as_ref(), property.value.to_nbt_tag_ref());
         }
         NbtTag::Compound(compound)
     }
@@ -416,7 +483,7 @@ impl StatePropertiesPredicate {
 impl WriteTo for StatePropertiesPredicate {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         write_len(self.properties.len(), writer)?;
-        for property in &self.properties {
+        for property in self.properties.iter() {
             write_utf(&property.name, writer)?;
             property.value.write_network(writer)?;
         }
@@ -771,6 +838,16 @@ impl ItemPredicate {
         &self.components
     }
 
+    /// Mirrors Vanilla `ItemPredicate.test(ItemInstance)`.
+    #[must_use]
+    pub fn matches(&self, stack: &impl ItemInstance) -> bool {
+        self.items
+            .as_ref()
+            .is_none_or(|items| items.contains(stack.item()))
+            && self.count.matches(stack.count())
+            && self.components.matches(stack)
+    }
+
     pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
         Some(Self::new(
@@ -829,6 +906,18 @@ impl LockCode {
     pub const fn predicate(&self) -> &ItemPredicate {
         &self.predicate
     }
+
+    /// Returns whether `stack` satisfies this lock's item predicate.
+    #[must_use]
+    pub fn unlocks_with(&self, stack: &ItemStack) -> bool {
+        self.predicate.matches(stack)
+    }
+
+    /// Encodes this lock code as its Vanilla item-predicate NBT without consuming it.
+    #[must_use]
+    pub fn to_nbt_tag_ref(&self) -> NbtTag {
+        self.predicate.to_nbt_tag_ref()
+    }
 }
 
 impl WriteTo for LockCode {
@@ -850,7 +939,7 @@ impl ReadFrom for LockCode {
 
 impl ToNbtTag for LockCode {
     fn to_nbt_tag(self) -> NbtTag {
-        self.predicate.to_nbt_tag_ref()
+        self.to_nbt_tag_ref()
     }
 }
 
@@ -999,7 +1088,7 @@ mod tests {
     use crate::blocks::block_state_ext::BlockStateExt as _;
     use crate::blocks::properties::BlockStateProperties;
     use crate::data_component_predicate::DataComponentMatchers;
-    use crate::{RegistryHolderSet, init_vanilla_registry, vanilla_blocks};
+    use crate::{RegistryHolderSet, test_support::init_test_registry, vanilla_blocks};
 
     #[test]
     fn double_bounds_use_java_ordering() {
@@ -1026,18 +1115,23 @@ mod tests {
 
     #[test]
     fn block_predicates_use_typed_vanilla_property_order() {
-        init_vanilla_registry();
+        static BORROWED_POWER: [StatePropertyMatcher; 1] = [StatePropertyMatcher::borrowed(
+            "power",
+            StatePropertyValueMatcher::borrowed_range(Some("6"), Some("8")),
+        )];
+
+        init_test_registry();
 
         let lit = StatePropertiesPredicate::new(vec![StatePropertyMatcher::new(
             "lit".to_owned(),
             StatePropertyValueMatcher::Range {
-                min: Some("true".to_owned()),
+                min: Some("true".to_owned().into()),
                 max: None,
             },
         )])
         .expect("one state property is valid");
         let ore = BlockPredicate::new(
-            Some(RegistryHolderSet::Direct(vec![
+            Some(RegistryHolderSet::direct(vec![
                 &vanilla_blocks::REDSTONE_ORE,
             ])),
             Some(lit),
@@ -1052,19 +1146,26 @@ mod tests {
         let power = StatePropertiesPredicate::new(vec![StatePropertyMatcher::new(
             "power".to_owned(),
             StatePropertyValueMatcher::Range {
-                min: Some("6".to_owned()),
-                max: Some("8".to_owned()),
+                min: Some("6".to_owned().into()),
+                max: Some("8".to_owned().into()),
             },
         )])
         .expect("one state property is valid");
         let wire = vanilla_blocks::REDSTONE_WIRE.default_state();
         assert!(power.matches_block_state(wire.set_value(&BlockStateProperties::POWER, 7)));
         assert!(!power.matches_block_state(wire.set_value(&BlockStateProperties::POWER, 9)));
+        let borrowed_power = StatePropertiesPredicate::borrowed(&BORROWED_POWER);
+        assert!(
+            borrowed_power.matches_block_state(wire.set_value(&BlockStateProperties::POWER, 7))
+        );
+        assert!(
+            !borrowed_power.matches_block_state(wire.set_value(&BlockStateProperties::POWER, 9))
+        );
 
         let facing = StatePropertiesPredicate::new(vec![StatePropertyMatcher::new(
             "facing".to_owned(),
             StatePropertyValueMatcher::Range {
-                min: Some("up".to_owned()),
+                min: Some("up".to_owned().into()),
                 max: None,
             },
         )])

@@ -23,7 +23,7 @@ use crate::behavior::block::{
     BlockBehavior, EntityFallDamage, EntityFallOnContext, default_can_be_replaced,
 };
 use crate::behavior::context::BlockPlaceContext;
-use crate::block_entity::SharedBlockEntity;
+use crate::block_entity::BlockEntity;
 use crate::entity::Entity;
 use crate::player::Player;
 use crate::world::World;
@@ -310,18 +310,19 @@ impl BlockBehavior for TurtleEggBlock {
 
     fn player_destroy(
         &self,
-        world: &Arc<World>,
-        _player: &Player,
-        pos: BlockPos,
         state: BlockStateId,
-        _block_entity: Option<&SharedBlockEntity>,
-        _tool: &ItemStack,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        block_entity: Option<&dyn BlockEntity>,
+        destroyed_with: &ItemStack,
     ) {
         // Vanilla calls super.playerDestroy (loot/stats) and then decreaseEggs so a
         // cluster is broken one egg at a time. Steel's break pipeline
         // (game_mode::block_breaking::destroy_block) already removes the block
         // before invoking player_destroy, exactly like vanilla, so decrease_eggs
         // re-places the cluster with one fewer egg when more than one remained.
+        world.drop_resources_for_player(state, pos, player, block_entity, destroyed_with);
         Self::decrease_eggs(world, pos, state);
     }
 }

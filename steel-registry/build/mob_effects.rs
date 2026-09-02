@@ -11,6 +11,7 @@ struct MobEffectEntry {
     name: String,
     category: MobEffectCategoryEntry,
     color: i32,
+    instantaneous: bool,
     particle: MobEffectParticleEntry,
     #[serde(default)]
     attribute_modifiers: Vec<MobEffectAttributeModifierEntry>,
@@ -101,6 +102,7 @@ pub(crate) fn build() -> TokenStream {
         let key = Literal::string(&effect.name);
         let category = effect.category.token();
         let color = effect.color;
+        let instantaneous = effect.instantaneous;
         let particle_ident = Ident::new(
             &effect.particle.particle_type.path.to_shouty_snake_case(),
             Span::call_site(),
@@ -176,6 +178,7 @@ pub(crate) fn build() -> TokenStream {
                 key: Identifier::vanilla_static(#key),
                 category: #category,
                 color: RgbColor::new(#color),
+                instantaneous: #instantaneous,
                 particle: #particle,
                 attribute_modifiers: #modifiers_ident,
             };
