@@ -527,7 +527,11 @@ impl LootFunction {
                 on_pass,
                 on_fail,
             } => {
-                let branch = if item_filter.test(item) { on_pass } else { on_fail };
+                let branch = if item_filter.test(item) {
+                    on_pass
+                } else {
+                    on_fail
+                };
                 if let Some(cond_func) = branch
                     && cond_func.conditions.iter().all(|c| c.test(ctx))
                 {

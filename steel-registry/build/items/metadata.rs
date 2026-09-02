@@ -203,7 +203,8 @@ pub(super) fn mob_visibility_component_token(value: &Value) -> TokenStream {
     let visibility = object
         .get("visibility")
         .and_then(Value::as_f64)
-        .unwrap_or_else(|| panic!("mob_visibility.visibility must be a number")) as f32;
+        .unwrap_or_else(|| panic!("mob_visibility.visibility must be a number"))
+        as f32;
     quote! {
         vanilla_components::MobVisibility::new(#targeting_entity_types, #visibility)
     }

@@ -9,17 +9,16 @@ use crate::block_transformer::BlockTransformerComponent;
 use super::components::{
     ArmorTrim, AttackRange, BannerPatternLayers, Bees, BlockEntityData, BlockItemStateProperties,
     BlocksAttacks, BrewingFuel, BundleContents, ChargedProjectiles, Compostable, Consumable,
-    CookingFuel,
-    CustomData, CustomModelData, DamageResistant, DamageTypeComponent, DeathProtection,
-    DebugStickState, DyedItemColor, Enchantable, EntityData, Equippable, FireworkExplosion,
-    Fireworks, FoodProperties, InstrumentComponent, ItemAttributeModifiers, ItemContainerContents,
-    ItemEnchantments, ItemLore, JukeboxPlayable, KineticWeapon, LodestoneTracker, MapDecorations,
-    MapId, MapItemColor, MapPostProcessing, MobVisibility, OminousBottleAmplifier,
-    PaintingVariantComponent,
-    PiercingWeapon, PotDecorations, PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial,
-    Rarity, Recipes, Repairable, SeededContainerLoot, SignText, SulfurCubeContent,
-    SuspiciousStewEffects, SwingAnimation, Tool, TooltipDisplay, UseCooldown, UseEffects,
-    UseRemainder, VillagerFood, Weapon, WritableBookContent, WrittenBookContent,
+    CookingFuel, CustomData, CustomModelData, DamageResistant, DamageTypeComponent,
+    DeathProtection, DebugStickState, DyedItemColor, Enchantable, EntityData, Equippable,
+    FireworkExplosion, Fireworks, FoodProperties, InstrumentComponent, ItemAttributeModifiers,
+    ItemContainerContents, ItemEnchantments, ItemLore, JukeboxPlayable, KineticWeapon,
+    LodestoneTracker, MapDecorations, MapId, MapItemColor, MapPostProcessing, MobVisibility,
+    OminousBottleAmplifier, PaintingVariantComponent, PiercingWeapon, PotDecorations,
+    PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial, Rarity, Recipes, Repairable,
+    SeededContainerLoot, SignText, SulfurCubeContent, SuspiciousStewEffects, SwingAnimation, Tool,
+    TooltipDisplay, UseCooldown, UseEffects, UseRemainder, VillagerFood, Weapon,
+    WritableBookContent, WrittenBookContent,
 };
 use crate::cat_sound_variant::CatSoundVariant;
 use crate::cat_variant::CatVariant;

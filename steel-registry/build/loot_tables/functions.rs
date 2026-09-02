@@ -363,8 +363,9 @@ fn generate_item_predicate(filter: &ItemFilterJson) -> TokenStream {
                 "unsupported item_filter predicate shape for {key}: {value} \
                  (only the presence-check `{{}}` shape is modeled)"
             );
-            let id = Identifier::from_str(key)
-                .unwrap_or_else(|error| panic!("invalid item_filter predicate key {key:?}: {error}"));
+            let id = Identifier::from_str(key).unwrap_or_else(|error| {
+                panic!("invalid item_filter predicate key {key:?}: {error}")
+            });
             assert_eq!(
                 id.namespace.as_ref(),
                 "minecraft",

@@ -210,8 +210,7 @@ mod tests {
         let mut network = Vec::new();
         value.write(&mut network).expect("sign text should encode");
         assert_eq!(
-            SignText::read(&mut Cursor::new(network.as_slice()))
-                .expect("sign text should decode"),
+            SignText::read(&mut Cursor::new(network.as_slice())).expect("sign text should decode"),
             value
         );
     }
@@ -252,8 +251,7 @@ mod tests {
         let mut network = Vec::new();
         value.write(&mut network).expect("sign text should encode");
         assert_eq!(
-            SignText::read(&mut Cursor::new(network.as_slice()))
-                .expect("sign text should decode"),
+            SignText::read(&mut Cursor::new(network.as_slice())).expect("sign text should decode"),
             value
         );
     }

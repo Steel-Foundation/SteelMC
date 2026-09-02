@@ -114,8 +114,14 @@ mod tests {
     fn persistent_codec_accepts_any_integral_nbt_tag_type() {
         // `ExtraCodecs.POSITIVE_INT` reads through `Codec.INT`, which simdnbt's
         // `codec_i32` mirrors by widening from any integral tag.
-        assert_eq!(parse(compound_with(NbtTag::Byte(4))), Some(VillagerFood::new(4)));
-        assert_eq!(parse(compound_with(NbtTag::Long(4))), Some(VillagerFood::new(4)));
+        assert_eq!(
+            parse(compound_with(NbtTag::Byte(4))),
+            Some(VillagerFood::new(4))
+        );
+        assert_eq!(
+            parse(compound_with(NbtTag::Long(4))),
+            Some(VillagerFood::new(4))
+        );
     }
 
     #[test]

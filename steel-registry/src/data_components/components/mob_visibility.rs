@@ -125,8 +125,7 @@ mod tests {
         let mut bytes = Vec::new();
         value.write(&mut bytes).expect("component should write");
         assert_eq!(
-            MobVisibility::read(&mut Cursor::new(bytes.as_slice()))
-                .expect("component should read"),
+            MobVisibility::read(&mut Cursor::new(bytes.as_slice())).expect("component should read"),
             value
         );
     }
