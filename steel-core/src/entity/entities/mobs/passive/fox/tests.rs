@@ -431,3 +431,59 @@ fn fox_drops_its_mouth_item_on_death_regardless_of_loot_rules() {
         .any(|stack| stack.is(&vanilla_items::SWEET_BERRIES));
     assert!(dropped, "the mouth item is dropped into the world");
 }
+
+#[test]
+fn fox_set_target_clears_defending_when_target_is_lost() {
+    let (_world, fox) = world_with_fox("fox_defend_clear");
+    fox.set_defending(true);
+
+    let cleared = Mob::set_target(fox.as_ref(), None);
+
+    assert!(cleared);
+    assert!(
+        !fox.is_defending(),
+        "losing the target always drops isDefending, no matter which goal cleared it"
+    );
+}
+
+#[test]
+fn fox_defends_a_trusted_entity_hurt_by_an_untrusted_one() {
+    let (world, fox) = world_with_fox("fox_defend");
+
+    let trusted = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(9.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    world
+        .try_add_entity(Arc::clone(&trusted) as SharedEntity)
+        .expect("trusted pig should attach to the loaded chunk");
+    fox.add_trusted(trusted.uuid());
+
+    let attacker: SharedEntity = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        next_entity_id(),
+        DVec3::new(10.0, 65.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    // A fresh entity's tick count is 0, the same as the goal's initial "last
+    // handled" timestamp; advance it so the hurt event actually looks new.
+    trusted.base().advance_tick_count();
+    LivingEntity::set_last_hurt_by_mob(trusted.as_ref(), Some(&attacker));
+
+    // can_use rolls a random interval each call (vanilla's randomInterval gate),
+    // so retry a bounded number of times rather than depend on a single roll.
+    let mut goal = DefendTrustedTargetGoal::new();
+    assert!(
+        (0..100).any(|_| goal.can_use(fox.as_ref())),
+        "an untrusted attacker on a trusted entity is worth defending against"
+    );
+
+    goal.start(fox.as_ref());
+    assert!(fox.is_defending(), "starting the goal sets isDefending");
+    assert_eq!(
+        Mob::target(fox.as_ref()).map(|target| target.uuid()),
+        Some(attacker.uuid())
+    );
+}
