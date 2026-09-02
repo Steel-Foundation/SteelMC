@@ -170,6 +170,25 @@ pub(super) fn swing_animation_component_token(value: &Value) -> Option<TokenStre
     })
 }
 
+pub(super) fn cooking_fuel_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("cooking_fuel component must be an object"));
+    let burn_time = object
+        .get("burn_time")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("cooking_fuel.burn_time must be an identifier string"));
+    let speed_multiplier = object
+        .get("speed_multiplier")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("cooking_fuel.speed_multiplier must be an identifier string"));
+    let burn_time = identifier_token(burn_time);
+    let speed_multiplier = identifier_token(speed_multiplier);
+    quote! {
+        vanilla_components::CookingFuel::new(#burn_time, #speed_multiplier)
+    }
+}
+
 pub(super) fn damage_type_ref_token(value: &str) -> TokenStream {
     let id = Identifier::from_str(value)
         .unwrap_or_else(|error| panic!("invalid damage_type component id {value:?}: {error}"));
