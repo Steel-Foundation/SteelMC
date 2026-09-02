@@ -1,5 +1,5 @@
 use super::{
-    BlockStateProvider, DualNoiseProvider, FeatureNoiseParameters, FloatProvider, HeightProvider,
+    BlockStateProviderKind, DualNoiseProvider, FeatureNoiseParameters, FloatProvider, HeightProvider,
     IntProvider, NoiseProvider, NoiseThresholdProvider, RuleBasedStateProviderRule, TokenStream,
     UniformIntProvider, WeightedBlockState, WeightedIntProvider, generate_block_holder_set,
     generate_block_predicate, generate_block_state_data, generate_block_state_provider_entry_ref,
@@ -296,31 +296,31 @@ pub(super) fn generate_rule_based_state_provider_rule(
     }
 }
 
-pub(super) fn generate_block_state_provider(provider: &BlockStateProvider) -> TokenStream {
+pub(super) fn generate_block_state_provider(provider: &BlockStateProviderKind) -> TokenStream {
     match provider {
-        BlockStateProvider::Reference(identifier) => {
+        BlockStateProviderKind::Reference(identifier) => {
             let reference = generate_block_state_provider_entry_ref(identifier);
-            quote! { BlockStateProvider::Reference(#reference) }
+            quote! { BlockStateProviderKind::Reference(#reference) }
         }
-        BlockStateProvider::Simple { state } => {
+        BlockStateProviderKind::Simple { state } => {
             let state = generate_block_state_data(state);
-            quote! { BlockStateProvider::Simple { state: #state } }
+            quote! { BlockStateProviderKind::Simple { state: #state } }
         }
-        BlockStateProvider::Weighted { entries } => {
+        BlockStateProviderKind::Weighted { entries } => {
             let entries = generate_vec(entries, generate_weighted_block_state);
-            quote! { BlockStateProvider::Weighted { entries: #entries } }
+            quote! { BlockStateProviderKind::Weighted { entries: #entries } }
         }
-        BlockStateProvider::RotatedBlock { state, direction } => {
+        BlockStateProviderKind::RotatedBlock { state, direction } => {
             let state = generate_box(state.as_ref(), generate_block_state_provider);
             let direction = generate_option(direction, |direction| generate_direction(*direction));
             quote! {
-                BlockStateProvider::RotatedBlock {
+                BlockStateProviderKind::RotatedBlock {
                     state: #state,
                     direction: #direction,
                 }
             }
         }
-        BlockStateProvider::RandomizedInt {
+        BlockStateProviderKind::RandomizedInt {
             property,
             source,
             values,
@@ -329,44 +329,44 @@ pub(super) fn generate_block_state_provider(provider: &BlockStateProvider) -> To
             let source = generate_box(source.as_ref(), generate_block_state_provider);
             let values = generate_int_provider(values);
             quote! {
-                BlockStateProvider::RandomizedInt {
+                BlockStateProviderKind::RandomizedInt {
                     property: #property.to_string(),
                     source: #source,
                     values: #values,
                 }
             }
         }
-        BlockStateProvider::RuleBased { fallback, rules } => {
+        BlockStateProviderKind::RuleBased { fallback, rules } => {
             let fallback = generate_option(fallback, |fallback| {
                 generate_box(fallback.as_ref(), generate_block_state_provider)
             });
             let rules = generate_vec(rules, generate_rule_based_state_provider_rule);
             quote! {
-                BlockStateProvider::RuleBased {
+                BlockStateProviderKind::RuleBased {
                     fallback: #fallback,
                     rules: #rules,
                 }
             }
         }
-        BlockStateProvider::Noise(provider) => {
+        BlockStateProviderKind::Noise(provider) => {
             let provider = generate_noise_provider(provider);
-            quote! { BlockStateProvider::Noise(#provider) }
+            quote! { BlockStateProviderKind::Noise(#provider) }
         }
-        BlockStateProvider::NoiseThreshold(provider) => {
+        BlockStateProviderKind::NoiseThreshold(provider) => {
             let provider = generate_noise_threshold_provider(provider);
-            quote! { BlockStateProvider::NoiseThreshold(#provider) }
+            quote! { BlockStateProviderKind::NoiseThreshold(#provider) }
         }
-        BlockStateProvider::DualNoise(provider) => {
+        BlockStateProviderKind::DualNoise(provider) => {
             let provider = generate_dual_noise_provider(provider);
-            quote! { BlockStateProvider::DualNoise(#provider) }
+            quote! { BlockStateProviderKind::DualNoise(#provider) }
         }
-        BlockStateProvider::CopyProperties { source } => {
+        BlockStateProviderKind::CopyProperties { source } => {
             let source = generate_box(source.as_ref(), generate_block_state_provider);
-            quote! { BlockStateProvider::CopyProperties { source: #source } }
+            quote! { BlockStateProviderKind::CopyProperties { source: #source } }
         }
-        BlockStateProvider::RandomBlock { blocks } => {
+        BlockStateProviderKind::RandomBlock { blocks } => {
             let blocks = generate_block_holder_set(blocks);
-            quote! { BlockStateProvider::RandomBlock { blocks: #blocks } }
+            quote! { BlockStateProviderKind::RandomBlock { blocks: #blocks } }
         }
     }
 }

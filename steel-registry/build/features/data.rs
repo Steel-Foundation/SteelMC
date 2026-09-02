@@ -519,7 +519,7 @@ pub enum BlockPredicate {
 /// `"minecraft:soil_beneath_tree"`). Custom-deserialized below since an
 /// internally-tagged enum alone can't accept a bare string.
 #[derive(Debug, Clone)]
-pub enum BlockStateProvider {
+pub enum BlockStateProviderKind {
     /// Holder reference into the `worldgen/block_state_provider` registry.
     Reference(Identifier),
     Simple {
@@ -529,30 +529,30 @@ pub enum BlockStateProvider {
         entries: Vec<WeightedBlockState>,
     },
     RotatedBlock {
-        state: Box<BlockStateProvider>,
+        state: Box<BlockStateProviderKind>,
         direction: Option<Direction>,
     },
     RandomizedInt {
         property: String,
-        source: Box<BlockStateProvider>,
+        source: Box<BlockStateProviderKind>,
         values: IntProvider,
     },
     RuleBased {
-        fallback: Option<Box<BlockStateProvider>>,
+        fallback: Option<Box<BlockStateProviderKind>>,
         rules: Vec<RuleBasedStateProviderRule>,
     },
     Noise(NoiseProvider),
     NoiseThreshold(NoiseThresholdProvider),
     DualNoise(DualNoiseProvider),
     CopyProperties {
-        source: Box<BlockStateProvider>,
+        source: Box<BlockStateProviderKind>,
     },
     RandomBlock {
         blocks: BlockHolderSet,
     },
 }
 
-impl<'de> Deserialize<'de> for BlockStateProvider {
+impl<'de> Deserialize<'de> for BlockStateProviderKind {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
         #[serde(tag = "type")]
@@ -563,20 +563,20 @@ impl<'de> Deserialize<'de> for BlockStateProvider {
             Weighted { entries: Vec<WeightedBlockState> },
             #[serde(rename = "minecraft:rotated")]
             RotatedBlock {
-                state: Box<BlockStateProvider>,
+                state: Box<BlockStateProviderKind>,
                 #[serde(default, deserialize_with = "deserialize_optional_direction")]
                 direction: Option<Direction>,
             },
             #[serde(rename = "minecraft:randomized_int")]
             RandomizedInt {
                 property: String,
-                source: Box<BlockStateProvider>,
+                source: Box<BlockStateProviderKind>,
                 values: IntProvider,
             },
             #[serde(rename = "minecraft:rule_based")]
             RuleBased {
                 #[serde(default)]
-                fallback: Option<Box<BlockStateProvider>>,
+                fallback: Option<Box<BlockStateProviderKind>>,
                 rules: Vec<RuleBasedStateProviderRule>,
             },
             #[serde(rename = "minecraft:noise")]
@@ -586,7 +586,7 @@ impl<'de> Deserialize<'de> for BlockStateProvider {
             #[serde(rename = "minecraft:dual_noise")]
             DualNoise(DualNoiseProvider),
             #[serde(rename = "minecraft:copy_properties")]
-            CopyProperties { source: Box<BlockStateProvider> },
+            CopyProperties { source: Box<BlockStateProviderKind> },
             #[serde(rename = "minecraft:random_block")]
             RandomBlock { blocks: BlockHolderSet },
         }
@@ -645,7 +645,7 @@ pub struct WeightedBlockState {
 #[serde(deny_unknown_fields)]
 pub struct RuleBasedStateProviderRule {
     pub if_true: BlockPredicate,
-    pub then: BlockStateProvider,
+    pub then: BlockStateProviderKind,
 }
 
 /// `NormalNoise.Parameters`, embedded in vanilla feature providers.
@@ -853,13 +853,13 @@ pub struct BlockColumnConfiguration {
 #[serde(deny_unknown_fields)]
 pub struct BlockColumnLayer {
     pub height: IntProvider,
-    pub provider: BlockStateProvider,
+    pub provider: BlockStateProviderKind,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BlockPileConfiguration {
-    pub state_provider: BlockStateProvider,
+    pub state_provider: BlockStateProviderKind,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -874,7 +874,7 @@ pub struct DeltaFeatureConfiguration {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DiskConfiguration {
-    pub state_provider: BlockStateProvider,
+    pub state_provider: BlockStateProviderKind,
     pub target: BlockPredicate,
     pub radius: IntProvider,
     pub half_height: i32,
@@ -889,7 +889,7 @@ struct CoralFeatureConfigJson {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectedRandomPatchySquareConfiguration {
-    pub block: BlockStateProvider,
+    pub block: BlockStateProviderKind,
     pub project_through: BlockPredicate,
     pub size: IntProvider,
     pub max_projection_height: i32,
@@ -898,7 +898,7 @@ pub struct ProjectedRandomPatchySquareConfiguration {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RandomNeighborSpreadConfiguration {
-    pub block: BlockStateProvider,
+    pub block: BlockStateProviderKind,
     pub accepted_neighbors: BlockHolderSet,
     pub can_replace: BlockPredicate,
     pub attempts: IntProvider,
@@ -909,7 +909,7 @@ pub struct RandomNeighborSpreadConfiguration {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SingleBlockPillarConfiguration {
-    pub block: BlockStateProvider,
+    pub block: BlockStateProviderKind,
     #[serde(default = "default_always_true_predicate")]
     pub can_replace: BlockPredicate,
     #[serde(deserialize_with = "deserialize_direction")]
@@ -923,7 +923,7 @@ pub struct SingleBlockPillarConfiguration {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SteppedColumnClusterConfiguration {
-    pub block: BlockStateProvider,
+    pub block: BlockStateProviderKind,
     pub continue_through: BlockPredicate,
     pub can_replace: BlockPredicate,
     pub cannot_place_on: BlockHolderSet,
@@ -1043,7 +1043,7 @@ pub struct EndSpike {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FallenTreeConfiguration {
-    pub trunk_provider: BlockStateProvider,
+    pub trunk_provider: BlockStateProviderKind,
     pub log_length: IntProvider,
     pub stump_decorators: Vec<TreeDecorator>,
     pub log_decorators: Vec<TreeDecorator>,
@@ -1089,11 +1089,11 @@ pub struct GeodeConfiguration {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GeodeBlockSettings {
-    pub filling_provider: BlockStateProvider,
-    pub inner_layer_provider: BlockStateProvider,
-    pub alternate_inner_layer_provider: BlockStateProvider,
-    pub middle_layer_provider: BlockStateProvider,
-    pub outer_layer_provider: BlockStateProvider,
+    pub filling_provider: BlockStateProviderKind,
+    pub inner_layer_provider: BlockStateProviderKind,
+    pub alternate_inner_layer_provider: BlockStateProviderKind,
+    pub middle_layer_provider: BlockStateProviderKind,
+    pub outer_layer_provider: BlockStateProviderKind,
     pub inner_placements: Vec<BlockStateData>,
     #[serde(deserialize_with = "deserialize_tag_identifier")]
     pub cannot_replace: Identifier,
@@ -1197,8 +1197,8 @@ const fn default_geode_crack_point_offset() -> i32 {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HugeMushroomConfiguration {
-    pub cap_provider: BlockStateProvider,
-    pub stem_provider: BlockStateProvider,
+    pub cap_provider: BlockStateProviderKind,
+    pub stem_provider: BlockStateProviderKind,
     #[serde(default = "default_huge_mushroom_foliage_radius")]
     pub foliage_radius: i32,
     pub can_place_on: BlockPredicate,
@@ -1223,8 +1223,8 @@ pub struct HugeFungusConfiguration {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LakeConfiguration {
-    pub fluid: BlockStateProvider,
-    pub barrier: BlockStateProvider,
+    pub fluid: BlockStateProviderKind,
+    pub barrier: BlockStateProviderKind,
     pub can_place_feature: BlockPredicate,
     pub can_replace_with_air_or_fluid: BlockPredicate,
     pub can_replace_with_barrier: BlockPredicate,
@@ -1278,7 +1278,7 @@ const fn default_multiface_chance_of_spreading() -> f32 {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NetherForestVegetationConfiguration {
-    pub state_provider: BlockStateProvider,
+    pub state_provider: BlockStateProviderKind,
     pub spread_width: i32,
     pub spread_height: i32,
 }
@@ -1387,8 +1387,8 @@ pub struct RootSystemConfiguration {
     pub hanging_roots_vertical_span: i32,
     pub hanging_root_placement_attempts: i32,
     pub allowed_vertical_water_for_tree: i32,
-    pub root_state_provider: BlockStateProvider,
-    pub hanging_root_state_provider: BlockStateProvider,
+    pub root_state_provider: BlockStateProviderKind,
+    pub hanging_root_state_provider: BlockStateProviderKind,
     pub root_replaceable: BlockHolderSet,
     pub allowed_tree_position: BlockPredicate,
 }
@@ -1418,7 +1418,7 @@ pub struct SeagrassConfiguration {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SimpleBlockConfiguration {
-    pub to_place: BlockStateProvider,
+    pub to_place: BlockStateProviderKind,
     #[serde(default)]
     pub schedule_tick: bool,
 }
@@ -1510,9 +1510,9 @@ const fn default_spring_hole_count() -> i32 {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TreeConfiguration {
-    pub trunk_provider: BlockStateProvider,
-    pub below_trunk_provider: BlockStateProvider,
-    pub foliage_provider: BlockStateProvider,
+    pub trunk_provider: BlockStateProviderKind,
+    pub below_trunk_provider: BlockStateProviderKind,
+    pub foliage_provider: BlockStateProviderKind,
     pub trunk_placer: TrunkPlacer,
     pub foliage_placer: FoliagePlacer,
     pub minimum_size: FeatureSize,
@@ -1753,7 +1753,7 @@ pub enum RootPlacer {
 #[serde(deny_unknown_fields)]
 pub struct MangroveRootPlacer {
     pub trunk_offset_y: IntProvider,
-    pub root_provider: BlockStateProvider,
+    pub root_provider: BlockStateProviderKind,
     pub above_root_placement: AboveRootPlacement,
     pub mangrove_root_placement: MangroveRootPlacement,
 }
@@ -1761,7 +1761,7 @@ pub struct MangroveRootPlacer {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AboveRootPlacement {
-    pub above_root_provider: BlockStateProvider,
+    pub above_root_provider: BlockStateProviderKind,
     pub above_root_placement_chance: f32,
 }
 
@@ -1771,7 +1771,7 @@ pub struct MangroveRootPlacement {
     #[serde(deserialize_with = "deserialize_tag_identifier")]
     pub can_grow_through: Identifier,
     pub muddy_roots_in: Vec<Identifier>,
-    pub muddy_roots_provider: BlockStateProvider,
+    pub muddy_roots_provider: BlockStateProviderKind,
     pub max_root_width: i32,
     pub max_root_length: i32,
     pub random_skew_chance: f32,
@@ -1781,7 +1781,7 @@ pub struct MangroveRootPlacement {
 #[serde(tag = "type")]
 pub enum TreeDecorator {
     #[serde(rename = "minecraft:alter_ground")]
-    AlterGround { provider: BlockStateProvider },
+    AlterGround { provider: BlockStateProviderKind },
     #[serde(rename = "minecraft:beehive")]
     Beehive { probability: f32 },
     #[serde(rename = "minecraft:cocoa")]
@@ -1815,7 +1815,7 @@ pub struct AttachedToLeavesDecorator {
     pub exclusion_radius_xz: i32,
     pub exclusion_radius_y: i32,
     pub required_empty_blocks: i32,
-    pub block_provider: BlockStateProvider,
+    pub block_provider: BlockStateProviderKind,
     #[serde(deserialize_with = "deserialize_directions")]
     pub directions: Vec<Direction>,
 }
@@ -1824,7 +1824,7 @@ pub struct AttachedToLeavesDecorator {
 #[serde(deny_unknown_fields)]
 pub struct AttachedToLogsDecorator {
     pub probability: f32,
-    pub block_provider: BlockStateProvider,
+    pub block_provider: BlockStateProviderKind,
     #[serde(deserialize_with = "deserialize_directions")]
     pub directions: Vec<Direction>,
 }
@@ -1832,7 +1832,7 @@ pub struct AttachedToLogsDecorator {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlaceOnGroundDecorator {
-    pub block_state_provider: BlockStateProvider,
+    pub block_state_provider: BlockStateProviderKind,
     #[serde(default = "default_place_on_ground_tries")]
     pub tries: i32,
     #[serde(default = "default_place_on_ground_radius")]
@@ -1874,7 +1874,7 @@ pub struct UnderwaterMagmaConfiguration {
 pub struct VegetationPatchConfiguration {
     #[serde(deserialize_with = "deserialize_tag_identifier")]
     pub replaceable: Identifier,
-    pub ground_state: BlockStateProvider,
+    pub ground_state: BlockStateProviderKind,
     pub vegetation_feature: PlacedFeatureRef,
     pub surface: VerticalSurface,
     pub depth: IntProvider,

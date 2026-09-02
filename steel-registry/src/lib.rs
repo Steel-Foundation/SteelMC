@@ -478,5 +478,10 @@ pub mod vanilla_placed_features;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_block_state_providers.rs"]
+pub mod vanilla_block_state_providers;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_custom_stats.rs"]
 pub mod vanilla_custom_stats;

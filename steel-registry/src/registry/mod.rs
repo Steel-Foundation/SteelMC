@@ -39,8 +39,8 @@ use crate::{
     entity_data::{EntityDataSerializerRegistry, register_vanilla_entity_data_serializers},
     entity_type::EntityTypeRegistry,
     feature::{
-        ConfiguredFeatureKind, ConfiguredFeatureRef, ConfiguredFeatureRegistry, PlacedFeatureData,
-        PlacedFeatureRef, PlacedFeatureRegistry,
+        BlockStateProviderRegistry, ConfiguredFeatureKind, ConfiguredFeatureRef,
+        ConfiguredFeatureRegistry, PlacedFeatureData, PlacedFeatureRef, PlacedFeatureRegistry,
     },
     fluid::FluidRegistry,
     frog_variant::FrogVariantRegistry,
@@ -72,8 +72,9 @@ use crate::{
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
     vanilla_attributes, vanilla_banner_pattern_tags, vanilla_banner_patterns, vanilla_biome_tags,
-    vanilla_biomes, vanilla_block_entity_types, vanilla_block_tags, vanilla_block_transformers,
-    vanilla_blocks, vanilla_cat_sound_variants, vanilla_cat_variants, vanilla_chat_types,
+    vanilla_biomes, vanilla_block_entity_types, vanilla_block_state_providers, vanilla_block_tags,
+    vanilla_block_transformers, vanilla_blocks, vanilla_cat_sound_variants, vanilla_cat_variants,
+    vanilla_chat_types,
     vanilla_chicken_sound_variants, vanilla_chicken_variants, vanilla_configured_carvers,
     vanilla_configured_features, vanilla_cow_sound_variants, vanilla_cow_variants,
     vanilla_custom_stats, vanilla_damage_type_tags, vanilla_damage_types, vanilla_dialog_tags,
@@ -225,6 +226,8 @@ pub const CONFIGURED_FEATURE_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/configured_feature");
 pub const PLACED_FEATURE_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/placed_feature");
+pub const BLOCK_STATE_PROVIDER_REGISTRY: Identifier =
+    Identifier::vanilla_static("worldgen/block_state_provider");
 pub const STRUCTURE_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/structure");
 pub const STRUCTURE_PROCESSOR_LIST_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/processor_list");
@@ -286,6 +289,7 @@ pub struct Registry {
     pub enchantments: EnchantmentRegistry,
     pub world_clocks: WorldClockRegistry,
     pub configured_carvers: ConfiguredCarverRegistry,
+    pub block_state_providers: BlockStateProviderRegistry,
     pub configured_features: ConfiguredFeatureRegistry,
     pub placed_features: PlacedFeatureRegistry,
     pub structures: StructureRegistry,
@@ -418,6 +422,10 @@ impl Registry {
             &mut registry.structure_processors,
         );
 
+        vanilla_block_state_providers::register_block_state_providers(
+            &mut registry.block_state_providers,
+        );
+
         vanilla_configured_carvers::register_configured_carvers(&mut registry.configured_carvers);
         vanilla_configured_features::register_configured_features(
             &mut registry.configured_features,
@@ -487,6 +495,7 @@ impl Registry {
         self.enchantments.freeze();
         self.world_clocks.freeze();
         self.configured_carvers.freeze();
+        self.block_state_providers.freeze();
         self.configured_features.freeze();
         self.placed_features.freeze();
         self.structures.freeze();
@@ -748,6 +757,7 @@ impl Registry {
             poi_types: PoiTypeRegistry::new(),
             enchantments: EnchantmentRegistry::new(),
             configured_carvers: ConfiguredCarverRegistry::new(),
+            block_state_providers: BlockStateProviderRegistry::new(),
             configured_features: ConfiguredFeatureRegistry::new(),
             placed_features: PlacedFeatureRegistry::new(),
             structures: StructureRegistry::new(),
