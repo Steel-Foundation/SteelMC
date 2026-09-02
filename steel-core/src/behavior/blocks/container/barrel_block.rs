@@ -7,16 +7,20 @@ use std::sync::{Arc, Weak};
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
+use crate::block_entity::base_container::BaseContainer;
 use crate::block_entity::entities::BarrelBlockEntity;
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
+use crate::entity::Entity as _;
 use crate::inventory::container::{
     ContainerAccessResult, ContainerReadiness, calculate_redstone_signal_from_container,
 };
 use crate::inventory::lock::{ContainerId, ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::kinds::chest_with_openers;
+use crate::inventory::menu::{MenuCreation, MenuProvider};
 use crate::player::Player;
 use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext};
 use crate::world::{LevelReader, World};
+use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -29,6 +33,7 @@ use steel_utils::{BlockPos, BlockStateId};
 ///
 /// Barrels are container block entities with 27 slots (3x9 grid).
 /// They use the same menu as chests but cannot form double containers.
+#[derive(Clone, Copy)]
 #[block_behavior]
 pub struct BarrelBlock {
     block: BlockRef,
@@ -41,6 +46,58 @@ struct DeferredBarrelOpenJob {
     container_id: ContainerId,
     player: Weak<Player>,
     token: u64,
+}
+
+/// Mirrors `BarrelBlockEntity` acting as its own Vanilla `MenuProvider`.
+struct BarrelMenuProvider {
+    block: BarrelBlock,
+    world: Arc<World>,
+    pos: BlockPos,
+    block_entity: SharedBlockEntity,
+}
+
+impl MenuProvider for BarrelMenuProvider {
+    fn create_menu(self: Box<Self>, player: &Player) -> MenuCreation {
+        let Self {
+            block,
+            world,
+            pos,
+            block_entity,
+        } = *self;
+        let Some(barrel) = block_entity.downcast_ref::<BarrelBlockEntity>() else {
+            return MenuCreation::Unavailable;
+        };
+        if !barrel.can_open(player) {
+            // RandomizableContainerBlockEntity.createMenu only notifies non-spectators.
+            if !player.is_spectator() {
+                BaseContainer::send_chest_locked_notifications(
+                    &world,
+                    DVec3::new(
+                        f64::from(pos.x()) + 0.5,
+                        f64::from(pos.y()) + 0.5,
+                        f64::from(pos.z()) + 0.5,
+                    ),
+                    player,
+                    barrel.display_name(),
+                );
+            }
+            return MenuCreation::Unavailable;
+        }
+        let Some(container_ref) = block_entity.container_ref() else {
+            return MenuCreation::Unavailable;
+        };
+        match container_ref.prepare_access(Some(player)) {
+            ContainerAccessResult::Ready => {
+                BarrelBlock::open(player, block_entity, container_ref);
+                MenuCreation::Opened
+            }
+            ContainerAccessResult::Pending => {
+                block.defer_open(&world, pos, player, container_ref.container_id());
+                MenuCreation::Deferred
+            }
+            ContainerAccessResult::Failed => MenuCreation::Unavailable,
+        }
+    }
 }
 
 impl BarrelBlock {
@@ -68,7 +125,7 @@ impl BarrelBlock {
     }
 
     fn defer_open(
-        &self,
+        self,
         world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
@@ -123,7 +180,7 @@ impl ServerJob for DeferredBarrelOpenJob {
         };
         if container.container_id() != self.container_id
             || !container.still_valid(&player)
-            || !barrel.menu_is_ready(&player)
+            || !barrel.can_open(&player)
         {
             player.finish_deferred_container_open(self.token);
             return JobPoll::Finished;
@@ -164,40 +221,34 @@ impl BlockBehavior for BarrelBlock {
 
     fn use_without_item(
         &self,
-        _state: BlockStateId,
+        state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        player.cancel_deferred_container_open();
-        let Some(block_entity) = world.get_block_entity(pos) else {
-            return InteractionResult::Success;
-        };
-        let Some(barrel) = block_entity.downcast_ref::<BarrelBlockEntity>() else {
-            return InteractionResult::Success;
-        };
-        if !barrel.menu_is_ready(player) {
-            return InteractionResult::Success;
+        if let Some(provider) = self.get_menu_provider(state, world, pos) {
+            player.open_menu_provider(provider);
+            // TODO: Award OPEN_BARREL and anger nearby piglins once those systems exist.
         }
-        let Some(container_ref) = block_entity.container_ref() else {
-            return InteractionResult::Success;
-        };
-        match container_ref.prepare_access(Some(player)) {
-            ContainerAccessResult::Ready => {
-                Self::open(player, block_entity, container_ref);
-            }
-            ContainerAccessResult::Pending => {
-                self.defer_open(world, pos, player, container_ref.container_id());
-            }
-            ContainerAccessResult::Failed => {}
-        }
-
-        // TODO: Award stat OPEN_BARREL
-        // TODO: Anger nearby piglins (PiglinAi.angerNearbyPiglins)
-
         InteractionResult::Success
+    }
+
+    fn get_menu_provider(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) -> Option<Box<dyn MenuProvider>> {
+        let block_entity = world.get_block_entity(pos)?;
+        block_entity.downcast_ref::<BarrelBlockEntity>()?;
+        Some(Box::new(BarrelMenuProvider {
+            block: *self,
+            world: Arc::clone(world),
+            pos,
+            block_entity,
+        }))
     }
 
     fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
@@ -284,7 +335,6 @@ mod tests {
     use crate::{
         behavior::{InventoryAccess, init_behaviors},
         block_entity::init_block_entities,
-        entity::Entity as _,
         player::ResetReason,
         server::{Server, jobs::ServerJobQueue},
         test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},

@@ -12,7 +12,7 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_entity_types;
 use steel_utils::{
     BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex,
-    translations::CONTAINER_CHEST, types::GameType,
+    translations::CONTAINER_CHEST,
 };
 use text_components::TextComponent;
 
@@ -77,14 +77,11 @@ impl ChestBlockEntity {
         self.container.lock().has_custom_name()
     }
 
-    /// Returns whether opening is permitted by the implemented lock validation.
+    /// Returns whether `player` may open this chest half.
     #[must_use]
-    pub fn menu_is_ready(&self, player: &Player) -> bool {
-        let container = self.container.lock();
-        let spectator = player.game_mode() == GameType::Spectator;
-        // TODO: Use a shared `ItemPredicate` matcher and send Vanilla's
-        // locked-container feedback once open validation supports them.
-        (!container.has_lock() || spectator) && (!container.has_pending_loot() || !spectator)
+    pub fn can_open(&self, player: &Player) -> bool {
+        let main_hand = player.get_main_hand_item();
+        self.container.lock().can_open(player, &main_hand)
     }
 
     fn configured_sound(state: BlockStateId, opening: bool) -> Option<SoundEventRef> {
@@ -211,25 +208,125 @@ impl ContainerOpeners for ChestBlockEntity {
 #[cfg(test)]
 mod tests {
     use glam::DVec3;
+    use simdnbt::owned::NbtCompound;
     use steel_registry::blocks::properties::{BlockStateProperties, ChestType, Direction};
-    use steel_registry::data_components::vanilla_components::CUSTOM_NAME;
+    use steel_registry::data_component_predicate::DataComponentMatchers;
+    use steel_registry::data_components::CustomData;
+    use steel_registry::data_components::vanilla_components::{
+        BLOCK_ENTITY_DATA, CONTAINER, CUSTOM_DATA, CUSTOM_NAME, ItemContainerContents, LOCK,
+    };
+    use steel_registry::item_predicate::{IntBounds, ItemPredicate, LockCode};
     use steel_registry::{
-        item_stack::ItemStack, test_support::init_test_registry, vanilla_blocks, vanilla_entities,
-        vanilla_items,
+        RegistryHolderSet, item_stack::ItemStack, test_support::init_test_registry, vanilla_blocks,
+        vanilla_entities, vanilla_items,
     };
     use steel_utils::{ChunkPos, Downcast as _, WorldAabb, types::UpdateFlags};
     use uuid::Uuid;
 
     use crate::behavior::items::BlockItem;
     use crate::behavior::{BlockPlaceContext, InteractionResult, init_behaviors};
-    use crate::block_entity::init_block_entities;
+    use crate::block_entity::{BlockEntityComponentsExt as _, init_block_entities};
     use crate::entity::Entity as _;
     use crate::entity::entities::ItemEntity;
     use crate::inventory::container::Container as _;
+    use crate::inventory::lock::ContainerLockGuard;
     use crate::inventory::menu::kinds::chest_with_openers;
+    use crate::player::ResetReason;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
     use super::*;
+
+    #[test]
+    fn placed_chest_items_apply_their_components_and_pick_block_collects_them() {
+        init_test_registry();
+        init_behaviors();
+        init_block_entities();
+        let world = fresh_test_world("chest_item_components");
+        let pos = BlockPos::new(3, 64, 3);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        let name = TextComponent::plain("Treasure");
+        let mut custom_data = NbtCompound::new();
+        custom_data.insert("steel_test", 1_i32);
+        let mut stack = ItemStack::new(&vanilla_items::CHEST);
+        stack.set(CUSTOM_NAME, name.clone());
+        stack.set(
+            LOCK,
+            LockCode::new(ItemPredicate::new(
+                Some(RegistryHolderSet::direct(vec![
+                    &vanilla_items::TRIPWIRE_HOOK,
+                ])),
+                IntBounds::ANY,
+                DataComponentMatchers::ANY,
+            )),
+        );
+        stack.set(
+            CONTAINER,
+            ItemContainerContents::from_items(&[
+                ItemStack::empty(),
+                ItemStack::with_count(&vanilla_items::DIAMOND, 3),
+            ])
+            .expect("test container contents should persist"),
+        );
+        stack.set(
+            CUSTOM_DATA,
+            CustomData::try_from_compound(custom_data).expect("test custom data should be valid"),
+        );
+
+        let context =
+            BlockPlaceContext::directional(&world, pos, Direction::Up, &mut stack, Direction::Up);
+        assert_eq!(
+            BlockItem::new(&vanilla_blocks::CHEST).place(context),
+            InteractionResult::Success
+        );
+        assert!(stack.is_empty());
+        let Some(block_entity) = world.get_block_entity(pos) else {
+            panic!("chest placement should create its block entity");
+        };
+        let Some(chest) = block_entity.downcast_ref::<ChestBlockEntity>() else {
+            panic!("chest should use its concrete block entity");
+        };
+        let Some(container_ref) = block_entity.container_ref() else {
+            panic!("chest should expose its inventory");
+        };
+
+        assert_eq!(chest.display_name(), name);
+        {
+            let guard = ContainerLockGuard::lock_all(&[&container_ref]);
+            let Some(container) = guard.get(container_ref.container_id()) else {
+                panic!("chest inventory should be lockable");
+            };
+            assert!(container.get_item(0).is_empty());
+            assert!(container.get_item(1).is(&vanilla_items::DIAMOND));
+            assert_eq!(container.get_item(1).count(), 3);
+        }
+        assert!(
+            block_entity.base().components().has(CUSTOM_DATA),
+            "components no field consumes stay explicit block-entity components"
+        );
+        let player =
+            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(1), "Looter", 1).build();
+        player.base().set_position_local(DVec3::new(3.5, 64.0, 3.5));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        assert!(!chest.can_open(&player), "the item's lock must apply");
+
+        let mut picked = ItemStack::new(&vanilla_items::CHEST);
+        block_entity.add_block_data_to_item(&mut picked);
+        assert_eq!(picked.get(CUSTOM_NAME), Some(&name));
+        assert!(picked.get(LOCK).is_some());
+        assert_eq!(
+            picked
+                .get(CONTAINER)
+                .and_then(|contents| contents.items().get(1))
+                .and_then(Option::as_ref)
+                .map(|diamonds| (diamonds.item(), diamonds.count())),
+            Some((&*vanilla_items::DIAMOND, 3))
+        );
+        assert!(picked.get(CUSTOM_DATA).is_some());
+        assert!(
+            picked.get(BLOCK_ENTITY_DATA).is_none(),
+            "every saved chest field is represented by a component"
+        );
+    }
 
     #[test]
     fn breaking_a_named_chest_drops_a_named_chest_item() {

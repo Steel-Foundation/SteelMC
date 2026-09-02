@@ -27,6 +27,7 @@ use crate::block_entity::{
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
+use crate::player::Player;
 use crate::world::World;
 
 /// Number of inventory slots in a furnace.
@@ -103,12 +104,11 @@ impl FurnaceBlockEntity {
             .display_name(TextComponent::translated(CONTAINER_FURNACE.msg()))
     }
 
-    /// Returns whether opening can proceed without unavailable lock matching.
+    /// Returns whether `player` may open this furnace.
     #[must_use]
-    pub fn menu_is_ready(&self) -> bool {
-        // TODO: Use a shared `ItemPredicate` matcher, spectator bypass, and
-        // Vanilla's locked-container feedback once open validation supports them.
-        !self.container.lock().has_lock()
+    pub fn can_open(&self, player: &Player) -> bool {
+        let main_hand = player.get_main_hand_item();
+        self.container.lock().base.can_open(player, &main_hand)
     }
 }
 
@@ -248,8 +248,8 @@ impl FurnaceContainer {
         self.base.display_name(default)
     }
 
-    #[must_use]
-    pub(crate) fn has_lock(&self) -> bool {
+    #[cfg(test)]
+    fn has_lock(&self) -> bool {
         self.base.has_lock()
     }
 
@@ -462,12 +462,51 @@ mod tests {
     use simdnbt::ToNbtTag as _;
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use steel_registry::test_support::init_test_registry;
+    use steel_registry::vanilla_blocks;
+    use steel_utils::types::GameType;
+    use uuid::Uuid;
 
     use super::*;
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world};
 
     fn furnace() -> FurnaceContainer {
         init_test_registry();
         FurnaceContainer::new()
+    }
+
+    #[test]
+    fn locked_furnace_requires_the_key_item_unless_the_player_is_a_spectator() {
+        init_test_registry();
+        let world = fresh_test_world("locked_furnace");
+        let furnace = FurnaceBlockEntity::new(
+            Weak::new(),
+            BlockPos::ZERO,
+            vanilla_blocks::FURNACE.default_state(),
+        );
+        let mut lock = NbtCompound::new();
+        lock.insert("items", "minecraft:tripwire_hook");
+        let mut nbt = NbtCompound::new();
+        nbt.insert("lock", lock);
+        let mut bytes = Vec::new();
+        nbt.write(&mut bytes);
+        let borrowed = read_borrowed_compound(&mut Cursor::new(bytes.as_slice()))
+            .expect("test lock NBT should reborrow");
+        furnace.load_additional(&borrowed);
+        let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "Smelter", 1).build();
+
+        assert!(!furnace.can_open(&player));
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::TRIPWIRE_HOOK));
+        assert!(furnace.can_open(&player));
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::empty());
+        assert!(!furnace.can_open(&player));
+        player.restore_game_modes(GameType::Spectator, None);
+        assert!(furnace.can_open(&player));
     }
 
     #[test]

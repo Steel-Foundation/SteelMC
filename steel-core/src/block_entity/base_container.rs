@@ -2,17 +2,23 @@
 
 use std::mem;
 
+use glam::DVec3;
 use simdnbt::borrow::NbtCompound as NbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::{FromNbtTag as _, ToNbtTag as _};
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::data_components::DataComponentMap;
 use steel_registry::data_components::vanilla_components::{
     CONTAINER, CUSTOM_NAME, ItemContainerContents, LOCK,
 };
-use steel_registry::{item_predicate::LockCode, item_stack::ItemStack};
+use steel_registry::{item_predicate::LockCode, item_stack::ItemStack, sound_events};
+use steel_utils::translations::CONTAINER_IS_LOCKED;
 use text_components::TextComponent;
 
 use crate::block_entity::BlockEntityComponentInput;
+use crate::entity::Entity as _;
+use crate::player::Player;
+use crate::world::World;
 
 /// Inventory, custom-name, and lock data shared by container block entities.
 pub(crate) struct BaseContainer {
@@ -172,5 +178,37 @@ impl BaseContainer {
         self.lock
             .as_ref()
             .is_some_and(|lock| lock != &LockCode::NO_LOCK)
+    }
+
+    /// Mirrors `BaseContainerBlockEntity.canOpen` and `LockCode.canUnlock`:
+    /// spectators bypass the lock, everyone else needs a matching main-hand item.
+    ///
+    /// Callers snapshot the main hand before locking the container so the
+    /// inventory lock is never nested inside a container lock.
+    #[must_use]
+    pub(crate) fn can_open(&self, player: &Player, main_hand: &ItemStack) -> bool {
+        player.is_spectator()
+            || self
+                .lock
+                .as_ref()
+                .is_none_or(|lock| lock.unlocks_with(main_hand))
+    }
+
+    /// Mirrors `BaseContainerBlockEntity.sendChestLockedNotifications`.
+    pub(crate) fn send_chest_locked_notifications(
+        world: &World,
+        pos: DVec3,
+        player: &Player,
+        display_name: TextComponent,
+    ) {
+        player.send_overlay_message(&CONTAINER_IS_LOCKED.message([display_name]).component());
+        world.play_sound_at(
+            &sound_events::BLOCK_CHEST_LOCKED,
+            SoundSource::Blocks,
+            pos,
+            1.0,
+            1.0,
+            None,
+        );
     }
 }

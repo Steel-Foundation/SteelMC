@@ -15,7 +15,7 @@ use steel_registry::{sound_events, vanilla_block_entity_types};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{
     BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex,
-    translations::CONTAINER_BARREL, types::GameType,
+    translations::CONTAINER_BARREL,
 };
 use text_components::TextComponent;
 
@@ -74,14 +74,11 @@ impl BarrelBlockEntity {
             .display_name(TextComponent::translated(CONTAINER_BARREL.msg()))
     }
 
-    /// Returns whether opening is permitted by the implemented lock validation.
+    /// Returns whether `player` may open this barrel.
     #[must_use]
-    pub fn menu_is_ready(&self, player: &Player) -> bool {
-        let container = self.container.lock();
-        let spectator = player.game_mode() == GameType::Spectator;
-        // TODO: Use a shared `ItemPredicate` matcher and send Vanilla's
-        // locked-container feedback once open validation supports them.
-        (!container.has_lock() || spectator) && (!container.has_pending_loot() || !spectator)
+    pub fn can_open(&self, player: &Player) -> bool {
+        let main_hand = player.get_main_hand_item();
+        self.container.lock().can_open(player, &main_hand)
     }
 
     fn play_sound(&self, world: &World, state: BlockStateId, opening: bool) {

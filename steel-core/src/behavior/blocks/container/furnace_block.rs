@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, Weak};
 
+use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
@@ -14,11 +15,13 @@ use crate::behavior::{
     BlockBehavior, BlockEntityCreation, BlockHitResult, BlockPlaceContext, InteractionResult,
     InventoryAccess,
 };
+use crate::block_entity::base_container::BaseContainer;
 use crate::block_entity::entities::FurnaceBlockEntity;
-use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker};
+use crate::block_entity::{BLOCK_ENTITIES, BlockEntityTicker, SharedBlockEntity};
 use crate::inventory::container::calculate_redstone_signal_from_container;
 use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::kinds::furnace as furnace_menu;
+use crate::inventory::menu::{MenuCreation, MenuProvider};
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 
@@ -36,6 +39,43 @@ impl FurnaceBlock {
     }
 }
 
+/// Mirrors `FurnaceBlockEntity` acting as its own Vanilla `MenuProvider`.
+struct FurnaceMenuProvider {
+    world: Arc<World>,
+    pos: BlockPos,
+    block_entity: SharedBlockEntity,
+}
+
+impl MenuProvider for FurnaceMenuProvider {
+    fn create_menu(self: Box<Self>, player: &Player) -> MenuCreation {
+        let Some(furnace) = self.block_entity.downcast_ref::<FurnaceBlockEntity>() else {
+            return MenuCreation::Unavailable;
+        };
+        let title = furnace.display_name();
+        if !furnace.can_open(player) {
+            BaseContainer::send_chest_locked_notifications(
+                &self.world,
+                DVec3::new(
+                    f64::from(self.pos.x()) + 0.5,
+                    f64::from(self.pos.y()) + 0.5,
+                    f64::from(self.pos.z()) + 0.5,
+                ),
+                player,
+                title,
+            );
+            return MenuCreation::Unavailable;
+        }
+        let Some(container) = self.block_entity.container_ref() else {
+            return MenuCreation::Unavailable;
+        };
+        let inventory = player.inventory.clone();
+        player.open_menu(title, move |context| {
+            furnace_menu(inventory, context.container_id, container)
+        });
+        MenuCreation::Opened
+    }
+}
+
 impl BlockBehavior for FurnaceBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         Some(self.block.default_state().set_value(
@@ -46,33 +86,33 @@ impl BlockBehavior for FurnaceBlock {
 
     fn use_without_item(
         &self,
-        _state: BlockStateId,
+        state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        let Some(block_entity) = world.get_block_entity(pos) else {
-            return InteractionResult::Success;
-        };
-        let Some(furnace) = block_entity.downcast_ref::<FurnaceBlockEntity>() else {
-            return InteractionResult::Success;
-        };
-        if !furnace.menu_is_ready() {
-            return InteractionResult::Success;
+        if let Some(provider) = self.get_menu_provider(state, world, pos) {
+            player.open_menu_provider(provider);
+            // TODO: Award INTERACT_WITH_FURNACE once Steel has statistics.
         }
-        let Some(container) = block_entity.container_ref() else {
-            return InteractionResult::Success;
-        };
-        let title = furnace.display_name();
-        let inventory = player.inventory.clone();
-        player.open_menu(title, move |context| {
-            furnace_menu(inventory, context.container_id, container)
-        });
-
-        // TODO: Award INTERACT_WITH_FURNACE once Steel has statistics.
         InteractionResult::Success
+    }
+
+    fn get_menu_provider(
+        &self,
+        _state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) -> Option<Box<dyn MenuProvider>> {
+        let block_entity = world.get_block_entity(pos)?;
+        block_entity.downcast_ref::<FurnaceBlockEntity>()?;
+        Some(Box::new(FurnaceMenuProvider {
+            world: Arc::clone(world),
+            pos,
+            block_entity,
+        }))
     }
 
     fn new_block_entity(

@@ -321,6 +321,16 @@ impl Player {
         self.game_modes.lock().current()
     }
 
+    /// Returns a copy of the main-hand stack, mirroring `LivingEntity.getMainHandItem`.
+    ///
+    /// The inventory lock is released before returning so callers may lock other containers.
+    #[must_use]
+    pub fn get_main_hand_item(&self) -> ItemStack {
+        let inventory = self.inventory.lock();
+        let stack = inventory.get_item_in_hand(InteractionHand::MainHand);
+        stack.copy_with_count(stack.count())
+    }
+
     /// Resolves this player to the shared instance currently registered in `world`.
     pub(crate) fn shared_in_world(&self, world: &World) -> Option<Arc<Self>> {
         world

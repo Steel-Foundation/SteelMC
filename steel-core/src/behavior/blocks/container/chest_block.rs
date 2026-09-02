@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, Weak};
 
+use glam::DVec3;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -18,14 +19,17 @@ use crate::behavior::block::{
 use crate::behavior::context::{
     BlockHitResult, BlockPlaceContext, InteractionResult, InventoryAccess,
 };
+use crate::block_entity::base_container::BaseContainer;
 use crate::block_entity::entities::{CHEST_SLOTS, ChestBlockEntity};
 use crate::block_entity::{BLOCK_ENTITIES, SharedBlockEntity};
+use crate::entity::Entity as _;
 use crate::entity::ai::path::PathComputationType;
 use crate::inventory::container::{
     ContainerAccessResult, ContainerReadiness, calculate_redstone_signal_from_containers,
 };
 use crate::inventory::lock::{ContainerId, ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::kinds::chest_with_openers;
+use crate::inventory::menu::{MenuCreation, MenuProvider};
 use crate::player::Player;
 use crate::server::jobs::{JobPoll, ServerJob, ServerJobContext};
 use crate::world::{LevelReader, ScheduledTickAccess, World};
@@ -42,11 +46,11 @@ impl ChestCombination {
             .collect()
     }
 
-    fn menu_is_ready(&self, player: &Player) -> bool {
+    fn can_open(&self, player: &Player) -> bool {
         self.entities.iter().all(|entity| {
             entity
                 .downcast_ref::<ChestBlockEntity>()
-                .is_some_and(|chest| chest.menu_is_ready(player))
+                .is_some_and(|chest| chest.can_open(player))
         })
     }
 
@@ -65,9 +69,38 @@ impl ChestCombination {
             Some(TextComponent::translated(CONTAINER_CHEST_DOUBLE.msg()))
         }
     }
+
+    /// Mirrors the locked-menu feedback of Vanilla's chest menu providers.
+    ///
+    /// A single chest (`RandomizableContainerBlockEntity.createMenu`) only
+    /// notifies non-spectators at its center; a double chest
+    /// (`ChestBlock.MENU_PROVIDER_COMBINER`) notifies everyone between both halves.
+    fn send_chest_locked_notifications(&self, world: &World, player: &Player) {
+        let (Some(first), Some(title)) = (self.entities.first(), self.title()) else {
+            return;
+        };
+        let pos = first.get_block_pos();
+        let mut center = DVec3::new(
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()) + 0.5,
+            f64::from(pos.z()) + 0.5,
+        );
+        if self.entities.len() == 1 {
+            if player.is_spectator() {
+                return;
+            }
+        } else {
+            let (offset_x, offset_z) =
+                ChestBlock::connected_direction(first.get_block_state()).offset_xz();
+            center.x += f64::from(offset_x) / 2.0;
+            center.z += f64::from(offset_z) / 2.0;
+        }
+        BaseContainer::send_chest_locked_notifications(world, center, player, title);
+    }
 }
 
 /// Behavior for the standard normal chest.
+#[derive(Clone, Copy)]
 #[block_behavior]
 pub struct ChestBlock {
     block: BlockRef,
@@ -77,12 +110,49 @@ pub struct ChestBlock {
     close_sound: SoundEventRef,
 }
 
+/// Mirrors the menu providers Vanilla's `ChestBlock.combine` produces for one or two halves.
+struct ChestMenuProvider {
+    block: ChestBlock,
+    world: Arc<World>,
+    pos: BlockPos,
+    combination: ChestCombination,
+}
+
+impl MenuProvider for ChestMenuProvider {
+    fn create_menu(self: Box<Self>, player: &Player) -> MenuCreation {
+        let Self {
+            block,
+            world,
+            pos,
+            combination,
+        } = *self;
+        if !combination.can_open(player) {
+            combination.send_chest_locked_notifications(&world, player);
+            return MenuCreation::Unavailable;
+        }
+        let Some(containers) = combination.container_refs() else {
+            return MenuCreation::Unavailable;
+        };
+        let results = containers
+            .iter()
+            .map(|container| container.prepare_access(Some(player)))
+            .collect::<Vec<_>>();
+        if results.contains(&ContainerAccessResult::Failed) {
+            return MenuCreation::Unavailable;
+        }
+        if results.contains(&ContainerAccessResult::Pending) {
+            block.defer_open(&world, pos, player, &containers);
+            return MenuCreation::Deferred;
+        }
+        ChestBlock::open_combination(player, combination);
+        MenuCreation::Opened
+    }
+}
+
 struct DeferredChestOpenJob {
     world: Arc<World>,
     pos: BlockPos,
-    block: BlockRef,
-    open_sound: SoundEventRef,
-    close_sound: SoundEventRef,
+    behavior: ChestBlock,
     container_ids: Vec<ContainerId>,
     player: Weak<Player>,
     token: u64,
@@ -123,7 +193,7 @@ impl ChestBlock {
     }
 
     fn defer_open(
-        &self,
+        self,
         world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
@@ -136,9 +206,7 @@ impl ChestBlock {
         let job = DeferredChestOpenJob {
             world: Arc::clone(world),
             pos,
-            block: self.block,
-            open_sound: self.open_sound,
-            close_sound: self.close_sound,
+            behavior: self,
             container_ids: containers.iter().map(ContainerRef::container_id).collect(),
             player: Arc::downgrade(&player),
             token,
@@ -278,17 +346,18 @@ impl ServerJob for DeferredChestOpenJob {
             return JobPoll::Finished;
         }
         let state = self.world.get_block_state(self.pos);
-        if state.get_block() != self.block {
+        if state.get_block() != self.behavior.block {
             player.finish_deferred_container_open(self.token);
             return JobPoll::Finished;
         }
-        let behavior = ChestBlock::new(self.block, self.open_sound, self.close_sound);
-        let Some(combination) = behavior.combination(state, self.world.as_ref(), self.pos, false)
+        let Some(combination) =
+            self.behavior
+                .combination(state, self.world.as_ref(), self.pos, false)
         else {
             player.finish_deferred_container_open(self.token);
             return JobPoll::Finished;
         };
-        if !combination.menu_is_ready(&player) {
+        if !combination.can_open(&player) {
             player.finish_deferred_container_open(self.token);
             return JobPoll::Finished;
         }
@@ -421,31 +490,26 @@ impl BlockBehavior for ChestBlock {
         _hit_result: &BlockHitResult,
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        player.cancel_deferred_container_open();
-        let Some(combination) = self.combination(state, world, pos, false) else {
-            return InteractionResult::Success;
-        };
-        if !combination.menu_is_ready(player) {
-            return InteractionResult::Success;
+        if let Some(provider) = self.get_menu_provider(state, world, pos) {
+            player.open_menu_provider(provider);
+            // TODO: Award OPEN_CHEST and anger nearby piglins once those systems exist.
         }
-        let Some(containers) = combination.container_refs() else {
-            return InteractionResult::Success;
-        };
-        let results = containers
-            .iter()
-            .map(|container| container.prepare_access(Some(player)))
-            .collect::<Vec<_>>();
-        if results.contains(&ContainerAccessResult::Failed) {
-            return InteractionResult::Success;
-        }
-        if results.contains(&ContainerAccessResult::Pending) {
-            self.defer_open(world, pos, player, &containers);
-            return InteractionResult::Success;
-        }
-        Self::open_combination(player, combination);
-
-        // TODO: Award OPEN_CHEST and anger nearby piglins once those systems exist.
         InteractionResult::Success
+    }
+
+    fn get_menu_provider(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) -> Option<Box<dyn MenuProvider>> {
+        let combination = self.combination(state, world.as_ref(), pos, false)?;
+        Some(Box::new(ChestMenuProvider {
+            block: *self,
+            world: Arc::clone(world),
+            pos,
+            combination,
+        }))
     }
 
     fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
@@ -539,14 +603,106 @@ impl BlockBehavior for ChestBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{sound_events, test_support::init_test_registry, vanilla_blocks};
-    use steel_utils::{ChunkPos, types::UpdateFlags};
+    use std::io::Cursor;
+
+    use glam::DVec3;
+    use simdnbt::borrow::read_compound as read_borrowed_compound;
+    use simdnbt::owned::NbtCompound;
+    use steel_registry::item_stack::ItemStack;
+    use steel_registry::{
+        sound_events, test_support::init_test_registry, vanilla_blocks, vanilla_items,
+    };
+    use steel_utils::ChunkPos;
+    use steel_utils::types::{GameType, UpdateFlags};
+    use uuid::Uuid;
 
     use crate::behavior::init_behaviors;
     use crate::block_entity::init_block_entities;
-    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+    use crate::player::ResetReason;
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
     use super::*;
+
+    fn load_additional(block_entity: &SharedBlockEntity, nbt: &NbtCompound) {
+        let mut bytes = Vec::new();
+        nbt.write(&mut bytes);
+        let borrowed = read_borrowed_compound(&mut Cursor::new(bytes.as_slice()))
+            .expect("test NBT should reborrow");
+        block_entity.load_additional(&borrowed);
+    }
+
+    #[test]
+    fn locked_chest_opens_only_for_a_matching_key_while_spectators_bypass_locks_but_not_loot() {
+        init_test_registry();
+        init_behaviors();
+        init_block_entities();
+        let world = fresh_test_world("locked_chest_menu_provider");
+        let pos = BlockPos::new(3, 64, 3);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        let state = vanilla_blocks::CHEST.default_state();
+        assert!(world.set_block(pos, state, UpdateFlags::UPDATE_NONE));
+        let Some(block_entity) = world.get_block_entity(pos) else {
+            panic!("chest placement should create its block entity");
+        };
+        let mut lock = NbtCompound::new();
+        lock.insert("items", "minecraft:tripwire_hook");
+        let mut nbt = NbtCompound::new();
+        nbt.insert("lock", lock);
+        load_additional(&block_entity, &nbt);
+
+        let player =
+            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(1), "Locksmith", 1).build();
+        player.base().set_position_local(DVec3::new(3.5, 64.0, 3.5));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let behavior = ChestBlock::new(
+            &vanilla_blocks::CHEST,
+            &sound_events::BLOCK_CHEST_OPEN,
+            &sound_events::BLOCK_CHEST_CLOSE,
+        );
+        let provider = |behavior: &ChestBlock| {
+            behavior
+                .get_menu_provider(state, &world, pos)
+                .unwrap_or_else(|| panic!("unblocked chest should provide a menu"))
+        };
+
+        assert_eq!(
+            provider(&behavior).create_menu(&player),
+            MenuCreation::Unavailable
+        );
+        assert!(!player.has_container_open());
+
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::TRIPWIRE_HOOK));
+        assert_eq!(
+            provider(&behavior).create_menu(&player),
+            MenuCreation::Opened
+        );
+        assert!(player.has_container_open());
+        player.close_container();
+
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::empty());
+        player.restore_game_modes(GameType::Spectator, None);
+        assert_eq!(
+            provider(&behavior).create_menu(&player),
+            MenuCreation::Opened
+        );
+        assert!(player.has_container_open());
+        player.close_container();
+
+        let mut loot_nbt = NbtCompound::new();
+        loot_nbt.insert("LootTable", "minecraft:chests/simple_dungeon");
+        load_additional(&block_entity, &loot_nbt);
+        assert_eq!(
+            provider(&behavior).create_menu(&player),
+            MenuCreation::Unavailable
+        );
+        assert!(!player.has_container_open());
+    }
 
     #[test]
     fn double_combination_keeps_right_half_first_and_checks_both_lids() {

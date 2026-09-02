@@ -23,12 +23,13 @@ use text_components::TextComponent;
 
 use crate::block_entity::BlockEntityComponentInput;
 use crate::block_entity::base_container::BaseContainer;
-use crate::entity::{LivingEntity as _, entity_loot_ref};
+use crate::entity::{Entity as _, LivingEntity as _, entity_loot_ref};
 use crate::inventory::container::{
     Container, ContainerAccessContext, ContainerAccessResult, ContainerPreparation,
     ContainerPreparationTask, ContainerReadiness,
 };
 use crate::inventory::lock::ContainerRef;
+use crate::player::Player;
 
 use self::exploration::ExplorationMapJob;
 
@@ -164,14 +165,17 @@ impl RandomizableContainer {
         self.base.has_custom_name()
     }
 
-    #[must_use]
-    pub(crate) fn has_lock(&self) -> bool {
+    #[cfg(test)]
+    fn has_lock(&self) -> bool {
         self.base.has_lock()
     }
 
+    /// Mirrors `RandomizableContainerBlockEntity.canOpen`: spectators may not
+    /// unpack loot, and everyone else must satisfy the lock.
     #[must_use]
-    pub(crate) const fn has_pending_loot(&self) -> bool {
-        self.loot_table.is_some() || self.pending_loot.is_some()
+    pub(crate) fn can_open(&self, player: &Player, main_hand: &ItemStack) -> bool {
+        (self.loot_table.is_none() || !player.is_spectator())
+            && self.base.can_open(player, main_hand)
     }
 
     /// Mirrors `RandomizableContainerBlockEntity.applyImplicitComponents`.
@@ -208,6 +212,11 @@ impl RandomizableContainer {
         nbt.remove("LootTable");
         nbt.remove("LootTableSeed");
         nbt.remove(PENDING_LOOT_KEY);
+    }
+
+    #[cfg(test)]
+    const fn has_pending_loot(&self) -> bool {
+        self.loot_table.is_some() || self.pending_loot.is_some()
     }
 
     const fn next_preparation_token(&mut self) -> u64 {
