@@ -15,7 +15,8 @@ pub use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
 // Re-export component types for convenience
 pub use super::components::{
     ArmorTrim, AttackRange, BannerPatternLayer, BannerPatternLayers, BeehiveOccupant, Bees,
-    BlockEntityData, BlockItemStateProperties, BlocksAttacks, BundleContents, ChargedProjectiles,
+    BlockEntityData, BlockItemStateProperties, BlocksAttacks, BrewingFuel, BundleContents,
+    ChargedProjectiles,
     Compostable, Consumable, CookingFuel, CustomData, CustomModelData, DamageReduction,
     DamageResistant, DamageTypeComponent, DeathProtection, DebugStickProperty, DebugStickState,
     DyedItemColor, Enchantable, EntityData, Equippable, EquippableAllowedEntities, Filterable,
@@ -204,6 +205,9 @@ pub const COMPOSTABLE: DataComponentType<Compostable> =
 
 pub const COOKING_FUEL: DataComponentType<CookingFuel> =
     DataComponentType::new(Identifier::vanilla_static("cooking_fuel"));
+
+pub const BREWING_FUEL: DataComponentType<BrewingFuel> =
+    DataComponentType::new(Identifier::vanilla_static("brewing_fuel"));
 
 pub const STORED_ENCHANTMENTS: DataComponentType<ItemEnchantments> =
     DataComponentType::new(Identifier::vanilla_static("stored_enchantments"));
@@ -412,6 +416,9 @@ pub const SIGN_TEXT_FRONT: DataComponentType<SignText> =
 
 pub const SIGN_TEXT_BACK: DataComponentType<SignText> =
     DataComponentType::new(Identifier::vanilla_static("sign_text_back"));
+
+pub const CUSHION_COLOR: DataComponentType<DyeColor> =
+    DataComponentType::new(Identifier::vanilla_static("cushion/color"));
 
 /// Network reader for VarInt-encoded i32 components.
 fn varint_reader(cursor: &mut std::io::Cursor<&[u8]>) -> std::io::Result<ComponentData> {
@@ -949,49 +956,51 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     registry.register(COMPOSTABLE);
     // 86: cooking_fuel
     registry.register(COOKING_FUEL);
-    // 87: villager/variant
+    // 87: brewing_fuel
+    registry.register(BREWING_FUEL);
+    // 88: villager/variant
     registry.register(VILLAGER_VARIANT);
-    // 88: wolf/variant
+    // 89: wolf/variant
     registry.register(WOLF_VARIANT);
-    // 89: wolf/sound_variant
+    // 90: wolf/sound_variant
     registry.register(WOLF_SOUND_VARIANT);
-    // 90: wolf/collar
+    // 91: wolf/collar
     registry.register(WOLF_COLLAR);
-    // 91: fox/variant
+    // 92: fox/variant
     registry.register(FOX_VARIANT);
-    // 92: salmon/size
+    // 93: salmon/size
     registry.register(SALMON_SIZE);
-    // 93: parrot/variant
+    // 94: parrot/variant
     registry.register(PARROT_VARIANT);
-    // 94: tropical_fish/pattern
+    // 95: tropical_fish/pattern
     registry.register(TROPICAL_FISH_PATTERN);
-    // 95: tropical_fish/base_color
+    // 96: tropical_fish/base_color
     registry.register(TROPICAL_FISH_BASE_COLOR);
-    // 96: tropical_fish/pattern_color
+    // 97: tropical_fish/pattern_color
     registry.register(TROPICAL_FISH_PATTERN_COLOR);
-    // 97: mooshroom/variant
+    // 98: mooshroom/variant
     registry.register(MOOSHROOM_VARIANT);
-    // 98: rabbit/variant
+    // 99: rabbit/variant
     registry.register(RABBIT_VARIANT);
-    // 99: pig/variant
+    // 100: pig/variant
     registry.register(PIG_VARIANT);
-    // 100: pig/sound_variant
+    // 101: pig/sound_variant
     registry.register(PIG_SOUND_VARIANT);
-    // 101: cow/variant
+    // 102: cow/variant
     registry.register(COW_VARIANT);
-    // 102: cow/sound_variant
+    // 103: cow/sound_variant
     registry.register(COW_SOUND_VARIANT);
-    // 103: chicken/variant
+    // 104: chicken/variant
     registry.register(CHICKEN_VARIANT);
-    // 104: chicken/sound_variant
+    // 105: chicken/sound_variant
     registry.register(CHICKEN_SOUND_VARIANT);
-    // 105: zombie_nautilus/variant
+    // 106: zombie_nautilus/variant
     registry.register(ZOMBIE_NAUTILUS_VARIANT);
-    // 106: frog/variant
+    // 107: frog/variant
     registry.register(FROG_VARIANT);
-    // 107: horse/variant
+    // 108: horse/variant
     registry.register(HORSE_VARIANT);
-    // 108: painting/variant
+    // 109: painting/variant
     registry.register_with_codecs(
         PAINTING_VARIANT,
         painting_variant_network_reader,
@@ -999,24 +1008,26 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
         painting_variant_nbt_reader,
         painting_variant_nbt_writer,
     );
-    // 109: llama/variant
+    // 110: llama/variant
     registry.register(LLAMA_VARIANT);
-    // 110: axolotl/variant
+    // 111: axolotl/variant
     registry.register(AXOLOTL_VARIANT);
-    // 111: cat/variant
+    // 112: cat/variant
     registry.register(CAT_VARIANT);
-    // 112: cat/sound_variant
+    // 113: cat/sound_variant
     registry.register(CAT_SOUND_VARIANT);
-    // 113: cat/collar
+    // 114: cat/collar
     registry.register(CAT_COLLAR);
-    // 114: sheep/color
+    // 115: sheep/color
     registry.register(SHEEP_COLOR);
-    // 115: shulker/color
+    // 116: shulker/color
     registry.register(SHULKER_COLOR);
-    // 116: sign_text_front
+    // 117: sign_text_front
     registry.register(SIGN_TEXT_FRONT);
-    // 117: sign_text_back
+    // 118: sign_text_back
     registry.register(SIGN_TEXT_BACK);
+    // 119: cushion/color
+    registry.register(CUSHION_COLOR);
 }
 
 #[cfg(test)]

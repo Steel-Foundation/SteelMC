@@ -189,6 +189,25 @@ pub(super) fn cooking_fuel_component_token(value: &Value) -> TokenStream {
     }
 }
 
+pub(super) fn brewing_fuel_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("brewing_fuel component must be an object"));
+    let uses = object
+        .get("uses")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("brewing_fuel.uses must be an identifier string"));
+    let speed_multiplier = object
+        .get("speed_multiplier")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("brewing_fuel.speed_multiplier must be an identifier string"));
+    let uses = identifier_token(uses);
+    let speed_multiplier = identifier_token(speed_multiplier);
+    quote! {
+        vanilla_components::BrewingFuel::new(#uses, #speed_multiplier)
+    }
+}
+
 pub(super) fn compostable_component_token(value: &Value) -> TokenStream {
     let object = value
         .as_object()
