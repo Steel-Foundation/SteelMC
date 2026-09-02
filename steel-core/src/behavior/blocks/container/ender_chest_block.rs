@@ -82,7 +82,6 @@ impl BlockBehavior for EnderChestBlock {
         );
 
         player.award_custom_stat(&vanilla_custom_stats::OPEN_ENDERCHEST);
-        // TODO: Award stat OPEN_ENDERCHEST
         // TODO: Anger nearby piglins
 
         InteractionResult::Success
