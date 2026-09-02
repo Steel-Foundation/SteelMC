@@ -24,6 +24,20 @@ const PARTNER_SEARCH_RANGE: f64 = 8.0;
 const BREED_DISTANCE_SQR: f64 = 9.0;
 /// Vanilla `BreedGoal` love timer length before an egg is granted.
 const BREED_TIME: i32 = 60;
+/// Vanilla `TurtleBreedGoal.breed`: both parents drop back to this age (the
+/// standard adult breeding cooldown) after breeding.
+const POST_BREED_AGE: i32 = 6000;
+/// Vanilla `TurtleLayEggGoal` search range handed to `MoveToBlockGoal`.
+const LAY_EGG_SEARCH_RANGE: i32 = 16;
+/// Vanilla `TurtleLayEggGoal`: the turtle must be within this distance of its
+/// home beach to start laying.
+const LAY_EGG_HOME_RANGE: f64 = 9.0;
+/// Vanilla `TurtleLayEggGoal`: ticks of the laying animation before the egg
+/// cluster is placed.
+const LAY_EGG_DURATION: i32 = 200;
+/// Vanilla `TurtleLayEggGoal`: love cooldown applied to the turtle once it has
+/// laid (`setInLoveTime(600)`).
+const POST_LAY_LOVE_TIME: i32 = 600;
 
 /// Vanilla `Turtle.TurtleBreedGoal`: breeding gives the mother an egg to lay
 /// instead of spawning a baby, and both parents grow back to adulthood.
@@ -92,8 +106,8 @@ impl TurtleBreedGoal {
         }
 
         turtle.set_has_egg(true);
-        turtle.set_age(6000);
-        partner_animal.set_age(6000);
+        turtle.set_age(POST_BREED_AGE);
+        partner_animal.set_age(POST_BREED_AGE);
         turtle.reset_love();
         partner_animal.reset_love();
 
@@ -182,7 +196,7 @@ pub(crate) struct TurtleLayEggGoal {
 impl TurtleLayEggGoal {
     pub(crate) fn new(speed_modifier: f64) -> Self {
         Self {
-            inner: MoveToBlockGoal::new(speed_modifier, 16, |level, pos| {
+            inner: MoveToBlockGoal::new(speed_modifier, LAY_EGG_SEARCH_RANGE, |level, pos| {
                 level.get_block_state(pos.above()).is_air()
                     && level
                         .get_block_state(pos)
@@ -193,7 +207,7 @@ impl TurtleLayEggGoal {
     }
 
     fn within_home(turtle: &TurtleEntity, mob: &dyn PathfinderMob) -> bool {
-        closer_to_center_than(turtle.home_pos(), mob.position(), 9.0)
+        closer_to_center_than(turtle.home_pos(), mob.position(), LAY_EGG_HOME_RANGE)
     }
 
     fn place_egg(&self, mob: &dyn PathfinderMob, turtle: &TurtleEntity) {
@@ -224,7 +238,7 @@ impl TurtleLayEggGoal {
 
         turtle.set_has_egg(false);
         turtle.set_laying_egg(false);
-        turtle.set_in_love_time(600);
+        turtle.set_in_love_time(POST_LAY_LOVE_TIME);
     }
 }
 
@@ -271,7 +285,7 @@ impl Goal for TurtleLayEggGoal {
 
         if turtle.lay_egg_counter() < 1 {
             turtle.set_laying_egg(true);
-        } else if turtle.lay_egg_counter() > 200 {
+        } else if turtle.lay_egg_counter() > LAY_EGG_DURATION {
             self.place_egg(mob, turtle);
         }
 

@@ -35,6 +35,14 @@ pub(super) use breeding::{TurtleBreedGoal, TurtleLayEggGoal};
 pub(super) use land::{TurtleGoHomeGoal, TurtleRandomStrollGoal};
 pub(super) use water::{TurtleGoToWaterGoal, TurtlePanicGoal, TurtleTravelGoal};
 
+/// Horizontal and vertical radius for the primary `DefaultRandomPos.getPosTowards`
+/// attempt the go-home and travel goals use to steer toward their target.
+pub(super) const TOWARD_TARGET_H: i32 = 16;
+pub(super) const TOWARD_TARGET_V: i32 = 3;
+/// Radii for the wider fallback attempt when the primary one finds nothing.
+pub(super) const TOWARD_TARGET_FALLBACK_H: i32 = 8;
+pub(super) const TOWARD_TARGET_FALLBACK_V: i32 = 7;
+
 /// Returns the concrete turtle behind a pathfinder mob, if this mob is a turtle.
 fn as_turtle(mob: &dyn PathfinderMob) -> Option<&TurtleEntity> {
     mob.downcast_ref::<TurtleEntity>()
