@@ -1,11 +1,18 @@
 use super::{
-    LootEntryJson, LootPoolJson, LootTableValueJson, TokenStream, generate_condition,
+    LootEntryJson, LootPoolJson, LootTableValueJson, ModifierJson, TokenStream, generate_condition,
     generate_function, generate_number_provider, quote,
 };
 
 pub(super) fn generate_entry(entry: &LootEntryJson) -> TokenStream {
-    let conditions: Vec<TokenStream> = entry.conditions.iter().map(generate_condition).collect();
-    let functions: Vec<TokenStream> = entry.functions.iter().map(generate_function).collect();
+    let conditions: Vec<TokenStream> = entry.condition.iter().map(generate_condition).collect();
+    let functions: Vec<TokenStream> = entry
+        .modifier
+        .as_ref()
+        .map(ModifierJson::functions)
+        .unwrap_or_default()
+        .into_iter()
+        .map(generate_function)
+        .collect();
 
     match entry.entry_type.as_str() {
         "minecraft:item" => {
@@ -81,7 +88,7 @@ pub(super) fn generate_entry(entry: &LootEntryJson) -> TokenStream {
             }
         }
         "minecraft:tag" => {
-            let name = entry.name.as_deref().unwrap_or("minecraft:empty");
+            let name = entry.items.as_deref().unwrap_or("minecraft:empty");
             let name = name.strip_prefix("minecraft:").unwrap_or(name);
             let expand = entry.expand;
             let weight = entry.weight;
@@ -153,8 +160,15 @@ pub(super) fn generate_pool(pool: &LootPoolJson) -> TokenStream {
     let rolls = generate_number_provider(&pool.rolls);
     let bonus_rolls = pool.bonus_rolls;
     let entries: Vec<TokenStream> = pool.entries.iter().map(generate_entry).collect();
-    let conditions: Vec<TokenStream> = pool.conditions.iter().map(generate_condition).collect();
-    let functions: Vec<TokenStream> = pool.functions.iter().map(generate_function).collect();
+    let conditions: Vec<TokenStream> = pool.condition.iter().map(generate_condition).collect();
+    let functions: Vec<TokenStream> = pool
+        .modifier
+        .as_ref()
+        .map(ModifierJson::functions)
+        .unwrap_or_default()
+        .into_iter()
+        .map(generate_function)
+        .collect();
 
     quote! {
         LootPool {

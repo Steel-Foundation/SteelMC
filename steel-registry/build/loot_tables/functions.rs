@@ -1,7 +1,9 @@
 use super::{
-    LimitJson, LootFunctionJson, TokenStream, generate_condition, generate_enchantment_options,
-    generate_instrument_options, generate_number_provider, quote,
+    ItemFilterJson, LimitJson, LootFunctionJson, TokenStream, generate_condition,
+    generate_enchantment_options, generate_instrument_options, generate_number_provider, quote,
 };
+use std::str::FromStr;
+use steel_utils::Identifier;
 
 pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
     let func_body = match function.function.as_str() {
@@ -301,17 +303,32 @@ pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
                 }
             }
         }
+        "minecraft:discard" => {
+            quote! { LootFunction::Discard }
+        }
+        "minecraft:filtered" => {
+            let item_filter = function
+                .item_filter
+                .as_ref()
+                .unwrap_or_else(|| panic!("minecraft:filtered function is missing item_filter"));
+            let item_filter = generate_item_predicate(item_filter);
+            let on_pass = generate_optional_nested_function(function.on_pass.as_deref());
+            let on_fail = generate_optional_nested_function(function.on_fail.as_deref());
+            quote! {
+                LootFunction::Filtered {
+                    item_filter: #item_filter,
+                    on_pass: #on_pass,
+                    on_fail: #on_fail,
+                }
+            }
+        }
         other => {
             panic!("Unknown loot function type: {other}");
         }
     };
 
-    // Wrap the function with conditions
-    let conditions: Vec<TokenStream> = function
-        .conditions
-        .as_ref()
-        .map(|conds| conds.iter().map(generate_condition).collect())
-        .unwrap_or_default();
+    // Wrap the function with its own condition
+    let conditions: Vec<TokenStream> = function.condition.iter().map(generate_condition).collect();
 
     quote! {
         ConditionalLootFunction {
@@ -319,4 +336,61 @@ pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
             conditions: &[#(#conditions),*],
         }
     }
+}
+
+/// Generates an `ItemPredicate` (vanilla `net.minecraft.advancements.predicates.ItemPredicate`)
+/// for `minecraft:filtered`'s `item_filter`.
+fn generate_item_predicate(filter: &ItemFilterJson) -> TokenStream {
+    assert!(
+        filter.items.is_none(),
+        "item_filter.items is not yet supported by any extracted loot table"
+    );
+
+    let (count_min, count_max) = match &filter.count {
+        Some(LimitJson::Integer(v)) => (Some(*v), Some(*v)),
+        Some(LimitJson::Object { min, max }) => (min.map(|v| v as i32), max.map(|v| v as i32)),
+        None => (None, None),
+    };
+    let count_min = count_min.map_or_else(|| quote! { None }, |v| quote! { Some(#v) });
+    let count_max = count_max.map_or_else(|| quote! { None }, |v| quote! { Some(#v) });
+
+    let has_components: Vec<TokenStream> = filter
+        .predicates
+        .iter()
+        .map(|(key, value)| {
+            assert!(
+                value.as_object().is_some_and(serde_json::Map::is_empty),
+                "unsupported item_filter predicate shape for {key}: {value} \
+                 (only the presence-check `{{}}` shape is modeled)"
+            );
+            let id = Identifier::from_str(key)
+                .unwrap_or_else(|error| panic!("invalid item_filter predicate key {key:?}: {error}"));
+            assert_eq!(
+                id.namespace.as_ref(),
+                "minecraft",
+                "item_filter predicate keys must use the minecraft namespace: {id}"
+            );
+            let path = id.path.as_ref();
+            quote! { Identifier::vanilla_static(#path) }
+        })
+        .collect();
+
+    quote! {
+        ItemPredicate {
+            count_min: #count_min,
+            count_max: #count_max,
+            has_components: &[#(#has_components),*],
+        }
+    }
+}
+
+/// Generates an `Option<&'static ConditionalLootFunction>` for `on_pass`/`on_fail`.
+fn generate_optional_nested_function(function: Option<&LootFunctionJson>) -> TokenStream {
+    function.map_or_else(
+        || quote! { None },
+        |f| {
+            let inner = generate_function(f);
+            quote! { Some(&#inner) }
+        },
+    )
 }

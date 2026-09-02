@@ -18,8 +18,8 @@ pub enum LootCondition {
     /// The loot survives explosion damage (random chance based on explosion radius).
     /// Vanilla: 1/radius chance to pass. If no explosion, always passes.
     SurvivesExplosion,
-    /// Check block state properties match expected values.
-    BlockStateProperty {
+    /// Check the block (and its state properties) matches (vanilla `match_block`).
+    MatchBlock {
         block: Identifier,
         properties: &'static [PropertyCheck],
     },
@@ -120,6 +120,34 @@ pub enum ToolPredicate {
     Any,
 }
 
+/// Predicate for matching items (vanilla `net.minecraft.advancements.predicates.ItemPredicate`),
+/// used by the `minecraft:filtered` loot function's `item_filter`.
+#[derive(Debug, Clone)]
+pub struct ItemPredicate {
+    pub count_min: Option<i32>,
+    pub count_max: Option<i32>,
+    pub has_components: &'static [Identifier],
+}
+
+impl ItemPredicate {
+    #[must_use]
+    pub fn test(&self, item: &ItemStack) -> bool {
+        if let Some(min) = self.count_min
+            && item.count < min
+        {
+            return false;
+        }
+        if let Some(max) = self.count_max
+            && item.count > max
+        {
+            return false;
+        }
+        self.has_components
+            .iter()
+            .all(|component| item.has_component(component))
+    }
+}
+
 /// Predicate for checking location/block properties.
 #[derive(Debug, Clone)]
 pub struct LocationPredicate {
@@ -200,7 +228,7 @@ impl LootCondition {
                     true // No explosion, always survives
                 }
             }
-            LootCondition::BlockStateProperty { block, properties } => {
+            LootCondition::MatchBlock { block, properties } => {
                 if let Some(state) = ctx.block_state {
                     let state_block = state.get_block();
                     // Check block matches

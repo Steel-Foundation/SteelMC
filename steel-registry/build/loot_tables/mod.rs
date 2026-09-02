@@ -66,6 +66,33 @@ enum LootTableValueJson {
     Inline(Box<InlineLootTableJson>),
 }
 
+/// A `modifier` field can be a single function object, or (via
+/// `SequenceFunction.INLINE_CODEC`) a bare array of function objects applied in order.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+enum ModifierJson {
+    Single(LootFunctionJson),
+    Sequence(Vec<LootFunctionJson>),
+}
+
+impl ModifierJson {
+    fn functions(&self) -> Vec<&LootFunctionJson> {
+        match self {
+            Self::Single(function) => vec![function],
+            Self::Sequence(functions) => functions.iter().collect(),
+        }
+    }
+}
+
+/// A `condition`/`term`/`terms` entry can be an inline condition object, or (via
+/// `RegistryCodecs.holder`) a bare string referencing a `minecraft:predicate` by id.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+enum ConditionRefJson {
+    Reference(String),
+    Inline(Box<LootConditionJson>),
+}
+
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 struct InlineLootTableJson {
@@ -132,7 +159,7 @@ struct LootTableJson {
     #[serde(default)]
     pools: Vec<LootPoolJson>,
     #[serde(default)]
-    functions: Vec<LootFunctionJson>,
+    modifier: Option<ModifierJson>,
     #[serde(default)]
     random_sequence: Option<String>,
 }
@@ -147,9 +174,9 @@ struct LootPoolJson {
     #[serde(default)]
     entries: Vec<LootEntryJson>,
     #[serde(default)]
-    conditions: Vec<LootConditionJson>,
+    condition: Option<ConditionRefJson>,
     #[serde(default)]
-    functions: Vec<LootFunctionJson>,
+    modifier: Option<ModifierJson>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -159,6 +186,9 @@ struct LootEntryJson {
     entry_type: String,
     #[serde(default)]
     name: Option<String>,
+    /// `minecraft:tag` entries reference a holder set via `items` instead of `name`.
+    #[serde(default)]
+    items: Option<String>,
     #[serde(default)]
     value: Option<LootTableValueJson>,
     #[serde(default = "default_weight")]
@@ -168,9 +198,9 @@ struct LootEntryJson {
     #[serde(default)]
     expand: bool,
     #[serde(default)]
-    conditions: Vec<LootConditionJson>,
+    condition: Option<ConditionRefJson>,
     #[serde(default)]
-    functions: Vec<LootFunctionJson>,
+    modifier: Option<ModifierJson>,
     #[serde(default)]
     children: Vec<LootEntryJson>,
 }
@@ -182,11 +212,12 @@ const fn default_weight() -> i32 {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 struct LootConditionJson {
+    #[serde(rename = "type")]
     condition: String,
-    // block_state_property
+    // match_block (vanilla `BlockPredicate`)
     #[serde(default)]
-    block: Option<String>,
-    #[serde(default)]
+    blocks: Option<String>,
+    #[serde(default, rename = "state")]
     properties: Option<FxHashMap<String, PropertyValueJson>>,
     // match_tool / entity_properties predicate
     #[serde(default)]
@@ -198,10 +229,10 @@ struct LootConditionJson {
     chances: Option<Vec<f32>>,
     // inverted
     #[serde(default)]
-    term: Option<Box<LootConditionJson>>,
+    term: Option<Box<ConditionRefJson>>,
     // any_of / all_of
     #[serde(default)]
-    terms: Option<Vec<LootConditionJson>>,
+    terms: Option<Vec<ConditionRefJson>>,
     // random_chance
     #[serde(default)]
     chance: Option<f32>,
@@ -388,6 +419,7 @@ struct LevelRangeJson {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 struct LootFunctionJson {
+    #[serde(rename = "type")]
     function: String,
     #[serde(default)]
     count: Option<NumberProviderJson>,
@@ -455,9 +487,36 @@ struct LootFunctionJson {
     // set_enchantments
     #[serde(default)]
     enchantments: Option<FxHashMap<String, NumberProviderJson>>,
-    // conditions for conditional functions
+    // condition for conditional functions (LootItemConditionalFunction.commonFields)
     #[serde(default)]
-    conditions: Option<Vec<LootConditionJson>>,
+    condition: Option<ConditionRefJson>,
+    // filtered
+    #[serde(default)]
+    item_filter: Option<ItemFilterJson>,
+    #[serde(default)]
+    on_pass: Option<Box<LootFunctionJson>>,
+    #[serde(default)]
+    on_fail: Option<Box<LootFunctionJson>>,
+}
+
+/// `ItemPredicate`'s JSON shape (`net.minecraft.advancements.predicates.ItemPredicate`).
+///
+/// `items` and `count` never appear in the extracted data, so they are parsed
+/// (via `deny_unknown_fields`, to fail loudly if that ever changes) but not
+/// otherwise handled beyond `count`'s trivial min/max range.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+struct ItemFilterJson {
+    #[serde(default)]
+    items: Option<serde_json::Value>,
+    #[serde(default)]
+    count: Option<LimitJson>,
+    /// Data-component-predicate map (`DataComponentMatchers.predicates`), keyed by
+    /// predicate/component type identifier. Only the `AnyValueType` fallback shape
+    /// (an empty object, meaning "component is present") is currently used by any
+    /// extracted loot table, so any other shape panics instead of being dropped.
+    #[serde(default)]
+    predicates: FxHashMap<String, serde_json::Value>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -530,8 +589,14 @@ pub(crate) fn build() -> TokenStream {
                 let const_ident = Ident::new(&const_name, Span::call_site());
 
                 let pools: Vec<TokenStream> = loot_table.pools.iter().map(generate_pool).collect();
-                let functions: Vec<TokenStream> =
-                    loot_table.functions.iter().map(generate_function).collect();
+                let functions: Vec<TokenStream> = loot_table
+                    .modifier
+                    .as_ref()
+                    .map(ModifierJson::functions)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(generate_function)
+                    .collect();
 
                 let random_sequence = loot_table
                     .random_sequence

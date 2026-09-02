@@ -1,7 +1,7 @@
 use super::{
-    DyeColor, EquipmentSlotGroup, Identifier, InstrumentRef, ItemStack, LootCondition, LootContext,
-    LootContextEntity, LootEntry, NumberProvider, REGISTRY, RngExt, TaggedRegistryExt,
-    ToolPredicate,
+    DyeColor, EquipmentSlotGroup, Identifier, InstrumentRef, ItemPredicate, ItemStack,
+    LootCondition, LootContext, LootContextEntity, LootEntry, NumberProvider, REGISTRY, RngExt,
+    TaggedRegistryExt,
 };
 
 /// Options for selecting enchantments - either a tag reference or explicit list.
@@ -193,10 +193,11 @@ pub enum LootFunction {
     Sequence {
         functions: &'static [ConditionalLootFunction],
     },
-    /// Conditionally apply function to specific item predicate matches.
+    /// Apply `on_pass`/`on_fail` depending on whether the item matches `item_filter`.
     Filtered {
-        item_filter: ToolPredicate,
-        modifier: &'static ConditionalLootFunction,
+        item_filter: ItemPredicate,
+        on_pass: Option<&'static ConditionalLootFunction>,
+        on_fail: Option<&'static ConditionalLootFunction>,
     },
 }
 
@@ -523,10 +524,14 @@ impl LootFunction {
             }
             LootFunction::Filtered {
                 item_filter,
-                modifier,
+                on_pass,
+                on_fail,
             } => {
-                if item_filter.test(item, ctx) && modifier.conditions.iter().all(|c| c.test(ctx)) {
-                    modifier.function.apply(item, ctx);
+                let branch = if item_filter.test(item) { on_pass } else { on_fail };
+                if let Some(cond_func) = branch
+                    && cond_func.conditions.iter().all(|c| c.test(ctx))
+                {
+                    cond_func.function.apply(item, ctx);
                 }
             }
         }

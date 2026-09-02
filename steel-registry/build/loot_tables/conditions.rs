@@ -1,16 +1,26 @@
 use super::{
-    EnchantedChanceJson, LootConditionJson, PredicateJson, PropertyValueJson, TokenStream,
-    generate_damage_source_predicate, generate_entity_predicate, generate_location_predicate,
-    generate_loot_context_entity, generate_tool_predicate, quote,
+    ConditionRefJson, EnchantedChanceJson, LootConditionJson, PredicateJson, PropertyValueJson,
+    TokenStream, generate_damage_source_predicate, generate_entity_predicate,
+    generate_location_predicate, generate_loot_context_entity, generate_tool_predicate, quote,
 };
 
-pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
+pub(super) fn generate_condition(condition: &ConditionRefJson) -> TokenStream {
+    match condition {
+        ConditionRefJson::Reference(name) => {
+            let name = name.strip_prefix("minecraft:").unwrap_or(name);
+            quote! { LootCondition::Reference(Identifier::vanilla_static(#name)) }
+        }
+        ConditionRefJson::Inline(condition) => generate_condition_object(condition),
+    }
+}
+
+fn generate_condition_object(condition: &LootConditionJson) -> TokenStream {
     match condition.condition.as_str() {
         "minecraft:survives_explosion" => {
             quote! { LootCondition::SurvivesExplosion }
         }
-        "minecraft:block_state_property" => {
-            let block = condition.block.as_deref().unwrap_or("minecraft:air");
+        "minecraft:match_block" => {
+            let block = condition.blocks.as_deref().unwrap_or("minecraft:air");
             let block = block.strip_prefix("minecraft:").unwrap_or(block);
 
             let properties: Vec<TokenStream> = condition
@@ -38,7 +48,7 @@ pub(super) fn generate_condition(condition: &LootConditionJson) -> TokenStream {
                 .unwrap_or_default();
 
             quote! {
-                LootCondition::BlockStateProperty {
+                LootCondition::MatchBlock {
                     block: Identifier::vanilla_static(#block),
                     properties: &[#(#properties),*],
                 }
