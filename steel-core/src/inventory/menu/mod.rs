@@ -6,6 +6,7 @@ mod grid;
 mod kind;
 pub mod kinds;
 mod layout;
+mod provider;
 
 use crate::inventory::container::Container as _;
 pub use behavior::MenuBehavior;
@@ -16,6 +17,7 @@ pub use builder::{
 pub use grid::{ColSpan, GridPlacer, PlacementBuilder, Rect, Region, RowSpan, SpanBounds};
 pub use kind::MenuKind;
 pub(crate) use layout::MenuLayout;
+pub use provider::{MenuCreation, MenuProvider};
 #[cfg(test)]
 use steel_utils::locks::Shared;
 

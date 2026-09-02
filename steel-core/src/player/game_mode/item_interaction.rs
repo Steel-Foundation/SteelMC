@@ -1,7 +1,7 @@
 use super::{
-    Arc, BLOCK_BEHAVIORS, BlockHitResult, Entity, GameType, ITEM_BEHAVIORS, InteractionHand,
-    InteractionResult, InventoryAccess, Player, REGISTRY, SUseItem, UseOnContext, World,
-    wrap_degrees,
+    Arc, BLOCK_BEHAVIORS, BlockHitResult, BlockStateExt as _, Entity, GameType, ITEM_BEHAVIORS,
+    InteractionHand, InteractionResult, InventoryAccess, Player, REGISTRY, SUseItem, UseOnContext,
+    World, wrap_degrees,
 };
 
 /// Handles using an item on a block.
@@ -9,7 +9,7 @@ use super::{
 /// This implements the logic from Java's `ServerPlayerGameMode.useItemOn()`.
 ///
 /// # Flow
-/// 1. Spectator mode: Only allow opening menus (currently returns Pass)
+/// 1. Spectator mode: Only open the block's menu provider
 /// 2. Check if block interaction should be suppressed (sneaking + holding items)
 /// 3. If not suppressed: Call block's `use_item_on` method
 /// 4. If block returns `TryEmptyHandInteraction` and main hand: Call block's `use_without_item`
@@ -24,10 +24,15 @@ pub fn use_item_on(
     let pos = hit_result.block_pos;
     let state = world.get_block_state(pos);
 
-    // Spectator mode: can only open menus
-    // TODO: Implement menu providers for blocks like chests
     if player.game_mode() == GameType::Spectator {
-        return InteractionResult::Pass;
+        let Some(provider) = BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .get_menu_provider(state, world, pos)
+        else {
+            return InteractionResult::Pass;
+        };
+        player.open_menu_provider(provider);
+        return InteractionResult::Success;
     }
 
     // Check if block interaction should be suppressed (sneaking + holding items in either hand)

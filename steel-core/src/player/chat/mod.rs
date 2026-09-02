@@ -314,6 +314,13 @@ impl Player {
         self.send_packet(CSystemChat::new(text, false, self));
     }
 
+    /// Sends a message to the player's action bar.
+    ///
+    /// Mirrors `ServerPlayer.sendOverlayMessage`.
+    pub fn send_overlay_message(&self, text: &TextComponent) {
+        self.send_packet(CSystemChat::new(text, true, self));
+    }
+
     /// Updates the player's chat session and initializes the message chain.
     ///
     /// This should be called when receiving a `ChatSessionUpdate` packet from the client.

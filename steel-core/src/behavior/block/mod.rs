@@ -32,6 +32,7 @@ use crate::entity::ai::path::PathComputationType;
 use crate::entity::projectile::Projectile;
 use crate::entity::{Entity, InsideBlockEffectCollector, damage::DamageSource};
 use crate::fluid::is_water_fluid;
+use crate::inventory::menu::MenuProvider;
 use crate::physics::collide;
 use crate::player::Player;
 use crate::world::game_event::SharedGameEventListener;
@@ -384,6 +385,24 @@ pub trait BlockBehavior: Send + Sync {
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
         InteractionResult::Pass
+    }
+
+    /// Returns the menu this block offers at `pos`, if any.
+    ///
+    /// Mirrors Vanilla `BlockBehaviour.getMenuProvider`. Spectators open menus
+    /// exclusively through this hook, so container blocks should route their
+    /// `use_without_item` opening through it as well.
+    #[expect(
+        unused_variables,
+        reason = "default trait implementation ignores all params"
+    )]
+    fn get_menu_provider(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) -> Option<Box<dyn MenuProvider>> {
+        None
     }
 
     /// Called when a neighboring block changes (not shape-related).

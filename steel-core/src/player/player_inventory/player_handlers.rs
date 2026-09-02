@@ -10,9 +10,10 @@ use steel_registry::item_stack::ItemStack;
 use steel_utils::{
     Downcast as _,
     locks::Shared,
+    translations::CONTAINER_SPECTATOR_CANT_OPEN,
     types::{GameType, InteractionHand},
 };
-use text_components::TextComponent;
+use text_components::{Modifier as _, TextComponent, format::Color};
 
 use crate::{
     entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity},
@@ -21,7 +22,7 @@ use crate::{
         container::{Container, CraftingContainer, clear_or_count_matching_stack},
         lock::{ContainerId, ContainerLockGuard},
         menu::{
-            Menu,
+            Menu, MenuCreation, MenuProvider,
             kinds::{INVENTORY_MENU_CONTAINER_ID, InventoryKind},
         },
         slots::CraftingHandler,
@@ -487,6 +488,22 @@ impl Player {
             create: Box::new(create),
         });
         self.finish_menu_open_operation();
+    }
+
+    /// Opens a block menu through its provider.
+    ///
+    /// Mirrors `ServerPlayer.openMenu(MenuProvider)`, including the overlay
+    /// spectators receive when the provider creates no menu.
+    pub fn open_menu_provider(&self, provider: Box<dyn MenuProvider>) {
+        self.cancel_deferred_container_open();
+        if provider.create_menu(self) == MenuCreation::Unavailable && self.is_spectator() {
+            self.send_overlay_message(
+                &CONTAINER_SPECTATOR_CANT_OPEN
+                    .msg()
+                    .component()
+                    .color(Color::Red),
+            );
+        }
     }
 
     fn open_menu_inner(&self, pending: PendingMenuOpen) {
