@@ -11,6 +11,8 @@ pub use reference::{RegistryReference, RegistryReferenceEntry};
 pub use tags::RegistryTags;
 
 use crate::game_events::GameEventRegistry;
+use crate::stat::custom::CustomStatRegistry;
+use crate::stat::{StatTypeRegistry, vanilla_stat_types};
 use crate::world_clock::WorldClockRegistry;
 use crate::{
     attribute::AttributeRegistry,
@@ -70,12 +72,12 @@ use crate::{
     vanilla_cat_sound_variants, vanilla_cat_variants, vanilla_chat_types,
     vanilla_chicken_sound_variants, vanilla_chicken_variants, vanilla_configured_carvers,
     vanilla_configured_features, vanilla_cow_sound_variants, vanilla_cow_variants,
-    vanilla_damage_type_tags, vanilla_damage_types, vanilla_dialog_tags, vanilla_dialogs,
-    vanilla_dimension_types, vanilla_enchantment_tags, vanilla_enchantments, vanilla_entities,
-    vanilla_entity_type_tags, vanilla_fluid_tags, vanilla_fluids, vanilla_frog_variants,
-    vanilla_game_events, vanilla_game_rules, vanilla_instrument_tags, vanilla_instruments,
-    vanilla_item_tags, vanilla_items, vanilla_jukebox_songs, vanilla_loot_tables,
-    vanilla_map_decoration_types, vanilla_menu_types, vanilla_mob_effects,
+    vanilla_custom_stats, vanilla_damage_type_tags, vanilla_damage_types, vanilla_dialog_tags,
+    vanilla_dialogs, vanilla_dimension_types, vanilla_enchantment_tags, vanilla_enchantments,
+    vanilla_entities, vanilla_entity_type_tags, vanilla_fluid_tags, vanilla_fluids,
+    vanilla_frog_variants, vanilla_game_events, vanilla_game_rules, vanilla_instrument_tags,
+    vanilla_instruments, vanilla_item_tags, vanilla_items, vanilla_jukebox_songs,
+    vanilla_loot_tables, vanilla_map_decoration_types, vanilla_menu_types, vanilla_mob_effects,
     vanilla_painting_variant_tags, vanilla_painting_variants, vanilla_particle_types,
     vanilla_pig_sound_variants, vanilla_pig_variants, vanilla_placed_features,
     vanilla_poi_type_tags, vanilla_poi_types, vanilla_position_source_types, vanilla_potion_tags,
@@ -90,7 +92,11 @@ use crate::{
     wolf_variant::WolfVariantRegistry,
     zombie_nautilus_variant::ZombieNautilusVariantRegistry,
 };
-use std::{fmt::Debug, ops::Deref, sync::OnceLock};
+use std::{
+    fmt::Debug,
+    ops::Deref,
+    sync::{Once, OnceLock},
+};
 use steel_utils::Identifier;
 
 pub struct RegistryLock(OnceLock<Registry>);
@@ -102,6 +108,19 @@ impl RegistryLock {
     }
 }
 
+/// Returns `false` if the registry was already published.
+pub fn init_vanilla_registry() -> bool {
+    static INIT: Once = Once::new();
+
+    let mut published = false;
+    INIT.call_once(|| {
+        let mut registry = Registry::new_vanilla();
+        registry.freeze();
+        published = REGISTRY.init(registry).is_ok();
+    });
+    published
+}
+
 impl Deref for RegistryLock {
     type Target = Registry;
 
@@ -111,24 +130,6 @@ impl Deref for RegistryLock {
 }
 
 pub static REGISTRY: RegistryLock = RegistryLock(OnceLock::new());
-
-#[cfg(any(test, feature = "test-utils"))]
-pub mod test_support {
-    use std::sync::Once;
-
-    use crate::{REGISTRY, Registry};
-
-    static INIT_REGISTRY: Once = Once::new();
-
-    /// Initializes the global registry with frozen vanilla data for tests.
-    pub fn init_test_registry() {
-        INIT_REGISTRY.call_once(|| {
-            let mut registry = Registry::new_vanilla();
-            registry.freeze();
-            let _ = REGISTRY.init(registry);
-        });
-    }
-}
 
 /// Trait for types stored in a registry, allowing self-lookup of their numeric ID.
 pub trait RegistryEntry: PartialEq + 'static {
@@ -223,6 +224,8 @@ pub const PLACED_FEATURE_REGISTRY: Identifier =
 pub const STRUCTURE_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/structure");
 pub const STRUCTURE_PROCESSOR_LIST_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/processor_list");
+pub const CUSTOM_STAT_REGISTRY: Identifier = Identifier::vanilla_static("custom_stat");
+pub const STAT_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("stat_type");
 
 pub struct Registry {
     pub attributes: AttributeRegistry,
@@ -280,6 +283,8 @@ pub struct Registry {
     pub placed_features: PlacedFeatureRegistry,
     pub structures: StructureRegistry,
     pub structure_processors: StructureProcessorListRegistry,
+    pub custom_stats: CustomStatRegistry,
+    pub stat_types: StatTypeRegistry,
 }
 
 impl Debug for Registry {
@@ -409,6 +414,9 @@ impl Registry {
         );
         vanilla_placed_features::register_placed_features(&mut registry.placed_features);
 
+        vanilla_custom_stats::register_custom_stats(&mut registry.custom_stats);
+        vanilla_stat_types::register_vanilla_stat_types(&mut registry.stat_types);
+
         registry
     }
 
@@ -470,6 +478,8 @@ impl Registry {
         self.placed_features.freeze();
         self.structures.freeze();
         self.structure_processors.freeze();
+        self.custom_stats.freeze();
+        self.stat_types.freeze();
     }
 
     fn validate_references(&self) {
@@ -726,6 +736,8 @@ impl Registry {
             placed_features: PlacedFeatureRegistry::new(),
             structures: StructureRegistry::new(),
             structure_processors: StructureProcessorListRegistry::new(),
+            custom_stats: CustomStatRegistry::new(),
+            stat_types: StatTypeRegistry::new(),
         }
     }
 }

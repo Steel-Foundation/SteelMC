@@ -7,14 +7,14 @@ mod pregen;
 /// The registry cache for the server.
 pub mod registry_cache;
 mod run_loop;
+mod service_keys;
 /// The tick rate manager for the server.
 pub mod tick_rate_manager;
 mod world_tick_workers;
 /// Domain-aware loaded world map.
 pub mod worlds;
 
-use crate::behavior::init_behaviors;
-use crate::block_entity::init_block_entities;
+use crate::bootstrap::init_globals;
 use crate::chunk::{
     chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
     status::ChunkStatus,
@@ -35,7 +35,6 @@ use crate::command::{
 use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_login_security};
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
-    init_entities,
 };
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
@@ -65,6 +64,7 @@ use crate::scoreboard::DomainScoreboards;
 use crate::server::jobs::{FnServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::packet_processor::PacketProcessor;
 use crate::server::registry_cache::RegistryCache;
+use crate::server::service_keys::ServiceKeyStore;
 use crate::server::worlds::WorldMap;
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
 use crate::world::{PlayerMap, World, WorldConfig};
@@ -74,6 +74,7 @@ use crossbeam::queue::SegQueue;
 use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use rustc_hash::FxHashMap;
+use std::sync::atomic::AtomicI32;
 use std::{
     collections::BTreeSet,
     io, mem,
@@ -83,20 +84,19 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use steel_crypto::key_store::KeyStore;
+use steel_crypto::{key_store::KeyStore, signature::ProfileKeyValidator};
 use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
 use steel_protocol::packets::game::{
-    CCommandSuggestions, CEntityEvent, CGameEvent, CLogin, CPlayerInfoUpdate, CRemovePlayerInfo,
+    CCommandSuggestions, CEntityEvent, CLogin, CPlayerInfoUpdate, CRemovePlayerInfo,
     CSetDefaultSpawnPosition, CSystemChat, CTabList, CTickingState, CTickingStep,
-    CommonPlayerSpawnInfo, GameEventType, RelativeMovement,
+    CommonPlayerSpawnInfo, RelativeMovement,
 };
 use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::vanilla_game_rules::{
     ALLOW_ENTERING_NETHER_USING_PORTALS, IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO,
 };
 use steel_registry::{
-    REGISTRY, Registry, RegistryEntry, dimension_type::DimensionTypeRef, vanilla_dimension_types,
-    vanilla_entities,
+    RegistryEntry, dimension_type::DimensionTypeRef, vanilla_dimension_types, vanilla_entities,
 };
 use steel_utils::{
     BlockPos, ChunkPos, Identifier,
@@ -385,6 +385,7 @@ use permissions::validate_player_permission_group_update;
 mod player_admission;
 mod player_lifecycle;
 
+pub use player_admission::{DuplicatePlayerWaitError, PlayerJoinReservation};
 use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQueue};
 
 mod world_changes;
@@ -414,8 +415,15 @@ pub struct Server {
     online_players: PlayerMap,
     /// UUIDs reserved by a join or disconnect/save lifecycle transition.
     player_admissions: SyncMutex<FxHashMap<Uuid, PlayerAdmissionState>>,
+    /// Wakes verified logins waiting for an older session with the same UUID to leave.
+    player_admission_changed: Notify,
+    /// Wakes connection lifecycle work waiting for a specific server tick.
+    server_tick_changed: Notify,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
+    /// The number of minutes required for a player to be idle for them to be kicked (timed out) from the server.
+    /// If this is equal to 0, no kicking will happen.
+    pub player_idle_timeout: AtomicI32,
     /// Command scoreboards isolated by Steel domain.
     pub scoreboards: DomainScoreboards,
     /// Command NBT storage isolated by Steel domain.
@@ -444,6 +452,8 @@ pub struct Server {
     known_player_save_idle: Notify,
     /// HTTP client used by online-mode name-to-profile lookups.
     profile_lookup_client: reqwest::Client,
+    /// Cached Mojang service keys used to validate player-key certificates.
+    service_keys: Arc<ServiceKeyStore>,
     /// Player joins prepared by async I/O and finalized at the game tick safe point.
     pending_player_joins: PlayerJoinQueue,
     /// Disconnected players waiting to be detached at the next game tick safe point.
@@ -476,6 +486,26 @@ impl Drop for GameTickTaskGuard {
 }
 
 impl Server {
+    /// Returns the current server tick number.
+    pub fn current_tick(&self) -> u64 {
+        self.tick_rate_manager.read().tick_count
+    }
+
+    /// Waits until the server reaches `target_tick`.
+    pub async fn wait_until_tick(&self, target_tick: u64) {
+        loop {
+            let tick_changed = self.server_tick_changed.notified();
+            tokio::pin!(tick_changed);
+            tick_changed.as_mut().enable();
+
+            if self.current_tick() >= target_tick {
+                return;
+            }
+
+            tick_changed.await;
+        }
+    }
+
     pub(crate) fn permission_rule_suggestions(&self) -> Vec<String> {
         let mut suggestions = self
             .command_permission_keys
@@ -545,23 +575,18 @@ impl Server {
     ) -> Result<Self, String> {
         validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
         let config = Arc::new(config);
-        let start = Instant::now();
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        log::info!("Vanilla registry loaded in {:?}", start.elapsed());
-
-        if REGISTRY.init(registry).is_err() {
-            return Err("global registry has already been initialized".to_owned());
-        }
-
-        // Initialize behavior registries after the main registry is frozen
-        init_behaviors();
-        init_block_entities();
-        init_entities();
-        log::info!("Behavior registries initialized");
+        init_globals()?;
         log::info!(
             "SteelMC is not affiliated with Mojang or Microsoft. Use is subject to the Minecraft EULA: https://aka.ms/MinecraftEULA"
         );
+
+        // Authlib starts this fetch alongside server initialization and waits on first use.
+        // Steel completes the same initial attempt before opening its listener.
+        let service_keys = Arc::new(
+            ServiceKeyStore::new(config.services_server.as_deref())
+                .map_err(|error| format!("failed to configure Minecraft services keys: {error}"))?,
+        );
+        let service_keys_ready = service_keys.start(cancel_token.clone());
 
         let registry_cache = RegistryCache::new(config.compression);
 
@@ -698,6 +723,10 @@ impl Server {
             .map(|permission| permission.as_str().to_owned())
             .collect();
 
+        if service_keys_ready.await.is_err() {
+            log::error!("Minecraft services key fetch task stopped before its initial attempt");
+        }
+
         Ok(Server {
             config,
             permission_groups,
@@ -706,8 +735,11 @@ impl Server {
             worlds,
             online_players: PlayerMap::new(),
             player_admissions: SyncMutex::new(FxHashMap::default()),
+            player_admission_changed: Notify::new(),
+            server_tick_changed: Notify::new(),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
+            player_idle_timeout: AtomicI32::new(0),
             scoreboards,
             command_storage,
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
@@ -722,11 +754,25 @@ impl Server {
             known_players: SyncMutex::new(KnownPlayerCacheState::new(known_players)),
             known_player_save_idle: Notify::new(),
             profile_lookup_client: reqwest::Client::new(),
+            service_keys,
             pending_player_joins: PlayerJoinQueue::new(),
             pending_player_disconnects: PlayerDisconnectQueue::new(),
             pending_world_changes: SyncMutex::new(vec![]),
             pending_domain_switches: SyncMutex::new(vec![]),
         })
+    }
+
+    /// Returns the current player-certificate validator, if service keys are available.
+    pub fn profile_key_signature_validator(&self) -> Option<Arc<ProfileKeyValidator>> {
+        self.service_keys.profile_key_validator()
+    }
+
+    /// Returns whether secure chat can currently be enforced.
+    #[must_use]
+    pub fn enforces_secure_chat(&self) -> bool {
+        self.config.enforce_secure_chat
+            && self.config.online_mode
+            && self.profile_key_signature_validator().is_some()
     }
 
     /// Saves all dirty domain command storage through domain default worlds.

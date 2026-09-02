@@ -5,7 +5,7 @@ use steel_registry::{
     blocks::{
         BlockRef,
         block_state_ext::BlockStateExt,
-        properties::{BlockStateProperties, DoubleBlockHalf},
+        properties::{BlockStateProperties, DoubleBlockHalf, EnumProperty},
     },
     vanilla_blocks,
 };
@@ -14,12 +14,13 @@ use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 use crate::{
     behavior::{
         BlockBehavior, BlockPlaceContext,
-        blocks::vegetation::{
-            Vegetation,
-            bonemealable::Bonemealable,
-            default_surviving_state,
-            vegetation_block::{
-                double_plant_can_survive, survival_update_shape, vegetation_can_survive,
+        blocks::{
+            DoublePlantBlock,
+            vegetation::{
+                Vegetation,
+                bonemealable::Bonemealable,
+                default_surviving_state,
+                vegetation_block::{survival_update_shape, vegetation_can_survive},
             },
         },
     },
@@ -29,14 +30,18 @@ use crate::{
 /// Behavior for short grass and fern blocks.
 #[block_behavior]
 pub struct TallGrassBlock {
-    block: BlockRef,
+    base: DoublePlantBlock,
 }
+
+const DOUBLE_BLOCK_HALF: &EnumProperty<DoubleBlockHalf> = &BlockStateProperties::DOUBLE_BLOCK_HALF;
 
 impl TallGrassBlock {
     /// Creates a new tall grass behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
-        Self { block }
+        Self {
+            base: DoublePlantBlock::new(block),
+        }
     }
 
     fn large_variant(state: BlockStateId) -> BlockRef {
@@ -66,7 +71,7 @@ impl BlockBehavior for TallGrassBlock {
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        default_surviving_state(self.block, self, context)
+        default_surviving_state(self.base.block, self, context)
     }
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
@@ -84,12 +89,11 @@ impl Bonemealable for TallGrassBlock {
         pos: BlockPos,
     ) -> bool {
         let above_pos = pos.above();
-        let lower_state = Self::large_variant(state).default_state().set_value(
-            &BlockStateProperties::DOUBLE_BLOCK_HALF,
-            DoubleBlockHalf::Lower,
-        );
+        let lower_state = Self::large_variant(state)
+            .default_state()
+            .set_value(DOUBLE_BLOCK_HALF, DoubleBlockHalf::Lower);
         !world.is_outside_build_height(above_pos.y())
-            && double_plant_can_survive(self, lower_state, world, pos)
+            && self.base.can_survive(lower_state, world, pos)
             && world.get_block_state(above_pos).is_air()
     }
 
@@ -100,27 +104,10 @@ impl Bonemealable for TallGrassBlock {
         _rng: &mut dyn rand::Rng,
         pos: BlockPos,
     ) {
-        let base_state = Self::large_variant(state).default_state();
-        let waterlogged_state = state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .map_or(base_state, |waterlogged| {
-                base_state.set_value(&BlockStateProperties::WATERLOGGED, waterlogged)
-            });
-
-        world.set_block(
+        DoublePlantBlock::place_at(
+            world,
+            Self::large_variant(state).default_state(),
             pos,
-            waterlogged_state.set_value(
-                &BlockStateProperties::DOUBLE_BLOCK_HALF,
-                DoubleBlockHalf::Lower,
-            ),
-            UpdateFlags::UPDATE_CLIENTS,
-        );
-        world.set_block(
-            pos.above(),
-            waterlogged_state.set_value(
-                &BlockStateProperties::DOUBLE_BLOCK_HALF,
-                DoubleBlockHalf::Upper,
-            ),
             UpdateFlags::UPDATE_CLIENTS,
         );
     }
@@ -128,7 +115,7 @@ impl Bonemealable for TallGrassBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use crate::test_support::TestLevel;
 
@@ -136,7 +123,7 @@ mod tests {
 
     #[test]
     fn tall_grass_bonemeal_rejects_top_build_height() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = TallGrassBlock::new(&vanilla_blocks::SHORT_GRASS);
         let state = vanilla_blocks::SHORT_GRASS.default_state();
         let level = TestLevel::default()

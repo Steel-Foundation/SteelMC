@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn sparse_scheduler_collects_a_registered_chunk_owned_tick() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("chunk_owned_tick_collection");
     let chunk_pos = ChunkPos::new(0, 0);
@@ -21,7 +21,7 @@ fn sparse_scheduler_collects_a_registered_chunk_owned_tick() {
 
 #[test]
 fn block_callback_ticks_respect_the_block_fluid_phase_boundary() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("scheduled_tick_phase_boundary");
     let chunk_pos = ChunkPos::new(0, 0);
@@ -67,7 +67,7 @@ fn block_callback_ticks_respect_the_block_fluid_phase_boundary() {
 
 #[test]
 fn earlier_live_insertion_replaces_the_sparse_container_head() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("scheduled_tick_head_replacement");
     let chunk_pos = ChunkPos::new(0, 0);
@@ -87,7 +87,7 @@ fn earlier_live_insertion_replaces_the_sparse_container_head() {
 
 #[test]
 fn registered_full_chunks_use_active_order_for_equal_explicit_tick_heads() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("registered_explicit_tick_tie");
     let first_chunk_pos = ChunkPos::new(0, 0);

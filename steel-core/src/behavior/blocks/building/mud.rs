@@ -37,7 +37,7 @@ impl BlockBehavior for MudBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
 
     use crate::behavior::block::BlockBehavior;
@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn is_pathfindable_returns_false_for_all_types() {
-        init_test_registry();
+        init_vanilla_registry();
         let block = MudBlock::new(&vanilla_blocks::MUD);
         let state = vanilla_blocks::MUD.default_state();
 

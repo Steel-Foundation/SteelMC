@@ -305,13 +305,13 @@ impl World {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_world_clocks};
+    use steel_registry::{init_vanilla_registry, vanilla_world_clocks};
 
     use super::*;
 
     #[test]
     fn initializes_every_registered_clock() {
-        init_test_registry();
+        init_vanilla_registry();
         let manager = WorldClockManager::new();
 
         assert_eq!(
@@ -324,7 +324,7 @@ mod tests {
 
     #[test]
     fn separate_worlds_keep_independent_clock_state() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut first_world = WorldClockManager::new();
         let second_world = WorldClockManager::new();
 
@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn rate_accumulates_partial_ticks_like_vanilla() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut manager = WorldClockManager::new();
         assert_eq!(
             manager.set_rate(&vanilla_world_clocks::OVERWORLD, 0.25),
@@ -366,12 +366,8 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "paused and non-advancing clocks must report the exact zero network rate"
-    )]
     fn pause_and_advance_time_gate_network_rate_and_ticks() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut manager = WorldClockManager::new();
         assert_eq!(
             manager.set_paused(&vanilla_world_clocks::OVERWORLD, true),
@@ -396,7 +392,7 @@ mod tests {
 
     #[test]
     fn repeating_time_marker_moves_strictly_forward() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut manager = WorldClockManager::new();
         assert_eq!(
             manager.set_total_ticks(&vanilla_world_clocks::OVERWORLD, 1_000),
@@ -418,7 +414,7 @@ mod tests {
 
     #[test]
     fn manager_round_trips_through_toml() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut manager = WorldClockManager::new();
         assert_eq!(
             manager.set_total_ticks(&vanilla_world_clocks::OVERWORLD, 12_345),

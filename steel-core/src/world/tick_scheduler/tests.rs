@@ -8,7 +8,7 @@ use super::scheduler::{RegisteredChunkTicks, TickKind};
 use super::*;
 use steel_registry::blocks::Block;
 use steel_registry::blocks::behavior::BlockConfig;
-use steel_registry::test_support::init_test_registry;
+use steel_registry::init_vanilla_registry;
 use steel_registry::vanilla_fluids;
 use steel_utils::Identifier;
 
@@ -137,7 +137,7 @@ fn schedule_deduplicates_by_position_and_type() {
 
 #[test]
 fn proto_pending_scheduling_is_linearized_with_full_promotion() {
-    init_test_registry();
+    init_vanilla_registry();
     let block_pos = BlockPos::new(1, 2, 3);
     let fluid_pos = BlockPos::new(4, 5, 6);
 
@@ -209,7 +209,7 @@ fn proto_pending_scheduling_is_linearized_with_full_promotion() {
 
 #[test]
 fn chunk_snapshot_does_not_wait_for_world_scheduler_metadata() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("chunk_tick_snapshot_lock_scope");
     let chunk_pos = ChunkPos::new(0, 0);
@@ -677,7 +677,7 @@ fn only_popped_containers_report_a_persistence_change() {
     let pending_pos = ChunkPos::new(1, 0);
     let scheduler = scheduler_with_block_lists([(empty_pos, empty), (pending_pos, pending)]);
     let before_deadline = begin_block_tick_at(&scheduler, 1, &[empty_pos, pending_pos], 1);
-    assert!(before_deadline.changed_containers.is_empty());
+    assert_eq!(before_deadline.changed_containers.len(), 0);
     let selected = begin_block_tick_at(&scheduler, 3, &[empty_pos, pending_pos], 1);
     assert_eq!(selected.changed_containers, vec![1]);
 }

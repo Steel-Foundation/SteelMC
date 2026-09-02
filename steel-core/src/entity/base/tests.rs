@@ -9,7 +9,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use steel_registry::{
     entity_data::EntityPose, entity_type::EntityDimensions, entity_type::EntityTypeRef,
-    test_support::init_test_registry,
+    init_vanilla_registry,
 };
 use steel_registry::{vanilla_damage_types, vanilla_entities};
 use steel_utils::locks::SyncMutex;
@@ -630,7 +630,7 @@ fn player_respawn_reset_restores_fresh_base_state_and_preserves_tags() {
         DVec3::new(2.0, 64.0, 1.0),
     ));
     base.set_position_local(DVec3::new(2.0, 64.0, 1.0));
-    assert!(!base.take_movements_for_block_effects().is_empty());
+    assert_ne!(base.take_movements_for_block_effects().len(), 0);
     base.record_movement_this_tick(EntityMovement::new(
         DVec3::new(2.0, 64.0, 1.0),
         DVec3::new(3.0, 64.0, 1.0),
@@ -663,7 +663,7 @@ fn player_respawn_reset_restores_fresh_base_state_and_preserves_tags() {
     assert!(!base.needs_velocity_sync());
     assert!(!base.hurt_marked());
     assert_eq!(base.dimensions(), reset_dimensions);
-    assert!(base.last_movements_for_block_effects().is_empty());
+    assert_eq!(base.last_movements_for_block_effects().len(), 0);
     assert_eq!(
         base.take_movements_for_block_effects(),
         vec![EntityMovement::new(reset_position, reset_position)]
@@ -772,7 +772,7 @@ fn removal_cleans_up_relationship_state() {
 
 #[test]
 fn base_fall_damage_propagates_to_passengers() {
-    init_test_registry();
+    init_vanilla_registry();
     let vehicle = raw_entity(1);
     let passenger = FallDamageTestEntity::new(2);
     let passenger_entity: SharedEntity = passenger.clone();
@@ -1122,7 +1122,7 @@ fn movement_trace_replays_last_finalized_movements() {
         EntityDimensions::new(0.25, 0.25, 0.125),
         Weak::<World>::new(),
     );
-    assert!(base.last_movements_for_block_effects().is_empty());
+    assert_eq!(base.last_movements_for_block_effects().len(), 0);
 
     base.record_movement_this_tick(EntityMovement::new(DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0)));
     base.set_position_local(DVec3::new(1.0, 0.0, 0.0));

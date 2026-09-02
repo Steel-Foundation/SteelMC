@@ -8,6 +8,11 @@
 
 use std::sync::Arc;
 
+use crate::command::brigadier::{
+    CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
+    ContextChain,
+};
+use steel_registry::damage_type::DamageTypeRef;
 use steel_registry::{
     enchantment::EnchantmentRef, entity_type::EntityTypeRef, item_stack::ItemStack,
     timeline::TimelineRef, world_clock::WorldClockRef,
@@ -15,13 +20,8 @@ use steel_registry::{
 use steel_utils::{DowncastType, Identifier, nbt::NbtPath, translations, types::GameType};
 use text_components::TextComponent;
 
-use crate::command::brigadier::{
-    CommandContext, CommandNodeBuilder, CommandRedirectTarget, CommandRuntime, CommandSyntaxError,
-    ContextChain,
-};
-
 use super::{
-    BiomeOrTag, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
+    BiomeOrTag, BlockInput, BlockPredicate, ChainModifiers, CommandResultSuspension, CommandSource,
     Coordinates, ExecutionCommandSource, ExecutionControl, GameProfileArgument, IntRange,
     ItemPredicate, PermissionGroupName, ScoreHolderArgument, ScoreHolderWildcard,
     SteelArgumentType, StructureOrTagKey, WorldArgument,
@@ -32,6 +32,8 @@ use super::{
     },
     selector::EntitySelector,
 };
+use crate::command::execution::argument::DamageTypeValue;
+use crate::command::incorrectly_typed_argument;
 use crate::{
     chunk::heightmap::HeightmapType,
     entity::{EntityAnchor, SharedEntity},
@@ -225,141 +227,170 @@ impl<S> SteelCommandContext<S>
 where
     S: ExecutionCommandSource,
 {
-    fn typed_argument<T: DowncastType>(&self, name: &str) -> Option<&T> {
-        self.argument(name)?.downcast_ref::<T>()
+    fn typed_argument<T: DowncastType>(&self, name: &str) -> Result<&T, CommandSyntaxError> {
+        self.argument(name)?
+            .downcast_ref::<T>()
+            .ok_or_else(|| incorrectly_typed_argument(name))
     }
 
     /// Returns a parsed Minecraft time argument in ticks.
-    pub(crate) fn time(&self, name: &str) -> Option<i32> {
+    pub(crate) fn time(&self, name: &str) -> Result<i32, CommandSyntaxError> {
         self.typed_argument::<TimeValue>(name).map(|value| value.0)
     }
 
     /// Returns a parsed coordinate expression without resolving it early.
-    pub(crate) fn coordinates(&self, name: &str) -> Option<Coordinates> {
+    pub(crate) fn coordinates(&self, name: &str) -> Result<Coordinates, CommandSyntaxError> {
         self.typed_argument::<Coordinates>(name).copied()
     }
 
     /// Returns a parsed entity position anchor.
-    pub(crate) fn entity_anchor(&self, name: &str) -> Option<EntityAnchor> {
+    pub(crate) fn entity_anchor(&self, name: &str) -> Result<EntityAnchor, CommandSyntaxError> {
         self.typed_argument::<EntityAnchor>(name).copied()
     }
 
-    pub(crate) fn swizzle(&self, name: &str) -> Option<CoordinateAxes> {
+    pub(crate) fn swizzle(&self, name: &str) -> Result<CoordinateAxes, CommandSyntaxError> {
         self.typed_argument::<CoordinateAxes>(name).copied()
     }
 
-    pub(crate) fn heightmap(&self, name: &str) -> Option<HeightmapType> {
+    pub(crate) fn heightmap(&self, name: &str) -> Result<HeightmapType, CommandSyntaxError> {
         self.typed_argument::<HeightmapType>(name).copied()
     }
 
-    pub(crate) fn score_holder_argument(&self, name: &str) -> Option<&ScoreHolderArgument> {
+    pub(crate) fn score_holder_argument(
+        &self,
+        name: &str,
+    ) -> Result<&ScoreHolderArgument, CommandSyntaxError> {
         self.typed_argument(name)
     }
 
-    pub(crate) fn objective_name(&self, name: &str) -> Option<&str> {
+    pub(crate) fn objective_name(&self, name: &str) -> Result<&str, CommandSyntaxError> {
         self.typed_argument::<ObjectiveValue>(name)
             .map(|value| value.0.as_ref())
     }
 
-    pub(crate) fn int_range(&self, name: &str) -> Option<IntRange> {
+    pub(crate) fn int_range(&self, name: &str) -> Result<IntRange, CommandSyntaxError> {
         self.typed_argument::<IntRange>(name).copied()
     }
 
-    pub(crate) fn biome_or_tag(&self, name: &str) -> Option<&BiomeOrTag> {
+    pub(crate) fn biome_or_tag(&self, name: &str) -> Result<&BiomeOrTag, CommandSyntaxError> {
         self.typed_argument(name)
     }
 
-    pub(crate) fn structure_or_tag_key(&self, name: &str) -> Option<&StructureOrTagKey> {
+    pub(crate) fn structure_or_tag_key(
+        &self,
+        name: &str,
+    ) -> Result<&StructureOrTagKey, CommandSyntaxError> {
         self.typed_argument(name)
     }
 
-    pub(crate) fn block_predicate(&self, name: &str) -> Option<&BlockPredicate> {
+    pub(crate) fn block_predicate(
+        &self,
+        name: &str,
+    ) -> Result<&BlockPredicate, CommandSyntaxError> {
+        self.typed_argument(name)
+    }
+
+    pub(crate) fn block_input(&self, name: &str) -> Result<&BlockInput, CommandSyntaxError> {
         self.typed_argument(name)
     }
 
     /// Returns a configured Steel domain name.
-    pub(crate) fn domain(&self, name: &str) -> Option<&str> {
+    pub(crate) fn domain(&self, name: &str) -> Result<&str, CommandSyntaxError> {
         self.typed_argument::<DomainValue>(name)
             .map(|value| value.0.as_ref())
     }
 
-    pub(crate) fn world_argument(&self, name: &str) -> Option<&WorldArgument> {
+    pub(crate) fn world_argument(&self, name: &str) -> Result<&WorldArgument, CommandSyntaxError> {
         self.typed_argument(name)
     }
 
     /// Returns a parsed vanilla game mode.
-    pub(crate) fn game_mode(&self, name: &str) -> Option<GameType> {
+    pub(crate) fn game_mode(&self, name: &str) -> Result<GameType, CommandSyntaxError> {
         self.typed_argument::<GameModeValue>(name)
             .map(|value| value.0)
     }
 
-    pub(crate) fn entity_type(&self, name: &str) -> Option<EntityTypeRef> {
+    pub(crate) fn entity_type(&self, name: &str) -> Result<EntityTypeRef, CommandSyntaxError> {
         self.typed_argument::<EntityTypeValue>(name)
             .map(|value| value.0)
     }
 
-    pub(crate) fn enchantment(&self, name: &str) -> Option<EnchantmentRef> {
+    pub(crate) fn enchantment(&self, name: &str) -> Result<EnchantmentRef, CommandSyntaxError> {
         self.typed_argument::<EnchantmentValue>(name)
             .map(|value| value.0)
     }
 
-    pub(crate) fn item_stack(&self, name: &str) -> Option<&ItemStack> {
+    pub(crate) fn damage_type(&self, name: &str) -> Result<DamageTypeRef, CommandSyntaxError> {
+        self.typed_argument::<DamageTypeValue>(name)
+            .map(|value| value.0)
+    }
+
+    pub(crate) fn item_stack(&self, name: &str) -> Result<&ItemStack, CommandSyntaxError> {
         self.typed_argument::<ItemStackValue>(name)
             .map(|value| &value.0)
     }
 
-    pub(crate) fn item_predicate(&self, name: &str) -> Option<&ItemPredicate> {
+    pub(crate) fn item_predicate(&self, name: &str) -> Result<&ItemPredicate, CommandSyntaxError> {
         self.typed_argument(name)
     }
 
-    pub(crate) fn text_component(&self, name: &str) -> Option<&TextComponent> {
+    pub(crate) fn text_component(&self, name: &str) -> Result<&TextComponent, CommandSyntaxError> {
         self.typed_argument::<ComponentValue>(name)
             .map(|value| &value.0)
     }
 
-    pub(crate) fn nbt_path(&self, name: &str) -> Option<&NbtPath> {
+    pub(crate) fn nbt_path(&self, name: &str) -> Result<&NbtPath, CommandSyntaxError> {
         self.typed_argument::<NbtPathValue>(name)
             .map(|value| &value.0)
     }
 
-    pub(crate) fn identifier(&self, name: &str) -> Option<&Identifier> {
+    pub(crate) fn identifier(&self, name: &str) -> Result<&Identifier, CommandSyntaxError> {
         self.typed_argument::<IdentifierValue>(name)
             .map(|value| &value.0)
     }
 
-    pub(crate) fn world_clock(&self, name: &str) -> Option<WorldClockRef> {
+    pub(crate) fn world_clock(&self, name: &str) -> Result<WorldClockRef, CommandSyntaxError> {
         self.typed_argument::<WorldClockValue>(name)
             .map(|value| value.0)
     }
 
-    pub(crate) fn timeline(&self, name: &str) -> Option<TimelineRef> {
+    pub(crate) fn timeline(&self, name: &str) -> Result<TimelineRef, CommandSyntaxError> {
         self.typed_argument::<TimelineValue>(name)
             .map(|value| value.0)
     }
 
-    pub(crate) fn entity_selector(&self, name: &str) -> Option<&EntitySelector> {
+    pub(crate) fn entity_selector(
+        &self,
+        name: &str,
+    ) -> Result<&EntitySelector, CommandSyntaxError> {
         self.typed_argument(name)
     }
 
-    pub(crate) fn game_profile_argument(&self, name: &str) -> Option<&GameProfileArgument> {
+    pub(crate) fn game_profile_argument(
+        &self,
+        name: &str,
+    ) -> Result<&GameProfileArgument, CommandSyntaxError> {
         self.typed_argument(name)
     }
 
     pub(crate) fn permission_rule_expression(
         &self,
         name: &str,
-    ) -> Option<&PermissionRuleExpression> {
+    ) -> Result<&PermissionRuleExpression, CommandSyntaxError> {
         self.typed_argument(name)
     }
 
     pub(crate) fn permission_metadata_expression(
         &self,
         name: &str,
-    ) -> Option<&PermissionMetadataExpression> {
+    ) -> Result<&PermissionMetadataExpression, CommandSyntaxError> {
         self.typed_argument(name)
     }
 
-    pub(crate) fn permission_group(&self, name: &str) -> Option<&PermissionGroupName> {
+    pub(crate) fn permission_group(
+        &self,
+        name: &str,
+    ) -> Result<&PermissionGroupName, CommandSyntaxError> {
         self.typed_argument(name)
     }
 }
@@ -371,8 +402,7 @@ impl SteelCommandContext<CommandSource> {
         wildcard: ScoreHolderWildcard,
     ) -> Result<Vec<ScoreHolder>, CommandSyntaxError> {
         let holders = self
-            .score_holder_argument(name)
-            .ok_or_else(|| missing_score_holder_argument(name))?
+            .score_holder_argument(name)?
             .resolve(self.source(), wildcard)?;
         if holders.is_empty() {
             Err(CommandSyntaxError::dynamic(TextComponent::from(
@@ -392,9 +422,7 @@ impl SteelCommandContext<CommandSource> {
         &self,
         name: &str,
     ) -> Result<Vec<SharedEntity>, CommandSyntaxError> {
-        self.entity_selector(name)
-            .ok_or_else(|| missing_selector_argument(name))?
-            .find_entities(self.source())
+        self.entity_selector(name)?.find_entities(self.source())
     }
 
     pub(crate) fn entities(&self, name: &str) -> Result<Vec<SharedEntity>, CommandSyntaxError> {
@@ -422,9 +450,7 @@ impl SteelCommandContext<CommandSource> {
         &self,
         name: &str,
     ) -> Result<Vec<Arc<Player>>, CommandSyntaxError> {
-        self.entity_selector(name)
-            .ok_or_else(|| missing_selector_argument(name))?
-            .find_players(self.source())
+        self.entity_selector(name)?.find_players(self.source())
     }
 
     pub(crate) fn players(&self, name: &str) -> Result<Vec<Arc<Player>>, CommandSyntaxError> {
@@ -447,16 +473,4 @@ impl SteelCommandContext<CommandSource> {
         }
         Ok(players.remove(0))
     }
-}
-
-fn missing_selector_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed selector for {name} is missing from the command context"
-    ))
-}
-
-fn missing_score_holder_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed score holder for {name} is missing from the command context"
-    ))
 }

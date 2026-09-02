@@ -18,8 +18,9 @@ use std::sync::Arc;
 
 use super::BlockRef;
 
-const WATERLOGGED: BoolProperty = BlockStateProperties::WATERLOGGED;
-const FACING: EnumProperty<Direction> = BlockStateProperties::FACING;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::FACING;
+
 /// Vanilla `BigDripleafStemBlock` survival.
 ///
 /// Below must be stem or in `SUPPORTS_BIG_DRIPLEAF`; above must be stem or big
@@ -45,10 +46,10 @@ impl BigDripleafStemBlock {
         let new_state = vanilla_blocks::BIG_DRIPLEAF_STEM
             .default_state()
             .set_value(
-                &WATERLOGGED,
+                WATERLOGGED,
                 fluid_state.is_source() && fluid_state.is_water(),
             )
-            .set_value(&FACING, facing);
+            .set_value(FACING, facing);
         world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL)
     }
 }
@@ -88,7 +89,7 @@ impl BlockBehavior for BigDripleafStemBlock {
         {
             world.schedule_block_tick_default(pos, self.block, 1);
         }
-        if state.get_value(&WATERLOGGED) {
+        if state.get_value(WATERLOGGED) {
             world.schedule_fluid_tick_default(
                 pos,
                 &vanilla_fluids::WATER,
@@ -142,7 +143,7 @@ impl Bonemealable for BigDripleafStemBlock {
             return;
         };
         let place_head_pos = head_pos.above();
-        let facing = state.get_value(&FACING);
+        let facing = state.get_value(FACING);
         Self::place(
             world,
             head_pos,

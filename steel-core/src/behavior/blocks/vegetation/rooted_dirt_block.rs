@@ -64,7 +64,7 @@ impl Bonemealable for RootedDirtBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use crate::test_support::TestLevel;
 
@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn rooted_dirt_bonemeal_rejects_bottom_build_height() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = RootedDirtBlock::new(&vanilla_blocks::ROOTED_DIRT);
         let state = vanilla_blocks::ROOTED_DIRT.default_state();
         let level = rooted_dirt_level(0, 1, vanilla_blocks::AIR.default_state());
@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn rooted_dirt_bonemeal_accepts_in_bounds_air_below() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = RootedDirtBlock::new(&vanilla_blocks::ROOTED_DIRT);
         let state = vanilla_blocks::ROOTED_DIRT.default_state();
         let level = rooted_dirt_level(-1, 2, vanilla_blocks::AIR.default_state());

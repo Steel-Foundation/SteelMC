@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn default_entity_tick_dispatches_living_tick() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_health(0.0);
     let entity_ref: &dyn Entity = &entity;
@@ -14,7 +14,7 @@ fn default_entity_tick_dispatches_living_tick() {
 
 #[test]
 fn living_tick_state_decrements_last_hurt_by_player_memory() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let player_uuid = Uuid::from_u128(42);
@@ -36,7 +36,7 @@ fn living_tick_state_decrements_last_hurt_by_player_memory() {
 
 #[test]
 fn living_tick_state_updates_swing_time() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.swing(InteractionHand::MainHand, false);
@@ -52,7 +52,7 @@ fn living_tick_state_updates_swing_time() {
 
 #[test]
 fn current_swing_duration_uses_vanilla_dig_effects() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     assert_eq!(entity.current_swing_duration(), DEFAULT_SWING_DURATION);
@@ -66,7 +66,7 @@ fn current_swing_duration_uses_vanilla_dig_effects() {
 
 #[test]
 fn current_swing_duration_uses_held_item_component() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.equip(
@@ -79,7 +79,7 @@ fn current_swing_duration_uses_held_item_component() {
 
 #[test]
 fn living_combat_memory_stores_and_expires_last_hurt_by_mob() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let attacker: SharedEntity = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
@@ -103,7 +103,7 @@ fn living_combat_memory_stores_and_expires_last_hurt_by_mob() {
 
 #[test]
 fn living_combat_memory_clears_dead_last_hurt_mob() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     let target = Arc::new(LivingFluidTestEntity::new(0.0, 0.0, true));
@@ -122,7 +122,7 @@ fn living_combat_memory_clears_dead_last_hurt_mob() {
 
 #[test]
 fn living_death_loot_table_uses_default_and_custom_mob_tables() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     let Some(default_table) = pig.death_loot_table() else {

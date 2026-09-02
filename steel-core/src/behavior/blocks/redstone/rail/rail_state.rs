@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, RailShape};
+use steel_registry::blocks::properties::{BlockStateProperties, EnumProperty, RailShape};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -22,6 +22,8 @@ pub(super) struct RailState<'a> {
     connections: Vec<BlockPos>,
 }
 
+const RAIL_SHAPE: &EnumProperty<RailShape> = &BlockStateProperties::RAIL_SHAPE;
+
 impl<'a> RailState<'a> {
     pub(super) fn new(world: &'a Arc<World>, pos: BlockPos, state: BlockStateId) -> Option<Self> {
         if !BaseRailBlock::is_rail_state(state) {
@@ -31,7 +33,7 @@ impl<'a> RailState<'a> {
             .get_behavior(state.get_block())
             .as_rail()?
             .is_straight();
-        let shape = state.get_value(&BlockStateProperties::RAIL_SHAPE);
+        let shape = state.get_value(RAIL_SHAPE);
         let mut rail = Self {
             world,
             pos,
@@ -199,9 +201,7 @@ impl<'a> RailState<'a> {
         }
 
         let shape = shape.unwrap_or(RailShape::NorthSouth);
-        self.state = self
-            .state
-            .set_value(&BlockStateProperties::RAIL_SHAPE, shape);
+        self.state = self.state.set_value(RAIL_SHAPE, shape);
         self.world
             .set_block(self.pos, self.state, UpdateFlags::UPDATE_ALL);
     }
@@ -322,9 +322,7 @@ impl<'a> RailState<'a> {
 
         let shape = shape.unwrap_or(default_shape);
         self.update_connections(shape);
-        self.state = self
-            .state
-            .set_value(&BlockStateProperties::RAIL_SHAPE, shape);
+        self.state = self.state.set_value(RAIL_SHAPE, shape);
         if first || self.world.get_block_state(self.pos) != self.state {
             self.world
                 .set_block(self.pos, self.state, UpdateFlags::UPDATE_ALL);
@@ -345,7 +343,7 @@ impl<'a> RailState<'a> {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
     use steel_utils::ChunkPos;
 
@@ -353,12 +351,14 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
+    const RAIL_SHAPE: &EnumProperty<RailShape> = &BlockStateProperties::RAIL_SHAPE;
+
     fn raw_flags() -> UpdateFlags {
         UpdateFlags::UPDATE_NONE | UpdateFlags::UPDATE_SKIP_ON_PLACE
     }
 
     fn topology_world(key: &'static str) -> (Arc<World>, BlockPos) {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world(key);
         let center = BlockPos::new(8, 64, 8);
@@ -382,7 +382,7 @@ mod tests {
     fn set_raw_rail(world: &Arc<World>, pos: BlockPos, shape: RailShape) -> BlockStateId {
         let state = vanilla_blocks::RAIL
             .default_state()
-            .set_value(&BlockStateProperties::RAIL_SHAPE, shape);
+            .set_value(RAIL_SHAPE, shape);
         world.set_block(pos, state, raw_flags());
         state
     }
@@ -402,20 +402,14 @@ mod tests {
         let mut rail = RailState::new(&unpowered_world, center, state)
             .expect("ordinary rail should expose rail capability");
         let unpowered = rail.place(false, true, RailShape::NorthSouth);
-        assert_eq!(
-            unpowered.get_value(&BlockStateProperties::RAIL_SHAPE),
-            RailShape::SouthEast
-        );
+        assert_eq!(unpowered.get_value(RAIL_SHAPE), RailShape::SouthEast);
 
         let (powered_world, center) = topology_world("rail_powered_curve_tie");
         let state = set_four_way_junction(&powered_world, center);
         let mut rail = RailState::new(&powered_world, center, state)
             .expect("ordinary rail should expose rail capability");
         let powered = rail.place(true, true, RailShape::NorthSouth);
-        assert_eq!(
-            powered.get_value(&BlockStateProperties::RAIL_SHAPE),
-            RailShape::NorthWest
-        );
+        assert_eq!(powered.get_value(RAIL_SHAPE), RailShape::NorthWest);
     }
 
     #[test]
@@ -432,10 +426,7 @@ mod tests {
             .expect("ordinary rail should expose rail capability");
         let placed = rail.place(false, true, RailShape::EastWest);
 
-        assert_eq!(
-            placed.get_value(&BlockStateProperties::RAIL_SHAPE),
-            RailShape::AscendingEast
-        );
+        assert_eq!(placed.get_value(RAIL_SHAPE), RailShape::AscendingEast);
         assert_eq!(rail.connections(), &[center.west(), center.east().above()]);
     }
 }

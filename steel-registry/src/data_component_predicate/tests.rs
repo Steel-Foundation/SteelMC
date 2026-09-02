@@ -7,15 +7,15 @@ use crate::data_components::vanilla_components::{
     CAN_BREAK, DAMAGE, LOCK, OMINOUS_BOTTLE_AMPLIFIER,
 };
 use crate::data_components::{ComponentData, DataComponentMap};
+use crate::init_vanilla_registry;
 use crate::item_predicate::{AdventureModePredicate, BlockPredicate, LockCode};
-use crate::test_support::init_test_registry;
 use crate::{RegistryHolderSet, vanilla_blocks, vanilla_items};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry};
 
 #[test]
 fn vanilla_predicate_types_follow_registry_order() {
-    init_test_registry();
+    init_vanilla_registry();
     let expected = [
         "damage",
         "enchantments",
@@ -51,7 +51,7 @@ fn vanilla_predicate_types_follow_registry_order() {
 
 #[test]
 fn every_builtin_predicate_payload_round_trips_persistence_and_network() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let mut twinkle = NbtCompound::new();
     twinkle.insert("has_twinkle", true);
@@ -115,7 +115,7 @@ fn every_builtin_predicate_payload_round_trips_persistence_and_network() {
 
 #[test]
 fn adventure_and_lock_components_round_trip_both_codecs() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let block = BlockPredicate::new(
         Some(RegistryHolderSet::Direct(vec![&vanilla_blocks::STONE])),
@@ -153,7 +153,7 @@ fn adventure_and_lock_components_round_trip_both_codecs() {
 
 #[test]
 fn exact_predicates_reject_component_values_that_cannot_persist() {
-    init_test_registry();
+    init_vanilla_registry();
     let entry = REGISTRY
         .data_components
         .by_key(&OMINOUS_BOTTLE_AMPLIFIER.key)

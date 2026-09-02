@@ -316,7 +316,7 @@ impl GenerationChunk<'_, CarversPhase> {
 mod tests {
     use std::sync::{Arc, Weak};
 
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_utils::ChunkPos;
 
     use super::{GenerationChunk, NoisePhase, SurfacePhase};
@@ -327,7 +327,7 @@ mod tests {
     use crate::chunk::status::ChunkStatus;
 
     fn holder_at(status: ChunkStatus) -> Arc<ChunkHolder> {
-        init_test_registry();
+        init_vanilla_registry();
         let pos = ChunkPos::new(0, 0);
         let holder = Arc::new(ChunkHolder::new(
             pos,

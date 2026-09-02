@@ -158,8 +158,7 @@ pub use workset::{
 mod tests {
     use steel_registry::{
         blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
-        test_support::init_test_registry,
-        vanilla_blocks,
+        init_vanilla_registry, vanilla_blocks,
     };
     use steel_utils::BlockStateId;
     use steel_utils::{BlockPos, ChunkPos, SectionPos};
@@ -177,7 +176,7 @@ mod tests {
     };
 
     fn init_light_tests() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
     }
 
@@ -257,10 +256,10 @@ mod tests {
 
         assert!(!mask_bit(&packet.sky_y_mask.0, 1));
         assert!(!mask_bit(&packet.empty_sky_y_mask.0, 1));
-        assert!(packet.sky_updates.is_empty());
+        assert_eq!(packet.sky_updates.len(), 0);
         assert!(!mask_bit(&packet.block_y_mask.0, 1));
         assert!(!mask_bit(&packet.empty_block_y_mask.0, 1));
-        assert!(packet.block_updates.is_empty());
+        assert_eq!(packet.block_updates.len(), 0);
     }
 
     #[test]
@@ -273,7 +272,7 @@ mod tests {
 
         assert!(!mask_bit(&packet.block_y_mask.0, 1));
         assert!(mask_bit(&packet.empty_block_y_mask.0, 1));
-        assert!(packet.block_updates.is_empty());
+        assert_eq!(packet.block_updates.len(), 0);
     }
 
     #[test]
@@ -299,7 +298,7 @@ mod tests {
 
         let packet = build_chunk_light_update_packet(&light, false);
 
-        assert!(packet.sky_updates.is_empty());
+        assert_eq!(packet.sky_updates.len(), 0);
         assert!(!mask_bit(&packet.sky_y_mask.0, 1));
         assert!(!mask_bit(&packet.empty_sky_y_mask.0, 1));
     }

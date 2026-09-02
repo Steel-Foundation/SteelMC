@@ -197,8 +197,7 @@ mod tests {
 
     use steel_registry::{
         blocks::{block_state_ext::BlockStateExt as _, properties::BlockStateProperties},
-        test_support::init_test_registry,
-        vanilla_blocks, vanilla_fluids,
+        init_vanilla_registry, vanilla_blocks, vanilla_fluids,
     };
     use steel_utils::{BlockPos, ChunkPos};
 
@@ -214,7 +213,7 @@ mod tests {
     use crate::world::tick_scheduler::TickPriority;
 
     fn init_tests() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
     }
 
@@ -342,7 +341,7 @@ mod tests {
 
         let (sky_updates, block_updates) = run_light_stage(&cache, &center_holder, false);
 
-        assert!(sky_updates.is_empty());
+        assert_eq!(sky_updates.len(), 0);
         assert!(block_updates.contains(&SectionPos::new(0, 0, 0)));
         assert_eq!(
             light_value(&center_holder, LightLayer::Block, source_pos),
@@ -427,7 +426,7 @@ mod tests {
 
         let (sky_updates, _block_updates) = run_loaded_light_stage(&cache, &center_holder, false);
 
-        assert!(sky_updates.is_empty());
+        assert_eq!(sky_updates.len(), 0);
         assert_eq!(light_value(&center_holder, LightLayer::Block, block_pos), 7);
     }
 

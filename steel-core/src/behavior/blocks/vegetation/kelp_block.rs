@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
-use crate::behavior::blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock;
+use crate::behavior::blocks::vegetation::growing_plant_block;
+use crate::behavior::blocks::vegetation::growing_plant_head_block::{
+    GrowingPlantHeadBehavior, GrowingPlantHeadBlock,
+};
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
@@ -12,15 +15,16 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::fluid::{FluidRef, FluidStateExt};
 use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{vanilla_blocks, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId};
 
-use super::{BlockRef, kelp_can_survive};
+use super::BlockRef;
 
 /// Vanilla `KelpBlock` survival and fluid state.
 #[block_behavior]
 pub struct KelpBlock {
-    block: BlockRef,
+    base: GrowingPlantHeadBlock,
 }
 
 const GROW_PER_TICK_PROBABILITY: f64 = 0.14;
@@ -29,7 +33,17 @@ impl KelpBlock {
     /// Creates a new kelp block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
-        Self { block }
+        Self {
+            base: GrowingPlantHeadBlock::new(
+                block,
+                Direction::Up,
+                true,
+                GROW_PER_TICK_PROBABILITY,
+                &vanilla_blocks::KELP_PLANT,
+                Some(Self::get_blocks_to_grow_when_bonemealed),
+                Self::can_grow_into,
+            ),
+        }
     }
 
     fn can_grow_into(state: BlockStateId) -> bool {
@@ -39,23 +53,28 @@ impl KelpBlock {
     fn get_blocks_to_grow_when_bonemealed(_rng: &mut dyn Rng) -> i32 {
         1
     }
-
-    const fn growing_plant_head_block(&self) -> GrowingPlantHeadBlock {
-        GrowingPlantHeadBlock::new(
-            self.block,
+    pub(crate) fn kelp_can_survive(world: &dyn LevelReader, pos: BlockPos) -> bool {
+        let attached_pos = pos.below();
+        let attached_state = world.get_block_state(attached_pos);
+        if attached_state
+            .get_block()
+            .has_tag(&BlockTag::CANNOT_SUPPORT_KELP)
+        {
+            return false;
+        }
+        growing_plant_block::can_survive(
+            world,
+            pos,
             Direction::Up,
-            true,
-            GROW_PER_TICK_PROBABILITY,
+            &vanilla_blocks::KELP,
             &vanilla_blocks::KELP_PLANT,
-            Some(Self::get_blocks_to_grow_when_bonemealed),
-            Self::can_grow_into,
         )
     }
 }
 
 impl BlockBehavior for KelpBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        kelp_can_survive(world, pos)
+        Self::kelp_can_survive(world, pos)
     }
 
     fn get_clone_item_stack(
@@ -68,8 +87,7 @@ impl BlockBehavior for KelpBlock {
     }
 
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_head_block()
-            .random_tick(state, world, pos);
+        self.base.random_tick(state, world, pos);
     }
 
     fn update_shape(
@@ -81,14 +99,8 @@ impl BlockBehavior for KelpBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        self.growing_plant_head_block().update_shape(
-            state,
-            world,
-            pos,
-            direction,
-            neighbor_pos,
-            neighbor_state,
-        )
+        self.base
+            .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
@@ -97,15 +109,13 @@ impl BlockBehavior for KelpBlock {
             .get_block_state(context.place_pos())
             .get_fluid_state();
         if fluid_state.is_water() && fluid_state.is_full() {
-            return self
-                .growing_plant_head_block()
-                .get_state_for_placement(context);
+            return self.base.get_state_for_placement(context);
         }
         None
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_head_block().tick(state, world, pos);
+        self.base.tick(state, world, pos);
     }
 
     fn is_liquid_container(&self, _state: BlockStateId) -> bool {
@@ -119,6 +129,10 @@ impl BlockBehavior for KelpBlock {
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
     }
+
+    fn as_growing_plant_head(&self) -> Option<&dyn GrowingPlantHeadBehavior> {
+        Some(&self.base)
+    }
 }
 
 impl Bonemealable for KelpBlock {
@@ -128,8 +142,7 @@ impl Bonemealable for KelpBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        self.growing_plant_head_block()
-            .is_valid_bonemeal_target(state, world, pos)
+        self.base.is_valid_bonemeal_target(state, world, pos)
     }
 
     fn perform_bonemeal(
@@ -139,8 +152,7 @@ impl Bonemealable for KelpBlock {
         rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        self.growing_plant_head_block()
-            .perform_bonemeal(state, world, rng, pos);
+        self.base.perform_bonemeal(state, world, rng, pos);
     }
 
     fn bonemeal_action_type(&self) -> BonemealAction {
@@ -152,11 +164,11 @@ impl Bonemealable for KelpBlock {
 mod tests {
     use super::*;
     use crate::test_support::TestLevel;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     #[test]
     fn kelp_update_shape_schedules_water_tick() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let kelp = KelpBlock::new(&vanilla_blocks::KELP);
         let level =
@@ -179,7 +191,7 @@ mod tests {
 
     #[test]
     fn kelp_head_update_shape_schedules_break_tick_when_unsupported() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let kelp = KelpBlock::new(&vanilla_blocks::KELP);
         let level =
@@ -207,7 +219,7 @@ mod tests {
 
     #[test]
     fn kelp_head_converts_to_body_when_connected_above() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let kelp = KelpBlock::new(&vanilla_blocks::KELP);
         let level =

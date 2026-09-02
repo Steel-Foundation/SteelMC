@@ -40,6 +40,8 @@ pub struct ServerConfig {
     pub auth_server: Option<String>,
     /// Optional endpoint for online-mode player name-to-profile lookups.
     pub profile_server: Option<String>,
+    /// Optional endpoint for Mojang-compatible service public keys.
+    pub services_server: Option<String>,
     /// Whether the server should use encryption. Required in online mode.
     pub encryption: bool,
     /// Whether vanilla floating/flying movement checks permit unauthorized flight.
@@ -66,6 +68,10 @@ pub struct ServerConfig {
     /// Thread counts for server thread pools.
     #[serde(default)]
     pub threads: ThreadConfig,
+    /// The number of minutes required for a player to be idle for them to be kicked (timed out) from the server.
+    /// If this is equal to 0, no kicking will happen.
+    #[serde(default)]
+    pub player_idle_timeout: i32,
 }
 
 impl ServerConfig {
@@ -80,6 +86,7 @@ impl ServerConfig {
             online_mode: self.online_mode,
             auth_server: self.auth_server,
             profile_server: self.profile_server,
+            services_server: self.services_server,
             encryption: self.encryption,
             allow_flight: self.allow_flight,
             motd: self.motd,
@@ -143,6 +150,14 @@ pub(super) fn validate(config: &ServerConfig) -> Result<(), &'static str> {
         };
         if !matches!(url.scheme(), "http" | "https") {
             return Err("profile_server must use http or https");
+        }
+    }
+    if let Some(services_server) = &config.services_server {
+        let Ok(url) = Url::parse(services_server) else {
+            return Err("services_server must be an absolute URL");
+        };
+        if !matches!(url.scheme(), "http" | "https") {
+            return Err("services_server must use http or https");
         }
     }
     if config.simulation_distance > config.view_distance {

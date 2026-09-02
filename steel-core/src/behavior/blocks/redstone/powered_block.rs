@@ -5,6 +5,7 @@ use steel_registry::blocks::BlockRef;
 use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
+use crate::behavior::blocks::redstone::MAX_REDSTONE_SIGNAL;
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::{LevelReader, SignalQueryContext};
 
@@ -38,6 +39,6 @@ impl BlockBehavior for PoweredBlock {
         _pos: BlockPos,
         _context: SignalQueryContext,
     ) -> i32 {
-        15
+        MAX_REDSTONE_SIGNAL
     }
 }

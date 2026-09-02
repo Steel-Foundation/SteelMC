@@ -253,7 +253,7 @@ mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::entities::PigEntity;
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn move_to_block_goal_requires_world_after_start_delay() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| true);
         let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn move_to_block_goal_counts_down_next_start_tick_before_world_lookup() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| true);
         goal.next_start_tick = 2;
         let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn move_to_block_goal_tracks_reached_target() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = MoveToBlockGoal::new(1.0, 8, |_, _| false);
         goal.block_pos = BlockPos::new(0, -1, 0);
         let mob = PigEntity::new(

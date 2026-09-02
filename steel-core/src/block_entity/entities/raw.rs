@@ -76,15 +76,13 @@ impl BlockEntity for RawBlockEntity {
 mod tests {
     use std::sync::Weak;
 
-    use steel_registry::{
-        test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
-    };
+    use steel_registry::{init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks};
 
     use super::*;
 
     #[test]
     fn full_metadata_replaces_stale_raw_metadata() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut data = NbtCompound::new();
         data.insert("id", "minecraft:chest");
         data.insert("x", 100_i32);
@@ -116,7 +114,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "invalid block entity minecraft:barrel state minecraft:stone")]
     fn constructor_rejects_a_type_state_mismatch() {
-        init_test_registry();
+        init_vanilla_registry();
         let _ = RawBlockEntity::new(
             &vanilla_block_entity_types::BARREL,
             Weak::new(),

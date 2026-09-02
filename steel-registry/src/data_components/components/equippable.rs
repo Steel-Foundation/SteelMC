@@ -240,10 +240,10 @@ mod tests {
 
     use super::{Equippable, EquippableAllowedEntities};
     use crate::data_components::{ComponentData, vanilla_components::EQUIPPABLE};
+    use crate::init_vanilla_registry;
     use crate::item_stack::ItemStack;
     use crate::sound_event::SoundEventHolder;
     use crate::sound_events;
-    use crate::test_support::init_test_registry;
     use crate::vanilla_entities::{LLAMA, PIG, PLAYER, WOLF};
     use crate::vanilla_entity_type_tags::EntityTypeTag;
     use crate::vanilla_items;
@@ -272,7 +272,7 @@ mod tests {
 
     #[test]
     fn extracted_equippable_fields_gate_swapping_and_entity_types() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let pumpkin = ItemStack::new(&vanilla_items::CARVED_PUMPKIN);
         let Some(pumpkin_equippable) = pumpkin.get_equippable() else {
@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     fn equippable_network_round_trips_tag_and_direct_holder_sets() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let saddle = ItemStack::new(&vanilla_items::SADDLE);
         let Some(saddle_equippable) = saddle.get_equippable() else {
@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn equippable_hash_includes_vanilla_codec_fields() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let saddle = ItemStack::new(&vanilla_items::SADDLE);
         let Some(saddle_equippable) = saddle.get_equippable() else {
@@ -391,7 +391,7 @@ mod tests {
 
     #[test]
     fn equippable_nbt_defaults_only_missing_fields() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut compound = NbtCompound::new();
         compound.insert("slot", "head");
         compound.insert("dispensable", 0_i32);

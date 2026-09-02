@@ -365,14 +365,14 @@ fn has_fluid_and_loaded(world: &World, bounds: FluidScanBounds) -> bool {
 #[cfg(test)]
 mod tests {
     use steel_registry::fluid::FluidState;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_fluids;
 
     use super::*;
 
     #[test]
     fn scan_reports_fluid_height_above_entity_feet() {
-        init_test_registry();
+        init_vanilla_registry();
         let bounding_box = WorldAabb::new(0.1, 10.0, 0.1, 0.9, 10.5, 0.9);
 
         let contact = EntityFluidContact::scan_with(
@@ -397,7 +397,7 @@ mod tests {
 
     #[test]
     fn scan_uses_effective_fluid_height() {
-        init_test_registry();
+        init_vanilla_registry();
         let bounding_box = WorldAabb::new(0.1, 10.0, 0.1, 0.9, 10.5, 0.9);
 
         let contact = EntityFluidContact::scan_with(
@@ -422,7 +422,7 @@ mod tests {
 
     #[test]
     fn scan_ignores_fluid_below_interaction_box() {
-        init_test_registry();
+        init_vanilla_registry();
         let bounding_box = WorldAabb::new(0.1, 10.2, 0.1, 0.9, 10.6, 0.9);
 
         let contact = EntityFluidContact::scan_with(
@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn scan_marks_eye_inside_matching_fluid_column() {
-        init_test_registry();
+        init_vanilla_registry();
         let bounding_box = WorldAabb::new(0.1, 10.0, 0.1, 0.9, 11.0, 0.9);
 
         let contact = EntityFluidContact::scan_with(
@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn scan_accumulates_player_fluid_current_as_average_flow() {
-        init_test_registry();
+        init_vanilla_registry();
         let bounding_box = WorldAabb::new(0.1, 10.0, 0.1, 1.9, 10.5, 0.9);
 
         let contact = EntityFluidContact::scan_with_flow(
@@ -490,7 +490,7 @@ mod tests {
 
     #[test]
     fn scan_accumulates_non_player_fluid_current_as_normalized_flow() {
-        init_test_registry();
+        init_vanilla_registry();
         let bounding_box = WorldAabb::new(0.1, 10.0, 0.1, 1.9, 10.5, 0.9);
 
         let contact = EntityFluidContact::scan_with_flow(
@@ -512,7 +512,7 @@ mod tests {
 
     #[test]
     fn shallow_current_is_scaled_by_fluid_height() {
-        init_test_registry();
+        init_vanilla_registry();
         let bounding_box = WorldAabb::new(0.1, 10.0, 0.1, 0.9, 10.5, 0.9);
 
         let contact = EntityFluidContact::scan_with_flow(

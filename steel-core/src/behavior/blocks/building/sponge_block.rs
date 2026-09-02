@@ -5,7 +5,8 @@ use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
-use steel_registry::{sound_events, vanilla_blocks, vanilla_fluid_tags};
+use steel_registry::vanilla_fluid_tags::FluidTag;
+use steel_registry::{sound_events, vanilla_blocks};
 use steel_utils::{
     BlockPos, BlockStateId,
     types::{TraversalNodeStatus, UpdateFlags},
@@ -75,10 +76,7 @@ impl SpongeBlock {
     fn remove_water_at(world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
         let fluid_state = state.get_fluid_state();
-        if !fluid_state
-            .fluid_id
-            .has_tag(&vanilla_fluid_tags::FluidTag::WATER)
-        {
+        if !fluid_state.fluid_id.has_tag(&FluidTag::WATER) {
             return false;
         }
 

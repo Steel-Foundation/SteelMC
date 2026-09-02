@@ -139,7 +139,7 @@ fn generation_priority_orders_normal_by_load_level() {
 
 #[test]
 fn cached_holder_rechecks_publication_and_generation_permission() {
-    init_test_registry();
+    init_vanilla_registry();
     let world = fresh_test_world("cached_holder_status_recheck");
     let pos = ChunkPos::new(4, -3);
     let load_level = ChunkTicketLevel::FULL_CHUNK;
@@ -220,7 +220,7 @@ fn cached_holder_rechecks_publication_and_generation_permission() {
     reason = "one lifecycle test documents both readiness radii and their transitions"
 )]
 fn full_publications_drive_block_and_entity_readiness_incrementally() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("full_chunk_readiness_lifecycle");
     let center_pos = ChunkPos::new(0, 0);
@@ -339,7 +339,7 @@ fn full_publications_drive_block_and_entity_readiness_incrementally() {
 
 #[test]
 fn first_block_readiness_anchors_pending_ticks_once() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("pending_tick_readiness_anchor");
     world.level_data.write().set_game_time(100);
@@ -401,7 +401,7 @@ fn first_block_readiness_anchors_pending_ticks_once() {
 
 #[test]
 fn ticking_snapshot_preserves_scc_order_and_distinct_readiness_gates() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("ticking_chunk_snapshot");
     let block_only_pos = ChunkPos::new(0, 0);
@@ -450,7 +450,7 @@ fn ticking_snapshot_preserves_scc_order_and_distinct_readiness_gates() {
 
 #[test]
 fn simulation_changes_rebuild_only_eligible_snapshot_membership() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("simulation_snapshot_membership");
     let pos = ChunkPos::new(0, 0);
@@ -490,7 +490,7 @@ fn simulation_changes_rebuild_only_eligible_snapshot_membership() {
 
 #[test]
 fn full_load_activation_uses_packed_chunk_position_order() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("packed_full_activation_order");
     let first_chunk = ChunkPos::new(0, 0);

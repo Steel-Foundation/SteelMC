@@ -123,6 +123,8 @@ mod properties;
 mod raycast;
 mod redstone;
 mod signal_getter;
+mod sleep;
+mod sleep_status;
 mod spawn;
 pub mod tick_scheduler;
 mod weather;
@@ -138,6 +140,7 @@ use block_event::BlockEventQueue;
 pub(crate) use block_region::{BlockRegionBounds, MAX_BLOCK_REGION_WORKSET_SLOTS};
 use block_updates::CollectingNeighborUpdater;
 pub use border::WorldBorderError;
+pub(crate) use border::{MAX_CENTER_COORDINATE, MAX_SIZE};
 use border::{WorldBorder, WorldBorderSnapshot};
 use entity_management::NavigatingMobTracker;
 #[cfg(test)]
@@ -145,10 +148,10 @@ use entity_management::nearest_player_distance_in_range;
 pub use level_reader::{LevelAccessor, LevelReader, ScheduledTickAccess};
 pub use player_index::{PlayerAreaMap, PlayerMap};
 pub use raycast::{ClipBlockShape, ClipFluid, ClipHitResult, RaytraceAction};
+#[cfg(test)]
+pub(crate) use signal_getter::get_best_neighbor_signal;
 pub use signal_getter::{SignalGetter, SignalQueryContext};
-pub(crate) use signal_getter::{
-    get_best_neighbor_signal, get_control_input_signal, get_signal, is_redstone_conductor,
-};
+pub(crate) use signal_getter::{get_control_input_signal, get_signal, is_redstone_conductor};
 pub use tick_scheduler::ScheduledTick;
 
 #[cfg(test)]
@@ -247,6 +250,8 @@ pub struct World {
     pub(crate) saved_data: SavedDataManager,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
+    /// Vanilla sleeping player counts for night-skip checks.
+    sleep_status: SyncMutex<sleep_status::SleepStatus>,
     /// Server view distance (maximum chunk radius).
     pub view_distance: u8,
     /// Server simulation distance.
@@ -412,6 +417,7 @@ impl World {
                 level_data: SyncRwLock::new(level_data),
                 saved_data,
                 world_border: SyncMutex::new(world_border),
+                sleep_status: SyncMutex::new(sleep_status::SleepStatus::default()),
                 view_distance,
                 simulation_distance,
                 compression,
@@ -497,6 +503,9 @@ impl World {
         if runs_normally {
             self.tick_world_border();
             self.tick_weather();
+        }
+        self.tick_sleeping_players();
+        if runs_normally {
             self.tick_time();
         }
 
@@ -759,6 +768,10 @@ impl ScheduledTickAccess for Arc<World> {
 impl LevelAccessor for Arc<World> {
     fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool {
         self.set_block(pos, state, flags)
+    }
+
+    fn destroy_block(&self, pos: BlockPos, drop_items: bool) -> bool {
+        World::destroy_block(self, pos, drop_items)
     }
 
     fn play_block_sound(

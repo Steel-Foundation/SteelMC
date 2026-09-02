@@ -4,7 +4,7 @@ fn dispatcher(minimum: i32) -> TestDispatcher {
     let mut dispatcher = TestDispatcher::new();
     let command = literal("duration").then(
         argument("value", SteelArgumentType::time(minimum)).executes(|context| {
-            let Some(value) = context.time("value") else {
+            let Ok(value) = context.time("value") else {
                 panic!("time argument should be retained");
             };
             Ok(value)
@@ -17,22 +17,19 @@ fn dispatcher(minimum: i32) -> TestDispatcher {
 fn parsed_time(dispatcher: &TestDispatcher, input: &str) -> Result<i32, CommandSyntaxError> {
     let parse = dispatcher.parse(input, TestSource::new());
     let chain = dispatcher.context_chain(parse)?;
-    chain
-        .top_context()
-        .time("value")
-        .ok_or_else(|| CommandSyntaxError::dynamic("time argument was not retained"))
+    chain.top_context().time("value")
 }
 
 #[test]
 fn entity_selector_argument_is_retained_for_deferred_resolution() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::players());
     let parse = dispatcher.parse("resource @a[distance=..10]", TestSource::new());
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("selector should parse");
     };
 
-    assert!(chain.top_context().entity_selector("value").is_some());
+    assert!(chain.top_context().entity_selector("value").is_ok());
 }
 
 #[test]
@@ -105,7 +102,7 @@ fn time_argument_suggests_units_for_a_numeric_prefix() {
 
 #[test]
 fn world_clock_argument_resolves_default_and_explicit_namespaces() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::world_clock());
 
     for input in ["resource overworld", "resource minecraft:overworld"] {
@@ -115,14 +112,14 @@ fn world_clock_argument_resolves_default_and_explicit_namespaces() {
         };
         assert_eq!(
             chain.top_context().world_clock("value"),
-            Some(&vanilla_world_clocks::OVERWORLD)
+            Ok(&vanilla_world_clocks::OVERWORLD)
         );
     }
 }
 
 #[test]
 fn world_clock_argument_rejects_unknown_resources() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::world_clock());
     let parse = dispatcher.parse("resource missing", TestSource::new());
     let error = dispatcher.context_chain(parse);
@@ -135,7 +132,7 @@ fn world_clock_argument_rejects_unknown_resources() {
 
 #[test]
 fn time_marker_argument_retains_default_namespace_identifier() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::time_marker(None));
     let parse = dispatcher.parse("resource day", TestSource::new());
     let Ok(chain) = dispatcher.context_chain(parse) else {
@@ -144,13 +141,13 @@ fn time_marker_argument_retains_default_namespace_identifier() {
 
     assert_eq!(
         chain.top_context().identifier("value"),
-        Some(&Identifier::vanilla_static("day"))
+        Ok(&Identifier::vanilla_static("day"))
     );
 }
 
 #[test]
 fn time_marker_argument_suggests_only_visible_markers_for_selected_clock() {
-    init_test_registry();
+    init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::time_marker(None));
     let parse = dispatcher.parse("resource d", TestSource::new());
     let Ok(suggestions) = dispatcher.completion_suggestions(&parse) else {
@@ -167,7 +164,7 @@ fn time_marker_argument_suggests_only_visible_markers_for_selected_clock() {
 
 #[test]
 fn timeline_suggestions_use_the_preceding_clock_argument() {
-    init_test_registry();
+    init_vanilla_registry();
     let mut dispatcher = TestDispatcher::new();
     let command =
         literal("timeline").then(argument("clock", SteelArgumentType::world_clock()).then(

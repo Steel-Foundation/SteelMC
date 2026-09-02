@@ -56,9 +56,7 @@ fn clear_matching(context: &SteelCommandContext<CommandSource>) -> Result<i32, C
 fn clear_matching_with_limit(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(max_count) = context.integer("maxCount") else {
-        return Err(missing_argument("maxCount"));
-    };
+    let max_count = context.integer("maxCount")?;
     clear_matching_with_count(context, max_count)
 }
 
@@ -67,9 +65,8 @@ fn clear_matching_with_count(
     max_count: i32,
 ) -> Result<i32, CommandSyntaxError> {
     let targets = context.players("targets")?;
-    let Some(predicate) = context.item_predicate("item") else {
-        return Err(missing_argument("item"));
-    };
+    let predicate = context.item_predicate("item")?;
+
     clear_players(
         context,
         &targets,
@@ -142,15 +139,9 @@ const fn matches_any_item(_stack: &ItemStack) -> bool {
     true
 }
 
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
-}
-
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::super::create_dispatcher;
     use super::*;
@@ -174,7 +165,7 @@ mod tests {
 
     #[test]
     fn clear_graph_matches_vanilla_argument_shape() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

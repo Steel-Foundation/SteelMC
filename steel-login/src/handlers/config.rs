@@ -13,7 +13,8 @@ use steel_protocol::packets::config::CSelectKnownPacks;
 use steel_protocol::packets::config::SSelectKnownPacks;
 use steel_protocol::packets::shared_implementation::KnownPack;
 use steel_protocol::utils::ConnectionProtocol;
-use steel_utils::Identifier;
+use steel_utils::{Identifier, translations};
+use text_components::TextComponent;
 
 use crate::tcp_client::{ConnectionAction, ConnectionUpdate, JavaTcpClient};
 
@@ -35,8 +36,9 @@ impl JavaTcpClient {
             language: packet.language,
             view_distance: packet
                 .view_distance
-                .clamp(2, i32::from(self.server.config.view_distance).max(2))
-                as u8,
+                .max(2)
+                .cast_unsigned()
+                .min(self.server.config.view_distance.max(2)),
             chat_visibility: packet.chat_visibility,
             chat_colors: packet.chat_colors,
             model_customization: packet.model_customization,
@@ -72,6 +74,11 @@ impl JavaTcpClient {
 
     /// Handles the select known packs packet during the configuration state.
     pub async fn handle_select_known_packs(&self, packet: SSelectKnownPacks) {
+        let sequence_result = self.pre_play_state.lock().select_known_packs();
+        if let Err(error) = sequence_result {
+            self.reject_unexpected_packet(error).await;
+            return;
+        }
         log::debug!("Select known packs packet: {packet:?}");
 
         let registry_cache = self.server.registry_cache.registry_packets.clone();
@@ -88,18 +95,20 @@ impl JavaTcpClient {
     }
 
     /// Finishes the configuration process and transitions to the play state.
-    ///
-    /// # Panics
-    /// This function will panic if the game profile is empty, should be impossible at this point.
     pub(crate) async fn finish_configuration(&self) -> ConnectionAction {
+        let sequence_result = self.pre_play_state.lock().finish_configuration();
+        let gameprofile = match sequence_result {
+            Ok(gameprofile) => gameprofile,
+            Err(error) => return self.reject_unexpected_packet(error).await,
+        };
+        let Some(reservation) = self.server.try_reserve_player_join(gameprofile.id) else {
+            self.kick(TextComponent::translated(
+                translations::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN.msg(),
+            ))
+            .await;
+            return ConnectionAction::none();
+        };
         self.protocol.store(ConnectionProtocol::Play);
-
-        let gameprofile = self
-            .gameprofile
-            .lock()
-            .await
-            .clone()
-            .expect("Game profile is empty");
 
         let client_info = self.client_information.lock().await.clone();
 
@@ -142,7 +151,7 @@ impl JavaTcpClient {
             () = self.connection_updated.notified() => {}
             () = self.cancel_token.cancelled() => return ConnectionAction::none(),
         }
-        self.server.queue_player_join(player);
+        reservation.queue_player_join(player);
 
         ConnectionAction::upgrade(connection)
     }

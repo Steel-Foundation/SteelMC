@@ -7,7 +7,8 @@ use steel_utils::{BlockPos, WorldAabb};
 
 use crate::level_data::WorldBorderData;
 
-const MAX_CENTER_COORDINATE: f64 = 2.999_998_4E7;
+pub(crate) const MAX_SIZE: f64 = 5.999_997E7_f32 as f64;
+pub(crate) const MAX_CENTER_COORDINATE: f64 = 2.999_998_4E7;
 const DEFAULT_ABSOLUTE_MAX_SIZE: i32 = 29_999_984;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -745,7 +746,7 @@ mod tests {
         let inside = WorldAabb::new(0.0, 0.0, -0.3, 0.6, 1.8, 0.3);
 
         assert_eq!(snapshot.collision_shapes_for(crossing_east).len(), 1);
-        assert!(snapshot.collision_shapes_for(inside).is_empty());
+        assert_eq!(snapshot.collision_shapes_for(inside).len(), 0);
     }
 
     #[test]

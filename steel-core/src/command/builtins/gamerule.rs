@@ -74,9 +74,7 @@ fn set_bool_rule(
     context: &SteelCommandContext<CommandSource>,
     rule: ErasedGameRuleRef,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(value) = context.boolean("value") else {
-        return Err(missing_rule_value(rule));
-    };
+    let value = context.boolean("value")?;
     set_rule(context, rule, GameRuleValue::new(value))
 }
 
@@ -84,9 +82,7 @@ fn set_int_rule(
     context: &SteelCommandContext<CommandSource>,
     rule: ErasedGameRuleRef,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(value) = context.integer("value") else {
-        return Err(missing_rule_value(rule));
-    };
+    let value = context.integer("value")?;
     set_rule(context, rule, GameRuleValue::new(value))
 }
 
@@ -114,13 +110,6 @@ fn set_rule(
     Ok(result)
 }
 
-fn missing_rule_value(rule: ErasedGameRuleRef) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for game rule {} is missing from the command context",
-        rule.key()
-    ))
-}
-
 fn rule_display_name(rule: ErasedGameRuleRef) -> String {
     if rule.key().namespace == Identifier::VANILLA_NAMESPACE {
         rule.key().path.to_string()
@@ -136,7 +125,7 @@ mod tests {
         brigadier::{ArgumentType, CommandDispatcher, NodeId},
         execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
     };
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -156,7 +145,7 @@ mod tests {
 
     #[test]
     fn vanilla_rules_have_short_and_qualified_literals() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };
@@ -179,7 +168,7 @@ mod tests {
 
     #[test]
     fn integer_rule_bounds_are_retained_in_the_graph() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

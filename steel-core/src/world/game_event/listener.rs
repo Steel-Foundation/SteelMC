@@ -512,9 +512,7 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
-    use steel_registry::{
-        game_events::GameEventRef, test_support::init_test_registry, vanilla_game_events,
-    };
+    use steel_registry::{game_events::GameEventRef, init_vanilla_registry, vanilla_game_events};
     use steel_utils::{BlockPos, SectionPos, locks::SyncMutex};
 
     use crate::behavior::init_behaviors;
@@ -900,7 +898,7 @@ mod tests {
 
     #[test]
     fn deferred_listener_destruction_runs_without_storage_lock() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("listener_drop_reentrancy");
         let storage = Arc::new(GameEventListenerStorage::new());
@@ -935,7 +933,7 @@ mod tests {
 
     #[test]
     fn world_dispatch_uses_vanilla_chunk_order_not_registration_order() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("game_event_chunk_order");
         insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(-1, 0));
@@ -975,7 +973,7 @@ mod tests {
 
     #[test]
     fn equal_distance_delivery_keeps_vanilla_traversal_order() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("equal_distance_game_event_order");
         insert_ready_full_chunk(&world, steel_utils::ChunkPos::new(-1, 0));

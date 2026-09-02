@@ -111,7 +111,7 @@ mod tests {
     use super::ArmorTrim;
     use crate::RegistryHolder;
     use crate::data_components::vanilla_components::TRIM;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::trim_material::{MaterialAssetGroup, MaterialAssetInfo, TrimMaterialValue};
     use crate::trim_pattern::TrimPatternValue;
     use crate::{REGISTRY, vanilla_trim_materials, vanilla_trim_patterns};
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn registry_references_round_trip_both_codecs_and_hash_the_record() {
-        init_test_registry();
+        init_vanilla_registry();
         let trim = ArmorTrim::new(
             RegistryHolder::reference(&vanilla_trim_materials::IRON),
             RegistryHolder::reference(&vanilla_trim_patterns::SENTRY),
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn inline_material_and_pattern_round_trip_both_codecs() {
-        init_test_registry();
+        init_vanilla_registry();
         let trim = ArmorTrim::new(
             RegistryHolder::direct(TrimMaterialValue::new(
                 MaterialAssetGroup::new(
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn extracted_item_prototypes_do_not_define_a_default_trim() {
-        init_test_registry();
+        init_vanilla_registry();
         assert_eq!(
             REGISTRY
                 .items

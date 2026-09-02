@@ -999,7 +999,7 @@ mod tests {
     use crate::blocks::block_state_ext::BlockStateExt as _;
     use crate::blocks::properties::BlockStateProperties;
     use crate::data_component_predicate::DataComponentMatchers;
-    use crate::{RegistryHolderSet, test_support::init_test_registry, vanilla_blocks};
+    use crate::{RegistryHolderSet, init_vanilla_registry, vanilla_blocks};
 
     #[test]
     fn double_bounds_use_java_ordering() {
@@ -1026,7 +1026,7 @@ mod tests {
 
     #[test]
     fn block_predicates_use_typed_vanilla_property_order() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let lit = StatePropertiesPredicate::new(vec![StatePropertyMatcher::new(
             "lit".to_owned(),

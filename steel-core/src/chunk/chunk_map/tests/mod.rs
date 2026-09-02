@@ -19,8 +19,8 @@ use std::io::Cursor;
 use std::thread;
 use steel_protocol::packet_traits::CompressionInfo;
 use steel_registry::{
+    init_vanilla_registry,
     packets::play::{C_BLOCK_CHANGED_ACK, C_BLOCK_UPDATE},
-    test_support::init_test_registry,
     vanilla_blocks,
     vanilla_dimension_types::OVERWORLD,
     vanilla_fluids,
@@ -30,8 +30,6 @@ use steel_utils::serial::ReadFrom;
 use steel_utils::types::UpdateFlags;
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 use text_components::TextComponent;
-use uuid::Uuid;
-
 struct RecordingConnection {
     packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
 }
@@ -69,7 +67,7 @@ fn recording_player(world: &Arc<World>) -> (Arc<Player>, Arc<SyncMutex<Vec<Encod
     let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
         packets: Arc::clone(&packets),
     })));
-    let player = TestPlayerBuilder::new(Arc::clone(world), Uuid::from_u128(1), "TestPlayer", 1)
+    let player = TestPlayerBuilder::new(Arc::clone(world), "TestPlayer", 1)
         .connection(connection)
         .build();
     (player, packets)
@@ -202,7 +200,7 @@ fn assert_postprocessing_drained(holder: &ChunkHolder) {
 }
 
 fn test_chunk_map() -> Arc<ChunkMap> {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     Arc::new(ChunkMap::new_with_storage(
         Arc::new(Runtime::new().expect("test runtime should initialize")),

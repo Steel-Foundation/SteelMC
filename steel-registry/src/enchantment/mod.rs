@@ -207,7 +207,7 @@ mod tests {
     };
     use crate::equipment::EquipmentSlot;
     use crate::item_stack::ItemStack;
-    use crate::{test_support::init_test_registry, vanilla_enchantments, vanilla_items};
+    use crate::{init_vanilla_registry, vanilla_enchantments, vanilla_items};
     use simdnbt::ToNbtTag;
     use simdnbt::owned::{NbtList, NbtTag};
     use steel_utils::Identifier;
@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn existing_identical_or_exclusive_enchantments_are_incompatible() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut sword = ItemStack::new(&vanilla_items::DIAMOND_SWORD);
         sword.upgrade_enchantment(vanilla_enchantments::SHARPNESS.key.clone(), 1);
 
@@ -249,7 +249,7 @@ mod tests {
 
     #[test]
     fn compatibility_checks_stored_enchantments_on_enchanted_books() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut book = ItemStack::new(&vanilla_items::ENCHANTED_BOOK);
         book.upgrade_enchantment(vanilla_enchantments::SHARPNESS.key.clone(), 1);
 

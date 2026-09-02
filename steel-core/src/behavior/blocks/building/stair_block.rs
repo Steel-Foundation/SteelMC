@@ -9,12 +9,12 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{
-    BlockStateProperties, Direction, EnumProperty, Half, StairsShape,
+    BlockStateProperties, BoolProperty, Direction, EnumProperty, Half, StairsShape,
 };
-use steel_registry::vanilla_fluids;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::weathering_block::{WeatherState, WeatheringCopper};
+use crate::behavior::block::schedule_water_tick_if_waterlogged;
 use crate::{
     behavior::{BlockBehavior, BlockPlaceContext},
     world::{LevelReader, ScheduledTickAccess, World},
@@ -26,11 +26,12 @@ pub struct StairBlock {
     block: BlockRef,
 }
 
-impl StairBlock {
-    const FACING: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
-    const HALF: EnumProperty<Half> = BlockStateProperties::HALF;
-    const SHAPE: EnumProperty<StairsShape> = BlockStateProperties::STAIRS_SHAPE;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
+const FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const HALF: &EnumProperty<Half> = &BlockStateProperties::HALF;
+const SHAPE: &EnumProperty<StairsShape> = &BlockStateProperties::STAIRS_SHAPE;
 
+impl StairBlock {
     /// Creates a new stair block behavior for the given block.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
@@ -42,16 +43,14 @@ impl StairBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> BlockStateId {
-        state.set_value(&Self::SHAPE, Self::stairs_shape(state, world, pos))
+        state.set_value(SHAPE, Self::stairs_shape(state, world, pos))
     }
 
     fn stairs_shape(state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> StairsShape {
-        let facing = state.get_value(&Self::FACING);
+        let facing = state.get_value(FACING);
         let behind_state = world.get_block_state(facing.relative(pos));
-        if Self::is_stairs(behind_state)
-            && state.get_value(&Self::HALF) == behind_state.get_value(&Self::HALF)
-        {
-            let behind_facing = behind_state.get_value(&Self::FACING);
+        if Self::is_stairs(behind_state) && state.get_value(HALF) == behind_state.get_value(HALF) {
+            let behind_facing = behind_state.get_value(FACING);
             if behind_facing.get_axis() != facing.get_axis()
                 && Self::can_take_shape(state, world, pos, behind_facing.opposite())
             {
@@ -63,10 +62,8 @@ impl StairBlock {
         }
 
         let front_state = world.get_block_state(facing.opposite().relative(pos));
-        if Self::is_stairs(front_state)
-            && state.get_value(&Self::HALF) == front_state.get_value(&Self::HALF)
-        {
-            let front_facing = front_state.get_value(&Self::FACING);
+        if Self::is_stairs(front_state) && state.get_value(HALF) == front_state.get_value(HALF) {
+            let front_facing = front_state.get_value(FACING);
             if front_facing.get_axis() != facing.get_axis()
                 && Self::can_take_shape(state, world, pos, front_facing)
             {
@@ -88,12 +85,12 @@ impl StairBlock {
     ) -> bool {
         let neighbor_state = world.get_block_state(neighbor.relative(pos));
         !Self::is_stairs(neighbor_state)
-            || neighbor_state.get_value(&Self::FACING) != state.get_value(&Self::FACING)
-            || neighbor_state.get_value(&Self::HALF) != state.get_value(&Self::HALF)
+            || neighbor_state.get_value(FACING) != state.get_value(FACING)
+            || neighbor_state.get_value(HALF) != state.get_value(HALF)
     }
 
     fn is_stairs(state: BlockStateId) -> bool {
-        state.try_get_value(&Self::SHAPE).is_some()
+        state.try_get_value(SHAPE).is_some()
     }
 }
 
@@ -111,12 +108,9 @@ impl BlockBehavior for StairBlock {
         let state = self
             .block
             .default_state()
-            .set_value(&Self::FACING, context.horizontal_direction())
-            .set_value(&Self::HALF, half)
-            .set_value(
-                &BlockStateProperties::WATERLOGGED,
-                context.is_water_source(),
-            );
+            .set_value(FACING, context.horizontal_direction())
+            .set_value(HALF, half)
+            .set_value(WATERLOGGED, context.is_water_source());
         Some(Self::update_stair_shape(
             state,
             context.world.as_ref(),
@@ -133,10 +127,7 @@ impl BlockBehavior for StairBlock {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         if direction.is_horizontal() {
             Self::update_stair_shape(state, world, pos)
@@ -190,7 +181,7 @@ impl BlockBehavior for WeatheringCopperStairBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::BlockPos;
 
     use crate::test_support::TestLevel;
@@ -199,14 +190,14 @@ mod tests {
 
     #[test]
     fn stair_update_shape_recomputes_shape_from_neighbors() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = StairBlock::new(&vanilla_blocks::DARK_OAK_STAIRS);
         let state = vanilla_blocks::DARK_OAK_STAIRS
             .default_state()
-            .set_value(&StairBlock::FACING, Direction::West)
-            .set_value(&StairBlock::HALF, Half::Top)
-            .set_value(&StairBlock::SHAPE, StairsShape::OuterRight)
-            .set_value(&BlockStateProperties::WATERLOGGED, true);
+            .set_value(FACING, Direction::West)
+            .set_value(HALF, Half::Top)
+            .set_value(SHAPE, StairsShape::OuterRight)
+            .set_value(WATERLOGGED, true);
         let level = TestLevel::default();
 
         let updated = behavior.update_shape(
@@ -218,7 +209,7 @@ mod tests {
             vanilla_blocks::AIR.default_state(),
         );
 
-        assert_eq!(updated.get_value(&StairBlock::SHAPE), StairsShape::Straight);
-        assert!(updated.get_value(&BlockStateProperties::WATERLOGGED));
+        assert_eq!(updated.get_value(SHAPE), StairsShape::Straight);
+        assert!(updated.get_value(WATERLOGGED));
     }
 }

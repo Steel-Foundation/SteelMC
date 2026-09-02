@@ -96,13 +96,13 @@ impl Player {
 mod tests {
     use steel_registry::data_components::vanilla_components::{USE_COOLDOWN, UseCooldown};
     use steel_registry::item_stack::ItemStack;
-    use steel_registry::{test_support::init_test_registry, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_items};
 
     use super::ItemCooldowns;
 
     #[test]
     fn cooldown_blocks_until_duration_ticks_pass() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let stack = ItemStack::with_count(&vanilla_items::ENDER_PEARL, 1);
         let mut cooldowns = ItemCooldowns::default();
@@ -116,7 +116,7 @@ mod tests {
         assert!(cooldowns.is_on_cooldown(&stack));
 
         for _ in 0..19 {
-            assert!(cooldowns.tick().is_empty());
+            assert_eq!(cooldowns.tick().len(), 0);
             assert!(cooldowns.is_on_cooldown(&stack));
         }
 
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn explicit_group_is_shared_between_items() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let group = steel_utils::Identifier::vanilla_static("test_group");
         let mut stack = ItemStack::with_count(&vanilla_items::ENDER_PEARL, 1);

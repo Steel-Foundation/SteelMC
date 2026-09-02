@@ -6,7 +6,7 @@ use steel_macros::block_behavior;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, PotentSulfurState};
+use steel_registry::blocks::properties::{BlockStateProperties, EnumProperty, PotentSulfurState};
 use steel_registry::sound_events;
 use steel_registry::vanilla_block_entity_types;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -25,6 +25,9 @@ pub struct PotentSulfurBlock {
     block: BlockRef,
 }
 
+const POTENT_SULFUR_STATE: &EnumProperty<PotentSulfurState> =
+    &BlockStateProperties::POTENT_SULFUR_STATE;
+
 impl PotentSulfurBlock {
     /// New potent sulfur block behavior
     #[must_use]
@@ -35,10 +38,7 @@ impl PotentSulfurBlock {
     fn valid_state(state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> BlockStateId {
         let above_fluid = world.get_block_state(pos.above()).get_fluid_state();
         if !above_fluid.is_source() || !above_fluid.is_water() {
-            return state.set_value(
-                &BlockStateProperties::POTENT_SULFUR_STATE,
-                PotentSulfurState::Dry,
-            );
+            return state.set_value(POTENT_SULFUR_STATE, PotentSulfurState::Dry);
         }
 
         let below = world.get_block_state(pos.below());
@@ -50,10 +50,7 @@ impl PotentSulfurBlock {
             .has_tag(&BlockTag::CAUSES_CONTINUOUS_GEYSER_ERUPTIONS)
             && fluid_ok
         {
-            return state.set_value(
-                &BlockStateProperties::POTENT_SULFUR_STATE,
-                PotentSulfurState::Continuous,
-            );
+            return state.set_value(POTENT_SULFUR_STATE, PotentSulfurState::Continuous);
         }
 
         if below
@@ -62,7 +59,7 @@ impl PotentSulfurBlock {
             && fluid_ok
         {
             let is_geyser = matches!(
-                state.get_value(&BlockStateProperties::POTENT_SULFUR_STATE),
+                state.get_value(POTENT_SULFUR_STATE),
                 PotentSulfurState::Dormant | PotentSulfurState::Erupting
             );
             if !is_geyser
@@ -72,21 +69,13 @@ impl PotentSulfurBlock {
                 potent_sulfur.reset_countdown();
             }
 
-            if state.get_value(&BlockStateProperties::POTENT_SULFUR_STATE)
-                == PotentSulfurState::Erupting
-            {
+            if state.get_value(POTENT_SULFUR_STATE) == PotentSulfurState::Erupting {
                 return state;
             }
-            return state.set_value(
-                &BlockStateProperties::POTENT_SULFUR_STATE,
-                PotentSulfurState::Dormant,
-            );
+            return state.set_value(POTENT_SULFUR_STATE, PotentSulfurState::Dormant);
         }
 
-        state.set_value(
-            &BlockStateProperties::POTENT_SULFUR_STATE,
-            PotentSulfurState::Wet,
-        )
+        state.set_value(POTENT_SULFUR_STATE, PotentSulfurState::Wet)
     }
 }
 
@@ -119,7 +108,7 @@ impl BlockBehavior for PotentSulfurBlock {
         _old_state: BlockStateId,
         _moved_by_piston: bool,
     ) {
-        let current = state.get_value(&BlockStateProperties::POTENT_SULFUR_STATE);
+        let current = state.get_value(POTENT_SULFUR_STATE);
         if !matches!(
             current,
             PotentSulfurState::Erupting | PotentSulfurState::Continuous
@@ -180,7 +169,7 @@ impl BlockBehavior for PotentSulfurBlock {
         state: BlockStateId,
         block_entity_type: BlockEntityTypeRef,
     ) -> Option<BlockEntityTicker> {
-        if state.get_value(&BlockStateProperties::POTENT_SULFUR_STATE) == PotentSulfurState::Dry {
+        if state.get_value(POTENT_SULFUR_STATE) == PotentSulfurState::Dry {
             return None;
         }
         BlockEntityTicker::for_matching_entity_tick(
@@ -192,7 +181,7 @@ impl BlockBehavior for PotentSulfurBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
 
     use super::*;
@@ -200,25 +189,19 @@ mod tests {
 
     #[test]
     fn potent_sulfur_ticker_selection_matches_live_geyser_state() {
-        init_test_registry();
+        init_vanilla_registry();
         let world = fresh_test_world("potent_sulfur_ticker");
         let behavior = PotentSulfurBlock::new(&vanilla_blocks::POTENT_SULFUR);
         let base = vanilla_blocks::POTENT_SULFUR.default_state();
 
-        let dry = base.set_value(
-            &BlockStateProperties::POTENT_SULFUR_STATE,
-            PotentSulfurState::Dry,
-        );
+        let dry = base.set_value(POTENT_SULFUR_STATE, PotentSulfurState::Dry);
         assert!(
             behavior
                 .get_block_entity_ticker(&world, dry, &vanilla_block_entity_types::POTENT_SULFUR,)
                 .is_none()
         );
 
-        let wet = base.set_value(
-            &BlockStateProperties::POTENT_SULFUR_STATE,
-            PotentSulfurState::Wet,
-        );
+        let wet = base.set_value(POTENT_SULFUR_STATE, PotentSulfurState::Wet);
 
         for sulfur_state in [
             PotentSulfurState::Wet,
@@ -226,7 +209,7 @@ mod tests {
             PotentSulfurState::Erupting,
             PotentSulfurState::Continuous,
         ] {
-            let state = base.set_value(&BlockStateProperties::POTENT_SULFUR_STATE, sulfur_state);
+            let state = base.set_value(POTENT_SULFUR_STATE, sulfur_state);
             assert!(
                 behavior
                     .get_block_entity_ticker(

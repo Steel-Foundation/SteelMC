@@ -338,7 +338,7 @@ pub fn register_vanilla_entity_data_serializers(registry: &mut EntityDataSeriali
 #[cfg(test)]
 mod tests {
     use crate::entity_data::ResolvableProfile;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt, RegistryReference, vanilla_pig_variants};
 
     use super::*;
@@ -443,7 +443,7 @@ mod tests {
 
     #[test]
     fn holder_serializer_resolves_the_registered_variant_id() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut serializers = EntityDataSerializerRegistry::new();
         register_vanilla_entity_data_serializers(&mut serializers);

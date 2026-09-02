@@ -338,7 +338,7 @@ mod tests {
 
     use glam::DVec3;
     use steel_registry::entity_type::EntityTypeRef;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::{EntityBase, LivingEntity, LivingEntityBase, MobBase};
@@ -356,7 +356,7 @@ mod tests {
 
     impl TestAgeableMob {
         fn new() -> Self {
-            init_test_registry();
+            init_vanilla_registry();
             Self {
                 base: EntityBase::new(
                     1,

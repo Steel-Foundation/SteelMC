@@ -54,7 +54,7 @@ fn keyed_argument_erasure_accepts_new_parser_and_value_types() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("extension argument should parse");
     };
-    let Some(value) = chain.top_context().argument("value") else {
+    let Ok(value) = chain.top_context().argument("value") else {
         panic!("extension argument value should be retained");
     };
 
@@ -99,7 +99,7 @@ fn component_argument_parses_vanilla_snbt_forms() {
 
         assert_eq!(
             chain.top_context().text_component("value"),
-            Some(&TextComponent::plain(expected))
+            Ok(&TextComponent::plain(expected))
         );
     }
 }
@@ -120,7 +120,7 @@ fn permission_arguments_parse_contexts_and_suggest_discovered_values() {
             .permission_rule_expression("value")
             .map(ToString::to_string)
             .as_deref(),
-        Some("steel.build{domain=alpha,plugin:region=spawn}")
+        Ok("steel.build{domain=alpha,plugin:region=spawn}")
     );
 
     let parse = dispatcher.parse("resource steel.build{plugin:region=s", TestSource::new());
@@ -229,7 +229,7 @@ fn component_argument_preserves_list_siblings_and_following_nodes() {
     let Ok(chain) = dispatcher.context_chain(parse) else {
         panic!("component parser should leave following command nodes unconsumed");
     };
-    let Some(component) = chain.top_context().text_component("value") else {
+    let Ok(component) = chain.top_context().text_component("value") else {
         panic!("component should be retained");
     };
     let mut expected = TextComponent::plain("first");

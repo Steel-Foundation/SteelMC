@@ -408,6 +408,10 @@ impl World {
             return None;
         }
 
+        if !self.get_game_rule(&BLOCK_DROPS) {
+            return None;
+        }
+
         let half_width = f64::from(vanilla_entities::ITEM.dimensions.width) / 2.0;
         let half_height = f64::from(vanilla_entities::ITEM.dimensions.height) / 2.0;
 

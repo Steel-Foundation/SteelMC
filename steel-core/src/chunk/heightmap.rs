@@ -646,8 +646,7 @@ mod tests {
 
     use steel_registry::{
         blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
-        test_support::init_test_registry,
-        vanilla_blocks,
+        init_vanilla_registry, vanilla_blocks,
     };
 
     use crate::behavior::init_behaviors;
@@ -658,7 +657,7 @@ mod tests {
     static INIT_BEHAVIORS: Once = Once::new();
 
     fn init_test_state() {
-        init_test_registry();
+        init_vanilla_registry();
         INIT_BEHAVIORS.call_once(init_behaviors);
     }
 

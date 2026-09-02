@@ -48,10 +48,11 @@ use steel_registry::{RegistryEntry, RegistryExt};
 use steel_registry::{vanilla_attributes, vanilla_fluid_tags, vanilla_items, vanilla_mob_effects};
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
-use steel_utils::types::{Difficulty, InteractionHand};
+use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Downcast as _, ErasedType, Identifier,
     UuidExt as _, WorldAabb, axis::Axis, block_util::FoundRectangle, text::DisplayResolutor,
+    wrap_degrees,
 };
 use text_components::{
     Modifier as _, TextComponent, interactivity::HoverEvent, translation::TranslatedMessage,
@@ -59,8 +60,9 @@ use text_components::{
 use uuid::Uuid;
 
 use crate::behavior::{
-    BLOCK_BEHAVIORS, BlockCollisionContext, EntityFallOnContext, EntityLandingContext,
-    FLUID_BEHAVIORS, InteractionResult, blocks::PowderSnowBlock,
+    BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, EntityFallOnContext,
+    EntityLandingContext, FLUID_BEHAVIORS, InteractionResult,
+    blocks::{BedBlock, PowderSnowBlock},
 };
 use crate::chunk_saver::ChunkStorage;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
@@ -197,7 +199,7 @@ fn leash_scan_area(center: DVec3) -> WorldAabb {
 fn transfer_leashables_to_holder(leashables: Vec<SharedEntity>, new_holder: &SharedEntity) -> bool {
     let mut transferred = false;
     for leashable in leashables {
-        let Some(mob) = leashable.as_mob() else {
+        let Some(mob) = leashable.as_leashable() else {
             continue;
         };
         if mob.can_have_a_leash_attached_to(new_holder.as_ref()) {
@@ -733,6 +735,7 @@ mod block_effects;
 mod callback;
 mod combat_rules;
 pub mod damage;
+pub(crate) mod dismount_helper;
 pub mod entities;
 #[expect(
     clippy::module_inception,
@@ -747,6 +750,7 @@ mod generated_entities;
 mod inside_block_effects;
 mod item_based_steering;
 mod item_frame;
+mod leash;
 mod living_base;
 mod living_entity;
 mod manager;
@@ -778,6 +782,7 @@ pub use callback::{
     PlayerEntityCallback, RemovalReason,
 };
 pub(crate) use entity::apply_entity_look_at;
+pub(crate) use entity::position_rider_default;
 pub use entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
 };
@@ -788,9 +793,9 @@ pub use inside_block_effects::{
 pub(crate) use item_based_steering::{ItemBasedSteering, ItemSteerable};
 pub use item_frame::ItemFrame;
 pub use living_base::{
-    ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase, LivingRotationState,
-    LivingSwingState, LivingTravelInput, MobEffectInstance, MobEffectSyncChange,
-    MobEffectSyncPacket,
+    ActiveItemUseState, ActiveMobEffect, DEATH_DURATION, DEFAULT_SWING_DURATION, LivingEntityBase,
+    LivingRotationState, LivingSwingState, LivingTravelInput, MobEffectInstance,
+    MobEffectSyncChange, MobEffectSyncPacket,
 };
 pub use living_entity::LivingEntity;
 pub use manager::{
@@ -807,14 +812,13 @@ pub use movement_sync::{
 };
 pub use projectile::{
     EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
-    ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, compute_margin,
+    ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
+    compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
-#[cfg(test)]
-pub(crate) use registry::init_test_entities;
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, SpawnGroupData};
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
-pub use synced_data::EntitySyncedData;
+pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
 pub(crate) use ticking::{
     snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_with_ticked_if,
 };
@@ -1318,6 +1322,7 @@ fn remove_after_changing_dimensions(entity: &dyn Entity) {
 
 pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
     let living_entity = entity.as_living_entity();
+    let sheep = living_entity.and_then(LivingEntity::sheep_loot_state);
     EntityRef {
         entity_type: Some(&entity.entity_type().key),
         flags: EntityRefFlags {
@@ -1330,6 +1335,40 @@ pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
         // TODO: Include equipment and custom name once loot contexts can snapshot entity data.
         equipment: None,
         custom_name: None,
+        sheep_color: sheep.map(|(color, _)| color),
+        sheep_sheared: sheep.map(|(_, sheared)| sheared),
+        chicken_variant: living_entity.and_then(LivingEntity::chicken_loot_variant),
+    }
+}
+
+/// Finds the leashable mobs near a position whose holder is `holder`.
+pub fn leashables_leashed_to_holder_in_area_near_position(
+    world: &Arc<World>,
+    pos: DVec3,
+    holder: &dyn Entity,
+) -> Vec<SharedEntity> {
+    let holder_id = holder.id();
+    let scan_area = leash_scan_area(pos);
+    world.get_entities_in_aabb_matching(&scan_area, |entity| {
+        entity.as_leashable().is_some_and(|mob| {
+            mob.leash_holder()
+                .is_some_and(|holder| holder.id() == holder_id)
+        })
+    })
+}
+
+/// Returns the living entity that will be credited with killing this entity.
+pub(crate) fn get_kill_credit<E: LivingEntity + ?Sized>(
+    entity: &E,
+    world: &World,
+) -> Option<SharedEntity> {
+    if let Some(uuid) = entity.last_hurt_by_player_uuid() {
+        world
+            .players
+            .get_by_uuid(&uuid)
+            .and_then(|player| world.get_entity_by_id(player.id()))
+    } else {
+        entity.last_hurt_by_mob()
     }
 }
 

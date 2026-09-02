@@ -116,8 +116,8 @@ impl BlockBehavior for RailBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::blocks::properties::{BlockStateProperties, RailShape};
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::blocks::properties::{BlockStateProperties, EnumProperty, RailShape};
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
     use steel_utils::ChunkPos;
     use steel_utils::types::UpdateFlags;
@@ -126,9 +126,11 @@ mod tests {
     use crate::behavior::{BLOCK_BEHAVIORS, init_behaviors};
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
+    const RAIL_SHAPE: &EnumProperty<RailShape> = &BlockStateProperties::RAIL_SHAPE;
+
     #[test]
     fn powered_three_way_junction_uses_vanilla_curve_priority() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("rail_three_way_switch");
         let center = BlockPos::new(8, 64, 8);
@@ -151,13 +153,13 @@ mod tests {
                 pos,
                 vanilla_blocks::RAIL
                     .default_state()
-                    .set_value(&BlockStateProperties::RAIL_SHAPE, shape),
+                    .set_value(RAIL_SHAPE, shape),
                 raw_flags,
             );
         }
         let state = vanilla_blocks::RAIL
             .default_state()
-            .set_value(&BlockStateProperties::RAIL_SHAPE, RailShape::SouthEast);
+            .set_value(RAIL_SHAPE, RailShape::SouthEast);
         world.set_block(center, state, raw_flags);
         world.set_block(
             center.west(),
@@ -176,9 +178,7 @@ mod tests {
             );
 
         assert_eq!(
-            world
-                .get_block_state(center)
-                .get_value(&BlockStateProperties::RAIL_SHAPE),
+            world.get_block_state(center).get_value(RAIL_SHAPE),
             RailShape::NorthEast
         );
     }

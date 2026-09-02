@@ -131,7 +131,7 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::{Mob, entities::PigEntity};
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn avoid_entity_default_selector_allows_non_player_living_entities() {
-        init_test_registry();
+        init_vanilla_registry();
         let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
         assert!(no_creative_or_spectator(&pig));
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn avoid_entity_goal_requires_world() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
         let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn avoid_entity_goal_sprints_when_close_to_avoided_entity() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
         let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
         goal.to_avoid = Some(Arc::new(PigEntity::new(
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn avoid_entity_goal_walks_when_far_from_avoided_entity() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = AvoidEntityGoal::new(8.0, 1.0, 1.2);
         let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
         goal.to_avoid = Some(Arc::new(PigEntity::new(

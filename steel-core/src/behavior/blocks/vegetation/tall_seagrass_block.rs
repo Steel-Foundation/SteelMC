@@ -1,6 +1,8 @@
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction, DoubleBlockHalf};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, Direction, DoubleBlockHalf, EnumProperty,
+};
 use steel_registry::fluid::{FluidRef, FluidState, FluidStateExt as _};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_block_tags::BlockTag;
@@ -22,6 +24,8 @@ pub struct TallSeagrassBlock {
     block: BlockRef,
 }
 
+const DOUBLE_BLOCK_HALF: &EnumProperty<DoubleBlockHalf> = &BlockStateProperties::DOUBLE_BLOCK_HALF;
+
 impl TallSeagrassBlock {
     /// Creates a new tall seagrass block behavior.
     #[must_use]
@@ -40,9 +44,9 @@ impl BlockBehavior for TallSeagrassBlock {
         _neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        let half = state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF);
+        let half = state.get_value(DOUBLE_BLOCK_HALF);
         let neighbor_is_matching_other_half = neighbor_state.get_block() == self.block
-            && neighbor_state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) != half;
+            && neighbor_state.get_value(DOUBLE_BLOCK_HALF) != half;
 
         if direction.get_axis() == Axis::Y
             && (half == DoubleBlockHalf::Lower) == (direction == Direction::Up)
@@ -59,11 +63,10 @@ impl BlockBehavior for TallSeagrassBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Upper {
+        if state.get_value(DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Upper {
             let below = world.get_block_state(pos.below());
             return below.get_block() == self.block
-                && below.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF)
-                    == DoubleBlockHalf::Lower;
+                && below.get_value(DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Lower;
         }
 
         let below_pos = pos.below();
@@ -96,10 +99,10 @@ impl BlockBehavior for TallSeagrassBlock {
             return None;
         }
 
-        let state = self.block.default_state().set_value(
-            &BlockStateProperties::DOUBLE_BLOCK_HALF,
-            DoubleBlockHalf::Lower,
-        );
+        let state = self
+            .block
+            .default_state()
+            .set_value(DOUBLE_BLOCK_HALF, DoubleBlockHalf::Lower);
         self.can_survive(state, context.world, context.place_pos())
             .then_some(state)
     }
@@ -135,11 +138,13 @@ impl BlockBehavior for TallSeagrassBlock {
 #[cfg(test)]
 mod tests {
     use crate::behavior::init_behaviors;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{blocks::properties::IntProperty, init_vanilla_registry, vanilla_blocks};
 
     use crate::test_support::TestLevel;
 
     use super::*;
+
+    const LEVEL: &IntProperty = &BlockStateProperties::LEVEL;
 
     fn tall_seagrass_level(below: BlockStateId, current: BlockStateId) -> TestLevel {
         TestLevel::default()
@@ -149,12 +154,11 @@ mod tests {
 
     #[test]
     fn tall_seagrass_lower_breaks_when_upper_half_is_missing() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = TallSeagrassBlock::new(&vanilla_blocks::TALL_SEAGRASS);
-        let lower = vanilla_blocks::TALL_SEAGRASS.default_state().set_value(
-            &BlockStateProperties::DOUBLE_BLOCK_HALF,
-            DoubleBlockHalf::Lower,
-        );
+        let lower = vanilla_blocks::TALL_SEAGRASS
+            .default_state()
+            .set_value(DOUBLE_BLOCK_HALF, DoubleBlockHalf::Lower);
         let level = tall_seagrass_level(vanilla_blocks::DIRT.default_state(), lower);
 
         let updated = behavior.update_shape(
@@ -171,12 +175,11 @@ mod tests {
 
     #[test]
     fn tall_seagrass_upper_breaks_when_lower_half_is_missing() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = TallSeagrassBlock::new(&vanilla_blocks::TALL_SEAGRASS);
-        let upper = vanilla_blocks::TALL_SEAGRASS.default_state().set_value(
-            &BlockStateProperties::DOUBLE_BLOCK_HALF,
-            DoubleBlockHalf::Upper,
-        );
+        let upper = vanilla_blocks::TALL_SEAGRASS
+            .default_state()
+            .set_value(DOUBLE_BLOCK_HALF, DoubleBlockHalf::Upper);
         let level = tall_seagrass_level(vanilla_blocks::AIR.default_state(), upper);
 
         let updated = behavior.update_shape(
@@ -193,16 +196,15 @@ mod tests {
 
     #[test]
     fn tall_seagrass_lower_survives_in_falling_full_water() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let behavior = TallSeagrassBlock::new(&vanilla_blocks::TALL_SEAGRASS);
-        let lower = vanilla_blocks::TALL_SEAGRASS.default_state().set_value(
-            &BlockStateProperties::DOUBLE_BLOCK_HALF,
-            DoubleBlockHalf::Lower,
-        );
+        let lower = vanilla_blocks::TALL_SEAGRASS
+            .default_state()
+            .set_value(DOUBLE_BLOCK_HALF, DoubleBlockHalf::Lower);
         let falling_full_water = vanilla_blocks::WATER
             .default_state()
-            .set_value(&BlockStateProperties::LEVEL, 8);
+            .set_value(LEVEL, LEVEL.max);
         let level = tall_seagrass_level(vanilla_blocks::DIRT.default_state(), falling_full_water);
 
         assert!(behavior.can_survive(lower, &level, BlockPos::ZERO));

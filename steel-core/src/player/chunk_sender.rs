@@ -417,7 +417,7 @@ mod tests {
     };
     use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
     use std::sync::Weak;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
     fn prepared_full_chunk(pos: ChunkPos) -> PreparedChunk {
@@ -454,7 +454,7 @@ mod tests {
 
     #[test]
     fn parallel_chunk_encoding_preserves_batch_order_and_cache_entries() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let positions = [
             ChunkPos::new(3, -2),
@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn readiness_demotion_invalidates_prepared_chunk_encoding() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let prepared = prepared_full_chunk(ChunkPos::new(4, -7));
         prepared
@@ -525,7 +525,7 @@ mod tests {
 
     #[test]
     fn encoding_cache_requires_holder_identity_and_exact_readiness_generation() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let pos = ChunkPos::new(-5, 9);
         let first_batch = PreparedBatch {

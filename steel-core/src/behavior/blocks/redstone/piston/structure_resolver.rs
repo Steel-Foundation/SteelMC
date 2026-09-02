@@ -254,7 +254,7 @@ impl<'a> PistonStructureResolver<'a> {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
 
     use super::*;
@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn resolver_accepts_twelve_blocks_and_rejects_thirteen() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let piston_pos = BlockPos::new(0, 64, 0);
         let twelve = TestLevel::default();
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn slime_branches_but_does_not_bind_honey() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let piston_pos = BlockPos::new(0, 64, 0);
         let slime_pos = piston_pos.east();

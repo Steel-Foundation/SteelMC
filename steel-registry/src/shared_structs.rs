@@ -191,7 +191,7 @@ pub fn insert_spawn_conditions(compound: &mut NbtCompound, entries: &[SpawnCondi
 mod tests {
     use steel_utils::random::{Random, RandomSplitter};
 
-    use crate::{test_support::init_test_registry, vanilla_biomes};
+    use crate::{init_vanilla_registry, vanilla_biomes};
 
     use super::{SpawnConditionEntry, pick_spawn_conditioned_entry};
 
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn pick_spawn_conditioned_entry_keeps_duplicate_highest_priority_matches() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut random = IndexRandom { index: 1 };
         let selected = pick_spawn_conditioned_entry(

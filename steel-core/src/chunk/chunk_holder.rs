@@ -1391,10 +1391,10 @@ mod tests {
     use crate::chunk::section::{ChunkSection, Sections};
     use crate::test_support::fresh_test_world;
     use crate::world::tick_scheduler::TickPriority;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_fluids};
 
     fn init_chunk_test_registry() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
     }
 

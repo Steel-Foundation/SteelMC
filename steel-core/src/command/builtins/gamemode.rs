@@ -77,9 +77,7 @@ fn set_target_game_mode(
 fn required_game_mode(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<GameType, CommandSyntaxError> {
-    context.game_mode("gamemode").ok_or_else(|| {
-        CommandSyntaxError::dynamic("Parsed gamemode is missing from the command context")
-    })
+    context.game_mode("gamemode")
 }
 
 fn require_game_mode_permission(
@@ -230,7 +228,7 @@ const fn game_mode_translation(game_mode: GameType) -> &'static Translation<0> {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::super::create_dispatcher;
     use super::*;
@@ -311,7 +309,7 @@ mod tests {
 
     #[test]
     fn gamemode_graph_matches_vanilla_shape() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

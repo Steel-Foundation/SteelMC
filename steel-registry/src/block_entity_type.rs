@@ -106,11 +106,11 @@ crate::impl_registry!(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks};
+    use crate::{init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks};
 
     #[test]
     fn overlapping_type_memberships_preserve_structural_presence() {
-        init_test_registry();
+        init_vanilla_registry();
         let valid_blocks = Box::leak(vec![&vanilla_blocks::BARREL].into_boxed_slice());
         let alternate = Box::leak(Box::new(BlockEntityType {
             key: Identifier::new_static("test", "alternate_barrel"),

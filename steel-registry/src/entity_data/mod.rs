@@ -479,7 +479,7 @@ mod tests {
     };
 
     use crate::vanilla_entity_data::{EggEntityData, ItemEntityData, ZombieVillagerEntityData};
-    use crate::{REGISTRY, RegistryExt, test_support::init_test_registry};
+    use crate::{REGISTRY, RegistryExt, init_vanilla_registry};
 
     use super::{
         ColorParticleOption, EntityData, EntityDataSerializerRegistry, ParticleData,
@@ -488,7 +488,7 @@ mod tests {
 
     #[test]
     fn zombie_villager_default_selects_profession_from_registry() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let profession_count = REGISTRY.villager_professions.len();
         let Ok(profession_bound) = i32::try_from(profession_count) else {
@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn entity_effect_particle_color_options_encode_payload() {
-        crate::test_support::init_test_registry();
+        crate::init_vanilla_registry();
         let registry = &*crate::REGISTRY;
         let entity_effect = Identifier::vanilla_static("entity_effect");
         let Some(particle_type_id) = registry.particle_types.id_from_key(&entity_effect) else {

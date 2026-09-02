@@ -523,11 +523,11 @@ fn sea_level_for_dimension_type(dimension_type: DimensionTypeRef) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     #[test]
     fn default_flat_config_matches_vanilla_superflat() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let registry = WorldGeneratorRegistry::new_with_builtins()
             .expect("built-in generator registry should initialize");

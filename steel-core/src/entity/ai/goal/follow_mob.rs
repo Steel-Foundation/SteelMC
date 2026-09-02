@@ -162,7 +162,7 @@ mod tests {
     use std::sync::{Arc, Weak};
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::entities::PigEntity;
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn follow_mob_goal_requires_world() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
         let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn follow_mob_goal_temporarily_removes_water_malus() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
         let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
         mob.set_pathfinding_malus(PathType::Water, 4.0);
@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn follow_mob_goal_stops_when_no_navigation_is_running() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
         let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
         goal.following_mob = Some(Arc::new(PigEntity::new(
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn follow_mob_goal_looks_at_following_mob() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = FollowMobGoal::new(1.0, 3.0, 7.0, |_, _| true);
         let mob = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
         let following_mob: SharedEntity = Arc::new(PigEntity::new(

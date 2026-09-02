@@ -170,7 +170,7 @@ impl World {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
     use steel_utils::Downcast as _;
     use steel_utils::types::UpdateFlags;
 
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn ordered_queue_suppresses_only_exact_duplicates() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut queue = BlockEventQueue::default();
         let first = BlockEventData {
             pos: BlockPos::new(1, 2, 3),
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn server_queue_defers_then_dispatches_the_current_block_event() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("server_block_event_queue");
         let pos = BlockPos::new(1, 64, 1);

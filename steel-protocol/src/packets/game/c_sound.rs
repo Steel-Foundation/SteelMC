@@ -116,26 +116,16 @@ impl CSound {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Once;
 
-    use steel_registry::{REGISTRY, Registry, RegistryEntry, sound_events};
+    use steel_registry::init_vanilla_registry;
+    use steel_registry::{RegistryEntry, sound_events};
     use steel_utils::BlockPos;
 
     use super::CSound;
 
-    static INIT_REGISTRY: Once = Once::new();
-
-    fn init_registry() {
-        INIT_REGISTRY.call_once(|| {
-            let mut registry = Registry::new_vanilla();
-            registry.freeze();
-            let _ = REGISTRY.init(registry);
-        });
-    }
-
     #[test]
     fn registered_sound_packet_uses_holder_id() {
-        init_registry();
+        init_vanilla_registry();
 
         let packet = CSound::block_sound(
             &sound_events::BLOCK_WOODEN_BUTTON_CLICK_ON,
