@@ -1,16 +1,24 @@
 //! Block item behavior implementation.
 
+use std::ptr;
+use std::sync::Arc;
+
 use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{BlockRef, block_state_ext::BlockStateExt},
+    data_components::vanilla_components::BLOCK_ENTITY_DATA,
+    item_stack::ItemStack,
     vanilla_blocks, vanilla_game_events,
 };
-use steel_utils::{BlockStateId, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::context::{BlockPlaceContext, InteractionResult, UseOnContext};
 use crate::behavior::{BLOCK_BEHAVIORS, ItemBehavior};
+use crate::block_entity::BlockEntityComponentsExt as _;
 use crate::entity::Entity;
 use crate::fluid::{FluidStateExt as _, get_fluid_state};
+use crate::player::Player;
+use crate::world::World;
 use crate::world::game_event::GameEventContext;
 
 /// Behavior for items that place blocks.
@@ -60,6 +68,18 @@ impl BlockItem {
 
         let placed_state = context.world.get_block_state(place_pos);
         if placed_state.get_block() == self.block {
+            // TODO: Apply the `BLOCK_STATE` component (Vanilla `updateBlockStateFromTag`)
+            // once Steel can resolve block-state properties from their serialized names.
+            // Block-entity callbacks must not run under the inventory lock, so the
+            // live stack is snapshotted first.
+            let stack = context.with_item(|item| item.copy_with_count(item.count()));
+            Self::update_custom_block_entity_tag(
+                context.world,
+                context.player(),
+                place_pos,
+                &stack,
+            );
+            Self::update_block_entity_components(context.world, place_pos, &stack);
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
             placed_behavior.set_placed_by(placed_state, context.world, place_pos, context.source());
         }
@@ -96,6 +116,43 @@ impl BlockItem {
         context
             .world
             .set_block(context.place_pos(), state, Self::PLACE_BLOCK_FLAGS)
+    }
+
+    /// Loads the stack's `BLOCK_ENTITY_DATA` into the placed block entity.
+    ///
+    /// Mirrors Vanilla `BlockItem.updateCustomBlockEntityTag`, including its
+    /// game-master restriction for op-only block-entity types.
+    fn update_custom_block_entity_tag(
+        world: &Arc<World>,
+        player: Option<&Player>,
+        pos: BlockPos,
+        stack: &ItemStack,
+    ) -> bool {
+        let Some(custom_data) = stack.get(BLOCK_ENTITY_DATA) else {
+            return false;
+        };
+        let Some(block_entity) = world.get_block_entity(pos) else {
+            return false;
+        };
+        let block_entity_type = block_entity.get_type();
+        if !ptr::eq(block_entity_type, custom_data.block_entity_type()) {
+            return false;
+        }
+        if block_entity_type.only_op_can_set_nbt()
+            && !player.is_some_and(Player::can_use_game_master_blocks)
+        {
+            return false;
+        }
+        block_entity.load_custom_data(custom_data.data())
+    }
+
+    /// Mirrors Vanilla `BlockItem.updateBlockEntityComponents`.
+    fn update_block_entity_components(world: &Arc<World>, pos: BlockPos, stack: &ItemStack) {
+        let Some(block_entity) = world.get_block_entity(pos) else {
+            return;
+        };
+        block_entity.apply_components_from_item_stack(stack);
+        block_entity.set_changed();
     }
 }
 

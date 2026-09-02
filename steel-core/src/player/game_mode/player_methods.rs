@@ -187,6 +187,15 @@ impl Player {
         self.game_mode() == GameType::Creative
     }
 
+    /// Returns whether the player may edit game-master block entities such as command blocks.
+    ///
+    /// Mirrors Vanilla `Player.canUseGameMasterBlocks`; Steel's operator group
+    /// stands in for Vanilla's `COMMANDS_GAMEMASTER` command level.
+    #[must_use]
+    pub fn can_use_game_master_blocks(&self) -> bool {
+        self.abilities.lock().instabuild && self.is_operator()
+    }
+
     /// Acknowledges block changes up to the given sequence number.
     ///
     /// The ack is batched and sent once per tick (in `tick_ack_block_changes`),
