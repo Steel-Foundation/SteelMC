@@ -41,16 +41,16 @@ use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
-    PathfinderMob, RemovalReason, SpawnGroupData, next_entity_id,
+    PathfinderMob, RemovalReason, SharedEntity, SpawnGroupData, next_entity_id,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::{LevelReader, World};
 use goals::{
-    FoxBreedGoal, FoxFloatGoal, FoxFollowParentGoal, FoxLookAtPlayerGoal, FoxMeleeAttackGoal,
-    FoxPanicGoal, FoxPounceGoal, FoxSearchForItemsGoal, FoxSleepGoal, PerchAndSearchGoal,
-    StalkPreyGoal,
+    DefendTrustedTargetGoal, FoxBreedGoal, FoxFloatGoal, FoxFollowParentGoal, FoxLookAtPlayerGoal,
+    FoxMeleeAttackGoal, FoxPanicGoal, FoxPounceGoal, FoxSearchForItemsGoal, FoxSleepGoal,
+    PerchAndSearchGoal, StalkPreyGoal,
 };
 
 const FACEPLANT_PARTICLE_CHANCE: f32 = 0.2;
@@ -177,7 +177,7 @@ impl FoxEntity {
             goal_selector.add_goal(13, PerchAndSearchGoal::new());
 
             let mut target_selector = mob_base.target_selector().lock();
-            // TODO(fox-goals): target 3 DefendTrustedTargetGoal (needs the trust/defend gate)
+            target_selector.add_goal(3, DefendTrustedTargetGoal::new());
             target_selector.add_goal(4, target_stalkable_prey());
             // TODO(fox-goals): target NearestAttackableTarget for baby turtles on land (needs the Turtle entity, #490)
             // TODO(fox-goals): target NearestAttackableTarget for schooling fish (needs the fish mobs)
@@ -846,6 +846,16 @@ impl Mob for FoxEntity {
 
     fn custom_server_ai_step(&self) {
         Animal::custom_server_ai_step_animal(self);
+    }
+
+    fn set_target(&self, target: Option<&SharedEntity>) -> bool {
+        // Vanilla Fox.setTarget: losing the target always drops isDefending, no
+        // matter which goal cleared it.
+        if self.is_defending() && target.is_none() {
+            self.set_defending(false);
+        }
+        self.mob_base()
+            .set_target(target, |target| self.is_valid_target(target))
     }
 
     fn ambient_sound(&self) -> Option<SoundEventRef> {
