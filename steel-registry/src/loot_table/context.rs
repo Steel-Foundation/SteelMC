@@ -2,6 +2,7 @@ use steel_utils::random::Random;
 
 use super::{BlockStateId, ExplorationMapRequest, Identifier, ItemStack, LootError, LootResult};
 use crate::biome::BiomeRef;
+use crate::data_components::DataComponentMap;
 use steel_utils::BlockPos;
 
 /// Read-only level facts used by loot predicates.
@@ -386,6 +387,10 @@ pub struct BlockEntityRef<'a> {
     pub custom_name: Option<&'a str>,
     /// Inventory contents (for dynamic/slots entries).
     pub inventory: Option<&'a [ItemStack]>,
+    /// Explicit and implicit components (for `copy_components`).
+    ///
+    /// Mirrors Vanilla `BlockEntity.collectComponents()`.
+    pub components: Option<&'a DataComponentMap>,
 }
 
 impl<'a, R: Random> LootContext<'a, R> {

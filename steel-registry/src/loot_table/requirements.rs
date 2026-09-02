@@ -2,9 +2,9 @@ use rustc_hash::FxHashSet;
 
 use super::conditions::validate_block_predicate;
 use super::{
-    ConditionalLootFunction, EnchantmentOptions, ExplorationMapRequest, InstrumentOptions,
-    LootCondition, LootEntry, LootError, LootFunction, LootResult, LootTable, NumberProvider,
-    NumberProviderRange, REGISTRY, RegistryExt, TaggedRegistryExt,
+    ConditionalLootFunction, CopySource, EnchantmentOptions, ExplorationMapRequest,
+    InstrumentOptions, LootCondition, LootEntry, LootError, LootFunction, LootResult, LootTable,
+    NumberProvider, NumberProviderRange, REGISTRY, RegistryExt, TaggedRegistryExt,
 };
 
 /// World work that must be resolved before a loot table can be evaluated.
@@ -214,7 +214,11 @@ fn validate_function(
         | LootFunction::SetCustomData { .. }
         | LootFunction::FurnaceSmelt { .. }
         | LootFunction::SetName { .. }
-        | LootFunction::Discard => {}
+        | LootFunction::Discard
+        | LootFunction::CopyComponents {
+            source: CopySource::BlockEntity,
+            ..
+        } => {}
         LootFunction::CopyComponents { .. } => unsupported_function("copy_components")?,
         LootFunction::CopyState { .. } => unsupported_function("copy_state")?,
         LootFunction::SetComponents { .. } => unsupported_function("set_components")?,

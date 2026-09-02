@@ -124,10 +124,12 @@ pub enum LootFunction {
         levels: NumberProvider,
         options: EnchantmentOptions,
     },
-    /// Copy components from the block entity to the item.
+    /// Copy components from the source to the item.
+    ///
+    /// `None` copies every component, mirroring Vanilla's optional `include` list.
     CopyComponents {
         source: CopySource,
-        include: &'static [Identifier],
+        include: Option<&'static [Identifier]>,
     },
     /// Copy block state properties to the item.
     CopyState {
@@ -456,15 +458,38 @@ impl LootFunction {
                 let level = levels.get_int_with_ctx(ctx.rng, Some(&context))?;
                 item.enchant_with_levels(level, options, ctx.rng)?;
             }
-            LootFunction::CopyComponents { source, .. } => {
-                let source_is_present = match source {
-                    CopySource::BlockEntity => ctx.block_entity.is_some(),
-                    CopySource::This => ctx.this_entity.is_some(),
-                    CopySource::Attacker => ctx.killer_entity.is_some(),
-                    CopySource::DirectAttacker => ctx.direct_killer_entity.is_some(),
-                };
-                if source_is_present {
-                    return Err(LootError::UnsupportedFunction("copy_components"));
+            LootFunction::CopyComponents { source, include } => {
+                // Vanilla treats an absent optional source as a no-op.
+                match source {
+                    CopySource::BlockEntity => {
+                        let Some(components) = ctx
+                            .block_entity
+                            .and_then(|block_entity| block_entity.components)
+                        else {
+                            return Ok(());
+                        };
+                        item.apply_components(
+                            &components
+                                .filter(|key| include.is_none_or(|include| include.contains(key))),
+                        );
+                    }
+                    // TODO: Copy entity components once Steel entities expose a
+                    // `DataComponentGetter` view like Vanilla `Entity`.
+                    CopySource::This => {
+                        if ctx.this_entity.is_some() {
+                            return Err(LootError::UnsupportedFunction("copy_components"));
+                        }
+                    }
+                    CopySource::Attacker => {
+                        if ctx.killer_entity.is_some() {
+                            return Err(LootError::UnsupportedFunction("copy_components"));
+                        }
+                    }
+                    CopySource::DirectAttacker => {
+                        if ctx.direct_killer_entity.is_some() {
+                            return Err(LootError::UnsupportedFunction("copy_components"));
+                        }
+                    }
                 }
             }
             LootFunction::CopyState { .. } => {

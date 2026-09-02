@@ -917,13 +917,57 @@ fn copy_components_without_its_optional_source_keeps_the_item() {
 
     LootFunction::CopyComponents {
         source: CopySource::BlockEntity,
-        include: &INCLUDE,
+        include: Some(&INCLUDE),
     }
     .apply(&mut chest, &mut context)
     .expect("an absent optional block-entity source should be a Vanilla no-op");
 
     assert!(chest.is(&vanilla_items::CHEST));
     assert_eq!(chest.count(), 1);
+}
+
+#[test]
+fn copy_components_copies_only_included_block_entity_components() {
+    use crate::data_components::DataComponentMap;
+    use crate::data_components::vanilla_components::{CUSTOM_NAME, MAX_STACK_SIZE};
+    use text_components::TextComponent;
+
+    static INCLUDE: [Identifier; 1] = [Identifier::vanilla_static("custom_name")];
+
+    init_test_registries();
+    let custom_name = TextComponent::plain("Loot Chest");
+    let mut components = DataComponentMap::new();
+    components.set(CUSTOM_NAME, Some(custom_name.clone()));
+    components.set(MAX_STACK_SIZE, Some(3));
+    let block_entity = BlockEntityRef {
+        block_entity_type: None,
+        custom_name: None,
+        inventory: None,
+        components: Some(&components),
+    };
+    let mut random = test_rng();
+
+    let mut chest = ItemStack::new(&vanilla_items::CHEST);
+    let mut context = LootContext::new(&mut random).with_block_entity(block_entity);
+    LootFunction::CopyComponents {
+        source: CopySource::BlockEntity,
+        include: Some(&INCLUDE),
+    }
+    .apply(&mut chest, &mut context)
+    .expect("copy_components should evaluate");
+    assert_eq!(chest.get(CUSTOM_NAME), Some(&custom_name));
+    assert_eq!(chest.max_stack_size(), 64);
+
+    let mut chest = ItemStack::new(&vanilla_items::CHEST);
+    let mut context = LootContext::new(&mut random).with_block_entity(block_entity);
+    LootFunction::CopyComponents {
+        source: CopySource::BlockEntity,
+        include: None,
+    }
+    .apply(&mut chest, &mut context)
+    .expect("copy_components should evaluate");
+    assert_eq!(chest.get(CUSTOM_NAME), Some(&custom_name));
+    assert_eq!(chest.max_stack_size(), 3);
 }
 
 #[test]
