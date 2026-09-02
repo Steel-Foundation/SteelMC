@@ -10,6 +10,7 @@ use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as Nbt
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::data_components::DataComponentMap;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, vanilla_block_entity_types, vanilla_items};
 use steel_utils::types::UpdateFlags;
@@ -20,7 +21,9 @@ use steel_utils::{
 use text_components::TextComponent;
 
 use crate::block_entity::base_container::BaseContainer;
-use crate::block_entity::{BlockEntity, BlockEntityBase, vanilla_fuel_values};
+use crate::block_entity::{
+    BlockEntity, BlockEntityBase, BlockEntityComponentInput, vanilla_fuel_values,
+};
 use crate::entity::entities::ExperienceOrbEntity;
 use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
@@ -143,6 +146,24 @@ impl BlockEntity for FurnaceBlockEntity {
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.container.lock().save(nbt);
+    }
+
+    fn apply_implicit_components(&self, components: &BlockEntityComponentInput<'_>) {
+        self.container
+            .lock()
+            .base
+            .apply_implicit_components(components);
+    }
+
+    fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        self.container
+            .lock()
+            .base
+            .collect_implicit_components(components);
+    }
+
+    fn remove_components_from_tag(&self, nbt: &mut NbtCompound) {
+        BaseContainer::remove_components_from_tag(nbt);
     }
 
     fn tick(&self, world: &Arc<World>) {

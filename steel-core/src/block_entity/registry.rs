@@ -109,7 +109,7 @@ impl BlockEntityRegistry {
         nbt: &BorrowedNbtCompound<'_>,
     ) -> Option<SharedBlockEntity> {
         let entity = self.create(block_entity_type, level, pos, state)?;
-        entity.load_additional(nbt);
+        entity.load_with_components(nbt);
         Some(entity)
     }
 
@@ -126,7 +126,7 @@ impl BlockEntityRegistry {
         let id = block_entity_type.id();
         if let Some(factory) = self.entries.get(id).and_then(|entry| entry.factory) {
             let entity = factory(level, pos, state);
-            entity.load_additional(nbt);
+            entity.load_with_components(nbt);
             entity
         } else {
             let nbt_view: BorrowedRootNbtCompound<'_, '_> = nbt.into();
@@ -156,7 +156,7 @@ impl BlockEntityRegistry {
             let mut nbt_bytes = Vec::new();
             nbt.write(&mut nbt_bytes);
             if let Ok(borrowed) = read_borrowed_compound(&mut Cursor::new(&nbt_bytes)) {
-                entity.load_additional(&borrowed);
+                entity.load_with_components(&borrowed);
             } else {
                 log::warn!(
                     "failed to reborrow owned NBT for block entity {}",

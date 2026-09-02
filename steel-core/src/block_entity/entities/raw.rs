@@ -67,8 +67,18 @@ impl BlockEntity for RawBlockEntity {
         self.state.lock().data = nbt_view.to_owned();
     }
 
+    /// Keeps the raw `components` compound instead of decoding it, so component
+    /// types Steel has not registered yet survive a save/load cycle.
+    fn load_with_components(&self, nbt: &BorrowedNbtCompound<'_>) {
+        self.load_additional(nbt);
+    }
+
     fn save_additional(&self, nbt: &mut NbtCompound) {
         *nbt = self.state.lock().data.clone();
+    }
+
+    fn save_without_metadata(&self) -> NbtCompound {
+        self.save_custom_only()
     }
 }
 

@@ -23,8 +23,9 @@
 //! let entity = BLOCK_ENTITIES.create(block_entity_type, pos, state);
 //! ```
 
-mod base_container;
+pub(crate) mod base_container;
 pub(crate) mod block_state_nbt;
+mod components;
 mod container_openers_counter;
 pub mod entities;
 mod fuel_values;
@@ -40,13 +41,16 @@ use std::{
     },
 };
 
-use simdnbt::borrow::BaseNbtCompound as BorrowedNbtCompound;
+use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
+use simdnbt::{FromNbtTag as _, ToNbtTag as _};
 use smallvec::SmallVec;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::data_components::DataComponentMap;
 use steel_utils::{BlockPos, BlockStateId, ErasedType, locks::SyncMutex};
 
+pub use components::{BlockEntityComponentInput, BlockEntityComponentsExt};
 pub use container_openers_counter::{ContainerOpeners, ContainerOpenersCounter};
 pub use fuel_values::{FuelValues, vanilla_fuel_values};
 pub use registry::{BLOCK_ENTITIES, BlockEntityFactory, BlockEntityRegistry, init_block_entities};
@@ -60,6 +64,9 @@ use crate::player::Player;
 
 use crate::world::World;
 use crate::world::game_event::SharedGameEventListener;
+
+/// NBT key of the explicit block-entity components.
+const COMPONENTS_TAG: &str = "components";
 
 /// Erased block-state-selected ticker for one concrete block-entity type.
 ///
@@ -150,6 +157,10 @@ pub struct BlockEntityBase {
     /// Lock-free removal snapshot; lifecycle writers remain serialized below.
     removed: AtomicBool,
     lifecycle: SyncMutex<BlockEntityLifecycle>,
+    /// Item components retained from placement that no entity field consumed.
+    ///
+    /// Mirrors Vanilla `BlockEntity.components`.
+    components: SyncMutex<DataComponentMap>,
 }
 
 struct BlockEntityLifecycleDispatchGuard<'a> {
@@ -197,12 +208,24 @@ impl BlockEntityBase {
                 events: SmallVec::new(),
                 dispatching_events: false,
             }),
+            components: SyncMutex::new(DataComponentMap::new()),
         }
     }
 
     #[must_use]
     const fn block_entity_type(&self) -> BlockEntityTypeRef {
         self.block_entity_type
+    }
+
+    /// Returns a copy of the explicit components.
+    #[must_use]
+    pub fn components(&self) -> DataComponentMap {
+        self.components.lock().clone()
+    }
+
+    /// Replaces the explicit components.
+    pub fn set_components(&self, components: DataComponentMap) {
+        *self.components.lock() = components;
     }
 
     #[must_use]
@@ -396,6 +419,26 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     /// chunk data from the server.
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>);
 
+    /// Loads entity data together with its explicit components.
+    ///
+    /// Mirrors Vanilla `BlockEntity.loadWithComponents`; malformed component
+    /// compounds are reported and dropped like Vanilla's problem reporter.
+    fn load_with_components(&self, nbt: &BorrowedNbtCompound<'_>) {
+        self.load_additional(nbt);
+        let nbt_view: NbtCompoundView<'_, '_> = nbt.into();
+        let components = nbt_view.get(COMPONENTS_TAG).map(|tag| {
+            DataComponentMap::from_nbt_tag(tag).unwrap_or_else(|| {
+                log::warn!(
+                    "Discarding malformed components of block entity {} at {:?}",
+                    self.get_type().key,
+                    self.get_block_pos()
+                );
+                DataComponentMap::new()
+            })
+        });
+        self.base().set_components(components.unwrap_or_default());
+    }
+
     /// Saves additional data to NBT.
     ///
     /// Called when saving the block entity to disk.
@@ -411,12 +454,19 @@ pub trait BlockEntity: ErasedType + Send + Sync {
         nbt
     }
 
+    /// Saves entity-specific data together with its explicit components.
+    ///
+    /// Mirrors Vanilla `BlockEntity.saveWithoutMetadata`, which always stores
+    /// the `components` compound.
+    fn save_without_metadata(&self) -> NbtCompound {
+        let mut nbt = self.save_custom_only();
+        nbt.insert(COMPONENTS_TAG, self.base().components().to_nbt_tag());
+        nbt
+    }
+
     /// Saves command-visible data together with vanilla block-entity metadata.
     fn save_with_full_metadata(&self) -> NbtCompound {
-        // TODO: Include stored block-entity components once Steel has Vanilla's
-        // block-entity component foundation. NBT predicates targeting the
-        // `components` field cannot match exactly until then.
-        let mut nbt = self.save_custom_only();
+        let mut nbt = self.save_without_metadata();
         let pos = self.get_block_pos();
         nbt.insert("id", self.get_type().key.to_string());
         nbt.insert("x", pos.x());
@@ -424,6 +474,34 @@ pub trait BlockEntity: ErasedType + Send + Sync {
         nbt.insert("z", pos.z());
         nbt
     }
+
+    /// Applies the placing item's components that this entity stores in its own fields.
+    ///
+    /// Mirrors Vanilla `BlockEntity.applyImplicitComponents`. Every component read
+    /// through `components` is consumed and not retained as an explicit component.
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameter used by overrides"
+    )]
+    fn apply_implicit_components(&self, components: &BlockEntityComponentInput<'_>) {}
+
+    /// Adds the components this entity derives from its own fields.
+    ///
+    /// Mirrors Vanilla `BlockEntity.collectImplicitComponents`.
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameter used by overrides"
+    )]
+    fn collect_implicit_components(&self, components: &mut DataComponentMap) {}
+
+    /// Removes the saved fields that [`Self::collect_implicit_components`] represents as components.
+    ///
+    /// Mirrors Vanilla `BlockEntity.removeComponentsFromTag`.
+    #[expect(
+        unused_variables,
+        reason = "default trait impl; parameter used by overrides"
+    )]
+    fn remove_components_from_tag(&self, nbt: &mut NbtCompound) {}
 
     /// Returns the NBT data to send to clients for initial sync.
     ///

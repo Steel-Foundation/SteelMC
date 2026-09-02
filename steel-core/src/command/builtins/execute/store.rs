@@ -274,7 +274,7 @@ fn store_block_data_value(
     data.write(&mut bytes);
     let borrowed = read_borrowed_compound(&mut Cursor::new(bytes.as_slice()))
         .map_err(|_| StoreDataMutationError::InvalidWrittenNbt)?;
-    block_entity.load_additional(&borrowed);
+    block_entity.load_with_components(&borrowed);
     block_entity.set_changed();
     Ok(())
 }

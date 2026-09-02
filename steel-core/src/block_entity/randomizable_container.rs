@@ -8,7 +8,10 @@ use simdnbt::borrow::NbtCompound as NbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_registry::{
     REGISTRY, RegistryExt,
-    data_components::{MapId, vanilla_components::MAP_ID},
+    data_components::{
+        DataComponentMap, MapId,
+        vanilla_components::{CONTAINER_LOOT, MAP_ID, SeededContainerLoot},
+    },
     item_stack::ItemStack,
     loot_table::{
         ExplorationMapRequest, ExplorationMapResolver, LootContext, LootError, LootResult,
@@ -18,6 +21,7 @@ use steel_registry::{
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey, Identifier};
 use text_components::TextComponent;
 
+use crate::block_entity::BlockEntityComponentInput;
 use crate::block_entity::base_container::BaseContainer;
 use crate::entity::{LivingEntity as _, entity_loot_ref};
 use crate::inventory::container::{
@@ -168,6 +172,42 @@ impl RandomizableContainer {
     #[must_use]
     pub(crate) const fn has_pending_loot(&self) -> bool {
         self.loot_table.is_some() || self.pending_loot.is_some()
+    }
+
+    /// Mirrors `RandomizableContainerBlockEntity.applyImplicitComponents`.
+    pub(crate) fn apply_implicit_components(&mut self, components: &BlockEntityComponentInput<'_>) {
+        self.base.apply_implicit_components(components);
+        if let Some(loot) = components.get(CONTAINER_LOOT) {
+            self.loot_table = Some(loot.loot_table().clone());
+            self.loot_table_seed = loot.seed();
+            self.pending_loot = None;
+            self.running_token = None;
+        }
+    }
+
+    /// Mirrors `RandomizableContainerBlockEntity.collectImplicitComponents`.
+    pub(crate) fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        self.base.collect_implicit_components(components);
+        if let Some(loot_table) = &self.loot_table {
+            components.set(
+                CONTAINER_LOOT,
+                Some(SeededContainerLoot::new(
+                    loot_table.clone(),
+                    self.loot_table_seed,
+                )),
+            );
+        }
+    }
+
+    /// Mirrors `RandomizableContainerBlockEntity.removeComponentsFromTag`.
+    ///
+    /// Steel's in-progress exploration-map state is dropped as well because the
+    /// `CONTAINER_LOOT` component re-rolls the table when the item is placed.
+    pub(crate) fn remove_components_from_tag(nbt: &mut NbtCompound) {
+        BaseContainer::remove_components_from_tag(nbt);
+        nbt.remove("LootTable");
+        nbt.remove("LootTableSeed");
+        nbt.remove(PENDING_LOOT_KEY);
     }
 
     const fn next_preparation_token(&mut self) -> u64 {

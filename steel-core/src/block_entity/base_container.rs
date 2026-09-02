@@ -5,13 +5,16 @@ use std::mem;
 use simdnbt::borrow::NbtCompound as NbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::{FromNbtTag as _, ToNbtTag as _};
+use steel_registry::data_components::DataComponentMap;
+use steel_registry::data_components::vanilla_components::{
+    CONTAINER, CUSTOM_NAME, ItemContainerContents, LOCK,
+};
 use steel_registry::{item_predicate::LockCode, item_stack::ItemStack};
 use text_components::TextComponent;
 
+use crate::block_entity::BlockEntityComponentInput;
+
 /// Inventory, custom-name, and lock data shared by container block entities.
-///
-/// TODO: Apply and collect these values through Steel's shared block-item/block-entity
-/// implicit-component pipeline once that foundation exists.
 pub(crate) struct BaseContainer {
     items: Vec<ItemStack>,
     custom_name: Option<TextComponent>,
@@ -83,6 +86,37 @@ impl BaseContainer {
             items.push(item_nbt);
         }
         nbt.insert("Items", NbtList::Compound(items));
+    }
+
+    /// Mirrors `BaseContainerBlockEntity.applyImplicitComponents`.
+    pub(crate) fn apply_implicit_components(&mut self, components: &BlockEntityComponentInput<'_>) {
+        self.custom_name = components.get(CUSTOM_NAME).cloned();
+        self.lock = components.get(LOCK).cloned();
+        components
+            .get_or_default(CONTAINER, ItemContainerContents::empty())
+            .copy_into(&mut self.items);
+    }
+
+    /// Mirrors `BaseContainerBlockEntity.collectImplicitComponents`.
+    ///
+    /// Items that cannot be represented by Steel's validated persistent templates
+    /// are reported and omitted, like Vanilla's save-time problem reporting.
+    pub(crate) fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        components.set(CUSTOM_NAME, self.custom_name.clone());
+        if self.has_lock() {
+            components.set(LOCK, self.lock.clone());
+        }
+        match ItemContainerContents::from_items(&self.items) {
+            Ok(contents) => components.set(CONTAINER, Some(contents)),
+            Err(error) => log::warn!("Skipping container component of block entity: {error}"),
+        }
+    }
+
+    /// Mirrors `BaseContainerBlockEntity.removeComponentsFromTag`.
+    pub(crate) fn remove_components_from_tag(nbt: &mut NbtCompound) {
+        nbt.remove("CustomName");
+        nbt.remove("lock");
+        nbt.remove("Items");
     }
 
     pub(crate) fn replace_items(&mut self, items: Vec<ItemStack>) -> Result<(), Vec<ItemStack>> {

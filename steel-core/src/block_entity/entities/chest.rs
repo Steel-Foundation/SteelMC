@@ -7,6 +7,7 @@ use simdnbt::owned::NbtCompound;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, ChestType};
+use steel_registry::data_components::DataComponentMap;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_entity_types;
 use steel_utils::{
@@ -19,7 +20,8 @@ use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::blocks::ChestBlock;
 use crate::block_entity::randomizable_container::RandomizableContainer;
 use crate::block_entity::{
-    BlockEntity, BlockEntityBase, ContainerOpeners, ContainerOpenersCounter,
+    BlockEntity, BlockEntityBase, BlockEntityComponentInput, ContainerOpeners,
+    ContainerOpenersCounter,
 };
 use crate::inventory::lock::{ContainerId, ContainerRef, SharedContainer};
 use crate::player::Player;
@@ -148,6 +150,20 @@ impl BlockEntity for ChestBlockEntity {
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
         self.container.lock().save(nbt);
+    }
+
+    fn apply_implicit_components(&self, components: &BlockEntityComponentInput<'_>) {
+        self.container.lock().apply_implicit_components(components);
+    }
+
+    fn collect_implicit_components(&self, components: &mut DataComponentMap) {
+        self.container
+            .lock()
+            .collect_implicit_components(components);
+    }
+
+    fn remove_components_from_tag(&self, nbt: &mut NbtCompound) {
+        RandomizableContainer::remove_components_from_tag(nbt);
     }
 
     fn trigger_event(&self, param_a: i32, _param_b: i32) -> bool {
