@@ -2,8 +2,9 @@ use crate::items::block_transformer::{block_transformer_component_token, pottery
 use super::{
     FromStr, Ident, Identifier, Item, Span, ToShoutySnakeCase, TokenStream, Value,
     banner_pattern_ref_token, block_state_component_token, blocks_attacks_component_token,
-    component_i32, consumable_component_token, damage_type_ref_token,
-    death_protection_component_token, dye_color_token, entity_type_ref_token,
+    component_i32, compostable_component_token, consumable_component_token,
+    cooking_fuel_component_token, damage_type_ref_token, death_protection_component_token,
+    dye_color_token, entity_type_ref_token,
     fireworks_component_token, food_component_token, generate_allowed_entities,
     generate_attack_range_component, generate_attribute_modifiers_component,
     generate_piercing_weapon_component, generate_tool_component, generate_weapon_component,
@@ -585,6 +586,18 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                         )
                     });
                 }
+            }
+            "minecraft:compostable" => {
+                let compostable = compostable_component_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(vanilla_components::COMPOSTABLE, Some(#compostable))
+                });
+            }
+            "minecraft:cooking_fuel" => {
+                let cooking_fuel = cooking_fuel_component_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(vanilla_components::COOKING_FUEL, Some(#cooking_fuel))
+                });
             }
             "minecraft:break_sound" => {
                 if value.as_str() != Some("minecraft:entity.item.break") {

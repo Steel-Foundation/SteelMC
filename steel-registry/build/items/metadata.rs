@@ -189,6 +189,18 @@ pub(super) fn cooking_fuel_component_token(value: &Value) -> TokenStream {
     }
 }
 
+pub(super) fn compostable_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("compostable component must be an object"));
+    let layers = object
+        .get("layers")
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("compostable.layers must be an identifier string"));
+    let layers = identifier_token(layers);
+    quote! { vanilla_components::Compostable::new(#layers) }
+}
+
 pub(super) fn damage_type_ref_token(value: &str) -> TokenStream {
     let id = Identifier::from_str(value)
         .unwrap_or_else(|error| panic!("invalid damage_type component id {value:?}: {error}"));

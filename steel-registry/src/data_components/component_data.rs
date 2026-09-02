@@ -6,9 +6,9 @@ use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey, ErasedType};
 
 use super::components::{
     ArmorTrim, AttackRange, BannerPatternLayers, Bees, BlockEntityData, BlockItemStateProperties,
-    BlocksAttacks, BundleContents, ChargedProjectiles, Consumable, CookingFuel, CustomData,
-    CustomModelData, DamageResistant, DamageTypeComponent, DeathProtection, DebugStickState,
-    DyedItemColor,
+    BlocksAttacks, BundleContents, ChargedProjectiles, Compostable, Consumable, CookingFuel,
+    CustomData, CustomModelData, DamageResistant, DamageTypeComponent, DeathProtection,
+    DebugStickState, DyedItemColor,
     Enchantable, EntityData, Equippable, FireworkExplosion, Fireworks, FoodProperties,
     InstrumentComponent, ItemAttributeModifiers, ItemContainerContents, ItemEnchantments, ItemLore,
     JukeboxPlayable, KineticWeapon, LodestoneTracker, MapDecorations, MapId, MapItemColor,
@@ -225,6 +225,7 @@ impl_component_downcast_type!(Rarity, "steel:item_component/rarity");
 impl_component_downcast_type!(TooltipDisplay, "steel:item_component/tooltip_display");
 impl_component_downcast_type!(SwingAnimation, "steel:item_component/swing_animation");
 impl_component_downcast_type!(CookingFuel, "steel:item_component/cooking_fuel");
+impl_component_downcast_type!(Compostable, "steel:item_component/compostable");
 impl_component_downcast_type!(
     MapPostProcessing,
     "steel:item_component/map_post_processing"

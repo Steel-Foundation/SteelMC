@@ -16,8 +16,8 @@ pub use crate::equipment::{EquipmentSlot, EquipmentSlotGroup};
 pub use super::components::{
     ArmorTrim, AttackRange, BannerPatternLayer, BannerPatternLayers, BeehiveOccupant, Bees,
     BlockEntityData, BlockItemStateProperties, BlocksAttacks, BundleContents, ChargedProjectiles,
-    Consumable, CookingFuel, CustomData, CustomModelData, DamageReduction, DamageResistant,
-    DamageTypeComponent,
+    Compostable, Consumable, CookingFuel, CustomData, CustomModelData, DamageReduction,
+    DamageResistant, DamageTypeComponent,
     DeathProtection, DebugStickProperty, DebugStickState, DyedItemColor, Enchantable, EntityData,
     Equippable, EquippableAllowedEntities, Filterable, FireworkExplosion, FireworkExplosionShape,
     Fireworks, FoodProperties, GlobalPos, InstrumentComponent, InvalidEnchantableValue,
@@ -190,6 +190,9 @@ pub const INTERACT_ANIMATION: DataComponentType<SwingAnimation> =
 
 pub const ADDITIONAL_TRADE_COST: DataComponentType<i32> =
     DataComponentType::new(Identifier::vanilla_static("additional_trade_cost"));
+
+pub const COMPOSTABLE: DataComponentType<Compostable> =
+    DataComponentType::new(Identifier::vanilla_static("compostable"));
 
 pub const COOKING_FUEL: DataComponentType<CookingFuel> =
     DataComponentType::new(Identifier::vanilla_static("cooking_fuel"));
@@ -826,30 +829,27 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     registry.register(INTERACT_ANIMATION);
     // 42: additional_trade_cost
     registry.register_transient_with_codecs(ADDITIONAL_TRADE_COST, varint_reader, varint_writer);
-    // TODO please add again if needed
-    // 43: cooking_fuel
-    registry.register(COOKING_FUEL);
-    // 44: stored_enchantments
+    // 43: stored_enchantments
     registry.register(STORED_ENCHANTMENTS);
-    // 45: dye
+    // 44: dye
     registry.register(DYE);
-    // 46: dyed_color
+    // 45: dyed_color
     registry.register(DYED_COLOR);
-    // 47: map_color
+    // 46: map_color
     registry.register(MAP_COLOR);
-    // 48: map_id
+    // 47: map_id
     registry.register(MAP_ID);
-    // 49: map_decorations
+    // 48: map_decorations
     registry.register(MAP_DECORATIONS);
-    // 50: map_post_processing
+    // 49: map_post_processing
     registry.register_transient(MAP_POST_PROCESSING);
-    // 51: charged_projectiles
+    // 50: charged_projectiles
     registry.register_validated(CHARGED_PROJECTILES);
-    // 52: bundle_contents
+    // 51: bundle_contents
     registry.register_validated(BUNDLE_CONTENTS);
-    // 53: potion_contents
+    // 52: potion_contents
     registry.register(POTION_CONTENTS);
-    // 54: potion_duration_scale
+    // 53: potion_duration_scale
     registry.register_with_codecs(
         POTION_DURATION_SCALE,
         float_reader,
@@ -857,29 +857,29 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
         potion_duration_scale_nbt_reader,
         potion_duration_scale_nbt_writer,
     );
-    // 55: suspicious_stew_effects
+    // 54: suspicious_stew_effects
     registry.register(SUSPICIOUS_STEW_EFFECTS);
-    // 56: writable_book_content
+    // 55: writable_book_content
     registry.register(WRITABLE_BOOK_CONTENT);
-    // 57: written_book_content
+    // 56: written_book_content
     registry.register(WRITTEN_BOOK_CONTENT);
-    // 58: trim
+    // 57: trim
     registry.register(TRIM);
-    // 59: debug_stick_state
+    // 58: debug_stick_state
     registry.register(DEBUG_STICK_STATE);
-    // 60: entity_data
+    // 59: entity_data
     registry.register(ENTITY_DATA);
-    // 61: bucket_entity_data
+    // 60: bucket_entity_data
     registry.register(BUCKET_ENTITY_DATA);
-    // 62: block_entity_data
+    // 61: block_entity_data
     registry.register(BLOCK_ENTITY_DATA);
-    // 63: instrument
+    // 62: instrument
     registry.register(INSTRUMENT);
-    // 64: provides_trim_material
+    // 63: provides_trim_material
     registry.register(PROVIDES_TRIM_MATERIAL);
-    // 65: ominous_bottle_amplifier
+    // 64: ominous_bottle_amplifier
     registry.register(OMINOUS_BOTTLE_AMPLIFIER);
-    // 66: jukebox_playable
+    // 65: jukebox_playable
     registry.register_with_codecs(
         JUKEBOX_PLAYABLE,
         jukebox_playable_network_reader,
@@ -887,15 +887,15 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
         jukebox_playable_nbt_reader,
         jukebox_playable_nbt_writer,
     );
-    // 67: provides_banner_patterns
+    // 66: provides_banner_patterns
     registry.register(PROVIDES_BANNER_PATTERNS);
-    // 68: recipes
+    // 67: recipes
     registry.register(RECIPES);
-    // 69: lodestone_tracker
+    // 68: lodestone_tracker
     registry.register(LODESTONE_TRACKER);
-    // 70: firework_explosion
+    // 69: firework_explosion
     registry.register(FIREWORK_EXPLOSION);
-    // 71: fireworks
+    // 70: fireworks
     registry.register_with_codecs(
         FIREWORKS,
         fireworks_network_reader,
@@ -903,73 +903,77 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
         fireworks_nbt_reader,
         fireworks_nbt_writer,
     );
-    // 72: profile
+    // 71: profile
     registry.register(PROFILE);
-    // 73: note_block_sound
+    // 72: note_block_sound
     registry.register(NOTE_BLOCK_SOUND);
-    // 74: banner_patterns
+    // 73: banner_patterns
     registry.register(BANNER_PATTERNS);
-    // 75: base_color
+    // 74: base_color
     registry.register(BASE_COLOR);
-    // 76: pot_decorations
+    // 75: pot_decorations
     registry.register(POT_DECORATIONS);
-    // 77: container
+    // 76: container
     registry.register_validated(CONTAINER);
-    // 78: block_state
+    // 77: block_state
     registry.register(BLOCK_STATE);
-    // 79: bees
+    // 78: bees
     registry.register(BEES);
-    // 80: sulfur_cube_content
+    // 79: sulfur_cube_content
     registry.register_validated(SULFUR_CUBE_CONTENT);
-    // 81: lock
+    // 80: lock
     registry.register(LOCK);
-    // 82: container_loot
+    // 81: container_loot
     registry.register(CONTAINER_LOOT);
-    // 83: break_sound
+    // 82: break_sound
     registry.register(BREAK_SOUND);
-    // 84: villager/variant
+    // 83: compostable
+    registry.register(COMPOSTABLE);
+    // 84: cooking_fuel
+    registry.register(COOKING_FUEL);
+    // 85: villager/variant
     registry.register(VILLAGER_VARIANT);
-    // 85: wolf/variant
+    // 86: wolf/variant
     registry.register(WOLF_VARIANT);
-    // 86: wolf/sound_variant
+    // 87: wolf/sound_variant
     registry.register(WOLF_SOUND_VARIANT);
-    // 87: wolf/collar
+    // 88: wolf/collar
     registry.register(WOLF_COLLAR);
-    // 88: fox/variant
+    // 89: fox/variant
     registry.register(FOX_VARIANT);
-    // 89: salmon/size
+    // 90: salmon/size
     registry.register(SALMON_SIZE);
-    // 90: parrot/variant
+    // 91: parrot/variant
     registry.register(PARROT_VARIANT);
-    // 91: tropical_fish/pattern
+    // 92: tropical_fish/pattern
     registry.register(TROPICAL_FISH_PATTERN);
-    // 92: tropical_fish/base_color
+    // 93: tropical_fish/base_color
     registry.register(TROPICAL_FISH_BASE_COLOR);
-    // 93: tropical_fish/pattern_color
+    // 94: tropical_fish/pattern_color
     registry.register(TROPICAL_FISH_PATTERN_COLOR);
-    // 94: mooshroom/variant
+    // 95: mooshroom/variant
     registry.register(MOOSHROOM_VARIANT);
-    // 95: rabbit/variant
+    // 96: rabbit/variant
     registry.register(RABBIT_VARIANT);
-    // 96: pig/variant
+    // 97: pig/variant
     registry.register(PIG_VARIANT);
-    // 97: pig/sound_variant
+    // 98: pig/sound_variant
     registry.register(PIG_SOUND_VARIANT);
-    // 98: cow/variant
+    // 99: cow/variant
     registry.register(COW_VARIANT);
-    // 99: cow/sound_variant
+    // 100: cow/sound_variant
     registry.register(COW_SOUND_VARIANT);
-    // 100: chicken/variant
+    // 101: chicken/variant
     registry.register(CHICKEN_VARIANT);
-    // 101: chicken/sound_variant
+    // 102: chicken/sound_variant
     registry.register(CHICKEN_SOUND_VARIANT);
-    // 102: zombie_nautilus/variant
+    // 103: zombie_nautilus/variant
     registry.register(ZOMBIE_NAUTILUS_VARIANT);
-    // 103: frog/variant
+    // 104: frog/variant
     registry.register(FROG_VARIANT);
-    // 104: horse/variant
+    // 105: horse/variant
     registry.register(HORSE_VARIANT);
-    // 105: painting/variant
+    // 106: painting/variant
     registry.register_with_codecs(
         PAINTING_VARIANT,
         painting_variant_network_reader,
@@ -977,19 +981,19 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
         painting_variant_nbt_reader,
         painting_variant_nbt_writer,
     );
-    // 106: llama/variant
+    // 107: llama/variant
     registry.register(LLAMA_VARIANT);
-    // 107: axolotl/variant
+    // 108: axolotl/variant
     registry.register(AXOLOTL_VARIANT);
-    // 108: cat/variant
+    // 109: cat/variant
     registry.register(CAT_VARIANT);
-    // 109: cat/sound_variant
+    // 110: cat/sound_variant
     registry.register(CAT_SOUND_VARIANT);
-    // 110: cat/collar
+    // 111: cat/collar
     registry.register(CAT_COLLAR);
-    // 111: sheep/color
+    // 112: sheep/color
     registry.register(SHEEP_COLOR);
-    // 112: shulker/color
+    // 113: shulker/color
     registry.register(SHULKER_COLOR);
 }
 
