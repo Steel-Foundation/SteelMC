@@ -11,6 +11,7 @@ use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use steel_math::trig;
 use steel_protocol::packets::game::{
     AnimateAction, AttributeSnapshot, CAnimate, CDamageEvent, CEntityEvent, CHurtAnimation,
     CTeleportEntity, EquipmentSlotItem, RelativeMovement, SoundSource,
@@ -419,13 +420,13 @@ pub(crate) fn get_input_vector(input: DVec3, speed: f32, yaw_degrees: f32) -> DV
     } else {
         input
     } * f64::from(speed);
-    let yaw = yaw_degrees.to_radians();
-    let sin = yaw.sin();
-    let cos = yaw.cos();
+    let yaw = f64::from(yaw_degrees.to_radians());
+    let sin = f64::from(trig::sin(yaw));
+    let cos = f64::from(trig::cos(yaw));
     DVec3::new(
-        movement.x * f64::from(cos) - movement.z * f64::from(sin),
+        movement.x * cos - movement.z * sin,
         movement.y,
-        movement.z * f64::from(cos) + movement.x * f64::from(sin),
+        movement.z * cos + movement.x * sin,
     )
 }
 
