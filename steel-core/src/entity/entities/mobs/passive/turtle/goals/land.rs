@@ -6,11 +6,29 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::vanilla_blocks;
 use steel_utils::BlockPos;
 
-use super::{as_turtle, bottom_center, closer_to_center_than};
+use super::{
+    TOWARD_TARGET_FALLBACK_H, TOWARD_TARGET_FALLBACK_V, TOWARD_TARGET_H, TOWARD_TARGET_V,
+    as_turtle, bottom_center, closer_to_center_than,
+};
 use crate::entity::ai::goal::{
     Goal, GoalControls, RandomStrollGoal, default_random_pos_towards, reduced_tick_delay,
 };
 use crate::entity::{AgeableMob, PathfinderMob};
+
+/// Vanilla `TurtleGoHomeGoal`: with no egg to lay, roll a 1-in-`reducedTickDelay`
+/// of this each tick to decide whether to head home.
+const GO_HOME_CHECK_INTERVAL: i32 = 700;
+/// Vanilla `TurtleGoHomeGoal`: only start heading home when at least this far from it.
+const GO_HOME_MIN_DISTANCE: f64 = 64.0;
+/// Vanilla `TurtleGoHomeGoal`: home counts as reached within this distance.
+const HOME_REACHED_DISTANCE: f64 = 7.0;
+/// Vanilla `TurtleGoHomeGoal.GIVE_UP_TICKS`: stop trying after this long lingering near home.
+const GIVE_UP_TICKS: i32 = 600;
+/// Vanilla `TurtleGoHomeGoal`: near enough home to count down the give-up timer.
+const NEAR_HOME_DISTANCE: f64 = 16.0;
+/// Vanilla `TurtleGoHomeGoal`: vertical radius for the last attempt that avoids
+/// stepping into water (horizontal radius stays [`TOWARD_TARGET_H`]).
+const AVOID_WATER_V: i32 = 5;
 
 /// Vanilla `Turtle.TurtleGoHomeGoal`: head back toward the home beach, always
 /// when carrying an egg and otherwise on a rare timer when far from home.
@@ -46,17 +64,17 @@ impl Goal for TurtleGoHomeGoal {
             return true;
         }
 
-        rand::random_range(0..reduced_tick_delay(700)) == 0
-            && !closer_to_center_than(turtle.home_pos(), mob.position(), 64.0)
+        rand::random_range(0..reduced_tick_delay(GO_HOME_CHECK_INTERVAL)) == 0
+            && !closer_to_center_than(turtle.home_pos(), mob.position(), GO_HOME_MIN_DISTANCE)
     }
 
     fn can_continue_to_use(&mut self, mob: &dyn PathfinderMob) -> bool {
         let Some(turtle) = as_turtle(mob) else {
             return false;
         };
-        !closer_to_center_than(turtle.home_pos(), mob.position(), 7.0)
+        !closer_to_center_than(turtle.home_pos(), mob.position(), HOME_REACHED_DISTANCE)
             && !self.stuck
-            && self.close_to_home_try_ticks <= reduced_tick_delay(600)
+            && self.close_to_home_try_ticks <= reduced_tick_delay(GIVE_UP_TICKS)
     }
 
     fn start(&mut self, mob: &dyn PathfinderMob) {
@@ -78,7 +96,7 @@ impl Goal for TurtleGoHomeGoal {
             return;
         };
         let home_pos = turtle.home_pos();
-        let close_to_home = closer_to_center_than(home_pos, mob.position(), 16.0);
+        let close_to_home = closer_to_center_than(home_pos, mob.position(), NEAR_HOME_DISTANCE);
         if close_to_home {
             self.close_to_home_try_ticks += 1;
         }
@@ -88,8 +106,17 @@ impl Goal for TurtleGoHomeGoal {
         }
 
         let home_vec = bottom_center(home_pos);
-        let mut next = default_random_pos_towards(mob, 16, 3, home_vec, PI / 10.0)
-            .or_else(|| default_random_pos_towards(mob, 8, 7, home_vec, FRAC_PI_2));
+        let mut next =
+            default_random_pos_towards(mob, TOWARD_TARGET_H, TOWARD_TARGET_V, home_vec, PI / 10.0)
+                .or_else(|| {
+                    default_random_pos_towards(
+                        mob,
+                        TOWARD_TARGET_FALLBACK_H,
+                        TOWARD_TARGET_FALLBACK_V,
+                        home_vec,
+                        FRAC_PI_2,
+                    )
+                });
 
         if let Some(candidate) = next
             && !close_to_home
@@ -100,7 +127,13 @@ impl Goal for TurtleGoHomeGoal {
                     != &vanilla_blocks::WATER
             })
         {
-            next = default_random_pos_towards(mob, 16, 5, home_vec, FRAC_PI_2);
+            next = default_random_pos_towards(
+                mob,
+                TOWARD_TARGET_H,
+                AVOID_WATER_V,
+                home_vec,
+                FRAC_PI_2,
+            );
         }
 
         let Some(next) = next else {

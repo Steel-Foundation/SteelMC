@@ -14,9 +14,7 @@ use crate::entity::ai::path::PathType;
 use crate::entity::{Animal, Entity, Mob, SharedEntity};
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
-mod ai_lay_egg;
 mod core;
-mod grow_up;
 mod persistence;
 
 /// Builds a turtle that is not attached to any world, for pure state tests.
