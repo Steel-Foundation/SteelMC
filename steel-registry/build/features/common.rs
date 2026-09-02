@@ -61,6 +61,11 @@ pub(super) fn generate_placed_feature_entry_ref(identifier: &Identifier) -> Toke
     quote! { &crate::vanilla_placed_features::#ident }
 }
 
+pub(super) fn generate_block_state_provider_entry_ref(identifier: &Identifier) -> TokenStream {
+    let ident = vanilla_registry_ident(identifier, "block state provider");
+    quote! { &crate::vanilla_block_state_providers::#ident }
+}
+
 pub(super) fn generate_vec<T>(values: &[T], f: impl Fn(&T) -> TokenStream) -> TokenStream {
     let values = values.iter().map(f);
     quote! { vec![#(#values),*] }
@@ -175,5 +180,8 @@ pub(super) fn generate_vertical_anchor(anchor: VerticalAnchor) -> TokenStream {
         VerticalAnchor::Absolute(value) => quote! { VerticalAnchor::Absolute(#value) },
         VerticalAnchor::AboveBottom(value) => quote! { VerticalAnchor::AboveBottom(#value) },
         VerticalAnchor::BelowTop(value) => quote! { VerticalAnchor::BelowTop(#value) },
+        VerticalAnchor::RelativeToSeaLevel(value) => {
+            quote! { VerticalAnchor::RelativeToSeaLevel(#value) }
+        }
     }
 }

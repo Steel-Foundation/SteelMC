@@ -11,7 +11,9 @@ use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_json::Value;
 use steel_utils::{
     Direction, Identifier, Rotation,
-    value_providers::{FloatProvider, HeightProvider, IntProvider, UniformIntProvider},
+    value_providers::{
+        FloatProvider, HeightProvider, IntProvider, UniformIntProvider, VerticalAnchor,
+    },
 };
 
 /// A configured feature reference, either a registry key or an inline configured feature.
@@ -45,6 +47,24 @@ pub struct PlacedFeatureData {
     pub placement: Vec<PlacementModifier>,
 }
 
+/// A `HolderSet<PlacedFeature>` — vanilla's holder-set codec accepts either a
+/// single inline-or-reference value or an array of them.
+fn deserialize_placed_feature_ref_list<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<PlacedFeatureRef>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Single(PlacedFeatureRef),
+        Many(Vec<PlacedFeatureRef>),
+    }
+
+    Ok(match Raw::deserialize(deserializer)? {
+        Raw::Single(value) => vec![value],
+        Raw::Many(values) => values,
+    })
+}
+
 /// A configured feature kind with its typed configuration.
 #[derive(Debug, Clone)]
 #[expect(
@@ -61,9 +81,9 @@ pub enum ConfiguredFeatureKind {
     BlueIce,
     BonusChest,
     ChorusPlant,
-    CoralClaw,
+    CoralClaw { feature: PlacedFeatureRef },
     CoralMushroom,
-    CoralTree,
+    CoralTree { feature: PlacedFeatureRef },
     DeltaFeature(DeltaFeatureConfiguration),
     DesertWell,
     Disk(DiskConfiguration),
@@ -71,6 +91,7 @@ pub enum ConfiguredFeatureKind {
     EndGateway(EndGatewayConfiguration),
     EndIsland,
     EndPlatform,
+    EndPodium { active: bool },
     EndSpike(EndSpikeConfiguration),
     FallenTree(FallenTreeConfiguration),
     Fossil(FossilConfiguration),
@@ -85,11 +106,15 @@ pub enum ConfiguredFeatureKind {
     Lake(LakeConfiguration),
     LargeDripstone(LargeDripstoneConfiguration),
     MonsterRoom,
+    NoOp,
     MultifaceGrowth(MultifaceGrowthConfiguration),
     NetherForestVegetation(NetherForestVegetationConfiguration),
     NetherrackReplaceBlobs(NetherrackReplaceBlobsConfiguration),
+    Overlay { features: Vec<PlacedFeatureRef> },
     Ore(OreConfiguration),
     PointedDripstone(PointedDripstoneConfiguration),
+    RandomNeighborSpread(RandomNeighborSpreadConfiguration),
+    ProjectedRandomPatchySquare(ProjectedRandomPatchySquareConfiguration),
     RandomBooleanSelector(RandomBooleanSelectorConfiguration),
     RandomSelector(RandomSelectorConfiguration),
     RootSystem(RootSystemConfiguration),
@@ -100,6 +125,8 @@ pub enum ConfiguredFeatureKind {
     Sequence(CompositeFeatureConfiguration),
     SimpleBlock(SimpleBlockConfiguration),
     SimpleRandomSelector(SimpleRandomSelectorConfiguration),
+    SingleBlockPillar(SingleBlockPillarConfiguration),
+    SteppedColumnCluster(SteppedColumnClusterConfiguration),
     Speleothem(SpeleothemConfiguration),
     SpeleothemCluster(SpeleothemClusterConfiguration),
     Spike(SpikeConfiguration),
@@ -155,9 +182,13 @@ fn deserialize_configured_feature_kind(
         "minecraft:blue_ice" => ConfiguredFeatureKind::BlueIce,
         "minecraft:bonus_chest" => ConfiguredFeatureKind::BonusChest,
         "minecraft:chorus_plant" => ConfiguredFeatureKind::ChorusPlant,
-        "minecraft:coral_claw" => ConfiguredFeatureKind::CoralClaw,
+        "minecraft:coral_claw" => ConfiguredFeatureKind::CoralClaw {
+            feature: parse!(CoralFeatureConfigJson)?.feature,
+        },
         "minecraft:coral_mushroom" => ConfiguredFeatureKind::CoralMushroom,
-        "minecraft:coral_tree" => ConfiguredFeatureKind::CoralTree,
+        "minecraft:coral_tree" => ConfiguredFeatureKind::CoralTree {
+            feature: parse!(CoralFeatureConfigJson)?.feature,
+        },
         "minecraft:delta_feature" => {
             ConfiguredFeatureKind::DeltaFeature(parse!(DeltaFeatureConfiguration)?)
         }
@@ -171,6 +202,17 @@ fn deserialize_configured_feature_kind(
         }
         "minecraft:end_island" => ConfiguredFeatureKind::EndIsland,
         "minecraft:end_platform" => ConfiguredFeatureKind::EndPlatform,
+        "minecraft:end_podium" => {
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct EndPodiumConfigJson {
+                #[serde(default)]
+                active: bool,
+            }
+            ConfiguredFeatureKind::EndPodium {
+                active: parse!(EndPodiumConfigJson)?.active,
+            }
+        }
         "minecraft:end_spike" => ConfiguredFeatureKind::EndSpike(parse!(EndSpikeConfiguration)?),
         "minecraft:fallen_tree" => {
             ConfiguredFeatureKind::FallenTree(parse!(FallenTreeConfiguration)?)
@@ -202,6 +244,7 @@ fn deserialize_configured_feature_kind(
             ConfiguredFeatureKind::LargeDripstone(parse!(LargeDripstoneConfiguration)?)
         }
         "minecraft:monster_room" => ConfiguredFeatureKind::MonsterRoom,
+        "minecraft:no_op" => ConfiguredFeatureKind::NoOp,
         "minecraft:multiface_growth" => {
             ConfiguredFeatureKind::MultifaceGrowth(parse!(MultifaceGrowthConfiguration)?)
         }
@@ -211,9 +254,28 @@ fn deserialize_configured_feature_kind(
         "minecraft:netherrack_replace_blobs" => ConfiguredFeatureKind::NetherrackReplaceBlobs(
             parse!(NetherrackReplaceBlobsConfiguration)?,
         ),
+        "minecraft:overlay" => {
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct OverlayConfigJson {
+                #[serde(deserialize_with = "deserialize_placed_feature_ref_list")]
+                features: Vec<PlacedFeatureRef>,
+            }
+            ConfiguredFeatureKind::Overlay {
+                features: parse!(OverlayConfigJson)?.features,
+            }
+        }
         "minecraft:ore" => ConfiguredFeatureKind::Ore(parse!(OreConfiguration)?),
         "minecraft:pointed_dripstone" => {
             ConfiguredFeatureKind::PointedDripstone(parse!(PointedDripstoneConfiguration)?)
+        }
+        "minecraft:random_neighbor_spread" => {
+            ConfiguredFeatureKind::RandomNeighborSpread(parse!(RandomNeighborSpreadConfiguration)?)
+        }
+        "minecraft:projected_random_patchy_square" => {
+            ConfiguredFeatureKind::ProjectedRandomPatchySquare(parse!(
+                ProjectedRandomPatchySquareConfiguration
+            )?)
         }
         "minecraft:random_boolean_selector" => ConfiguredFeatureKind::RandomBooleanSelector(
             parse!(RandomBooleanSelectorConfiguration)?,
@@ -241,6 +303,12 @@ fn deserialize_configured_feature_kind(
         }
         "minecraft:simple_random_selector" => {
             ConfiguredFeatureKind::SimpleRandomSelector(parse!(SimpleRandomSelectorConfiguration)?)
+        }
+        "minecraft:single_block_pillar" => {
+            ConfiguredFeatureKind::SingleBlockPillar(parse!(SingleBlockPillarConfiguration)?)
+        }
+        "minecraft:stepped_column_cluster" => {
+            ConfiguredFeatureKind::SteppedColumnCluster(parse!(SteppedColumnClusterConfiguration)?)
         }
         "minecraft:speleothem" => {
             ConfiguredFeatureKind::Speleothem(parse!(SpeleothemConfiguration)?)
@@ -340,6 +408,15 @@ fn deserialize_direction<'de, D: Deserializer<'de>>(
     parse_direction(&value).map_err(D::Error::custom)
 }
 
+fn deserialize_optional_direction<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Direction>, D::Error> {
+    let Some(value) = Option::<String>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    parse_direction(&value).map(Some).map_err(D::Error::custom)
+}
+
 fn deserialize_directions<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<Direction>, D::Error> {
@@ -420,36 +497,139 @@ pub enum BlockPredicate {
         #[serde(default = "default_offset")]
         offset: Offset,
     },
+    #[serde(rename = "minecraft:height_range")]
+    HeightRange {
+        min_inclusive: VerticalAnchor,
+        max_inclusive: VerticalAnchor,
+    },
+    #[serde(rename = "minecraft:volume_match")]
+    VolumeMatch {
+        min: Offset,
+        max: Offset,
+        #[serde(rename = "match")]
+        matches: Box<BlockPredicate>,
+    },
 }
 
 /// Block-state provider used by features.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type")]
+///
+/// Vanilla wraps this in a `Holder`, so a value can be either inline (the
+/// internally-tagged shapes below) or a bare string referencing a named
+/// entry in the `worldgen/block_state_provider` registry (e.g.
+/// `"minecraft:soil_beneath_tree"`). Custom-deserialized below since an
+/// internally-tagged enum alone can't accept a bare string.
+#[derive(Debug, Clone)]
 pub enum BlockStateProvider {
-    #[serde(rename = "minecraft:simple_state_provider")]
-    Simple { state: BlockStateData },
-    #[serde(rename = "minecraft:weighted_state_provider")]
-    Weighted { entries: Vec<WeightedBlockState> },
-    #[serde(rename = "minecraft:rotated_block_provider")]
-    RotatedBlock { state: BlockStateData },
-    #[serde(rename = "minecraft:randomized_int_state_provider")]
+    /// Holder reference into the `worldgen/block_state_provider` registry.
+    Reference(Identifier),
+    Simple {
+        state: BlockStateData,
+    },
+    Weighted {
+        entries: Vec<WeightedBlockState>,
+    },
+    RotatedBlock {
+        state: Box<BlockStateProvider>,
+        direction: Option<Direction>,
+    },
     RandomizedInt {
         property: String,
         source: Box<BlockStateProvider>,
         values: IntProvider,
     },
-    #[serde(rename = "minecraft:rule_based_state_provider")]
     RuleBased {
-        #[serde(default)]
         fallback: Option<Box<BlockStateProvider>>,
         rules: Vec<RuleBasedStateProviderRule>,
     },
-    #[serde(rename = "minecraft:noise_provider")]
     Noise(NoiseProvider),
-    #[serde(rename = "minecraft:noise_threshold_provider")]
     NoiseThreshold(NoiseThresholdProvider),
-    #[serde(rename = "minecraft:dual_noise_provider")]
     DualNoise(DualNoiseProvider),
+    CopyProperties {
+        source: Box<BlockStateProvider>,
+    },
+    RandomBlock {
+        blocks: BlockHolderSet,
+    },
+}
+
+impl<'de> Deserialize<'de> for BlockStateProvider {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(tag = "type")]
+        enum Inline {
+            #[serde(rename = "minecraft:simple")]
+            Simple { state: BlockStateData },
+            #[serde(rename = "minecraft:weighted")]
+            Weighted { entries: Vec<WeightedBlockState> },
+            #[serde(rename = "minecraft:rotated")]
+            RotatedBlock {
+                state: Box<BlockStateProvider>,
+                #[serde(default, deserialize_with = "deserialize_optional_direction")]
+                direction: Option<Direction>,
+            },
+            #[serde(rename = "minecraft:randomized_int")]
+            RandomizedInt {
+                property: String,
+                source: Box<BlockStateProvider>,
+                values: IntProvider,
+            },
+            #[serde(rename = "minecraft:rule_based")]
+            RuleBased {
+                #[serde(default)]
+                fallback: Option<Box<BlockStateProvider>>,
+                rules: Vec<RuleBasedStateProviderRule>,
+            },
+            #[serde(rename = "minecraft:noise")]
+            Noise(NoiseProvider),
+            #[serde(rename = "minecraft:noise_threshold")]
+            NoiseThreshold(NoiseThresholdProvider),
+            #[serde(rename = "minecraft:dual_noise")]
+            DualNoise(DualNoiseProvider),
+            #[serde(rename = "minecraft:copy_properties")]
+            CopyProperties { source: Box<BlockStateProvider> },
+            #[serde(rename = "minecraft:random_block")]
+            RandomBlock { blocks: BlockHolderSet },
+        }
+
+        // Order matters: a bare string is always a registry reference (vanilla's
+        // `DIRECT_CODEC` never accepts a bare string on its own), and a bare
+        // `{id, properties}` object with no `type` key is the `SimpleStateProvider`
+        // shorthand (`BlockState.CODEC`'s other `Either` branch).
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Reference(Identifier),
+            Inline(Inline),
+            Simple(BlockStateData),
+        }
+
+        Ok(match Repr::deserialize(deserializer)? {
+            Repr::Reference(id) => Self::Reference(id),
+            Repr::Simple(state) => Self::Simple { state },
+            Repr::Inline(Inline::Simple { state }) => Self::Simple { state },
+            Repr::Inline(Inline::Weighted { entries }) => Self::Weighted { entries },
+            Repr::Inline(Inline::RotatedBlock { state, direction }) => {
+                Self::RotatedBlock { state, direction }
+            }
+            Repr::Inline(Inline::RandomizedInt {
+                property,
+                source,
+                values,
+            }) => Self::RandomizedInt {
+                property,
+                source,
+                values,
+            },
+            Repr::Inline(Inline::RuleBased { fallback, rules }) => {
+                Self::RuleBased { fallback, rules }
+            }
+            Repr::Inline(Inline::Noise(provider)) => Self::Noise(provider),
+            Repr::Inline(Inline::NoiseThreshold(provider)) => Self::NoiseThreshold(provider),
+            Repr::Inline(Inline::DualNoise(provider)) => Self::DualNoise(provider),
+            Repr::Inline(Inline::CopyProperties { source }) => Self::CopyProperties { source },
+            Repr::Inline(Inline::RandomBlock { blocks }) => Self::RandomBlock { blocks },
+        })
+    }
 }
 
 /// Weighted block-state provider entry.
@@ -468,13 +648,35 @@ pub struct RuleBasedStateProviderRule {
     pub then: BlockStateProvider,
 }
 
-/// Noise parameters embedded in vanilla feature providers.
+/// `NormalNoise.Parameters`, embedded in vanilla feature providers.
+///
+/// `normalize` is modeled as a plain bool (vanilla's `Codec.BOOL` branch,
+/// `true` == `ENABLED`) — the deprecated `"legacy"` string form never
+/// appears in extracted data.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FeatureNoiseParameters {
-    #[serde(rename = "firstOctave")]
-    pub first_octave: i32,
-    pub amplitudes: Vec<f64>,
+    #[serde(default = "default_base_amplitude")]
+    pub base_amplitude: f64,
+    pub base_octave: i32,
+    #[serde(default = "default_octave_count")]
+    pub octave_count: i32,
+    #[serde(default = "default_normalize")]
+    pub normalize: bool,
+    #[serde(default)]
+    pub amplitude_modifiers: Vec<f64>,
+}
+
+const fn default_base_amplitude() -> f64 {
+    1.0
+}
+
+const fn default_octave_count() -> i32 {
+    1
+}
+
+const fn default_normalize() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -540,6 +742,25 @@ pub enum PlacementModifier {
     Heightmap { heightmap: FeatureHeightmap },
     #[serde(rename = "minecraft:in_square")]
     InSquare,
+    #[serde(rename = "minecraft:offset")]
+    Offset {
+        x: IntProvider,
+        y: IntProvider,
+        z: IntProvider,
+    },
+    #[serde(rename = "minecraft:randomly_selected")]
+    RandomlySelected { placements: Vec<PlacementModifier> },
+    #[serde(rename = "minecraft:random_chance")]
+    RandomChance { chance: f32 },
+    #[serde(rename = "minecraft:cuboid")]
+    Cuboid {
+        xz_size: IntProvider,
+        y_size: IntProvider,
+        #[serde(default = "default_true")]
+        include_edges: bool,
+        #[serde(default = "default_true")]
+        include_interior: bool,
+    },
     #[serde(rename = "minecraft:noise_based_count")]
     NoiseBasedCount {
         noise_to_count_ratio: i32,
@@ -657,6 +878,67 @@ pub struct DiskConfiguration {
     pub target: BlockPredicate,
     pub radius: IntProvider,
     pub half_height: i32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CoralFeatureConfigJson {
+    feature: PlacedFeatureRef,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectedRandomPatchySquareConfiguration {
+    pub block: BlockStateProvider,
+    pub project_through: BlockPredicate,
+    pub size: IntProvider,
+    pub max_projection_height: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RandomNeighborSpreadConfiguration {
+    pub block: BlockStateProvider,
+    pub accepted_neighbors: BlockHolderSet,
+    pub can_replace: BlockPredicate,
+    pub attempts: IntProvider,
+    pub xz_offset: IntProvider,
+    pub y_offset: IntProvider,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SingleBlockPillarConfiguration {
+    pub block: BlockStateProvider,
+    #[serde(default = "default_always_true_predicate")]
+    pub can_replace: BlockPredicate,
+    #[serde(deserialize_with = "deserialize_direction")]
+    pub direction: Direction,
+    #[serde(default = "default_chance_to_continue")]
+    pub chance_to_continue: f32,
+    #[serde(default)]
+    pub cap_feature: Option<PlacedFeatureRef>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SteppedColumnClusterConfiguration {
+    pub block: BlockStateProvider,
+    pub continue_through: BlockPredicate,
+    pub can_replace: BlockPredicate,
+    pub cannot_place_on: BlockHolderSet,
+    pub cluster_reach: IntProvider,
+    pub column_count: IntProvider,
+    pub column_reach: IntProvider,
+    pub height: IntProvider,
+}
+
+fn default_always_true_predicate() -> BlockPredicate {
+    BlockPredicate::True
+}
+
+const fn default_chance_to_continue() -> f32 {
+    1.0
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1021,17 +1303,8 @@ pub struct OreConfiguration {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OreTarget {
-    pub target: RuleTest,
+    pub target: crate::structure_processor_data::StructureRuleTestData,
     pub state: BlockStateData,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "predicate_type")]
-pub enum RuleTest {
-    #[serde(rename = "minecraft:block_match")]
-    BlockMatch { block: Identifier },
-    #[serde(rename = "minecraft:tag_match")]
-    TagMatch { tag: Identifier },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1128,8 +1401,6 @@ pub struct SculkPatchConfiguration {
     pub spread_attempts: i32,
     pub growth_rounds: i32,
     pub spread_rounds: i32,
-    pub extra_rare_growths: IntProvider,
-    pub catalyst_chance: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1177,6 +1448,8 @@ pub struct SpringConfiguration {
 #[serde(deny_unknown_fields)]
 pub struct TemplateFeatureConfiguration {
     pub templates: Vec<WeightedTemplateEntry>,
+    #[serde(default)]
+    pub processors: Option<crate::structure_processor_data::StructureProcessorListData>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1271,6 +1544,18 @@ pub enum TrunkPlacer {
     UpwardsBranching(UpwardsBranchingTrunkPlacer),
     #[serde(rename = "minecraft:cherry_trunk_placer")]
     Cherry(CherryTrunkPlacer),
+    #[serde(rename = "minecraft:poplar_trunk_placer")]
+    Poplar(PoplarTrunkPlacer),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PoplarTrunkPlacer {
+    pub base_height: i32,
+    pub height_rand_a: i32,
+    pub height_rand_b: i32,
+    pub trunk_height_above_branches: IntProvider,
+    pub branch_amount: IntProvider,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1341,6 +1626,17 @@ pub enum FoliagePlacer {
     RandomSpread(RandomSpreadFoliagePlacer),
     #[serde(rename = "minecraft:cherry_foliage_placer")]
     Cherry(CherryFoliagePlacer),
+    #[serde(rename = "minecraft:poplar_foliage_placer")]
+    Poplar(PoplarFoliagePlacer),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PoplarFoliagePlacer {
+    pub radius: IntProvider,
+    pub offset: IntProvider,
+    pub height: IntProvider,
+    pub side_hole_chance: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1508,6 +1804,8 @@ pub enum TreeDecorator {
         trunk_probability: f32,
         ground_probability: f32,
     },
+    #[serde(rename = "minecraft:shelf_mushroom")]
+    ShelfMushroom { probability: f32 },
 }
 
 #[derive(Debug, Clone, Deserialize)]

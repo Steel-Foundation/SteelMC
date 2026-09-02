@@ -91,6 +91,9 @@ fn generate_vertical_anchor(v: VerticalAnchor) -> TokenStream {
         VerticalAnchor::Absolute(y) => quote! { VerticalAnchor::Absolute(#y) },
         VerticalAnchor::AboveBottom(o) => quote! { VerticalAnchor::AboveBottom(#o) },
         VerticalAnchor::BelowTop(o) => quote! { VerticalAnchor::BelowTop(#o) },
+        VerticalAnchor::RelativeToSeaLevel(o) => {
+            quote! { VerticalAnchor::RelativeToSeaLevel(#o) }
+        }
     }
 }
 

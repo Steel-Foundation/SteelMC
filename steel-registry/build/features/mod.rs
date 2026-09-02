@@ -20,10 +20,11 @@ mod structures;
 
 use common::{
     generate_block_holder_set, generate_block_ref, generate_block_ref_list,
-    generate_block_state_data, generate_box, generate_configured_feature_entry_ref,
-    generate_direction, generate_fluid_ref_list, generate_fluid_state_data, generate_identifier,
-    generate_offset, generate_option, generate_placed_feature_entry_ref, generate_rotation,
-    generate_vec, generate_vertical_anchor, resource_name, sorted_json_files,
+    generate_block_state_data, generate_block_state_provider_entry_ref, generate_box,
+    generate_configured_feature_entry_ref, generate_direction, generate_fluid_ref_list,
+    generate_fluid_state_data, generate_identifier, generate_offset, generate_option,
+    generate_placed_feature_entry_ref, generate_rotation, generate_vec, generate_vertical_anchor,
+    resource_name, sorted_json_files,
 };
 use configured::generate_configured_feature_kind;
 use placement::{
@@ -49,8 +50,8 @@ use data::{
     FluidStateData, FoliagePlacer, FoliagePlacerBase, GeodeBlockSettings, GeodeCrackSettings,
     GeodeLayerSettings, HugeMushroomConfiguration, IdentifierList, MangroveRootPlacement,
     NoiseProvider, NoiseThresholdProvider, OreTarget, PlacedFeatureData, PlacedFeatureRef,
-    PlacementModifier, RootPlacer, RuleBasedStateProviderRule, RuleTest, TemplateEntry,
-    TreeDecorator, TrunkPlacer, TrunkPlacerBase, VegetationPatchConfiguration, VerticalSurface,
+    PlacementModifier, RootPlacer, RuleBasedStateProviderRule, TemplateEntry, TreeDecorator,
+    TrunkPlacer, TrunkPlacerBase, VegetationPatchConfiguration, VerticalSurface,
     WeightedBlockState, WeightedPlacedFeature, WeightedRandomPlacedFeature, WeightedTemplateEntry,
 };
 
@@ -72,6 +73,10 @@ pub(crate) fn build_configured() -> TokenStream {
     let mut stream = TokenStream::new();
     stream.extend(quote! {
         use crate::{feature::*, vanilla_blocks, vanilla_fluids};
+        use crate::structure_processor::{
+            PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData,
+            StructureProcessorKind, StructureProcessorListData, StructureRuleTestData,
+        };
         use steel_utils::value_providers::{
             FloatProvider, HeightProvider, IntProvider, UniformIntProvider, VerticalAnchor,
             WeightedIntProvider,
@@ -103,6 +108,39 @@ pub(crate) fn build_configured() -> TokenStream {
             #register
         }
     });
+
+    stream
+}
+
+pub(crate) fn build_block_state_providers() -> TokenStream {
+    let dir =
+        "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/block_state_provider";
+    println!("cargo:rerun-if-changed={dir}");
+
+    let mut entries = Vec::new();
+    for entry in sorted_json_files(dir) {
+        let name = resource_name(&entry);
+        let path = entry.path();
+        let content =
+            fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
+        let provider = serde_json::from_str::<BlockStateProvider>(&content)
+            .unwrap_or_else(|err| panic!("failed to parse block state provider {name}: {err}"));
+        entries.push((name, generate_block_state_provider(&provider)));
+    }
+
+    let mut stream = TokenStream::new();
+    stream.extend(quote! {
+        use crate::{feature::*, vanilla_blocks, vanilla_fluids};
+        use steel_utils::value_providers::IntProvider;
+        use std::sync::LazyLock;
+    });
+
+    for (name, provider) in &entries {
+        let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
+        stream.extend(quote! {
+            pub static #ident: LazyLock<BlockStateProvider> = LazyLock::new(|| #provider);
+        });
+    }
 
     stream
 }

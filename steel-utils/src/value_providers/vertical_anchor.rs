@@ -10,6 +10,8 @@ pub enum VerticalAnchor {
     AboveBottom(i32),
     /// `min_y + height - 1 - offset` (i.e. `max_y - offset`).
     BelowTop(i32),
+    /// `sea_level + offset`.
+    RelativeToSeaLevel(i32),
 }
 
 impl VerticalAnchor {
@@ -22,6 +24,9 @@ impl VerticalAnchor {
             Self::Absolute(y) => y,
             Self::AboveBottom(offset) => min_y + offset,
             Self::BelowTop(offset) => min_y + height - 1 - offset,
+            Self::RelativeToSeaLevel(_) => {
+                panic!("VerticalAnchor::RelativeToSeaLevel needs a sea level parameter")
+            }
         }
     }
 }
@@ -37,17 +42,25 @@ impl<'de> Deserialize<'de> for VerticalAnchor {
             above_bottom: Option<i32>,
             #[serde(default)]
             below_top: Option<i32>,
+            #[serde(default)]
+            relative_to_sea_level: Option<i32>,
         }
         let raw = Raw::deserialize(d)?;
-        match (raw.absolute, raw.above_bottom, raw.below_top) {
-            (Some(y), None, None) => Ok(Self::Absolute(y)),
-            (None, Some(o), None) => Ok(Self::AboveBottom(o)),
-            (None, None, Some(o)) => Ok(Self::BelowTop(o)),
-            (None, None, None) => Err(D::Error::custom(
-                "VerticalAnchor requires exactly one of absolute/above_bottom/below_top",
+        match (
+            raw.absolute,
+            raw.above_bottom,
+            raw.below_top,
+            raw.relative_to_sea_level,
+        ) {
+            (Some(y), None, None, None) => Ok(Self::Absolute(y)),
+            (None, Some(o), None, None) => Ok(Self::AboveBottom(o)),
+            (None, None, Some(o), None) => Ok(Self::BelowTop(o)),
+            (None, None, None, Some(o)) => Ok(Self::RelativeToSeaLevel(o)),
+            (None, None, None, None) => Err(D::Error::custom(
+                "VerticalAnchor requires exactly one of absolute/above_bottom/below_top/relative_to_sea_level",
             )),
             _ => Err(D::Error::custom(
-                "VerticalAnchor must have exactly one of absolute/above_bottom/below_top",
+                "VerticalAnchor must have exactly one of absolute/above_bottom/below_top/relative_to_sea_level",
             )),
         }
     }

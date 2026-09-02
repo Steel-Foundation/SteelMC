@@ -1,9 +1,10 @@
 use super::{
     BlockStateProvider, DualNoiseProvider, FeatureNoiseParameters, FloatProvider, HeightProvider,
     IntProvider, NoiseProvider, NoiseThresholdProvider, RuleBasedStateProviderRule, TokenStream,
-    UniformIntProvider, WeightedBlockState, WeightedIntProvider, generate_block_predicate,
-    generate_block_state_data, generate_box, generate_option, generate_vec,
-    generate_vertical_anchor, quote,
+    UniformIntProvider, WeightedBlockState, WeightedIntProvider, generate_block_holder_set,
+    generate_block_predicate, generate_block_state_data, generate_block_state_provider_entry_ref,
+    generate_box, generate_direction, generate_option, generate_vec, generate_vertical_anchor,
+    quote,
 };
 
 pub(super) fn generate_height_provider(provider: HeightProvider) -> TokenStream {
@@ -201,12 +202,18 @@ pub(super) fn generate_float_provider(provider: FloatProvider) -> TokenStream {
 pub(super) fn generate_feature_noise_parameters(
     parameters: &FeatureNoiseParameters,
 ) -> TokenStream {
-    let first_octave = parameters.first_octave;
-    let amplitudes = parameters.amplitudes.iter();
+    let base_amplitude = parameters.base_amplitude;
+    let base_octave = parameters.base_octave;
+    let octave_count = parameters.octave_count;
+    let normalize = parameters.normalize;
+    let amplitude_modifiers = parameters.amplitude_modifiers.iter();
     quote! {
         FeatureNoiseParameters {
-            first_octave: #first_octave,
-            amplitudes: vec![#(#amplitudes),*],
+            base_amplitude: #base_amplitude,
+            base_octave: #base_octave,
+            octave_count: #octave_count,
+            normalize: #normalize,
+            amplitude_modifiers: vec![#(#amplitude_modifiers),*],
         }
     }
 }
@@ -291,6 +298,10 @@ pub(super) fn generate_rule_based_state_provider_rule(
 
 pub(super) fn generate_block_state_provider(provider: &BlockStateProvider) -> TokenStream {
     match provider {
+        BlockStateProvider::Reference(identifier) => {
+            let reference = generate_block_state_provider_entry_ref(identifier);
+            quote! { BlockStateProvider::Reference(#reference) }
+        }
         BlockStateProvider::Simple { state } => {
             let state = generate_block_state_data(state);
             quote! { BlockStateProvider::Simple { state: #state } }
@@ -299,9 +310,15 @@ pub(super) fn generate_block_state_provider(provider: &BlockStateProvider) -> To
             let entries = generate_vec(entries, generate_weighted_block_state);
             quote! { BlockStateProvider::Weighted { entries: #entries } }
         }
-        BlockStateProvider::RotatedBlock { state } => {
-            let state = generate_block_state_data(state);
-            quote! { BlockStateProvider::RotatedBlock { state: #state } }
+        BlockStateProvider::RotatedBlock { state, direction } => {
+            let state = generate_box(state.as_ref(), generate_block_state_provider);
+            let direction = generate_option(direction, |direction| generate_direction(*direction));
+            quote! {
+                BlockStateProvider::RotatedBlock {
+                    state: #state,
+                    direction: #direction,
+                }
+            }
         }
         BlockStateProvider::RandomizedInt {
             property,
@@ -342,6 +359,14 @@ pub(super) fn generate_block_state_provider(provider: &BlockStateProvider) -> To
         BlockStateProvider::DualNoise(provider) => {
             let provider = generate_dual_noise_provider(provider);
             quote! { BlockStateProvider::DualNoise(#provider) }
+        }
+        BlockStateProvider::CopyProperties { source } => {
+            let source = generate_box(source.as_ref(), generate_block_state_provider);
+            quote! { BlockStateProvider::CopyProperties { source: #source } }
+        }
+        BlockStateProvider::RandomBlock { blocks } => {
+            let blocks = generate_block_holder_set(blocks);
+            quote! { BlockStateProvider::RandomBlock { blocks: #blocks } }
         }
     }
 }

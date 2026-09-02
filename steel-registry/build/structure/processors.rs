@@ -7,15 +7,8 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use steel_utils::{Identifier, value_providers::IntProvider};
 
-#[expect(
-    dead_code,
-    reason = "imported processor data contains variants not emitted by current vanilla assets"
-)]
-#[path = "../../src/structure/processor/data.rs"]
-mod structure_processor_data;
-
 use crate::shared_structs::BlockStateData;
-use structure_processor_data::{
+use crate::structure_processor_data::{
     PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData, StructureProcessorAxis,
     StructureProcessorKind, StructureProcessorListData, StructureRuleTestData,
 };
@@ -84,8 +77,10 @@ fn generate_block_state_data(data: &BlockStateData) -> TokenStream {
         quote! { std::collections::BTreeMap::from([#(#entries),*]) }
     };
 
+    // Fully-qualified: avoids colliding with features' own `BlockStateData`
+    // in generated files that glob-import that module.
     quote! {
-        BlockStateData {
+        crate::shared_structs::BlockStateData {
             name: #name,
             properties: #properties,
         }
@@ -201,7 +196,7 @@ fn generate_pos_rule_test(data: &PosRuleTestData) -> TokenStream {
     }
 }
 
-fn generate_rule_test(data: &StructureRuleTestData) -> TokenStream {
+pub(crate) fn generate_rule_test(data: &StructureRuleTestData) -> TokenStream {
     match data {
         StructureRuleTestData::AlwaysTrue => quote! { StructureRuleTestData::AlwaysTrue },
         StructureRuleTestData::BlockMatch { block } => {
@@ -225,6 +220,39 @@ fn generate_rule_test(data: &StructureRuleTestData) -> TokenStream {
             let block_state = generate_block_state_data(block_state);
             quote! { StructureRuleTestData::BlockStateMatch { block_state: #block_state } }
         }
+        StructureRuleTestData::RandomBlockStateMatch {
+            block_state,
+            probability,
+        } => {
+            let block_state = generate_block_state_data(block_state);
+            quote! {
+                StructureRuleTestData::RandomBlockStateMatch {
+                    block_state: #block_state,
+                    probability: #probability,
+                }
+            }
+        }
+        StructureRuleTestData::AllOf { rules } => {
+            let rules = generate_vec(rules, generate_rule_test);
+            quote! { StructureRuleTestData::AllOf { rules: #rules } }
+        }
+        StructureRuleTestData::AnyOf { rules } => {
+            let rules = generate_vec(rules, generate_rule_test);
+            quote! { StructureRuleTestData::AnyOf { rules: #rules } }
+        }
+        StructureRuleTestData::Not { rule } => {
+            let rule = generate_box(rule.as_ref(), generate_rule_test);
+            quote! { StructureRuleTestData::Not { rule: #rule } }
+        }
+        StructureRuleTestData::HeightMatch {
+            min_inclusive,
+            max_inclusive,
+        } => quote! {
+            StructureRuleTestData::HeightMatch {
+                min_inclusive: #min_inclusive,
+                max_inclusive: #max_inclusive,
+            }
+        },
     }
 }
 
@@ -297,7 +325,7 @@ fn generate_processor_kind(data: &StructureProcessorKind) -> TokenStream {
     }
 }
 
-fn generate_processor_list_data(data: &StructureProcessorListData) -> TokenStream {
+pub(crate) fn generate_processor_list_data(data: &StructureProcessorListData) -> TokenStream {
     let processors = generate_vec(&data.processors, generate_processor_kind);
     quote! { StructureProcessorListData { processors: #processors } }
 }

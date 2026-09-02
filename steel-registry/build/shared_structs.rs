@@ -3,6 +3,29 @@ use std::{collections::BTreeMap, str::FromStr};
 use serde::{Deserialize, Deserializer, de::Error as _};
 use steel_utils::Identifier;
 
+/// Shared `{"id": ..., "properties": {...}}`-or-bare-string shorthand
+/// deserialization, used by both [`BlockStateData`] and [`FluidStateData`]
+/// (identical shape, just a `Name`/`Properties` pair either way).
+fn deserialize_id_and_properties<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<(Identifier, BTreeMap<String, String>), D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged, deny_unknown_fields)]
+    enum Repr {
+        Shorthand(Identifier),
+        Full {
+            id: Identifier,
+            #[serde(default)]
+            properties: BTreeMap<String, String>,
+        },
+    }
+
+    Ok(match Repr::deserialize(deserializer)? {
+        Repr::Shorthand(id) => (id, BTreeMap::new()),
+        Repr::Full { id, properties } => (id, properties),
+    })
+}
+
 #[derive(Debug, Clone)]
 pub struct BlockStateData {
     pub name: Identifier,
@@ -11,35 +34,22 @@ pub struct BlockStateData {
 
 impl<'de> Deserialize<'de> for BlockStateData {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged, deny_unknown_fields)]
-        enum Repr {
-            Shorthand(Identifier),
-            Full {
-                id: Identifier,
-                #[serde(default)]
-                properties: BTreeMap<String, String>,
-            },
-        }
-
-        Ok(match Repr::deserialize(deserializer)? {
-            Repr::Shorthand(name) => Self {
-                name,
-                properties: BTreeMap::new(),
-            },
-            Repr::Full { id, properties } => Self {
-                name: id,
-                properties,
-            },
-        })
+        let (name, properties) = deserialize_id_and_properties(deserializer)?;
+        Ok(Self { name, properties })
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone)]
 pub struct FluidStateData {
     pub name: Identifier,
     pub properties: BTreeMap<String, String>,
+}
+
+impl<'de> Deserialize<'de> for FluidStateData {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (name, properties) = deserialize_id_and_properties(deserializer)?;
+        Ok(Self { name, properties })
+    }
 }
 
 pub fn deserialize_tag_identifier<'de, D: Deserializer<'de>>(

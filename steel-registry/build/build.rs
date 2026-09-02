@@ -26,6 +26,16 @@
 
 use std::{env, fs, path::Path, process::Command};
 
+/// Structure-processor codec types, shared by `structure::processors` and
+/// `features` (inline `TemplateFeature` processors). Deserialize derives
+/// live in `src/`, so build script and library use the same file.
+#[expect(
+    dead_code,
+    reason = "imported processor data contains variants not emitted by current vanilla assets"
+)]
+#[path = "../src/structure/processor/data.rs"]
+mod structure_processor_data;
+
 mod attributes;
 mod banner_patterns;
 mod biomes;
@@ -162,6 +172,7 @@ const STRUCTURE_PROCESSORS: &str = "structure_processors";
 const TEMPLATE_POOLS: &str = "template_pools";
 const WORLD_CLOCKS: &str = "world_clocks";
 const CARVERS: &str = "configured_carvers";
+const BLOCK_STATE_PROVIDERS: &str = "block_state_providers";
 const CONFIGURED_FEATURES: &str = "configured_features";
 const PLACED_FEATURES: &str = "placed_features";
 const CUSTOM_STATS: &str = "custom_stats";
@@ -252,6 +263,10 @@ pub fn main() {
         (tags::enchantment(), ENCHANTMENT_TAGS),
         (enchantments::build(), ENCHANTMENTS),
         (carvers::build(), CARVERS),
+        (
+            features::build_block_state_providers(),
+            BLOCK_STATE_PROVIDERS,
+        ),
         (features::build_configured(), CONFIGURED_FEATURES),
         (features::build_placed(), PLACED_FEATURES),
         (custom_stats::build(), CUSTOM_STATS),
