@@ -1,5 +1,5 @@
 use super::{
-    FromStr, Ident, Identifier, Span, ToShoutySnakeCase, TokenStream, Value,
+    FromStr, Ident, Identifier, Span, ToShoutySnakeCase, TokenStream, Value, dye_color_token,
     generate_sound_event_ref, identifier_token, quote, split_identifier,
 };
 
@@ -212,6 +212,59 @@ pub(super) fn villager_food_component_token(value: &Value) -> TokenStream {
     let nutrition = i32::try_from(nutrition)
         .unwrap_or_else(|_| panic!("villager_food.nutrition out of i32 range: {nutrition}"));
     quote! { vanilla_components::VillagerFood::new(#nutrition) }
+}
+
+fn sign_text_lines(value: &Value, field: &str) -> Vec<TokenStream> {
+    let lines = value
+        .as_array()
+        .unwrap_or_else(|| panic!("sign_text.{field} must be an array"));
+    assert!(
+        lines.len() == 4,
+        "sign_text.{field} must have exactly 4 lines, got {}",
+        lines.len()
+    );
+    lines
+        .iter()
+        .map(|line| {
+            let text = line
+                .as_str()
+                .unwrap_or_else(|| panic!("sign_text.{field} entries must be plain strings"));
+            quote! { TextComponent::plain(#text) }
+        })
+        .collect()
+}
+
+pub(super) fn sign_text_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("sign_text component must be an object"));
+    let messages = object
+        .get("messages")
+        .map(|value| sign_text_lines(value, "messages"))
+        .unwrap_or_else(|| panic!("sign_text.messages must be present"));
+    let filtered_messages = object.get("filtered_messages").map_or_else(
+        || quote! { None },
+        |value| {
+            let lines = sign_text_lines(value, "filtered_messages");
+            quote! { Some([#(#lines),*]) }
+        },
+    );
+    let color = object.get("color").map_or_else(
+        || quote! { vanilla_components::DyeColor::Black },
+        dye_color_token,
+    );
+    let has_glowing_text = object
+        .get("has_glowing_text")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    quote! {
+        vanilla_components::SignText::new(
+            [#(#messages),*],
+            #filtered_messages,
+            #color,
+            #has_glowing_text,
+        )
+    }
 }
 
 pub(super) fn damage_type_ref_token(value: &str) -> TokenStream {

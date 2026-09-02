@@ -10,9 +10,9 @@ use super::{
     get_component_ident, holder_set_component_field, holder_set_token, identifier_token,
     instrument_ref_token, item_name_component_token, item_ref_token, jukebox_song_ref_token,
     kinetic_weapon_component_token, optional_identifier_token, pottery_pattern_component_token,
-    quote, rarity_component_token, sound_event_holder_token, sound_event_value_token,
-    swing_animation_component_token, trim_material_ref_token, use_effects_component_token,
-    villager_food_component_token,
+    quote, rarity_component_token, sign_text_component_token, sound_event_holder_token,
+    sound_event_value_token, swing_animation_component_token, trim_material_ref_token,
+    use_effects_component_token, villager_food_component_token,
 };
 
 /// Returns the crafting remainder item key for a given item, if any.
@@ -787,6 +787,18 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                 let villager_food = villager_food_component_token(value);
                 builder_calls.push(
                     quote! { .builder_set(vanilla_components::VILLAGER_FOOD, Some(#villager_food)) },
+                );
+            }
+            "minecraft:sign_text_front" => {
+                let sign_text = sign_text_component_token(value);
+                builder_calls.push(
+                    quote! { .builder_set(vanilla_components::SIGN_TEXT_FRONT, Some(#sign_text)) },
+                );
+            }
+            "minecraft:sign_text_back" => {
+                let sign_text = sign_text_component_token(value);
+                builder_calls.push(
+                    quote! { .builder_set(vanilla_components::SIGN_TEXT_BACK, Some(#sign_text)) },
                 );
             }
             _ => panic!(

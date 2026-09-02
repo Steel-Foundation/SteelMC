@@ -38,6 +38,7 @@ mod recipes;
 mod recursive_items;
 mod registry_holder_sets;
 mod rgb_color;
+mod sign_text;
 mod suspicious_stew;
 mod swing_animation;
 mod tool;
@@ -88,6 +89,7 @@ pub use recursive_items::{
     BundleContents, ChargedProjectiles, ItemContainerContents, SulfurCubeContent, UseRemainder,
 };
 pub use registry_holder_sets::{DamageResistant, ProvidesBannerPatterns, Repairable};
+pub use sign_text::SignText;
 pub use suspicious_stew::{SuspiciousStewEffect, SuspiciousStewEffects};
 pub use swing_animation::{SwingAnimation, SwingAnimationType};
 pub use tool::{Tool, ToolRule, ToolRuleBlocks};

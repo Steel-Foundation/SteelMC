@@ -26,7 +26,8 @@ pub use super::components::{
     KineticWeaponCondition, LodestoneTracker, MapDecorationEntry, MapDecorations, MapId,
     MapItemColor, MapPostProcessing, OminousBottleAmplifier, PaintingVariantComponent,
     PiercingWeapon, PotDecorations, PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial,
-    Rarity, Recipes, Repairable, SeededContainerLoot, SulfurCubeContent, SuspiciousStewEffect,
+    Rarity, Recipes, Repairable, SeededContainerLoot, SignText, SulfurCubeContent,
+    SuspiciousStewEffect,
     SuspiciousStewEffects, SwingAnimation, SwingAnimationType, Tool, ToolRule, ToolRuleBlocks,
     TooltipDisplay, UseCooldown, UseEffects, UseRemainder, VillagerFood, Weapon,
     WritableBookContent, WrittenBookContent,
@@ -405,6 +406,12 @@ pub const SHEEP_COLOR: DataComponentType<DyeColor> =
 
 pub const SHULKER_COLOR: DataComponentType<DyeColor> =
     DataComponentType::new(Identifier::vanilla_static("shulker/color"));
+
+pub const SIGN_TEXT_FRONT: DataComponentType<SignText> =
+    DataComponentType::new(Identifier::vanilla_static("sign_text_front"));
+
+pub const SIGN_TEXT_BACK: DataComponentType<SignText> =
+    DataComponentType::new(Identifier::vanilla_static("sign_text_back"));
 
 /// Network reader for VarInt-encoded i32 components.
 fn varint_reader(cursor: &mut std::io::Cursor<&[u8]>) -> std::io::Result<ComponentData> {
@@ -1006,6 +1013,10 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     registry.register(SHEEP_COLOR);
     // 115: shulker/color
     registry.register(SHULKER_COLOR);
+    // 116: sign_text_front
+    registry.register(SIGN_TEXT_FRONT);
+    // 117: sign_text_back
+    registry.register(SIGN_TEXT_BACK);
 }
 
 #[cfg(test)]
