@@ -1,8 +1,13 @@
 //! Build-time codegen for `ConfiguredCarver` statics.
 //!
-//! Reads `build_assets/builtin_datapacks/minecraft/worldgen/configured_carver/*.json`,
-//! deserialises each via `steel_utils::value_providers` types, and emits
-//! Rust source with a `pub static` per carver plus a `register_carvers` fn.
+//! Reads `build_assets/builtin_datapacks/minecraft/worldgen/carver/*.json`
+//! and emits a `pub static` per carver plus a `register_carvers` fn.
+//!
+//! Vanilla flattened the old config wrapper into `CaveWorldCarver`/
+//! `CanyonWorldCarver` directly, dropped the separate `nether_cave` type
+//! (now just a differently-configured `cave`), and moved `lava_level`/
+//! `replaceable` out to a fixed Aquifer floor + the global
+//! `#minecraft:uncarvable` tag (handled in steel-core).
 
 use std::fs;
 
@@ -10,9 +15,9 @@ use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
-use serde_json::Value;
-use steel_utils::Identifier;
-use steel_utils::value_providers::{FloatProvider, HeightProvider, VerticalAnchor};
+use steel_utils::value_providers::{
+    FloatProvider, HeightProvider, IntProvider, VerticalAnchor, WeightedIntProvider,
+};
 
 // ── JSON-facing structs ─────────────────────────────────────────────────────
 
@@ -20,32 +25,46 @@ use steel_utils::value_providers::{FloatProvider, HeightProvider, VerticalAnchor
 struct CarverJson {
     #[serde(rename = "type")]
     carver_type: String,
-    config: Value,
 }
 
+/// Fields common to `CaveWorldCarver`/`CanyonWorldCarver`. `carver_type` is
+/// re-read here (flattened into the structs below) so the type-specific
+/// parse pass doesn't reject `type` as unknown.
 #[derive(Deserialize, Debug)]
-struct CarverConfigBaseJson {
+struct CarverBaseJson {
+    #[serde(rename = "type")]
+    #[expect(
+        dead_code,
+        reason = "consumed only so deny_unknown_fields accepts `type`"
+    )]
+    carver_type: String,
     probability: f32,
     y: HeightProvider,
-    #[serde(rename = "yScale")]
-    y_scale: FloatProvider,
-    lava_level: VerticalAnchor,
-    replaceable: String,
-    #[serde(default)]
-    #[expect(dead_code, reason = "debug_settings parsed but ignored (see TODO)")]
-    debug_settings: Option<Value>,
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 struct CaveConfigJson {
     #[serde(flatten)]
-    base: CarverConfigBaseJson,
+    base: CarverBaseJson,
+    count: IntProvider,
+    thickness: FloatProvider,
+    #[serde(default)]
+    weird_thickness_bias: bool,
+    room_vertical_radius_multiplier: FloatProvider,
     horizontal_radius_multiplier: FloatProvider,
     vertical_radius_multiplier: FloatProvider,
+    #[serde(default = "default_start_vertical_radius_multiplier")]
+    start_vertical_radius_multiplier: FloatProvider,
     floor_level: FloatProvider,
 }
 
+fn default_start_vertical_radius_multiplier() -> FloatProvider {
+    FloatProvider::Constant(1.0)
+}
+
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 struct CanyonShapeJson {
     distance_factor: FloatProvider,
     thickness: FloatProvider,
@@ -53,23 +72,19 @@ struct CanyonShapeJson {
     horizontal_radius_factor: FloatProvider,
     vertical_radius_default_factor: f32,
     vertical_radius_center_factor: f32,
+    y_scale: FloatProvider,
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 struct CanyonConfigJson {
     #[serde(flatten)]
-    base: CarverConfigBaseJson,
+    base: CarverBaseJson,
     vertical_rotation: FloatProvider,
     shape: CanyonShapeJson,
 }
 
 // ── Codegen helpers ─────────────────────────────────────────────────────────
-
-fn generate_identifier(resource: &Identifier) -> TokenStream {
-    let namespace = resource.namespace.as_ref();
-    let path = resource.path.as_ref();
-    quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
-}
 
 fn generate_vertical_anchor(v: VerticalAnchor) -> TokenStream {
     match v {
@@ -181,47 +196,125 @@ fn generate_float_provider(f: FloatProvider) -> TokenStream {
     }
 }
 
-/// Parses a tag reference string like `#minecraft:overworld_carver_replaceables`
-/// into the underlying tag [`Identifier`]. Non-tag (inline list) forms are
-/// rejected — all vanilla carvers use tags.
-fn parse_replaceable_tag(s: &str) -> Identifier {
-    let stripped = s
-        .strip_prefix('#')
-        .unwrap_or_else(|| panic!("carver `replaceable` must be a `#tag` reference, got `{s}`"));
-    let (ns, path) = stripped.split_once(':').unwrap_or(("minecraft", stripped));
-    Identifier::new(ns.to_owned(), path.to_owned())
+fn generate_int_provider(i: &IntProvider) -> TokenStream {
+    match i {
+        IntProvider::Constant(v) => quote! { IntProvider::Constant(#v) },
+        IntProvider::Uniform {
+            min_inclusive,
+            max_inclusive,
+        } => quote! {
+            IntProvider::Uniform {
+                min_inclusive: #min_inclusive,
+                max_inclusive: #max_inclusive,
+            }
+        },
+        IntProvider::BiasedToBottom {
+            min_inclusive,
+            max_inclusive,
+        } => quote! {
+            IntProvider::BiasedToBottom {
+                min_inclusive: #min_inclusive,
+                max_inclusive: #max_inclusive,
+            }
+        },
+        IntProvider::VeryBiasedToBottom {
+            min_inclusive,
+            max_inclusive,
+            inner,
+        } => quote! {
+            IntProvider::VeryBiasedToBottom {
+                min_inclusive: #min_inclusive,
+                max_inclusive: #max_inclusive,
+                inner: #inner,
+            }
+        },
+        IntProvider::Trapezoid { min, max, plateau } => quote! {
+            IntProvider::Trapezoid {
+                min: #min,
+                max: #max,
+                plateau: #plateau,
+            }
+        },
+        IntProvider::ClampedNormal {
+            mean,
+            deviation,
+            min_inclusive,
+            max_inclusive,
+        } => quote! {
+            IntProvider::ClampedNormal {
+                mean: #mean,
+                deviation: #deviation,
+                min_inclusive: #min_inclusive,
+                max_inclusive: #max_inclusive,
+            }
+        },
+        IntProvider::Clamped {
+            source,
+            min_inclusive,
+            max_inclusive,
+        } => {
+            let source = generate_int_provider(source);
+            quote! {
+                IntProvider::Clamped {
+                    source: Box::new(#source),
+                    min_inclusive: #min_inclusive,
+                    max_inclusive: #max_inclusive,
+                }
+            }
+        }
+        IntProvider::WeightedList { distribution } => {
+            let entries: Vec<TokenStream> = distribution
+                .iter()
+                .map(generate_weighted_int_provider)
+                .collect();
+            quote! {
+                IntProvider::WeightedList {
+                    distribution: vec![#(#entries),*],
+                }
+            }
+        }
+    }
 }
 
-fn generate_base(base: &CarverConfigBaseJson) -> TokenStream {
+fn generate_weighted_int_provider(w: &WeightedIntProvider) -> TokenStream {
+    let data = generate_int_provider(&w.data);
+    let weight = w.weight;
+    quote! { WeightedIntProvider { data: #data, weight: #weight } }
+}
+
+fn generate_base(base: &CarverBaseJson) -> TokenStream {
     let probability = base.probability;
     let y = generate_height_provider(base.y);
-    let y_scale = generate_float_provider(base.y_scale);
-    let lava_level = generate_vertical_anchor(base.lava_level);
-    let tag = generate_identifier(&parse_replaceable_tag(&base.replaceable));
 
     quote! {
         CarverConfiguration {
             probability: #probability,
             y: #y,
-            y_scale: #y_scale,
-            lava_level: #lava_level,
-            replaceable_tag: #tag,
         }
     }
 }
 
-fn generate_cave_kind(kind_name: &str, cfg: &CaveConfigJson) -> TokenStream {
+fn generate_cave_kind(cfg: &CaveConfigJson) -> TokenStream {
     let base = generate_base(&cfg.base);
+    let count = generate_int_provider(&cfg.count);
+    let thickness = generate_float_provider(cfg.thickness);
+    let weird_thickness_bias = cfg.weird_thickness_bias;
+    let room_vrm = generate_float_provider(cfg.room_vertical_radius_multiplier);
     let hrm = generate_float_provider(cfg.horizontal_radius_multiplier);
     let vrm = generate_float_provider(cfg.vertical_radius_multiplier);
+    let start_vrm = generate_float_provider(cfg.start_vertical_radius_multiplier);
     let floor = generate_float_provider(cfg.floor_level);
-    let kind_ident = Ident::new(kind_name, Span::call_site());
 
     quote! {
-        ConfiguredCarverKind::#kind_ident(CaveCarverConfiguration {
+        ConfiguredCarverKind::Cave(CaveCarverConfiguration {
             base: #base,
+            count: #count,
+            thickness: #thickness,
+            weird_thickness_bias: #weird_thickness_bias,
+            room_vertical_radius_multiplier: #room_vrm,
             horizontal_radius_multiplier: #hrm,
             vertical_radius_multiplier: #vrm,
+            start_vertical_radius_multiplier: #start_vrm,
             floor_level: #floor,
         })
     }
@@ -236,6 +329,7 @@ fn generate_canyon_kind(cfg: &CanyonConfigJson) -> TokenStream {
     let hrf = generate_float_provider(cfg.shape.horizontal_radius_factor);
     let vrdf = cfg.shape.vertical_radius_default_factor;
     let vrcf = cfg.shape.vertical_radius_center_factor;
+    let y_scale = generate_float_provider(cfg.shape.y_scale);
 
     quote! {
         ConfiguredCarverKind::Canyon(CanyonCarverConfiguration {
@@ -248,6 +342,7 @@ fn generate_canyon_kind(cfg: &CanyonConfigJson) -> TokenStream {
                 horizontal_radius_factor: #hrf,
                 vertical_radius_default_factor: #vrdf,
                 vertical_radius_center_factor: #vrcf,
+                y_scale: #y_scale,
             },
         })
     }
@@ -256,13 +351,13 @@ fn generate_canyon_kind(cfg: &CanyonConfigJson) -> TokenStream {
 // ── Build entry point ───────────────────────────────────────────────────────
 
 pub(crate) fn build() -> TokenStream {
-    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/configured_carver";
+    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/carver";
     println!("cargo:rerun-if-changed={dir}");
 
     let mut entries: Vec<(String, TokenStream)> = Vec::new();
 
     let mut files: Vec<_> = fs::read_dir(dir)
-        .expect("configured_carver dir missing")
+        .expect("carver dir missing")
         .filter_map(Result::ok)
         .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("json"))
         .collect();
@@ -283,21 +378,16 @@ pub(crate) fn build() -> TokenStream {
 
         let kind = match raw.carver_type.as_str() {
             "minecraft:cave" => {
-                let cfg: CaveConfigJson = serde_json::from_value(raw.config)
+                let cfg: CaveConfigJson = serde_json::from_str(&content)
                     .unwrap_or_else(|e| panic!("failed to parse {name} cave config: {e}"));
-                generate_cave_kind("Cave", &cfg)
-            }
-            "minecraft:nether_cave" => {
-                let cfg: CaveConfigJson = serde_json::from_value(raw.config)
-                    .unwrap_or_else(|e| panic!("failed to parse {name} nether_cave config: {e}"));
-                generate_cave_kind("NetherCave", &cfg)
+                generate_cave_kind(&cfg)
             }
             "minecraft:canyon" => {
-                let cfg: CanyonConfigJson = serde_json::from_value(raw.config)
+                let cfg: CanyonConfigJson = serde_json::from_str(&content)
                     .unwrap_or_else(|e| panic!("failed to parse {name} canyon config: {e}"));
                 generate_canyon_kind(&cfg)
             }
-            other => panic!("unknown configured_carver type `{other}` in {name}.json"),
+            other => panic!("unknown carver type `{other}` in {name}.json"),
         };
 
         entries.push((name, kind));
@@ -311,8 +401,9 @@ pub(crate) fn build() -> TokenStream {
             ConfiguredCarverRegistry,
         };
         use steel_utils::Identifier;
-        use steel_utils::value_providers::{FloatProvider, HeightProvider, VerticalAnchor};
-        use std::borrow::Cow;
+        use steel_utils::value_providers::{
+            FloatProvider, HeightProvider, IntProvider, VerticalAnchor, WeightedIntProvider,
+        };
         use std::sync::{LazyLock, OnceLock};
     });
 

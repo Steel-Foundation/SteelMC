@@ -1,9 +1,8 @@
 //! Configured carver registry.
 //!
-//! Mirrors vanilla's `ConfiguredWorldCarver` — each entry is a
-//! `CarverType` (the carver kind — cave / `nether_cave` / canyon) paired with
-//! its configuration. Configured carvers are referenced by biomes via the
-//! `carvers` field on [`Biome`](crate::biome::Biome) and sampled during the
+//! Mirrors vanilla's `ConfiguredWorldCarver` — each entry is a carver kind
+//! (cave or canyon) paired with its configuration. Referenced by biomes via
+//! [`Biome`](crate::biome::Biome)'s `carvers` field and sampled during the
 //! `CARVERS` chunk generation stage.
 
 use std::sync::OnceLock;
@@ -11,43 +10,45 @@ use std::sync::OnceLock;
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 use steel_utils::random::{Random, legacy_random::LegacyRandom};
-use steel_utils::value_providers::{FloatProvider, HeightProvider, VerticalAnchor};
+use steel_utils::value_providers::{FloatProvider, HeightProvider, IntProvider};
 
 /// Shared per-carver configuration fields present on every carver type.
 ///
-/// Mirrors vanilla's `CarverConfiguration`. The `replaceable` block set is
-/// stored as a tag identifier (e.g. `minecraft:overworld_carver_replaceables`)
-/// and resolved against `BlockRegistry::is_in_tag` at carve time.
+/// Mirrors `CaveWorldCarver`/`CanyonWorldCarver`'s common leading fields.
+/// `y_scale`/`lava_level`/`replaceable` are gone from vanilla's schema —
+/// replaceability is now the global `#minecraft:uncarvable` tag and the lava
+/// cutoff lives in the Aquifer's own fixed floor (both in steel-core).
 #[derive(Debug, Clone)]
 pub struct CarverConfiguration {
     /// Per-chunk start probability (in `[0, 1]`).
     pub probability: f32,
     /// Carver origin Y coordinate provider.
     pub y: HeightProvider,
-    /// Vertical-stretch multiplier for carved ellipsoids.
-    pub y_scale: FloatProvider,
-    /// Any block carved at or below this Y becomes lava instead of air.
-    pub lava_level: VerticalAnchor,
-    /// Tag of blocks the carver is allowed to replace.
-    pub replaceable_tag: Identifier,
-    // TODO: debug_settings parsed but ignored — only active when
-    // `SharedConstants.DEBUG_CARVERS` is true, which is never the case in
-    // a production build. Wire through if we ever want the cave visualiser.
 }
 
-/// Cave/nether-cave configuration.
+/// Cave carver configuration (also used for `nether_cave` — vanilla merged
+/// `NetherWorldCarver` into `CaveWorldCarver`, so only values differ now).
 ///
-/// Mirrors vanilla's `CaveCarverConfiguration`.
+/// Mirrors vanilla's `CaveWorldCarver` record.
 #[derive(Debug, Clone)]
 pub struct CaveCarverConfiguration {
     /// Base configuration.
     pub base: CarverConfiguration,
+    /// Number of cave starts to attempt per source chunk.
+    pub count: IntProvider,
+    /// Per-tunnel thickness draw.
+    pub thickness: FloatProvider,
+    /// When set, `thickness` gets an extra 1-in-10 boost.
+    pub weird_thickness_bias: bool,
+    /// Vertical-stretch multiplier, sampled once per cave, for its room.
+    pub room_vertical_radius_multiplier: FloatProvider,
     /// Per-tunnel horizontal-radius stretch factor.
     pub horizontal_radius_multiplier: FloatProvider,
     /// Per-tunnel vertical-radius stretch factor.
     pub vertical_radius_multiplier: FloatProvider,
-    /// Shapes the cave floor — values in `[-1, 1]`. Blocks where the normalized
-    /// vertical offset `yd` is below this value are skipped.
+    /// Vertical-stretch multiplier, sampled once per cave, for its tunnels.
+    pub start_vertical_radius_multiplier: FloatProvider,
+    /// Cave floor cutoff in `[-1, 1]`; blocks below it are skipped.
     pub floor_level: FloatProvider,
 }
 
@@ -69,6 +70,8 @@ pub struct CanyonShapeConfiguration {
     pub vertical_radius_default_factor: f32,
     /// Extra vertical-radius multiplier that peaks at the tunnel midpoint.
     pub vertical_radius_center_factor: f32,
+    /// Vertical-stretch multiplier (moved here from the old base config).
+    pub y_scale: FloatProvider,
 }
 
 impl CanyonShapeConfiguration {
@@ -129,9 +132,6 @@ pub struct CanyonCarverConfiguration {
 pub enum ConfiguredCarverKind {
     /// Branching cave tunnels (`CaveWorldCarver`).
     Cave(CaveCarverConfiguration),
-    /// Nether variant of caves (`NetherWorldCarver`) — no aquifer lookups,
-    /// and a fixed lava-or-cave-air substance decision.
-    NetherCave(CaveCarverConfiguration),
     /// Long narrow ravines (`CanyonWorldCarver`).
     Canyon(CanyonCarverConfiguration),
 }
@@ -156,7 +156,7 @@ impl ConfiguredCarver {
     #[must_use]
     pub const fn base(&self) -> &CarverConfiguration {
         match &self.kind {
-            ConfiguredCarverKind::Cave(c) | ConfiguredCarverKind::NetherCave(c) => &c.base,
+            ConfiguredCarverKind::Cave(c) => &c.base,
             ConfiguredCarverKind::Canyon(c) => &c.base,
         }
     }

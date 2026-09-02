@@ -119,11 +119,10 @@ pub enum ConfiguredFeatureKind {
 impl<'de> Deserialize<'de> for ConfiguredFeatureKind {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
         struct Raw {
             #[serde(rename = "type")]
             feature_type: Identifier,
-            #[serde(default)]
+            #[serde(flatten)]
             config: Value,
         }
 

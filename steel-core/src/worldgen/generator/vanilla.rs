@@ -25,7 +25,7 @@ use steel_worldgen::surface::{
 use crate::chunk::Chunk;
 use crate::chunk::heightmap::{Heightmap, HeightmapType};
 use crate::worldgen::carver::{
-    CarveRun, CarverBlockIds, CarvingContext, PreliminarySurfaceCorners, SourceChunk, cave,
+    CarveRun, CarverBlockIds, CarvingContext, PreliminarySurfaceCorners, SourceChunk,
 };
 use crate::worldgen::feature::FeatureDecorationRunner;
 use crate::worldgen::generator::{
@@ -925,10 +925,7 @@ where
 
                 match &carver.kind {
                     ConfiguredCarverKind::Cave(cfg) => {
-                        self.carve_cave(cfg, cave::CaveKind::Overworld, source.pos, random);
-                    }
-                    ConfiguredCarverKind::NetherCave(cfg) => {
-                        self.carve_cave(cfg, cave::CaveKind::Nether, source.pos, random);
+                        self.carve_cave(cfg, source.pos, random);
                     }
                     ConfiguredCarverKind::Canyon(cfg) => {
                         self.carve_canyon(cfg, source.pos, random);

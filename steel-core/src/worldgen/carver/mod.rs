@@ -9,7 +9,6 @@
 use std::{cell::Cell, sync::LazyLock};
 
 use glam::IVec3;
-use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use steel_math::lerp2;
 use steel_math::trig;
@@ -164,42 +163,30 @@ impl<N: DimensionNoises> CarvingContext<'_, N> {
     }
 }
 
-/// Vanilla's `WorldCarver.canReplaceBlock`: a carver may only replace blocks
-/// in its config's `replaceable` tag.
-#[must_use]
-pub fn can_replace_block(state: BlockStateId, tag: &Identifier) -> bool {
-    if state.is_air() {
-        return false;
-    }
-    let Some(block) = REGISTRY.blocks.by_state_id(state) else {
-        return false;
-    };
-    block.has_tag(tag)
-}
+/// Vanilla's global `#minecraft:uncarvable` block tag
+/// (`applyCarvingMask`'s `!blockState.is(BlockTags.UNCARVABLE)` check).
+/// Every carver shares this one tag now, not a per-carver one.
+pub const UNCARVABLE_TAG: Identifier = Identifier::vanilla_static("uncarvable");
 
-/// Per-state membership cache for a carver's replaceable block tag.
-///
-/// Vanilla tests a block-state predicate for every candidate block. Steel's
-/// registry stores tags by block key, so resolving that predicate once into a
-/// state-id table avoids repeated tag/hash lookups in the carve loop while
-/// preserving the configured tag as the source of truth.
+/// Per-state membership cache for [`UNCARVABLE_TAG`], resolved once into a
+/// state-id table to avoid repeated tag lookups in the carve loop.
 #[derive(Debug)]
 pub struct CarverReplaceableStates {
     states: Box<[bool]>,
 }
 
 impl CarverReplaceableStates {
-    fn build(tag: &Identifier) -> Self {
+    fn build() -> Self {
         let states = REGISTRY
             .blocks
             .state_to_block_lookup
             .iter()
-            .map(|&block| block.has_tag(tag))
+            .map(|&block| block.has_tag(&UNCARVABLE_TAG))
             .collect();
         Self { states }
     }
 
-    /// Returns whether `state` belongs to this cached replaceable set.
+    /// Returns whether `state` belongs to `#minecraft:uncarvable`.
     #[inline]
     #[must_use]
     pub fn contains(&self, state: BlockStateId) -> bool {
@@ -207,34 +194,14 @@ impl CarverReplaceableStates {
     }
 }
 
-static CARVER_REPLACEABLE_STATES: LazyLock<FxHashMap<Identifier, CarverReplaceableStates>> =
-    LazyLock::new(|| {
-        let mut states_by_tag = FxHashMap::default();
-        for (_, carver) in REGISTRY.configured_carvers.iter() {
-            let tag = &carver.base().replaceable_tag;
-            if !states_by_tag.contains_key(tag) {
-                states_by_tag.insert(tag.clone(), CarverReplaceableStates::build(tag));
-            }
-        }
-        states_by_tag
-    });
+static UNCARVABLE_STATES: LazyLock<CarverReplaceableStates> =
+    LazyLock::new(CarverReplaceableStates::build);
 
-/// Returns the cached replaceable-state set for a configured carver tag.
+/// A block may be carved unless it's in `#minecraft:uncarvable`. No separate
+/// air check — air isn't in the tag, so it's replaced like anything else.
 #[must_use]
-pub fn cached_replaceable_states(tag: &Identifier) -> Option<&'static CarverReplaceableStates> {
-    CARVER_REPLACEABLE_STATES.get(tag)
-}
-
-/// Which carver family dictates the per-block decision inside
-/// [`CarveRun::carve_ellipsoid`]. Overworld carvers (cave + canyon) use the
-/// aquifer to pick air / water / lava; the nether variant hardcodes lava
-/// below `min_gen_y + 31` and cave-air elsewhere, with no aquifer lookups.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CarverStyle {
-    /// Overworld / end: aquifer-driven fluid/air.
-    Overworld,
-    /// Nether: lava below `min_gen_y + 31` else `CAVE_AIR`; no aquifer check.
-    Nether,
+pub fn can_replace_block(state: BlockStateId) -> bool {
+    !UNCARVABLE_STATES.contains(state)
 }
 
 /// Well-known block state IDs a carver needs. Cached once per `apply_carvers`
@@ -243,7 +210,7 @@ pub enum CarverStyle {
 pub struct CarverBlockIds {
     /// `minecraft:air`.
     pub air: BlockStateId,
-    /// `minecraft:cave_air` (used by the nether carver).
+    /// `minecraft:cave_air`.
     pub cave_air: BlockStateId,
     /// `minecraft:lava` (fluid block state).
     pub lava: BlockStateId,
@@ -308,21 +275,6 @@ impl<F: FnMut(f64, f64, f64, i32) -> bool> CarveSkipChecker for F {
     }
 }
 
-/// Per-carver parameters: the replaceable-tag, resolved lava level, and
-/// which carver style to dispatch. Block IDs live on [`CarveRun`] because
-/// they're shared across all carvers in a chunk.
-pub struct CarveParams<'a> {
-    /// Tag of blocks the carver is allowed to replace.
-    pub replaceable_tag: &'a Identifier,
-    /// Cached state-id membership for `replaceable_tag` when available.
-    pub replaceable_states: Option<&'static CarverReplaceableStates>,
-    /// Resolved lava level (world Y). At or below this, carved blocks become
-    /// lava instead of air/water/etc.
-    pub lava_level_y: i32,
-    /// Which carver family this is (overworld vs nether).
-    pub style: CarverStyle,
-}
-
 /// Vanilla cave/canyon tunnel radius calculation.
 #[inline]
 #[must_use]
@@ -379,13 +331,8 @@ where
         clippy::similar_names,
         reason = "min_x_idx / min_z_idx / max_x_idx / max_z_idx mirror vanilla"
     )]
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "params + x/y/z/horizontal_radius/vertical_radius + skip_checker mirrors vanilla"
-    )]
     pub fn carve_ellipsoid<S: CarveSkipChecker>(
         &mut self,
-        params: &CarveParams<'_>,
         x: f64,
         y: f64,
         z: f64,
@@ -436,7 +383,7 @@ where
                     if !self.mask.set_if_unset(x_idx, world_y, z_idx) {
                         continue;
                     }
-                    if self.carve_block(params, world_x, world_y, world_z, &mut has_grass) {
+                    if self.carve_block(world_x, world_y, world_z, &mut has_grass) {
                         carved = true;
                     }
                 }
@@ -447,10 +394,9 @@ where
     }
 
     /// Per-block carve decision + placement. Mirrors vanilla's
-    /// `WorldCarver.carveBlock` (and the `NetherWorldCarver` override).
+    /// `NoiseBasedChunkGenerator.applyCarvingMask` per-position body.
     fn carve_block(
         &mut self,
-        params: &CarveParams<'_>,
         world_x: i32,
         world_y: i32,
         world_z: i32,
@@ -464,28 +410,24 @@ where
             *has_grass = true;
         }
 
-        if !Self::can_replace(params, existing) {
+        if !can_replace_block(existing) {
             return false;
         }
 
-        let state = match self.get_carve_state(params, world_x, world_y, world_z) {
+        let state = match self.get_carve_state(world_x, world_y, world_z) {
             CarveState::Place(id) => id,
             CarveState::Skip => return false,
         };
 
         self.chunk.set_block_state(pos, state);
-        if params.style == CarverStyle::Overworld
-            && self.ctx.aquifer.should_schedule_fluid_update()
-            && state.has_fluid()
-        {
+        if self.ctx.aquifer.should_schedule_fluid_update() && state.has_fluid() {
             self.chunk.mark_pos_for_postprocessing(pos);
         }
 
         // Top-material rewrite: only when we just turned a grass/mycelium
         // block into something carved, and the block directly below is plain
-        // dirt. Nether carver skips this entirely (its override of carveBlock
-        // doesn't run this branch).
-        if params.style == CarverStyle::Overworld && *has_grass {
+        // dirt.
+        if *has_grass {
             let below_pos = BlockPos::new(world_x, world_y - 1, world_z);
             if self.chunk.get_block_state(below_pos) == self.ids.dirt {
                 let under_fluid = !self.ids.is_air_like(state);
@@ -511,17 +453,6 @@ where
         true
     }
 
-    #[inline]
-    fn can_replace(params: &CarveParams<'_>, state: BlockStateId) -> bool {
-        if state.is_air() {
-            return false;
-        }
-        if let Some(states) = params.replaceable_states {
-            return states.contains(state);
-        }
-        can_replace_block(state, params.replaceable_tag)
-    }
-
     fn steep_material_condition(&self, world_x: i32, world_z: i32) -> bool {
         let Some(steep) = self.chunk.with_world_surface_heightmap(|worldgen_surface| {
             steep_material_condition(worldgen_surface, world_x, world_z)
@@ -532,30 +463,19 @@ where
         steep
     }
 
-    /// Vanilla's `WorldCarver.getCarveState` + the nether override dispatch.
-    fn get_carve_state(&mut self, params: &CarveParams<'_>, x: i32, y: i32, z: i32) -> CarveState {
-        match params.style {
-            CarverStyle::Overworld => {
-                if y <= params.lava_level_y {
-                    return CarveState::Place(self.ids.lava);
-                }
-                match self
-                    .ctx
-                    .aquifer
-                    .compute_substance(self.noises, x, y, z, 0.0)
-                {
-                    AquiferResult::Solid => CarveState::Skip,
-                    AquiferResult::Fluid(id) => CarveState::Place(id),
-                    AquiferResult::Air => CarveState::Place(self.ids.air),
-                }
-            }
-            CarverStyle::Nether => {
-                if y <= self.ctx.min_y + 31 {
-                    CarveState::Place(self.ids.lava)
-                } else {
-                    CarveState::Place(self.ids.cave_air)
-                }
-            }
+    /// Vanilla's `NoiseBasedChunkGenerator.applyCarvingMask` substance
+    /// computation (`aquifer.computeSubstance`).
+    fn get_carve_state(&mut self, x: i32, y: i32, z: i32) -> CarveState {
+        // No per-carver lava level anymore — Aquifer's own fixed floor
+        // (`LAVA_LEVEL`) decides this uniformly.
+        match self
+            .ctx
+            .aquifer
+            .compute_substance(self.noises, x, y, z, 0.0)
+        {
+            AquiferResult::Solid => CarveState::Skip,
+            AquiferResult::Fluid(id) => CarveState::Place(id),
+            AquiferResult::Air => CarveState::Place(self.ids.air),
         }
     }
 }

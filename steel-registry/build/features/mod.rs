@@ -55,7 +55,7 @@ use data::{
 };
 
 pub(crate) fn build_configured() -> TokenStream {
-    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/configured_feature";
+    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/feature";
     println!("cargo:rerun-if-changed={dir}");
 
     let mut entries = Vec::new();
