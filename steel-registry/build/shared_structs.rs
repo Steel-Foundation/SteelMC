@@ -3,21 +3,43 @@ use std::{collections::BTreeMap, str::FromStr};
 use serde::{Deserialize, Deserializer, de::Error as _};
 use steel_utils::Identifier;
 
-#[derive(Deserialize, Debug, Clone)]
-#[serde(deny_unknown_fields)]
+
+#[derive(Debug, Clone)]
 pub struct BlockStateData {
-    #[serde(rename = "Name")]
     pub name: Identifier,
-    #[serde(rename = "Properties", default)]
     pub properties: BTreeMap<String, String>,
+}
+
+impl<'de> Deserialize<'de> for BlockStateData {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged, deny_unknown_fields)]
+        enum Repr {
+            Shorthand(Identifier),
+            Full {
+                id: Identifier,
+                #[serde(default)]
+                properties: BTreeMap<String, String>,
+            },
+        }
+
+        Ok(match Repr::deserialize(deserializer)? {
+            Repr::Shorthand(name) => Self {
+                name,
+                properties: BTreeMap::new(),
+            },
+            Repr::Full { id, properties } => Self {
+                name: id,
+                properties,
+            },
+        })
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct FluidStateData {
-    #[serde(rename = "Name")]
     pub name: Identifier,
-    #[serde(rename = "Properties", default)]
     pub properties: BTreeMap<String, String>,
 }
 
