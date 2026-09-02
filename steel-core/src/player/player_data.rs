@@ -15,7 +15,10 @@ use crate::player::stats_counter::StatState;
 use crate::{
     chunk_saver::{ChunkStorage, PersistentEntity},
     entity::{Entity, EntityFireFreezeState, LivingEntity},
-    inventory::container::Container,
+    inventory::{
+        container::Container,
+        ender_chest::{ENDER_CHEST_SLOTS, PlayerEnderChestContainer},
+    },
 };
 
 /// Current data version for player saves.
@@ -212,7 +215,7 @@ impl PersistentPlayerData {
 
         let ender_chest_inventory = player.ender_chest_inventory.lock();
         let mut ender_items = Vec::new();
-        for slot in 0..27 {
+        for slot in 0..ENDER_CHEST_SLOTS {
             let item = ender_chest_inventory.get_item(slot);
             if !item.is_empty() {
                 ender_items.push(PersistentSlot {
@@ -339,6 +342,7 @@ impl Player {
         self.set_health(self.get_max_health());
         *self.abilities.lock() = Abilities::default();
         *self.inventory.lock() = PlayerInventory::new();
+        *self.ender_chest_inventory.lock() = PlayerEnderChestContainer::new();
         *self.food_data.lock() = FoodData::new();
         self.stats.lock().reset();
 
@@ -472,15 +476,14 @@ impl PersistentPlayerData {
             inventory.set_selected_slot(selected);
         }
 
-        // Ender Chest
         {
             let mut ender_chest_inventory = player.ender_chest_inventory.lock();
-            for slot in 0..27 {
+            for slot in 0..ENDER_CHEST_SLOTS {
                 ender_chest_inventory.set_item(slot, ItemStack::empty());
             }
             for slot_data in &self.ender_items {
                 let slot_index = slot_data.slot as usize;
-                if slot_index < 27 {
+                if slot_index < ENDER_CHEST_SLOTS {
                     ender_chest_inventory.set_item(slot_index, slot_data.item.clone());
                 }
             }

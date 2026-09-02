@@ -1,6 +1,4 @@
 //! Ender chest block entity implementation.
-//!
-//! Handles lid animations and sound effects for ender chests.
 
 use std::sync::{Arc, Weak};
 
@@ -34,26 +32,6 @@ impl EnderChestBlockEntity {
                 state,
             )),
         }
-    }
-
-    /// Called when a player starts looking into the ender chest.
-    #[expect(
-        clippy::unused_self,
-        reason = "Will use self once ContainerOpenersCounter is implemented"
-    )]
-    pub const fn start_open(&mut self) {
-        // TODO: Implement ContainerOpenersCounter to track open state and play sounds.
-        // Needs a lid controller and block events.
-    }
-
-    /// Called when a player stops looking into the ender chest.
-    #[expect(
-        clippy::unused_self,
-        reason = "Will use self once ContainerOpenersCounter is implemented"
-    )]
-    pub const fn stop_open(&mut self) {
-        // TODO: Implement ContainerOpenersCounter to track open state and play sounds.
-        // Needs a lid controller and block events.
     }
 }
 
