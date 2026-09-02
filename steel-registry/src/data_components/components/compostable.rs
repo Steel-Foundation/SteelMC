@@ -94,7 +94,9 @@ mod tests {
         assert_eq!(parse(nbt), Some(value.clone()));
 
         let mut network = Vec::new();
-        value.write(&mut network).expect("compostable should encode");
+        value
+            .write(&mut network)
+            .expect("compostable should encode");
         assert_eq!(
             Compostable::read(&mut Cursor::new(network.as_slice()))
                 .expect("compostable should decode"),

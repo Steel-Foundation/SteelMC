@@ -1,9 +1,9 @@
 use super::{
     ATTACK_ANIMATION, ATTRIBUTE_MODIFIERS, BREAK_SOUND, Component, ComponentData,
-    DataComponentType, Debug, DowncastType, ENCHANTMENTS, FxHashMap, Identifier,
-    INTERACT_ANIMATION, ItemAttributeModifiers, ItemEnchantments, ItemLore, LORE, MAX_STACK_SIZE,
-    RARITY, REPAIR_COST, Rarity, SoundEventHolder, SwingAnimation, TOOLTIP_DISPLAY,
-    TooltipDisplay, USE_EFFECTS, UseEffects, sound_events,
+    DataComponentType, Debug, DowncastType, ENCHANTMENTS, FxHashMap, INTERACT_ANIMATION,
+    Identifier, ItemAttributeModifiers, ItemEnchantments, ItemLore, LORE, MAX_STACK_SIZE, RARITY,
+    REPAIR_COST, Rarity, SoundEventHolder, SwingAnimation, TOOLTIP_DISPLAY, TooltipDisplay,
+    USE_EFFECTS, UseEffects, sound_events,
 };
 
 /// Storage for component values.

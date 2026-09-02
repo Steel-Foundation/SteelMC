@@ -414,10 +414,9 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     .as_object()
                     .unwrap_or_else(|| panic!("pot_decorations must be an object, got {value}"));
                 assert!(
-                    object.keys().all(|key| matches!(
-                        key.as_str(),
-                        "back" | "left" | "right" | "front"
-                    )),
+                    object
+                        .keys()
+                        .all(|key| matches!(key.as_str(), "back" | "left" | "right" | "front")),
                     "pot_decorations contains an unknown field: {value}"
                 );
                 let side = |name: &str| -> Option<TokenStream> {
@@ -430,10 +429,9 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                         1,
                         "extracted pot decorations currently require an item-only template"
                     );
-                    let item = side
-                        .get("id")
-                        .and_then(Value::as_str)
-                        .unwrap_or_else(|| panic!("pot_decorations.{name}.id must be an item identifier"));
+                    let item = side.get("id").and_then(Value::as_str).unwrap_or_else(|| {
+                        panic!("pot_decorations.{name}.id must be an item identifier")
+                    });
                     let item = item_ref_token(item, "pot_decorations");
                     Some(quote! { Some(vanilla_components::ItemStackTemplate::new(#item)) })
                 };

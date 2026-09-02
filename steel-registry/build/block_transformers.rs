@@ -69,11 +69,13 @@ fn block_transform_token(value: &Value) -> TokenStream {
         },
     );
     let drop_strategy = drop_strategy_token(transform.get("drop_strategy"));
-    let update_from_neighbors = transform.get("update_from_neighbors").map_or(true, |value| {
-        value
-            .as_bool()
-            .unwrap_or_else(|| panic!("update_from_neighbors must be a boolean"))
-    });
+    let update_from_neighbors = transform
+        .get("update_from_neighbors")
+        .map_or(true, |value| {
+            value
+                .as_bool()
+                .unwrap_or_else(|| panic!("update_from_neighbors must be a boolean"))
+        });
     let transform_type = transform_type_token(transform.get("transform_type"));
     let consume_on_use = transform.get("consume_on_use").map_or(true, |value| {
         value
@@ -157,12 +159,18 @@ fn provider_token(value: &Value) -> TokenStream {
                 .iter()
                 .map(weighted_state_token)
                 .collect::<Vec<_>>();
-            assert!(!entries.is_empty(), "weighted provider entries must not be empty");
+            assert!(
+                !entries.is_empty(),
+                "weighted provider entries must not be empty"
+            );
             quote! { #provider::Weighted { entries: vec![#(#entries),*] } }
         }
         "minecraft:randomized_int" => {
             let source = provider_token(required(object_value, "source"));
-            let property = string(required(object_value, "property"), "randomized_int property");
+            let property = string(
+                required(object_value, "property"),
+                "randomized_int property",
+            );
             let values = int_provider_token(required(object_value, "values"));
             quote! {
                 #provider::RandomizedInt {
@@ -203,10 +211,18 @@ fn provider_token(value: &Value) -> TokenStream {
                 .as_array()
                 .unwrap_or_else(|| panic!("dual_noise variety must be an array"));
             assert_eq!(variety.len(), 2, "dual_noise variety must have two entries");
-            let min = i32::try_from(variety[0].as_i64().expect("variety entries must be integers"))
-                .expect("variety entry must fit an i32");
-            let max = i32::try_from(variety[1].as_i64().expect("variety entries must be integers"))
-                .expect("variety entry must fit an i32");
+            let min = i32::try_from(
+                variety[0]
+                    .as_i64()
+                    .expect("variety entries must be integers"),
+            )
+            .expect("variety entry must fit an i32");
+            let max = i32::try_from(
+                variety[1]
+                    .as_i64()
+                    .expect("variety entries must be integers"),
+            )
+            .expect("variety entry must fit an i32");
             let slow_noise = noise_parameters_token(required(object_value, "slow_noise"));
             let slow_scale = required_f32(object_value, "slow_scale");
             let states = block_state_list_token(required(object_value, "states"));
@@ -253,7 +269,9 @@ fn weighted_state_token(value: &Value) -> TokenStream {
     quote! { #weighted_state { data: #data, weight: #weight } }
 }
 
-fn noise_fields_token(provider: &serde_json::Map<String, Value>) -> (TokenStream, TokenStream, TokenStream) {
+fn noise_fields_token(
+    provider: &serde_json::Map<String, Value>,
+) -> (TokenStream, TokenStream, TokenStream) {
     let seed = required(provider, "seed")
         .as_i64()
         .unwrap_or_else(|| panic!("noise provider seed must be an integer"));
@@ -275,7 +293,11 @@ fn noise_parameters_token(value: &Value) -> TokenStream {
         .map(|values| {
             values
                 .iter()
-                .map(|value| value.as_f64().unwrap_or_else(|| panic!("amplitude must be a number")))
+                .map(|value| {
+                    value
+                        .as_f64()
+                        .unwrap_or_else(|| panic!("amplitude must be a number"))
+                })
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
@@ -320,7 +342,10 @@ fn rule_token(value: &Value) -> TokenStream {
 
 fn predicate_token(value: &Value) -> TokenStream {
     let predicate = object(value, "block transformer predicate");
-    let predicate_type = string(required(predicate, "type"), "block transformer predicate type");
+    let predicate_type = string(
+        required(predicate, "type"),
+        "block transformer predicate type",
+    );
     let predicate_path = path("TransformPredicate");
     match predicate_type {
         "minecraft:matching_blocks" => {
@@ -330,7 +355,8 @@ fn predicate_token(value: &Value) -> TokenStream {
         }
         "minecraft:matching_block_tag" => {
             let offset = offset_token(predicate.get("offset"));
-            let tag = identifier_token(string(required(predicate, "tag"), "matching_block_tag.tag"));
+            let tag =
+                identifier_token(string(required(predicate, "tag"), "matching_block_tag.tag"));
             quote! { #predicate_path::MatchingBlockTag { offset: #offset, tag: #tag } }
         }
         "minecraft:matching_fluids" => {
@@ -453,7 +479,11 @@ fn offset_token(value: Option<&Value>) -> TokenStream {
         let values = value
             .as_array()
             .unwrap_or_else(|| panic!("predicate offset must be an array"));
-        assert_eq!(values.len(), 3, "predicate offset must have three coordinates");
+        assert_eq!(
+            values.len(),
+            3,
+            "predicate offset must have three coordinates"
+        );
         [0, 1, 2].map(|index| {
             let value = values[index]
                 .as_i64()
@@ -549,7 +579,10 @@ pub(crate) fn build() -> TokenStream {
     for (name, transforms) in &entries {
         let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
         let key = quote! { Identifier::vanilla_static(#name) };
-        let transforms = transforms.iter().map(block_transform_token).collect::<Vec<_>>();
+        let transforms = transforms
+            .iter()
+            .map(block_transform_token)
+            .collect::<Vec<_>>();
 
         stream.extend(quote! {
             pub static #ident: LazyLock<BlockTransformer> = LazyLock::new(|| BlockTransformer {

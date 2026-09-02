@@ -9,15 +9,15 @@ use std::io::{Cursor, Error, Result, Write};
 use std::str::FromStr;
 
 use rustc_hash::FxHashMap;
-use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::ToNbtTag;
+use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent};
 use steel_utils::serial::{ReadFrom, WriteTo};
 use steel_utils::{Direction, Identifier};
 
 use crate::sound_event::SoundEventHolder;
-use crate::{RegistryTags, REGISTRY};
+use crate::{REGISTRY, RegistryTags};
 
 /// Item block transforms, e.g. shovel flattening dirt into a path.
 ///
@@ -135,7 +135,10 @@ pub enum TransformStateProvider {
 #[derive(Debug, Clone, PartialEq)]
 pub enum IntProviderLiteral {
     Constant(i32),
-    Uniform { min_inclusive: i32, max_inclusive: i32 },
+    Uniform {
+        min_inclusive: i32,
+        max_inclusive: i32,
+    },
 }
 
 /// `BlockPredicate` (worldgen predicate, not the advancement one).
@@ -537,14 +540,20 @@ fn holder_set_nbt(set: &TransformHolderSet) -> NbtTag {
             entries[0].to_string().to_nbt_tag()
         }
         TransformHolderSet::Entries(entries) => NbtTag::List(NbtList::String(
-            entries.iter().map(|entry| entry.to_string().into()).collect(),
+            entries
+                .iter()
+                .map(|entry| entry.to_string().into())
+                .collect(),
         )),
     }
 }
 
 fn insert_offset(value: &mut NbtCompound, offset: (i32, i32, i32)) {
     if offset != (0, 0, 0) {
-        value.insert("offset", NbtTag::IntArray(vec![offset.0, offset.1, offset.2]));
+        value.insert(
+            "offset",
+            NbtTag::IntArray(vec![offset.0, offset.1, offset.2]),
+        );
     }
 }
 
