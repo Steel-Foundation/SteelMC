@@ -3052,7 +3052,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                     self.water_swim_sound();
                 }
                 if emission.emits_events() {
-                    self.game_event(&vanilla_game_events::SWIM)
+                    self.game_event(&vanilla_game_events::SWIM);
                 }
             }
         } else if supporting_state.get_block() == &vanilla_blocks::AIR {
