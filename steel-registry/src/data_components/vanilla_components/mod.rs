@@ -25,7 +25,8 @@ pub use super::components::{
     ItemAttributeModifierEntry, ItemAttributeModifiers, ItemContainerContents, ItemDamageFunction,
     ItemEnchantments, ItemLore, ItemLoreTooLong, ItemUseAnimation, JukeboxPlayable, KineticWeapon,
     KineticWeaponCondition, LodestoneTracker, MapDecorationEntry, MapDecorations, MapId,
-    MapItemColor, MapPostProcessing, OminousBottleAmplifier, PaintingVariantComponent,
+    MapItemColor, MapPostProcessing, MobVisibility, OminousBottleAmplifier,
+    PaintingVariantComponent,
     PiercingWeapon, PotDecorations, PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial,
     Rarity, Recipes, Repairable, SeededContainerLoot, SignText, SulfurCubeContent,
     SuspiciousStewEffect,
@@ -208,6 +209,9 @@ pub const COOKING_FUEL: DataComponentType<CookingFuel> =
 
 pub const BREWING_FUEL: DataComponentType<BrewingFuel> =
     DataComponentType::new(Identifier::vanilla_static("brewing_fuel"));
+
+pub const MOB_VISIBILITY: DataComponentType<MobVisibility> =
+    DataComponentType::new(Identifier::vanilla_static("mob_visibility"));
 
 pub const STORED_ENCHANTMENTS: DataComponentType<ItemEnchantments> =
     DataComponentType::new(Identifier::vanilla_static("stored_enchantments"));
@@ -958,49 +962,51 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     registry.register(COOKING_FUEL);
     // 87: brewing_fuel
     registry.register(BREWING_FUEL);
-    // 88: villager/variant
+    // 88: mob_visibility
+    registry.register(MOB_VISIBILITY);
+    // 89: villager/variant
     registry.register(VILLAGER_VARIANT);
-    // 89: wolf/variant
+    // 90: wolf/variant
     registry.register(WOLF_VARIANT);
-    // 90: wolf/sound_variant
+    // 91: wolf/sound_variant
     registry.register(WOLF_SOUND_VARIANT);
-    // 91: wolf/collar
+    // 92: wolf/collar
     registry.register(WOLF_COLLAR);
-    // 92: fox/variant
+    // 93: fox/variant
     registry.register(FOX_VARIANT);
-    // 93: salmon/size
+    // 94: salmon/size
     registry.register(SALMON_SIZE);
-    // 94: parrot/variant
+    // 95: parrot/variant
     registry.register(PARROT_VARIANT);
-    // 95: tropical_fish/pattern
+    // 96: tropical_fish/pattern
     registry.register(TROPICAL_FISH_PATTERN);
-    // 96: tropical_fish/base_color
+    // 97: tropical_fish/base_color
     registry.register(TROPICAL_FISH_BASE_COLOR);
-    // 97: tropical_fish/pattern_color
+    // 98: tropical_fish/pattern_color
     registry.register(TROPICAL_FISH_PATTERN_COLOR);
-    // 98: mooshroom/variant
+    // 99: mooshroom/variant
     registry.register(MOOSHROOM_VARIANT);
-    // 99: rabbit/variant
+    // 100: rabbit/variant
     registry.register(RABBIT_VARIANT);
-    // 100: pig/variant
+    // 101: pig/variant
     registry.register(PIG_VARIANT);
-    // 101: pig/sound_variant
+    // 102: pig/sound_variant
     registry.register(PIG_SOUND_VARIANT);
-    // 102: cow/variant
+    // 103: cow/variant
     registry.register(COW_VARIANT);
-    // 103: cow/sound_variant
+    // 104: cow/sound_variant
     registry.register(COW_SOUND_VARIANT);
-    // 104: chicken/variant
+    // 105: chicken/variant
     registry.register(CHICKEN_VARIANT);
-    // 105: chicken/sound_variant
+    // 106: chicken/sound_variant
     registry.register(CHICKEN_SOUND_VARIANT);
-    // 106: zombie_nautilus/variant
+    // 107: zombie_nautilus/variant
     registry.register(ZOMBIE_NAUTILUS_VARIANT);
-    // 107: frog/variant
+    // 108: frog/variant
     registry.register(FROG_VARIANT);
-    // 108: horse/variant
+    // 109: horse/variant
     registry.register(HORSE_VARIANT);
-    // 109: painting/variant
+    // 110: painting/variant
     registry.register_with_codecs(
         PAINTING_VARIANT,
         painting_variant_network_reader,
@@ -1008,25 +1014,25 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
         painting_variant_nbt_reader,
         painting_variant_nbt_writer,
     );
-    // 110: llama/variant
+    // 111: llama/variant
     registry.register(LLAMA_VARIANT);
-    // 111: axolotl/variant
+    // 112: axolotl/variant
     registry.register(AXOLOTL_VARIANT);
-    // 112: cat/variant
+    // 113: cat/variant
     registry.register(CAT_VARIANT);
-    // 113: cat/sound_variant
+    // 114: cat/sound_variant
     registry.register(CAT_SOUND_VARIANT);
-    // 114: cat/collar
+    // 115: cat/collar
     registry.register(CAT_COLLAR);
-    // 115: sheep/color
+    // 116: sheep/color
     registry.register(SHEEP_COLOR);
-    // 116: shulker/color
+    // 117: shulker/color
     registry.register(SHULKER_COLOR);
-    // 117: sign_text_front
+    // 118: sign_text_front
     registry.register(SIGN_TEXT_FRONT);
-    // 118: sign_text_back
+    // 119: sign_text_back
     registry.register(SIGN_TEXT_BACK);
-    // 119: cushion/color
+    // 120: cushion/color
     registry.register(CUSHION_COLOR);
 }
 

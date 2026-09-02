@@ -189,6 +189,26 @@ pub(super) fn cooking_fuel_component_token(value: &Value) -> TokenStream {
     }
 }
 
+pub(super) fn mob_visibility_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("mob_visibility component must be an object"));
+    let targeting_entity_types = object
+        .get("targeting_entity_types")
+        .unwrap_or_else(|| panic!("mob_visibility.targeting_entity_types must be present"));
+    let targeting_entity_types = holder_set_token(targeting_entity_types, "mob_visibility", |s| {
+        entity_type_ref_token(s)
+            .unwrap_or_else(|| panic!("invalid mob_visibility entity type {s:?}"))
+    });
+    let visibility = object
+        .get("visibility")
+        .and_then(Value::as_f64)
+        .unwrap_or_else(|| panic!("mob_visibility.visibility must be a number")) as f32;
+    quote! {
+        vanilla_components::MobVisibility::new(#targeting_entity_types, #visibility)
+    }
+}
+
 pub(super) fn brewing_fuel_component_token(value: &Value) -> TokenStream {
     let object = value
         .as_object()

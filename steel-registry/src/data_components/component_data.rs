@@ -14,7 +14,8 @@ use super::components::{
     DebugStickState, DyedItemColor, Enchantable, EntityData, Equippable, FireworkExplosion,
     Fireworks, FoodProperties, InstrumentComponent, ItemAttributeModifiers, ItemContainerContents,
     ItemEnchantments, ItemLore, JukeboxPlayable, KineticWeapon, LodestoneTracker, MapDecorations,
-    MapId, MapItemColor, MapPostProcessing, OminousBottleAmplifier, PaintingVariantComponent,
+    MapId, MapItemColor, MapPostProcessing, MobVisibility, OminousBottleAmplifier,
+    PaintingVariantComponent,
     PiercingWeapon, PotDecorations, PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial,
     Rarity, Recipes, Repairable, SeededContainerLoot, SignText, SulfurCubeContent,
     SuspiciousStewEffects, SwingAnimation, Tool, TooltipDisplay, UseCooldown, UseEffects,
@@ -228,6 +229,7 @@ impl_component_downcast_type!(TooltipDisplay, "steel:item_component/tooltip_disp
 impl_component_downcast_type!(SwingAnimation, "steel:item_component/swing_animation");
 impl_component_downcast_type!(CookingFuel, "steel:item_component/cooking_fuel");
 impl_component_downcast_type!(BrewingFuel, "steel:item_component/brewing_fuel");
+impl_component_downcast_type!(MobVisibility, "steel:item_component/mob_visibility");
 impl_component_downcast_type!(
     BlockTransformerComponent,
     "steel:item_component/block_transformer"

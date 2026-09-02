@@ -3,7 +3,7 @@ use super::{
     banner_pattern_ref_token, block_state_component_token, block_transformer_ref_token,
     blocks_attacks_component_token, brewing_fuel_component_token, component_i32,
     compostable_component_token, consumable_component_token, cooking_fuel_component_token,
-    damage_type_ref_token,
+    damage_type_ref_token, mob_visibility_component_token,
     death_protection_component_token, dye_color_token, entity_type_ref_token,
     fireworks_component_token, food_component_token, generate_allowed_entities,
     generate_attack_range_component, generate_attribute_modifiers_component,
@@ -623,6 +623,12 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                 let brewing_fuel = brewing_fuel_component_token(value);
                 builder_calls.push(quote! {
                     .builder_set(vanilla_components::BREWING_FUEL, Some(#brewing_fuel))
+                });
+            }
+            "minecraft:mob_visibility" => {
+                let mob_visibility = mob_visibility_component_token(value);
+                builder_calls.push(quote! {
+                    .builder_set(vanilla_components::MOB_VISIBILITY, Some(#mob_visibility))
                 });
             }
             "minecraft:break_sound" => {
