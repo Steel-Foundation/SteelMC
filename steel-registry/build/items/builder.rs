@@ -1,18 +1,17 @@
-use crate::items::block_transformer::{block_transformer_component_token, pottery_pattern_component_token};
 use super::{
     FromStr, Ident, Identifier, Item, Span, ToShoutySnakeCase, TokenStream, Value,
-    banner_pattern_ref_token, block_state_component_token, blocks_attacks_component_token,
-    component_i32, compostable_component_token, consumable_component_token,
-    cooking_fuel_component_token, damage_type_ref_token, death_protection_component_token,
-    dye_color_token, entity_type_ref_token,
+    banner_pattern_ref_token, block_state_component_token, block_transformer_ref_token,
+    blocks_attacks_component_token, component_i32, compostable_component_token,
+    consumable_component_token, cooking_fuel_component_token, damage_type_ref_token,
+    death_protection_component_token, dye_color_token, entity_type_ref_token,
     fireworks_component_token, food_component_token, generate_allowed_entities,
     generate_attack_range_component, generate_attribute_modifiers_component,
     generate_piercing_weapon_component, generate_tool_component, generate_weapon_component,
     get_component_ident, holder_set_component_field, holder_set_token, identifier_token,
     instrument_ref_token, item_name_component_token, item_ref_token, jukebox_song_ref_token,
-    kinetic_weapon_component_token, optional_identifier_token, quote, rarity_component_token,
-    sound_event_holder_token, sound_event_value_token, swing_animation_component_token,
-    trim_material_ref_token, use_effects_component_token,
+    kinetic_weapon_component_token, optional_identifier_token, pottery_pattern_component_token,
+    quote, rarity_component_token, sound_event_holder_token, sound_event_value_token,
+    swing_animation_component_token, trim_material_ref_token, use_effects_component_token,
 };
 
 /// Returns the crafting remainder item key for a given item, if any.
@@ -46,7 +45,7 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
 
         match key.as_str() {
             "minecraft:block_transformer" => {
-                let transformer = block_transformer_component_token(value);
+                let transformer = block_transformer_ref_token(value);
                 builder_calls.push(quote! {
                     .builder_set(vanilla_components::BLOCK_TRANSFORMER, Some(#transformer))
                 });

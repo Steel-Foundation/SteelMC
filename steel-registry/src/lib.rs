@@ -23,6 +23,7 @@ pub mod attribute;
 pub mod banner_pattern;
 pub mod biome;
 pub mod block_entity_type;
+pub mod block_transformer;
 pub mod blocks;
 pub mod carver;
 pub mod cat_sound_variant;
@@ -250,6 +251,11 @@ pub mod vanilla_dimension_types;
 #[rustfmt::skip]
 #[path = "generated/vanilla_damage_types.rs"]
 pub mod vanilla_damage_types;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_block_transformers.rs"]
+pub mod vanilla_block_transformers;
 
 #[expect(warnings)]
 #[rustfmt::skip]

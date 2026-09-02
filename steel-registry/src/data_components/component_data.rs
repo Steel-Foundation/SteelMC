@@ -4,6 +4,8 @@ use std::fmt::{self, Debug, Formatter};
 
 use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey, ErasedType};
 
+use crate::block_transformer::BlockTransformerComponent;
+
 use super::components::{
     ArmorTrim, AttackRange, BannerPatternLayers, Bees, BlockEntityData, BlockItemStateProperties,
     BlocksAttacks, BundleContents, ChargedProjectiles, Compostable, Consumable, CookingFuel,
@@ -225,6 +227,10 @@ impl_component_downcast_type!(Rarity, "steel:item_component/rarity");
 impl_component_downcast_type!(TooltipDisplay, "steel:item_component/tooltip_display");
 impl_component_downcast_type!(SwingAnimation, "steel:item_component/swing_animation");
 impl_component_downcast_type!(CookingFuel, "steel:item_component/cooking_fuel");
+impl_component_downcast_type!(
+    BlockTransformerComponent,
+    "steel:item_component/block_transformer"
+);
 impl_component_downcast_type!(Compostable, "steel:item_component/compostable");
 impl_component_downcast_type!(
     MapPostProcessing,

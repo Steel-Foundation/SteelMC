@@ -30,6 +30,7 @@ mod attributes;
 mod banner_patterns;
 mod biomes;
 mod block_entity_types;
+mod block_transformers;
 mod blocks;
 mod carvers;
 mod cat_variants;
@@ -119,6 +120,7 @@ const VILLAGER_TYPES: &str = "villager_types";
 const VILLAGER_PROFESSIONS: &str = "villager_professions";
 const DIMENSIONS: &str = "dimension_types";
 const DAMAGE_TYPES: &str = "damage_types";
+const BLOCK_TRANSFORMERS: &str = "block_transformers";
 const DAMAGE_TYPE_TAGS: &str = "damage_type_tags";
 const BANNER_PATTERN_TAGS: &str = "banner_pattern_tags";
 const ENTITY_TYPE_TAGS: &str = "entity_type_tags";
@@ -209,6 +211,7 @@ pub fn main() {
         (villager_professions::build(), VILLAGER_PROFESSIONS),
         (dimension_types::build(), DIMENSIONS),
         (damage_types::build(), DAMAGE_TYPES),
+        (block_transformers::build(), BLOCK_TRANSFORMERS),
         (tags::damage_type(), DAMAGE_TYPE_TAGS),
         (jukebox_songs::build(), JUKEBOX_SONGS),
         (instruments::build(), INSTRUMENTS),

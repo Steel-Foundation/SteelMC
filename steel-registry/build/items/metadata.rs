@@ -227,6 +227,47 @@ pub(super) fn banner_pattern_ref_token(value: &str) -> TokenStream {
     quote! { &crate::vanilla_banner_patterns::#ident }
 }
 
+/// Resolves a `minecraft:block_transformer` item component value (a plain
+/// identifier referencing the `Registries.BLOCK_TRANSFORMER` entry built in
+/// `build/block_transformers.rs`) to that entry's generated static.
+pub(super) fn block_transformer_ref_token(value: &Value) -> TokenStream {
+    let key = value
+        .as_str()
+        .unwrap_or_else(|| panic!("block_transformer component must be an identifier: {value}"));
+    let id = Identifier::from_str(key)
+        .unwrap_or_else(|error| panic!("invalid block_transformer component id {key:?}: {error}"));
+    assert_eq!(
+        id.namespace.as_ref(),
+        "minecraft",
+        "vanilla item block_transformer references must use the minecraft namespace: {id}"
+    );
+
+    let ident = Ident::new(&id.path.to_shouty_snake_case(), Span::call_site());
+    quote! {
+        vanilla_components::BlockTransformerComponent::new(
+            &*crate::vanilla_block_transformers::#ident,
+        )
+    }
+}
+
+pub(super) fn pottery_pattern_component_token(value: &Value) -> TokenStream {
+    let pattern = value
+        .as_str()
+        .unwrap_or_else(|| panic!("provides_pottery_pattern component must be an identifier"));
+    let (namespace, path) = pattern.split_once(':').unwrap_or(("minecraft", pattern));
+    assert_eq!(
+        namespace, "minecraft",
+        "vanilla provides_pottery_pattern must reference a vanilla pattern: {pattern}"
+    );
+    let pattern = Ident::new(&path.to_shouty_snake_case(), Span::call_site());
+
+    quote! {
+        vanilla_components::ProvidesPotteryPattern {
+            pattern: &crate::vanilla_decorated_pot_patterns::#pattern,
+        }
+    }
+}
+
 pub(super) fn item_ref_token(value: &str, component: &str) -> TokenStream {
     let id = Identifier::from_str(value)
         .unwrap_or_else(|error| panic!("invalid {component} item id {value:?}: {error}"));

@@ -20,7 +20,6 @@ mod consumables;
 mod kinetic;
 mod metadata;
 mod weapons;
-mod block_transformer;
 
 use attributes::{generate_allowed_entities, generate_attribute_modifiers_component};
 use basic_components::{
@@ -31,9 +30,10 @@ use builder::{generate_builder_calls, get_craft_remainder};
 use consumables::{consumable_component_token, death_protection_component_token};
 use kinetic::kinetic_weapon_component_token;
 use metadata::{
-    banner_pattern_ref_token, compostable_component_token, cooking_fuel_component_token,
-    damage_type_ref_token, entity_type_ref_token, holder_set_component_field, holder_set_token,
-    item_name_component_token, item_ref_token, optional_identifier_token, rarity_component_token,
+    banner_pattern_ref_token, block_transformer_ref_token, compostable_component_token,
+    cooking_fuel_component_token, damage_type_ref_token, entity_type_ref_token,
+    holder_set_component_field, holder_set_token, item_name_component_token, item_ref_token,
+    optional_identifier_token, pottery_pattern_component_token, rarity_component_token,
     registry_sound_event_holder_token, sound_event_holder_token, sound_event_value_token,
     swing_animation_component_token, use_effects_component_token,
 };
