@@ -279,6 +279,7 @@ impl SheepEntity {
     /// colors, falling back to a random parent when no mix recipe exists.
     #[must_use]
     pub fn get_mixed_color(color1: DyeColor, color2: DyeColor) -> DyeColor {
+        // TODO: add this function to DyeColor
         Self::find_color_mix_in_recipes(color1, color2).unwrap_or_else(|| {
             if rand::random::<bool>() {
                 color1
@@ -289,6 +290,7 @@ impl SheepEntity {
     }
 
     fn find_color_mix_in_recipes(color1: DyeColor, color2: DyeColor) -> Option<DyeColor> {
+        // TODO: add this function to DyeColor
         let dye1: Vec<_> = REGISTRY
             .items
             .iter()
