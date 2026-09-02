@@ -117,7 +117,7 @@ pub use coral_fan_block::CoralFanBlock;
 pub use coral_plant_block::CoralPlantBlock;
 pub use coral_wall_fan_block::CoralWallFanBlock;
 pub use crop_block::CropBlock;
-pub use dirt_path_block::DirtPathBlock;
+pub use dirt_path_block::PathBlock;
 pub use double_plant_block::DoublePlantBlock;
 pub use dry_vegetation_block::DryVegetationBlock;
 pub use eyeblossom_block::{EyeblossomBlock, EyeblossomType};
