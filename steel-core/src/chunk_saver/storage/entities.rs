@@ -240,7 +240,7 @@ impl ChunkStorage {
     pub(super) fn persistent_to_block_entity(
         persistent: &PersistentBlockEntity,
         chunk_pos: ChunkPos,
-        chunk: &LevelChunk,
+        chunk: FullChunkRef<'_>,
     ) -> Option<SharedBlockEntity> {
         let pos = Self::persistent_block_entity_pos(persistent, chunk_pos);
         let state = chunk.get_block_state(pos);

@@ -193,7 +193,7 @@ mod tests {
     use std::sync::Weak;
 
     use glam::DVec3;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
     use crate::entity::ai::node::Node;
@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn door_interact_goal_requires_horizontal_collision() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = DoorInteractGoal::new();
         let mob = pig(DVec3::ZERO);
 
@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn door_interact_path_scan_uses_current_node_and_one_ahead() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = DoorInteractGoal::new();
         let mob = pig(DVec3::ZERO);
         let path = Path::new(
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn door_interact_path_scan_uses_above_mob_as_fallback() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = DoorInteractGoal::new();
         let mob = pig(DVec3::ZERO);
         let path = Path::new(vec![Node::new(8, 0, 0)], BlockPos::new(8, 0, 0), true);
@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn door_interact_tick_marks_passed_after_crossing_door_plane() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = DoorInteractGoal::new();
         let mob = pig(DVec3::ZERO);
         goal.door_pos = BlockPos::new(1, 1, 0);
@@ -271,7 +271,7 @@ mod tests {
 
     #[test]
     fn door_interact_can_use_requires_world_after_collision() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut goal = DoorInteractGoal::new();
         let mob = pig(DVec3::ZERO);
         set_horizontal_collision(&mob);

@@ -19,6 +19,7 @@ use crate::cow_sound_variant::CowSoundVariant;
 use crate::cow_variant::CowVariant;
 use crate::frog_variant::FrogVariant;
 use crate::map_decoration_type::MapDecorationType;
+use crate::painting_variant::PaintingVariant;
 use crate::pig_sound_variant::PigSoundVariant;
 use crate::pig_variant::PigVariant;
 use crate::potion::Potion;
@@ -165,6 +166,7 @@ impl_registry_reference_entry!(
 impl_registry_reference_entry!(FrogVariant, frog_variants, "frog variant");
 impl_registry_reference_entry!(CatVariant, cat_variants, "cat variant");
 impl_registry_reference_entry!(CatSoundVariant, cat_sound_variants, "cat sound variant");
+impl_registry_reference_entry!(PaintingVariant, painting_variants, "painting variant");
 impl_registry_reference_entry!(Potion, potions, "potion");
 impl_registry_reference_entry!(
     MapDecorationType,
@@ -190,10 +192,11 @@ mod tests {
     use crate::cow_sound_variant::CowSoundVariant;
     use crate::cow_variant::CowVariant;
     use crate::frog_variant::FrogVariant;
+    use crate::init_vanilla_registry;
     use crate::map_decoration_type::MapDecorationType;
+    use crate::painting_variant::PaintingVariant;
     use crate::pig_sound_variant::PigSoundVariant;
     use crate::pig_variant::PigVariant;
-    use crate::test_support::init_test_registry;
     use crate::villager_type::VillagerType;
     use crate::wolf_sound_variant::WolfSoundVariant;
     use crate::wolf_variant::WolfVariant;
@@ -227,7 +230,7 @@ mod tests {
 
     #[test]
     fn fixed_variant_references_share_vanilla_holder_codecs() {
-        init_test_registry();
+        init_vanilla_registry();
         assert_codecs::<VillagerType>();
         assert_codecs::<WolfVariant>();
         assert_codecs::<WolfSoundVariant>();
@@ -241,12 +244,13 @@ mod tests {
         assert_codecs::<FrogVariant>();
         assert_codecs::<CatVariant>();
         assert_codecs::<CatSoundVariant>();
+        assert_codecs::<PaintingVariant>();
         assert_codecs::<MapDecorationType>();
     }
 
     #[test]
     fn fixed_variant_references_reject_unknown_network_ids() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut network = Vec::new();
         VarInt(i32::MAX)
             .write(&mut network)

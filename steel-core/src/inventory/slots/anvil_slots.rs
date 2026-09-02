@@ -146,8 +146,7 @@ mod tests {
 
     use steel_registry::{
         blocks::{block_state_ext::BlockStateExt as _, properties::BlockStateProperties},
-        test_support::init_test_registry,
-        vanilla_blocks,
+        init_vanilla_registry, vanilla_blocks,
     };
     use steel_utils::{BlockPos, ChunkPos, locks::IntoShared as _, types::UpdateFlags};
 
@@ -161,7 +160,7 @@ mod tests {
 
     #[test]
     fn anvil_damage_does_not_notify_neighbors() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("anvil_damage_update_flags");
         let anvil_pos = BlockPos::new(8, 64, 8);

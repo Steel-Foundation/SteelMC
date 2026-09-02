@@ -205,7 +205,7 @@ mod tests {
     use super::{BeehiveOccupant, Bees};
     use crate::data_components::components::{CustomData, EntityData};
     use crate::data_components::vanilla_components::BEES;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse(tag: NbtTag) -> Option<Bees> {
@@ -217,7 +217,7 @@ mod tests {
 
     #[test]
     fn bee_occupants_round_trip_both_codecs_and_hash_as_a_list() {
-        init_test_registry();
+        init_vanilla_registry();
         let bee = REGISTRY
             .entity_types
             .by_key(&steel_utils::Identifier::vanilla_static("bee"))
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn extracted_beehives_start_with_no_occupants() {
-        init_test_registry();
+        init_vanilla_registry();
         for key in ["bee_nest", "beehive"] {
             let item = REGISTRY
                 .items

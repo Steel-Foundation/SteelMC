@@ -640,7 +640,7 @@ mod tests {
 
     use super::{BlocksAttacks, DamageReduction, ItemDamageFunction};
     use crate::data_components::vanilla_components::BLOCKS_ATTACKS;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse(tag: simdnbt::owned::NbtTag) -> Option<BlocksAttacks> {
@@ -652,7 +652,7 @@ mod tests {
 
     #[test]
     fn shield_component_round_trips_both_codecs() {
-        init_test_registry();
+        init_vanilla_registry();
         let shield = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("shield"))

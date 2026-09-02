@@ -13,39 +13,39 @@ use crate::chunk::gameplay_chunk_lookup_cache::GameplayChunkLookupCacheStats;
 
 /// Timing information for one background epoch and its boundary commit.
 #[derive(Debug, Default)]
-pub(crate) struct ChunkMapSchedulingTimings {
+pub struct ChunkMapSchedulingTimings {
     /// Time spent applying queued ticket operations and propagating their levels.
-    pub(crate) ticket_updates: Duration,
+    pub ticket_updates: Duration,
     /// Time spent finalizing block-entity unloads before the boundary commit.
-    pub(crate) block_entity_unloads: Duration,
+    pub block_entity_unloads: Duration,
     /// Time spent revoking ticking readiness before holder lifecycle changes.
-    pub(crate) readiness_demotions: Duration,
+    pub readiness_demotions: Duration,
     /// Time spent committing holder lifecycle changes at the game-tick boundary.
-    pub(crate) lifecycle_commit: Duration,
+    pub lifecycle_commit: Duration,
     /// Time spent reconciling Full neighborhoods and applying ticking readiness.
-    pub(crate) readiness_reconcile: Duration,
+    pub readiness_reconcile: Duration,
     /// Subset of `readiness_reconcile` spent running generation post-processing.
-    pub(crate) post_process_generation: Duration,
+    pub post_process_generation: Duration,
     /// Number of chunks whose generation post-processing completed.
-    pub(crate) post_process_chunk_count: usize,
+    pub post_process_chunk_count: usize,
     /// Number of packed generation post-processing positions attempted.
-    pub(crate) post_process_position_count: usize,
+    pub post_process_position_count: usize,
     /// Number of readiness candidates considered during reconciliation.
-    pub(crate) readiness_candidate_count: usize,
+    pub readiness_candidate_count: usize,
     /// Time spent rebuilding the published ticking-chunk snapshot.
-    pub(crate) ticking_snapshot_rebuild: Duration,
+    pub ticking_snapshot_rebuild: Duration,
     /// Number of block-ticking chunks in a snapshot rebuilt during this epoch.
-    pub(crate) rebuilt_ticking_chunk_count: usize,
+    pub rebuilt_ticking_chunk_count: usize,
     /// Scoped holder-cache activity during readiness reconciliation.
-    pub(crate) lookup_cache: GameplayChunkLookupCacheStats,
+    pub lookup_cache: GameplayChunkLookupCacheStats,
     /// Time spent creating or updating chunk-generation tasks.
-    pub(crate) schedule_generation: Duration,
+    pub schedule_generation: Duration,
     /// Number of holders scheduled for generation.
-    pub(crate) scheduled_count: usize,
+    pub scheduled_count: usize,
     /// Time spent refilling generation worker slots.
-    pub(crate) run_generation: Duration,
+    pub run_generation: Duration,
     /// Time spent processing physical chunk unloads.
-    pub(crate) process_unloads: Duration,
+    pub process_unloads: Duration,
 }
 
 /// Timing information produced by the background half of a scheduling epoch.

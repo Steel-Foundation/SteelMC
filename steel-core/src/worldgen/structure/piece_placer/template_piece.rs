@@ -778,7 +778,7 @@ impl StructurePiecePlacer {
 mod tests {
     use super::*;
     use crate::behavior::init_behaviors;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     #[test]
     fn center_gated_expanded_clip_requires_template_center_inside_center_chunk() {
@@ -806,7 +806,7 @@ mod tests {
 
     #[test]
     fn marker_water_check_uses_fluid_state_for_seagrass() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         assert!(StructurePiecePlacer::is_water_state(

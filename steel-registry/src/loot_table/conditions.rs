@@ -2,8 +2,8 @@ use steel_utils::random::Random;
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::{
-    BlockStateExt, DamageSourceInfo, EntityEquipmentRef, EntityRef, EntityRefFlags, Identifier,
-    ItemStack, LootContext, LootContextEntity, LootError, LootResult, NumberProvider,
+    BlockStateExt, DamageSourceInfo, DyeColor, EntityEquipmentRef, EntityRef, EntityRefFlags,
+    Identifier, ItemStack, LootContext, LootContextEntity, LootError, LootResult, NumberProvider,
     NumberProviderRange, REGISTRY, RegistryExt, TaggedRegistryExt,
 };
 use crate::RegistryHolderSet;
@@ -235,6 +235,12 @@ pub struct EntityPredicate {
     pub entity_type: Option<Identifier>,
     pub flags: Option<EntityFlags>,
     pub equipment: Option<EntityEquipment>,
+    /// Vanilla `minecraft:components.sheep/color` entity data component check.
+    pub sheep_color: Option<DyeColor>,
+    /// Vanilla `minecraft:type_specific/sheep.sheared` check.
+    pub sheep_sheared: Option<bool>,
+    /// Vanilla `minecraft:components.chicken/variant` entity data component check.
+    pub chicken_variant: Option<Identifier>,
 }
 
 /// Entity flags (`is_on_fire`, `is_sneaking`, etc.)
@@ -526,6 +532,24 @@ impl EntityPredicate {
 
         if let Some(equipment) = &self.equipment
             && !equipment.test(entity.equipment, ctx)
+        {
+            return false;
+        }
+
+        if let Some(expected_color) = &self.sheep_color
+            && entity.sheep_color != Some(*expected_color)
+        {
+            return false;
+        }
+
+        if let Some(expected_sheared) = &self.sheep_sheared
+            && entity.sheep_sheared != Some(*expected_sheared)
+        {
+            return false;
+        }
+
+        if let Some(expected_variant) = &self.chicken_variant
+            && entity.chicken_variant != Some(expected_variant)
         {
             return false;
         }

@@ -195,7 +195,7 @@ mod tests {
     use std::sync::Weak;
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
 
@@ -208,7 +208,7 @@ mod tests {
     }
 
     fn gateway() -> EndGatewayBlockEntity {
-        init_test_registry();
+        init_vanilla_registry();
         EndGatewayBlockEntity::new(
             Weak::new(),
             BlockPos::new(4, 65, -9),

@@ -19,6 +19,7 @@ use steel_utils::ChunkPos;
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 
 use crate::chunk::player_chunk_view::PlayerChunkView;
+use crate::entity::leash::Leashable;
 use crate::entity::{
     Entity, EntityMovementSyncPacket, MobEffectSyncPacket, ServerEntityMovementSyncState,
     ServerEntityMovementSyncUpdate, SharedEntity, WeakEntity,
@@ -420,38 +421,40 @@ impl EntityTracker {
             if let Some(dirty_entity_data) = dirty_entity_data {
                 entity_data_to_broadcast.push((entity_id, dirty_entity_data));
             }
-            let dirty_attributes = entity.drain_dirty_syncable_attributes();
-            if !dirty_attributes.is_empty() {
-                attributes_to_broadcast.push((entity_id, dirty_attributes));
-            }
-            let dirty_mob_effects = entity.drain_dirty_mob_effects();
-            if !dirty_mob_effects.is_empty() {
-                let mut recipient_ids = FxHashSet::default();
-                if entity.entity_type() == &vanilla_entities::PLAYER
-                    && get_player(entity_id).is_some()
-                {
-                    recipient_ids.insert(entity_id);
+            if let Some(living) = entity.as_living_entity() {
+                let dirty_attributes = living.drain_dirty_syncable_attributes();
+                if !dirty_attributes.is_empty() {
+                    attributes_to_broadcast.push((entity_id, dirty_attributes));
                 }
-                for passenger in entity.passengers() {
-                    let passenger_id = passenger.id();
-                    if passenger.entity_type() == &vanilla_entities::PLAYER
-                        && get_player(passenger_id).is_some()
+                let dirty_mob_effects = living.drain_dirty_mob_effects();
+                if !dirty_mob_effects.is_empty() {
+                    let mut recipient_ids = FxHashSet::default();
+                    if entity.entity_type() == &vanilla_entities::PLAYER
+                        && get_player(entity_id).is_some()
                     {
-                        recipient_ids.insert(passenger_id);
+                        recipient_ids.insert(entity_id);
+                    }
+                    for passenger in entity.passengers() {
+                        let passenger_id = passenger.id();
+                        if passenger.entity_type() == &vanilla_entities::PLAYER
+                            && get_player(passenger_id).is_some()
+                        {
+                            recipient_ids.insert(passenger_id);
+                        }
+                    }
+                    for recipient_id in recipient_ids {
+                        for change in &dirty_mob_effects {
+                            mob_effect_packets_to_send.push((
+                                recipient_id,
+                                change.packet(entity_id, recipient_id == entity_id),
+                            ));
+                        }
                     }
                 }
-                for recipient_id in recipient_ids {
-                    for change in &dirty_mob_effects {
-                        mob_effect_packets_to_send.push((
-                            recipient_id,
-                            change.packet(entity_id, recipient_id == entity_id),
-                        ));
-                    }
+                let dirty_equipment = living.drain_dirty_equipment();
+                if !dirty_equipment.is_empty() {
+                    equipment_to_broadcast.push((entity_id, dirty_equipment));
                 }
-            }
-            let dirty_equipment = entity.drain_dirty_equipment();
-            if !dirty_equipment.is_empty() {
-                equipment_to_broadcast.push((entity_id, dirty_equipment));
             }
 
             let leash_holder_id = leash_holder_id(entity.as_ref());
@@ -510,21 +513,29 @@ impl EntityTracker {
         }
     }
 
-    /// Called when a player leaves - removes them from all entity tracking.
-    pub fn on_player_leave(&self, player_id: i32) {
-        // We need to iterate all entities to remove this player
-        // This is acceptable since player leave is infrequent
+    /// Removes a player from every entity pairing and despawns those entities from their client.
+    ///
+    /// Mirrors vanilla `ChunkMap.removeEntity` calling `TrackedEntity.removePlayer` for each
+    /// tracked entity before the player leaves the world.
+    pub fn on_player_leave(&self, player: &Player) {
+        let player_id = player.id();
+        let mut entities_to_despawn = Vec::new();
         let mut dead_entities = Vec::new();
 
         self.entities.iter_sync(|entity_id, tracked| {
-            tracked.seen_by.write().remove(&player_id);
+            if tracked.seen_by.write().remove(&player_id) {
+                entities_to_despawn.push(*entity_id);
+            }
             if tracked.entity.strong_count() == 0 {
                 dead_entities.push(*entity_id);
             }
-            true // continue iteration
+            true
         });
 
-        // Clean up any dead entities we found
+        for entity_id in entities_to_despawn {
+            player.send_packet(CRemoveEntities::single(entity_id));
+        }
+
         for entity_id in dead_entities {
             self.remove_dead_entity(entity_id);
         }
@@ -793,8 +804,8 @@ impl EntityTracker {
 
 fn leash_holder_id(entity: &dyn Entity) -> Option<i32> {
     entity
-        .as_mob()
-        .and_then(super::mob::Mob::leash_holder)
+        .as_leashable()
+        .and_then(Leashable::leash_holder)
         .map(|holder| holder.id())
 }
 
@@ -863,6 +874,16 @@ impl EntitySpawnPairing {
         let y_rot = to_angle_byte(yaw);
         let head_y_rot = to_angle_byte(head_yaw);
 
+        let (attributes, equipment) = entity.as_living_entity().map_or_else(
+            || (Vec::new(), Vec::new()),
+            |living| {
+                (
+                    living.pack_syncable_attributes(),
+                    living.pack_all_equipment(),
+                )
+            },
+        );
+
         Self {
             spawn_packet: CAddEntity {
                 id: entity.id(),
@@ -876,8 +897,8 @@ impl EntitySpawnPairing {
                 data: entity.spawn_data(),
             },
             entity_data: entity.pack_all_entity_data(),
-            attributes: entity.pack_syncable_attributes(),
-            equipment: entity.pack_all_equipment(),
+            attributes,
+            equipment,
             passenger_packets,
             entity_link_packet: leash_holder_id(entity.as_ref())
                 .map(|holder_id| CSetEntityLink::new(entity.id(), holder_id)),

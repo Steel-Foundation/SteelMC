@@ -8,12 +8,11 @@ use super::scheduler::{RegisteredChunkTicks, TickKind};
 use super::*;
 use steel_registry::blocks::Block;
 use steel_registry::blocks::behavior::BlockConfig;
-use steel_registry::test_support::init_test_registry;
+use steel_registry::init_vanilla_registry;
 use steel_registry::vanilla_fluids;
 use steel_utils::Identifier;
 
 use crate::behavior::init_behaviors;
-use crate::chunk::chunk_access::ChunkStatus;
 use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
 fn test_block() -> BlockRef {
@@ -137,8 +136,80 @@ fn schedule_deduplicates_by_position_and_type() {
 }
 
 #[test]
+fn proto_pending_scheduling_is_linearized_with_full_promotion() {
+    init_vanilla_registry();
+    let block_pos = BlockPos::new(1, 2, 3);
+    let fluid_pos = BlockPos::new(4, 5, 6);
+
+    for _ in 0..64 {
+        let container = Arc::new(ChunkTickContainer::new_proto(ChunkTickLists::new(
+            BlockTickList::new_pending(),
+            FluidTickList::new_pending(),
+        )));
+        let barrier = Arc::new(Barrier::new(4));
+
+        let block_container = Arc::clone(&container);
+        let block_barrier = Arc::clone(&barrier);
+        let block_worker = thread::spawn(move || {
+            block_barrier.wait();
+            block_container.schedule_pending_block(test_block(), block_pos, TickPriority::Normal)
+        });
+
+        let fluid_container = Arc::clone(&container);
+        let fluid_barrier = Arc::clone(&barrier);
+        let fluid_worker = thread::spawn(move || {
+            fluid_barrier.wait();
+            fluid_container.schedule_pending_fluid(
+                &vanilla_fluids::WATER,
+                fluid_pos,
+                TickPriority::Normal,
+            )
+        });
+
+        let promotion_container = Arc::clone(&container);
+        let promotion_barrier = Arc::clone(&barrier);
+        let promotion_worker = thread::spawn(move || {
+            promotion_barrier.wait();
+            promotion_container.promote_to_full()
+        });
+
+        barrier.wait();
+        let Ok(block_result) = block_worker.join() else {
+            panic!("block scheduling worker panicked");
+        };
+        let Ok(fluid_result) = fluid_worker.join() else {
+            panic!("fluid scheduling worker panicked");
+        };
+        let Ok(promoted) = promotion_worker.join() else {
+            panic!("promotion worker panicked");
+        };
+        assert!(promoted);
+
+        let Some(snapshot) = container.snapshot(0) else {
+            panic!("promoted scheduled-tick container should remain available");
+        };
+        match block_result {
+            Some(true) => {
+                assert_eq!(snapshot.block.len(), 1);
+                assert_eq!(snapshot.block[0].pos, block_pos);
+            }
+            None => assert!(snapshot.block.is_empty()),
+            Some(false) => panic!("fresh proto block tick cannot be a duplicate"),
+        }
+        match fluid_result {
+            Some(true) => {
+                assert_eq!(snapshot.fluid.len(), 1);
+                assert_eq!(snapshot.fluid[0].pos, fluid_pos);
+            }
+            None => assert!(snapshot.fluid.is_empty()),
+            Some(false) => panic!("fresh proto fluid tick cannot be a duplicate"),
+        }
+    }
+}
+
+#[test]
 fn chunk_snapshot_does_not_wait_for_world_scheduler_metadata() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("chunk_tick_snapshot_lock_scope");
     let chunk_pos = ChunkPos::new(0, 0);
@@ -152,10 +223,7 @@ fn chunk_snapshot_does_not_wait_for_world_scheduler_metadata() {
     let (sender, receiver) = mpsc::channel();
     let worker = thread::spawn(move || {
         worker_barrier.wait();
-        let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
-            return;
-        };
-        let Some(full) = chunk.as_full() else {
+        let Some(full) = holder.try_full_chunk() else {
             return;
         };
         let _ = sender.send(full.scheduled_tick_snapshot().block.len());
@@ -609,7 +677,7 @@ fn only_popped_containers_report_a_persistence_change() {
     let pending_pos = ChunkPos::new(1, 0);
     let scheduler = scheduler_with_block_lists([(empty_pos, empty), (pending_pos, pending)]);
     let before_deadline = begin_block_tick_at(&scheduler, 1, &[empty_pos, pending_pos], 1);
-    assert!(before_deadline.changed_containers.is_empty());
+    assert_eq!(before_deadline.changed_containers.len(), 0);
     let selected = begin_block_tick_at(&scheduler, 3, &[empty_pos, pending_pos], 1);
     assert_eq!(selected.changed_containers, vec![1]);
 }

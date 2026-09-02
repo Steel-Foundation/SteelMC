@@ -2,11 +2,14 @@ use std::sync::Arc;
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, RailShape};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, EnumProperty, RailShape,
+};
 use steel_registry::blocks::shapes::SupportType;
-use steel_registry::{vanilla_block_tags::BlockTag, vanilla_fluids};
+use steel_registry::vanilla_block_tags::BlockTag;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
+use crate::behavior::block::schedule_water_tick_if_waterlogged;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockPlaceContext};
 use crate::world::{LevelReader, ScheduledTickAccess, SignalGetter as _, World};
 
@@ -17,6 +20,9 @@ pub(super) struct BaseRailBlock {
     pub(super) block: BlockRef,
     is_straight: bool,
 }
+
+const RAIL_SHAPE: &EnumProperty<RailShape> = &BlockStateProperties::RAIL_SHAPE;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl BaseRailBlock {
     #[must_use]
@@ -59,11 +65,8 @@ impl BaseRailBlock {
         };
         self.block
             .default_state()
-            .set_value(&BlockStateProperties::RAIL_SHAPE, shape)
-            .set_value(
-                &BlockStateProperties::WATERLOGGED,
-                context.is_water_source(),
-            )
+            .set_value(RAIL_SHAPE, shape)
+            .set_value(WATERLOGGED, context.is_water_source())
     }
 
     pub(super) fn update_shape(
@@ -71,10 +74,7 @@ impl BaseRailBlock {
         level: &dyn ScheduledTickAccess,
         pos: BlockPos,
     ) -> BlockStateId {
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
-            let delay = level.fluid_tick_delay(&vanilla_fluids::WATER);
-            level.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, level, pos);
         state
     }
 
@@ -101,7 +101,7 @@ impl BaseRailBlock {
         state: BlockStateId,
         first: bool,
     ) -> BlockStateId {
-        let current = state.get_value(&BlockStateProperties::RAIL_SHAPE);
+        let current = state.get_value(RAIL_SHAPE);
         let Some(mut rail) = RailState::new(world, pos, state) else {
             return state;
         };
@@ -113,7 +113,7 @@ impl BaseRailBlock {
             return true;
         }
 
-        match state.get_value(&BlockStateProperties::RAIL_SHAPE) {
+        match state.get_value(RAIL_SHAPE) {
             RailShape::AscendingEast => !Self::can_support_rigid_block(world.as_ref(), pos.east()),
             RailShape::AscendingWest => !Self::can_support_rigid_block(world.as_ref(), pos.west()),
             RailShape::AscendingNorth => {
@@ -161,10 +161,7 @@ impl BaseRailBlock {
         if moved_by_piston {
             return;
         }
-        if state
-            .get_value(&BlockStateProperties::RAIL_SHAPE)
-            .is_slope()
-        {
+        if state.get_value(RAIL_SHAPE).is_slope() {
             world.update_neighbors_at(pos.above(), self.block);
         }
         if self.is_straight {
@@ -176,7 +173,7 @@ impl BaseRailBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_blocks;
 
     use super::*;
@@ -184,7 +181,7 @@ mod tests {
 
     #[test]
     fn rail_capability_requires_both_tag_and_behavior() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         assert!(BaseRailBlock::is_rail_state(

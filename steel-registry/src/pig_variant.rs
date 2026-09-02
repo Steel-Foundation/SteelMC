@@ -98,11 +98,11 @@ crate::impl_registry!(
 mod tests {
     use steel_utils::random::legacy_random::LegacyRandom;
 
-    use crate::{REGISTRY, test_support::init_test_registry, vanilla_biomes, vanilla_pig_variants};
+    use crate::{REGISTRY, init_vanilla_registry, vanilla_biomes, vanilla_pig_variants};
 
     #[test]
     fn select_spawn_variant_uses_highest_matching_biome_priority() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut random = LegacyRandom::from_seed(0);
         assert_eq!(

@@ -229,7 +229,9 @@ mod tests {
     fn test_menu(key: &'static str) -> (Arc<Player>, ContainerRef, Menu) {
         init_test_registry();
         let world = fresh_test_world(key);
-        let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "Smelter", 1).build();
+        let player = TestPlayerBuilder::new(world, "Smelter", 1)
+            .uuid(Uuid::from_u128(1))
+            .build();
         let block_entity = FurnaceBlockEntity::new(
             Weak::new(),
             BlockPos::ZERO,
@@ -311,7 +313,9 @@ mod tests {
     fn opening_copies_all_four_furnace_data_values() {
         init_test_registry();
         let world = fresh_test_world("furnace_menu_data");
-        let player = TestPlayerBuilder::new(world, Uuid::from_u128(2), "DataSmelter", 1).build();
+        let player = TestPlayerBuilder::new(world, "DataSmelter", 1)
+            .uuid(Uuid::from_u128(2))
+            .build();
         let block_entity = FurnaceBlockEntity::new(
             Weak::new(),
             BlockPos::ZERO,
@@ -348,13 +352,9 @@ mod tests {
         init_test_registry();
         let world = fresh_test_world("furnace_result_experience");
         insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
-        let player = TestPlayerBuilder::new(
-            Arc::clone(&world),
-            Uuid::from_u128(3),
-            "ExperiencedSmelter",
-            1,
-        )
-        .build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "ExperiencedSmelter", 1)
+            .uuid(Uuid::from_u128(3))
+            .build();
         let block_entity = FurnaceBlockEntity::new(
             Arc::downgrade(&world),
             BlockPos::ZERO,

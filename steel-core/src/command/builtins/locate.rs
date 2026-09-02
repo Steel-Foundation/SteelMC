@@ -17,10 +17,8 @@ use super::super::{
     },
     registration::CommandRegistration,
 };
-use crate::worldgen::{
-    generator::ChunkGenerator,
-    structure::locate::{LocatedStructure, StructureLocatePoll, StructureLocator},
-};
+use crate::worldgen::generator::ChunkGenerator as _;
+use crate::worldgen::structure::locate::{LocatedStructure, StructureLocatePoll, StructureLocator};
 
 const MAX_STRUCTURE_SEARCH_RADIUS: i32 = 100;
 
@@ -42,9 +40,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 fn start_structure_search(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<LocateStructureSearch, CommandSyntaxError> {
-    let Some(query) = context.structure_or_tag_key("structure") else {
-        return Err(missing_argument("structure"));
-    };
+    let query = context.structure_or_tag_key("structure")?;
     let Some(structures) = query.resolve() else {
         return Err(invalid_structure(query));
     };
@@ -152,12 +148,6 @@ fn structure_not_found(query: &StructureOrTagKey) -> CommandSyntaxError {
     )
 }
 
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
-}
-
 fn horizontal_distance(a: BlockPos, b: BlockPos) -> i32 {
     let dx = b.0.x.wrapping_sub(a.0.x);
     let dz = b.0.z.wrapping_sub(a.0.z);
@@ -206,7 +196,7 @@ mod tests {
         brigadier::{CommandDispatcher, NodeId},
         execution::SteelCommandRuntime,
     };
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
 
@@ -226,7 +216,7 @@ mod tests {
 
     #[test]
     fn locate_graph_exposes_only_the_supported_typed_structure_branch() {
-        init_test_registry();
+        init_vanilla_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

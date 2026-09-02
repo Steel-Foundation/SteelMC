@@ -80,12 +80,6 @@ impl BlockBehaviorRegistry {
         self.behaviors[id].as_ref()
     }
 
-    /// Gets the behavior for a block by its ID.
-    #[must_use]
-    pub fn get_behavior_by_id(&self, id: usize) -> Option<&dyn BlockBehavior> {
-        self.behaviors.get(id).map(AsRef::as_ref)
-    }
-
     /// Gets the behavior for a block state.
     #[must_use]
     pub fn get_behavior_for_state(&self, state: BlockStateId) -> Option<&dyn BlockBehavior> {

@@ -1,10 +1,11 @@
 use super::{
     Arc, ChunkGenerationTask, ChunkHolder, ChunkMap, ChunkPos, ChunkStatus, ChunkTicketLevel,
-    FullNeighborhoodCounts, FullNeighborhoodError, FullNeighborhoodIndex, FullPublication,
-    FxHashMap, GENERATION_THREAD_MULTIPLE, GenerationTaskPriority, Instant, LevelChange, Ordering,
-    PackedChunkPos, PostProcessGenerationError, ReadinessReconcileResult,
-    RunningGenerationTaskPermit, TickableChunk, TickingChunkSnapshot, TickingReadiness,
-    TickingReadinessCandidate, instrument, is_block_ticking, is_entity_ticking, is_full,
+    DeferredChunkRevival, FullNeighborhoodCounts, FullNeighborhoodError, FullNeighborhoodIndex,
+    FullPublication, FxHashMap, FxHashSet, GENERATION_THREAD_MULTIPLE, GenerationTaskPriority,
+    Instant, LevelChange, Ordering, PackedChunkPos, PostProcessGenerationError,
+    ReadinessReconcileResult, RunningGenerationTaskPermit, TickableChunk, TickingChunkSnapshot,
+    TickingReadiness, TickingReadinessCandidate, instrument, is_block_ticking, is_entity_ticking,
+    is_full,
 };
 
 impl ChunkMap {
@@ -106,6 +107,10 @@ impl ChunkMap {
         new_level: Option<ChunkTicketLevel>,
         new_simulation_level: Option<ChunkTicketLevel>,
     ) -> Option<Arc<ChunkHolder>> {
+        if new_level.is_none() {
+            self.deferred_revivals.lock().remove(&pos);
+        }
+
         // Recover from unloading if possible, else create new holder.
         let chunk_holder =
             if let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) {
@@ -114,8 +119,20 @@ impl ChunkMap {
                 let level = new_level?;
 
                 if let Some(entry) = self.unloading_chunks.remove_sync(&pos) {
-                    let _ = self.chunks.insert_sync(pos, entry.1.clone());
-                    entry.1
+                    let holder = entry.1;
+                    if !holder.try_revive_from_unloading() {
+                        let _ = self.unloading_chunks.insert_sync(pos, Arc::clone(&holder));
+                        self.deferred_revivals.lock().insert(
+                            pos,
+                            DeferredChunkRevival {
+                                load_level: level,
+                                simulation_level: new_simulation_level,
+                            },
+                        );
+                        return None;
+                    }
+                    let _ = self.chunks.insert_sync(pos, Arc::clone(&holder));
+                    holder
                 } else {
                     let holder = Arc::new(ChunkHolder::new_with_full_publications(
                         pos,
@@ -144,7 +161,7 @@ impl ChunkMap {
             if is_full(level)
                 && !old.is_some_and(is_full)
                 && chunk_holder.is_full_status_initialized()
-                && chunk_holder.persisted_status() == Some(ChunkStatus::Full)
+                && chunk_holder.published_status() == Some(ChunkStatus::Full)
                 && chunk_holder.try_chunk(ChunkStatus::Full).is_some()
             {
                 self.full_publications.publish(&chunk_holder);
@@ -152,6 +169,7 @@ impl ChunkMap {
             Some(chunk_holder)
         } else {
             //log::info!("Unloading chunk at {pos:?}");
+            chunk_holder.begin_unloading();
             chunk_holder.cancel_generation_task();
             chunk_holder.clear_load_level();
             chunk_holder.set_simulation_level(None);
@@ -165,9 +183,7 @@ impl ChunkMap {
             world.on_entity_chunk_unload_start(pos);
             world.poi_storage.lock().remove_chunk(pos);
 
-            if let Some(chunk) = chunk_holder.try_chunk(ChunkStatus::Full)
-                && let Some(chunk) = chunk.as_full()
-            {
+            if let Some(chunk) = chunk_holder.try_full_chunk() {
                 chunk.suspend_block_entities(&chunk_holder);
             }
 
@@ -177,6 +193,22 @@ impl ChunkMap {
             }
             None
         }
+    }
+
+    pub(super) fn merge_deferred_revivals(&self, changes: &mut Vec<LevelChange>) {
+        let changed_positions = changes
+            .iter()
+            .map(|change| change.pos)
+            .collect::<FxHashSet<_>>();
+        let mut deferred = self.deferred_revivals.lock();
+        for pos in &changed_positions {
+            deferred.remove(pos);
+        }
+        changes.extend(deferred.drain().map(|(pos, revival)| LevelChange {
+            pos,
+            new_level: Some(revival.load_level),
+            new_simulation_level: revival.simulation_level,
+        }));
     }
 
     pub(super) fn prepare_ticking_readiness_demotions(
@@ -273,8 +305,8 @@ impl ChunkMap {
     /// Rebuilds every gameplay ticking view from one optimized SCC traversal.
     ///
     /// This runs only after lifecycle/readiness changes, never as fixed per-tick
-    /// bookkeeping. The published snapshot owns holders but never chunk guards,
-    /// so callbacks cannot retain section or chunk locks.
+    /// bookkeeping. The published snapshot owns holders but never component guards,
+    /// so callbacks cannot retain section or chunk-component locks.
     pub(crate) fn rebuild_ticking_chunk_snapshot(&self) -> usize {
         let mut block = Vec::new();
         let mut random_chunk_indices = Vec::new();
@@ -288,13 +320,11 @@ impl ChunkMap {
             if !simulation_level.is_block_ticking() || !readiness.is_block_ticking() {
                 return true;
             }
-            let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
+            let Some(full) = holder.try_full_chunk() else {
                 return true;
             };
-            let Some(full) = chunk.as_full() else {
-                return true;
-            };
-            let randomly_ticking_sections = Arc::clone(full.sections.random_tick_sections());
+            let randomly_ticking_sections =
+                Arc::clone(full.common().sections.random_tick_sections());
 
             let index = block.len();
             block.push(TickableChunk {
@@ -361,7 +391,7 @@ impl ChunkMap {
             .read_sync(&pos, |_, holder| Arc::clone(holder))?;
         if !holder.load_level().is_some_and(is_full)
             || !holder.is_full_status_initialized()
-            || holder.persisted_status() != Some(ChunkStatus::Full)
+            || holder.published_status() != Some(ChunkStatus::Full)
             || holder.try_chunk(ChunkStatus::Full).is_none()
         {
             return None;
@@ -380,7 +410,7 @@ impl ChunkMap {
         if !Arc::ptr_eq(&published_holder, &active_holder)
             || !active_holder.load_level().is_some_and(is_full)
             || !active_holder.is_full_status_initialized()
-            || active_holder.persisted_status() != Some(ChunkStatus::Full)
+            || active_holder.published_status() != Some(ChunkStatus::Full)
             || active_holder.try_chunk(ChunkStatus::Full).is_none()
         {
             return None;
@@ -429,7 +459,7 @@ impl ChunkMap {
         counts: FullNeighborhoodCounts,
     ) -> TickingReadiness {
         if !holder.is_full_status_initialized()
-            || holder.persisted_status() != Some(ChunkStatus::Full)
+            || holder.published_status() != Some(ChunkStatus::Full)
             || holder.try_chunk(ChunkStatus::Full).is_none()
         {
             return TickingReadiness::Unready;
@@ -591,7 +621,7 @@ impl ChunkMap {
             rebuilt.mark_dirty(*pos);
             let contributor = if holder.load_level().is_some_and(is_full)
                 && holder.is_full_status_initialized()
-                && holder.persisted_status() == Some(ChunkStatus::Full)
+                && holder.published_status() == Some(ChunkStatus::Full)
                 && holder.try_chunk(ChunkStatus::Full).is_some()
             {
                 Some(holder)

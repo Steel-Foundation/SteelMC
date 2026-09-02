@@ -32,7 +32,7 @@ use glam::IVec3;
 use steel_utils::{BoundingBox, Identifier, PackedChunkPos};
 use wincode::{SchemaRead, SchemaWrite};
 
-use crate::chunk::chunk_access::ChunkStatus;
+use crate::chunk::status::ChunkStatus;
 
 /// Magic bytes for region file identification: "STLR" (Steel Region)
 pub const REGION_MAGIC: [u8; 4] = *b"STLR";
@@ -103,7 +103,7 @@ pub const MAX_CHUNK_SIZE: usize = 16 * 1024 * 1024;
 /// - offset: u32 - sector offset (0 = chunk doesn't exist)
 /// - size: u24 - compressed size in bytes
 /// - flags: u8 - status and flags
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct ChunkEntry {
     /// Sector offset from start of file. 0 means chunk doesn't exist.
     /// Multiply by `SECTOR_SIZE` to get byte offset.
@@ -171,15 +171,19 @@ impl ChunkEntry {
 
     /// Deserializes from 8 bytes.
     #[must_use]
-    pub fn from_bytes(bytes: [u8; 8]) -> Self {
+    pub fn from_bytes(bytes: [u8; 8]) -> Option<Self> {
         let sector_offset = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         let size_bytes = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], 0]);
-        let status = ChunkStatus::from_index(bytes[7] as usize).unwrap_or(ChunkStatus::Empty);
-        Self {
+        let status = if sector_offset == 0 {
+            ChunkStatus::Empty
+        } else {
+            ChunkStatus::from_index(bytes[7] as usize)?
+        };
+        Some(Self {
             sector_offset,
             size_bytes,
             status,
-        }
+        })
     }
 }
 
@@ -233,14 +237,16 @@ impl RegionHeader {
     ///
     /// # Panics
     /// Panics if bytes length is not exactly `CHUNK_TABLE_SIZE`.
-    #[must_use]
-    pub fn from_bytes(bytes: &[u8]) -> Self {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, usize> {
         assert_eq!(bytes.len(), CHUNK_TABLE_SIZE);
         let mut entries = Box::new([ChunkEntry::default(); CHUNKS_PER_REGION]);
         for (i, &chunk) in bytes.as_chunks::<8>().0.iter().enumerate() {
-            entries[i] = ChunkEntry::from_bytes(chunk);
+            let Some(entry) = ChunkEntry::from_bytes(chunk) else {
+                return Err(i);
+            };
+            entries[i] = entry;
         }
-        Self { entries }
+        Ok(Self { entries })
     }
 
     /// Finds a contiguous range of free sectors for allocation.
@@ -294,7 +300,8 @@ pub struct PersistentBlockState<'a> {
 /// A heightmap stored with a chunk.
 ///
 /// Height values are stored relative to `min_y` (same as the runtime `Heightmap`).
-/// Type discriminants: 0=WorldSurface, 1=MotionBlocking, 2=MotionBlockingNoLeaves, 3=OceanFloor.
+/// Type discriminants: 0=WorldSurface, 1=MotionBlocking, 2=MotionBlockingNoLeaves, 3=OceanFloor,
+/// 4=WorldSurfaceWg, 5=OceanFloorWg.
 #[derive(SchemaWrite, SchemaRead)]
 pub struct PersistentHeightmap {
     /// Heightmap type discriminant.
@@ -370,7 +377,7 @@ pub struct PersistentChunk<'a> {
     pub block_ticks: Vec<PersistentTick>,
     /// Scheduled fluid ticks pending in this chunk.
     pub fluid_ticks: Vec<PersistentTick>,
-    /// Final heightmaps for full chunks (empty for proto chunks).
+    /// Materialized heightmaps allowed by the chunk's persisted status.
     pub heightmaps: Vec<PersistentHeightmap>,
     /// Chunk-owned light sections.
     pub light: PersistentLightData,
@@ -1243,7 +1250,7 @@ mod tests {
     fn test_chunk_entry_roundtrip() {
         let entry = ChunkEntry::new(42, 12345, ChunkStatus::Full);
         let bytes = entry.to_bytes();
-        let decoded = ChunkEntry::from_bytes(bytes);
+        let decoded = ChunkEntry::from_bytes(bytes).expect("serialized entry should decode");
         assert_eq!(entry.sector_offset, decoded.sector_offset);
         assert_eq!(entry.size_bytes, decoded.size_bytes);
         assert_eq!(entry.status, decoded.status);

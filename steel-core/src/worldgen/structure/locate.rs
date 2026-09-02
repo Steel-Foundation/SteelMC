@@ -7,8 +7,8 @@ use steel_utils::{BlockPos, Identifier};
 
 use crate::{
     chunk::{
-        chunk_access::ChunkStatus,
         chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
+        status::ChunkStatus,
     },
     world::World,
     worldgen::structure::{StructureLocateCandidate, StructureLocatePlan, squared_distance},

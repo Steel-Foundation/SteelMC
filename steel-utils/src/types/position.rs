@@ -149,7 +149,44 @@ impl Iterator for SpiralAround {
         Some(self.cursor)
     }
 }
+/// Iterator returned by [`BlockPos::between_closed`].
+#[derive(Debug, Clone)]
+pub struct BetweenClosed {
+    min_x: i32,
+    min_y: i32,
+    min_z: i32,
+    width: i32,
+    height: i32,
+    index: i32,
+    end: i32,
+}
 
+impl Iterator for BetweenClosed {
+    type Item = BlockPos;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index == self.end {
+            return None;
+        }
+
+        let x = self.index % self.width;
+        let slice = self.index / self.width;
+        let y = slice % self.height;
+        let z = slice / self.height;
+        self.index += 1;
+
+        Some(BlockPos::new(
+            self.min_x + x,
+            self.min_y + y,
+            self.min_z + z,
+        ))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = (self.end - self.index).max(0) as usize;
+        (remaining, Some(remaining))
+    }
+}
 impl From<DVec3> for BlockPos {
     fn from(value: DVec3) -> Self {
         BlockPos(IVec3 {
@@ -226,22 +263,10 @@ impl BlockPos {
         self.offset(0, 0, -1)
     }
 
-    /// Returns the position `n` blocks to the north (Z - n).
-    #[must_use]
-    pub const fn north_n(&self, n: i32) -> Self {
-        self.offset(0, 0, -n)
-    }
-
     /// Returns the position one block to the south (Z + 1).
     #[must_use]
     pub const fn south(&self) -> Self {
         self.offset(0, 0, 1)
-    }
-
-    /// Returns the position `n` blocks to the south (Z + n).
-    #[must_use]
-    pub const fn south_n(&self, n: i32) -> Self {
-        self.offset(0, 0, n)
     }
 
     /// Returns the position one block to the west (X - 1).
@@ -250,22 +275,10 @@ impl BlockPos {
         self.offset(-1, 0, 0)
     }
 
-    /// Returns the position `n` blocks to the west (X - n).
-    #[must_use]
-    pub const fn west_n(&self, n: i32) -> Self {
-        self.offset(-n, 0, 0)
-    }
-
     /// Returns the position one block to the east (X + 1).
     #[must_use]
     pub const fn east(&self) -> Self {
         self.offset(1, 0, 0)
-    }
-
-    /// Returns the position `n` blocks to the east (X + n).
-    #[must_use]
-    pub const fn east_n(&self, n: i32) -> Self {
-        self.offset(n, 0, 0)
     }
 
     /// Returns the position offset by one block in the given direction.
@@ -455,6 +468,48 @@ impl BlockPos {
             y: 0,
             pending_z_mirror: None,
             done: false,
+        }
+    }
+    /// Returns vanilla `BlockPos.betweenClosed(BlockPos, BlockPos)`.
+    ///
+    /// Iterates all positions in the closed box spanned by `a` and `b`,
+    /// regardless of their relative min/max ordering.
+    #[must_use]
+    pub const fn between_closed(a: Self, b: Self) -> BetweenClosed {
+        Self::between_closed_coords(
+            a.0.x.min(b.0.x),
+            a.0.y.min(b.0.y),
+            a.0.z.min(b.0.z),
+            a.0.x.max(b.0.x),
+            a.0.y.max(b.0.y),
+            a.0.z.max(b.0.z),
+        )
+    }
+
+    /// Returns vanilla `BlockPos.betweenClosed(int, int, int, int, int, int)`.
+    ///
+    /// Iterates all positions in `[min_x, max_x] x [min_y, max_y] x [min_z, max_z]`.
+    #[must_use]
+    pub const fn between_closed_coords(
+        min_x: i32,
+        min_y: i32,
+        min_z: i32,
+        max_x: i32,
+        max_y: i32,
+        max_z: i32,
+    ) -> BetweenClosed {
+        let width = max_x - min_x + 1;
+        let height = max_y - min_y + 1;
+        let depth = max_z - min_z + 1;
+
+        BetweenClosed {
+            min_x,
+            min_y,
+            min_z,
+            width,
+            height,
+            index: 0,
+            end: width * height * depth,
         }
     }
 

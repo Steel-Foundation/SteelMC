@@ -296,12 +296,12 @@ mod tests {
     use crate::blocks::properties::BlockStateProperties;
     use crate::blocks::shapes::{ShapeChannel, SupportType};
     use crate::map_color::MapColor;
-    use crate::{test_support::init_test_registry, vanilla_fluids};
+    use crate::{init_vanilla_registry, vanilla_fluids};
     use steel_utils::Direction;
 
     #[test]
     fn solid_render_uses_occlusion_shape_not_collision_shape() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
         assert!(stone.is_solid_render());
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn light_properties_match_generated_state_offsets() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         assert_eq!(air.get_light_emission(), 0);
@@ -343,7 +343,7 @@ mod tests {
 
     #[test]
     fn blocks_motion_matches_vanilla_base_predicate() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
         assert!(stone.blocks_motion());
@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn suffocating_uses_extracted_vanilla_state_predicate() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let stone = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::STONE);
         assert!(stone.is_suffocating());
@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn static_redstone_conductor_uses_extracted_vanilla_state_predicate() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert!(
             vanilla_blocks::STONE
@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn vanilla_air_variants_are_air() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert!(vanilla_blocks::AIR.default_state().is_air());
         assert!(vanilla_blocks::CAVE_AIR.default_state().is_air());
@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn block_entity_presence_uses_extracted_type_validity() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert!(
             vanilla_blocks::MOVING_PISTON
@@ -424,7 +424,7 @@ mod tests {
 
     #[test]
     fn fence_post_supports_center_attachments_from_below() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let fence = vanilla_blocks::OAK_FENCE
             .default_state()
@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn generated_shape_offset_flags_distinguish_visual_offset_from_server_shapes() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let sulfur_spike = vanilla_blocks::SULFUR_SPIKE.default_state().get_block();
         assert_eq!(sulfur_spike.config.offset_type, OffsetType::Xz);
@@ -463,7 +463,7 @@ mod tests {
 
     #[test]
     fn with_properties_of_keeps_target_defaults_for_non_matching_properties() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let source = vanilla_blocks::STONE.default_state();
         let target = vanilla_blocks::CANDLE.default_state();
@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn cached_random_tick_metadata_tracks_state_dependent_predicates() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let decaying_leaves = vanilla_blocks::OAK_LEAVES.default_state();
         assert!(decaying_leaves.is_randomly_ticking());
@@ -499,7 +499,7 @@ mod tests {
 
     #[test]
     fn map_color_uses_extracted_state_overrides() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let young = vanilla_blocks::WHEAT
             .default_state()
@@ -512,7 +512,7 @@ mod tests {
 
     #[test]
     fn cached_fluid_state_preserves_source_flowing_and_falling_variants() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let wet_slab = vanilla_blocks::OAK_SLAB
             .default_state()
@@ -551,7 +551,7 @@ mod tests {
 
     #[test]
     fn cached_metadata_keeps_block_and_fluid_random_ticks_distinct() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let lava = vanilla_blocks::LAVA.default_state().get_ticking_metadata();
         assert!(lava.randomly_ticking_block());

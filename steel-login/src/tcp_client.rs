@@ -6,14 +6,16 @@
 use std::{
     cmp::Ordering,
     fmt::{self, Debug, Formatter},
+    future::{Future, pending},
     io::Cursor,
     net::SocketAddr,
     sync::Arc,
+    time::Duration,
 };
 
 use crossbeam::atomic::AtomicCell;
 use steel_core::player::{
-    ClientInformation, GameProfile, PlayerConnection,
+    ClientInformation, PlayerConnection,
     connection::{JavaNetworkWriter, OutboundPacket},
 };
 use steel_core::server::Server;
@@ -49,9 +51,75 @@ use tokio::{
         broadcast::{self, Sender, error::RecvError},
         mpsc::{self, UnboundedReceiver, UnboundedSender, error::TryRecvError},
     },
+    time::timeout,
 };
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use uuid::Uuid;
+
+use crate::pre_play_state::{PacketSequenceError, PrePlayPacket, PrePlayState};
+
+const MAX_TICKS_BEFORE_LOGIN: u64 = 600;
+const SLOW_LOGIN_DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct LoginDeadline {
+    expires_at_tick: u64,
+}
+
+impl LoginDeadline {
+    const fn from_start_tick(start_tick: u64) -> Self {
+        Self {
+            // Vanilla initializes its counter to zero and checks `tick++ == 600`.
+            expires_at_tick: start_tick.saturating_add(MAX_TICKS_BEFORE_LOGIN + 1),
+        }
+    }
+
+    pub(crate) const fn expires_at_tick(self) -> u64 {
+        self.expires_at_tick
+    }
+}
+
+enum LoginOperationResult<T> {
+    Completed(T),
+    Cancelled,
+    TimedOut,
+}
+
+enum IncomingEvent {
+    Packet(Result<RawPacket, PacketError>),
+    ConnectionUpdate(Result<ConnectionUpdate, RecvError>),
+}
+
+async fn await_login_operation<T, O, D>(
+    cancel_token: &CancellationToken,
+    login_deadline: &AtomicCell<Option<LoginDeadline>>,
+    operation: O,
+    deadline: D,
+) -> LoginOperationResult<T>
+where
+    O: Future<Output = T>,
+    D: Future<Output = ()>,
+{
+    tokio::pin!(operation);
+    tokio::pin!(deadline);
+
+    tokio::select! {
+        biased;
+        () = cancel_token.cancelled() => LoginOperationResult::Cancelled,
+        result = &mut operation => LoginOperationResult::Completed(result),
+        () = &mut deadline => {
+            if login_deadline.load().is_some() {
+                LoginOperationResult::TimedOut
+            } else {
+                tokio::select! {
+                    biased;
+                    () = cancel_token.cancelled() => LoginOperationResult::Cancelled,
+                    result = &mut operation => LoginOperationResult::Completed(result),
+                }
+            }
+        }
+    }
+}
 
 /// Represents updates to the connection state.
 #[derive(Clone)]
@@ -130,8 +198,6 @@ impl ConnectionAction {
 pub struct JavaTcpClient {
     /// The unique ID of the client.
     pub id: u64,
-    /// The client's game profile information.
-    pub gameprofile: AsyncMutex<Option<GameProfile>>,
     /// The client's settings (view distance, language, etc.) received during config.
     pub client_information: AsyncMutex<ClientInformation>,
     /// The current connection state of the client (e.g., Handshaking, Status, Play).
@@ -160,6 +226,8 @@ pub struct JavaTcpClient {
     /// Notification for when connection updates are processed.
     pub connection_updated: Arc<Notify>,
 
+    pub(crate) pre_play_state: SyncMutex<PrePlayState>,
+    pub(crate) login_deadline: AtomicCell<Option<LoginDeadline>>,
     task_tracker: TaskTracker,
 }
 
@@ -185,7 +253,6 @@ impl JavaTcpClient {
 
         let client = Self {
             id,
-            gameprofile: AsyncMutex::new(None),
             client_information: AsyncMutex::new(ClientInformation::default()),
             address,
             protocol: Arc::new(AtomicCell::new(ConnectionProtocol::Handshake)),
@@ -201,6 +268,8 @@ impl JavaTcpClient {
             challenge: AtomicCell::new([0; 4]),
             connection_updates,
             connection_updated: Arc::new(Notify::new()),
+            pre_play_state: SyncMutex::new(PrePlayState::new()),
+            login_deadline: AtomicCell::new(None),
             task_tracker,
         };
 
@@ -245,30 +314,21 @@ impl JavaTcpClient {
         packet: &EncodedPacket,
     ) -> Result<(), PacketError> {
         let mut network_writer = network_writer.lock().await;
-        let Some(network_writer) = network_writer.as_mut() else {
+        let Some(mut writer) = network_writer.take() else {
             return Err(PacketError::ConnectionClosed);
         };
-        network_writer.write_packet(packet).await
+        // Cancellation or failure drops the encoder instead of reusing a partial encrypted write.
+        match writer.write_packet(packet).await {
+            Ok(()) => {
+                *network_writer = Some(writer);
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
     }
 
     async fn release_network_writer(network_writer: &JavaNetworkWriter) {
         network_writer.lock().await.take();
-    }
-
-    /// Encodes and queues a packet to be sent.
-    pub fn send_bare_packet<P: ClientPacket>(&self, packet: P) -> Result<(), PacketError> {
-        let compression = self.compression.load();
-        let protocol = self.protocol.load();
-        let packet = EncodedPacket::from_bare(packet, compression, protocol)?;
-        self.outgoing_queue
-            .send(OutboundPacket::Packet(packet))
-            .map_err(|e| {
-                PacketError::SendError(format!(
-                    "Failed to send packet to client {}: {}",
-                    self.id, e
-                ))
-            })?;
-        Ok(())
     }
 
     /// Queues an already encoded packet to be sent.
@@ -423,53 +483,82 @@ impl JavaTcpClient {
         self.task_tracker.spawn(async move {
             let mut connection = None;
             loop {
-                select! {
-                    () = cancel_token.cancelled() => {
-                        break;
-                    }
-                    packet = reader.get_raw_packet() => {
-                        match packet {
-                            Ok(packet) => {
-                                match self_clone.process_packet(packet).await {
-                                    Ok(action) => {
-                                        if let Some(key) = action.reader_encryption {
-                                            reader.set_encryption(&key);
-                                        }
-                                        if let Some(compression) = action.reader_compression {
-                                            reader.set_compression(compression.threshold);
-                                        }
-                                        if let Some(upgrade) = action.upgrade {
-                                            connection = Some(upgrade);
-                                            break;
-                                        }
-                                    }
-                                    Err(err) => {
-                                        log::warn!(
-                                            "Failed to get packet from client {id}: {err}",
-                                        );
-                                    }
-                                }
-                            }
-                            Err(err) => {
-                                log::info!("Failed to get raw packet from client {id}: {err}");
-                                cancel_token.cancel();
+                let incoming_event = if self_clone.login_deadline_expired() {
+                    LoginOperationResult::TimedOut
+                } else {
+                    let incoming_event = async {
+                        select! {
+                            packet = reader.get_raw_packet() => IncomingEvent::Packet(packet),
+                            connection_update = connection_updates_recv.recv() => {
+                                IncomingEvent::ConnectionUpdate(connection_update)
                             }
                         }
-                    }
-                    connection_update = connection_updates_recv.recv() => {
-                        match connection_update {
-                            Ok(ConnectionUpdate::EnableEncryption(_)) => {}
-                            Ok(ConnectionUpdate::Upgrade(upgrade)) => {
-                                connection = Some(upgrade);
+                    };
+                    await_login_operation(
+                        &cancel_token,
+                        &self_clone.login_deadline,
+                        incoming_event,
+                        self_clone.wait_for_login_deadline(),
+                    )
+                    .await
+                };
+
+                match incoming_event {
+                    LoginOperationResult::Completed(IncomingEvent::Packet(Ok(packet))) => {
+                        match self_clone.process_packet_until_login_deadline(packet).await {
+                            LoginOperationResult::Completed(Ok(action)) => {
+                                if self_clone.login_deadline_expired() {
+                                    self_clone.disconnect_slow_login().await;
+                                    break;
+                                }
+                                if let Some(key) = action.reader_encryption {
+                                    reader.set_encryption(&key);
+                                }
+                                if let Some(compression) = action.reader_compression {
+                                    reader.set_compression(compression.threshold);
+                                }
+                                if let Some(upgrade) = action.upgrade {
+                                    connection = Some(upgrade);
+                                    break;
+                                }
+                            }
+                            LoginOperationResult::Completed(Err(err)) => {
+                                log::warn!("Failed to get packet from client {id}: {err}");
+                            }
+                            LoginOperationResult::Cancelled => break,
+                            LoginOperationResult::TimedOut => {
+                                self_clone.disconnect_slow_login().await;
                                 break;
                             }
-                            Err(err) => {
-                                if err != RecvError::Closed {
-                                    log::info!("Internal connection_updates_recv channel closed for client {id}: {err}");
-                                }
-                                cancel_token.cancel();
-                            }
                         }
+                    }
+                    LoginOperationResult::Completed(IncomingEvent::Packet(Err(err))) => {
+                        log::info!("Failed to get raw packet from client {id}: {err}");
+                        cancel_token.cancel();
+                    }
+                    LoginOperationResult::Completed(IncomingEvent::ConnectionUpdate(
+                        connection_update,
+                    )) => match connection_update {
+                        Ok(ConnectionUpdate::EnableEncryption(_)) => {}
+                        Ok(ConnectionUpdate::Upgrade(upgrade)) => {
+                            connection = Some(upgrade);
+                            break;
+                        }
+                        Err(err) => {
+                            if err != RecvError::Closed {
+                                log::info!(
+                                    "Internal connection_updates_recv channel closed for client {id}: {err}"
+                                );
+                            }
+                            cancel_token.cancel();
+                        }
+                    },
+                    LoginOperationResult::Cancelled => break,
+                    LoginOperationResult::TimedOut => {
+                        if self_clone.login_deadline_expired() {
+                            self_clone.disconnect_slow_login().await;
+                        }
+                        break;
                     }
                 }
             }
@@ -487,6 +576,55 @@ impl JavaTcpClient {
                 }
             }
         });
+    }
+
+    fn login_deadline_expired(&self) -> bool {
+        self.login_deadline
+            .load()
+            .is_some_and(|deadline| self.server.current_tick() >= deadline.expires_at_tick())
+    }
+
+    async fn wait_for_login_deadline(&self) {
+        match self.login_deadline.load() {
+            Some(deadline) => {
+                self.server
+                    .wait_until_tick(deadline.expires_at_tick())
+                    .await;
+            }
+            None => pending().await,
+        }
+    }
+
+    async fn process_packet_until_login_deadline(
+        &self,
+        packet: RawPacket,
+    ) -> LoginOperationResult<Result<ConnectionAction, PacketError>> {
+        if self.login_deadline_expired() {
+            return LoginOperationResult::TimedOut;
+        }
+
+        await_login_operation(
+            &self.cancel_token,
+            &self.login_deadline,
+            self.process_packet(packet),
+            self.wait_for_login_deadline(),
+        )
+        .await
+    }
+
+    pub(crate) async fn disconnect_slow_login(&self) {
+        let reason =
+            TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_SLOW_LOGIN.msg());
+        if timeout(SLOW_LOGIN_DISCONNECT_FLUSH_TIMEOUT, self.kick(reason))
+            .await
+            .is_err()
+        {
+            log::debug!(
+                "Best-effort slow-login disconnect write for client {} timed out",
+                self.id
+            );
+            self.close();
+        }
     }
 
     async fn process_packet(&self, packet: RawPacket) -> Result<ConnectionAction, PacketError> {
@@ -507,7 +645,7 @@ impl JavaTcpClient {
 
     /// Handles a handshake packet.
     pub async fn handle_handshake(&self, packet: RawPacket) -> Result<(), PacketError> {
-        let data = &mut Cursor::new(packet.payload.as_slice());
+        let data = &mut Cursor::new(packet.payload());
 
         match packet.id {
             handshake::S_INTENTION => {
@@ -516,11 +654,28 @@ impl JavaTcpClient {
                     ClientIntent::Status => ConnectionProtocol::Status,
                     ClientIntent::Login | ClientIntent::Transfer => ConnectionProtocol::Login,
                 };
-                self.protocol.store(intent);
-
-                if intent != ConnectionProtocol::Status {
+                let sequence_result = self.pre_play_state.lock().select_protocol(intent);
+                if let Err(error) = sequence_result {
+                    log::warn!("Client {} {error}", self.id);
+                    self.kick(TextComponent::translated(
+                        translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg(),
+                    ))
+                    .await;
+                    return Ok(());
+                }
+                if intent == ConnectionProtocol::Status {
+                    self.protocol.store(intent);
+                } else {
                     let reason = match packet.protocol_version.cmp(&CURRENT_MC_PROTOCOL) {
-                        Ordering::Equal => return Ok(()),
+                        Ordering::Equal => {
+                            let tick_manager = self.server.tick_rate_manager.read();
+                            self.login_deadline
+                                .store(Some(LoginDeadline::from_start_tick(
+                                    tick_manager.tick_count,
+                                )));
+                            self.protocol.store(intent);
+                            return Ok(());
+                        }
                         Ordering::Less => TextComponent::translated(
                             translations::MULTIPLAYER_DISCONNECT_OUTDATED_CLIENT
                                 .message([MC_VERSION]),
@@ -529,6 +684,7 @@ impl JavaTcpClient {
                             translations::MULTIPLAYER_DISCONNECT_INCOMPATIBLE.message([MC_VERSION]),
                         ),
                     };
+                    self.protocol.store(intent);
                     self.kick(reason).await;
                     return Ok(());
                 }
@@ -543,7 +699,7 @@ impl JavaTcpClient {
 
     /// Handles a status packet.
     pub async fn handle_status(&self, packet: RawPacket) -> Result<(), PacketError> {
-        let data = &mut Cursor::new(packet.payload.as_slice());
+        let data = &mut Cursor::new(packet.payload());
 
         match packet.id {
             status::S_STATUS_REQUEST => {
@@ -563,14 +719,26 @@ impl JavaTcpClient {
         &self,
         packet: RawPacket,
     ) -> Result<ConnectionAction, PacketError> {
-        let data = &mut Cursor::new(packet.payload.as_slice());
+        let data = &mut Cursor::new(packet.payload());
 
         match packet.id {
-            login_packets::S_HELLO => Ok(self.handle_hello(SHello::read_packet(data)?).await),
-            login_packets::S_KEY => Ok(self.handle_key(SKey::read_packet(data)?).await),
+            login_packets::S_HELLO => {
+                if let Err(error) = self.expect_pre_play_packet(PrePlayPacket::Hello) {
+                    return Ok(self.reject_unexpected_packet(error).await);
+                }
+                Ok(self.handle_hello(SHello::read_packet(data)?).await)
+            }
+            login_packets::S_KEY => {
+                if let Err(error) = self.expect_pre_play_packet(PrePlayPacket::Key) {
+                    return Ok(self.reject_unexpected_packet(error).await);
+                }
+                Ok(self.handle_key(SKey::read_packet(data)?).await)
+            }
             login_packets::S_LOGIN_ACKNOWLEDGED => {
-                self.handle_login_acknowledged().await;
-                Ok(ConnectionAction::none())
+                if let Err(error) = self.expect_pre_play_packet(PrePlayPacket::LoginAcknowledged) {
+                    return Ok(self.reject_unexpected_packet(error).await);
+                }
+                Ok(self.handle_login_acknowledged().await)
             }
             _ => Err(PacketError::InvalidProtocol("Login".to_string())),
         }
@@ -581,7 +749,7 @@ impl JavaTcpClient {
         &self,
         packet: RawPacket,
     ) -> Result<ConnectionAction, PacketError> {
-        let data = &mut Cursor::new(packet.payload.as_slice());
+        let data = &mut Cursor::new(packet.payload());
 
         match packet.id {
             config::S_CUSTOM_PAYLOAD => {
@@ -594,13 +762,38 @@ impl JavaTcpClient {
                 Ok(ConnectionAction::none())
             }
             config::S_SELECT_KNOWN_PACKS => {
+                if let Err(error) = self.expect_pre_play_packet(PrePlayPacket::SelectKnownPacks) {
+                    return Ok(self.reject_unexpected_packet(error).await);
+                }
                 self.handle_select_known_packs(SSelectKnownPacks::read_packet(data)?)
                     .await;
                 Ok(ConnectionAction::none())
             }
-            config::S_FINISH_CONFIGURATION => Ok(self.finish_configuration().await),
+            config::S_FINISH_CONFIGURATION => {
+                if let Err(error) = self.expect_pre_play_packet(PrePlayPacket::FinishConfiguration)
+                {
+                    return Ok(self.reject_unexpected_packet(error).await);
+                }
+                Ok(self.finish_configuration().await)
+            }
             _ => Err(PacketError::InvalidProtocol("Config".to_string())),
         }
+    }
+
+    fn expect_pre_play_packet(&self, packet: PrePlayPacket) -> Result<(), PacketSequenceError> {
+        self.pre_play_state.lock().expect(packet)
+    }
+
+    pub(crate) async fn reject_unexpected_packet(
+        &self,
+        error: PacketSequenceError,
+    ) -> ConnectionAction {
+        log::warn!("Client {} {error}", self.id);
+        self.kick(TextComponent::translated(
+            translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg(),
+        ))
+        .await;
+        ConnectionAction::none()
     }
 
     /// Kicks the client with a given reason.
@@ -635,3 +828,6 @@ impl TextResolutor for JavaTcpClient {
         None
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -9,6 +9,7 @@
 mod authentication;
 mod connection;
 mod handlers;
+mod pre_play_state;
 mod tcp_client;
 
 // Authentication

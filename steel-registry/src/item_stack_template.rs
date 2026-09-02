@@ -355,7 +355,7 @@ mod tests {
         MAX_DAMAGE, MAX_STACK_SIZE,
     };
     use crate::data_components::{ComponentData, DataComponentPatch};
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::vanilla_items;
     use crate::{REGISTRY, RegistryExt as _};
     use text_components::{Modifier as _, TextComponent};
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn item_only_alternative_decodes_and_primary_codec_omits_defaults() {
-        init_test_registry();
+        init_vanilla_registry();
         let template = ItemStackTemplate::new(&vanilla_items::STICK);
         let mut expected = NbtCompound::new();
         expected.insert("id", "minecraft:stick");
@@ -381,7 +381,7 @@ mod tests {
 
     #[test]
     fn complete_templates_round_trip_both_codecs() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut patch = DataComponentPatch::new();
         patch.set(ENCHANTMENT_GLINT_OVERRIDE, true);
         let template =
@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn hover_events_embed_the_typed_component_patch_codec_output() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut patch = DataComponentPatch::new();
         patch.set(CUSTOM_NAME, TextComponent::plain("Stone"));
         let template = ItemStackTemplate::try_with_count_and_patch(&vanilla_items::STONE, 2, patch)
@@ -429,7 +429,7 @@ mod tests {
 
     #[test]
     fn template_invariants_reject_empty_items_and_unpersistable_counts() {
-        init_test_registry();
+        init_vanilla_registry();
         for count in [-1, 0, 100] {
             assert!(
                 ItemStackTemplate::try_with_count_and_patch(
@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn stream_codec_accepts_nonzero_counts_outside_persistent_range() {
-        init_test_registry();
+        init_vanilla_registry();
         for count in [-1, 100] {
             let mut encoded = Vec::new();
             steel_utils::codec::VarInt(vanilla_items::STICK.id() as i32)
@@ -472,7 +472,7 @@ mod tests {
 
     #[test]
     fn containing_component_hash_rejects_stream_only_nested_patch() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut patch = DataComponentPatch::new();
         patch.set(MAX_STACK_SIZE, 0);
         let template = ItemStackTemplate::from_stream(&vanilla_items::STONE, 1, patch)
@@ -487,14 +487,14 @@ mod tests {
 
     #[test]
     fn item_only_air_alternative_returns_codec_failure() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert!(parse(NbtTag::String("minecraft:air".into())).is_none());
     }
 
     #[test]
     fn create_rejects_invalid_effective_stack_constraints() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut oversized_patch = DataComponentPatch::new();
         oversized_patch.set(MAX_STACK_SIZE, 1);
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn create_rejects_oversized_recursive_contents() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut container_patch = DataComponentPatch::new();
         container_patch.set(
@@ -556,7 +556,7 @@ mod tests {
 
     #[test]
     fn create_rejects_excessive_bundle_weight_arithmetic() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let items = [97, 89, 83, 79, 73]
             .into_iter()

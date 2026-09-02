@@ -283,7 +283,7 @@ where
 #[cfg(test)]
 mod tests {
     use steel_registry::fluid::FluidStateExt as _;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_fluids};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_fluids};
 
     use super::*;
 
@@ -293,7 +293,7 @@ mod tests {
 
     #[test]
     fn height_treats_source_and_flowing_variants_as_same_fluid_above() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_eq!(
             get_height_with(
@@ -317,7 +317,7 @@ mod tests {
 
     #[test]
     fn empty_fluid_height_is_zero() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_eq!(
             get_height_with(
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn flow_points_toward_lower_same_fluid_neighbor() {
-        init_test_registry();
+        init_vanilla_registry();
         let pos = BlockPos::new(0, 64, 0);
         let flow = get_flow_with(
             pos,
@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn falling_flow_pulls_down_when_horizontal_neighbor_has_solid_face() {
-        init_test_registry();
+        init_vanilla_registry();
         let pos = BlockPos::new(0, 64, 0);
         let flow = get_flow_with(
             pos,

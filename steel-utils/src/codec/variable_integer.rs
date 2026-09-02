@@ -1,6 +1,6 @@
 use std::io::{Cursor, Error, Write};
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 use crate::{
     FrontVec,
@@ -42,25 +42,6 @@ impl VarInt {
             }
         }
         Err(Error::other("VarInt"))
-    }
-
-    /// Writes a `VarInt` to an async writer.
-    ///
-    /// # Errors
-    /// - If the writer fails to write.
-    pub async fn write_async(self, write: &mut (impl AsyncWrite + Unpin)) -> Result<(), Error> {
-        let mut val = self.0 as u32;
-        loop {
-            let b: u8 = (val as u8) & 0b0111_1111;
-            val >>= 7;
-            write
-                .write_u8(if val == 0 { b } else { b | 0b1000_0000 })
-                .await?;
-            if val == 0 {
-                break;
-            }
-        }
-        Ok(())
     }
 
     // We could just get the written size in place,

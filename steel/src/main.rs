@@ -7,7 +7,7 @@ use std::num::NonZero;
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
-use std::{io, panic, thread};
+use std::{panic, thread};
 
 use crossterm::style::Attribute::{Bold, Dim, Reset};
 use crossterm::style::{Color, ResetColor, SetForegroundColor};
@@ -20,7 +20,9 @@ use steel_core::player::player_data::PersistentPlayerData;
 use steel_core::player::player_data_storage::GlobalPlayerData;
 use steel_core::player::player_inventory::MenuRemovalStatus;
 use steel_core::server::Server;
+use steel_registry::vanilla_custom_stats;
 use steel_utils::text::DisplayResolutor;
+use steel_utils::threading::worker_threads_for_available;
 use text_components::fmt::set_display_resolutor;
 use tokio::runtime::{Builder, Runtime};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -30,6 +32,9 @@ use tracing::{Level, error};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 #[cfg(feature = "jaeger")]
 use tracing_subscriber::{Layer, registry::LookupSpan};
+
+/// Cross-platform shutdown signal handling.
+mod shutdown;
 
 #[cfg(feature = "jaeger")]
 fn init_jaeger<S>() -> impl Layer<S> + Send + Sync
@@ -192,18 +197,6 @@ fn available_worker_threads() -> usize {
     thread::available_parallelism().map_or(4, NonZero::get)
 }
 
-fn worker_threads_for_available(
-    configured_threads: Option<usize>,
-    available_threads: usize,
-) -> usize {
-    let available_threads = available_threads.max(1);
-    if let Some(configured_threads) = configured_threads.filter(|&threads| threads > 0) {
-        return configured_threads.min(available_threads);
-    }
-
-    ((available_threads / 2).max(2)).min(available_threads)
-}
-
 async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConfig) {
     let cancel_token = CancellationToken::new();
 
@@ -214,7 +207,7 @@ async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConf
             return;
         }
     };
-    spawn_shutdown_signal_listener(cancel_token.clone());
+    shutdown::install(cancel_token.clone());
     let panic_token = cancel_token.clone();
     panic::set_hook(Box::new(move |panic_info| {
         let message = panic_info.payload_as_str().unwrap_or("Unknown");
@@ -293,43 +286,6 @@ async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConf
     if let Some(payload) = panic_payload {
         panic::resume_unwind(payload);
     }
-}
-
-fn spawn_shutdown_signal_listener(cancel_token: CancellationToken) {
-    let shutdown_token = cancel_token.clone();
-    tokio::spawn(async move {
-        tokio::select! {
-            signal = wait_for_shutdown_signal() => match signal {
-                Ok(signal) => {
-                    log::info!("Received {signal}; shutting down gracefully");
-                    shutdown_token.cancel();
-                }
-                Err(error) => {
-                    log::error!("Failed to listen for shutdown signals: {error}");
-                }
-            },
-            () = cancel_token.cancelled() => {}
-        }
-    });
-}
-
-#[cfg(unix)]
-async fn wait_for_shutdown_signal() -> io::Result<&'static str> {
-    use tokio::signal::unix::{SignalKind, signal};
-
-    let mut interrupt = signal(SignalKind::interrupt())?;
-    let mut terminate = signal(SignalKind::terminate())?;
-
-    tokio::select! {
-        _ = interrupt.recv() => Ok("SIGINT"),
-        _ = terminate.recv() => Ok("SIGTERM"),
-    }
-}
-
-#[cfg(not(unix))]
-async fn wait_for_shutdown_signal() -> io::Result<&'static str> {
-    tokio::signal::ctrl_c().await?;
-    Ok("Ctrl-C")
 }
 
 async fn run_server(
@@ -427,6 +383,7 @@ async fn stop_worlds_and_snapshot_players(server: &Arc<Server>) -> Vec<PendingPl
     let mut players_to_save = Vec::new();
     for player in players {
         let domain = player.get_world().domain().to_owned();
+        player.award_custom_stat(&vanilla_custom_stats::LEAVE_GAME);
         let data = PersistentPlayerData::from_player(&player);
         player.store_ender_pearls_with_player();
         players_to_save.push((player, domain, data));
@@ -546,22 +503,4 @@ async fn save_player_data_for_shutdown(
         }
     }
     log::info!("Saved {saved} players");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::worker_threads_for_available;
-
-    #[test]
-    fn configured_worker_threads_are_capped_to_available_threads() {
-        assert_eq!(worker_threads_for_available(Some(16), 8), 8);
-        assert_eq!(worker_threads_for_available(Some(4), 8), 4);
-    }
-
-    #[test]
-    fn zero_worker_threads_uses_auto_default() {
-        assert_eq!(worker_threads_for_available(Some(0), 8), 4);
-        assert_eq!(worker_threads_for_available(None, 8), 4);
-        assert_eq!(worker_threads_for_available(None, 1), 1);
-    }
 }

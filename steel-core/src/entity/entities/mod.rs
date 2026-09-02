@@ -1,25 +1,17 @@
 //! Concrete entity implementations.
 
-mod block_display;
-mod chest_minecart;
-mod end_crystal;
-mod ender_pearl;
-mod experience_orb;
-mod firework_rocket;
-mod item;
-mod item_frame;
-mod leash_fence_knot;
-mod pig;
+pub mod mobs;
+pub mod objects;
 mod raw;
 
-pub use block_display::BlockDisplayEntity;
-pub use chest_minecart::ChestMinecartEntity;
-pub use end_crystal::EndCrystalEntity;
-pub use ender_pearl::EnderPearlEntity;
-pub use experience_orb::ExperienceOrbEntity;
-pub use firework_rocket::FireworkRocketEntity;
-pub use item::ItemEntity;
-pub use item_frame::ItemFrameEntity;
-pub use leash_fence_knot::LeashFenceKnotEntity;
-pub use pig::PigEntity;
+pub use mobs::hostile::EndermiteEntity;
+pub use mobs::passive::{ChickenEntity, CowEntity, PigEntity, SheepEntity};
+pub use objects::display_ui::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity};
+pub use objects::explosives::EndCrystalEntity;
+pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
+pub use objects::projectiles::{
+    EnderPearlEntity, EyeOfEnderEntity, FireworkRocketEntity, SnowballEntity, ThrownEggEntity,
+};
+pub use objects::technical::{InteractionEntity, MarkerEntity};
+pub use objects::vehicles::ChestMinecartEntity;
 pub use raw::RawEntity;

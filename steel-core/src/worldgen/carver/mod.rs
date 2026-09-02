@@ -17,14 +17,12 @@ use steel_registry::REGISTRY;
 use steel_registry::biome::BiomeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::ChunkPos;
-use steel_utils::{BlockPos, BlockStateId, Identifier, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, Identifier};
 use steel_worldgen::density::DimensionNoises;
 use steel_worldgen::surface::{SurfaceConditionNoiseCache, SurfaceRuleContext};
 
-use crate::chunk::{
-    chunk_access::ChunkAccess,
-    heightmap::{Heightmap, HeightmapType},
-};
+use crate::chunk::heightmap::Heightmap;
+use crate::worldgen::generator::{CarversPhase, GenerationChunk};
 use crate::worldgen::surface::SurfaceSystem;
 use steel_worldgen::noise::{Aquifer, AquiferResult};
 
@@ -62,10 +60,7 @@ pub struct SourceChunk {
 
 /// Runtime context for a single `apply_carvers` invocation on one chunk.
 ///
-/// Mirrors vanilla's `CarvingContext`. Owns the freshly-built [`Aquifer`] for
-/// this chunk; the aquifer is regenerated per carver invocation rather than
-/// cached on the [`ProtoChunk`] — see the TODO on `ProtoChunk::carving_mask`
-/// for discussion.
+/// Mirrors vanilla's `CarvingContext` and borrows the Aquifer retained from Noise.
 pub struct CarvingContext<'a, N: DimensionNoises> {
     /// Dimension minimum Y (inclusive).
     pub min_y: i32,
@@ -73,9 +68,8 @@ pub struct CarvingContext<'a, N: DimensionNoises> {
     pub gen_depth: i32,
     /// Surface system (biome-specific surface noise + clay bands).
     pub surface_system: &'a SurfaceSystem,
-    /// Owned aquifer for this chunk. Built fresh from the dimension's noises
-    /// at the start of `apply_carvers`.
-    pub aquifer: Aquifer<N>,
+    /// Aquifer for this chunk, retained from Noise or reconstructed after a disk reload.
+    pub aquifer: &'a mut Aquifer<N>,
     /// Default solid block for this dimension (stone / netherrack /
     /// `end_stone`).
     pub default_block_id: BlockStateId,
@@ -121,6 +115,7 @@ impl<N: DimensionNoises> CarvingContext<'_, N> {
     /// carver-specific variant). Vanilla hardcodes
     /// `stone_depth_above = stone_depth_below = 1` here, and the water height
     /// depends on whether the carved block was replaced with a fluid.
+    #[must_use]
     pub fn top_material(
         &self,
         biome_id: u16,
@@ -358,7 +353,7 @@ where
     /// Noise generators for this dimension.
     pub noises: &'a N,
     /// Chunk being carved into.
-    pub chunk: &'a ChunkAccess,
+    pub chunk: GenerationChunk<'a, CarversPhase>,
     /// Chunk NW block X (cached; `ctx.chunk_min_x` mirrors this).
     pub chunk_min_x: i32,
     /// Chunk NW block Z (cached; `ctx.chunk_min_z` mirrors this).
@@ -478,7 +473,7 @@ where
             CarveState::Skip => return false,
         };
 
-        self.chunk.set_block_state(pos, state, UpdateFlags::empty());
+        self.chunk.set_block_state(pos, state);
         if params.style == CarverStyle::Overworld
             && self.ctx.aquifer.should_schedule_fluid_update()
             && state.has_fluid()
@@ -505,8 +500,7 @@ where
                     steep,
                     under_fluid,
                 ) {
-                    self.chunk
-                        .set_block_state(below_pos, top, UpdateFlags::empty());
+                    self.chunk.set_block_state(below_pos, top);
                     if top.has_fluid() {
                         self.chunk.mark_pos_for_postprocessing(below_pos);
                     }
@@ -529,21 +523,13 @@ where
     }
 
     fn steep_material_condition(&self, world_x: i32, world_z: i32) -> bool {
-        let heightmaps = self.chunk.proto_heightmaps();
-        if let Some(worldgen_surface) = heightmaps.get(HeightmapType::WorldSurfaceWg) {
-            return steep_material_condition(worldgen_surface, world_x, world_z);
-        }
-        drop(heightmaps);
-
-        self.chunk
-            .prime_heightmaps(&[HeightmapType::WorldSurfaceWg]);
-        let heightmaps = self.chunk.proto_heightmaps();
-        if let Some(worldgen_surface) = heightmaps.get(HeightmapType::WorldSurfaceWg) {
-            return steep_material_condition(worldgen_surface, world_x, world_z);
-        }
-
-        log::error!("WorldSurfaceWg heightmap missing during carver top-material lookup");
-        false
+        let Some(steep) = self.chunk.with_world_surface_heightmap(|worldgen_surface| {
+            steep_material_condition(worldgen_surface, world_x, world_z)
+        }) else {
+            log::error!("WorldSurfaceWg heightmap missing during carver top-material lookup");
+            return false;
+        };
+        steep
     }
 
     /// Vanilla's `WorldCarver.getCarveState` + the nether override dispatch.

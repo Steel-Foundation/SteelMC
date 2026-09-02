@@ -3,22 +3,27 @@ use std::sync::Arc;
 use rand::RngExt;
 use steel_macros::block_behavior;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, SpeleothemThickness};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, EnumProperty, IntProperty, SpeleothemThickness,
+};
 use steel_registry::blocks::shapes::{BooleanOp, VoxelShape, join_is_not_empty};
 use steel_registry::{
-    vanilla_block_tags::BlockTag, vanilla_blocks, vanilla_damage_types, vanilla_entities,
-    vanilla_fluids,
+    fluid::FluidRef, level_events, vanilla_block_tags::BlockTag, vanilla_blocks,
+    vanilla_damage_types, vanilla_entities, vanilla_fluids, vanilla_game_events,
 };
 use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::block::{
-    BlockBehavior, BlockCollisionContext, EntityFallDamage, EntityFallOnContext,
+    BlockBehavior, BlockCollisionContext, EntityFallDamage, EntityFallOnContext, push_entities_up,
+    schedule_water_tick_if_waterlogged,
 };
 use crate::behavior::context::BlockPlaceContext;
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::FallingBlockEntity;
 use crate::entity::projectile::Projectile;
 use crate::fluid::FluidStateExt as _;
+use crate::world::game_event::GameEventContext;
 use crate::world::{ClipHitResult, World};
 use crate::world::{LevelReader, ScheduledTickAccess};
 
@@ -29,12 +34,16 @@ use super::BlockRef;
 /// Survival mirrors vanilla's `isValidPointedDripstonePlacement`: the block
 /// opposite the tip direction must be face-sturdy on the face pointing toward
 /// us, or be another pointed dripstone with the same `vertical_direction`.
-// TODO: Implement falling stalactites after falling block entities exist.
-// TODO: Implement fluid transfer after cauldron drip-fill foundations exist.
 #[block_behavior]
 pub struct PointedDripstoneBlock {
     block: BlockRef,
 }
+
+const LEVEL_CAULDRON: &IntProperty = &BlockStateProperties::LEVEL_CAULDRON;
+const SPELEOTHEM_THICKNESS: &EnumProperty<SpeleothemThickness> =
+    &BlockStateProperties::SPELEOTHEM_THICKNESS;
+const VERTICAL_DIRECTION: &EnumProperty<Direction> = &BlockStateProperties::VERTICAL_DIRECTION;
+const WATERLOGGED: &BoolProperty = &BlockStateProperties::WATERLOGGED;
 
 impl PointedDripstoneBlock {
     /// Creates a new pointed dripstone block behavior.
@@ -43,11 +52,9 @@ impl PointedDripstoneBlock {
         Self { block }
     }
 
-    #[must_use]
     fn fall_damage_for_state(state: BlockStateId, fall_distance: f64) -> Option<EntityFallDamage> {
-        if state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) != Direction::Up
-            || state.get_value(&BlockStateProperties::SPELEOTHEM_THICKNESS)
-                != SpeleothemThickness::Tip
+        if state.get_value(VERTICAL_DIRECTION) != Direction::Up
+            || state.get_value(SPELEOTHEM_THICKNESS) != SpeleothemThickness::Tip
         {
             return None;
         }
@@ -119,8 +126,8 @@ impl BlockBehavior for PointedDripstoneBlock {
     }
 }
 
-#[block_behavior]
 /// Vanilla `SulfurSpikeBlock` behavior
+#[block_behavior]
 pub struct SulfurSpikeBlock {
     block: BlockRef,
 }
@@ -195,10 +202,20 @@ enum SpeleothemKind {
 const GROWTH_PROBABILITY_PER_RANDOM_TICK: f32 = 0.011_377_778;
 const MAX_GROWTH_LENGTH: i32 = 7;
 const MAX_STALAGMITE_SEARCH_RANGE_WHEN_GROWING: i32 = 10;
+const WATER_TRANSFER_PROBABILITY_PER_RANDOM_TICK: f32 = 45.0 / 256.0;
+const LAVA_TRANSFER_PROBABILITY_PER_RANDOM_TICK: f32 = 15.0 / 256.0;
+const MAX_SEARCH_LENGTH_WHEN_CHECKING_DRIP_TYPE: i32 = 11;
+const MAX_SEARCH_LENGTH_BETWEEN_STALACTITE_TIP_AND_CAULDRON: i32 = 11;
 const DRIP_THROUGH_COLUMN_BOXES: &[BlockLocalAabb] =
     &[BlockLocalAabb::new(0.375, 0.0, 0.375, 0.625, 1.0, 0.625)];
 const REQUIRED_SPACE_TO_DRIP_THROUGH_NON_SOLID_BLOCK: VoxelShape =
     VoxelShape::from_boxes(DRIP_THROUGH_COLUMN_BOXES);
+
+struct FluidInfo {
+    pos: BlockPos,
+    fluid: FluidRef,
+    source_state: BlockStateId,
+}
 
 impl SpeleothemBlockBehavior {
     fn projectile_can_break(projectile: &dyn Projectile, world: &World, pos: BlockPos) -> bool {
@@ -231,17 +248,14 @@ impl SpeleothemBlockBehavior {
         let state = self
             .block
             .default_state()
-            .set_value(&BlockStateProperties::VERTICAL_DIRECTION, tip_direction)
-            .set_value(
-                &BlockStateProperties::WATERLOGGED,
-                context.is_water_source(),
-            );
+            .set_value(VERTICAL_DIRECTION, tip_direction)
+            .set_value(WATERLOGGED, context.is_water_source());
 
         Some(Self::with_thickness(state, thickness))
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        let tip_direction = state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
+        let tip_direction = state.get_value(VERTICAL_DIRECTION);
         let behind_pos = pos.relative(tip_direction.opposite());
         let behind_state = world.get_block_state(behind_pos);
 
@@ -259,16 +273,13 @@ impl SpeleothemBlockBehavior {
         _neighbor_pos: BlockPos,
         _neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        if state.get_value(&BlockStateProperties::WATERLOGGED) {
-            let delay = world.fluid_tick_delay(&vanilla_fluids::WATER);
-            let _ = world.schedule_fluid_tick_default(pos, &vanilla_fluids::WATER, delay);
-        }
+        schedule_water_tick_if_waterlogged(state, world, pos);
 
         if direction != Direction::Up && direction != Direction::Down {
             return state;
         }
 
-        let tip_direction = state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
+        let tip_direction = state.get_value(VERTICAL_DIRECTION);
         if tip_direction == Direction::Down && world.has_scheduled_block_tick(pos, self.block) {
             return state;
         }
@@ -291,6 +302,29 @@ impl SpeleothemBlockBehavior {
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         if Self::is_stalagmite(state) && !self.can_survive(state, world.as_ref(), pos) {
             world.destroy_block(pos, true);
+        } else {
+            Self::spawn_falling_stalactite(state, world, pos);
+        }
+    }
+
+    /// Makes a speleothem block at `pos` (if any), and the other connected blocks directly below it, fall as a [`FallingBlockEntity`].
+    ///
+    /// These entities also deal damage. The further a connected block is below from the block at `pos`, the more damage its
+    /// falling block entity deals.
+    pub fn spawn_falling_stalactite(state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        let mut fall_pos = pos;
+        let mut fall_state = state;
+
+        while Self::is_stalactite(fall_state) {
+            let entity = FallingBlockEntity::fall(world, fall_pos, fall_state);
+            if Self::is_tip(fall_state, true) {
+                let size = (1 + pos.y() - fall_pos.y()).max(6);
+                let damage_per_fall_distance = size as f32;
+                entity.set_hurts_entities(damage_per_fall_distance, 40);
+                break;
+            }
+            fall_pos = fall_pos.relative(Direction::Down);
+            fall_state = world.get_block_state(fall_pos);
         }
     }
 
@@ -300,19 +334,19 @@ impl SpeleothemBlockBehavior {
         pos: BlockPos,
         default_tip_direction: Direction,
     ) -> Option<Direction> {
-        let default_state = self.block.default_state().set_value(
-            &BlockStateProperties::VERTICAL_DIRECTION,
-            default_tip_direction,
-        );
+        let default_state = self
+            .block
+            .default_state()
+            .set_value(VERTICAL_DIRECTION, default_tip_direction);
         if self.can_survive(default_state, world, pos) {
             return Some(default_tip_direction);
         }
 
         let opposite_tip_direction = default_tip_direction.opposite();
-        let opposite_state = self.block.default_state().set_value(
-            &BlockStateProperties::VERTICAL_DIRECTION,
-            opposite_tip_direction,
-        );
+        let opposite_state = self
+            .block
+            .default_state()
+            .set_value(VERTICAL_DIRECTION, opposite_tip_direction);
         self.can_survive(opposite_state, world, pos)
             .then_some(opposite_tip_direction)
     }
@@ -358,7 +392,7 @@ impl SpeleothemBlockBehavior {
 
     fn is_speleothem_with_direction(state: BlockStateId, tip_direction: Direction) -> bool {
         state.get_block().has_tag(&BlockTag::SPELEOTHEMS)
-            && state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) == tip_direction
+            && state.get_value(VERTICAL_DIRECTION) == tip_direction
     }
 
     fn is_stalagmite(state: BlockStateId) -> bool {
@@ -381,7 +415,13 @@ impl SpeleothemBlockBehavior {
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         let mut rng = rand::rng();
         if matches!(self.kind, SpeleothemKind::PointedDripstone) {
-            let _fluid_transfer_random_value = rng.random::<f32>();
+            let random_value = rng.random::<f32>();
+            if (random_value <= WATER_TRANSFER_PROBABILITY_PER_RANDOM_TICK
+                || random_value <= LAVA_TRANSFER_PROBABILITY_PER_RANDOM_TICK)
+                && self.is_stalactite_start_pos(state, world.as_ref(), pos)
+            {
+                self.maybe_transfer_fluid(state, world, pos, random_value);
+            }
         }
 
         if rng.random::<f32>() < GROWTH_PROBABILITY_PER_RANDOM_TICK
@@ -458,8 +498,7 @@ impl SpeleothemBlockBehavior {
             return Some(speleothem_pos);
         }
 
-        let search_direction =
-            speleothem_state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
+        let search_direction = speleothem_state.get_value(VERTICAL_DIRECTION);
         let mut current_pos = speleothem_pos;
         for _ in 1..max_search_length {
             current_pos = current_pos.relative(search_direction);
@@ -470,7 +509,7 @@ impl SpeleothemBlockBehavior {
 
             if world.is_outside_build_height(current_pos.y())
                 || state.get_block() != self.block
-                || state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) != search_direction
+                || state.get_value(VERTICAL_DIRECTION) != search_direction
             {
                 return None;
             }
@@ -492,11 +531,11 @@ impl SpeleothemBlockBehavior {
     fn is_free_hanging_stalactite(state: BlockStateId) -> bool {
         Self::is_stalactite(state)
             && Self::thickness(state) == SpeleothemThickness::Tip
-            && !state.get_value(&BlockStateProperties::WATERLOGGED)
+            && !state.get_value(WATERLOGGED)
     }
 
     fn can_tip_grow(&self, tip_state: BlockStateId, world: &Arc<World>, tip_pos: BlockPos) -> bool {
-        let grow_direction = tip_state.get_value(&BlockStateProperties::VERTICAL_DIRECTION);
+        let grow_direction = tip_state.get_value(VERTICAL_DIRECTION);
         let grow_pos = tip_pos.relative(grow_direction);
         let state_at_grow_pos = world.get_block_state(grow_pos);
         if state_at_grow_pos.has_fluid() {
@@ -514,7 +553,7 @@ impl SpeleothemBlockBehavior {
     ) -> bool {
         Self::is_tip(state, false)
             && state.get_block() == self.block
-            && state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) == tip_direction
+            && state.get_value(VERTICAL_DIRECTION) == tip_direction
     }
 
     fn grow(&self, world: &Arc<World>, grow_from_pos: BlockPos, grow_to_direction: Direction) {
@@ -551,15 +590,15 @@ impl SpeleothemBlockBehavior {
         let state = self
             .block
             .default_state()
-            .set_value(&BlockStateProperties::VERTICAL_DIRECTION, direction)
-            .set_value(&BlockStateProperties::SPELEOTHEM_THICKNESS, thickness)
-            .set_value(&BlockStateProperties::WATERLOGGED, waterlogged);
+            .set_value(VERTICAL_DIRECTION, direction)
+            .set_value(SPELEOTHEM_THICKNESS, thickness)
+            .set_value(WATERLOGGED, waterlogged);
         world.set_block(pos, state, UpdateFlags::UPDATE_ALL);
     }
 
     fn create_merged_tips(&self, tip_state: BlockStateId, world: &Arc<World>, tip_pos: BlockPos) {
         let (stalactite_pos, stalagmite_pos) =
-            if tip_state.get_value(&BlockStateProperties::VERTICAL_DIRECTION) == Direction::Up {
+            if tip_state.get_value(VERTICAL_DIRECTION) == Direction::Up {
                 (tip_pos.above(), tip_pos)
             } else {
                 (tip_pos, tip_pos.below())
@@ -598,7 +637,7 @@ impl SpeleothemBlockBehavior {
             let placement_state = self
                 .block
                 .default_state()
-                .set_value(&BlockStateProperties::VERTICAL_DIRECTION, Direction::Up);
+                .set_value(VERTICAL_DIRECTION, Direction::Up);
             if self.can_survive(placement_state, world.as_ref(), pos)
                 && !Self::is_water_at(world, pos.below())
             {
@@ -647,12 +686,223 @@ impl SpeleothemBlockBehavior {
         )
     }
 
+    fn maybe_transfer_fluid(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        random_value: f32,
+    ) {
+        let Some(fluid_info) = self.get_fluid_above_stalactite(world, pos, state) else {
+            return;
+        };
+
+        let is_water = fluid_info.fluid == &vanilla_fluids::WATER;
+        let is_lava = fluid_info.fluid == &vanilla_fluids::LAVA;
+
+        let transfer_probability = if is_water {
+            WATER_TRANSFER_PROBABILITY_PER_RANDOM_TICK
+        } else if is_lava {
+            LAVA_TRANSFER_PROBABILITY_PER_RANDOM_TICK
+        } else {
+            return;
+        };
+
+        if random_value >= transfer_probability {
+            return;
+        }
+
+        let Some(tip_pos) = self.find_tip(
+            state,
+            world.as_ref(),
+            pos,
+            MAX_SEARCH_LENGTH_WHEN_CHECKING_DRIP_TYPE,
+            false,
+        ) else {
+            return;
+        };
+
+        if fluid_info.source_state.get_block() == &vanilla_blocks::MUD && is_water {
+            if !world.dimension_type.water_evaporates {
+                let clay_state = vanilla_blocks::CLAY.default_state();
+                let _ =
+                    push_entities_up(fluid_info.source_state, clay_state, world, fluid_info.pos);
+                world.set_block(fluid_info.pos, clay_state, UpdateFlags::UPDATE_ALL);
+                world.game_event(
+                    &vanilla_game_events::BLOCK_CHANGE,
+                    fluid_info.pos,
+                    &GameEventContext::new(None, Some(clay_state)),
+                );
+                world.level_event(level_events::DRIPSTONE_DRIP, tip_pos, 0, None);
+            }
+            return;
+        }
+
+        let Some(cauldron_pos) =
+            Self::find_fillable_cauldron_below_stalactite_tip(world, tip_pos, fluid_info.fluid)
+        else {
+            return;
+        };
+
+        world.level_event(level_events::DRIPSTONE_DRIP, tip_pos, 0, None);
+        let fall_distance = tip_pos.y() - cauldron_pos.y();
+        let delay = 50 + fall_distance;
+        let cauldron_state = world.get_block_state(cauldron_pos);
+        let _ = world.schedule_block_tick_default(cauldron_pos, cauldron_state.get_block(), delay);
+    }
+
+    fn get_fluid_above_stalactite(
+        &self,
+        world: &Arc<World>,
+        stalactite_pos: BlockPos,
+        stalactite_state: BlockStateId,
+    ) -> Option<FluidInfo> {
+        if !Self::is_stalactite(stalactite_state) {
+            return None;
+        }
+
+        let root_pos = self.find_root_block(
+            world,
+            stalactite_pos,
+            stalactite_state,
+            MAX_SEARCH_LENGTH_WHEN_CHECKING_DRIP_TYPE,
+        )?;
+        let above_pos = root_pos.above();
+        let above_state = world.get_block_state(above_pos);
+
+        let fluid = if above_state.get_block() == &vanilla_blocks::MUD
+            && !world.dimension_type.water_evaporates
+        {
+            &vanilla_fluids::WATER
+        } else {
+            above_state.get_fluid_state().fluid_id
+        };
+
+        Some(FluidInfo {
+            pos: above_pos,
+            fluid,
+            source_state: above_state,
+        })
+    }
+
+    fn find_root_block(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        dripstone_state: BlockStateId,
+        max_search_length: i32,
+    ) -> Option<BlockPos> {
+        let tip_direction = dripstone_state.get_value(VERTICAL_DIRECTION);
+        let search_direction = tip_direction.opposite();
+        let mut current_pos = pos;
+        for _ in 1..max_search_length {
+            current_pos = current_pos.relative(search_direction);
+            let state = world.get_block_state(current_pos);
+            if state.get_block() != self.block {
+                return Some(current_pos);
+            }
+            if state.get_value(VERTICAL_DIRECTION) != tip_direction {
+                return None;
+            }
+            if world.is_outside_build_height(current_pos.y()) {
+                return None;
+            }
+        }
+        None
+    }
+
+    fn find_fillable_cauldron_below_stalactite_tip(
+        world: &Arc<World>,
+        tip_pos: BlockPos,
+        fluid: FluidRef,
+    ) -> Option<BlockPos> {
+        let mut current_pos = tip_pos;
+        for _ in 1..MAX_SEARCH_LENGTH_BETWEEN_STALACTITE_TIP_AND_CAULDRON {
+            current_pos = current_pos.below();
+            let state = world.get_block_state(current_pos);
+
+            if Self::is_fillable_cauldron(state, fluid) {
+                return Some(current_pos);
+            }
+
+            if !Self::can_drip_through(world.as_ref(), current_pos, state) {
+                return None;
+            }
+
+            if world.is_outside_build_height(current_pos.y()) {
+                return None;
+            }
+        }
+        None
+    }
+
+    fn is_fillable_cauldron(state: BlockStateId, fluid: FluidRef) -> bool {
+        let block = state.get_block();
+        if fluid == &vanilla_fluids::WATER {
+            block == &vanilla_blocks::CAULDRON
+                || (block == &vanilla_blocks::WATER_CAULDRON
+                    && state.get_value(LEVEL_CAULDRON) < LEVEL_CAULDRON.max)
+        } else if fluid == &vanilla_fluids::LAVA {
+            block == &vanilla_blocks::CAULDRON
+        } else {
+            false
+        }
+    }
+
     fn thickness(state: BlockStateId) -> SpeleothemThickness {
-        state.get_value(&BlockStateProperties::SPELEOTHEM_THICKNESS)
+        state.get_value(SPELEOTHEM_THICKNESS)
     }
 
     fn with_thickness(state: BlockStateId, thickness: SpeleothemThickness) -> BlockStateId {
-        state.set_value(&BlockStateProperties::SPELEOTHEM_THICKNESS, thickness)
+        state.set_value(SPELEOTHEM_THICKNESS, thickness)
+    }
+}
+
+/// Searches upward from cauldron position to find an overhanging stalactite tip.
+#[must_use]
+pub fn find_stalactite_tip_above_cauldron(
+    world: &dyn LevelReader,
+    cauldron_pos: BlockPos,
+) -> Option<BlockPos> {
+    let mut current_pos = cauldron_pos;
+    for _ in 1..MAX_SEARCH_LENGTH_BETWEEN_STALACTITE_TIP_AND_CAULDRON {
+        current_pos = current_pos.above();
+        let state = world.get_block_state(current_pos);
+
+        if SpeleothemBlockBehavior::is_free_hanging_stalactite(state) {
+            return Some(current_pos);
+        }
+
+        if !SpeleothemBlockBehavior::can_drip_through(world, current_pos, state) {
+            return None;
+        }
+
+        if world.is_outside_build_height(current_pos.y()) {
+            return None;
+        }
+    }
+    None
+}
+
+/// Determines which fluid (water or lava) a stalactite would fill a cauldron with.
+#[must_use]
+pub fn get_cauldron_fill_fluid_type(
+    world: &Arc<World>,
+    stalactite_pos: BlockPos,
+) -> Option<FluidRef> {
+    let state = world.get_block_state(stalactite_pos);
+    let dripstone = SpeleothemBlockBehavior {
+        block: &vanilla_blocks::POINTED_DRIPSTONE,
+        kind: SpeleothemKind::PointedDripstone,
+    };
+    let fluid = dripstone
+        .get_fluid_above_stalactite(world, stalactite_pos, state)?
+        .fluid;
+
+    if fluid == &vanilla_fluids::WATER || fluid == &vanilla_fluids::LAVA {
+        Some(fluid)
+    } else {
+        None
     }
 }
 
@@ -662,15 +912,16 @@ mod tests {
 
     use super::*;
     use glam::DVec3;
+    use steel_utils::ChunkPos;
 
     use steel_registry::{
-        entity_type::EntityTypeRef, test_support::init_test_registry, vanilla_blocks,
-        vanilla_damage_types,
+        entity_type::EntityTypeRef, init_vanilla_registry, vanilla_blocks, vanilla_damage_types,
     };
 
     use crate::{
+        behavior::init_behaviors,
         entity::{Entity, EntityBase, projectile::ProjectileBase},
-        test_support::test_world,
+        test_support::{fresh_test_world, insert_ready_full_chunk, test_world},
     };
 
     struct TestProjectile {
@@ -713,11 +964,11 @@ mod tests {
         direction: Direction,
         thickness: SpeleothemThickness,
     ) -> BlockStateId {
-        init_test_registry();
+        init_vanilla_registry();
         vanilla_blocks::POINTED_DRIPSTONE
             .default_state()
-            .set_value(&BlockStateProperties::VERTICAL_DIRECTION, direction)
-            .set_value(&BlockStateProperties::SPELEOTHEM_THICKNESS, thickness)
+            .set_value(VERTICAL_DIRECTION, direction)
+            .set_value(SPELEOTHEM_THICKNESS, thickness)
     }
 
     #[test]
@@ -750,7 +1001,7 @@ mod tests {
 
     #[test]
     fn only_fast_tridents_break_speleothems() {
-        init_test_registry();
+        init_vanilla_registry();
         let pos = BlockPos::ZERO;
         let fast_trident = TestProjectile::new(&vanilla_entities::TRIDENT, DVec3::X * 0.61);
         let threshold_trident = TestProjectile::new(&vanilla_entities::TRIDENT, DVec3::X * 0.6);
@@ -771,5 +1022,232 @@ mod tests {
             test_world(),
             pos,
         ));
+    }
+
+    fn stalactite_setup(
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) -> (SpeleothemBlockBehavior, BlockStateId) {
+        let dripstone = vanilla_blocks::POINTED_DRIPSTONE
+            .default_state()
+            .set_value(VERTICAL_DIRECTION, Direction::Down)
+            .set_value(SPELEOTHEM_THICKNESS, SpeleothemThickness::Tip);
+        let root = vanilla_blocks::DRIPSTONE_BLOCK.default_state();
+        assert!(world.set_block(pos, dripstone, UpdateFlags::UPDATE_NONE));
+        assert!(world.set_block(pos.above(), root, UpdateFlags::UPDATE_NONE));
+        let behavior = SpeleothemBlockBehavior {
+            block: &vanilla_blocks::POINTED_DRIPSTONE,
+            kind: SpeleothemKind::PointedDripstone,
+        };
+        (behavior, dripstone)
+    }
+
+    #[test]
+    fn stalactite_drip_converts_mud_to_clay() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("mud_to_clay");
+        let pos = BlockPos::new(8, 64, 8);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+
+        let mud = vanilla_blocks::MUD.default_state();
+        assert!(world.set_block(pos.above_n(2), mud, UpdateFlags::UPDATE_NONE));
+
+        let (behavior, dripstone) = stalactite_setup(&world, pos);
+        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+
+        assert_eq!(
+            world.get_block_state(pos.above_n(2)).get_block(),
+            &vanilla_blocks::CLAY,
+        );
+    }
+
+    #[test]
+    fn stalactite_drip_fills_empty_cauldron_with_water() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("water_cauldron_fill");
+        let pos = BlockPos::new(8, 64, 8);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+
+        let source_water = vanilla_blocks::WATER.default_state();
+        assert!(world.set_block(pos.above_n(2), source_water, UpdateFlags::UPDATE_NONE));
+        assert!(world.set_block(
+            pos.below(),
+            vanilla_blocks::CAULDRON.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+
+        let (behavior, dripstone) = stalactite_setup(&world, pos);
+        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+
+        world.level_data.write().set_game_time(51);
+        world.chunk_map.tick_game(&world, 51, 0, true);
+
+        let cauldron_state = world.get_block_state(pos.below());
+        assert_eq!(cauldron_state.get_block(), &vanilla_blocks::WATER_CAULDRON);
+        assert_eq!(cauldron_state.get_value(LEVEL_CAULDRON), 1,);
+    }
+
+    #[test]
+    fn stalactite_drip_increments_layered_water_cauldron() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("water_cauldron_inc");
+        let pos = BlockPos::new(8, 64, 8);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+
+        let source_water = vanilla_blocks::WATER.default_state();
+        assert!(world.set_block(pos.above_n(2), source_water, UpdateFlags::UPDATE_NONE));
+        let water_cauldron = vanilla_blocks::WATER_CAULDRON
+            .default_state()
+            .set_value(LEVEL_CAULDRON, 1);
+        assert!(world.set_block(pos.below(), water_cauldron, UpdateFlags::UPDATE_NONE));
+
+        let (behavior, dripstone) = stalactite_setup(&world, pos);
+        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+
+        world.level_data.write().set_game_time(51);
+        world.chunk_map.tick_game(&world, 51, 0, true);
+
+        let cauldron_state = world.get_block_state(pos.below());
+        assert_eq!(cauldron_state.get_block(), &vanilla_blocks::WATER_CAULDRON);
+        assert_eq!(cauldron_state.get_value(LEVEL_CAULDRON), 2,);
+    }
+
+    #[test]
+    fn stalactite_drip_does_not_overflow_full_water_cauldron() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("water_cauldron_full");
+        let pos = BlockPos::new(8, 64, 8);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+
+        let source_water = vanilla_blocks::WATER.default_state();
+        assert!(world.set_block(pos.above_n(2), source_water, UpdateFlags::UPDATE_NONE));
+        let full_cauldron = vanilla_blocks::WATER_CAULDRON
+            .default_state()
+            .set_value(LEVEL_CAULDRON, 3);
+        assert!(world.set_block(pos.below(), full_cauldron, UpdateFlags::UPDATE_NONE));
+
+        let (behavior, dripstone) = stalactite_setup(&world, pos);
+        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+
+        let cauldron_state = world.get_block_state(pos.below());
+        assert_eq!(cauldron_state.get_block(), &vanilla_blocks::WATER_CAULDRON);
+        assert_eq!(cauldron_state.get_value(LEVEL_CAULDRON), 3,);
+    }
+
+    #[test]
+    fn stalactite_drip_fills_empty_cauldron_with_lava() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("lava_cauldron_fill");
+        let pos = BlockPos::new(8, 64, 8);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+
+        let source_lava = vanilla_blocks::LAVA.default_state();
+        assert!(world.set_block(pos.above_n(2), source_lava, UpdateFlags::UPDATE_NONE));
+        assert!(world.set_block(
+            pos.below(),
+            vanilla_blocks::CAULDRON.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+
+        let (behavior, dripstone) = stalactite_setup(&world, pos);
+        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+
+        world.level_data.write().set_game_time(51);
+        world.chunk_map.tick_game(&world, 51, 0, true);
+
+        assert_eq!(
+            world.get_block_state(pos.below()).get_block(),
+            &vanilla_blocks::LAVA_CAULDRON,
+        );
+    }
+
+    #[test]
+    fn stalactite_drip_does_not_fill_lava_cauldron() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("lava_cauldron_skip");
+        let pos = BlockPos::new(8, 64, 8);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+
+        let source_lava = vanilla_blocks::LAVA.default_state();
+        assert!(world.set_block(pos.above_n(2), source_lava, UpdateFlags::UPDATE_NONE));
+        assert!(world.set_block(
+            pos.below(),
+            vanilla_blocks::LAVA_CAULDRON.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+
+        let (behavior, dripstone) = stalactite_setup(&world, pos);
+        behavior.maybe_transfer_fluid(dripstone, &world, pos, 0.0);
+
+        assert_eq!(
+            world.get_block_state(pos.below()).get_block(),
+            &vanilla_blocks::LAVA_CAULDRON,
+        );
+    }
+
+    #[test]
+    fn stalactite_drip_skips_drip_when_random_value_exceeds_water_probability() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("high_random_water");
+        let pos = BlockPos::new(8, 64, 8);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+
+        let source_water = vanilla_blocks::WATER.default_state();
+        assert!(world.set_block(pos.above_n(2), source_water, UpdateFlags::UPDATE_NONE));
+        assert!(world.set_block(
+            pos.below(),
+            vanilla_blocks::CAULDRON.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+
+        let (behavior, dripstone) = stalactite_setup(&world, pos);
+        behavior.maybe_transfer_fluid(
+            dripstone,
+            &world,
+            pos,
+            WATER_TRANSFER_PROBABILITY_PER_RANDOM_TICK + 0.01,
+        );
+
+        assert_eq!(
+            world.get_block_state(pos.below()).get_block(),
+            &vanilla_blocks::CAULDRON,
+        );
+    }
+
+    #[test]
+    fn stalactite_drip_skips_drip_when_random_value_exceeds_lava_probability() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("high_random_lava");
+        let pos = BlockPos::new(8, 64, 8);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+
+        let source_lava = vanilla_blocks::LAVA.default_state();
+        assert!(world.set_block(pos.above_n(2), source_lava, UpdateFlags::UPDATE_NONE));
+        assert!(world.set_block(
+            pos.below(),
+            vanilla_blocks::CAULDRON.default_state(),
+            UpdateFlags::UPDATE_NONE,
+        ));
+
+        let (behavior, dripstone) = stalactite_setup(&world, pos);
+        behavior.maybe_transfer_fluid(
+            dripstone,
+            &world,
+            pos,
+            LAVA_TRANSFER_PROBABILITY_PER_RANDOM_TICK + 0.01,
+        );
+
+        assert_eq!(
+            world.get_block_state(pos.below()).get_block(),
+            &vanilla_blocks::CAULDRON,
+        );
     }
 }

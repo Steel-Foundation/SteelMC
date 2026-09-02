@@ -1,4 +1,11 @@
 use super::*;
+use crate::entity::leash::Leashable;
+
+/// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
+/// this wide and tall (in blocks) get their position fudged after growing.
+const FUDGE_SMALL_DIMENSION_LIMIT: f32 = 4.0;
+/// Vanilla `Entity.fudgePositionAfterSizeChange` epsilon padding (vanilla `1.0E-6`).
+const FUDGE_POSITION_EPSILON: f64 = 1.0e-6;
 
 /// Final state accepted from a client-authored movement packet.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -315,7 +322,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla `Entity.isPickable`. Base entities are not pickable unless
     /// a concrete entity type opts in.
     fn is_pickable(&self) -> bool {
-        false
+        self.as_living_entity()
+            .is_some_and(|living| !living.is_removed())
     }
 
     /// Returns whether this entity can be attacked.
@@ -338,7 +346,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla `Entity.isPushable`. Base entities are not pushable unless
     /// a concrete entity type opts in.
     fn is_pushable(&self) -> bool {
-        false
+        let Some(living) = self.as_living_entity() else {
+            return false;
+        };
+        Entity::is_alive(living) && !living.is_spectator() && !living.on_climbable()
     }
 
     /// Returns whether vanilla fluid currents can push this entity.
@@ -685,19 +696,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ///
     /// Mirrors vanilla `Entity.positionRider`.
     fn position_rider(&self, passenger: &dyn Entity) {
-        if !self.has_passenger(passenger) {
-            return;
-        }
-
-        let riding_position = self.passenger_riding_position(passenger);
-        let vehicle_attachment = passenger.vehicle_attachment_point(self.as_entity_event_source());
-        if let Err(error) = passenger.try_set_position(riding_position - vehicle_attachment) {
-            log::debug!(
-                "Failed to position passenger {} riding entity {}: {error}",
-                passenger.id(),
-                self.id()
-            );
-        }
+        position_rider_default(self, passenger);
     }
 
     /// Returns this entity's root vehicle ID, or this entity's ID when it is not riding.
@@ -846,14 +845,27 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Use `self.level()` to access the world for physics, block queries, etc.
     /// The caller handles post-tick dirty data sync.
     ///
-    /// Steel keeps the fallback empty because many vanilla subclasses override
-    /// tick without calling `super.tick()`.
-    fn tick(&self) {}
+    /// The default dispatches vanilla living behavior without requiring every
+    /// living implementation to repeat an `Entity::tick` forwarding method.
+    /// Non-living entities with custom tick behavior override this directly.
+    fn tick(&self) {
+        if let Some(living) = self.as_living_entity() {
+            living.tick_living_entity();
+        }
+    }
 
     /// Called every game tick while this entity is riding another entity.
     ///
     /// Mirrors vanilla `Entity.rideTick`.
     fn ride_tick(&self) {
+        self.default_ride_tick();
+        if let Some(living) = self.as_living_entity() {
+            living.reset_fall_distance();
+        }
+    }
+
+    /// The default implementation of `Entity.rideTick` when not overridden.
+    fn default_ride_tick(&self) {
         self.set_velocity(DVec3::ZERO);
         self.tick();
         if let Some(vehicle) = self.vehicle() {
@@ -945,7 +957,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.check_below_world();
         self.sync_base_fire_freeze_entity_data();
         // Vanilla checks `this instanceof Leashable` inside `Entity.baseTick`.
-        if let Some(mob) = self.as_mob() {
+        if let Some(mob) = self.as_leashable() {
             mob.tick_leash();
         }
         // VANILLA CLIENT-LOCAL: `Entity.spawnSprintParticle` creates sprint particles.
@@ -968,7 +980,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     }
 
     /// Runs vanilla pre-tick despawn checks.
-    fn check_despawn(&self) {}
+    fn check_despawn(&self) {
+        if let Some(mob) = self.as_mob() {
+            mob.check_mob_despawn();
+        }
+    }
 
     /// Applies an inside-block effect queued by vanilla's step-based collector.
     fn apply_inside_block_effect(&self, effect_type: InsideBlockEffectType) {
@@ -1022,37 +1038,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla `Entity.updateDataBeforeSync`.
     fn update_data_before_sync(&self) {}
 
-    /// Packs syncable attributes for initial spawn pairing.
-    ///
-    /// Mirrors vanilla `ServerEntity.sendPairingData`, which sends all syncable
-    /// living attributes after the add-entity and metadata packets.
-    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        Vec::new()
-    }
-
-    /// Drains syncable dirty attributes for per-tick tracking updates.
-    ///
-    /// Mirrors vanilla `ServerEntity.sendDirtyEntityData`, which sends dirty
-    /// living attributes after dirty entity data.
-    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        Vec::new()
-    }
-
-    /// Drains dirty mob-effect packet changes for vanilla recipients.
-    fn drain_dirty_mob_effects(&self) -> Vec<MobEffectSyncChange> {
-        Vec::new()
-    }
-
-    /// Packs non-empty equipment slots for initial spawn pairing.
-    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
-        Vec::new()
-    }
-
-    /// Drains equipment slots that changed since the last tracker sync.
-    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
-        Vec::new()
-    }
-
     /// Returns true if the entity has been marked for removal.
     fn is_removed(&self) -> bool {
         self.base().is_removed()
@@ -1060,7 +1045,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns whether this entity is alive for vanilla generic entity checks.
     fn is_alive(&self) -> bool {
-        !self.is_removed()
+        let Some(living) = self.as_living_entity() else {
+            return !self.is_removed();
+        };
+        !living.is_removed() && living.get_health() > 0.0
     }
 
     /// Marks this entity as waiting for a prepared world change.
@@ -1146,6 +1134,17 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         );
     }
 
+    /// Emits a vanilla game event from this entity's exact position with a player.
+    fn game_event_with_player(&self, event: GameEventRef, player: &Player) {
+        if let Some(world) = self.level() {
+            world.game_event_at(
+                event,
+                self.position(),
+                &GameEventContext::new(Some(player), None),
+            );
+        }
+    }
+
     /// Kills this entity using vanilla's living/non-living class split.
     ///
     /// `world` is vanilla's explicit `ServerLevel` argument. Living entities
@@ -1193,14 +1192,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let Some(world) = self.level() else {
             return Vec::new();
         };
-        let holder_id = holder.id();
-        let scan_area = leash_scan_area(world_aabb_center(self.bounding_box()));
-        world.get_entities_in_aabb_matching(&scan_area, |entity| {
-            entity.as_mob().is_some_and(|mob| {
-                mob.leash_holder()
-                    .is_some_and(|holder| holder.id() == holder_id)
-            })
-        })
+        leashables_leashed_to_holder_in_area_near_position(
+            &world,
+            world_aabb_center(self.bounding_box()),
+            holder,
+        )
     }
 
     /// Transfers leashables currently held by `old_holder` to this entity.
@@ -1223,7 +1219,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let leashables = self.leashables_leashed_to();
         let mut dropped = !leashables.is_empty();
 
-        if let Some(mob) = self.as_mob()
+        if let Some(mob) = self.as_leashable()
             && mob.is_leashed()
         {
             mob.drop_leash();
@@ -1231,7 +1227,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         for leashable in leashables {
-            if let Some(mob) = leashable.as_mob() {
+            if let Some(mob) = leashable.as_leashable() {
                 mob.drop_leash();
             }
         }
@@ -1341,6 +1337,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         hand: InteractionHand,
         location: DVec3,
     ) -> InteractionResult {
+        if let Some(mob) = self.as_mob() {
+            return mob.interact_mob(player, hand, location);
+        }
         self.interact_entity(player, hand, location)
     }
 
@@ -1511,6 +1510,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         try_as_dyn::<Self, dyn Mob>(self)
     }
 
+    /// Returns this entity as a `Leashable` if it has [`Leashable`] behavior.
+    fn as_leashable(&self) -> Option<&dyn Leashable> {
+        try_as_dyn::<Self, dyn Leashable>(self)
+    }
+
     /// Returns true for entities that implement vanilla animal behavior.
     fn is_animal(&self) -> bool {
         self.as_animal().is_some()
@@ -1521,6 +1525,18 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla's frequent `instanceof Animal` branches.
     fn as_animal(&self) -> Option<&dyn Animal> {
         try_as_dyn::<Self, dyn Animal>(self)
+    }
+
+    /// Returns true for entities that implement vanilla ageable-mob behavior.
+    fn is_ageable_mob(&self) -> bool {
+        self.as_ageable_mob().is_some()
+    }
+
+    /// Returns this entity as an ageable mob when it has ageable behavior.
+    ///
+    /// Mirrors vanilla's frequent `instanceof AgeableMob` branches.
+    fn as_ageable_mob(&self) -> Option<&dyn AgeableMob> {
+        try_as_dyn::<Self, dyn AgeableMob>(self)
     }
 
     /// Returns true for entities that implement vanilla item-steered boosts.
@@ -1565,7 +1581,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns true when vanilla allows this side to run entity AI/travel logic.
     fn is_effective_ai(&self) -> bool {
-        self.is_server_driven_movement()
+        let Some(mob) = self.as_mob() else {
+            return self.is_server_driven_movement();
+        };
+        mob.is_server_driven_movement() && !mob.is_no_ai()
     }
 
     /// Returns true when vanilla landing bounce should be suppressed.
@@ -1642,19 +1661,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
     }
 
-    /// Returns vanilla `PowderSnowBlock.canEntityWalkOnPowderSnow`.
-    fn default_can_walk_on_powder_snow(&self) -> bool {
-        REGISTRY.entity_types.is_in_tag(
-            self.entity_type(),
-            &EntityTypeTag::POWDER_SNOW_WALKABLE_MOBS,
-        )
-    }
-
-    /// Returns whether this entity can walk on powder snow.
-    fn can_walk_on_powder_snow(&self) -> bool {
-        self.default_can_walk_on_powder_snow()
-    }
-
     /// Returns whether vanilla excludes this vehicle from floating kicks.
     fn is_flying_vehicle(&self) -> bool {
         false
@@ -1717,6 +1723,12 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Sets the entity's rotation as (yaw, pitch) in degrees.
     fn set_rotation(&self, rotation: (f32, f32)) {
         self.base().set_rotation(rotation);
+    }
+
+    /// Gets the nearest horizontal direction to the entity's yaw (horizontal rotation).
+    fn direction_yaw(&self) -> Direction {
+        let (yaw, _) = self.rotation();
+        Direction::from_yaw(yaw)
     }
 
     /// Rotates this entity to face a fixed position.
@@ -2019,7 +2031,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns whether this entity may accumulate frozen ticks.
     fn can_freeze(&self) -> bool {
-        self.default_can_freeze()
+        self.as_living_entity().map_or_else(
+            || self.default_can_freeze(),
+            LivingEntity::default_living_can_freeze,
+        )
     }
 
     /// Returns vanilla `getTicksRequiredToFreeze`.
@@ -2582,9 +2597,103 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Refreshes dimensions for the current physical pose.
     fn refresh_dimensions(&self) {
         let pose = self.pose();
-        self.base()
-            .set_pose_and_dimensions(pose, self.dimensions_for_pose(pose));
-        // TODO: Fudge position after growth once free-position probing exists.
+        let old_dimensions = self.base().dimensions();
+        let new_dimensions = self.dimensions_for_pose(pose);
+        self.base().set_pose_and_dimensions(pose, new_dimensions);
+
+        // Vanilla fudges the position when growth would push the entity into
+        // neighboring blocks, and only for small, non-player entities. Vanilla
+        // also requires the entity to have ticked once (`!firstTick`), which
+        // Steel does not track; no current entity grows on its first tick, so
+        // the omission is not observable.
+        let is_small = new_dimensions.width <= FUDGE_SMALL_DIMENSION_LIMIT
+            && new_dimensions.height <= FUDGE_SMALL_DIMENSION_LIMIT;
+        if self.level().is_some()
+            && !self.no_physics()
+            && is_small
+            && (new_dimensions.width > old_dimensions.width
+                || new_dimensions.height > old_dimensions.height)
+            && self.as_player().is_none()
+        {
+            self.fudge_position_after_size_change(old_dimensions);
+        }
+    }
+
+    /// Vanilla `Entity.fudgePositionAfterSizeChange`.
+    ///
+    /// Moves the entity to the closest free position for its new dimensions
+    /// within the previous dimensions' footprint, returning whether a valid
+    /// position was found. Vanilla runs this after growing in a confined space;
+    /// Steel's `ThrownEgg` hatchlings also use it to fit a newborn chick at the
+    /// egg's impact point.
+    fn fudge_position_after_size_change(&self, previous_dimensions: EntityDimensions) -> bool {
+        let new_dimensions = self.dimensions_for_pose(self.pose());
+        let old_center =
+            self.position() + DVec3::new(0.0, f64::from(previous_dimensions.height) / 2.0, 0.0);
+        let width_delta = f64::from((new_dimensions.width - previous_dimensions.width).max(0.0))
+            + FUDGE_POSITION_EPSILON;
+        let height_delta = f64::from((new_dimensions.height - previous_dimensions.height).max(0.0))
+            + FUDGE_POSITION_EPSILON;
+        let allowed_centers = [WorldAabb::of_size(
+            old_center,
+            width_delta,
+            height_delta,
+            width_delta,
+        )];
+
+        let Some(world) = self.level() else {
+            return false;
+        };
+        let provider = WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
+        if let Some(free_center) = provider.find_free_position(
+            &allowed_centers,
+            old_center,
+            f64::from(new_dimensions.width),
+            f64::from(new_dimensions.height),
+            f64::from(new_dimensions.width),
+        ) {
+            let new_position =
+                free_center + DVec3::new(0.0, -f64::from(new_dimensions.height) / 2.0, 0.0);
+            match self.try_set_position(new_position) {
+                Ok(()) => return true,
+                Err(error) => {
+                    log::warn!(
+                        "failed to fudge entity {} position after size change: {error}",
+                        self.id()
+                    );
+                }
+            }
+        }
+
+        // Vanilla retries ignoring the vertical axis when both dimensions grow,
+        // allowing the entity to keep its previous footprint horizontally.
+        if new_dimensions.width > previous_dimensions.width
+            && new_dimensions.height > previous_dimensions.height
+        {
+            let allowed_centers_ignoring_y = [WorldAabb::of_size(
+                old_center,
+                width_delta,
+                FUDGE_POSITION_EPSILON,
+                width_delta,
+            )];
+            if let Some(free_center) = provider.find_free_position(
+                &allowed_centers_ignoring_y,
+                old_center,
+                f64::from(new_dimensions.width),
+                f64::from(previous_dimensions.height),
+                f64::from(new_dimensions.width),
+            ) {
+                let new_position = free_center
+                    + DVec3::new(
+                        0.0,
+                        -f64::from(previous_dimensions.height) / 2.0 + FUDGE_POSITION_EPSILON,
+                        0.0,
+                    );
+                return self.try_set_position(new_position).is_ok();
+            }
+        }
+
+        false
     }
 
     /// Sets the physical pose and synchronized pose metadata.
@@ -3035,7 +3144,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Maximum height this entity can step up during normal movement.
     fn max_up_step(&self) -> f32 {
-        0.0
+        self.as_living_entity().map_or(0.0, |living| {
+            living
+                .attributes()
+                .lock()
+                .get_value(vanilla_attributes::STEP_HEIGHT)
+                .unwrap_or(0.6) as f32
+        })
     }
 
     /// Whether movement should apply player-style sneak edge prevention.
@@ -3050,7 +3165,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Override this to specify entity-specific gravity.
     /// Vanilla values: `ItemEntity` = 0.04, `LivingEntity` = 0.08
     fn get_default_gravity(&self) -> f64 {
-        0.0
+        self.as_living_entity()
+            .map_or(0.0, LivingEntity::get_attribute_gravity)
     }
 
     /// Returns true if gravity is disabled for this entity.
@@ -3458,19 +3574,81 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla's `Entity.readAdditionalSaveData()`.
     fn load_additional(&self, _nbt: BorrowedNbtCompoundView<'_, '_>) {}
 
+    /// Returns vanilla `Entity.isInvulnerableToBase`.
+    fn is_invulnerable_to_base(&self, source: &DamageSource) -> bool {
+        self.is_removed()
+            || self.is_invulnerable()
+                && !source.bypasses_invulnerability()
+                && !self.source_is_creative_player(source)
+            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FIRE) && self.fire_immune()
+            || source.is(&vanilla_damage_type_tags::DamageTypeTag::IS_FALL)
+                && self.is_fall_damage_immune()
+    }
+
+    /// Returns vanilla `DamageSource.isCreativePlayer`: whether the damage's
+    /// causing entity is a player with infinite materials.
+    fn source_is_creative_player(&self, source: &DamageSource) -> bool {
+        let Some(causing_entity_id) = source.causing_entity_id else {
+            return false;
+        };
+        let Some(world) = self.level() else {
+            return false;
+        };
+        world
+            .get_entity_by_id(causing_entity_id)
+            .is_some_and(|entity| {
+                entity
+                    .as_player()
+                    .is_some_and(Player::has_infinite_materials)
+            })
+    }
+
     /// Applies damage to this entity.
-    ///
-    /// Vanilla: `Entity.hurtServer()` — overridden by `LivingEntity` (complex
-    /// armor/effects/invulnerability logic) and `ItemEntity` (health decrement
-    /// and discard). `world` must preserve vanilla's explicit `ServerLevel`
-    /// argument rather than being inferred from the target. Default returns
-    /// `false` (entity ignores damage).
-    #[expect(
-        unused_variables,
-        reason = "default trait impl; parameters used by overrides"
-    )]
     fn hurt(&self, world: &World, source: &DamageSource, amount: f32) -> bool {
-        false
+        // Vanilla `Projectile.hurtServer` overrides the entity default.
+        if let Some(projectile) = self.as_projectile() {
+            return Projectile::hurt(projectile, world, source, amount);
+        }
+        let Some(living) = self.as_living_entity() else {
+            return false;
+        };
+        living.hurt_server(world, source, amount)
+    }
+
+    /// Runs when this entity causes another entity to die.
+    /// The entity provided is the entity who was killed.
+    fn killed_entity(
+        &self,
+        _world: &World,
+        _entity: &dyn LivingEntity,
+        _source: &DamageSource,
+    ) -> bool {
+        true
+    }
+
+    /// Runs when this entity kills another entity.
+    fn award_kill_score(&self, _victim: &dyn Entity, _killing_blow: &DamageSource) {
+        // TODO: Trigger advancement criterion ENTITY_KILLED_PLAYER if the victim is a player.
+    }
+}
+
+/// Repositions a direct passenger from the vehicle's attachment point.
+///
+/// Shared between the [`Entity::position_rider`] default and entity overrides that
+/// extend it (e.g. `Chicken` mirroring the rider's body yaw).
+pub(crate) fn position_rider_default<E: Entity + ?Sized>(entity: &E, passenger: &dyn Entity) {
+    if !entity.has_passenger(passenger) {
+        return;
+    }
+
+    let riding_position = entity.passenger_riding_position(passenger);
+    let vehicle_attachment = passenger.vehicle_attachment_point(entity.as_entity_event_source());
+    if let Err(error) = passenger.try_set_position(riding_position - vehicle_attachment) {
+        log::debug!(
+            "Failed to position passenger {} riding entity {}: {error}",
+            passenger.id(),
+            entity.id()
+        );
     }
 }
 

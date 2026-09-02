@@ -8,7 +8,7 @@ use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::vanilla_block_entity_types;
+use steel_registry::{vanilla_block_entity_types, vanilla_custom_stats};
 use steel_utils::{BlockPos, BlockStateId, Downcast as _};
 
 use crate::behavior::{
@@ -95,7 +95,7 @@ impl BlockBehavior for FurnaceBlock {
     ) -> InteractionResult {
         if let Some(provider) = self.get_menu_provider(state, world, pos) {
             player.open_menu_provider(provider);
-            // TODO: Award INTERACT_WITH_FURNACE once Steel has statistics.
+            player.award_custom_stat(&vanilla_custom_stats::INTERACT_WITH_FURNACE);
         }
         InteractionResult::Success
     }

@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn committed_move_updates_spatial_index_within_the_same_section() {
+    let manager = WorldEntityManager::new();
+    load_chunk(&manager, ChunkPos::new(0, 0));
+
+    let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+    assert!(
+        manager
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+            .is_ok()
+    );
+
+    let old_bounds = entity.bounding_box();
+    let new_position = DVec3::new(13.0, 64.0, 1.0);
+    entity.base().set_position_local(new_position);
+    let update = match manager.commit_move(entity.id(), new_position) {
+        Ok(update) => update,
+        Err(error) => panic!("same-section move should commit: {error}"),
+    };
+
+    assert!(!update.section_changed());
+    assert!(manager.get_entities_in_aabb(&old_bounds).is_empty());
+    let moved = manager.get_entities_in_aabb(&entity.bounding_box());
+    assert_eq!(moved.len(), 1);
+    assert!(Arc::ptr_eq(&moved[0], &entity));
+}
+
+#[test]
 fn committed_move_updates_chunk_index_for_loaded_destination() {
     let manager = WorldEntityManager::new();
     load_chunk(&manager, ChunkPos::new(0, 0));
@@ -126,6 +153,37 @@ fn chunk_recovery_restores_same_entity_arc_before_final_unload() {
     };
     assert!(Arc::ptr_eq(&entity, &live_entity));
     assert!(!entity.is_removed());
+}
+
+#[test]
+fn chunk_recovery_refreshes_bounds_changed_while_inactive() {
+    let manager = WorldEntityManager::new();
+    let chunk = ChunkPos::new(0, 0);
+    load_chunk(&manager, chunk);
+
+    let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+    let old_bounds = entity.bounding_box();
+    assert!(
+        manager
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+            .is_ok()
+    );
+
+    let unload = manager.begin_chunk_unload(chunk);
+    assert_eq!(unload.retained.len(), 1);
+    entity.set_level_callback(Arc::new(InactiveEntityCallback::new(entity.id())));
+    let new_bounds = WorldAabb::new(8.0, 64.0, 0.0, 9.0, 65.0, 1.0);
+    entity.base().set_bounding_box(new_bounds);
+
+    let load = manager.on_chunk_loaded(chunk);
+    assert_eq!(load.restored.len(), 1);
+    let changes = manager.update_chunk_visibility(chunk, EntityVisibility::Ticking);
+    assert_eq!(changes.tracking_started.len(), 1);
+
+    assert!(manager.get_entities_in_aabb(&old_bounds).is_empty());
+    let restored = manager.get_entities_in_aabb(&new_bounds);
+    assert_eq!(restored.len(), 1);
+    assert!(Arc::ptr_eq(&restored[0], &entity));
 }
 
 #[test]

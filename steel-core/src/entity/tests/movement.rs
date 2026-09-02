@@ -15,7 +15,7 @@ fn resolved_movement_application_matches_vanilla_threshold() {
 
 #[test]
 fn move_without_physics_returns_none_when_position_commit_rejects() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = PushableTestEntity::shared(1, DVec3::ZERO);
     entity.set_no_physics(true);
     entity.set_level_callback(Arc::new(CommitRejectingCallback {
@@ -86,7 +86,7 @@ fn look_angle_matches_vanilla_view_vector_axes() {
 
 #[test]
 fn fall_flying_movement_applies_vanilla_gravity_lift_and_drag() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_rotation((0.0, 0.0));
 
@@ -102,7 +102,7 @@ fn fall_flying_movement_applies_vanilla_gravity_lift_and_drag() {
 
 #[test]
 fn fall_flying_movement_converts_upward_pitch_to_lift() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_rotation((0.0, -45.0));
 
@@ -120,7 +120,7 @@ fn fall_flying_collision_damage_matches_vanilla_threshold() {
 
 #[test]
 fn in_wall_eye_box_requires_suffocating_state_and_shape_overlap() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let pos = BlockPos::ZERO;
     let level = EmptyTestLevel;
@@ -157,7 +157,7 @@ fn fall_flying_free_fall_interval_matches_vanilla_cadence() {
 
 #[test]
 fn jump_boost_power_uses_active_effect_amplifier() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
     assert!(entity.get_jump_boost_power().abs() < f32::EPSILON);
@@ -169,7 +169,7 @@ fn jump_boost_power_uses_active_effect_amplifier() {
 
 #[test]
 fn levitation_travel_uses_active_effect_amplifier() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
 
     assert!(entity.levitation_travel_y_delta(-0.2).is_none());
@@ -181,7 +181,7 @@ fn levitation_travel_uses_active_effect_amplifier() {
 
 #[test]
 fn slow_falling_caps_effective_gravity_only_while_falling() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_mob_effect_active(vanilla_mob_effects::SLOW_FALLING, true);
     entity.set_velocity(DVec3::new(0.0, -0.1, 0.0));
@@ -195,7 +195,7 @@ fn slow_falling_caps_effective_gravity_only_while_falling() {
 
 #[test]
 fn fall_distance_accumulation_clamps_like_vanilla() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity.set_fall_distance(2.0);
     entity.set_velocity(DVec3::new(0.0, -0.4, 0.0));

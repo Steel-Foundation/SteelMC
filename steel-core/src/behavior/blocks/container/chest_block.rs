@@ -8,7 +8,7 @@ use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, ChestType, Direction};
 use steel_registry::sound_event::SoundEventRef;
-use steel_registry::vanilla_block_entity_types;
+use steel_registry::{vanilla_block_entity_types, vanilla_custom_stats};
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, translations::CONTAINER_CHEST_DOUBLE};
 use text_components::TextComponent;
 
@@ -492,7 +492,8 @@ impl BlockBehavior for ChestBlock {
     ) -> InteractionResult {
         if let Some(provider) = self.get_menu_provider(state, world, pos) {
             player.open_menu_provider(provider);
-            // TODO: Award OPEN_CHEST and anger nearby piglins once those systems exist.
+            player.award_custom_stat(&vanilla_custom_stats::OPEN_CHEST);
+            // TODO: Anger nearby piglins (PiglinAi.angerNearbyPiglins)
         }
         InteractionResult::Success
     }
@@ -651,7 +652,9 @@ mod tests {
         load_additional(&block_entity, &nbt);
 
         let player =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(1), "Locksmith", 1).build();
+            TestPlayerBuilder::new(Arc::clone(&world), "Locksmith", 1)
+                .uuid(Uuid::from_u128(1))
+                .build();
         player.base().set_position_local(DVec3::new(3.5, 64.0, 3.5));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let behavior = ChestBlock::new(

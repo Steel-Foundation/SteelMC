@@ -693,7 +693,7 @@ mod tests {
     use std::sync::Arc;
 
     use steel_registry::data_components::vanilla_components::BLOCK_STATE;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_items;
     use steel_utils::locks::SyncMutex;
 
@@ -715,7 +715,7 @@ mod tests {
 
     #[test]
     fn player_hand_source_reads_current_components_and_mutates_the_hand() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
         inventory
@@ -746,7 +746,7 @@ mod tests {
 
     #[test]
     fn replacement_dispatch_does_not_hold_the_inventory_lock() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let inventory = Arc::new(SyncMutex::new(PlayerInventory::new()));
@@ -783,7 +783,7 @@ mod tests {
 
     #[test]
     fn direct_source_mutates_the_callers_exact_stack() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut stack = ItemStack::with_count(&vanilla_items::LIGHT, 2);
         {
@@ -804,7 +804,7 @@ mod tests {
 
     #[test]
     fn at_changes_geometry_and_retains_the_direct_source() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let mut stack = ItemStack::new(&vanilla_items::STONE);
@@ -843,7 +843,7 @@ mod tests {
 
     #[test]
     fn directional_context_uses_vanilla_direction_order() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let mut stack = ItemStack::new(&vanilla_items::STONE);
@@ -872,7 +872,7 @@ mod tests {
 
     #[test]
     fn singular_look_direction_is_not_reordered_around_clicked_face() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let mut stack = ItemStack::new(&vanilla_items::PISTON);

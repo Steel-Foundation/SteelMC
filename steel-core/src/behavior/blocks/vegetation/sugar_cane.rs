@@ -8,10 +8,10 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{BlockStateProperties, Direction, IntProperty};
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
-use steel_registry::vanilla_fluid_tags;
+use steel_registry::vanilla_fluid_tags::FluidTag;
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::behavior::BlockBehavior;
@@ -26,6 +26,8 @@ const MAX_SUGAR_CANE_HEIGHT: i32 = 3;
 pub struct SugarCaneBlock {
     block: BlockRef,
 }
+
+const AGE: &IntProperty = &BlockStateProperties::AGE_15;
 
 impl SugarCaneBlock {
     /// Creates a new sugar cane block behavior.
@@ -89,18 +91,18 @@ impl BlockBehavior for SugarCaneBlock {
             return;
         }
 
-        let age = state.get_value(&BlockStateProperties::AGE_15);
+        let age = state.get_value(AGE);
 
-        if age == 15 {
+        if age == AGE.max {
             world.set_block(
                 above_pos,
                 self.block.default_state(),
                 UpdateFlags::UPDATE_ALL,
             );
-            let new_state = state.set_value(&BlockStateProperties::AGE_15, 0);
+            let new_state = state.set_value(AGE, 0);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         } else {
-            let new_state = state.set_value(&BlockStateProperties::AGE_15, age + 1);
+            let new_state = state.set_value(AGE, age + 1);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_CLIENTS);
         }
     }
@@ -150,7 +152,7 @@ impl BlockBehavior for SugarCaneBlock {
                 || neighbor_state
                     .get_fluid_state()
                     .fluid_id
-                    .has_tag(&vanilla_fluid_tags::FluidTag::SUPPORTS_SUGAR_CANE_ADJACENTLY)
+                    .has_tag(&FluidTag::SUPPORTS_SUGAR_CANE_ADJACENTLY)
             {
                 return true;
             }
@@ -162,7 +164,7 @@ impl BlockBehavior for SugarCaneBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use crate::test_support::TestLevel;
 
@@ -170,7 +172,7 @@ mod tests {
 
     #[test]
     fn sugar_cane_update_shape_schedules_break_tick_when_unsupported() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = SugarCaneBlock::new(&vanilla_blocks::SUGAR_CANE);
         let level = TestLevel::default();
         let state = vanilla_blocks::SUGAR_CANE.default_state();

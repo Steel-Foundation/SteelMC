@@ -8,7 +8,7 @@ use crate::behavior::{BlockPlaceContext, block::default_can_be_replaced};
 use crate::world::LevelReader;
 
 pub const MAX_SEGMENT_AMOUNT: u8 = 4;
-const FACING_PROPERTY: EnumProperty<Direction> = BlockStateProperties::HORIZONTAL_FACING;
+const FACING_PROPERTY: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
 
 pub fn segmentable_get_state_for_placement(
     block_ref: BlockRef,
@@ -47,7 +47,7 @@ fn segmentable_placement_state(
     } else {
         block_ref
             .default_state()
-            .set_value(&FACING_PROPERTY, horizontal_direction.opposite())
+            .set_value(FACING_PROPERTY, horizontal_direction.opposite())
     }
 }
 
@@ -55,7 +55,7 @@ fn segmentable_placement_state(
 mod tests {
     use glam::DVec3;
     use steel_registry::item_stack::ItemStack;
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
     use steel_utils::{BlockPos, types::InteractionHand};
 
     use super::*;
@@ -66,6 +66,8 @@ mod tests {
         },
         test_support::test_world,
     };
+
+    const SEGMENT_AMOUNT: &IntProperty = &BlockStateProperties::SEGMENT_AMOUNT;
 
     fn place_context(
         item_in_hand: &mut ItemStack,
@@ -94,39 +96,33 @@ mod tests {
 
     #[test]
     fn placement_uses_horizontal_direction_and_preserves_existing_facing() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let placed = segmentable_placement_state(
             &vanilla_blocks::LEAF_LITTER,
-            &BlockStateProperties::SEGMENT_AMOUNT,
+            SEGMENT_AMOUNT,
             vanilla_blocks::AIR.default_state(),
             Direction::East,
         );
-        assert_eq!(
-            placed.get_value(&BlockStateProperties::HORIZONTAL_FACING),
-            Direction::West
-        );
+        assert_eq!(placed.get_value(FACING_PROPERTY), Direction::West);
 
         let existing = vanilla_blocks::LEAF_LITTER
             .default_state()
-            .set_value(&BlockStateProperties::HORIZONTAL_FACING, Direction::North)
-            .set_value(&BlockStateProperties::SEGMENT_AMOUNT, 2);
+            .set_value(FACING_PROPERTY, Direction::North)
+            .set_value(SEGMENT_AMOUNT, 2);
         let stacked = segmentable_placement_state(
             &vanilla_blocks::LEAF_LITTER,
-            &BlockStateProperties::SEGMENT_AMOUNT,
+            SEGMENT_AMOUNT,
             existing,
             Direction::East,
         );
-        assert_eq!(
-            stacked.get_value(&BlockStateProperties::HORIZONTAL_FACING),
-            Direction::North
-        );
-        assert_eq!(stacked.get_value(&BlockStateProperties::SEGMENT_AMOUNT), 3);
+        assert_eq!(stacked.get_value(FACING_PROPERTY), Direction::North);
+        assert_eq!(stacked.get_value(SEGMENT_AMOUNT), 3);
     }
 
     #[test]
     fn replacement_matches_vanilla_segmentable_and_default_rules() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let leaf_litter = vanilla_blocks::LEAF_LITTER.default_state();
@@ -134,8 +130,7 @@ mod tests {
         assert!(leaf_litter.can_be_replaced(&place_context(&mut leaf_litter_item, false)));
         assert!(!leaf_litter.can_be_replaced(&place_context(&mut leaf_litter_item, true)));
 
-        let full_leaf_litter =
-            leaf_litter.set_value(&BlockStateProperties::SEGMENT_AMOUNT, MAX_SEGMENT_AMOUNT);
+        let full_leaf_litter = leaf_litter.set_value(SEGMENT_AMOUNT, MAX_SEGMENT_AMOUNT);
         assert!(!full_leaf_litter.can_be_replaced(&place_context(&mut leaf_litter_item, false,)));
         let mut stone = ItemStack::new(&vanilla_items::STONE);
         assert!(leaf_litter.can_be_replaced(&place_context(&mut stone, false)));
@@ -145,7 +140,7 @@ mod tests {
 
     #[test]
     fn only_flower_beds_are_bonemealable() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         assert!(

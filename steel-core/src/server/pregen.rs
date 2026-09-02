@@ -9,11 +9,11 @@ use steel_utils::{ChunkPos, SectionPos};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
-use crate::chunk::chunk_access::ChunkStatus;
 use crate::chunk::chunk_pyramid::GENERATION_PYRAMID;
 use crate::chunk::chunk_request::{
     ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind,
 };
+use crate::chunk::status::ChunkStatus;
 use crate::server::Server;
 use crate::world::World;
 

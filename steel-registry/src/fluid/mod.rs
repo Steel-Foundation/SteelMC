@@ -1,10 +1,14 @@
 //! Fluid registry for Minecraft fluids.
 
 use crate::{
-    RegistryExt, RegistryTags, TaggedRegistryExt, vanilla_fluid_tags::FluidTag, vanilla_fluids,
+    RegistryExt, RegistryTags, TaggedRegistryExt,
+    blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
+    vanilla_blocks,
+    vanilla_fluid_tags::FluidTag,
+    vanilla_fluids,
 };
 use rustc_hash::FxHashMap;
-use steel_utils::Identifier;
+use steel_utils::{BlockStateId, Identifier};
 
 /// A fluid type definition (e.g., water, lava, empty).
 #[derive(Debug)]
@@ -89,6 +93,10 @@ pub struct FluidState {
     /// Whether the fluid is falling (flows downward faster).
     pub falling: bool,
 }
+
+const LEGACY_SOURCE_LEVEL: u8 = 0;
+const LEGACY_MAX_LEVEL: u8 = 8;
+const LEGACY_FALLING_OFFSET: u8 = 8;
 
 impl FluidState {
     /// The empty fluid state.
@@ -200,6 +208,26 @@ impl FluidState {
             8 - self.amount
         }
     }
+
+    pub fn create_legacy_block(self) -> BlockStateId {
+        vanilla_blocks::WATER
+            .default_state()
+            .set_value(&BlockStateProperties::LEVEL, Self::get_legacy_level(self))
+    }
+
+    const fn get_legacy_level(self) -> u8 {
+        if self.is_source() {
+            return LEGACY_SOURCE_LEVEL;
+        }
+
+        let falling_offset = if self.falling {
+            LEGACY_FALLING_OFFSET
+        } else {
+            0
+        };
+
+        LEGACY_MAX_LEVEL - self.amount.min(LEGACY_MAX_LEVEL) + falling_offset
+    }
 }
 
 /// Registry for all fluids.
@@ -286,13 +314,13 @@ impl FluidStateExt for FluidState {
 
 #[cfg(test)]
 mod tests {
-    use crate::{test_support::init_test_registry, vanilla_fluids};
+    use crate::{init_vanilla_registry, vanilla_fluids};
 
     use super::*;
 
     #[test]
     fn from_block_level_uses_source_variant_for_level_zero() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let water = FluidState::from_block_level(&vanilla_fluids::WATER, 0);
         let lava = FluidState::from_block_level(&vanilla_fluids::LAVA, 0);
@@ -305,7 +333,7 @@ mod tests {
 
     #[test]
     fn from_block_level_uses_flowing_variant_for_non_source_levels() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let water = FluidState::from_block_level(&vanilla_fluids::WATER, 1);
         let lava = FluidState::from_block_level(&vanilla_fluids::LAVA, 8);
@@ -319,7 +347,7 @@ mod tests {
 
     #[test]
     fn from_block_level_clamps_all_falling_liquid_levels_to_full_amount() {
-        init_test_registry();
+        init_vanilla_registry();
 
         for level in 8..=15 {
             let water = FluidState::from_block_level(&vanilla_fluids::WATER, level);
@@ -334,7 +362,7 @@ mod tests {
 
     #[test]
     fn source_fluid_type_is_source_even_when_falling() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let falling_source = FluidState::new(&vanilla_fluids::WATER, 8, true);
 

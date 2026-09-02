@@ -24,6 +24,14 @@ use crate::{
 };
 use steel_registry::item_stack::ItemStack;
 
+type ContainerChangedCallback = Arc<dyn Fn() + Send + Sync>;
+
+#[derive(Clone)]
+struct ContainerOwner {
+    block_entity: Arc<BlockEntityBase>,
+    after_changed: Option<ContainerChangedCallback>,
+}
+
 /// Thread-safe reference to an erased container.
 pub type SharedContainer = Shared<dyn Container>;
 
@@ -51,7 +59,7 @@ impl DerefMut for LockedContainer {
 pub struct ContainerRef {
     id: ContainerId,
     source: SharedContainer,
-    owner: Option<Arc<BlockEntityBase>>,
+    owner: Option<ContainerOwner>,
 }
 
 impl<T> From<Shared<T>> for ContainerRef
@@ -120,7 +128,32 @@ impl ContainerRef {
         Self {
             id: ContainerId::from_arc(&container),
             source: container,
-            owner: Some(owner),
+            owner: Some(ContainerOwner {
+                block_entity: owner,
+                after_changed: None,
+            }),
+        }
+    }
+
+    /// Creates a block-entity container capability with an unlocked post-change callback.
+    ///
+    /// The callback runs after the container lock is released and after the owning
+    /// block entity is marked changed. Specialized containers can use this to
+    /// publish state derived from their contents without violating [`Container`]'s
+    /// storage-local locking contract.
+    #[must_use]
+    pub(crate) fn owned_by_block_entity_with_callback(
+        container: SharedContainer,
+        owner: Arc<BlockEntityBase>,
+        after_changed: ContainerChangedCallback,
+    ) -> Self {
+        Self {
+            id: ContainerId::from_arc(&container),
+            source: container,
+            owner: Some(ContainerOwner {
+                block_entity: owner,
+                after_changed: Some(after_changed),
+            }),
         }
     }
 
@@ -135,7 +168,7 @@ impl ContainerRef {
     pub fn still_valid(&self, player: &Player) -> bool {
         self.owner
             .as_ref()
-            .is_none_or(|owner| owner.is_valid_container_for(player))
+            .is_none_or(|owner| owner.block_entity.is_valid_container_for(player))
     }
 
     /// Realizes deferred block-container contents before inventory access.
@@ -146,7 +179,7 @@ impl ContainerRef {
         let Some(owner) = &self.owner else {
             return ContainerAccessResult::Ready;
         };
-        let Some(world) = owner.level() else {
+        let Some(world) = owner.block_entity.level() else {
             return ContainerAccessResult::Failed;
         };
         let player = match player {
@@ -160,7 +193,7 @@ impl ContainerRef {
         };
         let context = ContainerAccessContext {
             world,
-            pos: owner.pos(),
+            pos: owner.block_entity.pos(),
             player,
         };
         let preparation = {
@@ -170,7 +203,7 @@ impl ContainerRef {
         match preparation {
             ContainerPreparation::Ready { changed } => {
                 if changed {
-                    owner.set_changed();
+                    owner.block_entity.set_changed();
                 }
                 ContainerAccessResult::Ready
             }
@@ -192,7 +225,10 @@ impl ContainerRef {
     /// Marks the owning block entity changed after container locks are released.
     pub(crate) fn notify_owner_changed(&self) {
         if let Some(owner) = &self.owner {
-            owner.set_changed();
+            owner.block_entity.set_changed();
+            if let Some(after_changed) = &owner.after_changed {
+                after_changed();
+            }
         }
     }
 
@@ -379,12 +415,17 @@ impl ContainerLockGuard {
         result
     }
 
-    fn notify_owner(&mut self, owner: Option<Arc<BlockEntityBase>>) {
+    fn notify_owner(&mut self, owner: Option<ContainerOwner>) {
         let Some(owner) = owner else {
             return;
         };
 
-        self.run_unlocked(|| owner.set_changed());
+        self.run_unlocked(|| {
+            owner.block_entity.set_changed();
+            if let Some(after_changed) = owner.after_changed {
+                after_changed();
+            }
+        });
     }
 
     /// Gets immutable access when the locked container has concrete type `T`.
@@ -471,8 +512,8 @@ mod tests {
     use steel_registry::blocks::block_state_ext::BlockStateExt as _;
     use steel_registry::blocks::properties::{BlockStateProperties, Direction};
     use steel_registry::{
-        item_stack::ItemStack, test_support::init_test_registry, vanilla_block_entity_types,
-        vanilla_blocks, vanilla_items,
+        init_vanilla_registry, item_stack::ItemStack, vanilla_block_entity_types, vanilla_blocks,
+        vanilla_items,
     };
     use steel_utils::types::UpdateFlags;
     use steel_utils::{BlockPos, ChunkPos, locks::SyncMutex};
@@ -508,7 +549,7 @@ mod tests {
 
     #[test]
     fn block_entity_container_capability_is_independently_lockable() {
-        init_test_registry();
+        init_vanilla_registry();
         let barrel = Arc::new(BarrelBlockEntity::new(
             Weak::new(),
             BlockPos::new(1, 2, 3),
@@ -526,7 +567,7 @@ mod tests {
 
     #[test]
     fn non_container_block_entity_ref_is_rejected() {
-        init_test_registry();
+        init_vanilla_registry();
         let block_entity: SharedBlockEntity = Arc::new(RawBlockEntity::new(
             &vanilla_block_entity_types::END_PORTAL,
             Weak::new(),
@@ -539,7 +580,7 @@ mod tests {
 
     #[test]
     fn explicit_unregistered_player_cannot_prepare_container_access() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         init_block_entities();
         let world = fresh_test_world("stale_container_player");
@@ -556,13 +597,9 @@ mod tests {
                 .expect("barrel should create its block entity"),
         )
         .expect("barrel should expose a container capability");
-        let player = TestPlayerBuilder::new(
-            Arc::clone(&world),
-            Uuid::from_u128(0x0053_5441_4c45),
-            "Stale",
-            91,
-        )
-        .build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Stale", 91)
+            .uuid(Uuid::from_u128(0x0053_5441_4c45))
+            .build();
 
         assert_eq!(
             container_ref.prepare_access(Some(&player)),
@@ -591,7 +628,7 @@ mod tests {
 
     #[test]
     fn barrel_change_reenters_analog_read_without_holding_container_lock() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         init_block_entities();
         let world = fresh_test_world("barrel_comparator_reentry");

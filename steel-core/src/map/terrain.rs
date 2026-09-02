@@ -233,7 +233,7 @@ fn terrain_sample(
                 for offset_z in 0..scale {
                     let x = area_min_x + offset_x;
                     let z = area_min_z + offset_z;
-                    let mut column_y = chunk.height_at(
+                    let mut column_y = chunk.get_height(
                         HeightmapType::WorldSurface,
                         (x & 15) as usize,
                         (z & 15) as usize,

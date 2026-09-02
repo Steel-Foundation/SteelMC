@@ -17,7 +17,7 @@ use steel_utils::types::Difficulty;
 use steel_utils::{BlockPos, GlobalPos, Identifier};
 use tokio::fs;
 
-use crate::world::clock::WorldClockManager;
+use crate::world::{MAX_SIZE, clock::WorldClockManager};
 
 /// Persistent world border data stored with Steel level data.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -52,7 +52,7 @@ impl Default for WorldBorderData {
             safe_zone: 5.0,
             warning_blocks: 5,
             warning_time: 300,
-            size: f64::from(5.999_997E7_f32),
+            size: MAX_SIZE,
             lerp_time: 0,
             lerp_target: 0.0,
         }
@@ -629,7 +629,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
     use steel_registry::{
-        test_support::init_test_registry,
+        init_vanilla_registry,
         vanilla_game_rules::{KEEP_INVENTORY, RANDOM_TICK_SPEED},
         vanilla_world_clocks,
     };
@@ -692,7 +692,7 @@ mod tests {
 
     #[test]
     fn adopts_missing_generation_settings() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut data = LevelData::new_with_seed(1);
 
         let adopted = data
@@ -705,7 +705,7 @@ mod tests {
 
     #[test]
     fn rejects_mismatched_generation_settings() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut data = LevelData::new_with_seed(1);
         data.generation = Some(settings("minecraft:the_nether", 128));
 
@@ -756,7 +756,7 @@ mod tests {
 
     #[test]
     fn level_data_uses_legacy_spawn_as_respawn_default() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut data = LevelData::new_with_seed(1);
         data.set_spawn_pos(BlockPos::new(10, 65, -3));
         data.spawn.angle = 270.0;
@@ -773,12 +773,8 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        clippy::float_cmp,
-        reason = "the exactly representable configured clock rate must round-trip unchanged"
-    )]
     fn level_data_round_trips_world_clock_state() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut data = LevelData::new_with_seed(1);
         assert_eq!(
             data.world_clocks
@@ -815,7 +811,7 @@ mod tests {
 
     #[test]
     fn level_data_round_trips_typed_game_rules_with_untagged_toml_values() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut data = LevelData::new_with_seed(1);
         assert!(
             data.game_rules_values

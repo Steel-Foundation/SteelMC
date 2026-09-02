@@ -492,7 +492,9 @@ mod tests {
         let borrowed = read_borrowed_compound(&mut Cursor::new(bytes.as_slice()))
             .expect("test lock NBT should reborrow");
         furnace.load_additional(&borrowed);
-        let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "Smelter", 1).build();
+        let player = TestPlayerBuilder::new(world, "Smelter", 1)
+            .uuid(Uuid::from_u128(1))
+            .build();
 
         assert!(!furnace.can_open(&player));
         player

@@ -13,7 +13,7 @@ use crate::{
         block::default_can_be_replaced,
         blocks::vegetation::{
             bonemealable::{BonemealAction, Bonemealable},
-            get_top_connected_block, growing_plant_can_survive,
+            get_top_connected_block, growing_plant_block,
             growing_plant_head_block::GrowingPlantHeadBlock,
         },
     },
@@ -27,6 +27,7 @@ pub struct GrowingPlantBodyBlock {
     schedule_fluid_ticks: bool,
     head_block: BlockRef,
     update_head_after_converted_from_body: fn(BlockStateId, BlockStateId) -> BlockStateId,
+    can_grow_into: fn(BlockStateId) -> bool,
 }
 
 impl GrowingPlantBodyBlock {
@@ -37,6 +38,7 @@ impl GrowingPlantBodyBlock {
         growth_direction: Direction,
         schedule_fluid_ticks: bool,
         head_block: BlockRef,
+        can_grow_into: fn(BlockStateId) -> bool,
     ) -> Self {
         Self {
             block,
@@ -44,6 +46,7 @@ impl GrowingPlantBodyBlock {
             schedule_fluid_ticks,
             head_block,
             update_head_after_converted_from_body: Self::unchanged_converted_state,
+            can_grow_into,
         }
     }
 
@@ -62,9 +65,6 @@ impl GrowingPlantBodyBlock {
         head_state: BlockStateId,
     ) -> BlockStateId {
         head_state
-    }
-    fn can_grow_into(state: BlockStateId) -> bool {
-        state.is_air()
     }
     fn get_head_pos(
         &self,
@@ -93,7 +93,7 @@ impl BlockBehavior for GrowingPlantBodyBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        growing_plant_can_survive(
+        growing_plant_block::can_survive(
             world,
             pos,
             self.growth_direction,
@@ -157,7 +157,7 @@ impl Bonemealable for GrowingPlantBodyBlock {
             return false;
         };
         let growth_pos = head_pos.relative(self.growth_direction);
-        Self::can_grow_into(world.get_block_state(growth_pos))
+        (self.can_grow_into)(world.get_block_state(growth_pos))
             && !world.is_outside_build_height(growth_pos.y())
     }
 
@@ -200,13 +200,16 @@ impl Bonemealable for GrowingPlantBodyBlock {
 mod tests {
     use glam::DVec3;
     use steel_registry::{
-        item_stack::ItemStack, test_support::init_test_registry, vanilla_blocks, vanilla_items,
+        init_vanilla_registry, item_stack::ItemStack, vanilla_blocks, vanilla_items,
     };
     use steel_utils::{BlockPos, types::InteractionHand};
 
     use super::*;
     use crate::{
-        behavior::{BlockHitResult, PlacementOrientation, PlacementSource, init_behaviors},
+        behavior::{
+            BlockHitResult, PlacementOrientation, PlacementSource, blocks::CaveVinesBlock,
+            init_behaviors,
+        },
         test_support::test_world,
     };
 
@@ -234,7 +237,7 @@ mod tests {
 
     #[test]
     fn replacement_rejects_head_item_and_preserves_default_result() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         let behavior = GrowingPlantBodyBlock::new(
@@ -242,6 +245,7 @@ mod tests {
             Direction::Down,
             false,
             &vanilla_blocks::CAVE_VINES,
+            CaveVinesBlock::can_grow_into,
         );
         let mut glow_berries = ItemStack::new(&vanilla_items::GLOW_BERRIES);
         let context = place_context(&mut glow_berries);

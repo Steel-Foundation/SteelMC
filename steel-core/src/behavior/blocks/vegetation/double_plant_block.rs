@@ -14,7 +14,7 @@ use steel_utils::{
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::Vegetation;
 use crate::behavior::blocks::vegetation::default_surviving_state;
-use crate::behavior::blocks::vegetation::vegetation_block::double_plant_can_survive;
+use crate::behavior::blocks::vegetation::vegetation_block::vegetation_can_survive;
 use crate::behavior::context::{BlockPlaceContext, PlacementSource};
 use crate::block_entity::BlockEntity;
 use crate::entity::Entity;
@@ -27,7 +27,7 @@ use super::BlockRef;
 /// Behavior for vanilla two-block-tall plants.
 #[block_behavior]
 pub struct DoublePlantBlock {
-    block: BlockRef,
+    pub(super) block: BlockRef,
 }
 
 impl DoublePlantBlock {
@@ -148,6 +148,39 @@ impl DoublePlantBlock {
 
         state
     }
+
+    pub(super) fn place_at(
+        world: &Arc<World>,
+        state: BlockStateId,
+        lower_pos: BlockPos,
+        update_type: UpdateFlags,
+    ) {
+        let upper_pos = lower_pos.above();
+        world.set_block(
+            lower_pos,
+            Self::copy_waterlogged_from(
+                world,
+                lower_pos,
+                state.set_value(
+                    &BlockStateProperties::DOUBLE_BLOCK_HALF,
+                    DoubleBlockHalf::Lower,
+                ),
+            ),
+            update_type,
+        );
+        world.set_block(
+            upper_pos,
+            Self::copy_waterlogged_from(
+                world,
+                upper_pos,
+                state.set_value(
+                    &BlockStateProperties::DOUBLE_BLOCK_HALF,
+                    DoubleBlockHalf::Upper,
+                ),
+            ),
+            update_type,
+        );
+    }
 }
 
 impl Vegetation for DoublePlantBlock {}
@@ -188,7 +221,14 @@ impl BlockBehavior for DoublePlantBlock {
     }
 
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        double_plant_can_survive(self, state, world, pos)
+        if state.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF) == DoubleBlockHalf::Upper {
+            let state_below = world.get_block_state(pos.below());
+            state_below.get_block() == state.get_block()
+                && state_below.get_value(&BlockStateProperties::DOUBLE_BLOCK_HALF)
+                    == DoubleBlockHalf::Lower
+        } else {
+            vegetation_can_survive(self, state, world, pos)
+        }
     }
 
     fn set_placed_by(

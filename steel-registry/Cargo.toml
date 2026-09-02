@@ -60,7 +60,6 @@ flate2.workspace = true
 [features]
 fmt = []
 minecraft-src = []
-test-utils = []
 
 [lints]
 workspace = true

@@ -294,6 +294,9 @@ fn test_pig_loot_drops_raw_porkchop_when_not_on_fire() {
         flags: EntityRefFlags::default(),
         equipment: None,
         custom_name: None,
+        sheep_color: None,
+        sheep_sheared: None,
+        chicken_variant: None,
     };
 
     let mut ctx = LootContext::new(&mut rng).with_this_entity(pig);
@@ -319,6 +322,9 @@ fn test_pig_loot_smelt_condition_uses_entity_fire_flag() {
         },
         equipment: None,
         custom_name: None,
+        sheep_color: None,
+        sheep_sheared: None,
+        chicken_variant: None,
     };
 
     let mut ctx = LootContext::new(&mut rng).with_this_entity(pig);

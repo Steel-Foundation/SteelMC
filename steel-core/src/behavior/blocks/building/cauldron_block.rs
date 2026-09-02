@@ -4,18 +4,23 @@
 //! this module implements the complete vanilla analog-output contract shared by
 //! empty, water, and powder-snow cauldrons.
 
+use std::sync::Arc;
+
 use steel_macros::block_behavior;
-use steel_registry::blocks::{
-    BlockRef,
-    block_state_ext::BlockStateExt as _,
-    properties::{BlockStateProperties, Direction},
+use steel_registry::{
+    blocks::{
+        BlockRef,
+        block_state_ext::BlockStateExt as _,
+        properties::{BlockStateProperties, Direction, IntProperty},
+    },
+    level_events, vanilla_blocks, vanilla_fluids, vanilla_game_events,
 };
-use steel_utils::{BlockPos, BlockStateId};
+use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext},
+    behavior::{BlockBehavior, BlockPlaceContext, blocks::vegetation},
     entity::ai::path::PathComputationType,
-    world::LevelReader,
+    world::{LevelReader, World, game_event::GameEventContext},
 };
 
 /// Vanilla empty cauldron behavior.
@@ -23,6 +28,8 @@ use crate::{
 pub struct CauldronBlock {
     block: BlockRef,
 }
+
+const LEVEL_CAULDRON: &IntProperty = &BlockStateProperties::LEVEL_CAULDRON;
 
 impl CauldronBlock {
     /// Creates empty cauldron behavior.
@@ -58,6 +65,39 @@ impl BlockBehavior for CauldronBlock {
     ) -> bool {
         false
     }
+
+    fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        let Some(stalactite_pos) =
+            vegetation::find_stalactite_tip_above_cauldron(world.as_ref(), pos)
+        else {
+            return;
+        };
+        let Some(fluid) = vegetation::get_cauldron_fill_fluid_type(world, stalactite_pos) else {
+            return;
+        };
+
+        if fluid == &vanilla_fluids::WATER {
+            let new_state = vanilla_blocks::WATER_CAULDRON
+                .default_state()
+                .set_value(LEVEL_CAULDRON, 1);
+            world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+            world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                pos,
+                &GameEventContext::new(None, Some(new_state)),
+            );
+            world.level_event(level_events::SOUND_DRIP_WATER_INTO_CAULDRON, pos, 0, None);
+        } else if fluid == &vanilla_fluids::LAVA {
+            let new_state = vanilla_blocks::LAVA_CAULDRON.default_state();
+            world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+            world.game_event(
+                &vanilla_game_events::BLOCK_CHANGE,
+                pos,
+                &GameEventContext::new(None, Some(new_state)),
+            );
+            world.level_event(level_events::SOUND_DRIP_LAVA_INTO_CAULDRON, pos, 0, None);
+        }
+    }
 }
 
 /// Vanilla layered water and powder-snow cauldron behavior.
@@ -90,7 +130,7 @@ impl BlockBehavior for LayeredCauldronBlock {
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
-        i32::from(state.get_value(&BlockStateProperties::LEVEL_CAULDRON))
+        i32::from(state.get_value(LEVEL_CAULDRON))
     }
 
     fn is_pathfindable(
@@ -100,11 +140,36 @@ impl BlockBehavior for LayeredCauldronBlock {
     ) -> bool {
         false
     }
+
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        let Some(stalactite_pos) =
+            vegetation::find_stalactite_tip_above_cauldron(world.as_ref(), pos)
+        else {
+            return;
+        };
+        let Some(fluid) = vegetation::get_cauldron_fill_fluid_type(world, stalactite_pos) else {
+            return;
+        };
+
+        if fluid == &vanilla_fluids::WATER {
+            let level = state.get_value(LEVEL_CAULDRON);
+            if level < LEVEL_CAULDRON.max {
+                let new_state = state.set_value(LEVEL_CAULDRON, level + 1);
+                world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
+                world.game_event(
+                    &vanilla_game_events::BLOCK_CHANGE,
+                    pos,
+                    &GameEventContext::new(None, Some(new_state)),
+                );
+                world.level_event(level_events::SOUND_DRIP_WATER_INTO_CAULDRON, pos, 0, None);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{init_vanilla_registry, vanilla_blocks};
 
     use super::*;
     use crate::{
@@ -114,7 +179,7 @@ mod tests {
 
     #[test]
     fn registered_cauldron_behaviors_expose_vanilla_fill_levels() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let level = TestLevel::default();
         let pos = BlockPos::ZERO;
@@ -130,7 +195,7 @@ mod tests {
         for level_value in 1..=3 {
             let state = vanilla_blocks::WATER_CAULDRON
                 .default_state()
-                .set_value(&BlockStateProperties::LEVEL_CAULDRON, level_value);
+                .set_value(LEVEL_CAULDRON, level_value);
             let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
             assert_eq!(
                 behavior.get_analog_output_signal(state, &level, pos, Direction::North),

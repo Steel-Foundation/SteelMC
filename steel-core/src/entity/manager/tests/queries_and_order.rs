@@ -1,3 +1,5 @@
+use std::thread;
+
 use super::*;
 
 #[test]
@@ -235,11 +237,119 @@ fn aabb_queries_use_vanilla_section_order_then_section_insertion_order() {
 }
 
 #[test]
-fn entity_query_section_bounds_match_vanilla_search_grace() {
-    let aabb = WorldAabb::new(0.0, 66.0, 0.0, 15.0, 79.0, 15.0);
+fn spatial_cell_reentry_preserves_section_insertion_order() {
+    let manager = WorldEntityManager::new();
+    load_chunk(&manager, ChunkPos::new(0, 0));
 
-    let (minimum, maximum) = WorldEntityManager::entity_query_section_bounds(&aabb);
+    let first = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+    let second = entity(2, 2, DVec3::new(1.5, 64.0, 1.0));
+    for entity in [Arc::clone(&first), second] {
+        assert!(
+            manager
+                .add_live_entity(entity, EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+    }
 
-    assert_eq!(minimum, SectionPos::new(-1, 3, -1));
-    assert_eq!(maximum, SectionPos::new(1, 4, 1));
+    for position in [DVec3::new(9.0, 64.0, 1.0), DVec3::new(1.0, 64.0, 1.0)] {
+        first.base().set_position_local(position);
+        assert!(manager.commit_move(first.id(), position).is_ok());
+    }
+
+    let entity_ids = manager
+        .get_entities_in_aabb(&WorldAabb::new(0.0, 63.0, 0.0, 2.0, 66.0, 2.0))
+        .into_iter()
+        .map(|entity| entity.id())
+        .collect::<Vec<_>>();
+    assert_eq!(entity_ids, vec![1, 2]);
+}
+
+#[test]
+fn spatial_query_candidates_skip_distant_entities_in_the_same_section() {
+    let manager = WorldEntityManager::new();
+    load_chunk(&manager, ChunkPos::new(0, 0));
+
+    let nearby = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+    let distant = entity(2, 2, DVec3::new(13.0, 64.0, 1.0));
+    for entity in [Arc::clone(&nearby), distant] {
+        assert!(
+            manager
+                .add_live_entity(entity, EntityOwnership::ManagerOwned)
+                .is_ok()
+        );
+    }
+
+    let state = manager.state.read();
+    let candidate_ids = WorldEntityManager::entity_query_entries(
+        &state,
+        &WorldAabb::new(0.0, 63.0, 0.0, 2.0, 66.0, 2.0),
+    )
+    .into_iter()
+    .map(|entry| entry.entity.id())
+    .collect::<Vec<_>>();
+
+    assert_eq!(candidate_ids, vec![nearby.id()]);
+}
+
+#[test]
+fn bounding_box_change_updates_spatial_index_without_position_change() {
+    let manager = WorldEntityManager::new();
+    load_chunk(&manager, ChunkPos::new(0, 0));
+
+    let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+    let old_bounds = entity.bounding_box();
+    assert!(
+        manager
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+            .is_ok()
+    );
+
+    let new_bounds = WorldAabb::new(8.0, 64.0, 0.0, 9.0, 65.0, 1.0);
+    entity.base().set_bounding_box(new_bounds);
+    manager.commit_bounding_box_change(entity.id());
+
+    assert!(manager.get_entities_in_aabb(&old_bounds).is_empty());
+    let moved_bounds = manager.get_entities_in_aabb(&new_bounds);
+    assert_eq!(moved_bounds.len(), 1);
+    assert!(Arc::ptr_eq(&moved_bounds[0], &entity));
+}
+
+#[test]
+fn delayed_bounding_box_callback_cannot_restore_stale_bounds() {
+    let manager = Arc::new(WorldEntityManager::new());
+    load_chunk(&manager, ChunkPos::new(0, 0));
+
+    let entity = entity(1, 1, DVec3::new(1.0, 64.0, 1.0));
+    assert!(
+        manager
+            .add_live_entity(Arc::clone(&entity), EntityOwnership::ManagerOwned)
+            .is_ok()
+    );
+
+    let first_callback_entered = Arc::new(Barrier::new(2));
+    let release_first_callback = Arc::new(Barrier::new(2));
+    entity.set_level_callback(Arc::new(DelayedFirstBoundsCallback {
+        entity_id: entity.id(),
+        manager: Arc::clone(&manager),
+        first_callback_entered: Arc::clone(&first_callback_entered),
+        release_first_callback: Arc::clone(&release_first_callback),
+        callback_count: AtomicUsize::new(0),
+    }));
+
+    let stale_bounds = WorldAabb::new(4.0, 64.0, 0.0, 5.0, 65.0, 1.0);
+    let current_bounds = WorldAabb::new(8.0, 64.0, 0.0, 9.0, 65.0, 1.0);
+    let first_entity = Arc::clone(&entity);
+    let first_update = thread::spawn(move || {
+        first_entity.base().set_bounding_box(stale_bounds);
+    });
+
+    first_callback_entered.wait();
+    entity.base().set_bounding_box(current_bounds);
+    release_first_callback.wait();
+    assert!(first_update.join().is_ok());
+
+    assert!(manager.get_entities_in_aabb(&stale_bounds).is_empty());
+    let current = manager.get_entities_in_aabb(&current_bounds);
+    assert_eq!(current.len(), 1);
+    assert!(Arc::ptr_eq(&current[0], &entity));
 }

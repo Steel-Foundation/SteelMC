@@ -205,13 +205,13 @@ impl Player {
 
         let mut inventory = self.inventory.lock();
 
-        let slot_with_item = inventory.find_slot_matching_item(&item_stack);
+        let slot_with_item = inventory.find_slot_matching_item_with_same_components(&item_stack);
 
-        if slot_with_item != -1 {
-            if PlayerInventory::is_hotbar_slot(slot_with_item as usize) {
-                inventory.set_selected_slot(slot_with_item as u8);
+        if let Some(slot) = slot_with_item {
+            if PlayerInventory::is_hotbar_slot(slot) {
+                inventory.set_selected_slot(slot);
             } else {
-                inventory.pick_slot(slot_with_item);
+                inventory.pick_slot(slot);
             }
         } else if self.has_infinite_materials() {
             inventory.add_and_pick_item(item_stack);

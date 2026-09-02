@@ -5,10 +5,11 @@
 //! of chunk load state; chunks are still the persistence boundary, and only
 //! full simulated chunks tick entities.
 
-use std::{collections::BTreeMap, error::Error, fmt, slice, sync::Arc};
+use std::{collections::BTreeMap, error::Error, fmt, mem, slice, sync::Arc};
 
 use glam::DVec3;
 use rustc_hash::{FxHashMap, FxHashSet};
+use smallvec::SmallVec;
 use steel_registry::vanilla_entities;
 use steel_utils::locks::SyncRwLock;
 use steel_utils::{ChunkPos, PackedSectionPos, SectionPos, WorldAabb};
@@ -18,6 +19,79 @@ use super::{
     Entity, NullEntityCallback, RemovalReason, SharedEntity, snapshot_old_pos_and_rot_for_tick,
     tick_vehicle_passengers_with_ticked_if,
 };
+
+// Vanilla treats four blocks as the largest ordinary entity search extent.
+const ENTITY_SPATIAL_CELL_SIZE: f64 = 4.0;
+// Center common integer positions inside cells instead of on cell boundaries.
+const ENTITY_SPATIAL_CELL_OFFSET: f64 = ENTITY_SPATIAL_CELL_SIZE / 2.0;
+// Large queries scan occupied cells instead of materializing an enormous cell range.
+const MAX_DIRECT_SPATIAL_CELL_PROBES: i128 = 4_096;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct EntitySpatialCell {
+    x: i32,
+    y: i32,
+    z: i32,
+}
+
+impl EntitySpatialCell {
+    fn containing(x: f64, y: f64, z: f64) -> Self {
+        Self {
+            x: ((x + ENTITY_SPATIAL_CELL_OFFSET) / ENTITY_SPATIAL_CELL_SIZE).floor() as i32,
+            y: ((y + ENTITY_SPATIAL_CELL_OFFSET) / ENTITY_SPATIAL_CELL_SIZE).floor() as i32,
+            z: ((z + ENTITY_SPATIAL_CELL_OFFSET) / ENTITY_SPATIAL_CELL_SIZE).floor() as i32,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct EntityQueryOrder {
+    section: PackedSectionPos,
+    insertion: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct EntitySpatialCellBounds {
+    minimum: EntitySpatialCell,
+    maximum: EntitySpatialCell,
+}
+
+impl EntitySpatialCellBounds {
+    fn from_aabb(aabb: &WorldAabb) -> Self {
+        Self {
+            minimum: EntitySpatialCell::containing(aabb.min_x(), aabb.min_y(), aabb.min_z()),
+            maximum: EntitySpatialCell::containing(aabb.max_x(), aabb.max_y(), aabb.max_z()),
+        }
+    }
+
+    const fn contains(self, cell: EntitySpatialCell) -> bool {
+        cell.x >= self.minimum.x
+            && cell.x <= self.maximum.x
+            && cell.y >= self.minimum.y
+            && cell.y <= self.maximum.y
+            && cell.z >= self.minimum.z
+            && cell.z <= self.maximum.z
+    }
+
+    fn direct_probe_count(self) -> i128 {
+        let width = i128::from(self.maximum.x) - i128::from(self.minimum.x) + 1;
+        let height = i128::from(self.maximum.y) - i128::from(self.minimum.y) + 1;
+        let depth = i128::from(self.maximum.z) - i128::from(self.minimum.z) + 1;
+        width * height * depth
+    }
+
+    fn cells(self) -> SmallVec<[EntitySpatialCell; 8]> {
+        let mut cells = SmallVec::new();
+        for x in self.minimum.x..=self.maximum.x {
+            for y in self.minimum.y..=self.maximum.y {
+                for z in self.minimum.z..=self.maximum.z {
+                    cells.push(EntitySpatialCell { x, y, z });
+                }
+            }
+        }
+        cells
+    }
+}
 
 /// Error returned when adding an entity to the runtime world fails.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -283,6 +357,9 @@ struct EntityEntry {
     uuid: Uuid,
     section: SectionPos,
     chunk: ChunkPos,
+    bounding_box: WorldAabb,
+    spatial_cells: SmallVec<[EntitySpatialCell; 8]>,
+    section_order: u64,
     ownership: EntityOwnership,
 }
 
@@ -290,11 +367,15 @@ impl EntityEntry {
     fn new(entity: SharedEntity, ownership: EntityOwnership) -> Self {
         let section = SectionPos::from_entity_pos(entity.position());
         let chunk = ChunkPos::new(section.x(), section.z());
+        let bounding_box = entity.bounding_box();
         Self {
             uuid: entity.uuid(),
             entity,
             section,
             chunk,
+            bounding_box,
+            spatial_cells: EntitySpatialCellBounds::from_aabb(&bounding_box).cells(),
+            section_order: 0,
             ownership,
         }
     }
@@ -311,6 +392,13 @@ impl EntityEntry {
             && !self.entity.has_exactly_one_player_passenger()
             && self.entity.entity_type().can_serialize
     }
+
+    fn query_order(&self) -> EntityQueryOrder {
+        EntityQueryOrder {
+            section: PackedSectionPos::from(self.section),
+            insertion: self.section_order,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -320,10 +408,12 @@ struct ManagerState {
     live_by_uuid: FxHashMap<Uuid, i32>,
     accessible_order: OrderedEntityIds,
     by_section: BTreeMap<PackedSectionPos, OrderedEntityIds>,
+    by_spatial_cell: FxHashMap<EntitySpatialCell, OrderedEntityIds>,
     by_chunk: FxHashMap<ChunkPos, FxHashSet<i32>>,
     unloading_by_chunk: FxHashMap<ChunkPos, Vec<EntityEntry>>,
     save_pending_by_chunk: FxHashMap<ChunkPos, Vec<EntityEntry>>,
     tick_list: EntityTickList,
+    next_section_order: u64,
 }
 
 #[derive(Default)]
@@ -346,6 +436,11 @@ impl OrderedEntityIds {
         };
         self.ids.remove(index);
         true
+    }
+
+    fn insert_at(&mut self, index: usize, entity_id: i32) {
+        assert!(!self.ids.contains(&entity_id));
+        self.ids.insert(index, entity_id);
     }
 
     const fn is_empty(&self) -> bool {
@@ -817,6 +912,10 @@ impl WorldEntityManager {
     }
 
     /// Commits manager indexes after a live entity position change.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "keeps movement index updates atomic under one manager write lock"
+    )]
     pub fn commit_move(
         &self,
         entity_id: i32,
@@ -848,8 +947,18 @@ impl WorldEntityManager {
             Self::lifecycle_visibility_for(current, Self::chunk_visibility(&state, new_chunk));
         let old_ticking = old_visibility.is_ticking();
         let new_ticking = new_visibility.is_ticking();
-        let entity = current.entity.clone();
-        if old_section == new_section && old_chunk == new_chunk {
+        let entity = Arc::clone(&current.entity);
+        let new_bounding_box = entity.bounding_box();
+        let new_spatial_cells = EntitySpatialCellBounds::from_aabb(&new_bounding_box).cells();
+        let spatial_cells_changed = current.spatial_cells != new_spatial_cells;
+        let section_changed = old_section != new_section;
+        let spatial_index_changed = spatial_cells_changed || section_changed;
+        let current_section_order = current.section_order;
+
+        if !section_changed && !spatial_cells_changed {
+            if let Some(entry) = state.live_by_id.get_mut(&entity_id) {
+                entry.bounding_box = new_bounding_box;
+            }
             return Ok(EntityMoveUpdate {
                 entity_id,
                 old_section,
@@ -863,24 +972,59 @@ impl WorldEntityManager {
             });
         }
 
-        Self::remove_from_section(&mut state, old_section, entity_id);
-        Self::remove_from_chunk(&mut state, old_chunk, entity_id);
+        if section_changed {
+            Self::remove_from_section(&mut state, old_section, entity_id);
+            Self::remove_from_chunk(&mut state, old_chunk, entity_id);
+        }
+
+        let new_section_order = if section_changed {
+            Self::next_section_order(&mut state)
+        } else {
+            current_section_order
+        };
+        let new_query_order = EntityQueryOrder {
+            section: PackedSectionPos::from(new_section),
+            insertion: new_section_order,
+        };
+
+        if spatial_index_changed {
+            let Some(entry) = state.live_by_id.get_mut(&entity_id) else {
+                return Err(EntityMoveError::NotLive { entity_id });
+            };
+            let previous_cells = mem::take(&mut entry.spatial_cells);
+            Self::remove_from_spatial_cells(&mut state, &previous_cells, entity_id);
+            Self::insert_into_spatial_cells(
+                &mut state,
+                &new_spatial_cells,
+                entity_id,
+                new_query_order,
+            );
+        }
 
         if let Some(entry) = state.live_by_id.get_mut(&entity_id) {
             entry.section = new_section;
             entry.chunk = new_chunk;
+            entry.bounding_box = new_bounding_box;
+            if spatial_index_changed {
+                entry.spatial_cells = new_spatial_cells;
+            }
+            if section_changed {
+                entry.section_order = new_section_order;
+            }
         }
 
-        state
-            .by_section
-            .entry(PackedSectionPos::from(new_section))
-            .or_default()
-            .insert(entity_id);
-        state
-            .by_chunk
-            .entry(new_chunk)
-            .or_default()
-            .insert(entity_id);
+        if section_changed {
+            state
+                .by_section
+                .entry(PackedSectionPos::from(new_section))
+                .or_default()
+                .insert(entity_id);
+            state
+                .by_chunk
+                .entry(new_chunk)
+                .or_default()
+                .insert(entity_id);
+        }
 
         if old_accessible && !new_accessible {
             state.accessible_order.remove(entity_id);
@@ -905,6 +1049,38 @@ impl WorldEntityManager {
             old_ticking,
             new_ticking,
         })
+    }
+
+    /// Commits a live entity bounding-box change to the spatial query index.
+    ///
+    /// Reads the current bounds after acquiring the manager lock so concurrent
+    /// callbacks may complete in either order without restoring stale bounds.
+    pub fn commit_bounding_box_change(&self, entity_id: i32) {
+        let mut state = self.state.write();
+        let Some(current) = state.live_by_id.get(&entity_id) else {
+            return;
+        };
+        let bounding_box = current.entity.bounding_box();
+        let new_spatial_cells = EntitySpatialCellBounds::from_aabb(&bounding_box).cells();
+        let query_order = current.query_order();
+
+        if current.spatial_cells == new_spatial_cells {
+            if let Some(entry) = state.live_by_id.get_mut(&entity_id) {
+                entry.bounding_box = bounding_box;
+            }
+            return;
+        }
+
+        let Some(entry) = state.live_by_id.get_mut(&entity_id) else {
+            return;
+        };
+        let previous_cells = mem::take(&mut entry.spatial_cells);
+        Self::remove_from_spatial_cells(&mut state, &previous_cells, entity_id);
+        Self::insert_into_spatial_cells(&mut state, &new_spatial_cells, entity_id, query_order);
+        if let Some(entry) = state.live_by_id.get_mut(&entity_id) {
+            entry.bounding_box = bounding_box;
+            entry.spatial_cells = new_spatial_cells;
+        }
     }
 
     fn can_move_manager_owned_to_chunk(
@@ -1018,19 +1194,12 @@ impl WorldEntityManager {
         mut predicate: impl FnMut(&dyn Entity) -> bool,
     ) -> bool {
         let state = self.state.read();
-        for entity_ids in Self::entity_query_sections(&state, aabb) {
-            for entity_id in entity_ids.iter() {
-                let Some(entry) = state.live_by_id.get(entity_id) else {
-                    continue;
-                };
-                if !Self::is_accessible(&state, entry) {
-                    continue;
-                }
-
-                let bounding_box = entry.entity.bounding_box();
-                if bounding_box.intersects(*aabb) && predicate(entry.entity.as_ref()) {
-                    return true;
-                }
+        for entry in Self::entity_query_entries(&state, aabb) {
+            if Self::is_accessible(&state, entry)
+                && entry.bounding_box.intersects(*aabb)
+                && predicate(entry.entity.as_ref())
+            {
+                return true;
             }
         }
 
@@ -1046,19 +1215,12 @@ impl WorldEntityManager {
     ) -> Vec<WorldAabb> {
         let state = self.state.read();
         let mut result = Vec::new();
-        for entity_ids in Self::entity_query_sections(&state, aabb) {
-            for entity_id in entity_ids.iter() {
-                let Some(entry) = state.live_by_id.get(entity_id) else {
-                    continue;
-                };
-                if !Self::is_accessible(&state, entry) {
-                    continue;
-                }
-
-                let bounding_box = entry.entity.bounding_box();
-                if bounding_box.intersects(*aabb) && predicate(entry.entity.as_ref()) {
-                    result.push(bounding_box);
-                }
+        for entry in Self::entity_query_entries(&state, aabb) {
+            if Self::is_accessible(&state, entry)
+                && entry.bounding_box.intersects(*aabb)
+                && predicate(entry.entity.as_ref())
+            {
+                result.push(entry.bounding_box);
             }
         }
 
@@ -1088,21 +1250,13 @@ impl WorldEntityManager {
     /// Gets live entities whose bounding boxes intersect `aabb`.
     pub fn get_entities_in_aabb(&self, aabb: &WorldAabb) -> Vec<SharedEntity> {
         let state = self.state.read();
-        let mut result = Vec::new();
-        for entity_ids in Self::entity_query_sections(&state, aabb) {
-            for entity_id in entity_ids.iter() {
-                let Some(entry) = state.live_by_id.get(entity_id) else {
-                    continue;
-                };
-                if Self::is_accessible(&state, entry)
-                    && entry.entity.bounding_box().intersects(*aabb)
-                {
-                    result.push(entry.entity.clone());
-                }
-            }
-        }
-
-        result
+        Self::entity_query_entries(&state, aabb)
+            .into_iter()
+            .filter(|entry| {
+                Self::is_accessible(&state, entry) && entry.bounding_box.intersects(*aabb)
+            })
+            .map(|entry| Arc::clone(&entry.entity))
+            .collect()
     }
 
     /// Gets all live entities visible to vanilla gameplay lookups.
@@ -1118,27 +1272,47 @@ impl WorldEntityManager {
             .collect()
     }
 
-    fn entity_query_sections<'a>(
-        state: &'a ManagerState,
-        aabb: &WorldAabb,
-    ) -> Vec<&'a OrderedEntityIds> {
-        let (minimum, maximum) = Self::entity_query_section_bounds(aabb);
-        let mut sections = Vec::new();
-        for x in minimum.x()..=maximum.x() {
-            let first = PackedSectionPos::from(SectionPos::new(x, 0, 0));
-            let last = PackedSectionPos::from(SectionPos::new(x, -1, -1));
-            for (packed, entity_ids) in state.by_section.range(first..=last) {
-                let section = packed.to_section_pos();
-                if section.y() >= minimum.y()
-                    && section.y() <= maximum.y()
-                    && section.z() >= minimum.z()
-                    && section.z() <= maximum.z()
-                {
-                    sections.push(entity_ids);
+    fn entity_query_entries<'a>(state: &'a ManagerState, aabb: &WorldAabb) -> Vec<&'a EntityEntry> {
+        let bounds = EntitySpatialCellBounds::from_aabb(aabb);
+        let mut populated_cells = SmallVec::<[&OrderedEntityIds; 8]>::new();
+
+        if bounds.direct_probe_count() <= MAX_DIRECT_SPATIAL_CELL_PROBES {
+            for x in bounds.minimum.x..=bounds.maximum.x {
+                for y in bounds.minimum.y..=bounds.maximum.y {
+                    for z in bounds.minimum.z..=bounds.maximum.z {
+                        if let Some(cell_ids) =
+                            state.by_spatial_cell.get(&EntitySpatialCell { x, y, z })
+                        {
+                            populated_cells.push(cell_ids);
+                        }
+                    }
+                }
+            }
+        } else {
+            for (cell, cell_ids) in &state.by_spatial_cell {
+                if bounds.contains(*cell) {
+                    populated_cells.push(cell_ids);
                 }
             }
         }
-        sections
+
+        if let [cell] = populated_cells.as_slice() {
+            return cell
+                .iter()
+                .filter_map(|entity_id| state.live_by_id.get(entity_id))
+                .collect();
+        }
+
+        let mut entity_ids = FxHashSet::default();
+        for cell in populated_cells {
+            entity_ids.extend(cell.iter().copied());
+        }
+        let mut entries = entity_ids
+            .into_iter()
+            .filter_map(|entity_id| state.live_by_id.get(&entity_id))
+            .collect::<Vec<_>>();
+        entries.sort_unstable_by_key(|entry| entry.query_order());
+        entries
     }
 
     fn entity_ids_in_chunk_order(state: &ManagerState, chunk: ChunkPos) -> Vec<i32> {
@@ -1149,20 +1323,6 @@ impl WorldEntityManager {
             .range(first..=last)
             .flat_map(|(_, entity_ids)| entity_ids.iter().copied())
             .collect()
-    }
-
-    fn entity_query_section_bounds(aabb: &WorldAabb) -> (SectionPos, SectionPos) {
-        let min_section = SectionPos::from_entity_pos(DVec3::new(
-            aabb.min_x() - 2.0,
-            aabb.min_y() - 4.0,
-            aabb.min_z() - 2.0,
-        ));
-        let max_section = SectionPos::from_entity_pos(DVec3::new(
-            aabb.max_x() + 2.0,
-            aabb.max_y(),
-            aabb.max_z() + 2.0,
-        ));
-        (min_section, max_section)
     }
 
     /// Reports saveable entities whose chunks were not part of a chunk save pass.
@@ -1516,8 +1676,10 @@ impl WorldEntityManager {
         }
     }
 
-    fn insert_live_entry(state: &mut ManagerState, entry: EntityEntry) {
+    fn insert_live_entry(state: &mut ManagerState, mut entry: EntityEntry) {
         let entity_id = entry.entity.id();
+        entry.bounding_box = entry.entity.bounding_box();
+        entry.spatial_cells = EntitySpatialCellBounds::from_aabb(&entry.bounding_box).cells();
         let is_accessible = Self::is_accessible_at(state, entry.ownership, entry.chunk);
         assert!(
             !state.live_by_id.contains_key(&entity_id),
@@ -1528,11 +1690,18 @@ impl WorldEntityManager {
             "entity uuid {} is already registered in the world entity manager",
             entry.uuid
         );
+        entry.section_order = Self::next_section_order(state);
         state
             .by_section
             .entry(PackedSectionPos::from(entry.section))
             .or_default()
             .insert(entity_id);
+        Self::insert_into_spatial_cells(
+            state,
+            &entry.spatial_cells,
+            entity_id,
+            entry.query_order(),
+        );
         state
             .by_chunk
             .entry(entry.chunk)
@@ -1615,8 +1784,74 @@ impl WorldEntityManager {
         state.live_by_uuid.remove(&entry.uuid);
         state.accessible_order.remove(entity_id);
         Self::remove_from_section(state, entry.section, entity_id);
+        Self::remove_from_spatial_cells(state, &entry.spatial_cells, entity_id);
         Self::remove_from_chunk(state, entry.chunk, entity_id);
         Some(entry)
+    }
+
+    fn next_section_order(state: &mut ManagerState) -> u64 {
+        assert!(
+            state.next_section_order < u64::MAX,
+            "entity section insertion order exhausted"
+        );
+        let order = state.next_section_order;
+        state.next_section_order += 1;
+        order
+    }
+
+    fn insert_into_spatial_cells(
+        state: &mut ManagerState,
+        cells: &[EntitySpatialCell],
+        entity_id: i32,
+        query_order: EntityQueryOrder,
+    ) {
+        for cell in cells {
+            let insertion_index = state.by_spatial_cell.get(cell).map_or(0, |entity_ids| {
+                let append_in_order = entity_ids.ids.last().is_none_or(|existing_id| {
+                    state
+                        .live_by_id
+                        .get(existing_id)
+                        .is_none_or(|entry| entry.query_order() <= query_order)
+                });
+                if append_in_order {
+                    return entity_ids.ids.len();
+                }
+
+                let earlier_index = entity_ids.iter().position(|existing_id| {
+                    state
+                        .live_by_id
+                        .get(existing_id)
+                        .is_some_and(|entry| entry.query_order() > query_order)
+                });
+                match earlier_index {
+                    Some(index) => index,
+                    None => entity_ids.ids.len(),
+                }
+            });
+            state
+                .by_spatial_cell
+                .entry(*cell)
+                .or_default()
+                .insert_at(insertion_index, entity_id);
+        }
+    }
+
+    fn remove_from_spatial_cells(
+        state: &mut ManagerState,
+        cells: &[EntitySpatialCell],
+        entity_id: i32,
+    ) {
+        for cell in cells {
+            let remove_cell = if let Some(entity_ids) = state.by_spatial_cell.get_mut(cell) {
+                entity_ids.remove(entity_id);
+                entity_ids.is_empty()
+            } else {
+                false
+            };
+            if remove_cell {
+                state.by_spatial_cell.remove(cell);
+            }
+        }
     }
 
     fn remove_from_section(state: &mut ManagerState, section: SectionPos, entity_id: i32) {

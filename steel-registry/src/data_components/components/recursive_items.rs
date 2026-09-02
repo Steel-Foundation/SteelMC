@@ -702,7 +702,7 @@ mod tests {
     use crate::data_components::vanilla_components::{
         BEES, BUNDLE_CONTENTS, CHARGED_PROJECTILES, CONTAINER, MAX_STACK_SIZE, USE_REMAINDER,
     };
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{ItemStackTemplate, REGISTRY, vanilla_entities, vanilla_items};
 
     fn round_trip<T>(value: T)
@@ -736,7 +736,7 @@ mod tests {
 
     #[test]
     fn recursive_item_components_round_trip_both_codecs() {
-        init_test_registry();
+        init_vanilla_registry();
         let arrow = ItemStackTemplate::new(&vanilla_items::ARROW);
         let diamond = ItemStackTemplate::new(&vanilla_items::DIAMOND);
         round_trip(UseRemainder::new(ItemStackTemplate::new(
@@ -754,7 +754,7 @@ mod tests {
 
     #[test]
     fn sparse_container_persistence_and_dense_network_preserve_vanilla_shapes() {
-        init_test_registry();
+        init_vanilla_registry();
         let contents = ItemContainerContents::new(vec![
             None,
             Some(ItemStackTemplate::new(&vanilla_items::DIAMOND)),
@@ -775,7 +775,7 @@ mod tests {
 
     #[test]
     fn recursive_collection_limits_are_enforced() {
-        init_test_registry();
+        init_vanilla_registry();
         let projectile = ItemStackTemplate::new(&vanilla_items::ARROW);
         assert!(
             ChargedProjectiles::new(vec![projectile; ChargedProjectiles::MAX_SIZE + 1]).is_err()
@@ -787,7 +787,7 @@ mod tests {
 
     #[test]
     fn bundle_weight_matches_nested_bundle_and_beehive_rules() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let mut inner_patch = DataComponentPatch::new();
         inner_patch.set(
@@ -826,7 +826,7 @@ mod tests {
 
     #[test]
     fn bundle_weight_rejects_commons_fraction_denominator_overflow() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let items = [97, 89, 83, 79, 73]
             .into_iter()
@@ -843,7 +843,7 @@ mod tests {
 
     #[test]
     fn extracted_item_prototypes_use_recursive_component_values() {
-        init_test_registry();
+        init_vanilla_registry();
         assert_eq!(
             REGISTRY
                 .items

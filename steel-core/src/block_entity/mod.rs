@@ -34,6 +34,7 @@ mod registry;
 mod storage;
 
 use std::{
+    io::Cursor,
     ptr,
     sync::{
         Arc, Weak,
@@ -41,14 +42,20 @@ use std::{
     },
 };
 
-use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
+use simdnbt::FromNbtTag as _;
+use simdnbt::borrow::{
+    BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView,
+    read_compound as read_borrowed_compound,
+};
 use simdnbt::owned::NbtCompound;
-use simdnbt::{FromNbtTag as _, ToNbtTag as _};
 use smallvec::SmallVec;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::data_components::DataComponentMap;
-use steel_utils::{BlockPos, BlockStateId, ErasedType, locks::SyncMutex};
+use steel_utils::{
+    BlockPos, BlockStateId, ErasedType,
+    locks::{SyncMutex, SyncRwLock},
+};
 
 pub use components::{BlockEntityComponentInput, BlockEntityComponentsExt};
 pub use container_openers_counter::{ContainerOpeners, ContainerOpenersCounter};
@@ -160,7 +167,7 @@ pub struct BlockEntityBase {
     /// Item components retained from placement that no entity field consumed.
     ///
     /// Mirrors Vanilla `BlockEntity.components`.
-    components: SyncMutex<DataComponentMap>,
+    components: SyncRwLock<DataComponentMap>,
 }
 
 struct BlockEntityLifecycleDispatchGuard<'a> {
@@ -208,7 +215,7 @@ impl BlockEntityBase {
                 events: SmallVec::new(),
                 dispatching_events: false,
             }),
-            components: SyncMutex::new(DataComponentMap::new()),
+            components: SyncRwLock::new(DataComponentMap::new()),
         }
     }
 
@@ -220,12 +227,12 @@ impl BlockEntityBase {
     /// Returns a copy of the explicit components.
     #[must_use]
     pub fn components(&self) -> DataComponentMap {
-        self.components.lock().clone()
+        self.components.read().clone()
     }
 
     /// Replaces the explicit components.
     pub fn set_components(&self, components: DataComponentMap) {
-        *self.components.lock() = components;
+        *self.components.write() = components;
     }
 
     #[must_use]
@@ -310,6 +317,26 @@ impl BlockEntityBase {
         if !state.is_air() {
             world.update_neighbor_for_output_signal(self.pos, state.get_block());
         }
+    }
+
+    fn load_components(&self, nbt: &BorrowedNbtCompound<'_>) {
+        let nbt_view: NbtCompoundView<'_, '_> = nbt.into();
+        let components = match nbt_view.get(COMPONENTS_TAG) {
+            Some(tag) => DataComponentMap::from_nbt_tag(tag).unwrap_or_else(|| {
+                log::warn!(
+                    "Discarding malformed stored components for block entity {} at {:?}",
+                    self.block_entity_type.key,
+                    self.pos,
+                );
+                DataComponentMap::new()
+            }),
+            None => DataComponentMap::new(),
+        };
+        *self.components.write() = components;
+    }
+
+    fn stored_components(&self) -> DataComponentMap {
+        self.components.read().clone()
     }
 
     pub(crate) fn is_valid_container_for(&self, player: &Player) -> bool {
@@ -425,18 +452,20 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     /// compounds are reported and dropped like Vanilla's problem reporter.
     fn load_with_components(&self, nbt: &BorrowedNbtCompound<'_>) {
         self.load_additional(nbt);
-        let nbt_view: NbtCompoundView<'_, '_> = nbt.into();
-        let components = nbt_view.get(COMPONENTS_TAG).map(|tag| {
-            DataComponentMap::from_nbt_tag(tag).unwrap_or_else(|| {
-                log::warn!(
-                    "Discarding malformed components of block entity {} at {:?}",
-                    self.get_type().key,
-                    self.get_block_pos()
-                );
-                DataComponentMap::new()
-            })
-        });
-        self.base().set_components(components.unwrap_or_default());
+        self.base().load_components(nbt);
+    }
+
+    /// Loads entity data from an owned command/runtime compound.
+    ///
+    /// `simdnbt` keeps its read-facing representation borrowed, so this
+    /// performs a checked in-memory encode/decode bridge rather than making
+    /// every command caller duplicate that conversion.
+    fn load_with_owned_components(&self, nbt: &NbtCompound) -> Result<(), simdnbt::Error> {
+        let mut encoded = Vec::new();
+        nbt.write(&mut encoded);
+        let borrowed = read_borrowed_compound(&mut Cursor::new(encoded.as_slice()))?;
+        self.load_with_components(&borrowed);
+        Ok(())
     }
 
     /// Saves additional data to NBT.
@@ -460,7 +489,10 @@ pub trait BlockEntity: ErasedType + Send + Sync {
     /// the `components` compound.
     fn save_without_metadata(&self) -> NbtCompound {
         let mut nbt = self.save_custom_only();
-        nbt.insert(COMPONENTS_TAG, self.base().components().to_nbt_tag());
+        nbt.insert(
+            COMPONENTS_TAG,
+            self.base().stored_components().to_nbt_tag_ref(),
+        );
         nbt
     }
 

@@ -3,9 +3,7 @@ use std::sync::Weak;
 use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::{BlockStateProperties, SlabType};
-use steel_registry::{
-    REGISTRY, test_support::init_test_registry, vanilla_blocks, vanilla_entities,
-};
+use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks, vanilla_entities};
 use steel_utils::{BlockPos, BlockStateId, Direction, WorldAabb};
 
 use super::{
@@ -62,7 +60,7 @@ impl LevelReader for GridLevel {
 
 #[test]
 fn mob_path_settings_reads_can_open_doors_from_navigation() {
-    init_test_registry();
+    init_vanilla_registry();
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     pig.mob_base().navigation().lock().set_can_open_doors(true);
 
@@ -73,7 +71,7 @@ fn mob_path_settings_reads_can_open_doors_from_navigation() {
 
 #[test]
 fn mob_path_settings_reads_can_walk_over_fences_from_navigation() {
-    init_test_registry();
+    init_vanilla_registry();
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
     pig.mob_base()
         .navigation()
@@ -87,7 +85,7 @@ fn mob_path_settings_reads_can_walk_over_fences_from_navigation() {
 
 #[test]
 fn path_type_from_state_matches_core_vanilla_special_cases() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -117,7 +115,7 @@ fn path_type_from_state_matches_core_vanilla_special_cases() {
 
 #[test]
 fn doors_use_vanilla_mob_interactable_door_tag() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let oak_closed = vanilla_blocks::OAK_DOOR
@@ -139,7 +137,7 @@ fn doors_use_vanilla_mob_interactable_door_tag() {
 
 #[test]
 fn block_state_pathfindable_uses_behavior_overrides() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let water = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::WATER);
@@ -176,7 +174,7 @@ fn block_state_pathfindable_uses_behavior_overrides() {
 
 #[test]
 fn walk_node_evaluator_applies_vanilla_door_adjustments_for_mobs() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let oak_closed = vanilla_blocks::OAK_DOOR
@@ -207,7 +205,7 @@ fn walk_node_evaluator_applies_vanilla_door_adjustments_for_mobs() {
 
 #[test]
 fn walk_node_evaluator_marks_rails_unpassable_when_mob_is_not_on_rails() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -224,7 +222,7 @@ fn walk_node_evaluator_marks_rails_unpassable_when_mob_is_not_on_rails() {
 
 #[test]
 fn large_walk_node_evaluator_caps_nearby_danger_cost_like_vanilla() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -244,7 +242,7 @@ fn large_walk_node_evaluator_caps_nearby_danger_cost_like_vanilla() {
 
 #[test]
 fn walk_node_evaluator_floor_level_uses_collision_shape_below_node() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -265,7 +263,7 @@ fn walk_node_evaluator_floor_level_uses_collision_shape_below_node() {
 
 #[test]
 fn get_start_uses_grounded_mob_block_position() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -286,7 +284,7 @@ fn get_start_uses_grounded_mob_block_position() {
 
 #[test]
 fn get_start_floats_to_top_water_node_when_mob_can_float() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -313,7 +311,7 @@ fn get_start_floats_to_top_water_node_when_mob_can_float() {
 
 #[test]
 fn get_start_scans_down_to_first_ground_when_airborne() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -333,7 +331,7 @@ fn get_start_scans_down_to_first_ground_when_airborne() {
 
 #[test]
 fn get_start_uses_first_startable_bounding_box_corner() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -353,7 +351,7 @@ fn get_start_uses_first_startable_bounding_box_corner() {
 
 #[test]
 fn find_accepted_node_records_walkable_node_cost() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -378,7 +376,7 @@ fn find_accepted_node_records_walkable_node_cost() {
 
 #[test]
 fn find_accepted_node_falls_to_ground_when_within_max_fall_distance() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -403,7 +401,7 @@ fn find_accepted_node_falls_to_ground_when_within_max_fall_distance() {
 
 #[test]
 fn find_accepted_node_blocks_falls_past_max_fall_distance() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -429,7 +427,7 @@ fn find_accepted_node_blocks_falls_past_max_fall_distance() {
 
 #[test]
 fn find_accepted_node_keeps_last_water_node_before_non_water() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -458,7 +456,7 @@ fn find_accepted_node_keeps_last_water_node_before_non_water() {
 
 #[test]
 fn find_accepted_node_rejects_partial_collision_when_reach_is_blocked() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -484,7 +482,7 @@ fn find_accepted_node_rejects_partial_collision_when_reach_is_blocked() {
 
 #[test]
 fn get_neighbors_expands_all_cardinal_and_diagonal_nodes_on_flat_ground() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -522,7 +520,7 @@ fn get_neighbors_expands_all_cardinal_and_diagonal_nodes_on_flat_ground() {
 
 #[test]
 fn get_neighbors_rejects_diagonals_through_walkable_doors() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -563,7 +561,7 @@ fn get_neighbors_rejects_diagonals_through_walkable_doors() {
 
 #[test]
 fn open_air_above_solid_ground_becomes_walkable() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
@@ -579,7 +577,7 @@ fn open_air_above_solid_ground_becomes_walkable() {
 
 #[test]
 fn walkable_ground_adjacent_to_water_becomes_water_border() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
 
     let air = REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);

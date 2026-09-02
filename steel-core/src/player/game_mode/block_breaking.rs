@@ -9,6 +9,8 @@ use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::data_components::AdventureModePredicate;
 use steel_registry::data_components::vanilla_components::CAN_BREAK;
+use steel_registry::equipment::EquipmentSlot;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
     REGISTRY, blocks::properties::Direction, vanilla_blocks, vanilla_game_events,
 };
@@ -19,7 +21,7 @@ use steel_utils::{
 };
 
 use crate::behavior::BLOCK_BEHAVIORS;
-use crate::entity::Entity;
+use crate::entity::{Entity, LivingEntity as _};
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
 use crate::player::food_data::food_constants;
@@ -407,24 +409,30 @@ impl BlockBreakingManager {
                 .map_or(0.0, |b| b.config.destroy_time);
 
             if block_destroy_time != 0.0 {
-                let mut inv = player.inventory.lock();
-                let damage_per_block = inv.get_selected_item().get_tool_damage_per_block();
+                let broke = {
+                    let mut inv = player.inventory.lock();
+                    let damage_per_block = inv.get_selected_item().get_tool_damage_per_block();
 
-                if damage_per_block > 0 {
-                    // Use with_selected_item_mut to ensure set_changed() is called
-                    // Skip damage if player has infinite materials (creative mode)
-                    let has_infinite_materials = player.has_infinite_materials();
-                    let broke = inv.with_selected_item_mut(|main_hand| {
-                        main_hand.hurt_and_break(damage_per_block, has_infinite_materials)
-                    });
-                    if broke {
-                        // TODO: Play item break sound/particles
-                        log::debug!("Tool broke while mining block at {pos:?}");
+                    if damage_per_block > 0 {
+                        // Use with_selected_item_mut to ensure set_changed() is called
+                        // Skip damage if player has infinite materials (creative mode)
+                        let has_infinite_materials = player.has_infinite_materials();
+                        inv.with_selected_item_mut(|main_hand| {
+                            let item = main_hand.item;
+                            main_hand
+                                .hurt_and_break(damage_per_block, has_infinite_materials)
+                                .then_some(item)
+                        })
+                    } else {
+                        None
                     }
+                };
+
+                if let Some(item) = broke {
+                    player.on_equipped_item_broken(item, EquipmentSlot::MainHand);
+                    log::debug!("Tool broke while mining block at {pos:?}");
                 }
             }
-
-            player.cause_food_exhaustion(food_constants::EXHAUSTION_MINE);
 
             // Handle drops (skip for creative/spectator)
             let game_mode = player.game_mode();
@@ -432,6 +440,9 @@ impl BlockBreakingManager {
                 && game_mode != GameType::Creative
                 && has_correct_tool
             {
+                player.award_stat(&vanilla_stat_types::BLOCK_MINED, state.get_block());
+                player.cause_food_exhaustion(food_constants::EXHAUSTION_MINE);
+
                 behavior.player_destroy(
                     adjusted_state,
                     world,

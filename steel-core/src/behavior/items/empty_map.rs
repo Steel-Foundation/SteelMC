@@ -93,13 +93,9 @@ mod tests {
     };
 
     fn test_player(world: &Arc<World>, uuid: u128, entity_id: i32) -> Arc<Player> {
-        let player = TestPlayerBuilder::new(
-            Arc::clone(world),
-            Uuid::from_u128(uuid),
-            "Cartographer",
-            entity_id,
-        )
-        .build();
+        let player = TestPlayerBuilder::new(Arc::clone(world), "Cartographer", entity_id)
+            .uuid(Uuid::from_u128(uuid))
+            .build();
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         player
     }

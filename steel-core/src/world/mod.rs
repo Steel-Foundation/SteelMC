@@ -10,13 +10,13 @@ use std::{
     time::Duration,
 };
 
-use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use crate::chunk::chunk_ticket_manager::{PersistentChunkTickets, TimedChunkTickets};
+use crate::chunk::full_chunk::{FullChunkBlockSetResult, FullChunkRef};
 use crate::chunk::gameplay_chunk_lookup_cache::GameplayChunkLookupCacheScope;
-use crate::chunk::level_chunk::{LevelChunk, LevelChunkBlockSetResult};
 use crate::chunk::light::{
     LightLayer, LightSectionEmptinessChange, MAX_LIGHT_LEVEL, has_different_light_properties,
 };
+use crate::chunk::status::ChunkStatus;
 use crate::poi::OccupationStatus;
 use crate::portal::WorldChangeRequest;
 use crate::world::game_event::{
@@ -110,6 +110,7 @@ use crate::{
 
 mod block_entity_ticker;
 mod block_event;
+mod block_region;
 mod block_updates;
 mod border;
 mod broadcasts;
@@ -128,6 +129,8 @@ mod properties;
 mod raycast;
 mod redstone;
 mod signal_getter;
+mod sleep;
+mod sleep_status;
 mod spawn;
 pub mod tick_scheduler;
 mod weather;
@@ -140,8 +143,10 @@ pub use crate::config::WorldStorageConfig;
 use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::{ChunkGenerator, ChunkGeneratorType};
 use block_event::BlockEventQueue;
+pub(crate) use block_region::{BlockRegionBounds, MAX_BLOCK_REGION_WORKSET_SLOTS};
 use block_updates::CollectingNeighborUpdater;
 pub use border::WorldBorderError;
+pub(crate) use border::{MAX_CENTER_COORDINATE, MAX_SIZE};
 use border::{WorldBorder, WorldBorderSnapshot};
 use entity_management::NavigatingMobTracker;
 #[cfg(test)]
@@ -149,10 +154,10 @@ use entity_management::nearest_player_distance_in_range;
 pub use level_reader::{LevelAccessor, LevelReader, ScheduledTickAccess};
 pub use player_index::{PlayerAreaMap, PlayerMap};
 pub use raycast::{ClipBlockShape, ClipFluid, ClipHitResult, RaytraceAction};
+#[cfg(test)]
+pub(crate) use signal_getter::get_best_neighbor_signal;
 pub use signal_getter::{SignalGetter, SignalQueryContext};
-pub(crate) use signal_getter::{
-    get_best_neighbor_signal, get_control_input_signal, get_signal, is_redstone_conductor,
-};
+pub(crate) use signal_getter::{get_control_input_signal, get_signal, is_redstone_conductor};
 pub use tick_scheduler::ScheduledTick;
 
 #[cfg(test)]
@@ -259,6 +264,8 @@ pub struct World {
     server_jobs: SyncRwLock<Weak<ServerJobQueue>>,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
+    /// Vanilla sleeping player counts for night-skip checks.
+    sleep_status: SyncMutex<sleep_status::SleepStatus>,
     /// Server view distance (maximum chunk radius).
     pub view_distance: u8,
     /// Server simulation distance.
@@ -440,6 +447,7 @@ impl World {
                 map_data: SyncRwLock::new(Arc::new(MapDataStore::ephemeral())),
                 server_jobs: SyncRwLock::new(Weak::new()),
                 world_border: SyncMutex::new(world_border),
+                sleep_status: SyncMutex::new(sleep_status::SleepStatus::default()),
                 view_distance,
                 simulation_distance,
                 compression,
@@ -604,6 +612,9 @@ impl World {
         if runs_normally {
             self.tick_world_border();
             self.tick_weather();
+        }
+        self.tick_sleeping_players();
+        if runs_normally {
             self.tick_time();
         }
 
@@ -866,6 +877,10 @@ impl ScheduledTickAccess for Arc<World> {
 impl LevelAccessor for Arc<World> {
     fn set_block_state(&self, pos: BlockPos, state: BlockStateId, flags: UpdateFlags) -> bool {
         self.set_block(pos, state, flags)
+    }
+
+    fn destroy_block(&self, pos: BlockPos, drop_items: bool) -> bool {
+        World::destroy_block(self, pos, drop_items)
     }
 
     fn play_block_sound(

@@ -19,19 +19,6 @@ pub enum CraftingCategory {
     Misc,
 }
 
-impl CraftingCategory {
-    /// Parses a category from a JSON string.
-    #[must_use]
-    pub const fn parse_json(s: &str) -> Self {
-        match s {
-            "building" => Self::Building,
-            "redstone" => Self::Redstone,
-            "equipment" => Self::Equipment,
-            _ => Self::Misc,
-        }
-    }
-}
-
 /// The result of a crafting recipe.
 #[derive(Debug, Clone)]
 pub struct RecipeResult {

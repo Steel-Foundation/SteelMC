@@ -662,27 +662,25 @@ impl BlockEntity for PistonMovingBlockEntity {
 mod tests {
     use std::io::Cursor;
 
-    use glam::DVec3;
-    use simdnbt::borrow::read_compound as read_borrowed_compound;
-    use simdnbt::owned::NbtTag;
-    use steel_registry::{test_support::init_test_registry, vanilla_entities};
-    use steel_utils::{ChunkPos, types::GameType};
-    use uuid::Uuid;
-
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::block_entity::SharedBlockEntity;
     use crate::entity::{SharedEntity, entities::RawEntity};
     use crate::player::Player;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+    use glam::DVec3;
+    use simdnbt::borrow::read_compound as read_borrowed_compound;
+    use simdnbt::owned::NbtTag;
+    use steel_registry::{init_vanilla_registry, vanilla_entities};
+    use steel_utils::{ChunkPos, types::GameType};
 
     fn test_player(world: Arc<World>) -> Arc<Player> {
-        TestPlayerBuilder::new(world, Uuid::from_u128(1), "PistonTestPlayer", 1).build()
+        TestPlayerBuilder::new(world, "PistonTestPlayer", 1).build()
     }
 
     #[test]
     fn moving_state_and_progress_round_trip_with_vanilla_keys() {
-        init_test_registry();
+        init_vanilla_registry();
         let state = vanilla_blocks::MOVING_PISTON
             .default_state()
             .set_value(&BlockStateProperties::FACING, Direction::West)
@@ -725,7 +723,7 @@ mod tests {
 
     #[test]
     fn collided_entity_filter_matches_vanilla_player_and_spectator_rules() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("piston_entity_filter");
         let player = test_player(Arc::clone(&world));
@@ -769,7 +767,7 @@ mod tests {
 
     #[test]
     fn piston_entity_move_can_reenter_moving_block_collision() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("piston_collision_reentry");
         let pos = BlockPos::new(8, 64, 8);
@@ -810,7 +808,7 @@ mod tests {
 
     #[test]
     fn final_tick_marks_a_detached_moving_entity_removed() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("detached_piston_final_tick");
         let pos = BlockPos::new(8, 64, 8);
@@ -834,7 +832,7 @@ mod tests {
 
     #[test]
     fn stale_final_tick_cannot_remove_or_finish_a_replacement() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("stale_piston_final_tick");
         let pos = BlockPos::new(8, 64, 8);

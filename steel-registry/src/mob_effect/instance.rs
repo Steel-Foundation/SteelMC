@@ -390,12 +390,12 @@ mod tests {
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 
     use super::{MobEffectInstance, MobEffectInstanceDetails};
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     #[test]
     fn effect_instances_round_trip_recursive_details_and_clamp_amplifier() {
-        init_test_registry();
+        init_vanilla_registry();
         let speed = REGISTRY
             .mob_effects
             .by_key(&steel_utils::Identifier::vanilla_static("speed"))
@@ -433,7 +433,7 @@ mod tests {
 
     #[test]
     fn effect_instance_equality_ignores_hidden_effects_like_vanilla() {
-        init_test_registry();
+        init_vanilla_registry();
         let speed = REGISTRY
             .mob_effects
             .by_key(&steel_utils::Identifier::vanilla_static("speed"))

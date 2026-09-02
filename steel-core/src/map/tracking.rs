@@ -23,9 +23,9 @@ use uuid::Uuid;
 
 use crate::{
     chunk::{
-        chunk_access::ChunkStatus,
         chunk_map::ChunkMap,
         chunk_request::{ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkTicketKind},
+        status::ChunkStatus,
     },
     entity::Entity as _,
     inventory::{
@@ -770,7 +770,9 @@ mod tests {
             })
             .expect("map allocation should succeed");
         let player =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(1), "Mapper", 1).build();
+            TestPlayerBuilder::new(Arc::clone(&world), "Mapper", 1)
+                .uuid(Uuid::from_u128(1))
+                .build();
         player
             .base()
             .set_position_local(DVec3::new(8.0, 64.0, -8.0));
@@ -844,7 +846,9 @@ mod tests {
             })
             .expect("map allocation should succeed");
         let uuid = Uuid::from_u128(11);
-        let first = TestPlayerBuilder::new(Arc::clone(&world), uuid, "Reconnect", 11).build();
+        let first = TestPlayerBuilder::new(Arc::clone(&world), "Reconnect", 11)
+            .uuid(uuid)
+            .build();
         assert!(world.add_player(Arc::clone(&first), ResetReason::InitialJoin));
 
         let mut map = ItemStack::new(&vanilla_items::FILLED_MAP);
@@ -860,7 +864,9 @@ mod tests {
         assert_eq!(store.synchronize_player(&first, &carried, &[]).len(), 1);
 
         world.remove_player_for_world_change(&first);
-        let second = TestPlayerBuilder::new(Arc::clone(&world), uuid, "Reconnect", 12).build();
+        let second = TestPlayerBuilder::new(Arc::clone(&world), "Reconnect", 12)
+            .uuid(uuid)
+            .build();
         second.inventory.lock().items_mut()[9] = map;
         assert!(world.add_player(Arc::clone(&second), ResetReason::InitialJoin));
         let carried = second
@@ -899,7 +905,9 @@ mod tests {
             })
             .expect("map allocation should succeed");
         let player =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(13), "Surveyor", 13).build();
+            TestPlayerBuilder::new(Arc::clone(&world), "Surveyor", 13)
+                .uuid(Uuid::from_u128(13))
+                .build();
         player.base().set_position_local(DVec3::new(0.0, 64.0, 0.0));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let mut map = ItemStack::new(&vanilla_items::FILLED_MAP);
@@ -1000,7 +1008,9 @@ mod tests {
             })
             .expect("map allocation should succeed");
         let player =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(2), "Walker", 2).build();
+            TestPlayerBuilder::new(Arc::clone(&world), "Walker", 2)
+                .uuid(Uuid::from_u128(2))
+                .build();
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let mut map = ItemStack::new(&vanilla_items::FILLED_MAP);
         map.set(MAP_ID, map_id);
@@ -1043,7 +1053,9 @@ mod tests {
             })
             .expect("map allocation should succeed");
         let player =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(5), "Copies", 5).build();
+            TestPlayerBuilder::new(Arc::clone(&world), "Copies", 5)
+                .uuid(Uuid::from_u128(5))
+                .build();
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         for slot in 0..2 {
             let mut map = ItemStack::new(&vanilla_items::FILLED_MAP);
@@ -1087,9 +1099,13 @@ mod tests {
             })
             .expect("map allocation should succeed");
         let first =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(3), "First", 3).build();
+            TestPlayerBuilder::new(Arc::clone(&world), "First", 3)
+                .uuid(Uuid::from_u128(3))
+                .build();
         let second =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(4), "Second", 4).build();
+            TestPlayerBuilder::new(Arc::clone(&world), "Second", 4)
+                .uuid(Uuid::from_u128(4))
+                .build();
         assert!(world.add_player(Arc::clone(&first), ResetReason::InitialJoin));
         assert!(world.add_player(Arc::clone(&second), ResetReason::InitialJoin));
 

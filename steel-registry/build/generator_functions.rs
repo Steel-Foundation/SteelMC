@@ -5,6 +5,8 @@ use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::quote;
+use rustc_hash::FxHashMap;
+use serde::Deserialize;
 use std::fs;
 use steel_utils::Identifier;
 
@@ -190,11 +192,11 @@ pub fn read_variants_from_dir<T: serde::de::DeserializeOwned>(subdir: &str) -> V
             .unwrap_or_else(|e| panic!("Failed to parse {name}: {e}"));
         out.push((name, value));
     }
-    let order = vanilla_variant_order(subdir);
+    let order = extracted_variant_order(subdir);
     out.sort_by_key(|(name, _)| {
         order
             .iter()
-            .position(|ordered| *ordered == name)
+            .position(|ordered| ordered == name)
             .unwrap_or_else(|| panic!("Unknown vanilla {subdir} variant in extracted data: {name}"))
     });
     assert_eq!(
@@ -207,95 +209,32 @@ pub fn read_variants_from_dir<T: serde::de::DeserializeOwned>(subdir: &str) -> V
     out
 }
 
-pub fn vanilla_variant_id(subdir: &str, key: &str) -> usize {
-    let path = key.strip_prefix("minecraft:").unwrap_or(key);
-    vanilla_variant_order(subdir)
-        .iter()
-        .position(|ordered| *ordered == path)
-        .unwrap_or_else(|| panic!("Unknown vanilla {subdir} variant default: {key}"))
+#[derive(Deserialize)]
+struct ExtractedVariantRegistryEntry {
+    id: usize,
+    key: String,
 }
 
-fn vanilla_variant_order(subdir: &str) -> &'static [&'static str] {
-    match subdir {
-        "cat_variant" => &[
-            "tabby",
-            "black",
-            "red",
-            "siamese",
-            "british_shorthair",
-            "calico",
-            "persian",
-            "ragdoll",
-            "white",
-            "jellie",
-            "all_black",
-        ],
-        "cat_sound_variant" => &["classic", "royal"],
-        "cow_variant" => &["temperate", "warm", "cold"],
-        "cow_sound_variant" => &["classic", "moody"],
-        "wolf_variant" => &[
-            "pale", "spotted", "snowy", "black", "ashen", "rusty", "woods", "chestnut", "striped",
-        ],
-        "wolf_sound_variant" => &["classic", "puglin", "sad", "angry", "grumpy", "big", "cute"],
-        "frog_variant" => &["temperate", "warm", "cold"],
-        "pig_variant" => &["temperate", "warm", "cold"],
-        "pig_sound_variant" => &["classic", "big", "mini"],
-        "chicken_variant" => &["temperate", "warm", "cold"],
-        "chicken_sound_variant" => &["classic", "picky"],
-        "zombie_nautilus_variant" => &["temperate", "warm"],
-        "painting_variant" => &[
-            "kebab",
-            "aztec",
-            "alban",
-            "aztec2",
-            "bomb",
-            "plant",
-            "wasteland",
-            "pool",
-            "courbet",
-            "sea",
-            "sunset",
-            "creebet",
-            "wanderer",
-            "graham",
-            "match",
-            "bust",
-            "stage",
-            "void",
-            "skull_and_roses",
-            "wither",
-            "fighters",
-            "pointer",
-            "pigscene",
-            "burning_skull",
-            "skeleton",
-            "earth",
-            "wind",
-            "water",
-            "fire",
-            "donkey_kong",
-            "baroque",
-            "humble",
-            "meditative",
-            "prairie_ride",
-            "unpacked",
-            "backyard",
-            "bouquet",
-            "cavebird",
-            "changing",
-            "cotan",
-            "endboss",
-            "fern",
-            "finding",
-            "lowmist",
-            "orb",
-            "owlemons",
-            "passage",
-            "pond",
-            "sunflowers",
-            "tides",
-            "dennis",
-        ],
-        _ => panic!("Missing vanilla variant order for {subdir}"),
-    }
+fn extracted_variant_order(subdir: &str) -> Vec<String> {
+    const ASSET: &str = "build_assets/entity_variant_registries.json";
+
+    let mut registries: FxHashMap<String, Vec<ExtractedVariantRegistryEntry>> =
+        read_json_asset(ASSET);
+    let mut entries = registries
+        .remove(subdir)
+        .unwrap_or_else(|| panic!("Missing vanilla {subdir} registry in {ASSET}"));
+    sort_contiguous_registry_entries(&mut entries, ASSET, |entry| entry.id);
+
+    entries
+        .into_iter()
+        .map(|entry| {
+            let Some(key) = entry.key.strip_prefix("minecraft:") else {
+                panic!(
+                    "Expected vanilla {subdir} registry key in {ASSET}, got {}",
+                    entry.key
+                );
+            };
+            key.to_owned()
+        })
+        .collect()
 }

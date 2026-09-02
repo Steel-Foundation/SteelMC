@@ -86,12 +86,12 @@ mod tests {
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 
     use super::PaintingVariantComponent;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::vanilla_painting_variants;
 
     #[test]
     fn registry_reference_round_trips_both_codecs() {
-        init_test_registry();
+        init_vanilla_registry();
         let component = PaintingVariantComponent::new(&vanilla_painting_variants::KEBAB);
 
         let mut network = Vec::new();

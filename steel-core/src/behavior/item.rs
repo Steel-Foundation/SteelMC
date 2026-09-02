@@ -1,6 +1,11 @@
 //! Item behavior trait and registry.
 
+use std::sync::Arc;
+
 use std::borrow::Cow;
+use steel_registry::data_components::vanilla_components::{
+    BLOCKS_ATTACKS, CONSUMABLE, KINETIC_WEAPON,
+};
 
 use steel_registry::data_components::vanilla_components::ITEM_NAME;
 use steel_registry::item_stack::ItemStack;
@@ -14,6 +19,9 @@ use crate::behavior::{InteractionResult, UseItemContext, UseOnContext};
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity};
 use crate::player::{Player, player_inventory::EquipmentSwapResult};
+use crate::world::World;
+
+pub use steel_registry::data_components::vanilla_components::ItemUseAnimation;
 
 /// Trait defining the behavior of an item.
 ///
@@ -72,6 +80,63 @@ pub trait ItemBehavior: Send + Sync {
             }
             EquipmentSwapResult::Fail => InteractionResult::Fail,
         }
+    }
+
+    /// Returns vanilla `Item.getUseAnimation`.
+    fn get_use_animation(&self, stack: &ItemStack) -> ItemUseAnimation {
+        if let Some(consumable) = stack.get(CONSUMABLE) {
+            consumable.animation()
+        } else if stack.has(BLOCKS_ATTACKS) {
+            ItemUseAnimation::Block
+        } else if stack.has(KINETIC_WEAPON) {
+            ItemUseAnimation::Spear
+        } else {
+            ItemUseAnimation::None
+        }
+    }
+
+    /// Returns vanilla `Item.getUseDuration`.
+    fn get_use_duration(&self, stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+        if let Some(consumable) = stack.get(CONSUMABLE) {
+            consumable.consume_ticks()
+        } else if stack.has(BLOCKS_ATTACKS) || stack.has(KINETIC_WEAPON) {
+            72000
+        } else {
+            0
+        }
+    }
+
+    /// Called every tick while a living entity is actively using this item.
+    fn on_use_tick(
+        &self,
+        _world: &Arc<World>,
+        _user: &dyn LivingEntity,
+        _stack: &mut ItemStack,
+        _ticks_remaining: i32,
+    ) {
+    }
+
+    /// Called when active use is released before completion.
+    ///
+    /// Returns whether vanilla should update active use once more before stopping it.
+    fn release_using(
+        &self,
+        _stack: &mut ItemStack,
+        _world: &Arc<World>,
+        _user: &dyn LivingEntity,
+        _time_left: i32,
+    ) -> bool {
+        false
+    }
+
+    /// Called when active use reaches its full duration.
+    fn finish_using(
+        &self,
+        stack: &mut ItemStack,
+        _world: &Arc<World>,
+        _user: &dyn LivingEntity,
+    ) -> ItemStack {
+        stack.copy_with_count(stack.count())
     }
 
     /// Called by vanilla `ItemStack.interactLivingEntity`.
@@ -169,12 +234,6 @@ impl ItemBehaviorRegistry {
         stack
             .custom_name()
             .unwrap_or_else(|| self.get_behavior(stack.item()).get_name(stack))
-    }
-
-    /// Gets the behavior for an item by its ID.
-    #[must_use]
-    pub fn get_behavior_by_id(&self, id: usize) -> Option<&dyn ItemBehavior> {
-        self.behaviors.get(id).map(AsRef::as_ref)
     }
 
     /// Get all behaviors.

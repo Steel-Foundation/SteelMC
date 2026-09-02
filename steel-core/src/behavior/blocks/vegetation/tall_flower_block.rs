@@ -18,7 +18,6 @@ use super::{BlockRef, DoublePlantBlock};
 /// Behavior for two-block-tall flowers.
 #[block_behavior]
 pub struct TallFlowerBlock {
-    block: BlockRef,
     base: DoublePlantBlock,
 }
 
@@ -27,7 +26,6 @@ impl TallFlowerBlock {
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self {
-            block,
             base: DoublePlantBlock::new(block),
         }
     }
@@ -110,7 +108,7 @@ impl Bonemealable for TallFlowerBlock {
         _rng: &mut dyn rand::Rng,
         pos: BlockPos,
     ) {
-        if let Some(item) = REGISTRY.items.by_key(&self.block.key) {
+        if let Some(item) = REGISTRY.items.by_key(&self.base.block.key) {
             world.pop_resource(pos, ItemStack::new(item));
         }
     }

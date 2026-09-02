@@ -1,6 +1,8 @@
 use steel_utils::random::Random;
 
-use super::{BlockStateId, ExplorationMapRequest, Identifier, ItemStack, LootError, LootResult};
+use super::{
+    BlockStateId, DyeColor, ExplorationMapRequest, Identifier, ItemStack, LootError, LootResult,
+};
 use crate::biome::BiomeRef;
 use crate::data_components::DataComponentMap;
 use steel_utils::BlockPos;
@@ -344,6 +346,13 @@ pub struct EntityRef<'a> {
     pub equipment: Option<&'a EntityEquipmentRef<'a>>,
     /// Entity name (for `copy_name` function).
     pub custom_name: Option<&'a str>,
+    /// Vanilla `minecraft:components.sheep/color` entity data component.
+    pub sheep_color: Option<DyeColor>,
+    /// Vanilla `minecraft:type_specific/sheep.sheared`. `None` when the entity is
+    /// not a sheep, matching vanilla `SheepPredicate.matches`' non-sheep rejection.
+    pub sheep_sheared: Option<bool>,
+    /// Vanilla `minecraft:components.chicken/variant` entity data component key.
+    pub chicken_variant: Option<&'a Identifier>,
 }
 
 /// Entity flags for predicate checking.

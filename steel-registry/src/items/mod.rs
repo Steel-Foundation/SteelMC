@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use rustc_hash::FxHashMap;
 
-use steel_utils::{DowncastType, Identifier};
+use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
 use text_components::TextComponent;
 
 pub mod item;
@@ -112,6 +112,11 @@ pub struct ItemRegistry {
     allows_registering: bool,
 }
 
+// SAFETY: This Steel-owned key uniquely identifies the item registry.
+unsafe impl DowncastType for ItemRegistry {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:registry/item");
+}
+
 impl Default for ItemRegistry {
     fn default() -> Self {
         Self::new()
@@ -198,8 +203,7 @@ mod tests {
     use crate::{
         REGISTRY,
         data_components::vanilla_components::{ITEM_MODEL, ITEM_NAME},
-        test_support::init_test_registry,
-        vanilla_blocks, vanilla_items,
+        init_vanilla_registry, vanilla_blocks, vanilla_items,
     };
 
     #[test]
@@ -214,7 +218,7 @@ mod tests {
 
     #[test]
     fn extracted_block_item_associations_match_vanilla() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert_eq!(
             REGISTRY.items.by_block(&vanilla_blocks::LEAF_LITTER),
@@ -240,7 +244,7 @@ mod tests {
 
     #[test]
     fn block_item_capability_includes_extracted_vanilla_subclasses() {
-        init_test_registry();
+        init_vanilla_registry();
 
         for item in [
             &*vanilla_items::STONE,

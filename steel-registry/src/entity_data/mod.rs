@@ -43,8 +43,22 @@ use steel_utils::{
 use text_components::TextComponent;
 use uuid::Uuid;
 
+use crate::RegistryReference;
+use crate::cat_sound_variant::CatSoundVariant;
+use crate::cat_variant::CatVariant;
+use crate::chicken_sound_variant::ChickenSoundVariant;
+use crate::chicken_variant::ChickenVariant;
+use crate::cow_sound_variant::CowSoundVariant;
+use crate::cow_variant::CowVariant;
+use crate::frog_variant::FrogVariant;
 use crate::item_stack::ItemStack;
+use crate::painting_variant::PaintingVariant;
 pub use crate::particle_type::{ColorParticleOption, ParticleData};
+use crate::pig_sound_variant::PigSoundVariant;
+use crate::pig_variant::PigVariant;
+use crate::wolf_sound_variant::WolfSoundVariant;
+use crate::wolf_variant::WolfVariant;
+use crate::zombie_nautilus_variant::ZombieNautilusVariant;
 
 // Re-export types used in generated code
 pub use crate::blocks::properties::Direction;
@@ -380,20 +394,20 @@ pub enum EntityData {
     // Optional numeric
     OptionalUnsignedInt(Option<u32>),
 
-    // Holder/registry reference variants (VarInt registry IDs)
-    CatVariant(i32),
-    CatSoundVariant(i32),
-    CowVariant(i32),
-    CowSoundVariant(i32),
-    WolfVariant(i32),
-    WolfSoundVariant(i32),
-    FrogVariant(i32),
-    PigVariant(i32),
-    PigSoundVariant(i32),
-    ChickenVariant(i32),
-    ChickenSoundVariant(i32),
-    ZombieNautilusVariant(i32),
-    PaintingVariant(i32),
+    // Holder/registry reference variants (encoded as VarInt registry IDs)
+    CatVariant(RegistryReference<CatVariant>),
+    CatSoundVariant(RegistryReference<CatSoundVariant>),
+    CowVariant(RegistryReference<CowVariant>),
+    CowSoundVariant(RegistryReference<CowSoundVariant>),
+    WolfVariant(RegistryReference<WolfVariant>),
+    WolfSoundVariant(RegistryReference<WolfSoundVariant>),
+    FrogVariant(RegistryReference<FrogVariant>),
+    PigVariant(RegistryReference<PigVariant>),
+    PigSoundVariant(RegistryReference<PigSoundVariant>),
+    ChickenVariant(RegistryReference<ChickenVariant>),
+    ChickenSoundVariant(RegistryReference<ChickenSoundVariant>),
+    ZombieNautilusVariant(RegistryReference<ZombieNautilusVariant>),
+    PaintingVariant(RegistryReference<PaintingVariant>),
 
     // Global position
     OptionalGlobalPos(Option<GlobalPos>),
@@ -465,7 +479,7 @@ mod tests {
     };
 
     use crate::vanilla_entity_data::{EggEntityData, ItemEntityData, ZombieVillagerEntityData};
-    use crate::{REGISTRY, RegistryExt, test_support::init_test_registry};
+    use crate::{REGISTRY, RegistryExt, init_vanilla_registry};
 
     use super::{
         ColorParticleOption, EntityData, EntityDataSerializerRegistry, ParticleData,
@@ -474,7 +488,7 @@ mod tests {
 
     #[test]
     fn zombie_villager_default_selects_profession_from_registry() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let profession_count = REGISTRY.villager_professions.len();
         let Ok(profession_bound) = i32::try_from(profession_count) else {
@@ -536,7 +550,7 @@ mod tests {
 
     #[test]
     fn entity_effect_particle_color_options_encode_payload() {
-        crate::test_support::init_test_registry();
+        crate::init_vanilla_registry();
         let registry = &*crate::REGISTRY;
         let entity_effect = Identifier::vanilla_static("entity_effect");
         let Some(particle_type_id) = registry.particle_types.id_from_key(&entity_effect) else {

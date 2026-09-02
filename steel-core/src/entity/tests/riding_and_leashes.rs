@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn living_ride_tick_resets_fall_distance() {
+    init_vanilla_registry();
+
+    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    entity.set_fall_distance(7.0);
+    let entity_ref: &dyn Entity = &entity;
+
+    entity_ref.ride_tick();
+
+    assert_f64_close(entity.fall_distance(), 0.0);
+}
+
+#[test]
 fn default_below_world_hook_discards_entity() {
     let entity = PushableTestEntity::shared(1, DVec3::ZERO);
 
@@ -19,7 +32,7 @@ fn base_entity_has_no_controlling_passenger() {
 
 #[test]
 fn start_riding_entities_links_passenger_and_vehicle() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let passenger = PushableTestEntity::shared(1, DVec3::ZERO);
     let vehicle = PushableTestEntity::shared(2, DVec3::ZERO);
@@ -35,7 +48,7 @@ fn start_riding_entities_links_passenger_and_vehicle() {
 
 #[test]
 fn transfer_leashables_to_holder_moves_valid_mobs() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let old_holder: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
@@ -55,9 +68,9 @@ fn transfer_leashables_to_holder_moves_valid_mobs() {
         DVec3::new(1.0, 0.0, 0.0),
         Weak::new(),
     ));
-    let Some(mob) = leashable.as_mob() else {
-        panic!("pig should expose mob behavior");
-    };
+    let mob = leashable
+        .as_leashable()
+        .expect("pig should expose leashable behavior");
     assert!(mob.set_leashed_to(&old_holder));
 
     assert!(transfer_leashables_to_holder(
@@ -65,15 +78,15 @@ fn transfer_leashables_to_holder_moves_valid_mobs() {
         &new_holder
     ));
 
-    let Some(holder) = mob.leash_holder() else {
-        panic!("transferred mob should stay leashed");
-    };
+    let holder = mob
+        .leash_holder()
+        .expect("transferred mob should stay leashed");
     assert_eq!(holder.id(), new_holder.id());
 }
 
 #[test]
 fn transfer_leashables_to_holder_skips_mobs_outside_snap_distance() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let old_holder: SharedEntity = Arc::new(PigEntity::new(
         &vanilla_entities::PIG,
@@ -93,9 +106,9 @@ fn transfer_leashables_to_holder_skips_mobs_outside_snap_distance() {
         DVec3::new(20.0, 0.0, 0.0),
         Weak::new(),
     ));
-    let Some(mob) = leashable.as_mob() else {
-        panic!("pig should expose mob behavior");
-    };
+    let mob = leashable
+        .as_leashable()
+        .expect("pig should expose leashable behavior");
     assert!(mob.set_leashed_to(&old_holder));
 
     assert!(!transfer_leashables_to_holder(
@@ -103,15 +116,15 @@ fn transfer_leashables_to_holder_skips_mobs_outside_snap_distance() {
         &new_holder
     ));
 
-    let Some(holder) = mob.leash_holder() else {
-        panic!("untransferred mob should stay leashed");
-    };
+    let holder = mob
+        .leash_holder()
+        .expect("untransferred mob should stay leashed");
     assert_eq!(holder.id(), old_holder.id());
 }
 
 #[test]
 fn set_leashed_to_notifies_replaced_holder() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let old_holder_typed = LeashNotificationTestEntity::new(1);
     let old_holder: SharedEntity = old_holder_typed.clone();
@@ -123,20 +136,20 @@ fn set_leashed_to_notifies_replaced_holder() {
         DVec3::ZERO,
         Weak::new(),
     ));
-    let Some(mob) = leashable.as_mob() else {
-        panic!("pig should expose mob behavior");
-    };
+    let mob = leashable
+        .as_leashable()
+        .expect("pig should expose leashable behavior");
 
     assert!(mob.set_leashed_to(&old_holder));
     assert!(mob.set_leashed_to(&new_holder));
 
     assert_eq!(old_holder_typed.removed_notifications(), vec![3]);
-    assert!(new_holder_typed.removed_notifications().is_empty());
+    assert_eq!(new_holder_typed.removed_notifications().len(), 0);
 }
 
 #[test]
 fn tick_leash_notifies_live_holder() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let holder_typed = LeashNotificationTestEntity::new(1);
     let holder: SharedEntity = holder_typed.clone();
@@ -146,21 +159,21 @@ fn tick_leash_notifies_live_holder() {
         DVec3::ZERO,
         Weak::new(),
     ));
-    let Some(mob) = leashable.as_mob() else {
-        panic!("pig should expose mob behavior");
-    };
+    let mob = leashable
+        .as_leashable()
+        .expect("pig should expose leashable behavior");
     assert!(mob.set_leashed_to(&holder));
 
     mob.tick_leash();
 
     assert_eq!(holder_typed.holder_notifications(), vec![3]);
     assert!(mob.is_leashed());
-    assert!(holder_typed.removed_notifications().is_empty());
+    assert_eq!(holder_typed.removed_notifications().len(), 0);
 }
 
 #[test]
 fn tick_leash_snaps_live_holder_past_snap_distance() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let holder_typed = LeashNotificationTestEntity::with_position(1, DVec3::new(13.0, 0.0, 0.0));
     let holder: SharedEntity = holder_typed.clone();
@@ -170,9 +183,9 @@ fn tick_leash_snaps_live_holder_past_snap_distance() {
         DVec3::ZERO,
         Weak::new(),
     ));
-    let Some(mob) = leashable.as_mob() else {
-        panic!("pig should expose mob behavior");
-    };
+    let mob = leashable
+        .as_leashable()
+        .expect("pig should expose leashable behavior");
     assert!(mob.set_leashed_to(&holder));
 
     mob.tick_leash();
@@ -184,7 +197,7 @@ fn tick_leash_snaps_live_holder_past_snap_distance() {
 
 #[test]
 fn start_riding_entities_respects_boarding_cooldown() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let passenger = PushableTestEntity::shared(1, DVec3::ZERO);
     let vehicle = PushableTestEntity::shared(2, DVec3::ZERO);
@@ -197,7 +210,7 @@ fn start_riding_entities_respects_boarding_cooldown() {
 
 #[test]
 fn start_riding_entities_rejects_vehicle_cycles() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let root = PushableTestEntity::shared(1, DVec3::ZERO);
     let child = PushableTestEntity::shared(2, DVec3::ZERO);
@@ -210,7 +223,7 @@ fn start_riding_entities_rejects_vehicle_cycles() {
 
 #[test]
 fn start_riding_entities_inserts_player_passenger_first() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let vehicle = MultiPassengerTestEntity::shared(1);
     let mob_passenger = PushableTestEntity::shared(2, DVec3::ZERO);
@@ -262,7 +275,7 @@ fn controlled_vehicle_uses_player_known_movement_and_speed() {
 
 #[test]
 fn controlled_vehicle_returns_direct_controlled_vehicle_not_root_vehicle() {
-    init_test_registry();
+    init_vanilla_registry();
 
     let passenger =
         KnownMovementTestEntity::shared(1, &vanilla_entities::PLAYER, DVec3::ZERO, DVec3::ZERO);
@@ -272,12 +285,12 @@ fn controlled_vehicle_returns_direct_controlled_vehicle_not_root_vehicle() {
     assert!(start_riding_entities(&passenger, &vehicle));
     assert!(start_riding_entities(&vehicle, &root_vehicle));
 
-    let Some(controlled_vehicle) = passenger.controlled_vehicle() else {
-        panic!("passenger should directly control the middle vehicle");
-    };
-    let Some(root) = passenger.root_vehicle() else {
-        panic!("passenger should have a root vehicle");
-    };
+    let controlled_vehicle = passenger
+        .controlled_vehicle()
+        .expect("passenger should directly control the middle vehicle");
+    let root = passenger
+        .root_vehicle()
+        .expect("passenger should have a root vehicle");
 
     assert_eq!(controlled_vehicle.id(), vehicle.id());
     assert_eq!(root.id(), root_vehicle.id());

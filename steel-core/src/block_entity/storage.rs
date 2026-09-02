@@ -131,7 +131,7 @@ impl BlockEntityStorage {
         )
     }
 
-    /// Atomically snapshots `ProtoChunk` entries without applying Full lifecycle filtering.
+    /// Atomically snapshots `Chunk` entries without applying Full lifecycle filtering.
     ///
     /// Vanilla `ProtoChunk` storage is a raw map: removed flags are neither changed nor consulted
     /// until transfer into a `LevelChunk`.
@@ -143,19 +143,6 @@ impl BlockEntityStorage {
         (
             entries.entities.values().cloned().collect(),
             entries.pending.iter().copied().collect(),
-        )
-    }
-
-    /// Consumes this proto storage and transfers its contents without removal transitions.
-    ///
-    /// Promotion is ownership transfer, not unload. Rejected entities are simply not adopted,
-    /// matching Vanilla's Proto-to-LevelChunk transfer.
-    #[must_use]
-    pub(crate) fn into_transfer_snapshot(self) -> (Vec<SharedBlockEntity>, Vec<BlockPos>) {
-        let entries = self.entries.into_inner();
-        (
-            entries.entities.into_values().collect(),
-            entries.pending.into_iter().collect(),
         )
     }
 
@@ -185,7 +172,7 @@ impl BlockEntityStorage {
         self.entries.read().entities.len()
     }
 
-    /// Sets a `ProtoChunk` block entity without invoking `LevelChunk` lifecycle callbacks.
+    /// Sets a `Chunk` block entity without invoking `LevelChunk` lifecycle callbacks.
     ///
     /// Vanilla `ProtoChunk` map replacement neither clears nor sets the removed flag.
     #[must_use]
@@ -201,6 +188,57 @@ impl BlockEntityStorage {
             return false;
         }
         entries.entities.insert(pos, Arc::clone(block_entity));
+        true
+    }
+
+    /// Adopts an existing pre-Full entity in place and stages its Full lifecycle updates.
+    ///
+    /// Returns `None` if `expected` no longer owns the position.
+    #[must_use]
+    pub(crate) fn adopt_if_same_staged(
+        &self,
+        pos: BlockPos,
+        expected: &SharedBlockEntity,
+        block_state: BlockStateId,
+    ) -> Option<LifecycleDispatchers> {
+        let dispatch = {
+            let entries = self.entries.write();
+            if !entries
+                .entities
+                .get(&pos)
+                .is_some_and(|current| Arc::ptr_eq(current, expected))
+            {
+                return None;
+            }
+            let dispatch_state = expected.base().queue_block_state_change(block_state);
+            let dispatch_clear = expected.base().queue_clear_removed();
+            dispatch_state || dispatch_clear
+        };
+        let mut lifecycle_dispatchers = LifecycleDispatchers::new();
+        if dispatch {
+            lifecycle_dispatchers.push(Arc::clone(expected));
+        }
+        Some(lifecycle_dispatchers)
+    }
+
+    /// Discards an invalid pre-Full entity only while it still owns the position.
+    ///
+    /// Promotion is an ownership transfer, not an unload, so this deliberately
+    /// queues no removal lifecycle event.
+    pub(crate) fn discard_if_same_without_lifecycle(
+        &self,
+        pos: BlockPos,
+        expected: &SharedBlockEntity,
+    ) -> bool {
+        let mut entries = self.entries.write();
+        if !entries
+            .entities
+            .get(&pos)
+            .is_some_and(|current| Arc::ptr_eq(current, expected))
+        {
+            return false;
+        }
+        entries.entities.remove(&pos);
         true
     }
 
@@ -254,7 +292,7 @@ impl BlockEntityStorage {
         }
     }
 
-    /// Removes `ProtoChunk` entity data without invoking `LevelChunk` lifecycle callbacks.
+    /// Removes `Chunk` entity data without invoking `LevelChunk` lifecycle callbacks.
     pub(crate) fn remove_without_lifecycle(&self, pos: BlockPos) -> bool {
         let mut entries = self.entries.write();
         let removed = entries.entities.remove(&pos).is_some();
@@ -500,7 +538,7 @@ impl BlockEntityStorage {
         }
     }
 
-    /// Clears `ProtoChunk` entity data without invoking `LevelChunk` lifecycle callbacks.
+    /// Clears `Chunk` entity data without invoking `LevelChunk` lifecycle callbacks.
     pub(crate) fn clear_without_lifecycle(&self) {
         let mut entries = self.entries.write();
         entries.entities.clear();
@@ -530,9 +568,7 @@ mod tests {
     };
 
     use simdnbt::{borrow::BaseNbtCompound as BorrowedNbtCompound, owned::NbtCompound};
-    use steel_registry::{
-        test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
-    };
+    use steel_registry::{init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks};
     use steel_utils::{DowncastType, DowncastTypeKey, locks::SyncMutex};
 
     use super::*;
@@ -577,7 +613,7 @@ mod tests {
 
     #[test]
     fn readding_the_same_entity_preserves_ownership_and_clears_the_marker() {
-        init_test_registry();
+        init_vanilla_registry();
         let storage = BlockEntityStorage::new();
         let entity: SharedBlockEntity = Arc::new(SignBlockEntity::new(
             Weak::new(),
@@ -597,12 +633,12 @@ mod tests {
         assert!(!entity.is_removed());
         let (concrete, pending) = storage.save_snapshot();
         assert_eq!(concrete.len(), 1);
-        assert!(pending.is_empty());
+        assert_eq!(pending.len(), 0);
     }
 
     #[test]
     fn stale_removed_cleanup_cannot_delete_a_same_arc_revival() {
-        init_test_registry();
+        init_vanilla_registry();
         let storage = BlockEntityStorage::new();
         let entity: SharedBlockEntity = Arc::new(SignBlockEntity::new(
             Weak::new(),
@@ -623,7 +659,7 @@ mod tests {
 
     #[test]
     fn insert_if_absent_preserves_the_concurrent_owner() {
-        init_test_registry();
+        init_vanilla_registry();
         let storage = BlockEntityStorage::new();
         let pos = BlockPos::new(1, 2, 3);
         let state = vanilla_blocks::OAK_SIGN.default_state();
@@ -644,7 +680,7 @@ mod tests {
 
     #[test]
     fn lifecycle_callbacks_are_reentrant_and_keep_transition_order() {
-        init_test_registry();
+        init_vanilla_registry();
         let concrete = Arc::new(ReentrantLifecycleBlockEntity {
             base: BlockEntityBase::new(
                 &vanilla_block_entity_types::BARREL,
@@ -666,7 +702,7 @@ mod tests {
 
     #[test]
     fn repeated_set_removed_calls_remain_observable() {
-        init_test_registry();
+        init_vanilla_registry();
         let concrete = Arc::new(ReentrantLifecycleBlockEntity {
             base: BlockEntityBase::new(
                 &vanilla_block_entity_types::BARREL,
@@ -687,7 +723,7 @@ mod tests {
 
     #[test]
     fn detached_dispatcher_preserves_same_arc_revival_order() {
-        init_test_registry();
+        init_vanilla_registry();
         let concrete = Arc::new(ReentrantLifecycleBlockEntity {
             base: BlockEntityBase::new(
                 &vanilla_block_entity_types::BARREL,
@@ -727,7 +763,7 @@ mod tests {
 
     #[test]
     fn cached_state_callback_is_staged_after_storage_commit() {
-        init_test_registry();
+        init_vanilla_registry();
         let copper = vanilla_blocks::COPPER_CHEST.default_state();
         let exposed = vanilla_blocks::EXPOSED_COPPER_CHEST.default_state();
         let concrete = Arc::new(ReentrantLifecycleBlockEntity {

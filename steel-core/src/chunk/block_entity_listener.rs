@@ -25,17 +25,17 @@ pub(crate) enum ListenerSelectionCommit {
     Occupied,
 }
 
-/// Game-event registries and exact block-entity bindings owned by one `LevelChunk`.
+/// Game-event registries and exact block-entity bindings owned by one Full chunk runtime.
 ///
 /// The registry remains attached to a retained chunk while it is temporarily below Full. World
 /// dispatch gates access through the active Full holder, matching Vanilla without reordering
 /// listeners on revival.
-pub(crate) struct LevelChunkGameEventListeners {
+pub(crate) struct FullChunkGameEventListeners {
     pub(crate) registry: Arc<GameEventListenerStorage>,
     block_entities: SyncMutex<FxHashMap<BlockPos, BlockEntityListenerBinding>>,
 }
 
-impl LevelChunkGameEventListeners {
+impl FullChunkGameEventListeners {
     #[must_use]
     pub(crate) fn new(listener_count: Arc<GameEventListenerCount>) -> Self {
         Self {

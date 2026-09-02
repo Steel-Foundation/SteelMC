@@ -19,7 +19,7 @@ use super::super::super::{
     },
 };
 use super::{objective, source_command_storage, source_scoreboard};
-use crate::{block_entity::SharedBlockEntity, world::World};
+use crate::{block_entity::SharedBlockEntity, command::missing_argument, world::World};
 
 type Builder = CommandNodeBuilder<CommandSource, SteelCommandRuntime>;
 
@@ -103,15 +103,11 @@ fn data_match_count(
             NbtTag::Compound(entity.nbt_for_data_compare())
         }
         DataSource::Storage => {
-            let key = context
-                .identifier("source")
-                .ok_or_else(|| missing_argument("source"))?;
+            let key = context.identifier("source")?;
             NbtTag::Compound(source_command_storage(context)?.get(key))
         }
     };
-    let path = context
-        .nbt_path("path")
-        .ok_or_else(|| missing_argument("path"))?;
+    let path = context.nbt_path("path")?;
     matching_data_count(path, &tag)
 }
 
@@ -143,8 +139,7 @@ fn dimension_matches(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<bool, CommandSyntaxError> {
     let world = context
-        .world_argument("dimension")
-        .ok_or_else(|| missing_argument("dimension"))?
+        .world_argument("dimension")?
         .resolve(context.source())?;
     Ok(Arc::ptr_eq(context.source().world(), &world))
 }
@@ -229,9 +224,30 @@ fn block_region_volume(region: &BoundingBox) -> i64 {
 }
 
 // Steel's synchronous command runner rejects unloaded region chunks instead of loading them.
-fn ensure_region_chunks_loaded(
+pub(in crate::command::builtins) fn ensure_region_chunks_loaded(
     world: &World,
     region: &BoundingBox,
+) -> Result<(), CommandSyntaxError> {
+    ensure_region_chunks_available(world, region, RegionChunkAvailability::Full)
+}
+
+pub(in crate::command::builtins) fn ensure_region_chunks_block_ticking(
+    world: &World,
+    region: &BoundingBox,
+) -> Result<(), CommandSyntaxError> {
+    ensure_region_chunks_available(world, region, RegionChunkAvailability::BlockTicking)
+}
+
+#[derive(Clone, Copy)]
+enum RegionChunkAvailability {
+    Full,
+    BlockTicking,
+}
+
+fn ensure_region_chunks_available(
+    world: &World,
+    region: &BoundingBox,
+    availability: RegionChunkAvailability,
 ) -> Result<(), CommandSyntaxError> {
     if region.max_y() < world.get_min_y() || region.min_y() > world.get_max_y() {
         return Ok(());
@@ -246,7 +262,11 @@ fn ensure_region_chunks_loaded(
                 continue;
             }
             let pos = BlockPos::new(chunk_x * 16, world.get_min_y(), chunk_z * 16);
-            if !world.is_full_chunk_loaded_at(pos) {
+            let available = match availability {
+                RegionChunkAvailability::Full => world.is_full_chunk_loaded_at(pos),
+                RegionChunkAvailability::BlockTicking => world.is_block_ticking_chunk_loaded(pos),
+            };
+            if !available {
                 return Err(unloaded_position());
             }
         }
@@ -338,21 +358,11 @@ fn block_condition(expected: bool) -> Builder {
 
 fn block_matches(context: &SteelCommandContext<CommandSource>) -> Result<bool, CommandSyntaxError> {
     let position = loaded_block_position(context, "pos")?;
-    let predicate = context
-        .block_predicate("block")
-        .ok_or_else(|| missing_argument("block"))?;
+    let Ok(predicate) = context.block_predicate("block") else {
+        return Err(missing_argument("block"));
+    };
     let world = context.source().world();
-    if !predicate.matches_state(world.get_block_state(position)) {
-        return Ok(false);
-    }
-    let Some(expected_nbt) = predicate.nbt() else {
-        return Ok(true);
-    };
-    let Some(block_entity) = world.get_block_entity(position) else {
-        return Ok(false);
-    };
-    let actual_nbt = block_entity.save_with_full_metadata();
-    Ok(compare_nbt_compounds(expected_nbt, &actual_nbt, true))
+    Ok(predicate.matches(world, position))
 }
 
 fn biome_condition(expected: bool) -> Builder {
@@ -376,20 +386,15 @@ fn biome_matches(context: &SteelCommandContext<CommandSource>) -> Result<bool, C
     let biome = world.biome_at(position).ok_or_else(|| {
         CommandSyntaxError::dynamic(TextComponent::from(&translations::ARGUMENT_POS_UNLOADED))
     })?;
-    let expected = context
-        .biome_or_tag("biome")
-        .ok_or_else(|| missing_argument("biome"))?;
+    let expected = context.biome_or_tag("biome")?;
     Ok(expected.matches(biome))
 }
 
-pub(super) fn loaded_block_position(
+pub fn loaded_block_position(
     context: &SteelCommandContext<CommandSource>,
     name: &str,
 ) -> Result<steel_utils::BlockPos, CommandSyntaxError> {
-    let position = context
-        .coordinates(name)
-        .ok_or_else(|| missing_argument(name))?
-        .block_pos(context.source());
+    let position = context.coordinates(name)?.block_pos(context.source());
     let world = context.source().world();
     if !world.is_full_chunk_loaded_at(position) {
         return Err(unloaded_position());
@@ -439,10 +444,7 @@ fn loaded_condition(expected: bool) -> Builder {
 fn loaded_matches(
     context: &SteelCommandContext<CommandSource>,
 ) -> Result<bool, CommandSyntaxError> {
-    let position = context
-        .coordinates("pos")
-        .ok_or_else(|| missing_argument("pos"))?
-        .block_pos(context.source());
+    let position = context.coordinates("pos")?.block_pos(context.source());
     Ok(context
         .source()
         .world()
@@ -525,9 +527,7 @@ fn score_range_matches(
     let scoreboard = source_scoreboard(context)?;
     let target = context.score_holder("target")?;
     let target_objective = objective(context, scoreboard, "targetObjective")?;
-    let range = context
-        .int_range("range")
-        .ok_or_else(|| missing_argument("range"))?;
+    let range = context.int_range("range")?;
     Ok(scoreboard
         .score(&target, &target_objective)
         .is_some_and(|score| range.matches(score)))
@@ -620,20 +620,12 @@ fn conditional_failed_count(count: i32) -> CommandSyntaxError {
     CommandSyntaxError::dynamic(message)
 }
 
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Weak;
 
     use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-    use steel_registry::{
-        test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
-    };
+    use steel_registry::{init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks};
     use steel_utils::nbt::parse_nbt_path;
 
     use super::*;
@@ -684,7 +676,7 @@ mod tests {
 
     #[test]
     fn masked_regions_skip_only_vanilla_air() {
-        init_test_registry();
+        init_vanilla_registry();
 
         assert!(!should_compare_block(
             vanilla_blocks::AIR.default_state(),
@@ -706,7 +698,7 @@ mod tests {
 
     #[test]
     fn region_block_entities_compare_type_and_custom_data_only() {
-        init_test_registry();
+        init_vanilla_registry();
         let source = raw_block_entity(7, BlockPos::new(1, 64, 1), false);
         let matching = raw_block_entity(7, BlockPos::new(4, 70, 4), true);
         let different = raw_block_entity(8, BlockPos::new(4, 70, 4), false);

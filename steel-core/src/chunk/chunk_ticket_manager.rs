@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use steel_utils::ChunkPos;
 
-use crate::chunk::{chunk_access::ChunkStatus, chunk_pyramid::GENERATION_PYRAMID};
+use crate::chunk::{chunk_pyramid::GENERATION_PYRAMID, status::ChunkStatus};
 
 /// The maximum supported view distance for players.
 pub const MAX_SUPPORTED_VIEW_DISTANCE: u8 = 128;
@@ -711,7 +711,7 @@ impl ChunkTicketManager {
 
     /// Returns a drained change buffer for reuse by the next propagation pass.
     pub(crate) fn recycle_changes(&mut self, mut changes: Vec<LevelChange>) {
-        debug_assert!(self.changes.is_empty());
+        debug_assert_eq!(self.changes, []);
         changes.clear();
         self.changes = changes;
     }

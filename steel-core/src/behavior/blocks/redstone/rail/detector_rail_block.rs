@@ -3,10 +3,11 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::BlockStateProperties;
+use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty};
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId, Direction, WorldAabb};
 
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::{BlockBehavior, BlockPlaceContext, RailBehavior};
 use crate::entity::{Entity, InsideBlockEffectCollector};
 use crate::world::{LevelReader, ScheduledTickAccess, SignalQueryContext, World};
@@ -19,6 +20,8 @@ use super::rail_state::RailState;
 pub struct DetectorRailBlock {
     base: BaseRailBlock,
 }
+
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
 
 impl DetectorRailBlock {
     const PRESSED_CHECK_PERIOD: i32 = 20;
@@ -69,10 +72,10 @@ impl DetectorRailBlock {
             return;
         }
 
-        let was_pressed = state.get_value(&BlockStateProperties::POWERED);
+        let was_pressed = state.get_value(POWERED);
         let should_be_pressed = Self::has_interacting_minecart(world, pos);
         if should_be_pressed != was_pressed {
-            let new_state = state.set_value(&BlockStateProperties::POWERED, should_be_pressed);
+            let new_state = state.set_value(POWERED, should_be_pressed);
             world.set_block(pos, new_state, UpdateFlags::UPDATE_ALL);
             Self::update_power_to_connected(world, pos, new_state);
             world.update_neighbors_at(pos, self.base.block);
@@ -88,10 +91,10 @@ impl DetectorRailBlock {
     }
 
     fn signal(state: BlockStateId) -> i32 {
-        if state.get_value(&BlockStateProperties::POWERED) {
-            15
+        if state.get_value(POWERED) {
+            MAX_REDSTONE_SIGNAL
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 }
@@ -153,7 +156,7 @@ impl BlockBehavior for DetectorRailBlock {
     }
 
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if state.get_value(&BlockStateProperties::POWERED) {
+        if state.get_value(POWERED) {
             self.check_pressed(world, pos, state);
         }
     }
@@ -167,7 +170,7 @@ impl BlockBehavior for DetectorRailBlock {
         _effect_collector: &mut InsideBlockEffectCollector,
         _is_precise: bool,
     ) {
-        if !state.get_value(&BlockStateProperties::POWERED) {
+        if !state.get_value(POWERED) {
             self.check_pressed(world, pos, state);
         }
     }
@@ -208,7 +211,7 @@ impl BlockBehavior for DetectorRailBlock {
         if direction == Direction::Up {
             Self::signal(state)
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         }
     }
 
@@ -226,7 +229,7 @@ impl BlockBehavior for DetectorRailBlock {
         // Command success counts and container fullness require concrete
         // minecart capabilities. No currently implemented Steel minecart
         // exposes either, for which vanilla's observable result is zero.
-        0
+        MIN_REDSTONE_SIGNAL
     }
 
     fn as_rail(&self) -> Option<&dyn RailBehavior> {
@@ -239,7 +242,7 @@ mod tests {
     use std::sync::Arc;
 
     use glam::DVec3;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::{vanilla_blocks, vanilla_entities};
     use steel_utils::ChunkPos;
 
@@ -251,7 +254,7 @@ mod tests {
 
     #[test]
     fn minecart_powers_detector_and_schedules_relative_tick() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("detector_rail_minecart");
         let pos = BlockPos::new(8, 64, 8);
@@ -279,7 +282,7 @@ mod tests {
         behavior.entity_inside(state, &world, pos, minecart.as_ref(), &mut effects, true);
 
         let powered = world.get_block_state(pos);
-        assert!(powered.get_value(&BlockStateProperties::POWERED));
+        assert!(powered.get_value(POWERED));
         assert_eq!(
             behavior.get_own_signal(powered, &world, pos, SignalQueryContext::DEFAULT,),
             15
@@ -308,10 +311,6 @@ mod tests {
 
         minecart.set_removed(RemovalReason::Discarded);
         behavior.tick(powered, &world, pos);
-        assert!(
-            !world
-                .get_block_state(pos)
-                .get_value(&BlockStateProperties::POWERED)
-        );
+        assert!(!world.get_block_state(pos).get_value(POWERED));
     }
 }

@@ -1,10 +1,16 @@
 use super::*;
+use crate::chunk::Chunk;
 
 mod neighbor_updater;
 
 pub(in crate::world) use neighbor_updater::{CollectingNeighborUpdater, ShapeUpdate};
 
+static LARGE_BLOCK_REGION_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+
 impl World {
+    /// Vanilla block-update recursion limit (`Block.UPDATE_LIMIT`).
+    pub const UPDATE_LIMIT: i32 = 512;
+
     /// Gets the block state at the given position.
     ///
     /// Returns void air out of bounds and air when the containing chunk is not loaded.
@@ -34,9 +40,32 @@ impl World {
             })
     }
 
+    ///Vanilla equivalent: `level.getBrightness()`
+    pub fn light_value_at(&self, layer: LightLayer, pos: BlockPos) -> u8 {
+        if layer == LightLayer::Sky && !self.dimension_type.has_skylight {
+            return 0;
+        }
+        if !self.is_in_valid_bounds_horizontal(pos) {
+            return self.default_light_value(layer);
+        }
+
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        self.chunk_map
+            .with_chunk_at_status(chunk_pos, ChunkStatus::Light, |chunk| {
+                let light = chunk.light();
+                light.get_light_value(layer, pos)
+            })
+            .unwrap_or_else(|| self.default_light_value(layer))
+    }
+
     pub(crate) fn is_entity_ticking_chunk_loaded(&self, pos: BlockPos) -> bool {
         self.chunk_map
             .is_entity_ticking_full_chunk_loaded(Self::chunk_pos_for_block(pos))
+    }
+
+    pub(crate) fn is_block_ticking_chunk_loaded(&self, pos: BlockPos) -> bool {
+        self.chunk_map
+            .is_block_ticking_full_chunk_loaded(Self::chunk_pos_for_block(pos))
     }
 
     pub(crate) fn is_full_chunk_loaded_at(&self, pos: BlockPos) -> bool {
@@ -61,23 +90,6 @@ impl World {
             .queue_light_change(pos, light_properties_changed, empty_section_change);
     }
 
-    pub(super) fn light_value_at(&self, layer: LightLayer, pos: BlockPos) -> u8 {
-        if layer == LightLayer::Sky && !self.dimension_type.has_skylight {
-            return 0;
-        }
-        if !self.is_in_valid_bounds_horizontal(pos) {
-            return self.default_light_value(layer);
-        }
-
-        let chunk_pos = Self::chunk_pos_for_block(pos);
-        self.chunk_map
-            .with_chunk_at_status(chunk_pos, ChunkStatus::Light, |chunk| {
-                let light = chunk.light();
-                light.get_light_value(layer, pos)
-            })
-            .unwrap_or_else(|| self.default_light_value(layer))
-    }
-
     pub(super) const fn default_light_value(&self, layer: LightLayer) -> u8 {
         match layer {
             LightLayer::Sky if self.dimension_type.has_skylight => MAX_LIGHT_LEVEL,
@@ -89,7 +101,8 @@ impl World {
     ///
     /// Matches `BlockGetter.getBlockStates(AABB)` using
     /// `BlockPos.betweenClosedStream(AABB)`: both min and max coordinates are
-    /// floored before iterating the inclusive block range.
+    /// floored before iterating the inclusive block range. Large ranges fall back
+    /// to streaming reads instead of acquiring an unbounded section workset.
     #[must_use]
     pub fn block_states_in_aabb_are_air(&self, aabb: WorldAabb) -> bool {
         let min_x = aabb.min_x().floor() as i32;
@@ -99,17 +112,54 @@ impl World {
         let max_y = aabb.max_y().floor() as i32;
         let max_z = aabb.max_z().floor() as i32;
 
-        for y in min_y..=max_y {
-            for z in min_z..=max_z {
-                for x in min_x..=max_x {
-                    if !self.get_block_state(BlockPos::new(x, y, z)).is_air() {
-                        return false;
+        let bounds = BlockRegionBounds::from_corners(
+            BlockPos::new(min_x, min_y, min_z),
+            BlockPos::new(max_x, max_y, max_z),
+        );
+
+        let streaming_read = || {
+            for y in min_y..=max_y {
+                for z in min_z..=max_z {
+                    for x in min_x..=max_x {
+                        if !self.get_block_state(BlockPos::new(x, y, z)).is_air() {
+                            return false;
+                        }
                     }
                 }
             }
-        }
+            true
+        };
 
-        true
+        let Some(all_air) = self.try_with_block_region(bounds, |region| {
+            for y in min_y..=max_y {
+                for z in min_z..=max_z {
+                    for x in min_x..=max_x {
+                        let Some(state) = region.get_block_state(BlockPos::new(x, y, z)) else {
+                            return false;
+                        };
+                        if !state.is_air() {
+                            return false;
+                        }
+                    }
+                }
+            }
+            true
+        }) else {
+            if !LARGE_BLOCK_REGION_WARNING_EMITTED.swap(true, Ordering::Relaxed) {
+                tracing::warn!(
+                    min_x,
+                    min_y,
+                    min_z,
+                    max_x,
+                    max_y,
+                    max_z,
+                    max_workset_slots = MAX_BLOCK_REGION_WORKSET_SLOTS,
+                    "Block-state AABB exceeds the bulk-read limit; using streaming reads"
+                );
+            }
+            return streaming_read();
+        };
+        all_air
     }
 
     /// Sets a block at the given position.
@@ -127,7 +177,7 @@ impl World {
         block_state: BlockStateId,
         flags: UpdateFlags,
     ) -> bool {
-        self.set_block_with_limit(pos, block_state, flags, 512)
+        self.set_block_with_limit(pos, block_state, flags, Self::UPDATE_LIMIT)
     }
 
     /// Sets a block at the given position with a custom update limit.
@@ -176,7 +226,13 @@ impl World {
         new_state: BlockStateId,
         flags: UpdateFlags,
     ) -> ConditionalBlockSetResult {
-        self.set_block_if_unchanged_with_limit(pos, expected_state, new_state, flags, 512)
+        self.set_block_if_unchanged_with_limit(
+            pos,
+            expected_state,
+            new_state,
+            flags,
+            Self::UPDATE_LIMIT,
+        )
     }
 
     /// Conditional variant of [`Self::set_block_with_limit`].
@@ -204,12 +260,12 @@ impl World {
         };
 
         match result {
-            LevelChunkBlockSetResult::Changed(old_state) => {
+            FullChunkBlockSetResult::Changed(old_state) => {
                 self.finish_block_set(pos, old_state, new_state, flags, update_limit);
                 ConditionalBlockSetResult::Changed
             }
-            LevelChunkBlockSetResult::Unchanged => ConditionalBlockSetResult::Unchanged,
-            LevelChunkBlockSetResult::Stale(current_state) => {
+            FullChunkBlockSetResult::Unchanged => ConditionalBlockSetResult::Unchanged,
+            FullChunkBlockSetResult::Stale(current_state) => {
                 ConditionalBlockSetResult::Stale(current_state)
             }
         }
@@ -350,6 +406,33 @@ impl World {
             .update_neighbors_at_except_from_facing(self, pos, source_block, None);
     }
 
+    /// Runs Vanilla's deferred command-placement neighbor notifications.
+    ///
+    /// `/fill`, `/setblock`, and `/clone` suppress ordinary neighbor updates
+    /// while mutating their regions, then replay this operation in a stable
+    /// second pass.
+    pub(crate) fn update_neighbors_on_block_set(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        old_state: BlockStateId,
+    ) {
+        let state = self.get_block_state(pos);
+        let block = state.get_block();
+        if old_state.get_block() != block {
+            BLOCK_BEHAVIORS
+                .get_behavior(old_state.get_block())
+                .affect_neighbors_after_removal(old_state, self, pos, false);
+        }
+
+        self.update_neighbors_at(pos, block);
+        if BLOCK_BEHAVIORS
+            .get_behavior(block)
+            .has_analog_output_signal(state)
+        {
+            self.update_neighbor_for_output_signal(pos, block);
+        }
+    }
+
     /// Updates all neighbors except the one in `skip_direction`.
     ///
     /// Mirrors vanilla `Level.updateNeighborsAtExceptFromFacing` without the
@@ -362,6 +445,27 @@ impl World {
     ) {
         self.neighbor_updater
             .update_neighbors_at_except_from_facing(self, pos, source_block, Some(skip_direction));
+    }
+
+    /// Updates all neighboring shapes around `pos`.
+    pub fn update_neighbor_shapes_at(
+        self: &Arc<Self>,
+        state: BlockStateId,
+        pos: BlockPos,
+        flags: UpdateFlags,
+        update_limit: i32,
+    ) {
+        for direction in Direction::UPDATE_SHAPE_ORDER {
+            let neighbor_pos = pos.relative(direction);
+            self.neighbor_shape_changed(
+                direction.opposite(),
+                neighbor_pos,
+                pos,
+                state,
+                flags,
+                update_limit,
+            );
+        }
     }
 
     /// Updates comparators that can read analog output from `pos`.
@@ -527,6 +631,29 @@ impl World {
         }
     }
 
+    /// Called when a block changed with a command (setblock, fill, ...)
+    ///
+    /// This is the Rust equivalent of vanilla's `ServerLevel.updateNeighborsOnBlockSet()`.
+    pub(crate) fn update_neighbour_on_block_set(
+        self: &Arc<Self>,
+        pos: BlockPos,
+        old_state: BlockStateId,
+    ) {
+        let block_state = self.get_block_state(pos);
+        // For block behaviors
+        let behavior = BLOCK_BEHAVIORS.get_behavior(old_state.get_block());
+
+        if old_state != block_state {
+            behavior.affect_neighbors_after_removal(old_state, self, pos, false);
+        }
+
+        self.update_neighbors_at(pos, block_state.get_block());
+
+        if behavior.has_analog_output_signal(block_state) {
+            self.update_neighbor_for_output_signal(pos, block_state.get_block());
+        }
+    }
+
     /// Notifies a block that one of its neighbors changed.
     ///
     /// This is the Rust equivalent of vanilla's `Level.neighborChanged()`.
@@ -580,11 +707,7 @@ impl World {
     pub fn get_block_entity(&self, pos: BlockPos) -> Option<SharedBlockEntity> {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
-            .with_full_chunk(chunk_pos, |chunk| {
-                chunk
-                    .as_full()
-                    .and_then(|lc| lc.get_block_entity_immediate(pos))
-            })
+            .with_full_chunk(chunk_pos, |chunk| chunk.get_block_entity_immediate(pos))
             .flatten()
     }
 
@@ -597,9 +720,7 @@ impl World {
 
         self.chunk_map
             .with_full_chunk(Self::chunk_pos_for_block(pos), |chunk| {
-                chunk
-                    .as_full()
-                    .is_some_and(|chunk| chunk.add_and_register_block_entity(block_entity))
+                chunk.add_and_register_block_entity(block_entity)
             })
             .unwrap_or(false)
     }
@@ -613,9 +734,7 @@ impl World {
 
         self.chunk_map
             .with_full_chunk(Self::chunk_pos_for_block(pos), |chunk| {
-                chunk
-                    .as_full()
-                    .is_some_and(|chunk| chunk.remove_block_entity_if_same(expected))
+                chunk.remove_block_entity_if_same(expected)
             })
             .unwrap_or(false)
     }
@@ -642,6 +761,6 @@ impl World {
     /// Called when entities move, are added/removed, or when block entities change.
     pub fn mark_chunk_dirty(&self, chunk_pos: ChunkPos) {
         self.chunk_map
-            .with_chunk_at_status(chunk_pos, ChunkStatus::Empty, ChunkAccess::mark_dirty);
+            .with_chunk_at_status(chunk_pos, ChunkStatus::Empty, Chunk::mark_dirty);
     }
 }

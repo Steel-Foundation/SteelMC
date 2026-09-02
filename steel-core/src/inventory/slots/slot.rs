@@ -249,7 +249,7 @@ mod tests {
         atomic::{AtomicBool, Ordering},
     };
 
-    use steel_registry::{test_support::init_test_registry, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_items};
     use steel_utils::locks::IntoShared;
     use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
 
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn custom_slot_safe_insert_override_survives_erasure() {
-        init_test_registry();
+        init_vanilla_registry();
         let container = SimpleContainer::new(1).into_shared();
         let container_ref = ContainerRef::from(Arc::clone(&container));
         let called = Arc::new(AtomicBool::new(false));

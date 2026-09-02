@@ -6,6 +6,10 @@ use super::{
     LivingEntity, Player, SSpectatorAction, WorldAabb, WorldCollisionProvider,
     player_can_change_difficulty, shapes, vanilla_attributes,
 };
+use crate::behavior::blocks::PowderSnowBlock;
+use steel_protocol::packets::game::SSwing;
+
+const SURVIVAL_DEFAULT_BLOCK_INTERACTION_RANGE: f64 = 4.5;
 
 impl Player {
     /// Sets the player's game mode and notifies the client.
@@ -36,7 +40,7 @@ impl Player {
             CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
         self.server().broadcast_to_online(update_packet);
 
-        // TODO: Refresh sleeping-player aggregation once world sleep tracking is implemented.
+        self.get_world().update_sleeping_player_list();
 
         if gamemode == GameType::Creative {
             self.reset_current_impulse_context();
@@ -79,7 +83,9 @@ impl Player {
         let collision_context =
             BlockCollisionContext::entity(self.position().y, self.is_descending())
                 .with_fall_distance(self.fall_distance())
-                .with_can_walk_on_powder_snow(self.can_walk_on_powder_snow());
+                .with_can_walk_on_powder_snow(PowderSnowBlock::can_entity_walk_on_powder_snow(
+                    self,
+                ));
 
         if collision_world.has_collision_with_context(&bounding_box, collision_context) {
             return false;
@@ -220,14 +226,13 @@ impl Player {
     pub fn is_within_block_interaction_range(&self, pos: BlockPos) -> bool {
         self.is_within_block_interaction_range_with_buffer(pos, 1.0)
     }
-
-    /// Returns the player's current block interaction range attribute.
+    /// Vanilla `player.blockInteractionRange()`
     #[must_use]
-    pub(crate) fn block_interaction_range(&self) -> f64 {
+    pub fn block_interaction_range(&self) -> f64 {
         self.attributes()
             .lock()
             .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-            .unwrap_or(4.5)
+            .unwrap_or(SURVIVAL_DEFAULT_BLOCK_INTERACTION_RANGE)
     }
 
     /// Returns true if player is within block interaction range plus a vanilla buffer.
@@ -289,6 +294,8 @@ impl Player {
             return;
         }
 
+        self.reset_last_action_time();
+
         let Some(entity_id) = packet.spectate_entity_id else {
             return;
         };
@@ -313,5 +320,11 @@ impl Player {
     #[must_use]
     pub fn is_secondary_use_active(&self) -> bool {
         self.is_crouching()
+    }
+
+    /// Handles a player swing packet.
+    pub fn handle_animate(&self, packet: SSwing) {
+        self.reset_last_action_time();
+        self.swing(packet.hand, false);
     }
 }

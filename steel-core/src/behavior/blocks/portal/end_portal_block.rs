@@ -214,8 +214,7 @@ mod tests {
     use steel_registry::blocks::block_state_ext::BlockStateExt as _;
     use steel_registry::entity_type::EntityTypeRef;
     use steel_registry::{
-        test_support::init_test_registry, vanilla_block_entity_types, vanilla_blocks,
-        vanilla_dimension_types,
+        init_vanilla_registry, vanilla_block_entity_types, vanilla_blocks, vanilla_dimension_types,
     };
 
     use super::{EndGatewayBlock, EndPortalBlock};
@@ -224,7 +223,7 @@ mod tests {
 
     #[test]
     fn registered_end_portal_blocks_reject_fluid_replacement() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
 
         assert!(
@@ -276,7 +275,7 @@ mod tests {
 
     #[test]
     fn end_portal_entity_inside_shape_uses_outline_shape() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let state = vanilla_blocks::END_PORTAL.default_state();
         let behavior = EndPortalBlock::new(&vanilla_blocks::END_PORTAL);
@@ -292,7 +291,7 @@ mod tests {
 
     #[test]
     fn end_portal_creates_end_portal_block_entity() {
-        init_test_registry();
+        init_vanilla_registry();
         let behavior = EndPortalBlock::new(&vanilla_blocks::END_PORTAL);
         let state = vanilla_blocks::END_PORTAL.default_state();
         let pos = BlockPos::new(2, 70, -4);
@@ -317,7 +316,7 @@ mod tests {
 
     #[test]
     fn end_portal_marks_non_player_inside_end_portal() {
-        init_test_registry();
+        init_vanilla_registry();
         let entity = TestEntity::new();
         let pos = BlockPos::new(3, 70, 3);
 
@@ -334,7 +333,7 @@ mod tests {
 
     #[test]
     fn end_gateway_creates_typed_block_entity() {
-        init_test_registry();
+        init_vanilla_registry();
         let world = fresh_test_world("end_gateway_ticker");
         let behavior = EndGatewayBlock::new(&vanilla_blocks::END_GATEWAY);
         let state = vanilla_blocks::END_GATEWAY.default_state();

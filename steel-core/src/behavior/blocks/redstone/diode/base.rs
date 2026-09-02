@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+use steel_registry::blocks::properties::{
+    BlockStateProperties, BoolProperty, Direction, EnumProperty, IntProperty,
+};
 use steel_registry::blocks::shapes::SupportType;
 use steel_registry::vanilla_blocks;
 use steel_utils::types::UpdateFlags;
@@ -12,10 +14,15 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::BLOCK_BEHAVIORS;
 use crate::behavior::BlockPlaceContext;
+use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::world::{
     LevelReader, SignalQueryContext, World, get_control_input_signal,
     get_signal as get_redstone_signal, tick_scheduler::TickPriority,
 };
+
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const POWER: &IntProperty = &BlockStateProperties::POWER;
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
 
 /// Common server-side behavior inherited from vanilla's abstract `DiodeBlock`.
 pub(super) struct DiodeBlock {
@@ -47,10 +54,9 @@ impl DiodeBlock {
     }
 
     pub(super) fn state_for_placement(&self, context: &BlockPlaceContext<'_>) -> BlockStateId {
-        self.block.default_state().set_value(
-            &BlockStateProperties::HORIZONTAL_FACING,
-            context.horizontal_direction().opposite(),
-        )
+        self.block
+            .default_state()
+            .set_value(HORIZONTAL_FACING, context.horizontal_direction().opposite())
     }
 
     pub(super) fn get_input_signal(
@@ -58,18 +64,18 @@ impl DiodeBlock {
         pos: BlockPos,
         state: BlockStateId,
     ) -> i32 {
-        let direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let direction = state.get_value(HORIZONTAL_FACING);
         let target_pos = pos.relative(direction);
         let input = get_redstone_signal(level, target_pos, direction, SignalQueryContext::DEFAULT);
-        if input >= 15 {
+        if input >= MAX_REDSTONE_SIGNAL {
             return input;
         }
 
         let target_state = level.get_block_state(target_pos);
         let wire_power = if target_state.get_block() == &vanilla_blocks::REDSTONE_WIRE {
-            i32::from(target_state.get_value(&BlockStateProperties::POWER))
+            i32::from(target_state.get_value(POWER))
         } else {
-            0
+            MIN_REDSTONE_SIGNAL
         };
         input.max(wire_power)
     }
@@ -80,7 +86,7 @@ impl DiodeBlock {
         state: BlockStateId,
         side_input_diodes_only: bool,
     ) -> i32 {
-        let direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let direction = state.get_value(HORIZONTAL_FACING);
         let clockwise = direction.rotate_y_clockwise();
         let counter_clockwise = direction.rotate_y_counter_clockwise();
         get_control_input_signal(
@@ -102,14 +108,12 @@ impl DiodeBlock {
         pos: BlockPos,
         state: BlockStateId,
     ) -> bool {
-        let direction = state
-            .get_value(&BlockStateProperties::HORIZONTAL_FACING)
-            .opposite();
+        let direction = state.get_value(HORIZONTAL_FACING).opposite();
         let opposite_state = level.get_block_state(pos.relative(direction));
         BLOCK_BEHAVIORS
             .get_behavior(opposite_state.get_block())
             .is_diode()
-            && opposite_state.get_value(&BlockStateProperties::HORIZONTAL_FACING) != direction
+            && opposite_state.get_value(HORIZONTAL_FACING) != direction
     }
 
     pub(super) fn check_tick_on_neighbor(
@@ -125,7 +129,7 @@ impl DiodeBlock {
             return;
         }
 
-        let powered = state.get_value(&BlockStateProperties::POWERED);
+        let powered = state.get_value(POWERED);
         if powered == should_turn_on || world.will_tick_block_this_tick(pos, self.block) {
             return;
         }
@@ -162,17 +166,17 @@ impl DiodeBlock {
             return;
         }
 
-        let powered = state.get_value(&BlockStateProperties::POWERED);
+        let powered = state.get_value(POWERED);
         if powered && !should_turn_on {
             world.set_block(
                 pos,
-                state.set_value(&BlockStateProperties::POWERED, false),
+                state.set_value(POWERED, false),
                 UpdateFlags::UPDATE_CLIENTS,
             );
         } else if !powered {
             world.set_block(
                 pos,
-                state.set_value(&BlockStateProperties::POWERED, true),
+                state.set_value(POWERED, true),
                 UpdateFlags::UPDATE_CLIENTS,
             );
             if !should_turn_on {
@@ -231,14 +235,14 @@ impl DiodeBlock {
         pos: BlockPos,
         state: BlockStateId,
     ) {
-        let direction = state.get_value(&BlockStateProperties::HORIZONTAL_FACING);
+        let direction = state.get_value(HORIZONTAL_FACING);
         let opposite_pos = pos.relative(direction.opposite());
         world.neighbor_changed(opposite_pos, self.block);
         world.update_neighbors_at_except_from_facing(opposite_pos, self.block, direction);
     }
 
     pub(super) fn own_signal(state: BlockStateId, output_signal: i32) -> i32 {
-        if state.get_value(&BlockStateProperties::POWERED) {
+        if state.get_value(POWERED) {
             output_signal
         } else {
             0
@@ -246,7 +250,7 @@ impl DiodeBlock {
     }
 
     pub(super) fn signal(state: BlockStateId, direction: Direction, output_signal: i32) -> i32 {
-        if state.get_value(&BlockStateProperties::HORIZONTAL_FACING) == direction {
+        if state.get_value(HORIZONTAL_FACING) == direction {
             Self::own_signal(state, output_signal)
         } else {
             0

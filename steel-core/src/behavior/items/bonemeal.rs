@@ -4,12 +4,14 @@ use rand::RngExt;
 use steel_macros::item_behavior;
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt, shapes::is_offset_shape_full_block},
-    level_events, vanilla_blocks,
+    data_components::vanilla_components::USE_EFFECTS,
+    level_events, vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::{BlockPos, Direction, types::UpdateFlags};
 
 use crate::{
     behavior::{BLOCK_BEHAVIORS, InteractionResult, ItemBehavior, UseOnContext},
+    entity::Entity,
     world::{LevelReader as _, World},
 };
 
@@ -18,6 +20,18 @@ use crate::{
 pub struct BoneMealItem;
 
 impl BoneMealItem {
+    fn cause_finish_use_vibration(context: &UseOnContext<'_>) {
+        let interact_vibrations = context.inv.with_item(|item| {
+            item.get(USE_EFFECTS)
+                .is_some_and(|effects| effects.interact_vibrations)
+        });
+        if interact_vibrations {
+            context
+                .player
+                .game_event(&vanilla_game_events::ITEM_INTERACT_FINISH);
+        }
+    }
+
     fn grow(world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
         let Some(behavior) = BLOCK_BEHAVIORS.get_behavior_for_state(state) else {
@@ -102,6 +116,7 @@ impl ItemBehavior for BoneMealItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
         if Self::grow(context.world, context.hit_result.block_pos) {
             context.inv.with_item(|item| item.shrink(1));
+            Self::cause_finish_use_vibration(context);
             context.world.level_event(
                 level_events::PARTICLES_AND_SOUND_PLANT_GROWTH,
                 context.hit_result.block_pos,
@@ -127,6 +142,7 @@ impl ItemBehavior for BoneMealItem {
             )
         {
             context.inv.with_item(|item| item.shrink(1));
+            Self::cause_finish_use_vibration(context);
             context.world.level_event(
                 level_events::PARTICLES_AND_SOUND_PLANT_GROWTH,
                 context

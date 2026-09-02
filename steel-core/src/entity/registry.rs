@@ -170,24 +170,6 @@ impl EntityRegistry {
             .map(|f| f(entity_type, entity_id, pos, world))
     }
 
-    /// Creates an entity from persisted data and loads its type-specific NBT.
-    ///
-    /// Returns `None` if no load factory is registered for the entity type.
-    #[must_use]
-    pub fn create_and_load(
-        &self,
-        request: EntityLoadRequest,
-        nbt: &BorrowedNbtCompound<'_>,
-    ) -> Option<SharedEntity> {
-        let (entity_type, load) = request.into_base_load();
-        let id = entity_type.id();
-        let load_factory = self.entries.get(id)?.load_factory?;
-
-        let entity = load_factory(entity_type, load);
-        Self::finish_registered_load(&entity, nbt);
-        Some(entity)
-    }
-
     /// Creates an entity from persisted data, falling back to raw NBT preservation.
     #[must_use]
     pub fn create_and_load_or_raw(
@@ -215,15 +197,6 @@ impl EntityRegistry {
         let id = entity_type.id();
         self.entries.get(id).is_some_and(|e| e.factory.is_some())
     }
-
-    /// Returns whether a load factory is registered for the given type.
-    #[must_use]
-    pub fn has_load_factory(&self, entity_type: EntityTypeRef) -> bool {
-        let id = entity_type.id();
-        self.entries
-            .get(id)
-            .is_some_and(|e| e.load_factory.is_some())
-    }
 }
 
 impl Default for EntityRegistry {
@@ -249,6 +222,10 @@ impl EntityRegistryLock {
         self.0.set(registry)
     }
 
+    fn get_or_init(&self, init: impl FnOnce() -> EntityRegistry) -> &EntityRegistry {
+        self.0.get_or_init(init)
+    }
+
     /// Returns the initialized registry, if entity factories have been installed.
     #[must_use]
     pub fn get(&self) -> Option<&EntityRegistry> {
@@ -261,36 +238,13 @@ impl EntityRegistryLock {
 /// Access via deref: `ENTITIES.create(type, entity_id, pos)`
 pub static ENTITIES: EntityRegistryLock = EntityRegistryLock(OnceLock::new());
 
-/// Initializes the global entity registry.
-///
-/// This should be called once after the main registry is frozen.
-///
-/// # Panics
-///
-/// Panics if called more than once.
+/// Initializes the global entity registry, once the main registry is frozen.
 pub fn init_entities() {
-    let mut registry = EntityRegistry::new();
-    register_entity_factories(&mut registry);
-
-    assert!(
-        ENTITIES.set(registry).is_ok(),
-        "Entity registry already initialized"
-    );
-}
-
-#[cfg(test)]
-pub(crate) fn init_test_entities() {
-    use steel_registry::test_support::init_test_registry;
-
-    init_test_registry();
-
-    if ENTITIES.get().is_some() {
-        return;
-    }
-
-    let mut registry = EntityRegistry::new();
-    register_entity_factories(&mut registry);
-    let _ = ENTITIES.set(registry);
+    ENTITIES.get_or_init(|| {
+        let mut registry = EntityRegistry::new();
+        register_entity_factories(&mut registry);
+        registry
+    });
 }
 
 #[cfg(test)]
@@ -299,14 +253,14 @@ mod tests {
 
     use simdnbt::borrow::read_compound as read_borrowed_compound;
     use simdnbt::owned::NbtCompound;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::vanilla_entities;
 
     use super::*;
 
     #[test]
     fn registered_living_load_restores_current_head_and_body_yaw() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut registry = EntityRegistry::new();
         register_entity_factories(&mut registry);
         let mut bytes = Vec::new();
@@ -344,7 +298,7 @@ mod tests {
 
     #[test]
     fn create_and_load_or_raw_preserves_unregistered_entity_data() {
-        init_test_registry();
+        init_vanilla_registry();
         let registry = EntityRegistry::new();
         let mut nbt = NbtCompound::new();
         nbt.insert("SteelRawMarker", "raw");
@@ -392,7 +346,7 @@ mod tests {
 
     #[test]
     fn create_forwards_entity_type_to_factory() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut registry = EntityRegistry::new();
         registry.register(
             &vanilla_entities::OAK_BOAT,

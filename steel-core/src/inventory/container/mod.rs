@@ -201,8 +201,17 @@ pub trait Container: ErasedType + Send + Sync {
         true
     }
 
-    /// Returns true if the specified item can be taken from the specified slot.
-    fn can_take_item(&self, _slot: usize, _stack: &ItemStack) -> bool {
+    /// Returns true if the specified item can be taken from this slot into `destination`.
+    ///
+    /// The destination is part of Vanilla's `Container.canTakeItem` contract. Most
+    /// containers ignore it, while specialized containers such as chiseled
+    /// bookshelves use it to reject transfers that cannot fit at the destination.
+    fn can_take_item(
+        &self,
+        _destination: &dyn Container,
+        _slot: usize,
+        _stack: &ItemStack,
+    ) -> bool {
         true
     }
 
@@ -451,7 +460,7 @@ pub fn calculate_redstone_signal_from_containers(containers: &[&dyn Container]) 
 mod tests {
     use std::array;
 
-    use steel_registry::{test_support::init_test_registry, vanilla_items};
+    use steel_registry::{init_vanilla_registry, vanilla_items};
 
     use super::*;
     use steel_utils::{DowncastType, DowncastTypeKey};
@@ -558,7 +567,7 @@ mod tests {
 
     #[test]
     fn clear_or_count_matching_items_counts_without_mutating() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut container = TestContainer::new(3);
         container.set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
         container.set_item(1, ItemStack::with_count(&vanilla_items::DIRT, 4));
@@ -577,7 +586,7 @@ mod tests {
 
     #[test]
     fn clear_or_count_matching_items_applies_cap_in_slot_order() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut container = TestContainer::new(2);
         container.set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
         container.set_item(1, ItemStack::with_count(&vanilla_items::STONE, 4));
@@ -595,7 +604,7 @@ mod tests {
 
     #[test]
     fn clear_or_count_matching_items_removes_every_match_for_negative_limit() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut container = TestContainer::new(2);
         container.set_item(0, ItemStack::with_count(&vanilla_items::STONE, 3));
         container.set_item(1, ItemStack::with_count(&vanilla_items::STONE, 4));
@@ -612,7 +621,7 @@ mod tests {
 
     #[test]
     fn comparator_signal_uses_vanilla_discrete_non_empty_floor() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut container = TestContainer::new(27);
         container.set_item(0, ItemStack::new(&vanilla_items::STONE));
         assert_eq!(calculate_redstone_signal_from_container(&container), 1);
@@ -625,7 +634,7 @@ mod tests {
 
     #[test]
     fn compound_comparator_signal_uses_the_total_slot_count() {
-        init_test_registry();
+        init_vanilla_registry();
         let mut first = TestContainer::new(27);
         let second = TestContainer::new(27);
         for slot in 0..first.get_container_size() {

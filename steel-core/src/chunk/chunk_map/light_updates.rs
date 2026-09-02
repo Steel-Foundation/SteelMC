@@ -353,7 +353,7 @@ impl ChunkMap {
             true,
             |chunk_pos| {
                 let holder = self.light_update_holder(chunk_pos)?;
-                drop(holder.try_chunk(ChunkStatus::Light)?);
+                holder.try_chunk(ChunkStatus::Light)?;
                 Some(holder)
             },
             |_| true,

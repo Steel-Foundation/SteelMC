@@ -402,7 +402,7 @@ pub trait Animal: AgeableMob {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::{REGISTRY, test_support::init_test_registry, vanilla_blocks};
+    use steel_registry::{REGISTRY, init_vanilla_registry, vanilla_blocks};
     use steel_utils::BlockStateId;
 
     use super::*;
@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn animal_spawn_rules_require_spawnable_block_tag() {
-        init_test_registry();
+        init_vanilla_registry();
         let level = spawn_rule_level(vanilla_blocks::STONE.default_state(), 15);
 
         assert!(!<PigEntity as Animal>::check_animal_spawn_rules(
@@ -458,7 +458,7 @@ mod tests {
 
     #[test]
     fn animal_spawn_rules_require_raw_brightness_above_eight() {
-        init_test_registry();
+        init_vanilla_registry();
         let level = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 8);
 
         assert!(!<PigEntity as Animal>::check_animal_spawn_rules(
@@ -478,7 +478,7 @@ mod tests {
 
     #[test]
     fn animal_spawn_rules_trial_spawner_ignores_light() {
-        init_test_registry();
+        init_vanilla_registry();
         let level = spawn_rule_level(vanilla_blocks::GRASS_BLOCK.default_state(), 0);
 
         assert!(<PigEntity as Animal>::check_animal_spawn_rules(

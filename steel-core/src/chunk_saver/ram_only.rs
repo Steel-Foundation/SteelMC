@@ -3,7 +3,6 @@ use std::{io, sync::Weak};
 use rustc_hash::FxHashMap;
 use steel_utils::{ChunkPos, locks::AsyncRwLock};
 
-use crate::chunk::chunk_access::ChunkStatus;
 use crate::world::World;
 
 use super::{ChunkStorage, LoadedChunk, PreparedChunkSave};
@@ -22,15 +21,13 @@ pub struct RamOnlyStorage {
     saved_chunks: AsyncRwLock<FxHashMap<ChunkPos, SimpleRAMChunk>>,
 }
 
-/// Represents a simple in-memory chunk containing a prepared chunk save and its status.
+/// Represents a simple in-memory prepared chunk save.
 ///
 /// This structure is used to manage the in-memory representation of a chunk in a system,
 /// including its saved data and current processing or usage status.
 pub struct SimpleRAMChunk {
     /// A `PreparedChunkSave` instance that holds the saved state of the chunk.
     pub prepared: PreparedChunkSave,
-    /// A `ChunkStatus` value representing the current status of the chunk.
-    pub chunk_status: ChunkStatus,
 }
 
 impl RamOnlyStorage {
@@ -54,14 +51,14 @@ impl RamOnlyStorage {
     ) -> io::Result<Option<LoadedChunk>> {
         if let Ok(true) = self.chunk_exists(pos).await {
             if let Some(storage) = self.saved_chunks.read().await.get(&pos) {
-                Ok(Some(ChunkStorage::persistent_to_chunk(
+                Ok(Some(ChunkStorage::try_persistent_to_chunk(
                     &storage.prepared.persistent,
                     pos,
-                    storage.chunk_status,
+                    storage.prepared.status,
                     min_y,
                     height,
                     level,
-                )))
+                )?))
             } else {
                 Ok(None)
             }
@@ -71,20 +68,13 @@ impl RamOnlyStorage {
     }
 
     /// Saves prepared chunk data to storage.
-    pub async fn save_chunk_data(
-        &self,
-        prepared: PreparedChunkSave,
-        status: ChunkStatus,
-    ) -> io::Result<bool> {
+    pub async fn save_chunk_data(&self, prepared: PreparedChunkSave) -> io::Result<bool> {
         // Just track that this chunk has been saved
-        // The actual data is in the live World/ChunkAccess, not persisted
-        self.saved_chunks.write().await.insert(
-            prepared.pos,
-            SimpleRAMChunk {
-                prepared,
-                chunk_status: status,
-            },
-        );
+        // The actual data is in the live World/Chunk, not persisted
+        self.saved_chunks
+            .write()
+            .await
+            .insert(prepared.pos, SimpleRAMChunk { prepared });
         Ok(true)
     }
 

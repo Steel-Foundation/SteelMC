@@ -52,6 +52,7 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
  - Use `Result` for recoverable failures; panic only for impossible or fatal states.
  - Don't multithread something unless you can explain why it needs multithreading.
  - Don't use async unless you need disk or network I/O.
+ - Game ticks must never wait for async work or sleep/poll in a loop; use the server job system, or get explicit approval for rare vanilla divergence.
  - `// TODO:` comments are fine for non-foundational follow-up work. Don't use TODOs to hide missing foundations, skipped vanilla behavior, or incomplete shared interfaces that implementations depend on.
  - Keep comments concise.
  - After fixing something, don't leave a comment that only explains the old bug.

@@ -250,6 +250,7 @@ impl<T: TickKey> TickList<T> {
 
     /// Packs pending entries followed by live entries in Vanilla saved-list order.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn pack(&self, current_tick: i64) -> Vec<SavedTick<T>> {
         self.packing_snapshot().pack(current_tick)
     }

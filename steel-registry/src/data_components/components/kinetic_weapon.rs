@@ -465,7 +465,7 @@ mod tests {
 
     use super::{KineticWeapon, KineticWeaponCondition};
     use crate::data_components::vanilla_components::KINETIC_WEAPON;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse(tag: simdnbt::owned::NbtTag) -> Option<KineticWeapon> {
@@ -537,7 +537,7 @@ mod tests {
 
     #[test]
     fn extracted_netherite_spear_keeps_kinetic_thresholds_and_sounds() {
-        init_test_registry();
+        init_vanilla_registry();
         let spear = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("netherite_spear"))

@@ -30,9 +30,7 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
             .executes(|context| summon_entity(context, context.source().position()))
             .then(
                 argument("pos", SteelArgumentType::vec3(true)).executes(|context| {
-                    let Some(position) = context.coordinates("pos") else {
-                        return Err(missing_argument("pos"));
-                    };
+                    let position = context.coordinates("pos")?;
                     summon_entity(context, position.position(context.source()))
                 }),
             ),
@@ -45,9 +43,7 @@ fn summon_entity(
     context: &SteelCommandContext<CommandSource>,
     position: DVec3,
 ) -> Result<i32, CommandSyntaxError> {
-    let Some(entity_type) = context.entity_type("entity") else {
-        return Err(missing_argument("entity"));
-    };
+    let entity_type = context.entity_type("entity")?;
     let entity = create_entity(context, entity_type, position)?;
     let message = translations::COMMANDS_SUMMON_SUCCESS
         .message([entity.display_name()])
@@ -100,21 +96,13 @@ fn command_failed(translation: &'static Translation<0>) -> CommandSyntaxError {
     CommandSyntaxError::dynamic(TextComponent::from(translation))
 }
 
-fn missing_argument(name: &str) -> CommandSyntaxError {
-    CommandSyntaxError::dynamic(format!(
-        "Parsed value for {name} is missing from the command context"
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::create_dispatcher;
-    use crate::{
-        command::{
-            brigadier::{CommandDispatcher, NodeId},
-            execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
-        },
-        entity::init_test_entities,
+    use crate::bootstrap::init_globals_once;
+    use crate::command::{
+        brigadier::{CommandDispatcher, NodeId},
+        execution::{CommandSource, SteelArgumentType, SteelCommandRuntime},
     };
 
     type Dispatcher = CommandDispatcher<CommandSource, SteelCommandRuntime>;
@@ -135,7 +123,7 @@ mod tests {
 
     #[test]
     fn summon_graph_uses_typed_entity_and_deferred_position_arguments() {
-        init_test_entities();
+        init_globals_once();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };

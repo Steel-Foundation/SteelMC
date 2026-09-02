@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use steel_macros::block_behavior;
+use steel_registry::blocks::properties::{BoolProperty, EnumProperty};
 use steel_registry::blocks::{
     BlockRef, block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
     properties::Direction, shapes::VoxelShape,
@@ -31,6 +32,14 @@ pub struct TripWireBlock {
     hook: BlockRef,
 }
 
+const DISARMED: &BoolProperty = &BlockStateProperties::DISARMED;
+const EAST: &BoolProperty = &BlockStateProperties::EAST;
+const HORIZONTAL_FACING: &EnumProperty<Direction> = &BlockStateProperties::HORIZONTAL_FACING;
+const NORTH: &BoolProperty = &BlockStateProperties::NORTH;
+const POWERED: &BoolProperty = &BlockStateProperties::POWERED;
+const SOUTH: &BoolProperty = &BlockStateProperties::SOUTH;
+const WEST: &BoolProperty = &BlockStateProperties::WEST;
+
 impl TripWireBlock {
     /// Creates tripwire behavior.
     #[must_use]
@@ -40,7 +49,7 @@ impl TripWireBlock {
 
     fn should_connect_to(&self, state: BlockStateId, direction: Direction) -> bool {
         if state.get_block() == self.hook {
-            state.get_value(&BlockStateProperties::HORIZONTAL_FACING) == direction.opposite()
+            state.get_value(HORIZONTAL_FACING) == direction.opposite()
         } else {
             state.get_block() == self.block
         }
@@ -48,10 +57,10 @@ impl TripWireBlock {
 
     fn set_connection(state: BlockStateId, direction: Direction, connected: bool) -> BlockStateId {
         match direction {
-            Direction::North => state.set_value(&BlockStateProperties::NORTH, connected),
-            Direction::East => state.set_value(&BlockStateProperties::EAST, connected),
-            Direction::South => state.set_value(&BlockStateProperties::SOUTH, connected),
-            Direction::West => state.set_value(&BlockStateProperties::WEST, connected),
+            Direction::North => state.set_value(NORTH, connected),
+            Direction::East => state.set_value(EAST, connected),
+            Direction::South => state.set_value(SOUTH, connected),
+            Direction::West => state.set_value(WEST, connected),
             Direction::Up | Direction::Down => state,
         }
     }
@@ -62,9 +71,7 @@ impl TripWireBlock {
                 let test_pos = pos.relative_n(direction, distance);
                 let test_state = world.get_block_state(test_pos);
                 if test_state.get_block() == self.hook {
-                    if test_state.get_value(&BlockStateProperties::HORIZONTAL_FACING)
-                        == direction.opposite()
-                    {
+                    if test_state.get_value(HORIZONTAL_FACING) == direction.opposite() {
                         TripWireHookBlock::calculate_state(
                             world,
                             test_pos,
@@ -103,9 +110,9 @@ impl TripWireBlock {
 
     fn set_pressed(&self, world: &Arc<World>, pos: BlockPos, should_be_pressed: bool) {
         let mut state = world.get_block_state(pos);
-        let was_pressed = state.get_value(&BlockStateProperties::POWERED);
+        let was_pressed = state.get_value(POWERED);
         if should_be_pressed != was_pressed {
-            state = state.set_value(&BlockStateProperties::POWERED, should_be_pressed);
+            state = state.set_value(POWERED, should_be_pressed);
             world.set_block(pos, state, UpdateFlags::UPDATE_ALL);
             self.update_source(world, pos, state);
         }
@@ -181,11 +188,7 @@ impl BlockBehavior for TripWireBlock {
         moved_by_piston: bool,
     ) {
         if !moved_by_piston {
-            self.update_source(
-                world,
-                pos,
-                state.set_value(&BlockStateProperties::POWERED, true),
-            );
+            self.update_source(world, pos, state.set_value(POWERED, true));
         }
     }
 
@@ -204,7 +207,7 @@ impl BlockBehavior for TripWireBlock {
         if held_shears {
             world.set_block(
                 pos,
-                state.set_value(&BlockStateProperties::DISARMED, true),
+                state.set_value(DISARMED, true),
                 UpdateFlags::UPDATE_NONE,
             );
             world.game_event(
@@ -235,18 +238,13 @@ impl BlockBehavior for TripWireBlock {
         _effect_collector: &mut InsideBlockEffectCollector,
         _is_precise: bool,
     ) {
-        if !state.get_value(&BlockStateProperties::POWERED)
-            && !world.has_scheduled_block_tick(pos, self.block)
-        {
+        if !state.get_value(POWERED) && !world.has_scheduled_block_tick(pos, self.block) {
             self.check_pressed_for_entity(world, pos, entity);
         }
     }
 
     fn tick(&self, _state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        if world
-            .get_block_state(pos)
-            .get_value(&BlockStateProperties::POWERED)
-        {
+        if world.get_block_state(pos).get_value(POWERED) {
             self.check_pressed(world, pos);
         }
     }
@@ -257,7 +255,7 @@ mod tests {
     use std::sync::Arc;
 
     use glam::DVec3;
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
     use steel_registry::{vanilla_blocks, vanilla_entities};
     use steel_utils::ChunkPos;
 
@@ -269,7 +267,7 @@ mod tests {
 
     #[test]
     fn entity_inside_powers_wire_and_attached_hooks() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let world = fresh_test_world("tripwire_entity_inside");
         let left = BlockPos::new(5, 64, 8);
@@ -288,10 +286,10 @@ mod tests {
         ));
         let left_state = vanilla_blocks::TRIPWIRE_HOOK
             .default_state()
-            .set_value(&BlockStateProperties::HORIZONTAL_FACING, Direction::East);
+            .set_value(HORIZONTAL_FACING, Direction::East);
         let right_state = vanilla_blocks::TRIPWIRE_HOOK
             .default_state()
-            .set_value(&BlockStateProperties::HORIZONTAL_FACING, Direction::West);
+            .set_value(HORIZONTAL_FACING, Direction::West);
         assert!(world.set_block(left, left_state, UpdateFlags::UPDATE_NONE));
         assert!(world.set_block(right, right_state, UpdateFlags::UPDATE_NONE));
         assert!(world.set_block(
@@ -319,21 +317,9 @@ mod tests {
                 true,
             );
 
-        assert!(
-            world
-                .get_block_state(wire_pos)
-                .get_value(&BlockStateProperties::POWERED)
-        );
-        assert!(
-            world
-                .get_block_state(left)
-                .get_value(&BlockStateProperties::POWERED)
-        );
-        assert!(
-            world
-                .get_block_state(right)
-                .get_value(&BlockStateProperties::POWERED)
-        );
+        assert!(world.get_block_state(wire_pos).get_value(POWERED));
+        assert!(world.get_block_state(left).get_value(POWERED));
+        assert!(world.get_block_state(right).get_value(POWERED));
         assert!(world.has_scheduled_block_tick(wire_pos, &vanilla_blocks::TRIPWIRE));
     }
 }

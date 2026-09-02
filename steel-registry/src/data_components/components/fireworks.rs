@@ -489,7 +489,7 @@ mod tests {
 
     use super::{FireworkExplosion, FireworkExplosionShape, Fireworks};
     use crate::data_components::vanilla_components::FIREWORKS;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse<T: simdnbt::FromNbtTag>(tag: NbtTag) -> Option<T> {
@@ -585,7 +585,7 @@ mod tests {
 
     #[test]
     fn extracted_firework_rocket_has_one_unit_of_flight() {
-        init_test_registry();
+        init_vanilla_registry();
         let rocket = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("firework_rocket"))

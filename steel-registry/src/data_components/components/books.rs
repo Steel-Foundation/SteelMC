@@ -597,7 +597,7 @@ mod tests {
 
     use super::{Filterable, WritableBookContent, WrittenBookContent};
     use crate::data_components::vanilla_components::WRITABLE_BOOK_CONTENT;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, RegistryExt};
 
     fn parse<T: simdnbt::FromNbtTag>(tag: simdnbt::owned::NbtTag) -> Option<T> {
@@ -661,7 +661,7 @@ mod tests {
 
     #[test]
     fn extracted_writable_book_starts_with_empty_pages() {
-        init_test_registry();
+        init_vanilla_registry();
         let item = REGISTRY
             .items
             .by_key(&steel_utils::Identifier::vanilla_static("writable_book"))

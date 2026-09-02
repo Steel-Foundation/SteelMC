@@ -5,12 +5,14 @@ use std::{
 
 use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem};
 use steel_registry::item_stack::ItemStack;
-use steel_registry::{entity_type::EntityTypeRef, test_support, vanilla_entities, vanilla_items};
+use steel_registry::{
+    entity_type::EntityTypeRef, init_vanilla_registry, vanilla_entities, vanilla_items,
+};
 use steel_utils::BlockPos;
 
 use super::*;
 use crate::entity::{
-    EntityBase, Mob,
+    EntityBase, LivingEntity, LivingEntityBase,
     entities::{LeashFenceKnotEntity, PigEntity},
 };
 use crate::inventory::equipment::EquipmentSlot;
@@ -18,6 +20,7 @@ use crate::inventory::equipment::EquipmentSlot;
 struct PairingTestEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
+    living_base: LivingEntityBase,
     attributes: Vec<AttributeSnapshot>,
     dirty_attributes: SyncMutex<Vec<AttributeSnapshot>>,
     equipment: SyncMutex<Vec<EquipmentSlotItem>>,
@@ -39,6 +42,7 @@ impl PairingTestEntity {
         Arc::new(Self {
             base: EntityBase::new(id, DVec3::ZERO, entity_type.dimensions, Weak::new()),
             entity_type,
+            living_base: LivingEntityBase::new(&vanilla_entities::PIG),
             attributes,
             dirty_attributes: SyncMutex::new(Vec::new()),
             equipment: SyncMutex::new(Vec::new()),
@@ -88,22 +92,6 @@ impl Entity for PairingTestEntity {
         self.entity_type
     }
 
-    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        self.attributes.clone()
-    }
-
-    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
-        mem::take(&mut *self.dirty_attributes.lock())
-    }
-
-    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
-        self.equipment.lock().clone()
-    }
-
-    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
-        mem::take(&mut *self.dirty_equipment.lock())
-    }
-
     fn vehicle(&self) -> Option<SharedEntity> {
         self.vehicle.lock().as_ref().and_then(Weak::upgrade)
     }
@@ -118,6 +106,34 @@ impl Entity for PairingTestEntity {
             true
         });
         live_passengers
+    }
+}
+
+impl LivingEntity for PairingTestEntity {
+    fn living_base(&self) -> &LivingEntityBase {
+        &self.living_base
+    }
+
+    fn get_health(&self) -> f32 {
+        20.0
+    }
+
+    fn set_health(&self, _health: f32) {}
+
+    fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        self.attributes.clone()
+    }
+
+    fn drain_dirty_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
+        mem::take(&mut *self.dirty_attributes.lock())
+    }
+
+    fn pack_all_equipment(&self) -> Vec<EquipmentSlotItem> {
+        self.equipment.lock().clone()
+    }
+
+    fn drain_dirty_equipment(&self) -> Vec<EquipmentSlotItem> {
+        mem::take(&mut *self.dirty_equipment.lock())
     }
 }
 

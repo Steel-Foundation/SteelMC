@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use crate::chunk::{
-    chunk_access::ChunkStatus,
     chunk_generation_task::StaticCache2D,
     chunk_holder::ChunkHolder,
     chunk_pyramid::ChunkStep,
@@ -11,6 +10,7 @@ use crate::chunk::{
         check_sky_light_chunk_edges, force_load_block_light_chunk, force_load_sky_light_chunk,
         propagate_block_light_chunk, propagate_sky_light_chunk,
     },
+    status::ChunkStatus,
 };
 use crate::worldgen::generator::context::WorldGenContext;
 use steel_utils::SectionPos;
@@ -88,7 +88,7 @@ fn run_light_stage(
                 .then(|| Arc::clone(holder))
         },
         |cached_chunk, holder, _chunk| {
-            let status = holder.persisted_status();
+            let status = holder.published_status();
             let center_chunk = cached_chunk.chunk_pos == center;
             let initialized = status.is_some_and(|status| status >= ChunkStatus::InitializeLight);
             let lit = status.is_some_and(|status| status >= ChunkStatus::Light);
@@ -197,24 +197,23 @@ mod tests {
 
     use steel_registry::{
         blocks::{block_state_ext::BlockStateExt as _, properties::BlockStateProperties},
-        test_support::init_test_registry,
-        vanilla_blocks, vanilla_fluids,
+        init_vanilla_registry, vanilla_blocks, vanilla_fluids,
     };
     use steel_utils::{BlockPos, ChunkPos};
 
     use super::*;
     use crate::behavior::init_behaviors;
     use crate::chunk::{
-        chunk_access::{ChunkAccess, ChunkStatus},
+        Chunk,
         chunk_ticket_manager::ChunkTicketLevel,
         light::{LightSection, LightSectionData},
-        proto_chunk::ProtoChunk,
         section::{ChunkSection, Sections},
+        status::ChunkStatus,
     };
     use crate::world::tick_scheduler::TickPriority;
 
     fn init_tests() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
     }
 
@@ -224,7 +223,7 @@ mod tests {
         section: ChunkSection,
     ) -> Arc<ChunkHolder> {
         let sections = Sections::from_owned(vec![section].into_boxed_slice());
-        let proto = ProtoChunk::new(sections, pos, 0, 16, Weak::new());
+        let proto = Chunk::new(sections, pos, 0, 16, Weak::new());
         proto.initialize_light_sources();
         let holder = Arc::new(ChunkHolder::new(
             pos,
@@ -233,7 +232,7 @@ mod tests {
             0,
             16,
         ));
-        holder.insert_chunk(ChunkAccess::Proto(proto), status);
+        holder.insert_chunk(proto, status);
         holder
     }
 
@@ -293,12 +292,9 @@ mod tests {
         let Some(chunk) = holder.try_chunk(ChunkStatus::Empty) else {
             panic!("test chunk should be available");
         };
-        let ChunkAccess::Proto(proto) = &*chunk else {
-            panic!("test chunk should remain proto");
-        };
-        proto.schedule_block_tick(leaf_pos, &vanilla_blocks::OAK_LEAVES, TickPriority::Normal);
-        proto.schedule_block_tick(other_pos, &vanilla_blocks::STONE, TickPriority::Low);
-        proto.schedule_fluid_tick(leaf_pos, &vanilla_fluids::WATER, TickPriority::Normal);
+        chunk.schedule_block_tick(leaf_pos, &vanilla_blocks::OAK_LEAVES, TickPriority::Normal);
+        chunk.schedule_block_tick(other_pos, &vanilla_blocks::STONE, TickPriority::Low);
+        chunk.schedule_fluid_tick(leaf_pos, &vanilla_fluids::WATER, TickPriority::Normal);
     }
 
     fn block_state(holder: &ChunkHolder, pos: BlockPos) -> steel_utils::BlockStateId {
@@ -345,7 +341,7 @@ mod tests {
 
         let (sky_updates, block_updates) = run_light_stage(&cache, &center_holder, false);
 
-        assert!(sky_updates.is_empty());
+        assert_eq!(sky_updates.len(), 0);
         assert!(block_updates.contains(&SectionPos::new(0, 0, 0)));
         assert_eq!(
             light_value(&center_holder, LightLayer::Block, source_pos),
@@ -405,15 +401,16 @@ mod tests {
         let Some(chunk) = center_holder.try_chunk(ChunkStatus::Empty) else {
             panic!("test chunk should be available");
         };
-        let ChunkAccess::Proto(proto) = &*chunk else {
-            panic!("test chunk should remain proto");
+        let Some(block_ticks) = chunk.scheduled_ticks.pending_block_snapshot() else {
+            panic!("proto chunk scheduled ticks should remain pending");
         };
-        let block_ticks = proto.block_ticks.lock();
-        assert_eq!(block_ticks.pending_entries().len(), 1);
-        assert_eq!(block_ticks.pending_entries()[0].pos, other_tick_pos);
-        drop(block_ticks);
-        assert_eq!(proto.fluid_ticks.lock().pending_entries().len(), 1);
-        assert!(!proto.sections.sections[0].read().is_randomly_ticking());
+        assert_eq!(block_ticks.len(), 1);
+        assert_eq!(block_ticks[0].pos, other_tick_pos);
+        let Some(fluid_ticks) = chunk.scheduled_ticks.pending_fluid_snapshot() else {
+            panic!("proto chunk scheduled ticks should remain pending");
+        };
+        assert_eq!(fluid_ticks.len(), 1);
+        assert!(!chunk.sections.sections[0].read().is_randomly_ticking());
     }
 
     #[test]
@@ -429,7 +426,7 @@ mod tests {
 
         let (sky_updates, _block_updates) = run_loaded_light_stage(&cache, &center_holder, false);
 
-        assert!(sky_updates.is_empty());
+        assert_eq!(sky_updates.len(), 0);
         assert_eq!(light_value(&center_holder, LightLayer::Block, block_pos), 7);
     }
 
@@ -444,11 +441,7 @@ mod tests {
         let Some(chunk) = center_holder.try_chunk(ChunkStatus::Empty) else {
             panic!("test chunk should be available");
         };
-        let ChunkAccess::Proto(proto) = &*chunk else {
-            panic!("test chunk should remain proto");
-        };
-        proto.schedule_block_tick(leaf_pos, &vanilla_blocks::OAK_LEAVES, TickPriority::Normal);
-        drop(chunk);
+        chunk.schedule_block_tick(leaf_pos, &vanilla_blocks::OAK_LEAVES, TickPriority::Normal);
         let cache = cache_with_center(center_pos, &center_holder, ChunkStatus::Light);
 
         let _ = run_loaded_light_stage(&cache, &center_holder, false);
@@ -456,10 +449,10 @@ mod tests {
         let Some(chunk) = center_holder.try_chunk(ChunkStatus::Empty) else {
             panic!("test chunk should be available");
         };
-        let ChunkAccess::Proto(proto) = &*chunk else {
-            panic!("test chunk should remain proto");
+        let Some(block_ticks) = chunk.scheduled_ticks.pending_block_snapshot() else {
+            panic!("proto chunk scheduled ticks should remain pending");
         };
-        assert_eq!(proto.block_ticks.lock().pending_entries().len(), 1);
+        assert_eq!(block_ticks.len(), 1);
     }
 
     #[test]

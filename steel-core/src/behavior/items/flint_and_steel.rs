@@ -11,7 +11,7 @@ use steel_registry::{
     sound_events, vanilla_game_events,
 };
 use steel_utils::types::UpdateFlags;
-use steel_utils::{BlockPos, BlockStateId, Direction};
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::entity::Entity;
 use crate::world::game_event::GameEventContext;
@@ -39,8 +39,7 @@ impl ItemBehavior for FlintAndSteelItem {
         }
 
         let fire_pos = click_pos.relative(context.hit_result.direction);
-        let (yaw, _) = context.player.rotation();
-        let forward_dir = Direction::from_yaw(yaw);
+        let forward_dir = context.player.direction_yaw();
 
         if !FireBlock::can_be_placed_at(context.world, fire_pos, forward_dir) {
             return InteractionResult::Fail;
@@ -94,8 +93,7 @@ impl ItemBehavior for FireChargeItem {
         }
 
         let fire_pos = click_pos.relative(context.hit_result.direction);
-        let (yaw, _) = context.player.rotation();
-        let forward_dir = Direction::from_yaw(yaw);
+        let forward_dir = context.player.direction_yaw();
 
         if !FireBlock::can_be_placed_at(context.world, fire_pos, forward_dir) {
             return InteractionResult::Fail;
@@ -186,15 +184,14 @@ fn fire_charge_pitch() -> f32 {
 mod tests {
     use steel_registry::{
         blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
-        test_support::init_test_registry,
-        vanilla_blocks,
+        init_vanilla_registry, vanilla_blocks,
     };
 
     use super::can_light;
 
     #[test]
     fn can_light_rejects_waterlogged_campfires_and_candles() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let waterlogged_campfire = vanilla_blocks::CAMPFIRE
             .default_state()
@@ -217,7 +214,7 @@ mod tests {
 
     #[test]
     fn can_light_accepts_unlit_candle_cakes() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let unlit_candle_cake = vanilla_blocks::CANDLE_CAKE
             .default_state()

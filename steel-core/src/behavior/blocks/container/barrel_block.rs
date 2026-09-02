@@ -25,7 +25,7 @@ use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::vanilla_block_entity_types;
+use steel_registry::{vanilla_block_entity_types, vanilla_custom_stats};
 use steel_utils::Downcast as _;
 use steel_utils::{BlockPos, BlockStateId};
 
@@ -230,7 +230,8 @@ impl BlockBehavior for BarrelBlock {
     ) -> InteractionResult {
         if let Some(provider) = self.get_menu_provider(state, world, pos) {
             player.open_menu_provider(provider);
-            // TODO: Award OPEN_BARREL and anger nearby piglins once those systems exist.
+            player.award_custom_stat(&vanilla_custom_stats::OPEN_BARREL);
+            // TODO: Anger nearby piglins (PiglinAi.angerNearbyPiglins)
         }
         InteractionResult::Success
     }
@@ -367,7 +368,9 @@ mod tests {
         block_entity.load_additional(&borrowed);
 
         let player =
-            TestPlayerBuilder::new(Arc::clone(&world), Uuid::from_u128(1), "Explorer", 1).build();
+            TestPlayerBuilder::new(Arc::clone(&world), "Explorer", 1)
+                .uuid(Uuid::from_u128(1))
+                .build();
         player.base().set_position_local(DVec3::new(3.5, 64.0, 3.5));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let hit = BlockHitResult {

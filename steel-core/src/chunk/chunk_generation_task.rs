@@ -16,10 +16,10 @@ use steel_utils::{ChunkPos, locks::SyncMutex};
 use tokio_util::sync::CancellationToken;
 
 use crate::chunk::{
-    chunk_access::ChunkStatus,
     chunk_holder::ChunkHolder,
     chunk_map::ChunkMap,
     chunk_pyramid::{GENERATION_PYRAMID, LOADING_PYRAMID},
+    status::ChunkStatus,
 };
 
 /// A pre-filled 2D cache of elements, efficient for async creation.
@@ -201,11 +201,11 @@ impl ChunkGenerationTask {
         needs_generation: bool,
         chunk_holder: &Arc<ChunkHolder>,
     ) -> bool {
-        let persisted_status = chunk_holder.persisted_status();
+        let published_status = chunk_holder.published_status();
 
         let generate;
-        if let Some(persisted_status) = persisted_status {
-            generate = status > persisted_status;
+        if let Some(published_status) = published_status {
+            generate = status > published_status;
         } else {
             generate = true;
         }
@@ -296,7 +296,7 @@ impl ChunkGenerationTask {
             return true;
         }
         let center = self.cache.get(self.pos.0.x, self.pos.0.y);
-        let highest_generated_status = center.persisted_status();
+        let highest_generated_status = center.published_status();
 
         if let Some(highest_status) = highest_generated_status {
             if highest_status < self.target_status {
@@ -313,8 +313,8 @@ impl ChunkGenerationTask {
                     let distance = max((self.pos.0.x - x).abs(), (self.pos.0.y - z).abs()) as usize;
                     if let Some(required_status) = dependencies.get(distance) {
                         let neighbor = self.cache.get(x, z);
-                        let persisted = neighbor.persisted_status();
-                        if persisted < Some(required_status) {
+                        let published = neighbor.published_status();
+                        if published < Some(required_status) {
                             return false;
                         }
                     }

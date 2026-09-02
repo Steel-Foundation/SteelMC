@@ -1,13 +1,17 @@
 use crate::behavior::blocks::vegetation::bonemealable::{BonemealAction, Bonemealable};
-use crate::behavior::blocks::vegetation::nether_vines_get_blocks_to_grow_when_bonemealed;
+use crate::behavior::blocks::vegetation::nether_vines;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{
-    block::BlockBehavior, blocks::vegetation::growing_plant_head_block::GrowingPlantHeadBlock,
+    block::BlockBehavior,
+    blocks::vegetation::growing_plant_head_block::{
+        GrowingPlantHeadBehavior, GrowingPlantHeadBlock,
+    },
 };
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 use rand::Rng;
 use std::sync::Arc;
 use steel_macros::block_behavior;
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
@@ -16,35 +20,38 @@ use super::BlockRef;
 /// Vanilla `TwistingVinesBlock` (head) survival.
 #[block_behavior]
 pub struct TwistingVinesBlock {
-    block: BlockRef,
+    base: GrowingPlantHeadBlock,
 }
 
 impl TwistingVinesBlock {
     /// Creates a new twisting vines (head) block behavior.
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
-        Self { block }
+        Self {
+            base: GrowingPlantHeadBlock::new(
+                block,
+                Direction::Up,
+                false,
+                0.1,
+                &vanilla_blocks::TWISTING_VINES_PLANT,
+                Some(nether_vines::get_blocks_to_grow_when_bonemealed),
+                Self::can_grow_into,
+            ),
+        }
     }
-    const fn growing_plant_head_block(&self) -> GrowingPlantHeadBlock {
-        GrowingPlantHeadBlock::new(
-            self.block,
-            Direction::Up,
-            false,
-            0.1,
-            &vanilla_blocks::TWISTING_VINES_PLANT,
-            Some(nether_vines_get_blocks_to_grow_when_bonemealed),
-        )
+
+    fn can_grow_into(state: BlockStateId) -> bool {
+        state.is_air()
     }
 }
 
 impl BlockBehavior for TwistingVinesBlock {
     fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        self.growing_plant_head_block()
-            .can_survive(state, world, pos)
+        self.base.can_survive(state, world, pos)
     }
+
     fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_head_block()
-            .random_tick(state, world, pos);
+        self.base.random_tick(state, world, pos);
     }
 
     fn update_shape(
@@ -56,25 +63,24 @@ impl BlockBehavior for TwistingVinesBlock {
         neighbor_pos: BlockPos,
         neighbor_state: BlockStateId,
     ) -> BlockStateId {
-        self.growing_plant_head_block().update_shape(
-            state,
-            world,
-            pos,
-            direction,
-            neighbor_pos,
-            neighbor_state,
-        )
+        self.base
+            .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
     }
+
     fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
-        self.growing_plant_head_block().tick(state, world, pos);
+        self.base.tick(state, world, pos);
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
-        self.growing_plant_head_block()
-            .get_state_for_placement(context)
+        self.base.get_state_for_placement(context)
     }
+
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
         Some(self)
+    }
+
+    fn as_growing_plant_head(&self) -> Option<&dyn GrowingPlantHeadBehavior> {
+        Some(&self.base)
     }
 }
 impl Bonemealable for TwistingVinesBlock {
@@ -84,8 +90,7 @@ impl Bonemealable for TwistingVinesBlock {
         world: &dyn LevelReader,
         pos: BlockPos,
     ) -> bool {
-        self.growing_plant_head_block()
-            .is_valid_bonemeal_target(state, world, pos)
+        self.base.is_valid_bonemeal_target(state, world, pos)
     }
 
     fn perform_bonemeal(
@@ -95,8 +100,7 @@ impl Bonemealable for TwistingVinesBlock {
         rng: &mut dyn Rng,
         pos: BlockPos,
     ) {
-        self.growing_plant_head_block()
-            .perform_bonemeal(state, world, rng, pos);
+        self.base.perform_bonemeal(state, world, rng, pos);
     }
 
     fn bonemeal_action_type(&self) -> BonemealAction {
@@ -106,14 +110,14 @@ impl Bonemealable for TwistingVinesBlock {
 
 #[cfg(test)]
 mod tests {
-    use steel_registry::test_support::init_test_registry;
+    use steel_registry::init_vanilla_registry;
 
     use super::*;
     use crate::test_support::TestLevel;
 
     #[test]
     fn bonemeal_target_requires_open_growth_position() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = TwistingVinesBlock::new(&vanilla_blocks::TWISTING_VINES);
         let state = vanilla_blocks::TWISTING_VINES.default_state();
@@ -129,7 +133,7 @@ mod tests {
 
     #[test]
     fn connected_head_converts_to_body() {
-        init_test_registry();
+        init_vanilla_registry();
 
         let behavior = TwistingVinesBlock::new(&vanilla_blocks::TWISTING_VINES);
         let state = vanilla_blocks::TWISTING_VINES.default_state();

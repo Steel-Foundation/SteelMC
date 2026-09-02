@@ -17,10 +17,8 @@ impl World {
         let trigger_tick = self.game_time().wrapping_add(i64::from(delay));
         let order = self.scheduled_ticks.next_sub_tick_order();
         let chunk_pos = Self::chunk_pos_for_block(pos);
-        self.chunk_map.with_full_chunk(chunk_pos, |chunk_access| {
-            if let Some(chunk) = chunk_access.as_full() {
-                chunk.schedule_block_tick(pos, block, trigger_tick, priority, order);
-            }
+        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
+            chunk.schedule_block_tick(pos, block, trigger_tick, priority, order);
         });
     }
 
@@ -44,10 +42,8 @@ impl World {
         let trigger_tick = self.game_time().wrapping_add(i64::from(delay));
         let order = self.scheduled_ticks.next_sub_tick_order();
         let chunk_pos = Self::chunk_pos_for_block(pos);
-        self.chunk_map.with_full_chunk(chunk_pos, |chunk_access| {
-            if let Some(chunk) = chunk_access.as_full() {
-                chunk.schedule_fluid_tick(pos, fluid, trigger_tick, priority, order);
-            }
+        self.chunk_map.with_full_chunk(chunk_pos, |chunk| {
+            chunk.schedule_fluid_tick(pos, fluid, trigger_tick, priority, order);
         });
     }
 
@@ -65,10 +61,7 @@ impl World {
     pub fn has_scheduled_block_tick(&self, pos: BlockPos, block: BlockRef) -> bool {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
-            .with_full_chunk(chunk_pos, |chunk_access| {
-                let Some(chunk) = chunk_access.as_full() else {
-                    return false;
-                };
+            .with_full_chunk(chunk_pos, |chunk| {
                 match chunk.has_scheduled_block_tick(pos, block) {
                     Ok(has_tick) => has_tick,
                     Err(error) => {
@@ -88,10 +81,7 @@ impl World {
     pub fn has_scheduled_fluid_tick(&self, pos: BlockPos, fluid: FluidRef) -> bool {
         let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
-            .with_full_chunk(chunk_pos, |chunk_access| {
-                let Some(chunk) = chunk_access.as_full() else {
-                    return false;
-                };
+            .with_full_chunk(chunk_pos, |chunk| {
                 match chunk.has_scheduled_fluid_tick(pos, fluid) {
                     Ok(has_tick) => has_tick,
                     Err(error) => {
@@ -104,7 +94,7 @@ impl World {
 
     pub(crate) fn register_full_chunk_ticks(
         &self,
-        chunk: &LevelChunk,
+        chunk: FullChunkRef<'_>,
     ) -> Result<(), super::TickSchedulerError> {
         self.scheduled_ticks.register_chunk(chunk)
     }
@@ -125,7 +115,7 @@ impl World {
 
     pub(crate) fn schedule_block_tick_for_chunk(
         &self,
-        chunk: &LevelChunk,
+        chunk: FullChunkRef<'_>,
         pos: BlockPos,
         block: BlockRef,
         trigger_tick: i64,
@@ -144,7 +134,7 @@ impl World {
 
     pub(crate) fn schedule_fluid_tick_for_chunk(
         &self,
-        chunk: &LevelChunk,
+        chunk: FullChunkRef<'_>,
         pos: BlockPos,
         fluid: FluidRef,
         trigger_tick: i64,

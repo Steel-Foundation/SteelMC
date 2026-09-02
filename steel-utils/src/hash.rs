@@ -283,15 +283,6 @@ impl ComponentHasher {
     pub fn finish(self) -> i32 {
         crc32c::crc32c(&self.data) as i32
     }
-
-    /// Finishes hashing and returns the hash as a padded i64.
-    /// Used for sorting map entries.
-    #[must_use]
-    pub fn finish_as_long(self) -> i64 {
-        let hash = crc32c::crc32c(&self.data);
-        // Pad to long by zero-extending (matches Guava's HashCode.padToLong())
-        i64::from(hash)
-    }
 }
 
 /// A hash entry for map sorting.

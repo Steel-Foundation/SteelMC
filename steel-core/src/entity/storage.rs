@@ -3,7 +3,7 @@
 //! Full chunks do not own or tick entities. `EntityStorage` only keeps entities
 //! staged in proto chunks until promotion hands them to `WorldEntityManager`.
 
-use std::fmt;
+use std::{collections::hash_map::Entry, fmt, mem};
 
 use rustc_hash::FxHashMap;
 use steel_utils::locks::SyncRwLock;
@@ -15,8 +15,21 @@ use super::{RemovalReason, SharedEntity};
 /// Steel keeps proto entity staging separate from full-chunk runtime ownership:
 /// promoted or loaded full-chunk entities are owned and ticked by `WorldEntityManager`.
 pub(crate) struct EntityStorage {
-    /// Proto-staged entities keyed by entity ID.
-    entities: SyncRwLock<FxHashMap<i32, SharedEntity>>,
+    state: SyncRwLock<EntityStorageState>,
+}
+
+enum EntityStorageState {
+    Open(FxHashMap<i32, SharedEntity>),
+    Closed,
+}
+
+/// Result of trying to stage an entity before full-chunk promotion.
+#[must_use]
+pub(crate) enum EntityStorageAddResult {
+    /// The entity was staged in proto-chunk storage.
+    Staged,
+    /// Promotion already closed storage, so the caller retains the entity.
+    Closed(SharedEntity),
 }
 
 fn should_keep_for_save(entity: &SharedEntity) -> bool {
@@ -39,29 +52,72 @@ impl EntityStorage {
     #[must_use]
     pub(crate) fn new() -> Self {
         Self {
-            entities: SyncRwLock::new(FxHashMap::default()),
+            state: SyncRwLock::new(EntityStorageState::Open(FxHashMap::default())),
         }
     }
 
-    /// Adds an entity to proto storage.
-    pub(crate) fn add(&self, entity: SharedEntity) {
+    /// Creates empty storage that has already crossed the Full promotion boundary.
+    #[must_use]
+    pub(crate) const fn new_closed() -> Self {
+        Self {
+            state: SyncRwLock::new(EntityStorageState::Closed),
+        }
+    }
+
+    /// Tries to add an entity to proto storage.
+    ///
+    /// This operation linearizes with [`Self::close_and_drain`]. If promotion
+    /// closes storage first, ownership is returned so the caller can apply its
+    /// phase-specific disposition.
+    pub(crate) fn add(&self, entity: SharedEntity) -> EntityStorageAddResult {
         let id = entity.id();
-        assert!(
-            self.entities.write().insert(id, entity).is_none(),
-            "entity id {id} is already present in proto entity storage"
-        );
+        let mut state = self.state.write();
+        let EntityStorageState::Open(entities) = &mut *state else {
+            return EntityStorageAddResult::Closed(entity);
+        };
+        match entities.entry(id) {
+            Entry::Vacant(entry) => {
+                entry.insert(entity);
+                EntityStorageAddResult::Staged
+            }
+            Entry::Occupied(_) => {
+                panic!("entity id {id} is already present in proto entity storage")
+            }
+        }
+    }
+
+    /// Atomically closes proto storage and drains every staged entity.
+    ///
+    /// Later adds return [`EntityStorageAddResult::Closed`]. Repeated closes
+    /// return an empty collection.
+    pub(crate) fn close_and_drain(&self) -> Vec<SharedEntity> {
+        let mut state = self.state.write();
+        let EntityStorageState::Open(entities) =
+            mem::replace(&mut *state, EntityStorageState::Closed)
+        else {
+            return Vec::new();
+        };
+        entities.into_values().collect()
     }
 
     /// Returns all staged entities.
     #[must_use]
     pub(crate) fn get_all(&self) -> Vec<SharedEntity> {
-        self.entities.read().values().cloned().collect()
+        let state = self.state.read();
+        let EntityStorageState::Open(entities) = &*state else {
+            return Vec::new();
+        };
+        entities.values().cloned().collect()
     }
 
     /// Returns the number of staged entities.
     #[must_use]
     pub(crate) fn len(&self) -> usize {
-        self.entities.read().len()
+        let state = self.state.read();
+        match &*state {
+            EntityStorageState::Open(entities) => entities.len(),
+            EntityStorageState::Closed => 0,
+        }
     }
 
     /// Returns staged entities that should be saved when the proto chunk is persisted.
@@ -71,8 +127,11 @@ impl EntityStorage {
     /// - Entity types with `can_serialize = false` (including players)
     #[must_use]
     pub(crate) fn get_saveable_entities(&self) -> Vec<SharedEntity> {
-        self.entities
-            .read()
+        let state = self.state.read();
+        let EntityStorageState::Open(entities) = &*state else {
+            return Vec::new();
+        };
+        entities
             .values()
             .filter(|e| should_keep_for_save(e) && e.entity_type().can_serialize)
             .cloned()
@@ -88,7 +147,10 @@ impl Default for EntityStorage {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Weak};
+    use std::{
+        sync::{Arc, Barrier, Weak},
+        thread,
+    };
 
     use glam::DVec3;
     use steel_registry::vanilla_entities;
@@ -113,8 +175,14 @@ mod tests {
 
         unloaded.set_removed(RemovalReason::UnloadedToChunk);
         discarded.set_removed(RemovalReason::Discarded);
-        storage.add(unloaded);
-        storage.add(discarded);
+        assert!(matches!(
+            storage.add(unloaded),
+            EntityStorageAddResult::Staged
+        ));
+        assert!(matches!(
+            storage.add(discarded),
+            EntityStorageAddResult::Staged
+        ));
 
         let saveable = storage.get_saveable_entities();
 
@@ -127,7 +195,67 @@ mod tests {
     fn add_rejects_duplicate_entity_ids() {
         let storage = EntityStorage::new();
 
-        storage.add(raw_item(1));
-        storage.add(raw_item(1));
+        assert!(matches!(
+            storage.add(raw_item(1)),
+            EntityStorageAddResult::Staged
+        ));
+        let _ = storage.add(raw_item(1));
+    }
+
+    #[test]
+    fn close_drains_staged_entities_and_returns_late_adds() {
+        let storage = EntityStorage::new();
+        let staged = raw_item(1);
+        assert!(matches!(
+            storage.add(Arc::clone(&staged)),
+            EntityStorageAddResult::Staged
+        ));
+
+        let drained = storage.close_and_drain();
+        assert_eq!(drained.len(), 1);
+        assert!(Arc::ptr_eq(&drained[0], &staged));
+        assert!(storage.get_all().is_empty());
+        assert!(storage.get_saveable_entities().is_empty());
+
+        let late = raw_item(2);
+        let EntityStorageAddResult::Closed(returned) = storage.add(Arc::clone(&late)) else {
+            panic!("closed storage must return ownership of a late entity");
+        };
+        assert!(Arc::ptr_eq(&returned, &late));
+        assert!(storage.close_and_drain().is_empty());
+    }
+
+    #[test]
+    fn concurrent_add_and_close_leave_entity_with_exactly_one_owner() {
+        for id in 0..64 {
+            let storage = Arc::new(EntityStorage::new());
+            let barrier = Arc::new(Barrier::new(2));
+            let entity = raw_item(id);
+            let add_storage = Arc::clone(&storage);
+            let add_barrier = Arc::clone(&barrier);
+            let add_entity = Arc::clone(&entity);
+            let add_thread = thread::spawn(move || {
+                add_barrier.wait();
+                add_storage.add(add_entity)
+            });
+
+            barrier.wait();
+            let drained = storage.close_and_drain();
+            let Ok(add_result) = add_thread.join() else {
+                panic!("entity staging thread panicked");
+            };
+
+            match add_result {
+                EntityStorageAddResult::Staged => {
+                    assert_eq!(drained.len(), 1);
+                    assert!(Arc::ptr_eq(&drained[0], &entity));
+                }
+                EntityStorageAddResult::Closed(returned) => {
+                    assert!(drained.is_empty());
+                    assert!(Arc::ptr_eq(&returned, &entity));
+                }
+            }
+            assert!(storage.get_all().is_empty());
+        }
     }
 }

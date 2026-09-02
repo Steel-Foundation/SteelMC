@@ -209,7 +209,7 @@ mod tests {
     use text_components::TextComponent;
 
     use super::TrimPatternValue;
-    use crate::test_support::init_test_registry;
+    use crate::init_vanilla_registry;
     use crate::{REGISTRY, vanilla_trim_patterns};
 
     fn parse(tag: simdnbt::owned::NbtTag) -> Option<TrimPatternValue> {
@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn generated_patterns_follow_vanilla_registry_order() {
-        init_test_registry();
+        init_vanilla_registry();
         let keys = REGISTRY
             .trim_patterns
             .iter()
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn direct_codecs_always_encode_decal_and_default_it_when_absent() {
-        init_test_registry();
+        init_vanilla_registry();
         let pattern = vanilla_trim_patterns::SENTRY.value().clone();
 
         let mut network = Vec::new();

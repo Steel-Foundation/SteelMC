@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn send_changes_broadcasts_dirty_attributes_once() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let entity_typed = PairingTestEntity::new(1, Vec::new());
@@ -59,7 +59,7 @@ fn send_changes_broadcasts_dirty_attributes_once() {
 
 #[test]
 fn send_changes_broadcasts_dirty_equipment_once() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let entity_typed = PairingTestEntity::new(1, Vec::new());
@@ -115,7 +115,7 @@ fn send_changes_broadcasts_dirty_equipment_once() {
 
 #[test]
 fn send_changes_broadcasts_equipment_before_attributes() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let entity_typed = PairingTestEntity::new(1, Vec::new());
@@ -153,7 +153,7 @@ fn send_changes_broadcasts_equipment_before_attributes() {
 
 #[test]
 fn send_changes_syncs_hurt_marked_player_motion_to_self() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let entity_typed = PairingTestEntity::new_with_type(1, &vanilla_entities::PLAYER, Vec::new());
@@ -199,7 +199,7 @@ fn send_changes_syncs_hurt_marked_player_motion_to_self() {
 
 #[test]
 fn send_changes_broadcasts_hurt_marked_non_player_motion() {
-    test_support::init_test_registry();
+    init_vanilla_registry();
 
     let tracker = EntityTracker::new();
     let entity_typed = PairingTestEntity::new(1, Vec::new());
