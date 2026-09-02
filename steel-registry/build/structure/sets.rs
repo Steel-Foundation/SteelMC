@@ -123,10 +123,48 @@ struct SpawnerJson {
     #[serde(rename = "type")]
     entity_type: String,
     weight: i32,
-    #[serde(rename = "minCount")]
-    min_count: i32,
-    #[serde(rename = "maxCount")]
-    max_count: i32,
+    count: SpawnerCountJson,
+}
+
+/// `IntProvider` (`MobSpawnSettings.SpawnerData.count`): either a plain int
+/// (`ConstantInt` shorthand) or a `minecraft:uniform`/`minecraft:constant` object.
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+enum SpawnerCountJson {
+    Constant(i32),
+    Object {
+        #[serde(rename = "type")]
+        provider_type: String,
+        #[serde(default)]
+        value: Option<i32>,
+        #[serde(default)]
+        min_inclusive: Option<i32>,
+        #[serde(default)]
+        max_inclusive: Option<i32>,
+    },
+}
+
+/// Resolves a `SpawnerJson.count` `IntProvider` into an inclusive `(min, max)` range.
+fn parse_spawner_count(count: &SpawnerCountJson, context: &str) -> (i32, i32) {
+    match count {
+        SpawnerCountJson::Constant(n) => (*n, *n),
+        SpawnerCountJson::Object {
+            provider_type,
+            value,
+            min_inclusive,
+            max_inclusive,
+        } => match provider_type.as_str() {
+            "minecraft:uniform" => (
+                required(*min_inclusive, context, "count.min_inclusive"),
+                required(*max_inclusive, context, "count.max_inclusive"),
+            ),
+            "minecraft:constant" => {
+                let n = required(*value, context, "count.value");
+                (n, n)
+            }
+            other => panic!("Unsupported spawner count IntProvider {other} in {context}"),
+        },
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -723,7 +761,10 @@ fn generate_spawn_bounding_box(bounding_box: &str) -> TokenStream {
     }
 }
 
-fn generate_spawn_overrides(overrides: &[SpawnOverrideData]) -> Vec<TokenStream> {
+fn generate_spawn_overrides(
+    overrides: &[SpawnOverrideData],
+    context: &str,
+) -> Vec<TokenStream> {
     overrides
         .iter()
         .map(|override_data| {
@@ -735,8 +776,9 @@ fn generate_spawn_overrides(overrides: &[SpawnOverrideData]) -> Vec<TokenStream>
                 .map(|spawn| {
                     let entity_type = generate_identifier(&spawn.entity_type);
                     let weight = spawn.weight;
-                    let min_count = spawn.min_count;
-                    let max_count = spawn.max_count;
+                    let spawn_context = format!("{context}.spawn_overrides.{category}.spawns");
+                    let (min_count, max_count) =
+                        parse_spawner_count(&spawn.count, &spawn_context);
                     quote! {
                         StructureSpawnerData {
                             entity_type: #entity_type,
@@ -1041,7 +1083,7 @@ pub(crate) fn build_structures() -> TokenStream {
             .iter()
             .map(|b| generate_identifier(b))
             .collect();
-        let spawn_overrides = generate_spawn_overrides(&structure.spawn_overrides);
+        let spawn_overrides = generate_spawn_overrides(&structure.spawn_overrides, &key);
         let step = generate_generation_step(&structure.step);
         let terrain_adjustment =
             generate_terrain_adjustment(structure.terrain_adaptation.as_deref());
