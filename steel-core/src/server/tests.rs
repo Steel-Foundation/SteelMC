@@ -912,6 +912,10 @@ fn domain_detach_invalidates_an_encoded_source_chunk_batch() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one disconnect-path test follows detached domain snapshot ownership through save completion"
+)]
 fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
     let source_world = fresh_test_world_in_domain("source", "spawn");
     let target_world = fresh_test_world_in_domain("target", "spawn");

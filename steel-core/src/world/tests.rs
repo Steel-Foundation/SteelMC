@@ -240,11 +240,11 @@ fn block_loot_location_predicate_reads_full_chunk_before_ticking_readiness() {
 
     let orphan_pos = BlockPos::new(10, 64, 8);
     assert!(world.set_block(orphan_pos, lower, placement_flags));
-    assert!(
+    assert_eq!(
         BlockLootContext::new(&world, orphan_pos)
             .with_tool(&shears)
-            .get_drops(lower)
-            .is_empty()
+            .get_drops(lower),
+        vec![]
     );
 }
 

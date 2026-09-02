@@ -56,10 +56,10 @@ use std::{
     time::{Duration, Instant},
 };
 use steel_protocol::packets::game::{
-    CEntityEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn, CSetDefaultSpawnPosition, CSetHealth,
-    CSetHeldSlot, CSetPassengers, ClientCommandAction, LookAtAnchor, RelativeMovement, SoundSource,
+    CEntityEvent, CLevelEvent, CPlayerCombatKill, CPlayerLookAt, CRespawn,
+    CSetDefaultSpawnPosition, CSetEntityData, CSetHeldSlot, CSetPassengers, ClientCommandAction,
+    LookAtAnchor, RelativeMovement, SoundSource,
 };
-use steel_protocol::packets::game::{CLevelEvent, CSetEntityData, CSetExperience};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_data::{EntityPose, HumanoidArm, ParticleList};
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
@@ -731,43 +731,8 @@ impl Player {
         self.broadcast_inventory_changes();
         self.synchronize_carried_maps();
         self.update_pose();
-
-        {
-            let health = self.get_health();
-            let (food, saturation) = {
-                let food_data = self.food_data.lock();
-                (food_data.food_level, food_data.saturation_level)
-            };
-
-            let saturation_zero = saturation == 0.0;
-
-            let mut sync = self.health_sync.lock();
-            if sync.needs_update(health, food, saturation_zero) {
-                self.send_packet(CSetHealth {
-                    health,
-                    food,
-                    food_saturation: saturation,
-                });
-                sync.record_sent(health, food, saturation_zero);
-            }
-        }
-
-        let experience_packet = {
-            let mut experience = self.experience.lock();
-            if experience.dirty {
-                experience.dirty = false;
-                Some(CSetExperience {
-                    progress: experience.progress(),
-                    level: experience.level(),
-                    total_experience: experience.total_points(),
-                })
-            } else {
-                None
-            }
-        };
-        if let Some(packet) = experience_packet {
-            self.send_packet(packet);
-        }
+        self.synchronize_health();
+        self.synchronize_experience();
 
         self.connection.tick();
     }
