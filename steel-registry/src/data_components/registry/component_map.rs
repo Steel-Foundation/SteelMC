@@ -131,6 +131,35 @@ impl DataComponentMap {
         self.map.keys()
     }
 
+    /// Iterates over component keys and their raw values.
+    pub fn iter(&self) -> impl Iterator<Item = (&Identifier, &ComponentData)> {
+        self.map.iter()
+    }
+
+    /// Returns the components whose keys are accepted by `predicate`.
+    ///
+    /// Mirrors Vanilla `DataComponentMap.filter`.
+    #[must_use]
+    pub fn filter(&self, predicate: impl Fn(&Identifier) -> bool) -> Self {
+        Self {
+            map: self
+                .map
+                .iter()
+                .filter(|(key, _)| predicate(key))
+                .map(|(key, data)| (key.clone(), data.clone()))
+                .collect(),
+        }
+    }
+
+    /// Copies every component of `other` into this map, replacing existing values.
+    ///
+    /// Mirrors Vanilla `DataComponentMap.Builder.addAll`.
+    pub fn add_all(&mut self, other: &Self) {
+        for (key, data) in &other.map {
+            self.map.insert(key.clone(), data.clone());
+        }
+    }
+
     /// Gets raw component data by key (for plugin use).
     #[must_use]
     pub fn get_raw(&self, key: &Identifier) -> Option<&ComponentData> {

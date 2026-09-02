@@ -156,6 +156,16 @@ impl ItemStack {
         self.patch.sanitize_against(&self.item.components);
     }
 
+    /// Sets every component of `components` on this stack.
+    ///
+    /// Mirrors Vanilla's `ItemStack.applyComponents(DataComponentMap)` overload.
+    pub fn apply_components(&mut self, components: &DataComponentMap) {
+        for (key, data) in components.iter() {
+            self.patch.set_component_data(key.clone(), data.clone());
+        }
+        self.patch.sanitize_against(&self.item.components);
+    }
+
     pub const fn set_count(&mut self, count: i32) {
         self.count = count;
     }

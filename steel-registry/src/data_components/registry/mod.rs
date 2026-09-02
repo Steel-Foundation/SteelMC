@@ -40,6 +40,7 @@ use crate::{sound_event::SoundEventHolder, sound_events};
 
 mod codecs;
 mod component_map;
+mod map_persistence;
 mod patch;
 mod patch_network;
 mod patch_persistence;
@@ -49,7 +50,7 @@ pub use codecs::{
     ComponentEntry, ComponentEntryRef, NbtReader, NbtWriter, NetworkReader, NetworkWriter,
 };
 pub use component_map::DataComponentMap;
-pub use patch::{ComponentPatchEntry, DataComponentPatch};
+pub use patch::{ComponentPatchEntry, DataComponentPatch, SplitResult};
 pub use patch_persistence::component_try_into;
 
 use codecs::{

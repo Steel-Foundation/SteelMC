@@ -57,5 +57,6 @@ pub use registry::{
     // Type aliases for reader/writer functions
     NetworkReader,
     NetworkWriter,
+    SplitResult,
     component_try_into,
 };
