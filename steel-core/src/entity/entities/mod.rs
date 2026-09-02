@@ -10,7 +10,7 @@ pub use objects::display_ui::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKno
 pub use objects::explosives::EndCrystalEntity;
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
 pub use objects::projectiles::{
-    EnderPearlEntity, FireworkRocketEntity, SnowballEntity, ThrownEggEntity,
+    EnderPearlEntity, EyeOfEnderEntity, FireworkRocketEntity, SnowballEntity, ThrownEggEntity,
 };
 pub use objects::technical::{InteractionEntity, MarkerEntity};
 pub use objects::vehicles::ChestMinecartEntity;
