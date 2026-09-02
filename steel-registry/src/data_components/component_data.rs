@@ -16,8 +16,8 @@ use super::components::{
     MapId, MapItemColor, MapPostProcessing, OminousBottleAmplifier, PaintingVariantComponent,
     PiercingWeapon, PotDecorations, PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial,
     Rarity, Recipes, Repairable, SeededContainerLoot, SulfurCubeContent, SuspiciousStewEffects,
-    SwingAnimation, Tool, TooltipDisplay, UseCooldown, UseEffects, UseRemainder, Weapon,
-    WritableBookContent, WrittenBookContent,
+    SwingAnimation, Tool, TooltipDisplay, UseCooldown, UseEffects, UseRemainder, VillagerFood,
+    Weapon, WritableBookContent, WrittenBookContent,
 };
 use crate::cat_sound_variant::CatSoundVariant;
 use crate::cat_variant::CatVariant;
@@ -230,6 +230,7 @@ impl_component_downcast_type!(
     BlockTransformerComponent,
     "steel:item_component/block_transformer"
 );
+impl_component_downcast_type!(VillagerFood, "steel:item_component/villager_food");
 impl_component_downcast_type!(Compostable, "steel:item_component/compostable");
 impl_component_downcast_type!(
     MapPostProcessing,

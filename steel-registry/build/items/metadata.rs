@@ -201,6 +201,19 @@ pub(super) fn compostable_component_token(value: &Value) -> TokenStream {
     quote! { vanilla_components::Compostable::new(#layers) }
 }
 
+pub(super) fn villager_food_component_token(value: &Value) -> TokenStream {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("villager_food component must be an object"));
+    let nutrition = object
+        .get("nutrition")
+        .and_then(Value::as_i64)
+        .unwrap_or_else(|| panic!("villager_food.nutrition must be an integer"));
+    let nutrition = i32::try_from(nutrition)
+        .unwrap_or_else(|_| panic!("villager_food.nutrition out of i32 range: {nutrition}"));
+    quote! { vanilla_components::VillagerFood::new(#nutrition) }
+}
+
 pub(super) fn damage_type_ref_token(value: &str) -> TokenStream {
     let id = Identifier::from_str(value)
         .unwrap_or_else(|error| panic!("invalid damage_type component id {value:?}: {error}"));

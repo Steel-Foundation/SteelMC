@@ -35,7 +35,7 @@ use metadata::{
     holder_set_component_field, holder_set_token, item_name_component_token, item_ref_token,
     optional_identifier_token, pottery_pattern_component_token, rarity_component_token,
     registry_sound_event_holder_token, sound_event_holder_token, sound_event_value_token,
-    swing_animation_component_token, use_effects_component_token,
+    swing_animation_component_token, use_effects_component_token, villager_food_component_token,
 };
 use weapons::{
     generate_attack_range_component, generate_piercing_weapon_component, generate_tool_rule,

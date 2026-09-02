@@ -45,6 +45,7 @@ mod tooltip_display;
 mod typed_entity_data;
 mod use_cooldown;
 mod use_effects;
+mod villager_food;
 
 pub use armor_trim::ArmorTrim;
 pub use attribute_modifiers::{
@@ -94,3 +95,4 @@ pub use tooltip_display::TooltipDisplay;
 pub use typed_entity_data::{BlockEntityData, EntityData};
 pub use use_cooldown::UseCooldown;
 pub use use_effects::UseEffects;
+pub use villager_food::VillagerFood;

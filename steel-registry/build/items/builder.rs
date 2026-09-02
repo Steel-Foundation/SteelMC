@@ -12,6 +12,7 @@ use super::{
     kinetic_weapon_component_token, optional_identifier_token, pottery_pattern_component_token,
     quote, rarity_component_token, sound_event_holder_token, sound_event_value_token,
     swing_animation_component_token, trim_material_ref_token, use_effects_component_token,
+    villager_food_component_token,
 };
 
 /// Returns the crafting remainder item key for a given item, if any.
@@ -780,6 +781,12 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                 let piercing_weapon = generate_piercing_weapon_component(value);
                 builder_calls.push(
                     quote! { .builder_set(vanilla_components::PIERCING_WEAPON, Some(#piercing_weapon)) },
+                );
+            }
+            "minecraft:villager_food" => {
+                let villager_food = villager_food_component_token(value);
+                builder_calls.push(
+                    quote! { .builder_set(vanilla_components::VILLAGER_FOOD, Some(#villager_food)) },
                 );
             }
             _ => panic!(
