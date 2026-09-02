@@ -1,29 +1,24 @@
 //! Vanilla `minecraft:pot_decorations` item component.
 
-use std::io::{Cursor, Error, Result, Write};
-use std::str::FromStr;
+use std::io::{Cursor, Result, Write};
 
-use simdnbt::owned::{NbtList, NbtTag};
+use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
-use steel_utils::Identifier;
-use steel_utils::codec::VarInt;
-use steel_utils::hash::{ComponentHasher, HashComponent};
+use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::serial::{ReadFrom, WriteTo};
 
-use crate::items::ItemRef;
-use crate::{REGISTRY, RegistryEntry, RegistryExt, vanilla_items};
+use crate::ItemStackTemplate;
 
 /// The back, left, right, and front decorations of a decorated pot.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PotDecorations {
-    back: Option<ItemRef>,
-    left: Option<ItemRef>,
-    right: Option<ItemRef>,
-    front: Option<ItemRef>,
+    back: Option<ItemStackTemplate>,
+    left: Option<ItemStackTemplate>,
+    right: Option<ItemStackTemplate>,
+    front: Option<ItemStackTemplate>,
 }
 
 impl PotDecorations {
-    pub const MAX_DECORATIONS: usize = 4;
     pub const EMPTY: Self = Self {
         back: None,
         left: None,
@@ -31,132 +26,137 @@ impl PotDecorations {
         front: None,
     };
 
-    /// Constructs the component from Vanilla's ordered, at-most-four item list.
-    pub fn from_ordered(items: &[ItemRef]) -> Result<Self> {
-        if items.len() > Self::MAX_DECORATIONS {
-            return Err(Error::other(format!(
-                "Got {} pot decorations, but maximum is {}",
-                items.len(),
-                Self::MAX_DECORATIONS
-            )));
+    #[must_use]
+    pub const fn new(
+        back: Option<ItemStackTemplate>,
+        left: Option<ItemStackTemplate>,
+        right: Option<ItemStackTemplate>,
+        front: Option<ItemStackTemplate>,
+    ) -> Self {
+        Self {
+            back,
+            left,
+            right,
+            front,
         }
-        Ok(Self {
-            back: decoration(items.first().copied()),
-            left: decoration(items.get(1).copied()),
-            right: decoration(items.get(2).copied()),
-            front: decoration(items.get(3).copied()),
-        })
     }
 
     #[must_use]
-    pub const fn back(&self) -> Option<ItemRef> {
-        self.back
+    pub const fn back(&self) -> Option<&ItemStackTemplate> {
+        self.back.as_ref()
     }
 
     #[must_use]
-    pub const fn left(&self) -> Option<ItemRef> {
-        self.left
+    pub const fn left(&self) -> Option<&ItemStackTemplate> {
+        self.left.as_ref()
     }
 
     #[must_use]
-    pub const fn right(&self) -> Option<ItemRef> {
-        self.right
+    pub const fn right(&self) -> Option<&ItemStackTemplate> {
+        self.right.as_ref()
     }
 
     #[must_use]
-    pub const fn front(&self) -> Option<ItemRef> {
-        self.front
+    pub const fn front(&self) -> Option<&ItemStackTemplate> {
+        self.front.as_ref()
     }
-
-    #[must_use]
-    pub fn ordered(&self) -> [ItemRef; Self::MAX_DECORATIONS] {
-        [
-            self.back.unwrap_or(&vanilla_items::BRICK),
-            self.left.unwrap_or(&vanilla_items::BRICK),
-            self.right.unwrap_or(&vanilla_items::BRICK),
-            self.front.unwrap_or(&vanilla_items::BRICK),
-        ]
-    }
-}
-
-fn decoration(item: Option<ItemRef>) -> Option<ItemRef> {
-    item.filter(|item| *item != &*vanilla_items::BRICK)
 }
 
 impl WriteTo for PotDecorations {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
-        VarInt(Self::MAX_DECORATIONS as i32).write(writer)?;
-        for item in self.ordered() {
-            let id = i32::try_from(item.id())
-                .map_err(|_| Error::other(format!("Item id is too large: {}", item.id())))?;
-            VarInt(id).write(writer)?;
-        }
-        Ok(())
+        self.back.write(writer)?;
+        self.left.write(writer)?;
+        self.right.write(writer)?;
+        self.front.write(writer)
     }
 }
 
 impl ReadFrom for PotDecorations {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
-        let count = VarInt::read(data)?.0;
-        let count =
-            usize::try_from(count).map_err(|_| Error::other("Negative pot decoration count"))?;
-        if count > Self::MAX_DECORATIONS {
-            return Err(Error::other(format!(
-                "Got {count} pot decorations, but maximum is {}",
-                Self::MAX_DECORATIONS
-            )));
-        }
-        let mut items = Vec::with_capacity(count);
-        for _ in 0..count {
-            let id = VarInt::read(data)?.0;
-            let id =
-                usize::try_from(id).map_err(|_| Error::other(format!("Negative item id: {id}")))?;
-            let item = REGISTRY
-                .items
-                .by_id(id)
-                .ok_or_else(|| Error::other(format!("Unknown item id: {id}")))?;
-            items.push(item);
-        }
-        Self::from_ordered(&items)
+        Ok(Self {
+            back: Option::<ItemStackTemplate>::read(data)?,
+            left: Option::<ItemStackTemplate>::read(data)?,
+            right: Option::<ItemStackTemplate>::read(data)?,
+            front: Option::<ItemStackTemplate>::read(data)?,
+        })
     }
 }
 
 impl ToNbtTag for PotDecorations {
     fn to_nbt_tag(self) -> NbtTag {
-        NbtTag::List(NbtList::String(
-            self.ordered()
-                .into_iter()
-                .map(|item| item.key.to_string().into())
-                .collect(),
-        ))
+        let mut compound = NbtCompound::new();
+        if let Some(back) = self.back {
+            compound.insert("back", back.to_nbt_tag());
+        }
+        if let Some(left) = self.left {
+            compound.insert("left", left.to_nbt_tag());
+        }
+        if let Some(right) = self.right {
+            compound.insert("right", right.to_nbt_tag());
+        }
+        if let Some(front) = self.front {
+            compound.insert("front", front.to_nbt_tag());
+        }
+        NbtTag::Compound(compound)
     }
 }
 
 impl FromNbtTag for PotDecorations {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
-        let values = tag.list()?.to_owned().as_nbt_tags();
-        if values.len() > Self::MAX_DECORATIONS {
-            return None;
-        }
-        let items = values
-            .iter()
-            .map(|value| {
-                let key = Identifier::from_str(&value.string()?.to_string()).ok()?;
-                REGISTRY.items.by_key(&key)
-            })
-            .collect::<Option<Vec<_>>>()?;
-        Self::from_ordered(&items).ok()
+        let compound = tag.compound()?;
+        Some(Self {
+            back: optional_side(compound.get("back"))?,
+            left: optional_side(compound.get("left"))?,
+            right: optional_side(compound.get("right"))?,
+            front: optional_side(compound.get("front"))?,
+        })
+    }
+}
+
+#[expect(
+    clippy::option_option,
+    reason = "the outer option reports codec failure while the inner option represents an absent side"
+)]
+fn optional_side(
+    tag: Option<simdnbt::borrow::NbtTag<'_, '_>>,
+) -> Option<Option<ItemStackTemplate>> {
+    match tag {
+        Some(tag) => Some(Some(ItemStackTemplate::from_nbt_tag(tag)?)),
+        None => Some(None),
     }
 }
 
 impl HashComponent for PotDecorations {
     fn hash_component(&self, hasher: &mut ComponentHasher) {
-        hasher.start_list();
-        for item in self.ordered() {
-            hasher.put_component_hash(&item.key.to_string());
+        let mut entries = Vec::with_capacity(4);
+        if let Some(back) = &self.back {
+            push_hash_entry(&mut entries, "back", back);
         }
-        hasher.end_list();
+        if let Some(left) = &self.left {
+            push_hash_entry(&mut entries, "left", left);
+        }
+        if let Some(right) = &self.right {
+            push_hash_entry(&mut entries, "right", right);
+        }
+        if let Some(front) = &self.front {
+            push_hash_entry(&mut entries, "front", front);
+        }
+        sort_map_entries(&mut entries);
+        hasher.start_map();
+        for entry in entries {
+            hasher.put_raw_bytes(&entry.key_bytes);
+            hasher.put_raw_bytes(&entry.value_bytes);
+        }
+        hasher.end_map();
     }
+}
+
+fn push_hash_entry<T: HashComponent + ?Sized>(entries: &mut Vec<HashEntry>, key: &str, value: &T) {
+    let mut key_hasher = ComponentHasher::new();
+    key_hasher.put_string(key);
+    let mut value_hasher = ComponentHasher::new();
+    value.hash_component(&mut value_hasher);
+    entries.push(HashEntry::new(key_hasher, value_hasher));
 }
 
 #[cfg(test)]
@@ -171,7 +171,7 @@ mod tests {
     use super::PotDecorations;
     use crate::data_components::vanilla_components::POT_DECORATIONS;
     use crate::init_vanilla_registry;
-    use crate::vanilla_items;
+    use crate::{ItemStackTemplate, vanilla_items};
 
     fn parse(tag: simdnbt::owned::NbtTag) -> Option<PotDecorations> {
         let mut bytes = Vec::new();
@@ -181,20 +181,16 @@ mod tests {
     }
 
     #[test]
-    fn ordered_sides_round_trip_both_codecs_and_hash_as_four_items() {
+    fn named_sides_round_trip_both_codecs_and_hash() {
         init_vanilla_registry();
-        let decorations = PotDecorations::from_ordered(&[
-            &vanilla_items::ANGLER_POTTERY_SHERD,
-            &vanilla_items::BRICK,
-            &vanilla_items::ARCHER_POTTERY_SHERD,
-        ])
-        .expect("three decorations should fit");
-        assert_eq!(
-            decorations.back(),
-            Some(&*vanilla_items::ANGLER_POTTERY_SHERD)
+        let decorations = PotDecorations::new(
+            Some(ItemStackTemplate::new(&vanilla_items::ANGLER_POTTERY_SHERD)),
+            None,
+            Some(ItemStackTemplate::new(&vanilla_items::ARCHER_POTTERY_SHERD)),
+            None,
         );
-        assert_eq!(decorations.left(), None);
-        assert_eq!(decorations.front(), None);
+        assert!(decorations.back().is_some());
+        assert!(decorations.left().is_none());
 
         let nbt = decorations.clone().to_nbt_tag();
         assert_eq!(parse(nbt.clone()), Some(decorations.clone()));
@@ -212,22 +208,15 @@ mod tests {
     }
 
     #[test]
-    fn extracted_decorated_pot_uses_four_bricks_as_empty_sides() {
+    fn extracted_decorated_pot_defaults_to_brick_on_every_side() {
         init_vanilla_registry();
-        assert_eq!(
-            vanilla_items::DECORATED_POT.components.get(POT_DECORATIONS),
-            Some(PotDecorations::EMPTY)
-        );
-    }
-
-    #[test]
-    fn both_codecs_reject_more_than_four_items() {
-        init_vanilla_registry();
-        let items = [&*vanilla_items::BRICK; 5];
-        assert!(PotDecorations::from_ordered(&items).is_err());
-
-        let mut network = vec![5];
-        network.extend([0; 5]);
-        assert!(PotDecorations::read(&mut Cursor::new(network.as_slice())).is_err());
+        let decorations = vanilla_items::DECORATED_POT
+            .components
+            .get(POT_DECORATIONS)
+            .expect("decorated pot should have a pot_decorations component");
+        assert!(decorations.back().is_some());
+        assert!(decorations.left().is_some());
+        assert!(decorations.right().is_some());
+        assert!(decorations.front().is_some());
     }
 }

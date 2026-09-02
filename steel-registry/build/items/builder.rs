@@ -411,20 +411,41 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                 });
             }
             "minecraft:pot_decorations" => {
-                let decorations = value
-                    .as_array()
-                    .unwrap_or_else(|| panic!("pot_decorations must be an item list, got {value}"));
+                let object = value
+                    .as_object()
+                    .unwrap_or_else(|| panic!("pot_decorations must be an object, got {value}"));
                 assert!(
-                    decorations.len() == 4
-                        && decorations
-                            .iter()
-                            .all(|decoration| decoration.as_str() == Some("minecraft:brick")),
-                    "extracted decorated pot must use four brick placeholders"
+                    object.keys().all(|key| matches!(
+                        key.as_str(),
+                        "back" | "left" | "right" | "front"
+                    )),
+                    "pot_decorations contains an unknown field: {value}"
                 );
+                let side = |name: &str| -> Option<TokenStream> {
+                    let side = object.get(name)?;
+                    let side = side.as_object().unwrap_or_else(|| {
+                        panic!("pot_decorations.{name} must be an item template, got {side}")
+                    });
+                    assert_eq!(
+                        side.len(),
+                        1,
+                        "extracted pot decorations currently require an item-only template"
+                    );
+                    let item = side
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_else(|| panic!("pot_decorations.{name}.id must be an item identifier"));
+                    let item = item_ref_token(item, "pot_decorations");
+                    Some(quote! { Some(vanilla_components::ItemStackTemplate::new(#item)) })
+                };
+                let back = side("back").unwrap_or_else(|| quote! { None });
+                let left = side("left").unwrap_or_else(|| quote! { None });
+                let right = side("right").unwrap_or_else(|| quote! { None });
+                let front = side("front").unwrap_or_else(|| quote! { None });
                 builder_calls.push(quote! {
                     .builder_set(
                         vanilla_components::POT_DECORATIONS,
-                        Some(vanilla_components::PotDecorations::EMPTY),
+                        Some(vanilla_components::PotDecorations::new(#back, #left, #right, #front)),
                     )
                 });
             }
