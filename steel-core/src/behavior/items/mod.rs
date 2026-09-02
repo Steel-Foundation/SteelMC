@@ -4,7 +4,6 @@
 //! See `src/behavior/generated/items.rs` for the generated registration code.
 
 mod air;
-mod axe;
 mod bed_item;
 mod block_item;
 mod bonemeal;
@@ -21,7 +20,6 @@ mod ender_eye;
 mod ender_pearl;
 mod firework_rocket;
 mod food_on_a_stick;
-mod hoe;
 mod honeycomb;
 mod ink_sac;
 mod mace;
@@ -32,7 +30,6 @@ mod potion;
 mod scaffolding_block_item;
 mod shears;
 mod shield;
-mod shovel;
 mod sign_item;
 mod snowball;
 mod solid_bucket_item;
@@ -46,7 +43,6 @@ mod flint_and_steel;
 mod lead;
 
 pub use air::AirItem;
-pub use axe::AxeItem;
 pub use bed_item::BedItem;
 pub use block_item::{BlockItem, DoubleHighBlockItem};
 pub use bonemeal::BoneMealItem;
