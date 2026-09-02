@@ -279,10 +279,9 @@ mod tests {
         let Some(container) = block_entity.container_ref() else {
             panic!("barrel should expose its inventory");
         };
-        let player =
-            TestPlayerBuilder::new(Arc::clone(&world), "BarrelViewer", 1)
-                .uuid(Uuid::from_u128(1))
-                .build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "BarrelViewer", 1)
+            .uuid(Uuid::from_u128(1))
+            .build();
         player.base().set_position_local(DVec3::new(3.5, 64.0, 3.5));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let inventory = Arc::clone(&player.inventory);

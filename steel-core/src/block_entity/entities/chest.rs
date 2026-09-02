@@ -303,10 +303,9 @@ mod tests {
             block_entity.base().components().has(CUSTOM_DATA),
             "components no field consumes stay explicit block-entity components"
         );
-        let player =
-            TestPlayerBuilder::new(Arc::clone(&world), "Looter", 1)
-                .uuid(Uuid::from_u128(1))
-                .build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Looter", 1)
+            .uuid(Uuid::from_u128(1))
+            .build();
         player.base().set_position_local(DVec3::new(3.5, 64.0, 3.5));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         assert!(!chest.can_open(&player), "the item's lock must apply");
@@ -430,10 +429,9 @@ mod tests {
         let Some(left_container) = left_entity.container_ref() else {
             panic!("left chest half should expose its inventory");
         };
-        let player =
-            TestPlayerBuilder::new(Arc::clone(&world), "ChestViewer", 1)
-                .uuid(Uuid::from_u128(1))
-                .build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "ChestViewer", 1)
+            .uuid(Uuid::from_u128(1))
+            .build();
         player.base().set_position_local(DVec3::new(3.5, 64.0, 3.5));
         let inventory = Arc::clone(&player.inventory);
         let right_opener = Arc::clone(&right_entity);

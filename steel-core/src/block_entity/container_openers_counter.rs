@@ -325,10 +325,9 @@ mod tests {
         let shared_container: SharedContainer = container;
         let container_ref = ContainerRef::from(shared_container);
         let owner = Arc::new(RecordingOpeners::new(&world, pos, container_ref.clone()));
-        let player =
-            TestPlayerBuilder::new(Arc::clone(&world), "OpenerViewer", 1)
-                .uuid(Uuid::from_u128(1))
-                .build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "OpenerViewer", 1)
+            .uuid(Uuid::from_u128(1))
+            .build();
         player.base().set_position_local(DVec3::new(3.5, 64.0, 3.5));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let inventory = Arc::clone(&player.inventory);

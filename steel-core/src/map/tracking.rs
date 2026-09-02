@@ -769,10 +769,9 @@ mod tests {
                 colors: colors.clone(),
             })
             .expect("map allocation should succeed");
-        let player =
-            TestPlayerBuilder::new(Arc::clone(&world), "Mapper", 1)
-                .uuid(Uuid::from_u128(1))
-                .build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Mapper", 1)
+            .uuid(Uuid::from_u128(1))
+            .build();
         player
             .base()
             .set_position_local(DVec3::new(8.0, 64.0, -8.0));
@@ -904,10 +903,9 @@ mod tests {
                 colors: vec![0; MAP_COLOR_COUNT],
             })
             .expect("map allocation should succeed");
-        let player =
-            TestPlayerBuilder::new(Arc::clone(&world), "Surveyor", 13)
-                .uuid(Uuid::from_u128(13))
-                .build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Surveyor", 13)
+            .uuid(Uuid::from_u128(13))
+            .build();
         player.base().set_position_local(DVec3::new(0.0, 64.0, 0.0));
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let mut map = ItemStack::new(&vanilla_items::FILLED_MAP);
@@ -1007,10 +1005,9 @@ mod tests {
                 colors: vec![0; MAP_COLOR_COUNT],
             })
             .expect("map allocation should succeed");
-        let player =
-            TestPlayerBuilder::new(Arc::clone(&world), "Walker", 2)
-                .uuid(Uuid::from_u128(2))
-                .build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Walker", 2)
+            .uuid(Uuid::from_u128(2))
+            .build();
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         let mut map = ItemStack::new(&vanilla_items::FILLED_MAP);
         map.set(MAP_ID, map_id);
@@ -1052,10 +1049,9 @@ mod tests {
                 colors: vec![0; MAP_COLOR_COUNT],
             })
             .expect("map allocation should succeed");
-        let player =
-            TestPlayerBuilder::new(Arc::clone(&world), "Copies", 5)
-                .uuid(Uuid::from_u128(5))
-                .build();
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Copies", 5)
+            .uuid(Uuid::from_u128(5))
+            .build();
         assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
         for slot in 0..2 {
             let mut map = ItemStack::new(&vanilla_items::FILLED_MAP);
@@ -1098,14 +1094,12 @@ mod tests {
                 colors: vec![0; MAP_COLOR_COUNT],
             })
             .expect("map allocation should succeed");
-        let first =
-            TestPlayerBuilder::new(Arc::clone(&world), "First", 3)
-                .uuid(Uuid::from_u128(3))
-                .build();
-        let second =
-            TestPlayerBuilder::new(Arc::clone(&world), "Second", 4)
-                .uuid(Uuid::from_u128(4))
-                .build();
+        let first = TestPlayerBuilder::new(Arc::clone(&world), "First", 3)
+            .uuid(Uuid::from_u128(3))
+            .build();
+        let second = TestPlayerBuilder::new(Arc::clone(&world), "Second", 4)
+            .uuid(Uuid::from_u128(4))
+            .build();
         assert!(world.add_player(Arc::clone(&first), ResetReason::InitialJoin));
         assert!(world.add_player(Arc::clone(&second), ResetReason::InitialJoin));
 

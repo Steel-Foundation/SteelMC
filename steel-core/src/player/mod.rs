@@ -95,10 +95,11 @@ use crate::chunk::chunk_request::{ChunkRequestHandle, ChunkRequestState};
 use crate::config::RuntimeConfig;
 use crate::enchantment_helper;
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::ExperienceOrbEntity;
 use crate::entity::{
     DEATH_DURATION, Entity, EntityAnchor, EntityBase, EntityEventSource, EntityMovementEmission,
     EntitySyncedData, LivingEntity, LivingEntityBase, MobEffectSyncChange, MobEffectSyncPacket,
-    RemovalReason, SharedEntity, apply_entity_look_at, start_riding_entities,
+    RemovalReason, SharedEntity, apply_entity_look_at, get_kill_credit, start_riding_entities,
 };
 use crate::fluid::get_fluid_state;
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot};
@@ -1022,25 +1023,26 @@ impl Player {
             });
         }
 
-        if !world.get_game_rule(&KEEP_INVENTORY) {
-            let items: Vec<ItemStack> = {
-                let mut inventory = self.inventory.lock();
-                (0..inventory.get_container_size())
-                    .filter_map(|slot| {
-                        let item = inventory.get_item(slot).clone();
-                        if item.is_empty() {
-                            None
-                        } else {
-                            inventory.set_item(slot, ItemStack::empty());
-                            Some(item)
-                        }
-                    })
-                    .collect()
-            };
-            for item in items {
+        if !world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator {
+            let drops = self.inventory.lock().take_death_drops();
+            for item in drops {
                 let _ = self.drop_item(item, true, false);
             }
+
+            let reward = self.experience.lock().death_xp_reward();
+            if reward > 0 {
+                ExperienceOrbEntity::award(&world, self.position(), reward);
+            }
         }
+
+        if let Some(killer) = get_kill_credit(self, world.as_ref()) {
+            self.award_stat(&vanilla_stat_types::ENTITY_KILLED_BY, killer.entity_type());
+            killer.award_kill_score(self, source);
+        }
+
+        self.award_custom_stat(&vanilla_custom_stats::DEATHS);
+        self.reset_custom_stat(&vanilla_custom_stats::TIME_SINCE_DEATH);
+        self.reset_custom_stat(&vanilla_custom_stats::TIME_SINCE_REST);
 
         self.clear_fire();
         self.set_ticks_frozen(0);
