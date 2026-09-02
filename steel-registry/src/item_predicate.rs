@@ -18,6 +18,8 @@ use steel_utils::serial::{ReadFrom, WriteTo};
 
 use crate::blocks::{Block, properties::Property};
 use crate::data_component_predicate::DataComponentMatchers;
+use crate::item_instance::ItemInstance;
+use crate::item_stack::ItemStack;
 use crate::items::Item;
 use crate::{REGISTRY, RegistryHolderSet};
 
@@ -66,6 +68,12 @@ impl IntBounds {
     #[must_use]
     pub const fn is_any(&self) -> bool {
         self.min.is_none() && self.max.is_none()
+    }
+
+    /// Mirrors Vanilla `MinMaxBounds.Ints.matches`.
+    #[must_use]
+    pub fn matches(self, value: i32) -> bool {
+        self.min.is_none_or(|min| value >= min) && self.max.is_none_or(|max| value <= max)
     }
 
     pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
@@ -147,6 +155,16 @@ impl DoubleBounds {
     #[must_use]
     pub const fn is_any(&self) -> bool {
         self.min.is_none() && self.max.is_none()
+    }
+
+    /// Mirrors Vanilla `MinMaxBounds.Doubles.matches`, so `NaN` bounds never reject.
+    #[must_use]
+    pub fn matches(self, value: f64) -> bool {
+        self.min
+            .is_none_or(|min| min.partial_cmp(&value) != Some(Ordering::Greater))
+            && self
+                .max
+                .is_none_or(|max| max.partial_cmp(&value) != Some(Ordering::Less))
     }
 
     pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
@@ -820,6 +838,16 @@ impl ItemPredicate {
         &self.components
     }
 
+    /// Mirrors Vanilla `ItemPredicate.test(ItemInstance)`.
+    #[must_use]
+    pub fn matches(&self, stack: &impl ItemInstance) -> bool {
+        self.items
+            .as_ref()
+            .is_none_or(|items| items.contains(stack.item()))
+            && self.count.matches(stack.count())
+            && self.components.matches(stack)
+    }
+
     pub(crate) fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
         Some(Self::new(
@@ -877,6 +905,12 @@ impl LockCode {
     #[must_use]
     pub const fn predicate(&self) -> &ItemPredicate {
         &self.predicate
+    }
+
+    /// Returns whether `stack` satisfies this lock's item predicate.
+    #[must_use]
+    pub fn unlocks_with(&self, stack: &ItemStack) -> bool {
+        self.predicate.matches(stack)
     }
 
     /// Encodes this lock code as its Vanilla item-predicate NBT without consuming it.

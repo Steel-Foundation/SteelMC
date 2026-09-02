@@ -1,9 +1,10 @@
 use super::{
-    CollectionPredicate, ComponentHasher, DataComponentPredicateCodec, Debug, DowncastType,
-    DowncastTypeKey, HashComponent, IntBounds, NbtCompound, NbtNumeric, NbtTag, TextComponent,
-    collection_field_nbt, decode_optional, hash_entries, hash_optional_collection_field,
-    owned_string, push_hash_entry,
+    CollectionPredicate, ComponentHasher, DataComponentGetter, DataComponentPredicateCodec, Debug,
+    DowncastType, DowncastTypeKey, HashComponent, IntBounds, NbtCompound, NbtNumeric, NbtTag,
+    TextComponent, collection_field_nbt, decode_optional, hash_entries,
+    hash_optional_collection_field, owned_string, push_hash_entry,
 };
+use crate::data_components::vanilla_components::{WRITABLE_BOOK_CONTENT, WRITTEN_BOOK_CONTENT};
 
 /// Predicate for one writable-book page.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +67,16 @@ impl DataComponentPredicateCodec for WritableBookPredicate {
             "pages",
             WritableBookPagePredicate::to_nbt_value,
         )
+    }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components.get(WRITABLE_BOOK_CONTENT).is_some_and(|book| {
+            self.0.as_ref().is_none_or(|pages| {
+                pages.matches(book.pages(), |predicate, page| {
+                    predicate.contents() == page.raw()
+                })
+            })
+        })
     }
 }
 
@@ -206,6 +217,27 @@ impl DataComponentPredicateCodec for WrittenBookPredicate {
             compound.insert("resolved", resolved);
         }
         NbtTag::Compound(compound)
+    }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components.get(WRITTEN_BOOK_CONTENT).is_some_and(|book| {
+            self.author
+                .as_ref()
+                .is_none_or(|author| author == book.author())
+                && self
+                    .title
+                    .as_ref()
+                    .is_none_or(|title| title == book.title().raw())
+                && self.generation.matches(book.generation())
+                && self
+                    .resolved
+                    .is_none_or(|resolved| resolved == book.resolved())
+                && self.pages.as_ref().is_none_or(|pages| {
+                    pages.matches(book.pages(), |predicate, page| {
+                        predicate.contents() == page.raw()
+                    })
+                })
+        })
     }
 }
 

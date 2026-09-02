@@ -152,6 +152,68 @@ fn adventure_and_lock_components_round_trip_both_codecs() {
 }
 
 #[test]
+fn lock_codes_match_stacks_through_item_count_exact_and_partial_predicates() {
+    use crate::data_components::vanilla_components::{CUSTOM_NAME, MAX_STACK_SIZE};
+    use crate::item_stack::ItemStack;
+    use text_components::TextComponent;
+
+    init_test_registry();
+    let mut exact_components = DataComponentMap::new();
+    exact_components.set(MAX_STACK_SIZE, Some(64));
+    let custom_name_entry = REGISTRY
+        .data_components
+        .by_key(&CUSTOM_NAME.key)
+        .expect("custom name component should exist");
+    let damage_type = REGISTRY
+        .data_component_predicate_types
+        .by_key(&Identifier::vanilla_static("damage"))
+        .expect("damage predicate type should exist");
+    let matchers = DataComponentMatchers::new(
+        DataComponentExactPredicate::all_of(&exact_components)
+            .expect("exact components should persist"),
+        vec![
+            DataComponentPredicateData::any(custom_name_entry),
+            DataComponentPredicateData::new(
+                damage_type,
+                DamagePredicate::new(IntBounds::ANY, IntBounds::exactly(3)),
+            ),
+        ],
+    )
+    .expect("exact and partial maps use separate namespaces");
+    let lock = LockCode::new(ItemPredicate::new(
+        Some(RegistryHolderSet::direct(vec![&vanilla_items::STONE])),
+        IntBounds::exactly(1),
+        matchers,
+    ));
+
+    let mut key = ItemStack::new(&vanilla_items::STONE);
+    assert!(!lock.unlocks_with(&key), "missing partial components");
+    key.set(CUSTOM_NAME, TextComponent::plain("Key"));
+    key.set(DAMAGE, 3);
+    assert!(
+        lock.unlocks_with(&key),
+        "prototype values satisfy exact predicates"
+    );
+
+    assert!(!lock.unlocks_with(&key.copy_with_count(2)));
+    let mut other_item = ItemStack::new(&vanilla_items::DIRT);
+    other_item.set(CUSTOM_NAME, TextComponent::plain("Key"));
+    other_item.set(DAMAGE, 3);
+    assert!(!lock.unlocks_with(&other_item));
+
+    key.set(DAMAGE, 4);
+    assert!(!lock.unlocks_with(&key));
+    key.set(DAMAGE, 3);
+    key.remove(MAX_STACK_SIZE);
+    assert!(
+        !lock.unlocks_with(&key),
+        "removed prototype components no longer match exact values"
+    );
+
+    assert!(LockCode::NO_LOCK.unlocks_with(&ItemStack::empty()));
+}
+
+#[test]
 fn exact_predicates_reject_component_values_that_cannot_persist() {
     init_test_registry();
     let entry = REGISTRY

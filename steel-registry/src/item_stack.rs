@@ -20,8 +20,8 @@ use crate::{
     REGISTRY, RegistryEntry, RegistryExt, RegistryReference,
     damage_type::DamageTypeRef,
     data_components::{
-        Component, ComponentData, ComponentPatchEntry, CustomData, DataComponentMap,
-        DataComponentPatch, DataComponentType,
+        Component, ComponentData, ComponentPatchEntry, CustomData, DataComponentGetter,
+        DataComponentMap, DataComponentPatch, DataComponentType,
         vanilla_components::{
             ATTACK_RANGE, ATTRIBUTE_MODIFIERS, AttackRange, BUNDLE_CONTENTS, CHARGED_PROJECTILES,
             CONTAINER, CUSTOM_DATA, CUSTOM_NAME, DAMAGE, DAMAGE_RESISTANT, DAMAGE_TYPE,
@@ -36,6 +36,7 @@ use crate::{
     enchantment::{Enchantment, EnchantmentRef},
     enchantment_effect::EnchantmentEffectComponent,
     equipment::EquipmentSlot,
+    item_instance::ItemInstance,
     item_stack_template::ItemStackTemplate,
     items::{Item, ItemRef},
     vanilla_items,
@@ -55,6 +56,22 @@ pub struct ItemStack {
 impl Default for ItemStack {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+impl DataComponentGetter for ItemStack {
+    fn get_raw(&self, key: &Identifier) -> Option<&ComponentData> {
+        self.get_effective_value_raw(key)
+    }
+}
+
+impl ItemInstance for ItemStack {
+    fn item(&self) -> ItemRef {
+        Self::item(self)
+    }
+
+    fn count(&self) -> i32 {
+        Self::count(self)
     }
 }
 

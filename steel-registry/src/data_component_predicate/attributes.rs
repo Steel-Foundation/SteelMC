@@ -1,4 +1,5 @@
 use super::*;
+use crate::data_components::vanilla_components::{ATTRIBUTE_MODIFIERS, ItemAttributeModifierEntry};
 
 /// Predicate for one attribute-modifier entry.
 #[derive(Debug, Clone, PartialEq)]
@@ -51,6 +52,20 @@ impl AttributeModifierEntryPredicate {
     #[must_use]
     pub const fn slot(&self) -> Option<EquipmentSlotGroup> {
         self.slot
+    }
+
+    /// Mirrors Vanilla `AttributeModifiersPredicate.EntryPredicate.test`.
+    #[must_use]
+    pub fn matches(&self, modifier: &ItemAttributeModifierEntry) -> bool {
+        self.attribute
+            .as_ref()
+            .is_none_or(|attributes| attributes.contains(modifier.attribute))
+            && self.id.as_ref().is_none_or(|id| id == &modifier.id)
+            && self.amount.matches(modifier.amount)
+            && self
+                .operation
+                .is_none_or(|operation| operation == modifier.operation)
+            && self.slot.is_none_or(|slot| slot == modifier.slot)
     }
 
     fn from_nbt_value(tag: &NbtTag) -> Option<Self> {
@@ -148,6 +163,19 @@ impl DataComponentPredicateCodec for AttributeModifiersPredicate {
             "modifiers",
             AttributeModifierEntryPredicate::to_nbt_value,
         )
+    }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .get(ATTRIBUTE_MODIFIERS)
+            .is_some_and(|modifiers| {
+                self.0.as_ref().is_none_or(|predicate| {
+                    predicate.matches(
+                        modifiers.modifiers.iter(),
+                        AttributeModifierEntryPredicate::matches,
+                    )
+                })
+            })
     }
 }
 

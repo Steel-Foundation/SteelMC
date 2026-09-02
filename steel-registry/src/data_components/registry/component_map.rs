@@ -1,8 +1,9 @@
 use super::{
-    ATTRIBUTE_MODIFIERS, BREAK_SOUND, Component, ComponentData, DataComponentType, Debug,
-    DowncastType, ENCHANTMENTS, FxHashMap, Identifier, ItemAttributeModifiers, ItemEnchantments,
-    ItemLore, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST, Rarity, SWING_ANIMATION, SoundEventHolder,
-    SwingAnimation, TOOLTIP_DISPLAY, TooltipDisplay, USE_EFFECTS, UseEffects, sound_events,
+    ATTRIBUTE_MODIFIERS, BREAK_SOUND, Component, ComponentData, DataComponentGetter,
+    DataComponentType, Debug, DowncastType, ENCHANTMENTS, FxHashMap, Identifier,
+    ItemAttributeModifiers, ItemEnchantments, ItemLore, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST,
+    Rarity, SWING_ANIMATION, SoundEventHolder, SwingAnimation, TOOLTIP_DISPLAY, TooltipDisplay,
+    USE_EFFECTS, UseEffects, sound_events,
 };
 
 /// Storage for component values.
@@ -159,5 +160,11 @@ impl DataComponentMap {
     /// Removes a component by key.
     pub fn remove(&mut self, key: &Identifier) -> Option<ComponentData> {
         self.map.remove(key)
+    }
+}
+
+impl DataComponentGetter for DataComponentMap {
+    fn get_raw(&self, key: &Identifier) -> Option<&ComponentData> {
+        self.map.get(key)
     }
 }

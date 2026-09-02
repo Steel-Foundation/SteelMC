@@ -40,6 +40,32 @@ impl<P> CollectionPredicate<P> {
         self.size.as_ref()
     }
 
+    /// Mirrors Vanilla `CollectionPredicate.test`: every `contains` predicate
+    /// matches some value, every `count` predicate matches its number of values,
+    /// and the total size lies within `size`.
+    pub fn matches<'a, T: 'a>(
+        &self,
+        values: impl IntoIterator<Item = &'a T>,
+        matches: impl Fn(&P, &T) -> bool + Copy,
+    ) -> bool {
+        let values = values.into_iter().collect::<Vec<_>>();
+        self.contains.as_ref().is_none_or(|predicates| {
+            predicates
+                .iter()
+                .all(|predicate| values.iter().any(|value| matches(predicate, value)))
+        }) && self.counts.as_ref().is_none_or(|predicates| {
+            predicates.iter().all(|predicate| {
+                let count = values
+                    .iter()
+                    .filter(|value| matches(&predicate.test, value))
+                    .count();
+                i32::try_from(count).is_ok_and(|count| predicate.count.matches(count))
+            })
+        }) && self
+            .size
+            .is_none_or(|size| i32::try_from(values.len()).is_ok_and(|length| size.matches(length)))
+    }
+
     pub(super) fn from_nbt_with(
         tag: &NbtTag,
         decode: impl Fn(&NbtTag) -> Option<P> + Copy,

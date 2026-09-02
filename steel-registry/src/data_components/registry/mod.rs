@@ -31,6 +31,7 @@ use super::components::{
     ItemAttributeModifiers, ItemEnchantments, ItemLore, Rarity, SwingAnimation, TooltipDisplay,
     UseEffects,
 };
+use super::getter::DataComponentGetter;
 use super::vanilla_components::{
     ATTRIBUTE_MODIFIERS, BREAK_SOUND, ENCHANTMENTS, LORE, MAX_STACK_SIZE, RARITY, REPAIR_COST,
     SWING_ANIMATION, TOOLTIP_DISPLAY, USE_EFFECTS,

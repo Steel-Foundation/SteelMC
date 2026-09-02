@@ -6,11 +6,14 @@ pub trait DataComponentPredicateCodec:
 {
     fn from_nbt_value(tag: &NbtTag) -> Option<Self>;
     fn to_nbt_value(&self) -> NbtTag;
+    /// Mirrors Vanilla `DataComponentPredicate.matches(DataComponentGetter)`.
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool;
 }
 
 trait ErasedDataComponentPredicate: ErasedType + Debug + Send + Sync {
     fn clone_predicate(&self) -> Box<dyn ErasedDataComponentPredicate>;
     fn predicate_eq(&self, other: &dyn ErasedDataComponentPredicate) -> bool;
+    fn predicate_matches(&self, components: &dyn DataComponentGetter) -> bool;
 }
 
 impl<T: DataComponentPredicateCodec> ErasedDataComponentPredicate for T {
@@ -20,6 +23,10 @@ impl<T: DataComponentPredicateCodec> ErasedDataComponentPredicate for T {
 
     fn predicate_eq(&self, other: &dyn ErasedDataComponentPredicate) -> bool {
         other.downcast_ref::<T>() == Some(self)
+    }
+
+    fn predicate_matches(&self, components: &dyn DataComponentGetter) -> bool {
+        self.matches(components)
     }
 }
 
@@ -140,6 +147,21 @@ impl DataComponentPredicateData {
     #[must_use]
     pub const fn key(&self) -> &Identifier {
         self.discriminator.key()
+    }
+
+    /// Mirrors Vanilla `DataComponentPredicate.matches`, where an any-value
+    /// predicate only requires the component to be present.
+    #[must_use]
+    pub fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        match (self.discriminator, self.value.as_deref()) {
+            (PredicateDiscriminator::Concrete(_), Some(value)) => {
+                value.predicate_matches(components)
+            }
+            (PredicateDiscriminator::Any(component), None) => {
+                components.get_raw(&component.key).is_some()
+            }
+            _ => panic!("component predicate discriminator and value disagree"),
+        }
     }
 
     pub(super) fn from_persistent_entry(key: &Identifier, tag: &NbtTag) -> Option<Self> {
@@ -328,6 +350,15 @@ impl DataComponentExactPredicate {
         &self.values
     }
 
+    /// Mirrors Vanilla `DataComponentExactPredicate.test`: every expected value
+    /// must equal the effective value, so removed prototype components mismatch.
+    #[must_use]
+    pub fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        self.values
+            .iter()
+            .all(|(entry, expected)| components.get_raw(&entry.key) == Some(expected))
+    }
+
     fn from_owned_nbt(tag: &NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
         let mut values = Vec::with_capacity(compound.len());
@@ -440,6 +471,16 @@ impl DataComponentMatchers {
     #[must_use]
     pub fn partial(&self) -> &[DataComponentPredicateData] {
         &self.partial
+    }
+
+    /// Mirrors Vanilla `DataComponentMatchers.test`.
+    #[must_use]
+    pub fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        self.exact.matches(components)
+            && self
+                .partial
+                .iter()
+                .all(|predicate| predicate.matches(components))
     }
 
     pub(crate) fn from_fields(compound: &NbtCompound) -> Option<Self> {

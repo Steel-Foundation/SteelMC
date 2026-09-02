@@ -1,4 +1,8 @@
 use super::*;
+use crate::data_components::vanilla_components::{
+    BUNDLE_CONTENTS, CONTAINER, CUSTOM_DATA, DAMAGE, ENCHANTMENTS, ItemEnchantments, MAX_DAMAGE,
+    POTION_CONTENTS, PotionContents, STORED_ENCHANTMENTS,
+};
 
 /// Durability and current-damage bounds.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +51,14 @@ impl DataComponentPredicateCodec for DamagePredicate {
         }
         NbtTag::Compound(compound)
     }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        let Some(damage) = components.get(DAMAGE).copied() else {
+            return false;
+        };
+        let max_damage = components.get(MAX_DAMAGE).copied().unwrap_or(0);
+        self.durability.matches(max_damage - damage) && self.damage.matches(damage)
+    }
 }
 
 impl HashComponent for DamagePredicate {
@@ -84,6 +96,30 @@ impl EnchantmentPredicate {
     #[must_use]
     pub const fn levels(&self) -> IntBounds {
         self.levels
+    }
+
+    /// Mirrors Vanilla `EnchantmentPredicate.containedIn`.
+    #[must_use]
+    pub fn contained_in(&self, enchantments: &ItemEnchantments) -> bool {
+        if let Some(expected) = &self.enchantments {
+            return enchantments.iter().any(|(key, level)| {
+                REGISTRY
+                    .enchantments
+                    .by_key(key)
+                    .is_some_and(|enchantment| expected.contains(enchantment))
+                    && self.matches_level(*level)
+            });
+        }
+        if !self.levels.is_any() {
+            return enchantments
+                .iter()
+                .any(|(_, level)| self.matches_level(*level));
+        }
+        !enchantments.is_empty()
+    }
+
+    fn matches_level(&self, level: u32) -> bool {
+        i32::try_from(level).is_ok_and(|level| self.levels.matches(level))
     }
 
     fn from_nbt_value(tag: &NbtTag) -> Option<Self> {
@@ -132,6 +168,14 @@ impl DataComponentPredicateCodec for EnchantmentsPredicate {
     fn to_nbt_value(&self) -> NbtTag {
         encode_list(&self.0, EnchantmentPredicate::to_nbt_value)
     }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components.get(ENCHANTMENTS).is_some_and(|enchantments| {
+            self.0
+                .iter()
+                .all(|predicate| predicate.contained_in(enchantments))
+        })
+    }
 }
 
 impl HashComponent for EnchantmentsPredicate {
@@ -168,6 +212,16 @@ impl DataComponentPredicateCodec for StoredEnchantmentsPredicate {
 
     fn to_nbt_value(&self) -> NbtTag {
         encode_list(&self.0, EnchantmentPredicate::to_nbt_value)
+    }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .get(STORED_ENCHANTMENTS)
+            .is_some_and(|enchantments| {
+                self.0
+                    .iter()
+                    .all(|predicate| predicate.contained_in(enchantments))
+            })
     }
 }
 
@@ -206,6 +260,13 @@ impl DataComponentPredicateCodec for PotionsPredicate {
     fn to_nbt_value(&self) -> NbtTag {
         self.0.clone().to_nbt_tag()
     }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .get(POTION_CONTENTS)
+            .and_then(PotionContents::potion)
+            .is_some_and(|potion| self.0.contains(potion.value()))
+    }
 }
 
 impl HashComponent for PotionsPredicate {
@@ -242,6 +303,16 @@ impl DataComponentPredicateCodec for CustomDataPredicate {
 
     fn to_nbt_value(&self) -> NbtTag {
         self.0.to_nbt_tag_ref()
+    }
+
+    /// Mirrors `NbtPredicate.matches(DataComponentGetter)`, which compares
+    /// against empty custom data when the component is absent.
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components
+            .get(CUSTOM_DATA)
+            .cloned()
+            .unwrap_or_default()
+            .matched_by(self.0.tag())
     }
 }
 
@@ -283,6 +354,14 @@ impl DataComponentPredicateCodec for ContainerPredicate {
 
     fn to_nbt_value(&self) -> NbtTag {
         collection_field_nbt(self.0.as_ref(), "items", ItemPredicate::to_nbt_tag_ref)
+    }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components.get(CONTAINER).is_some_and(|contents| {
+            self.0.as_ref().is_none_or(|items| {
+                items.matches(contents.items().iter().flatten(), ItemPredicate::matches)
+            })
+        })
     }
 }
 
@@ -329,6 +408,14 @@ impl DataComponentPredicateCodec for BundlePredicate {
 
     fn to_nbt_value(&self) -> NbtTag {
         collection_field_nbt(self.0.as_ref(), "items", ItemPredicate::to_nbt_tag_ref)
+    }
+
+    fn matches(&self, components: &dyn DataComponentGetter) -> bool {
+        components.get(BUNDLE_CONTENTS).is_some_and(|contents| {
+            self.0
+                .as_ref()
+                .is_none_or(|items| items.matches(contents.items(), ItemPredicate::matches))
+        })
     }
 }
 

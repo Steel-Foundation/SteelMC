@@ -14,7 +14,9 @@ use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey, ErasedType, Iden
 use text_components::TextComponent;
 
 use crate::attribute::{Attribute, AttributeModifierOperation};
-use crate::data_components::{ComponentData, ComponentEntryRef, DataComponentMap};
+use crate::data_components::{
+    ComponentData, ComponentEntryRef, DataComponentGetter, DataComponentMap,
+};
 use crate::enchantment::Enchantment;
 use crate::equipment::EquipmentSlotGroup;
 use crate::item_predicate::{

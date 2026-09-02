@@ -59,6 +59,7 @@ pub mod frog_variant;
 pub mod game_events;
 pub mod game_rules;
 pub mod instrument;
+pub mod item_instance;
 pub mod item_predicate;
 pub mod item_stack;
 pub mod item_stack_template;
@@ -106,6 +107,7 @@ pub use entity_variant::{
     AxolotlVariant, FoxVariant, HorseVariant, LlamaVariant, MooshroomVariant, ParrotVariant,
     RabbitVariant, SalmonVariant, TropicalFishBase, TropicalFishPattern,
 };
+pub use item_instance::ItemInstance;
 pub use item_stack_template::ItemStackTemplate;
 pub use mob_effect_instance::{MobEffectInstance, MobEffectInstanceDetails};
 pub use potion::{Potion, PotionEffect, PotionRef};
