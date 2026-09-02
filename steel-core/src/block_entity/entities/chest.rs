@@ -212,20 +212,63 @@ impl ContainerOpeners for ChestBlockEntity {
 mod tests {
     use glam::DVec3;
     use steel_registry::blocks::properties::{BlockStateProperties, ChestType, Direction};
+    use steel_registry::data_components::vanilla_components::CUSTOM_NAME;
     use steel_registry::{
-        item_stack::ItemStack, test_support::init_test_registry, vanilla_blocks, vanilla_items,
+        item_stack::ItemStack, test_support::init_test_registry, vanilla_blocks, vanilla_entities,
+        vanilla_items,
     };
-    use steel_utils::{ChunkPos, Downcast as _, types::UpdateFlags};
+    use steel_utils::{ChunkPos, Downcast as _, WorldAabb, types::UpdateFlags};
     use uuid::Uuid;
 
-    use crate::behavior::init_behaviors;
+    use crate::behavior::items::BlockItem;
+    use crate::behavior::{BlockPlaceContext, InteractionResult, init_behaviors};
     use crate::block_entity::init_block_entities;
     use crate::entity::Entity as _;
+    use crate::entity::entities::ItemEntity;
     use crate::inventory::container::Container as _;
     use crate::inventory::menu::kinds::chest_with_openers;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
 
     use super::*;
+
+    #[test]
+    fn breaking_a_named_chest_drops_a_named_chest_item() {
+        init_test_registry();
+        init_behaviors();
+        init_block_entities();
+        let world = fresh_test_world("named_chest_drop");
+        let pos = BlockPos::new(3, 64, 3);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        let name = TextComponent::plain("Keepsake");
+        let mut stack = ItemStack::new(&vanilla_items::CHEST);
+        stack.set(CUSTOM_NAME, name.clone());
+        let context =
+            BlockPlaceContext::directional(&world, pos, Direction::Up, &mut stack, Direction::Up);
+        assert_eq!(
+            BlockItem::new(&vanilla_blocks::CHEST).place(context),
+            InteractionResult::Success
+        );
+
+        assert!(world.destroy_block(pos, true));
+
+        let min = DVec3::new(
+            f64::from(pos.x()) - 1.0,
+            f64::from(pos.y()) - 1.0,
+            f64::from(pos.z()) - 1.0,
+        );
+        let dropped = world.get_entities_in_aabb_matching(
+            &WorldAabb::new(min.x, min.y, min.z, min.x + 3.0, min.y + 3.0, min.z + 3.0),
+            |entity| entity.entity_type() == &vanilla_entities::ITEM,
+        );
+        let chest_items = dropped
+            .iter()
+            .filter_map(|entity| entity.as_ref().downcast_ref::<ItemEntity>())
+            .map(ItemEntity::get_item)
+            .filter(|item| item.is(&vanilla_items::CHEST))
+            .collect::<Vec<_>>();
+        assert_eq!(chest_items.len(), 1);
+        assert_eq!(chest_items[0].get(CUSTOM_NAME), Some(&name));
+    }
 
     fn test_chest() -> ChestBlockEntity {
         init_test_registry();

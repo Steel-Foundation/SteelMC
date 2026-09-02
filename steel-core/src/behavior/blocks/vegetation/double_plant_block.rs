@@ -97,7 +97,7 @@ impl DoublePlantBlock {
                 let main_hand = inventory.get_item_in_hand(InteractionHand::MainHand);
                 main_hand.copy_with_count(main_hand.count)
             };
-            world.drop_resources_for_player(state, pos, player, &destroyed_with);
+            world.drop_resources_for_player(state, pos, player, None, &destroyed_with);
         }
         state
     }
@@ -112,6 +112,7 @@ impl DoublePlantBlock {
             vanilla_blocks::AIR.default_state(),
             pos,
             player,
+            None,
             destroyed_with,
         );
     }

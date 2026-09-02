@@ -268,18 +268,17 @@ pub trait BlockBehavior: Send + Sync {
     /// Vanilla parity: `Block.playerDestroy(Level, Player, BlockPos,
     /// BlockState, BlockEntity, ItemStack)`. The game-mode layer owns shared
     /// exhaustion/tool handling; block behavior controls the state whose loot
-    /// is evaluated. Block-entity loot parameters are retained in the callback
-    /// signature but are not yet exposed by [`BlockLootContext`].
+    /// is evaluated.
     fn player_destroy(
         &self,
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
-        _block_entity: Option<&dyn BlockEntity>,
+        block_entity: Option<&dyn BlockEntity>,
         destroyed_with: &ItemStack,
     ) {
-        world.drop_resources_for_player(state, pos, player, destroyed_with);
+        world.drop_resources_for_player(state, pos, player, block_entity, destroyed_with);
     }
 
     /// Overrides the loot generated for this block state.

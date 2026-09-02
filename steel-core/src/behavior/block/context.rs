@@ -1,6 +1,7 @@
 use super::{
-    Arc, Axis, BlockLocalAabb, BlockPos, BlockStateId, DVec3, DamageSource, Entity, EntityTypeRef,
-    ItemStack, SharedBlockEntity, SmallVec, SoundEventRef, VoxelShape, World, vanilla_entities,
+    Arc, Axis, BlockEntity, BlockLocalAabb, BlockPos, BlockStateId, DVec3, DamageSource, Entity,
+    EntityTypeRef, ItemStack, SharedBlockEntity, SmallVec, SoundEventRef, VoxelShape, World,
+    vanilla_entities,
 };
 
 pub struct PickupResult {
@@ -65,6 +66,7 @@ pub struct BlockLootContext<'a> {
     world: &'a Arc<World>,
     pos: BlockPos,
     entity: Option<&'a dyn Entity>,
+    block_entity: Option<&'a dyn BlockEntity>,
     tool: Option<&'a ItemStack>,
     luck: f32,
 }
@@ -77,6 +79,7 @@ impl<'a> BlockLootContext<'a> {
             world,
             pos,
             entity: None,
+            block_entity: None,
             tool: None,
             luck: 0.0,
         }
@@ -86,6 +89,13 @@ impl<'a> BlockLootContext<'a> {
     #[must_use]
     pub const fn with_entity(mut self, entity: Option<&'a dyn Entity>) -> Self {
         self.entity = entity;
+        self
+    }
+
+    /// Adds the destroyed block's entity, which `copy_components` loot functions read.
+    #[must_use]
+    pub const fn with_block_entity(mut self, block_entity: Option<&'a dyn BlockEntity>) -> Self {
+        self.block_entity = block_entity;
         self
     }
 
@@ -123,6 +133,10 @@ impl<'a> BlockLootContext<'a> {
 
     pub(crate) const fn entity(&self) -> Option<&'a dyn Entity> {
         self.entity
+    }
+
+    pub(crate) const fn block_entity(&self) -> Option<&'a dyn BlockEntity> {
+        self.block_entity
     }
 
     pub(crate) const fn tool(&self) -> Option<&'a ItemStack> {

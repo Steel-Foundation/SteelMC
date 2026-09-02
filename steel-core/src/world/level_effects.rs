@@ -1,3 +1,5 @@
+use steel_registry::loot_table::BlockEntityRef;
+
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockLootContext, BlockPos, BlockStateExt, BlockStateId, CLevelEvent,
     CLevelParticles, CSound, ChunkPos, ConnectionProtocol, DVec3, EncodedPacket, Entity,
@@ -6,6 +8,7 @@ use super::{
     UpdateFlags, World, WorldEntityManager, entity_loot_ref, fluid_state_to_block, level_events,
     vanilla_blocks, vanilla_game_events,
 };
+use crate::block_entity::{BlockEntity, BlockEntityComponentsExt};
 
 pub(super) fn sound_is_within_range(
     sound: SoundEventRef,
@@ -283,8 +286,8 @@ impl World {
         }
 
         if drop_items {
-            self.drop_resources_with_entity(state, pos, entity);
-            // TODO: block entity drops
+            let block_entity = self.get_block_entity(pos);
+            self.drop_resources_with_entity(state, pos, entity, block_entity.as_deref());
         }
 
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
@@ -308,7 +311,7 @@ impl World {
     /// [`BlockBehavior::player_destroy`](crate::behavior::BlockBehavior::player_destroy),
     /// which includes player and tool context.
     pub fn drop_resources(self: &Arc<Self>, state: BlockStateId, pos: BlockPos) {
-        self.drop_resources_with_entity(state, pos, None);
+        self.drop_resources_with_entity(state, pos, None, None);
     }
 
     pub(super) fn drop_resources_with_entity(
@@ -316,8 +319,11 @@ impl World {
         state: BlockStateId,
         pos: BlockPos,
         entity: Option<&dyn Entity>,
+        block_entity: Option<&dyn BlockEntity>,
     ) {
-        let context = BlockLootContext::new(self, pos).with_entity(entity);
+        let context = BlockLootContext::new(self, pos)
+            .with_entity(entity)
+            .with_block_entity(block_entity);
         self.drop_resources_from_context(state, &context);
     }
 
@@ -327,10 +333,12 @@ impl World {
         state: BlockStateId,
         pos: BlockPos,
         player: &Player,
+        block_entity: Option<&dyn BlockEntity>,
         tool: &ItemStack,
     ) {
         let context = BlockLootContext::new(self, pos)
             .with_entity(Some(player))
+            .with_block_entity(block_entity)
             .with_tool(tool);
         self.drop_resources_from_context(state, &context);
     }
@@ -373,6 +381,9 @@ impl World {
             return Vec::new();
         };
 
+        let block_entity_components = context
+            .block_entity()
+            .map(BlockEntityComponentsExt::collect_components);
         let result =
             context
                 .world()
@@ -391,6 +402,16 @@ impl World {
                     }
                     if let Some(entity) = context.entity() {
                         ctx = ctx.with_this_entity(entity_loot_ref(entity));
+                    }
+                    if let Some((block_entity, components)) =
+                        context.block_entity().zip(block_entity_components.as_ref())
+                    {
+                        ctx = ctx.with_block_entity(BlockEntityRef {
+                            block_entity_type: Some(&block_entity.get_type().key),
+                            custom_name: None,
+                            inventory: None,
+                            components: Some(components),
+                        });
                     }
 
                     loot_table.get_random_items(&mut ctx)
