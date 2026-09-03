@@ -101,6 +101,7 @@ impl ItemBehavior for FireworkRocketItem {
             context.player,
         );
         let rocket = Self::add_rocket(context.world, rocket);
+        let has_infinite_materials = context.player.has_infinite_materials();
         context.inv.with_item(|itemstack| {
             let item = itemstack.item();
             enchantment_helper::on_projectile_spawned(
@@ -109,7 +110,7 @@ impl ItemBehavior for FireworkRocketItem {
                 rocket.as_ref(),
                 Some(context.player),
             );
-            itemstack.shrink(1);
+            itemstack.consume_one(has_infinite_materials);
             context
                 .player
                 .award_stat(&vanilla_stat_types::ITEM_USED, item);

@@ -1122,27 +1122,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().set_removed(reason);
     }
 
-    /// Emits a vanilla game event from this entity's exact position.
-    fn game_event(&self, event: GameEventRef) {
+    /// Emits a vanilla game event from this entity's exact position with an explicit source entity.
+    fn game_event_with_source_entity(
+        &self,
+        event: GameEventRef,
+        source_entity: Option<&dyn Entity>,
+    ) {
         let Some(world) = self.level() else {
             return;
         };
+
         world.game_event_at(
             event,
             self.position(),
-            &GameEventContext::new(Some(self.as_entity_event_source()), None),
+            &GameEventContext::new(source_entity, None),
         );
     }
 
-    /// Emits a vanilla game event from this entity's exact position with a player.
-    fn game_event_with_player(&self, event: GameEventRef, player: &Player) {
-        if let Some(world) = self.level() {
-            world.game_event_at(
-                event,
-                self.position(),
-                &GameEventContext::new(Some(player), None),
-            );
-        }
+    /// Emits a vanilla game event from this entity's exact position.
+    fn game_event(&self, event: GameEventRef) {
+        self.game_event_with_source_entity(event, Some(self.as_entity_event_source()));
     }
 
     /// Kills this entity using vanilla's living/non-living class split.
@@ -1236,14 +1235,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return false;
         }
 
-        if let Some(world) = self.level() {
-            let source_entity = player.map(|player| player as &dyn Entity);
-            world.game_event(
-                &vanilla_game_events::SHEAR,
-                self.block_position(),
-                &GameEventContext::new(source_entity, None),
-            );
-        }
+        let source_entity = player.map(|player| player as &dyn Entity);
+        self.game_event_with_source_entity(&vanilla_game_events::SHEAR, source_entity);
         true
     }
 
@@ -1307,13 +1300,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             mob.set_guaranteed_drop(slot);
             mob.set_persistence_required();
 
-            if let Some(world) = self.level() {
-                world.game_event(
-                    &vanilla_game_events::SHEAR,
-                    self.block_position(),
-                    &GameEventContext::new(Some(player), None),
-                );
-            }
+            self.game_event_with_source_entity(&vanilla_game_events::SHEAR, Some(player));
             if let Some(shearing_sound) = shearing_sound {
                 self.play_sound(shearing_sound, 1.0, 1.0);
             }
@@ -1400,13 +1387,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                     mob.drop_leash();
                 }
 
-                if let Some(world) = self.level() {
-                    world.game_event(
-                        &vanilla_game_events::ENTITY_INTERACT,
-                        self.block_position(),
-                        &GameEventContext::new(Some(player), None),
-                    );
-                }
+                self.game_event_with_source_entity(
+                    &vanilla_game_events::ENTITY_INTERACT,
+                    Some(player),
+                );
                 self.play_sound(&sound_events::ITEM_LEAD_UNTIED, 1.0, 1.0);
                 return InteractionResult::Success;
             }
@@ -3010,14 +2994,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         self.on_flap();
-        if self.movement_emission().emits_events()
-            && let Some(world) = self.level()
-        {
-            world.game_event_at(
-                &vanilla_game_events::FLAP,
-                self.position(),
-                &GameEventContext::new(Some(self.as_entity_event_source()), None),
-            );
+        if self.movement_emission().emits_events() {
+            self.game_event(&vanilla_game_events::FLAP);
         }
     }
 
@@ -3074,11 +3052,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                     self.water_swim_sound();
                 }
                 if emission.emits_events() {
-                    world.game_event_at(
-                        &vanilla_game_events::SWIM,
-                        self.position(),
-                        &GameEventContext::new(Some(self.as_entity_event_source()), None),
-                    );
+                    self.game_event(&vanilla_game_events::SWIM);
                 }
             }
         } else if supporting_state.get_block() == &vanilla_blocks::AIR {

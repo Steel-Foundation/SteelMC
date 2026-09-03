@@ -23,6 +23,32 @@ pub fn chest(
     rows: usize,
 ) -> Menu {
     let container = container.into();
+    chest_with_kind(
+        inventory,
+        container_id,
+        container.clone(),
+        rows,
+        ChestKind { container },
+    )
+}
+
+/// Builds the same layout as [`chest`] under a caller-supplied menu kind.
+///
+/// Chest-shaped menus whose validity or close cleanup is not the backing
+/// container's own (the ender chest, whose container belongs to the player
+/// rather than the block) share the layout through this.
+///
+/// # Panics
+/// Panics if `rows` is 0 or greater than 6.
+#[must_use]
+pub(crate) fn chest_with_kind(
+    inventory: Shared<PlayerInventory>,
+    container_id: u8,
+    container: impl Into<ContainerRef>,
+    rows: usize,
+    kind: impl MenuKind + 'static,
+) -> Menu {
+    let container = container.into();
     assert!(
         (1..=6).contains(&rows),
         "Chest rows must be between 1 and 6"
@@ -35,7 +61,7 @@ pub fn chest(
     builder.route(chest, player.all(), FillDirection::Backward);
     builder.route(player.all(), chest, FillDirection::Forward);
 
-    builder.build(ChestKind { container })
+    builder.build(kind)
 }
 
 /// Menu type for a chest of `rows` rows.
