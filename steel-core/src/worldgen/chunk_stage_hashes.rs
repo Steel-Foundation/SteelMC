@@ -1718,3 +1718,272 @@ fn chunk_stage_hashes_inner() {
         }
     }
 }
+
+/// Full-pipeline trial chamber verification at seed 13579.
+///
+/// The vanilla chunk-stage hash fixture has no chunks inside any trial
+/// chamber, so end-to-end emission cannot be compared against vanilla hashes.
+/// Instead this drives the chunk pipeline (structure starts → references →
+/// noise → surface → carvers → features) over the chunk window of the trial
+/// chamber start at (-98, 7) — which the `structure_starts.json` fixture
+/// proves matches vanilla piece-for-piece — and asserts that the functional
+/// trial-chamber content is actually emitted: signature blocks exist and the
+/// trial spawner block entity loads its vanilla config reference.
+#[test]
+#[ignore = "release-only full-pipeline generation over a chunk region"]
+fn trial_chambers_feature_stage_places_functional_blocks() {
+    use crate::bootstrap::init_globals_once;
+    use crate::block_entity::init_block_entities;
+    use crate::block_entity::entities::TrialSpawnerBlockEntity;
+    use steel_utils::{BlockPos, Downcast as _};
+    use crate::worldgen::{OverworldGenerator, WorldGenContext};
+    use steel_registry::blocks::block_state_ext::BlockStateExt;
+    use steel_registry::vanilla_blocks;
+    use steel_worldgen::biomes::BiomeSourceKind;
+
+    init_globals_once();
+    init_block_entities();
+
+    let seed = 13579;
+    let dim_type = &vanilla_dimension_types::OVERWORLD;
+    let min_y = dim_type.min_y;
+    let height = dim_type.height;
+    let section_count = (height / 16) as usize;
+
+    let thread_pool = Arc::new(
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("rayon pool"),
+    );
+    let generator: Arc<ChunkGeneratorType> = Arc::new(ChunkGeneratorType::Overworld(
+        OverworldGenerator::new(None, BiomeSourceKind::overworld(seed), seed, &thread_pool),
+    ));
+    let world = create_test_world(
+        "minecraft:overworld",
+        dim_type,
+        seed,
+        generator.clone(),
+        thread_pool,
+    );
+    let context: Arc<WorldGenContext> = world.chunk_map.world_gen_context.clone();
+
+    let feature_step = GENERATION_PYRAMID.get_step_to(ChunkStatus::Features);
+    let feature_cache_radius = feature_step.direct_dependencies.get_radius() as i32;
+    let feature_carver_radius = feature_step
+        .direct_dependencies
+        .get_radius_of(ChunkStatus::Carvers) as i32;
+
+    // Chunk window covering the spawner/melee/zombie and reward/vault pieces
+    // of the vanilla-fixture trial chamber start at (-98, 7).
+    let feature_centers: Vec<(i32, i32)> =
+        (-99..=-97).flat_map(|x| (7..=9).map(move |z| (x, z))).collect();
+    assert_eq!(feature_centers.len(), 9);
+
+    // Structure starts for the radius-8 ring around every carver dependency.
+    let mut start_positions: FxHashSet<(i32, i32)> = FxHashSet::default();
+    for &(x, z) in &feature_centers {
+        for dx in -(8 + feature_carver_radius)..=(8 + feature_carver_radius) {
+            for dz in -(8 + feature_carver_radius)..=(8 + feature_carver_radius) {
+                start_positions.insert((x + dx, z + dz));
+            }
+        }
+    }
+
+    let mut chunks: FxHashMap<(i32, i32), Chunk> =
+        FxHashMap::with_capacity_and_hasher(start_positions.len(), FxBuildHasher);
+    for &pos in &start_positions {
+        chunks.insert(pos, empty_proto_chunk(pos, section_count, min_y, height));
+    }
+    for chunk in chunks.values() {
+        generator.create_structures(chunk);
+    }
+
+    let mut biome_positions: FxHashSet<(i32, i32)> = FxHashSet::default();
+    for &(x, z) in &feature_centers {
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                biome_positions.insert((x + dx, z + dz));
+            }
+        }
+    }
+    for &pos in &biome_positions {
+        generator.create_biomes(chunk_or_panic(&chunks, pos));
+    }
+
+    // References scan (mirrors `generate_references`).
+    let carver_positions: FxHashSet<(i32, i32)> = feature_centers
+        .iter()
+        .flat_map(|&(x, z)| {
+            (-feature_carver_radius..=feature_carver_radius).flat_map(move |dx| {
+                (-feature_carver_radius..=feature_carver_radius).map(move |dz| (x + dx, z + dz))
+            })
+        })
+        .collect();
+    for &(target_x, target_z) in &carver_positions {
+        let target_block_x = target_x * 16;
+        let target_block_z = target_z * 16;
+        for source_x in (target_x - 8)..=(target_x + 8) {
+            for source_z in (target_z - 8)..=(target_z + 8) {
+                let Some(source_chunk) = chunks.get(&(source_x, source_z)) else {
+                    continue;
+                };
+                let starts = source_chunk.structure_starts();
+                for (structure_id, start) in starts.iter() {
+                    let Some(bb) = start.bounding_box else {
+                        continue;
+                    };
+                    if bb.intersects_xz(
+                        target_block_x,
+                        target_block_z,
+                        target_block_x + 15,
+                        target_block_z + 15,
+                    ) {
+                        chunk_or_panic(&chunks, (target_x, target_z))
+                            .structure_references_mut()
+                            .entry(structure_id.clone())
+                            .or_default()
+                            .insert(ChunkPos::new(source_x, source_z));
+                    }
+                }
+            }
+        }
+    }
+
+    // Noise + surface + carvers for the carver dependency ring.
+    let dependency_positions = sorted_positions(&carver_positions);
+    for &pos in &dependency_positions {
+        let chunk = chunk_or_panic(&chunks, pos);
+        let beardifier = build_test_beardifier(chunk, &chunks);
+        generator.fill_from_noise(
+            GenerationChunk::<NoisePhase>::for_test(chunk),
+            beardifier.as_ref(),
+        );
+    }
+    let neighbor_biomes = |q: IVec3| -> u16 {
+        let cx = q.x >> 2;
+        let cz = q.z >> 2;
+        let neighbor = chunk_or_panic(&chunks, (cx, cz));
+        let sections = &neighbor.sections;
+        let min_qy = min_y >> 2;
+        let total_quarts_y = (section_count * 4) as i32;
+        let local_qx = (q.x - cx * 4) as usize;
+        let local_qz = (q.z - cz * 4) as usize;
+        let qy_clamped = ((q.y - min_qy).clamp(0, total_quarts_y - 1)) as usize;
+        let section_idx = qy_clamped / 4;
+        let local_qy = qy_clamped % 4;
+        sections.sections[section_idx].read().biomes.get(local_qx, local_qy, local_qz)
+    };
+    for &pos in &dependency_positions {
+        let chunk = chunk_or_panic(&chunks, pos);
+        generator.build_surface(
+            GenerationChunk::<SurfacePhase>::for_test(chunk),
+            &neighbor_biomes,
+        );
+    }
+    for &pos in &dependency_positions {
+        let chunk = chunk_or_panic(&chunks, pos);
+        recalculate_section_counts(chunk);
+        generator.apply_carvers(GenerationChunk::<CarversPhase>::for_test(chunk));
+    }
+
+    // Feature stage.
+    let holders = Arc::new(build_feature_holders(chunks, &carver_positions, min_y, height));
+    let mut generated_positions = FxHashSet::default();
+    generate_features_for_positions(
+        &feature_centers,
+        &mut generated_positions,
+        FeatureGenerationInputs {
+            holders: &holders,
+            context: &context,
+            generator: &generator,
+            feature_step,
+            feature_cache_radius,
+            seed,
+        },
+    );
+
+    // Scan the chamber window for signature blocks.
+    let mut trial_spawner_positions: Vec<BlockPos> = Vec::new();
+    let mut counts: FxHashMap<String, usize> = FxHashMap::default();
+    let tracked = [
+        &vanilla_blocks::TRIAL_SPAWNER,
+        &vanilla_blocks::VAULT,
+        &vanilla_blocks::CHEST,
+        &vanilla_blocks::TUFF_BRICKS,
+        &vanilla_blocks::TUFF,
+        &vanilla_blocks::POLISHED_TUFF,
+        &vanilla_blocks::CHISELED_TUFF,
+        &vanilla_blocks::COPPER_BULB,
+        &vanilla_blocks::COPPER_GRATE,
+        &vanilla_blocks::CHISELED_COPPER,
+    ];
+    for &(chunk_x, chunk_z) in &feature_centers {
+        let holder = holders.get(&(chunk_x, chunk_z)).expect("feature chunk");
+        let chunk = holder.try_chunk(ChunkStatus::Carvers).expect("chunk");
+        for (section_index, section_holder) in chunk.sections.sections.iter().enumerate() {
+            let section_base_y = min_y + (section_index as i32) * 16;
+            if section_base_y > 32 {
+                break;
+            }
+            let section = section_holder.read();
+            for y in 0..16i32 {
+                for z in 0..16usize {
+                    for x in 0..16usize {
+                        let block = section.states.get(x, y as usize, z).get_block();
+                        let world_x = chunk_x * 16 + x as i32;
+                        let world_y = section_base_y + y;
+                        let world_z = chunk_z * 16 + z as i32;
+                        if block.key == vanilla_blocks::TRIAL_SPAWNER.key {
+                            trial_spawner_positions.push(BlockPos::new(world_x, world_y, world_z));
+                        }
+                        if tracked.iter().any(|candidate| block.key == candidate.key) {
+                            *counts.entry(block.key.to_string()).or_default() += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("trial chamber block counts: {counts:?}");
+
+    assert!(
+        !trial_spawner_positions.is_empty(),
+        "trial chamber window must contain trial spawners"
+    );
+    assert!(
+        counts.get("minecraft:vault").copied().unwrap_or(0) > 0,
+        "trial chamber window must contain vaults"
+    );
+    assert!(
+        counts
+            .keys()
+            .any(|key| key.starts_with("minecraft:copper_bulb")),
+        "trial chamber window must contain copper bulbs, got {counts:?}"
+    );
+    assert!(
+        counts.keys().any(|key| key.ends_with("tuff")),
+        "trial chamber window must contain tuff variants, got {counts:?}"
+    );
+
+    // The emitted trial spawner block entity must exist and have loaded its
+    // vanilla config reference from the template NBT.
+    let holder = holders.get(&(-98, 8)).or_else(|| holders.get(&(-99, 8))).expect("chunk");
+    let chunk = holder.try_chunk(ChunkStatus::Carvers).expect("chunk");
+    let mut resolved_configs = Vec::new();
+    for pos in &trial_spawner_positions {
+        let Some(block_entity) = chunk.get_block_entity(*pos) else {
+            continue;
+        };
+        let Some(spawner) = block_entity.downcast_ref::<TrialSpawnerBlockEntity>() else {
+            panic!("trial spawner block at {pos:?} did not create a trial spawner block entity");
+        };
+        resolved_configs.push(spawner.active_config(false).key.to_string());
+    }
+    assert!(
+        resolved_configs
+            .iter()
+            .any(|key| key.starts_with("minecraft:trial_chamber/")),
+        "trial spawner block entities must reference vanilla trial spawner configs, got {resolved_configs:?}"
+    );
+}

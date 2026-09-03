@@ -14,11 +14,52 @@ struct VillagerProfessionEntry {
     id: usize,
     key: Identifier,
     work_sound: Option<Identifier>,
+    held_job_site: Option<Vec<Identifier>>,
+    acquirable_job_site: Option<Vec<Identifier>>,
 }
 
 #[derive(Deserialize)]
 struct SoundEventEntry {
     key: Identifier,
+}
+
+#[derive(Deserialize)]
+struct PoiTypeKeysFile {
+    poi_types: Vec<PoiTypeNameEntry>,
+}
+
+#[derive(Deserialize)]
+struct PoiTypeNameEntry {
+    name: String,
+}
+
+/// Resolves job-site POI type keys to references of the generated
+/// `vanilla_poi_types` constants, validating every key against the extracted POI
+/// type registry.
+fn generate_job_sites(
+    sites: &Option<Vec<Identifier>>,
+    poi_type_keys: &BTreeSet<String>,
+    profession: &Identifier,
+    field: &str,
+) -> TokenStream {
+    let Some(sites) = sites else {
+        return quote! { &[] };
+    };
+
+    let refs = sites.iter().map(|key| {
+        assert!(
+            key.namespace.as_ref() == "minecraft",
+            "Villager profession {profession} {field} references non-vanilla POI type {key}"
+        );
+        assert!(
+            poi_type_keys.contains(&key.to_string()),
+            "Villager profession {profession} {field} references missing POI type {key}"
+        );
+        let ident = Ident::new(&key.path.to_shouty_snake_case(), Span::call_site());
+        quote! { &crate::vanilla_poi_types::#ident }
+    });
+
+    quote! { &[#(#refs),*] }
 }
 
 pub(crate) fn build() -> TokenStream {
@@ -30,6 +71,12 @@ pub(crate) fn build() -> TokenStream {
     let sound_event_keys: BTreeSet<String> = sound_events
         .into_iter()
         .map(|entry| entry.key.to_string())
+        .collect();
+    let poi_file: PoiTypeKeysFile = read_json_asset("build_assets/poi_types.json");
+    let poi_type_keys: BTreeSet<String> = poi_file
+        .poi_types
+        .into_iter()
+        .map(|entry| format!("minecraft:{}", entry.name))
         .collect();
 
     let mut constants = TokenStream::new();
@@ -50,11 +97,25 @@ pub(crate) fn build() -> TokenStream {
             );
         }
         let work_sound = generate_option(&villager_profession.work_sound, generate_sound_event_ref);
+        let held_job_site = generate_job_sites(
+            &villager_profession.held_job_site,
+            &poi_type_keys,
+            &villager_profession.key,
+            "held_job_site",
+        );
+        let acquirable_job_site = generate_job_sites(
+            &villager_profession.acquirable_job_site,
+            &poi_type_keys,
+            &villager_profession.key,
+            "acquirable_job_site",
+        );
 
         constants.extend(quote! {
             pub static #ident: VillagerProfession = VillagerProfession {
                 key: #key,
                 work_sound: #work_sound,
+                held_job_site: #held_job_site,
+                acquirable_job_site: #acquirable_job_site,
             };
         });
 

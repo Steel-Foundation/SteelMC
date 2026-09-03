@@ -4,23 +4,16 @@
 //! result), burn/cook timers driven by `serverTick`, smelting recipe lookups
 //! against the vanilla recipe registry, and `RecipesUsed` experience tracking.
 
-use std::sync::{Arc, Weak};
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::{Arc, Weak};
 
 use simdnbt::borrow::{BaseNbtCompound as BorrowedNbtCompound, NbtCompound as NbtCompoundView};
 use simdnbt::owned::NbtCompound;
 use steel_registry::{
-    REGISTRY,
-    item_stack::ItemStack,
-    vanilla_block_entity_types,
-    vanilla_fuel_values,
-    vanilla_items,
-};
-use steel_utils::{
-    BlockPos, DowncastType, DowncastTypeKey, Identifier,
-    locks::SyncMutex,
+    REGISTRY, item_stack::ItemStack, vanilla_block_entity_types, vanilla_fuel_values, vanilla_items,
 };
 use steel_utils::BlockStateId;
+use steel_utils::{BlockPos, DowncastType, DowncastTypeKey, Identifier, locks::SyncMutex};
 
 use crate::block_entity::{BlockEntity, BlockEntityBase};
 use crate::inventory::{
@@ -52,6 +45,9 @@ pub struct FurnaceState {
 const DEFAULT_COOK_TIME: i32 = 200;
 
 /// Tile NBT tag list of items, each tagged with its `Slot`.
+///
+/// TODO: Used by the container item load/save paths once those TODOs land.
+#[expect(dead_code, reason = "reserved for the container NBT TODOs")]
 const ITEMS_TAG: &str = "Items";
 /// Tile NBT short: completed cook ticks (`cooking_time_spent`).
 const COOKING_TIMER_TAG: &str = "CookTime";
@@ -62,6 +58,9 @@ const BURN_TIME_TAG: &str = "BurnTime";
 /// Tile NBT short: total fuel burn ticks (`lit_total_time`).
 const LIT_DURATION_TAG: &str = "LitDuration";
 /// Tile NBT compound: recipe id -> completed smelt count (`RecipesUsed`).
+///
+/// TODO: Used by the recipes_used save/load TODOs.
+#[expect(dead_code, reason = "reserved for the recipes_used save/load TODOs")]
 const RECIPES_USED_TAG: &str = "RecipesUsed";
 
 /// A furnace block entity.
@@ -82,12 +81,19 @@ pub struct FurnaceBlockEntity {
 /// same mutex instead of juggling a second lock and lock-order hazard.
 pub struct FurnaceContainer {
     items: Vec<ItemStack>,
+    /// Remaining fuel burn ticks (`BurnTime`).
     pub lit_time_remaining: AtomicI32,
+    /// Total burn ticks of the currently burning fuel (`LitDuration`).
     pub lit_total_time: AtomicI32,
+    /// Completed cook ticks for the current input (`CookTime`).
     pub cooking_timer: AtomicI32,
+    /// Total cook ticks required for the current input (`CookTimeTotal`).
     pub cooking_total_time: AtomicI32,
     /// Completed smelts awaiting their XP payout, keyed by recipe id (vanilla
     /// `recipesUsed`). Persisted and drained when output is taken.
+    // TODO: persisted and read for XP-on-break once the furnace advancement/XP
+    // TODOs land.
+    #[expect(dead_code, reason = "reserved for the furnace XP TODOs")]
     recipes_used: Vec<(Identifier, i32)>,
 }
 
@@ -150,6 +156,7 @@ impl FurnaceBlockEntity {
         Arc::clone(&self.container)
     }
 
+    /// Sets the data.
     pub fn set_data(&self, index: i32, value: i32) {
         let container = self.container.lock();
         match index {
@@ -232,8 +239,10 @@ impl FurnaceContainer {
     }
 
     /// Main furnace tick logic - mirrors vanilla AbstractFurnaceBlockEntity.serverTick
-    fn server_tick(&mut self, world: &Arc<World>, pos: BlockPos) {
+    fn server_tick(&mut self, _world: &Arc<World>, _pos: BlockPos) {
         let is_burning = self.is_lit();
+        // TODO: mark the block entity changed when `changed` is true once the
+        // furnace dirty-flag TODO lands.
         let mut changed = false;
 
         // Decrement burn time
@@ -252,7 +261,11 @@ impl FurnaceContainer {
             if result.is_none() {
                 tracing::info!("No smelting recipe found for item: {:?}", input.item().id);
             } else {
-                tracing::info!("Found smelting recipe for {:?} -> {:?}", input.item().id, result.as_ref().unwrap().item().id);
+                tracing::info!(
+                    "Found smelting recipe for {:?} -> {:?}",
+                    input.item().id,
+                    result.as_ref().unwrap().item().id
+                );
             }
             result
         } else {
@@ -281,7 +294,8 @@ impl FurnaceContainer {
                         // TODO: Check vanilla fuel remainders
                         // For now, buckets return empty buckets
                         if fuel.item() == &*vanilla_items::LAVA_BUCKET {
-                            self.items[SLOT_FUEL] = ItemStack::with_count(&vanilla_items::BUCKET, 1);
+                            self.items[SLOT_FUEL] =
+                                ItemStack::with_count(&vanilla_items::BUCKET, 1);
                         }
                     }
                 }
@@ -306,6 +320,10 @@ impl FurnaceContainer {
             // Reset cooking progress if can't cook
             self.cooking_timer.store(0, Ordering::Relaxed);
         }
+
+        // TODO: mark the block entity changed when `changed` is true once the
+        // furnace dirty-flag TODO lands.
+        let _ = changed;
     }
 
     /// Check if we can smelt (output slot can accept result)
@@ -364,16 +382,20 @@ impl FurnaceContainer {
     fn load_nbt(&mut self, nbt: &NbtCompoundView<'_, '_>) {
         // Load timers
         if let Some(burn_time) = nbt.short(BURN_TIME_TAG) {
-            self.lit_time_remaining.store(burn_time as i32, Ordering::Relaxed);
+            self.lit_time_remaining
+                .store(burn_time as i32, Ordering::Relaxed);
         }
         if let Some(lit_duration) = nbt.short(LIT_DURATION_TAG) {
-            self.lit_total_time.store(lit_duration as i32, Ordering::Relaxed);
+            self.lit_total_time
+                .store(lit_duration as i32, Ordering::Relaxed);
         }
         if let Some(cook_time) = nbt.short(COOKING_TIMER_TAG) {
-            self.cooking_timer.store(cook_time as i32, Ordering::Relaxed);
+            self.cooking_timer
+                .store(cook_time as i32, Ordering::Relaxed);
         }
         if let Some(cook_total) = nbt.short(COOKING_TOTAL_TIME_TAG) {
-            self.cooking_total_time.store(cook_total as i32, Ordering::Relaxed);
+            self.cooking_total_time
+                .store(cook_total as i32, Ordering::Relaxed);
         }
 
         // TODO: Load items from NBT
@@ -382,10 +404,22 @@ impl FurnaceContainer {
 
     fn save_nbt(&self, nbt: &mut NbtCompound) {
         // Save timers
-        nbt.insert(BURN_TIME_TAG, self.lit_time_remaining.load(Ordering::Relaxed) as i16);
-        nbt.insert(LIT_DURATION_TAG, self.lit_total_time.load(Ordering::Relaxed) as i16);
-        nbt.insert(COOKING_TIMER_TAG, self.cooking_timer.load(Ordering::Relaxed) as i16);
-        nbt.insert(COOKING_TOTAL_TIME_TAG, self.cooking_total_time.load(Ordering::Relaxed) as i16);
+        nbt.insert(
+            BURN_TIME_TAG,
+            self.lit_time_remaining.load(Ordering::Relaxed) as i16,
+        );
+        nbt.insert(
+            LIT_DURATION_TAG,
+            self.lit_total_time.load(Ordering::Relaxed) as i16,
+        );
+        nbt.insert(
+            COOKING_TIMER_TAG,
+            self.cooking_timer.load(Ordering::Relaxed) as i16,
+        );
+        nbt.insert(
+            COOKING_TOTAL_TIME_TAG,
+            self.cooking_total_time.load(Ordering::Relaxed) as i16,
+        );
 
         // TODO: Save items to NBT
         // TODO: Save recipes_used

@@ -1,6 +1,5 @@
 //! Vanilla Mooshroom (MushroomCow) entity — red/brown variant, bowl milking, shearing, and suspicious-stew feeding.
 
-use std::str::FromStr;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -16,7 +15,7 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::MushroomCowEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
-    REGISTRY, RegistryReference, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_items,
+    REGISTRY, TaggedRegistryExt, sound_events, vanilla_attributes, vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::InteractionHand;
@@ -54,7 +53,9 @@ const DEFAULT_STEP_HEIGHT: f32 = 0.6;
 /// Mooshroom variant — mirrors `MushroomCow.Variant` ids (0 = red, 1 = brown).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MooshroomVariant {
+    /// The red variant.
     Red = 0,
+    /// The brown variant.
     Brown = 1,
 }
 
@@ -85,6 +86,7 @@ unsafe impl DowncastType for MooshroomEntity {
 
 impl MooshroomEntity {
     #[must_use]
+    /// Creates a new instance.
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
             EntityBase::new(id, position, entity_type.dimensions, world),
@@ -93,6 +95,7 @@ impl MooshroomEntity {
     }
 
     #[must_use]
+    /// Creates an instance from saved data.
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
             EntityBase::from_load(load, entity_type.dimensions),
@@ -144,10 +147,12 @@ impl MooshroomEntity {
     }
 
     #[must_use]
+    /// variant.
     pub fn variant(&self) -> MooshroomVariant {
         MooshroomVariant::from_id(*self.entity_data.lock().variant_type.get())
     }
 
+    /// Sets the variant.
     pub fn set_variant(&self, variant: MooshroomVariant) {
         self.entity_data.lock().variant_type.set(variant as i32);
     }
@@ -169,6 +174,7 @@ impl MooshroomEntity {
     }
 
     #[must_use]
+    /// Returns whether this is food.
     pub fn is_food(item_stack: &ItemStack) -> bool {
         REGISTRY
             .items

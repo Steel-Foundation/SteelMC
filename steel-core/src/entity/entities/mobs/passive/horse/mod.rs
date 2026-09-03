@@ -21,15 +21,14 @@ use crate::entity::ai::goal::{
 use crate::entity::damage::DamageSource;
 use crate::entity::{
     Entity, EntityBase, EntityBaseLoad, EntityPose, EntitySpawnReason, EntitySyncedData,
-    LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob, SpawnGroupData,
+    LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob, SharedEntity, SpawnGroupData,
 };
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
 
-const DEFAULT_STEP_HEIGHT: f32 = 0.6;
-
 #[entity_behavior(class = "Horse")]
+/// Entity behavior for the horse.
 pub struct HorseEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -44,6 +43,7 @@ unsafe impl DowncastType for HorseEntity {
 
 impl HorseEntity {
     #[must_use]
+    /// Creates a new instance.
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
             EntityBase::new(id, position, entity_type.dimensions, world),
@@ -51,6 +51,7 @@ impl HorseEntity {
         )
     }
     #[must_use]
+    /// Creates an instance from saved data.
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
             EntityBase::from_load(load, entity_type.dimensions),
@@ -95,6 +96,9 @@ impl HorseEntity {
 }
 
 impl Entity for HorseEntity {
+    fn controlling_passenger(&self) -> Option<SharedEntity> {
+        super::controlling_passenger_mountable(self, Mob::is_saddled(self))
+    }
     fn base(&self) -> &EntityBase {
         &self.base
     }
@@ -163,6 +167,9 @@ impl LivingEntity for HorseEntity {
 }
 
 impl Mob for HorseEntity {
+    fn mob_interact(&self, player: &Player, hand: InteractionHand) -> InteractionResult {
+        super::mob_interact_mountable(self, player, hand)
+    }
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }
@@ -192,3 +199,131 @@ impl Mob for HorseEntity {
 }
 
 impl PathfinderMob for HorseEntity {}
+
+#[cfg(test)]
+mod mount_tests {
+    use std::sync::Arc;
+
+    use glam::DVec3;
+    use steel_registry::{item_stack::ItemStack, vanilla_entities, vanilla_items};
+    use steel_utils::{ChunkPos, Downcast as _, types::InteractionHand};
+
+    use crate::behavior::InteractionResult;
+    use crate::entity::{Entity as _, SharedEntity};
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+
+    #[test]
+    fn adult_horse_mounts_player_on_empty_hand_interact() {
+        steel_registry::init_vanilla_registry();
+        crate::behavior::init_behaviors();
+
+        let world = fresh_test_world("adult_horse_mounts_player_on_empty_hand_interact");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let horse: SharedEntity = Arc::new(super::HorseEntity::new(
+            &vanilla_entities::HORSE,
+            1,
+            DVec3::new(0.0, 64.0, 0.0),
+            Arc::downgrade(&world),
+        ));
+        world
+            .try_add_entity(horse.clone())
+            .expect("horse should join world");
+
+        let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 2).build();
+        player.set_client_loaded(true);
+        assert!(world.add_player(player.clone(), crate::player::ResetReason::InitialJoin));
+
+        let result = player.interact_on(
+            horse.as_ref(),
+            InteractionHand::MainHand,
+            DVec3::new(0.0, 64.0, 0.0),
+        );
+
+        assert!(result.consumes_action(), "mount should consume the action");
+        assert!(
+            player.is_passenger(),
+            "player should end up riding the horse"
+        );
+        assert!(horse.has_passenger(player.as_ref()));
+
+        // Sneak-interact must not mount.
+        let other = TestPlayerBuilder::new(world.clone(), "Other", 3).build();
+        other.set_client_loaded(true);
+        assert!(world.add_player(other.clone(), crate::player::ResetReason::InitialJoin));
+        other.set_crouching(true);
+        let result = other.interact_on(
+            horse.as_ref(),
+            InteractionHand::MainHand,
+            DVec3::new(0.0, 64.0, 0.0),
+        );
+        assert!(!result.consumes_action());
+        assert!(!other.is_passenger());
+    }
+
+    #[test]
+    fn saddled_horse_is_controlled_by_player_passenger() {
+        steel_registry::init_vanilla_registry();
+        crate::behavior::init_behaviors();
+
+        let world = fresh_test_world("saddled_horse_is_controlled_by_player_passenger");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let horse: SharedEntity = Arc::new(super::HorseEntity::new(
+            &vanilla_entities::HORSE,
+            1,
+            DVec3::new(0.0, 64.0, 0.0),
+            Arc::downgrade(&world),
+        ));
+        world
+            .try_add_entity(horse.clone())
+            .expect("horse should join world");
+        horse
+            .downcast_ref::<super::HorseEntity>()
+            .unwrap()
+            .living_base
+            .equipment()
+            .lock()
+            .set(
+                crate::inventory::equipment::EquipmentSlot::Saddle,
+                steel_registry::item_stack::ItemStack::new(&vanilla_items::SADDLE),
+            );
+
+        // Unsaddled: no player control (vanilla gate).
+        assert!(horse.controlling_passenger().is_none());
+
+        let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 2).build();
+        player.set_client_loaded(true);
+        assert!(world.add_player(player.clone(), crate::player::ResetReason::InitialJoin));
+
+        let result = player.interact_on(
+            horse.as_ref(),
+            InteractionHand::MainHand,
+            DVec3::new(0.0, 64.0, 0.0),
+        );
+        assert!(result.consumes_action());
+
+        assert_eq!(
+            horse
+                .controlling_passenger()
+                .map(|controller| controller.id()),
+            Some(player.id()),
+            "saddled horse should be steered by its player rider"
+        );
+    }
+
+    #[test]
+    fn horse_saddle_slot_accepts_saddle_item() {
+        steel_registry::init_vanilla_registry();
+        let horse = super::HorseEntity::new(
+            &vanilla_entities::HORSE,
+            1,
+            DVec3::ZERO,
+            std::sync::Weak::new(),
+        );
+        let saddle = ItemStack::new(&vanilla_items::SADDLE);
+        assert!(crate::entity::LivingEntity::is_equippable_in_slot(
+            &horse,
+            &saddle,
+            crate::inventory::equipment::EquipmentSlot::Saddle
+        ));
+    }
+}

@@ -1,57 +1,132 @@
 [
   {
     "id": 0,
-    "key": "minecraft:none"
+    "key": "minecraft:none",
+    "acquirable_job_site": [
+      "minecraft:armorer",
+      "minecraft:butcher",
+      "minecraft:cartographer",
+      "minecraft:cleric",
+      "minecraft:farmer",
+      "minecraft:fisherman",
+      "minecraft:fletcher",
+      "minecraft:leatherworker",
+      "minecraft:librarian",
+      "minecraft:mason",
+      "minecraft:shepherd",
+      "minecraft:toolsmith",
+      "minecraft:weaponsmith"
+    ]
   },
   {
     "id": 1,
     "key": "minecraft:armorer",
-    "work_sound": "minecraft:entity.villager.work_armorer"
+    "work_sound": "minecraft:entity.villager.work_armorer",
+    "held_job_site": [
+      "minecraft:armorer"
+    ],
+    "acquirable_job_site": [
+      "minecraft:armorer"
+    ]
   },
   {
     "id": 2,
     "key": "minecraft:butcher",
-    "work_sound": "minecraft:entity.villager.work_butcher"
+    "work_sound": "minecraft:entity.villager.work_butcher",
+    "held_job_site": [
+      "minecraft:butcher"
+    ],
+    "acquirable_job_site": [
+      "minecraft:butcher"
+    ]
   },
   {
     "id": 3,
     "key": "minecraft:cartographer",
-    "work_sound": "minecraft:entity.villager.work_cartographer"
+    "work_sound": "minecraft:entity.villager.work_cartographer",
+    "held_job_site": [
+      "minecraft:cartographer"
+    ],
+    "acquirable_job_site": [
+      "minecraft:cartographer"
+    ]
   },
   {
     "id": 4,
     "key": "minecraft:cleric",
-    "work_sound": "minecraft:entity.villager.work_cleric"
+    "work_sound": "minecraft:entity.villager.work_cleric",
+    "held_job_site": [
+      "minecraft:cleric"
+    ],
+    "acquirable_job_site": [
+      "minecraft:cleric"
+    ]
   },
   {
     "id": 5,
     "key": "minecraft:farmer",
-    "work_sound": "minecraft:entity.villager.work_farmer"
+    "work_sound": "minecraft:entity.villager.work_farmer",
+    "held_job_site": [
+      "minecraft:farmer"
+    ],
+    "acquirable_job_site": [
+      "minecraft:farmer"
+    ]
   },
   {
     "id": 6,
     "key": "minecraft:fisherman",
-    "work_sound": "minecraft:entity.villager.work_fisherman"
+    "work_sound": "minecraft:entity.villager.work_fisherman",
+    "held_job_site": [
+      "minecraft:fisherman"
+    ],
+    "acquirable_job_site": [
+      "minecraft:fisherman"
+    ]
   },
   {
     "id": 7,
     "key": "minecraft:fletcher",
-    "work_sound": "minecraft:entity.villager.work_fletcher"
+    "work_sound": "minecraft:entity.villager.work_fletcher",
+    "held_job_site": [
+      "minecraft:fletcher"
+    ],
+    "acquirable_job_site": [
+      "minecraft:fletcher"
+    ]
   },
   {
     "id": 8,
     "key": "minecraft:leatherworker",
-    "work_sound": "minecraft:entity.villager.work_leatherworker"
+    "work_sound": "minecraft:entity.villager.work_leatherworker",
+    "held_job_site": [
+      "minecraft:leatherworker"
+    ],
+    "acquirable_job_site": [
+      "minecraft:leatherworker"
+    ]
   },
   {
     "id": 9,
     "key": "minecraft:librarian",
-    "work_sound": "minecraft:entity.villager.work_librarian"
+    "work_sound": "minecraft:entity.villager.work_librarian",
+    "held_job_site": [
+      "minecraft:librarian"
+    ],
+    "acquirable_job_site": [
+      "minecraft:librarian"
+    ]
   },
   {
     "id": 10,
     "key": "minecraft:mason",
-    "work_sound": "minecraft:entity.villager.work_mason"
+    "work_sound": "minecraft:entity.villager.work_mason",
+    "held_job_site": [
+      "minecraft:mason"
+    ],
+    "acquirable_job_site": [
+      "minecraft:mason"
+    ]
   },
   {
     "id": 11,
@@ -60,16 +135,34 @@
   {
     "id": 12,
     "key": "minecraft:shepherd",
-    "work_sound": "minecraft:entity.villager.work_shepherd"
+    "work_sound": "minecraft:entity.villager.work_shepherd",
+    "held_job_site": [
+      "minecraft:shepherd"
+    ],
+    "acquirable_job_site": [
+      "minecraft:shepherd"
+    ]
   },
   {
     "id": 13,
     "key": "minecraft:toolsmith",
-    "work_sound": "minecraft:entity.villager.work_toolsmith"
+    "work_sound": "minecraft:entity.villager.work_toolsmith",
+    "held_job_site": [
+      "minecraft:toolsmith"
+    ],
+    "acquirable_job_site": [
+      "minecraft:toolsmith"
+    ]
   },
   {
     "id": 14,
     "key": "minecraft:weaponsmith",
-    "work_sound": "minecraft:entity.villager.work_weaponsmith"
+    "work_sound": "minecraft:entity.villager.work_weaponsmith",
+    "held_job_site": [
+      "minecraft:weaponsmith"
+    ],
+    "acquirable_job_site": [
+      "minecraft:weaponsmith"
+    ]
   }
 ]

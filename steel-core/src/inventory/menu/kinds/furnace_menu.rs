@@ -6,11 +6,14 @@
 //! - Slot 2: Output (smelted result)
 //! - Slots 3-38: Player inventory (27 main + 9 hotbar)
 
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use crate::block_entity::{
+    SharedBlockEntity,
+    entities::{FurnaceBlockEntity, FurnaceContainer},
+};
 use crate::inventory::prelude::*;
 use crate::player::player_inventory::PlayerInventory;
-use crate::block_entity::{entities::{FurnaceBlockEntity, FurnaceContainer}, SharedBlockEntity};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use steel_utils::{Downcast, locks::SyncMutex};
 
 /// Builds a furnace menu with 3 machine slots (input, fuel, output) plus the player inventory.
@@ -114,4 +117,3 @@ impl MenuKind for FurnaceKind {
         }
     }
 }
-

@@ -14,4 +14,4 @@ pub use chest_menu::{ChestKind, chest};
 pub use crafting_menu::{CraftingKind, crafting};
 pub use furnace_menu::{FurnaceKind, furnace};
 pub use inventory_menu::{INVENTORY_MENU_CONTAINER_ID, InventoryKind, inventory_menu};
-pub use merchant_menu::{MerchantKind, merchant};
+pub use merchant_menu::{MerchantAccess, MerchantKind, merchant};

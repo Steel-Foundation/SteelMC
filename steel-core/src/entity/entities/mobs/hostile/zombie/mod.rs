@@ -34,7 +34,6 @@ use crate::entity::{
     LivingEntity, LivingEntityBase, LivingEntitySyncedData, Mob, MobBase, MoveResult,
     PathfinderMob, SpawnGroupData,
 };
-use crate::inventory::equipment::EquipmentSlot;
 use crate::world::World;
 
 /// Vanilla zombie entity.
@@ -98,15 +97,21 @@ impl ZombieEntity {
             );
             target_selector.add_goal(
                 3,
-                NearestAttackableTargetGoal::new(false, |target, _| target.entity_type() == &vanilla_entities::VILLAGER),
+                NearestAttackableTargetGoal::new(false, |target, _| {
+                    target.entity_type() == &vanilla_entities::VILLAGER
+                }),
             );
             target_selector.add_goal(
                 3,
-                NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::IRON_GOLEM),
+                NearestAttackableTargetGoal::new(true, |target, _| {
+                    target.entity_type() == &vanilla_entities::IRON_GOLEM
+                }),
             );
             target_selector.add_goal(
                 5,
-                NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::TURTLE),
+                NearestAttackableTargetGoal::new(true, |target, _| {
+                    target.entity_type() == &vanilla_entities::TURTLE
+                }),
             );
         }
 
@@ -144,11 +149,6 @@ impl ZombieEntity {
         self.entity_data.lock().drowned_conversion.set(true);
     }
 
-    /// Vanilla `Zombie.isSunSensitive`.
-    const fn is_sun_sensitive() -> bool {
-        true
-    }
-
     fn update_dirty_mob_effect_entity_data(&self) {
         if !self.living_base.take_effects_dirty() {
             return;
@@ -169,7 +169,7 @@ impl ZombieEntity {
     }
 
     fn tick_zombie_specific(&self) {
-        let Some(world) = self.level() else {
+        let Some(_world) = self.level() else {
             return;
         };
         if !Entity::is_alive(self) || self.is_no_ai() {
@@ -194,27 +194,9 @@ impl ZombieEntity {
             *self.in_water_time.lock() = -1;
         }
 
-        // Sun sensitivity (vanilla `Monster.aiStep`).
-        if Self::is_sun_sensitive()
-            && world.difficulty() != Difficulty::Peaceful
-            && world.sky_darkening() < 4
-        {
-            let eye_pos = BlockPos::new(
-                self.position().x.floor() as i32,
-                self.get_eye_y().floor() as i32,
-                self.position().z.floor() as i32,
-            );
-            if world.can_see_sky(eye_pos)
-                && self
-                    .living_base()
-                    .equipment()
-                    .lock()
-                    .get_ref(EquipmentSlot::Head)
-                    .is_empty()
-            {
-                self.set_remaining_fire_ticks(2);
-            }
-        }
+        // Sun sensitivity is handled by `Mob::maybe_burn_in_daylight` in the
+        // server AI step; setting fire ticks here would stomp that ignite
+        // (keeping it at 2 ticks, which never passes the damage threshold).
     }
 }
 
@@ -333,6 +315,9 @@ impl LivingEntity for ZombieEntity {
 }
 
 impl Mob for ZombieEntity {
+    fn burns_in_daylight(&self) -> bool {
+        true
+    }
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }
@@ -429,5 +414,144 @@ mod tests {
         // 6 goal-selector goals + 5 target-selector goals.
         assert!(goal_selector.available_goal_count() >= 6);
         assert!(target_selector.available_goal_count() >= 5);
+    }
+}
+
+#[cfg(test)]
+mod sunburn_tests {
+    use std::sync::Arc;
+
+    use glam::DVec3;
+    use steel_registry::item_stack::ItemStack;
+    use steel_registry::vanilla_blocks;
+    use steel_registry::{vanilla_entities, vanilla_items};
+    use steel_utils::{BlockPos, ChunkPos, Downcast as _};
+
+    use crate::entity::SharedEntity;
+    use crate::inventory::equipment::EquipmentSlot;
+    use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
+
+    #[test]
+    fn daylight_ignites_zombie_and_helmet_protects() {
+        steel_registry::init_vanilla_registry();
+
+        let world = fresh_test_world("daylight_ignites_zombie_and_helmet_protects");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+        let make_zombie = |id, world: &Arc<crate::world::World>| {
+            let zombie: SharedEntity = Arc::new(super::ZombieEntity::new(
+                &vanilla_entities::ZOMBIE,
+                id,
+                DVec3::new(0.0, 64.0, 0.0),
+                Arc::downgrade(world),
+            ));
+            world
+                .try_add_entity(zombie.clone())
+                .expect("zombie should join world");
+            zombie
+        };
+
+        let exposed = make_zombie(1, &world);
+        exposed.as_mob().unwrap().maybe_burn_in_daylight();
+        assert!(exposed.is_on_fire(), "zombie in daylight should ignite");
+
+        let helmeted = make_zombie(2, &world);
+        helmeted
+            .downcast_ref::<super::ZombieEntity>()
+            .unwrap()
+            .living_base
+            .equipment()
+            .lock()
+            .set(
+                EquipmentSlot::Head,
+                ItemStack::new(&vanilla_items::IRON_HELMET),
+            );
+        helmeted.as_mob().unwrap().maybe_burn_in_daylight();
+        assert!(!helmeted.is_on_fire(), "helmet should block daylight burn");
+    }
+
+    #[test]
+    fn burning_zombie_takes_fire_damage_from_tick() {
+        steel_registry::init_vanilla_registry();
+
+        let world = fresh_test_world("burning_zombie_takes_fire_damage_from_tick");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+        let zombie: SharedEntity = Arc::new(super::ZombieEntity::new(
+            &vanilla_entities::ZOMBIE,
+            3,
+            DVec3::new(0.0, 64.0, 0.0),
+            Arc::downgrade(&world),
+        ));
+        world
+            .try_add_entity(zombie.clone())
+            .expect("zombie should join world");
+
+        let initial_health = zombie.as_living_entity().unwrap().get_health();
+        zombie.as_mob().unwrap().ignite_for_ticks(8 * 20);
+
+        for _ in 0..25 {
+            zombie.tick();
+        }
+
+        let after_health = zombie.as_living_entity().unwrap().get_health();
+        assert!(
+            after_health < initial_health,
+            "burning zombie should lose health from fire ticks (health {initial_health} -> {after_health})"
+        );
+    }
+
+    #[test]
+    fn burning_zombie_dies_after_enough_fire_ticks() {
+        steel_registry::init_vanilla_registry();
+        crate::behavior::init_behaviors();
+
+        let world = fresh_test_world("burning_zombie_dies_after_enough_fire_ticks");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+
+        let zombie: SharedEntity = Arc::new(super::ZombieEntity::new(
+            &vanilla_entities::ZOMBIE,
+            4,
+            DVec3::new(8.0, 64.0, 8.0),
+            Arc::downgrade(&world),
+        ));
+        world
+            .try_add_entity(zombie.clone())
+            .expect("zombie should join world");
+
+        // Floor so the zombie doesn't fall into the void of the empty chunk.
+        // Stays inside chunk (0,0), which is the only inserted chunk.
+        for x in 0..=15 {
+            for z in 0..=15 {
+                assert!(
+                    world.set_block(
+                        BlockPos::new(x, 63, z),
+                        vanilla_blocks::STONE.default_state(),
+                        steel_utils::types::UpdateFlags::UPDATE_NONE,
+                    ),
+                    "set_block failed at {x},{z}"
+                );
+            }
+        }
+
+        zombie.as_mob().unwrap().ignite_for_ticks(8 * 20);
+
+        // Sunlight re-ignites every tick via the AI step; run the real
+        // sunburn path so a stale fire-tick write can't mask it. One burn
+        // cycle is 8 damage, so a 20-HP zombie must eventually die.
+        for i in 0..400 {
+            zombie.as_mob().unwrap().maybe_burn_in_daylight();
+            zombie.tick();
+            if zombie
+                .as_living_entity()
+                .map_or(true, |l| l.get_health() <= 0.0)
+            {
+                return;
+            }
+        }
+        panic!(
+            "zombie should die from sustained burning, health={}",
+            zombie.as_living_entity().map_or(0.0, |l| l.get_health())
+        );
     }
 }

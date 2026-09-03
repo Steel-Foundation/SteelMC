@@ -860,7 +860,7 @@ impl PropertyEnum for SculkSensorPhase {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 #[derive_const(PartialEq)]
 pub enum TrialSpawnerState {
     Inactive,
@@ -884,7 +884,7 @@ impl PropertyEnum for TrialSpawnerState {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 #[derive_const(PartialEq)]
 pub enum VaultState {
     Inactive,

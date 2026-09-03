@@ -875,6 +875,12 @@ pub trait LivingEntity: Entity {
 
     /// Processes vanilla living death side effects.
     fn die(&self, source: &DamageSource) {
+        self.die_living_entity(source);
+    }
+
+    /// The vanilla `LivingEntity.die` body; overrides that extend it call this as their
+    /// `super.die(source)`.
+    fn die_living_entity(&self, source: &DamageSource) {
         if self.is_removed() {
             return;
         }

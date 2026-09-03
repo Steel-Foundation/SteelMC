@@ -7,28 +7,24 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
 use steel_protocol::packets::game::SoundSource;
-use steel_registry::entity_type::{
-    EntityAttachmentPoint, EntityAttachments, EntityDimensions, EntityTypeRef,
-};
+use steel_registry::entity_type::{EntityAttachments, EntityDimensions, EntityTypeRef};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_biome_tags::BiomeTag;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_entity_data::RabbitEntityData;
 use steel_registry::vanilla_item_tags::ItemTag;
-use steel_registry::{
-    REGISTRY, RegistryExt, RegistryReference, TaggedRegistryExt, sound_events, vanilla_attributes,
-};
+use steel_registry::{REGISTRY, TaggedRegistryExt, sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::InteractionHand;
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, Identifier};
+use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
-    BreedGoal, FloatGoal, LookAtPlayerGoal, MeleeAttackGoal, PanicGoal, RandomLookAroundGoal,
-    TemptGoal, WaterAvoidingRandomStrollGoal,
+    BreedGoal, FloatGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal, TemptGoal,
+    WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::ai::goal::{HurtByTargetGoal, NearestAttackableTargetGoal};
 use crate::entity::damage::DamageSource;
@@ -56,12 +52,19 @@ const DEFAULT_STEP_HEIGHT: f32 = 0.6;
 /// Mirrors `Rabbit.Variant` ids (0–5 normal, 99 evil).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RabbitVariant {
+    /// The brown variant.
     Brown = 0,
+    /// The white variant.
     White = 1,
+    /// The black variant.
     Black = 2,
+    /// The white splotched variant.
     WhiteSplotched = 3,
+    /// The gold variant.
     Gold = 4,
+    /// The salt variant.
     Salt = 5,
+    /// The evil variant.
     Evil = 99,
 }
 
@@ -102,6 +105,7 @@ unsafe impl DowncastType for RabbitEntity {
 
 impl RabbitEntity {
     #[must_use]
+    /// Creates a new instance.
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
             EntityBase::new(id, position, entity_type.dimensions, world),
@@ -110,6 +114,7 @@ impl RabbitEntity {
     }
 
     #[must_use]
+    /// Creates an instance from saved data.
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
             EntityBase::from_load(load, entity_type.dimensions),
@@ -165,10 +170,12 @@ impl RabbitEntity {
     }
 
     #[must_use]
+    /// variant.
     pub fn variant(&self) -> RabbitVariant {
         RabbitVariant::from_id(*self.entity_data.lock().variant_type.get())
     }
 
+    /// Sets the variant.
     pub fn set_variant(&self, variant: RabbitVariant) {
         let was_evil_before = self.variant().is_evil();
         let is_evil_after = variant.is_evil();
@@ -182,7 +189,9 @@ impl RabbitEntity {
             );
             target_selector.add_goal(
                 2,
-                NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::WOLF),
+                NearestAttackableTargetGoal::new(true, |target, _| {
+                    target.entity_type() == &vanilla_entities::WOLF
+                }),
             );
             // Killer bunny melee is wired via MeleeAttackGoal(1.4) once the killer variant is active;
             // game currently handles target acquisition and the existing melee loop handles the swing.
@@ -190,6 +199,7 @@ impl RabbitEntity {
     }
 
     #[must_use]
+    /// more_carrot_ticks.
     pub fn more_carrot_ticks(&self) -> i32 {
         *self.more_carrot_ticks.lock()
     }
@@ -211,6 +221,7 @@ impl RabbitEntity {
     }
 
     #[must_use]
+    /// Returns whether this is food.
     pub fn is_food(item_stack: &ItemStack) -> bool {
         REGISTRY
             .items

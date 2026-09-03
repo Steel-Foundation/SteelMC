@@ -103,6 +103,10 @@ pub trait LivingEntitySyncedData: EntitySyncedData {
 
     /// Clears synchronized vanilla sleeping position.
     fn clear_sleeping_pos(&self);
+
+    /// Sets the vanilla `USING_ITEM` living-entity flag (bit 0), driving the
+    /// client-side item-use animation (bow draw, eating, blocking).
+    fn set_using_item_flag(&self, using: bool);
 }
 
 impl<T> LivingEntitySyncedData for SyncMutex<T>
@@ -118,6 +122,13 @@ where
 
     fn clear_sleeping_pos(&self) {
         self.lock().living_entity_mut().sleeping_pos.set(None);
+    }
+
+    fn set_using_item_flag(&self, using: bool) {
+        let mut data = self.lock();
+        let flags = *data.living_entity().living_entity_flags.get();
+        let next = if using { flags | 1 } else { flags & !1 };
+        data.living_entity_mut().living_entity_flags.set(next);
     }
 }
 

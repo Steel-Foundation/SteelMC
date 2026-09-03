@@ -91,6 +91,8 @@ pub use mobs::passive::zombie_horse::ZombieHorseEntity;
 pub use objects::display_ui::{BlockDisplayEntity, ItemFrameEntity, LeashFenceKnotEntity};
 pub use objects::explosives::EndCrystalEntity;
 pub use objects::items::{ExperienceOrbEntity, FallingBlockEntity, ItemEntity};
-pub use objects::projectiles::{EnderPearlEntity, FireworkRocketEntity, ThrownEggEntity};
-pub use objects::vehicles::ChestMinecartEntity;
+pub use objects::projectiles::{
+    ArrowEntity, EnderPearlEntity, FireworkRocketEntity, ThrownEggEntity,
+};
+pub use objects::vehicles::{BoatEntity, ChestBoatEntity, ChestMinecartEntity};
 pub use raw::RawEntity;

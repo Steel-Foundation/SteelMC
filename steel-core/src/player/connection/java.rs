@@ -16,10 +16,10 @@ use steel_protocol::packets::game::{
     SChatCommand, SChatSessionUpdate, SChunkBatchReceived, SClientCommand, SClientTickEnd,
     SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
-    SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
-    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem, SSelectTrade,
-    SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem,
-    SUseItemOn,
+    SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPaddleBoat, SPickItemFromBlock,
+    SPlayerAbilities, SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem,
+    SSelectTrade, SSetCarriedItem, SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing,
+    SUseItem, SUseItemOn,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
@@ -95,6 +95,7 @@ enum ScheduledPlayPacketKind {
     SelectTrade(SSelectTrade),
     SetCreativeModeSlot(SSetCreativeModeSlot),
     PlayerInput(SPlayerInput),
+    PaddleBoat(SPaddleBoat),
     PlayerCommand(SPlayerCommand),
     PlayerAbilities(SPlayerAbilities),
     RenameItem(SRenameItem),
@@ -166,6 +167,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::ContainerClose(_)
             | ScheduledPlayPacketKind::SetCreativeModeSlot(_)
             | ScheduledPlayPacketKind::PlayerInput(_)
+            | ScheduledPlayPacketKind::PaddleBoat(_)
             | ScheduledPlayPacketKind::PlayerAbilities(_)
             | ScheduledPlayPacketKind::SetCarriedItem(_)
             | ScheduledPlayPacketKind::Swing(_)
@@ -306,6 +308,7 @@ impl ScheduledPlayPacket {
                 player.handle_set_creative_mode_slot(packet);
             }
             ScheduledPlayPacketKind::PlayerInput(packet) => player.handle_player_input(packet),
+            ScheduledPlayPacketKind::PaddleBoat(packet) => player.handle_paddle_boat(packet),
             ScheduledPlayPacketKind::PlayerCommand(packet) => {
                 player.handle_player_command(packet);
             }
@@ -758,6 +761,9 @@ impl JavaConnection {
             }
             play::S_PLAYER_INPUT => scheduled(ScheduledPlayPacketKind::PlayerInput(
                 SPlayerInput::read_packet(data)?,
+            )),
+            play::S_PADDLE_BOAT => scheduled(ScheduledPlayPacketKind::PaddleBoat(
+                SPaddleBoat::read_packet(data)?,
             )),
             play::S_PLAYER_COMMAND => scheduled(ScheduledPlayPacketKind::PlayerCommand(
                 SPlayerCommand::read_packet(data)?,

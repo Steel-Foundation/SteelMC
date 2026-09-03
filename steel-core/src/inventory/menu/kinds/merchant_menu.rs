@@ -5,7 +5,6 @@ use steel_registry::{item_stack::ItemStack, vanilla_menu_types};
 use steel_utils::locks::{IntoShared, Shared, SyncMutex};
 
 use crate::{
-    entity::Entity,
     inventory::{
         container::{ResultContainer, SimpleContainer},
         prelude::*,
@@ -15,12 +14,39 @@ use crate::{
     villager::MerchantOffer,
 };
 
+/// Server-side merchant the trading menu reads and notifies.
+///
+/// Villagers implement this so the menu can send live level/XP and call
+/// vanilla `Merchant.notifyTrade` without depending on the concrete entity type.
+pub trait MerchantAccess: Send + Sync {
+    /// Shared offer list mutated when a trade is taken.
+    fn offers(&self) -> Arc<SyncMutex<Vec<MerchantOffer>>>;
+    /// Vanilla `Merchant.getVillagerXp` career progress shown in the trade GUI.
+    fn villager_xp(&self) -> i32;
+    /// Vanilla villager career level sent with merchant offers (1–5).
+    fn villager_level(&self) -> i32;
+    /// Vanilla `Merchant.notifyTrade` after a completed exchange.
+    fn notify_trade(&self, player: &Player, offer_xp: i32);
+    /// Vanilla `AbstractVillager.stopTrading` when the menu closes.
+    fn stop_trading(&self);
+    /// Vanilla `MerchantMenu.stillValid`.
+    fn still_valid(&self, player: &Player) -> bool;
+    /// Vanilla `Merchant.showProgressBar`.
+    fn show_progress(&self) -> bool {
+        true
+    }
+    /// Vanilla `Merchant.canRestock`.
+    fn can_restock(&self) -> bool {
+        true
+    }
+}
+
 /// Builds the vanilla merchant menu: two payment slots, one result, and the player inventory.
 #[must_use]
 pub fn merchant(
     inventory: Shared<PlayerInventory>,
     container_id: u8,
-    offers: Arc<SyncMutex<Vec<MerchantOffer>>>,
+    merchant: Arc<dyn MerchantAccess>,
 ) -> Menu {
     let payment = SimpleContainer::new(2).into_shared();
     let result = ResultContainer::new().into_shared();
@@ -28,7 +54,7 @@ pub fn merchant(
     let handler = MerchantResultHandler {
         payment: payment.clone(),
         result: result.clone(),
-        offers: offers.clone(),
+        merchant: Arc::clone(&merchant),
         selected: selected.clone(),
     };
     let mut builder = MenuBuilder::new(&vanilla_menu_types::MERCHANT, container_id);
@@ -39,15 +65,16 @@ pub fn merchant(
     builder.route(payment_section, player.all(), FillDirection::Forward);
     builder.route(player.all(), payment_section, FillDirection::Forward);
     builder.build(MerchantKind {
-        offers,
+        merchant,
         result,
         payment,
         selected,
     })
 }
 
+/// The merchant kind type.
 pub struct MerchantKind {
-    offers: Arc<SyncMutex<Vec<MerchantOffer>>>,
+    merchant: Arc<dyn MerchantAccess>,
     result: Shared<ResultContainer>,
     payment: Shared<SimpleContainer>,
     selected: Arc<SyncMutex<usize>>,
@@ -63,41 +90,36 @@ impl MenuKind for MerchantKind {
         false
     }
 
+    fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
+        self.merchant.still_valid(player)
+    }
+
     fn on_open(
         &mut self,
         behavior: &mut MenuBehavior,
         guard: &mut ContainerLockGuard,
         player: &Player,
     ) {
-        // === RUNTIME DEBUG INSTRUMENTATION ===
-        let container_id = behavior.container_id();
-        eprintln!("[MERCHANT] on_open called");
-        eprintln!("[MERCHANT] container_id={}", container_id);
-        eprintln!("[MERCHANT] player_id={}", player.id());
-
         self.send_offers(behavior.container_id(), player);
-        eprintln!("[MERCHANT] send_offers completed");
 
         let handler = MerchantResultHandler {
             payment: self.payment.clone(),
             result: self.result.clone(),
-            offers: self.offers.clone(),
+            merchant: Arc::clone(&self.merchant),
             selected: self.selected.clone(),
         };
         handler.update_result(guard);
-        eprintln!("[MERCHANT] update_result completed");
-        eprintln!("[MERCHANT] on_open finished\n");
     }
 
     fn on_select_trade(&mut self, behavior: &mut MenuBehavior, offer: usize, player: &Player) {
-        if offer >= self.offers.lock().len() {
+        if offer >= self.merchant.offers().lock().len() {
             return;
         }
         *self.selected.lock() = offer;
         let handler = MerchantResultHandler {
             payment: self.payment.clone(),
             result: self.result.clone(),
-            offers: self.offers.clone(),
+            merchant: Arc::clone(&self.merchant),
             selected: self.selected.clone(),
         };
         let mut guard = behavior.lock_all_containers();
@@ -107,76 +129,53 @@ impl MenuKind for MerchantKind {
 
     fn slots_changed(
         &mut self,
-        _behavior: &mut MenuBehavior,
+        behavior: &mut MenuBehavior,
         guard: &mut ContainerLockGuard,
-        _player: &Player,
+        player: &Player,
     ) {
         let handler = MerchantResultHandler {
             payment: self.payment.clone(),
             result: self.result.clone(),
-            offers: self.offers.clone(),
+            merchant: Arc::clone(&self.merchant),
             selected: self.selected.clone(),
         };
         handler.update_result(guard);
+        // After a completed trade the offer uses and villager XP have changed;
+        // resend so the client XP bar and out-of-stock marks stay in sync.
+        self.send_offers(behavior.container_id(), player);
     }
 
     fn removed(&mut self, _behavior: &mut MenuBehavior, _player: &Player) {
         self.result.lock().set_item(0, ItemStack::empty());
+        self.merchant.stop_trading();
     }
 }
 
 impl MerchantKind {
     fn send_offers(&self, container_id: u8, player: &Player) {
-        let locked = self.offers.lock();
-        let offers_vec: Vec<_> = locked.iter().map(to_packet).collect();
-
-        // === RUNTIME DEBUG INSTRUMENTATION ===
-        eprintln!("[MERCHANT] send_offers: preparing CMerchantOffers packet");
-        eprintln!("[MERCHANT]   container_id: {}", container_id);
-        eprintln!("[MERCHANT]   offers count: {}", offers_vec.len());
-        for (index, offer) in locked.iter().enumerate() {
-            let cost_b = match &offer.cost_b {
-                Some(cost) => format!("{} x{}", cost.item().key, cost.count()),
-                None => "absent".to_owned(),
-            };
-            eprintln!(
-                "[MERCHANT]   offer {index}: cost_a={} x{} (empty={}), result={} x{} (empty={}), \
-cost_b={cost_b}, uses={}, max_uses={}, xp={}, price_multiplier={}, out_of_stock={}",
-                offer.cost_a.item().key,
-                offer.cost_a.count(),
-                offer.cost_a.is_empty(),
-                offer.result.item().key,
-                offer.result.count(),
-                offer.result.is_empty(),
-                offer.uses,
-                offer.max_uses,
-                offer.xp,
-                offer.reputation_discount,
-                offer.is_out_of_stock(),
-            );
-        }
-        drop(locked);
+        let offers_vec: Vec<_> = self
+            .merchant
+            .offers()
+            .lock()
+            .iter()
+            .map(to_packet)
+            .collect();
 
         player.send_packet(CMerchantOffers {
             container_id: i32::from(container_id),
             offers: offers_vec,
-            villager_level: 1,
-            villager_xp: 0,
-            show_progress: true,
-            can_restock: true,
+            villager_level: self.merchant.villager_level(),
+            villager_xp: self.merchant.villager_xp(),
+            show_progress: self.merchant.show_progress(),
+            can_restock: self.merchant.can_restock(),
         });
-
-        eprintln!(
-            "[MERCHANT] CMerchantOffers packet sent to player {}",
-            player.id()
-        );
     }
 }
 
 struct MerchantResultHandler {
     payment: Shared<SimpleContainer>,
     result: Shared<ResultContainer>,
-    offers: Arc<SyncMutex<Vec<MerchantOffer>>>,
+    merchant: Arc<dyn MerchantAccess>,
     selected: Arc<SyncMutex<usize>>,
 }
 
@@ -196,7 +195,8 @@ impl ResultHandler for MerchantResultHandler {
         let [a, b] = payment.items() else {
             return;
         };
-        let offers = self.offers.lock();
+        let offers = self.merchant.offers();
+        let offers = offers.lock();
         let selected = *self.selected.lock();
         let Some(offer) = offers.get(selected).filter(|offer| offer.can_trade(a, b)) else {
             result.set_item(0, ItemStack::empty());
@@ -207,7 +207,7 @@ impl ResultHandler for MerchantResultHandler {
     fn on_result_taken(
         &self,
         guard: &mut ContainerLockGuard,
-        _player: &Player,
+        player: &Player,
     ) -> Option<ItemStack> {
         let payment_id = ContainerId::from_arc(&self.payment);
         let result_id = ContainerId::from_arc(&self.result);
@@ -217,16 +217,24 @@ impl ResultHandler for MerchantResultHandler {
         let [a, b] = payment.items_mut() else {
             return None;
         };
-        let mut offers = self.offers.lock();
-        let selected = *self.selected.lock();
-        let Some(offer) = offers
-            .get_mut(selected)
-            .filter(|offer| offer.can_trade(a, b))
-        else {
-            return None;
+        let offer_xp = {
+            let offers = self.merchant.offers();
+            let mut offers = offers.lock();
+            let selected = *self.selected.lock();
+            let Some(offer) = offers
+                .get_mut(selected)
+                .filter(|offer| offer.can_trade(a, b))
+            else {
+                return None;
+            };
+            let xp = offer.xp;
+            if !offer.take(a, b) {
+                return None;
+            }
+            xp
         };
-        let _ = offer.take(a, b);
         result.set_item(0, ItemStack::empty());
+        self.merchant.notify_trade(player, offer_xp);
         None
     }
     fn is_result_valid(&self, guard: &ContainerLockGuard, _player: &Player) -> bool {
@@ -238,7 +246,8 @@ impl ResultHandler for MerchantResultHandler {
             return false;
         };
         let selected = *self.selected.lock();
-        self.offers
+        self.merchant
+            .offers()
             .lock()
             .get(selected)
             .is_some_and(|offer| offer.can_trade(a, b))

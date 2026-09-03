@@ -145,7 +145,10 @@ pub trait ItemBehavior: Send + Sync {
     ) -> ItemStack {
         if let Some(food) = stack.get(FOOD) {
             if let Some(player) = user.as_player() {
-                player.food_data.lock().eat(food.nutrition(), food.saturation());
+                player
+                    .food_data
+                    .lock()
+                    .eat(food.nutrition(), food.saturation());
                 if !player.has_infinite_materials() {
                     stack.shrink(1);
                 }

@@ -7,6 +7,8 @@
 pub mod carver;
 #[cfg(test)]
 mod chunk_stage_hashes;
+#[cfg(test)]
+mod structure_start_fixture;
 pub(crate) mod feature;
 pub mod generator;
 pub mod natural_spawn;

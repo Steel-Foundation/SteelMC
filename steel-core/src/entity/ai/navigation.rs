@@ -8,7 +8,7 @@ use steel_utils::BlockPos;
 
 use crate::entity::ai::path::{Path, PathType, PathTypeCache, PathfindingContext};
 use crate::entity::ai::pathfinder::{PathFinder, PathRequest};
-use crate::entity::ai::walk::{NodeEvaluator, WalkNodeCollision, WalkNodeEvaluator};
+use crate::entity::ai::walk::{NodeEvaluator, WalkNodeCollision};
 use crate::world::LevelReader;
 
 const DIRECT_TARGET_REACHED_DISTANCE_SQR: f64 = 2.500_000_3e-7;

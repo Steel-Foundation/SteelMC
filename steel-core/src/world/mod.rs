@@ -112,6 +112,7 @@ pub(crate) mod clock;
 mod entity_management;
 mod environment;
 mod events;
+pub mod explosion;
 /// Vanilla game-event contexts, listeners, and dispatch storage.
 pub mod game_event;
 mod level_effects;

@@ -1,5 +1,6 @@
 use super::*;
 use crate::entity::leash::Leashable;
+use crate::world::explosion::ExplosionView;
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
 /// this wide and tall (in blocks) get their position fudged after growing.
@@ -491,6 +492,15 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         } else {
             ProjectileDeflection::None
         }
+    }
+
+    /// Returns whether this entity is skipped by an explosion.
+    ///
+    /// Mirrors vanilla `Entity.ignoreExplosion`. The default matches vanilla's base
+    /// `false`; block-like entities (items, armor stands, decorations) override it to
+    /// consult `ExplosionView::should_affect_blocklike_entities`.
+    fn ignore_explosion(&self, _explosion: &ExplosionView<'_>) -> bool {
+        false
     }
 
     /// Gets the vehicle this entity is riding, if present.
@@ -1520,6 +1530,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Mirrors vanilla's frequent `instanceof Animal` branches.
     fn as_animal(&self) -> Option<&dyn Animal> {
         try_as_dyn::<Self, dyn Animal>(self)
+    }
+
+    /// Returns true for entities that implement vanilla tamable-animal behavior.
+    fn is_tamable_animal(&self) -> bool {
+        self.as_tamable().is_some()
+    }
+
+    /// Returns this entity as a tamable animal when it has tamable behavior.
+    fn as_tamable(&self) -> Option<&dyn TamableAnimal> {
+        try_as_dyn::<Self, dyn TamableAnimal>(self)
     }
 
     /// Returns true for entities that implement vanilla ageable-mob behavior.

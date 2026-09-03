@@ -22,6 +22,7 @@ use crate::physics::MoveResult;
 use crate::world::World;
 
 #[entity_behavior(class = "EnderDragon")]
+/// Entity behavior for the ender dragon.
 pub struct EnderDragonEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -36,6 +37,7 @@ unsafe impl DowncastType for EnderDragonEntity {
 
 impl EnderDragonEntity {
     #[must_use]
+    /// Creates a new instance.
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
             EntityBase::new(id, position, entity_type.dimensions, world),
@@ -43,6 +45,7 @@ impl EnderDragonEntity {
         )
     }
     #[must_use]
+    /// Creates an instance from saved data.
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
             EntityBase::from_load(load, entity_type.dimensions),

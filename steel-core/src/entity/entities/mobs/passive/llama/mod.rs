@@ -11,10 +11,8 @@ use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::LlamaEntityData;
 use steel_utils::locks::SyncMutex;
-use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
-use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
     FloatGoal, LookAtPlayerGoal, RandomLookAroundGoal, WaterAvoidingRandomStrollGoal,
 };
@@ -24,12 +22,10 @@ use crate::entity::{
     LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob, SpawnGroupData,
 };
 use crate::physics::MoveResult;
-use crate::player::Player;
 use crate::world::World;
 
-const DEFAULT_STEP_HEIGHT: f32 = 0.6;
-
 #[entity_behavior(class = "Llama")]
+/// Entity behavior for the llama.
 pub struct LlamaEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -44,6 +40,7 @@ unsafe impl DowncastType for LlamaEntity {
 
 impl LlamaEntity {
     #[must_use]
+    /// Creates a new instance.
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
             EntityBase::new(id, position, entity_type.dimensions, world),
@@ -51,6 +48,7 @@ impl LlamaEntity {
         )
     }
     #[must_use]
+    /// Creates an instance from saved data.
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
             EntityBase::from_load(load, entity_type.dimensions),

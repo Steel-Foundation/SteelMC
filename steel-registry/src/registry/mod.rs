@@ -67,6 +67,7 @@ use crate::{
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
+    trial_spawner::TrialSpawnerConfigRegistry,
     vanilla_attributes, vanilla_banner_pattern_tags, vanilla_banner_patterns, vanilla_biome_tags,
     vanilla_biomes, vanilla_block_entity_types, vanilla_block_tags, vanilla_blocks,
     vanilla_cat_sound_variants, vanilla_cat_variants, vanilla_chat_types,
@@ -83,7 +84,8 @@ use crate::{
     vanilla_poi_type_tags, vanilla_poi_types, vanilla_position_source_types, vanilla_potion_tags,
     vanilla_potions, vanilla_recipes, vanilla_structure_processors, vanilla_structure_tags,
     vanilla_structures, vanilla_template_pools, vanilla_timeline_tags, vanilla_timelines,
-    vanilla_trim_materials, vanilla_trim_patterns, vanilla_villager_professions,
+    vanilla_trim_materials, vanilla_trim_patterns, vanilla_trial_spawner_configs,
+    vanilla_villager_professions,
     vanilla_villager_types, vanilla_wolf_sound_variants, vanilla_wolf_variants,
     vanilla_world_clocks, vanilla_zombie_nautilus_variants,
     villager_profession::VillagerProfessionRegistry,
@@ -270,6 +272,7 @@ pub struct Registry {
     pub recipes: RecipeRegistry,
     pub entity_types: EntityTypeRegistry,
     pub loot_tables: LootTableRegistry,
+    pub trial_spawner_configs: TrialSpawnerConfigRegistry,
     pub block_entity_types: BlockEntityTypeRegistry,
     pub game_rules: GameRuleRegistry,
     pub game_events: GameEventRegistry,
@@ -384,6 +387,9 @@ impl Registry {
             &mut registry.entity_types,
         );
         vanilla_loot_tables::register_loot_tables(&mut registry.loot_tables);
+        vanilla_trial_spawner_configs::register_trial_spawner_configs(
+            &mut registry.trial_spawner_configs,
+        );
         vanilla_block_entity_types::register_block_entity_types(&mut registry.block_entity_types);
         vanilla_game_rules::register_game_rules(&mut registry.game_rules);
         vanilla_game_events::register_game_events(&mut registry.game_events);
@@ -723,6 +729,7 @@ impl Registry {
             recipes: RecipeRegistry::new(),
             entity_types: EntityTypeRegistry::new(),
             loot_tables: LootTableRegistry::new(),
+            trial_spawner_configs: TrialSpawnerConfigRegistry::new(),
             block_entity_types: BlockEntityTypeRegistry::new(),
             game_rules: GameRuleRegistry::new(),
             game_events: GameEventRegistry::new(),

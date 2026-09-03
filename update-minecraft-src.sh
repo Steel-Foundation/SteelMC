@@ -16,8 +16,7 @@ trap "rm -rf $TEMP_DIR" EXIT
 # Clone GitCraft
 git clone https://github.com/WinPlay02/GitCraft "$TEMP_DIR/GitCraft"
 
-# Increase heap from default 4G to 8G
-sed -i.bak "s/-Xmx4G/-Xmx8G/" "$TEMP_DIR/GitCraft/build.gradle" && rm -f "$TEMP_DIR/GitCraft/build.gradle.bak"
+# Use Gradle's default 4G heap (avoid bumping to 8G)
 
 # Run GitCraft
 cd "$TEMP_DIR/GitCraft"

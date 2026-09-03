@@ -145,7 +145,9 @@ impl World {
                     let cx = x.div_euclid(16) as i64;
                     let cz = z.div_euclid(16) as i64;
                     let seed = self.seed();
-                    let mixed = cx.wrapping_mul(cx).wrapping_mul(4_987_142)
+                    let mixed = cx
+                        .wrapping_mul(cx)
+                        .wrapping_mul(4_987_142)
                         .wrapping_add(cx.wrapping_mul(5_947_611))
                         .wrapping_add(cz.wrapping_mul(cz).wrapping_mul(4_392_871))
                         .wrapping_add(cz.wrapping_mul(3_897_111))
@@ -226,10 +228,7 @@ impl World {
             if block_light != 0 {
                 return false;
             }
-        } else if category.is_friendly()
-            && !water_category
-            && light <= 8
-        {
+        } else if category.is_friendly() && !water_category && light <= 8 {
             return false;
         }
         !crate::physics::WorldCollisionProvider::new(self).has_block_collision(&aabb)

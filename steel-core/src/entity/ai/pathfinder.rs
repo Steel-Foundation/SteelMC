@@ -6,7 +6,7 @@ use steel_utils::BlockPos;
 
 use crate::entity::ai::node::{Node, NodeHeap, Target};
 use crate::entity::ai::path::{Path, PathfindingContext};
-use crate::entity::ai::walk::{WalkNodeCollision, WalkNodeEvaluator, NodeEvaluator};
+use crate::entity::ai::walk::{NodeEvaluator, WalkNodeCollision};
 
 const FUDGING: f32 = 1.5;
 

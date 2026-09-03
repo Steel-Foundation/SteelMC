@@ -13,8 +13,14 @@ use path_evaluator::does_block_have_partial_collision;
 pub use settings::MobPathSettings;
 pub use swim_node_evaluator::SwimNodeEvaluator;
 
+use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _};
+use crate::entity::Mob;
 use crate::entity::ai::node::Node;
+use crate::entity::ai::node::NodeStore;
 use crate::entity::ai::path::PathfindingContext;
+use crate::entity::ai::path::{PathComputationType, PathType, PathTypeSet, PathfindingMalus};
+use crate::fluid::FluidStateExt as _;
+use crate::world::LevelReader;
 use steel_math::fast_floor;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::blocks::properties::BlockStateProperties;
@@ -22,12 +28,6 @@ use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_blocks;
 use steel_utils::{BlockPos, Direction, WorldAabb, axis::Axis};
-use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _};
-use crate::entity::Mob;
-use crate::entity::ai::node::NodeStore;
-use crate::entity::ai::path::{PathComputationType, PathType, PathTypeSet, PathfindingMalus};
-use crate::fluid::FluidStateExt as _;
-use crate::world::LevelReader;
 
 /// The evaluator surface consumed by the A* [`crate::entity::ai::pathfinder::PathFinder`].
 ///

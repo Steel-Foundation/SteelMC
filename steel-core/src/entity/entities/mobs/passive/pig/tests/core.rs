@@ -438,3 +438,59 @@ fn mob_death_loot_without_world_keeps_preserved_equipment() {
     assert!(pig.is_saddled());
     assert!(pig.is_equipment_drop_preserved(EquipmentSlot::Saddle));
 }
+
+#[test]
+fn saddled_pig_mounts_player_on_interact() {
+    use std::sync::Arc;
+
+    use steel_registry::item_stack::ItemStack;
+
+    use crate::entity::SharedEntity;
+    use steel_utils::ChunkPos;
+    use steel_utils::Downcast as _;
+
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
+
+    init_vanilla_registry();
+
+    let world = fresh_test_world("saddled_pig_mounts_player_on_interact");
+    let pig: SharedEntity = Arc::new(PigEntity::new(
+        &vanilla_entities::PIG,
+        1,
+        DVec3::new(0.0, 64.0, 0.0),
+        Arc::downgrade(&world),
+    ));
+    insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+    world
+        .try_add_entity(pig.clone())
+        .expect("pig should join world");
+
+    let pig_typed = pig.downcast_ref::<PigEntity>().unwrap();
+    pig_typed.living_base.equipment().lock().set(
+        EquipmentSlot::Saddle,
+        ItemStack::new(&vanilla_items::SADDLE),
+    );
+
+    let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 2).build();
+    player.set_client_loaded(true);
+    assert!(
+        world.add_player(player.clone(), crate::player::ResetReason::InitialJoin),
+        "player should join the world"
+    );
+
+    let result = player.interact_on(
+        pig.as_ref(),
+        InteractionHand::MainHand,
+        DVec3::new(0.0, 64.0, 0.0),
+    );
+
+    assert!(
+        result.consumes_action(),
+        "expected mount interaction to consume the action"
+    );
+    assert!(player.is_passenger(), "player should end up riding the pig");
+    assert!(
+        pig.has_passenger(player.as_ref()),
+        "pig should have the player as passenger"
+    );
+}

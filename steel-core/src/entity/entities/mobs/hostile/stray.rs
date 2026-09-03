@@ -6,16 +6,14 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
-use steel_protocol::packets::game::SoundSource;
 use steel_registry::entity_type::{EntityDimensions, EntityTypeRef};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::StrayEntityData;
 use steel_utils::locks::SyncMutex;
-use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::entity::ai::goal::{
-    FloatGoal, HurtByTargetGoal, LookAtPlayerGoal, MeleeAttackGoal, NearestAttackableTargetGoal,
+    FloatGoal, HurtByTargetGoal, LookAtPlayerGoal, NearestAttackableTargetGoal,
     RandomLookAroundGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::damage::DamageSource;
@@ -24,13 +22,10 @@ use crate::entity::{
     LivingEntity, LivingEntityBase, Mob, MobBase, PathfinderMob, SpawnGroupData,
 };
 use crate::physics::MoveResult;
-use crate::player::Player;
 use crate::world::World;
-use steel_registry::vanilla_entities;
-
-const DEFAULT_STEP_HEIGHT: f32 = 0.6;
 
 #[entity_behavior(class = "Stray")]
+/// Entity behavior for the stray.
 pub struct StrayEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -45,6 +40,7 @@ unsafe impl DowncastType for StrayEntity {
 
 impl StrayEntity {
     #[must_use]
+    /// Creates a new instance.
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
             EntityBase::new(id, position, entity_type.dimensions, world),
@@ -52,6 +48,7 @@ impl StrayEntity {
         )
     }
     #[must_use]
+    /// Creates an instance from saved data.
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
             EntityBase::from_load(load, entity_type.dimensions),
@@ -66,7 +63,7 @@ impl StrayEntity {
         {
             let mut goal_selector = mob_base.goal_selector().lock();
             goal_selector.add_goal(0, FloatGoal::new(&mob_base));
-            goal_selector.add_goal(2, MeleeAttackGoal::new(1.0, false));
+            super::apply_bow_ai(&living_base, &mut goal_selector);
             goal_selector.add_goal(7, WaterAvoidingRandomStrollGoal::new(1.0));
             goal_selector.add_goal(8, LookAtPlayerGoal::new(8.0));
             goal_selector.add_goal(8, RandomLookAroundGoal::new());
@@ -170,6 +167,9 @@ impl LivingEntity for StrayEntity {
 }
 
 impl Mob for StrayEntity {
+    fn burns_in_daylight(&self) -> bool {
+        true
+    }
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }

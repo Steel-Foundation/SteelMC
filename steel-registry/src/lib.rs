@@ -85,6 +85,7 @@ pub use structure::template_pool;
 pub mod timeline;
 pub mod trim_material;
 pub mod trim_pattern;
+pub mod trial_spawner;
 pub mod villager_profession;
 pub mod villager_type;
 pub mod wolf_sound_variant;
@@ -389,6 +390,11 @@ pub mod vanilla_fluid_tags;
 #[rustfmt::skip]
 #[path = "generated/vanilla_loot_tables.rs"]
 pub mod vanilla_loot_tables;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_trial_spawner_configs.rs"]
+pub mod vanilla_trial_spawner_configs;
 
 #[expect(warnings)]
 #[rustfmt::skip]

@@ -15,7 +15,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 use std::sync::Weak;
 
 use crate::entity::ai::goal::{
-    FloatGoal, HurtByTargetGoal, LookAtPlayerGoal, MeleeAttackGoal, MoveTowardsRestrictionGoal,
+    FloatGoal, HurtByTargetGoal, LookAtPlayerGoal, MoveTowardsRestrictionGoal,
     NearestAttackableTargetGoal, RandomLookAroundGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::damage::DamageSource;
@@ -69,8 +69,7 @@ impl SkeletonEntity {
         {
             let mut goal_selector = mob_base.goal_selector().lock();
             goal_selector.add_goal(0, FloatGoal::new(&mob_base));
-            // TODO: Add RangedBowAttackGoal for skeleton shooting
-            goal_selector.add_goal(2, MeleeAttackGoal::new(1.0, false));
+            super::apply_bow_ai(&living_base, &mut goal_selector);
             goal_selector.add_goal(3, MoveTowardsRestrictionGoal::new(1.0));
             goal_selector.add_goal(7, WaterAvoidingRandomStrollGoal::new(1.0));
             goal_selector.add_goal(8, LookAtPlayerGoal::new(8.0));
@@ -86,11 +85,15 @@ impl SkeletonEntity {
             );
             target_selector.add_goal(
                 3,
-                NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::IRON_GOLEM),
+                NearestAttackableTargetGoal::new(true, |target, _| {
+                    target.entity_type() == &vanilla_entities::IRON_GOLEM
+                }),
             );
             target_selector.add_goal(
                 3,
-                NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::TURTLE),
+                NearestAttackableTargetGoal::new(true, |target, _| {
+                    target.entity_type() == &vanilla_entities::TURTLE
+                }),
             );
         }
 
@@ -207,6 +210,9 @@ impl LivingEntity for SkeletonEntity {
 }
 
 impl Mob for SkeletonEntity {
+    fn burns_in_daylight(&self) -> bool {
+        true
+    }
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }

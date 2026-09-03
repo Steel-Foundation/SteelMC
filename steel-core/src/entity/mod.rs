@@ -324,7 +324,7 @@ fn finish_inside_block_effects(
     }
 }
 
-fn is_in_rain(entity: &dyn Entity) -> bool {
+pub(crate) fn is_in_rain(entity: &dyn Entity) -> bool {
     let Some(world) = entity.level() else {
         return false;
     };
@@ -743,6 +743,7 @@ pub mod entities;
 )]
 mod entity;
 mod fluid_contact;
+mod tamable;
 #[expect(warnings)]
 #[rustfmt::skip]
 #[path = "generated/entities.rs"]
@@ -812,12 +813,14 @@ pub use movement_sync::{
 pub use projectile::{
     EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
     ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
-    compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
+    compute_margin, get_hit_result_on_view_vector, spawn_arrow_projectile, spawn_arrow_towards,
+    spawn_throwable_item_projectile,
 };
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, SpawnGroupData};
 pub(crate) use storage::{EntityStorage, EntityStorageAddResult};
 pub use synced_data::{EntitySyncedData, LivingEntitySyncedData};
+pub(crate) use tamable::TamableAnimal;
 pub(crate) use ticking::{
     snapshot_old_pos_and_rot_for_tick, tick_vehicle_passengers_with_ticked_if,
 };

@@ -1,8 +1,3 @@
-use std::sync::{Arc, Weak};
-use steel_macros::block_behavior;
-use steel_registry::{blocks::{BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties}, vanilla_block_entity_types};
-use steel_utils::{BlockPos, BlockStateId, translations};
-use text_components::TextComponent;
 use crate::{
     behavior::{
         InventoryAccess,
@@ -14,13 +9,23 @@ use crate::{
     player::Player,
     world::World,
 };
+use std::sync::{Arc, Weak};
+use steel_macros::block_behavior;
+use steel_registry::{
+    blocks::{BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties},
+    vanilla_block_entity_types,
+};
+use steel_utils::{BlockPos, BlockStateId, translations};
+use text_components::TextComponent;
 
 #[block_behavior]
+/// Block behavior for the furnace block.
 pub struct FurnaceBlock {
     block: BlockRef,
 }
 
 impl FurnaceBlock {
+    /// Creates a new instance.
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
@@ -32,7 +37,11 @@ impl BlockBehavior for FurnaceBlock {
         context: &crate::behavior::context::BlockPlaceContext<'_>,
     ) -> Option<BlockStateId> {
         let facing = context.horizontal_direction().opposite();
-        Some(self.block.default_state().set_value(&BlockStateProperties::HORIZONTAL_FACING, facing))
+        Some(
+            self.block
+                .default_state()
+                .set_value(&BlockStateProperties::HORIZONTAL_FACING, facing),
+        )
     }
 
     fn get_block_entity_ticker(

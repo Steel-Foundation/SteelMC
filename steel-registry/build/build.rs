@@ -73,6 +73,7 @@ mod sound_events;
 mod sound_types;
 mod structure;
 mod timelines;
+mod trial_spawner_configs;
 mod trim_materials;
 mod trim_patterns;
 mod villager_professions;
@@ -220,6 +221,7 @@ pub fn main() {
         (map_decoration_types::build(), MAP_DECORATION_TYPES),
         (potions::build(), POTIONS),
         (timelines::build(), TIMELINES),
+        (trial_spawner_configs::build(), "trial_spawner_configs"),
         (tags::timeline(), TIMELINE_TAGS),
         (zombie_nautilus_variants::build(), ZOMBIE_NAUTILUS_VARIANTS),
         (recipes::build(), RECIPES),

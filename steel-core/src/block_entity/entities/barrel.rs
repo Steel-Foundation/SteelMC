@@ -20,6 +20,8 @@ use crate::inventory::container::Container;
 use crate::inventory::lock::{ContainerRef, SharedContainer};
 use crate::world::World;
 
+use super::container_loot::ContainerLoot;
+
 /// Number of slots in a barrel (3 rows of 9).
 pub const BARREL_SLOTS: usize = 27;
 
@@ -30,6 +32,7 @@ pub struct BarrelBlockEntity {
     base: Arc<BlockEntityBase>,
     container: Arc<SyncMutex<BarrelContainer>>,
     container_ref: ContainerRef,
+    loot: SyncMutex<ContainerLoot>,
 }
 
 struct BarrelContainer {
@@ -65,6 +68,22 @@ impl BarrelBlockEntity {
             container_ref: ContainerRef::owned_by_block_entity(shared_container, Arc::clone(&base)),
             base,
             container,
+            loot: SyncMutex::new(ContainerLoot::default()),
+        }
+    }
+
+    /// Rolls any pending structure loot table into the barrel, mirroring
+    /// vanilla's first-open `unpackLootTable`.
+    pub fn try_populate_loot(&self, world: &Arc<World>) {
+        let mut loot = self.loot.lock();
+        if !loot.has_pending_loot() {
+            return;
+        }
+        let seed = loot.loot_seed(world.seed(), self.get_block_pos());
+        let mut container = self.container.lock();
+        if loot.populate(seed, self.get_block_pos(), &mut *container) {
+            drop(container);
+            self.set_changed();
         }
     }
 }
@@ -75,6 +94,11 @@ impl BlockEntity for BarrelBlockEntity {
     }
 
     fn pre_remove_side_effects(&self, pos: BlockPos, _state: BlockStateId) {
+        // Vanilla unpacks the loot table when the container is removed so its
+        // contents drop together with the barrel's items.
+        if let Some(world) = self.get_level() {
+            self.try_populate_loot(&world);
+        }
         let items = {
             let mut container = self.container.lock();
             mem::replace(&mut container.items, vec![ItemStack::empty(); BARREL_SLOTS])
@@ -90,6 +114,7 @@ impl BlockEntity for BarrelBlockEntity {
     fn load_additional(&self, nbt: &BorrowedNbtCompound<'_>) {
         // Convert to NbtCompound view for accessing methods
         let nbt_view: NbtCompoundView<'_, '_> = nbt.into();
+        *self.loot.lock() = ContainerLoot::load(nbt);
         let mut container = self.container.lock();
         container.items.fill(ItemStack::empty());
 
@@ -113,6 +138,8 @@ impl BlockEntity for BarrelBlockEntity {
     }
 
     fn save_additional(&self, nbt: &mut NbtCompound) {
+        self.loot.lock().save(nbt);
+
         // Save items to NBT (only non-empty slots)
         let container = self.container.lock();
         let mut items: Vec<NbtCompound> = Vec::new();

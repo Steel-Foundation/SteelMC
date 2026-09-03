@@ -107,6 +107,8 @@ pub struct BlockLootContext<'a> {
     entity: Option<&'a dyn Entity>,
     tool: Option<&'a ItemStack>,
     luck: f32,
+    /// Vanilla `LootContextParams.EXPLOSION_RADIUS`, set only by decay explosions.
+    explosion_radius: Option<f32>,
 }
 
 impl<'a> BlockLootContext<'a> {
@@ -119,6 +121,7 @@ impl<'a> BlockLootContext<'a> {
             entity: None,
             tool: None,
             luck: 0.0,
+            explosion_radius: None,
         }
     }
 
@@ -140,6 +143,16 @@ impl<'a> BlockLootContext<'a> {
     #[must_use]
     pub const fn with_luck(mut self, luck: f32) -> Self {
         self.luck = luck;
+        self
+    }
+
+    /// Adds vanilla `LootContextParams.EXPLOSION_RADIUS`.
+    ///
+    /// Vanilla only sets this for `BlockInteraction.DESTROY_WITH_DECAY`, where loot
+    /// conditions and functions may let items survive the explosion.
+    #[must_use]
+    pub const fn with_explosion_radius(mut self, radius: f32) -> Self {
+        self.explosion_radius = Some(radius);
         self
     }
 
@@ -171,6 +184,10 @@ impl<'a> BlockLootContext<'a> {
 
     pub(crate) const fn luck(&self) -> f32 {
         self.luck
+    }
+
+    pub(crate) const fn explosion_radius(&self) -> Option<f32> {
+        self.explosion_radius
     }
 }
 

@@ -1,4 +1,23 @@
 //! Hostile entity implementations.
+
+use steel_registry::item_stack::ItemStack;
+use steel_registry::vanilla_items;
+
+use crate::entity::LivingEntityBase;
+use crate::entity::ai::goal::{GoalSelector, RangedBowAttackGoal};
+use crate::inventory::equipment::EquipmentSlot;
+
+/// Gives a skeleton-type mob a held bow and the ranged-bow-attack goal.
+/// Takes the already-locked goal selector: the goal selector is a
+/// non-reentrant `parking_lot::Mutex` and callers hold its lock.
+pub(crate) fn apply_bow_ai(living_base: &LivingEntityBase, goal_selector: &mut GoalSelector) {
+    let _ = living_base
+        .equipment()
+        .lock()
+        .set(EquipmentSlot::MainHand, ItemStack::new(&vanilla_items::BOW));
+    goal_selector.add_goal(2, RangedBowAttackGoal::new(1.0, 20));
+}
+
 pub mod bat;
 pub mod blaze;
 pub mod bogged;
@@ -8,6 +27,7 @@ pub mod creaking;
 pub mod creeper;
 pub mod elder_guardian;
 pub mod enderman;
+/// The endermite module.
 pub mod endermite;
 pub mod evoker;
 pub mod ghast;

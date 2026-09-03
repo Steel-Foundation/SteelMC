@@ -84,7 +84,9 @@ impl SpiderEntity {
             );
             target_selector.add_goal(
                 3,
-                NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::IRON_GOLEM),
+                NearestAttackableTargetGoal::new(true, |target, _| {
+                    target.entity_type() == &vanilla_entities::IRON_GOLEM
+                }),
             );
         }
 

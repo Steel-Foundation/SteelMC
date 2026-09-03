@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use glam::DVec3;
 use steel_registry::vanilla_attributes;
 
-use crate::entity::ai::control::{MoveControlOperation, MobControls};
+use crate::entity::ai::control::MoveControlOperation;
 use crate::entity::ai::path::PathType;
 use crate::entity::mob::{Mob, MobBase, rotlerp};
 use crate::physics::{MoveResult, MoverType};
@@ -77,8 +77,12 @@ pub fn travel<M: Mob + ?Sized>(mob: &M, input: DVec3) -> Option<MoveResult> {
             "[FISH-{}] tick={} pos=({:.2},{:.2},{:.2}) vel=({:.4},{:.4},{:.4}) in_water={} on_ground={} nav_done={}",
             mob.id(),
             mob.tick_count(),
-            pos.x, pos.y, pos.z,
-            vel.x, vel.y, vel.z,
+            pos.x,
+            pos.y,
+            pos.z,
+            vel.x,
+            vel.y,
+            vel.z,
             mob.is_in_water(),
             mob.on_ground(),
             mob.mob_base().navigation().lock().is_done(),
@@ -89,14 +93,26 @@ pub fn travel<M: Mob + ?Sized>(mob: &M, input: DVec3) -> Option<MoveResult> {
 
     if debug {
         let vel = mob.velocity();
-        eprintln!("[FISH-{}] after move_relative vel=({:.4},{:.4},{:.4})", mob.id(), vel.x, vel.y, vel.z);
+        eprintln!(
+            "[FISH-{}] after move_relative vel=({:.4},{:.4},{:.4})",
+            mob.id(),
+            vel.x,
+            vel.y,
+            vel.z
+        );
     }
 
     let result = mob.move_entity(MoverType::SelfMovement, mob.velocity())?;
 
     if debug {
         let vel = mob.velocity();
-        eprintln!("[FISH-{}] after move_entity vel=({:.4},{:.4},{:.4})", mob.id(), vel.x, vel.y, vel.z);
+        eprintln!(
+            "[FISH-{}] after move_entity vel=({:.4},{:.4},{:.4})",
+            mob.id(),
+            vel.x,
+            vel.y,
+            vel.z
+        );
     }
 
     let mut vel = mob.velocity();
@@ -107,7 +123,13 @@ pub fn travel<M: Mob + ?Sized>(mob: &M, input: DVec3) -> Option<MoveResult> {
     }
 
     if debug {
-        eprintln!("[FISH-{}] after drag/sink vel=({:.4},{:.4},{:.4})", mob.id(), vel.x, vel.y, vel.z);
+        eprintln!(
+            "[FISH-{}] after drag/sink vel=({:.4},{:.4},{:.4})",
+            mob.id(),
+            vel.x,
+            vel.y,
+            vel.z
+        );
     }
 
     mob.set_velocity(vel);

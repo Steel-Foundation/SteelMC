@@ -1,4 +1,32 @@
 //! Passive entity implementations.
+
+use crate::behavior::InteractionResult;
+use crate::entity::{Entity, LivingEntity, SharedEntity};
+use crate::player::Player;
+use steel_utils::types::InteractionHand;
+
+/// Vanilla `AbstractHorse`-style mounting: right-clicking an adult
+/// horse-family mob (horse, donkey, mule, camel, ...) with an empty hand
+/// mounts the player. (Taming/breeding is not implemented yet, so any
+/// adult is mountable; sneak + interact still dismounts first.)
+pub(crate) fn mob_interact_mountable(
+    entity: &(impl Entity + LivingEntity),
+    player: &Player,
+    _hand: InteractionHand,
+) -> InteractionResult {
+    if LivingEntity::is_baby(entity) || player.is_secondary_use_active() {
+        return InteractionResult::Pass;
+    }
+    if let Some(world) = entity.level()
+        && let Some(vehicle) = world.get_entity_by_id(entity.id())
+        && !entity.is_vehicle()
+        && player.start_riding(&vehicle)
+    {
+        return InteractionResult::Success;
+    }
+    InteractionResult::Pass
+}
+
 pub mod allay;
 pub mod armadillo;
 pub mod axolotl;
@@ -91,3 +119,16 @@ pub use villager::VillagerEntity;
 pub use wandering_trader::WanderingTraderEntity;
 pub use wolf::WolfEntity;
 pub use zombie_horse::ZombieHorseEntity;
+
+/// Vanilla `AbstractHorse.getControllingPassenger`: the first passenger steers
+/// the horse-family mob when it is a player and the mount is saddled.
+pub(crate) fn controlling_passenger_mountable(
+    entity: &impl Entity,
+    saddled: bool,
+) -> Option<SharedEntity> {
+    if !saddled {
+        return None;
+    }
+    let passenger = entity.first_passenger()?;
+    passenger.as_player().is_some().then_some(passenger)
+}

@@ -42,6 +42,7 @@ unsafe impl DowncastType for ZombieVillagerEntity {
 
 impl ZombieVillagerEntity {
     #[must_use]
+    /// Creates a new instance.
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
             EntityBase::new(id, position, entity_type.dimensions, world),
@@ -50,6 +51,7 @@ impl ZombieVillagerEntity {
     }
 
     #[must_use]
+    /// Creates an instance from saved data.
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
             EntityBase::from_load(load, entity_type.dimensions),
@@ -83,15 +85,21 @@ impl ZombieVillagerEntity {
             );
             target_selector.add_goal(
                 3,
-                NearestAttackableTargetGoal::new(false, |target, _| target.entity_type() == &vanilla_entities::VILLAGER),
+                NearestAttackableTargetGoal::new(false, |target, _| {
+                    target.entity_type() == &vanilla_entities::VILLAGER
+                }),
             );
             target_selector.add_goal(
                 3,
-                NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::IRON_GOLEM),
+                NearestAttackableTargetGoal::new(true, |target, _| {
+                    target.entity_type() == &vanilla_entities::IRON_GOLEM
+                }),
             );
             target_selector.add_goal(
                 5,
-                NearestAttackableTargetGoal::new(true, |target, _| target.entity_type() == &vanilla_entities::TURTLE),
+                NearestAttackableTargetGoal::new(true, |target, _| {
+                    target.entity_type() == &vanilla_entities::TURTLE
+                }),
             );
         }
 
@@ -105,10 +113,12 @@ impl ZombieVillagerEntity {
     }
 
     #[must_use]
+    /// Returns whether this is baby.
     pub fn is_baby(&self) -> bool {
         *self.entity_data.lock().zombie().baby.get()
     }
 
+    /// Sets the baby.
     pub fn set_baby(&self, baby: bool) {
         self.entity_data.lock().zombie_mut().baby.set(baby);
     }
@@ -224,6 +234,9 @@ impl LivingEntity for ZombieVillagerEntity {
 }
 
 impl Mob for ZombieVillagerEntity {
+    fn burns_in_daylight(&self) -> bool {
+        true
+    }
     fn mob_base(&self) -> &MobBase {
         &self.mob_base
     }

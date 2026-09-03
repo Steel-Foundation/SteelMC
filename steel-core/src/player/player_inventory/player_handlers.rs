@@ -201,6 +201,7 @@ impl Player {
         // - Lectern page turning
     }
 
+    /// handle_select_trade.
     pub fn handle_select_trade(&self, packet: SSelectTrade) {
         match self.take_open_menu_for_callback(None) {
             Ok(mut menu) => {

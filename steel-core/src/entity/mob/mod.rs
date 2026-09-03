@@ -1,10 +1,13 @@
 //! Vanilla-shaped mob foundations.
 
-mod pathfinder;
 mod fish;
+mod pathfinder;
 
 use crate::entity::leash::{LeashData, Leashable};
-pub use fish::{init_mob_base as fish_init_mob_base, tick_move_control as fish_tick_move_control, travel as fish_travel};
+pub use fish::{
+    init_mob_base as fish_init_mob_base, tick_move_control as fish_tick_move_control,
+    travel as fish_travel,
+};
 pub use pathfinder::PathfinderMob;
 use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
@@ -23,9 +26,10 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
+use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::{
-    REGISTRY, RegistryExt, vanilla_attributes, vanilla_damage_types, vanilla_entities,
-    vanilla_game_events,
+    REGISTRY, RegistryExt, TaggedRegistryExt as _, vanilla_attributes, vanilla_damage_types,
+    vanilla_entities, vanilla_game_events,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
@@ -328,6 +332,46 @@ pub trait Mob: LivingEntity + Leashable {
     fn mob_flags(&self) -> i8;
 
     fn set_mob_flags(&self, flags: i8);
+
+    /// Whether daylight should ignite this mob. Vanilla hard-codes this per
+    /// undead type (zombies and most skeletons burn; drowned, wither skeleton,
+    /// and undead horses do not), so it defaults to false and burners opt in.
+    fn burns_in_daylight(&self) -> bool {
+        false
+    }
+
+    /// Vanilla `Zombie.maybeStartBurningInDaylight` via `Monster.isSunBurnTick`:
+    /// ignite for 8 seconds when exposed to direct daylight.
+    fn maybe_burn_in_daylight(&self) {
+        if !self.burns_in_daylight() || self.fire_immune() {
+            return;
+        }
+        let Some(world) = self.level() else {
+            return;
+        };
+        if !world.is_bright_outside() {
+            return;
+        }
+        let pos = self.block_position();
+        let eye_pos = BlockPos::new(pos.x(), self.get_eye_y().floor() as i32, pos.z());
+        if !world.can_see_sky(eye_pos)
+            || world.effective_sky_brightness(eye_pos) <= 7
+            || self.is_in_water()
+            || world.is_raining_at(eye_pos)
+        {
+            return;
+        }
+        let mut wearing_helmet = false;
+        self.with_equipment_slot(EquipmentSlot::Head, &mut |item_stack| {
+            wearing_helmet = REGISTRY
+                .items
+                .is_in_tag(item_stack.item(), &ItemTag::HEAD_ARMOR);
+        });
+        if wearing_helmet {
+            return;
+        }
+        self.ignite_for_ticks(8 * 20);
+    }
 
     /// Returns vanilla `Mob.isSaddled`.
     fn is_saddled(&self) -> bool {
@@ -1090,6 +1134,7 @@ pub trait Mob: LivingEntity + Leashable {
     }
 
     fn mob_server_ai_step(&self) {
+        self.maybe_burn_in_daylight();
         self.increment_no_action_time();
         self.mob_base().sensing().lock().tick();
         if self.tick_count() % 5 == 0 {

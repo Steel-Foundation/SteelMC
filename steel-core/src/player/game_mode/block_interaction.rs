@@ -343,8 +343,10 @@ mod tests {
     use crate::behavior::init_behaviors;
     use crate::player::connection::NetworkConnection as _;
     use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
-    use steel_registry::vanilla_items;
+    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+    use steel_registry::{init_vanilla_registry, vanilla_blocks, vanilla_items};
     use steel_utils::ChunkPos;
+    use steel_utils::types::UpdateFlags;
 
     #[test]
     fn use_item_on_rejects_non_finite_hit_locations() {
@@ -382,5 +384,61 @@ mod tests {
         assert!(held_item.is(&vanilla_items::FIREWORK_ROCKET));
         assert_eq!(held_item.count(), 1);
         assert!(!player.connection.closed());
+    }
+
+    #[test]
+    fn creative_sword_cannot_break_blocks() {
+        init_vanilla_registry();
+        init_behaviors();
+        let world = fresh_test_world("creative_sword_cannot_break_blocks");
+        let pos = BlockPos::new(1, 64, 0);
+        insert_ready_full_chunk(&world, ChunkPos::from_block_pos(pos));
+        assert!(world.set_block(
+            pos,
+            vanilla_blocks::STONE.default_state(),
+            UpdateFlags::UPDATE_ALL,
+        ));
+
+        let player = TestPlayerBuilder::new(world.clone(), "TestPlayer", 1).build();
+        player.set_client_loaded(true);
+        player.base.set_position_local(DVec3::new(1.5, 64.0, 0.5));
+        player.restore_game_modes(GameType::Creative, None);
+        player
+            .abilities
+            .lock()
+            .update_for_game_mode(GameType::Creative);
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::new(&vanilla_items::NETHERITE_SWORD));
+
+        // Vanilla `ItemStack.canDestroyBlock`: swords carry
+        // `can_destroy_blocks_in_creative: false`, so a creative sword left-click
+        // (START_DESTROY_BLOCK) must not break the block.
+        player.block_breaking.lock().handle_block_break_action(
+            &player,
+            &world,
+            pos,
+            BlockBreakAction::Start,
+            Direction::Up,
+        );
+        assert_eq!(
+            world.get_block_state(pos),
+            vanilla_blocks::STONE.default_state()
+        );
+
+        // Empty hand in creative still instabreaks.
+        player
+            .inventory
+            .lock()
+            .set_selected_item(ItemStack::empty());
+        player.block_breaking.lock().handle_block_break_action(
+            &player,
+            &world,
+            pos,
+            BlockBreakAction::Start,
+            Direction::Up,
+        );
+        assert!(world.get_block_state(pos).is_air());
     }
 }

@@ -340,6 +340,22 @@ impl BlockBreakingManager {
     fn destroy_block(&self, player: &Player, world: &Arc<World>, pos: BlockPos) -> bool {
         let state = world.get_block_state(pos);
 
+        // Vanilla `ServerPlayerGameMode.destroyBlock` -> `ItemStack.canDestroyBlock`:
+        // tools with `can_destroy_blocks_in_creative: false` (swords) may not break
+        // blocks while the player has creative instabuild. This is what stops a
+        // creative-mode sword left-click from destroying blocks.
+        if player.has_infinite_materials() {
+            let can_destroy = {
+                let inventory = player.inventory.lock();
+                inventory
+                    .get_item_in_hand(InteractionHand::MainHand)
+                    .can_destroy_blocks_in_creative()
+            };
+            if !can_destroy {
+                return false;
+            }
+        }
+
         // Check if player's tool can destroy this block
         // TODO: Implement canDestroyBlock check for adventure mode
 

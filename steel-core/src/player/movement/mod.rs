@@ -14,15 +14,17 @@ pub(super) use teleport::TeleportState;
 use glam::DVec3;
 use steel_protocol::packets::game::{
     CMoveVehicle, CPlayerPosition, PlayerCommandAction, RelativeMovement, SAcceptTeleportation,
-    SMovePlayer, SMoveVehicle, SPlayerCommand, SPlayerInput,
+    SMovePlayer, SMoveVehicle, SPaddleBoat, SPlayerCommand, SPlayerInput,
 };
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
 use steel_registry::vanilla_mob_effects;
+use steel_utils::Downcast as _;
 use steel_utils::translations;
 use steel_utils::types::GameType;
 
 use crate::entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityMoveError, LivingEntity,
+    entities::{BoatEntity, ChestBoatEntity},
 };
 use crate::physics::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, MoverType, WorldCollisionProvider,
@@ -876,6 +878,32 @@ impl Player {
         self.reset_last_action_time();
 
         self.set_crouching(input.shift());
+
+        // Vanilla dismounts on shift via `Player.wantsToStopRiding()` during ride tick;
+        // the input packet is what carries the shift key while mounted.
+        if input.shift() && self.is_passenger() {
+            self.stop_riding();
+        }
+    }
+
+    /// Handles boat paddle state from the controlling client.
+    ///
+    /// Matches vanilla `ServerGamePacketListenerImpl.handlePaddleBoat()`.
+    pub fn handle_paddle_boat(&self, packet: SPaddleBoat) {
+        if !self.has_client_loaded() {
+            return;
+        }
+
+        let Some(vehicle) = self.vehicle() else {
+            return;
+        };
+        if vehicle.entity_type().is_abstract_boat {
+            if let Some(boat) = vehicle.downcast_ref::<BoatEntity>() {
+                boat.set_paddle_state(packet.left_paddle, packet.right_paddle);
+            } else if let Some(boat) = vehicle.downcast_ref::<ChestBoatEntity>() {
+                boat.set_paddle_state(packet.left_paddle, packet.right_paddle);
+            }
+        }
     }
 
     /// Handles a player command packet (sprinting, elytra, leaving bed, etc).

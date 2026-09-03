@@ -11,7 +11,7 @@ use crate::entity::ai::navigation::{
     NavigationPathRequest, NavigationRecomputeRequest, NavigationTickContext,
 };
 use crate::entity::ai::path::Path;
-use crate::entity::ai::walk::{MobPathSettings, NodeEvaluator, WalkNodeEvaluator, SwimNodeEvaluator};
+use crate::entity::ai::walk::{MobPathSettings, SwimNodeEvaluator, WalkNodeEvaluator};
 use crate::entity::{Entity, LivingEntity, SharedEntity};
 use crate::physics::WorldCollisionProvider;
 use crate::world::{LevelReader, World};
@@ -27,7 +27,11 @@ pub(super) fn tick_path_navigation_target<M: Mob + ?Sized>(
         let water_bound = navigation.water_bound();
         let mob_position = if water_bound {
             let bb = mob.bounding_box();
-            DVec3::new(mob.position().x, (bb.min_y() + bb.max_y()) / 2.0, mob.position().z)
+            DVec3::new(
+                mob.position().x,
+                (bb.min_y() + bb.max_y()) / 2.0,
+                mob.position().z,
+            )
         } else {
             ground_navigation_temp_mob_pos(mob, world.as_ref(), navigation.can_float())
         };
@@ -122,7 +126,16 @@ pub trait PathfinderMob: Mob {
     }
 
     fn can_update_path(&self) -> bool {
+        if self.mob_base().navigation().lock().water_bound() {
+            return self.is_in_water() || self.is_in_lava();
+        }
         self.on_ground() || self.is_in_water() || self.is_in_lava() || self.is_passenger()
+    }
+
+    /// Whether water-bound pathfinding may use breach nodes (air pockets above
+    /// the water surface). Vanilla only enables this for the dolphin.
+    fn allow_water_breaching(&self) -> bool {
+        false
     }
 
     fn can_path_to_targets_below_surface(&self) -> bool {
@@ -149,16 +162,17 @@ pub trait PathfinderMob: Mob {
             return;
         };
         let game_time = world.game_time();
+        let can_update_path = self.can_update_path();
         let recompute_request = {
             let mut navigation = self.mob_base().navigation().lock();
             navigation.tick();
-            navigation.take_delayed_recompute_request(game_time, self.can_update_path())
+            navigation.take_delayed_recompute_request(game_time, can_update_path)
         };
         if let Some(request) = recompute_request {
             self.recompute_path(request);
         }
 
-        tick_path_navigation_target(self, &world, game_time, self.can_update_path());
+        tick_path_navigation_target(self, &world, game_time, can_update_path);
     }
 
     fn tick_pathfinder_goal_selectors(&self)
@@ -335,7 +349,7 @@ pub trait PathfinderMob: Mob {
         };
 
         if water_bound {
-            let mut evaluator = SwimNodeEvaluator::new(settings, false);
+            let mut evaluator = SwimNodeEvaluator::new(settings, self.allow_water_breaching());
             self.mob_base().navigation().lock().create_path(
                 &mut evaluator,
                 world.as_ref(),

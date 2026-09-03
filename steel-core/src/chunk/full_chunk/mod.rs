@@ -733,7 +733,11 @@ impl FullChunkRef<'_> {
         let ticker = behavior.get_block_entity_ticker(&world, state, block_entity.get_type());
 
         if state.get_block().key.to_string().contains("furnace") {
-            tracing::info!("Furnace ticker refresh at {:?}: ticker={}", pos, ticker.is_some());
+            tracing::info!(
+                "Furnace ticker refresh at {:?}: ticker={}",
+                pos,
+                ticker.is_some()
+            );
         }
 
         let ticker = ticker.filter(|ticker| {

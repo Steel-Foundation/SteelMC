@@ -1,12 +1,12 @@
 use rustc_hash::FxHashMap;
 use steel_math::fast_floor;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
-use steel_utils::{BlockPos, Direction, WorldAabb};
+use steel_utils::{BlockPos, Direction};
 
-use super::{MobPathSettings, NodeEvaluator, WalkNeighbors, WalkNodeCollision, WalkPathEvaluator};
+use super::{MobPathSettings, NodeEvaluator, WalkNeighbors, WalkNodeCollision};
+use crate::behavior::BlockStateBehaviorExt as _;
 use crate::entity::ai::node::{Node, NodeStore};
 use crate::entity::ai::path::{PathComputationType, PathType, PathfindingContext};
-use crate::behavior::BlockStateBehaviorExt as _;
 use steel_registry::fluid::FluidStateExt as _;
 
 const HORIZONTAL_DIRECTIONS: [Direction; 4] = [
@@ -144,7 +144,7 @@ impl NodeEvaluator for SwimNodeEvaluator {
         &mut self.nodes
     }
 
-    fn get_start(&mut self, context: &mut PathfindingContext<'_>) -> i32 {
+    fn get_start(&mut self, _context: &mut PathfindingContext<'_>) -> i32 {
         let bb = self.settings.bounding_box();
         let x = fast_floor(bb.min_x());
         let y = fast_floor(bb.min_y() + 0.5);

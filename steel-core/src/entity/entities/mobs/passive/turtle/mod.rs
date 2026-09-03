@@ -16,8 +16,7 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
-    BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
-    TemptGoal, WaterAvoidingRandomStrollGoal,
+    FloatGoal, LookAtPlayerGoal, RandomLookAroundGoal, WaterAvoidingRandomStrollGoal,
 };
 use crate::entity::damage::DamageSource;
 use crate::entity::{
@@ -29,9 +28,8 @@ use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
 
-const DEFAULT_STEP_HEIGHT: f32 = 0.6;
-
 #[entity_behavior(class = "Turtle")]
+/// Entity behavior for the turtle.
 pub struct TurtleEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -48,6 +46,7 @@ unsafe impl DowncastType for TurtleEntity {
 
 impl TurtleEntity {
     #[must_use]
+    /// Creates a new instance.
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
             EntityBase::new(id, position, entity_type.dimensions, world),
@@ -55,6 +54,7 @@ impl TurtleEntity {
         )
     }
     #[must_use]
+    /// Creates an instance from saved data.
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
             EntityBase::from_load(load, entity_type.dimensions),

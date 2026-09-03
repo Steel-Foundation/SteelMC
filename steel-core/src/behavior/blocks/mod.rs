@@ -12,6 +12,7 @@ mod fluid;
 mod portal;
 mod redstone;
 mod spawner;
+mod vault;
 mod utils;
 pub mod vegetation;
 
@@ -29,7 +30,8 @@ pub use building::{
 };
 pub use colored::StainedGlassPaneBlock;
 pub use container::{
-    AnvilBlock, BarrelBlock, BeehiveBlock, ChiseledBookShelfBlock, CraftingTableBlock, FurnaceBlock,
+    AnvilBlock, BarrelBlock, BeehiveBlock, ChiseledBookShelfBlock, ChestBlock, CraftingTableBlock,
+    FurnaceBlock,
 };
 pub use decoration::{
     BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
@@ -52,7 +54,8 @@ pub use redstone::{
     WeatheringCopperBulbBlock, WeightedPressurePlateBlock,
 };
 pub(crate) use redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
-pub use spawner::SpawnerBlock;
+pub use spawner::{SpawnerBlock, TrialSpawnerBlock};
+pub use vault::VaultBlock;
 pub(crate) use utils::multiface_face_property;
 pub use vegetation::{
     AttachedStemBlock, AzaleaBlock, BambooSaplingBlock, BambooStalkBlock, BeetrootBlock,

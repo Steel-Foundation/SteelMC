@@ -17,10 +17,10 @@ use steel_utils::{BlockPos, BlockStateId};
 use super::SharedBlockEntity;
 use super::entities::{
     BarrelBlockEntity, BeehiveBlockEntity, BellBlockEntity, BrushableBlockEntity,
-    ChiseledBookShelfBlockEntity, ComparatorBlockEntity, DaylightDetectorBlockEntity,
-    EndGatewayBlockEntity, EndPortalBlockEntity, FurnaceBlockEntity, JukeboxBlockEntity,
-    PistonMovingBlockEntity, PotentSulfurBlockEntity, RawBlockEntity, SignBlockEntity,
-    SpawnerBlockEntity,
+    ChiseledBookShelfBlockEntity, ChestBlockEntity, ComparatorBlockEntity,
+    DaylightDetectorBlockEntity, EndGatewayBlockEntity, EndPortalBlockEntity, FurnaceBlockEntity,
+    JukeboxBlockEntity, PistonMovingBlockEntity, PotentSulfurBlockEntity, RawBlockEntity,
+    SignBlockEntity, SpawnerBlockEntity, TrialSpawnerBlockEntity, VaultBlockEntity,
 };
 use crate::world::World;
 
@@ -223,7 +223,9 @@ pub fn init_block_entities() {
         registry.register(&vanilla_block_entity_types::BARREL, |level, pos, state| {
             Arc::new(BarrelBlockEntity::new(level, pos, state))
         });
-        registry.register(&vanilla_block_entity_types::FURNACE, |level, pos, state| Arc::new(FurnaceBlockEntity::new(level, pos, state)));
+        registry.register(&vanilla_block_entity_types::FURNACE, |level, pos, state| {
+            Arc::new(FurnaceBlockEntity::new(level, pos, state))
+        });
 
         registry.register(
             &vanilla_block_entity_types::CHISELED_BOOKSHELF,
@@ -287,6 +289,22 @@ pub fn init_block_entities() {
             &vanilla_block_entity_types::MOB_SPAWNER,
             |level, pos, state| Arc::new(SpawnerBlockEntity::new(level, pos, state)),
         );
+
+        // Register chest block entity factory
+        registry.register(&vanilla_block_entity_types::CHEST, |level, pos, state| {
+            Arc::new(ChestBlockEntity::new(level, pos, state))
+        });
+
+        // Register trial spawner block entity factory
+        registry.register(
+            &vanilla_block_entity_types::TRIAL_SPAWNER,
+            |level, pos, state| Arc::new(TrialSpawnerBlockEntity::new(level, pos, state)),
+        );
+
+        // Register vault block entity factory
+        registry.register(&vanilla_block_entity_types::VAULT, |level, pos, state| {
+            Arc::new(VaultBlockEntity::new(level, pos, state))
+        });
 
         registry
     });

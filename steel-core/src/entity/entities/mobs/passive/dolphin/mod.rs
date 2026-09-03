@@ -16,10 +16,11 @@ use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 use crate::behavior::InteractionResult;
 use crate::entity::ai::goal::{
-    BreedGoal, FloatGoal, FollowParentGoal, LookAtPlayerGoal, PanicGoal, RandomLookAroundGoal,
-    TemptGoal, WaterAvoidingRandomStrollGoal,
+    BreathAirGoal, DolphinJumpGoal, LookAtPlayerGoal, MeleeAttackGoal,
+    NearestAttackableTargetGoal, RandomLookAroundGoal, RandomSwimmingGoal, TryFindWaterGoal,
 };
 use crate::entity::damage::DamageSource;
+use crate::entity::mob::{fish_init_mob_base, fish_tick_move_control, fish_travel};
 use crate::entity::{
     AgeableMob, AgeableMobBase, Animal, AnimalBase, Entity, EntityBase, EntityBaseLoad, EntityPose,
     EntitySpawnReason, EntitySyncedData, LivingEntity, LivingEntityBase, Mob, MobBase,
@@ -29,9 +30,8 @@ use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
 
-const DEFAULT_STEP_HEIGHT: f32 = 0.6;
-
 #[entity_behavior(class = "Dolphin")]
+/// Entity behavior for the dolphin.
 pub struct DolphinEntity {
     base: EntityBase,
     entity_type: EntityTypeRef,
@@ -48,6 +48,7 @@ unsafe impl DowncastType for DolphinEntity {
 
 impl DolphinEntity {
     #[must_use]
+    /// Creates a new instance.
     pub fn new(entity_type: EntityTypeRef, id: i32, position: DVec3, world: Weak<World>) -> Self {
         Self::new_with_base(
             EntityBase::new(id, position, entity_type.dimensions, world),
@@ -55,6 +56,7 @@ impl DolphinEntity {
         )
     }
     #[must_use]
+    /// Creates an instance from saved data.
     pub fn from_saved(entity_type: EntityTypeRef, load: EntityBaseLoad) -> Self {
         Self::new_with_base(
             EntityBase::from_load(load, entity_type.dimensions),
@@ -66,15 +68,33 @@ impl DolphinEntity {
         let mob_base = MobBase::new();
         let ageable_base = AgeableMobBase::new();
         let animal_base = AnimalBase::new();
-        AnimalBase::initialize_pathfinding_malus(&mob_base);
         let mut entity_data = DolphinEntityData::new();
         living_base.initialize_synced_data(&mut entity_data);
+        fish_init_mob_base(&mob_base);
         {
             let mut goal_selector = mob_base.goal_selector().lock();
-            goal_selector.add_goal(0, FloatGoal::new(&mob_base));
-            goal_selector.add_goal(5, WaterAvoidingRandomStrollGoal::new(1.0));
-            goal_selector.add_goal(6, LookAtPlayerGoal::new(6.0));
-            goal_selector.add_goal(7, RandomLookAroundGoal::new());
+            goal_selector.add_goal(0, DolphinJumpGoal::new(2));
+            goal_selector.add_goal(0, BreathAirGoal::new());
+            goal_selector.add_goal(1, TryFindWaterGoal::new());
+            goal_selector.add_goal(2, MeleeAttackGoal::new(1.2, false));
+            goal_selector.add_goal(4, LookAtPlayerGoal::new(6.0));
+            goal_selector.add_goal(6, RandomLookAroundGoal::new());
+            goal_selector.add_goal(7, RandomSwimmingGoal::new(1.0, 40));
+        }
+        // Target selector: dolphins hunt fish and squid (water creatures).
+        {
+            let mut target_selector = mob_base.target_selector().lock();
+            target_selector.add_goal(
+                1,
+                NearestAttackableTargetGoal::new(false, |target, _| {
+                    let category = target.entity_type().mob_category;
+                    matches!(
+                        category,
+                        steel_registry::entity_type::MobCategory::WaterAmbient
+                            | steel_registry::entity_type::MobCategory::WaterCreature
+                    )
+                }),
+            );
         }
         Self {
             base,
@@ -179,6 +199,15 @@ impl LivingEntity for DolphinEntity {
         Animal::tick_animal_love(self);
         r
     }
+    fn travel_in_water(
+        &self,
+        input: DVec3,
+        _base_gravity: f64,
+        _is_falling: bool,
+        _old_y: f64,
+    ) -> Option<MoveResult> {
+        fish_travel(self, input)
+    }
 }
 
 impl AgeableMob for DolphinEntity {
@@ -218,6 +247,9 @@ impl Mob for DolphinEntity {
     fn tick_path_navigation(&self) {
         PathfinderMob::tick_pathfinder_path_navigation(self);
     }
+    fn tick_move_control(&self) {
+        fish_tick_move_control(self);
+    }
     fn custom_server_ai_step(&self) {
         Animal::custom_server_ai_step_animal(self);
     }
@@ -243,4 +275,8 @@ impl Mob for DolphinEntity {
     }
 }
 
-impl PathfinderMob for DolphinEntity {}
+impl PathfinderMob for DolphinEntity {
+    fn allow_water_breaching(&self) -> bool {
+        true
+    }
+}

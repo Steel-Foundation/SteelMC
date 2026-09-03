@@ -22,7 +22,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLOCKS};
-use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
+use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_entities, vanilla_game_events};
 use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
 use steel_utils::{UuidExt, WorldAabb};
@@ -696,6 +696,83 @@ where
     }
     enchantment_helper::on_projectile_spawned(world, item_stack, entity.as_ref(), Some(player));
 
+    Some(entity)
+}
+
+/// Spawns an arrow from the shooter's eye, shot along their look direction.
+///
+/// Used by bows. Gravity/drag live on [`crate::entity::entities::ArrowEntity`].
+#[must_use]
+pub fn spawn_arrow_projectile(
+    world: &Arc<World>,
+    shooter: &dyn LivingEntity,
+    power: f32,
+    uncertainty: f32,
+    damage: f64,
+) -> Option<SharedEntity> {
+    spawn_arrow_projectile_with(world, shooter, damage, |arrow| {
+        let (yaw, pitch) = shooter.rotation();
+        arrow.shoot_from_rotation(shooter, pitch, yaw, 0.0, power, uncertainty);
+    })
+}
+
+/// Spawns an arrow aimed at a world-space point (vanilla skeleton `shoot`).
+#[must_use]
+pub fn spawn_arrow_towards(
+    world: &Arc<World>,
+    shooter: &dyn LivingEntity,
+    target: DVec3,
+    power: f32,
+    uncertainty: f32,
+    damage: f64,
+) -> Option<SharedEntity> {
+    spawn_arrow_projectile_with(world, shooter, damage, |arrow| {
+        let from = arrow.position();
+        let delta = target - from;
+        let horizontal = (delta.x * delta.x + delta.z * delta.z).sqrt();
+        arrow.shoot(
+            DVec3::new(delta.x, delta.y + horizontal * 0.2, delta.z),
+            power,
+            uncertainty,
+        );
+    })
+}
+
+fn spawn_arrow_projectile_with(
+    world: &Arc<World>,
+    shooter: &dyn LivingEntity,
+    damage: f64,
+    aim: impl FnOnce(&crate::entity::entities::ArrowEntity),
+) -> Option<SharedEntity> {
+    use crate::entity::entities::ArrowEntity;
+    use crate::entity::next_entity_id;
+
+    let shooter_pos = shooter.position();
+    let spawn_pos = DVec3::new(
+        shooter_pos.x,
+        shooter.get_eye_y() - THROWN_ITEM_SPAWN_EYE_OFFSET,
+        shooter_pos.z,
+    );
+
+    let arrow = ArrowEntity::new(
+        &vanilla_entities::ARROW,
+        next_entity_id(),
+        spawn_pos,
+        Arc::downgrade(world),
+    );
+    arrow.set_base_damage(damage);
+    if let Some(owner) = world.get_entity_by_uuid(&shooter.uuid()) {
+        arrow.set_owner_entity(Some(&owner));
+    } else {
+        arrow.set_owner_uuid(Some(shooter.uuid()));
+    }
+    aim(&arrow);
+
+    let entity: SharedEntity = Arc::new(arrow);
+    if let Err(error) = world.try_add_entity(Arc::clone(&entity)) {
+        log::debug!("failed to spawn arrow projectile: {error}");
+        return None;
+    }
     Some(entity)
 }
 
