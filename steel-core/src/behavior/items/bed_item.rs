@@ -1,4 +1,3 @@
-use steel_macros::item_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_utils::{BlockStateId, types::UpdateFlags};
 
