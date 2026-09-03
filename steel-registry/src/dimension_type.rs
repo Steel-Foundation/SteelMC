@@ -2,6 +2,7 @@ use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
+use steel_utils::value_providers::IntProvider;
 
 use crate::sound_event::SoundEventRef;
 use crate::world_clock::WorldClockRef;
@@ -76,7 +77,7 @@ pub struct DimensionType {
     pub default_clock: Option<WorldClockRef>,
     pub timelines: Option<&'static str>,
     pub has_ender_dragon_fight: bool,
-    pub monster_spawn_light_level: MonsterSpawnLightLevel,
+    pub monster_spawn_light_level: IntProvider,
     pub monster_spawn_block_light_limit: i32,
 
     // Top-level
@@ -119,17 +120,6 @@ impl DimensionType {
     }
 }
 
-/// Represents the complex structure for monster spawn light level.
-#[derive(Debug)]
-pub enum MonsterSpawnLightLevel {
-    Simple(i32),
-    Complex {
-        distribution_type: &'static str,
-        min_inclusive: i32,
-        max_inclusive: i32,
-    },
-}
-
 impl ToNbtTag for &DimensionType {
     fn to_nbt_tag(self) -> NbtTag {
         use simdnbt::owned::{NbtCompound, NbtTag};
@@ -160,23 +150,7 @@ impl ToNbtTag for &DimensionType {
         if let Some(cardinal_light) = self.cardinal_light {
             compound.insert("cardinal_light", cardinal_light);
         }
-        compound.insert(
-            "monster_spawn_light_level",
-            match &self.monster_spawn_light_level {
-                MonsterSpawnLightLevel::Simple(v) => NbtTag::Int(*v),
-                MonsterSpawnLightLevel::Complex {
-                    distribution_type,
-                    min_inclusive,
-                    max_inclusive,
-                } => {
-                    let mut inner = NbtCompound::new();
-                    inner.insert("type", *distribution_type);
-                    inner.insert("min_inclusive", *min_inclusive);
-                    inner.insert("max_inclusive", *max_inclusive);
-                    NbtTag::Compound(inner)
-                }
-            },
-        );
+        compound.insert("monster_spawn_light_level", &self.monster_spawn_light_level);
         compound.insert(
             "monster_spawn_block_light_limit",
             self.monster_spawn_block_light_limit,

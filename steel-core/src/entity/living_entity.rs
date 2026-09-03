@@ -2225,6 +2225,16 @@ pub trait LivingEntity: Entity {
         self.apply_effects_from_blocks();
         self.tick_freezing();
         self.push_entities();
+        if let Some(world) = self.level()
+            && self.entity_type().flags.is_sensitive_to_water
+            && self.is_in_water_or_rain()
+        {
+            self.hurt(
+                &*world,
+                &DamageSource::environment(&vanilla_damage_types::DROWN),
+                1.0,
+            );
+        }
         result
     }
 

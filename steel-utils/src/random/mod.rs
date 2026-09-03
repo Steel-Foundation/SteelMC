@@ -106,3 +106,12 @@ pub fn get_seed(x: i32, y: i32, z: i32) -> i64 {
         .wrapping_add(l.wrapping_mul(11));
     l >> 16
 }
+
+/// Generates a random value using triangle distribution.
+///
+/// Mirrors vanilla's `RandomSource.triangle(mode, deviation)`.
+/// Produces values centered around `mode` with a spread of `deviation`.
+#[must_use]
+pub fn triangle_random(mode: f64, deviation: f64) -> f64 {
+    mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
+}

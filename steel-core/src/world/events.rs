@@ -1,15 +1,9 @@
+use steel_utils::random::triangle_random;
+
 use super::{
     Arc, BlockEntityTypeRef, BlockPos, CBlockDestruction, ChunkPos, DVec3, ItemEntity, ItemStack,
     NbtCompound, RegistryEntry, SectionPos, World,
 };
-
-/// Generates a random value using triangle distribution.
-///
-/// Mirrors vanilla's `RandomSource.triangle(mode, deviation)`.
-/// Produces values centered around `mode` with a spread of `deviation`.
-fn triangle_random(mode: f64, deviation: f64) -> f64 {
-    mode + deviation * (rand::random::<f64>() - rand::random::<f64>())
-}
 
 impl World {
     /// Broadcasts block destruction progress to nearby players.

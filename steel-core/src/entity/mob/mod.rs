@@ -1104,6 +1104,19 @@ pub trait Mob: LivingEntity + Leashable {
         }
     }
 
+    fn check_mob_spawn_rules(
+        &self,
+        level: &World,
+        spawn_reason: EntitySpawnReason,
+        pos: BlockPos,
+    ) -> bool {
+        let below = pos.below();
+        spawn_reason.is_spawner()
+            || level
+                .get_block_state(below)
+                .is_valid_spawn(self.entity_type())
+    }
+
     fn nearest_player_distance_sqr(&self) -> Option<f64> {
         let world = self.level()?;
         world.nearest_player_distance_sqr(self.position())

@@ -1,3 +1,4 @@
+use crate::entity_type::EntityTypeRef;
 use crate::vanilla_blocks;
 use crate::{
     REGISTRY,
@@ -87,6 +88,8 @@ pub trait BlockStateExt {
     fn is_static_redstone_conductor(&self) -> bool;
     /// Returns if a block can be replaced extracted from the minecraft data
     fn is_replaceable(&self) -> bool;
+    /// Returns if a entity can spawn above this block
+    fn is_valid_spawn(&self, entity: EntityTypeRef) -> bool;
 }
 
 impl BlockStateExt for BlockStateId {
@@ -276,6 +279,11 @@ impl BlockStateExt for BlockStateId {
 
     fn is_replaceable(&self) -> bool {
         self.get_block().config.replaceable
+    }
+
+    fn is_valid_spawn(&self, _entity: EntityTypeRef) -> bool {
+        // TODO: Decipher how tf this works
+        true
     }
 }
 
