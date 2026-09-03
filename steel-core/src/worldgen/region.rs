@@ -1015,7 +1015,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
         chunk_z: i32,
         section_index: usize,
         positions: &[PackedSectionBlockPos],
-        mut replacement: impl FnMut(BlockStateId) -> Option<BlockStateId>,
+        mut replacement: impl FnMut(BlockStateId, i32) -> Option<BlockStateId>,
     ) -> u64 {
         let ore_profile = self.ore_profile;
         let started_at = ore_profile.map(|_| Instant::now());
@@ -1039,6 +1039,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             status,
             section_index,
         };
+        let section_base_y = self.region.min_y() + (section_index as i32) * 16;
         let chunk = self.chunk(chunk_x, chunk_z, status);
         if !chunk.access_mode.allows_writes() {
             Self::record_ore_write_time(ore_profile, started_at);
@@ -1061,7 +1062,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
                 let old_state = section_guard.states.get(local_x, local_y, local_z);
-                if let Some(state) = replacement(old_state) {
+                if let Some(state) = replacement(old_state, section_base_y + local_y as i32) {
                     let old_state = Self::set_bulk_block_state(
                         chunk.holder,
                         &mut section_guard,
@@ -1081,7 +1082,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
                 let local_y = usize::from(pos.y());
                 let local_z = usize::from(pos.z());
                 let old_state = section_guard.states.get(local_x, local_y, local_z);
-                if let Some(state) = replacement(old_state) {
+                if let Some(state) = replacement(old_state, section_base_y + local_y as i32) {
                     let old_state = Self::set_bulk_block_state(
                         chunk.holder,
                         &mut section_guard,
