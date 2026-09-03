@@ -3589,6 +3589,33 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         living.hurt_server(world, source, amount)
     }
 
+    // This already exists for structures and AABB whatever that might be, but I also need it for entities, I hope this is the right spot to put it.
+    /// Calculates the squared Euclidean distance from this entity's position to the given position.
+    fn distance_to_sqr(&self, pos: DVec3) -> f64 {
+        let dx = self.position().x - pos.x;
+        let dy = self.position().y - pos.y;
+        let dz = self.position().z - pos.z;
+
+        dx * dx + dy * dy + dz * dz
+    }
+
+    /// Sets position and rotation, matching vanilla `Entity.snapTo`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the active world entity manager rejects the snap position. This is an invariant
+    /// failure for loaded entities.
+    fn snap_to(&self, position: DVec3, yaw: f32, pitch: f32) {
+        if let Err(error) = self.try_set_position(position) {
+            panic!(
+                "failed to commit entity {} snap position: {error}",
+                self.id()
+            );
+        }
+        self.set_rotation((yaw, pitch));
+        self.set_old_position_to_current();
+    }
+
     /// Runs when this entity causes another entity to die.
     /// The entity provided is the entity who was killed.
     fn killed_entity(
