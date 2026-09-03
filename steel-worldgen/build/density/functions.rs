@@ -184,10 +184,7 @@ pub enum DensityFunctionData {
         input: Box<DensityFunctionJson>,
     },
     #[serde(rename = "minecraft:distance_to_point")]
-    DistanceToPoint {
-        point: [i32; 3],
-        metric: String,
-    },
+    DistanceToPoint { point: [i32; 3], metric: String },
     #[serde(rename = "minecraft:weird_scaled_sampler")]
     WeirdScaledSampler {
         input: Box<DensityFunctionJson>,
@@ -354,9 +351,9 @@ fn read_noise_settings(dimension: &str) -> NoiseSettingsJson {
 
 use crate::density::{
     Axis, BlendAlpha, BlendDensity, BlendOffset, BlendedNoise, Clamp, Constant, CubicSpline,
-    DensityFunction, DistanceMetric, DistanceToPoint, FindTopSurface, IntervalSelect, Lerp,
-    Mapped, MappedType, Marker, MarkerType, Noise, RangeChoice, RarityValueMapper, Reference,
-    Shift, ShiftA, ShiftB, ShiftedNoise, Slice, Spline, SplinePoint, SplineValue, TwoArgType,
+    DensityFunction, DistanceMetric, DistanceToPoint, FindTopSurface, IntervalSelect, Lerp, Mapped,
+    MappedType, Marker, MarkerType, Noise, RangeChoice, RarityValueMapper, Reference, Shift,
+    ShiftA, ShiftB, ShiftedNoise, Slice, Spline, SplinePoint, SplineValue, TwoArgType,
     TwoArgumentSimple, WeirdScaledSampler, YClampedGradient,
 };
 
@@ -763,7 +760,10 @@ fn router_to_entries(
         ("vein_toggle", &router.vein_toggle),
         ("vein_ridged", &router.vein_ridged),
         ("vein_gap", &router.vein_gap),
-        ("preliminary_surface_level", &router.preliminary_surface_level),
+        (
+            "preliminary_surface_level",
+            &router.preliminary_surface_level,
+        ),
     ] {
         if let Some(json) = field {
             entries.insert(name.to_string(), json_to_df(json));
@@ -793,8 +793,10 @@ fn find_interpolated_cell_size(
         DensityFunction::Reference(r) => registry
             .get(&r.id)
             .and_then(|target| find_interpolated_cell_size(target, registry)),
-        DensityFunction::TwoArgumentSimple(t) => find_interpolated_cell_size(&t.argument1, registry)
-            .or_else(|| find_interpolated_cell_size(&t.argument2, registry)),
+        DensityFunction::TwoArgumentSimple(t) => {
+            find_interpolated_cell_size(&t.argument1, registry)
+                .or_else(|| find_interpolated_cell_size(&t.argument2, registry))
+        }
         DensityFunction::Lerp(l) => find_interpolated_cell_size(&l.alpha, registry)
             .or_else(|| find_interpolated_cell_size(&l.first, registry))
             .or_else(|| find_interpolated_cell_size(&l.second, registry)),

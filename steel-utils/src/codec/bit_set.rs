@@ -88,7 +88,8 @@ mod tests {
 
         use crate::serial::ReadFrom;
 
-        let bit_set = BitSet(vec![0x0102_0304_0506_0708, 0, 0x0000_0000_0000_00ff].into_boxed_slice());
+        let bit_set =
+            BitSet(vec![0x0102_0304_0506_0708, 0, 0x0000_0000_0000_00ff].into_boxed_slice());
         let mut data = Vec::new();
         bit_set.write(&mut data).expect("bit set should encode");
 

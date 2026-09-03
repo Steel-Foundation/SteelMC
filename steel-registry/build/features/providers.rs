@@ -1,10 +1,10 @@
 use super::{
-    BlockStateProviderKind, DualNoiseProvider, FeatureNoiseParameters, FloatProvider, HeightProvider,
-    IntProvider, NoiseProvider, NoiseThresholdProvider, RuleBasedStateProviderRule, TokenStream,
-    UniformIntProvider, WeightedBlockState, WeightedIntProvider, generate_block_holder_set,
-    generate_block_predicate, generate_block_state_data, generate_block_state_provider_entry_ref,
-    generate_box, generate_direction, generate_option, generate_vec, generate_vertical_anchor,
-    quote,
+    BlockStateProviderKind, DualNoiseProvider, FeatureNoiseParameters, FloatProvider,
+    HeightProvider, IntProvider, NoiseProvider, NoiseThresholdProvider, RuleBasedStateProviderRule,
+    TokenStream, UniformIntProvider, WeightedBlockState, WeightedIntProvider,
+    generate_block_holder_set, generate_block_predicate, generate_block_state_data,
+    generate_block_state_provider_entry_ref, generate_box, generate_direction, generate_option,
+    generate_vec, generate_vertical_anchor, quote,
 };
 
 pub(super) fn generate_height_provider(provider: HeightProvider) -> TokenStream {

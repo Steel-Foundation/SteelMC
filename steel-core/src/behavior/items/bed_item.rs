@@ -7,7 +7,7 @@ use crate::behavior::items::BlockItem;
 
 /// Behavior for beds
 pub struct BedItem {
-//     #[json_arg(vanilla_blocks, json = "block")]
+    //     #[json_arg(vanilla_blocks, json = "block")]
     _block: BlockRef,
     base: BlockItem,
 }

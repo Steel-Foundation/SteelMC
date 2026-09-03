@@ -182,8 +182,7 @@ pub(super) fn generate_block_predicate_nbt(predicate: &BlockPredicate) -> TokenS
             NbtTag::Compound(compound)
         }},
         BlockPredicate::AllOf { predicates } => {
-            let predicates =
-                generate_nbt_list(predicates.iter().map(generate_block_predicate_nbt));
+            let predicates = generate_nbt_list(predicates.iter().map(generate_block_predicate_nbt));
             quote! {{
                 let mut compound = NbtCompound::new();
                 compound.insert("type", "minecraft:all_of");
@@ -192,8 +191,7 @@ pub(super) fn generate_block_predicate_nbt(predicate: &BlockPredicate) -> TokenS
             }}
         }
         BlockPredicate::AnyOf { predicates } => {
-            let predicates =
-                generate_nbt_list(predicates.iter().map(generate_block_predicate_nbt));
+            let predicates = generate_nbt_list(predicates.iter().map(generate_block_predicate_nbt));
             quote! {{
                 let mut compound = NbtCompound::new();
                 compound.insert("type", "minecraft:any_of");
@@ -448,7 +446,8 @@ pub(super) fn generate_block_state_provider_kind_nbt(
             let noise = generate_feature_noise_parameters_nbt(&provider.noise);
             let scale = provider.scale;
             let seed = provider.seed;
-            let states = generate_nbt_list(provider.states.iter().map(generate_block_state_data_nbt));
+            let states =
+                generate_nbt_list(provider.states.iter().map(generate_block_state_data_nbt));
             quote! {{
                 let mut compound = NbtCompound::new();
                 compound.insert("type", "minecraft:noise");
@@ -466,10 +465,18 @@ pub(super) fn generate_block_state_provider_kind_nbt(
             let threshold = provider.threshold;
             let high_chance = provider.high_chance;
             let default_state = generate_block_state_data_nbt(&provider.default_state);
-            let low_states =
-                generate_nbt_list(provider.low_states.iter().map(generate_block_state_data_nbt));
-            let high_states =
-                generate_nbt_list(provider.high_states.iter().map(generate_block_state_data_nbt));
+            let low_states = generate_nbt_list(
+                provider
+                    .low_states
+                    .iter()
+                    .map(generate_block_state_data_nbt),
+            );
+            let high_states = generate_nbt_list(
+                provider
+                    .high_states
+                    .iter()
+                    .map(generate_block_state_data_nbt),
+            );
             quote! {{
                 let mut compound = NbtCompound::new();
                 compound.insert("type", "minecraft:noise_threshold");
@@ -490,7 +497,8 @@ pub(super) fn generate_block_state_provider_kind_nbt(
             let seed = provider.seed;
             let slow_noise = generate_feature_noise_parameters_nbt(&provider.slow_noise);
             let slow_scale = provider.slow_scale;
-            let states = generate_nbt_list(provider.states.iter().map(generate_block_state_data_nbt));
+            let states =
+                generate_nbt_list(provider.states.iter().map(generate_block_state_data_nbt));
             let [variety_min, variety_max] = provider.variety;
             quote! {{
                 let mut compound = NbtCompound::new();

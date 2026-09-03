@@ -193,9 +193,7 @@ pub(super) fn compute_bounds_inner(
                     let hi_c = hi.clamp(-1.0, 1.0);
                     (map(lo_c), map(hi_c))
                 }
-                MappedType::Negate => {
-                    (-hi, -lo)
-                }
+                MappedType::Negate => (-hi, -lo),
             }
         }
 

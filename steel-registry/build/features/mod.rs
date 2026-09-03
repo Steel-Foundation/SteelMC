@@ -28,10 +28,10 @@ use common::{
     resource_name, sorted_json_files,
 };
 use configured::generate_configured_feature_kind;
+use nbt::generate_block_state_provider_kind_nbt;
 use placement::{
     generate_block_predicate, generate_placed_feature_data, generate_placed_feature_ref,
 };
-use nbt::generate_block_state_provider_kind_nbt;
 use providers::{
     generate_block_state_provider, generate_float_provider, generate_height_provider,
     generate_int_provider, generate_uniform_int_provider,

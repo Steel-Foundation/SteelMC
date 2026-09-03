@@ -102,7 +102,8 @@ impl FeatureDecorationRunner {
                 Self::sample_dual_noise_provider(registry, provider, pos)
             }
             BlockStateProviderKind::CopyProperties { source } => {
-                let sampled = Self::sample_block_state_provider(level, registry, random, source, pos);
+                let sampled =
+                    Self::sample_block_state_provider(level, registry, random, source, pos);
                 match registry.blocks.by_state_id(sampled) {
                     Some(target_block) => registry
                         .blocks

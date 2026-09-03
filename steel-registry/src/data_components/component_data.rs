@@ -16,10 +16,9 @@ use super::components::{
     LodestoneTracker, MapDecorations, MapId, MapItemColor, MapPostProcessing, MobVisibility,
     OminousBottleAmplifier, PaintingVariantComponent, PiercingWeapon, PotDecorations,
     PotionContents, ProvidesBannerPatterns, ProvidesPotteryPattern, ProvidesTrimMaterial, Rarity,
-    Recipes, Repairable,
-    SeededContainerLoot, SignText, SulfurCubeContent, SuspiciousStewEffects, SwingAnimation, Tool,
-    TooltipDisplay, UseCooldown, UseEffects, UseRemainder, VillagerFood, Weapon,
-    WritableBookContent, WrittenBookContent,
+    Recipes, Repairable, SeededContainerLoot, SignText, SulfurCubeContent, SuspiciousStewEffects,
+    SwingAnimation, Tool, TooltipDisplay, UseCooldown, UseEffects, UseRemainder, VillagerFood,
+    Weapon, WritableBookContent, WrittenBookContent,
 };
 use crate::cat_sound_variant::CatSoundVariant;
 use crate::cat_variant::CatVariant;

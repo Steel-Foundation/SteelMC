@@ -214,8 +214,8 @@ mod tests {
             vec![
                 5, // entity_id VarInt
                 0, // properties VarInt: on_ground=0, step_count=0
-                0, 0, 0, 0, 0, 0, // dx, dy, dz = 0
-                64, // y_rot
+                0, 0, 0, 0, 0, 0,   // dx, dy, dz = 0
+                64,  // y_rot
                 192, // x_rot (-64 as u8)
             ]
         );

@@ -425,11 +425,13 @@ fn compute_parity_base_amplitude(base_octave: i32, amplitudes: &[f64]) -> f64 {
     let octave_count = amplitudes.len() as i32;
     let octave_amplitudes = build_octave_amplitudes(1.0, octave_count, true, amplitudes);
     let target_amplitude: f64 = octave_amplitudes.iter().map(|a| a.abs()).sum();
-    let new_normalization_factor = compute_normalization_factor(target_amplitude, &octave_amplitudes);
+    let new_normalization_factor =
+        compute_normalization_factor(target_amplitude, &octave_amplitudes);
     if new_normalization_factor == 0.0 {
         return 1.0;
     }
-    let old_normalization_factor = compute_parity_normalization_factor(1.0, octave_count, amplitudes);
+    let old_normalization_factor =
+        compute_parity_normalization_factor(1.0, octave_count, amplitudes);
     old_normalization_factor / new_normalization_factor
 }
 

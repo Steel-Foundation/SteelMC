@@ -101,7 +101,10 @@ pub(crate) fn build() -> TokenStream {
     // Generate static amplitude-modifier arrays
     for (name, params) in &noises {
         let const_name = Ident::new(
-            &format!("{}_AMPLITUDE_MODIFIERS", name.replace('/', "_").to_uppercase()),
+            &format!(
+                "{}_AMPLITUDE_MODIFIERS",
+                name.replace('/', "_").to_uppercase()
+            ),
             Span::call_site(),
         );
         let amplitude_modifiers = &params.amplitude_modifiers;

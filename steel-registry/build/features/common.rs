@@ -9,8 +9,8 @@ use super::{
 /// deterministic codegen output.
 pub(super) fn sorted_json_files(dir: &str) -> Vec<PathBuf> {
     fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
-        let entries = fs::read_dir(dir)
-            .unwrap_or_else(|err| panic!("{dir:?} missing: {err}", dir = dir));
+        let entries =
+            fs::read_dir(dir).unwrap_or_else(|err| panic!("{dir:?} missing: {err}", dir = dir));
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
             if path.is_dir() {

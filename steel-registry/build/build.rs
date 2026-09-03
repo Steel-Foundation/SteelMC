@@ -206,10 +206,7 @@ pub fn main() {
         (chat_types::build(), CHAT_TYPES),
         (trim_patterns::build(), TRIM_PATTERNS),
         (trim_materials::build(), TRIM_MATERIALS),
-        (
-            decorated_pot_patterns::build(),
-            DECORATED_POT_PATTERNS,
-        ),
+        (decorated_pot_patterns::build(), DECORATED_POT_PATTERNS),
         (wolf_variants::build(), WOLF_VARIANTS),
         (wolf_sound_variants::build(), WOLF_SOUNDS),
         (pig_variants::build(), PIG_VARIANTS),

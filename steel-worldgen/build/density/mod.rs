@@ -7,8 +7,8 @@ pub(crate) use functions::build;
 pub use transpiler::{TranspilerInput, transpile};
 pub use types::{
     Axis, BlendAlpha, BlendDensity, BlendOffset, BlendedNoise, Clamp, Constant, CubicSpline,
-    DensityFunction, DistanceMetric, DistanceToPoint, FindTopSurface, IntervalSelect, Lerp,
-    Mapped, MappedType, Marker, MarkerType, Noise, RangeChoice, RarityValueMapper, Reference,
-    Shift, ShiftA, ShiftB, ShiftedNoise, Slice, Spline, SplinePoint, SplineValue, TwoArgType,
+    DensityFunction, DistanceMetric, DistanceToPoint, FindTopSurface, IntervalSelect, Lerp, Mapped,
+    MappedType, Marker, MarkerType, Noise, RangeChoice, RarityValueMapper, Reference, Shift,
+    ShiftA, ShiftB, ShiftedNoise, Slice, Spline, SplinePoint, SplineValue, TwoArgType,
     TwoArgumentSimple, WeirdScaledSampler, YClampedGradient,
 };

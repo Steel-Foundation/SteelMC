@@ -695,12 +695,12 @@ impl StructureTemplate {
             world_pos,
             random,
         ) && Self::pos_rule_test_matches(
-                &rule.position_predicate,
-                template_pos,
-                world_pos,
-                reference_pos,
-                random,
-            )
+            &rule.position_predicate,
+            template_pos,
+            world_pos,
+            reference_pos,
+            random,
+        )
     }
 
     pub(super) fn rule_test_matches(

@@ -120,7 +120,10 @@ mod tests {
         let component = ItemStack::new(&vanilla_items::ANGLER_POTTERY_SHERD)
             .get(PROVIDES_POTTERY_PATTERN)
             .expect("angler pottery sherd should provide a pattern");
-        assert_eq!(component.pattern.key, vanilla_decorated_pot_patterns::ANGLER.key);
+        assert_eq!(
+            component.pattern.key,
+            vanilla_decorated_pot_patterns::ANGLER.key
+        );
         assert_eq!(
             REGISTRY
                 .items

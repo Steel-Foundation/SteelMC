@@ -27,10 +27,10 @@ pub use super::components::{
     MapItemColor, MapPostProcessing, MobVisibility, OminousBottleAmplifier,
     PaintingVariantComponent, PiercingWeapon, PotDecorations, PotionContents,
     ProvidesBannerPatterns, ProvidesPotteryPattern, ProvidesTrimMaterial, Rarity, Recipes,
-    Repairable, SeededContainerLoot,
-    SignText, SulfurCubeContent, SuspiciousStewEffect, SuspiciousStewEffects, SwingAnimation,
-    SwingAnimationType, Tool, ToolRule, ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects,
-    UseRemainder, VillagerFood, Weapon, WritableBookContent, WrittenBookContent,
+    Repairable, SeededContainerLoot, SignText, SulfurCubeContent, SuspiciousStewEffect,
+    SuspiciousStewEffects, SwingAnimation, SwingAnimationType, Tool, ToolRule, ToolRuleBlocks,
+    TooltipDisplay, UseCooldown, UseEffects, UseRemainder, VillagerFood, Weapon,
+    WritableBookContent, WrittenBookContent,
 };
 pub use crate::ItemStackTemplate;
 pub use crate::block_transformer::BlockTransformerComponent;
