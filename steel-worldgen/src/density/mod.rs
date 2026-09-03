@@ -13,28 +13,64 @@
 //! - [`DimensionNoises`] - Trait for dimension-specific noise generators
 //! - [`NoiseSettings`] - Trait for dimension-specific settings from datapack
 
+use crate::noise::NormalNoise;
+use crate::random::RandomSplitter;
+
 pub mod spline_eval;
 pub mod traits;
 
 pub use traits::{ColumnCache, DimensionNoises, NoiseSettings};
 
 /// Parameters for creating a noise generator.
+///
+/// Mirrors vanilla's `NormalNoise.Parameters` codec, used directly by datapack
+/// `worldgen/noise/*.json` entries.
 #[derive(Debug, Clone)]
 pub struct NoiseParameters {
-    /// The first octave level.
-    pub first_octave: i32,
-    /// Amplitude multipliers for each octave.
-    pub amplitudes: Vec<f64>,
+    /// Amplitude at the base octave, before persistence falloff.
+    pub base_amplitude: f64,
+    /// The first (lowest-frequency) octave level.
+    pub base_octave: i32,
+    /// Number of octaves.
+    pub octave_count: i32,
+    /// Whether to apply persistence normalization (`Normalization.ENABLED`).
+    pub normalize: bool,
+    /// Per-octave amplitude multipliers. Empty means "all `1.0`".
+    pub amplitude_modifiers: Vec<f64>,
 }
 
 impl NoiseParameters {
     /// Create new noise parameters.
     #[must_use]
-    pub const fn new(first_octave: i32, amplitudes: Vec<f64>) -> Self {
+    pub const fn new(
+        base_amplitude: f64,
+        base_octave: i32,
+        octave_count: i32,
+        normalize: bool,
+        amplitude_modifiers: Vec<f64>,
+    ) -> Self {
         Self {
-            first_octave,
-            amplitudes,
+            base_amplitude,
+            base_octave,
+            octave_count,
+            normalize,
+            amplitude_modifiers,
         }
+    }
+
+    /// Create a [`NormalNoise`] generator from these parameters, seeded from `splitter`
+    /// under the given noise `id`.
+    #[must_use]
+    pub fn create(&self, splitter: &RandomSplitter, id: &str) -> NormalNoise {
+        NormalNoise::create_with_params(
+            splitter,
+            id,
+            self.base_octave,
+            self.base_amplitude,
+            self.octave_count,
+            self.normalize,
+            &self.amplitude_modifiers,
+        )
     }
 }
 

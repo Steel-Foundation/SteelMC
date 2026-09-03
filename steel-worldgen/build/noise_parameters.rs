@@ -6,11 +6,34 @@ use std::fs;
 use std::path::Path;
 
 /// JSON structure for a noise parameter entry (matches datapack format).
+///
+/// Mirrors vanilla's `NormalNoise.Parameters` codec. `normalize` is modeled as a plain
+/// bool (`enabled`/`disabled`, matching vanilla's `Codec.BOOL` branch) — the deprecated
+/// `"legacy"` string form never appears in extracted data.
 #[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 struct NoiseParamsJson {
-    #[serde(rename = "firstOctave")]
-    first_octave: i32,
-    amplitudes: Vec<f64>,
+    #[serde(default = "default_base_amplitude")]
+    base_amplitude: f64,
+    base_octave: i32,
+    #[serde(default = "default_octave_count")]
+    octave_count: i32,
+    #[serde(default = "default_normalize")]
+    normalize: bool,
+    #[serde(default)]
+    amplitude_modifiers: Vec<f64>,
+}
+
+const fn default_base_amplitude() -> f64 {
+    1.0
+}
+
+const fn default_octave_count() -> i32 {
+    1
+}
+
+const fn default_normalize() -> bool {
+    true
 }
 
 /// Recursively collect all `.json` files under `dir`, keyed by their path
@@ -36,6 +59,17 @@ fn collect_noise_files(base: &Path, dir: &Path, out: &mut BTreeMap<String, Noise
 
             let params: NoiseParamsJson = serde_json::from_str(&content)
                 .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", path.display()));
+
+            if !params.amplitude_modifiers.is_empty()
+                && params.amplitude_modifiers.len() as i32 != params.octave_count
+            {
+                panic!(
+                    "{}: amplitude_modifiers had size {}, but octave_count was {}",
+                    path.display(),
+                    params.amplitude_modifiers.len(),
+                    params.octave_count
+                );
+            }
 
             out.insert(name, params);
         }
@@ -64,16 +98,16 @@ pub(crate) fn build() -> TokenStream {
         use steel_worldgen::density::NoiseParameters;
     });
 
-    // Generate static amplitude arrays
+    // Generate static amplitude-modifier arrays
     for (name, params) in &noises {
         let const_name = Ident::new(
-            &format!("{}_AMPLITUDES", name.replace('/', "_").to_uppercase()),
+            &format!("{}_AMPLITUDE_MODIFIERS", name.replace('/', "_").to_uppercase()),
             Span::call_site(),
         );
-        let amplitudes = &params.amplitudes;
+        let amplitude_modifiers = &params.amplitude_modifiers;
 
         stream.extend(quote! {
-            static #const_name: &[f64] = &[#(#amplitudes),*];
+            static #const_name: &[f64] = &[#(#amplitude_modifiers),*];
         });
     }
 
@@ -82,14 +116,17 @@ pub(crate) fn build() -> TokenStream {
         .iter()
         .map(|(name, params)| {
             let amp_name = Ident::new(
-                &format!("{}_AMPLITUDES", name.replace('/', "_").to_uppercase()),
+                &format!("{}_AMPLITUDE_MODIFIERS", name.replace('/', "_").to_uppercase()),
                 Span::call_site(),
             );
-            let first_octave = params.first_octave;
+            let base_amplitude = params.base_amplitude;
+            let base_octave = params.base_octave;
+            let octave_count = params.octave_count;
+            let normalize = params.normalize;
             let key = format!("minecraft:{name}");
 
             quote! {
-                (String::from(#key), NoiseParameters::new(#first_octave, #amp_name.to_vec())),
+                (String::from(#key), NoiseParameters::new(#base_amplitude, #base_octave, #octave_count, #normalize, #amp_name.to_vec())),
             }
         })
         .collect();

@@ -23,17 +23,18 @@ use crate::random::{PositionalRandom, RandomSource, RandomSplitter, name_hash::N
 )]
 pub const INPUT_FACTOR: f64 = 1.0181268882175227;
 
-/// Value factor numerator matching vanilla's inline literal `0.16666666666666666` (1/6).
+/// `NormalNoise.TARGET_DEVIATION` — target standard deviation for the combined output.
+const TARGET_DEVIATION: f64 = 0.3333333333333333;
+
+/// Per-octave deviation coefficient used by `estimateDeviation`.
 ///
-/// Vanilla declares a constant `TARGET_DEVIATION = 0.3333333333333333` (1/3) but never
-/// uses it — the constructor hardcodes `0.16666666666666666` (1/6) as the numerator in
-/// `valueFactor = 0.16666... / expectedDeviation(span)`. We name this differently to
-/// avoid confusion with vanilla's dead `TARGET_DEVIATION` constant.
+/// Vanilla's `NormalNoise.estimateDeviation`: each octave layer contributes
+/// `0.2702247831245211 * octave.absAmplitude()` to the variance sum.
 #[expect(
     clippy::unreadable_literal,
     reason = "exact vanilla constant; underscores would obscure precision"
 )]
-const VALUE_FACTOR_NUMERATOR: f64 = 0.16666666666666666;
+const DEVIATION_COEFFICIENT: f64 = 0.2702247831245211;
 
 /// Normal (Double Perlin) noise generator.
 ///
@@ -68,7 +69,7 @@ impl NormalNoise {
         let first = PerlinNoise::create_from_random(random, first_octave, amplitudes);
         let second = PerlinNoise::create_from_random(random, first_octave, amplitudes);
 
-        Self::finish(first, second, amplitudes)
+        Self::finish(first, second, parity_value_factor(first_octave, amplitudes))
     }
 
     /// Create a new `NormalNoise` from a positional random splitter.
@@ -101,34 +102,61 @@ impl NormalNoise {
         let first = PerlinNoise::create_legacy_for_nether(random, first_octave, amplitudes);
         let second = PerlinNoise::create_legacy_for_nether(random, first_octave, amplitudes);
 
-        Self::finish(first, second, amplitudes)
+        Self::finish(first, second, parity_value_factor(first_octave, amplitudes))
     }
 
-    /// Finish construction with the two `PerlinNoise` instances.
-    fn finish(first: PerlinNoise, second: PerlinNoise, amplitudes: &[f64]) -> Self {
-        // Find the span of non-zero octaves
-        let mut min_octave = i32::MAX;
-        let mut max_octave = i32::MIN;
-        for (i, &amp) in amplitudes.iter().enumerate() {
-            if amp != 0.0 {
-                min_octave = min_octave.min(i as i32);
-                max_octave = max_octave.max(i as i32);
-            }
-        }
+    /// Create a new `NormalNoise` directly from vanilla's current `NormalNoise.Parameters`
+    /// codec fields (`base_amplitude`/`base_octave`/`octave_count`/`normalize`/
+    /// `amplitude_modifiers`), as used by datapack `worldgen/noise/*.json` entries and
+    /// feature-embedded noise providers.
+    #[must_use]
+    pub fn create_with_params(
+        splitter: &RandomSplitter,
+        noise_id: &str,
+        base_octave: i32,
+        base_amplitude: f64,
+        octave_count: i32,
+        normalize: bool,
+        amplitude_modifiers: &[f64],
+    ) -> Self {
+        let mut random = splitter.with_hash_of(&NameHash::new(noise_id));
+        Self::create_from_random_with_params(
+            &mut random,
+            base_octave,
+            base_amplitude,
+            octave_count,
+            normalize,
+            amplitude_modifiers,
+        )
+    }
 
-        // All-zero amplitudes: silent noise, always returns 0.
-        if min_octave == i32::MAX {
-            return Self {
-                first,
-                second,
-                value_factor: 0.0,
-                max_value: 0.0,
-            };
-        }
+    /// Create a new `NormalNoise` from a mutable sequential random source, directly from
+    /// vanilla's current `NormalNoise.Parameters` codec fields. See [`Self::create_with_params`].
+    #[must_use]
+    pub fn create_from_random_with_params(
+        random: &mut RandomSource,
+        base_octave: i32,
+        base_amplitude: f64,
+        octave_count: i32,
+        normalize: bool,
+        amplitude_modifiers: &[f64],
+    ) -> Self {
+        let amplitudes = expand_amplitude_modifiers(amplitude_modifiers, octave_count);
+        let first = PerlinNoise::create_from_random(random, base_octave, &amplitudes);
+        let second = PerlinNoise::create_from_random(random, base_octave, &amplitudes);
+        let value_factor = compute_value_factor(
+            base_octave,
+            base_amplitude,
+            octave_count,
+            normalize,
+            amplitude_modifiers,
+        );
 
-        // Calculate value factor based on octave span
-        let octave_span = max_octave - min_octave;
-        let value_factor = VALUE_FACTOR_NUMERATOR / expected_deviation(octave_span);
+        Self::finish(first, second, value_factor)
+    }
+
+    /// Finish construction with the two `PerlinNoise` instances and a precomputed value factor.
+    fn finish(first: PerlinNoise, second: PerlinNoise, value_factor: f64) -> Self {
         let max_value = (first.max_value() + second.max_value()) * value_factor;
 
         Self {
@@ -251,13 +279,175 @@ impl NormalNoise {
     }
 }
 
-/// Calculate the expected deviation for a given octave span.
-///
-/// This is used to normalize the output of the combined noise.
-/// Formula: 0.1 * (1 + 1/(span + 1))
+/// `NormalNoise.getAmplitudeModifier`: modifier for octave `index`, or `1.0` when the
+/// list is empty (meaning "unmodified").
 #[inline]
-fn expected_deviation(octave_span: i32) -> f64 {
+fn get_amplitude_modifier(amplitude_modifiers: &[f64], index: usize) -> f64 {
+    if amplitude_modifiers.is_empty() {
+        1.0
+    } else {
+        amplitude_modifiers[index]
+    }
+}
+
+/// Expand `amplitude_modifiers` (possibly empty, meaning "all `1.0`") to exactly
+/// `octave_count` entries, for feeding into [`PerlinNoise::create_from_random`].
+fn expand_amplitude_modifiers(amplitude_modifiers: &[f64], octave_count: i32) -> Vec<f64> {
+    (0..octave_count)
+        .map(|i| get_amplitude_modifier(amplitude_modifiers, i as usize))
+        .collect()
+}
+
+/// The persistence-normalization constant vanilla applies when `normalize` is enabled:
+/// `0.5^-(octaveCount-1) / (0.5^-octaveCount - 1)`, i.e. `2^(n-1) / (2^n - 1)`.
+///
+/// This is also, not coincidentally, exactly [`PerlinNoise`]'s own internal
+/// `lowest_freq_value_factor` for an `n`-octave amplitude list — see
+/// [`compute_value_factor`] for why that equivalence is load-bearing.
+#[inline]
+fn normalize_const(octave_count: i32) -> f64 {
+    2.0_f64.powi(octave_count - 1) / (2.0_f64.powi(octave_count) - 1.0)
+}
+
+/// `NormalNoise.buildOctaves`: per-octave amplitude (`baseAmplitude * persistence * modifier`)
+/// for each octave with a non-zero amplitude modifier, in ascending octave order.
+///
+/// Only the amplitude is needed here (not the frequency/octave index) — this is used
+/// solely to feed [`estimate_deviation`]/[`compute_normalization_factor`]; actual sampling
+/// reuses unmodified [`PerlinNoise`], see [`compute_value_factor`].
+fn build_octave_amplitudes(
+    base_amplitude: f64,
+    octave_count: i32,
+    normalize: bool,
+    amplitude_modifiers: &[f64],
+) -> Vec<f64> {
+    let mut amplitude = base_amplitude;
+    if normalize {
+        amplitude *= normalize_const(octave_count);
+    }
+
+    let mut octaves = Vec::with_capacity(octave_count as usize);
+    for i in 0..octave_count {
+        let modifier = get_amplitude_modifier(amplitude_modifiers, i as usize);
+        if modifier != 0.0 {
+            octaves.push(amplitude * modifier);
+        }
+        amplitude *= 0.5;
+    }
+    octaves
+}
+
+/// `NormalNoise.estimateDeviation`: RMS of per-octave layer deviations
+/// (`DEVIATION_COEFFICIENT * |amplitude|`).
+fn estimate_deviation(octave_amplitudes: &[f64]) -> f64 {
+    let variance: f64 = octave_amplitudes
+        .iter()
+        .map(|amplitude| (DEVIATION_COEFFICIENT * amplitude.abs()).powi(2))
+        .sum();
+    variance.sqrt()
+}
+
+/// `NormalNoise.computeNormalizationFactor`: the scalar applied to every octave's
+/// amplitude so the combined noise has the vanilla target standard deviation.
+fn compute_normalization_factor(target_amplitude: f64, octave_amplitudes: &[f64]) -> f64 {
+    let input_deviation = estimate_deviation(octave_amplitudes);
+    if input_deviation == 0.0 {
+        return 0.0;
+    }
+    let input_sum_deviation = input_deviation * std::f64::consts::SQRT_2;
+    let target_deviation = target_amplitude * TARGET_DEVIATION;
+    target_deviation / input_sum_deviation
+}
+
+/// The external scalar applied after summing the first/second [`PerlinNoise`] samplers.
+///
+/// Vanilla's new `NormalNoise` scales each octave individually by
+/// `normalizationFactor * octave.amplitude`, where `octave.amplitude` already has
+/// `baseAmplitude` and (if `normalize`) [`normalize_const`] baked in. Reused
+/// [`PerlinNoise::create_from_random`] instead computes, per octave `i`,
+/// `modifier_i * normalize_const(octave_count) * 0.5^i` (it always applies its own
+/// internal persistence normalization, unconditionally). Dividing out that
+/// unconditional [`normalize_const`] — canceling it back in when `normalize` is
+/// actually requested — lets the single scalar returned here, applied once to
+/// `first + second` exactly like the old algorithm, reproduce vanilla's per-octave
+/// weighting exactly.
+fn compute_value_factor(
+    base_octave: i32,
+    base_amplitude: f64,
+    octave_count: i32,
+    normalize: bool,
+    amplitude_modifiers: &[f64],
+) -> f64 {
+    let _ = base_octave; // octave index doesn't affect amplitude-only normalization
+    let octave_amplitudes =
+        build_octave_amplitudes(base_amplitude, octave_count, normalize, amplitude_modifiers);
+    let target_amplitude: f64 = octave_amplitudes.iter().map(|a| a.abs()).sum();
+    let normalization_factor = compute_normalization_factor(target_amplitude, &octave_amplitudes);
+    let unconditional_normalize_correction = if normalize {
+        1.0
+    } else {
+        1.0 / normalize_const(octave_count)
+    };
+    normalization_factor * base_amplitude * unconditional_normalize_correction
+}
+
+/// `NormalNoise.parityExpectedDeviation`: expected deviation formula used by the legacy
+/// (pre-`Parameters`) flat-amplitude-list algorithm. Formula: `0.1 * (1 + 1/(span + 1))`.
+#[inline]
+fn parity_expected_deviation(octave_span: i32) -> f64 {
     0.1 * (1.0 + 1.0 / f64::from(octave_span + 1))
+}
+
+/// `NormalNoise.computeParityNormalizationFactor`: the value factor the legacy algorithm
+/// would have produced for a flat `amplitudes` list, used by [`compute_parity_base_amplitude`]
+/// to find a `base_amplitude` reproducing that legacy result exactly under the new algorithm.
+fn compute_parity_normalization_factor(
+    base_amplitude: f64,
+    octave_count: i32,
+    amplitude_modifiers: &[f64],
+) -> f64 {
+    let mut min_octave = i32::MAX;
+    let mut max_octave = i32::MIN;
+    for i in 0..octave_count {
+        if get_amplitude_modifier(amplitude_modifiers, i as usize) != 0.0 {
+            min_octave = min_octave.min(i);
+            max_octave = max_octave.max(i);
+        }
+    }
+    base_amplitude * 0.5 * TARGET_DEVIATION / parity_expected_deviation(max_octave - min_octave)
+}
+
+/// `NormalNoise.computeParityBaseAmplitude`: the `base_amplitude` for which the new
+/// algorithm reproduces the legacy flat-amplitude-list `NormalNoise(firstOctave, amplitudes)`
+/// result exactly.
+fn compute_parity_base_amplitude(base_octave: i32, amplitudes: &[f64]) -> f64 {
+    let _ = base_octave; // octave index doesn't affect amplitude-only normalization
+    let octave_count = amplitudes.len() as i32;
+    let octave_amplitudes = build_octave_amplitudes(1.0, octave_count, true, amplitudes);
+    let target_amplitude: f64 = octave_amplitudes.iter().map(|a| a.abs()).sum();
+    let new_normalization_factor = compute_normalization_factor(target_amplitude, &octave_amplitudes);
+    if new_normalization_factor == 0.0 {
+        return 1.0;
+    }
+    let old_normalization_factor = compute_parity_normalization_factor(1.0, octave_count, amplitudes);
+    old_normalization_factor / new_normalization_factor
+}
+
+/// `NormalNoise.createParity`: the value factor for a legacy flat `(firstOctave, amplitudes)`
+/// call, computed by finding the parity `base_amplitude` and running it through the new
+/// algorithm — bit-for-bit equivalent to the pre-`Parameters` vanilla `NormalNoise`.
+fn parity_value_factor(first_octave: i32, amplitudes: &[f64]) -> f64 {
+    if amplitudes.is_empty() {
+        return 0.0;
+    }
+    let base_amplitude = compute_parity_base_amplitude(first_octave, amplitudes);
+    compute_value_factor(
+        first_octave,
+        base_amplitude,
+        amplitudes.len() as i32,
+        true,
+        amplitudes,
+    )
 }
 
 #[cfg(test)]
@@ -367,11 +557,11 @@ mod tests {
     }
 
     #[test]
-    fn test_expected_deviation() {
+    fn test_parity_expected_deviation() {
         // Check the formula produces expected values
-        assert!((expected_deviation(0) - 0.2).abs() < 1e-10);
-        assert!((expected_deviation(1) - 0.15).abs() < 1e-10);
-        assert!((expected_deviation(2) - 0.13333333333333333).abs() < 1e-10);
+        assert!((parity_expected_deviation(0) - 0.2).abs() < 1e-10);
+        assert!((parity_expected_deviation(1) - 0.15).abs() < 1e-10);
+        assert!((parity_expected_deviation(2) - 0.13333333333333333).abs() < 1e-10);
     }
 
     #[test]

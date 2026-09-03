@@ -662,5 +662,5 @@ fn create_noise(
     let p = params
         .get(id)
         .unwrap_or_else(|| panic!("Missing noise parameters for {id}"));
-    NormalNoise::create(splitter, id, p.first_octave, &p.amplitudes)
+    p.create(splitter, id)
 }

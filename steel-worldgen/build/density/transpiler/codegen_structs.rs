@@ -81,7 +81,7 @@ impl TranspileContext {
                     quote! {
                         #field: {
                             let p = params.get(#id_lit).expect(concat!("missing noise params: ", #id_lit));
-                            NormalNoise::create(splitter, #id_lit, p.first_octave, &p.amplitudes)
+                            p.create(splitter, #id_lit)
                         }
                     }
                 }
