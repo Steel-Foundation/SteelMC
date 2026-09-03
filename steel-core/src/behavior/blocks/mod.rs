@@ -30,8 +30,7 @@ pub use building::{
 pub use colored::StainedGlassPaneBlock;
 pub use container::{
     AnvilBlock, BarrelBlock, BeehiveBlock, ChiseledBookShelfBlock, CraftingTableBlock,
-    GrindstoneBlock,
-    EnderChestBlock,
+    EnderChestBlock, GrindstoneBlock,
 };
 pub use decoration::{
     BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
