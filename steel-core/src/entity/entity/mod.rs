@@ -858,13 +858,18 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ///
     /// Mirrors vanilla `Entity.rideTick`.
     fn ride_tick(&self) {
+        self.default_ride_tick();
+        if let Some(living) = self.as_living_entity() {
+            living.reset_fall_distance();
+        }
+    }
+
+    /// The default implementation of `Entity.rideTick` when not overridden.
+    fn default_ride_tick(&self) {
         self.set_velocity(DVec3::ZERO);
         self.tick();
         if let Some(vehicle) = self.vehicle() {
             vehicle.position_rider(self.as_entity_event_source());
-        }
-        if let Some(living) = self.as_living_entity() {
-            living.reset_fall_distance();
         }
     }
 
@@ -3608,6 +3613,22 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return false;
         };
         living.hurt_server(world, source, amount)
+    }
+
+    /// Runs when this entity causes another entity to die.
+    /// The entity provided is the entity who was killed.
+    fn killed_entity(
+        &self,
+        _world: &World,
+        _entity: &dyn LivingEntity,
+        _source: &DamageSource,
+    ) -> bool {
+        true
+    }
+
+    /// Runs when this entity kills another entity.
+    fn award_kill_score(&self, _victim: &dyn Entity, _killing_blow: &DamageSource) {
+        // TODO: Trigger advancement criterion ENTITY_KILLED_PLAYER if the victim is a player.
     }
 }
 
