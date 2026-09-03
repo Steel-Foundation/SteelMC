@@ -2602,13 +2602,7 @@ pub trait LivingEntity: Entity {
                 if free_fall_interval % 2 == 0 {
                     self.damage_random_glider();
                 }
-                if let Some(world) = self.level() {
-                    world.game_event_at(
-                        &vanilla_game_events::ELYTRA_GLIDE,
-                        self.position(),
-                        &GameEventContext::new(Some(self.as_entity_event_source()), None),
-                    );
-                }
+                self.game_event(&vanilla_game_events::ELYTRA_GLIDE);
             }
         } else {
             self.set_fall_flying(false);
