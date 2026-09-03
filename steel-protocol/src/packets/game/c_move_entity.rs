@@ -24,26 +24,39 @@ const MAX_DELTA: i64 = i16::MAX as i64;
 const MIN_DELTA: i64 = i16::MIN as i64;
 
 /// Updates an entity's position with a delta from its current position.
+///
+/// Vanilla packs this as `entityId, properties, VecDelta`, where `properties`
+/// is a `VarInt` combining the on-ground flag (bit 0) with a step count (upper
+/// bits) used for the client's sub-tick movement-interpolation paths. Steel
+/// never emits interpolation steps, so the step count is always 0 and
+/// `properties` reduces to just the on-ground flag as a `VarInt`.
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
 #[packet_id(Play = C_MOVE_ENTITY_POS)]
 pub struct CMoveEntityPos {
     #[write(as = VarInt)]
     pub entity_id: i32,
+    #[write(as = VarInt)]
+    pub on_ground: bool,
     /// Delta X (current X * 4096 - previous X * 4096)
     pub dx: PackedEntityDelta,
     /// Delta Y
     pub dy: PackedEntityDelta,
     /// Delta Z
     pub dz: PackedEntityDelta,
-    pub on_ground: bool,
 }
 
 /// Updates an entity's position and rotation.
+///
+/// See [`CMoveEntityPos`] for why `on_ground` is written as a `VarInt`
+/// "properties" field ahead of the position delta rather than as a trailing
+/// boolean.
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
 #[packet_id(Play = C_MOVE_ENTITY_POS_ROT)]
 pub struct CMoveEntityPosRot {
     #[write(as = VarInt)]
     pub entity_id: i32,
+    #[write(as = VarInt)]
+    pub on_ground: bool,
     /// Delta X (current X * 4096 - previous X * 4096)
     pub dx: PackedEntityDelta,
     /// Delta Y
@@ -54,7 +67,6 @@ pub struct CMoveEntityPosRot {
     pub y_rot: i8,
     /// Pitch as angle byte
     pub x_rot: i8,
-    pub on_ground: bool,
 }
 
 /// A fixed-point entity movement delta encoded as a protocol `i16`.
@@ -95,16 +107,20 @@ impl steel_utils::serial::WriteTo for PackedEntityDelta {
 }
 
 /// Updates an entity's rotation only.
+///
+/// Unlike [`CMoveEntityPos`]/[`CMoveEntityPosRot`], vanilla writes `on_ground`
+/// here as a plain boolean (not a packed `VarInt`), and before the angle
+/// bytes rather than after.
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
 #[packet_id(Play = C_MOVE_ENTITY_ROT)]
 pub struct CMoveEntityRot {
     #[write(as = VarInt)]
     pub entity_id: i32,
+    pub on_ground: bool,
     /// Yaw as angle byte
     pub y_rot: i8,
     /// Pitch as angle byte
     pub x_rot: i8,
-    pub on_ground: bool,
 }
 
 /// Converts degrees to a protocol angle byte (0-255 representing 0-360 degrees).
@@ -146,7 +162,81 @@ pub fn calc_delta(current: f64, previous: f64) -> Option<PackedEntityDelta> {
 
 #[cfg(test)]
 mod tests {
+    use steel_utils::serial::WriteTo as _;
+
     use super::*;
+
+    // Vanilla wire format (`ClientboundMoveEntityPacket.Pos/PosRot.write`, `VecDelta.write`
+    // for a zero-step-count `Linear` delta): entityId VarInt, `properties` VarInt (on-ground
+    // flag packed into bit 0, step count always 0 here), then dx/dy/dz as raw big-endian
+    // shorts — on_ground is NOT a trailing boolean like the old (pre-step-interpolation)
+    // format this packet used to have.
+    #[test]
+    fn pos_packet_matches_vanilla_wire_format() {
+        let packet = CMoveEntityPos {
+            entity_id: 5,
+            on_ground: true,
+            dx: PackedEntityDelta::from_raw(1),
+            dy: PackedEntityDelta::from_raw(-1),
+            dz: PackedEntityDelta::from_raw(300),
+        };
+        let mut buf = Vec::new();
+        packet.write(&mut buf).unwrap();
+
+        assert_eq!(
+            buf,
+            vec![
+                5, // entity_id VarInt
+                1, // properties VarInt: on_ground=1, step_count=0
+                0, 1, // dx = 1
+                0xFF, 0xFF, // dy = -1
+                1, 44, // dz = 300
+            ]
+        );
+    }
+
+    #[test]
+    fn pos_rot_packet_matches_vanilla_wire_format() {
+        let packet = CMoveEntityPosRot {
+            entity_id: 5,
+            on_ground: false,
+            dx: PackedEntityDelta::from_raw(0),
+            dy: PackedEntityDelta::from_raw(0),
+            dz: PackedEntityDelta::from_raw(0),
+            y_rot: 64,
+            x_rot: -64,
+        };
+        let mut buf = Vec::new();
+        packet.write(&mut buf).unwrap();
+
+        assert_eq!(
+            buf,
+            vec![
+                5, // entity_id VarInt
+                0, // properties VarInt: on_ground=0, step_count=0
+                0, 0, 0, 0, 0, 0, // dx, dy, dz = 0
+                64, // y_rot
+                192, // x_rot (-64 as u8)
+            ]
+        );
+    }
+
+    // Vanilla `ClientboundMoveEntityPacket.Rot.write`: entityId VarInt, on_ground as a
+    // plain boolean (unlike Pos/PosRot, not packed into a VarInt), then the angle bytes —
+    // on_ground comes before the rotation, not after it.
+    #[test]
+    fn rot_packet_matches_vanilla_wire_format() {
+        let packet = CMoveEntityRot {
+            entity_id: 5,
+            on_ground: true,
+            y_rot: 64,
+            x_rot: -64,
+        };
+        let mut buf = Vec::new();
+        packet.write(&mut buf).unwrap();
+
+        assert_eq!(buf, vec![5, 1, 64, 192]);
+    }
 
     #[test]
     fn test_encode_matches_java_rounding() {
