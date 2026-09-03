@@ -169,7 +169,7 @@ mod tests {
 
         assert_eq!(replacement.id(), old_player.id());
         assert_eq!(replacement.uuid(), old_player.uuid());
-        assert_ne!(replacement.instance_id(), old_player.instance_id());
+        assert_ne!(replacement.generation(), old_player.generation());
         assert!(!Arc::ptr_eq(&replacement, &old_player));
         assert!(Arc::ptr_eq(&replacement.connection, &old_player.connection));
         assert!(Arc::ptr_eq(&replacement.session, &old_player.session));

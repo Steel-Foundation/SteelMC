@@ -86,14 +86,14 @@ impl FallDamageTestEntity {
 }
 
 #[test]
-fn instance_id_distinguishes_reconstructed_entity_identity() {
+fn generation_distinguishes_reconstructed_entity_identity() {
     let uuid = Uuid::nil();
     let first = FallDamageTestEntity::new(1, uuid);
     let reincarnated = FallDamageTestEntity::new(1, uuid);
 
     assert_eq!(first.id(), reincarnated.id());
     assert_eq!(first.uuid(), reincarnated.uuid());
-    assert_ne!(first.instance_id(), reincarnated.instance_id());
+    assert_ne!(first.generation(), reincarnated.generation());
 }
 
 crate::entity::impl_test_downcast_type!(FallDamageTestEntity);

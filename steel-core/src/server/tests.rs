@@ -793,7 +793,7 @@ fn domain_restore_jobs_follow_same_session_player_replacement() {
         assert!(
             restored_pearls[0]
                 .projectile_owner()
-                .is_some_and(|owner| owner.instance_id() == replacement.instance_id())
+                .is_some_and(|owner| owner.generation() == replacement.generation())
         );
 
         world.remove_player_for_world_change(&replacement);
@@ -2167,7 +2167,7 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
             panic!("test server should initialize");
         };
         let player = test_player(&server, Arc::clone(&source_world));
-        let player_instance_id = player.instance_id();
+        let player_generation = player.generation();
         assert!(server.online_players.insert(Arc::clone(&player)));
         assert!(source_world.players.insert(Arc::clone(&player)));
         let _ = player.mark_joined_world();
@@ -2212,7 +2212,7 @@ fn same_domain_world_selection_waits_for_safe_spawn_and_full_chunk_square() {
         assert!(!player.is_world_change_pending());
         assert!(!source_world.contains_player(&player));
         assert!(target_world.contains_player(&player));
-        assert_eq!(player.instance_id(), player_instance_id);
+        assert_eq!(player.generation(), player_generation);
         assert_eq!(player.position(), DVec3::new(0.5, 66.0, 0.5));
         assert_eq!(player.rotation(), (37.0, 0.0));
 
@@ -2293,7 +2293,7 @@ fn current_respawn_replacement(
     assert!(!Arc::ptr_eq(&replacement, old_player));
     assert_eq!(replacement.gameprofile.id, old_player.gameprofile.id);
     assert_eq!(replacement.id(), old_player.id());
-    assert_ne!(replacement.instance_id(), old_player.instance_id());
+    assert_ne!(replacement.generation(), old_player.generation());
     assert!(Arc::ptr_eq(&replacement.session, &old_player.session));
     assert!(replacement.session.is_current_player(&replacement));
     assert!(!replacement.session.is_current_player(old_player));
@@ -2310,7 +2310,7 @@ fn current_respawn_replacement(
     assert!(
         world
             .get_entity_by_id(replacement.id())
-            .is_some_and(|entity| entity.instance_id() == replacement.instance_id())
+            .is_some_and(|entity| entity.generation() == replacement.generation())
     );
     assert!(!old_player.is_world_change_pending());
 
@@ -3138,11 +3138,11 @@ fn end_credits_respawn_replaces_the_detached_player_incarnation() {
         assert!(
             pearl
                 .projectile_owner()
-                .is_some_and(|owner| owner.instance_id() == replacement.instance_id())
+                .is_some_and(|owner| owner.generation() == replacement.generation())
         );
         let registered_pearls = replacement.ender_pearls();
         assert_eq!(registered_pearls.len(), 1);
-        assert_eq!(registered_pearls[0].instance_id(), pearl.instance_id());
+        assert_eq!(registered_pearls[0].generation(), pearl.generation());
 
         target_world.remove_player_for_world_change(&replacement);
         assert!(server.remove_online_player_sync(&replacement).is_some());

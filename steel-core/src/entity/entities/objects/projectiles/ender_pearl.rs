@@ -132,7 +132,7 @@ impl EnderPearlEntity {
         let Some(pearl) = world.get_entity_by_uuid(&self.uuid()) else {
             return;
         };
-        if pearl.instance_id() != self.instance_id() {
+        if pearl.generation() != self.generation() {
             return;
         }
 
@@ -487,6 +487,6 @@ mod tests {
 
         let registered = player.ender_pearls();
         assert_eq!(registered.len(), 1);
-        assert_eq!(registered[0].instance_id(), pearl.instance_id());
+        assert_eq!(registered[0].generation(), pearl.generation());
     }
 }

@@ -788,7 +788,7 @@ pub use entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
 };
 pub use fluid_contact::EntityFluidContact;
-pub use identity::EntityInstanceId;
+pub use identity::EntityGeneration;
 pub use inside_block_effects::{
     InsideBlockEffectCallback, InsideBlockEffectCollector, InsideBlockEffectType,
 };

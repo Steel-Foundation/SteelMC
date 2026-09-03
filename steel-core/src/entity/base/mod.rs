@@ -34,7 +34,7 @@ use uuid::Uuid;
 
 use crate::entity::fluid_contact::EntityFluidContact;
 use crate::entity::{
-    EntityInstanceId, EntityLevelCallback, EntityMoveError, InsideBlockEffectType,
+    EntityGeneration, EntityLevelCallback, EntityMoveError, InsideBlockEffectType,
     NullEntityCallback, RemovalReason, SharedEntity,
 };
 use crate::physics::EntityPhysicsState;
@@ -374,8 +374,8 @@ impl EntityBaseState {
 /// }
 /// ```
 pub struct EntityBase {
-    /// Identity of this runtime construction of the entity.
-    instance_id: EntityInstanceId,
+    /// Generation counter for this runtime construction of the entity.
+    generation: EntityGeneration,
     /// Unique network ID for this entity (session-local).
     id: i32,
     /// Persistent UUID for this entity.
@@ -445,7 +445,7 @@ impl EntityBase {
         world: Weak<World>,
     ) -> Self {
         Self {
-            instance_id: EntityInstanceId::next(),
+            generation: EntityGeneration::next(),
             id,
             uuid,
             world: SyncMutex::new(world),
@@ -477,10 +477,10 @@ impl EntityBase {
         base
     }
 
-    /// Gets the identity of this runtime construction of the entity.
+    /// Gets the generation counter of this runtime construction of the entity.
     #[inline]
-    pub const fn instance_id(&self) -> EntityInstanceId {
-        self.instance_id
+    pub const fn generation(&self) -> EntityGeneration {
+        self.generation
     }
 
     /// Gets the entity's unique network ID.

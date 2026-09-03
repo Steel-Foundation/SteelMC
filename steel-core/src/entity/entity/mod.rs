@@ -93,9 +93,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().id()
     }
 
-    /// Gets the identity of this runtime construction of the entity.
-    fn instance_id(&self) -> EntityInstanceId {
-        self.base().instance_id()
+    /// Gets the generation counter of this runtime construction of the entity.
+    fn generation(&self) -> EntityGeneration {
+        self.base().generation()
     }
 
     /// Gets the UUID of the entity (persistent identifier).
