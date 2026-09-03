@@ -8,7 +8,7 @@ use steel_registry::{Registry, vanilla_blocks, vanilla_entities};
 use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockStateId, BoundingBox, Direction};
 
-use crate::entity::{entities::RawEntity, next_entity_id};
+use crate::entity::{Entity, entities::RawEntity, next_entity_id};
 use crate::worldgen::region::WorldGenRegion;
 use steel_worldgen::structure::swamp_hut::SwampHutPieceData;
 
