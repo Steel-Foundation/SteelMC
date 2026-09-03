@@ -102,7 +102,7 @@ impl ItemBehavior for SignItem {
             &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
-        place_context.with_item_mut(|item| item.consume(1, has_infinite_materials));
+        place_context.with_item_mut(|item| item.consume_one(has_infinite_materials));
 
         // Sign-specific: Open the sign editor for the player (front text by default)
         context.player.open_sign_editor(place_pos, true);
@@ -273,7 +273,7 @@ impl ItemBehavior for HangingSignItem {
             &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
-        place_context.with_item_mut(|item| item.consume(1, has_infinite_materials));
+        place_context.with_item_mut(|item| item.consume_one(has_infinite_materials));
 
         // Sign-specific: Open the sign editor for the player (front text by default)
         context.player.open_sign_editor(place_pos, true);

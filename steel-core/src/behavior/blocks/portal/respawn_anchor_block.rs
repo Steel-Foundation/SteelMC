@@ -200,7 +200,7 @@ impl BlockBehavior for RespawnAnchorBlock {
             Self::charge(Some(player), world, pos, state);
             let has_infinite_materials = player.has_infinite_materials();
             inv.with_item(|item_stack| {
-                item_stack.consume(1, has_infinite_materials);
+                item_stack.consume_one(has_infinite_materials);
             });
             return InteractionResult::Success;
         }

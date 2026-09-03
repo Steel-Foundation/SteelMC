@@ -68,7 +68,7 @@ fn apply_glow(context: &mut UseOnContext, glowing: bool) -> InteractionResult {
 
     let has_infinite_materials = context.player.has_infinite_materials();
     let item_used = context.inv.with_item(|item| {
-        item.consume(1, has_infinite_materials);
+        item.consume_one(has_infinite_materials);
         item.item
     });
     context

@@ -110,7 +110,7 @@ impl ItemBehavior for FireworkRocketItem {
                 rocket.as_ref(),
                 Some(context.player),
             );
-            itemstack.consume(1, has_infinite_materials);
+            itemstack.consume_one(has_infinite_materials);
             context
                 .player
                 .award_stat(&vanilla_stat_types::ITEM_USED, item);

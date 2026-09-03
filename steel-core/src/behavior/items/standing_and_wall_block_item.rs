@@ -175,7 +175,7 @@ impl ItemBehavior for StandingAndWallBlockItem {
             &GameEventContext::new(Some(context.player), Some(placed_state)),
         );
 
-        place_context.with_item_mut(|item| item.consume(1, has_infinite_materials));
+        place_context.with_item_mut(|item| item.consume_one(has_infinite_materials));
 
         InteractionResult::Success
     }

@@ -70,7 +70,7 @@ impl ItemBehavior for EggItem {
         let has_infinite_materials = player.has_infinite_materials();
         context
             .inv
-            .with_item(|item| item.consume(1, has_infinite_materials));
+            .with_item(|item| item.consume_one(has_infinite_materials));
 
         InteractionResult::Success
     }

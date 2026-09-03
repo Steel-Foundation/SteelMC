@@ -144,6 +144,12 @@ impl ItemStack {
         }
     }
 
+    /// [Consumes](Self::consume) a single item from this stack.
+    #[inline]
+    pub const fn consume_one(&mut self, has_infinite_materials: bool) {
+        self.consume(1, has_infinite_materials);
+    }
+
     /// Splits off the given amount and [consumes](Self::consume) it from this stack.
     #[inline]
     #[must_use]
@@ -1314,11 +1320,11 @@ mod consume_tests {
         init_vanilla_registry();
 
         let mut survival = ItemStack::with_count(&vanilla_items::GLOWSTONE, 2);
-        survival.consume(1, false);
+        survival.consume_one(false);
         assert_eq!(survival.count(), 1);
 
         let mut creative = ItemStack::with_count(&vanilla_items::GLOWSTONE, 2);
-        creative.consume(1, true);
+        creative.consume_one(true);
         assert_eq!(creative.count(), 2);
     }
 

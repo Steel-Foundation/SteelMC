@@ -151,7 +151,7 @@ impl BlockItem {
         );
 
         let has_infinite_materials = context.player().is_some_and(Player::has_infinite_materials);
-        context.with_item_mut(|item| item.consume(1, has_infinite_materials));
+        context.with_item_mut(|item| item.consume_one(has_infinite_materials));
 
         InteractionResult::Success
     }

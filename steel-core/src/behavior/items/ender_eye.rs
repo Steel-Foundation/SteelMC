@@ -196,7 +196,7 @@ impl ItemBehavior for EnderEyeItem {
         let has_infinite_materials = context.player.has_infinite_materials();
         context
             .inv
-            .with_item(|item| item.consume(1, has_infinite_materials));
+            .with_item(|item| item.consume_one(has_infinite_materials));
         context
             .player
             .award_stat(&vanilla_stat_types::ITEM_USED, &vanilla_items::ENDER_EYE);
