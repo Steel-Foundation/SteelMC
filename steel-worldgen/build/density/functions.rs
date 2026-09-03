@@ -60,15 +60,9 @@ pub enum DensityFunctionData {
         noise: String,
     },
     #[serde(rename = "minecraft:shift_a")]
-    ShiftA {
-        #[serde(rename = "argument")]
-        noise: String,
-    },
+    ShiftA { noise: String },
     #[serde(rename = "minecraft:shift_b")]
-    ShiftB {
-        #[serde(rename = "argument")]
-        noise: String,
-    },
+    ShiftB { noise: String },
     #[serde(rename = "minecraft:shift")]
     Shift {
         #[serde(rename = "argument")]
@@ -161,6 +155,8 @@ pub enum DensityFunctionData {
     Cache2d { argument: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:cache_all_in_cell")]
     CacheAllInCell { argument: Box<DensityFunctionJson> },
+    #[serde(rename = "minecraft:cache")]
+    Cache { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:blend_offset")]
     BlendOffset {},
     #[serde(rename = "minecraft:blend_alpha")]
@@ -491,6 +487,7 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
         DensityFunctionData::CacheAllInCell { argument } => {
             json_marker(MarkerType::CacheAllInCell, argument)
         }
+        DensityFunctionData::Cache { input } => json_marker(MarkerType::CacheAllInCell, input),
 
         DensityFunctionData::BlendOffset {} => DensityFunction::BlendOffset(BlendOffset),
         DensityFunctionData::BlendAlpha {} => DensityFunction::BlendAlpha(BlendAlpha),
