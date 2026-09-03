@@ -385,6 +385,10 @@ pub struct Marker {
     pub kind: MarkerType,
     /// The wrapped density function
     pub wrapped: Arc<DensityFunction>,
+    /// Cell size for `MarkerType::Interpolated`; `0` (unused) for other kinds.
+    pub cell_size_xz: i32,
+    /// Cell size for `MarkerType::Interpolated`; `0` (unused) for other kinds.
+    pub cell_size_y: i32,
 }
 
 /// Cubic spline density function wrapper.
@@ -653,6 +657,8 @@ impl DensityFunction {
             Self::Marker(m) => Self::Marker(Marker {
                 kind: m.kind,
                 wrapped: Arc::new(m.wrapped.resolve_inner(registry, noises)),
+                cell_size_xz: m.cell_size_xz,
+                cell_size_y: m.cell_size_y,
             }),
 
             Self::FindTopSurface(fts) => Self::FindTopSurface(FindTopSurface {

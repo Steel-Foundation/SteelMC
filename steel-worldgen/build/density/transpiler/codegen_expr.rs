@@ -437,7 +437,7 @@ impl TranspileContext {
             }
 
             DensityFunction::Slice(s) => {
-                let coord = Literal::f64_unsuffixed(f64::from(s.coordinate));
+                let coord = Literal::f64_suffixed(f64::from(s.coordinate));
                 match s.axis {
                     Axis::X => {
                         let inner = self.gen_expr(&s.input, input, is_flat);
@@ -455,9 +455,9 @@ impl TranspileContext {
             }
 
             DensityFunction::DistanceToPoint(d) => {
-                let px = Literal::f64_unsuffixed(f64::from(d.point[0]));
-                let py = Literal::f64_unsuffixed(f64::from(d.point[1]));
-                let pz = Literal::f64_unsuffixed(f64::from(d.point[2]));
+                let px = Literal::f64_suffixed(f64::from(d.point[0]));
+                let py = Literal::f64_suffixed(f64::from(d.point[1]));
+                let pz = Literal::f64_suffixed(f64::from(d.point[2]));
                 match d.metric {
                     DistanceMetric::Euclidean => quote! {
                         ((x - #px).powi(2) + (y - #py).powi(2) + (z - #pz).powi(2)).sqrt()

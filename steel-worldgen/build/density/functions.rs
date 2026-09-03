@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -236,21 +236,21 @@ pub struct SplinePointJson {
 /// Parsed noise router from a `noise_settings` datapack file.
 #[derive(Deserialize)]
 pub struct NoiseRouterJson {
-    barrier: DensityFunctionJson,
-    fluid_level_floodedness: DensityFunctionJson,
-    fluid_level_spread: DensityFunctionJson,
-    lava: DensityFunctionJson,
     temperature: DensityFunctionJson,
     vegetation: DensityFunctionJson,
     continents: DensityFunctionJson,
     erosion: DensityFunctionJson,
     depth: DensityFunctionJson,
     ridges: DensityFunctionJson,
+    #[serde(default)]
     preliminary_surface_level: Option<DensityFunctionJson>,
     final_density: DensityFunctionJson,
-    vein_toggle: DensityFunctionJson,
-    vein_ridged: DensityFunctionJson,
-    vein_gap: DensityFunctionJson,
+    #[serde(default)]
+    vein_toggle: Option<DensityFunctionJson>,
+    #[serde(default)]
+    vein_ridged: Option<DensityFunctionJson>,
+    #[serde(default)]
+    vein_gap: Option<DensityFunctionJson>,
 }
 
 /// Noise configuration from a `noise_settings` datapack file.
@@ -258,27 +258,27 @@ pub struct NoiseRouterJson {
 struct NoiseConfigJson {
     min_y: i32,
     height: i32,
-    size_horizontal: i32,
-    size_vertical: i32,
 }
 
-/// Block state reference from a `noise_settings` datapack file.
+/// Aquifer density functions from a `noise_settings` datapack file.
 #[derive(Deserialize)]
-struct BlockStateJson {
-    #[serde(rename = "Name")]
-    name: String,
+struct AquifersJson {
+    barrier: DensityFunctionJson,
+    fluid_level_floodedness: DensityFunctionJson,
+    fluid_level_spread: DensityFunctionJson,
+    lava: DensityFunctionJson,
 }
 
 /// Full noise settings from a datapack file.
 #[derive(Deserialize)]
 struct NoiseSettingsJson {
     sea_level: i32,
-    ore_veins_enabled: bool,
-    aquifers_enabled: bool,
+    #[serde(default)]
+    aquifers: Option<AquifersJson>,
     #[serde(default)]
     legacy_random_source: bool,
-    default_block: BlockStateJson,
-    default_fluid: BlockStateJson,
+    default_block: String,
+    default_fluid: String,
     noise: NoiseConfigJson,
     noise_router: NoiseRouterJson,
     #[serde(default)]
@@ -522,20 +522,22 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
             input,
             cell_size_xz,
             cell_size_y,
-        } => {
-            assert!(
-                *cell_size_xz == 4 && *cell_size_y == 8,
-                "minecraft:interpolated with cell_size_xz {cell_size_xz} cell_size_y {cell_size_y} is not yet supported (only the router's default 4/8 grid is wired up)"
-            );
-            json_marker(MarkerType::Interpolated, input)
+        } => json_marker(MarkerType::Interpolated, input, *cell_size_xz, *cell_size_y),
+        DensityFunctionData::FlatCache { argument } => {
+            json_marker(MarkerType::FlatCache, argument, 0, 0)
         }
-        DensityFunctionData::FlatCache { argument } => json_marker(MarkerType::FlatCache, argument),
-        DensityFunctionData::CacheOnce { argument } => json_marker(MarkerType::CacheOnce, argument),
-        DensityFunctionData::Cache2d { argument } => json_marker(MarkerType::Cache2D, argument),
+        DensityFunctionData::CacheOnce { argument } => {
+            json_marker(MarkerType::CacheOnce, argument, 0, 0)
+        }
+        DensityFunctionData::Cache2d { argument } => {
+            json_marker(MarkerType::Cache2D, argument, 0, 0)
+        }
         DensityFunctionData::CacheAllInCell { argument } => {
-            json_marker(MarkerType::CacheAllInCell, argument)
+            json_marker(MarkerType::CacheAllInCell, argument, 0, 0)
         }
-        DensityFunctionData::Cache { input } => json_marker(MarkerType::CacheAllInCell, input),
+        DensityFunctionData::Cache { input } => {
+            json_marker(MarkerType::CacheAllInCell, input, 0, 0)
+        }
 
         DensityFunctionData::BlendOffset {} => DensityFunction::BlendOffset(BlendOffset),
         DensityFunctionData::BlendAlpha {} => DensityFunction::BlendAlpha(BlendAlpha),
@@ -644,10 +646,17 @@ fn json_two_arg(
     })
 }
 
-fn json_marker(kind: MarkerType, argument: &DensityFunctionJson) -> DensityFunction {
+fn json_marker(
+    kind: MarkerType,
+    argument: &DensityFunctionJson,
+    cell_size_xz: i32,
+    cell_size_y: i32,
+) -> DensityFunction {
     DensityFunction::Marker(Marker {
         kind,
         wrapped: Arc::new(json_to_df(argument)),
+        cell_size_xz,
+        cell_size_y,
     })
 }
 
@@ -720,18 +729,11 @@ fn json_spline_point(p: &SplinePointJson) -> SplinePoint {
 use crate::density::{TranspilerInput, transpile};
 
 /// Convert a noise router JSON into a `BTreeMap` of router entries.
-fn router_to_entries(router: &NoiseRouterJson) -> BTreeMap<String, DensityFunction> {
+fn router_to_entries(
+    router: &NoiseRouterJson,
+    aquifers: Option<&AquifersJson>,
+) -> BTreeMap<String, DensityFunction> {
     let mut entries = BTreeMap::new();
-    entries.insert("barrier".to_string(), json_to_df(&router.barrier));
-    entries.insert(
-        "fluid_level_floodedness".to_string(),
-        json_to_df(&router.fluid_level_floodedness),
-    );
-    entries.insert(
-        "fluid_level_spread".to_string(),
-        json_to_df(&router.fluid_level_spread),
-    );
-    entries.insert("lava".to_string(), json_to_df(&router.lava));
     entries.insert("temperature".to_string(), json_to_df(&router.temperature));
     entries.insert("vegetation".to_string(), json_to_df(&router.vegetation));
     entries.insert(
@@ -745,13 +747,78 @@ fn router_to_entries(router: &NoiseRouterJson) -> BTreeMap<String, DensityFuncti
         "final_density".to_string(),
         json_to_df(&router.final_density),
     );
-    entries.insert("vein_toggle".to_string(), json_to_df(&router.vein_toggle));
-    entries.insert("vein_ridged".to_string(), json_to_df(&router.vein_ridged));
-    entries.insert("vein_gap".to_string(), json_to_df(&router.vein_gap));
-    if let Some(ref psl) = router.preliminary_surface_level {
-        entries.insert("preliminary_surface_level".to_string(), json_to_df(psl));
+    if let Some(aquifers) = aquifers {
+        entries.insert("barrier".to_string(), json_to_df(&aquifers.barrier));
+        entries.insert(
+            "fluid_level_floodedness".to_string(),
+            json_to_df(&aquifers.fluid_level_floodedness),
+        );
+        entries.insert(
+            "fluid_level_spread".to_string(),
+            json_to_df(&aquifers.fluid_level_spread),
+        );
+        entries.insert("lava".to_string(), json_to_df(&aquifers.lava));
+    }
+    for (name, field) in [
+        ("vein_toggle", &router.vein_toggle),
+        ("vein_ridged", &router.vein_ridged),
+        ("vein_gap", &router.vein_gap),
+        ("preliminary_surface_level", &router.preliminary_surface_level),
+    ] {
+        if let Some(json) = field {
+            entries.insert(name.to_string(), json_to_df(json));
+        }
     }
     entries
+}
+
+/// Find the `cell_size_xz`/`cell_size_y` of the first `minecraft:interpolated`
+/// marker reachable from `df` (through `Reference`s via `registry`).
+///
+/// The interpolation cell size is no longer a fixed per-dimension setting —
+/// it's declared per-node — but in practice every reachable `Interpolated`
+/// node within one dimension's router uses the same size.
+fn find_interpolated_cell_size(
+    df: &DensityFunction,
+    registry: &BTreeMap<String, DensityFunction>,
+) -> Option<(i32, i32)> {
+    match df {
+        DensityFunction::Marker(m) => {
+            if m.kind == MarkerType::Interpolated {
+                Some((m.cell_size_xz, m.cell_size_y))
+            } else {
+                find_interpolated_cell_size(&m.wrapped, registry)
+            }
+        }
+        DensityFunction::Reference(r) => registry
+            .get(&r.id)
+            .and_then(|target| find_interpolated_cell_size(target, registry)),
+        DensityFunction::TwoArgumentSimple(t) => find_interpolated_cell_size(&t.argument1, registry)
+            .or_else(|| find_interpolated_cell_size(&t.argument2, registry)),
+        DensityFunction::Lerp(l) => find_interpolated_cell_size(&l.alpha, registry)
+            .or_else(|| find_interpolated_cell_size(&l.first, registry))
+            .or_else(|| find_interpolated_cell_size(&l.second, registry)),
+        DensityFunction::Mapped(m) => find_interpolated_cell_size(&m.input, registry),
+        DensityFunction::Clamp(c) => find_interpolated_cell_size(&c.input, registry),
+        DensityFunction::Slice(s) => find_interpolated_cell_size(&s.input, registry),
+        DensityFunction::BlendDensity(bd) => find_interpolated_cell_size(&bd.input, registry),
+        DensityFunction::WeirdScaledSampler(ws) => find_interpolated_cell_size(&ws.input, registry),
+        DensityFunction::RangeChoice(rc) => find_interpolated_cell_size(&rc.input, registry)
+            .or_else(|| find_interpolated_cell_size(&rc.when_in_range, registry))
+            .or_else(|| find_interpolated_cell_size(&rc.when_out_of_range, registry)),
+        DensityFunction::IntervalSelect(i) => find_interpolated_cell_size(&i.input, registry)
+            .or_else(|| {
+                i.functions
+                    .iter()
+                    .find_map(|f| find_interpolated_cell_size(f, registry))
+            }),
+        DensityFunction::ShiftedNoise(sn) => find_interpolated_cell_size(&sn.shift_x, registry)
+            .or_else(|| find_interpolated_cell_size(&sn.shift_y, registry))
+            .or_else(|| find_interpolated_cell_size(&sn.shift_z, registry)),
+        DensityFunction::FindTopSurface(fts) => find_interpolated_cell_size(&fts.density, registry)
+            .or_else(|| find_interpolated_cell_size(&fts.upper_bound, registry)),
+        _ => None,
+    }
 }
 
 /// Transpile density functions for a single dimension.
@@ -761,14 +828,18 @@ fn transpile_dimension(
     registry: &BTreeMap<String, DensityFunction>,
 ) -> TokenStream {
     let settings = read_noise_settings(dimension);
-    let router_entries = router_to_entries(&settings.noise_router);
+    let router_entries = router_to_entries(&settings.noise_router, settings.aquifers.as_ref());
 
-    let cell_width = settings.noise.size_horizontal * 4;
+    let (cell_width, cell_height) = router_entries
+        .values()
+        .find_map(|df| find_interpolated_cell_size(df, registry))
+        .unwrap_or((4, 8));
     let input = TranspilerInput {
         registry: registry.clone(),
         router_entries,
         prefix: prefix.to_string(),
         cell_width,
+        cell_height,
         legacy_random_source: settings.legacy_random_source,
     };
 
@@ -861,28 +932,59 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
 
     let min_y = settings.noise.min_y;
     let height = settings.noise.height;
-    let size_horizontal = settings.noise.size_horizontal;
-    let size_vertical = settings.noise.size_vertical;
     let sea_level = settings.sea_level;
-    let aquifers_enabled = settings.aquifers_enabled;
-    let ore_veins_enabled = settings.ore_veins_enabled;
+    let aquifers_enabled = settings.aquifers.is_some();
+    let ore_veins_enabled = false;
     let legacy_random_source = settings.legacy_random_source;
 
-    // Cell dimensions: size_horizontal * 4 for XZ, size_vertical * 4 for Y
-    let cell_width = size_horizontal * 4;
-    let cell_height = size_vertical * 4;
+    let registry: BTreeMap<String, DensityFunction> = read_density_function_registry()
+        .iter()
+        .map(|(id, json)| (id.clone(), json_to_df(json)))
+        .collect();
+    let router_entries = router_to_entries(&settings.noise_router, settings.aquifers.as_ref());
+    let (cell_width, cell_height) = router_entries
+        .values()
+        .find_map(|df| find_interpolated_cell_size(df, &registry))
+        .unwrap_or((4, 8));
+
+    // Dimensions without a router entry for these (e.g. nether, end) return `0.0`;
+    // callers are expected to check `AQUIFERS_ENABLED`/`ORE_VEINS_ENABLED` first.
+    let optional_router_fns: TokenStream = [
+        "barrier",
+        "fluid_level_floodedness",
+        "fluid_level_spread",
+        "lava",
+        "vein_toggle",
+        "vein_ridged",
+        "vein_gap",
+        "preliminary_surface_level",
+    ]
+    .into_iter()
+    .map(|name| {
+        let fn_ident = format_ident!("router_{name}");
+        let body = if router_entries.contains_key(name) {
+            quote! { #fn_ident(self, cache, x as f64, y as f64, z as f64) }
+        } else {
+            quote! { 0.0 }
+        };
+        quote! {
+            #[inline]
+            fn #fn_ident(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+                #body
+            }
+        }
+    })
+    .collect();
 
     // Extract block name without minecraft: prefix for lookup
     let default_block = settings
         .default_block
-        .name
         .strip_prefix("minecraft:")
-        .unwrap_or(&settings.default_block.name);
+        .unwrap_or(&settings.default_block);
     let default_fluid = settings
         .default_fluid
-        .name
         .strip_prefix("minecraft:")
-        .unwrap_or(&settings.default_fluid.name);
+        .unwrap_or(&settings.default_fluid);
 
     let default_block_upper = default_block.to_uppercase();
     let default_fluid_upper = default_fluid.to_uppercase();
@@ -988,40 +1090,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
                 router_depth(self, cache, x as f64, y as f64, z as f64)
             }
 
-            #[inline]
-            fn router_barrier(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_barrier(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_fluid_level_floodedness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_fluid_level_floodedness(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_fluid_level_spread(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_fluid_level_spread(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_lava(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_lava(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_vein_toggle(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_vein_toggle(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_vein_ridged(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_vein_ridged(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_vein_gap(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_vein_gap(self, cache, x as f64, y as f64, z as f64)
-            }
+            #optional_router_fns
 
             #[inline]
             fn router_erosion(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
@@ -1046,11 +1115,6 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             #[inline]
             fn router_ridges(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
                 router_ridges(self, cache, x as f64, y as f64, z as f64)
-            }
-
-            #[inline]
-            fn router_preliminary_surface_level(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
-                router_preliminary_surface_level(self, cache, x as f64, y as f64, z as f64)
             }
 
             #[inline]

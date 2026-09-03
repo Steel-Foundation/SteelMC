@@ -57,6 +57,8 @@ pub struct TranspilerInput {
     /// Cell width in blocks (XZ direction). Determines the `FlatCache` grid size:
     /// `grid_side = (16 / cell_width) + 1`, total entries = `grid_side²`.
     pub cell_width: i32,
+    /// Cell height in blocks (Y direction), for `Interpolated` markers.
+    pub cell_height: i32,
     /// Whether this dimension uses Java's LCG random (`true`) or Xoroshiro (`false`).
     ///
     /// When `true`, vanilla's `RandomState` intercepts noise creation:

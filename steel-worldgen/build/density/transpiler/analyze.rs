@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::density::{CubicSpline, DensityFunction, SplineValue};
+use crate::density::{CubicSpline, DensityFunction, MarkerType, SplineValue};
 
 use super::TranspilerInput;
 use super::context::TranspileContext;
@@ -176,7 +176,19 @@ impl TranspileContext {
                 self.noise_ids.insert(ws.noise_id.clone());
             }
             DensityFunction::BlendDensity(bd) => self.walk_df(&bd.input, input),
-            DensityFunction::Marker(m) => self.walk_df(&m.wrapped, input),
+            DensityFunction::Marker(m) => {
+                if m.kind == MarkerType::Interpolated {
+                    assert!(
+                        m.cell_size_xz == input.cell_width && m.cell_size_y == input.cell_height,
+                        "minecraft:interpolated with cell_size_xz {} cell_size_y {} is not yet supported (only the router's default {}/{} grid is wired up)",
+                        m.cell_size_xz,
+                        m.cell_size_y,
+                        input.cell_width,
+                        input.cell_height
+                    );
+                }
+                self.walk_df(&m.wrapped, input);
+            }
             DensityFunction::FindTopSurface(fts) => {
                 self.walk_df(&fts.density, input);
                 self.walk_df(&fts.upper_bound, input);
