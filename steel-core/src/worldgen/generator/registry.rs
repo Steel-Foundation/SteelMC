@@ -527,6 +527,24 @@ mod tests {
 
     #[test]
     fn default_flat_config_matches_vanilla_superflat() {
+        use std::panic;
+        use std::thread;
+
+        // Larger stack to match chunk_stage_hashes.rs / structure_starts.rs —
+        // loading the default structure overrides (strongholds, villages)
+        // recurses deeply for jigsaw assembly.
+        let result = thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(default_flat_config_matches_vanilla_superflat_inner)
+            .expect("Failed to spawn test thread")
+            .join();
+
+        if let Err(payload) = result {
+            panic::resume_unwind(payload);
+        }
+    }
+
+    fn default_flat_config_matches_vanilla_superflat_inner() {
         init_vanilla_registry();
 
         let registry = WorldGeneratorRegistry::new_with_builtins()

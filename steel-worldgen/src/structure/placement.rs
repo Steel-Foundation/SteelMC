@@ -577,7 +577,7 @@ mod tests {
     #[test]
     fn test_load_vanilla_structure_sets() {
         let sets = load_vanilla_structure_sets();
-        assert_eq!(sets.len(), 20);
+        assert_eq!(sets.len(), 21);
 
         // Verify villages loaded correctly from datapack
         let (key, villages) = sets

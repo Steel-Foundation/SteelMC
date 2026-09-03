@@ -839,7 +839,7 @@ mod tests {
                 .iter()
                 .filter(|(_, item)| item.components.has(CONTAINER))
                 .count(),
-            44
+            45
         );
 
         assert_eq!(

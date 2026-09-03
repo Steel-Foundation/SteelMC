@@ -72,6 +72,7 @@ mod tests {
     use std::io::Cursor;
 
     use simdnbt::FromNbtTag as _;
+    use simdnbt::ToNbtTag as _;
     use simdnbt::borrow::read_tag;
     use simdnbt::owned::NbtTag;
     use steel_utils::Identifier;

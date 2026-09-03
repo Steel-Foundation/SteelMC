@@ -6,9 +6,9 @@ use crate::{
     data_components::vanilla_components::{
         ADDITIONAL_TRADE_COST, ATTACK_ANIMATION, BREAK_SOUND, BUCKET_ENTITY_DATA, CHICKEN_VARIANT,
         CREATIVE_SLOT_LOCK, CUSTOM_NAME, DYE, ENCHANTABLE, ENCHANTMENT_GLINT_OVERRIDE,
-        INTERACT_ANIMATION, ITEM_MODEL, ITEM_NAME, LORE, MAP_COLOR, MAP_POST_PROCESSING,
-        MAX_STACK_SIZE, OMINOUS_BOTTLE_AMPLIFIER, POTION_DURATION_SCALE, RARITY,
-        STORED_ENCHANTMENTS, SwingAnimationType, TOOLTIP_DISPLAY, USE_EFFECTS,
+        INTERACT_ANIMATION, ITEM_MODEL, ITEM_NAME, LORE, MAP_POST_PROCESSING, MAX_STACK_SIZE,
+        OMINOUS_BOTTLE_AMPLIFIER, POTION_DURATION_SCALE, RARITY, STORED_ENCHANTMENTS,
+        SwingAnimationType, TOOLTIP_DISPLAY, USE_EFFECTS,
     },
     init_vanilla_registry,
     item_stack::ItemStack,
@@ -334,12 +334,6 @@ fn common_defaults_and_extracted_item_overrides_match_vanilla() {
         assert_eq!(ItemStack::new(item).get(DYE), Some(&color), "{}", item.key);
     }
 
-    assert_eq!(
-        ItemStack::new(&vanilla_items::FILLED_MAP)
-            .get(MAP_COLOR)
-            .map(|color| color.rgb()),
-        Some(4_603_950)
-    );
     assert_eq!(
         ItemStack::new(&vanilla_items::OMINOUS_BOTTLE)
             .get(OMINOUS_BOTTLE_AMPLIFIER)

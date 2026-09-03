@@ -1304,6 +1304,23 @@ mod tests {
 
     #[test]
     fn retained_and_rebuilt_aquifers_produce_identical_carver_output() {
+        use std::panic;
+        use std::thread;
+
+        // Larger stack to match chunk_stage_hashes.rs — noise/carver generation
+        // recurses deeply enough to overflow the default test thread stack.
+        let result = thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(retained_and_rebuilt_aquifers_produce_identical_carver_output_inner)
+            .expect("Failed to spawn test thread")
+            .join();
+
+        if let Err(payload) = result {
+            panic::resume_unwind(payload);
+        }
+    }
+
+    fn retained_and_rebuilt_aquifers_produce_identical_carver_output_inner() {
         init_vanilla_registry();
         init_behaviors();
         let pool = rayon::ThreadPoolBuilder::new()

@@ -1,3 +1,5 @@
+use std::fs;
+
 use super::{
     ConditionRefJson, EnchantedChanceJson, LootConditionJson, PredicateJson, PropertyValueJson,
     TokenStream, generate_damage_source_predicate, generate_entity_predicate,
@@ -6,12 +8,20 @@ use super::{
 
 pub(super) fn generate_condition(condition: &ConditionRefJson) -> TokenStream {
     match condition {
-        ConditionRefJson::Reference(name) => {
-            let name = name.strip_prefix("minecraft:").unwrap_or(name);
-            quote! { LootCondition::Reference(Identifier::vanilla_static(#name)) }
-        }
+        ConditionRefJson::Reference(name) => generate_condition_object(&load_predicate(name)),
         ConditionRefJson::Inline(condition) => generate_condition_object(condition),
     }
+}
+
+fn load_predicate(name: &str) -> LootConditionJson {
+    let path_name = name.strip_prefix("minecraft:").unwrap_or(name);
+    let path = format!(
+        "../steel-utils/build_assets/builtin_datapacks/minecraft/predicate/{path_name}.json"
+    );
+    let content = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read predicate {name} at {path}: {e}"));
+    serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("Failed to parse predicate {name}: {e}"))
 }
 
 fn generate_condition_object(condition: &LootConditionJson) -> TokenStream {

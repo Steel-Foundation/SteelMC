@@ -322,15 +322,6 @@ pub(super) fn generate_builder_calls(item: &Item) -> Vec<TokenStream> {
                     .builder_set(vanilla_components::DYE, Some(#color))
                 });
             }
-            "minecraft:map_color" => {
-                let rgb = component_i32(value, "map_color");
-                builder_calls.push(quote! {
-                    .builder_set(
-                        vanilla_components::MAP_COLOR,
-                        Some(vanilla_components::MapItemColor::new(#rgb)),
-                    )
-                });
-            }
             "minecraft:ominous_bottle_amplifier" => {
                 let amplifier = component_i32(value, "ominous_bottle_amplifier");
                 assert!(

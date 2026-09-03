@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn extracted_types_follow_vanilla_registry_order_and_fields() {
         init_vanilla_registry();
-        assert_eq!(REGISTRY.map_decoration_types.len(), 35);
+        assert_eq!(REGISTRY.map_decoration_types.len(), 40);
 
         let player = REGISTRY
             .map_decoration_types
@@ -88,7 +88,7 @@ mod tests {
         let trial_chambers = REGISTRY
             .map_decoration_types
             .by_id(34)
-            .expect("trial chambers decoration should be registered last");
+            .expect("trial chambers decoration should be registered");
         assert_eq!(
             trial_chambers.key,
             Identifier::vanilla_static("trial_chambers")
