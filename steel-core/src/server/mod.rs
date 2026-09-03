@@ -259,10 +259,6 @@ fn is_nether_dimension_type(world: &World) -> bool {
     world.dimension_type == &vanilla_dimension_types::THE_NETHER
 }
 
-fn is_end_dimension_type(world: &World) -> bool {
-    world.dimension_type == &vanilla_dimension_types::THE_END
-}
-
 fn can_entity_return_from_end_to_overworld(
     entity: &dyn Entity,
     projectile_owner_seen_credits: impl Fn(&uuid::Uuid) -> Option<bool>,
