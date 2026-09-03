@@ -123,7 +123,6 @@ impl FishingHookEntity {
         }
     }
 
-    // TODO: as soon as we have enchantments: use `luck` and `lure_speed` as input
     /// Mimics Java's `FishingHook(Player, Level, int, int)` constructor. (But we don't need `level` here)
     pub fn shoot_from_player(self: &Arc<Self>, player: &Arc<Player>, luck: i32, lure_speed: i32) {
         const MAGIC_OFFSET: f64 = 0.010_336_5;
