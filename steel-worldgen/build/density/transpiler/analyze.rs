@@ -149,6 +149,11 @@ impl TranspileContext {
                 self.walk_df(&t.argument1, input);
                 self.walk_df(&t.argument2, input);
             }
+            DensityFunction::Lerp(l) => {
+                self.walk_df(&l.alpha, input);
+                self.walk_df(&l.first, input);
+                self.walk_df(&l.second, input);
+            }
             DensityFunction::Mapped(m) => self.walk_df(&m.input, input),
             DensityFunction::Clamp(c) => self.walk_df(&c.input, input),
             DensityFunction::RangeChoice(rc) => {
@@ -176,6 +181,8 @@ impl TranspileContext {
                 self.walk_df(&fts.density, input);
                 self.walk_df(&fts.upper_bound, input);
             }
+            DensityFunction::Slice(s) => self.walk_df(&s.input, input),
+            DensityFunction::DistanceToPoint(_) => {}
             DensityFunction::Reference(r) => {
                 if !self.used_names.contains(&r.id) {
                     self.used_names.insert(r.id.clone());

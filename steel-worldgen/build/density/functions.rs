@@ -44,6 +44,16 @@ pub enum DensityFunctionData {
         from_value: f64,
         to_value: f64,
     },
+    #[serde(rename = "minecraft:gradient")]
+    Gradient {
+        axis: String,
+        #[serde(default)]
+        tiling: Option<String>,
+        from_coordinate: i32,
+        to_coordinate: i32,
+        from_value: f64,
+        to_value: f64,
+    },
     #[serde(rename = "minecraft:noise")]
     Noise {
         xz_scale: f64,
@@ -64,10 +74,7 @@ pub enum DensityFunctionData {
     #[serde(rename = "minecraft:shift_b")]
     ShiftB { noise: String },
     #[serde(rename = "minecraft:shift")]
-    Shift {
-        #[serde(rename = "argument")]
-        noise: String,
-    },
+    Shift { noise: String },
     #[serde(rename = "minecraft:clamp")]
     Clamp {
         input: Box<DensityFunctionJson>,
@@ -75,59 +82,56 @@ pub enum DensityFunctionData {
         max: f64,
     },
     #[serde(rename = "minecraft:abs")]
-    Abs {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    Abs { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:square")]
-    Square {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    Square { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:cube")]
-    Cube {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    Cube { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:half_negative")]
-    HalfNegative {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    HalfNegative { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:quarter_negative")]
-    QuarterNegative {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    QuarterNegative { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:invert")]
-    Invert {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    Invert { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:squeeze")]
-    Squeeze {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    Squeeze { input: Box<DensityFunctionJson> },
+    #[serde(rename = "minecraft:negate")]
+    Negate { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:add")]
     Add {
-        argument1: Box<DensityFunctionJson>,
-        argument2: Box<DensityFunctionJson>,
+        left: Box<DensityFunctionJson>,
+        right: Box<DensityFunctionJson>,
+    },
+    #[serde(rename = "minecraft:sub")]
+    Sub {
+        left: Box<DensityFunctionJson>,
+        right: Box<DensityFunctionJson>,
     },
     #[serde(rename = "minecraft:mul")]
     Mul {
-        argument1: Box<DensityFunctionJson>,
-        argument2: Box<DensityFunctionJson>,
+        left: Box<DensityFunctionJson>,
+        right: Box<DensityFunctionJson>,
+    },
+    #[serde(rename = "minecraft:div")]
+    Div {
+        left: Box<DensityFunctionJson>,
+        right: Box<DensityFunctionJson>,
     },
     #[serde(rename = "minecraft:min")]
     Min {
-        argument1: Box<DensityFunctionJson>,
-        argument2: Box<DensityFunctionJson>,
+        left: Box<DensityFunctionJson>,
+        right: Box<DensityFunctionJson>,
     },
     #[serde(rename = "minecraft:max")]
     Max {
-        argument1: Box<DensityFunctionJson>,
-        argument2: Box<DensityFunctionJson>,
+        left: Box<DensityFunctionJson>,
+        right: Box<DensityFunctionJson>,
+    },
+    #[serde(rename = "minecraft:lerp")]
+    Lerp {
+        alpha: Box<DensityFunctionJson>,
+        first: Box<DensityFunctionJson>,
+        second: Box<DensityFunctionJson>,
     },
     #[serde(rename = "minecraft:spline")]
     Spline { spline: SplineJson },
@@ -146,7 +150,11 @@ pub enum DensityFunctionData {
         functions: Vec<DensityFunctionJson>,
     },
     #[serde(rename = "minecraft:interpolated")]
-    Interpolated { argument: Box<DensityFunctionJson> },
+    Interpolated {
+        input: Box<DensityFunctionJson>,
+        cell_size_xz: i32,
+        cell_size_y: i32,
+    },
     #[serde(rename = "minecraft:flat_cache")]
     FlatCache { argument: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:cache_once")]
@@ -162,14 +170,24 @@ pub enum DensityFunctionData {
     #[serde(rename = "minecraft:blend_alpha")]
     BlendAlpha {},
     #[serde(rename = "minecraft:blend_density")]
-    BlendDensity {
-        #[serde(rename = "argument")]
-        input: Box<DensityFunctionJson>,
-    },
+    BlendDensity { input: Box<DensityFunctionJson> },
     #[serde(rename = "minecraft:beardifier")]
     Beardifier {},
     #[serde(rename = "minecraft:end_islands")]
     EndIslands {},
+    #[serde(rename = "minecraft:end_outer_islands")]
+    EndOuterIslands {},
+    #[serde(rename = "minecraft:slice")]
+    Slice {
+        axis: String,
+        coordinate: i32,
+        input: Box<DensityFunctionJson>,
+    },
+    #[serde(rename = "minecraft:distance_to_point")]
+    DistanceToPoint {
+        point: [i32; 3],
+        metric: String,
+    },
     #[serde(rename = "minecraft:weird_scaled_sampler")]
     WeirdScaledSampler {
         input: Box<DensityFunctionJson>,
@@ -335,10 +353,11 @@ fn read_noise_settings(dimension: &str) -> NoiseSettingsJson {
 // ── JSON → DensityFunction conversion ───────────────────────────────────────
 
 use crate::density::{
-    BlendAlpha, BlendDensity, BlendOffset, BlendedNoise, Clamp, Constant, CubicSpline,
-    DensityFunction, FindTopSurface, IntervalSelect, Mapped, MappedType, Marker, MarkerType, Noise,
-    RangeChoice, RarityValueMapper, Reference, Shift, ShiftA, ShiftB, ShiftedNoise, Spline,
-    SplinePoint, SplineValue, TwoArgType, TwoArgumentSimple, WeirdScaledSampler, YClampedGradient,
+    Axis, BlendAlpha, BlendDensity, BlendOffset, BlendedNoise, Clamp, Constant, CubicSpline,
+    DensityFunction, DistanceMetric, DistanceToPoint, FindTopSurface, IntervalSelect, Lerp,
+    Mapped, MappedType, Marker, MarkerType, Noise, RangeChoice, RarityValueMapper, Reference,
+    Shift, ShiftA, ShiftB, ShiftedNoise, Slice, Spline, SplinePoint, SplineValue, TwoArgType,
+    TwoArgumentSimple, WeirdScaledSampler, YClampedGradient,
 };
 
 /// Convert a JSON density function to a runtime `DensityFunction` value.
@@ -379,6 +398,26 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
             from_value: *from_value,
             to_value: *to_value,
         }),
+
+        DensityFunctionData::Gradient {
+            axis,
+            tiling,
+            from_coordinate,
+            to_coordinate,
+            from_value,
+            to_value,
+        } => {
+            assert!(
+                axis == "y" && tiling.as_deref().is_none_or(|t| t == "clamp_to_edge"),
+                "minecraft:gradient with axis {axis:?} tiling {tiling:?} is not yet supported"
+            );
+            DensityFunction::YClampedGradient(YClampedGradient {
+                from_y: *from_coordinate,
+                to_y: *to_coordinate,
+                from_value: *from_value,
+                to_value: *to_value,
+            })
+        }
 
         DensityFunctionData::Noise {
             xz_scale,
@@ -436,23 +475,24 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
         }
         DensityFunctionData::Invert { input } => json_mapped(MappedType::Invert, input),
         DensityFunctionData::Squeeze { input } => json_mapped(MappedType::Squeeze, input),
+        DensityFunctionData::Negate { input } => json_mapped(MappedType::Negate, input),
 
-        DensityFunctionData::Add {
-            argument1,
-            argument2,
-        } => json_two_arg(TwoArgType::Add, argument1, argument2),
-        DensityFunctionData::Mul {
-            argument1,
-            argument2,
-        } => json_two_arg(TwoArgType::Mul, argument1, argument2),
-        DensityFunctionData::Min {
-            argument1,
-            argument2,
-        } => json_two_arg(TwoArgType::Min, argument1, argument2),
-        DensityFunctionData::Max {
-            argument1,
-            argument2,
-        } => json_two_arg(TwoArgType::Max, argument1, argument2),
+        DensityFunctionData::Add { left, right } => json_two_arg(TwoArgType::Add, left, right),
+        DensityFunctionData::Sub { left, right } => json_two_arg(TwoArgType::Sub, left, right),
+        DensityFunctionData::Mul { left, right } => json_two_arg(TwoArgType::Mul, left, right),
+        DensityFunctionData::Div { left, right } => json_two_arg(TwoArgType::Div, left, right),
+        DensityFunctionData::Min { left, right } => json_two_arg(TwoArgType::Min, left, right),
+        DensityFunctionData::Max { left, right } => json_two_arg(TwoArgType::Max, left, right),
+
+        DensityFunctionData::Lerp {
+            alpha,
+            first,
+            second,
+        } => DensityFunction::Lerp(Lerp {
+            alpha: Arc::new(json_to_df(alpha)),
+            first: Arc::new(json_to_df(first)),
+            second: Arc::new(json_to_df(second)),
+        }),
 
         DensityFunctionData::Spline { spline } => DensityFunction::Spline(Spline {
             spline: Arc::new(json_spline_to_cubic(spline)),
@@ -478,8 +518,16 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
             functions,
         } => json_interval_select(input, thresholds, functions),
 
-        DensityFunctionData::Interpolated { argument } => {
-            json_marker(MarkerType::Interpolated, argument)
+        DensityFunctionData::Interpolated {
+            input,
+            cell_size_xz,
+            cell_size_y,
+        } => {
+            assert!(
+                *cell_size_xz == 4 && *cell_size_y == 8,
+                "minecraft:interpolated with cell_size_xz {cell_size_xz} cell_size_y {cell_size_y} is not yet supported (only the router's default 4/8 grid is wired up)"
+            );
+            json_marker(MarkerType::Interpolated, input)
         }
         DensityFunctionData::FlatCache { argument } => json_marker(MarkerType::FlatCache, argument),
         DensityFunctionData::CacheOnce { argument } => json_marker(MarkerType::CacheOnce, argument),
@@ -501,6 +549,35 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
         // Constant(0.0) is correct when structures are not yet generated.
         DensityFunctionData::Beardifier {} => DensityFunction::Constant(Constant { value: 0.0 }),
         DensityFunctionData::EndIslands {} => DensityFunction::EndIslands,
+        DensityFunctionData::EndOuterIslands {} => DensityFunction::EndIslands,
+
+        DensityFunctionData::Slice {
+            axis,
+            coordinate,
+            input,
+        } => DensityFunction::Slice(Slice {
+            axis: match axis.as_str() {
+                "x" => Axis::X,
+                "y" => Axis::Y,
+                "z" => Axis::Z,
+                other => panic!("minecraft:slice has unknown axis {other:?}"),
+            },
+            coordinate: *coordinate,
+            input: Arc::new(json_to_df(input)),
+        }),
+
+        DensityFunctionData::DistanceToPoint { point, metric } => {
+            DensityFunction::DistanceToPoint(DistanceToPoint {
+                point: *point,
+                metric: match metric.as_str() {
+                    "euclidean" => DistanceMetric::Euclidean,
+                    "euclidean_squared" => DistanceMetric::EuclideanSquared,
+                    "manhattan" => DistanceMetric::Manhattan,
+                    "chebyshev" => DistanceMetric::Chebyshev,
+                    other => panic!("minecraft:distance_to_point has unknown metric {other:?}"),
+                },
+            })
+        }
 
         DensityFunctionData::WeirdScaledSampler {
             input,

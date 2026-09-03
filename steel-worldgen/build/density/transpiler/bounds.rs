@@ -66,6 +66,28 @@ pub(super) fn compute_bounds_inner(
         | DensityFunction::Spline(_)
         | DensityFunction::BlendedNoise(_) => (f64::NEG_INFINITY, f64::INFINITY),
 
+        DensityFunction::Lerp(l) => {
+            let (alpha_lo, alpha_hi) = compute_bounds_inner(&l.alpha, input, visiting);
+            let (first_lo, first_hi) = compute_bounds_inner(&l.first, input, visiting);
+            let (second_lo, second_hi) = compute_bounds_inner(&l.second, input, visiting);
+            let lerp = |a: f64, f: f64, s: f64| f + a * (s - f);
+            let mut lo = f64::INFINITY;
+            let mut hi = f64::NEG_INFINITY;
+            for a in [alpha_lo, alpha_hi] {
+                for f in [first_lo, first_hi] {
+                    for s in [second_lo, second_hi] {
+                        let c = lerp(a, f, s);
+                        if c.is_nan() {
+                            return (f64::NEG_INFINITY, f64::INFINITY);
+                        }
+                        lo = lo.min(c);
+                        hi = hi.max(c);
+                    }
+                }
+            }
+            (lo, hi)
+        }
+
         DensityFunction::TwoArgumentSimple(t) => {
             let (a_lo, a_hi) = compute_bounds_inner(&t.argument1, input, visiting);
             let (b_lo, b_hi) = compute_bounds_inner(&t.argument2, input, visiting);
@@ -91,6 +113,28 @@ pub(super) fn compute_bounds_inner(
                 }
                 TwoArgType::Min => (a_lo.min(b_lo), a_hi.min(b_hi)),
                 TwoArgType::Max => (a_lo.max(b_lo), a_hi.max(b_hi)),
+                TwoArgType::Sub => (a_lo - b_hi, a_hi - b_lo),
+                TwoArgType::Div => {
+                    if b_lo <= 0.0 && b_hi >= 0.0 {
+                        (f64::NEG_INFINITY, f64::INFINITY)
+                    } else {
+                        let candidates = [a_lo / b_lo, a_lo / b_hi, a_hi / b_lo, a_hi / b_hi];
+                        let mut lo = f64::INFINITY;
+                        let mut hi = f64::NEG_INFINITY;
+                        for c in candidates {
+                            if c.is_nan() {
+                                return (f64::NEG_INFINITY, f64::INFINITY);
+                            }
+                            if c < lo {
+                                lo = c;
+                            }
+                            if c > hi {
+                                hi = c;
+                            }
+                        }
+                        (lo, hi)
+                    }
+                }
             }
         }
 
@@ -149,6 +193,9 @@ pub(super) fn compute_bounds_inner(
                     let hi_c = hi.clamp(-1.0, 1.0);
                     (map(lo_c), map(hi_c))
                 }
+                MappedType::Negate => {
+                    (-hi, -lo)
+                }
             }
         }
 
@@ -196,5 +243,9 @@ pub(super) fn compute_bounds_inner(
             let (_, upper) = compute_bounds_inner(&fts.upper_bound, input, visiting);
             (f64::from(fts.lower_bound), upper)
         }
+
+        DensityFunction::Slice(s) => compute_bounds_inner(&s.input, input, visiting),
+
+        DensityFunction::DistanceToPoint(_) => (0.0, f64::INFINITY),
     }
 }

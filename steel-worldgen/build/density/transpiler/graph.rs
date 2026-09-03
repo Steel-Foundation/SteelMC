@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::density::{CubicSpline, DensityFunction, MarkerType, SplineValue};
+use crate::density::{Axis, CubicSpline, DensityFunction, MarkerType, SplineValue};
 
 use super::fingerprint::fingerprint;
 
@@ -22,6 +22,7 @@ pub(super) fn uses_y(df: &DensityFunction) -> bool {
         DensityFunction::ShiftedNoise(sn) => sn.y_scale != 0.0 || uses_y(&sn.shift_y),
         DensityFunction::WeirdScaledSampler(ws) => uses_y(&ws.input),
         DensityFunction::TwoArgumentSimple(t) => uses_y(&t.argument1) || uses_y(&t.argument2),
+        DensityFunction::Lerp(l) => uses_y(&l.alpha) || uses_y(&l.first) || uses_y(&l.second),
         DensityFunction::Mapped(m) => uses_y(&m.input),
         DensityFunction::Clamp(c) => uses_y(&c.input),
         DensityFunction::RangeChoice(rc) => {
@@ -33,6 +34,8 @@ pub(super) fn uses_y(df: &DensityFunction) -> bool {
         DensityFunction::BlendDensity(bd) => uses_y(&bd.input),
         DensityFunction::Marker(m) => uses_y(&m.wrapped),
         DensityFunction::Spline(s) => uses_y_spline(&s.spline),
+        DensityFunction::Slice(s) => !matches!(s.axis, Axis::Y) && uses_y(&s.input),
+        DensityFunction::DistanceToPoint(_) => true,
         // These don't use Y:
         // - FindTopSurface scans Y internally but result only depends on (x, z)
         // - References are handled at the analysis level
@@ -91,6 +94,11 @@ pub(super) fn collect_refs_inner(df: &DensityFunction, refs: &mut Vec<String>) {
             collect_refs_inner(&t.argument1, refs);
             collect_refs_inner(&t.argument2, refs);
         }
+        DensityFunction::Lerp(l) => {
+            collect_refs_inner(&l.alpha, refs);
+            collect_refs_inner(&l.first, refs);
+            collect_refs_inner(&l.second, refs);
+        }
         DensityFunction::Mapped(m) => collect_refs_inner(&m.input, refs),
         DensityFunction::Clamp(c) => collect_refs_inner(&c.input, refs),
         DensityFunction::RangeChoice(rc) => {
@@ -111,6 +119,7 @@ pub(super) fn collect_refs_inner(df: &DensityFunction, refs: &mut Vec<String>) {
         }
         DensityFunction::BlendDensity(bd) => collect_refs_inner(&bd.input, refs),
         DensityFunction::WeirdScaledSampler(ws) => collect_refs_inner(&ws.input, refs),
+        DensityFunction::Slice(s) => collect_refs_inner(&s.input, refs),
         DensityFunction::Spline(s) => collect_spline_refs(&s.spline, refs),
         DensityFunction::FindTopSurface(fts) => {
             collect_refs_inner(&fts.density, refs);
@@ -140,6 +149,11 @@ pub(super) fn collect_inline_flat_noises(
             collect_inline_flat_noises(&t.argument1, out);
             collect_inline_flat_noises(&t.argument2, out);
         }
+        DensityFunction::Lerp(l) => {
+            collect_inline_flat_noises(&l.alpha, out);
+            collect_inline_flat_noises(&l.first, out);
+            collect_inline_flat_noises(&l.second, out);
+        }
         DensityFunction::Mapped(m) => collect_inline_flat_noises(&m.input, out),
         DensityFunction::Clamp(c) => collect_inline_flat_noises(&c.input, out),
         DensityFunction::RangeChoice(rc) => {
@@ -155,6 +169,7 @@ pub(super) fn collect_inline_flat_noises(
         }
         DensityFunction::WeirdScaledSampler(ws) => collect_inline_flat_noises(&ws.input, out),
         DensityFunction::BlendDensity(bd) => collect_inline_flat_noises(&bd.input, out),
+        DensityFunction::Slice(s) => collect_inline_flat_noises(&s.input, out),
         DensityFunction::Marker(m) => collect_inline_flat_noises(&m.wrapped, out),
         DensityFunction::ShiftedNoise(sn) => {
             collect_inline_flat_noises(&sn.shift_x, out);
@@ -202,6 +217,11 @@ pub(super) fn collect_interpolated_walk(
             collect_interpolated_walk(&t.argument1, registry, inners);
             collect_interpolated_walk(&t.argument2, registry, inners);
         }
+        DensityFunction::Lerp(l) => {
+            collect_interpolated_walk(&l.alpha, registry, inners);
+            collect_interpolated_walk(&l.first, registry, inners);
+            collect_interpolated_walk(&l.second, registry, inners);
+        }
         DensityFunction::Mapped(m) => collect_interpolated_walk(&m.input, registry, inners),
         DensityFunction::Clamp(c) => collect_interpolated_walk(&c.input, registry, inners),
         DensityFunction::RangeChoice(rc) => {
@@ -220,6 +240,9 @@ pub(super) fn collect_interpolated_walk(
         }
         DensityFunction::WeirdScaledSampler(ws) => {
             collect_interpolated_walk(&ws.input, registry, inners);
+        }
+        DensityFunction::Slice(s) => {
+            collect_interpolated_walk(&s.input, registry, inners);
         }
         DensityFunction::Spline(s) => {
             collect_interpolated_spline_walk(&s.spline, registry, inners);

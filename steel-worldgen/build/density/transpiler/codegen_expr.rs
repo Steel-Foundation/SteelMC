@@ -13,8 +13,8 @@ use proc_macro2::{Ident, Literal, TokenStream};
 use quote::{format_ident, quote};
 
 use crate::density::{
-    CubicSpline, DensityFunction, MappedType, MarkerType, RarityValueMapper, SplineValue,
-    TwoArgType,
+    Axis, CubicSpline, DensityFunction, DistanceMetric, MappedType, MarkerType, RarityValueMapper,
+    SplineValue, TwoArgType,
 };
 
 use super::TranspilerInput;
@@ -127,6 +127,23 @@ impl TranspileContext {
                 }
             }
 
+            DensityFunction::Lerp(l) => {
+                let alpha = self.gen_expr(&l.alpha, input, is_flat);
+                let first = self.gen_expr(&l.first, input, is_flat);
+                let second = self.gen_expr(&l.second, input, is_flat);
+                quote! {{
+                    let __lerp_alpha = #alpha;
+                    if __lerp_alpha == 0.0 {
+                        #first
+                    } else if __lerp_alpha == 1.0 {
+                        #second
+                    } else {
+                        let __lerp_first = #first;
+                        __lerp_first + __lerp_alpha * ((#second) - __lerp_first)
+                    }
+                }}
+            }
+
             DensityFunction::TwoArgumentSimple(t) => {
                 let (hoisted, hoisted_fps) =
                     self.hoist_common_subexprs(&[&t.argument1, &t.argument2], input, is_flat);
@@ -152,7 +169,9 @@ impl TranspileContext {
                 // bit-identical here.
                 let op = match t.op {
                     TwoArgType::Add => quote! { ((#a) + (#b)) },
+                    TwoArgType::Sub => quote! { ((#a) - (#b)) },
                     TwoArgType::Mul => quote! { ((#a) * (#b)) },
+                    TwoArgType::Div => quote! { ((#a) / (#b)) },
                     TwoArgType::Min => {
                         let (b_lo, _b_hi) = compute_bounds(&t.argument2, input);
                         if b_lo.is_finite() {
@@ -225,6 +244,7 @@ impl TranspileContext {
                     MappedType::Squeeze => {
                         quote! { { let c = clamp(#v, -1.0, 1.0); c / 2.0 - c * c * c / 24.0 } }
                     }
+                    MappedType::Negate => quote! { (-(#v)) },
                 }
             }
 
@@ -414,6 +434,44 @@ impl TranspileContext {
                         __result
                     }
                 }}
+            }
+
+            DensityFunction::Slice(s) => {
+                let coord = Literal::f64_unsuffixed(f64::from(s.coordinate));
+                match s.axis {
+                    Axis::X => {
+                        let inner = self.gen_expr(&s.input, input, is_flat);
+                        quote! {{ let x = #coord; #inner }}
+                    }
+                    Axis::Z => {
+                        let inner = self.gen_expr(&s.input, input, is_flat);
+                        quote! {{ let z = #coord; #inner }}
+                    }
+                    Axis::Y => {
+                        let inner = self.gen_expr(&s.input, input, false);
+                        quote! {{ let y = #coord; #inner }}
+                    }
+                }
+            }
+
+            DensityFunction::DistanceToPoint(d) => {
+                let px = Literal::f64_unsuffixed(f64::from(d.point[0]));
+                let py = Literal::f64_unsuffixed(f64::from(d.point[1]));
+                let pz = Literal::f64_unsuffixed(f64::from(d.point[2]));
+                match d.metric {
+                    DistanceMetric::Euclidean => quote! {
+                        ((x - #px).powi(2) + (y - #py).powi(2) + (z - #pz).powi(2)).sqrt()
+                    },
+                    DistanceMetric::EuclideanSquared => quote! {
+                        ((x - #px).powi(2) + (y - #py).powi(2) + (z - #pz).powi(2))
+                    },
+                    DistanceMetric::Manhattan => quote! {
+                        ((x - #px).abs() + (y - #py).abs() + (z - #pz).abs())
+                    },
+                    DistanceMetric::Chebyshev => quote! {
+                        (x - #px).abs().max((y - #py).abs()).max((z - #pz).abs())
+                    },
+                }
             }
 
             DensityFunction::Reference(r) => {
@@ -843,6 +901,7 @@ impl TranspileContext {
                                 - __c * __c * __c / f64x4::splat(24.0)
                         }}
                     }
+                    MappedType::Negate => quote! { (-(#v)) },
                 }
             }
 
@@ -919,10 +978,20 @@ impl TranspileContext {
                         let b = self.gen_expr_simd(&t.argument2, input, is_flat);
                         quote! { ((#a) + (#b)) }
                     }
+                    TwoArgType::Sub => {
+                        let a = self.gen_expr_simd(&t.argument1, input, is_flat);
+                        let b = self.gen_expr_simd(&t.argument2, input, is_flat);
+                        quote! { ((#a) - (#b)) }
+                    }
                     TwoArgType::Mul => {
                         let a = self.gen_expr_simd(&t.argument1, input, is_flat);
                         let b = self.gen_expr_simd(&t.argument2, input, is_flat);
                         quote! { ((#a) * (#b)) }
+                    }
+                    TwoArgType::Div => {
+                        let a = self.gen_expr_simd(&t.argument1, input, is_flat);
+                        let b = self.gen_expr_simd(&t.argument2, input, is_flat);
+                        quote! { ((#a) / (#b)) }
                     }
                     TwoArgType::Min => {
                         let (b_lo, _) = compute_bounds(&t.argument2, input);
@@ -1145,6 +1214,11 @@ impl TranspileContext {
             DensityFunction::TwoArgumentSimple(t) => {
                 self.is_y_independent(&t.argument1) && self.is_y_independent(&t.argument2)
             }
+            DensityFunction::Lerp(l) => {
+                self.is_y_independent(&l.alpha)
+                    && self.is_y_independent(&l.first)
+                    && self.is_y_independent(&l.second)
+            }
             DensityFunction::RangeChoice(rc) => {
                 self.is_y_independent(&rc.input)
                     && self.is_y_independent(&rc.when_in_range)
@@ -1161,6 +1235,11 @@ impl TranspileContext {
             DensityFunction::Marker(m) => self.is_y_independent(&m.wrapped),
 
             DensityFunction::Spline(s) => self.is_spline_y_independent(&s.spline),
+
+            DensityFunction::Slice(s) => {
+                matches!(s.axis, Axis::Y) || self.is_y_independent(&s.input)
+            }
+            DensityFunction::DistanceToPoint(_) => false,
 
             // A non-flat `Reference` is Y-dependent. The flatness analyzer
             // would have promoted it to `flat_cached` if it were Y-indep.
