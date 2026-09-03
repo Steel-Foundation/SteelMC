@@ -630,10 +630,10 @@ pub(crate) fn build() -> TokenStream {
         use crate::loot_table::{
             BlockPredicate, BonusFormula, ConditionalLootFunction, CopySource, DamageSourcePredicate,
             DamageTagPredicate, DyeColor, EnchantedChance, EnchantmentOptions, EntityEquipment,
-            EntityFlags, EntityPredicate, EquipmentSlotGroup, InstrumentOptions, LocationPredicate,
-            LootCondition, LootContextEntity, LootEntry, LootFunction, LootPool, LootTable,
-            LootTableRef, LootTableRegistry, LootType, NameTarget, NumberProvider, PropertyCheck,
-            StewEffect, ToolPredicate,
+            EntityFlags, EntityPredicate, EquipmentSlotGroup, InstrumentOptions, ItemPredicate,
+            LocationPredicate, LootCondition, LootContextEntity, LootEntry, LootFunction, LootPool,
+            LootTable, LootTableRef, LootTableRegistry, LootType, NameTarget, NumberProvider,
+            PropertyCheck, StewEffect, ToolPredicate,
         };
         use steel_utils::Identifier;
     });

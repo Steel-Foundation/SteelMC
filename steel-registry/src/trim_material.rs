@@ -44,7 +44,7 @@ impl TrimMaterialValue {
 
     fn to_nbt_tag_ref(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
-        compound.insert("palette_id", self.palette_id.to_nbt_tag());
+        compound.insert("palette_id", self.palette_id.clone().to_nbt_tag());
         compound.insert("description", self.description.to_codec_nbt());
         NbtTag::Compound(compound)
     }

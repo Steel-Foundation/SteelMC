@@ -48,6 +48,7 @@ mod chat_types;
 mod chicken_variants;
 mod cow_variants;
 mod damage_types;
+mod decorated_pot_patterns;
 mod dialogs;
 mod dimension_types;
 mod entities;
@@ -112,6 +113,7 @@ const BIOME_TAGS: &str = "biome_tags";
 const CHAT_TYPES: &str = "chat_types";
 const TRIM_PATTERNS: &str = "trim_patterns";
 const TRIM_MATERIALS: &str = "trim_materials";
+const DECORATED_POT_PATTERNS: &str = "decorated_pot_patterns";
 const WOLF_VARIANTS: &str = "wolf_variants";
 const WOLF_SOUNDS: &str = "wolf_sound_variants";
 const PIG_VARIANTS: &str = "pig_variants";
@@ -204,6 +206,10 @@ pub fn main() {
         (chat_types::build(), CHAT_TYPES),
         (trim_patterns::build(), TRIM_PATTERNS),
         (trim_materials::build(), TRIM_MATERIALS),
+        (
+            decorated_pot_patterns::build(),
+            DECORATED_POT_PATTERNS,
+        ),
         (wolf_variants::build(), WOLF_VARIANTS),
         (wolf_sound_variants::build(), WOLF_SOUNDS),
         (pig_variants::build(), PIG_VARIANTS),

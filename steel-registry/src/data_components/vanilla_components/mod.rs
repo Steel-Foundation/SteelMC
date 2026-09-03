@@ -26,7 +26,8 @@ pub use super::components::{
     KineticWeaponCondition, LodestoneTracker, MapDecorationEntry, MapDecorations, MapId,
     MapItemColor, MapPostProcessing, MobVisibility, OminousBottleAmplifier,
     PaintingVariantComponent, PiercingWeapon, PotDecorations, PotionContents,
-    ProvidesBannerPatterns, ProvidesTrimMaterial, Rarity, Recipes, Repairable, SeededContainerLoot,
+    ProvidesBannerPatterns, ProvidesPotteryPattern, ProvidesTrimMaterial, Rarity, Recipes,
+    Repairable, SeededContainerLoot,
     SignText, SulfurCubeContent, SuspiciousStewEffect, SuspiciousStewEffects, SwingAnimation,
     SwingAnimationType, Tool, ToolRule, ToolRuleBlocks, TooltipDisplay, UseCooldown, UseEffects,
     UseRemainder, VillagerFood, Weapon, WritableBookContent, WrittenBookContent,
@@ -269,6 +270,9 @@ pub const INSTRUMENT: DataComponentType<InstrumentComponent> =
 
 pub const PROVIDES_TRIM_MATERIAL: DataComponentType<ProvidesTrimMaterial> =
     DataComponentType::new(Identifier::vanilla_static("provides_trim_material"));
+
+pub const PROVIDES_POTTERY_PATTERN: DataComponentType<ProvidesPotteryPattern> =
+    DataComponentType::new(Identifier::vanilla_static("provides_pottery_pattern"));
 
 pub const OMINOUS_BOTTLE_AMPLIFIER: DataComponentType<OminousBottleAmplifier> =
     DataComponentType::new(Identifier::vanilla_static("ominous_bottle_amplifier"));
@@ -1031,6 +1035,8 @@ pub fn register_vanilla_data_components(registry: &mut DataComponentRegistry) {
     registry.register(SIGN_TEXT_BACK);
     // 120: cushion/color
     registry.register(CUSHION_COLOR);
+    // 121: provides_pottery_pattern
+    registry.register(PROVIDES_POTTERY_PATTERN);
 }
 
 #[cfg(test)]

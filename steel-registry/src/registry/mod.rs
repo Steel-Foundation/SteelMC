@@ -33,6 +33,7 @@ use crate::{
     damage_type::DamageTypeRegistry,
     data_component_predicate::{self, DataComponentPredicateTypeRegistry},
     data_components::{DataComponentRegistry, vanilla_components},
+    decorated_pot_pattern::DecoratedPotPatternRegistry,
     dialog::DialogRegistry,
     dimension_type::DimensionTypeRegistry,
     enchantment::EnchantmentRegistry,
@@ -77,7 +78,8 @@ use crate::{
     vanilla_chat_types,
     vanilla_chicken_sound_variants, vanilla_chicken_variants, vanilla_configured_carvers,
     vanilla_configured_features, vanilla_cow_sound_variants, vanilla_cow_variants,
-    vanilla_custom_stats, vanilla_damage_type_tags, vanilla_damage_types, vanilla_dialog_tags,
+    vanilla_custom_stats, vanilla_damage_type_tags, vanilla_damage_types,
+    vanilla_decorated_pot_patterns, vanilla_dialog_tags,
     vanilla_dialogs, vanilla_dimension_types, vanilla_enchantment_tags, vanilla_enchantments,
     vanilla_entities, vanilla_entity_type_tags, vanilla_fluid_tags, vanilla_fluids,
     vanilla_frog_variants, vanilla_game_events, vanilla_game_rules, vanilla_instrument_tags,
@@ -179,6 +181,8 @@ pub const BIOMES_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/bio
 pub const CHAT_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("chat_type");
 pub const TRIM_PATTERN_REGISTRY: Identifier = Identifier::vanilla_static("trim_pattern");
 pub const TRIM_MATERIAL_REGISTRY: Identifier = Identifier::vanilla_static("trim_material");
+pub const DECORATED_POT_PATTERN_REGISTRY: Identifier =
+    Identifier::vanilla_static("decorated_pot_pattern");
 pub const WOLF_VARIANT_REGISTRY: Identifier = Identifier::vanilla_static("wolf_variant");
 pub const WOLF_SOUND_VARIANT_REGISTRY: Identifier =
     Identifier::vanilla_static("wolf_sound_variant");
@@ -246,6 +250,7 @@ pub struct Registry {
     pub chat_types: ChatTypeRegistry,
     pub trim_patterns: TrimPatternRegistry,
     pub trim_materials: TrimMaterialRegistry,
+    pub decorated_pot_patterns: DecoratedPotPatternRegistry,
     pub wolf_variants: WolfVariantRegistry,
     pub wolf_sound_variants: WolfSoundVariantRegistry,
     pub pig_sound_variants: PigSoundVariantRegistry,
@@ -336,6 +341,9 @@ impl Registry {
         vanilla_chat_types::register_chat_types(&mut registry.chat_types);
         vanilla_trim_patterns::register_trim_patterns(&mut registry.trim_patterns);
         vanilla_trim_materials::register_trim_materials(&mut registry.trim_materials);
+        vanilla_decorated_pot_patterns::register_decorated_pot_patterns(
+            &mut registry.decorated_pot_patterns,
+        );
         vanilla_wolf_variants::register_wolf_variants(&mut registry.wolf_variants);
         vanilla_wolf_sound_variants::register_wolf_sound_variants(
             &mut registry.wolf_sound_variants,
@@ -452,6 +460,7 @@ impl Registry {
         self.chat_types.freeze();
         self.trim_patterns.freeze();
         self.trim_materials.freeze();
+        self.decorated_pot_patterns.freeze();
         self.wolf_variants.freeze();
         self.wolf_sound_variants.freeze();
         self.pig_variants.freeze();
@@ -714,6 +723,7 @@ impl Registry {
             chat_types: ChatTypeRegistry::new(),
             trim_patterns: TrimPatternRegistry::new(),
             trim_materials: TrimMaterialRegistry::new(),
+            decorated_pot_patterns: DecoratedPotPatternRegistry::new(),
             wolf_variants: WolfVariantRegistry::new(),
             wolf_sound_variants: WolfSoundVariantRegistry::new(),
             pig_variants: PigVariantRegistry::new(),

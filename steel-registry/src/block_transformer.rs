@@ -17,7 +17,7 @@ use steel_utils::serial::{ReadFrom, WriteTo};
 use steel_utils::{Direction, Identifier};
 
 use crate::sound_event::SoundEventHolder;
-use crate::{REGISTRY, RegistryTags};
+use crate::{REGISTRY, RegistryEntry, RegistryExt, RegistryTags};
 
 /// Item block transforms, e.g. shovel flattening dirt into a path.
 ///

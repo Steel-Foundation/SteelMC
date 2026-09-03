@@ -15,7 +15,8 @@ use super::components::{
     ItemContainerContents, ItemEnchantments, ItemLore, JukeboxPlayable, KineticWeapon,
     LodestoneTracker, MapDecorations, MapId, MapItemColor, MapPostProcessing, MobVisibility,
     OminousBottleAmplifier, PaintingVariantComponent, PiercingWeapon, PotDecorations,
-    PotionContents, ProvidesBannerPatterns, ProvidesTrimMaterial, Rarity, Recipes, Repairable,
+    PotionContents, ProvidesBannerPatterns, ProvidesPotteryPattern, ProvidesTrimMaterial, Rarity,
+    Recipes, Repairable,
     SeededContainerLoot, SignText, SulfurCubeContent, SuspiciousStewEffects, SwingAnimation, Tool,
     TooltipDisplay, UseCooldown, UseEffects, UseRemainder, VillagerFood, Weapon,
     WritableBookContent, WrittenBookContent,
@@ -209,6 +210,10 @@ impl_component_downcast_type!(
 impl_component_downcast_type!(
     ProvidesTrimMaterial,
     "steel:item_component/provides_trim_material"
+);
+impl_component_downcast_type!(
+    ProvidesPotteryPattern,
+    "steel:item_component/provides_pottery_pattern"
 );
 impl_component_downcast_type!(JukeboxPlayable, "steel:item_component/jukebox_playable");
 impl_component_downcast_type!(

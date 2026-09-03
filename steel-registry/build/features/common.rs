@@ -1,25 +1,41 @@
+use std::path::{Path, PathBuf};
+
 use super::{
     BlockHolderSet, BlockStateData, Direction, FluidStateData, Ident, Identifier, IdentifierList,
     Rotation, Span, ToShoutySnakeCase, TokenStream, VerticalAnchor, fs, quote,
 };
 
-pub(super) fn sorted_json_files(dir: &str) -> Vec<fs::DirEntry> {
-    let mut files: Vec<_> = fs::read_dir(dir)
-        .unwrap_or_else(|err| panic!("{dir} missing: {err}"))
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().extension().and_then(|s| s.to_str()) == Some("json"))
-        .collect();
-    files.sort_by_key(std::fs::DirEntry::file_name);
+/// Recursively collects every `.json` file under `dir`, sorted for
+/// deterministic codegen output.
+pub(super) fn sorted_json_files(dir: &str) -> Vec<PathBuf> {
+    fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
+        let entries = fs::read_dir(dir)
+            .unwrap_or_else(|err| panic!("{dir:?} missing: {err}", dir = dir));
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, files);
+            } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                files.push(path);
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    walk(Path::new(dir), &mut files);
+    files.sort();
     files
 }
 
-pub(super) fn resource_name(entry: &fs::DirEntry) -> String {
-    entry
-        .path()
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or_else(|| panic!("invalid feature file name: {:?}", entry.path()))
-        .to_owned()
+/// Derives the vanilla resource path (e.g. `coral/tube_block`) for a file
+/// found under `dir` by `sorted_json_files`.
+pub(super) fn resource_name(dir: &str, path: &Path) -> String {
+    path.with_extension("")
+        .strip_prefix(dir)
+        .unwrap_or_else(|_| panic!("{path:?} is not under {dir}"))
+        .to_str()
+        .unwrap_or_else(|| panic!("invalid feature file name: {path:?}"))
+        .replace('\\', "/")
 }
 
 pub(super) fn generate_identifier(identifier: &Identifier) -> TokenStream {

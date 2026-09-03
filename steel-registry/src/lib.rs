@@ -37,6 +37,7 @@ pub mod cow_variant;
 pub mod damage_type;
 pub mod data_component_predicate;
 pub mod data_components;
+pub mod decorated_pot_pattern;
 pub mod dialog;
 pub mod dimension_type;
 pub mod dye_color;
@@ -161,6 +162,11 @@ pub mod vanilla_trim_patterns;
 #[rustfmt::skip]
 #[path = "generated/vanilla_trim_materials.rs"]
 pub mod vanilla_trim_materials;
+
+#[expect(warnings)]
+#[rustfmt::skip]
+#[path = "generated/vanilla_decorated_pot_patterns.rs"]
+pub mod vanilla_decorated_pot_patterns;
 
 #[expect(warnings)]
 #[rustfmt::skip]

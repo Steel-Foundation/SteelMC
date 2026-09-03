@@ -62,9 +62,8 @@ pub(crate) fn build_configured() -> TokenStream {
     println!("cargo:rerun-if-changed={dir}");
 
     let mut entries = Vec::new();
-    for entry in sorted_json_files(dir) {
-        let name = resource_name(&entry);
-        let path = entry.path();
+    for path in sorted_json_files(dir) {
+        let name = resource_name(dir, &path);
         let content =
             fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
         let kind = serde_json::from_str::<ConfiguredFeatureKind>(&content)
@@ -120,9 +119,8 @@ pub(crate) fn build_block_state_providers() -> TokenStream {
     println!("cargo:rerun-if-changed={dir}");
 
     let mut entries = Vec::new();
-    for entry in sorted_json_files(dir) {
-        let name = resource_name(&entry);
-        let path = entry.path();
+    for path in sorted_json_files(dir) {
+        let name = resource_name(dir, &path);
         let content =
             fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
         let provider = serde_json::from_str::<BlockStateProviderKind>(&content)
@@ -182,9 +180,8 @@ pub(crate) fn build_placed() -> TokenStream {
     println!("cargo:rerun-if-changed={dir}");
 
     let mut entries = Vec::new();
-    for entry in sorted_json_files(dir) {
-        let name = resource_name(&entry);
-        let path = entry.path();
+    for path in sorted_json_files(dir) {
+        let name = resource_name(dir, &path);
         let content =
             fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
         let data = serde_json::from_str::<PlacedFeatureData>(&content)
