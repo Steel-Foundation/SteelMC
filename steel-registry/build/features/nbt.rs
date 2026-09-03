@@ -211,7 +211,7 @@ pub(super) fn generate_block_predicate_nbt(predicate: &BlockPredicate) -> TokenS
             }}
         }
         BlockPredicate::MatchingBlockTag { tag, offset } => {
-            let tag = format!("#{tag}");
+            let tag = tag.to_string();
             let offset = generate_offset_nbt(offset);
             quote! {{
                 let mut compound = NbtCompound::new();
