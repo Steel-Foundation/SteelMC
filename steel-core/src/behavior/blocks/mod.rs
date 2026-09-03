@@ -7,6 +7,7 @@ mod building;
 mod colored;
 mod container;
 mod decoration;
+mod face_attached_horizontal_directional_block;
 mod falling;
 mod fluid;
 mod portal;
