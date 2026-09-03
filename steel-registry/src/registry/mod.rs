@@ -232,6 +232,7 @@ pub const PLACED_FEATURE_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/placed_feature");
 pub const BLOCK_STATE_PROVIDER_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/block_state_provider");
+pub const BLOCK_TRANSFORMER_REGISTRY: Identifier = Identifier::vanilla_static("block_transformer");
 pub const STRUCTURE_REGISTRY: Identifier = Identifier::vanilla_static("worldgen/structure");
 pub const STRUCTURE_PROCESSOR_LIST_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/processor_list");

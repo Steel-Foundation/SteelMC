@@ -12,8 +12,9 @@ use steel_protocol::{
 };
 
 use steel_registry::{
-    BANNER_PATTERN_REGISTRY, BIOMES_REGISTRY, BLOCK_STATE_PROVIDER_REGISTRY, BLOCKS_REGISTRY,
-    CAT_SOUND_VARIANT_REGISTRY,
+    BANNER_PATTERN_REGISTRY, BIOMES_REGISTRY, BLOCK_STATE_PROVIDER_REGISTRY,
+    BLOCK_TRANSFORMER_REGISTRY, BLOCKS_REGISTRY, CAT_SOUND_VARIANT_REGISTRY,
+    DECORATED_POT_PATTERN_REGISTRY,
     CAT_VARIANT_REGISTRY, CHAT_TYPE_REGISTRY, CHICKEN_SOUND_VARIANT_REGISTRY,
     CHICKEN_VARIANT_REGISTRY, COW_SOUND_VARIANT_REGISTRY, COW_VARIANT_REGISTRY,
     DAMAGE_TYPE_REGISTRY, DIALOG_REGISTRY, DIMENSION_TYPE_REGISTRY, ENCHANTMENT_REGISTRY,
@@ -76,6 +77,7 @@ impl RegistryCache {
         add_registry!(CHAT_TYPE_REGISTRY, chat_types);
         add_registry!(TRIM_PATTERN_REGISTRY, trim_patterns);
         add_registry!(TRIM_MATERIAL_REGISTRY, trim_materials);
+        add_registry!(DECORATED_POT_PATTERN_REGISTRY, decorated_pot_patterns);
         add_registry!(WOLF_VARIANT_REGISTRY, wolf_variants);
         add_registry!(WOLF_SOUND_VARIANT_REGISTRY, wolf_sound_variants);
         add_registry!(PIG_VARIANT_REGISTRY, pig_variants);
@@ -102,6 +104,7 @@ impl RegistryCache {
 
         add_registry!(WORLD_CLOCK_REGISTRY, world_clocks);
         add_registry!(BLOCK_STATE_PROVIDER_REGISTRY, block_state_providers);
+        add_registry!(BLOCK_TRANSFORMER_REGISTRY, block_transformers);
 
         packets
     }
