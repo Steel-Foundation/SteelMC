@@ -34,15 +34,15 @@ use crate::world::{LevelReader as _, World};
 /// build script via `#[json_arg]` to generate constructor calls from `classes.json`.
 /// The actual values are forwarded into `inner` — the fields themselves are not used at runtime.
 pub struct SignItem {
-    #[json_arg(vanilla_blocks, json = "block")]
+    // #[json_arg(vanilla_blocks, json = "block")]
     _standing_block: BlockRef,
-    #[json_arg(vanilla_blocks, json = "wall_block")]
+    // #[json_arg(vanilla_blocks, json = "wall_block")]
     _wall_block: BlockRef,
-    #[json_arg(
-        r#enum = "Direction",
-        module = "steel_registry::blocks::properties",
-        json = "attachment_direction"
-    )]
+    // #[json_arg(
+    //     r#enum = "Direction",
+    //     module = "steel_registry::blocks::properties",
+    //     json = "attachment_direction"
+    // )]
     _attachment_direction: Direction,
     /// Placement logic delegate (vanilla: `SignItem extends StandingAndWallBlockItem`).
     inner: StandingAndWallBlockItem,
