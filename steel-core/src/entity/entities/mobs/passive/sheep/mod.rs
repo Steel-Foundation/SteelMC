@@ -41,7 +41,6 @@ use crate::entity::{
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
-use crate::world::game_event::GameEventContext;
 
 const SHEEP_BABY_PASSENGER_ATTACHMENTS: [EntityAttachmentPoint; 1] =
     [EntityAttachmentPoint::new(0.0, 0.5625, 0.0)];
@@ -446,7 +445,7 @@ impl LivingEntity for SheepEntity {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
+        let result = Mob::mob_ai_step(self);
 
         AgeableMob::tick_ageable_mob(self);
         Animal::tick_animal_love(self);
@@ -562,11 +561,7 @@ impl Mob for SheepEntity {
             };
             self.shear(world.as_ref(), &item_stack);
             // Vanilla `Sheep.mobInteract` sources the shear game event to the player.
-            world.game_event_at(
-                &vanilla_game_events::SHEAR,
-                self.position(),
-                &GameEventContext::new(Some(player as &dyn Entity), None),
-            );
+            self.game_event_with_source_entity(&vanilla_game_events::SHEAR, Some(player));
             player
                 .inventory
                 .lock()

@@ -140,6 +140,7 @@ use block_event::BlockEventQueue;
 pub(crate) use block_region::{BlockRegionBounds, MAX_BLOCK_REGION_WORKSET_SLOTS};
 use block_updates::CollectingNeighborUpdater;
 pub use border::WorldBorderError;
+pub(crate) use border::{MAX_CENTER_COORDINATE, MAX_SIZE};
 use border::{WorldBorder, WorldBorderSnapshot};
 use entity_management::NavigatingMobTracker;
 #[cfg(test)]
@@ -147,10 +148,10 @@ use entity_management::nearest_player_distance_in_range;
 pub use level_reader::{LevelAccessor, LevelReader, ScheduledTickAccess};
 pub use player_index::{PlayerAreaMap, PlayerMap};
 pub use raycast::{ClipBlockShape, ClipFluid, ClipHitResult, RaytraceAction};
+#[cfg(test)]
+pub(crate) use signal_getter::get_best_neighbor_signal;
 pub use signal_getter::{SignalGetter, SignalQueryContext};
-pub(crate) use signal_getter::{
-    get_best_neighbor_signal, get_control_input_signal, get_signal, is_redstone_conductor,
-};
+pub(crate) use signal_getter::{get_control_input_signal, get_signal, is_redstone_conductor};
 pub use tick_scheduler::ScheduledTick;
 
 #[cfg(test)]
