@@ -38,11 +38,17 @@ use crate::world::World;
 /// `MobEffect` instance.
 pub trait MobEffectBehavior: Send + Sync {
     /// Mirrors vanilla `MobEffect.isInstantaneous`.
+    #[must_use]
     fn is_instantaneous(&self) -> bool {
-        false
+        self.as_instantaneous().is_some()
     }
 
-    /// Mirrors vanilla `MobEffect.shouldApplyEffectTickThisTick`
+    /// Returns the instantaneous-only half of this behavior, if any.
+    fn as_instantaneous(&self) -> Option<&dyn InstantaneousMobEffect> {
+        None
+    }
+
+    /// Mirrors vanilla `MobEffect.shouldApplyEffectTickThisTick`.
     fn should_apply_effect_tick_this_tick(&self, tick_count: i32, _amplifier: i32) -> bool {
         self.is_instantaneous() && tick_count >= 1
     }
@@ -54,7 +60,42 @@ pub trait MobEffectBehavior: Send + Sync {
     }
 
     /// Mirrors vanilla `MobEffect.applyInstantaneousEffect(level, source,
-    /// owner, mob, amplification, scale)`
+    /// owner, mob, amplification, scale)`.
+    fn apply_instantaneous(
+        &self,
+        world: &World,
+        user: &dyn LivingEntity,
+        amplifier: i32,
+        direct_entity: Option<i32>,
+        causing_entity: Option<i32>,
+        scale: f32,
+    ) {
+        if let Some(instantaneous) = self.as_instantaneous() {
+            // Disambiguates from this same-named method on `MobEffectBehavior`
+            // itself (a supertrait bound of `InstantaneousMobEffect`).
+            InstantaneousMobEffect::apply_instantaneous(
+                instantaneous,
+                world,
+                user,
+                amplifier,
+                direct_entity,
+                causing_entity,
+                scale,
+            );
+        } else {
+            self.apply_effect_tick(world, user, amplifier);
+        }
+    }
+
+    /// Mirrors vanilla `MobEffect.onEffectStarted`.
+    fn on_effect_started(&self, _user: &dyn LivingEntity, _amplifier: i32) {}
+}
+
+/// The instantaneous-only half of a [`MobEffectBehavior`] that also extends
+/// vanilla `InstantaneousMobEffect`.
+pub trait InstantaneousMobEffect: MobEffectBehavior {
+    /// Mirrors vanilla `InstantaneousMobEffect`'s override of
+    /// `applyInstantaneousEffect`.
     fn apply_instantaneous(
         &self,
         world: &World,
@@ -67,7 +108,4 @@ pub trait MobEffectBehavior: Send + Sync {
         let _ = (direct_entity, causing_entity, scale);
         self.apply_effect_tick(world, user, amplifier);
     }
-
-    /// Mirrors vanilla `MobEffect.onEffectStarted`
-    fn on_effect_started(&self, _user: &dyn LivingEntity, _amplifier: i32) {}
 }

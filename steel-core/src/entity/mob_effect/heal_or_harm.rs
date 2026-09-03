@@ -2,7 +2,7 @@
 
 use steel_registry::vanilla_damage_types;
 
-use super::MobEffectBehavior;
+use super::{InstantaneousMobEffect, MobEffectBehavior};
 use crate::entity::LivingEntity;
 use crate::entity::damage::DamageSource;
 use crate::world::World;
@@ -19,8 +19,8 @@ const BASE_HEAL_AMOUNT: i32 = 4;
 const BASE_HARM_AMOUNT: i32 = 6;
 
 impl MobEffectBehavior for HealOrHarmBehavior {
-    fn is_instantaneous(&self) -> bool {
-        true
+    fn as_instantaneous(&self) -> Option<&dyn InstantaneousMobEffect> {
+        Some(self)
     }
 
     /// Reached through `ApplyStatusEffectsConsumeEffect` (e.g. a golden
@@ -40,7 +40,9 @@ impl MobEffectBehavior for HealOrHarmBehavior {
         }
         true
     }
+}
 
+impl InstantaneousMobEffect for HealOrHarmBehavior {
     /// Reached by drinking a potion directly, or a splash/lingering potion
     /// once implemented. Unlike `apply_effect_tick`, the heal amount is
     /// never clamped to zero, and damage is attributed via
