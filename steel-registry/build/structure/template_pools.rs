@@ -127,12 +127,12 @@ fn extract_template(path: &str) -> Result<ExtractedTemplate, String> {
     let palette_len = palette.len();
     let mut jigsaw_indices: Vec<(usize, String)> = Vec::new();
     for (i, entry) in palette.into_iter().enumerate() {
-        let Some(name) = entry.string("Name") else {
+        let Some(name) = entry.string("id") else {
             continue;
         };
         if name.to_str() == "minecraft:jigsaw" {
             let Some(orientation) = entry
-                .compound("Properties")
+                .compound("properties")
                 .and_then(|p| p.string("orientation"))
                 .map(|s| s.to_str().to_string())
             else {
