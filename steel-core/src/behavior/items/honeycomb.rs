@@ -73,7 +73,7 @@ impl ItemBehavior for HoneycombItem {
         sign.set_changed();
         context.inv.with_item(ItemStack::shrink_one);
         context.world.level_event(
-            level_events::PARTICLES_AND_SOUND_WAX_ON,
+            level_events::PARTICLES_WAX_ON,
             pos,
             0,
             Some(context.player.id()),

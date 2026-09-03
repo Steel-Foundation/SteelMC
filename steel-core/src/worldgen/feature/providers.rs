@@ -8,11 +8,11 @@ impl FeatureDecorationRunner {
         level: &dyn LevelReader,
         registry: &Registry,
         random: &mut WorldgenRandom,
-        provider: &BlockStateProvider,
+        provider: &BlockStateProviderKind,
         pos: BlockPos,
     ) -> Option<BlockStateId> {
         match provider {
-            BlockStateProvider::RuleBased { fallback, rules } => {
+            BlockStateProviderKind::RuleBased { fallback, rules } => {
                 for rule in rules {
                     if Self::test_block_predicate(level, registry, &rule.if_true, pos) {
                         return Some(Self::sample_block_state_provider(
@@ -35,12 +35,17 @@ impl FeatureDecorationRunner {
         level: &dyn LevelReader,
         registry: &Registry,
         random: &mut WorldgenRandom,
-        provider: &BlockStateProvider,
+        provider: &BlockStateProviderKind,
         pos: BlockPos,
     ) -> BlockStateId {
         match provider {
-            BlockStateProvider::Simple { state } => Self::block_state_from_data(registry, state),
-            BlockStateProvider::Weighted { entries } => {
+            BlockStateProviderKind::Reference(provider) => {
+                Self::sample_block_state_provider(level, registry, random, &provider.kind, pos)
+            }
+            BlockStateProviderKind::Simple { state } => {
+                Self::block_state_from_data(registry, state)
+            }
+            BlockStateProviderKind::Weighted { entries } => {
                 assert!(
                     !entries.is_empty(),
                     "weighted block-state provider must not be empty"
@@ -62,11 +67,14 @@ impl FeatureDecorationRunner {
                 }
                 panic!("weighted block-state provider failed to select an entry");
             }
-            BlockStateProvider::RotatedBlock { state } => {
-                let state = Self::block_state_from_data(registry, state);
-                state.set_value(&BlockStateProperties::AXIS, Self::random_axis(random))
+            BlockStateProviderKind::RotatedBlock { state, direction } => {
+                let state = Self::sample_block_state_provider(level, registry, random, state, pos);
+                let axis = direction
+                    .map(|direction| direction.axis())
+                    .unwrap_or_else(|| Self::random_axis(random));
+                state.set_value(&BlockStateProperties::AXIS, axis)
             }
-            BlockStateProvider::RandomizedInt {
+            BlockStateProviderKind::RandomizedInt {
                 property,
                 source,
                 values,
@@ -75,7 +83,7 @@ impl FeatureDecorationRunner {
                 let value = values.sample(random);
                 Self::set_int_property_by_name(registry, state, property, value)
             }
-            BlockStateProvider::RuleBased { .. } => {
+            BlockStateProviderKind::RuleBased { .. } => {
                 if let Some(state) = Self::sample_block_state_provider_optional(
                     level, registry, random, provider, pos,
                 ) {
@@ -84,14 +92,46 @@ impl FeatureDecorationRunner {
                     level.get_block_state(pos)
                 }
             }
-            BlockStateProvider::Noise(provider) => {
+            BlockStateProviderKind::Noise(provider) => {
                 Self::sample_noise_provider(registry, provider, pos)
             }
-            BlockStateProvider::NoiseThreshold(provider) => {
+            BlockStateProviderKind::NoiseThreshold(provider) => {
                 Self::sample_noise_threshold_provider(registry, random, provider, pos)
             }
-            BlockStateProvider::DualNoise(provider) => {
+            BlockStateProviderKind::DualNoise(provider) => {
                 Self::sample_dual_noise_provider(registry, provider, pos)
+            }
+            BlockStateProviderKind::CopyProperties { source } => {
+                let sampled = Self::sample_block_state_provider(level, registry, random, source, pos);
+                match registry.blocks.by_state_id(sampled) {
+                    Some(target_block) => registry
+                        .blocks
+                        .copy_matching_properties(level.get_block_state(pos), target_block),
+                    None => sampled,
+                }
+            }
+            BlockStateProviderKind::RandomBlock { blocks } => {
+                let block = match blocks {
+                    BlockHolderSet::Entries(entries) => {
+                        assert!(
+                            !entries.is_empty(),
+                            "random block-state provider entries must not be empty"
+                        );
+                        let index = random.next_i32_bounded(entries.len() as i32) as usize;
+                        entries[index]
+                    }
+                    BlockHolderSet::Tag(tag) => {
+                        let matches: SmallVec<[BlockRef; 8]> =
+                            registry.blocks.iter_tag(tag).collect();
+                        assert!(
+                            !matches.is_empty(),
+                            "random block-state provider tag {tag} must not be empty"
+                        );
+                        let index = random.next_i32_bounded(matches.len() as i32) as usize;
+                        matches[index]
+                    }
+                };
+                registry.blocks.get_default_state_id(block)
             }
         }
     }
@@ -211,10 +251,13 @@ impl FeatureDecorationRunner {
 
     pub(super) fn normal_noise(parameters: &FeatureNoiseParameters, seed: i64) -> NormalNoise {
         let mut random = RandomSource::Legacy(LegacyRandom::from_seed(seed as u64));
-        NormalNoise::create_from_random(
+        NormalNoise::create_from_random_with_params(
             &mut random,
-            parameters.first_octave,
-            &parameters.amplitudes,
+            parameters.base_octave,
+            parameters.base_amplitude,
+            parameters.octave_count,
+            parameters.normalize,
+            &parameters.amplitude_modifiers,
         )
     }
 

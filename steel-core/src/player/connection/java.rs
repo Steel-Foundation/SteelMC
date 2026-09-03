@@ -770,7 +770,7 @@ impl JavaConnection {
             play::S_SET_CARRIED_ITEM => scheduled(ScheduledPlayPacketKind::SetCarriedItem(
                 SSetCarriedItem::read_packet(data)?,
             )),
-            play::S_SWING => scheduled(ScheduledPlayPacketKind::Swing(SSwing::read_packet(data)?)),
+            play::S_PUNCH => scheduled(ScheduledPlayPacketKind::Swing(SSwing::read_packet(data)?)),
             play::S_PLAYER_ACTION => scheduled(ScheduledPlayPacketKind::PlayerAction(
                 SPlayerAction::read_packet(data)?,
             )),

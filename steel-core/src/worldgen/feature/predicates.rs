@@ -91,6 +91,31 @@ impl FeatureDecorationRunner {
                 let position = Self::offset(origin, offset);
                 !level.is_outside_build_height(position.y())
             }
+            BlockPredicate::HeightRange {
+                min_inclusive,
+                max_inclusive,
+            } => {
+                let min_y = min_inclusive.resolve_y(level.min_y(), level.height());
+                let max_y = max_inclusive.resolve_y(level.min_y(), level.height());
+                (min_y..=max_y).contains(&origin.y())
+            }
+            BlockPredicate::VolumeMatch { min, max, matches } => {
+                for x in min.x..=max.x {
+                    for y in min.y..=max.y {
+                        for z in min.z..=max.z {
+                            if !Self::test_block_predicate(
+                                level,
+                                registry,
+                                matches,
+                                Self::offset(origin, &IVec3::new(x, y, z)),
+                            ) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                true
+            }
         }
     }
 

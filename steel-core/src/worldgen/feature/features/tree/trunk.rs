@@ -29,6 +29,12 @@ impl FeatureDecorationRunner {
                 base.height_rand_a,
                 base.height_rand_b,
             ),
+            TrunkPlacer::Poplar(base) => Self::sample_tree_height(
+                random,
+                base.base_height,
+                base.height_rand_a,
+                base.height_rand_b,
+            ),
             TrunkPlacer::Bending(placer) => Self::sample_tree_height(
                 random,
                 placer.base_height,
@@ -155,6 +161,7 @@ impl FeatureDecorationRunner {
                 placer,
                 placement,
             ),
+            TrunkPlacer::Poplar(_) => todo!("poplar tree trunk placement"),
         }
     }
 

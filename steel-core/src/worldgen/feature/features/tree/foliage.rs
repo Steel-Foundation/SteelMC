@@ -31,6 +31,7 @@ impl FeatureDecorationRunner {
             FoliagePlacer::Jungle(placer) => placer.height.sample(random),
             FoliagePlacer::RandomSpread(placer) => placer.foliage_height,
             FoliagePlacer::Cherry(placer) => placer.height.sample(random),
+            FoliagePlacer::Poplar(placer) => placer.height.sample(random),
         }
     }
 
@@ -53,6 +54,7 @@ impl FeatureDecorationRunner {
             FoliagePlacer::Jungle(placer) => placer.radius.sample(random),
             FoliagePlacer::RandomSpread(placer) => placer.radius.sample(random),
             FoliagePlacer::Cherry(placer) => placer.radius.sample(random),
+            FoliagePlacer::Poplar(placer) => placer.radius.sample(random),
         }
     }
 
@@ -180,6 +182,7 @@ impl FeatureDecorationRunner {
                 leaf_radius,
                 placement,
             ),
+            FoliagePlacer::Poplar(_) => todo!("poplar tree foliage placement"),
         }
     }
 
@@ -657,6 +660,7 @@ impl FeatureDecorationRunner {
             FoliagePlacer::Jungle(placer) => placer.offset.sample(random),
             FoliagePlacer::RandomSpread(placer) => placer.offset.sample(random),
             FoliagePlacer::Cherry(placer) => placer.offset.sample(random),
+            FoliagePlacer::Poplar(placer) => placer.offset.sample(random),
         }
     }
 
@@ -838,6 +842,7 @@ impl FeatureDecorationRunner {
                 Self::cherry_foliage_should_skip_location(random, placer, dx, y, dz, current_radius)
             }
             FoliagePlacer::DarkOak(_) => unreachable!(),
+            FoliagePlacer::Poplar(_) => todo!("poplar tree foliage placement"),
         }
     }
 

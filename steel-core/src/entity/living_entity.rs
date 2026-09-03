@@ -78,7 +78,7 @@ pub trait LivingEntity: Entity {
         let mut swing_duration = SwingAnimation::DEFAULT.duration;
         self.with_equipment_slot(slot, &mut |item_stack| {
             swing_duration = item_stack
-                .get(SWING_ANIMATION)
+                .get(ATTACK_ANIMATION)
                 .copied()
                 .unwrap_or(SwingAnimation::DEFAULT)
                 .duration;

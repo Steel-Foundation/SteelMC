@@ -21,7 +21,7 @@ use steel_registry::blocks::{
     shapes::is_shape_full_block,
 };
 use steel_registry::data_components::vanilla_components::{
-    GLIDER, SWING_ANIMATION, SwingAnimation,
+    ATTACK_ANIMATION, GLIDER, SwingAnimation,
 };
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_data::{DataValue, EntityPose, HumanoidArm};

@@ -80,9 +80,9 @@ impl FeatureDecorationRunner {
             ConfiguredFeatureKind::BlueIce => place_blue_ice,
             ConfiguredFeatureKind::BonusChest => place_bonus_chest,
             ConfiguredFeatureKind::ChorusPlant => place_chorus_plant,
-            ConfiguredFeatureKind::CoralClaw => place_coral_claw,
+            ConfiguredFeatureKind::CoralClaw { .. } => place_coral_claw,
             ConfiguredFeatureKind::CoralMushroom => place_coral_mushroom,
-            ConfiguredFeatureKind::CoralTree => place_coral_tree,
+            ConfiguredFeatureKind::CoralTree { .. } => place_coral_tree,
             ConfiguredFeatureKind::DeltaFeature(_) => place_delta_feature,
             ConfiguredFeatureKind::DesertWell => place_desert_well,
             ConfiguredFeatureKind::Disk(_) => place_disk,
@@ -135,6 +135,15 @@ impl FeatureDecorationRunner {
                 place_waterlogged_vegetation_patch
             }
             ConfiguredFeatureKind::WeepingVines => place_weeping_vines,
+            ConfiguredFeatureKind::EndPodium { .. }
+            | ConfiguredFeatureKind::NoOp
+            | ConfiguredFeatureKind::Overlay { .. }
+            | ConfiguredFeatureKind::ProjectedRandomPatchySquare(_)
+            | ConfiguredFeatureKind::RandomNeighborSpread(_)
+            | ConfiguredFeatureKind::SingleBlockPillar(_)
+            | ConfiguredFeatureKind::SteppedColumnCluster(_) => {
+                todo!("{kind:?} configured feature placement")
+            }
         }
     }
 }
@@ -566,7 +575,7 @@ fn place_coral_claw(
     context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
     kind: &ConfiguredFeatureKind,
 ) -> bool {
-    let ConfiguredFeatureKind::CoralClaw = kind else {
+    let ConfiguredFeatureKind::CoralClaw { .. } = kind else {
         panic!("coral_claw placer received wrong configured feature kind");
     };
     FeatureDecorationRunner::place_coral_claw_feature(
@@ -596,7 +605,7 @@ fn place_coral_tree(
     context: &mut ConfiguredFeaturePlaceContext<'_, '_>,
     kind: &ConfiguredFeatureKind,
 ) -> bool {
-    let ConfiguredFeatureKind::CoralTree = kind else {
+    let ConfiguredFeatureKind::CoralTree { .. } = kind else {
         panic!("coral_tree placer received wrong configured feature kind");
     };
     FeatureDecorationRunner::place_coral_tree_feature(

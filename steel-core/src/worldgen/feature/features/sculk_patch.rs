@@ -16,6 +16,8 @@ const SCULK_DEFAULT_SPREAD_TYPES: [SculkSpreadType; 3] = [
     SculkSpreadType::WrapAround,
 ];
 const SCULK_SAME_SPACE_SPREAD_TYPES: [SculkSpreadType; 1] = [SculkSpreadType::SamePosition];
+const SCULK_CATALYST_CHANCE: f32 = 0.5;
+const SCULK_EXTRA_RARE_GROWTHS_MAX: i32 = 2;
 
 #[derive(Clone, Copy)]
 enum SculkSpreadType {
@@ -139,7 +141,7 @@ impl FeatureDecorationRunner {
 
         let below = origin.below();
         let below_state = region.block_state(below);
-        if random.next_f32() <= config.catalyst_chance
+        if random.next_f32() <= SCULK_CATALYST_CHANCE
             && shapes::is_offset_shape_full_block(below_state.get_collision_shape_at(below))
         {
             let catalyst = vanilla_blocks::SCULK_CATALYST.default_state();
@@ -153,7 +155,7 @@ impl FeatureDecorationRunner {
             }
         }
 
-        let extra_growths = config.extra_rare_growths.sample(random);
+        let extra_growths = random.next_i32_bounded(SCULK_EXTRA_RARE_GROWTHS_MAX + 1);
         for _ in 0..extra_growths {
             let candidate = origin.offset(
                 random.next_i32_bounded(5) - 2,

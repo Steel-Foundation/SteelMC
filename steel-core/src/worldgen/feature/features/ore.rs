@@ -558,8 +558,14 @@ impl ResolvedOreTargets {
         let mut targets = SmallVec::with_capacity(config.targets.len());
         for target in &config.targets {
             let matcher = match &target.target {
-                RuleTest::BlockMatch { block } => ResolvedOreRuleTest::Block(block.id()),
-                RuleTest::TagMatch { tag } => {
+                StructureRuleTestData::BlockMatch { block } => {
+                    let block_ref = registry
+                        .blocks
+                        .by_key(block)
+                        .unwrap_or_else(|| panic!("unknown ore target block {block}"));
+                    ResolvedOreRuleTest::Block(steel_registry::RegistryEntry::id(block_ref))
+                }
+                StructureRuleTestData::TagMatch { tag } => {
                     let block_ids = registry
                         .blocks
                         .iter_tag(tag)
@@ -567,6 +573,7 @@ impl ResolvedOreTargets {
                         .collect();
                     ResolvedOreRuleTest::Tag(block_ids)
                 }
+                other => unreachable!("ore rule test target must be block_match/tag_match, got {other:?}"),
             };
             let state = WorldgenStateResolver::feature_block_state_from_data(
                 registry,

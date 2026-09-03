@@ -97,6 +97,7 @@ impl FeatureDecorationRunner {
                         placement,
                     );
                 }
+                TreeDecorator::ShelfMushroom { .. } => todo!("shelf mushroom tree decorator"),
             }
         }
     }
@@ -105,7 +106,7 @@ impl FeatureDecorationRunner {
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut WorldgenRandom,
-        provider: &BlockStateProvider,
+        provider: &BlockStateProviderKind,
         placement: &mut TreePlacement,
     ) {
         let positions = Self::lowest_tree_trunks_or_roots(placement);
@@ -170,7 +171,7 @@ impl FeatureDecorationRunner {
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut WorldgenRandom,
-        provider: &BlockStateProvider,
+        provider: &BlockStateProviderKind,
         pos: BlockPos,
         placement: &mut TreePlacement,
     ) {
@@ -194,7 +195,7 @@ impl FeatureDecorationRunner {
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut WorldgenRandom,
-        provider: &BlockStateProvider,
+        provider: &BlockStateProviderKind,
         pos: BlockPos,
         placement: &mut TreePlacement,
     ) {
@@ -267,7 +268,7 @@ impl FeatureDecorationRunner {
         region: &mut WorldGenRegion<'_>,
         registry: &Registry,
         random: &mut WorldgenRandom,
-        provider: &BlockStateProvider,
+        provider: &BlockStateProviderKind,
         pos: BlockPos,
         placement: &mut TreePlacement,
     ) {

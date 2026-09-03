@@ -58,7 +58,7 @@ impl ItemBehavior for PotionItem {
         let block_state = context.world.get_block_state(pos);
         if !block_state
             .get_block()
-            .has_tag(&BlockTag::CONVERTABLE_TO_MUD)
+            .has_tag(&BlockTag::CONVERTIBLE_TO_MUD)
         {
             return InteractionResult::Pass;
         }

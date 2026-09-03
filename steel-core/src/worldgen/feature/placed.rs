@@ -408,6 +408,40 @@ impl FeatureDecorationRunner {
                     );
                 }
             }
+            PlacementModifier::Offset { x, y, z } => {
+                let position = BlockPos::new(
+                    origin.x() + x.sample(random),
+                    origin.y() + y.sample(random),
+                    origin.z() + z.sample(random),
+                );
+                placed = Self::place_placed_feature_from_modifier(
+                    region,
+                    registry,
+                    random,
+                    position,
+                    feature,
+                    biome_filter,
+                    biome_zoom_seed,
+                    modifier_index + 1,
+                );
+            }
+            PlacementModifier::RandomChance { chance } => {
+                if random.next_f32() < *chance {
+                    placed = Self::place_placed_feature_from_modifier(
+                        region,
+                        registry,
+                        random,
+                        origin,
+                        feature,
+                        biome_filter,
+                        biome_zoom_seed,
+                        modifier_index + 1,
+                    );
+                }
+            }
+            PlacementModifier::RandomlySelected { .. } | PlacementModifier::Cuboid { .. } => {
+                todo!("{modifier:?} placement modifier")
+            }
         }
 
         placed
