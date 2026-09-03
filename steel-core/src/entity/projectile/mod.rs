@@ -609,14 +609,11 @@ pub trait Projectile: Entity + ProjectileEventSource {
     /// Vanilla `Projectile.tick` (the `super.tick()` reached from subclasses).
     fn projectile_base_tick(&self) {
         if !self.has_been_shot() {
-            if let Some(world) = self.level() {
-                let owner = self.get_owner();
-                world.game_event_at(
-                    &vanilla_game_events::PROJECTILE_SHOOT,
-                    self.position(),
-                    &GameEventContext::new(owner.as_deref(), None),
-                );
-            }
+            let owner = self.get_owner();
+            self.game_event_with_source_entity(
+                &vanilla_game_events::PROJECTILE_SHOOT,
+                owner.as_deref(),
+            );
             self.set_has_been_shot(true);
         }
         self.check_left_owner();

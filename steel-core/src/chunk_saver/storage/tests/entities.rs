@@ -471,13 +471,13 @@ fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
     let pos = ChunkPos::new(0, 0);
     let block_pos = BlockPos::new(4, 4, 6);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
-    let ender_chest = REGISTRY
+    let dispenser = REGISTRY
         .blocks
-        .get_default_state_id(&vanilla_blocks::ENDER_CHEST);
+        .get_default_state_id(&vanilla_blocks::DISPENSER);
     proto.set_block_state_for_generation(
         ChunkStatus::Features,
         block_pos,
-        ender_chest,
+        dispenser,
         UpdateFlags::UPDATE_NONE,
     );
 
@@ -485,10 +485,10 @@ fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
     nbt.insert("LootTable", "minecraft:chests/simple_dungeon");
     nbt.insert("LootTableSeed", 42_i64);
     let entity = BLOCK_ENTITIES.create_and_load_owned_or_raw(
-        &vanilla_block_entity_types::ENDER_CHEST,
+        &vanilla_block_entity_types::DISPENSER,
         proto.level_weak(),
         block_pos,
-        ender_chest,
+        dispenser,
         nbt,
     );
     assert!(proto.set_block_entity(entity));
@@ -517,7 +517,7 @@ fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
     let mut saved = NbtCompound::new();
     assert_eq!(
         loaded_entity.get_type().id(),
-        vanilla_block_entity_types::ENDER_CHEST.id()
+        vanilla_block_entity_types::DISPENSER.id()
     );
     loaded_entity.save_additional(&mut saved);
 

@@ -1560,7 +1560,7 @@ mod tests {
             Weak::new(),
         );
         let moving_pos = BlockPos::new(2, 4, 5);
-        let ender_pos = BlockPos::new(3, 4, 5);
+        let dispenser_pos = BlockPos::new(3, 4, 5);
         assert!(
             proto
                 .set_block_state_for_generation(
@@ -1575,26 +1575,29 @@ mod tests {
             proto
                 .set_block_state_for_generation(
                     ChunkStatus::Empty,
-                    ender_pos,
-                    vanilla_blocks::ENDER_CHEST.default_state(),
+                    dispenser_pos,
+                    vanilla_blocks::DISPENSER.default_state(),
                     UpdateFlags::UPDATE_NONE,
                 )
                 .is_some()
         );
         proto.set_pending_block_entity(moving_pos);
-        proto.set_pending_block_entity(ender_pos);
+        proto.set_pending_block_entity(dispenser_pos);
 
         assert!(proto.promote_pending_block_entity(moving_pos).is_none());
-        assert!(proto.promote_pending_block_entity(ender_pos).is_none());
+        assert!(proto.promote_pending_block_entity(dispenser_pos).is_none());
         let pending = proto.pending_block_entity_positions();
         assert!(pending.contains(&moving_pos));
-        assert!(pending.contains(&ender_pos));
+        assert!(pending.contains(&dispenser_pos));
 
         let full = proto.promote_to_full().chunk;
         assert!(full.get_block_entity(moving_pos).is_none());
         assert!(!full.pending_block_entity_positions().contains(&moving_pos));
-        assert!(full.get_block_entity(ender_pos).is_none());
-        assert!(full.pending_block_entity_positions().contains(&ender_pos));
+        assert!(full.get_block_entity(dispenser_pos).is_none());
+        assert!(
+            full.pending_block_entity_positions()
+                .contains(&dispenser_pos)
+        );
     }
 
     #[test]

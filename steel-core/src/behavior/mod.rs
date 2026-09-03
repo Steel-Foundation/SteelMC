@@ -78,7 +78,8 @@ pub use item::{ItemBehavior, ItemBehaviorRegistry, ItemUseAnimation};
 use item_behaviors::register_item_behaviors;
 pub use items::{
     BedItem, BlockItem, BucketItem, DefaultItemBehavior, DoubleHighBlockItem, EnderEyeItem,
-    HangingSignItem, ShovelItem, SignItem, SolidBucketItem, StandingAndWallBlockItem,
+    HangingSignItem, ScaffoldingBlockItem, ShovelItem, SignItem, SolidBucketItem,
+    StandingAndWallBlockItem,
 };
 use std::ops::Deref;
 use std::sync::OnceLock;

@@ -176,6 +176,58 @@ pub(super) fn parse_vec3(
     }
 }
 
+pub(super) fn parse_vec2(
+    reader: &mut StringReader<'_>,
+    center_integers: bool,
+) -> Result<Coordinates, CommandSyntaxError> {
+    let start = reader.checkpoint();
+    if !reader.can_read() {
+        return Err(translated_error(
+            reader,
+            &translations::ARGUMENT_POS2D_INCOMPLETE,
+        ));
+    }
+    let x = parse_world_coordinate_double(reader, center_integers)?;
+    if reader.peek() != Some(' ') {
+        reader.restore(start);
+        return Err(translated_error(
+            reader,
+            &translations::ARGUMENT_POS2D_INCOMPLETE,
+        ));
+    }
+    reader.skip();
+    let z = parse_world_coordinate_double(reader, center_integers)?;
+    Ok(Coordinates::World(WorldCoordinates::new(
+        x,
+        WorldCoordinate::new(true, 0.0),
+        z,
+    )))
+}
+
+pub(super) fn suggest_vec2(
+    builder: &mut SuggestionsBuilder<'_>,
+    parser: impl Fn(&mut StringReader<'_>) -> Result<Coordinates, CommandSyntaxError>,
+) {
+    let input = builder.remaining();
+    let coordinate = if input.starts_with('^') { "^" } else { "~" };
+    if input.is_empty() {
+        let full = format!("{coordinate} {coordinate}");
+        if valid_coordinates(&full, &parser) {
+            builder.suggest(coordinate);
+            builder.suggest(full);
+        }
+        return;
+    }
+
+    let fields = input.trim_end().split(' ').collect::<Vec<_>>();
+    if let [x] = fields.as_slice() {
+        let full = format!("{x} {coordinate}");
+        if valid_coordinates(&full, &parser) {
+            builder.suggest(full);
+        }
+    }
+}
+
 fn parse_world_coordinates_int(
     reader: &mut StringReader<'_>,
 ) -> Result<Coordinates, CommandSyntaxError> {

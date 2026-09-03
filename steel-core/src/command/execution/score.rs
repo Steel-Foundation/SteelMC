@@ -145,16 +145,14 @@ pub(super) fn parse_int_range(
         ));
     }
 
-    let minimum = read_optional_integer(reader)
-        .map_err(|()| range_error(reader, start, &translations::ARGUMENT_RANGE_INTS))?;
+    let minimum = read_optional_integer(reader, start)?;
     let maximum = if reader.can_read_length(2)
         && reader.peek() == Some('.')
         && peek_next(reader) == Some('.')
     {
         reader.skip();
         reader.skip();
-        read_optional_integer(reader)
-            .map_err(|()| range_error(reader, start, &translations::ARGUMENT_RANGE_INTS))?
+        read_optional_integer(reader, start)?
     } else {
         minimum
     };
@@ -211,7 +209,10 @@ fn resolve_uuid(uuid: &Uuid, raw: &str, source: &CommandSource) -> Vec<ScoreHold
     }
 }
 
-fn read_optional_integer(reader: &mut StringReader<'_>) -> Result<Option<i32>, ()> {
+fn read_optional_integer(
+    reader: &mut StringReader<'_>,
+    range_start: ReaderCursor,
+) -> Result<Option<i32>, CommandSyntaxError> {
     let start = reader.read_so_far().len();
     while reader
         .peek()
@@ -223,7 +224,12 @@ fn read_optional_integer(reader: &mut StringReader<'_>) -> Result<Option<i32>, (
     if raw.is_empty() {
         return Ok(None);
     }
-    raw.parse().map(Some).map_err(|_| ())
+    let Ok(value) = raw.parse() else {
+        let raw = raw.into();
+        reader.restore(range_start);
+        return Err(reader.error(CommandSyntaxErrorKind::InvalidInt(raw)));
+    };
+    Ok(Some(value))
 }
 
 fn peek_next(reader: &StringReader<'_>) -> Option<char> {

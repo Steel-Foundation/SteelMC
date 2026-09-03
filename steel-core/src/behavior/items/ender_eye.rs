@@ -2,18 +2,30 @@
 
 use std::sync::Arc;
 
+use crate::entity::Entity;
+use crate::worldgen::generator::ChunkGenerator;
 use steel_macros::item_behavior;
-use steel_registry::REGISTRY;
+use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
-use steel_registry::level_events;
-use steel_registry::vanilla_blocks;
+use steel_registry::stat::vanilla_stat_types;
+use steel_registry::{
+    REGISTRY, level_events, sound_events, vanilla_blocks, vanilla_entities, vanilla_game_events,
+    vanilla_structure_tags,
+};
+use steel_registry::{TaggedRegistryExt, vanilla_items};
 use steel_utils::{BlockPos, types::UpdateFlags};
 
 use crate::behavior::ItemBehavior;
 use crate::behavior::block::push_entities_up;
 use crate::behavior::context::{InteractionResult, UseOnContext};
-use crate::world::{LevelReader, World};
+use crate::behavior::item_utils::get_player_pov_hit_result;
+use crate::entity::entities::EyeOfEnderEntity;
+use crate::entity::{SharedEntity, next_entity_id};
+use crate::world::game_event::GameEventContext;
+use crate::world::{ClipFluid, LevelReader, World};
+
+use glam::DVec3;
 
 const END_PORTAL_PATTERN_DISTANCE: i32 = 5;
 const END_PORTAL_PATTERN: [[char; 5]; 5] = [
@@ -82,6 +94,116 @@ impl ItemBehavior for EnderEyeItem {
         }
 
         InteractionResult::Success
+    }
+
+    fn use_item(&self, context: &mut crate::behavior::UseItemContext) -> InteractionResult {
+        let world = context.world;
+
+        let hit = get_player_pov_hit_result(world, context.player, ClipFluid::None);
+        if !hit.miss
+            && let Some(hit_block) = REGISTRY
+                .blocks
+                .by_state_id(world.get_block_state(hit.block_pos))
+            && hit_block.key == vanilla_blocks::END_PORTAL_FRAME.key
+        {
+            return InteractionResult::Pass;
+        }
+
+        let Some(structure_generator) = world
+            .chunk_map
+            .world_gen_context
+            .generator
+            .structure_generator()
+        else {
+            log::warn!("World generator not found");
+            return InteractionResult::Consume;
+        };
+
+        let Some(structures) = REGISTRY
+            .structures
+            .get_tag(&vanilla_structure_tags::StructureTag::EYE_OF_ENDER_LOCATED)
+        else {
+            log::debug!("Can't find `EYE_OF_ENDER_LOCATED` tag");
+            return InteractionResult::Consume;
+        };
+
+        let structure_keys = structures
+            .iter()
+            .map(|structure| structure.key.clone())
+            .collect::<Vec<_>>();
+
+        let Some(structure_locate_plan) =
+            structure_generator.locate_plan_for_structures(&structure_keys)
+        else {
+            log::debug!("No structure found");
+            return InteractionResult::Consume;
+        };
+
+        let strongholds = structure_locate_plan.ring_candidates(context.player.block_position());
+
+        let Some(closest_stronghold) = strongholds.first() else {
+            return InteractionResult::Consume;
+        };
+
+        let stronghold_pos = closest_stronghold.locate_pos;
+
+        let player_pos = context.player.position();
+        let spawn_pos = DVec3::new(
+            player_pos.x,
+            player_pos.y + f64::from(context.player.base().dimensions().height * 0.5),
+            player_pos.z,
+        );
+
+        let target_pos = DVec3::new(
+            f64::from(stronghold_pos.x()),
+            f64::from(stronghold_pos.y()),
+            f64::from(stronghold_pos.z()),
+        );
+
+        world.game_event_at(
+            &vanilla_game_events::PROJECTILE_SHOOT,
+            spawn_pos,
+            &GameEventContext::new(Some(context.player), None),
+        );
+
+        let pitch = 0.4 / (rand::random::<f32>() * 0.4 + 0.8);
+        world.play_sound_at(
+            &sound_events::ENTITY_ENDER_EYE_LAUNCH,
+            SoundSource::Neutral,
+            player_pos,
+            1.0,
+            pitch,
+            None,
+        );
+
+        let thrown_stack = context.inv.with_item(|stack| stack.copy_with_count(1));
+        let eye = EyeOfEnderEntity::with_item(
+            &vanilla_entities::EYE_OF_ENDER,
+            next_entity_id(),
+            spawn_pos,
+            thrown_stack,
+            Arc::downgrade(world),
+        );
+
+        eye.init_target_pos(target_pos);
+
+        let entity: SharedEntity = Arc::new(eye);
+        if let Err(error) = world.try_add_entity(entity) {
+            log::debug!("failed to spawn eye of ender: {error}");
+            return InteractionResult::Consume;
+        }
+
+        let has_infinite_materials = context.player.has_infinite_materials();
+        context
+            .inv
+            .with_item(|item| item.consume_one(has_infinite_materials));
+        context
+            .player
+            .award_stat(&vanilla_stat_types::ITEM_USED, &vanilla_items::ENDER_EYE);
+
+        InteractionResult::SuccessServer
+
+        // TODO implement advancment
     }
 }
 
