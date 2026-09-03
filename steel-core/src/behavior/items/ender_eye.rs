@@ -193,7 +193,10 @@ impl ItemBehavior for EnderEyeItem {
             return InteractionResult::Consume;
         }
 
-        context.inv.with_item(|item| item.shrink(1));
+        let has_infinite_materials = context.player.has_infinite_materials();
+        context
+            .inv
+            .with_item(|item| item.consume_one(has_infinite_materials));
         context
             .player
             .award_stat(&vanilla_stat_types::ITEM_USED, &vanilla_items::ENDER_EYE);
