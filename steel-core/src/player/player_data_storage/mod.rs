@@ -36,7 +36,7 @@ use steel_utils::{BlockPos, Identifier};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
-const PLAYER_STORAGE_VERSION: u16 = 8;
+const PLAYER_STORAGE_VERSION: u16 = 9;
 const GLOBAL_STORAGE_VERSION: u16 = 1;
 const GLOBAL_PLAYER_DATA_VERSION: i32 = 1;
 
@@ -88,6 +88,7 @@ struct PlayerDataFile {
     root_vehicle: Option<RootVehicleFile>,
     respawn_config: Option<RespawnConfigFile>,
     ender_pearls: Vec<EnderPearlFile>,
+    ender_items: Vec<SlotFile>,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -313,6 +314,14 @@ impl PlayerDataFile {
                     entity: pearl.entity.clone(),
                 })
                 .collect(),
+            ender_items: data
+                .ender_items
+                .iter()
+                .map(|slot| SlotFile {
+                    slot: slot.slot,
+                    item_nbt: item_to_nbt_bytes(&slot.item).unwrap_or_default(),
+                })
+                .collect(),
         })
     }
 
@@ -387,6 +396,16 @@ impl PlayerDataFile {
                     entity: pearl.entity,
                 })
                 .collect(),
+            ender_items: {
+                let mut items = Vec::with_capacity(self.ender_items.len());
+                for slot in self.ender_items {
+                    items.push(PersistentSlot {
+                        slot: slot.slot,
+                        item: item_from_nbt_bytes(&slot.item_nbt)?,
+                    });
+                }
+                items
+            },
             stats: Vec::new(),
         })
     }
