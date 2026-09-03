@@ -1227,6 +1227,10 @@ fn apply_non_default_domain_data(player: &Player) {
     source_data.experience_total = 300;
     source_data.score = 42;
     source_data.seen_credits = true;
+    source_data.ender_items = vec![PersistentSlot {
+        slot: 3,
+        item: ItemStack::new(&vanilla_items::STICK),
+    }];
     source_data.apply_to_player_without_location(player);
 }
 
@@ -1250,6 +1254,7 @@ fn assert_default_domain_data(player: &Player) {
         0.1_f32.to_bits()
     );
     assert!(target_data.inventory.is_empty());
+    assert!(target_data.ender_items.is_empty());
     assert_eq!(target_data.selected_slot, 0);
     assert_eq!(target_data.food_level, 20);
     assert_eq!(

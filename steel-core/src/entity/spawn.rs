@@ -184,9 +184,9 @@ pub(crate) fn apply_item_stack_components(
 }
 
 fn only_op_can_set_custom_data(entity_type: EntityTypeRef) -> bool {
-    ptr::eq(entity_type, &vanilla_entities::FALLING_BLOCK)
-        || ptr::eq(entity_type, &vanilla_entities::COMMAND_BLOCK_MINECART)
-        || ptr::eq(entity_type, &vanilla_entities::SPAWNER_MINECART)
+    ptr::eq(entity_type, &raw const vanilla_entities::FALLING_BLOCK)
+        || ptr::eq(entity_type, &raw const vanilla_entities::COMMAND_BLOCK_MINECART)
+        || ptr::eq(entity_type, &raw const vanilla_entities::SPAWNER_MINECART)
 }
 
 /// Mirrors vanilla `EntityType.spawn` for server-side entity creation.

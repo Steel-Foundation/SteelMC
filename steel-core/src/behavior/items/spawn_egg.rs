@@ -12,7 +12,7 @@ use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{vanilla_blocks, vanilla_game_events};
 use steel_utils::BlockPos;
 
-use super::place_on_water_block_item::get_player_pov_hit_result;
+use crate::behavior::item_utils::get_player_pov_hit_result;
 use crate::behavior::{
     BLOCK_BEHAVIORS, BlockCollisionContext, BlockStateBehaviorExt as _, ITEM_BEHAVIORS,
     InteractionResult, InventoryAccess, ItemBehavior, UseItemContext, UseOnContext,
