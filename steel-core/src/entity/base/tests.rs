@@ -1266,6 +1266,7 @@ fn base_tick_lava_contact_dampens_fall_distance() {
 
     base.set_fall_distance(8.0);
     base.set_fluid_contact(EntityFluidContact::from_parts(0.0, 0.25, false, false));
+    base.set_first_tick(false);
     base.dampen_fall_distance_in_lava();
 
     assert_f64_close(base.fall_distance(), 4.0);
@@ -1298,6 +1299,7 @@ fn water_reset_runs_before_lava_fall_distance_damping() {
 
     base.set_fall_distance(8.0);
     base.set_fluid_contact(EntityFluidContact::from_parts(0.25, 0.25, false, false));
+    base.set_first_tick(false);
     base.reset_fall_distance_in_water();
     base.dampen_fall_distance_in_lava();
 
