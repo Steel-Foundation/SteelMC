@@ -112,6 +112,9 @@ pub enum PacketError {
     #[error("failed to compress packet: {0}")]
     /// Failed to compress the packet.
     CompressionFailed(String),
+    #[error("badly compressed packet - size of {0} is below the server threshold")]
+    /// The packet declares a compressed size below the server's compression threshold.
+    BelowThreshold(usize),
     #[error("packet is uncompressed but greater than the threshold")]
     /// The packet is uncompressed but greater than the threshold.
     NotCompressed,

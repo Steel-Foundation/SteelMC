@@ -77,7 +77,7 @@ use rustc_hash::FxHashMap;
 use std::sync::atomic::AtomicI32;
 use std::{
     collections::BTreeSet,
-    io, mem,
+    fs, io, mem,
     num::NonZero,
     path::Path,
     sync::{Arc, mpsc},
@@ -397,6 +397,8 @@ use jobs::teleport::{
 pub struct Server {
     /// Runtime configuration (view distance, compression, etc.).
     pub config: Arc<RuntimeConfig>,
+    /// Favicon data URL loaded once at startup, if configured.
+    pub favicon: Option<String>,
     /// Runtime permission groups and their persistence boundary.
     pub permission_groups: PermissionGroupManager,
     /// The cancellation token for graceful shutdown.
@@ -446,8 +448,9 @@ pub struct Server {
     known_players: SyncMutex<KnownPlayerCacheState>,
     /// Wakes shutdown when the single known-player save worker becomes idle.
     known_player_save_idle: Notify,
-    /// HTTP client used by online-mode name-to-profile lookups.
-    profile_lookup_client: reqwest::Client,
+    /// Shared HTTP client used by online-mode name-to-profile lookups and
+    /// session-server authentication.
+    pub profile_lookup_client: reqwest::Client,
     /// Cached Mojang service keys used to validate player-key certificates.
     service_keys: Arc<ServiceKeyStore>,
     /// Player joins prepared by async I/O and finalized at the game tick safe point.
@@ -723,8 +726,11 @@ impl Server {
             log::error!("Minecraft services key fetch task stopped before its initial attempt");
         }
 
+        let favicon = load_favicon(&config);
+
         Ok(Server {
             config,
+            favicon,
             permission_groups,
             cancel_token,
             key_store: KeyStore::create(),
@@ -749,7 +755,11 @@ impl Server {
             player_permission_updates: AsyncMutex::new(()),
             known_players: SyncMutex::new(KnownPlayerCacheState::new(known_players)),
             known_player_save_idle: Notify::new(),
-            profile_lookup_client: reqwest::Client::new(),
+            profile_lookup_client: reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(5))
+                .timeout(Duration::from_secs(10))
+                .build()
+                .map_err(|error| format!("failed to build HTTP client: {error}"))?,
             service_keys,
             pending_player_joins: PlayerJoinQueue::new(),
             pending_player_disconnects: PlayerDisconnectQueue::new(),
@@ -850,4 +860,32 @@ impl Server {
             }
         }
     }
+}
+/// Loads the configured favicon into its data-URL representation once at startup so the
+/// status ping path performs no disk I/O.
+fn load_favicon(config: &RuntimeConfig) -> Option<String> {
+    use base64::{Engine, prelude::BASE64_STANDARD};
+
+    const ICON_PREFIX: &str = "data:image/png;base64,";
+
+    if !config.use_favicon {
+        return None;
+    }
+
+    let icon = match fs::read(&config.favicon) {
+        Ok(icon) => icon,
+        Err(error) => {
+            log::warn!(
+                "Failed to read configured favicon {}: {error}",
+                config.favicon
+            );
+            return None;
+        }
+    };
+
+    let cap = ICON_PREFIX.len() + icon.len().div_ceil(3) * 4;
+    let mut base64 = String::with_capacity(cap);
+    base64 += ICON_PREFIX;
+    BASE64_STANDARD.encode_string(icon, &mut base64);
+    Some(base64)
 }

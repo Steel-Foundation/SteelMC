@@ -1,5 +1,7 @@
 //! Login state packet handlers.
 
+use std::time::Instant;
+
 use rsa::Pkcs1v15Encrypt;
 use sha1::Sha1;
 use sha2::Digest;
@@ -102,6 +104,27 @@ impl JavaTcpClient {
         self.finish_verified_login(profile, None).await
     }
 
+    /// Authenticates the joining player against the configured session server.
+    async fn authenticate_online_player(
+        &self,
+        requested_username: &str,
+        secret_key: &[u8; 16],
+    ) -> Result<GameProfile, AuthError> {
+        let server_hash = &Sha1::new()
+            .chain_update(secret_key)
+            .chain_update(&self.server.key_store.public_key_der)
+            .finalize();
+        let server_hash = signed_bytes_be_to_hex(server_hash);
+
+        mojang_authenticate(
+            &self.server.profile_lookup_client,
+            requested_username,
+            &server_hash,
+            self.server.config.auth_server.as_deref(),
+        )
+        .await
+    }
+
     /// Handles the key packet during the login state, used for encryption.
     pub(crate) async fn handle_key(&self, packet: SKey) -> ConnectionAction {
         let sequence_result = self.pre_play_state.lock().begin_authentication();
@@ -157,19 +180,9 @@ impl JavaTcpClient {
         }
 
         let profile = if self.server.config.online_mode {
-            let server_hash = &Sha1::new()
-                .chain_update(secret_key)
-                .chain_update(&self.server.key_store.public_key_der)
-                .finalize();
-
-            let server_hash = signed_bytes_be_to_hex(server_hash);
-
-            match mojang_authenticate(
-                &requested_username,
-                &server_hash,
-                self.server.config.auth_server.as_deref(),
-            )
-            .await
+            match self
+                .authenticate_online_player(&requested_username, &secret_key)
+                .await
             {
                 Ok(profile) => profile,
                 Err(error) => {
@@ -245,6 +258,7 @@ impl JavaTcpClient {
         }
         self.login_deadline.store(None);
         self.protocol.store(ConnectionProtocol::Config);
+        self.config_keepalive.lock().last_sent = Instant::now();
 
         self.start_configuration().await;
         ConnectionAction::none()

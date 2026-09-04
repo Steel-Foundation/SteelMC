@@ -232,6 +232,7 @@ async fn test_server_with_worlds(
 
     Ok(Arc::new(Server {
         config,
+        favicon: None,
         permission_groups,
         cancel_token: CancellationToken::new(),
         key_store: KeyStore::create(),
