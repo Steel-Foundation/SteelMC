@@ -1,6 +1,8 @@
+use steel_protocol::packets::game::CommonPlayerSpawnInfo;
+
 use super::{
     Arc, BlockBreakingManager, CContainerClose, CGameEvent, CRespawn, CSetDefaultSpawnPosition,
-    CSetHeldSlot, CSetPassengers, DVec3, Entity, GameEventType, GameType, MenuRemovalStatus,
+    CSetHeldSlot, CSetPassengers, DVec3, Entity, GameEventType, MenuRemovalStatus,
     MobEffectSyncChange, MobEffectSyncPacket, Player, RegistryEntry, RelativeMovement, ResetReason,
     World,
 };
@@ -81,18 +83,18 @@ impl Player {
             let data_kept = reason.respawn_data_kept();
 
             self.send_packet(CRespawn {
-                dimension_type: new_world.dimension_type.id() as i32,
-                dimension_name: new_world.key.clone(),
-                hashed_seed: new_world.obfuscated_seed(),
-                gamemode: self.game_mode() as u8,
-                previous_gamemode: nullable_game_mode_id(self.previous_game_mode()),
-                is_debug: false,
-                is_flat: new_world.is_flat,
-                has_death_location: false,
-                death_dimension_name: None,
-                death_location: None,
-                portal_cooldown_ticks: self.portal_cooldown(),
-                sea_level: new_world.sea_level,
+                common_player_spawn_info: CommonPlayerSpawnInfo {
+                    dimension_type: new_world.dimension_type.id() as i32,
+                    dimension: new_world.key.clone(),
+                    seed: new_world.obfuscated_seed(),
+                    game_type: self.game_mode(),
+                    previous_game_type: self.previous_game_mode(),
+                    is_debug: false,
+                    is_flat: new_world.is_flat,
+                    last_death_location: None,
+                    portal_cooldown: self.portal_cooldown(),
+                    sea_level: new_world.sea_level,
+                },
                 data_kept,
             });
         }
@@ -340,8 +342,4 @@ impl Player {
             );
         }
     }
-}
-
-pub(in crate::player) fn nullable_game_mode_id(game_mode: Option<GameType>) -> i8 {
-    game_mode.map_or(-1, |game_mode| game_mode as i8)
 }

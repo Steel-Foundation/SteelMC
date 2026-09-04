@@ -54,7 +54,6 @@ use super::{
     experience::Experience,
     experience::first_point_level_up_sound,
     game_mode::block_breaking::BlockBreakAction,
-    lifecycle::nullable_game_mode_id,
     player_data::{PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle},
 };
 
@@ -1180,12 +1179,6 @@ fn equipment_detection_coalesces_before_tracker_drain() {
             item_stack: ItemStack::new(&vanilla_items::DIAMOND_HELMET),
         }]
     );
-}
-
-#[test]
-fn nullable_game_mode_id_matches_vanilla_encoding() {
-    assert_eq!(nullable_game_mode_id(None), -1);
-    assert_eq!(nullable_game_mode_id(Some(GameType::Creative)), 1);
 }
 
 #[test]
