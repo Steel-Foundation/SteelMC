@@ -8,10 +8,7 @@ use crate::world::World;
 ///
 // TODO: `applyEffectTick` checks the mob is a non-spectator `ServerPlayer`
 // standing in a village (`ServerLevel.isVillage`) with no raid already at its
-// max omen level, then starts/extends a `Raid` via `player.setRaidOmenPosition`
-// and removes this effect (returns `false`) so `RaidOmenMobEffect` can pick up
-// next tick. None of `isVillage`/`Raid`/`setRaidOmenPosition` exist yet, so
-// this just keeps ticking harmlessly until the raid system lands.
+// max omen level, then starts/extends a `Raid`
 pub struct BadOmenBehavior;
 
 impl MobEffectBehavior for BadOmenBehavior {

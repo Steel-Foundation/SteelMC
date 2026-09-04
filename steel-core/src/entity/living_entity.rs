@@ -1741,11 +1741,8 @@ pub trait LivingEntity: Entity {
         false
     }
 
-    /// Called with a `use_remainder` item that could not fit back into the
-    /// stack that was consumed (e.g. drinking one honey bottle out of a
-    /// stack of several leaves a spare glass bottle). Mirrors vanilla
-    /// `LivingEntity.handleExtraItemsCreatedOnUse`, which is a no-op for
-    /// non-player mobs.
+    /// Mirrors vanilla `LivingEntity.handleExtraItemsCreatedOnUse`, 
+    /// which is a no-op for non-player mobs.
     fn handle_extra_items_created_on_use(&self, _extra: ItemStack) {}
 
     /// Called after an equipped item breaks.
@@ -2961,10 +2958,8 @@ pub trait LivingEntity: Entity {
         }
     }
 
-    /// Mirrors vanilla `Entity.randomTeleport`: attempts to move this entity
-    /// to `(x, y, z)`, snapping down to the first block that blocks motion
-    /// and validating the landing spot is free of block, entity, and liquid
-    /// collision. Returns `true` and commits the move on success, or
+    /// Mirrors vanilla `Entity.randomTeleport`.
+    /// Returns `true` and commits the move on success, or
     /// `false` and leaves the entity untouched on failure.
     fn random_teleport(&self, world: &Arc<World>, x: f64, y: f64, z: f64, broadcast: bool) -> bool {
         let Some(landing_y) = random_teleport_ground_y(world, x, y, z) else {

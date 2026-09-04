@@ -22,9 +22,7 @@ impl ConsumeEffectBehavior for PlaySoundBehavior {
             return;
         };
         // Vanilla plays this at the entity's block-position center via
-        // `Level.playSound(null, BlockPos, ...)`, not `Entity.playSound` —
-        // so, unlike `LivingEntity::play_sound`, this bypasses `isSilent()`
-        // and uses the floored block position instead of the exact one.
+        // `Level.playSound(null, BlockPos, ...)`
         let block_pos = user.block_position();
         let block_center = DVec3::new(
             f64::from(block_pos.x()) + 0.5,

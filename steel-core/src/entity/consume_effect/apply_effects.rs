@@ -12,10 +12,7 @@ use crate::entity::potion_contents::to_runtime_instance;
 use crate::world::World;
 
 /// Mirrors vanilla `ApplyStatusEffectsConsumeEffect.apply`: unlike drinking a
-/// potion, this always goes through `LivingEntity.addEffect` — even for
-/// Instant Health/Damage/Saturation, which vanilla's generic effect-tick
-/// loop then applies once (as a 1-tick effect) and expires, via `MobEffect
-/// .isInstantaneous`/`shouldApplyEffectTickThisTick`.
+/// potion, this always goes through `LivingEntity.addEffect`
 pub struct ApplyEffectsBehavior;
 
 impl ConsumeEffectBehavior for ApplyEffectsBehavior {
