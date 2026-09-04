@@ -4,20 +4,15 @@
 //! stay inside the stage's block-state write radius. `WorldGenRegion` centralizes that
 //! contract so feature, structure, and vegetation code cannot bypass the chunk pyramid.
 
-#[expect(
-    clippy::disallowed_types,
-    reason = "The HashMap are with a custom Hasher for performance"
-)]
 use std::{
     cell::RefCell,
-    collections::{HashMap, hash_map::Entry},
-    hash::{BuildHasherDefault, Hasher},
     sync::{Arc, Weak},
     time::Instant,
 };
 
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use simdnbt::owned::NbtCompound;
+use small_map::FxSmallMap;
 use steel_registry::{
     REGISTRY, block_entity_type::BlockEntityTypeRef, blocks::BlockRef,
     blocks::block_state_ext::BlockStateExt as _, blocks::properties::Direction,
@@ -65,12 +60,12 @@ pub struct WorldGenRegion<'a> {
     random: RandomSource,
 }
 
-#[expect(
-    clippy::disallowed_types,
-    reason = "this cache intentionally uses a custom identity hasher for packed integer keys"
-)]
+/// Size of 8 is fine here because analysis showed that 91.7% only ever reach <=2 and the largest one ever grew was 6.
+/// Decreasing the size below 8 resulted in no change in speed.
+const BULK_SECTION_INLINE_CHUNKS: usize = 8;
+
 type BulkSectionChunkMap<'region> =
-    HashMap<i64, CachedWorldGenChunk<'region>, BuildHasherDefault<BulkSectionChunkHasher>>;
+    FxSmallMap<BULK_SECTION_INLINE_CHUNKS, i64, CachedWorldGenChunk<'region>>;
 
 /// Cached section-level access for feature code that mirrors vanilla `BulkSectionAccess`.
 ///
@@ -86,24 +81,6 @@ pub(crate) struct WorldGenBulkSectionAccess<'region, 'world, 'profile> {
     chunks: BulkSectionChunkMap<'region>,
     air: BlockStateId,
     ore_profile: Option<&'profile RefCell<OreFeatureStats>>,
-}
-
-/// Identity hasher for packed chunk positions used only by the bulk-section cache.
-#[derive(Default)]
-struct BulkSectionChunkHasher(u64);
-
-impl Hasher for BulkSectionChunkHasher {
-    fn finish(&self) -> u64 {
-        self.0
-    }
-
-    fn write(&mut self, _bytes: &[u8]) {
-        panic!("BulkSectionChunkHasher only supports i64 keys");
-    }
-
-    fn write_i64(&mut self, value: i64) {
-        self.0 = value.cast_unsigned();
-    }
 }
 
 struct CachedWorldGenChunk<'region> {
@@ -1329,34 +1306,41 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
             );
         };
 
-        // Single entry lookup: insert on miss, in-place status upgrade on hit.
-        match self.chunks.entry(cache_key) {
-            Entry::Occupied(mut occupied) => {
-                let cached = occupied.get_mut();
-                if status > cached.verified_status {
-                    Self::with_ore_profile_ref(
-                        self.ore_profile,
-                        OreFeatureStats::record_chunk_status_upgrade,
+        match self
+            .chunks
+            .get(&cache_key)
+            .map(|cached| cached.verified_status)
+        {
+            Some(verified_status) if status > verified_status => {
+                self.with_ore_profile(OreFeatureStats::record_chunk_status_upgrade);
+                let _ = self.region.chunk(chunk_x, chunk_z, status);
+                let Some(cached) = self.chunks.get_mut(&cache_key) else {
+                    panic!(
+                        "Worldgen bulk section cache lost verified chunk ({chunk_x}, {chunk_z})"
                     );
-                    let _ = self.region.chunk(chunk_x, chunk_z, status);
-                    cached.verified_status = status;
-                }
-                occupied.into_mut()
+                };
+                cached.verified_status = status;
             }
-            Entry::Vacant(vacant) => {
-                Self::with_ore_profile_ref(
-                    self.ore_profile,
-                    OreFeatureStats::record_chunk_cache_miss,
-                );
+            Some(_) => {}
+            None => {
+                self.with_ore_profile(OreFeatureStats::record_chunk_cache_miss);
                 let chunk = self.region.chunk(chunk_x, chunk_z, status);
-                vacant.insert(CachedWorldGenChunk {
-                    access_mode: chunk.access_mode,
-                    holder: chunk.holder,
-                    chunk: chunk.chunk,
-                    verified_status: status,
-                })
+                self.chunks.insert(
+                    cache_key,
+                    CachedWorldGenChunk {
+                        access_mode: chunk.access_mode,
+                        holder: chunk.holder,
+                        chunk: chunk.chunk,
+                        verified_status: status,
+                    },
+                );
             }
         }
+
+        let Some(cached) = self.chunks.get(&cache_key) else {
+            panic!("Worldgen bulk section cache failed to store chunk ({chunk_x}, {chunk_z})");
+        };
+        cached
     }
 
     fn chunk_cache_key(&self, chunk_x: i32, chunk_z: i32) -> Option<i64> {
@@ -1405,12 +1389,7 @@ impl<'region, 'world, 'profile> WorldGenBulkSectionAccess<'region, 'world, 'prof
     }
 
     fn with_ore_profile(&self, f: impl FnOnce(&mut OreFeatureStats)) {
-        let Some(profile) = self.ore_profile else {
-            return;
-        };
-        if let Ok(mut profile) = profile.try_borrow_mut() {
-            f(&mut profile);
-        }
+        Self::with_ore_profile_ref(self.ore_profile, f);
     }
 
     fn with_ore_profile_ref(
