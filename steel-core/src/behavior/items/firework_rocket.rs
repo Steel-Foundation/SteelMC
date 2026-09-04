@@ -8,6 +8,7 @@ use std::sync::Arc;
 use glam::DVec3;
 use steel_macros::item_behavior;
 use steel_protocol::packets::game::SoundSource;
+use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{sound_events, vanilla_entities};
 use steel_utils::Direction;
 
@@ -100,16 +101,20 @@ impl ItemBehavior for FireworkRocketItem {
             context.player,
         );
         let rocket = Self::add_rocket(context.world, rocket);
-        context.inv.with_item(|item| {
+        let has_infinite_materials = context.player.has_infinite_materials();
+        context.inv.with_item(|itemstack| {
+            let item = itemstack.item();
             enchantment_helper::on_projectile_spawned(
                 context.world,
-                item,
+                itemstack,
                 rocket.as_ref(),
                 Some(context.player),
             );
-            item.shrink(1);
+            itemstack.consume_one(has_infinite_materials);
+            context
+                .player
+                .award_stat(&vanilla_stat_types::ITEM_USED, item);
         });
-        // TODO: Award `Stats.ITEM_USED` once Steel has a statistics foundation.
 
         InteractionResult::Success
     }

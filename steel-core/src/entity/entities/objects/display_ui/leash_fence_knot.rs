@@ -290,7 +290,7 @@ impl Entity for LeashFenceKnotEntity {
             return self.interact_entity(player, hand, location);
         }
 
-        self.game_event_with_player(&BLOCK_ATTACH, player);
+        self.game_event_with_source_entity(&BLOCK_ATTACH, Some(player));
         self.play_sound(&ITEM_LEAD_TIED, 1.0, 1.0);
 
         InteractionResult::Success
@@ -301,7 +301,7 @@ impl Entity for LeashFenceKnotEntity {
     }
 
     fn hurt(&self, world: &World, source: &DamageSource, _amount: f32) -> bool {
-        if self.default_is_invulnerable_to(source) {
+        if self.is_invulnerable_to_base(source) {
             return false;
         }
 

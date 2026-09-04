@@ -15,19 +15,23 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_math::fast_floor;
+use steel_protocol::packets::game::CTakeItemEntity;
+use steel_registry::attribute::AttributeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+use steel_registry::data_components::components::ItemEnchantments;
+use steel_registry::data_components::vanilla_components::CUSTOM_NAME;
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::loot_table::LootTableRef;
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
-    REGISTRY, RegistryExt, vanilla_attributes, vanilla_damage_types, vanilla_entities,
-    vanilla_game_events,
+    REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_attributes, vanilla_damage_types,
+    vanilla_entities, vanilla_game_events, vanilla_game_rules,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
-use steel_utils::{BlockPos, Identifier, WorldAabb, axis::Axis};
+use steel_utils::{BlockPos, ChunkPos, Downcast as _, Identifier, WorldAabb, axis::Axis};
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
@@ -41,13 +45,14 @@ use crate::entity::ai::sensing::Sensing;
 use crate::entity::ai::walk::WalkPathEvaluator;
 use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
+use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
     Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason, SharedEntity,
     SpawnGroupData, WeakEntity,
 };
 use crate::inventory::equipment::EquipmentSlot;
+use crate::physics::MoveResult;
 use crate::player::Player;
-use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
 
 const MOB_FLAG_NO_AI: i8 = 1;
@@ -56,6 +61,9 @@ const MOB_FLAG_AGGRESSIVE: i8 = 4;
 const MOVE_CONTROL_MIN_SPEED_SQR: f64 = 2.500_000_3e-7;
 const MOVE_CONTROL_MAX_TURN: f32 = 90.0;
 const DEFAULT_EQUIPMENT_DROP_CHANCE: f32 = 0.085;
+/// Vanilla bias subtracted from the roll before comparing against a slot's drop
+/// chance when a mob swaps out worn gear it picked something better up over.
+const REPLACED_EQUIPMENT_DROP_BIAS: f32 = 0.1;
 const PRESERVE_ITEM_DROP_CHANCE_THRESHOLD: f32 = 1.0;
 const PRESERVE_ITEM_DROP_CHANCE: f32 = 2.0;
 const BODY_ROTATION_MOVING_DISTANCE_SQR: f64 = 2.500_000_3e-7;
@@ -65,6 +73,9 @@ const DEFAULT_ATTACK_REACH_OFFSET: f32 = 0.6;
 const RANDOM_SPAWN_BONUS_ID: Identifier = Identifier::vanilla_static("random_spawn_bonus");
 const RANDOM_SPAWN_BONUS_SCALE: f64 = 0.114_850_000_000_000_01;
 const LEFT_HANDED_SPAWN_CHANCE: f32 = 0.05;
+/// Vanilla `Mob.ITEM_PICKUP_REACH`: the per-axis distance the item-pickup search
+/// box is inflated by when a mob looks for nearby dropped items to collect.
+const ITEM_PICKUP_REACH: DVec3 = DVec3::new(1.0, 0.0, 1.0);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct DropChances {
@@ -500,14 +511,8 @@ pub trait Mob: LivingEntity + Leashable {
         }
 
         let interaction_result = self.mob_interact(player, hand);
-        if interaction_result.consumes_action()
-            && let Some(world) = self.level()
-        {
-            world.game_event(
-                &vanilla_game_events::ENTITY_INTERACT,
-                self.block_position(),
-                &GameEventContext::new(Some(player), None),
-            );
+        if interaction_result.consumes_action() {
+            self.game_event_with_source_entity(&vanilla_game_events::ENTITY_INTERACT, Some(player));
         }
 
         interaction_result
@@ -568,6 +573,307 @@ pub trait Mob: LivingEntity + Leashable {
             .drop_chances()
             .lock()
             .set_guaranteed_drop(slot);
+    }
+
+    /// Vanilla `Mob.getPickupReach`: the per-axis distance the item-pickup search
+    /// box is inflated by. Overridable so mobs with a longer reach can widen it.
+    fn get_pickup_reach(&self) -> DVec3 {
+        ITEM_PICKUP_REACH
+    }
+
+    /// Vanilla `Mob.wantsToPickUp`: whether this mob wants to collect the item it
+    /// just walked over. Defaults to whatever the mob is willing to hold.
+    fn wants_to_pick_up(&self, item_stack: &ItemStack) -> bool {
+        self.can_hold_item(item_stack)
+    }
+
+    /// Vanilla `Mob.canHoldItem`: whether this mob is willing to hold the item.
+    /// The base mob holds anything; specific mobs narrow this down.
+    fn can_hold_item(&self, _item_stack: &ItemStack) -> bool {
+        true
+    }
+
+    /// Vanilla `Mob.pickUpItem`: take a dropped item into this mob's equipment.
+    ///
+    /// Delegates the slot routing and gear-swap decision to
+    /// [`equip_item_if_possible`](Self::equip_item_if_possible), then shrinks the
+    /// source stack by however much was equipped, only removing the item entity
+    /// once nothing is left.
+    fn pick_up_item(&self, world: &Arc<World>, item_entity: &ItemEntity) {
+        let equipped = self.equip_item_if_possible(item_entity.get_item());
+        if equipped.is_empty() {
+            return;
+        }
+
+        let count = equipped.count();
+        // TODO(advancements): vanilla calls LivingEntity.onItemPickup here, before
+        // the take packet, which fires the THROWN_ITEM_PICKED_UP_BY_ENTITY criterion.
+        // Add that once Steel has the advancement-criteria foundation.
+        let chunk_pos = ChunkPos::from_entity_pos(item_entity.position());
+        world.broadcast_to_nearby(
+            chunk_pos,
+            CTakeItemEntity::new(item_entity.id(), self.id(), count),
+            None,
+        );
+
+        let mut remaining = item_entity.get_item();
+        remaining.shrink(count);
+        if remaining.is_empty() {
+            item_entity.set_removed(RemovalReason::Discarded);
+        } else {
+            item_entity.set_item(remaining);
+        }
+    }
+
+    /// Vanilla `Mob.equipItemIfPossible`: route `item_stack` to the slot its
+    /// equippable component asks for (main hand otherwise), swap up when the
+    /// target slot already holds worse gear, and drop the replaced piece by its
+    /// drop chance. Returns the stack that was equipped, or empty when nothing
+    /// was taken.
+    fn equip_item_if_possible(&self, mut item_stack: ItemStack) -> ItemStack {
+        let mut slot = self.get_equipment_slot_for_item(&item_stack);
+        if !self.is_equippable_in_slot(&item_stack, slot) {
+            return ItemStack::empty();
+        }
+
+        let mut current = self.equipment_in_slot(slot);
+        let mut can_replace = self.can_replace_current_item(&item_stack, &current, slot);
+        // Armor that would not be an upgrade still gets a chance to be carried in
+        // the main hand instead, provided that hand is free.
+        if slot.is_armor() && !can_replace {
+            slot = EquipmentSlot::MainHand;
+            current = self.equipment_in_slot(slot);
+            can_replace = current.is_empty();
+        }
+
+        if !can_replace || !self.can_hold_item(&item_stack) {
+            return ItemStack::empty();
+        }
+
+        let drop_chance = self.equipment_drop_chance(slot);
+        if !current.is_empty()
+            && (rand::random::<f32>() - REPLACED_EQUIPMENT_DROP_BIAS).max(0.0) < drop_chance
+        {
+            self.spawn_at_location(current, 0.0);
+        }
+
+        let to_equip = slot.limit(&mut item_stack);
+        let equipped = to_equip.copy_with_count(to_equip.count());
+        self.living_base().equipment().lock().set(slot, to_equip);
+        self.set_guaranteed_drop(slot);
+        self.set_persistence_required();
+        equipped
+    }
+
+    /// Vanilla `LivingEntity.getEquipmentSlotForItem`: the slot an item wants to
+    /// occupy, falling back to the main hand when it is not equippable or the mob
+    /// cannot use that slot.
+    fn get_equipment_slot_for_item(&self, item_stack: &ItemStack) -> EquipmentSlot {
+        match item_stack.get_equippable() {
+            Some(equippable) if self.can_use_slot(equippable.slot) => equippable.slot,
+            _ => EquipmentSlot::MainHand,
+        }
+    }
+
+    /// Returns a copy of whatever this mob currently holds in `slot`.
+    fn equipment_in_slot(&self, slot: EquipmentSlot) -> ItemStack {
+        let equipment = self.living_base().equipment().lock();
+        let stack = equipment.get_ref(slot);
+        stack.copy_with_count(stack.count())
+    }
+
+    /// Vanilla `Mob.canReplaceCurrentItem`: whether the freshly picked-up item
+    /// should displace what is already in `slot`.
+    fn can_replace_current_item(
+        &self,
+        new_item_stack: &ItemStack,
+        current_item_stack: &ItemStack,
+        slot: EquipmentSlot,
+    ) -> bool {
+        if current_item_stack.is_empty() {
+            true
+        } else if slot.is_armor() {
+            self.compare_armor(new_item_stack, current_item_stack, slot)
+        } else if slot == EquipmentSlot::MainHand {
+            self.compare_weapons(new_item_stack, current_item_stack, slot)
+        } else {
+            false
+        }
+    }
+
+    /// Vanilla `Mob.compareArmor`: prefer the piece granting more armor, then
+    /// more toughness, then the equal-item tiebreak, unless the worn piece is
+    /// protected against removal.
+    #[expect(
+        clippy::float_cmp,
+        reason = "vanilla compares approximate attribute values for exact equality"
+    )]
+    fn compare_armor(
+        &self,
+        new_item_stack: &ItemStack,
+        current_item_stack: &ItemStack,
+        slot: EquipmentSlot,
+    ) -> bool {
+        if current_item_stack.has_enchantment_effect(EnchantmentEffectComponent::PreventArmorChange)
+        {
+            return false;
+        }
+
+        let new_defense =
+            self.approximate_attribute_with(new_item_stack, vanilla_attributes::ARMOR, slot);
+        let old_defense =
+            self.approximate_attribute_with(current_item_stack, vanilla_attributes::ARMOR, slot);
+        if new_defense != old_defense {
+            return new_defense > old_defense;
+        }
+
+        let new_toughness = self.approximate_attribute_with(
+            new_item_stack,
+            vanilla_attributes::ARMOR_TOUGHNESS,
+            slot,
+        );
+        let old_toughness = self.approximate_attribute_with(
+            current_item_stack,
+            vanilla_attributes::ARMOR_TOUGHNESS,
+            slot,
+        );
+        if new_toughness == old_toughness {
+            self.can_replace_equal_item(new_item_stack, current_item_stack)
+        } else {
+            new_toughness > old_toughness
+        }
+    }
+
+    /// Vanilla `Mob.getPreferredWeaponType`: the item tag a mob favors for its
+    /// main hand regardless of raw damage (a skeleton keeps its bow over a
+    /// stronger sword). The base mob has no preference; specific mobs override it.
+    fn get_preferred_weapon_type(&self) -> Option<Identifier> {
+        None
+    }
+
+    /// Vanilla `Mob.compareWeapons`: keep a piece of the mob's preferred weapon
+    /// type over one that is not, otherwise prefer more attack damage, then the
+    /// equal-item tiebreak.
+    #[expect(
+        clippy::float_cmp,
+        reason = "vanilla compares approximate attribute values for exact equality"
+    )]
+    fn compare_weapons(
+        &self,
+        new_item_stack: &ItemStack,
+        current_item_stack: &ItemStack,
+        slot: EquipmentSlot,
+    ) -> bool {
+        if let Some(preferred_weapon_type) = self.get_preferred_weapon_type() {
+            let current_is_preferred = REGISTRY
+                .items
+                .is_in_tag(current_item_stack.item(), &preferred_weapon_type);
+            let new_is_preferred = REGISTRY
+                .items
+                .is_in_tag(new_item_stack.item(), &preferred_weapon_type);
+            if current_is_preferred && !new_is_preferred {
+                return false;
+            }
+            if !current_is_preferred && new_is_preferred {
+                return true;
+            }
+        }
+
+        let new_attack_damage = self.approximate_attribute_with(
+            new_item_stack,
+            vanilla_attributes::ATTACK_DAMAGE,
+            slot,
+        );
+        let old_attack_damage = self.approximate_attribute_with(
+            current_item_stack,
+            vanilla_attributes::ATTACK_DAMAGE,
+            slot,
+        );
+        if new_attack_damage == old_attack_damage {
+            self.can_replace_equal_item(new_item_stack, current_item_stack)
+        } else {
+            new_attack_damage > old_attack_damage
+        }
+    }
+
+    /// Vanilla `Mob.getApproximateAttributeWith`: the value of `attribute` this
+    /// mob would have in `slot` while wearing `item_stack`, taking the mob's base
+    /// value (zero when it lacks the attribute) and folding in the item's
+    /// attribute modifiers.
+    fn approximate_attribute_with(
+        &self,
+        item_stack: &ItemStack,
+        attribute: AttributeRef,
+        slot: EquipmentSlot,
+    ) -> f64 {
+        let base_value = self
+            .attributes()
+            .lock()
+            .get_base_value(attribute)
+            .unwrap_or(0.0);
+        item_stack
+            .get_attribute_modifiers()
+            .map_or(base_value, |modifiers| {
+                modifiers.compute(attribute, base_value, slot)
+            })
+    }
+
+    /// Vanilla `Mob.canReplaceEqualItem`: the tiebreak when two pieces grade out
+    /// equally, favoring more enchantments, then less damage, then a custom name.
+    fn can_replace_equal_item(
+        &self,
+        new_item_stack: &ItemStack,
+        current_item_stack: &ItemStack,
+    ) -> bool {
+        let new_enchantments = new_item_stack
+            .get_enchantments()
+            .map_or(0, ItemEnchantments::len);
+        let current_enchantments = current_item_stack
+            .get_enchantments()
+            .map_or(0, ItemEnchantments::len);
+        if new_enchantments != current_enchantments {
+            return new_enchantments > current_enchantments;
+        }
+
+        let new_damage = new_item_stack.get_damage_value();
+        let current_damage = current_item_stack.get_damage_value();
+        if new_damage == current_damage {
+            new_item_stack.has(CUSTOM_NAME) && !current_item_stack.has(CUSTOM_NAME)
+        } else {
+            new_damage < current_damage
+        }
+    }
+
+    /// Vanilla `Mob.aiStep` looting loop: while this mob may pick up loot and the
+    /// `mobGriefing` game rule allows it, collect nearby dropped items in reach.
+    fn tick_looting(&self) {
+        let Some(world) = self.level() else {
+            return;
+        };
+        if !self.can_pick_up_loot()
+            || !Entity::is_alive(self)
+            || !world.get_game_rule(&vanilla_game_rules::MOB_GRIEFING)
+        {
+            return;
+        }
+
+        let reach = self.get_pickup_reach();
+        let search_box = self.bounding_box().inflate_xyz(reach.x, reach.y, reach.z);
+        for entity in world.get_entities_in_aabb(&search_box) {
+            let Some(item_entity) = entity.downcast_ref::<ItemEntity>() else {
+                continue;
+            };
+            let item = item_entity.get_item();
+            if item_entity.is_removed()
+                || item.is_empty()
+                || item_entity.has_pickup_delay()
+                || !self.wants_to_pick_up(&item)
+            {
+                continue;
+            }
+
+            self.pick_up_item(&world, item_entity);
+        }
     }
 
     fn drop_custom_death_loot_mob(&self, _source: &DamageSource, killed_by_player: bool) {
@@ -1099,6 +1405,19 @@ pub trait Mob: LivingEntity + Leashable {
         self.tick_move_control();
         self.tick_look_control();
         self.tick_jump_control();
+    }
+
+    /// Vanilla `Mob.aiStep`: the `LivingEntity.aiStep` movement foundation followed
+    /// by the item-pickup looting loop.
+    ///
+    /// Looting lives here rather than in [`mob_server_ai_step`](Self::mob_server_ai_step)
+    /// because vanilla runs it from `aiStep`, not `serverAiStep`: a mob with
+    /// `NoAI` set still collects loot, so the looting must not sit behind the
+    /// `isEffectiveAi` gate that guards the goal/navigation ticks.
+    fn mob_ai_step(&self) -> Option<MoveResult> {
+        let result = self.default_ai_step();
+        self.tick_looting();
+        result
     }
 
     fn tick_path_navigation(&self) {

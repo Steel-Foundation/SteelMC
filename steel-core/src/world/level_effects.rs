@@ -224,9 +224,9 @@ impl World {
     /// Sends destruction particles (skipping fire blocks), optionally drops
     /// resources via loot table, then replaces with air.
     ///
-    /// Defaults to recursion limit of 512
+    /// Defaults to [`Self::UPDATE_LIMIT`].
     pub fn destroy_block(self: &Arc<Self>, pos: BlockPos, drop_items: bool) -> bool {
-        self.destroy_block_with_limit(pos, drop_items, 512)
+        self.destroy_block_with_limit(pos, drop_items, Self::UPDATE_LIMIT)
     }
 
     /// Replaces a block with its fluid state's legacy block.
@@ -249,7 +249,7 @@ impl World {
         drop_items: bool,
         entity: &dyn Entity,
     ) -> bool {
-        self.destroy_block_with_limit_and_entity(pos, drop_items, 512, Some(entity))
+        self.destroy_block_with_limit_and_entity(pos, drop_items, Self::UPDATE_LIMIT, Some(entity))
     }
 
     /// Destroys a block at the given position, optionally dropping its loot.

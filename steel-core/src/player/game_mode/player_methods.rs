@@ -7,10 +7,14 @@ use super::{
     player_can_change_difficulty, shapes, vanilla_attributes,
 };
 use crate::behavior::blocks::PowderSnowBlock;
-
-const SURVIVAL_DEFAULT_BLOCK_INTERACTION_RANGE: f64 = 4.5;
+use steel_protocol::packets::game::SSwing;
 
 impl Player {
+    /// Vanilla `Player.DEFAULT_BLOCK_INTERACTION_RANGE`.
+    pub const DEFAULT_BLOCK_INTERACTION_RANGE: f64 = 4.5;
+    /// Vanilla `Player.DEFAULT_ENTITY_INTERACTION_RANGE`.
+    pub const DEFAULT_ENTITY_INTERACTION_RANGE: f64 = 3.0;
+
     /// Sets the player's game mode and notifies the client.
     ///
     /// Returns `true` if the game mode was changed, `false` if the player was already in the requested game mode.
@@ -222,7 +226,7 @@ impl Player {
         self.attributes()
             .lock()
             .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-            .unwrap_or(SURVIVAL_DEFAULT_BLOCK_INTERACTION_RANGE)
+            .unwrap_or(Self::DEFAULT_BLOCK_INTERACTION_RANGE)
     }
 
     /// Returns true if player is within block interaction range plus a vanilla buffer.
@@ -247,11 +251,7 @@ impl Player {
         let dz = f64::max(f64::max(min_z - player_pos.z, player_pos.z - max_z), 0.0);
         let dist_sq = dx * dx + dy * dy + dz * dz;
 
-        let base_range = self
-            .attributes()
-            .lock()
-            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-            .unwrap_or(4.5);
+        let base_range = self.block_interaction_range();
         let max_range = base_range + buffer;
         dist_sq < max_range * max_range
     }
@@ -277,7 +277,7 @@ impl Player {
             .attributes()
             .lock()
             .get_value(vanilla_attributes::ENTITY_INTERACTION_RANGE)
-            .unwrap_or(3.0);
+            .unwrap_or(Self::DEFAULT_ENTITY_INTERACTION_RANGE);
         let max_range = base_range + buffer;
         dist_sq < max_range * max_range
     }
@@ -287,6 +287,8 @@ impl Player {
         if !self.has_client_loaded() || self.game_mode() != GameType::Spectator {
             return;
         }
+
+        self.reset_last_action_time();
 
         let Some(entity_id) = packet.spectate_entity_id else {
             return;
@@ -312,5 +314,11 @@ impl Player {
     #[must_use]
     pub fn is_secondary_use_active(&self) -> bool {
         self.is_crouching()
+    }
+
+    /// Handles a player swing packet.
+    pub fn handle_animate(&self, packet: SSwing) {
+        self.reset_last_action_time();
+        self.swing(packet.hand, false);
     }
 }

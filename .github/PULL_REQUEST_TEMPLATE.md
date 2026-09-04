@@ -36,6 +36,11 @@ PR template
 - [ ] Docs updated (if applicable)
 - [ ] No leftover debug code / comments
 
+## Classes / commands modified:
+
+<!-- This is optional, and you don't need to do it for chores or foundation. -->
+<!-- Classes and commands need to be written in the same way as they are written in the [tracker](https://steelmc.dev/tracker/) to appear in it. -->
+
 ## Additional notes
 
 <!-- Anything else reviewers should know -->

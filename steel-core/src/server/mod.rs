@@ -74,13 +74,12 @@ use crossbeam::queue::SegQueue;
 use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use rustc_hash::FxHashMap;
+use std::sync::atomic::AtomicI32;
 use std::{
     collections::BTreeSet,
     io, mem,
-    num::NonZero,
     path::Path,
     sync::{Arc, mpsc},
-    thread,
     time::{Duration, Instant},
 };
 use steel_crypto::{key_store::KeyStore, signature::ProfileKeyValidator};
@@ -101,6 +100,7 @@ use steel_utils::{
     BlockPos, ChunkPos, Identifier,
     locks::{AsyncMutex, SyncMutex, SyncRwLock},
     text::DisplayResolutor,
+    threading::{DEBUG_STACK_SIZE, available_worker_threads},
     translations,
 };
 use text_components::{Modifier, TextComponent, format::Color};
@@ -168,32 +168,12 @@ fn configured_chunk_encoding_threads(configured_threads: Option<usize>) -> Optio
     cap_positive_thread_count(configured_threads, available_worker_threads())
 }
 
-fn configured_packet_workers(configured_workers: Option<usize>) -> usize {
-    packet_workers_for_available(configured_workers, available_worker_threads())
-}
-
-fn available_worker_threads() -> usize {
-    thread::available_parallelism().map_or(4, NonZero::get)
-}
-
 fn cap_positive_thread_count(
     configured_threads: Option<usize>,
     available_threads: usize,
 ) -> Option<usize> {
     let configured_threads = configured_threads.filter(|&threads| threads > 0)?;
     Some(configured_threads.min(available_threads.max(1)))
-}
-
-fn packet_workers_for_available(
-    configured_workers: Option<usize>,
-    available_threads: usize,
-) -> usize {
-    let available_threads = available_threads.max(1);
-    if let Some(configured_workers) = configured_workers.filter(|&workers| workers > 0) {
-        return configured_workers.min(available_threads);
-    }
-
-    ((available_threads / 2).max(2)).min(available_threads)
 }
 
 #[cfg(test)]
@@ -256,10 +236,6 @@ fn is_end_return_transition(
 
 fn is_nether_dimension_type(world: &World) -> bool {
     world.dimension_type == &vanilla_dimension_types::THE_NETHER
-}
-
-fn is_end_dimension_type(world: &World) -> bool {
-    world.dimension_type == &vanilla_dimension_types::THE_END
 }
 
 fn can_entity_return_from_end_to_overworld(
@@ -384,6 +360,7 @@ use permissions::validate_player_permission_group_update;
 mod player_admission;
 mod player_lifecycle;
 
+pub use player_admission::{DuplicatePlayerWaitError, PlayerJoinReservation};
 use player_admission::{PlayerAdmissionState, PlayerDisconnectQueue, PlayerJoinQueue};
 
 mod world_changes;
@@ -413,8 +390,15 @@ pub struct Server {
     online_players: PlayerMap,
     /// UUIDs reserved by a join or disconnect/save lifecycle transition.
     player_admissions: SyncMutex<FxHashMap<Uuid, PlayerAdmissionState>>,
+    /// Wakes verified logins waiting for an older session with the same UUID to leave.
+    player_admission_changed: Notify,
+    /// Wakes connection lifecycle work waiting for a specific server tick.
+    server_tick_changed: Notify,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
+    /// The number of minutes required for a player to be idle for them to be kicked (timed out) from the server.
+    /// If this is equal to 0, no kicking will happen.
+    pub player_idle_timeout: AtomicI32,
     /// Command scoreboards isolated by Steel domain.
     pub scoreboards: DomainScoreboards,
     /// Command NBT storage isolated by Steel domain.
@@ -477,6 +461,26 @@ impl Drop for GameTickTaskGuard {
 }
 
 impl Server {
+    /// Returns the current server tick number.
+    pub fn current_tick(&self) -> u64 {
+        self.tick_rate_manager.read().tick_count
+    }
+
+    /// Waits until the server reaches `target_tick`.
+    pub async fn wait_until_tick(&self, target_tick: u64) {
+        loop {
+            let tick_changed = self.server_tick_changed.notified();
+            tokio::pin!(tick_changed);
+            tick_changed.as_mut().enable();
+
+            if self.current_tick() >= target_tick {
+                return;
+            }
+
+            tick_changed.await;
+        }
+    }
+
     pub(crate) fn permission_rule_suggestions(&self) -> Vec<String> {
         let mut suggestions = self
             .command_permission_keys
@@ -575,7 +579,7 @@ impl Server {
             }
             // Debug builds have deep call chains in density functions that overflow the default 2 MB stack
             if cfg!(debug_assertions) {
-                builder = builder.stack_size(8 * 1024 * 1024);
+                builder = builder.stack_size(DEBUG_STACK_SIZE);
             }
             builder
                 .build()
@@ -706,8 +710,11 @@ impl Server {
             worlds,
             online_players: PlayerMap::new(),
             player_admissions: SyncMutex::new(FxHashMap::default()),
+            player_admission_changed: Notify::new(),
+            server_tick_changed: Notify::new(),
             registry_cache,
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
+            player_idle_timeout: AtomicI32::new(0),
             scoreboards,
             command_storage,
             command_dispatcher: SyncRwLock::new(registered_commands.dispatcher),
