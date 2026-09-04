@@ -1,10 +1,19 @@
 use super::{
     ADVANCE_TIME, BlockPos, CChangeDifficulty, ChunkPos, Difficulty, Digest, ErasedGameRuleRef,
     GameRule, GameRuleValue, GameRuleValueType, LevelDataManager, OffsetVoxelShape, Ordering,
-    Player, REGISTRY, SectionPos, Sha256, World,
+    Player, REGISTRY, SectionPos, Sha256, World, vanilla_dimension_types,
 };
 
 impl World {
+    /// Returns whether this world uses the vanilla End dimension type.
+    ///
+    /// Steel world keys are domain-scoped, so End gameplay semantics cannot rely on the
+    /// vanilla `minecraft:the_end` level key.
+    #[must_use]
+    pub fn is_end_dimension_type(&self) -> bool {
+        self.dimension_type == &vanilla_dimension_types::THE_END
+    }
+
     /// Returns vanilla level difficulty.
     pub fn difficulty(&self) -> Difficulty {
         self.level_data.read().data().difficulty
