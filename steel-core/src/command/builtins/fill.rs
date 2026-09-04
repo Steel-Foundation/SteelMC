@@ -6,14 +6,14 @@ use steel_registry::{
     blocks::block_state_ext::BlockStateExt as _, vanilla_blocks,
     vanilla_game_rules::MAX_BLOCK_MODIFICATIONS,
 };
-use steel_utils::{BlockPos, BoundingBox, Identifier, translations, types::UpdateFlags};
+use steel_utils::{BlockPos, BoundingBox, Identifier, translations};
 use text_components::TextComponent;
 
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
     execution::{
         BlockInput, BlockPredicate, CommandSource, SteelArgumentType, SteelCommandContext,
-        SteelCommandRuntime, argument, literal,
+        SteelCommandRuntime, argument, literal, placement_flags,
     },
     registration::CommandRegistration,
 };
@@ -175,11 +175,7 @@ fn fill_blocks(
                     continue;
                 };
 
-                let placed = input.place(world, pos, flags).map_err(|error| {
-                    CommandSyntaxError::dynamic(format!(
-                        "Failed to apply block entity NBT at {pos:?}: {error}"
-                    ))
-                })?;
+                let placed = input.place(world, pos, flags)?;
                 if !placed {
                     if affected {
                         count += 1;
@@ -229,16 +225,6 @@ const fn input_at<'input>(
     }
 }
 
-fn placement_flags(strict: bool) -> UpdateFlags {
-    let mut flags = UpdateFlags::UPDATE_CLIENTS | UpdateFlags::UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS;
-    if strict {
-        flags |= UpdateFlags::UPDATE_KNOWN_SHAPE
-            | UpdateFlags::UPDATE_SUPPRESS_DROPS
-            | UpdateFlags::UPDATE_SKIP_ON_PLACE;
-    }
-    flags
-}
-
 fn block_region_volume(region: BoundingBox) -> i64 {
     let x_span = i64::from(region.max_x()) - i64::from(region.min_x()) + 1;
     let y_span = i64::from(region.max_y()) - i64::from(region.min_y()) + 1;
@@ -259,7 +245,7 @@ fn area_too_large(limit: i32, area: i64) -> CommandSyntaxError {
 #[cfg(test)]
 mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_game_rules};
-    use steel_utils::{ChunkPos, Downcast as _, WorldAabb};
+    use steel_utils::{ChunkPos, Downcast as _, WorldAabb, types::UpdateFlags};
 
     use super::super::create_dispatcher;
     use super::*;

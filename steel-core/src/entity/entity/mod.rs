@@ -956,6 +956,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().dampen_fall_distance_in_lava();
         self.check_below_world();
         self.sync_base_fire_freeze_entity_data();
+        self.set_first_tick(false);
         // Vanilla checks `this instanceof Leashable` inside `Entity.baseTick`.
         if let Some(mob) = self.as_leashable() {
             mob.tick_leash();
@@ -1684,6 +1685,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().tick_count()
     }
 
+    /// Returns whether this entity has not completed its first tick.
+    fn is_first_tick(&self) -> bool {
+        self.base().is_first_tick()
+    }
+
+    /// Sets whether this entity has not completed its first tick.
+    fn set_first_tick(&self, first_tick: bool) {
+        self.base().set_first_tick(first_tick);
+    }
+
     /// Advances vanilla `Entity.tickCount`.
     fn advance_tick_count(&self) {
         self.base().advance_tick_count();
@@ -2090,7 +2101,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns true if this entity is currently touching lava.
     fn is_in_lava(&self) -> bool {
-        self.fluid_contact().lava_height() > 0.0
+        self.base().is_in_lava()
     }
 
     /// Returns true if this entity's eyes are currently inside water.
@@ -2585,14 +2596,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let new_dimensions = self.dimensions_for_pose(pose);
         self.base().set_pose_and_dimensions(pose, new_dimensions);
 
-        // Vanilla fudges the position when growth would push the entity into
-        // neighboring blocks, and only for small, non-player entities. Vanilla
-        // also requires the entity to have ticked once (`!firstTick`), which
-        // Steel does not track; no current entity grows on its first tick, so
-        // the omission is not observable.
         let is_small = new_dimensions.width <= FUDGE_SMALL_DIMENSION_LIMIT
             && new_dimensions.height <= FUDGE_SMALL_DIMENSION_LIMIT;
-        if self.level().is_some()
+        if !self.is_first_tick()
+            && self.level().is_some()
             && !self.no_physics()
             && is_small
             && (new_dimensions.width > old_dimensions.width
