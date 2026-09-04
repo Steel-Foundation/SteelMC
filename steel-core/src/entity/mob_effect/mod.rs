@@ -37,12 +37,6 @@ use crate::world::World;
 /// registered behavior (most of them) behaves exactly like a bare vanilla
 /// `MobEffect` instance.
 pub trait MobEffectBehavior: Send + Sync {
-    /// Mirrors vanilla `MobEffect.isInstantaneous`.
-    #[must_use]
-    fn is_instantaneous(&self) -> bool {
-        self.as_instantaneous().is_some()
-    }
-
     /// Returns the instantaneous-only half of this behavior, if any.
     fn as_instantaneous(&self) -> Option<&dyn InstantaneousMobEffect> {
         None
@@ -50,41 +44,13 @@ pub trait MobEffectBehavior: Send + Sync {
 
     /// Mirrors vanilla `MobEffect.shouldApplyEffectTickThisTick`.
     fn should_apply_effect_tick_this_tick(&self, tick_count: i32, _amplifier: i32) -> bool {
-        self.is_instantaneous() && tick_count >= 1
+        self.as_instantaneous().is_some() && tick_count >= 1
     }
 
     /// Mirrors vanilla `MobEffect.applyEffectTick`. Returns whether the
     /// effect remains active.
     fn apply_effect_tick(&self, _world: &World, _user: &dyn LivingEntity, _amplifier: i32) -> bool {
         true
-    }
-
-    /// Mirrors vanilla `MobEffect.applyInstantaneousEffect(level, source,
-    /// owner, mob, amplification, scale)`.
-    fn apply_instantaneous(
-        &self,
-        world: &World,
-        user: &dyn LivingEntity,
-        amplifier: i32,
-        direct_entity: Option<i32>,
-        causing_entity: Option<i32>,
-        scale: f32,
-    ) {
-        if let Some(instantaneous) = self.as_instantaneous() {
-            // Disambiguates from this same-named method on `MobEffectBehavior`
-            // itself (a supertrait bound of `InstantaneousMobEffect`).
-            InstantaneousMobEffect::apply_instantaneous(
-                instantaneous,
-                world,
-                user,
-                amplifier,
-                direct_entity,
-                causing_entity,
-                scale,
-            );
-        } else {
-            self.apply_effect_tick(world, user, amplifier);
-        }
     }
 
     /// Mirrors vanilla `MobEffect.onEffectStarted`.

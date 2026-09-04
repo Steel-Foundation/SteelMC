@@ -21,12 +21,12 @@ pub(crate) fn apply_potion_contents(
     let damage_source_entity = user.as_player().map(Entity::id);
     for effect in contents.all_effects() {
         let behavior = MOB_EFFECT_BEHAVIORS.get_behavior(effect.effect());
-        if behavior.is_instantaneous() {
+        if let Some(instantaneous) = behavior.as_instantaneous() {
             // Vanilla always passes `scale = 1.0` from this call site; only a
             // splash/lingering potion (not yet implemented) passes a
             // distance-based falloff scale, and a `source` distinct from
             // `owner`.
-            behavior.apply_instantaneous(
+            instantaneous.apply_instantaneous(
                 world,
                 user,
                 effect.amplifier(),
