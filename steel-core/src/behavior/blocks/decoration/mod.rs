@@ -22,7 +22,7 @@ pub use jukebox_block::JukeboxBlock;
 pub use lantern_block::LanternBlock;
 pub use sign_block::{
     CeilingHangingSignBlock, StandingSignBlock, WallHangingSignBlock, WallSignBlock,
-    is_facing_front_text,
+    facing_text_slot,
 };
 pub use torch_block::{TorchBlock, WallTorchBlock};
 pub use weathering_lantern_block::WeatheringLanternBlock;

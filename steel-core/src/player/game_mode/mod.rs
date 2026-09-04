@@ -22,7 +22,7 @@ use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};
 use steel_registry::{REGISTRY, vanilla_attributes, vanilla_damage_types, vanilla_entities};
-use steel_utils::types::{Difficulty, GameType, InteractionHand};
+use steel_utils::types::{Difficulty, GameType, InteractionHand, SignTextSlot};
 use steel_utils::{BlockPos, Downcast as _, Identifier, WorldAabb};
 use text_components::TextComponent;
 use text_components::translation::TranslatedMessage;

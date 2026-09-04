@@ -269,7 +269,7 @@ impl Player {
             return;
         }
 
-        let mut text = sign.get_text(packet.is_front_text);
+        let mut text = sign.get_text(packet.slot);
         for (i, line) in packet.lines.iter().enumerate() {
             if i < 4 {
                 let stripped = strip_formatting_codes(line);
@@ -277,7 +277,7 @@ impl Player {
             }
         }
 
-        sign.set_text(text, packet.is_front_text);
+        sign.set_text(text, packet.slot);
         sign.set_player_who_may_edit(None);
         sign.set_changed();
 
@@ -294,8 +294,8 @@ impl Player {
     ///
     /// # Arguments
     /// * `pos` - Position of the sign block
-    /// * `is_front_text` - Whether to edit front (true) or back (false) text
-    pub fn open_sign_editor(&self, pos: BlockPos, is_front_text: bool) {
+    /// * `slot` - Which side of the sign to edit
+    pub fn open_sign_editor(&self, pos: BlockPos, slot: SignTextSlot) {
         let world = self.get_world();
 
         if let Some(block_entity) = world.get_block_entity(pos)
@@ -310,7 +310,7 @@ impl Player {
             block_state: state,
         });
 
-        self.send_packet(COpenSignEditor { pos, is_front_text });
+        self.send_packet(COpenSignEditor { pos, slot });
     }
 }
 

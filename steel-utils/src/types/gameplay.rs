@@ -196,6 +196,34 @@ impl ReadFrom for InteractionHand {
     }
 }
 
+/// Which side of a sign a text edit applies to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignTextSlot {
+    /// The back text of the sign.
+    Back = 0,
+    /// The front text of the sign.
+    Front = 1,
+}
+
+impl SignTextSlot {
+    /// Returns whether this slot is the front text.
+    #[must_use]
+    pub const fn is_front(self) -> bool {
+        matches!(self, SignTextSlot::Front)
+    }
+}
+
+impl ReadFrom for SignTextSlot {
+    fn read(data: &mut Cursor<&[u8]>) -> io::Result<Self> {
+        // Vanilla uses ByIdMap::continuous with OutOfBoundsStrategy::ZERO, so any
+        // unknown id falls back to the first variant instead of failing the read.
+        Ok(match VarInt::read(data)?.0 {
+            1 => SignTextSlot::Front,
+            _ => SignTextSlot::Back,
+        })
+    }
+}
+
 /// Flags that control how a block update is processed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UpdateFlags(u16);

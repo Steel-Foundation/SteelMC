@@ -12,7 +12,9 @@ use simdnbt::borrow::{
 use simdnbt::owned::{NbtCompound, NbtList};
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::{DyeColor, vanilla_block_entity_types};
-use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex};
+use steel_utils::{
+    BlockPos, BlockStateId, DowncastType, DowncastTypeKey, locks::SyncMutex, types::SignTextSlot,
+};
 use text_components::{TextComponent, content::Content};
 use uuid::Uuid;
 
@@ -207,9 +209,9 @@ impl SignBlockEntity {
 
     /// Gets the text for a side.
     #[must_use]
-    pub fn get_text(&self, front: bool) -> SignText {
+    pub fn get_text(&self, slot: SignTextSlot) -> SignText {
         let sign = self.sign.lock();
-        if front {
+        if slot.is_front() {
             sign.front_text.clone()
         } else {
             sign.back_text.clone()
@@ -235,9 +237,9 @@ impl SignBlockEntity {
     ///
     /// Mirrors vanilla `SignBlockEntity.updateText`: returns false when the side
     /// already has the requested glow state, so callers can skip consuming the item.
-    pub fn set_glowing(&self, front: bool, glowing: bool) -> bool {
+    pub fn set_glowing(&self, slot: SignTextSlot, glowing: bool) -> bool {
         let mut sign = self.sign.lock();
-        let text = if front {
+        let text = if slot.is_front() {
             &mut sign.front_text
         } else {
             &mut sign.back_text
@@ -250,9 +252,9 @@ impl SignBlockEntity {
     }
 
     /// Sets the text for a side.
-    pub fn set_text(&self, text: SignText, front: bool) {
+    pub fn set_text(&self, text: SignText, slot: SignTextSlot) {
         let mut sign = self.sign.lock();
-        if front {
+        if slot.is_front() {
             sign.front_text = text;
         } else {
             sign.back_text = text;

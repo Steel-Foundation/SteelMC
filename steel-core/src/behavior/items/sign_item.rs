@@ -15,7 +15,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::blocks::shapes::SupportType;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_game_events;
-use steel_utils::types::UpdateFlags;
+use steel_utils::types::{SignTextSlot, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
 use super::standing_and_wall_block_item::StandingAndWallBlockItem;
@@ -104,7 +104,9 @@ impl ItemBehavior for SignItem {
         place_context.with_item_mut(|item| item.consume_one(has_infinite_materials));
 
         // Sign-specific: Open the sign editor for the player (front text by default)
-        context.player.open_sign_editor(place_pos, true);
+        context
+            .player
+            .open_sign_editor(place_pos, SignTextSlot::Front);
 
         InteractionResult::Success
     }
@@ -275,7 +277,9 @@ impl ItemBehavior for HangingSignItem {
         place_context.with_item_mut(|item| item.consume_one(has_infinite_materials));
 
         // Sign-specific: Open the sign editor for the player (front text by default)
-        context.player.open_sign_editor(place_pos, true);
+        context
+            .player
+            .open_sign_editor(place_pos, SignTextSlot::Front);
 
         InteractionResult::Success
     }

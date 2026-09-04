@@ -16,7 +16,7 @@ use steel_registry::blocks::properties::{
 };
 use steel_registry::blocks::shapes::SupportType;
 use steel_registry::{vanilla_block_entity_types, vanilla_blocks};
-use steel_utils::{BlockPos, BlockStateId, Downcast as _};
+use steel_utils::{BlockPos, BlockStateId, Downcast as _, types::SignTextSlot};
 
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::{
@@ -73,11 +73,11 @@ fn get_nearest_looking_directions(rotation: f32, clicked_face: Direction) -> Vec
     directions
 }
 
-/// Calculates whether the player is facing the front of a sign.
+/// Calculates which side of a sign the player is facing.
 ///
 /// Uses the sign's rotation (from block state) and the player's position
 /// relative to the sign to determine which side they're looking at.
-pub fn is_facing_front_text(state: BlockStateId, pos: BlockPos, player: &Player) -> bool {
+pub fn facing_text_slot(state: BlockStateId, pos: BlockPos, player: &Player) -> SignTextSlot {
     // Get the sign's Y rotation in degrees from the block state
     let sign_y_rot = get_sign_rotation_degrees(state);
 
@@ -90,8 +90,12 @@ pub fn is_facing_front_text(state: BlockStateId, pos: BlockPos, player: &Player)
     let player_angle = (dz.atan2(dx) * RAD_TO_DEG_F64) as f32 - DEGREE_90;
 
     // Front text if the angle difference is <= 90 degrees
-    let diff = (sign_y_rot - player_angle + DEGREE_180).rem_euclid(DEGREE_360) - DEGREE_180;
-    diff.abs() <= DEGREE_90
+    let diff = (sign_y_rot - player_angle + DEGREE_180).rem_euclid(360.0) - DEGREE_360;
+    if diff.abs() <= 90.0 {
+        SignTextSlot::Front
+    } else {
+        SignTextSlot::Back
+    }
 }
 
 /// Gets the Y rotation of a sign in degrees from its block state.
@@ -254,13 +258,13 @@ fn try_open_sign_editor(
     // }
 
     // Determine which side the player is facing
-    let is_front_text = is_facing_front_text(state, pos, player);
+    let slot = facing_text_slot(state, pos, player);
 
     // Set the editing player lock
     sign.set_player_who_may_edit(Some(player.gameprofile.id));
 
     // Open the editor
-    player.open_sign_editor(pos, is_front_text);
+    player.open_sign_editor(pos, slot);
     InteractionResult::Success
 }
 

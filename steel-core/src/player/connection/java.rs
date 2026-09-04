@@ -976,7 +976,11 @@ mod tests {
     use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
     use steel_protocol::packets::game::{ClickType, ClientCommandAction, HashedStack};
     use steel_registry::{blocks::properties::Direction, item_stack::ItemStack};
-    use steel_utils::{BlockPos, codec::VarInt, types::InteractionHand};
+    use steel_utils::{
+        BlockPos,
+        codec::VarInt,
+        types::{InteractionHand, SignTextSlot},
+    };
     use uuid::Uuid;
 
     use super::*;
@@ -1318,8 +1322,8 @@ mod tests {
         assert_eq!(
             execution(ScheduledPlayPacketKind::SignUpdate(SSignUpdate {
                 pos: BlockPos::new(0, 64, 0),
-                is_front_text: true,
                 lines: array::from_fn(|_| String::new()),
+                slot: SignTextSlot::Front,
             })),
             ScheduledPacketExecution::Serialized
         );
