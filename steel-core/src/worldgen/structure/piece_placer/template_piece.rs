@@ -17,6 +17,7 @@ use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Rotation, type
 
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::{
+    Entity,
     entities::{ItemFrameEntity, RawEntity},
     next_entity_id,
 };

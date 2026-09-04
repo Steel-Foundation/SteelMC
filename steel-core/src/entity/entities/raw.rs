@@ -49,23 +49,6 @@ impl RawEntity {
         }
     }
 
-    /// Sets position and rotation, matching vanilla `Entity.snapTo`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the active world entity manager rejects the snap position. This is an invariant
-    /// failure for loaded raw entities.
-    pub fn snap_to(&self, position: DVec3, yaw: f32, pitch: f32) {
-        if let Err(error) = self.base.try_set_position(position) {
-            panic!(
-                "failed to commit raw entity {} snap position: {error}",
-                self.base.id()
-            );
-        }
-        self.base.set_rotation((yaw, pitch));
-        self.set_old_position_to_current();
-    }
-
     /// Marks a raw mob as persistent when vanilla structure generation would do so.
     pub fn set_persistence_required(&self) {
         self.data.lock().insert("PersistenceRequired", 1_i8);
