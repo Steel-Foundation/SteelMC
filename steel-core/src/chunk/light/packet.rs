@@ -1,3 +1,4 @@
+use rustc_hash::FxHashSet;
 use steel_protocol::packets::game::LightUpdatePacketData;
 use steel_utils::{ChunkPos, SectionPos, codec::BitSet};
 
@@ -66,13 +67,39 @@ pub fn build_chunk_light_update_packet_for_sections(
     let mut sky_updates = Vec::new();
     let mut block_updates = Vec::new();
 
+    // Small deltas are scanned linearly; larger ones use a set so the per-section
+    // membership test stays O(1) while walking every section of the column.
+    let use_sky_set = has_skylight && sky_sections.len() > 4;
+    let use_block_set = block_sections.len() > 4;
+    let sky_set: FxHashSet<SectionPos> = if use_sky_set {
+        sky_sections.iter().copied().collect()
+    } else {
+        FxHashSet::default()
+    };
+    let block_set: FxHashSet<SectionPos> = if use_block_set {
+        block_sections.iter().copied().collect()
+    } else {
+        FxHashSet::default()
+    };
+
     for section_index in 0..range.section_count() {
         let Some(section_y) = range.section_y(section_index) else {
             continue;
         };
         let section_pos = SectionPos::new(chunk_pos.0.x, section_y, chunk_pos.0.y);
 
-        if has_skylight && sky_sections.contains(&section_pos) {
+        let sky_matched = if use_sky_set {
+            sky_set.contains(&section_pos)
+        } else {
+            sky_sections.contains(&section_pos)
+        };
+        let block_matched = if use_block_set {
+            block_set.contains(&section_pos)
+        } else {
+            block_sections.contains(&section_pos)
+        };
+
+        if sky_matched {
             prepare_chunk_section_data(
                 &light.sky,
                 section_index,
@@ -82,7 +109,7 @@ pub fn build_chunk_light_update_packet_for_sections(
             );
         }
 
-        if block_sections.contains(&section_pos) {
+        if block_matched {
             prepare_chunk_section_data(
                 &light.block,
                 section_index,

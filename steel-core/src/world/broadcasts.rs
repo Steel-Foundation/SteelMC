@@ -2,6 +2,7 @@ use super::{
     Arc, CPlayerChat, CSystemChat, ChunkPos, ClientPacket, ConnectionProtocol, EncodedPacket,
     Entity, EntityMovementSyncPacket, LastSeen, NetworkConnection, Player, PlayerChunkView, World,
 };
+use rustc_hash::FxHashMap;
 
 impl World {
     /// Broadcasts a signed chat message to all players in the world.
@@ -196,26 +197,34 @@ impl World {
             .collect()
     }
 
-    /// Returns players on the tracked border of a chunk whose client has its base chunk packet.
-    pub fn get_light_packet_tracking_players(&self, chunk: ChunkPos) -> Vec<i32> {
-        self.player_area_map
-            .get_tracking_players(chunk)
-            .into_iter()
-            .filter(|entity_id| {
-                let Some(player) = self.players.get_by_entity_id(*entity_id) else {
-                    return false;
+    /// Resolves and sends deferred light updates: for each player the border checks for
+    /// all their candidate chunks run under a single view/chunk-sender lock pair.
+    pub fn send_deferred_light_updates(
+        &self,
+        writes: &[(ChunkPos, EncodedPacket, Vec<i32>)],
+        candidates: FxHashMap<i32, Vec<usize>>,
+    ) {
+        for (entity_id, indices) in candidates {
+            let Some(player) = self.players.get_by_entity_id(entity_id) else {
+                continue;
+            };
+            let Some(view) = *player.last_tracking_view.lock() else {
+                continue;
+            };
+            let chunk_sender = player.chunk_sender.lock();
+            let is_chunk_sent = |pos| chunk_sender.is_chunk_sent(pos);
+            for index in indices {
+                let Some((chunk_pos, encoded, _)) = writes.get(index) else {
+                    continue;
                 };
-                let Some(view) = *player.last_tracking_view.lock() else {
-                    return false;
-                };
-                let chunk_sender = player.chunk_sender.lock();
-                let is_chunk_sent = |pos| chunk_sender.is_chunk_sent(pos);
-                Self::chunk_is_on_packet_tracked_border(view, chunk, &is_chunk_sent)
-            })
-            .collect()
+                if Self::chunk_is_on_packet_tracked_border(view, *chunk_pos, &is_chunk_sent) {
+                    player.connection.send_encoded(encoded.clone());
+                }
+            }
+        }
     }
 
-    pub(super) fn chunk_is_on_packet_tracked_border(
+    pub(crate) fn chunk_is_on_packet_tracked_border(
         view: PlayerChunkView,
         chunk: ChunkPos,
         is_chunk_sent: &impl Fn(ChunkPos) -> bool,
