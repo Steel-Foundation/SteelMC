@@ -143,6 +143,8 @@ pub struct EntityPredicate {
     pub sheep_color: Option<DyeColor>,
     /// Vanilla `minecraft:type_specific/sheep.sheared` check.
     pub sheep_sheared: Option<bool>,
+    /// Vanilla `minecraft:components.chicken/variant` entity data component check.
+    pub chicken_variant: Option<Identifier>,
 }
 
 /// Entity flags (`is_on_fire`, `is_sneaking`, etc.)
@@ -392,6 +394,12 @@ impl EntityPredicate {
 
         if let Some(expected_sheared) = &self.sheep_sheared
             && entity.sheep_sheared != Some(*expected_sheared)
+        {
+            return false;
+        }
+
+        if let Some(expected_variant) = &self.chicken_variant
+            && entity.chicken_variant != Some(expected_variant)
         {
             return false;
         }

@@ -7,6 +7,7 @@ mod domain;
 mod enchant;
 mod execute;
 mod experience;
+mod fill;
 mod fly;
 pub(crate) mod gamemode;
 mod gamerule;
@@ -20,14 +21,18 @@ mod perms;
 mod return_command;
 mod seed;
 mod setblock;
+mod setidletimeout;
 mod setworldspawn;
+mod spawnpoint;
 mod stop;
 mod summon;
 mod teleport;
 mod tellraw;
 mod tick;
 mod time;
+mod title;
 mod weather;
+mod worldborder;
 
 pub(crate) use difficulty::player_can_change_difficulty;
 
@@ -66,6 +71,7 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(enchant::registration())?;
     builder.register(execute::registration())?;
     builder.register(experience::registration())?;
+    builder.register(fill::registration())?;
     builder.register(fly::registration())?;
     builder.register(gamemode::registration()?)?;
     builder.register(gamerule::registration())?;
@@ -78,6 +84,8 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(return_command::registration())?;
     builder.register(seed::registration())?;
     builder.register(setblock::registration())?;
+    builder.register(spawnpoint::registration())?;
+    builder.register(setidletimeout::registration())?;
     builder.register(setworldspawn::registration())?;
     builder.register(stop::registration())?;
     builder.register(summon::registration())?;
@@ -85,7 +93,9 @@ pub(crate) fn create_registered_dispatcher(
     builder.register(tellraw::registration())?;
     builder.register(tick::registration())?;
     builder.register(time::registration())?;
+    builder.register(title::registration())?;
     builder.register(weather::registration())?;
+    builder.register(worldborder::registration())?;
     builder.register(invsee::registration()?)?;
     builder.extend(extension_commands.into_inner())?;
     builder.build_with_permissions()
@@ -139,6 +149,7 @@ mod tests {
                 "execute",
                 "experience",
                 "xp",
+                "fill",
                 "fly",
                 "gamemode",
                 "gamerule",
@@ -151,6 +162,8 @@ mod tests {
                 "return",
                 "seed",
                 "setblock",
+                "spawnpoint",
+                "setidletimeout",
                 "setworldspawn",
                 "stop",
                 "summon",
@@ -159,7 +172,9 @@ mod tests {
                 "tellraw",
                 "tick",
                 "time",
+                "title",
                 "weather",
+                "worldborder",
                 "invsee"
             ]
         );
