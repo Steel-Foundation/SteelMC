@@ -104,13 +104,10 @@ pub fn use_item_on(
         let item_behavior = item_behaviors.get_behavior(item_ref);
         let result = item_behavior.use_on(&mut context);
 
-        // Restore count for creative mode (infinite materials)
+        // Restored in both directions: `use_on` can also grow the held stack when
+        // its result merges back into the slot it came from.
         if player.has_infinite_materials() {
-            context.inv.with_item(|item| {
-                if item.count < original_count {
-                    item.count = original_count;
-                }
-            });
+            context.inv.with_item(|item| item.count = original_count);
         }
 
         return result;
@@ -129,8 +126,8 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
     }
 
     let inventory_access = InventoryAccess::new(player.inventory.clone(), hand);
-    let (is_empty, original_count, item_ref, stack_before_use) =
-        inventory_access.with_item(|item| (item.is_empty(), item.count, item.item, item.clone()));
+    let (is_empty, item_ref, stack_before_use) =
+        inventory_access.with_item(|item| (item.is_empty(), item.item, item.clone()));
 
     if !is_empty {
         if player.is_item_on_cooldown(&stack_before_use) {
@@ -145,15 +142,6 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
         let item_behavior = item_behaviors.get_behavior(item_ref);
 
         let result = item_behavior.use_item(&mut context);
-
-        // Restore count for creative mode (infinite materials)
-        if player.has_infinite_materials() {
-            context.inv.with_item(|item| {
-                if item.count < original_count {
-                    item.count = original_count;
-                }
-            });
-        }
 
         if result.should_apply_item_use_side_effects() {
             player.apply_item_use_cooldown(&stack_before_use);

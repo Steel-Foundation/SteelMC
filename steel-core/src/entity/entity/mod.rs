@@ -956,6 +956,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().dampen_fall_distance_in_lava();
         self.check_below_world();
         self.sync_base_fire_freeze_entity_data();
+        self.set_first_tick(false);
         // Vanilla checks `this instanceof Leashable` inside `Entity.baseTick`.
         if let Some(mob) = self.as_leashable() {
             mob.tick_leash();
@@ -1122,27 +1123,26 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().set_removed(reason);
     }
 
-    /// Emits a vanilla game event from this entity's exact position.
-    fn game_event(&self, event: GameEventRef) {
+    /// Emits a vanilla game event from this entity's exact position with an explicit source entity.
+    fn game_event_with_source_entity(
+        &self,
+        event: GameEventRef,
+        source_entity: Option<&dyn Entity>,
+    ) {
         let Some(world) = self.level() else {
             return;
         };
+
         world.game_event_at(
             event,
             self.position(),
-            &GameEventContext::new(Some(self.as_entity_event_source()), None),
+            &GameEventContext::new(source_entity, None),
         );
     }
 
-    /// Emits a vanilla game event from this entity's exact position with a player.
-    fn game_event_with_player(&self, event: GameEventRef, player: &Player) {
-        if let Some(world) = self.level() {
-            world.game_event_at(
-                event,
-                self.position(),
-                &GameEventContext::new(Some(player), None),
-            );
-        }
+    /// Emits a vanilla game event from this entity's exact position.
+    fn game_event(&self, event: GameEventRef) {
+        self.game_event_with_source_entity(event, Some(self.as_entity_event_source()));
     }
 
     /// Kills this entity using vanilla's living/non-living class split.
@@ -1236,14 +1236,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return false;
         }
 
-        if let Some(world) = self.level() {
-            let source_entity = player.map(|player| player as &dyn Entity);
-            world.game_event(
-                &vanilla_game_events::SHEAR,
-                self.block_position(),
-                &GameEventContext::new(source_entity, None),
-            );
-        }
+        let source_entity = player.map(|player| player as &dyn Entity);
+        self.game_event_with_source_entity(&vanilla_game_events::SHEAR, source_entity);
         true
     }
 
@@ -1307,13 +1301,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             mob.set_guaranteed_drop(slot);
             mob.set_persistence_required();
 
-            if let Some(world) = self.level() {
-                world.game_event(
-                    &vanilla_game_events::SHEAR,
-                    self.block_position(),
-                    &GameEventContext::new(Some(player), None),
-                );
-            }
+            self.game_event_with_source_entity(&vanilla_game_events::SHEAR, Some(player));
             if let Some(shearing_sound) = shearing_sound {
                 self.play_sound(shearing_sound, 1.0, 1.0);
             }
@@ -1400,13 +1388,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                     mob.drop_leash();
                 }
 
-                if let Some(world) = self.level() {
-                    world.game_event(
-                        &vanilla_game_events::ENTITY_INTERACT,
-                        self.block_position(),
-                        &GameEventContext::new(Some(player), None),
-                    );
-                }
+                self.game_event_with_source_entity(
+                    &vanilla_game_events::ENTITY_INTERACT,
+                    Some(player),
+                );
                 self.play_sound(&sound_events::ITEM_LEAD_UNTIED, 1.0, 1.0);
                 return InteractionResult::Success;
             }
@@ -1698,6 +1683,16 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns vanilla `Entity.tickCount`.
     fn tick_count(&self) -> i32 {
         self.base().tick_count()
+    }
+
+    /// Returns whether this entity has not completed its first tick.
+    fn is_first_tick(&self) -> bool {
+        self.base().is_first_tick()
+    }
+
+    /// Sets whether this entity has not completed its first tick.
+    fn set_first_tick(&self, first_tick: bool) {
+        self.base().set_first_tick(first_tick);
     }
 
     /// Advances vanilla `Entity.tickCount`.
@@ -2106,7 +2101,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns true if this entity is currently touching lava.
     fn is_in_lava(&self) -> bool {
-        self.fluid_contact().lava_height() > 0.0
+        self.base().is_in_lava()
     }
 
     /// Returns true if this entity's eyes are currently inside water.
@@ -2601,14 +2596,10 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         let new_dimensions = self.dimensions_for_pose(pose);
         self.base().set_pose_and_dimensions(pose, new_dimensions);
 
-        // Vanilla fudges the position when growth would push the entity into
-        // neighboring blocks, and only for small, non-player entities. Vanilla
-        // also requires the entity to have ticked once (`!firstTick`), which
-        // Steel does not track; no current entity grows on its first tick, so
-        // the omission is not observable.
         let is_small = new_dimensions.width <= FUDGE_SMALL_DIMENSION_LIMIT
             && new_dimensions.height <= FUDGE_SMALL_DIMENSION_LIMIT;
-        if self.level().is_some()
+        if !self.is_first_tick()
+            && self.level().is_some()
             && !self.no_physics()
             && is_small
             && (new_dimensions.width > old_dimensions.width
@@ -3010,14 +3001,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         }
 
         self.on_flap();
-        if self.movement_emission().emits_events()
-            && let Some(world) = self.level()
-        {
-            world.game_event_at(
-                &vanilla_game_events::FLAP,
-                self.position(),
-                &GameEventContext::new(Some(self.as_entity_event_source()), None),
-            );
+        if self.movement_emission().emits_events() {
+            self.game_event(&vanilla_game_events::FLAP);
         }
     }
 
@@ -3074,11 +3059,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                     self.water_swim_sound();
                 }
                 if emission.emits_events() {
-                    world.game_event_at(
-                        &vanilla_game_events::SWIM,
-                        self.position(),
-                        &GameEventContext::new(Some(self.as_entity_event_source()), None),
-                    );
+                    self.game_event(&vanilla_game_events::SWIM);
                 }
             }
         } else if supporting_state.get_block() == &vanilla_blocks::AIR {
@@ -3613,6 +3594,33 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             return false;
         };
         living.hurt_server(world, source, amount)
+    }
+
+    // This already exists for structures and AABB whatever that might be, but I also need it for entities, I hope this is the right spot to put it.
+    /// Calculates the squared Euclidean distance from this entity's position to the given position.
+    fn distance_to_sqr(&self, pos: DVec3) -> f64 {
+        let dx = self.position().x - pos.x;
+        let dy = self.position().y - pos.y;
+        let dz = self.position().z - pos.z;
+
+        dx * dx + dy * dy + dz * dz
+    }
+
+    /// Sets position and rotation, matching vanilla `Entity.snapTo`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the active world entity manager rejects the snap position. This is an invariant
+    /// failure for loaded entities.
+    fn snap_to(&self, position: DVec3, yaw: f32, pitch: f32) {
+        if let Err(error) = self.try_set_position(position) {
+            panic!(
+                "failed to commit entity {} snap position: {error}",
+                self.id()
+            );
+        }
+        self.set_rotation((yaw, pitch));
+        self.set_old_position_to_current();
     }
 
     /// Runs when this entity causes another entity to die.
