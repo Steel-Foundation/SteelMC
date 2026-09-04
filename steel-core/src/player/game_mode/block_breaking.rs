@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use steel_protocol::packets::game::CBlockUpdate;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
-use steel_registry::data_components::{AdventureModePredicate, vanilla_components::CAN_BREAK};
 use steel_registry::equipment::EquipmentSlot;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::vanilla_attributes;
