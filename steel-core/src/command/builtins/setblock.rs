@@ -9,7 +9,6 @@ use super::super::{
     registration::CommandRegistration,
 };
 use super::execute::loaded_block_position;
-use crate::world::tick_scheduler::TickPriority;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::Identifier;
 use steel_utils::translations::{COMMANDS_SETBLOCK_FAILED, COMMANDS_SETBLOCK_SUCCESS};
@@ -74,15 +73,6 @@ fn set_block(
 
     if !strict {
         level.update_neighbors_on_block_set(block_pos, old_state);
-        let placed_state = level.get_block_state(block_pos);
-        if placed_state.has_fluid() {
-            level.schedule_fluid_tick(
-                block_pos,
-                placed_state.get_fluid_state().fluid_id,
-                0,
-                TickPriority::ExtremelyHigh,
-            );
-        }
     }
 
     context.source().send_success(

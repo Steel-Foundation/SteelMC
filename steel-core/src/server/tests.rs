@@ -2105,6 +2105,22 @@ fn decode_system_chat(packet: &EncodedPacket) -> TextComponent {
     component
 }
 
+/// Parses `command` for `source` and runs it to completion on `server`.
+fn run_command(server: &Server, source: CommandSource, command: &str) {
+    let chain = {
+        let dispatcher = server.command_dispatcher.read();
+        let parse = dispatcher.parse(command, source.clone());
+        dispatcher.context_chain(parse)
+    };
+    let chain = match chain {
+        Ok(chain) => chain,
+        Err(error) => panic!("{command} should parse: {error}"),
+    };
+    let mut execution = CommandExecutionContext::for_source(&source);
+    execution.queue_initial_command(chain, source, CommandResultCallback::empty());
+    assert!(matches!(execution.run(), ExecutionStop::Completed));
+}
+
 fn packet_id(packet: &EncodedPacket) -> i32 {
     let mut cursor = Cursor::new(packet.encoded_data.as_slice());
     assert!(
@@ -3127,20 +3143,11 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
         attacker.set_client_loaded(true);
 
         let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
-        let command = "damage Victim 1 minecraft:player_attack by Attacker";
-        let chain = {
-            let dispatcher = server.command_dispatcher.read();
-            let parse = dispatcher.parse(command, source.clone());
-            dispatcher.context_chain(parse)
-        };
-        let chain = match chain {
-            Ok(chain) => chain,
-            Err(error) => panic!("damage command should parse: {error}"),
-        };
-
-        let mut execution = CommandExecutionContext::for_source(&source);
-        execution.queue_initial_command(chain, source, CommandResultCallback::empty());
-        assert!(matches!(execution.run(), ExecutionStop::Completed));
+        run_command(
+            &server,
+            source,
+            "damage Victim 1 minecraft:player_attack by Attacker",
+        );
 
         assert_eq!(
             target.last_hurt_by_player_uuid(),
@@ -3149,7 +3156,6 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
         );
 
         drop((target, attacker));
-        drop(execution);
         drop(server);
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");
@@ -3158,10 +3164,6 @@ fn damage_command_records_by_entity_as_the_responsible_player() {
 }
 
 #[test]
-#[expect(
-    clippy::too_many_lines,
-    reason = "one integration test covers all title branches and issuer-scoped resolution"
-)]
 fn title_command_delivers_vanilla_packets_to_recorded_connections() {
     let world = fresh_test_world("title-command");
     let storage_root = test_storage_root("title-command");
@@ -3203,19 +3205,7 @@ fn title_command_delivers_vanilla_packets_to_recorded_connections() {
             if let Some(source_entity) = source_entity {
                 source = source.with_entity(source_entity);
             }
-            let source = source.with_callback(callback);
-            let chain = {
-                let dispatcher = server.command_dispatcher.read();
-                let parse = dispatcher.parse(command, source.clone());
-                dispatcher.context_chain(parse)
-            };
-            let Ok(chain) = chain else {
-                panic!("title command should parse: {command}");
-            };
-
-            let mut execution = CommandExecutionContext::for_source(&source);
-            execution.queue_initial_command(chain, source, CommandResultCallback::empty());
-            assert!(matches!(execution.run(), ExecutionStop::Completed));
+            run_command(&server, source.with_callback(callback), command);
 
             let Some(result) = *result.lock() else {
                 panic!("title command should report a result");
@@ -3308,18 +3298,7 @@ fn setblock_command_places_blocks_and_keep_mode_skips_occupied_positions() {
 
         let run = |command: &str| {
             let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
-            let chain = {
-                let dispatcher = server.command_dispatcher.read();
-                let parse = dispatcher.parse(command, source.clone());
-                dispatcher.context_chain(parse)
-            };
-            let chain = match chain {
-                Ok(chain) => chain,
-                Err(error) => panic!("{command} should parse: {error}"),
-            };
-            let mut execution = CommandExecutionContext::for_source(&source);
-            execution.queue_initial_command(chain, source, CommandResultCallback::empty());
-            assert!(matches!(execution.run(), ExecutionStop::Completed));
+            run_command(&server, source, command);
         };
 
         let pos = BlockPos::new(8, 64, 8);
