@@ -1,5 +1,4 @@
 use super::{CSetChunkCenter, ChunkMap, ChunkPos, ChunkTicket, Entity, Player, PlayerChunkView};
-use crate::player::chunk_sender::ChunkSender;
 
 impl ChunkMap {
     /// Updates the player's status in the chunk map.
@@ -104,7 +103,7 @@ impl ChunkMap {
             let mut chunk_sender = player.chunk_sender.lock();
             let mut chunk_send_epoch = player.chunk_send_epoch.lock();
             *chunk_send_epoch = chunk_send_epoch.wrapping_add(1);
-            *chunk_sender = ChunkSender::default();
+            chunk_sender.clear_tracking();
             *player.last_chunk_pos.lock() = ChunkPos::new(i32::MAX, i32::MAX);
             last_view.take()
         };
