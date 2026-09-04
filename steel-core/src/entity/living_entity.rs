@@ -1741,7 +1741,7 @@ pub trait LivingEntity: Entity {
         false
     }
 
-    /// Mirrors vanilla `LivingEntity.handleExtraItemsCreatedOnUse`, 
+    /// Mirrors vanilla `LivingEntity.handleExtraItemsCreatedOnUse`,
     /// which is a no-op for non-player mobs.
     fn handle_extra_items_created_on_use(&self, _extra: ItemStack) {}
 
