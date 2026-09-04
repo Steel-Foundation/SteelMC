@@ -3,7 +3,7 @@
 use glam::DVec3;
 use steel_protocol::packets::game::{
     CEntityPositionSync, CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, CRotateHead,
-    CSetEntityMotion, PackedEntityDelta, calc_delta, to_angle_byte,
+    CSetEntityMotion, PackedEntityDelta, PositionPath, VecDelta, calc_delta, to_angle_byte,
 };
 
 /// Squared position delta needed before vanilla considers a movement worth syncing.
@@ -222,7 +222,6 @@ impl EntityMovementSyncPackets {
 pub struct EntityPositionSyncSnapshot {
     entity_id: i32,
     position: DVec3,
-    velocity: DVec3,
     rotation: (f32, f32),
     on_ground: bool,
 }
@@ -233,14 +232,12 @@ impl EntityPositionSyncSnapshot {
     pub const fn new(
         entity_id: i32,
         position: DVec3,
-        velocity: DVec3,
         rotation: (f32, f32),
         on_ground: bool,
     ) -> Self {
         Self {
             entity_id,
             position,
-            velocity,
             rotation,
             on_ground,
         }
@@ -249,10 +246,9 @@ impl EntityPositionSyncSnapshot {
     const fn full_sync_packet(self) -> CEntityPositionSync {
         CEntityPositionSync {
             entity_id: self.entity_id,
-            pos: self.position,
-            vel: self.velocity,
-            yaw: self.rotation.0,
-            pitch: self.rotation.1,
+            path: PositionPath::Linear(self.position),
+            y_rot: self.rotation.0,
+            x_rot: self.rotation.1,
             on_ground: self.on_ground,
         }
     }
@@ -268,9 +264,7 @@ impl EntityPositionSyncDecision {
         match self {
             Self::Delta { dx, dy, dz } => EntityPositionSyncPacket::Delta(CMoveEntityPos {
                 entity_id: snapshot.entity_id,
-                dx,
-                dy,
-                dz,
+                delta: VecDelta::Linear { dx, dy, dz },
                 on_ground: snapshot.on_ground,
             }),
             Self::Full => EntityPositionSyncPacket::Full(snapshot.full_sync_packet()),
@@ -286,9 +280,7 @@ impl EntityPositionSyncDecision {
         match self {
             Self::Delta { dx, dy, dz } => EntityPositionRotSyncPacket::Delta(CMoveEntityPosRot {
                 entity_id: snapshot.entity_id,
-                dx,
-                dy,
-                dz,
+                delta: VecDelta::Linear { dx, dy, dz },
                 y_rot: to_angle_byte(snapshot.rotation.0),
                 x_rot: to_angle_byte(snapshot.rotation.1),
                 on_ground: snapshot.on_ground,
@@ -654,7 +646,6 @@ impl ServerEntityMovementSyncState {
                 decision.into_position_rot_packet(EntityPositionSyncSnapshot::new(
                     update.entity_id,
                     update.position,
-                    update.velocity,
                     update.body_rotation,
                     update.on_ground,
                 )),
@@ -668,7 +659,6 @@ impl ServerEntityMovementSyncState {
                 decision.into_position_rot_packet(EntityPositionSyncSnapshot::new(
                     update.entity_id,
                     update.position,
-                    update.velocity,
                     update.body_rotation,
                     update.on_ground,
                 )),
@@ -681,7 +671,6 @@ impl ServerEntityMovementSyncState {
                 decision.into_position_packet(EntityPositionSyncSnapshot::new(
                     update.entity_id,
                     update.position,
-                    update.velocity,
                     update.body_rotation,
                     update.on_ground,
                 )),
@@ -775,7 +764,6 @@ impl EntityMovementSyncState {
             let snapshot = EntityPositionSyncSnapshot::new(
                 update.entity_id,
                 update.position,
-                update.velocity,
                 update.body_rotation,
                 update.on_ground,
             );
@@ -825,13 +813,13 @@ impl EntityMovementSyncState {
 #[cfg(test)]
 mod tests {
     use glam::DVec3;
-    use steel_protocol::packets::game::{calc_delta, to_angle_byte};
+    use steel_protocol::packets::game::{VecDelta, calc_delta, to_angle_byte};
 
     use super::{
         EntityMovementSyncPacket, EntityMovementSyncState, EntityMovementSyncUpdate,
         EntityPositionRotSyncPacket, EntityPositionSyncDecision, EntityPositionSyncPacket,
         EntityPositionSyncSnapshot, EntityPositionSyncState, EntityRotationSyncState,
-        EntityVelocitySyncState, PackedEntityRotation, ServerEntityMovementSyncState,
+        EntityVelocitySyncState, PackedEntityRotation, PositionPath, ServerEntityMovementSyncState,
         ServerEntityMovementSyncUpdate,
     };
 
@@ -998,10 +986,10 @@ mod tests {
             panic!("expected position-rotation packet");
         };
         assert_eq!(packet.entity_id, 12);
-        assert_eq!(
-            packet.dx,
-            calc_delta(position.x, 0.0).expect("delta should fit")
-        );
+        let VecDelta::Linear { dx, .. } = &packet.delta else {
+            panic!("expected linear delta");
+        };
+        assert_eq!(*dx, calc_delta(position.x, 0.0).expect("delta should fit"));
         assert_eq!(packet.y_rot, to_angle_byte(2.0));
         assert_eq!(packet.x_rot, to_angle_byte(0.0));
 
@@ -1221,7 +1209,6 @@ mod tests {
         let packet = decision.into_position_packet(EntityPositionSyncSnapshot::new(
             12,
             position,
-            DVec3::new(1.0, 2.0, 3.0),
             (90.0, 45.0),
             true,
         ));
@@ -1231,16 +1218,12 @@ mod tests {
         };
         assert_eq!(packet.entity_id, 12);
         assert_eq!(
-            packet.dx,
-            calc_delta(position.x, 0.0).expect("delta should fit")
-        );
-        assert_eq!(
-            packet.dy,
-            calc_delta(position.y, 0.0).expect("delta should fit")
-        );
-        assert_eq!(
-            packet.dz,
-            calc_delta(position.z, 0.0).expect("delta should fit")
+            packet.delta,
+            VecDelta::Linear {
+                dx: calc_delta(position.x, 0.0).expect("delta should fit"),
+                dy: calc_delta(position.y, 0.0).expect("delta should fit"),
+                dz: calc_delta(position.z, 0.0).expect("delta should fit"),
+            }
         );
         assert!(packet.on_ground);
     }
@@ -1257,7 +1240,6 @@ mod tests {
         let packet = decision.into_position_rot_packet(EntityPositionSyncSnapshot::new(
             12,
             position,
-            DVec3::new(1.0, 2.0, 3.0),
             (90.0, 45.0),
             true,
         ));
@@ -1267,16 +1249,12 @@ mod tests {
         };
         assert_eq!(packet.entity_id, 12);
         assert_eq!(
-            packet.dx,
-            calc_delta(position.x, 0.0).expect("delta should fit")
-        );
-        assert_eq!(
-            packet.dy,
-            calc_delta(position.y, 0.0).expect("delta should fit")
-        );
-        assert_eq!(
-            packet.dz,
-            calc_delta(position.z, 0.0).expect("delta should fit")
+            packet.delta,
+            VecDelta::Linear {
+                dx: calc_delta(position.x, 0.0).expect("delta should fit"),
+                dy: calc_delta(position.y, 0.0).expect("delta should fit"),
+                dz: calc_delta(position.z, 0.0).expect("delta should fit"),
+            }
         );
         assert_eq!(packet.y_rot, to_angle_byte(90.0));
         assert_eq!(packet.x_rot, to_angle_byte(45.0));
@@ -1285,13 +1263,8 @@ mod tests {
 
     #[test]
     fn sync_decision_builds_full_position_sync_packet() {
-        let snapshot = EntityPositionSyncSnapshot::new(
-            12,
-            DVec3::new(10.0, 20.0, 30.0),
-            DVec3::new(1.0, 2.0, 3.0),
-            (90.0, 45.0),
-            true,
-        );
+        let snapshot =
+            EntityPositionSyncSnapshot::new(12, DVec3::new(10.0, 20.0, 30.0), (90.0, 45.0), true);
 
         let packet = EntityPositionSyncDecision::Full.into_position_packet(snapshot);
 
@@ -1299,14 +1272,12 @@ mod tests {
             panic!("expected full packet");
         };
         assert_eq!(packet.entity_id, 12);
-        assert_eq!(packet.pos.x.to_bits(), 10.0_f64.to_bits());
-        assert_eq!(packet.pos.y.to_bits(), 20.0_f64.to_bits());
-        assert_eq!(packet.pos.z.to_bits(), 30.0_f64.to_bits());
-        assert_eq!(packet.vel.x.to_bits(), 1.0_f64.to_bits());
-        assert_eq!(packet.vel.y.to_bits(), 2.0_f64.to_bits());
-        assert_eq!(packet.vel.z.to_bits(), 3.0_f64.to_bits());
-        assert_eq!(packet.yaw.to_bits(), 90.0_f32.to_bits());
-        assert_eq!(packet.pitch.to_bits(), 45.0_f32.to_bits());
+        assert_eq!(
+            packet.path,
+            PositionPath::Linear(DVec3::new(10.0, 20.0, 30.0))
+        );
+        assert_eq!(packet.y_rot.to_bits(), 90.0_f32.to_bits());
+        assert_eq!(packet.x_rot.to_bits(), 45.0_f32.to_bits());
         assert!(packet.on_ground);
     }
 }

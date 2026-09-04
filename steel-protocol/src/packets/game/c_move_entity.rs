@@ -13,6 +13,7 @@ use std::io::{self, Write};
 use steel_macros::{ClientPacket, WriteTo};
 use steel_math::DEGREE_360;
 use steel_registry::packets::play::{C_MOVE_ENTITY_POS, C_MOVE_ENTITY_POS_ROT, C_MOVE_ENTITY_ROT};
+use steel_utils::codec::VarInt;
 
 /// Fixed-point encoding multiplier (1/4096 block precision).
 const TRUNCATION_STEPS: f64 = 4096.0;
@@ -23,50 +24,132 @@ const MAX_DELTA: i64 = i16::MAX as i64;
 /// Minimum delta value that fits in i16.
 const MIN_DELTA: i64 = i16::MIN as i64;
 
-/// Updates an entity's position with a delta from its current position.
+/// One leg of a stepped movement delta.
 ///
-/// Vanilla packs this as `entityId, properties, VecDelta`, where `properties`
-/// is a `VarInt` combining the on-ground flag (bit 0) with a step count (upper
-/// bits) used for the client's sub-tick movement-interpolation paths. Steel
-/// never emits interpolation steps, so the step count is always 0 and
-/// `properties` reduces to just the on-ground flag as a `VarInt`.
-#[derive(ClientPacket, WriteTo, Clone, Debug)]
+/// The client replays each step in order, `ticks` apart, to interpolate sub-tick
+/// movement instead of sliding straight to the end position.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DeltaStep {
+    /// Delta X from the previous step.
+    pub dx: PackedEntityDelta,
+    /// Delta Y from the previous step.
+    pub dy: PackedEntityDelta,
+    /// Delta Z from the previous step.
+    pub dz: PackedEntityDelta,
+    /// Ticks elapsed since the previous step.
+    pub ticks: i32,
+}
+
+/// A movement delta relative to the position the client last acknowledged.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VecDelta {
+    /// A single delta the client moves straight along.
+    Linear {
+        /// Delta X.
+        dx: PackedEntityDelta,
+        /// Delta Y.
+        dy: PackedEntityDelta,
+        /// Delta Z.
+        dz: PackedEntityDelta,
+    },
+    /// Intermediate deltas the client replays in order.
+    Stepped(Vec<DeltaStep>),
+}
+
+impl VecDelta {
+    /// A delta that leaves the entity where the client already has it.
+    pub const ZERO: Self = Self::Linear {
+        dx: PackedEntityDelta::from_raw(0),
+        dy: PackedEntityDelta::from_raw(0),
+        dz: PackedEntityDelta::from_raw(0),
+    };
+
+    /// Returns the number of steps, which the reader needs to tell the two forms apart.
+    #[must_use]
+    pub fn step_count(&self) -> i32 {
+        match self {
+            Self::Linear { .. } => 0,
+            Self::Stepped(steps) => steps.len() as i32,
+        }
+    }
+
+    /// Packs the on-ground flag and the step count into the `properties` field.
+    fn pack_properties(&self, on_ground: bool) -> i32 {
+        i32::from(on_ground) | (self.step_count() << 1)
+    }
+}
+
+impl steel_utils::serial::WriteTo for VecDelta {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        match self {
+            Self::Linear { dx, dy, dz } => {
+                dx.write(writer)?;
+                dy.write(writer)?;
+                dz.write(writer)
+            }
+            Self::Stepped(steps) => {
+                for step in steps {
+                    VarInt(step.ticks).write(writer)?;
+                    step.dx.write(writer)?;
+                    step.dy.write(writer)?;
+                    step.dz.write(writer)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Updates an entity's position with a delta from the position the client last acknowledged.
+///
+/// The wire form is `entityId`, a `properties` `VarInt` packing the on-ground flag into
+/// bit 0 and the delta's step count into the upper bits, then the delta itself.
+#[derive(ClientPacket, Clone, Debug)]
 #[packet_id(Play = C_MOVE_ENTITY_POS)]
 pub struct CMoveEntityPos {
-    #[write(as = VarInt)]
+    /// The entity being moved.
     pub entity_id: i32,
-    #[write(as = VarInt)]
+    /// Movement since the client's last acknowledged position.
+    pub delta: VecDelta,
+    /// Whether the entity is on the ground.
     pub on_ground: bool,
-    /// Delta X (current X * 4096 - previous X * 4096)
-    pub dx: PackedEntityDelta,
-    /// Delta Y
-    pub dy: PackedEntityDelta,
-    /// Delta Z
-    pub dz: PackedEntityDelta,
+}
+
+impl steel_utils::serial::WriteTo for CMoveEntityPos {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        VarInt(self.entity_id).write(writer)?;
+        VarInt(self.delta.pack_properties(self.on_ground)).write(writer)?;
+        self.delta.write(writer)
+    }
 }
 
 /// Updates an entity's position and rotation.
 ///
-/// See [`CMoveEntityPos`] for why `on_ground` is written as a `VarInt`
-/// "properties" field ahead of the position delta rather than as a trailing
-/// boolean.
-#[derive(ClientPacket, WriteTo, Clone, Debug)]
+/// Carries the same `entityId`/`properties`/delta prefix as [`CMoveEntityPos`], followed by
+/// the rotation as angle bytes.
+#[derive(ClientPacket, Clone, Debug)]
 #[packet_id(Play = C_MOVE_ENTITY_POS_ROT)]
 pub struct CMoveEntityPosRot {
-    #[write(as = VarInt)]
+    /// The entity being moved.
     pub entity_id: i32,
-    #[write(as = VarInt)]
-    pub on_ground: bool,
-    /// Delta X (current X * 4096 - previous X * 4096)
-    pub dx: PackedEntityDelta,
-    /// Delta Y
-    pub dy: PackedEntityDelta,
-    /// Delta Z
-    pub dz: PackedEntityDelta,
-    /// Yaw as angle byte
+    /// Movement since the client's last acknowledged position.
+    pub delta: VecDelta,
+    /// Yaw as an angle byte.
     pub y_rot: i8,
-    /// Pitch as angle byte
+    /// Pitch as an angle byte.
     pub x_rot: i8,
+    /// Whether the entity is on the ground.
+    pub on_ground: bool,
+}
+
+impl steel_utils::serial::WriteTo for CMoveEntityPosRot {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        VarInt(self.entity_id).write(writer)?;
+        VarInt(self.delta.pack_properties(self.on_ground)).write(writer)?;
+        self.delta.write(writer)?;
+        self.y_rot.write(writer)?;
+        self.x_rot.write(writer)
+    }
 }
 
 /// A fixed-point entity movement delta encoded as a protocol `i16`.
@@ -108,9 +191,8 @@ impl steel_utils::serial::WriteTo for PackedEntityDelta {
 
 /// Updates an entity's rotation only.
 ///
-/// Unlike [`CMoveEntityPos`]/[`CMoveEntityPosRot`], vanilla writes `on_ground`
-/// here as a plain boolean (not a packed `VarInt`), and before the angle
-/// bytes rather than after.
+/// This packet carries no delta, so `on_ground` is a plain boolean written ahead of the
+/// angle bytes rather than a packed `properties` `VarInt`.
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
 #[packet_id(Play = C_MOVE_ENTITY_ROT)]
 pub struct CMoveEntityRot {
@@ -166,19 +248,18 @@ mod tests {
 
     use super::*;
 
-    // Vanilla wire format (`ClientboundMoveEntityPacket.Pos/PosRot.write`, `VecDelta.write`
-    // for a zero-step-count `Linear` delta): entityId VarInt, `properties` VarInt (on-ground
-    // flag packed into bit 0, step count always 0 here), then dx/dy/dz as raw big-endian
-    // shorts — on_ground is NOT a trailing boolean like the old (pre-step-interpolation)
-    // format this packet used to have.
+    // `entityId` VarInt, `properties` VarInt (on-ground flag in bit 0, step count in the
+    // upper bits), then the delta: three big-endian shorts for a linear delta.
     #[test]
     fn pos_packet_matches_vanilla_wire_format() {
         let packet = CMoveEntityPos {
             entity_id: 5,
+            delta: VecDelta::Linear {
+                dx: PackedEntityDelta::from_raw(1),
+                dy: PackedEntityDelta::from_raw(-1),
+                dz: PackedEntityDelta::from_raw(300),
+            },
             on_ground: true,
-            dx: PackedEntityDelta::from_raw(1),
-            dy: PackedEntityDelta::from_raw(-1),
-            dz: PackedEntityDelta::from_raw(300),
         };
         let mut buf = Vec::new();
         packet.write(&mut buf).unwrap();
@@ -195,16 +276,52 @@ mod tests {
         );
     }
 
+    // A stepped delta carries its length in `properties`, not as its own prefix, and each
+    // step is a `ticks` VarInt followed by the three shorts.
+    #[test]
+    fn pos_packet_writes_stepped_delta_with_packed_step_count() {
+        let packet = CMoveEntityPos {
+            entity_id: 5,
+            delta: VecDelta::Stepped(vec![
+                DeltaStep {
+                    dx: PackedEntityDelta::from_raw(1),
+                    dy: PackedEntityDelta::from_raw(0),
+                    dz: PackedEntityDelta::from_raw(0),
+                    ticks: 2,
+                },
+                DeltaStep {
+                    dx: PackedEntityDelta::from_raw(0),
+                    dy: PackedEntityDelta::from_raw(-1),
+                    dz: PackedEntityDelta::from_raw(0),
+                    ticks: 3,
+                },
+            ]),
+            on_ground: true,
+        };
+        let mut buf = Vec::new();
+        packet.write(&mut buf).unwrap();
+
+        assert_eq!(
+            buf,
+            vec![
+                5, // entity_id VarInt
+                5, // properties VarInt: on_ground=1, step_count=2
+                2, // step 0 ticks
+                0, 1, 0, 0, 0, 0, // step 0 dx/dy/dz
+                3, // step 1 ticks
+                0, 0, 0xFF, 0xFF, 0, 0, // step 1 dx/dy/dz
+            ]
+        );
+    }
+
     #[test]
     fn pos_rot_packet_matches_vanilla_wire_format() {
         let packet = CMoveEntityPosRot {
             entity_id: 5,
-            on_ground: false,
-            dx: PackedEntityDelta::from_raw(0),
-            dy: PackedEntityDelta::from_raw(0),
-            dz: PackedEntityDelta::from_raw(0),
+            delta: VecDelta::ZERO,
             y_rot: 64,
             x_rot: -64,
+            on_ground: false,
         };
         let mut buf = Vec::new();
         packet.write(&mut buf).unwrap();
@@ -221,9 +338,8 @@ mod tests {
         );
     }
 
-    // Vanilla `ClientboundMoveEntityPacket.Rot.write`: entityId VarInt, on_ground as a
-    // plain boolean (unlike Pos/PosRot, not packed into a VarInt), then the angle bytes —
-    // on_ground comes before the rotation, not after it.
+    // `CMoveEntityRot` has no delta: `entityId` VarInt, `on_ground` as a plain boolean, then
+    // the angle bytes.
     #[test]
     fn rot_packet_matches_vanilla_wire_format() {
         let packet = CMoveEntityRot {

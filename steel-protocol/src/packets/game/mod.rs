@@ -120,7 +120,7 @@ pub use c_container_set_slot::CContainerSetSlot;
 pub use c_cooldown::CCooldown;
 pub use c_damage_event::CDamageEvent;
 pub use c_entity_event::CEntityEvent;
-pub use c_entity_position_sync::CEntityPositionSync;
+pub use c_entity_position_sync::{CEntityPositionSync, PositionPath, PositionStep};
 pub use c_game_event::CGameEvent;
 pub use c_game_event::GameEventType;
 pub use c_hurt_animation::CHurtAnimation;
@@ -129,7 +129,8 @@ pub use c_level_particles::CLevelParticles;
 pub use c_login::CLogin;
 pub use c_login::CommonPlayerSpawnInfo;
 pub use c_move_entity::{
-    CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, PackedEntityDelta, calc_delta, to_angle_byte,
+    CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, DeltaStep, PackedEntityDelta, VecDelta,
+    calc_delta, to_angle_byte,
 };
 pub use c_move_vehicle::CMoveVehicle;
 pub use c_open_screen::COpenScreen;
