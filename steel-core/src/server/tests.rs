@@ -1,3 +1,5 @@
+use glam::DVec3;
+use std::sync::atomic::AtomicI32;
 use std::{
     env::temp_dir,
     io::Cursor,
@@ -9,8 +11,6 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-
-use glam::DVec3;
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
     ChatVisibility, HumanoidArm, ParticleStatus, SClientInformation,
@@ -236,6 +236,8 @@ async fn test_server_with_worlds(
         worlds,
         online_players: PlayerMap::new(),
         player_admissions: SyncMutex::new(FxHashMap::default()),
+        player_admission_changed: Notify::new(),
+        server_tick_changed: Notify::new(),
         tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
         scoreboards,
         command_storage,
@@ -263,8 +265,11 @@ async fn test_server_with_worlds(
         pending_player_disconnects: PlayerDisconnectQueue::new(),
         pending_world_changes: SyncMutex::new(Vec::new()),
         pending_domain_switches: SyncMutex::new(Vec::new()),
+        player_idle_timeout: AtomicI32::new(0),
     }))
 }
+
+mod connection_lifecycle;
 
 #[test]
 #[expect(
@@ -1222,6 +1227,10 @@ fn apply_non_default_domain_data(player: &Player) {
     source_data.experience_total = 300;
     source_data.score = 42;
     source_data.seen_credits = true;
+    source_data.ender_items = vec![PersistentSlot {
+        slot: 3,
+        item: ItemStack::new(&vanilla_items::STICK),
+    }];
     source_data.apply_to_player_without_location(player);
 }
 
@@ -1245,6 +1254,7 @@ fn assert_default_domain_data(player: &Player) {
         0.1_f32.to_bits()
     );
     assert!(target_data.inventory.is_empty());
+    assert!(target_data.ender_items.is_empty());
     assert_eq!(target_data.selected_slot, 0);
     assert_eq!(target_data.food_level, 20);
     assert_eq!(

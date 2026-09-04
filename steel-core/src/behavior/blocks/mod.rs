@@ -29,6 +29,7 @@ pub use building::{
 pub use colored::StainedGlassPaneBlock;
 pub use container::{
     AnvilBlock, BarrelBlock, BeehiveBlock, ChiseledBookShelfBlock, CraftingTableBlock,
+    EnderChestBlock,
 };
 pub use decoration::{
     BannerBlock, CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, ChainBlock,
@@ -43,10 +44,10 @@ pub use portal::{
     RespawnAnchorBlock, SoulFireBlock,
 };
 pub use redstone::{
-    ButtonBlock, ComparatorBlock, CopperBulbBlock, DaylightDetectorBlock, DetectorRailBlock,
-    LeverBlock, MovingPistonBlock, NoteBlock, ObserverBlock, PistonBaseBlock, PistonHeadBlock,
-    PoweredBlock, PoweredRailBlock, PressurePlateBlock, PressurePlateSensitivity, RailBlock,
-    RedStoneOreBlock, RedStoneWireBlock, RedstoneLampBlock, RedstoneTorchBlock,
+    BellBlock, ButtonBlock, ComparatorBlock, CopperBulbBlock, DaylightDetectorBlock,
+    DetectorRailBlock, LeverBlock, MovingPistonBlock, NoteBlock, ObserverBlock, PistonBaseBlock,
+    PistonHeadBlock, PoweredBlock, PoweredRailBlock, PressurePlateBlock, PressurePlateSensitivity,
+    RailBlock, RedStoneOreBlock, RedStoneWireBlock, RedstoneLampBlock, RedstoneTorchBlock,
     RedstoneWallTorchBlock, RepeaterBlock, TargetBlock, TripWireBlock, TripWireHookBlock,
     WeatheringCopperBulbBlock, WeightedPressurePlateBlock,
 };
@@ -70,7 +71,7 @@ pub use vegetation::{
     HugeMushroomBlock, KelpBlock, KelpPlantBlock, LeafLitterBlock, LilyPadBlock,
     MangrovePropaguleBlock, MossyCarpetBlock, MushroomBlock, NetherFungusBlock, NetherRootsBlock,
     PointedDripstoneBlock, SaplingBlock, SculkVeinBlock, SeaPickleBlock, ShortDryGrassBlock,
-    SmallDripleafBlock, SporeBlossomBlock, SulfurSpikeBlock, TallDryGrassBlock, TwistingVinesBlock,
-    TwistingVinesPlantBlock, VineBlock, WeepingVinesBlock, WeepingVinesPlantBlock, WitherRoseBlock,
-    WoolCarpetBlock,
+    SmallDripleafBlock, SporeBlossomBlock, SulfurSpikeBlock, TallDryGrassBlock, TurtleEggBlock,
+    TwistingVinesBlock, TwistingVinesPlantBlock, VineBlock, WeepingVinesBlock,
+    WeepingVinesPlantBlock, WitherRoseBlock, WoolCarpetBlock,
 };
