@@ -43,5 +43,12 @@ flate2.workspace = true
 replace_with.workspace = true
 text_components.workspace = true
 
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "outbound_transport"
+harness = false
+
 [lints]
 workspace = true

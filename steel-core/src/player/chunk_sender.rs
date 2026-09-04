@@ -119,12 +119,14 @@ impl ChunkSender {
         }
     }
 
+    fn encode_packet<P: ClientPacket>(connection: &PlayerConnection, packet: P) -> EncodedPacket {
+        EncodedPacket::from_bare(packet, connection.compression(), ConnectionProtocol::Play)
+            .expect("Failed to encode packet")
+    }
+
     /// Encodes and sends a packet through the connection.
     fn send_packet<P: ClientPacket>(connection: &PlayerConnection, packet: P) {
-        let encoded =
-            EncodedPacket::from_bare(packet, connection.compression(), ConnectionProtocol::Play)
-                .expect("Failed to encode packet");
-        connection.send_encoded(encoded);
+        connection.send_encoded(Self::encode_packet(connection, packet));
     }
 
     /// Phase 1: Lock briefly to drain pending chunks and snapshot state.
@@ -273,25 +275,25 @@ impl ChunkSender {
         self.unacknowledged_batches += 1;
         self.batch_quota -= valid_chunks.len() as f32;
 
-        Self::send_packet(connection, CChunkBatchStart {});
-
         let batch_size = valid_chunks.len();
-        for encoded in &valid_chunks {
-            connection.send_encoded(encoded.packet.clone());
+        let mut packets = Vec::with_capacity(batch_size.saturating_add(2));
+        packets.push(Self::encode_packet(connection, CChunkBatchStart {}));
+        let mut sent_chunks = Vec::with_capacity(batch_size);
+        for encoded in valid_chunks {
+            packets.push(encoded.packet);
+            sent_chunks.push(encoded.pos);
         }
-
-        Self::send_packet(
+        packets.push(Self::encode_packet(
             connection,
             CChunkBatchFinished {
                 batch_size: batch_size as i32,
             },
-        );
+        ));
+        connection.send_encoded_batch(packets);
 
-        let mut sent_chunks = Vec::with_capacity(valid_chunks.len());
-        for encoded in valid_chunks {
-            self.pending_chunks.remove(&encoded.pos);
-            self.sent_chunks.insert(encoded.pos);
-            sent_chunks.push(encoded.pos);
+        for pos in &sent_chunks {
+            self.pending_chunks.remove(pos);
+            self.sent_chunks.insert(*pos);
         }
         sent_chunks
     }
@@ -415,10 +417,13 @@ mod tests {
         light::ChunkLightData,
         section::{ChunkSection, Sections},
     };
+    use crate::player::connection::{JavaConnection, OutboundPacket};
     use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
     use std::sync::Weak;
     use steel_registry::init_vanilla_registry;
     use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
+    use tokio::sync::mpsc;
+    use tokio_util::sync::CancellationToken;
 
     fn prepared_full_chunk(pos: ChunkPos) -> PreparedChunk {
         let chunk = Chunk::from_full_disk(
@@ -498,6 +503,71 @@ mod tests {
                 &second.packet.encoded_data
             ));
         }
+    }
+
+    #[test]
+    fn commit_enqueues_chunk_batch_as_one_ordered_transport_group() {
+        init_vanilla_registry();
+        init_behaviors();
+        let positions = [ChunkPos::new(6, -4), ChunkPos::new(-2, 9)];
+        let batch = PreparedBatch {
+            chunks: positions.into_iter().map(prepared_full_chunk).collect(),
+            has_skylight: true,
+            epoch_snapshot: 0,
+        };
+        let encoding_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("test chunk encoding pool should initialize");
+        let mut cache = FxHashMap::default();
+        let encoded = ChunkSender::encode_batch(&batch, &mut cache, None, &encoding_pool);
+        let encoded_chunk_data = encoded
+            .iter()
+            .map(|chunk| Arc::clone(&chunk.packet.encoded_data))
+            .collect::<Vec<_>>();
+
+        let (outgoing, mut receiver) = mpsc::unbounded_channel();
+        let connection = PlayerConnection::Java(JavaConnection::new(
+            outgoing,
+            CancellationToken::new(),
+            None,
+            1,
+            Weak::new(),
+        ));
+        let mut sender = ChunkSender::default();
+        sender.pending_chunks.extend(positions);
+        sender.batch_quota = positions.len() as f32;
+        let expected_start = ChunkSender::encode_packet(&connection, CChunkBatchStart {});
+        let expected_finish = ChunkSender::encode_packet(
+            &connection,
+            CChunkBatchFinished {
+                batch_size: positions.len() as i32,
+            },
+        );
+
+        let sent = sender.commit_batch(
+            &batch,
+            encoded,
+            &connection,
+            &SyncMutex::new(batch.epoch_snapshot),
+        );
+
+        assert_eq!(sent, positions);
+        let Ok(OutboundPacket::PacketBatch(packets)) = receiver.try_recv() else {
+            panic!("chunk batch should occupy one outbound queue entry");
+        };
+        assert_eq!(packets.len(), positions.len() + 2);
+        assert_eq!(packets[0].encoded_data, expected_start.encoded_data);
+        assert!(Arc::ptr_eq(
+            &packets[1].encoded_data,
+            &encoded_chunk_data[0]
+        ));
+        assert!(Arc::ptr_eq(
+            &packets[2].encoded_data,
+            &encoded_chunk_data[1]
+        ));
+        assert_eq!(packets[3].encoded_data, expected_finish.encoded_data);
+        assert!(receiver.try_recv().is_err());
     }
 
     #[test]

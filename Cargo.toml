@@ -141,6 +141,7 @@ phf_codegen = "0.14.0"
 
 # Dev/Bench dependencies
 criterion = "0.8.2"
+socket2 = "0.6.5"
 
 
 [profile.release]

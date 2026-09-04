@@ -3,10 +3,15 @@
 //! The trait is object-safe to allow using `dyn PlayerConnection` for both real network
 //! connections (`JavaConnection`) and test connections (`FlintConnection`).
 
+use std::time::Duration;
+
 mod java;
 
-pub use java::{BundleBuilder, JavaConnection, JavaNetworkWriter, OutboundPacket};
+pub use java::{BundleBuilder, JavaConnection, JavaPacketWriter, OutboundPacket};
 pub(crate) use java::{ScheduledPacketExecution, ScheduledPlayPacket};
+
+/// Maximum time spent preserving queued packets during a graceful Java connection close.
+pub const GRACEFUL_CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 
 use enum_dispatch::enum_dispatch;
 use steel_protocol::packet_traits::{ClientPacket, CompressionInfo, EncodedPacket};
@@ -83,6 +88,12 @@ pub trait NetworkConnection: Send + Sync {
     /// Use `Player::send_packet()` for the generic version that handles encoding.
     fn send_encoded(&self, packet: EncodedPacket);
 
+    /// Sends separate protocol packets as one ordered transport batch.
+    ///
+    /// Implementations may flush inside the batch to bound executor work, but no
+    /// other packet may be inserted between its members.
+    fn send_encoded_batch(&self, packets: Vec<EncodedPacket>);
+
     /// Sends multiple pre-encoded packets as an atomic bundle.
     ///
     /// The implementation wraps the packets with bundle delimiter packets so
@@ -125,6 +136,10 @@ impl NetworkConnection for Box<dyn NetworkConnection> {
 
     fn send_encoded(&self, packet: EncodedPacket) {
         (**self).send_encoded(packet);
+    }
+
+    fn send_encoded_batch(&self, packets: Vec<EncodedPacket>) {
+        (**self).send_encoded_batch(packets);
     }
 
     fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {

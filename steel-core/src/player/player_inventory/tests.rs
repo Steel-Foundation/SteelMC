@@ -768,6 +768,10 @@ impl NetworkConnection for LockProbeConnection {
         self.record_if_armed();
     }
 
+    fn send_encoded_batch(&self, _packets: Vec<EncodedPacket>) {
+        self.record_if_armed();
+    }
+
     fn send_encoded_bundle(&self, _packets: Vec<EncodedPacket>) {
         self.record_if_armed();
     }

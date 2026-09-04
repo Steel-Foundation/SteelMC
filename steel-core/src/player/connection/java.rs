@@ -1,4 +1,5 @@
 //! This module contains the `JavaConnection` struct, which is used to represent a connection to a Java client.
+use std::future::Future;
 use std::io::Cursor;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -23,35 +24,78 @@ use steel_protocol::packets::game::{
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
 use steel_registry::packets::play;
-use steel_utils::locks::{AsyncMutex, SyncMutex};
+use steel_utils::locks::SyncMutex;
 use steel_utils::translations;
 use text_components::content::Resolvable;
 use text_components::custom::CustomData;
 use text_components::resolving::TextResolutor;
 use text_components::{Modifier, TextComponent, format::Color};
-use tokio::io::{BufReader, BufWriter};
+use tokio::io::{AsyncWrite, BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, error::TryRecvError};
-use tokio::time::timeout;
+use tokio::task::yield_now;
+use tokio::time::{Instant, sleep_until};
 use tokio_util::sync::CancellationToken;
 
 use crate::command::{handle_client_request, sender::CommandSender};
 use crate::player::Player;
-use crate::player::connection::NetworkConnection;
+use crate::player::connection::{GRACEFUL_CLOSE_TIMEOUT, NetworkConnection};
 use crate::server::Server;
 
-/// Shared Java socket writer.
-pub type JavaNetworkWriter = Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>>;
+/// Packet encoder transferred from the pre-play connection task to the play sender.
+pub type JavaPacketWriter = TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>;
 
-const DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
+// Tuned by the release `outbound_transport` A/B; these bound cooperative work, not protocol size.
+const MAX_PACKETS_PER_WRITE_QUANTUM: usize = 32;
+const MAX_BYTES_PER_WRITE_QUANTUM: usize = 256 * 1_024;
+const MAX_CLOSE_ITEMS_PER_QUANTUM: usize = 32;
 
 /// Outbound packet queue message for Java connections.
 pub enum OutboundPacket {
-    /// Normal packet write that may be interrupted by connection shutdown.
+    /// One packet that is flushed immediately.
     Packet(EncodedPacket),
+    /// Separate protocol packets kept contiguous and flushed in bounded quanta.
+    /// Boxing keeps ordinary per-packet queue entries compact.
+    #[expect(
+        clippy::box_collection,
+        reason = "boxing the rare batch keeps every common per-packet channel slot compact"
+    )]
+    PacketBatch(Box<Vec<EncodedPacket>>),
     /// Final disconnect packet that is flushed on a bounded best-effort basis.
     Disconnect(EncodedPacket),
+}
+
+enum QueuedWrite {
+    Packet(EncodedPacket),
+    Batch(Vec<EncodedPacket>),
+}
+
+struct ClosingWrites {
+    queued: Vec<QueuedWrite>,
+    disconnect: EncodedPacket,
+}
+
+#[derive(Clone, Copy)]
+struct CloseDeadline {
+    at: Instant,
+}
+
+impl CloseDeadline {
+    fn after(timeout: Duration) -> Self {
+        Self {
+            at: Instant::now() + timeout,
+        }
+    }
+
+    async fn run<T>(self, operation: impl Future<Output = T>) -> Option<T> {
+        tokio::pin!(operation);
+        select! {
+            biased;
+            () = sleep_until(self.at) => None,
+            output = operation.as_mut() => Some(output),
+        }
+    }
 }
 
 /// A decoded play packet whose handler runs in the server's inter-tick packet phase.
@@ -340,7 +384,7 @@ impl ScheduledPlayPacket {
 
 /// Builder for creating packet bundles.
 ///
-/// Used with [`JavaConnection::send_bundle`] to send multiple packets atomically.
+/// Used with [`Player::send_bundle`] to send multiple packets atomically.
 pub struct BundleBuilder {
     packets: Vec<EncodedPacket>,
     compression: Option<CompressionInfo>,
@@ -388,7 +432,6 @@ pub struct JavaConnection {
     outgoing_packets: UnboundedSender<OutboundPacket>,
     cancel_token: CancellationToken,
     compression: Option<CompressionInfo>,
-    network_writer: JavaNetworkWriter,
     id: u64,
 
     player: Weak<Player>,
@@ -398,11 +441,11 @@ pub struct JavaConnection {
 
 impl JavaConnection {
     /// Creates a new `JavaConnection`.
+    #[must_use]
     pub const fn new(
         outgoing_packets: UnboundedSender<OutboundPacket>,
         cancel_token: CancellationToken,
         compression: Option<CompressionInfo>,
-        network_writer: JavaNetworkWriter,
         id: u64,
         player: Weak<Player>,
     ) -> Self {
@@ -410,7 +453,6 @@ impl JavaConnection {
             outgoing_packets,
             cancel_token,
             compression,
-            network_writer,
             id,
             player,
             keep_alive_tracker: SyncMutex::new(KeepAliveTracker {
@@ -419,38 +461,6 @@ impl JavaConnection {
                 alive_id: 0,
             }),
             latency: SyncMutex::new(0),
-        }
-    }
-
-    async fn write_packet_now(&self, packet: &EncodedPacket) -> Result<(), PacketError> {
-        let mut network_writer = self.network_writer.lock().await;
-        let Some(network_writer) = network_writer.as_mut() else {
-            return Err(PacketError::ConnectionClosed);
-        };
-        network_writer.write_packet(packet).await
-    }
-
-    async fn finish_disconnect(&self, disconnect_packet: Option<EncodedPacket>) {
-        let finish = async {
-            let Some(mut network_writer) = self.network_writer.lock().await.take() else {
-                return Ok(());
-            };
-            let Some(packet) = disconnect_packet else {
-                return Ok(());
-            };
-            network_writer.write_packet(&packet).await
-        };
-
-        match timeout(DISCONNECT_FLUSH_TIMEOUT, finish).await {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => log::debug!(
-                "Best-effort disconnect write for client {} failed: {error}",
-                self.id
-            ),
-            Err(_) => log::debug!(
-                "Best-effort disconnect write for client {} timed out",
-                self.id
-            ),
         }
     }
 
@@ -539,8 +549,7 @@ impl JavaConnection {
     /// Sends a packet to the client.
     ///
     /// # Panics
-    /// - If the packet fails to be encoded.
-    /// - If the packet fails to be sent through the channel.
+    /// Panics if the packet fails to be encoded.
     pub fn send_packet<P: ClientPacket>(&self, packet: P) {
         let packet = EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
             .expect("Failed to encode packet");
@@ -554,13 +563,23 @@ impl JavaConnection {
     }
 
     /// Sends an encoded packet to the client.
-    ///
-    /// # Panics
-    /// - If the packet fails to be sent through the channel.
     pub fn send_encoded_packet(&self, packet: EncodedPacket) {
         if self
             .outgoing_packets
             .send(OutboundPacket::Packet(packet))
+            .is_err()
+        {
+            self.close();
+        }
+    }
+
+    fn enqueue_packet_batch(&self, packets: Vec<EncodedPacket>) {
+        if packets.is_empty() {
+            return;
+        }
+        if self
+            .outgoing_packets
+            .send(OutboundPacket::PacketBatch(Box::new(packets)))
             .is_err()
         {
             self.close();
@@ -823,6 +842,7 @@ impl JavaConnection {
     ) {
         loop {
             select! {
+                biased;
                 () = self.wait_for_close() => {
                     break;
                 }
@@ -847,68 +867,287 @@ impl JavaConnection {
         }
     }
 
-    /// Sends packets to the client.
-    ///
-    pub async fn sender(&self, mut sender_recv: UnboundedReceiver<OutboundPacket>) {
-        let disconnect_packet = loop {
+    /// Runs the play-state sender with exclusive ownership of the encoder.
+    pub async fn sender(
+        &self,
+        mut sender_recv: UnboundedReceiver<OutboundPacket>,
+        mut network_writer: JavaPacketWriter,
+    ) {
+        self.send_packets(&mut network_writer, &mut sender_recv)
+            .await;
+    }
+
+    pub(crate) async fn send_packets<W: AsyncWrite + Unpin>(
+        &self,
+        network_writer: &mut TCPNetworkEncoder<W>,
+        sender_recv: &mut UnboundedReceiver<OutboundPacket>,
+    ) {
+        self.send_packets_with_timeout(network_writer, sender_recv, GRACEFUL_CLOSE_TIMEOUT)
+            .await;
+    }
+
+    async fn send_packets_with_timeout<W: AsyncWrite + Unpin>(
+        &self,
+        network_writer: &mut TCPNetworkEncoder<W>,
+        sender_recv: &mut UnboundedReceiver<OutboundPacket>,
+        close_timeout: Duration,
+    ) {
+        let close = self.wait_for_close();
+        tokio::pin!(close);
+
+        loop {
             select! {
                 biased;
-                () = self.wait_for_close() => {
-                    break Self::take_queued_disconnect(&mut sender_recv);
+                () = close.as_mut() => {
+                    let deadline = CloseDeadline::after(close_timeout);
+                    let Some(closing) = self.take_closing_before_deadline(
+                        sender_recv,
+                        deadline,
+                    ).await else {
+                        break;
+                    };
+                    self.write_closing_before_deadline(
+                        network_writer,
+                        closing,
+                        deadline,
+                    )
+                    .await;
+                    break;
                 }
                 outbound = sender_recv.recv() => {
-                    if let Some(outbound) = outbound {
-                        let (packet, close_after_write) = match outbound {
-                            OutboundPacket::Packet(packet) => (packet, false),
-                            OutboundPacket::Disconnect(packet) => (packet, true),
-                        };
-
-                        if close_after_write {
+                    let Some(outbound) = outbound else {
+                        self.close();
+                        break;
+                    };
+                    let queued_write = match outbound {
+                        OutboundPacket::Packet(packet) => QueuedWrite::Packet(packet),
+                        OutboundPacket::PacketBatch(packets) => QueuedWrite::Batch(*packets),
+                        OutboundPacket::Disconnect(disconnect) => {
+                            sender_recv.close();
                             self.close();
-                            break Some(packet);
+                            let deadline = CloseDeadline::after(close_timeout);
+                            self.write_closing_before_deadline(
+                                network_writer,
+                                ClosingWrites {
+                                    queued: Vec::new(),
+                                    disconnect,
+                                },
+                                deadline,
+                            )
+                            .await;
+                            break;
                         }
+                    };
 
-                        let write_result = self.write_packet_now(&packet);
+                    let closing = {
+                        let write_result = Self::write_queued(network_writer, queued_write);
+                        tokio::pin!(write_result);
                         select! {
                             biased;
-                            () = self.wait_for_close() => {
-                                break Self::take_queued_disconnect(&mut sender_recv);
-                            },
-                            result = write_result => {
-                                if let Err(err) = result {
-                                    log::warn!("Failed to send packet to client {}: {err}", self.id);
-                                    self.close();
-                                    break None;
+                            () = close.as_mut() => {
+                                let deadline = CloseDeadline::after(close_timeout);
+                                let Some(closing) = self.take_closing_before_deadline(
+                                    sender_recv,
+                                    deadline,
+                                ).await else {
+                                    break;
+                                };
+                                if !self.finish_active_write_before_deadline(
+                                    write_result.as_mut(),
+                                    deadline,
+                                ).await {
+                                    break;
                                 }
+                                Some((closing, deadline))
+                            }
+                            result = write_result.as_mut() => {
+                                if let Err(error) = result {
+                                    log::warn!(
+                                        "Failed to send outbound write to client {}: {error}",
+                                        self.id
+                                    );
+                                    self.close();
+                                    break;
+                                }
+                                None
                             }
                         }
-                    } else {
-                        //log::warn!(
-                        //    "Internal packet_sender_recv channel closed for client {}",
-                        //    self.id
-                        //);
-                        self.close();
-                        break None;
+                    };
+
+                    if let Some((closing, deadline)) = closing {
+                        self.write_closing_before_deadline(
+                            network_writer,
+                            closing,
+                            deadline,
+                        )
+                        .await;
+                        break;
                     }
                 }
             }
-        };
-
-        self.finish_disconnect(disconnect_packet).await;
+        }
     }
 
-    fn take_queued_disconnect(
-        sender_recv: &mut UnboundedReceiver<OutboundPacket>,
-    ) -> Option<EncodedPacket> {
-        let mut disconnect_packet = None;
-        loop {
-            match sender_recv.try_recv() {
-                Ok(OutboundPacket::Packet(_)) => {}
-                Ok(OutboundPacket::Disconnect(packet)) => disconnect_packet = Some(packet),
-                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+    async fn finish_active_write_before_deadline<O>(
+        &self,
+        write: O,
+        deadline: CloseDeadline,
+    ) -> bool
+    where
+        O: Future<Output = Result<(), PacketError>>,
+    {
+        match deadline.run(write).await {
+            Some(Ok(())) => true,
+            Some(Err(error)) => {
+                log::debug!(
+                    "Best-effort close for client {} failed while finishing the active outbound write: {error}",
+                    self.id
+                );
+                false
+            }
+            None => {
+                self.log_close_timeout();
+                false
             }
         }
-        disconnect_packet
+    }
+
+    async fn take_closing_before_deadline(
+        &self,
+        sender_recv: &mut UnboundedReceiver<OutboundPacket>,
+        deadline: CloseDeadline,
+    ) -> Option<ClosingWrites> {
+        let Some(closing) = deadline.run(Self::take_closing_writes(sender_recv)).await else {
+            self.log_close_timeout();
+            return None;
+        };
+        closing
+    }
+
+    fn log_close_timeout(&self) {
+        log::debug!(
+            "Best-effort graceful close for client {} timed out",
+            self.id
+        );
+    }
+
+    async fn write_queued<W: AsyncWrite + Unpin>(
+        network_writer: &mut TCPNetworkEncoder<W>,
+        queued_write: QueuedWrite,
+    ) -> Result<(), PacketError> {
+        match queued_write {
+            QueuedWrite::Packet(packet) => network_writer.write_packet(&packet).await,
+            QueuedWrite::Batch(packets) => Self::write_packet_batch(network_writer, &packets).await,
+        }
+    }
+
+    async fn write_packet_batch<W: AsyncWrite + Unpin>(
+        network_writer: &mut TCPNetworkEncoder<W>,
+        packets: &[EncodedPacket],
+    ) -> Result<(), PacketError> {
+        Self::write_packet_batch_with_limits(
+            network_writer,
+            packets,
+            MAX_PACKETS_PER_WRITE_QUANTUM,
+            MAX_BYTES_PER_WRITE_QUANTUM,
+        )
+        .await
+    }
+
+    async fn write_packet_batch_with_limits<W: AsyncWrite + Unpin>(
+        network_writer: &mut TCPNetworkEncoder<W>,
+        packets: &[EncodedPacket],
+        max_packets: usize,
+        max_bytes: usize,
+    ) -> Result<(), PacketError> {
+        let mut quantum_start = 0usize;
+        let mut quantum_bytes = 0usize;
+
+        for (index, packet) in packets.iter().enumerate() {
+            let next_bytes = quantum_bytes.saturating_add(packet.encoded_data.len());
+            if index != quantum_start && next_bytes > max_bytes {
+                network_writer
+                    .write_packets(&packets[quantum_start..index])
+                    .await?;
+                quantum_start = index;
+                quantum_bytes = 0;
+                yield_now().await;
+            }
+
+            quantum_bytes = quantum_bytes.saturating_add(packet.encoded_data.len());
+            let quantum_packets = index + 1 - quantum_start;
+
+            if quantum_packets >= max_packets || quantum_bytes >= max_bytes {
+                network_writer
+                    .write_packets(&packets[quantum_start..=index])
+                    .await?;
+                quantum_start = index + 1;
+                quantum_bytes = 0;
+                yield_now().await;
+            }
+        }
+
+        if quantum_start != packets.len() {
+            network_writer
+                .write_packets(&packets[quantum_start..])
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn take_closing_writes(
+        sender_recv: &mut UnboundedReceiver<OutboundPacket>,
+    ) -> Option<ClosingWrites> {
+        sender_recv.close();
+        let mut queued = Vec::new();
+        let mut scanned_since_yield = 0usize;
+        loop {
+            let queued_write = match sender_recv.try_recv() {
+                Ok(OutboundPacket::Packet(packet)) => QueuedWrite::Packet(packet),
+                Ok(OutboundPacket::PacketBatch(packets)) => QueuedWrite::Batch(*packets),
+                Ok(OutboundPacket::Disconnect(disconnect)) => {
+                    return Some(ClosingWrites { queued, disconnect });
+                }
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => return None,
+            };
+            queued.push(queued_write);
+            scanned_since_yield += 1;
+            if scanned_since_yield == MAX_CLOSE_ITEMS_PER_QUANTUM {
+                scanned_since_yield = 0;
+                yield_now().await;
+            }
+        }
+    }
+
+    async fn write_closing_before_deadline<W: AsyncWrite + Unpin>(
+        &self,
+        network_writer: &mut TCPNetworkEncoder<W>,
+        closing: ClosingWrites,
+        deadline: CloseDeadline,
+    ) {
+        match deadline
+            .run(Self::write_closing(network_writer, closing))
+            .await
+        {
+            Some(Ok(())) => {}
+            Some(Err(error)) => {
+                log::debug!("Best-effort close for client {} failed: {error}", self.id);
+            }
+            None => self.log_close_timeout(),
+        }
+    }
+
+    async fn write_closing<W: AsyncWrite + Unpin>(
+        network_writer: &mut TCPNetworkEncoder<W>,
+        closing: ClosingWrites,
+    ) -> Result<(), PacketError> {
+        for (index, queued_write) in closing.queued.into_iter().enumerate() {
+            Self::write_queued(network_writer, queued_write).await?;
+            if (index + 1) % MAX_CLOSE_ITEMS_PER_QUANTUM == 0 {
+                yield_now().await;
+            }
+        }
+        network_writer.write_packet(&closing.disconnect).await
     }
 }
 
@@ -935,12 +1174,31 @@ impl NetworkConnection for JavaConnection {
         self.send_encoded_packet(packet);
     }
 
+    fn send_encoded_batch(&self, packets: Vec<EncodedPacket>) {
+        self.enqueue_packet_batch(packets);
+    }
+
     fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
-        self.send_packet(CBundleDelimiter);
-        for packet in packets {
-            self.send_encoded_packet(packet);
-        }
-        self.send_packet(CBundleDelimiter);
+        let delimiter = match EncodedPacket::from_bare(
+            CBundleDelimiter,
+            self.compression,
+            ConnectionProtocol::Play,
+        ) {
+            Ok(packet) => packet,
+            Err(err) => {
+                log::warn!(
+                    "Failed to encode bundle delimiter for client {}: {err}",
+                    self.id
+                );
+                self.close();
+                return;
+            }
+        };
+        let mut batch = Vec::with_capacity(packets.len().saturating_add(2));
+        batch.push(delimiter.clone());
+        batch.extend(packets);
+        batch.push(delimiter);
+        self.enqueue_packet_batch(batch);
     }
 
     fn disconnect_with_reason(&self, reason: TextComponent) {
@@ -966,17 +1224,30 @@ impl NetworkConnection for JavaConnection {
 
 #[cfg(test)]
 mod tests {
-    use std::array;
+    use std::{
+        array,
+        future::Future,
+        io,
+        pin::Pin,
+        sync::Arc,
+        task::{Context, Poll, Waker},
+    };
 
     use crate::{
         entity::{Entity as _, LivingEntity as _},
         test_support::{TestPlayerBuilder, fresh_test_world},
     };
+    use cfb8::cipher::KeyIvInit;
     use rustc_hash::FxHashMap;
     use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
     use steel_protocol::packets::game::{ClickType, ClientCommandAction, HashedStack};
     use steel_registry::{blocks::properties::Direction, item_stack::ItemStack};
-    use steel_utils::{BlockPos, codec::VarInt, types::InteractionHand};
+    use steel_utils::{BlockPos, FrontVec, codec::VarInt, types::InteractionHand};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWrite},
+        net::{TcpListener, TcpStream},
+        sync::{Notify, mpsc},
+    };
     use uuid::Uuid;
 
     use super::*;
@@ -990,6 +1261,648 @@ mod tests {
 
     fn execution(kind: ScheduledPlayPacketKind) -> ScheduledPacketExecution {
         ScheduledPlayPacket(kind).execution()
+    }
+
+    fn encoded_bytes(bytes: &[u8]) -> EncodedPacket {
+        let mut data = FrontVec::new(0);
+        data.extend_from_slice(bytes);
+        EncodedPacket {
+            encoded_data: Arc::new(data),
+        }
+    }
+
+    fn encoded_marker(marker: u8) -> EncodedPacket {
+        encoded_bytes(&[marker])
+    }
+
+    fn setup_test_connection() -> (
+        Arc<JavaConnection>,
+        mpsc::UnboundedSender<OutboundPacket>,
+        mpsc::UnboundedReceiver<OutboundPacket>,
+    ) {
+        let (outgoing, receiver) = mpsc::unbounded_channel();
+        let connection = Arc::new(JavaConnection::new(
+            outgoing.clone(),
+            CancellationToken::new(),
+            None,
+            1,
+            Weak::new(),
+        ));
+        (connection, outgoing, receiver)
+    }
+
+    #[derive(Default)]
+    struct RecordingWriterState {
+        bytes: Vec<u8>,
+        flush_offsets: Vec<usize>,
+    }
+
+    struct RecordingWriter {
+        state: Arc<SyncMutex<RecordingWriterState>>,
+    }
+
+    impl AsyncWrite for RecordingWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            bytes: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            self.state.lock().bytes.extend_from_slice(bytes);
+            Poll::Ready(Ok(bytes.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            let mut state = self.state.lock();
+            let offset = state.bytes.len();
+            state.flush_offsets.push(offset);
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[derive(Default)]
+    struct PausingWriterState {
+        bytes: Vec<u8>,
+        released: bool,
+        waker: Option<Waker>,
+    }
+
+    #[derive(Clone, Copy)]
+    enum PausePoint {
+        WriteAfter(usize),
+        Flush,
+    }
+
+    #[derive(Clone)]
+    struct PausingWriter {
+        state: Arc<SyncMutex<PausingWriterState>>,
+        paused: Arc<Notify>,
+        pause_at: PausePoint,
+    }
+
+    impl AsyncWrite for PausingWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            bytes: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            let PausePoint::WriteAfter(pause_after) = self.pause_at else {
+                self.state.lock().bytes.extend_from_slice(bytes);
+                return Poll::Ready(Ok(bytes.len()));
+            };
+            let mut state = self.state.lock();
+            if !state.released && state.bytes.len() >= pause_after {
+                state.waker = Some(cx.waker().clone());
+                drop(state);
+                self.paused.notify_one();
+                return Poll::Pending;
+            }
+
+            let write_len = if state.released {
+                bytes.len()
+            } else {
+                bytes.len().min(pause_after - state.bytes.len())
+            };
+            state.bytes.extend_from_slice(&bytes[..write_len]);
+            Poll::Ready(Ok(write_len))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            if !matches!(self.pause_at, PausePoint::Flush) {
+                return Poll::Ready(Ok(()));
+            }
+            let mut state = self.state.lock();
+            if state.released {
+                return Poll::Ready(Ok(()));
+            }
+            state.waker = Some(cx.waker().clone());
+            drop(state);
+            self.paused.notify_one();
+            Poll::Pending
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl PausingWriter {
+        fn release(&self) {
+            let waker = {
+                let mut state = self.state.lock();
+                state.released = true;
+                state.waker.take()
+            };
+            if let Some(waker) = waker {
+                waker.wake();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn packet_batch_flushes_at_packet_and_byte_limits() {
+        const PACKETS_PER_QUANTUM: usize = 2;
+        const BYTES_PER_QUANTUM: usize = 4;
+        const PACKET_LIMITED_PAYLOAD: &[u8] = b"ABCDE";
+        const PACKET_LIMITED_FLUSH_OFFSETS: &[usize] = &[2, 4, 5];
+        const BYTE_LIMITED_PAYLOAD: &[u8] = b"ABCDEFGHIJ";
+        const BYTE_LIMITED_FLUSH_OFFSETS: &[usize] = &[4, 9, 10];
+
+        let packet_limited_state = Arc::new(SyncMutex::new(RecordingWriterState::default()));
+        let mut packet_limited_encoder = TCPNetworkEncoder::new(RecordingWriter {
+            state: Arc::clone(&packet_limited_state),
+        });
+        let packet_limited = PACKET_LIMITED_PAYLOAD
+            .iter()
+            .copied()
+            .map(encoded_marker)
+            .collect::<Vec<_>>();
+
+        JavaConnection::write_packet_batch_with_limits(
+            &mut packet_limited_encoder,
+            &packet_limited,
+            PACKETS_PER_QUANTUM,
+            usize::MAX,
+        )
+        .await
+        .expect("packet-limited batch should write");
+
+        {
+            let packet_limited_result = packet_limited_state.lock();
+            assert_eq!(packet_limited_result.bytes, PACKET_LIMITED_PAYLOAD);
+            assert_eq!(
+                packet_limited_result.flush_offsets,
+                PACKET_LIMITED_FLUSH_OFFSETS
+            );
+        }
+
+        let byte_limited_state = Arc::new(SyncMutex::new(RecordingWriterState::default()));
+        let mut byte_limited_encoder = TCPNetworkEncoder::new(RecordingWriter {
+            state: Arc::clone(&byte_limited_state),
+        });
+        let byte_limited = vec![
+            encoded_bytes(b"AB"),
+            encoded_bytes(b"CD"),
+            encoded_bytes(b"EFGHI"),
+            encoded_marker(b'J'),
+        ];
+
+        JavaConnection::write_packet_batch_with_limits(
+            &mut byte_limited_encoder,
+            &byte_limited,
+            usize::MAX,
+            BYTES_PER_QUANTUM,
+        )
+        .await
+        .expect("byte-limited batch should write");
+
+        let byte_limited_result = byte_limited_state.lock();
+        assert_eq!(byte_limited_result.bytes, BYTE_LIMITED_PAYLOAD);
+        assert_eq!(
+            byte_limited_result.flush_offsets,
+            BYTE_LIMITED_FLUSH_OFFSETS
+        );
+    }
+
+    #[tokio::test]
+    async fn packet_batch_yields_between_bounded_quanta() {
+        const FIRST_PACKET: u8 = b'A';
+        const SECOND_PACKET: u8 = b'B';
+        const ONE_PACKET_PER_QUANTUM: usize = 1;
+
+        let state = Arc::new(SyncMutex::new(RecordingWriterState::default()));
+        let mut encoder = TCPNetworkEncoder::new(RecordingWriter {
+            state: Arc::clone(&state),
+        });
+        let packets = [encoded_marker(FIRST_PACKET), encoded_marker(SECOND_PACKET)];
+        let mut write = Box::pin(JavaConnection::write_packet_batch_with_limits(
+            &mut encoder,
+            &packets,
+            ONE_PACKET_PER_QUANTUM,
+            usize::MAX,
+        ));
+        let mut context = Context::from_waker(Waker::noop());
+
+        assert!(write.as_mut().poll(&mut context).is_pending());
+        assert_eq!(state.lock().bytes, [FIRST_PACKET]);
+        assert_eq!(state.lock().flush_offsets, [1]);
+
+        assert!(write.as_mut().poll(&mut context).is_pending());
+        assert_eq!(state.lock().bytes, [FIRST_PACKET, SECOND_PACKET]);
+        assert_eq!(state.lock().flush_offsets, [1, 2]);
+
+        write.await.expect("second write quantum should finish");
+        let result = state.lock();
+        assert_eq!(result.bytes, [FIRST_PACKET, SECOND_PACKET]);
+        assert_eq!(result.flush_offsets, [1, 2]);
+    }
+
+    #[tokio::test]
+    async fn sender_keeps_batch_contiguous_across_write_quanta() {
+        let state = Arc::new(SyncMutex::new(RecordingWriterState::default()));
+        let writer = RecordingWriter {
+            state: Arc::clone(&state),
+        };
+        let (connection, outgoing, mut receiver) = setup_test_connection();
+        let sender_connection = Arc::clone(&connection);
+        let sender = tokio::spawn(async move {
+            let mut network_writer = TCPNetworkEncoder::new(writer);
+            sender_connection
+                .send_packets(&mut network_writer, &mut receiver)
+                .await;
+        });
+        let marker = |value| u8::try_from(value).expect("write quantum should fit a test marker");
+        let batch_end = MAX_PACKETS_PER_WRITE_QUANTUM + 1;
+        let normal_marker = marker(batch_end + 1);
+        let disconnect_marker = marker(batch_end + 2);
+        let batch = (1..=batch_end)
+            .map(|value| encoded_marker(marker(value)))
+            .collect::<Vec<_>>();
+
+        assert!(
+            outgoing
+                .send(OutboundPacket::PacketBatch(Box::new(batch)))
+                .is_ok()
+        );
+        assert!(
+            outgoing
+                .send(OutboundPacket::Packet(encoded_marker(normal_marker)))
+                .is_ok()
+        );
+        assert!(
+            outgoing
+                .send(OutboundPacket::Disconnect(encoded_marker(
+                    disconnect_marker,
+                )))
+                .is_ok()
+        );
+        sender.await.expect("sender task should finish");
+
+        let result = state.lock();
+        assert_eq!(result.bytes, (1..=disconnect_marker).collect::<Vec<_>>());
+        assert_eq!(
+            result.flush_offsets,
+            [
+                MAX_PACKETS_PER_WRITE_QUANTUM,
+                batch_end,
+                batch_end + 1,
+                batch_end + 2,
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn encrypted_packet_batch_matches_one_continuous_cfb8_stream() {
+        const KEY: [u8; 16] = *b"batch-cipher-key";
+        const SHORT_PACKET_BYTES: usize = 1;
+        const BUFFER_EDGE_PACKET_BYTES: usize = 255;
+        const BUFFER_CROSSING_PACKET_BYTES: usize = 257;
+        const MULTI_BUFFER_PACKET_BYTES: usize = 1_025;
+
+        let state = Arc::new(SyncMutex::new(RecordingWriterState::default()));
+        let mut encoder = TCPNetworkEncoder::new(RecordingWriter {
+            state: Arc::clone(&state),
+        });
+        encoder.set_encryption(&KEY);
+        let payloads = [
+            vec![b'A'; SHORT_PACKET_BYTES],
+            vec![b'B'; BUFFER_EDGE_PACKET_BYTES],
+            vec![b'C'; BUFFER_CROSSING_PACKET_BYTES],
+            vec![b'D'; MULTI_BUFFER_PACKET_BYTES],
+        ];
+        let packets = payloads
+            .iter()
+            .map(|payload| encoded_bytes(payload))
+            .collect::<Vec<_>>();
+
+        JavaConnection::write_packet_batch_with_limits(&mut encoder, &packets, 2, 300)
+            .await
+            .expect("encrypted batch should write");
+
+        let mut expected = payloads.concat();
+        cfb8::Encryptor::<aes::Aes128>::new(&KEY.into(), &KEY.into()).encrypt(&mut expected);
+        let result = state.lock();
+        assert_eq!(result.bytes, expected);
+        assert_eq!(result.flush_offsets.len(), 3);
+    }
+
+    #[test]
+    fn bundle_is_enqueued_as_one_ordered_transport_batch() {
+        const BUNDLE_MEMBER: u8 = b'A';
+
+        let (outgoing, mut receiver) = mpsc::unbounded_channel();
+        let connection =
+            JavaConnection::new(outgoing, CancellationToken::new(), None, 1, Weak::new());
+
+        connection.send_encoded_bundle(vec![encoded_marker(BUNDLE_MEMBER)]);
+
+        let expected_delimiter =
+            EncodedPacket::from_bare(CBundleDelimiter, None, ConnectionProtocol::Play)
+                .expect("bundle delimiter should encode");
+        let Ok(OutboundPacket::PacketBatch(packets)) = receiver.try_recv() else {
+            panic!("bundle should occupy one outbound queue entry");
+        };
+        assert_eq!(packets.len(), 3);
+        assert_eq!(packets[1].encoded_data.as_slice(), [BUNDLE_MEMBER]);
+        assert_eq!(packets[0].encoded_data, expected_delimiter.encoded_data);
+        assert_eq!(packets[2].encoded_data, expected_delimiter.encoded_data);
+        assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
+    }
+
+    #[tokio::test]
+    async fn play_sender_owns_writer_and_writes_fifo() {
+        const FIRST_PACKET: u8 = b'A';
+        const DISCONNECT_PACKET: u8 = b'B';
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("loopback listener should bind");
+        let address = listener
+            .local_addr()
+            .expect("loopback listener should have an address");
+        let connect = TcpStream::connect(address);
+        let accept = listener.accept();
+        let (client_result, server_result) = tokio::join!(connect, accept);
+        let mut client = client_result.expect("loopback client should connect");
+        let (server, _) = server_result.expect("loopback server should accept");
+        let (_, server_write) = server.into_split();
+
+        let network_writer = TCPNetworkEncoder::new(BufWriter::new(server_write));
+        let (connection, outgoing, receiver) = setup_test_connection();
+        let sender_connection = Arc::clone(&connection);
+        let sender = tokio::spawn(async move {
+            sender_connection.sender(receiver, network_writer).await;
+        });
+
+        assert!(
+            outgoing
+                .send(OutboundPacket::Packet(encoded_marker(FIRST_PACKET)))
+                .is_ok()
+        );
+        assert!(
+            outgoing
+                .send(OutboundPacket::Disconnect(encoded_marker(
+                    DISCONNECT_PACKET,
+                )))
+                .is_ok()
+        );
+
+        let mut wire_bytes = [0; 2];
+        client
+            .read_exact(&mut wire_bytes)
+            .await
+            .expect("loopback client should receive both packets");
+        sender.await.expect("sender task should finish");
+
+        assert_eq!(wire_bytes, [FIRST_PACKET, DISCONNECT_PACKET]);
+    }
+
+    #[tokio::test]
+    async fn encrypted_partial_batch_resumes_fifo_before_close_deadline() {
+        const KEY: [u8; 16] = *b"close-cipher-key";
+        const ACTIVE_PACKET: &[u8] = b"AB";
+        const ACTIVE_BATCH_TAIL: u8 = b'C';
+        const QUEUED_BATCH: [u8; 2] = *b"DE";
+        const DISCONNECT_PACKET: u8 = b'F';
+        const POST_DISCONNECT_PACKET: u8 = b'G';
+        const REJECTED_PACKET: u8 = b'H';
+
+        let state = Arc::new(SyncMutex::new(PausingWriterState::default()));
+        let paused = Arc::new(Notify::new());
+        let writer = PausingWriter {
+            state: Arc::clone(&state),
+            paused: Arc::clone(&paused),
+            pause_at: PausePoint::WriteAfter(1),
+        };
+        let writer_control = writer.clone();
+        let (connection, outgoing, mut receiver) = setup_test_connection();
+        let sender_connection = Arc::clone(&connection);
+        let sender = tokio::spawn(async move {
+            let mut network_writer = TCPNetworkEncoder::new(writer);
+            network_writer.set_encryption(&KEY);
+            sender_connection
+                .send_packets_with_timeout(
+                    &mut network_writer,
+                    &mut receiver,
+                    GRACEFUL_CLOSE_TIMEOUT,
+                )
+                .await;
+        });
+
+        assert!(
+            outgoing
+                .send(OutboundPacket::PacketBatch(Box::new(vec![
+                    encoded_bytes(ACTIVE_PACKET),
+                    encoded_marker(ACTIVE_BATCH_TAIL),
+                ])))
+                .is_ok()
+        );
+        paused.notified().await;
+        assert!(
+            outgoing
+                .send(OutboundPacket::PacketBatch(Box::new(vec![
+                    encoded_marker(QUEUED_BATCH[0]),
+                    encoded_marker(QUEUED_BATCH[1]),
+                ])))
+                .is_ok()
+        );
+        assert!(
+            outgoing
+                .send(OutboundPacket::Disconnect(encoded_marker(
+                    DISCONNECT_PACKET,
+                )))
+                .is_ok()
+        );
+        assert!(
+            outgoing
+                .send(OutboundPacket::Packet(encoded_marker(
+                    POST_DISCONNECT_PACKET,
+                )))
+                .is_ok()
+        );
+        connection.close();
+        outgoing.closed().await;
+
+        assert!(!sender.is_finished());
+        assert!(
+            outgoing
+                .send(OutboundPacket::Packet(encoded_marker(REJECTED_PACKET)))
+                .is_err()
+        );
+        writer_control.release();
+        sender.await.expect("sender task should finish");
+
+        let mut expected = b"ABCDEF".to_vec();
+        cfb8::Encryptor::<aes::Aes128>::new(&KEY.into(), &KEY.into()).encrypt(&mut expected);
+        assert_eq!(state.lock().bytes, expected);
+    }
+
+    #[tokio::test]
+    async fn disconnect_finishes_pending_batch_flush_before_terminal_packet() {
+        const ACTIVE_PACKET: u8 = b'A';
+        const QUEUED_PACKET: u8 = b'B';
+        const DISCONNECT_PACKET: u8 = b'C';
+        const POST_DISCONNECT_PACKET: u8 = b'D';
+
+        let state = Arc::new(SyncMutex::new(PausingWriterState::default()));
+        let paused = Arc::new(Notify::new());
+        let writer = PausingWriter {
+            state: Arc::clone(&state),
+            paused: Arc::clone(&paused),
+            pause_at: PausePoint::Flush,
+        };
+        let writer_control = writer.clone();
+        let (connection, outgoing, mut receiver) = setup_test_connection();
+        let sender_connection = Arc::clone(&connection);
+        let sender = tokio::spawn(async move {
+            let mut network_writer = TCPNetworkEncoder::new(writer);
+            sender_connection
+                .send_packets_with_timeout(
+                    &mut network_writer,
+                    &mut receiver,
+                    GRACEFUL_CLOSE_TIMEOUT,
+                )
+                .await;
+        });
+
+        assert!(
+            outgoing
+                .send(OutboundPacket::PacketBatch(Box::new(vec![encoded_marker(
+                    ACTIVE_PACKET,
+                )])))
+                .is_ok()
+        );
+        paused.notified().await;
+        assert!(
+            outgoing
+                .send(OutboundPacket::Packet(encoded_marker(QUEUED_PACKET)))
+                .is_ok()
+        );
+        assert!(
+            outgoing
+                .send(OutboundPacket::Disconnect(encoded_marker(
+                    DISCONNECT_PACKET,
+                )))
+                .is_ok()
+        );
+        assert!(
+            outgoing
+                .send(OutboundPacket::Packet(encoded_marker(
+                    POST_DISCONNECT_PACKET,
+                )))
+                .is_ok()
+        );
+        connection.close();
+        outgoing.closed().await;
+
+        assert!(!sender.is_finished());
+        writer_control.release();
+        sender.await.expect("sender task should finish");
+
+        assert_eq!(
+            state.lock().bytes,
+            [ACTIVE_PACKET, QUEUED_PACKET, DISCONNECT_PACKET]
+        );
+    }
+
+    #[tokio::test]
+    async fn encrypted_partial_write_is_dropped_when_close_deadline_elapses() {
+        const KEY: [u8; 16] = *b"close-cipher-key";
+        const ACTIVE_PACKET: &[u8] = b"AB";
+        const QUEUED_PACKET: u8 = b'C';
+        const DISCONNECT_PACKET: u8 = b'D';
+
+        let state = Arc::new(SyncMutex::new(PausingWriterState::default()));
+        let paused = Arc::new(Notify::new());
+        let writer = PausingWriter {
+            state: Arc::clone(&state),
+            paused: Arc::clone(&paused),
+            pause_at: PausePoint::WriteAfter(1),
+        };
+        let writer_control = writer.clone();
+        let (connection, outgoing, mut receiver) = setup_test_connection();
+        let sender_connection = Arc::clone(&connection);
+        let sender = tokio::spawn(async move {
+            let mut network_writer = TCPNetworkEncoder::new(writer);
+            network_writer.set_encryption(&KEY);
+            sender_connection
+                .send_packets_with_timeout(&mut network_writer, &mut receiver, Duration::ZERO)
+                .await;
+        });
+
+        assert!(
+            outgoing
+                .send(OutboundPacket::Packet(encoded_bytes(ACTIVE_PACKET)))
+                .is_ok()
+        );
+        paused.notified().await;
+        assert!(
+            outgoing
+                .send(OutboundPacket::Packet(encoded_marker(QUEUED_PACKET)))
+                .is_ok()
+        );
+        assert!(
+            outgoing
+                .send(OutboundPacket::Disconnect(encoded_marker(
+                    DISCONNECT_PACKET,
+                )))
+                .is_ok()
+        );
+        connection.close();
+        outgoing.closed().await;
+
+        sender
+            .await
+            .expect("sender task should honor close deadline");
+
+        let mut expected_prefix = vec![ACTIVE_PACKET[0]];
+        cfb8::Encryptor::<aes::Aes128>::new(&KEY.into(), &KEY.into()).encrypt(&mut expected_prefix);
+        assert_eq!(state.lock().bytes, expected_prefix);
+        writer_control.release();
+        yield_now().await;
+        assert_eq!(state.lock().bytes, expected_prefix);
+    }
+
+    #[tokio::test]
+    async fn hard_close_drops_partial_write_without_waiting_for_a_deadline() {
+        const ACTIVE_PACKET: &[u8] = b"AB";
+        const QUEUED_PACKET: u8 = b'C';
+
+        let state = Arc::new(SyncMutex::new(PausingWriterState::default()));
+        let paused = Arc::new(Notify::new());
+        let writer = PausingWriter {
+            state: Arc::clone(&state),
+            paused: Arc::clone(&paused),
+            pause_at: PausePoint::WriteAfter(1),
+        };
+        let (connection, outgoing, mut receiver) = setup_test_connection();
+        let sender_connection = Arc::clone(&connection);
+        let sender = tokio::spawn(async move {
+            let mut network_writer = TCPNetworkEncoder::new(writer);
+            sender_connection
+                .send_packets(&mut network_writer, &mut receiver)
+                .await;
+        });
+
+        assert!(
+            outgoing
+                .send(OutboundPacket::Packet(encoded_bytes(ACTIVE_PACKET)))
+                .is_ok()
+        );
+        paused.notified().await;
+        assert!(
+            outgoing
+                .send(OutboundPacket::Packet(encoded_marker(QUEUED_PACKET)))
+                .is_ok()
+        );
+        connection.close();
+        outgoing.closed().await;
+
+        sender.await.expect("hard close should not wait for I/O");
+        assert_eq!(state.lock().bytes, [ACTIVE_PACKET[0]]);
     }
 
     #[test]

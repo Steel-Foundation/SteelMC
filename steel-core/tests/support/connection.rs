@@ -17,6 +17,8 @@ impl NetworkConnection for TestConnection {
 
     fn send_encoded(&self, _packet: EncodedPacket) {}
 
+    fn send_encoded_batch(&self, _packets: Vec<EncodedPacket>) {}
+
     fn send_encoded_bundle(&self, _packets: Vec<EncodedPacket>) {}
 
     fn disconnect_with_reason(&self, _reason: TextComponent) {

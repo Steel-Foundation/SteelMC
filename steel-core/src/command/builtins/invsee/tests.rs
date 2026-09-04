@@ -58,6 +58,10 @@ impl NetworkConnection for RecordingConnection {
         self.packets.lock().push(packet);
     }
 
+    fn send_encoded_batch(&self, packets: Vec<EncodedPacket>) {
+        self.packets.lock().extend(packets);
+    }
+
     fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
         self.packets.lock().extend(packets);
     }

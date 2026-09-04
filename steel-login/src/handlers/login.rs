@@ -143,16 +143,17 @@ impl JavaTcpClient {
             return ConnectionAction::none();
         };
 
+        self.begin_outbound_encryption();
         let Ok(_) = self
             .connection_updates
             .send(ConnectionUpdate::EnableEncryption(secret_key))
         else {
-            self.kick("Failed to send connection update".into()).await;
+            self.close();
             return ConnectionAction::none();
         };
 
         tokio::select! {
-            () = self.connection_updated.notified() => {}
+            () = self.wait_for_outbound_encryption() => {}
             () = self.cancel_token.cancelled() => return ConnectionAction::none(),
         }
 

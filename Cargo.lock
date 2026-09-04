@@ -2698,9 +2698,11 @@ dependencies = [
 name = "steel-core"
 version = "0.15.3+mc26.2"
 dependencies = [
+ "aes",
  "arc-swap",
  "base64 0.23.0",
  "bitflags",
+ "cfb8",
  "chrono",
  "criterion",
  "crossbeam",
@@ -2728,6 +2730,7 @@ dependencies = [
  "simdnbt",
  "small-map",
  "smallvec",
+ "socket2",
  "steel-crypto",
  "steel-macros",
  "steel-math",
@@ -2801,6 +2804,7 @@ version = "0.15.3+mc26.2"
 dependencies = [
  "aes",
  "cfb8",
+ "criterion",
  "flate2",
  "glam",
  "log",

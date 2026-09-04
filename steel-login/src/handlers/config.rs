@@ -120,7 +120,6 @@ impl JavaTcpClient {
                 self.outgoing_queue.clone(),
                 self.cancel_token.clone(),
                 self.compression.load(),
-                self.network_writer.clone(),
                 self.id,
                 player_weak.clone(),
             );
@@ -148,7 +147,7 @@ impl JavaTcpClient {
         }
 
         tokio::select! {
-            () = self.connection_updated.notified() => {}
+            () = self.connection_upgraded.notified() => {}
             () = self.cancel_token.cancelled() => return ConnectionAction::none(),
         }
         reservation.queue_player_join(player);

@@ -7,17 +7,20 @@ use std::{
 };
 
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
-use steel_utils::{
-    locks::{AsyncMutex, SyncMutex},
-    translations,
-};
+use steel_protocol::packet_writer::TCPNetworkEncoder;
+use steel_utils::{locks::SyncMutex, translations};
 use text_components::TextComponent;
-use tokio::{fs, runtime::Builder, sync::mpsc};
+use tokio::{
+    fs,
+    io::{copy, duplex, sink},
+    runtime::Builder,
+    sync::mpsc,
+};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    player::connection::{JavaConnection, JavaNetworkWriter, NetworkConnection, OutboundPacket},
+    player::connection::{JavaConnection, NetworkConnection, OutboundPacket},
     player::{ClientInformation, GameProfile, Player, PlayerConnection},
     server::DuplicatePlayerWaitError,
     world::World,
@@ -29,20 +32,14 @@ fn java_test_player(
     server: &Arc<Server>,
     world: Arc<World>,
     uuid: Uuid,
-) -> (
-    Arc<Player>,
-    mpsc::UnboundedReceiver<OutboundPacket>,
-    JavaNetworkWriter,
-) {
+) -> (Arc<Player>, mpsc::UnboundedReceiver<OutboundPacket>) {
     let (outgoing_packets, receiver) = mpsc::unbounded_channel();
     let cancel_token = CancellationToken::new();
-    let network_writer = Arc::new(AsyncMutex::new(None));
     let player = Arc::new_cyclic(|player_weak| {
         let connection = Arc::new(PlayerConnection::Java(JavaConnection::new(
             outgoing_packets,
             cancel_token,
             None,
-            Arc::clone(&network_writer),
             1,
             player_weak.clone(),
         )));
@@ -61,11 +58,13 @@ fn java_test_player(
             ClientInformation::default(),
         )
     });
-    (player, receiver, network_writer)
+    (player, receiver)
 }
 
 #[test]
 fn blocked_disconnect_write_does_not_delay_player_removal() {
+    const BLOCKED_WRITE_CAPACITY: usize = 1;
+
     let world = fresh_test_world("blocked_disconnect_write");
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
@@ -83,7 +82,7 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
         let Ok(server) = server else {
             panic!("test server should initialize");
         };
-        let (player, receiver, network_writer) =
+        let (player, mut receiver) =
             java_test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
 
         assert!(server.online_players.insert(Arc::clone(&player)));
@@ -91,12 +90,13 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
         let _ = player.mark_joined_world();
         assert!(player.has_joined_world());
 
-        let writer_guard = network_writer.lock().await;
-        {
+        let (writer, mut peer) = duplex(BLOCKED_WRITE_CAPACITY);
+        let mut encoder = TCPNetworkEncoder::new(writer);
+        let drain = {
             let PlayerConnection::Java(connection) = player.connection.as_ref() else {
                 panic!("test player should use a Java connection");
             };
-            let sender = connection.sender(receiver);
+            let sender = connection.send_packets(&mut encoder, &mut receiver);
             tokio::pin!(sender);
 
             player.disconnect("test disconnect");
@@ -114,12 +114,18 @@ fn blocked_disconnect_write_does_not_delay_player_removal() {
             assert!(matches!(futures::poll!(&mut sender), Poll::Pending));
 
             drop(pending);
-            drop(writer_guard);
+            let drain = tokio::spawn(async move {
+                copy(&mut peer, &mut sink())
+                    .await
+                    .expect("disconnect bytes should drain")
+            });
             sender.await;
-        }
+            drain
+        };
+        drop(encoder);
+        assert_ne!(drain.await.expect("drain task should finish"), 0);
 
         drop(player);
-        drop(network_writer);
         drop(server);
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");
@@ -138,6 +144,8 @@ impl NetworkConnection for DisconnectRecordingConnection {
     }
 
     fn send_encoded(&self, _packet: EncodedPacket) {}
+
+    fn send_encoded_batch(&self, _packets: Vec<EncodedPacket>) {}
 
     fn send_encoded_bundle(&self, _packets: Vec<EncodedPacket>) {}
 
