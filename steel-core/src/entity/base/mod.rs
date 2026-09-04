@@ -1687,6 +1687,13 @@ impl EntityBase {
         self.state.lock().fluid_contact = fluid_contact;
     }
 
+    /// Returns whether the entity is currently touching lava.
+    #[inline]
+    pub fn is_in_lava(&self) -> bool {
+        let state = self.state.lock();
+        !state.first_tick && state.fluid_contact.lava_height() > 0.0
+    }
+
     /// Stores fluid contact for a vanilla base-tick refresh.
     ///
     /// Vanilla updates `wasEyeInWater` from the previous fluid interaction

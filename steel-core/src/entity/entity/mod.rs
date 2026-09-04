@@ -2101,7 +2101,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
     /// Returns true if this entity is currently touching lava.
     fn is_in_lava(&self) -> bool {
-        !self.is_first_tick() && self.fluid_contact().lava_height() > 0.0
+        self.base().is_in_lava()
     }
 
     /// Returns true if this entity's eyes are currently inside water.
