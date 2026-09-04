@@ -384,6 +384,7 @@ impl EntityTracker {
 
             let dirty_entity_data = entity.pack_dirty_entity_data();
             let has_dirty_entity_data = dirty_entity_data.is_some();
+            let needs_velocity_sync = entity.needs_velocity_sync();
             let result =
                 tracked
                     .server_entity
@@ -396,7 +397,7 @@ impl EntityTracker {
                         body_rotation: entity.rotation(),
                         head_yaw: entity.head_yaw(),
                         on_ground: entity.on_ground(),
-                        needs_velocity_sync: entity.needs_velocity_sync(),
+                        needs_velocity_sync,
                         has_dirty_entity_data,
                         force_velocity_sync: entity.forces_fall_flying_velocity_sync(),
                     });

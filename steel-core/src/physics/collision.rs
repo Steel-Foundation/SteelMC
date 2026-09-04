@@ -271,6 +271,15 @@ impl<'a> WorldCollisionProvider<'a> {
         }
     }
 
+    /// Creates a movement provider for vehicles that push entities after moving.
+    pub const fn for_vehicle_movement(world: &'a Arc<World>, source: &'a dyn Entity) -> Self {
+        Self {
+            world,
+            source: Some(source),
+            include_entity_collisions: false,
+        }
+    }
+
     /// Creates a collision provider matching vanilla `PathNavigationRegion`.
     pub const fn for_path_navigation(world: &'a Arc<World>, source: &'a dyn Entity) -> Self {
         Self {

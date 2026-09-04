@@ -778,6 +778,13 @@ impl EntityBase {
         self.first_passenger().is_some()
     }
 
+    /// Ejects all direct passengers, mirroring vanilla `Entity.ejectPassengers`.
+    pub fn eject_passengers(&self) {
+        for passenger in self.passengers() {
+            passenger.stop_riding();
+        }
+    }
+
     /// Returns true when the entity ID is a direct passenger.
     pub fn has_passenger_id(&self, passenger_id: i32) -> bool {
         self.relationships.lock().has_passenger_id(passenger_id)
@@ -1034,7 +1041,7 @@ impl EntityBase {
 
         if let Some(vehicle) = vehicle {
             vehicle.base().remove_passenger_id(self.id);
-            self.set_boarding_cooldown(60);
+            self.set_boarding_cooldown(10);
         }
     }
 
@@ -1048,7 +1055,7 @@ impl EntityBase {
 
         for passenger in passengers {
             if passenger.base().clear_vehicle_if(self.id) {
-                passenger.base().set_boarding_cooldown(60);
+                passenger.base().set_boarding_cooldown(10);
             }
         }
     }

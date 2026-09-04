@@ -25,6 +25,7 @@ mod c_level_event;
 mod c_level_particles;
 mod c_login;
 mod c_move_entity;
+mod c_move_minecart;
 mod c_move_vehicle;
 mod c_open_screen;
 mod c_open_sign_editor;
@@ -131,6 +132,7 @@ pub use c_login::CommonPlayerSpawnInfo;
 pub use c_move_entity::{
     CMoveEntityPos, CMoveEntityPosRot, CMoveEntityRot, PackedEntityDelta, calc_delta, to_angle_byte,
 };
+pub use c_move_minecart::{CMoveMinecartAlongTrack, MinecartStep};
 pub use c_move_vehicle::CMoveVehicle;
 pub use c_open_screen::COpenScreen;
 pub use c_open_sign_editor::COpenSignEditor;

@@ -423,22 +423,31 @@ impl LevelDataManager {
             let path = dir.as_ref().join("level.toml");
 
             let (data, dirty) = if path.exists() {
-                // Load existing level data (seed from file takes precedence)
+                // Load existing level data when the file is valid. If it is corrupted,
+                // fall back to the configured seed and write a fresh world state.
                 let content = fs::read_to_string(&path).await?;
-                let mut loaded: LevelData = toml::from_str(&content).map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("Invalid level.toml: {e}"),
-                    )
-                })?;
-                // Initialize runtime game rules from serialized values
-                loaded.load_game_rules();
-                let initialized_clocks = loaded
-                    .world_clocks
-                    .initialize_registered_clocks()
-                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-                let adopted_generation = loaded.validate_generation_settings(generation)?;
-                (loaded, adopted_generation || initialized_clocks)
+                match toml::from_str::<LevelData>(&content) {
+                    Ok(mut loaded) => {
+                        loaded.load_game_rules();
+                        let initialized_clocks = loaded
+                            .world_clocks
+                            .initialize_registered_clocks()
+                            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+                        let adopted_generation = loaded.validate_generation_settings(generation)?;
+                        (loaded, adopted_generation || initialized_clocks)
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "Ignoring invalid level.toml at {} ({}); creating a fresh world with seed {}.",
+                            path.display(),
+                            error,
+                            seed,
+                        );
+                        let mut data = LevelData::new_with_seed_and_difficulty(seed, difficulty);
+                        data.generation = Some(generation);
+                        (data, true)
+                    }
+                }
             } else {
                 // Create new level data with the provided defaults.
                 let mut data = LevelData::new_with_seed_and_difficulty(seed, difficulty);
@@ -469,14 +478,19 @@ impl LevelDataManager {
             return Ok(default_seed);
         }
 
-        let content = fs::read_to_string(path).await?;
-        let saved: SavedLevelSeed = toml::from_str(&content).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Invalid level.toml: {e}"),
-            )
-        })?;
-        Ok(saved.seed)
+        let content = fs::read_to_string(&path).await?;
+        match toml::from_str::<SavedLevelSeed>(&content) {
+            Ok(saved) => Ok(saved.seed),
+            Err(error) => {
+                log::warn!(
+                    "Ignoring invalid level.toml at {} ({}); using default seed {} instead.",
+                    path.display(),
+                    error,
+                    default_seed,
+                );
+                Ok(default_seed)
+            }
+        }
     }
 
     /// Gets a reference to the level data.
@@ -685,6 +699,19 @@ mod tests {
         let seed = LevelDataManager::load_seed_or_default(Some(dir.as_path()), 7)
             .await
             .expect("missing level.toml should use default seed");
+        let _ = std_fs::remove_dir_all(&dir);
+
+        assert_eq!(seed, 7);
+    }
+
+    #[tokio::test]
+    async fn load_seed_returns_default_when_level_toml_is_invalid() {
+        let dir = temp_level_data_dir("invalid-seed");
+        std_fs::write(dir.join("level.toml"), [0_u8; 64]).expect("level.toml should be written");
+
+        let seed = LevelDataManager::load_seed_or_default(Some(dir.as_path()), 7)
+            .await
+            .expect("invalid level.toml should fall back to default seed");
         let _ = std_fs::remove_dir_all(&dir);
 
         assert_eq!(seed, 7);

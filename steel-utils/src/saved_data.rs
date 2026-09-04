@@ -172,12 +172,17 @@ impl SavedDataManager {
         }
 
         let content = fs::read_to_string(&path).await?;
-        toml::from_str(&content).map_err(|error| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Invalid saved data {}: {error}", path.display()),
-            )
-        })
+        match toml::from_str(&content) {
+            Ok(data) => Ok(data),
+            Err(error) => {
+                tracing::warn!(
+                    "Ignoring invalid saved data at {} ({}); using default value instead.",
+                    path.display(),
+                    error,
+                );
+                Ok(T::default())
+            }
+        }
     }
 
     /// Saves a versioned wincode value.
@@ -295,6 +300,22 @@ mod tests {
             .load_or_default(TEST_DATA)
             .await
             .expect("missing saved data should load default");
+
+        assert_eq!(loaded, TestData::default());
+    }
+
+    #[tokio::test]
+    async fn invalid_saved_data_loads_default() {
+        let dir = temp_world_dir("invalid");
+        let manager = SavedDataManager::new(Some(dir.as_path()));
+        sync_fs::create_dir_all(dir.join("data")).expect("data dir should be created");
+        sync_fs::write(dir.join("data").join("test_data.toml"), [0_u8; 32])
+            .expect("invalid TOML should be written");
+
+        let loaded: TestData = manager
+            .load_or_default(TEST_DATA)
+            .await
+            .expect("invalid saved data should load default");
 
         assert_eq!(loaded, TestData::default());
     }

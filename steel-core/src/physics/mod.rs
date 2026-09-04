@@ -11,6 +11,7 @@
 
 pub mod collision;
 pub(crate) mod entity_move;
+pub mod minecart_collision_context;
 pub mod movement_validation;
 pub(crate) mod physics_state;
 pub mod shapes;
@@ -22,6 +23,7 @@ pub use collision::{
 };
 pub(crate) use entity_move::move_entity;
 pub use entity_move::{MoveResult, MoverType};
+pub use minecart_collision_context::MinecartCollisionContext;
 pub(crate) use movement_validation::ClientAuthoredMovementState;
 pub use movement_validation::{
     MOVEMENT_ERROR_THRESHOLD, MovementCollisionValidation, movement_error_delta,

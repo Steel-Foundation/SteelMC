@@ -903,6 +903,10 @@ impl Player {
 
         self.reset_last_action_time();
 
+        if self.is_passenger() && input.shift() {
+            self.stop_riding();
+        }
+
         self.set_crouching(input.shift());
     }
 

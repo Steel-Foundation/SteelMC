@@ -1463,6 +1463,19 @@ impl Entity for Player {
             return;
         };
 
+        if let Some(world) = self.level() {
+            let dismount_pos = old_vehicle
+                .get_dismount_location_for_passenger(self.as_entity_event_source(), &world);
+            let (yaw, pitch) = self.rotation();
+            if let Err(error) = self.teleport(dismount_pos, yaw, pitch) {
+                log::warn!(
+                    "failed to teleport player {} after dismount: {}",
+                    self.id(),
+                    error
+                );
+            }
+        }
+
         self.remove_active_effects_for_vehicle(old_vehicle.as_ref());
         self.send_packet(CSetPassengers::new(
             old_vehicle.id(),

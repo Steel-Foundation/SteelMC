@@ -297,8 +297,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         };
 
         let target_box = self.bounding_box().translate(delta);
-        let collision_world =
-            WorldCollisionProvider::for_entity(&world, self.as_entity_event_source());
+        let collision_world = if self.entity_type().is_abstract_minecart {
+            WorldCollisionProvider::for_vehicle_movement(&world, self.as_entity_event_source())
+        } else {
+            WorldCollisionProvider::for_entity(&world, self.as_entity_event_source())
+        };
         if collision_world.has_collision_with_context(
             &target_box.deflate(COLLISION_EPSILON),
             physics_state_for_move(self.as_entity_event_source()).block_collision_context(),
@@ -529,7 +532,21 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ///
     /// Mirrors vanilla `Entity.stopRiding`.
     fn stop_riding(&self) {
+        let old_vehicle = self.vehicle();
         self.base().stop_riding();
+        if let Some(old_vehicle) = old_vehicle
+            && let Some(world) = self.level()
+        {
+            let dismount_pos = old_vehicle
+                .get_dismount_location_for_passenger(self.as_entity_event_source(), &world);
+            if let Err(error) = self.try_set_position(dismount_pos) {
+                log::warn!(
+                    "failed to set entity {} position after dismount: {}",
+                    self.id(),
+                    error
+                );
+            }
+        }
     }
 
     /// Starts riding `entity_to_ride` if vanilla boarding rules allow it.
@@ -628,6 +645,25 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         REGISTRY
             .entity_types
             .is_in_tag(self.entity_type(), &EntityTypeTag::DISMOUNTS_UNDERWATER)
+    }
+
+    /// Returns the dismount location for the given passenger.
+    ///
+    /// Mirrors vanilla `Entity.getDismountLocationForPassenger`.
+    fn get_dismount_location_for_passenger(
+        &self,
+        _passenger: &dyn Entity,
+        _world: &Arc<World>,
+    ) -> DVec3 {
+        let bbox = self.bounding_box();
+        DVec3::new(self.position().x, bbox.max_y(), self.position().z)
+    }
+
+    /// Returns the motion direction of this entity.
+    ///
+    /// Mirrors vanilla `Entity.getMotionDirection`.
+    fn get_motion_direction(&self) -> Direction {
+        self.direction_yaw()
     }
 
     /// Returns whether `passenger` is a direct passenger of this entity.
@@ -2704,6 +2740,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     fn is_on_rails(&self) -> bool {
         false
     }
+
+    /// Sets whether this entity is on rails.
+    fn set_on_rails(&self, _on_rails: bool) {}
 
     /// Returns whether a block state is climbable for base movement effects.
     fn is_state_climbable(&self, state: BlockStateId) -> bool {

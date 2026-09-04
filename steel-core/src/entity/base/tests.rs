@@ -767,7 +767,7 @@ fn removal_cleans_up_relationship_state() {
     assert!(vehicle.is_removed());
     assert!(!vehicle.is_vehicle());
     assert!(!passenger.is_passenger());
-    assert_eq!(passenger.base().boarding_cooldown(), 60);
+    assert_eq!(passenger.base().boarding_cooldown(), 10);
 }
 
 #[test]

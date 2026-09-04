@@ -20,10 +20,6 @@ use crate::physics::{CollisionWorld, WorldCollisionProvider};
 use crate::world::World;
 
 #[must_use]
-#[expect(
-    dead_code,
-    reason = "vanilla DismountHelper foundation; vehicle dismounts use this next"
-)]
 pub(crate) const fn offsets_for_direction(forward: steel_utils::Direction) -> [(i32, i32); 8] {
     let right = forward.rotate_y_clockwise();
     let left = right.opposite();
