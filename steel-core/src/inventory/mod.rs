@@ -5,6 +5,7 @@
 
 pub mod click;
 pub mod container;
+pub mod ender_chest;
 pub mod equipment;
 pub mod lock;
 pub mod menu;
