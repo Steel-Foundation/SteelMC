@@ -44,6 +44,7 @@ fn java_test_player(
             None,
             Arc::clone(&network_writer),
             1,
+            0,
             player_weak.clone(),
         )));
         Player::new(

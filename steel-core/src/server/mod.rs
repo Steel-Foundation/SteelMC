@@ -77,7 +77,7 @@ use rustc_hash::FxHashMap;
 use std::sync::atomic::AtomicI32;
 use std::{
     collections::BTreeSet,
-    io, mem,
+    fs, io, mem,
     num::NonZero,
     path::Path,
     sync::{Arc, mpsc},
@@ -397,6 +397,8 @@ use jobs::teleport::{
 pub struct Server {
     /// Runtime configuration (view distance, compression, etc.).
     pub config: Arc<RuntimeConfig>,
+    /// Favicon data URL loaded once at startup, if configured.
+    pub favicon: Option<String>,
     /// Runtime permission groups and their persistence boundary.
     pub permission_groups: PermissionGroupManager,
     /// The cancellation token for graceful shutdown.
@@ -723,8 +725,11 @@ impl Server {
             log::error!("Minecraft services key fetch task stopped before its initial attempt");
         }
 
+        let favicon = load_favicon(&config);
+
         Ok(Server {
             config,
+            favicon,
             permission_groups,
             cancel_token,
             key_store: KeyStore::create(),
@@ -850,4 +855,56 @@ impl Server {
             }
         }
     }
+}
+
+/// Loads the configured favicon into its data-URL representation once at startup so the
+/// status ping path performs no disk I/O.
+///
+/// Mirrors vanilla `MinecraftServer.loadStatusIcon`: the file must be a PNG with a
+/// 64x64 `IHDR`, otherwise it is rejected with a logged error and the server starts
+/// without a favicon.
+fn load_favicon(config: &RuntimeConfig) -> Option<String> {
+    use base64::{Engine, prelude::BASE64_STANDARD};
+
+    const ICON_PREFIX: &str = "data:image/png;base64,";
+
+    if !config.use_favicon {
+        return None;
+    }
+
+    let icon = fs::read(&config.favicon)
+        .map_err(|error| log::error!("Couldn't load server icon: {error}"))
+        .ok()?;
+    let Some((width, height)) = png_dimensions(&icon) else {
+        log::error!("Couldn't load server icon: not a PNG file");
+        return None;
+    };
+    if width != 64 || height != 64 {
+        log::error!(
+            "Couldn't load server icon: invalid icon size [{width}, {height}], but expected [64, 64]"
+        );
+        return None;
+    }
+
+    let cap = ICON_PREFIX.len() + icon.len().div_ceil(3) * 4;
+    let mut base64 = String::with_capacity(cap);
+    base64 += ICON_PREFIX;
+    BASE64_STANDARD.encode_string(icon, &mut base64);
+    Some(base64)
+}
+
+/// Extracts the `IHDR` dimensions from PNG bytes, mirroring vanilla `PngInfo.fromBytes`:
+/// PNG signature, a 13-byte `IHDR` chunk, then big-endian width and height.
+fn png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+
+    if bytes.len() < 24 || bytes[..8] != PNG_SIGNATURE {
+        return None;
+    }
+    if u32::from_be_bytes(bytes[8..12].try_into().ok()?) != 13 || bytes[12..16] != *b"IHDR" {
+        return None;
+    }
+    let width = u32::from_be_bytes(bytes[16..20].try_into().ok()?);
+    let height = u32::from_be_bytes(bytes[20..24].try_into().ok()?);
+    Some((width, height))
 }

@@ -10,7 +10,7 @@ use std::{
     io::Cursor,
     net::SocketAddr,
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use crossbeam::atomic::AtomicCell;
@@ -24,7 +24,9 @@ use steel_protocol::{
     packet_traits::{ClientPacket, CompressionInfo, EncodedPacket, ServerPacket},
     packet_writer::TCPNetworkEncoder,
     packets::{
-        common::{CDisconnect, SClientInformation, SCustomPayload, SPingRequest},
+        common::{
+            CDisconnect, CKeepAlive, SClientInformation, SCustomPayload, SKeepAlive, SPingRequest,
+        },
         config::SSelectKnownPacks,
         handshake::{ClientIntent, SClientIntention},
         login::{CLoginDisconnect, SHello, SKey},
@@ -42,6 +44,7 @@ use steel_utils::{
 use text_components::{
     TextComponent, content::Resolvable, custom::CustomData, resolving::TextResolutor,
 };
+use tokio::time::{Interval, MissedTickBehavior, interval};
 use tokio::{
     io::{BufReader, BufWriter},
     net::{TcpStream, tcp::OwnedReadHalf},
@@ -59,7 +62,11 @@ use uuid::Uuid;
 use crate::pre_play_state::{PacketSequenceError, PrePlayPacket, PrePlayState};
 
 const MAX_TICKS_BEFORE_LOGIN: u64 = 600;
-const SLOW_LOGIN_DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
+const DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
+/// Bound for the periodic keep-alive write itself: a healthy client accepts it in
+/// microseconds, so a stall means the socket is wedged and the connection must close
+/// instead of the read loop blocking on the write forever.
+const KEEP_ALIVE_WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct LoginDeadline {
@@ -88,6 +95,7 @@ enum LoginOperationResult<T> {
 enum IncomingEvent {
     Packet(Result<RawPacket, PacketError>),
     ConnectionUpdate(Result<ConnectionUpdate, RecvError>),
+    KeepAliveTick,
 }
 
 async fn await_login_operation<T, O, D>(
@@ -192,6 +200,76 @@ impl ConnectionAction {
     }
 }
 
+/// What a configuration keep-alive tick should do.
+enum KeepAliveDecision {
+    /// Nothing is due yet.
+    None,
+    /// Send a challenge with this id.
+    Send(i64),
+    /// The pending challenge went unanswered for a full interval; kick.
+    Timeout,
+}
+
+/// Configuration keep-alive state, mirroring vanilla's `ServerCommonPacketListenerImpl`
+/// keep-alive timing and latency smoothing.
+pub(crate) struct PrePlayKeepAliveTracker {
+    /// Last time a challenge was sent (or the phase was entered).
+    pub(crate) last_sent: Instant,
+    /// The challenge the client has not answered yet.
+    pub(crate) pending: Option<i64>,
+    /// Smoothed round-trip latency in milliseconds, seeded into the play connection like
+    /// vanilla's `CommonListenerCookie.latency()`.
+    pub(crate) latency: u32,
+}
+
+impl PrePlayKeepAliveTracker {
+    /// Vanilla sends a keep-alive every 15 seconds since the last send and kicks a
+    /// client whose challenge went unanswered for a full interval.
+    const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
+
+    /// Decides this tick's action, mirroring vanilla `keepConnectionAlive`.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "milliseconds since the Unix epoch fit i64 for the next 292 million years"
+    )]
+    fn tick(&mut self, now: Instant) -> KeepAliveDecision {
+        if now.duration_since(self.last_sent) < Self::KEEP_ALIVE_INTERVAL {
+            return KeepAliveDecision::None;
+        }
+        if self.pending.is_some() {
+            return KeepAliveDecision::Timeout;
+        }
+
+        // Vanilla uses `Util.getMillis()` as the challenge id.
+        let challenge = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("System time before UNIX EPOCH")
+            .as_millis() as i64;
+        self.pending = Some(challenge);
+        self.last_sent = now;
+        KeepAliveDecision::Send(challenge)
+    }
+
+    /// Records a client keep-alive response. Returns `true` when it answers the pending
+    /// challenge, smoothing the latency like vanilla `handleKeepAlive`; out-of-order
+    /// answers return `false` and are a timeout kick.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "an unanswered challenge times out after one interval, so the round trip stays far below u32::MAX ms"
+    )]
+    fn answer(&mut self, id: i64, now: Instant) -> bool {
+        match self.pending {
+            Some(pending) if pending == id => {
+                let round_trip = now.duration_since(self.last_sent).as_millis() as u32;
+                self.latency = (self.latency * 3 + round_trip) / 4;
+                self.pending = None;
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
 /// Connection for pre-play packets.
 ///
 /// Gets dropped by `incoming_packet_task` if closed or upgraded to play connection.
@@ -220,6 +298,8 @@ pub struct JavaTcpClient {
     pub connection_session: Arc<ServerConnectionSession>,
     /// The challenge sent to the client during login.
     pub challenge: AtomicCell<[u8; 4]>,
+    /// Outstanding configuration keep-alive challenge awaiting the client response.
+    pub(crate) config_keepalive: SyncMutex<PrePlayKeepAliveTracker>,
 
     /// Channel for broadcasting connection state updates.
     pub connection_updates: Sender<ConnectionUpdate>,
@@ -266,6 +346,11 @@ impl JavaTcpClient {
             server,
             connection_session,
             challenge: AtomicCell::new([0; 4]),
+            config_keepalive: SyncMutex::new(PrePlayKeepAliveTracker {
+                last_sent: Instant::now(),
+                pending: None,
+                latency: 0,
+            }),
             connection_updates,
             connection_updated: Arc::new(Notify::new()),
             pre_play_state: SyncMutex::new(PrePlayState::new()),
@@ -482,26 +567,16 @@ impl JavaTcpClient {
 
         self.task_tracker.spawn(async move {
             let mut connection = None;
+            // One-second ticks give the vanilla 15-second send and timeout boundaries
+            // one-second resolution on a single shared timer.
+            let mut config_keepalive_tick = interval(Duration::from_secs(1));
+            config_keepalive_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            // Consume the immediate first tick so the cadence starts at one second.
+            config_keepalive_tick.tick().await;
             loop {
-                let incoming_event = if self_clone.login_deadline_expired() {
-                    LoginOperationResult::TimedOut
-                } else {
-                    let incoming_event = async {
-                        select! {
-                            packet = reader.get_raw_packet() => IncomingEvent::Packet(packet),
-                            connection_update = connection_updates_recv.recv() => {
-                                IncomingEvent::ConnectionUpdate(connection_update)
-                            }
-                        }
-                    };
-                    await_login_operation(
-                        &cancel_token,
-                        &self_clone.login_deadline,
-                        incoming_event,
-                        self_clone.wait_for_login_deadline(),
-                    )
-                    .await
-                };
+                let incoming_event = self_clone
+                    .await_incoming_event(&mut reader, &mut connection_updates_recv, &mut config_keepalive_tick)
+                    .await;
 
                 match incoming_event {
                     LoginOperationResult::Completed(IncomingEvent::Packet(Ok(packet))) => {
@@ -524,6 +599,10 @@ impl JavaTcpClient {
                             }
                             LoginOperationResult::Completed(Err(err)) => {
                                 log::warn!("Failed to get packet from client {id}: {err}");
+                                let reason = TextComponent::translated(
+                                    translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg(),
+                                );
+                                self_clone.kick(reason).await;
                             }
                             LoginOperationResult::Cancelled => break,
                             LoginOperationResult::TimedOut => {
@@ -553,6 +632,11 @@ impl JavaTcpClient {
                             cancel_token.cancel();
                         }
                     },
+                    LoginOperationResult::Completed(IncomingEvent::KeepAliveTick) => {
+                        if self_clone.protocol.load() == ConnectionProtocol::Config {
+                            self_clone.tick_config_keepalive().await;
+                        }
+                    }
                     LoginOperationResult::Cancelled => break,
                     LoginOperationResult::TimedOut => {
                         if self_clone.login_deadline_expired() {
@@ -576,6 +660,35 @@ impl JavaTcpClient {
                 }
             }
         });
+    }
+
+    /// Awaits the next pre-play event: an inbound packet, a connection update, or a
+    /// configuration keep-alive tick, bounded by the login deadline when one is set.
+    async fn await_incoming_event(
+        &self,
+        reader: &mut TCPNetworkDecoder<BufReader<OwnedReadHalf>>,
+        connection_updates_recv: &mut broadcast::Receiver<ConnectionUpdate>,
+        config_keepalive_tick: &mut Interval,
+    ) -> LoginOperationResult<IncomingEvent> {
+        if self.login_deadline_expired() {
+            return LoginOperationResult::TimedOut;
+        }
+        let incoming_event = async {
+            select! {
+                packet = reader.get_raw_packet() => IncomingEvent::Packet(packet),
+                connection_update = connection_updates_recv.recv() => {
+                    IncomingEvent::ConnectionUpdate(connection_update)
+                }
+                _ = config_keepalive_tick.tick() => IncomingEvent::KeepAliveTick,
+            }
+        };
+        await_login_operation(
+            &self.cancel_token,
+            &self.login_deadline,
+            incoming_event,
+            self.wait_for_login_deadline(),
+        )
+        .await
     }
 
     fn login_deadline_expired(&self) -> bool {
@@ -615,7 +728,7 @@ impl JavaTcpClient {
     pub(crate) async fn disconnect_slow_login(&self) {
         let reason =
             TextComponent::translated(translations::MULTIPLAYER_DISCONNECT_SLOW_LOGIN.msg());
-        if timeout(SLOW_LOGIN_DISCONNECT_FLUSH_TIMEOUT, self.kick(reason))
+        if timeout(DISCONNECT_FLUSH_TIMEOUT, self.kick(reason))
             .await
             .is_err()
         {
@@ -769,6 +882,23 @@ impl JavaTcpClient {
                     .await;
                 Ok(ConnectionAction::none())
             }
+            config::S_KEEP_ALIVE => {
+                let packet = SKeepAlive::read_packet(data)?;
+                if self
+                    .config_keepalive
+                    .lock()
+                    .answer(packet.id, Instant::now())
+                {
+                    Ok(ConnectionAction::none())
+                } else {
+                    // Vanilla disconnects clients answering out of order with a timeout.
+                    self.kick(TextComponent::translated(
+                        translations::DISCONNECT_TIMEOUT.msg(),
+                    ))
+                    .await;
+                    Ok(ConnectionAction::none())
+                }
+            }
             config::S_FINISH_CONFIGURATION => {
                 if let Err(error) = self.expect_pre_play_packet(PrePlayPacket::FinishConfiguration)
                 {
@@ -777,6 +907,36 @@ impl JavaTcpClient {
                 Ok(self.finish_configuration().await)
             }
             _ => Err(PacketError::InvalidProtocol("Config".to_string())),
+        }
+    }
+
+    /// Ticks the configuration keep-alive, executing the tracker's vanilla-timed
+    /// decision. Both writes are bounded: a wedged socket must close the connection
+    /// instead of stalling the read loop.
+    async fn tick_config_keepalive(&self) {
+        let decision = self.config_keepalive.lock().tick(Instant::now());
+        match decision {
+            KeepAliveDecision::None => {}
+            KeepAliveDecision::Send(challenge) => {
+                if timeout(
+                    KEEP_ALIVE_WRITE_TIMEOUT,
+                    self.send_bare_packet_now(CKeepAlive::new(challenge)),
+                )
+                .await
+                .is_err()
+                {
+                    self.close();
+                }
+            }
+            KeepAliveDecision::Timeout => {
+                let reason = TextComponent::translated(translations::DISCONNECT_TIMEOUT.msg());
+                if timeout(DISCONNECT_FLUSH_TIMEOUT, self.kick(reason))
+                    .await
+                    .is_err()
+                {
+                    self.close();
+                }
+            }
         }
     }
 

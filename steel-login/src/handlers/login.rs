@@ -1,5 +1,7 @@
 //! Login state packet handlers.
 
+use std::time::Instant;
+
 use rsa::Pkcs1v15Encrypt;
 use sha1::Sha1;
 use sha2::Digest;
@@ -245,6 +247,7 @@ impl JavaTcpClient {
         }
         self.login_deadline.store(None);
         self.protocol.store(ConnectionProtocol::Config);
+        self.config_keepalive.lock().last_sent = Instant::now();
 
         self.start_configuration().await;
         ConnectionAction::none()
