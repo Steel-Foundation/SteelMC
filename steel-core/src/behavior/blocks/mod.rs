@@ -11,6 +11,7 @@ mod falling;
 mod fluid;
 mod portal;
 mod redstone;
+mod sculk;
 mod spawner;
 mod vault;
 mod utils;
@@ -52,6 +53,9 @@ pub use redstone::{
     RailBlock, RedStoneOreBlock, RedStoneWireBlock, RedstoneLampBlock, RedstoneTorchBlock,
     RedstoneWallTorchBlock, RepeaterBlock, TargetBlock, TripWireBlock, TripWireHookBlock,
     WeatheringCopperBulbBlock, WeightedPressurePlateBlock,
+};
+pub use sculk::{
+    CalibratedSculkSensorBlock, SculkBlock, SculkCatalystBlock, SculkSensorBlock, SculkShriekerBlock,
 };
 pub(crate) use redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 pub use spawner::{SpawnerBlock, TrialSpawnerBlock};

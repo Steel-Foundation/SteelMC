@@ -76,7 +76,8 @@ use crate::{
     vanilla_custom_stats, vanilla_damage_type_tags, vanilla_damage_types, vanilla_dialog_tags,
     vanilla_dialogs, vanilla_dimension_types, vanilla_enchantment_tags, vanilla_enchantments,
     vanilla_entities, vanilla_entity_type_tags, vanilla_fluid_tags, vanilla_fluids,
-    vanilla_frog_variants, vanilla_game_events, vanilla_game_rules, vanilla_instrument_tags,
+    vanilla_frog_variants, vanilla_game_event_tags, vanilla_game_events, vanilla_game_rules,
+    vanilla_instrument_tags,
     vanilla_instruments, vanilla_item_tags, vanilla_items, vanilla_jukebox_songs,
     vanilla_loot_tables, vanilla_map_decoration_types, vanilla_menu_types, vanilla_mob_effects,
     vanilla_painting_variant_tags, vanilla_painting_variants, vanilla_particle_types,
@@ -393,6 +394,7 @@ impl Registry {
         vanilla_block_entity_types::register_block_entity_types(&mut registry.block_entity_types);
         vanilla_game_rules::register_game_rules(&mut registry.game_rules);
         vanilla_game_events::register_game_events(&mut registry.game_events);
+        vanilla_game_event_tags::GameEventsTag::register_game_events_tags(&mut registry.game_events);
         sound_events::register_sound_events(&mut registry.sound_events);
 
         vanilla_fluids::register_fluids(&mut registry.fluids);

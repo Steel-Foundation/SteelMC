@@ -50,3 +50,6 @@ pub mod generators {
 pub mod registry {
     pub use super::generator::registry::*;
 }
+
+#[cfg(test)]
+mod ancient_city_integration_tests;

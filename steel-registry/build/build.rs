@@ -152,6 +152,7 @@ const LOOT_TABLES: &str = "loot_tables";
 const BLOCK_ENTITY_TYPES: &str = "block_entity_types";
 const GAME_RULES: &str = "game_rules";
 const GAME_EVENTS: &str = "game_events";
+const GAME_EVENT_TAGS: &str = "game_event_tags";
 const LEVEL_EVENTS: &str = "level_events";
 const SOUND_EVENTS: &str = "sound_events";
 const SOUND_TYPES: &str = "sound_types";
@@ -234,6 +235,7 @@ pub fn main() {
         (block_entity_types::build(), BLOCK_ENTITY_TYPES),
         (game_rules::build(), GAME_RULES),
         (game_events::build(), GAME_EVENTS),
+        (tags::game_event(), GAME_EVENT_TAGS),
         (level_events::build(), LEVEL_EVENTS),
         (sound_events::build(), SOUND_EVENTS),
         (sound_types::build(), SOUND_TYPES),

@@ -581,3 +581,73 @@ fn fluid_clip_height_treats_source_and_flowing_variants_as_same_fluid_above() {
 
     assert_eq!(height.to_bits(), 1.0_f64.to_bits());
 }
+
+// Sculk system tests
+#[test]
+fn test_sculk_spreader_persistence() {
+    let mut spreader = SculkSpreader::new();
+
+    // Add charge from mob death
+    let death_pos = BlockPos::new(0, 64, 0);
+    spreader.add_cursors_from_death(death_pos, 10);
+
+    assert!(spreader.has_active_cursors());
+
+    // Save and reload
+    let nbt = spreader.save();
+    let mut bytes = Vec::new();
+    nbt.write(&mut bytes);
+    let borrowed = simdnbt::borrow::read_compound(&mut std::io::Cursor::new(bytes.as_slice())).unwrap();
+    let nbt_view: simdnbt::borrow::NbtCompound<'_, '_> = (&borrowed).into();
+    let loaded = SculkSpreader::load(&nbt_view);
+
+    assert!(loaded.has_active_cursors());
+}
+
+#[test]
+fn test_warden_spawn_tracker_progression() {
+    use crate::player::warden_spawn_tracker::{WardenSpawnResult, WardenSpawnTracker};
+
+    let mut tracker = WardenSpawnTracker::new();
+
+    // First three warnings
+    assert_eq!(tracker.try_warn(100, true), WardenSpawnResult::Warning { level: 1 });
+    assert_eq!(tracker.try_warn(200, true), WardenSpawnResult::Warning { level: 2 });
+    assert_eq!(tracker.try_warn(300, true), WardenSpawnResult::Warning { level: 3 });
+
+    // Fourth warning spawns Warden
+    assert_eq!(tracker.try_warn(400, true), WardenSpawnResult::SpawnWarden);
+    assert_eq!(tracker.warning_level(), 0); // Reset
+
+    // Cooldown active
+    assert_eq!(tracker.try_warn(500, true), WardenSpawnResult::OnCooldown);
+}
+
+#[test]
+fn test_warden_spawn_tracker_decay() {
+    use crate::player::warden_spawn_tracker::WardenSpawnTracker;
+
+    let mut tracker = WardenSpawnTracker::new();
+    tracker.try_warn(100, true);
+    tracker.try_warn(200, true);
+    assert_eq!(tracker.warning_level(), 2);
+
+    // Tick past decay time
+    tracker.tick(12300);
+    assert_eq!(tracker.warning_level(), 0);
+}
+
+#[test]
+fn test_warden_spawn_non_summoning_shrieker() {
+    use crate::player::warden_spawn_tracker::{WardenSpawnResult, WardenSpawnTracker};
+
+    let mut tracker = WardenSpawnTracker::new();
+
+    // Four warnings from player-placed shrieker (can't summon)
+    for i in 1..=4 {
+        let result = tracker.try_warn(i as i64 * 100, false);
+        assert!(matches!(result, WardenSpawnResult::Warning { .. }));
+    }
+
+    assert_eq!(tracker.warning_level(), 4); // Stays at 4, no spawn
+}

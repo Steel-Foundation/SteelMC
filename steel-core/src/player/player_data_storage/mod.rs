@@ -20,7 +20,7 @@ use self::permissions::set_permission_subject;
 use super::PlayerRespawnConfig;
 use super::player_data::{
     PLAYER_DATA_VERSION, PersistentAbilities, PersistentEnderPearl, PersistentPlayerData,
-    PersistentRootVehicle, PersistentSlot,
+    PersistentRootVehicle, PersistentSlot, PersistentWardenSpawnTracker,
 };
 use crate::chunk_saver::PersistentEntity;
 use crate::config::StorageSelection;
@@ -89,6 +89,14 @@ struct PlayerDataFile {
     respawn_config: Option<RespawnConfigFile>,
     ender_pearls: Vec<EnderPearlFile>,
     ender_items: Vec<SlotFile>,
+    warden_spawn_tracker: Option<WardenSpawnTrackerFile>,
+}
+
+#[derive(SchemaWrite, SchemaRead)]
+struct WardenSpawnTrackerFile {
+    warning_level: i32,
+    cooldown_ends_at: i64,
+    last_warning_time: i64,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -322,6 +330,13 @@ impl PlayerDataFile {
                     item_nbt: item_to_nbt_bytes(&slot.item).unwrap_or_default(),
                 })
                 .collect(),
+            warden_spawn_tracker: data.warden_spawn_tracker.as_ref().map(|tracker| {
+                WardenSpawnTrackerFile {
+                    warning_level: tracker.warning_level,
+                    cooldown_ends_at: tracker.cooldown_ends_at,
+                    last_warning_time: tracker.last_warning_time,
+                }
+            }),
         })
     }
 
@@ -407,6 +422,13 @@ impl PlayerDataFile {
                 items
             },
             stats: Vec::new(),
+            warden_spawn_tracker: self.warden_spawn_tracker.map(|tracker| {
+                PersistentWardenSpawnTracker {
+                    warning_level: tracker.warning_level,
+                    cooldown_ends_at: tracker.cooldown_ends_at,
+                    last_warning_time: tracker.last_warning_time,
+                }
+            }),
         })
     }
 }

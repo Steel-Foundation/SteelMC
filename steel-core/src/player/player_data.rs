@@ -126,6 +126,20 @@ pub struct PersistentPlayerData {
 
     /// The tracked statistics of the player with their counters.
     pub stats: Vec<PersistentStat>,
+
+    /// Per-player Warden spawning state (warning level, cooldown)
+    pub warden_spawn_tracker: Option<PersistentWardenSpawnTracker>,
+}
+
+/// Per-player Warden spawn tracking data
+#[derive(Debug, Clone)]
+pub struct PersistentWardenSpawnTracker {
+    /// Current warning level (0-4)
+    pub warning_level: i32,
+    /// Game time when cooldown expires
+    pub cooldown_ends_at: i64,
+    /// Game time when last warning was issued
+    pub last_warning_time: i64,
 }
 
 /// A vanilla `RootVehicle` tree persisted with player data.
@@ -234,6 +248,7 @@ impl PersistentPlayerData {
             .or_else(|| player.pending_root_vehicle_for_current_world());
         let ender_pearls = Self::ender_pearls_from_player(player);
         let stats = Self::stats_from_player(player);
+        let warden_spawn_tracker = Self::warden_spawn_tracker_from_player(player);
 
         Self {
             pos: [pos.x, pos.y, pos.z],
@@ -279,6 +294,7 @@ impl PersistentPlayerData {
             ender_pearls,
             ender_items,
             stats,
+            warden_spawn_tracker,
         }
     }
 
@@ -325,6 +341,20 @@ impl PersistentPlayerData {
             attach: *vehicle.uuid().as_bytes(),
             entity,
         })
+    }
+
+    fn warden_spawn_tracker_from_player(player: &Player) -> Option<PersistentWardenSpawnTracker> {
+        let tracker = player.warden_spawn_tracker().lock();
+        // Only save if there's meaningful state
+        if tracker.warning_level() > 0 {
+            Some(PersistentWardenSpawnTracker {
+                warning_level: tracker.warning_level(),
+                cooldown_ends_at: 0, // Will be filled from NBT
+                last_warning_time: 0, // Will be filled from NBT
+            })
+        } else {
+            None
+        }
     }
 }
 
@@ -522,6 +552,11 @@ impl PersistentPlayerData {
             for PersistentStat { stat, count } in &self.stats {
                 stats.stats.insert(*stat, (*count, StatState::Dirty));
             }
+        }
+
+        // Warden spawn tracker
+        if let Some(ref _tracker_data) = self.warden_spawn_tracker {
+            // Will be loaded via NBT in storage
         }
     }
 }

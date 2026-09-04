@@ -35,6 +35,7 @@ pub use mobs::hostile::skeleton::SkeletonEntity;
 pub use mobs::hostile::slime::SlimeEntity;
 pub use mobs::hostile::spider::SpiderEntity;
 pub use mobs::hostile::stray::StrayEntity;
+pub use mobs::hostile::sulfur_cube::SulfurCubeEntity;
 pub use mobs::hostile::vex::VexEntity;
 pub use mobs::hostile::vindicator::VindicatorEntity;
 pub use mobs::hostile::warden::WardenEntity;

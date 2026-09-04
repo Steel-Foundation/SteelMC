@@ -413,6 +413,11 @@ pub mod vanilla_game_events;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_game_event_tags.rs"]
+pub mod vanilla_game_event_tags;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_level_events.rs"]
 pub mod level_events;
 

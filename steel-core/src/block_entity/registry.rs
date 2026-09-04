@@ -313,6 +313,27 @@ pub fn init_block_entities() {
             Arc::new(VaultBlockEntity::new(level, pos, state))
         });
 
+        // Register sculk block entity factories
+        registry.register(
+            &vanilla_block_entity_types::SCULK_SENSOR,
+            |level, pos, state| Arc::new(SculkSensorBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(
+            &vanilla_block_entity_types::CALIBRATED_SCULK_SENSOR,
+            |level, pos, state| Arc::new(CalibratedSculkSensorBlockEntity::new(level, pos, state)),
+        );
+
+        registry.register(
+            &vanilla_block_entity_types::SCULK_CATALYST,
+            |level, pos, state| Arc::new(SculkCatalystBlockEntity::new(pos, state, level)),
+        );
+
+        registry.register(
+            &vanilla_block_entity_types::SCULK_SHRIEKER,
+            |level, pos, state| Arc::new(SculkShriekerBlockEntity::new(pos, state, level)),
+        );
+
         registry
     });
 }

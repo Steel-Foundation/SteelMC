@@ -69,6 +69,7 @@ fn sample_player_file(data_version: i32) -> PlayerDataFile {
         respawn_config: None,
         ender_pearls: Vec::new(),
         ender_items: Vec::new(),
+        warden_spawn_tracker: None,
     }
 }
 

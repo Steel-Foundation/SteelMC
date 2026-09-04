@@ -55,6 +55,12 @@ simple_tag_builder!(
 simple_tag_builder!(poi_type, "point_of_interest_type", "poi", "PoiTypeRegistry");
 simple_tag_builder!(potion, "potion", "potion", "PotionRegistry");
 simple_tag_builder!(
+    game_event,
+    "game_event",
+    "game_events",
+    "GameEventRegistry"
+);
+simple_tag_builder!(
     structure,
     "worldgen/structure",
     "structure",

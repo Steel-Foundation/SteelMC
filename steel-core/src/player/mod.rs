@@ -25,6 +25,7 @@ mod sleep_state;
 pub mod stats_counter;
 mod tick_state;
 mod title;
+pub mod warden_spawn_tracker;
 
 pub use abilities::{Abilities, DEFAULT_FLYING_SPEED};
 use chat::ChatState;
@@ -43,6 +44,7 @@ pub(crate) use lifecycle::ResetReason;
 pub use movement::PlayerInput;
 use movement::{MovementState, TeleportState};
 use permissions::PlayerPermissionState;
+use warden_spawn_tracker::WardenSpawnTracker;
 pub(crate) use profile::{GAME_PROFILE_CACHE_LIMIT, KnownPlayerNameLookup, lookup_online_profile};
 pub use profile::{
     GameProfile, GameProfileAction, KnownPlayer, KnownPlayers, ProfileLookupError,
@@ -268,6 +270,9 @@ pub struct Player {
 
     /// The counter keeping track of this player's statistics.
     stats: SyncMutex<StatsCounter>,
+
+    /// Per-player Warden spawning state for Sculk Shriekers
+    warden_spawn_tracker: SyncMutex<WardenSpawnTracker>,
 
     /// The last action time of this player.
     last_action_time: SyncMutex<Instant>,
@@ -575,6 +580,7 @@ impl Player {
             residence: SyncMutex::new(PlayerResidenceState::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
             stats: SyncMutex::new(StatsCounter::new()),
+            warden_spawn_tracker: SyncMutex::new(WardenSpawnTracker::new()),
             last_action_time: SyncMutex::new(Instant::now()),
         }
     }
@@ -642,6 +648,7 @@ impl Player {
         self.tick_active_item_use();
         // TODO: Tick stats even when the player has been dead for more than 20 ticks.
         self.tick_stats();
+        self.tick_warden_spawn_tracker();
 
         if self.get_health() <= 0.0 {
             self.tick_death();
@@ -785,6 +792,17 @@ impl Player {
                 1,
             );
         }
+    }
+
+    fn tick_warden_spawn_tracker(&self) {
+        let world = self.get_world();
+        let mut tracker = self.warden_spawn_tracker.lock();
+        tracker.tick(world.game_time());
+    }
+
+    /// Access to per-player Warden spawn tracker (for Sculk Shriekers)
+    pub fn warden_spawn_tracker(&self) -> &SyncMutex<WardenSpawnTracker> {
+        &self.warden_spawn_tracker
     }
 
     /// Immediately flushes dirty player entity data to tracking players and self.

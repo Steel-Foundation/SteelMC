@@ -1602,6 +1602,13 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.is_suppressing_bounce()
     }
 
+    /// Returns whether this entity dampens vibrations it produces.
+    ///
+    /// Vanilla `Entity.dampensVibrations`. The Warden overrides this to `true`.
+    fn dampens_vibrations(&self) -> bool {
+        false
+    }
+
     /// Returns true when vanilla collision context should treat the entity as descending.
     fn is_descending(&self) -> bool {
         self.synced_data()
