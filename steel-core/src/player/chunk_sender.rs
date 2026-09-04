@@ -252,19 +252,8 @@ impl ChunkSender {
         }
         drop(epoch);
 
-        let mut valid_chunks = Vec::with_capacity(encoded_chunks.len());
-        for encoded in encoded_chunks {
-            if !self.pending_chunks.contains(&encoded.pos) {
-                continue;
-            }
-            let Some(prepared) = batch.chunks.iter().find(|chunk| chunk.pos == encoded.pos) else {
-                continue;
-            };
-            if !encoded.is_current_for(prepared) {
-                continue;
-            }
-            valid_chunks.push(encoded);
-        }
+        let valid_chunks =
+            Self::resolve_valid_chunks(&batch.chunks, encoded_chunks, &self.pending_chunks);
 
         if valid_chunks.is_empty() {
             return Vec::new();
@@ -294,6 +283,36 @@ impl ChunkSender {
             sent_chunks.push(encoded.pos);
         }
         sent_chunks
+    }
+
+    /// Keeps the encoded chunks that are still pending and still match their prepared source.
+    ///
+    /// `encoded_chunks` is a subsequence of `prepared` in the same relative order:
+    /// [`Self::encode_batch`] maps over `prepared` with an order-preserving parallel
+    /// iterator and only drops entries. A single forward cursor over `prepared` therefore
+    /// resolves every encoded chunk in one pass, instead of restarting the scan per chunk.
+    fn resolve_valid_chunks(
+        prepared: &[PreparedChunk],
+        encoded_chunks: Vec<EncodedChunk>,
+        pending: &FxHashSet<ChunkPos>,
+    ) -> Vec<EncodedChunk> {
+        let mut prepared_chunks = prepared.iter();
+        let mut valid_chunks = Vec::with_capacity(encoded_chunks.len());
+
+        for encoded in encoded_chunks {
+            if !pending.contains(&encoded.pos) {
+                continue;
+            }
+            let Some(prepared) = prepared_chunks.find(|prepared| prepared.pos == encoded.pos)
+            else {
+                continue;
+            };
+            if encoded.is_current_for(prepared) {
+                valid_chunks.push(encoded);
+            }
+        }
+
+        valid_chunks
     }
 
     fn collect_candidates(
@@ -403,24 +422,37 @@ impl Default for ChunkSender {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::behavior::init_behaviors;
+#[cfg(any(test, feature = "benchmark-support"))]
+/// Fixtures and direct entry points shared by unit tests and Criterion benchmarks.
+///
+/// The commit phase needs a [`PlayerConnection`] and cannot be driven from a
+/// benchmark, so this exposes the pure batch-resolution step that runs inside it
+/// along with the pieces needed to build a realistic batch.
+pub mod benchmark_support {
+    use std::sync::{Arc, Weak};
+
+    use rustc_hash::FxHashSet;
+    use steel_utils::ChunkPos;
+
+    use super::{ChunkSender, EncodedChunk, PreparedChunk};
     use crate::chunk::{
         Chunk,
-        chunk_holder::TickingReadiness,
+        chunk_holder::{ChunkHolder, TickingReadiness},
         chunk_ticket_manager::ChunkTicketLevel,
         heightmap::ChunkHeightmaps,
         light::ChunkLightData,
         section::{ChunkSection, Sections},
+        status::ChunkStatus,
     };
     use crate::world::tick_scheduler::{BlockTickList, FluidTickList};
-    use std::sync::Weak;
-    use steel_registry::init_vanilla_registry;
     use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
 
-    fn prepared_full_chunk(pos: ChunkPos) -> PreparedChunk {
+    /// Builds a block-ticking prepared chunk backed by a real empty full chunk.
+    ///
+    /// The holder is the same shape the prepare phase produces, so an encoded
+    /// chunk built from it passes every [`EncodedChunk::is_current_for`] check.
+    #[must_use]
+    pub fn prepared_full_chunk(pos: ChunkPos) -> PreparedChunk {
         let chunk = Chunk::from_full_disk(
             Sections::from_owned(vec![ChunkSection::new_empty()].into_boxed_slice()),
             pos,
@@ -450,6 +482,145 @@ mod tests {
             holder,
             readiness,
         }
+    }
+
+    /// Position the encoded chunk was built for.
+    #[must_use]
+    pub const fn encoded_pos(encoded: &EncodedChunk) -> ChunkPos {
+        encoded.pos
+    }
+
+    /// Whether an encoded chunk still matches the prepared chunk it came from.
+    ///
+    /// Exposed so a benchmark can drive an alternative resolution strategy through
+    /// the exact validity check the commit phase uses.
+    #[must_use]
+    pub fn encoded_is_current_for(encoded: &EncodedChunk, prepared: &PreparedChunk) -> bool {
+        encoded.is_current_for(prepared)
+    }
+
+    /// Runs the batch-resolution step of [`ChunkSender::commit_batch`].
+    #[must_use]
+    #[expect(
+        clippy::implicit_hasher,
+        reason = "mirrors the FxHashSet the commit phase actually passes"
+    )]
+    pub fn resolve_valid_chunks(
+        prepared: &[PreparedChunk],
+        encoded_chunks: Vec<EncodedChunk>,
+        pending: &FxHashSet<ChunkPos>,
+    ) -> Vec<EncodedChunk> {
+        ChunkSender::resolve_valid_chunks(prepared, encoded_chunks, pending)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::benchmark_support::prepared_full_chunk;
+    use super::*;
+    use crate::behavior::init_behaviors;
+    use crate::chunk::chunk_holder::TickingReadiness;
+    use steel_registry::init_vanilla_registry;
+
+    fn encode_positions(positions: &[ChunkPos]) -> (PreparedBatch, Vec<EncodedChunk>) {
+        init_vanilla_registry();
+        init_behaviors();
+        let batch = PreparedBatch {
+            chunks: positions.iter().copied().map(prepared_full_chunk).collect(),
+            has_skylight: true,
+            epoch_snapshot: 0,
+        };
+        let encoding_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(2)
+            .build()
+            .expect("test chunk encoding pool should initialize");
+        let mut cache = FxHashMap::default();
+        let encoded = ChunkSender::encode_batch(&batch, &mut cache, None, &encoding_pool);
+        (batch, encoded)
+    }
+
+    #[test]
+    fn batch_resolution_keeps_every_still_pending_chunk_in_batch_order() {
+        let positions = [
+            ChunkPos::new(3, -2),
+            ChunkPos::new(-1, 4),
+            ChunkPos::new(8, 5),
+            ChunkPos::new(0, 0),
+        ];
+        let (batch, encoded) = encode_positions(&positions);
+        let pending = positions.iter().copied().collect::<FxHashSet<_>>();
+
+        let valid = ChunkSender::resolve_valid_chunks(&batch.chunks, encoded, &pending);
+
+        assert_eq!(
+            valid.iter().map(|chunk| chunk.pos).collect::<Vec<_>>(),
+            positions
+        );
+    }
+
+    #[test]
+    fn batch_resolution_walks_past_prepared_chunks_that_failed_to_encode() {
+        let positions = [
+            ChunkPos::new(0, 0),
+            ChunkPos::new(1, 0),
+            ChunkPos::new(2, 0),
+            ChunkPos::new(3, 0),
+            ChunkPos::new(4, 0),
+        ];
+        let (batch, encoded) = encode_positions(&positions);
+        let kept = [ChunkPos::new(1, 0), ChunkPos::new(4, 0)];
+        let encoded = encoded
+            .into_iter()
+            .filter(|chunk| kept.contains(&chunk.pos))
+            .collect::<Vec<_>>();
+        let pending = positions.iter().copied().collect::<FxHashSet<_>>();
+
+        let valid = ChunkSender::resolve_valid_chunks(&batch.chunks, encoded, &pending);
+
+        assert_eq!(
+            valid.iter().map(|chunk| chunk.pos).collect::<Vec<_>>(),
+            kept
+        );
+    }
+
+    #[test]
+    fn batch_resolution_drops_chunks_no_longer_pending() {
+        let positions = [
+            ChunkPos::new(0, 0),
+            ChunkPos::new(1, 0),
+            ChunkPos::new(2, 0),
+        ];
+        let (batch, encoded) = encode_positions(&positions);
+        let mut pending = positions.iter().copied().collect::<FxHashSet<_>>();
+        pending.remove(&ChunkPos::new(1, 0));
+
+        let valid = ChunkSender::resolve_valid_chunks(&batch.chunks, encoded, &pending);
+
+        assert_eq!(
+            valid.iter().map(|chunk| chunk.pos).collect::<Vec<_>>(),
+            [ChunkPos::new(0, 0), ChunkPos::new(2, 0)]
+        );
+    }
+
+    #[test]
+    fn batch_resolution_drops_chunks_demoted_after_encoding() {
+        let positions = [
+            ChunkPos::new(0, 0),
+            ChunkPos::new(1, 0),
+            ChunkPos::new(2, 0),
+        ];
+        let (batch, encoded) = encode_positions(&positions);
+        batch.chunks[1]
+            .holder
+            .transition_ticking_readiness(TickingReadiness::Unready);
+        let pending = positions.iter().copied().collect::<FxHashSet<_>>();
+
+        let valid = ChunkSender::resolve_valid_chunks(&batch.chunks, encoded, &pending);
+
+        assert_eq!(
+            valid.iter().map(|chunk| chunk.pos).collect::<Vec<_>>(),
+            [ChunkPos::new(0, 0), ChunkPos::new(2, 0)]
+        );
     }
 
     #[test]
