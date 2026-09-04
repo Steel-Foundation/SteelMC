@@ -12,7 +12,8 @@ impl ChunkMap {
         let world = self.world_gen_context.world();
         let mut last_view_guard = player.last_tracking_view.lock();
 
-        if last_view_guard.as_ref() != Some(&new_view) {
+        let view_unchanged = last_view_guard.as_ref() == Some(&new_view);
+        if !view_unchanged {
             let new_ticket = ChunkTicket::player(new_view.view_distance, world.simulation_distance);
 
             if let Some(last_view) = last_view_guard.as_ref() {
@@ -87,11 +88,22 @@ impl ChunkMap {
 
         // Entity visibility also depends on exact player position, not only
         // chunk-view changes. Vanilla refreshes tracked entities for accepted
-        // movement within the same chunk as well.
+        // movement within the same chunk as well. When the view is unchanged the
+        // refresh is scoped to entities registered around the player chunk; view
+        // changes keep the full world scan.
         let sent_chunks = player.chunk_sender.lock().sent_chunks_snapshot();
-        world
-            .entity_tracker()
-            .update_player(player, &new_view, |chunk| sent_chunks.contains(&chunk));
+        let tracker = world.entity_tracker();
+        if view_unchanged {
+            tracker.update_player_nearby(
+                player,
+                &new_view,
+                current_chunk_pos,
+                u32::from(view_distance),
+                |chunk| sent_chunks.contains(&chunk),
+            );
+        } else {
+            tracker.update_player(player, &new_view, |chunk| sent_chunks.contains(&chunk));
+        }
     }
 
     /// Removes a player from the chunk map.

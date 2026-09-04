@@ -2,6 +2,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use crate::chunk::player_chunk_view::PlayerChunkView;
 use glam::DVec3;
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_protocol::packets::common::{
@@ -30,7 +31,7 @@ use uuid::Uuid;
 use crate::behavior::{InteractionResult, init_behaviors};
 use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
-    DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, SharedEntity,
+    DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, RemovalReason, SharedEntity,
     damage::DamageSource, entities::ItemEntity, next_entity_id,
 };
 use crate::inventory::{
@@ -1365,5 +1366,107 @@ fn block_action_restriction_precedes_redstone_ore_attack() {
         world
             .get_block_state(pos)
             .get_value(&BlockStateProperties::LIT)
+    );
+}
+
+#[test]
+fn update_player_nearby_uses_chunk_registry_without_full_scan() {
+    init_vanilla_registry();
+    let world = fresh_test_world("tracker_nearby_scoping");
+    let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
+    let connection = Arc::new(PlayerConnection::Other(Box::new(RecordingConnection {
+        sent_packets: Arc::clone(&sent_packets),
+        closed: AtomicBool::new(false),
+    })));
+    let player = TestPlayerBuilder::new(Arc::clone(&world), "TestPlayer", 1)
+        .connection(connection)
+        .build();
+
+    let item_here: SharedEntity = Arc::new(ItemEntity::new(
+        &vanilla_entities::ITEM,
+        2,
+        DVec3::new(8.0, 64.0, 8.0),
+        Arc::downgrade(&world),
+    ));
+    let item_far: SharedEntity = Arc::new(ItemEntity::new(
+        &vanilla_entities::ITEM,
+        3,
+        DVec3::new(640.0, 64.0, 640.0),
+        Arc::downgrade(&world),
+    ));
+
+    let tracker = world.entity_tracker();
+    tracker.add(
+        &item_here,
+        |chunk| {
+            (chunk == ChunkPos::new(0, 0))
+                .then(|| player.id())
+                .into_iter()
+                .collect()
+        },
+        |player_id| (player_id == player.id()).then(|| Arc::clone(&player)),
+    );
+    tracker.add(
+        &item_far,
+        |chunk| {
+            (chunk == ChunkPos::new(40, 40))
+                .then(|| player.id())
+                .into_iter()
+                .collect()
+        },
+        |player_id| (player_id == player.id()).then(|| Arc::clone(&player)),
+    );
+
+    assert_eq!(
+        tracker.tracking_player_ids(item_here.id()),
+        vec![player.id()],
+        "item at the player chunk should be tracked right after add"
+    );
+    assert!(
+        tracker.tracking_player_ids(item_far.id()).is_empty(),
+        "far item is outside the tracking range, so nothing is tracked yet"
+    );
+
+    let view = PlayerChunkView::new(ChunkPos::new(0, 0), 2);
+
+    // add() legitimately spawns the tracked item to the watching player; the scoped
+    // refresh itself must stay silent.
+    sent_packets.lock().clear();
+    tracker.update_player_nearby(&player, &view, ChunkPos::new(0, 0), 2, |_| true);
+
+    // The nearby refresh keeps the near pairing intact and must not re-send anything:
+    // the far entity is outside the scanned radius and was never tracked.
+    assert_eq!(
+        tracker.tracking_player_ids(item_here.id()),
+        vec![player.id()]
+    );
+    assert!(
+        tracker.tracking_player_ids(item_far.id()).is_empty(),
+        "far entity outside the radius must not be evaluated or despawned"
+    );
+    assert_eq!(
+        sent_packets.lock().len(),
+        0,
+        "scoped refresh must not send packets for already-paired entities"
+    );
+
+    // Removing the near entity must be picked up by the scoped refresh: it is inside
+    // the radius, so the pass evaluates it and despawns it for the player.
+    item_here.set_removed(RemovalReason::Discarded);
+    tracker.update_player_nearby(&player, &view, ChunkPos::new(0, 0), 2, |_| true);
+
+    assert!(
+        tracker.tracking_player_ids(item_here.id()).is_empty(),
+        "removed entities inside the radius are despawned by the scoped refresh"
+    );
+    let removed = sent_packets
+        .lock()
+        .iter()
+        .flat_map(removed_entity_ids)
+        .collect::<Vec<_>>();
+    assert_eq!(removed, vec![item_here.id()]);
+    assert!(
+        tracker.tracking_player_ids(item_far.id()).is_empty(),
+        "the far entity stays outside the scoped refresh"
     );
 }

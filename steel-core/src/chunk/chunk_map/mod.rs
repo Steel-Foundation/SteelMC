@@ -698,6 +698,12 @@ impl ChunkMap {
 
         let mut world = None;
 
+        // Light sends are resolved once per player after the loop: each player's view
+        // and chunk sender are locked a single time for the whole pass instead of once
+        // per candidate chunk.
+        let mut light_writes: Vec<(ChunkPos, EncodedPacket, Vec<i32>)> = Vec::new();
+        let mut light_candidates: FxHashMap<i32, Vec<usize>> = FxHashMap::default();
+
         for holder in holders {
             let chunk_pos = holder.get_pos();
             // Vanilla publishes block changes independently of unfinished light propagation.
@@ -719,7 +725,7 @@ impl ChunkMap {
             if has_publishable_light_changes
                 && let Some(chunk) = holder.try_chunk(ChunkStatus::Full)
             {
-                let tracking_players = world.get_light_packet_tracking_players(chunk_pos);
+                let tracking_players = world.player_area_map.get_tracking_players(chunk_pos);
                 if !tracking_players.is_empty() {
                     let light_data = {
                         let light = chunk.light();
@@ -751,11 +757,11 @@ impl ChunkMap {
                         continue;
                     };
 
+                    let index = light_writes.len();
                     for entity_id in &tracking_players {
-                        if let Some(player) = world.players.get_by_entity_id(*entity_id) {
-                            player.connection.send_encoded(encoded.clone());
-                        }
+                        light_candidates.entry(*entity_id).or_default().push(index);
                     }
+                    light_writes.push((chunk_pos, encoded, tracking_players));
                 }
             }
 
@@ -853,6 +859,27 @@ impl ChunkMap {
                         let block_pos = section_pos.relative_to_block_pos(packed);
                         world.broadcast_block_entity_if_needed(block_pos);
                     }
+                }
+            }
+        }
+
+        // Resolve the deferred light sends: one lock pair per player for the whole pass.
+        let world = world.get_or_insert_with(|| self.world_gen_context.world());
+        for (entity_id, indices) in light_candidates {
+            let Some(player) = world.players.get_by_entity_id(entity_id) else {
+                continue;
+            };
+            let Some(view) = *player.last_tracking_view.lock() else {
+                continue;
+            };
+            let chunk_sender = player.chunk_sender.lock();
+            let is_chunk_sent = |pos| chunk_sender.is_chunk_sent(pos);
+            for index in indices {
+                let Some((chunk_pos, encoded, _)) = light_writes.get(index) else {
+                    continue;
+                };
+                if World::chunk_is_on_packet_tracked_border(view, *chunk_pos, &is_chunk_sent) {
+                    player.connection.send_encoded(encoded.clone());
                 }
             }
         }

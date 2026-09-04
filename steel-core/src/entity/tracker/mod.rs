@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use glam::DVec3;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use steel_protocol::packets::game::{
     AttributeSnapshot, CAddEntity, CRemoveEntities, CSetEntityData, CSetEntityLink,
     CSetEntityMotion, CSetEquipment, CSetPassengers, CUpdateAttributes, EquipmentSlotItem,
@@ -32,6 +32,9 @@ const BLOCKS_PER_CHUNK: f64 = 16.0;
 pub struct EntityTracker {
     /// Maps entity ID to its tracking data.
     entities: scc::HashMap<i32, TrackedEntity>,
+    /// Secondary index of entity IDs by their registered chunk, so player refreshes can
+    /// be scoped to nearby chunks instead of scanning every tracked entity.
+    entities_by_chunk: SyncMutex<FxHashMap<ChunkPos, FxHashSet<i32>>>,
 }
 
 /// Packet sinks used by [`EntityTracker::send_changes`].
@@ -115,6 +118,7 @@ impl EntityTracker {
     pub fn new() -> Self {
         Self {
             entities: scc::HashMap::new(),
+            entities_by_chunk: SyncMutex::new(FxHashMap::default()),
         }
     }
 
@@ -185,6 +189,12 @@ impl EntityTracker {
             "entity {entity_id} is already tracked"
         );
 
+        self.entities_by_chunk
+            .lock()
+            .entry(registered_chunk)
+            .or_default()
+            .insert(entity_id);
+
         // Send spawn packets to all nearby players
         for player_id in player_ids_to_notify {
             if let Some(player) = get_player(player_id) {
@@ -196,6 +206,13 @@ impl EntityTracker {
     /// Stops tracking an entity and sends despawn to all tracking players.
     pub fn remove(&self, entity_id: i32, get_player: impl Fn(i32) -> Option<Arc<Player>>) {
         if let Some((_, tracked)) = self.entities.remove_sync(&entity_id) {
+            if let Some(bucket) = self
+                .entities_by_chunk
+                .lock()
+                .get_mut(&tracked.registered_chunk)
+            {
+                bucket.remove(&entity_id);
+            }
             let entity = tracked.entity.upgrade();
             // Send despawn to all tracking players
             for player_id in tracked.seen_by.read().iter() {
@@ -225,7 +242,6 @@ impl EntityTracker {
     ) {
         let player_id = player.id();
         let player_pos = player.position();
-        let player_view_distance = view.view_distance;
 
         let mut entities_to_despawn = Vec::new();
         let mut entities_to_spawn = Vec::new();
@@ -238,17 +254,16 @@ impl EntityTracker {
                 return true;
             };
 
-            let visible = !entity.is_removed()
-                && entity_id != player_id
-                && view.contains(tracked.registered_chunk)
-                && is_chunk_sent(tracked.registered_chunk)
-                && entity.broadcast_to_player(player)
-                && is_within_tracking_distance(
-                    entity.position(),
-                    player_pos,
-                    effective_tracking_range(entity.as_ref(), tracked.tracking_range),
-                    player_view_distance,
-                );
+            let visible = Self::entity_visible_to_player(
+                entity.as_ref(),
+                entity_id,
+                player,
+                player_pos,
+                view,
+                tracked.registered_chunk,
+                tracked.tracking_range,
+                &is_chunk_sent,
+            );
 
             let mut despawn = false;
             {
@@ -286,6 +301,108 @@ impl EntityTracker {
         for entity_id in dead_entities {
             self.remove_dead_entity(entity_id);
         }
+    }
+
+    /// Refreshes the tracked-entity set for one player whose view did not change:
+    /// only entities registered within `radius_chunks` of `center` are evaluated
+    /// instead of scanning the whole world tracker.
+    pub fn update_player_nearby(
+        &self,
+        player: &Player,
+        view: &PlayerChunkView,
+        center: ChunkPos,
+        radius_chunks: u32,
+        is_chunk_sent: impl Fn(ChunkPos) -> bool,
+    ) {
+        let radius = i32::try_from(radius_chunks).unwrap_or(i32::MAX);
+        let mut candidate_ids: Vec<i32> = Vec::new();
+        {
+            let registry = self.entities_by_chunk.lock();
+            for dx in -radius..=radius {
+                for dz in -radius..=radius {
+                    if let Some(bucket) =
+                        registry.get(&ChunkPos::new(center.0.x + dx, center.0.y + dz))
+                    {
+                        candidate_ids.extend(bucket.iter().copied());
+                    }
+                }
+            }
+        }
+
+        let player_id = player.id();
+        let player_pos = player.position();
+        for entity_id in candidate_ids {
+            let mut despawn_packet = None;
+            let mut just_spawned = None;
+            let mut despawn = false;
+            let mut is_dead = false;
+            self.entities.read_sync(&entity_id, |_, tracked| {
+                let Some(entity) = tracked.entity.upgrade() else {
+                    is_dead = true;
+                    return;
+                };
+                let visible = Self::entity_visible_to_player(
+                    entity.as_ref(),
+                    entity_id,
+                    player,
+                    player_pos,
+                    view,
+                    tracked.registered_chunk,
+                    tracked.tracking_range,
+                    &is_chunk_sent,
+                );
+                let mut seen_by = tracked.seen_by.write();
+                if visible && seen_by.insert(player_id) {
+                    just_spawned = Some(entity.clone());
+                } else if !visible && seen_by.remove(&player_id) {
+                    despawn_packet =
+                        self.vehicle_passenger_packet_for_player(entity.as_ref(), player_id);
+                    despawn = true;
+                }
+            });
+            if is_dead {
+                self.remove_dead_entity(entity_id);
+            } else {
+                if despawn {
+                    player.send_packet(CRemoveEntities::single(entity_id));
+                }
+                if let Some(packet) = despawn_packet {
+                    player.send_packet(packet);
+                }
+                if let Some(entity) = just_spawned {
+                    self.send_spawn_packets(&entity, player);
+                }
+            }
+        }
+    }
+
+    /// Vanilla visibility predicate: chunk tracked, chunk sent, broadcast rules, and
+    /// effective horizontal range.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the predicate mirrors vanilla's updatePlayer inputs one to one"
+    )]
+    fn entity_visible_to_player(
+        entity: &dyn Entity,
+        entity_id: i32,
+        player: &Player,
+        player_pos: DVec3,
+        view: &PlayerChunkView,
+        registered_chunk: ChunkPos,
+        tracking_range: EntityTrackingRange,
+        is_chunk_sent: &impl Fn(ChunkPos) -> bool,
+    ) -> bool {
+        !entity.is_removed()
+            && entity_id != player.id()
+            && view.contains(registered_chunk)
+            && is_chunk_sent(registered_chunk)
+            && entity.broadcast_to_player(player)
+            && is_within_tracking_distance(
+                entity.position(),
+                player_pos,
+                effective_tracking_range(entity, tracking_range),
+                view.view_distance,
+            )
     }
 
     /// Sends tracker-owned movement changes for all tracked entities.
@@ -581,6 +698,13 @@ impl EntityTracker {
             *seen_by = new_seen_by;
             entity_to_spawn = Some(entity);
         });
+        if old_chunk != new_chunk {
+            let mut registry = self.entities_by_chunk.lock();
+            if let Some(old_bucket) = registry.get_mut(&old_chunk) {
+                old_bucket.remove(&entity_id);
+            }
+            registry.entry(new_chunk).or_default().insert(entity_id);
+        }
 
         let Some(entity) = entity_to_spawn else {
             return;
@@ -676,7 +800,14 @@ impl EntityTracker {
     fn remove_dead_entity(&self, entity_id: i32) {
         // Note: We don't send despawn packets here because the players
         // will get updated via player view changes or explicit removals.
-        let _ = self.entities.remove_sync(&entity_id);
+        if let Some((_, tracked)) = self.entities.remove_sync(&entity_id)
+            && let Some(bucket) = self
+                .entities_by_chunk
+                .lock()
+                .get_mut(&tracked.registered_chunk)
+        {
+            bucket.remove(&entity_id);
+        }
     }
 
     fn visible_players_for_entity(
