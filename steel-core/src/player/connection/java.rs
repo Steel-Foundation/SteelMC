@@ -1084,7 +1084,10 @@ mod tests {
 
     #[test]
     fn scheduled_domain_handshake_classification_is_narrow() {
-        let accept = decode(RawPacket::new(play::S_ACCEPT_TELEPORTATION, vec![0]));
+        // Teleport id, then the acknowledged position and rotation.
+        let mut accept_payload = vec![0];
+        accept_payload.extend_from_slice(&[0; size_of::<f64>() * 3 + size_of::<f32>() * 2]);
+        let accept = decode(RawPacket::new(play::S_ACCEPT_TELEPORTATION, accept_payload));
         let DecodedPlayPacket::Scheduled(accept) = accept else {
             panic!("teleport acknowledgement should be scheduled");
         };
@@ -1267,7 +1270,14 @@ mod tests {
     fn audited_handlers_use_the_narrowest_safe_execution_class() {
         assert_eq!(
             execution(ScheduledPlayPacketKind::AcceptTeleportation(
-                SAcceptTeleportation { teleport_id: 1 },
+                SAcceptTeleportation {
+                    teleport_id: 1,
+                    x: 0.0,
+                    y: 64.0,
+                    z: 0.0,
+                    y_rot: 0.0,
+                    x_rot: 0.0,
+                },
             )),
             ScheduledPacketExecution::Serialized
         );

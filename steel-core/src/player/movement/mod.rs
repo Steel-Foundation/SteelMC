@@ -250,11 +250,44 @@ impl Player {
             return;
         }
 
+        let current_position = self.position();
+        self.handle_player_position_change(
+            DVec3::new(
+                packet.get_x(current_position.x),
+                packet.get_y(current_position.y),
+                packet.get_z(current_position.z),
+            ),
+            packet.get_y_rot(current_rotation.0),
+            packet.get_x_rot(current_rotation.1),
+            packet.on_ground,
+            packet.horizontal_collision,
+        );
+    }
+
+    /// Applies a client-reported position and rotation to the player.
+    ///
+    /// Matches vanilla `ServerGamePacketListenerImpl.handlePlayerPositionChange()`, shared by
+    /// the movement packet and the teleport acknowledgement.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "matches vanilla handlePlayerPositionChange; splitting would hurt readability"
+    )]
+    fn handle_player_position_change(
+        &self,
+        requested: DVec3,
+        requested_yaw: f32,
+        requested_pitch: f32,
+        is_on_ground: bool,
+        horizontal_collision: bool,
+    ) {
+        let current_rotation = self.rotation();
+        let target_yaw = wrap_degrees(requested_yaw);
+        let target_pitch = wrap_degrees(requested_pitch);
         let start_pos = self.position();
         let target_pos = DVec3::new(
-            clamp_horizontal(packet.get_x(start_pos.x)),
-            clamp_vertical(packet.get_y(start_pos.y)),
-            clamp_horizontal(packet.get_z(start_pos.z)),
+            clamp_horizontal(requested.x),
+            clamp_vertical(requested.y),
+            clamp_horizontal(requested.z),
         );
         let game_mode = self.game_mode();
         let is_sleeping = self.is_sleeping();
@@ -339,7 +372,7 @@ impl Player {
         let moved_upwards = move_delta.y > 0.0;
         let player_stands_on_something = self.vertical_collision_below();
 
-        if was_on_ground && !packet.on_ground && moved_upwards {
+        if was_on_ground && !is_on_ground && moved_upwards {
             self.jump_from_ground();
         }
 
@@ -385,8 +418,8 @@ impl Player {
                     self.id()
                 );
             }
-            self.refresh_supporting_block_for_fall_damage(DVec3::ZERO, packet.on_ground);
-            self.do_check_fall_damage(DVec3::ZERO, packet.on_ground, &world);
+            self.refresh_supporting_block_for_fall_damage(DVec3::ZERO, is_on_ground);
+            self.do_check_fall_damage(DVec3::ZERO, is_on_ground, &world);
             self.remove_latest_movement_recording();
             return;
         }
@@ -395,7 +428,7 @@ impl Player {
         // post-move residual used by moved-wrongly validation.
         let floating_check = Some((player_stands_on_something, move_delta.y));
 
-        if packet.on_ground && self.is_sprinting() {
+        if is_on_ground && self.is_sprinting() {
             let dx = move_delta.x;
             let dz = move_delta.z;
 
@@ -411,8 +444,8 @@ impl Player {
             AcceptedClientMovement {
                 position: Some(target_pos),
                 rotation: (target_yaw, target_pitch),
-                on_ground: packet.on_ground,
-                horizontal_collision: packet.horizontal_collision,
+                on_ground: is_on_ground,
+                horizontal_collision: horizontal_collision,
                 movement: client_delta,
                 reset_fall_distance: moved_upwards,
             },
@@ -856,6 +889,15 @@ impl Player {
     pub fn handle_accept_teleportation(&self, packet: SAcceptTeleportation) {
         let mut tp = self.teleport_state.lock();
 
+        // Vanilla rejects a NaN/infinite acknowledged position before accepting the teleport.
+        if packet.teleport_id == tp.teleport_id
+            && Self::is_invalid_position(packet.x, packet.y, packet.z, packet.x_rot, packet.y_rot)
+        {
+            drop(tp);
+            self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());
+            return;
+        }
+
         if let Some(pos) = tp.try_accept(packet.teleport_id) {
             drop(tp);
             if let Err(error) = self.try_set_position(pos) {
@@ -867,9 +909,21 @@ impl Player {
                 return;
             }
             self.set_old_position_to_current();
-            let mut movement = self.movement.lock();
-            movement.mark_last_good_position(pos);
-            movement.reset_last_known_client_movement();
+            {
+                let mut movement = self.movement.lock();
+                movement.mark_last_good_position(pos);
+                movement.reset_last_known_client_movement();
+            }
+
+            // Vanilla feeds the acknowledged position through the shared movement path
+            // once the awaited position has been committed.
+            self.handle_player_position_change(
+                DVec3::new(packet.x, packet.y, packet.z),
+                packet.y_rot,
+                packet.x_rot,
+                false,
+                false,
+            );
         } else if packet.teleport_id == tp.teleport_id && tp.awaiting_position.is_none() {
             drop(tp);
             self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());
