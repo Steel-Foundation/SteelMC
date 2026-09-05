@@ -367,14 +367,13 @@ fn filled_bucket_primary_pos(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use crate::{
         behavior::init_behaviors,
         player::game_mode::use_item,
         test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk},
     };
     use glam::DVec3;
+    use std::sync::Arc;
     use steel_registry::{
         RegistryHolderSet,
         data_component_predicate::DataComponentMatchers,
