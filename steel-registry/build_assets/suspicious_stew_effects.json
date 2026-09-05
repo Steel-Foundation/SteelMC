@@ -1,0 +1,155 @@
+[
+  {
+    "item": "minecraft:dandelion",
+    "effects": [
+      {
+        "effect": "minecraft:saturation",
+        "duration": 7
+      }
+    ]
+  },
+  {
+    "item": "minecraft:golden_dandelion",
+    "effects": [
+      {
+        "effect": "minecraft:saturation",
+        "duration": 7
+      }
+    ]
+  },
+  {
+    "item": "minecraft:open_eyeblossom",
+    "effects": [
+      {
+        "effect": "minecraft:blindness",
+        "duration": 220
+      }
+    ]
+  },
+  {
+    "item": "minecraft:closed_eyeblossom",
+    "effects": [
+      {
+        "effect": "minecraft:nausea",
+        "duration": 140
+      }
+    ]
+  },
+  {
+    "item": "minecraft:poppy",
+    "effects": [
+      {
+        "effect": "minecraft:night_vision",
+        "duration": 100
+      }
+    ]
+  },
+  {
+    "item": "minecraft:blue_orchid",
+    "effects": [
+      {
+        "effect": "minecraft:saturation",
+        "duration": 7
+      }
+    ]
+  },
+  {
+    "item": "minecraft:allium",
+    "effects": [
+      {
+        "effect": "minecraft:fire_resistance",
+        "duration": 60
+      }
+    ]
+  },
+  {
+    "item": "minecraft:azure_bluet",
+    "effects": [
+      {
+        "effect": "minecraft:blindness",
+        "duration": 220
+      }
+    ]
+  },
+  {
+    "item": "minecraft:red_tulip",
+    "effects": [
+      {
+        "effect": "minecraft:weakness",
+        "duration": 140
+      }
+    ]
+  },
+  {
+    "item": "minecraft:orange_tulip",
+    "effects": [
+      {
+        "effect": "minecraft:weakness",
+        "duration": 140
+      }
+    ]
+  },
+  {
+    "item": "minecraft:white_tulip",
+    "effects": [
+      {
+        "effect": "minecraft:weakness",
+        "duration": 140
+      }
+    ]
+  },
+  {
+    "item": "minecraft:pink_tulip",
+    "effects": [
+      {
+        "effect": "minecraft:weakness",
+        "duration": 140
+      }
+    ]
+  },
+  {
+    "item": "minecraft:oxeye_daisy",
+    "effects": [
+      {
+        "effect": "minecraft:regeneration",
+        "duration": 140
+      }
+    ]
+  },
+  {
+    "item": "minecraft:cornflower",
+    "effects": [
+      {
+        "effect": "minecraft:jump_boost",
+        "duration": 100
+      }
+    ]
+  },
+  {
+    "item": "minecraft:lily_of_the_valley",
+    "effects": [
+      {
+        "effect": "minecraft:poison",
+        "duration": 220
+      }
+    ]
+  },
+  {
+    "item": "minecraft:wither_rose",
+    "effects": [
+      {
+        "effect": "minecraft:wither",
+        "duration": 140
+      }
+    ]
+  },
+  {
+    "item": "minecraft:torchflower",
+    "effects": [
+      {
+        "effect": "minecraft:night_vision",
+        "duration": 100
+      }
+    ]
+  }
+]
