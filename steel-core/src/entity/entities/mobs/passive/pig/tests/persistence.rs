@@ -258,3 +258,43 @@ fn pig_drop_all_leash_connections_clears_own_live_leash() {
     assert!(!pig.is_leashed());
     assert!(!pig.may_be_leashed());
 }
+
+#[test]
+fn pig_saves_and_loads_saddle_equipment() {
+    init_vanilla_registry();
+
+    let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
+    let saddle = ItemStack::new(&vanilla_items::SADDLE);
+    pig.living_base()
+        .equipment()
+        .lock()
+        .set(EquipmentSlot::Saddle, saddle.clone());
+    assert!(pig.is_saddled());
+
+    let mut nbt = NbtCompound::new();
+    pig.save_additional(&mut nbt);
+
+    let equipment = nbt
+        .compound("equipment")
+        .expect("equipment compound should be saved");
+    let saddle_nbt = equipment
+        .compound("saddle")
+        .expect("saddle slot should be saved");
+    assert_eq!(
+        saddle_nbt.string("id").map(ToString::to_string),
+        Some("minecraft:saddle".to_owned())
+    );
+
+    let mut bytes = Vec::new();
+    nbt.write(&mut bytes);
+    let borrowed = read_borrowed_compound(&mut Cursor::new(&bytes))
+        .unwrap_or_else(|error| panic!("test nbt should reborrow: {error}"));
+
+    let loaded_pig = PigEntity::new(&vanilla_entities::PIG, 2, DVec3::ZERO, Weak::new());
+    assert!(!loaded_pig.is_saddled());
+    loaded_pig.load_additional((&borrowed).into());
+    assert!(loaded_pig.is_saddled());
+    loaded_pig.with_equipment_slot(EquipmentSlot::Saddle, &mut |item| {
+        assert_eq!(item.item().key, vanilla_items::SADDLE.key);
+    });
+}
