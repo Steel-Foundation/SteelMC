@@ -811,7 +811,7 @@ impl JavaConnection {
                     .lock()
                     .on_chunk_batch_received_by_client(packet.desired_chunks_per_tick);
             }
-            ImmediatePlayPacket::Unknown(id) => log::info!("play packet id {id} is not known"),
+            ImmediatePlayPacket::Unknown(id) => log::debug!("play packet id {id} is not known"),
         }
     }
 
@@ -830,10 +830,14 @@ impl JavaConnection {
                     match packet {
                         Ok(packet) => {
                             if let Some(player) = self.player.upgrade()
-                                && let Err(err) = self.process_packet(packet, player, &server) {
-                                log::warn!(
-                                    "Failed to get packet from client {}: {err}",
-                                    self.id
+                                && let Err(err) = self.process_packet(packet, player, &server)
+                            {
+                                // A packet failed to decode or dispatch. The stream framing
+                                // is still intact, so the vanilla invalid-packet disconnect
+                                // reaches the client before the connection closes.
+                                log::warn!("Failed to process packet from client {}: {err}", self.id);
+                                self.disconnect(
+                                    translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg(),
                                 );
                             }
                         }

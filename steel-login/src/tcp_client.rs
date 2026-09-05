@@ -524,6 +524,10 @@ impl JavaTcpClient {
                             }
                             LoginOperationResult::Completed(Err(err)) => {
                                 log::warn!("Failed to get packet from client {id}: {err}");
+                                let reason = TextComponent::translated(
+                                    translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg(),
+                                );
+                                self_clone.kick(reason).await;
                             }
                             LoginOperationResult::Cancelled => break,
                             LoginOperationResult::TimedOut => {
