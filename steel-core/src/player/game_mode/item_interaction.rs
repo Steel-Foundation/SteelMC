@@ -1,7 +1,7 @@
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockHitResult, Entity, GameType, ITEM_BEHAVIORS, InteractionHand,
-    InteractionResult, InventoryAccess, Player, REGISTRY, SUseItem, UseOnContext, World,
-    wrap_degrees,
+    InteractionResult, InventoryAccess, LivingEntity, Player, REGISTRY, SUseItem, UseOnContext,
+    World, wrap_degrees,
 };
 
 /// Handles using an item on a block.
@@ -204,7 +204,7 @@ impl Player {
         let result = use_item(self, &world, packet.hand);
 
         if result.should_swing_server() {
-            self.swing(packet.hand, true);
+            self.swing(packet.hand, self.interact_animation(packet.hand), true);
         }
 
         self.broadcast_inventory_changes();

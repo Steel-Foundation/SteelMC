@@ -21,8 +21,8 @@ impl Player {
     }
 
     /// Triggers arm swing animation and broadcasts it to tracking players.
-    pub fn swing(&self, hand: InteractionHand, update_self: bool) {
-        LivingEntity::swing(self, hand, update_self);
+    pub fn swing(&self, hand: InteractionHand, animation: SwingAnimation, update_self: bool) {
+        LivingEntity::swing(self, hand, animation, update_self);
     }
 
     /// Handles the use of an item on a block.
@@ -85,7 +85,7 @@ impl Player {
         let result = use_item_on(self, &world, packet.hand, &packet.block_hit);
 
         if result.should_swing_server() {
-            self.swing(packet.hand, true);
+            self.swing(packet.hand, self.interact_animation(packet.hand), true);
         }
 
         self.send_block_updates(pos, direction);

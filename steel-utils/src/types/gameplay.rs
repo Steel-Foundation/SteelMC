@@ -178,11 +178,18 @@ impl<'de> Deserialize<'de> for Difficulty {
 
 /// Represents the hand used for an interaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum InteractionHand {
     /// The main hand.
-    MainHand,
+    MainHand = 0,
     /// The off hand.
-    OffHand,
+    OffHand = 1,
+}
+
+impl WriteTo for InteractionHand {
+    fn write(&self, writer: &mut impl Write) -> io::Result<()> {
+        VarInt(*self as i32).write(writer)
+    }
 }
 
 impl ReadFrom for InteractionHand {

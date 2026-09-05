@@ -17,8 +17,8 @@ use steel_protocol::packets::game::{
     SCommandSuggestion, SContainerButtonClick, SContainerClick, SContainerClose,
     SContainerSlotStateChanged, SInteract, SMovePlayer, SMovePlayerPos, SMovePlayerPosRot,
     SMovePlayerRot, SMovePlayerStatusOnly, SMoveVehicle, SPickItemFromBlock, SPlayerAbilities,
-    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SRenameItem, SSetCarriedItem,
-    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SSwing, SUseItem, SUseItemOn,
+    SPlayerAction, SPlayerCommand, SPlayerInput, SPlayerLoad, SPunch, SRenameItem, SSetCarriedItem,
+    SSetCreativeModeSlot, SSignUpdate, SSpectatorAction, SUseItem, SUseItemOn,
 };
 
 use steel_protocol::utils::{ConnectionProtocol, PacketError, RawPacket};
@@ -99,7 +99,7 @@ enum ScheduledPlayPacketKind {
     UseItemOn(SUseItemOn),
     UseItem(SUseItem),
     SetCarriedItem(SSetCarriedItem),
-    Swing(SSwing),
+    Punch(SPunch),
     PlayerAction(SPlayerAction),
     PickItemFromBlock(SPickItemFromBlock),
     SignUpdate(SSignUpdate),
@@ -166,7 +166,7 @@ impl ScheduledPlayPacket {
             | ScheduledPlayPacketKind::PlayerInput(_)
             | ScheduledPlayPacketKind::PlayerAbilities(_)
             | ScheduledPlayPacketKind::SetCarriedItem(_)
-            | ScheduledPlayPacketKind::Swing(_)
+            | ScheduledPlayPacketKind::Punch(_)
             | ScheduledPlayPacketKind::PickItemFromBlock(_)
             | ScheduledPlayPacketKind::ClientCommand(_) => ScheduledPacketExecution::PlayerLocal,
             ScheduledPlayPacketKind::PlayerCommand(packet) => match packet.action {
@@ -314,7 +314,7 @@ impl ScheduledPlayPacket {
             ScheduledPlayPacketKind::SetCarriedItem(packet) => {
                 player.handle_set_carried_item(packet);
             }
-            ScheduledPlayPacketKind::Swing(packet) => player.handle_animate(packet),
+            ScheduledPlayPacketKind::Punch(packet) => player.handle_punch(&packet),
             ScheduledPlayPacketKind::PlayerAction(packet) => {
                 player.handle_player_action(packet);
             }
@@ -770,7 +770,7 @@ impl JavaConnection {
             play::S_SET_CARRIED_ITEM => scheduled(ScheduledPlayPacketKind::SetCarriedItem(
                 SSetCarriedItem::read_packet(data)?,
             )),
-            play::S_PUNCH => scheduled(ScheduledPlayPacketKind::Swing(SSwing::read_packet(data)?)),
+            play::S_PUNCH => scheduled(ScheduledPlayPacketKind::Punch(SPunch::read_packet(data)?)),
             play::S_PLAYER_ACTION => scheduled(ScheduledPlayPacketKind::PlayerAction(
                 SPlayerAction::read_packet(data)?,
             )),
@@ -976,11 +976,7 @@ mod tests {
     use steel_protocol::packets::common::{ChatVisibility, HumanoidArm, ParticleStatus};
     use steel_protocol::packets::game::{ClickType, ClientCommandAction, HashedStack};
     use steel_registry::{blocks::properties::Direction, item_stack::ItemStack};
-    use steel_utils::{
-        BlockPos,
-        codec::VarInt,
-        types::{InteractionHand, SignTextSlot},
-    };
+    use steel_utils::{BlockPos, codec::VarInt, types::SignTextSlot};
     use uuid::Uuid;
 
     use super::*;
@@ -1338,9 +1334,7 @@ mod tests {
             ScheduledPacketExecution::Serialized
         );
         assert_eq!(
-            execution(ScheduledPlayPacketKind::Swing(SSwing {
-                hand: InteractionHand::MainHand,
-            })),
+            execution(ScheduledPlayPacketKind::Punch(SPunch {})),
             ScheduledPacketExecution::PlayerLocal
         );
         assert_eq!(

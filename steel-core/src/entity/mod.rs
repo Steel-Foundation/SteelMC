@@ -13,15 +13,16 @@ use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
-    AnimateAction, AttributeSnapshot, CAnimate, CDamageEvent, CEntityEvent, CHurtAnimation,
+    AttributeSnapshot, CDamageEvent, CEntityEvent, CHurtAnimation, CSwingAnimation,
     CTeleportEntity, EquipmentSlotItem, RelativeMovement, SoundSource,
 };
 use steel_registry::blocks::{
     behavior::PushReaction, block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
     shapes::is_shape_full_block,
 };
+use steel_registry::data_components::DataComponentType;
 use steel_registry::data_components::vanilla_components::{
-    ATTACK_ANIMATION, GLIDER, SwingAnimation,
+    ATTACK_ANIMATION, GLIDER, INTERACT_ANIMATION, SwingAnimation,
 };
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_data::{DataValue, EntityPose, HumanoidArm};

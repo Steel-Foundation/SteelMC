@@ -18,6 +18,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::damage_type::DamageType;
 use steel_registry::data_components::components::PiercingWeapon;
+use steel_registry::data_components::vanilla_components::SwingAnimation;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_event::{SoundEventHolder, SoundEventRef};

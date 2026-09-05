@@ -13,6 +13,7 @@ use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_protocol::packets::game::{CRemoveMobEffect, CUpdateMobEffect, MobEffectPacketFlags};
 use steel_registry::RegistryEntry;
 use steel_registry::attribute::AttributeRef;
+use steel_registry::data_components::vanilla_components::SwingAnimation;
 use steel_registry::entity_data::ParticleList;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
@@ -501,6 +502,7 @@ pub struct LivingSwingState {
     swinging: bool,
     swinging_arm: Option<InteractionHand>,
     swing_time: i32,
+    duration: i32,
     old_attack_anim: f32,
     attack_anim: f32,
 }
@@ -513,6 +515,7 @@ impl LivingSwingState {
             swinging: false,
             swinging_arm: None,
             swing_time: 0,
+            duration: SwingAnimation::DEFAULT.duration,
             old_attack_anim: 0.0,
             attack_anim: 0.0,
         }
@@ -534,6 +537,12 @@ impl LivingSwingState {
     #[must_use]
     pub const fn swing_time(self) -> i32 {
         self.swing_time
+    }
+
+    /// Returns the modified duration of the swing currently in progress.
+    #[must_use]
+    pub const fn duration(self) -> i32 {
+        self.duration
     }
 
     /// Returns vanilla `LivingEntity.oAttackAnim`.
@@ -901,27 +910,31 @@ impl LivingEntityBase {
     }
 
     /// Starts vanilla `LivingEntity.swing` state if the swing gate allows it.
-    pub fn start_swing(&self, hand: InteractionHand, current_swing_duration: i32) -> bool {
+    ///
+    /// `duration` is the modified duration of the swing being started; it is
+    /// retained so the per-tick update keeps using the animation the swing
+    /// actually began with.
+    pub fn start_swing(&self, hand: InteractionHand, duration: i32) -> bool {
         let mut state = self.state.lock();
         let swing = &mut state.swing;
-        if swing.swinging && swing.swing_time < current_swing_duration / 2 && swing.swing_time >= 0
-        {
+        if swing.swinging && swing.swing_time < swing.duration / 2 && swing.swing_time >= 0 {
             return false;
         }
 
         swing.swing_time = -1;
         swing.swinging = true;
         swing.swinging_arm = Some(hand);
+        swing.duration = duration;
         true
     }
 
     /// Updates vanilla `LivingEntity.swingTime` and `attackAnim`.
-    pub fn update_swing_time(&self, current_swing_duration: i32) {
+    pub fn update_swing_time(&self) {
         let mut state = self.state.lock();
         let swing = &mut state.swing;
         if swing.swinging {
             swing.swing_time += 1;
-            if swing.swing_time >= current_swing_duration {
+            if swing.swing_time >= swing.duration {
                 swing.swing_time = 0;
                 swing.swinging = false;
             }
@@ -929,7 +942,7 @@ impl LivingEntityBase {
             swing.swing_time = 0;
         }
 
-        swing.attack_anim = swing.swing_time as f32 / current_swing_duration as f32;
+        swing.attack_anim = swing.swing_time as f32 / swing.duration as f32;
     }
 
     /// Returns vanilla `LivingEntity.absorptionAmount` for non-player living entities.

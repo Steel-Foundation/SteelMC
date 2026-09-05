@@ -1,4 +1,5 @@
 use super::*;
+use steel_registry::data_components::vanilla_components::SwingAnimation;
 
 #[test]
 fn default_entity_tick_dispatches_living_tick() {
@@ -39,7 +40,7 @@ fn living_tick_state_updates_swing_time() {
     init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    entity.swing(InteractionHand::MainHand, false);
+    entity.swing_for_attack(InteractionHand::MainHand);
     assert_eq!(entity.living_swing_state().swing_time(), -1);
 
     entity.tick_living_state();
@@ -51,21 +52,31 @@ fn living_tick_state_updates_swing_time() {
 }
 
 #[test]
-fn current_swing_duration_uses_vanilla_dig_effects() {
+fn modified_swing_duration_uses_vanilla_dig_effects() {
     init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
-    assert_eq!(entity.current_swing_duration(), DEFAULT_SWING_DURATION);
+    let default = SwingAnimation::DEFAULT;
+    assert_eq!(
+        entity.modified_swing_duration(default),
+        DEFAULT_SWING_DURATION
+    );
 
     entity.set_mob_effect(vanilla_mob_effects::MINING_FATIGUE, 2);
-    assert_eq!(entity.current_swing_duration(), DEFAULT_SWING_DURATION + 6);
+    assert_eq!(
+        entity.modified_swing_duration(default),
+        DEFAULT_SWING_DURATION + 6
+    );
 
     entity.set_mob_effect(vanilla_mob_effects::HASTE, 1);
-    assert_eq!(entity.current_swing_duration(), DEFAULT_SWING_DURATION - 2);
+    assert_eq!(
+        entity.modified_swing_duration(default),
+        DEFAULT_SWING_DURATION - 2
+    );
 }
 
 #[test]
-fn current_swing_duration_uses_held_item_component() {
+fn attack_animation_uses_held_item_component() {
     init_vanilla_registry();
 
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
@@ -74,7 +85,14 @@ fn current_swing_duration_uses_held_item_component() {
         ItemStack::new(&vanilla_items::WOODEN_SPEAR),
     );
 
-    assert_eq!(entity.current_swing_duration(), 13);
+    assert_eq!(
+        entity.attack_animation(InteractionHand::MainHand).duration,
+        13
+    );
+    assert_eq!(
+        entity.interact_animation(InteractionHand::MainHand),
+        SwingAnimation::DEFAULT
+    );
 }
 
 #[test]

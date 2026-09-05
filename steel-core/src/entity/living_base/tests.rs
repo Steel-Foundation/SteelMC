@@ -242,7 +242,7 @@ fn living_swing_uses_vanilla_restart_gate() {
     assert_eq!(state.swinging_arm(), Some(InteractionHand::MainHand));
     assert_eq!(state.swing_time(), -1);
 
-    base.update_swing_time(DEFAULT_SWING_DURATION);
+    base.update_swing_time();
     assert!(!base.start_swing(InteractionHand::OffHand, DEFAULT_SWING_DURATION));
     assert_eq!(
         base.swing_state().swinging_arm(),
@@ -250,7 +250,7 @@ fn living_swing_uses_vanilla_restart_gate() {
     );
 
     for _ in 0..3 {
-        base.update_swing_time(DEFAULT_SWING_DURATION);
+        base.update_swing_time();
     }
     assert!(base.start_swing(InteractionHand::OffHand, DEFAULT_SWING_DURATION));
     let state = base.swing_state();
@@ -264,8 +264,8 @@ fn living_swing_time_updates_attack_animation() {
     let base = LivingEntityBase::new(&vanilla_entities::PIG);
 
     assert!(base.start_swing(InteractionHand::MainHand, DEFAULT_SWING_DURATION));
-    base.update_swing_time(DEFAULT_SWING_DURATION);
-    base.update_swing_time(DEFAULT_SWING_DURATION);
+    base.update_swing_time();
+    base.update_swing_time();
     let state = base.swing_state();
     assert!(state.swinging());
     assert_eq!(state.swing_time(), 1);
@@ -281,7 +281,7 @@ fn living_swing_time_updates_attack_animation() {
     );
 
     for _ in 0..5 {
-        base.update_swing_time(DEFAULT_SWING_DURATION);
+        base.update_swing_time();
     }
     let state = base.swing_state();
     assert!(!state.swinging());

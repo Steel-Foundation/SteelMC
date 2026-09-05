@@ -7,7 +7,8 @@ use super::{
     player_can_change_difficulty, shapes, vanilla_attributes,
 };
 use crate::behavior::blocks::PowderSnowBlock;
-use steel_protocol::packets::game::SSwing;
+use steel_protocol::packets::game::SPunch;
+use steel_utils::types::InteractionHand;
 
 impl Player {
     /// Vanilla `Player.DEFAULT_BLOCK_INTERACTION_RANGE`.
@@ -316,9 +317,15 @@ impl Player {
         self.is_crouching()
     }
 
-    /// Handles a player swing packet.
-    pub fn handle_animate(&self, packet: SSwing) {
+    /// Handles a player punch packet. The punch always swings the main hand
+    /// with the held item's attack animation.
+    pub fn handle_punch(&self, _packet: &SPunch) {
         self.reset_last_action_time();
-        self.swing(packet.hand, false);
+        self.swing(
+            InteractionHand::MainHand,
+            self.attack_animation(InteractionHand::MainHand),
+            false,
+        );
+        self.reset_attack_strength_ticker();
     }
 }

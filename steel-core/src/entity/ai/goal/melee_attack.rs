@@ -51,7 +51,7 @@ impl MeleeAttackGoal {
         }
 
         self.reset_attack_cooldown();
-        mob.swing(InteractionHand::MainHand, false);
+        mob.swing_for_attack(InteractionHand::MainHand);
         if let Some(world) = mob.level() {
             let _ = mob.do_hurt_target(&world, target);
         }

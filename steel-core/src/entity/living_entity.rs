@@ -65,24 +65,9 @@ pub trait LivingEntity: Entity {
         self.living_base().swing_state()
     }
 
-    /// Returns vanilla `LivingEntity.getCurrentSwingDuration`.
-    fn current_swing_duration(&self) -> i32 {
-        let hand = self
-            .living_swing_state()
-            .swinging_arm()
-            .unwrap_or(InteractionHand::MainHand);
-        let slot = match hand {
-            InteractionHand::MainHand => EquipmentSlot::MainHand,
-            InteractionHand::OffHand => EquipmentSlot::OffHand,
-        };
-        let mut swing_duration = SwingAnimation::DEFAULT.duration;
-        self.with_equipment_slot(slot, &mut |item_stack| {
-            swing_duration = item_stack
-                .get(ATTACK_ANIMATION)
-                .copied()
-                .unwrap_or(SwingAnimation::DEFAULT)
-                .duration;
-        });
+    /// Returns vanilla `LivingEntity.getModifiedSwingDuration`.
+    fn modified_swing_duration(&self, animation: SwingAnimation) -> i32 {
+        let swing_duration = animation.duration;
         if let Some(haste) = self.mob_effect(vanilla_mob_effects::HASTE) {
             swing_duration - (1 + haste.amplifier())
         } else if let Some(mining_fatigue) = self.mob_effect(vanilla_mob_effects::MINING_FATIGUE) {
@@ -92,11 +77,42 @@ pub trait LivingEntity: Entity {
         }
     }
 
+    /// Returns vanilla `ItemStack.getAttackAnimation` for the item held in `hand`.
+    fn attack_animation(&self, hand: InteractionHand) -> SwingAnimation {
+        self.held_swing_animation(hand, ATTACK_ANIMATION)
+    }
+
+    /// Returns vanilla `ItemStack.getInteractAnimation` for the item held in `hand`.
+    fn interact_animation(&self, hand: InteractionHand) -> SwingAnimation {
+        self.held_swing_animation(hand, INTERACT_ANIMATION)
+    }
+
+    /// Reads a swing animation component off the item held in `hand`, falling
+    /// back to the vanilla default when the item does not carry one.
+    fn held_swing_animation(
+        &self,
+        hand: InteractionHand,
+        component: DataComponentType<SwingAnimation>,
+    ) -> SwingAnimation {
+        let slot = match hand {
+            InteractionHand::MainHand => EquipmentSlot::MainHand,
+            InteractionHand::OffHand => EquipmentSlot::OffHand,
+        };
+        let mut animation = SwingAnimation::DEFAULT;
+        self.with_equipment_slot(slot, &mut |item_stack| {
+            animation = item_stack
+                .get(component.clone())
+                .copied()
+                .unwrap_or(SwingAnimation::DEFAULT);
+        });
+        animation
+    }
+
     /// Runs vanilla `LivingEntity.swing`.
-    fn swing(&self, hand: InteractionHand, update_self: bool) {
+    fn swing(&self, hand: InteractionHand, animation: SwingAnimation, update_self: bool) {
         if !self
             .living_base()
-            .start_swing(hand, self.current_swing_duration())
+            .start_swing(hand, self.modified_swing_duration(animation))
         {
             return;
         }
@@ -104,11 +120,7 @@ pub trait LivingEntity: Entity {
         let Some(world) = self.level() else {
             return;
         };
-        let action = match hand {
-            InteractionHand::MainHand => AnimateAction::SwingMainHand,
-            InteractionHand::OffHand => AnimateAction::SwingOffHand,
-        };
-        let packet = CAnimate::new(self.id(), action);
+        let packet = CSwingAnimation::new(self.id(), hand, animation);
         let exclude = if update_self { None } else { Some(self.id()) };
         world.broadcast_to_entity_trackers(self.id(), packet.clone(), exclude);
         if update_self && let Some(player) = self.as_player() {
@@ -116,10 +128,14 @@ pub trait LivingEntity: Entity {
         }
     }
 
+    /// Runs vanilla `Mob.swingForAttack` - swings with the held item's attack animation.
+    fn swing_for_attack(&self, hand: InteractionHand) {
+        self.swing(hand, self.attack_animation(hand), false);
+    }
+
     /// Runs vanilla `LivingEntity.updateSwingTime`.
     fn update_swing_time(&self) {
-        self.living_base()
-            .update_swing_time(self.current_swing_duration());
+        self.living_base().update_swing_time();
     }
 
     /// Returns a reference to this entity's attribute map.
