@@ -130,6 +130,14 @@ pub struct ChunkGenerationTask {
 }
 
 impl ChunkGenerationTask {
+    /// Radius of the holder neighborhood acquired before this target can be scheduled.
+    pub(crate) const fn dependency_radius(target_status: ChunkStatus) -> i32 {
+        GENERATION_PYRAMID
+            .get_step_to(target_status)
+            .accumulated_dependencies
+            .get_radius_of(ChunkStatus::Empty) as i32
+    }
+
     /// Creates a new generation task.
     #[must_use]
     #[inline]
@@ -144,10 +152,7 @@ impl ChunkGenerationTask {
         thread_pool: Arc<ThreadPool>,
         cancel_token: CancellationToken,
     ) -> Self {
-        let worst_case_radius = GENERATION_PYRAMID
-            .get_step_to(target_status)
-            .accumulated_dependencies
-            .get_radius_of(ChunkStatus::Empty) as i32;
+        let worst_case_radius = Self::dependency_radius(target_status);
 
         let chunk_map_clone = chunk_map.clone();
         let cache = StaticCache2D::create(pos.0.x, pos.0.y, worst_case_radius, move |x, y| {
