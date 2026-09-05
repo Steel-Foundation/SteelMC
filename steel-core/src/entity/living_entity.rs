@@ -1,6 +1,7 @@
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
 use super::*;
+use crate::behavior::MOB_EFFECT_BEHAVIORS;
 
 /// A trait for living entities that can take damage, heal, and die.
 ///
@@ -1215,6 +1216,14 @@ pub trait LivingEntity: Entity {
         !self.is_dead_or_dying()
     }
 
+    /// Returns vanilla `LivingEntity.isInvertedHealAndHarm()`.
+    fn is_inverted_heal_and_harm(&self) -> bool {
+        REGISTRY.entity_types.is_in_tag(
+            self.entity_type(),
+            &EntityTypeTag::INVERTED_HEALING_AND_HARM,
+        )
+    }
+
     /// Returns vanilla base `LivingEntity.canBeAffected` eligibility.
     fn default_can_be_affected(&self, effect: &MobEffectInstance) -> bool {
         if REGISTRY
@@ -1272,7 +1281,17 @@ pub trait LivingEntity: Entity {
         if !self.can_be_affected(&effect) {
             return false;
         }
-        self.living_base().add_mob_effect(effect)
+        let (effect_key, amplifier) = (effect.effect(), effect.amplifier());
+        let changed = self.living_base().add_mob_effect(effect);
+        // Mirrors vanilla `newEffect.onEffectStarted(this)`: called
+        // unconditionally, even when it didn't replace a stronger instance.
+        let dyn_self = self
+            .as_living_entity()
+            .expect("Self implements LivingEntity");
+        MOB_EFFECT_BEHAVIORS
+            .get_behavior(effect_key)
+            .on_effect_started(dyn_self, amplifier);
+        changed
     }
 
     /// Sets the presence of a vanilla mob effect.
@@ -1292,6 +1311,9 @@ pub trait LivingEntity: Entity {
     /// Ticks vanilla server-side mob-effect behavior and durations.
     fn tick_mob_effects(&self) {
         let world = self.level();
+        let dyn_self = self
+            .as_living_entity()
+            .expect("Self implements LivingEntity");
         for effect in self.active_mob_effects() {
             if !effect.has_remaining_duration() {
                 self.living_base().tick_mob_effect_duration(effect.effect());
@@ -1301,7 +1323,7 @@ pub trait LivingEntity: Entity {
             if effect.should_apply_effect_tick_this_tick(self.tick_count())
                 && world
                     .as_deref()
-                    .is_some_and(|world| !effect.apply_effect_tick(world, self))
+                    .is_some_and(|world| !effect.apply_effect_tick(world, dyn_self))
             {
                 self.remove_mob_effect(effect.effect());
                 continue;
@@ -1718,6 +1740,10 @@ pub trait LivingEntity: Entity {
     fn has_infinite_materials(&self) -> bool {
         false
     }
+
+    /// Mirrors vanilla `LivingEntity.handleExtraItemsCreatedOnUse`,
+    /// which is a no-op for non-player mobs.
+    fn handle_extra_items_created_on_use(&self, _extra: ItemStack) {}
 
     /// Called after an equipped item breaks.
     fn on_equipped_item_broken(&self, _item: ItemRef, slot: EquipmentSlot) {
@@ -2931,6 +2957,61 @@ pub trait LivingEntity: Entity {
             // TODO: WAYPOINT_TRANSMIT_RANGE → waypoint manager
         }
     }
+
+    /// Mirrors vanilla `Entity.randomTeleport`.
+    /// Returns `true` and commits the move on success, or
+    /// `false` and leaves the entity untouched on failure.
+    fn random_teleport(&self, world: &Arc<World>, x: f64, y: f64, z: f64, broadcast: bool) -> bool {
+        let Some(landing_y) = random_teleport_ground_y(world, x, y, z) else {
+            return false;
+        };
+
+        let dimensions = self.base().dimensions();
+        let aabb = WorldAabb::entity_box(
+            x,
+            landing_y,
+            z,
+            f64::from(dimensions.half_width()),
+            f64::from(dimensions.height),
+        );
+        let collision = WorldCollisionProvider::for_entity(world, self.as_entity_event_source());
+        if collision.has_entity_collision(&aabb)
+            || collision.has_block_collision_with_context(&aabb, BlockCollisionContext::empty())
+            || aabb_contains_any_liquid(world, aabb)
+        {
+            return false;
+        }
+
+        if self.teleport_to(DVec3::new(x, landing_y, z)).is_err() {
+            return false;
+        }
+
+        if let Some(pathfinder) = self.as_pathfinder_mob() {
+            pathfinder.mob_base().navigation().lock().stop();
+        }
+
+        if broadcast {
+            self.broadcast_entity_event(EntityStatus::Teleport);
+        }
+        true
+    }
+}
+
+/// Walks down from `y` until standing on a block that blocks motion,
+/// mirroring the descent loop in vanilla `Entity.randomTeleport`. Returns
+/// `None` if the world's floor is reached without finding solid ground.
+fn random_teleport_ground_y(world: &Arc<World>, x: f64, y: f64, z: f64) -> Option<f64> {
+    let mut pos = BlockPos::containing(x, y, z);
+    let mut current_y = y;
+    while pos.y() > world.get_min_y() {
+        let below = pos.below();
+        if world.get_block_state(below).blocks_motion() {
+            return Some(current_y);
+        }
+        current_y -= 1.0;
+        pos = below;
+    }
+    None
 }
 
 fn death_loot_items_with_rng<R: rand::Rng, E: LivingEntity + ?Sized>(

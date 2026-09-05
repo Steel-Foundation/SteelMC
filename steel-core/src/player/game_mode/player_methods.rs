@@ -9,9 +9,12 @@ use super::{
 use crate::behavior::blocks::PowderSnowBlock;
 use steel_protocol::packets::game::SSwing;
 
-const SURVIVAL_DEFAULT_BLOCK_INTERACTION_RANGE: f64 = 4.5;
-
 impl Player {
+    /// Vanilla `Player.DEFAULT_BLOCK_INTERACTION_RANGE`.
+    pub const DEFAULT_BLOCK_INTERACTION_RANGE: f64 = 4.5;
+    /// Vanilla `Player.DEFAULT_ENTITY_INTERACTION_RANGE`.
+    pub const DEFAULT_ENTITY_INTERACTION_RANGE: f64 = 3.0;
+
     /// Sets the player's game mode and notifies the client.
     ///
     /// Returns `true` if the game mode was changed, `false` if the player was already in the requested game mode.
@@ -223,7 +226,7 @@ impl Player {
         self.attributes()
             .lock()
             .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-            .unwrap_or(SURVIVAL_DEFAULT_BLOCK_INTERACTION_RANGE)
+            .unwrap_or(Self::DEFAULT_BLOCK_INTERACTION_RANGE)
     }
 
     /// Returns true if player is within block interaction range plus a vanilla buffer.
@@ -248,11 +251,7 @@ impl Player {
         let dz = f64::max(f64::max(min_z - player_pos.z, player_pos.z - max_z), 0.0);
         let dist_sq = dx * dx + dy * dy + dz * dz;
 
-        let base_range = self
-            .attributes()
-            .lock()
-            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-            .unwrap_or(4.5);
+        let base_range = self.block_interaction_range();
         let max_range = base_range + buffer;
         dist_sq < max_range * max_range
     }
@@ -278,7 +277,7 @@ impl Player {
             .attributes()
             .lock()
             .get_value(vanilla_attributes::ENTITY_INTERACTION_RANGE)
-            .unwrap_or(3.0);
+            .unwrap_or(Self::DEFAULT_ENTITY_INTERACTION_RANGE);
         let max_range = base_range + buffer;
         dist_sq < max_range * max_range
     }

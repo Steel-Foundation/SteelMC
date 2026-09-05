@@ -5,7 +5,6 @@ use std::sync::Arc;
 use steel_macros::item_behavior;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::sound_events;
-use steel_registry::vanilla_attributes;
 use steel_utils::Downcast as _;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, Direction};
@@ -97,11 +96,7 @@ impl ItemBehavior for BrushItem {
 }
 
 fn calculate_block_hit(world: &World, player: &Player) -> Option<(BlockPos, Direction)> {
-    let distance = player
-        .attributes()
-        .lock()
-        .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-        .unwrap_or(4.5);
+    let distance = player.block_interaction_range();
     match get_hit_result_on_view_vector(world, player, distance, Entity::is_pickable) {
         ViewVectorHitResult::Block(hit) => Some((hit.block_pos, hit.direction)),
         ViewVectorHitResult::Miss | ViewVectorHitResult::Entity(_) => None,

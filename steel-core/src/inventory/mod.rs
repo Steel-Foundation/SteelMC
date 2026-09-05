@@ -7,6 +7,7 @@ pub mod click;
 pub mod container;
 pub mod ender_chest;
 pub mod equipment;
+pub mod fuel_values;
 pub mod lock;
 pub mod menu;
 pub mod prelude;
