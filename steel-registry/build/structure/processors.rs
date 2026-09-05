@@ -9,7 +9,7 @@ use crate::generator_functions::{
 use proc_macro2::TokenStream;
 use quote::quote;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
-use steel_utils::{Identifier, value_providers::IntProvider};
+use steel_utils::value_providers::IntProvider;
 
 #[path = "../../src/structure/processor/data.rs"]
 mod structure_processor_data;

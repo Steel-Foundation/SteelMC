@@ -42,13 +42,13 @@ use structures::{
     generate_weighted_random_placed_feature, generate_weighted_template_entry,
 };
 
+use data::parse_configured_feature_json;
 use data::{
     AboveRootPlacement, BlobFoliagePlacer, BlockColumnLayer, BlockHolderSet, BlockPredicate,
     BlockStateData, BlockStateProvider, ConfiguredFeatureKind, ConfiguredFeatureRef,
     DualNoiseProvider, EndSpike, FeatureHeightmap, FeatureNoiseParameters, FeatureSize,
     FluidHolderSet, FluidStateData, FoliagePlacer, FoliagePlacerBase, GeodeBlockSettings,
-    GeodeCrackSettings, GeodeLayerSettings, HugeMushroomConfiguration, IdentifierList,
-    MangroveRootPlacement,
+    GeodeCrackSettings, GeodeLayerSettings, HugeMushroomConfiguration, MangroveRootPlacement,
     NoiseProvider, NoiseThresholdProvider, OreTarget, PlacedFeatureData, PlacedFeatureRef,
     PlacementModifier, RootPlacer, RuleBasedStateProviderRule, RuleTest, TemplateEntry,
     TreeDecorator, TrunkPlacer, TrunkPlacerBase, VegetationPatchConfiguration, VerticalSurface,
