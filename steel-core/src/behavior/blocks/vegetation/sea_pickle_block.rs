@@ -6,7 +6,6 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{
     BlockStateProperties, BoolProperty, Direction, IntProperty,
 };
-use steel_registry::fluid::FluidStateExt;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::types::UpdateFlags;
@@ -19,7 +18,6 @@ use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext};
 use crate::entity::ai::path::PathComputationType;
-use crate::fluid::get_fluid_state_from_block;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 
 use super::BlockRef;
@@ -83,12 +81,10 @@ impl BlockBehavior for SeaPickleBlock {
         if state.get_block() == self.block {
             return Some(state.set_value(PICKLES, MAX_PICKLES.min(state.get_value(PICKLES) + 1)));
         }
-        let replaced_fluid_state = get_fluid_state_from_block(state);
-        let is_water_source = replaced_fluid_state.is_water() && replaced_fluid_state.is_source();
         Some(
             self.block
                 .default_state()
-                .set_value(WATERLOGGED, is_water_source),
+                .set_value(WATERLOGGED, context.is_water_source()),
         )
     }
     fn can_be_replaced(&self, state: BlockStateId, context: &BlockPlaceContext<'_>) -> bool {
