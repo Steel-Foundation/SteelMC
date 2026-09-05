@@ -1416,6 +1416,7 @@ fn try_placing_children<'a>(
 mod tests {
     use super::*;
     use steel_registry::structure::DimensionPadding;
+    use steel_utils::value_providers::{HeightProvider, VerticalAnchor};
 
     fn bbox(min: IVec3, max: IVec3) -> BoundingBox {
         BoundingBox::new(min, max)
@@ -1495,9 +1496,7 @@ mod tests {
             max_depth: 0,
             use_expansion_hack: false,
             project_start_to_heightmap: None,
-            start_height: steel_utils::value_providers::HeightProvider::Constant(
-                steel_utils::value_providers::VerticalAnchor::Absolute(70),
-            ),
+            start_height: HeightProvider::Constant(VerticalAnchor::Absolute(70)),
             max_distance_from_center: 80,
             start_jigsaw_name: Some(Identifier::vanilla_static("bottom")),
             dimension_padding: DimensionPadding { bottom: 0, top: 0 },
