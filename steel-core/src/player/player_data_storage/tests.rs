@@ -14,6 +14,7 @@ use crate::player::player_data_storage::*;
 use std::collections::BTreeMap;
 use std::{
     env,
+    path::Path,
     time::{SystemTime, UNIX_EPOCH},
 };
 use steel_registry::stat::vanilla_stat_types;
@@ -433,6 +434,38 @@ fn known_player_cache_persists_vanillas_mru_limit() {
     assert!(decoded.by_uuid(Uuid::from_u128(1_000)).is_none());
 }
 
+/// Every player-side file kind shares `encode_file`, so this pins that the
+/// shared path frames payloads with a content checksum. Detection behaviour
+/// itself is pinned in `crate::compression`.
+#[test]
+fn persisted_player_files_carry_a_content_checksum() {
+    /// Bit 2 of a zstd frame header descriptor is the content checksum flag.
+    const CONTENT_CHECKSUM_FLAG: u8 = 0b0000_0100;
+    /// Magic (4 bytes) plus storage version (2 bytes) precede the zstd frame.
+    const FRAME_START: usize = 6;
+
+    let encoded =
+        encode_player_file(&sample_player_file(PLAYER_DATA_VERSION)).expect("player file encodes");
+    let global = encode_global_file(&GlobalPlayerDataFile {
+        data_version: GLOBAL_PLAYER_DATA_VERSION,
+        last_active_domain: "lobby".to_owned(),
+    })
+    .expect("global file encodes");
+
+    for (label, bytes) in [("player", &encoded), ("global", &global)] {
+        assert_eq!(
+            bytes[FRAME_START..FRAME_START + 4],
+            [0x28, 0xB5, 0x2F, 0xFD],
+            "{label} file should hold a zstd frame after its header"
+        );
+        assert_ne!(
+            bytes[FRAME_START + 4] & CONTENT_CHECKSUM_FLAG,
+            0,
+            "{label} file frame should advertise a content checksum"
+        );
+    }
+}
+
 #[test]
 fn player_file_roundtrip_preserves_domain_world_data() {
     let file = sample_player_file(PLAYER_DATA_VERSION);
@@ -633,6 +666,224 @@ fn player_file_roundtrip_preserves_respawn_config() {
     );
 }
 
+/// Publishes two generations of domain player data so the second write leaves
+/// the first as an atomic-write backup, then hands back the live file's path.
+async fn publish_two_player_generations(
+    storage: &FilePlayerDataStorage,
+    uuid: Uuid,
+    first_world: &str,
+    second_world: &str,
+) -> PathBuf {
+    init_vanilla_registry();
+    for world in [first_world, second_world] {
+        let mut file = sample_player_file(PLAYER_DATA_VERSION);
+        file.world = world.to_owned();
+        let data = file
+            .into_persistent()
+            .expect("sample player data should convert");
+        storage
+            .save_domain_data("lobby", uuid, &data)
+            .await
+            .expect("player data should persist");
+    }
+    FilePlayerDataStorage::player_data_file(&storage.domain_players_dir("lobby"), uuid)
+}
+
+async fn quarantined_files(directory: &Path) -> Vec<PathBuf> {
+    let mut entries = fs::read_dir(directory)
+        .await
+        .expect("player data directory should be readable");
+    let mut found = Vec::new();
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .expect("directory entry should be readable")
+    {
+        let path = entry.path();
+        if path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|extension| extension.contains("corrupt"))
+        {
+            found.push(path);
+        }
+    }
+    found
+}
+
+#[tokio::test]
+async fn corrupt_player_data_recovers_the_previous_generation_from_its_backup() {
+    let root = temp_storage_root("recover-player-data");
+    let storage = FilePlayerDataStorage::new(root.clone())
+        .await
+        .expect("test storage should initialize");
+    let uuid = Uuid::from_u128(7);
+    let path = publish_two_player_generations(&storage, uuid, "lobby:first", "lobby:second").await;
+
+    // Damage the live generation; the backup still holds "lobby:first"
+    let mut live = fs::read(&path).await.expect("live file should be readable");
+    let last = live.len() - 1;
+    live[last] ^= 0xFF;
+    fs::write(&path, &live)
+        .await
+        .expect("live file should be corruptible");
+
+    let recovered = storage
+        .load_domain_player_data("lobby", uuid)
+        .await
+        .expect("a corrupt live file should recover from its backup")
+        .expect("recovered data should be present");
+    assert_eq!(recovered.world, "lobby:first");
+
+    // The backup was promoted, so the next read succeeds directly
+    let reread = storage
+        .load_domain_player_data("lobby", uuid)
+        .await
+        .expect("the promoted generation should load")
+        .expect("promoted data should be present");
+    assert_eq!(reread.world, "lobby:first");
+
+    // The damaged bytes are set aside, not destroyed
+    let quarantined = quarantined_files(path.parent().expect("path has a parent")).await;
+    assert_eq!(quarantined.len(), 1, "damaged file should be quarantined");
+    assert_eq!(
+        fs::read(&quarantined[0])
+            .await
+            .expect("quarantined file should be readable"),
+        live,
+        "quarantine should preserve the damaged bytes verbatim"
+    );
+
+    fs::remove_dir_all(root)
+        .await
+        .expect("temporary storage should be removable");
+}
+
+#[tokio::test]
+async fn corrupt_player_data_without_a_backup_stays_fatal() {
+    let root = temp_storage_root("no-backup-player-data");
+    let storage = FilePlayerDataStorage::new(root.clone())
+        .await
+        .expect("test storage should initialize");
+    let uuid = Uuid::from_u128(8);
+    init_vanilla_registry();
+
+    // A single write leaves nothing to back up
+    let data = sample_player_file(PLAYER_DATA_VERSION)
+        .into_persistent()
+        .expect("sample player data should convert");
+    storage
+        .save_domain_data("lobby", uuid, &data)
+        .await
+        .expect("player data should persist");
+    let path = FilePlayerDataStorage::player_data_file(&storage.domain_players_dir("lobby"), uuid);
+    fs::write(&path, b"not a player data file")
+        .await
+        .expect("live file should be corruptible");
+
+    let error = storage
+        .load_domain_player_data("lobby", uuid)
+        .await
+        .expect_err("corruption with no backup must stay fatal");
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(
+        fs::read(&path).await.expect("live file should remain"),
+        b"not a player data file",
+        "an unrecoverable file must be left in place for an operator"
+    );
+    assert!(
+        quarantined_files(path.parent().expect("path has a parent"))
+            .await
+            .is_empty(),
+        "nothing should be quarantined when recovery is impossible"
+    );
+
+    fs::remove_dir_all(root)
+        .await
+        .expect("temporary storage should be removable");
+}
+
+/// A version bump must not be mistaken for damage: the backup shares the
+/// version, so consuming it would destroy a good file for no gain.
+#[tokio::test]
+async fn unsupported_player_data_version_does_not_consume_the_backup() {
+    let root = temp_storage_root("unsupported-player-data");
+    let storage = FilePlayerDataStorage::new(root.clone())
+        .await
+        .expect("test storage should initialize");
+    let uuid = Uuid::from_u128(9);
+    let path = publish_two_player_generations(&storage, uuid, "lobby:first", "lobby:second").await;
+
+    // Intact, but stamped with a foreign storage version
+    let mut live = fs::read(&path).await.expect("live file should be readable");
+    live[4..6].copy_from_slice(&(PLAYER_STORAGE_VERSION + 1).to_le_bytes());
+    fs::write(&path, &live)
+        .await
+        .expect("live file should be rewritable");
+
+    let error = storage
+        .load_domain_player_data("lobby", uuid)
+        .await
+        .expect_err("a foreign storage version must not be recovered from a backup");
+    assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+    assert!(
+        fs::try_exists(FilePlayerDataStorage::atomic_backup_path(&path))
+            .await
+            .expect("backup existence should be checkable"),
+        "the backup must survive a version mismatch"
+    );
+    assert!(
+        quarantined_files(path.parent().expect("path has a parent"))
+            .await
+            .is_empty(),
+        "a version mismatch must not quarantine anything"
+    );
+
+    fs::remove_dir_all(root)
+        .await
+        .expect("temporary storage should be removable");
+}
+
+#[tokio::test]
+async fn corrupt_global_player_data_recovers_from_its_backup() {
+    let root = temp_storage_root("recover-global-data");
+    let storage = FilePlayerDataStorage::new(root.clone())
+        .await
+        .expect("test storage should initialize");
+    let uuid = Uuid::from_u128(10);
+
+    for domain in ["first", "second"] {
+        storage
+            .save_global(
+                uuid,
+                &GlobalPlayerData {
+                    last_active_domain: domain.to_owned(),
+                },
+            )
+            .await
+            .expect("global data should persist");
+    }
+
+    let path = FilePlayerDataStorage::player_data_file(&storage.global_players_dir(), uuid);
+    let mut live = fs::read(&path).await.expect("live file should be readable");
+    let last = live.len() - 1;
+    live[last] ^= 0xFF;
+    fs::write(&path, &live)
+        .await
+        .expect("live file should be corruptible");
+
+    let recovered = storage
+        .load_global(uuid)
+        .await
+        .expect("a corrupt global file should recover from its backup")
+        .expect("recovered global data should be present");
+    assert_eq!(recovered.last_active_domain, "first");
+
+    fs::remove_dir_all(root)
+        .await
+        .expect("temporary storage should be removable");
+}
+
 #[test]
 fn stale_player_payload_version_is_rejected() {
     let file = sample_player_file(PLAYER_DATA_VERSION - 1);
@@ -641,7 +892,54 @@ fn stale_player_payload_version_is_rejected() {
         .into_persistent()
         .expect_err("stale payload should fail");
 
-    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    // Not corruption: the file is intact and a backup carries the same version
+    assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+}
+
+/// Pins the split that recovery keys on: an intact file from another format
+/// version reports `Unsupported`, while damaged bytes report `InvalidData`.
+#[test]
+fn version_mismatch_and_corruption_report_distinct_error_kinds() {
+    fn rejection_kind(bytes: &[u8], expectation: &str) -> io::ErrorKind {
+        let Err(error) = decode_player_file(bytes) else {
+            panic!("{expectation}");
+        };
+        error.kind()
+    }
+
+    let encoded =
+        encode_player_file(&sample_player_file(PLAYER_DATA_VERSION)).expect("player file encodes");
+
+    let mut wrong_version = encoded.clone();
+    wrong_version[4..6].copy_from_slice(&(PLAYER_STORAGE_VERSION + 1).to_le_bytes());
+    assert_eq!(
+        rejection_kind(
+            &wrong_version,
+            "a foreign storage version should be rejected"
+        ),
+        io::ErrorKind::Unsupported
+    );
+
+    let mut wrong_magic = encoded.clone();
+    wrong_magic[0] ^= 0xFF;
+    assert_eq!(
+        rejection_kind(&wrong_magic, "a damaged magic should be rejected"),
+        io::ErrorKind::InvalidData
+    );
+
+    assert_eq!(
+        rejection_kind(&encoded[..3], "a truncated header should be rejected"),
+        io::ErrorKind::InvalidData
+    );
+
+    // Damage inside the zstd frame, which the content checksum detects
+    let mut damaged_payload = encoded.clone();
+    let last = damaged_payload.len() - 1;
+    damaged_payload[last] ^= 0xFF;
+    assert_eq!(
+        rejection_kind(&damaged_payload, "a damaged payload should be rejected"),
+        io::ErrorKind::InvalidData
+    );
 }
 
 #[test]

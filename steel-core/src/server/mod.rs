@@ -36,6 +36,7 @@ use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig, validate_l
 use crate::entity::{
     Entity, EntityBase, PendingWorldChangeToken, RemovalReason, SharedEntity, change_entity_world,
 };
+use crate::fatal::register_fatal_shutdown;
 
 use crate::chunk_saver::{ChunkStorage, PersistentEntity, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
@@ -549,6 +550,10 @@ impl Server {
         command_registry: CommandRegistry,
     ) -> Result<Self, String> {
         validate_login_security(config.online_mode, config.encryption).map_err(str::to_owned)?;
+        // Storage layers are far from the server lifecycle; give them a way to
+        // stop the server when it can no longer persist anything.
+        register_fatal_shutdown(cancel_token.clone());
+
         let config = Arc::new(config);
         init_globals()?;
         log::info!(
