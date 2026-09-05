@@ -4,6 +4,7 @@ use super::{
     generate_firework_shape, generate_instrument_options, generate_number_provider,
     generate_static_identifier_from_str, generate_tool_predicate_from_item_predicate, quote,
 };
+use crate::nbt::{generate_nbt_compound, parse_lenient_compound};
 
 pub(super) fn generate_function(function: &LootFunctionJson) -> TokenStream {
     let func_body = generate_function_body(function);
@@ -220,6 +221,24 @@ fn generate_function_body(function: &LootFunctionJson) -> TokenStream {
                 .as_ref()
                 .map_or_else(|| "{}".to_string(), std::string::ToString::to_string);
             quote! { LootFunction::SetComponents { components: #components_str } }
+        }
+        "minecraft:set_custom_data" => {
+            let tag = function
+                .tag
+                .as_ref()
+                .unwrap_or_else(|| panic!("set_custom_data loot function is missing its tag"));
+            let tag = parse_lenient_compound(tag, "set_custom_data tag");
+            let tag = generate_nbt_compound(&tag);
+            quote! {
+                LootFunction::SetCustomData {
+                    tag: || {
+                        let Some(data) = crate::data_components::CustomData::try_from_compound(#tag) else {
+                            panic!("generated set_custom_data tag is invalid");
+                        };
+                        data
+                    },
+                }
+            }
         }
         "minecraft:set_attributes" => {
             let modifiers: Vec<TokenStream> = function

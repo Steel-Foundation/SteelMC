@@ -485,6 +485,9 @@ struct LootFunctionJson {
     // set_components (keep as raw value since it's complex NBT)
     #[serde(default)]
     components: Option<serde_json::Value>,
+    // set_custom_data
+    #[serde(default)]
+    tag: Option<serde_json::Value>,
     // furnace_smelt
     #[serde(default)]
     use_input_count: Option<bool>,

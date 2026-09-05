@@ -443,7 +443,12 @@ impl TranspileContext {
                 } else {
                     // 3D named function — call it
                     let fn_name = named_fn_ident(&r.id);
-                    quote! { #fn_name(noises, cache, x, y, z) }
+                    if is_flat {
+                        // Vanilla fills FlatCache entries with SinglePointContext Y=0.
+                        quote! { #fn_name(noises, cache, x, 0.0, z) }
+                    } else {
+                        quote! { #fn_name(noises, cache, x, y, z) }
+                    }
                 }
             }
         }
