@@ -200,12 +200,6 @@ struct TickingReadinessCandidate {
     target: TickingReadiness,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct DeferredChunkRevival {
-    load_level: ChunkTicketLevel,
-    simulation_level: Option<ChunkTicketLevel>,
-}
-
 #[derive(Default)]
 struct ReadinessReconcileResult {
     snapshot_changed: bool,
@@ -221,8 +215,6 @@ pub struct ChunkMap {
     pub(crate) chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
     /// Map of chunks currently being unloaded.
     pub(crate) unloading_chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
-    /// Ticket states waiting for an unloading holder's save preparation to finish.
-    deferred_revivals: SyncMutex<FxHashMap<ChunkPos, DeferredChunkRevival>>,
     /// Queue of pending generation tasks.
     pub pending_generation_tasks: SyncMutex<Vec<Arc<ChunkGenerationTask>>>,
     /// Tracker for background scheduling, generation, save, and unload tasks.
@@ -365,7 +357,6 @@ impl ChunkMap {
         Self {
             chunks: scc::HashMap::default(),
             unloading_chunks: scc::HashMap::default(),
-            deferred_revivals: SyncMutex::new(FxHashMap::default()),
             pending_generation_tasks: SyncMutex::new(Vec::new()),
             task_tracker: TaskTracker::new(),
             scheduling: ChunkSchedulingCoordinator::new(chunk_tickets),
@@ -993,8 +984,6 @@ impl ChunkMap {
         } = epoch;
         let mut timings = timings.into_scheduling_timings();
 
-        self.merge_deferred_revivals(&mut changes);
-
         {
             let _span = tracing::trace_span!("block_entity_unloads").entered();
             let start = Instant::now();
@@ -1167,7 +1156,6 @@ impl ChunkMap {
                     change.new_level.is_some() && self.unloading_chunks.contains_sync(&change.pos)
                 })
                 .map(|change| change.pos)
-                .chain(self.deferred_revivals.lock().keys().copied())
                 .collect::<FxHashSet<_>>();
             self.process_unloads(&staged_revivals);
             timings.process_unloads = start.elapsed();

@@ -263,11 +263,18 @@ impl ChunkStorage {
     }
 
     /// Converts a runtime section to persistent format.
+    ///
+    /// Sections still in worldgen `Building` mode are finalized under the same write guard that
+    /// serializes them: worldgen re-enters `Building` on every column write, so a chunk that
+    /// resumes generation mid-snapshot would defeat any earlier finalization pass.
     pub(super) fn section_to_persistent(
         section: &SectionHolder,
         builder: &mut ChunkBuilder,
     ) -> PersistentSection {
-        let section = section.read();
+        let mut section = section.write();
+        if matches!(&section.states, PalettedContainer::Building(_)) {
+            section.recalculate_counts();
+        }
         let biomes = Self::biomes_to_persistent(&section.biomes, builder);
 
         match &section.states {
@@ -311,9 +318,8 @@ impl ChunkStorage {
                     biomes,
                 }
             }
-            PalettedContainer::Building(_) => panic!(
-                "section_to_persistent called on a section still in worldgen Building mode; \
-                 finalize_building must be called before serialization"
+            PalettedContainer::Building(_) => unreachable!(
+                "recalculate_counts finalizes Building sections under this same write guard"
             ),
         }
     }
