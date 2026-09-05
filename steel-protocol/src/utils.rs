@@ -124,6 +124,9 @@ pub enum PacketError {
     #[error("the connection has closed")]
     /// The connection has closed.
     ConnectionClosed,
+    #[error("outbound write timed out")]
+    /// An outbound write stalled past its deadline.
+    WriteTimeout,
     #[error("{0}")]
     /// An error occurred when sending a packet.
     SendError(String),
@@ -142,11 +145,20 @@ impl From<io::Error> for PacketError {
     }
 }
 
-///NOTE: This makes lots of small writes; make sure there is a buffer somewhere down the line
+/// A stream that encrypts data before writing it to the underlying stream.
+///
+/// Whole buffers are encrypted at once (mirroring vanilla `CipherBase.encipher`) with
+/// `std::io::BufWriter` semantics: every written buffer is reported fully consumed and
+/// its ciphertext is retained until the inner writer accepts it, so a sink that accepts
+/// partially or stalls can never desync the CFB8 stream. Retained ciphertext is drained
+/// by subsequent writes, `poll_flush`, and `poll_shutdown`.
 pub struct StreamEncryptor<W: AsyncWrite + Unpin> {
     cipher: Aes128Cfb8Enc,
     write: W,
-    last_unwritten_encrypted_byte: Option<u8>,
+    /// Encrypted bytes for consumed input that have not been handed to `write` yet.
+    output: Vec<u8>,
+    /// How many bytes of `output` have already been written to `write`.
+    written: usize,
 }
 
 impl<W: AsyncWrite + Unpin> StreamEncryptor<W> {
@@ -156,73 +168,106 @@ impl<W: AsyncWrite + Unpin> StreamEncryptor<W> {
         Self {
             cipher,
             write: stream,
-            last_unwritten_encrypted_byte: None,
+            output: Vec::new(),
+            written: 0,
         }
+    }
+
+    /// Writes buffered ciphertext to the inner writer until it is drained, pending,
+    /// or fails.
+    fn poll_drain(this: &mut Self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        while this.written < this.output.len() {
+            match Pin::new(&mut this.write).poll_write(cx, &this.output[this.written..]) {
+                Poll::Ready(Ok(0)) => {
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::WriteZero,
+                        "encrypted write made no progress",
+                    )));
+                }
+                Poll::Ready(Ok(written)) => this.written += written,
+                Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+
+        this.output.clear();
+        this.written = 0;
+        Poll::Ready(Ok(()))
     }
 }
 
 impl<W: AsyncWrite + Unpin> AsyncWrite for StreamEncryptor<W> {
-    #[expect(
-        clippy::unwrap_used,
-        reason = "CFB8 block size is one byte, so each chunk fits the cipher block type"
-    )]
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let ref_self = self.get_mut();
-        let cipher = &mut ref_self.cipher;
+        let this = self.get_mut();
 
-        let mut total_written = 0;
-        // Decrypt the raw data, note that our block size is 1 byte, so this is always safe
-        for block in buf.chunks(Aes128Cfb8Enc::block_size()) {
-            let mut out = [0u8];
-
-            if let Some(out_to_use) = ref_self.last_unwritten_encrypted_byte {
-                // This assumes that this `poll_write` is called on the same stream of bytes which I
-                // think is a fair assumption, since thats an invariant for the TCP stream anyway.
-
-                // This should never panic
-                out[0] = out_to_use;
-            } else {
-                // This is a stream cipher, so this value must be used
-                let out_block: &mut Array<u8, _> = (&mut out).into();
-                cipher.encrypt_block_b2b(block.try_into().unwrap(), out_block);
-            }
-
-            let write = Pin::new(&mut ref_self.write);
-            match write.poll_write(cx, &out) {
-                Poll::Pending => {
-                    ref_self.last_unwritten_encrypted_byte = Some(out[0]);
-                    if total_written == 0 {
-                        //If we didn't write anything, return pending
-                        return Poll::Pending;
-                    }
-                    // Otherwise, we actually did write something
-                    return Poll::Ready(Ok(total_written));
-                }
-                Poll::Ready(result) => {
-                    ref_self.last_unwritten_encrypted_byte = None;
-                    match result {
-                        Ok(written) => total_written += written,
-                        Err(err) => return Poll::Ready(Err(err)),
-                    }
-                }
-            }
+        // Ciphertext for already consumed bytes must reach the inner writer before new
+        // input is encrypted, or the CFB8 stream would interleave two input sources.
+        match Self::poll_drain(this, cx) {
+            Poll::Ready(Ok(())) => {}
+            Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+            Poll::Pending => return Poll::Pending,
         }
 
-        Poll::Ready(Ok(total_written))
+        if buf.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
+
+        // Encrypt the whole buffer at once instead of one byte per async write, mirroring
+        // vanilla `CipherBase.encipher`. CFB8 is a byte-oriented stream cipher, so every
+        // byte is one block.
+        this.output.clear();
+        this.output.extend_from_slice(buf);
+        let cipher = &mut this.cipher;
+        for chunk in this.output.as_chunks_mut::<1>().0 {
+            let mut out = [0u8];
+            let in_block: &Array<u8, _> = (&*chunk).into();
+            let out_block: &mut Array<u8, _> = (&mut out).into();
+            cipher.encrypt_block_b2b(in_block, out_block);
+            chunk[0] = out[0];
+        }
+        this.written = 0;
+
+        // Hand what the sink accepts to the inner writer; the rest is a backlog of
+        // consumed bytes that later writes, `poll_flush`, and `poll_shutdown` drain. The
+        // whole buffer is always reported consumed: the `AsyncWrite` contract lets the
+        // caller discard everything past the returned count, and CFB8 ciphertext is bound
+        // to the exact plaintext sequence, so a partially consumed write could neither
+        // drop nor re-split its unreported tail. A pending sink keeps the backlog and is
+        // retried through the flush paths (`BufWriter` semantics).
+        match Self::poll_drain(this, cx) {
+            Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+            Poll::Ready(Ok(())) | Poll::Pending => {}
+        }
+
+        Poll::Ready(Ok(buf.len()))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let ref_self = self.get_mut();
+        // Committed ciphertext must reach the inner writer before the flush resolves,
+        // or `flush` could report success while bytes are still buffered.
+        match Self::poll_drain(ref_self, cx) {
+            Poll::Ready(Ok(())) => {}
+            Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+            Poll::Pending => return Poll::Pending,
+        }
         let write = Pin::new(&mut ref_self.write);
         write.poll_flush(cx)
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let ref_self = self.get_mut();
+        // Committed ciphertext must reach the inner writer before shutdown resolves,
+        // or shutdown could silently drop buffered bytes.
+        match Self::poll_drain(ref_self, cx) {
+            Poll::Ready(Ok(())) => {}
+            Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+            Poll::Pending => return Poll::Pending,
+        }
         let write = Pin::new(&mut ref_self.write);
         write.poll_shutdown(cx)
     }
@@ -271,5 +316,188 @@ impl<R: AsyncRead + Unpin> AsyncRead for StreamDecryptor<R> {
         }
 
         internal_poll
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use aes::cipher::KeyIvInit;
+    use tokio::io::AsyncWriteExt;
+
+    use super::*;
+
+    fn test_cipher() -> Aes128Cfb8Enc {
+        Aes128Cfb8Enc::new_from_slices(&[0x42; 16], &[0x07; 16]).expect("valid key and iv")
+    }
+
+    /// Reference CFB8 keystream application over a whole buffer, matching vanilla
+    /// `CipherBase.encipher`.
+    fn encrypt_reference(cipher: &mut Aes128Cfb8Enc, data: &[u8]) -> Vec<u8> {
+        let mut output = Vec::with_capacity(data.len());
+        for byte in data {
+            let in_block: &Array<u8, _> = std::slice::from_ref(byte)
+                .try_into()
+                .expect("one-byte block");
+            let mut out = [0u8];
+            let out_block: &mut Array<u8, _> = (&mut out).into();
+            cipher.encrypt_block_b2b(in_block, out_block);
+            output.push(out[0]);
+        }
+        output
+    }
+
+    #[tokio::test]
+    async fn encrypts_whole_buffers_like_vanilla_cipher() {
+        let plain: Vec<u8> = (0..256u32).map(|i| (i % 251) as u8).collect();
+        let expected = encrypt_reference(&mut test_cipher(), &plain);
+
+        let mut sink = Vec::new();
+        {
+            let mut encryptor = StreamEncryptor::new(test_cipher(), &mut sink);
+            encryptor
+                .write_all(&plain)
+                .await
+                .expect("write should succeed");
+        }
+
+        assert_eq!(sink, expected);
+    }
+
+    /// A writer that accepts one byte per poll, rejecting the very first poll, to force
+    /// `StreamEncryptor` through its partial-write and pending-buffer paths.
+    struct OneBytePendingWriter {
+        first_poll: bool,
+        received: Vec<u8>,
+    }
+
+    impl AsyncWrite for OneBytePendingWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            let this = self.get_mut();
+            if this.first_poll {
+                this.first_poll = false;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            assert!(!buf.is_empty(), "encryptor must never offer an empty slice");
+            this.received.push(buf[0]);
+            Poll::Ready(Ok(1))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn retains_unwritten_encrypted_bytes_across_partial_writes() {
+        let plain: Vec<u8> = (0..64u32).map(|i| (i * 7 % 253) as u8).collect();
+        let expected = encrypt_reference(&mut test_cipher(), &plain);
+
+        let mut writer = OneBytePendingWriter {
+            first_poll: true,
+            received: Vec::new(),
+        };
+        {
+            let mut encryptor = StreamEncryptor::new(test_cipher(), &mut writer);
+            encryptor
+                .write_all(&plain)
+                .await
+                .expect("write should succeed");
+            encryptor.flush().await.expect("flush should succeed");
+        }
+
+        assert_eq!(writer.received, expected);
+    }
+
+    /// Accepts one byte per successful poll and pends every other poll (self-waking),
+    /// forcing ciphertext retention across separate writes and the flush paths.
+    struct TrickleWriter {
+        accept_next: bool,
+        received: Vec<u8>,
+    }
+
+    impl AsyncWrite for TrickleWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            let this = self.get_mut();
+            assert!(!buf.is_empty(), "encryptor must never offer an empty slice");
+            if !this.accept_next {
+                this.accept_next = true;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            this.accept_next = false;
+            this.received.push(buf[0]);
+            Poll::Ready(Ok(1))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn backpressured_sink_keeps_separate_writes_sequential() {
+        let expected = encrypt_reference(&mut test_cipher(), b"abcXY");
+
+        let mut writer = TrickleWriter {
+            accept_next: true,
+            received: Vec::new(),
+        };
+        {
+            let mut encryptor = StreamEncryptor::new(test_cipher(), &mut writer);
+            // Both writes complete while ciphertext is retained; reported consumption is
+            // always the full buffer, so the stream must contain both writes in order.
+            encryptor
+                .write_all(b"abc")
+                .await
+                .expect("first write should succeed");
+            encryptor
+                .write_all(b"XY")
+                .await
+                .expect("second write should succeed");
+            encryptor.flush().await.expect("flush should succeed");
+        }
+
+        assert_eq!(writer.received, expected);
+    }
+
+    #[tokio::test]
+    async fn shutdown_drains_retained_ciphertext() {
+        let expected = encrypt_reference(&mut test_cipher(), b"abc");
+
+        let mut writer = TrickleWriter {
+            accept_next: true,
+            received: Vec::new(),
+        };
+        {
+            let mut encryptor = StreamEncryptor::new(test_cipher(), &mut writer);
+            encryptor
+                .write_all(b"abc")
+                .await
+                .expect("write should succeed");
+            // No flush: shutdown itself must drain the retained ciphertext.
+            encryptor
+                .shutdown()
+                .await
+                .expect("shutdown should drain and succeed");
+        }
+
+        assert_eq!(writer.received, expected);
     }
 }
