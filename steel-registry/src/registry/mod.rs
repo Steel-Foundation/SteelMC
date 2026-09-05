@@ -13,6 +13,7 @@ pub use tags::RegistryTags;
 use crate::game_events::GameEventRegistry;
 use crate::stat::custom::CustomStatRegistry;
 use crate::stat::{StatTypeRegistry, vanilla_stat_types};
+use crate::ticket_type::TicketTypeRegistry;
 use crate::world_clock::WorldClockRegistry;
 use crate::{
     attribute::AttributeRegistry,
@@ -60,7 +61,7 @@ use crate::{
     potion::PotionRegistry,
     recipe::RecipeRegistry,
     sound_event::SoundEventRegistry,
-    sound_events,
+    sound_events, steel_ticket_types,
     structure::StructureRegistry,
     structure_processor::StructureProcessorListRegistry,
     template_pool,
@@ -82,8 +83,8 @@ use crate::{
     vanilla_pig_sound_variants, vanilla_pig_variants, vanilla_placed_features,
     vanilla_poi_type_tags, vanilla_poi_types, vanilla_position_source_types, vanilla_potion_tags,
     vanilla_potions, vanilla_recipes, vanilla_structure_processors, vanilla_structure_tags,
-    vanilla_structures, vanilla_template_pools, vanilla_timeline_tags, vanilla_timelines,
-    vanilla_trim_materials, vanilla_trim_patterns, vanilla_villager_professions,
+    vanilla_structures, vanilla_template_pools, vanilla_ticket_types, vanilla_timeline_tags,
+    vanilla_timelines, vanilla_trim_materials, vanilla_trim_patterns, vanilla_villager_professions,
     vanilla_villager_types, vanilla_wolf_sound_variants, vanilla_wolf_variants,
     vanilla_world_clocks, vanilla_zombie_nautilus_variants,
     villager_profession::VillagerProfessionRegistry,
@@ -226,6 +227,7 @@ pub const STRUCTURE_PROCESSOR_LIST_REGISTRY: Identifier =
     Identifier::vanilla_static("worldgen/processor_list");
 pub const CUSTOM_STAT_REGISTRY: Identifier = Identifier::vanilla_static("custom_stat");
 pub const STAT_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("stat_type");
+pub const TICKET_TYPE_REGISTRY: Identifier = Identifier::vanilla_static("ticket_type");
 
 pub struct Registry {
     pub attributes: AttributeRegistry,
@@ -285,6 +287,7 @@ pub struct Registry {
     pub structure_processors: StructureProcessorListRegistry,
     pub custom_stats: CustomStatRegistry,
     pub stat_types: StatTypeRegistry,
+    pub ticket_types: TicketTypeRegistry,
 }
 
 impl Debug for Registry {
@@ -417,6 +420,9 @@ impl Registry {
         vanilla_custom_stats::register_custom_stats(&mut registry.custom_stats);
         vanilla_stat_types::register_vanilla_stat_types(&mut registry.stat_types);
 
+        vanilla_ticket_types::register_vanilla_ticket_types(&mut registry.ticket_types);
+        steel_ticket_types::register_steel_ticket_types(&mut registry.ticket_types);
+
         registry
     }
 
@@ -480,6 +486,7 @@ impl Registry {
         self.structure_processors.freeze();
         self.custom_stats.freeze();
         self.stat_types.freeze();
+        self.ticket_types.freeze();
     }
 
     fn validate_references(&self) {
@@ -738,6 +745,7 @@ impl Registry {
             structure_processors: StructureProcessorListRegistry::new(),
             custom_stats: CustomStatRegistry::new(),
             stat_types: StatTypeRegistry::new(),
+            ticket_types: TicketTypeRegistry::new(),
         }
     }
 }
