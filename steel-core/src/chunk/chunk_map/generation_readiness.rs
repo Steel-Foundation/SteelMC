@@ -1,11 +1,10 @@
 use super::{
     Arc, ChunkGenerationTask, ChunkHolder, ChunkMap, ChunkPos, ChunkStatus, ChunkTicketLevel,
-    DeferredChunkRevival, FullNeighborhoodCounts, FullNeighborhoodError, FullNeighborhoodIndex,
-    FullPublication, FxHashMap, FxHashSet, GENERATION_THREAD_MULTIPLE, GenerationTaskPriority,
-    Instant, LevelChange, Ordering, PackedChunkPos, PostProcessGenerationError,
-    ReadinessReconcileResult, RunningGenerationTaskPermit, TickableChunk, TickingChunkSnapshot,
-    TickingReadiness, TickingReadinessCandidate, instrument, is_block_ticking, is_entity_ticking,
-    is_full,
+    FullNeighborhoodCounts, FullNeighborhoodError, FullNeighborhoodIndex, FullPublication,
+    FxHashMap, GENERATION_THREAD_MULTIPLE, GenerationTaskPriority, Instant, LevelChange, Ordering,
+    PackedChunkPos, PostProcessGenerationError, ReadinessReconcileResult,
+    RunningGenerationTaskPermit, TickableChunk, TickingChunkSnapshot, TickingReadiness,
+    TickingReadinessCandidate, instrument, is_block_ticking, is_entity_ticking, is_full,
 };
 
 impl ChunkMap {
@@ -99,7 +98,11 @@ impl ChunkMap {
     }
 
     /// Updates scheduling for a chunk based on its new level.
-    /// Returns the chunk holder if it is active.
+    ///
+    /// Returns the holder for every loaded level, and `None` only when the level is unloaded.
+    /// `ChunkGenerationTask::new` depends on that: it builds its dependency square by reading
+    /// `chunks` directly, so every position this commit granted a loading level must own a live
+    /// holder before the next epoch schedules a neighbor whose radius covers it.
     #[inline]
     pub(super) fn update_chunk_level(
         self: &Arc<Self>,
@@ -107,10 +110,6 @@ impl ChunkMap {
         new_level: Option<ChunkTicketLevel>,
         new_simulation_level: Option<ChunkTicketLevel>,
     ) -> Option<Arc<ChunkHolder>> {
-        if new_level.is_none() {
-            self.deferred_revivals.lock().remove(&pos);
-        }
-
         // Recover from unloading if possible, else create new holder.
         let chunk_holder =
             if let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) {
@@ -120,17 +119,7 @@ impl ChunkMap {
 
                 if let Some(entry) = self.unloading_chunks.remove_sync(&pos) {
                     let holder = entry.1;
-                    if !holder.try_revive_from_unloading() {
-                        let _ = self.unloading_chunks.insert_sync(pos, Arc::clone(&holder));
-                        self.deferred_revivals.lock().insert(
-                            pos,
-                            DeferredChunkRevival {
-                                load_level: level,
-                                simulation_level: new_simulation_level,
-                            },
-                        );
-                        return None;
-                    }
+                    holder.revive_from_unloading();
                     let _ = self.chunks.insert_sync(pos, Arc::clone(&holder));
                     holder
                 } else {
@@ -147,68 +136,55 @@ impl ChunkMap {
                 }
             };
 
-        if let Some(level) = new_level {
-            let old = chunk_holder.swap_load_level(level);
-            chunk_holder.set_simulation_level(new_simulation_level);
-            if old != Some(level) {
-                chunk_holder.update_highest_allowed_status(Some(level));
-            }
-            if chunk_holder.try_chunk(ChunkStatus::Empty).is_some() {
-                let world = self.world_gen_context.world();
-                world.on_entity_chunk_loaded(pos);
-                world.update_entity_chunk_visibility(pos, chunk_holder.entity_visibility());
-            }
-            if is_full(level)
-                && !old.is_some_and(is_full)
-                && chunk_holder.is_full_status_initialized()
-                && chunk_holder.published_status() == Some(ChunkStatus::Full)
-                && chunk_holder.try_chunk(ChunkStatus::Full).is_some()
-            {
-                self.full_publications.publish(&chunk_holder);
-            }
-            Some(chunk_holder)
-        } else {
-            //log::info!("Unloading chunk at {pos:?}");
-            chunk_holder.begin_unloading();
-            chunk_holder.cancel_generation_task();
-            chunk_holder.clear_load_level();
-            chunk_holder.set_simulation_level(None);
-            chunk_holder.update_highest_allowed_status(None);
-            // Wake any await_chunk futures so generation tasks holding refs to
-            // this chunk can detect the status is disallowed and exit.
-            chunk_holder.wake_all_watchers();
+        let Some(level) = new_level else {
+            self.begin_chunk_unload(pos, &chunk_holder);
+            return None;
+        };
 
-            // Clean up POI data for this chunk column
-            let world = self.world_gen_context.world();
-            world.on_entity_chunk_unload_start(pos);
-            world.poi_storage.lock().remove_chunk(pos);
-
-            if let Some(chunk) = chunk_holder.try_full_chunk() {
-                chunk.suspend_block_entities(&chunk_holder);
-            }
-
-            // Move to unloading_chunks for deferred unload
-            if let Some((_, holder)) = self.chunks.remove_sync(&pos) {
-                let _ = self.unloading_chunks.insert_sync(pos, holder);
-            }
-            None
+        let old = chunk_holder.swap_load_level(level);
+        chunk_holder.set_simulation_level(new_simulation_level);
+        if old != Some(level) {
+            chunk_holder.update_highest_allowed_status(Some(level));
         }
+        if chunk_holder.try_chunk(ChunkStatus::Empty).is_some() {
+            let world = self.world_gen_context.world();
+            world.on_entity_chunk_loaded(pos);
+            world.update_entity_chunk_visibility(pos, chunk_holder.entity_visibility());
+        }
+        if is_full(level)
+            && !old.is_some_and(is_full)
+            && chunk_holder.is_full_status_initialized()
+            && chunk_holder.published_status() == Some(ChunkStatus::Full)
+            && chunk_holder.try_chunk(ChunkStatus::Full).is_some()
+        {
+            self.full_publications.publish(&chunk_holder);
+        }
+        Some(chunk_holder)
     }
 
-    pub(super) fn merge_deferred_revivals(&self, changes: &mut Vec<LevelChange>) {
-        let changed_positions = changes
-            .iter()
-            .map(|change| change.pos)
-            .collect::<FxHashSet<_>>();
-        let mut deferred = self.deferred_revivals.lock();
-        for pos in &changed_positions {
-            deferred.remove(pos);
+    /// Tears an active holder down and moves it to `unloading_chunks` for deferred unload.
+    fn begin_chunk_unload(&self, pos: ChunkPos, chunk_holder: &Arc<ChunkHolder>) {
+        chunk_holder.begin_unloading();
+        chunk_holder.cancel_generation_task();
+        chunk_holder.clear_load_level();
+        chunk_holder.set_simulation_level(None);
+        chunk_holder.update_highest_allowed_status(None);
+        // Wake any await_chunk futures so generation tasks holding refs to
+        // this chunk can detect the status is disallowed and exit.
+        chunk_holder.wake_all_watchers();
+
+        // Clean up POI data for this chunk column
+        let world = self.world_gen_context.world();
+        world.on_entity_chunk_unload_start(pos);
+        world.poi_storage.lock().remove_chunk(pos);
+
+        if let Some(chunk) = chunk_holder.try_full_chunk() {
+            chunk.suspend_block_entities(chunk_holder);
         }
-        changes.extend(deferred.drain().map(|(pos, revival)| LevelChange {
-            pos,
-            new_level: Some(revival.load_level),
-            new_simulation_level: revival.simulation_level,
-        }));
+
+        if let Some((_, holder)) = self.chunks.remove_sync(&pos) {
+            let _ = self.unloading_chunks.insert_sync(pos, holder);
+        }
     }
 
     pub(super) fn prepare_ticking_readiness_demotions(

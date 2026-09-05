@@ -154,7 +154,11 @@ impl ChunkGenerationTask {
             chunk_map_clone
                 .chunks
                 .read_sync(&ChunkPos::new(x, y), |_, chunk_holder| chunk_holder.clone())
-                .expect("The chunkholder should be created by distance manager before the generation task is scheduled. This occurring means there is a bug in the distance manager or you called this yourself.")
+                .expect(
+                    "ChunkMap::update_chunk_level installs a holder for every position granted a \
+                     loading level, before the epoch that schedules its neighbors runs. A missing \
+                     holder means ticket propagation or the lifecycle commit broke that invariant.",
+                )
         });
         let center_holder = Arc::clone(cache.get(pos.0.x, pos.0.y));
 

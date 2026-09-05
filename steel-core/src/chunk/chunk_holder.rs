@@ -164,6 +164,8 @@ pub struct ChunkHolder {
     /// Number of save dependencies that have not completed yet.
     active_save_dependencies: AtomicUsize,
     /// Coordinates unloading revival with the short immutable save-preparation phase.
+    ///
+    /// Revival always wins; see [`ChunkHolder::revive_from_unloading`].
     save_lifecycle: AtomicU8,
     /// The highest status that generation is allowed to reach.
     highest_allowed_status: AtomicU8,
@@ -219,22 +221,38 @@ impl Drop for ChunkSaveDependency {
     }
 }
 
+/// Reservation of a holder's save-preparation phase.
+///
+/// The phase excludes a second preparation but deliberately does not exclude a ticket revival. End
+/// it with [`Self::finish`]: the snapshot is moved into the guard and only comes back out when the
+/// phase still owned the holder, so a preparation that lost the revival race cannot reach disk.
+///
+/// Only one guard can exist per holder at a time: it keeps a strong reference, and
+/// `ChunkMap::process_unloads` only spawns a save for a holder whose strong count is 1.
 pub(crate) struct ChunkSavePreparationGuard {
     holder: Arc<ChunkHolder>,
+    /// Whether the lifecycle was already handed back, so `Drop` does not repeat it.
+    released: bool,
+}
+
+impl ChunkSavePreparationGuard {
+    /// Ends the phase, returning `value` only if no revival reclaimed the holder meanwhile.
+    #[must_use = "a snapshot prepared while losing a revival race must be discarded"]
+    pub(crate) fn finish<T>(mut self, value: T) -> Option<T> {
+        self.released = true;
+        self.holder.end_save_preparation().then_some(value)
+    }
 }
 
 impl Drop for ChunkSavePreparationGuard {
     fn drop(&mut self) {
-        let result = self.holder.save_lifecycle.compare_exchange(
-            SAVE_LIFECYCLE_PREPARING,
-            SAVE_LIFECYCLE_UNLOADING,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        );
-        assert!(
-            result.is_ok(),
-            "chunk save preparation ended outside the preparing lifecycle"
-        );
+        if self.released {
+            return;
+        }
+
+        // Only reached when the preparation unwound or bailed before building a snapshot, so
+        // nothing escaped and the holder just leaves the preparing lifecycle.
+        let _ = self.holder.end_save_preparation();
     }
 }
 
@@ -711,19 +729,44 @@ impl ChunkHolder {
             .ok()
             .map(|_| ChunkSavePreparationGuard {
                 holder: Arc::clone(self),
+                released: false,
             })
     }
 
-    /// Attempts to reactivate an unloading holder without waiting for save preparation.
-    pub(crate) fn try_revive_from_unloading(&self) -> bool {
+    /// Leaves the preparing lifecycle, reporting whether the phase still owned the holder.
+    fn end_save_preparation(&self) -> bool {
         self.save_lifecycle
             .compare_exchange(
+                SAVE_LIFECYCLE_PREPARING,
                 SAVE_LIFECYCLE_UNLOADING,
-                SAVE_LIFECYCLE_ACTIVE,
                 Ordering::AcqRel,
                 Ordering::Acquire,
             )
             .is_ok()
+    }
+
+    /// Reactivates an unloading holder, whether or not a save snapshot is in flight.
+    ///
+    /// Vanilla revives unconditionally: `ChunkMap.updateChunkScheduling` pulls the holder straight
+    /// back out of `pendingUnloads` and lets the pending unload find out that it lost. A concurrent
+    /// preparation learns that from [`ChunkSavePreparationGuard::finish`] and throws its snapshot
+    /// away. Revival cannot be allowed to fail: a position that holds a ticket level but has no
+    /// entry in `ChunkMap::chunks` is a hole in the dependency grid that
+    /// `ChunkGenerationTask::new` cannot resolve.
+    ///
+    /// A single `try_update` is required rather than one CAS per source state: a preparation ending
+    /// concurrently moves `PREPARING` back to `UNLOADING`, so sequential attempts could both miss
+    /// and spuriously fail.
+    pub(crate) fn revive_from_unloading(&self) {
+        let previous =
+            self.save_lifecycle
+                .try_update(Ordering::AcqRel, Ordering::Acquire, |lifecycle| {
+                    (lifecycle != SAVE_LIFECYCLE_ACTIVE).then_some(SAVE_LIFECYCLE_ACTIVE)
+                });
+        debug_assert!(
+            previous.is_ok(),
+            "an already active chunk holder was revived from unloading"
+        );
     }
 
     /// Applies a step to the chunk.
@@ -1710,27 +1753,44 @@ mod tests {
     }
 
     #[test]
-    fn save_preparation_defers_revival_only_until_the_snapshot_is_built() {
+    fn revival_wins_over_an_in_flight_save_preparation() {
         let holder = test_holder();
         holder.begin_unloading();
         let preparation = holder
             .try_begin_save_preparation()
             .expect("an unloading holder should begin save preparation");
 
-        assert!(!holder.try_revive_from_unloading());
+        holder.revive_from_unloading();
 
-        drop(preparation);
-
-        assert!(holder.try_revive_from_unloading());
+        assert!(
+            preparation.finish(()).is_none(),
+            "a preparation that lost the revival race must discard its snapshot"
+        );
         assert!(holder.try_begin_save_preparation().is_none());
     }
 
     #[test]
-    fn revival_winning_the_lifecycle_race_cancels_save_preparation() {
+    fn an_uncontested_save_preparation_keeps_its_snapshot() {
+        let holder = test_holder();
+        holder.begin_unloading();
+        let preparation = holder
+            .try_begin_save_preparation()
+            .expect("an unloading holder should begin save preparation");
+
+        assert_eq!(preparation.finish(7), Some(7));
+        assert!(
+            holder.try_begin_save_preparation().is_some(),
+            "finishing an uncontested phase must return the holder to the unloading lifecycle"
+        );
+    }
+
+    #[test]
+    fn a_revived_holder_refuses_a_new_save_preparation() {
         let holder = test_holder();
         holder.begin_unloading();
 
-        assert!(holder.try_revive_from_unloading());
+        holder.revive_from_unloading();
+
         assert!(holder.try_begin_save_preparation().is_none());
     }
 }

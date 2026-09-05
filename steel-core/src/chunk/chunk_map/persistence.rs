@@ -45,12 +45,14 @@ impl ChunkMap {
                     None
                 };
 
+                // A revival that won the race leaves the holder live again, so its snapshot is
+                // stale and must not reach disk.
+                let prepared = save_preparation.finish(prepared).flatten();
+
                 if prepared.is_none() && dirty {
                     chunk_guard.mark_dirty();
                 }
 
-                // Revival need not wait for encoding or disk I/O once this owned input exists.
-                drop(save_preparation);
                 prepared
             };
 
