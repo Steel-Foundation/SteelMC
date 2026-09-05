@@ -5,7 +5,7 @@ pub mod set;
 pub mod template_pool;
 
 use rustc_hash::FxHashMap;
-use steel_utils::Identifier;
+use steel_utils::{Identifier, value_providers::HeightProvider};
 
 use crate::RegistryTags;
 
@@ -325,7 +325,7 @@ pub struct JigsawConfig {
     /// If set, project the start piece to this heightmap type.
     pub project_start_to_heightmap: Option<String>,
     /// Start height provider type and value.
-    pub start_height: StartHeight,
+    pub start_height: HeightProvider,
     /// Maximum distance from center for piece placement.
     pub max_distance_from_center: i32,
     /// Optional named jigsaw to anchor the start piece to.
@@ -336,18 +336,6 @@ pub struct JigsawConfig {
     pub pool_aliases: Vec<PoolAlias>,
     /// Liquid handling mode.
     pub liquid_settings: LiquidSettingsData,
-}
-
-/// Start height configuration for jigsaw structures.
-#[derive(Debug, Clone)]
-pub enum StartHeight {
-    /// Fixed vertical anchor.
-    Constant(VerticalAnchorData),
-    /// Uniform random between resolved anchors, inclusive.
-    Uniform {
-        min: VerticalAnchorData,
-        max: VerticalAnchorData,
-    },
 }
 
 /// Dimension padding (how close pieces can be to world height limits).

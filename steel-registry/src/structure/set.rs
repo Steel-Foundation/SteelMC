@@ -4,7 +4,7 @@
 //! the vanilla datapack JSONs. `steel-core` converts these into its
 //! placement types for actual worldgen logic.
 
-pub use crate::structure::{DimensionPadding, JigsawConfig, PoolAlias, StartHeight};
+pub use crate::structure::{DimensionPadding, JigsawConfig, PoolAlias};
 use glam::IVec3;
 use steel_utils::Identifier;
 
