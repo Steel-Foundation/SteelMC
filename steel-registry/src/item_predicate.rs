@@ -829,6 +829,12 @@ impl LockCode {
     pub const fn predicate(&self) -> &ItemPredicate {
         &self.predicate
     }
+
+    /// Encodes this lock code as its Vanilla item-predicate NBT without consuming it.
+    #[must_use]
+    pub fn to_nbt_tag_ref(&self) -> NbtTag {
+        self.predicate.to_nbt_tag_ref()
+    }
 }
 
 impl WriteTo for LockCode {

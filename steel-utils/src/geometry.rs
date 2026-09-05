@@ -577,6 +577,42 @@ impl Aabb<DVec3, World> {
         let max = min + DVec3::ONE;
         self.intersects_bounds(min, max)
     }
+
+    /// Shrinks the box in the direction of `delta`.
+    ///
+    /// Positive components move the maximum edge inward, while negative
+    /// components move the minimum edge inward.
+    ///
+    /// Mirrors vanilla `AABB.contract`.
+    #[must_use]
+    pub fn contract(self, delta: DVec3) -> Self {
+        let mut min = self.min;
+        let mut max = self.max;
+
+        if delta.x < 0.0 {
+            min.x -= delta.x;
+        } else if delta.x > 0.0 {
+            max.x -= delta.x;
+        }
+
+        if delta.y < 0.0 {
+            min.y -= delta.y;
+        } else if delta.y > 0.0 {
+            max.y -= delta.y;
+        }
+
+        if delta.z < 0.0 {
+            min.z -= delta.z;
+        } else if delta.z > 0.0 {
+            max.z -= delta.z;
+        }
+
+        Self {
+            min,
+            max,
+            p: PhantomData,
+        }
+    }
 }
 
 impl Aabb<IVec3, Structure> {

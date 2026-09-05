@@ -23,6 +23,7 @@ use steel_utils::{
 };
 
 use crate::behavior::{BLOCK_BEHAVIORS, BlockLootContext};
+use crate::block_entity::BlockEntity;
 use crate::entity::{Entity, LivingEntity};
 use crate::fluid::fluid_state_to_block;
 use crate::player::Player;
@@ -365,6 +366,10 @@ impl BlockBreakingManager {
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
         // block leaves water behind instead of air.
         let replacement = fluid_state_to_block(state.get_fluid_state());
+
+        // Store the block entity before removal.
+        let block_entity = world.get_block_entity(pos);
+
         // Vanilla removes the live state after `playerWillDestroy`; tripwire uses
         // that callback to set DISARMED before the same block is removed.
         let removed_by_player_break = !state_after_player_will_destroy.is_air()
@@ -444,8 +449,14 @@ impl BlockBreakingManager {
                 player.award_stat(&vanilla_stat_types::BLOCK_MINED, state.get_block());
                 player.cause_food_exhaustion(food_constants::EXHAUSTION_MINE);
 
-                drop_block_loot(player, world, pos, adjusted_state, &destroyed_with);
-                let block_entity = world.get_block_entity(pos);
+                drop_block_loot(
+                    player,
+                    world,
+                    pos,
+                    adjusted_state,
+                    &destroyed_with,
+                    block_entity.as_deref(),
+                );
                 behavior.player_destroy(
                     world,
                     player,
@@ -555,6 +566,7 @@ fn drop_block_loot(
     pos: BlockPos,
     state: BlockStateId,
     tool: &ItemStack,
+    block_entity: Option<&'_ dyn BlockEntity>,
 ) {
     let luck = player
         .attributes()
@@ -565,6 +577,7 @@ fn drop_block_loot(
     let drops = BlockLootContext::new(world, pos)
         .with_luck(luck)
         .with_tool(tool)
+        .with_block_entity(block_entity)
         .get_drops(state);
 
     // Spawn each dropped item using the player's world reference (Arc<World>)

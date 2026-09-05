@@ -129,6 +129,10 @@ impl BlockItem {
 
         let placed_state = context.world.get_block_state(place_pos);
         if placed_state.get_block() == self.block {
+            if let Some(block_entity) = context.world.get_block_entity(place_pos) {
+                context.with_item(|item| block_entity.apply_components_from_item(item));
+                block_entity.set_changed();
+            }
             let placed_behavior = BLOCK_BEHAVIORS.get_behavior(placed_state.get_block());
             placed_behavior.set_placed_by(placed_state, context.world, place_pos, context.source());
         }
