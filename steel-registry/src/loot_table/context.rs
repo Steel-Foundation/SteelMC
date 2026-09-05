@@ -41,6 +41,10 @@ pub enum NumberProvider {
         min: f32,
         max: f32,
     },
+    UniformProvider {
+        min: &'static NumberProvider,
+        max: &'static NumberProvider,
+    },
     Binomial {
         n: i32,
         p: f32,
@@ -83,6 +87,11 @@ impl NumberProvider {
         match self {
             Self::Constant(v) => *v,
             Self::Uniform { min, max } => rng.random_range(*min..=*max),
+            Self::UniformProvider { min, max } => {
+                let min = min.get(rng, ctx);
+                let max = max.get(rng, ctx);
+                rng.random_range(min..=max)
+            }
             Self::Binomial { n, p } => {
                 let mut count = 0;
                 for _ in 0..*n {
@@ -113,6 +122,11 @@ impl NumberProvider {
         match self {
             Self::Constant(v) => *v,
             Self::Uniform { min, max } => rng.random_range(*min..=*max),
+            Self::UniformProvider { min, max } => {
+                let min = min.get_simple(rng);
+                let max = max.get_simple(rng);
+                rng.random_range(min..=max)
+            }
             Self::Binomial { n, p } => {
                 let mut count = 0;
                 for _ in 0..*n {

@@ -157,8 +157,10 @@ impl FromStr for Identifier {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let Some((namespace, path)) = s.split_once(':') else {
-            return Err("Invalid resource location");
+        let (namespace, path) = match s.split_once(':') {
+            Some(("", path)) => (Self::VANILLA_NAMESPACE, path),
+            Some((namespace, path)) => (namespace, path),
+            None => (Self::VANILLA_NAMESPACE, s),
         };
 
         Identifier::new_validated(namespace, path)

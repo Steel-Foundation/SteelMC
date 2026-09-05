@@ -5,7 +5,7 @@
 
 use std::{collections::BTreeMap, fs, str::FromStr};
 
-use crate::generator_functions::{generate_sound_event_ref, parse_loose_identifier};
+use crate::generator_functions::generate_sound_event_ref;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -125,7 +125,7 @@ fn generate_tool_component(value: &Value) -> TokenStream {
 }
 
 fn block_ref_token(value: &str) -> TokenStream {
-    let id = Identifier::from_str(value)
+    let id = Identifier::parse_or_vanilla(value)
         .unwrap_or_else(|error| panic!("invalid tool block id {value:?}: {error}"));
     assert_eq!(
         id.namespace.as_ref(),
@@ -137,7 +137,7 @@ fn block_ref_token(value: &str) -> TokenStream {
 }
 
 fn parse_identifier_or_vanilla(s: &str) -> Identifier {
-    parse_loose_identifier(s)
+    Identifier::parse_or_vanilla(s)
         .unwrap_or_else(|error| panic!("invalid item build identifier {s}: {error}"))
 }
 

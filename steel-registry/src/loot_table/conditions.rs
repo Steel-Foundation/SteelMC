@@ -116,6 +116,8 @@ pub enum ToolPredicate {
     },
     /// Match items in a tag.
     Tag(Identifier),
+    /// Match items whose `custom_data` component contains the expected NBT subset.
+    CustomData { tag: &'static str },
     /// Always matches (no predicate specified).
     Any,
 }
@@ -330,6 +332,7 @@ impl ToolPredicate {
                 // Check if the tool's item is in the specified tag
                 REGISTRY.items.is_in_tag(tool.item, tag)
             }
+            ToolPredicate::CustomData { tag: _tag } => false,
             ToolPredicate::Any => true,
         }
     }

@@ -122,8 +122,6 @@ impl<'de> Deserialize<'de> for UniformIntProvider {
             Uniform {
                 min_inclusive: i32,
                 max_inclusive: i32,
-                #[serde(default, rename = "value")]
-                _value: Option<serde_json::Value>,
             },
         }
 
@@ -309,6 +307,8 @@ impl<'de> Deserialize<'de> for IntProvider {
             Uniform {
                 min_inclusive: i32,
                 max_inclusive: i32,
+                #[serde(default, rename = "value")]
+                _value: Option<serde_json::Value>,
             },
             #[serde(rename = "minecraft:biased_to_bottom")]
             BiasedToBottom {
