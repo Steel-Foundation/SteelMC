@@ -13,7 +13,7 @@ use steel_utils::{BlockPos, BlockStateId};
 use crate::behavior::blocks::redstone::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
 use crate::behavior::blocks::{WeatherState, WeatheringCopper};
 use crate::behavior::{BlockBehavior, BlockPlaceContext};
-use crate::world::{LevelReader, SignalGetter as _, World};
+use crate::world::{SignalGetter as _, World};
 
 /// Vanilla `CopperBulbBlock`, used directly by waxed bulb variants.
 #[block_behavior]
@@ -67,7 +67,7 @@ impl CopperBulbBlock {
         }
     }
 
-    fn analog_output(world: &dyn LevelReader, pos: BlockPos) -> i32 {
+    fn analog_output(world: &World, pos: BlockPos) -> i32 {
         if world.get_block_state(pos).get_value(LIT) {
             MAX_REDSTONE_SIGNAL
         } else {
@@ -110,7 +110,7 @@ impl BlockBehavior for CopperBulbBlock {
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        world: &dyn LevelReader,
+        world: &World,
         pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
@@ -175,7 +175,7 @@ impl BlockBehavior for WeatheringCopperBulbBlock {
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        world: &dyn LevelReader,
+        world: &World,
         pos: BlockPos,
         _direction: Direction,
     ) -> i32 {

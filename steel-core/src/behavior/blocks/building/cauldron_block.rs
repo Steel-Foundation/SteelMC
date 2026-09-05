@@ -20,7 +20,7 @@ use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 use crate::{
     behavior::{BlockBehavior, BlockPlaceContext, blocks::vegetation},
     entity::ai::path::PathComputationType,
-    world::{LevelReader, World, game_event::GameEventContext},
+    world::{World, game_event::GameEventContext},
 };
 
 /// Vanilla empty cauldron behavior.
@@ -51,7 +51,7 @@ impl BlockBehavior for CauldronBlock {
     fn get_analog_output_signal(
         &self,
         _state: BlockStateId,
-        _world: &dyn LevelReader,
+        _world: &World,
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
@@ -126,7 +126,7 @@ impl BlockBehavior for LayeredCauldronBlock {
     fn get_analog_output_signal(
         &self,
         state: BlockStateId,
-        _world: &dyn LevelReader,
+        _world: &World,
         _pos: BlockPos,
         _direction: Direction,
     ) -> i32 {
@@ -174,21 +174,21 @@ mod tests {
     use super::*;
     use crate::{
         behavior::{BLOCK_BEHAVIORS, init_behaviors},
-        test_support::TestLevel,
+        test_support::fresh_test_world,
     };
 
     #[test]
     fn registered_cauldron_behaviors_expose_vanilla_fill_levels() {
         init_vanilla_registry();
         init_behaviors();
-        let level = TestLevel::default();
+        let world = fresh_test_world("cauldron_analog_output");
         let pos = BlockPos::ZERO;
 
         let empty = vanilla_blocks::CAULDRON.default_state();
         let empty_behavior = BLOCK_BEHAVIORS.get_behavior(empty.get_block());
         assert!(empty_behavior.has_analog_output_signal(empty));
         assert_eq!(
-            empty_behavior.get_analog_output_signal(empty, &level, pos, Direction::North),
+            empty_behavior.get_analog_output_signal(empty, world.as_ref(), pos, Direction::North),
             0,
         );
 
@@ -198,7 +198,7 @@ mod tests {
                 .set_value(LEVEL_CAULDRON, level_value);
             let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
             assert_eq!(
-                behavior.get_analog_output_signal(state, &level, pos, Direction::North),
+                behavior.get_analog_output_signal(state, world.as_ref(), pos, Direction::North),
                 i32::from(level_value),
             );
         }

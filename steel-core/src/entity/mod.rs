@@ -229,7 +229,7 @@ fn entity_eye_suffocation_box(eye_pos: DVec3, width: f64) -> WorldAabb {
 
 fn block_state_suffocates_eye_box(
     state: BlockStateId,
-    world: &dyn LevelReader,
+    world: &impl LevelReader,
     pos: BlockPos,
     eye_box: WorldAabb,
 ) -> bool {

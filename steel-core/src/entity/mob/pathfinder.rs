@@ -350,9 +350,9 @@ pub(super) fn path_end_node_can_reach_target(path: &Path, target: BlockPos) -> b
     f64::from(dx * dx + dz * dz) <= TARGET_REACH_DISTANCE_SQR
 }
 
-fn path_target_for_mob<M: PathfinderMob + ?Sized>(
+fn path_target_for_mob<M: PathfinderMob + ?Sized, L: LevelReader>(
     mob: &M,
-    level: &dyn LevelReader,
+    level: &L,
     target: BlockPos,
 ) -> BlockPos {
     if mob.can_path_to_targets_below_surface() {
@@ -363,7 +363,7 @@ fn path_target_for_mob<M: PathfinderMob + ?Sized>(
 }
 
 pub(super) fn find_ground_path_target_surface(
-    level: &dyn LevelReader,
+    level: &impl LevelReader,
     mut pos: BlockPos,
 ) -> BlockPos {
     if level.get_block_state(pos).is_air() {
