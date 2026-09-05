@@ -93,6 +93,14 @@ pub fn parse_configured_feature_json(registry_id: &str, content: &str) -> Config
         .unwrap_or_else(|err| panic!("failed to parse configured feature {registry_id}: {err}"))
 }
 
+pub fn parse_placed_feature_json(registry_id: &str, content: &str) -> PlacedFeatureData {
+    let mut value: Value = serde_json::from_str(content)
+        .unwrap_or_else(|err| panic!("failed to parse placed feature {registry_id}: {err}"));
+    normalize_datapack_type_fields(&mut value);
+    serde_json::from_value(value)
+        .unwrap_or_else(|err| panic!("failed to parse placed feature {registry_id}: {err}"))
+}
+
 /// A configured feature reference, either a registry key or an inline configured feature.
 #[derive(Debug, Clone)]
 pub enum ConfiguredFeatureRef {

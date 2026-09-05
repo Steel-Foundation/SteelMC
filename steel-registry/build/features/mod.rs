@@ -42,7 +42,6 @@ use structures::{
     generate_weighted_random_placed_feature, generate_weighted_template_entry,
 };
 
-use data::parse_configured_feature_json;
 use data::{
     AboveRootPlacement, BlobFoliagePlacer, BlockColumnLayer, BlockHolderSet, BlockPredicate,
     BlockStateData, BlockStateProvider, ConfiguredFeatureKind, ConfiguredFeatureRef,
@@ -54,6 +53,7 @@ use data::{
     TreeDecorator, TrunkPlacer, TrunkPlacerBase, VegetationPatchConfiguration, VerticalSurface,
     WeightedBlockState, WeightedPlacedFeature, WeightedRandomPlacedFeature, WeightedTemplateEntry,
 };
+use data::{parse_configured_feature_json, parse_placed_feature_json};
 
 fn sorted_json_registry_entries(dir: &str) -> Vec<(String, String)> {
     sorted_json_files(dir)
@@ -135,8 +135,7 @@ pub(crate) fn build_placed() -> TokenStream {
         let path = entry.as_path();
         let content =
             fs::read_to_string(path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
-        let data = serde_json::from_str::<PlacedFeatureData>(&content)
-            .unwrap_or_else(|err| panic!("failed to parse placed feature {name}: {err}"));
+        let data = parse_placed_feature_json(&name, &content);
         entries.push((name, generate_placed_feature_data(&data)));
     }
 

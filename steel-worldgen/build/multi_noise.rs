@@ -79,26 +79,26 @@ pub(crate) fn build() -> TokenStream {
 
     // Generate each preset
     for (preset_name, entries) in &presets {
-        let short_name = preset_name
-            .strip_prefix("minecraft:")
-            .unwrap_or(preset_name);
-        let upper_name = short_name.to_uppercase();
+        let generated_name = generated_preset_name(preset_name);
+        let upper_name = generated_name.to_uppercase();
 
         let static_ident = Ident::new(&format!("{upper_name}_BIOME_PARAMETERS"), Span::call_site());
         let points_ident = Ident::new(&format!("{upper_name}_BIOME_POINTS"), Span::call_site());
-        let lookup_fn = Ident::new(&format!("lookup_{short_name}_biome"), Span::call_site());
-        let get_fn = Ident::new(&format!("get_{short_name}_biome"), Span::call_site());
-        let get_cached_fn =
-            Ident::new(&format!("get_{short_name}_biome_cached"), Span::call_site());
+        let lookup_fn = Ident::new(&format!("lookup_{generated_name}_biome"), Span::call_site());
+        let get_fn = Ident::new(&format!("get_{generated_name}_biome"), Span::call_site());
+        let get_cached_fn = Ident::new(
+            &format!("get_{generated_name}_biome_cached"),
+            Span::call_site(),
+        );
 
         let (points_tokens, arms_tokens) = generate_biome_entries(entries);
         let doc_static = format!(
             "{} biome parameter list for multi-noise biome selection.",
-            capitalize(short_name)
+            capitalize(preset_name)
         );
-        let doc_get = format!("Get the biome for a target point in the {short_name}.");
+        let doc_get = format!("Get the biome for a target point in {preset_name}.");
         let doc_cached = format!(
-            "Get the biome with lastResult caching for the {short_name} (matches vanilla's ThreadLocal warm-start)."
+            "Get the biome with lastResult caching for {preset_name} (matches vanilla's ThreadLocal warm-start)."
         );
 
         // Emit climate points as a `static` of `const`-constructed values so they live
@@ -142,6 +142,31 @@ pub(crate) fn build() -> TokenStream {
     }
 
     stream
+}
+
+fn generated_preset_name(preset_name: &str) -> String {
+    let (namespace, path) = preset_name
+        .split_once(':')
+        .unwrap_or(("minecraft", preset_name));
+    let raw = if namespace == "minecraft" {
+        path.to_owned()
+    } else {
+        format!("{namespace}__{path}")
+    };
+    let mut generated: String = raw
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '_' {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if generated.starts_with(|character: char| character.is_ascii_digit()) {
+        generated.insert(0, '_');
+    }
+    generated
 }
 
 /// Quantize a float value matching vanilla's `(long)(float * 10000.0F)`.

@@ -66,6 +66,7 @@ mod loot_tables;
 mod map_decoration_types;
 mod menu_types;
 mod mob_effects;
+mod nbt;
 mod packets;
 mod painting_variants;
 mod particle_types;

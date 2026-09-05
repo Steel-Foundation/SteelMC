@@ -6,9 +6,9 @@ use crate::generator_functions::{
     generate_static_identifier as generate_identifier, generate_static_identifier_from_str,
     registry_entry_ident, resource_name, sorted_json_files,
 };
+use crate::nbt::generate_nbt_compound;
 use proc_macro2::TokenStream;
 use quote::quote;
-use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::value_providers::IntProvider;
 
 #[path = "../../src/structure/processor/data.rs"]
@@ -224,79 +224,6 @@ fn generate_block_entity_modifier(data: &RuleBlockEntityModifierData) -> TokenSt
             let data = generate_nbt_compound(data);
             quote! { RuleBlockEntityModifierData::AppendStatic { data: #data } }
         }
-    }
-}
-
-fn generate_nbt_compound(compound: &NbtCompound) -> TokenStream {
-    let entries = compound.iter().map(|(key, value)| {
-        let key = key.to_string();
-        let value = generate_nbt_tag(value);
-        quote! { (#key.into(), #value) }
-    });
-    quote! { NbtCompound::from_values(vec![#(#entries),*]) }
-}
-
-fn generate_nbt_list(list: &NbtList) -> TokenStream {
-    match list {
-        NbtList::Empty => quote! { NbtList::Empty },
-        NbtList::Byte(values) => quote! { NbtList::Byte(vec![#(#values),*]) },
-        NbtList::Short(values) => quote! { NbtList::Short(vec![#(#values),*]) },
-        NbtList::Int(values) => quote! { NbtList::Int(vec![#(#values),*]) },
-        NbtList::Long(values) => quote! { NbtList::Long(vec![#(#values),*]) },
-        NbtList::Float(values) => quote! { NbtList::Float(vec![#(#values),*]) },
-        NbtList::Double(values) => quote! { NbtList::Double(vec![#(#values),*]) },
-        NbtList::ByteArray(values) => {
-            let values = values.iter().map(|value| quote! { vec![#(#value),*] });
-            quote! { NbtList::ByteArray(vec![#(#values),*]) }
-        }
-        NbtList::String(values) => {
-            let values = values
-                .iter()
-                .map(|value| value.as_str().to_str().into_owned());
-            quote! { NbtList::String(vec![#(#values.into()),*]) }
-        }
-        NbtList::List(values) => {
-            let values = values.iter().map(generate_nbt_list);
-            quote! { NbtList::List(vec![#(#values),*]) }
-        }
-        NbtList::Compound(values) => {
-            let values = values.iter().map(generate_nbt_compound);
-            quote! { NbtList::Compound(vec![#(#values),*]) }
-        }
-        NbtList::IntArray(values) => {
-            let values = values.iter().map(|value| quote! { vec![#(#value),*] });
-            quote! { NbtList::IntArray(vec![#(#values),*]) }
-        }
-        NbtList::LongArray(values) => {
-            let values = values.iter().map(|value| quote! { vec![#(#value),*] });
-            quote! { NbtList::LongArray(vec![#(#values),*]) }
-        }
-    }
-}
-
-fn generate_nbt_tag(tag: &NbtTag) -> TokenStream {
-    match tag {
-        NbtTag::Byte(value) => quote! { NbtTag::Byte(#value) },
-        NbtTag::Short(value) => quote! { NbtTag::Short(#value) },
-        NbtTag::Int(value) => quote! { NbtTag::Int(#value) },
-        NbtTag::Long(value) => quote! { NbtTag::Long(#value) },
-        NbtTag::Float(value) => quote! { NbtTag::Float(#value) },
-        NbtTag::Double(value) => quote! { NbtTag::Double(#value) },
-        NbtTag::ByteArray(value) => quote! { NbtTag::ByteArray(vec![#(#value),*]) },
-        NbtTag::String(value) => {
-            let value = value.as_str().to_str().into_owned();
-            quote! { NbtTag::String(#value.into()) }
-        }
-        NbtTag::List(value) => {
-            let value = generate_nbt_list(value);
-            quote! { NbtTag::List(#value) }
-        }
-        NbtTag::Compound(value) => {
-            let value = generate_nbt_compound(value);
-            quote! { NbtTag::Compound(#value) }
-        }
-        NbtTag::IntArray(value) => quote! { NbtTag::IntArray(vec![#(#value),*]) },
-        NbtTag::LongArray(value) => quote! { NbtTag::LongArray(vec![#(#value),*]) },
     }
 }
 
