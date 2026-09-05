@@ -1,5 +1,6 @@
 //! This module contains the `JavaConnection` struct, which is used to represent a connection to a Java client.
 use std::io::Cursor;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -38,8 +39,12 @@ use tokio_util::sync::CancellationToken;
 
 use crate::command::{handle_client_request, sender::CommandSender};
 use crate::player::Player;
-use crate::player::connection::NetworkConnection;
+use crate::player::connection::{NetworkConnection, OUTBOUND_BATCH_SIZE, write_outbound_batch};
 use crate::server::Server;
+
+/// Maximum encoded bytes allowed to sit in a connection's outbound queue before the
+/// client is kicked; 8x the inbound `MAX_PACKET_DATA_SIZE` (8 MiB) admission limit.
+const MAX_OUTBOUND_QUEUED_BYTES: usize = 64 * 1024 * 1024;
 
 /// Shared Java socket writer.
 pub type JavaNetworkWriter = Arc<AsyncMutex<Option<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>>;
@@ -50,6 +55,9 @@ const DISCONNECT_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
 pub enum OutboundPacket {
     /// Normal packet write that may be interrupted by connection shutdown.
     Packet(EncodedPacket),
+    /// An atomic bundle: delimiters and sub-packets written consecutively, without
+    /// interleaving other messages.
+    Bundle(Vec<EncodedPacket>),
     /// Final disconnect packet that is flushed on a bounded best-effort basis.
     Disconnect(EncodedPacket),
 }
@@ -390,6 +398,7 @@ pub struct JavaConnection {
     compression: Option<CompressionInfo>,
     network_writer: JavaNetworkWriter,
     id: u64,
+    outbound_queued_bytes: AtomicUsize,
 
     player: Weak<Player>,
     keep_alive_tracker: SyncMutex<KeepAliveTracker>,
@@ -412,6 +421,7 @@ impl JavaConnection {
             compression,
             network_writer,
             id,
+            outbound_queued_bytes: AtomicUsize::new(0),
             player,
             keep_alive_tracker: SyncMutex::new(KeepAliveTracker {
                 alive_time: 0,
@@ -420,14 +430,6 @@ impl JavaConnection {
             }),
             latency: SyncMutex::new(0),
         }
-    }
-
-    async fn write_packet_now(&self, packet: &EncodedPacket) -> Result<(), PacketError> {
-        let mut network_writer = self.network_writer.lock().await;
-        let Some(network_writer) = network_writer.as_mut() else {
-            return Err(PacketError::ConnectionClosed);
-        };
-        network_writer.write_packet(packet).await
     }
 
     async fn finish_disconnect(&self, disconnect_packet: Option<EncodedPacket>) {
@@ -525,6 +527,8 @@ impl JavaConnection {
                 return;
             }
         };
+        // The disconnect packet is intentionally not byte-tracked: it is a single
+        // bounded message per connection, and `release_dequeued_bytes` excludes it.
         if self
             .outgoing_packets
             .send(OutboundPacket::Disconnect(packet))
@@ -536,14 +540,25 @@ impl JavaConnection {
         self.close();
     }
 
-    /// Sends a packet to the client.
-    ///
-    /// # Panics
-    /// - If the packet fails to be encoded.
-    /// - If the packet fails to be sent through the channel.
-    pub fn send_packet<P: ClientPacket>(&self, packet: P) {
-        let packet = EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
-            .expect("Failed to encode packet");
+    /// Tracks encoded bytes queued for the client and kicks it when the outbound buffer
+    /// budget is exceeded.
+    fn track_outbound_bytes(&self, bytes: usize) {
+        let queued = self
+            .outbound_queued_bytes
+            .fetch_add(bytes, Ordering::Relaxed)
+            + bytes;
+        if queued > MAX_OUTBOUND_QUEUED_BYTES && !self.closed() {
+            log::warn!(
+                "Disconnecting client {} exceeding outbound buffer limit",
+                self.id
+            );
+            self.disconnect(translations::DISCONNECT_TIMEOUT.msg());
+        }
+    }
+
+    /// Queues an already encoded packet for the sender task.
+    fn queue_encoded_packet(&self, packet: EncodedPacket) {
+        self.track_outbound_bytes(packet.encoded_data.len());
         if self
             .outgoing_packets
             .send(OutboundPacket::Packet(packet))
@@ -553,18 +568,41 @@ impl JavaConnection {
         }
     }
 
+    /// Releases the tracked bytes of messages drained from the channel. `Disconnect`
+    /// messages were never tracked, so they contribute zero and the counter can never
+    /// underflow.
+    fn release_dequeued_bytes(&self, batch: &[OutboundPacket]) {
+        let dequeued: usize = batch
+            .iter()
+            .map(|outbound| match outbound {
+                OutboundPacket::Packet(packet) => packet.encoded_data.len(),
+                OutboundPacket::Bundle(bundle) => {
+                    bundle.iter().map(|packet| packet.encoded_data.len()).sum()
+                }
+                OutboundPacket::Disconnect(_) => 0,
+            })
+            .sum();
+        self.outbound_queued_bytes
+            .fetch_sub(dequeued, Ordering::Relaxed);
+    }
+
+    /// Sends a packet to the client.
+    ///
+    /// # Panics
+    /// - If the packet fails to be encoded.
+    /// - If the packet fails to be sent through the channel.
+    pub fn send_packet<P: ClientPacket>(&self, packet: P) {
+        let packet = EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
+            .expect("Failed to encode packet");
+        self.queue_encoded_packet(packet);
+    }
+
     /// Sends an encoded packet to the client.
     ///
     /// # Panics
     /// - If the packet fails to be sent through the channel.
     pub fn send_encoded_packet(&self, packet: EncodedPacket) {
-        if self
-            .outgoing_packets
-            .send(OutboundPacket::Packet(packet))
-            .is_err()
-        {
-            self.close();
-        }
+        self.queue_encoded_packet(packet);
     }
 
     /// Closes the connection.
@@ -848,47 +886,49 @@ impl JavaConnection {
     }
 
     /// Sends packets to the client.
-    ///
     pub async fn sender(&self, mut sender_recv: UnboundedReceiver<OutboundPacket>) {
+        let mut batch = Vec::with_capacity(OUTBOUND_BATCH_SIZE);
         let disconnect_packet = loop {
             select! {
                 biased;
                 () = self.wait_for_close() => {
                     break Self::take_queued_disconnect(&mut sender_recv);
                 }
-                outbound = sender_recv.recv() => {
-                    if let Some(outbound) = outbound {
-                        let (packet, close_after_write) = match outbound {
-                            OutboundPacket::Packet(packet) => (packet, false),
-                            OutboundPacket::Disconnect(packet) => (packet, true),
-                        };
+                received = sender_recv.recv_many(&mut batch, OUTBOUND_BATCH_SIZE) => {
+                    if received == 0 {
+                        // The channel closed without a disconnect; drop the connection.
+                        self.close();
+                        continue;
+                    }
 
-                        if close_after_write {
-                            self.close();
-                            break Some(packet);
-                        }
+                    // The messages have left the channel; release their tracked bytes.
+                    self.release_dequeued_bytes(&batch);
 
-                        let write_result = self.write_packet_now(&packet);
-                        select! {
-                            biased;
-                            () = self.wait_for_close() => {
+                    let has_disconnect = batch
+                        .iter()
+                        .any(|outbound| matches!(outbound, OutboundPacket::Disconnect(_)));
+                    // Bundles stay contiguous, and everything up to (and including) a
+                    // disconnect is written under a single writer lock, in order. The batch
+                    // is drained by value, so it is empty once written.
+                    match write_outbound_batch(&self.network_writer, &mut batch).await {
+                        Ok(close_after_write) => {
+                            if close_after_write {
+                                self.close();
                                 break Self::take_queued_disconnect(&mut sender_recv);
-                            },
-                            result = write_result => {
-                                if let Err(err) = result {
-                                    log::warn!("Failed to send packet to client {}: {err}", self.id);
-                                    self.close();
-                                    break None;
-                                }
                             }
                         }
-                    } else {
-                        //log::warn!(
-                        //    "Internal packet_sender_recv channel closed for client {}",
-                        //    self.id
-                        //);
-                        self.close();
-                        break None;
+                        Err(err) => {
+                            if has_disconnect {
+                                log::warn!(
+                                    "Failed to send disconnect packet to client {}: {err}",
+                                    self.id
+                                );
+                            } else {
+                                log::warn!("Failed to send packet to client {}: {err}", self.id);
+                            }
+                            self.close();
+                            break None;
+                        }
                     }
                 }
             }
@@ -900,10 +940,12 @@ impl JavaConnection {
     fn take_queued_disconnect(
         sender_recv: &mut UnboundedReceiver<OutboundPacket>,
     ) -> Option<EncodedPacket> {
+        // Only runs at close; tracked bytes of discarded messages are not released,
+        // which is fine because the counter dies with the connection.
         let mut disconnect_packet = None;
         loop {
             match sender_recv.try_recv() {
-                Ok(OutboundPacket::Packet(_)) => {}
+                Ok(OutboundPacket::Packet(_) | OutboundPacket::Bundle(_)) => {}
                 Ok(OutboundPacket::Disconnect(packet)) => disconnect_packet = Some(packet),
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
             }
@@ -936,11 +978,24 @@ impl NetworkConnection for JavaConnection {
     }
 
     fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>) {
-        self.send_packet(CBundleDelimiter);
-        for packet in packets {
-            self.send_encoded_packet(packet);
+        let mut bundle = Vec::with_capacity(packets.len() + 2);
+        bundle.push(
+            EncodedPacket::from_bare(CBundleDelimiter, self.compression, ConnectionProtocol::Play)
+                .expect("Failed to encode bundle delimiter"),
+        );
+        bundle.extend(packets);
+        bundle.push(
+            EncodedPacket::from_bare(CBundleDelimiter, self.compression, ConnectionProtocol::Play)
+                .expect("Failed to encode bundle delimiter"),
+        );
+        self.track_outbound_bytes(bundle.iter().map(|packet| packet.encoded_data.len()).sum());
+        if self
+            .outgoing_packets
+            .send(OutboundPacket::Bundle(bundle))
+            .is_err()
+        {
+            self.close();
         }
-        self.send_packet(CBundleDelimiter);
     }
 
     fn disconnect_with_reason(&self, reason: TextComponent) {
@@ -980,6 +1035,8 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+
+    use tokio::sync::mpsc::unbounded_channel;
 
     fn decode(packet: RawPacket) -> DecodedPlayPacket {
         let Ok(decoded) = JavaConnection::decode_play_packet(packet) else {
@@ -1034,6 +1091,107 @@ mod tests {
 
         assert!(player.finish_domain_switch(token));
         assert!(player.finish_pending_world_change(token));
+    }
+
+    #[test]
+    fn send_encoded_bundle_sends_one_atomic_bundle_message() {
+        let (sender, mut receiver) = unbounded_channel();
+        let network_writer: JavaNetworkWriter = Arc::new(AsyncMutex::new(None));
+        let connection = JavaConnection::new(
+            sender,
+            CancellationToken::new(),
+            None,
+            network_writer,
+            7,
+            Weak::new(),
+        );
+
+        let delimiter = || {
+            EncodedPacket::from_bare(CBundleDelimiter, None, ConnectionProtocol::Play)
+                .expect("bundle delimiter should encode")
+        };
+        let keep_alive =
+            EncodedPacket::from_bare(CKeepAlive::new(42), None, ConnectionProtocol::Play)
+                .expect("keep alive should encode");
+        let keep_alive_bytes = keep_alive.encoded_data.clone();
+
+        connection.send_encoded_bundle(vec![keep_alive]);
+        let Ok(OutboundPacket::Bundle(bundle)) = receiver.try_recv() else {
+            panic!("bundle must arrive as a single atomic channel message");
+        };
+        assert!(
+            receiver.try_recv().is_err(),
+            "bundle must not be split into multiple channel messages"
+        );
+
+        assert_eq!(bundle.len(), 3);
+        assert_eq!(bundle[0].encoded_data, delimiter().encoded_data);
+        assert_eq!(bundle[1].encoded_data, keep_alive_bytes);
+        assert_eq!(bundle[2].encoded_data, delimiter().encoded_data);
+    }
+
+    #[test]
+    fn outbound_budget_overflow_kicks_the_client() {
+        let (sender, mut receiver) = unbounded_channel();
+        let network_writer: JavaNetworkWriter = Arc::new(AsyncMutex::new(None));
+        let connection = JavaConnection::new(
+            sender,
+            CancellationToken::new(),
+            None,
+            network_writer,
+            8,
+            Weak::new(),
+        );
+
+        connection.track_outbound_bytes(1024);
+        assert!(
+            !connection.closed(),
+            "queued bytes below the budget must not kick"
+        );
+
+        connection.track_outbound_bytes(MAX_OUTBOUND_QUEUED_BYTES);
+        assert!(
+            connection.closed(),
+            "exceeding the outbound budget must kick the client"
+        );
+        // The disconnect packet is still queued so the kick reason reaches the client.
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(OutboundPacket::Disconnect(_))
+        ));
+    }
+
+    #[test]
+    fn dequeue_releases_only_tracked_bytes() {
+        let (sender, mut receiver) = unbounded_channel();
+        let network_writer: JavaNetworkWriter = Arc::new(AsyncMutex::new(None));
+        let connection = JavaConnection::new(
+            sender,
+            CancellationToken::new(),
+            None,
+            network_writer,
+            9,
+            Weak::new(),
+        );
+
+        connection.send_encoded_packet(
+            EncodedPacket::from_bare(CKeepAlive::new(1), None, ConnectionProtocol::Play)
+                .expect("keep alive should encode"),
+        );
+        // The disconnect packet is queued untracked.
+        connection.disconnect(translations::DISCONNECT_TIMEOUT.msg());
+
+        let mut batch = Vec::new();
+        while let Ok(outbound) = receiver.try_recv() {
+            batch.push(outbound);
+        }
+        connection.release_dequeued_bytes(&batch);
+
+        assert_eq!(
+            connection.outbound_queued_bytes.load(Ordering::Relaxed),
+            0,
+            "dequeue must release exactly the tracked bytes"
+        );
     }
 
     #[test]
