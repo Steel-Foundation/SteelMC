@@ -2,6 +2,7 @@
 
 use glam::DVec3;
 use std::sync::Arc;
+use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270};
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::BlockPos;
@@ -403,11 +404,11 @@ impl PlacementOrientation {
         match self {
             Self::Player { rotation, .. } => rotation,
             Self::Directional { direction } => match direction {
-                Direction::Down | Direction::Up => -90.0,
+                Direction::Down | Direction::Up => -DEGREE_90,
                 Direction::South => 0.0,
-                Direction::West => 90.0,
-                Direction::North => 180.0,
-                Direction::East => 270.0,
+                Direction::West => DEGREE_90,
+                Direction::North => DEGREE_180,
+                Direction::East => DEGREE_270,
             },
         }
     }

@@ -1,3 +1,4 @@
+use steel_math::DEGREE_90;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 
 use super::*;
@@ -2816,7 +2817,8 @@ pub trait LivingEntity: Entity {
                 );
                 let look_direction = (bed_center - stand_up).normalize_or_zero();
                 let yaw = wrap_degrees(
-                    (look_direction.z.atan2(look_direction.x).to_degrees() - 90.0) as f32,
+                    (look_direction.z.atan2(look_direction.x).to_degrees() - f64::from(DEGREE_90))
+                        as f32,
                 );
                 if let Err(error) = self.try_set_position(stand_up) {
                     log::warn!(

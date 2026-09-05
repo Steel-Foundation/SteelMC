@@ -15,7 +15,7 @@ use std::f32::consts::PI;
 use std::ops::Add;
 use std::sync::{Arc, Weak};
 use steel_macros::entity_behavior;
-use steel_math::trig;
+use steel_math::{DEG_TO_RAD, DEGREE_360, trig};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::fluid::FluidStateExt;
@@ -43,10 +43,6 @@ const DMG_DEFAULT: i32 = 5;
 const DMG_ITEM_ENTITY: i32 = 3;
 const DMG_ON_GROUND: i32 = 2;
 const DMG_CAUGHT: i32 = 1;
-
-const DEGREE_180: f32 = 180.0;
-const DEGREE_360: f32 = 360.0;
-const DEG_TO_RAD: f32 = PI / DEGREE_180;
 
 const ONE_SECOND: i32 = 20;
 const TWO_SECONDS: i32 = 40;

@@ -11,6 +11,7 @@ use std::{
 
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use steel_math::{DEGREE_90, wrap_degrees};
 use steel_registry::REGISTRY;
 use steel_registry::game_rules::GameRuleValues;
 use steel_utils::types::Difficulty;
@@ -197,7 +198,7 @@ impl RespawnData {
         Self {
             global_pos,
             yaw: wrap_degrees(yaw),
-            pitch: pitch.clamp(-90.0, 90.0),
+            pitch: pitch.clamp(-DEGREE_90, DEGREE_90),
         }
     }
 
@@ -218,17 +219,6 @@ impl RespawnData {
     pub const fn pos(&self) -> BlockPos {
         self.global_pos.pos
     }
-}
-
-fn wrap_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
-    }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
 }
 
 #[derive(Serialize, Deserialize)]

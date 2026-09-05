@@ -1,4 +1,3 @@
-use std::f32::consts::PI;
 use std::sync::Arc;
 
 use crate::entity::entities::LeashFenceKnotEntity;
@@ -6,6 +5,7 @@ use crate::entity::{Entity, Mob, SharedEntity, WeakEntity};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_math::DEG_TO_RAD;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::item_stack::ItemStack;
@@ -505,14 +505,14 @@ pub(super) fn compute_elastic_interaction(
     holder: &dyn Entity,
     slack_distance: f64,
 ) -> Option<LeashWrench> {
-    let entity_y_rot = entity.rotation().0 * PI / 180.0;
+    let entity_y_rot = entity.rotation().0 * DEG_TO_RAD;
     let entity_attach_vector = rotate_y(
         ENTITY_LEASH_ATTACHMENT_POINT * leash_dimensions(entity),
         -entity_y_rot,
     );
     let entity_attach_pos = entity.position() + entity_attach_vector;
 
-    let holder_y_rot = holder.rotation().0 * PI / 180.0;
+    let holder_y_rot = holder.rotation().0 * DEG_TO_RAD;
     let holder_attach_vector = rotate_y(
         LEASHER_ATTACHMENT_POINT * leash_dimensions(holder),
         -holder_y_rot,

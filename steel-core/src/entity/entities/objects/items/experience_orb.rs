@@ -6,6 +6,7 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
+use steel_math::DEGREE_360;
 use steel_protocol::packets::game::{CTakeItemEntity, SoundSource};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::entity_type::EntityTypeRef;
@@ -195,7 +196,7 @@ impl ExperienceOrbEntity {
     }
 
     fn initialize_spawn_movement(&self) {
-        let yaw = rand::random_range(0.0..360.0);
+        let yaw = rand::random_range(0.0..DEGREE_360);
         let velocity = DVec3::new(
             f64::from(rand::random_range(-0.1f32..0.1)) * 2.0,
             f64::from(rand::random_range(0.0f32..0.2)) * 2.0,
