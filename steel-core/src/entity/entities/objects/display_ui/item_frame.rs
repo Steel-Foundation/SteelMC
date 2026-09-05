@@ -6,6 +6,7 @@ use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
 use steel_macros::entity_behavior;
+use steel_math::DEGREE_90;
 use steel_registry::data_components::vanilla_components::MAP_ID;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
@@ -159,11 +160,14 @@ impl ItemFrameEntity {
 
     fn rotation_for_direction(direction: Direction) -> (f32, f32) {
         if direction.is_horizontal() {
-            (f32::from(direction_2d_data_value(direction)) * 90.0, 0.0)
+            (
+                f32::from(direction_2d_data_value(direction)) * DEGREE_90,
+                0.0,
+            )
         } else {
             let pitch = match direction {
-                Direction::Up => -90.0,
-                Direction::Down => 90.0,
+                Direction::Up => -DEGREE_90,
+                Direction::Down => DEGREE_90,
                 Direction::North | Direction::South | Direction::West | Direction::East => 0.0,
             };
             (0.0, pitch)

@@ -45,7 +45,7 @@ impl Goal for RandomLookAroundGoal {
     }
 
     fn start(&mut self, _mob: &dyn PathfinderMob) {
-        let direction = TAU * rand::random::<f64>();
+        let direction = rand::random_range(0.0..TAU);
         self.rel_x = direction.cos();
         self.rel_z = direction.sin();
         self.look_time = 20 + rand::random_range(0..20);

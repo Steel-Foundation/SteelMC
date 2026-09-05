@@ -1,4 +1,5 @@
 use super::*;
+use steel_math::{DEGREE_90, DEGREE_180, DEGREE_270, wrap_degrees};
 
 impl StructureTemplate {
     pub(crate) fn bounding_box(&self, pos: BlockPos, rotation: Rotation) -> BoundingBox {
@@ -69,16 +70,16 @@ impl StructureTemplate {
         mirror: StructureMirror,
         rotation: Rotation,
     ) -> (f32, f32) {
-        let yaw = Self::wrap_degrees(yaw);
+        let yaw = wrap_degrees(yaw);
         let rotated = match rotation {
-            Rotation::Clockwise180 => yaw + 180.0,
-            Rotation::CounterClockwise90 => yaw + 270.0,
-            Rotation::Clockwise90 => yaw + 90.0,
+            Rotation::Clockwise180 => yaw + DEGREE_180,
+            Rotation::CounterClockwise90 => yaw + DEGREE_270,
+            Rotation::Clockwise90 => yaw + DEGREE_90,
             Rotation::None => yaw,
         };
         let mirrored = match mirror {
             StructureMirror::FrontBack => -yaw,
-            StructureMirror::LeftRight => 180.0 - yaw,
+            StructureMirror::LeftRight => DEGREE_180 - yaw,
             StructureMirror::None => yaw,
         };
         (rotated + mirrored - yaw, pitch)
@@ -125,17 +126,6 @@ impl StructureTemplate {
             Direction::West => 4,
             Direction::East => 5,
         }
-    }
-
-    pub(super) fn wrap_degrees(mut degrees: f32) -> f32 {
-        degrees %= 360.0;
-        if degrees >= 180.0 {
-            degrees -= 360.0;
-        }
-        if degrees < -180.0 {
-            degrees += 360.0;
-        }
-        degrees
     }
 
     #[expect(

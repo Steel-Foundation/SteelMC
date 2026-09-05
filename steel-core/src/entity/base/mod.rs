@@ -25,6 +25,7 @@ use std::{
 
 use glam::DVec3;
 use simdnbt::owned::NbtCompound;
+use steel_math::{DEGREE_90, DEGREE_360};
 use steel_registry::entity_data::EntityPose;
 use steel_registry::entity_type::EntityDimensions;
 use steel_registry::vanilla_entities;
@@ -70,7 +71,10 @@ fn normalize_rotation(rotation: (f32, f32)) -> (f32, f32) {
         rotation.0.is_finite() && rotation.1.is_finite(),
         "entity rotation must be finite: {rotation:?}"
     );
-    (rotation.0 % 360.0, rotation.1.clamp(-90.0, 90.0) % 360.0)
+    (
+        rotation.0 % DEGREE_360,
+        rotation.1.clamp(-DEGREE_90, DEGREE_90) % DEGREE_360,
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1293,7 +1297,7 @@ impl EntityBase {
             progress.crystal_sound_intensity
         };
 
-        let pitch = 0.5 + intensity * rand::random::<f32>() * 1.2;
+        let pitch = rand::random_range(0.5..0.5 + intensity * 1.2);
         let volume = 0.1 + intensity * 1.2;
         Some(EntityAmethystStepSound { volume, pitch })
     }

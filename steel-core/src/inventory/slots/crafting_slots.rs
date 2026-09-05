@@ -125,7 +125,7 @@ impl ResultHandler for CraftingHandler {
                     {
                         let item = crafting.get_item_mut(grid_slot);
                         if !item.is_empty() {
-                            item.shrink(1);
+                            item.shrink_one();
                         }
                     }
 

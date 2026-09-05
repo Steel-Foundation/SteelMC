@@ -8,13 +8,12 @@ use pathfinder::tick_path_navigation_target;
 #[cfg(test)]
 use pathfinder::{find_ground_path_target_surface, path_end_node_can_reach_target};
 
-use std::f32::consts::PI;
 use std::sync::Arc;
 
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
-use steel_math::fast_floor;
+use steel_math::{DEG_TO_RAD, DEGREE_90, DEGREE_360, RAD_TO_DEG, fast_floor, wrap_degrees};
 use steel_protocol::packets::game::CTakeItemEntity;
 use steel_registry::attribute::AttributeRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
@@ -59,7 +58,7 @@ const MOB_FLAG_NO_AI: i8 = 1;
 const MOB_FLAG_LEFT_HANDED: i8 = 2;
 const MOB_FLAG_AGGRESSIVE: i8 = 4;
 const MOVE_CONTROL_MIN_SPEED_SQR: f64 = 2.500_000_3e-7;
-const MOVE_CONTROL_MAX_TURN: f32 = 90.0;
+const MOVE_CONTROL_MAX_TURN: f32 = DEGREE_90;
 const DEFAULT_EQUIPMENT_DROP_CHANCE: f32 = 0.085;
 /// Vanilla bias subtracted from the roll before comparing against a slot's drop
 /// chance when a mob swaps out worn gear it picked something better up over.
@@ -1480,7 +1479,7 @@ pub trait Mob: LivingEntity + Leashable {
             return;
         }
 
-        let y_rot = (zd.atan2(xd) as f32 * 180.0 / PI) - 90.0;
+        let y_rot = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
         let (_, pitch) = self.rotation();
         self.set_rotation((
             rotlerp(self.rotation().0, y_rot, MOVE_CONTROL_MAX_TURN),
@@ -1516,7 +1515,7 @@ pub trait Mob: LivingEntity + Leashable {
         distance = speed / distance;
         let xa = strafe_forward * distance;
         let za = strafe_right * distance;
-        let yaw_radians = self.rotation().0 * PI / 180.0;
+        let yaw_radians = self.rotation().0 * DEG_TO_RAD;
         let sin = yaw_radians.sin();
         let cos = yaw_radians.cos();
         let dx = xa.mul_add(cos, -(za * sin));
@@ -1576,12 +1575,12 @@ pub trait Mob: LivingEntity + Leashable {
             let zd = wanted_position.z - position.z;
             let horizontal = xd.hypot(zd);
             if horizontal.abs() > 1.0e-5 || yd.abs() > 1.0e-5 {
-                let target_pitch = -(yd.atan2(horizontal)) as f32 * 180.0 / PI;
+                let target_pitch = -(yd.atan2(horizontal)) as f32 * RAD_TO_DEG;
                 rotation.1 =
                     rotate_towards(rotation.1, target_pitch, look_control.x_max_rot_angle());
             }
             if zd.abs() > 1.0e-5 || xd.abs() > 1.0e-5 {
-                let target_yaw = (zd.atan2(xd) as f32 * 180.0 / PI) - 90.0;
+                let target_yaw = zd.atan2(xd) as f32 * RAD_TO_DEG - DEGREE_90;
                 self.set_y_head_rot(rotate_towards(
                     self.y_head_rot(),
                     target_yaw,
@@ -1727,22 +1726,11 @@ fn rotlerp(a: f32, b: f32, max: f32) -> f32 {
 
     let mut result = a + diff;
     if result < 0.0 {
-        result += 360.0;
-    } else if result > 360.0 {
-        result -= 360.0;
+        result += DEGREE_360;
+    } else if result > DEGREE_360 {
+        result -= DEGREE_360;
     }
     result
-}
-
-fn wrap_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
-    }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
 }
 
 #[cfg(test)]

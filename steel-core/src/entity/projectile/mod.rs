@@ -18,6 +18,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtTag};
+use steel_math::{DEGREE_180, DEGREE_360};
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
@@ -846,11 +847,11 @@ const fn axis_component(vec: DVec3, axis: Axis) -> f64 {
 
 /// Vanilla `Mth.lerp(0.2, rotO, rot)` after wrapping the old angle into range.
 fn lerp_rotation(mut rot_old: f32, rot: f32) -> f32 {
-    while rot - rot_old < -180.0 {
-        rot_old -= 360.0;
+    while rot - rot_old < -DEGREE_180 {
+        rot_old -= DEGREE_360;
     }
-    while rot - rot_old >= 180.0 {
-        rot_old += 360.0;
+    while rot - rot_old >= DEGREE_180 {
+        rot_old += DEGREE_360;
     }
     rot_old + 0.2 * (rot - rot_old)
 }

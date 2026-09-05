@@ -36,8 +36,7 @@ const SONG_END_PADDING_TICKS: i32 = 20;
 const UNKNOWN_SONG_REGISTRY_ID: i32 = -1;
 const BLOCK_CENTER_OFFSET: f64 = 0.5;
 const ITEM_EJECTION_Y_OFFSET: f64 = 1.01;
-const ITEM_EJECTION_RANDOM_CENTER: f32 = 0.5;
-const ITEM_EJECTION_HORIZONTAL_SPREAD: f32 = 0.7;
+const ITEM_EJECTION_MAX_HORIZONTAL_OFFSET: f32 = 0.35;
 const NOTE_PARTICLE_Y_OFFSET: f32 = 1.2;
 const NOTE_PARTICLE_COLOR_VARIANTS: u8 = 4;
 const NOTE_PARTICLE_COLOR_DIVISOR: f32 = 24.0;
@@ -199,10 +198,12 @@ impl JukeboxBlockEntity {
         self.stop_playback(Some(&world));
 
         let pos = self.get_block_pos();
-        let random_x =
-            (rand::random::<f32>() - ITEM_EJECTION_RANDOM_CENTER) * ITEM_EJECTION_HORIZONTAL_SPREAD;
-        let random_z =
-            (rand::random::<f32>() - ITEM_EJECTION_RANDOM_CENTER) * ITEM_EJECTION_HORIZONTAL_SPREAD;
+        let random_x = rand::random_range(
+            -ITEM_EJECTION_MAX_HORIZONTAL_OFFSET..ITEM_EJECTION_MAX_HORIZONTAL_OFFSET,
+        );
+        let random_z = rand::random_range(
+            -ITEM_EJECTION_MAX_HORIZONTAL_OFFSET..ITEM_EJECTION_MAX_HORIZONTAL_OFFSET,
+        );
         let item_pos = DVec3::new(
             f64::from(pos.x()) + BLOCK_CENTER_OFFSET + f64::from(random_x),
             f64::from(pos.y()) + ITEM_EJECTION_Y_OFFSET,

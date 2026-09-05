@@ -1,5 +1,6 @@
 use super::*;
 use crate::entity::leash::Leashable;
+use steel_math::DEGREE_90;
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
 /// this wide and tall (in blocks) get their position fudged after growing.
@@ -1986,7 +1987,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             4.0,
         ) && self.should_play_lava_hurt_sound()
         {
-            let pitch = 2.0 + rand::random::<f32>() * 0.4;
+            let pitch = rand::random_range(2.0..2.4);
             self.play_sound(&sound_events::ENTITY_GENERIC_BURN, 0.4, pitch);
         }
     }
@@ -2323,7 +2324,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
                 is_shape_full_block(collision_shape)
             });
 
-        let speed = f64::from(rand::random::<f32>().mul_add(0.2, 0.1));
+        let speed = f64::from(rand::random_range(0.1f32..0.3));
         let step = direction_step(closest_direction);
         let scaled_velocity = self.velocity() * 0.75;
         let next_velocity = match closest_direction.axis() {
@@ -3673,20 +3674,9 @@ pub(crate) fn apply_entity_look_at(entity: &dyn Entity, from_anchor: EntityAncho
 fn look_at_rotation(from: DVec3, target: DVec3) -> (f32, f32) {
     let delta = target - from;
     let horizontal = delta.x.hypot(delta.z);
-    let pitch = wrap_look_at_degrees(-delta.y.atan2(horizontal).to_degrees() as f32);
-    let yaw = wrap_look_at_degrees(delta.z.atan2(delta.x).to_degrees() as f32 - 90.0);
+    let pitch = wrap_degrees(-delta.y.atan2(horizontal).to_degrees() as f32);
+    let yaw = wrap_degrees(delta.z.atan2(delta.x).to_degrees() as f32 - DEGREE_90);
     (yaw, pitch)
-}
-
-fn wrap_look_at_degrees(mut degrees: f32) -> f32 {
-    degrees %= 360.0;
-    if degrees >= 180.0 {
-        degrees -= 360.0;
-    }
-    if degrees < -180.0 {
-        degrees += 360.0;
-    }
-    degrees
 }
 
 #[cfg(test)]
