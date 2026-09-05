@@ -228,6 +228,8 @@ pub struct ChunkMap {
     pub(crate) unloading_chunks: scc::HashMap<ChunkPos, Arc<ChunkHolder>, FxBuildHasher>,
     /// Ticket states waiting for an unloading holder's save preparation to finish.
     deferred_revivals: SyncMutex<FxHashMap<ChunkPos, DeferredChunkRevival>>,
+    /// Centers waiting for a dependency holder to finish save preparation and revive.
+    pub(crate) deferred_generation: SyncMutex<FxHashSet<ChunkPos>>,
     /// Queue of pending generation tasks.
     pub pending_generation_tasks: SyncMutex<Vec<Arc<ChunkGenerationTask>>>,
     /// Tracker for generation, save, and unload tasks.
@@ -383,6 +385,7 @@ impl ChunkMap {
             chunks: scc::HashMap::default(),
             unloading_chunks: scc::HashMap::default(),
             deferred_revivals: SyncMutex::new(FxHashMap::default()),
+            deferred_generation: SyncMutex::new(FxHashSet::default()),
             pending_generation_tasks: SyncMutex::new(Vec::new()),
             task_tracker: TaskTracker::new(),
             scheduling: ChunkSchedulingCoordinator::new(
@@ -1090,7 +1093,7 @@ impl ChunkMap {
             )
         };
 
-        let holders_to_schedule = {
+        let mut holders_to_schedule: Vec<_> = {
             let _span = tracing::trace_span!("lifecycle_commit").entered();
             let start = Instant::now();
             let holders: Vec<(Arc<ChunkHolder>, ChunkTicketLevel)> = batch
@@ -1104,6 +1107,26 @@ impl ChunkMap {
             timings.lifecycle_commit = start.elapsed();
             holders
         };
+
+        // The center's level need not change when its dependency revives. Retry against
+        // committed holders and levels so intervening unloads or demotions take effect.
+        let previously_deferred = mem::take(&mut *self.deferred_generation.lock());
+        if !previously_deferred.is_empty() {
+            let scheduled_positions: FxHashSet<ChunkPos> = holders_to_schedule
+                .iter()
+                .map(|(h, _)| h.get_pos())
+                .collect();
+            holders_to_schedule.extend(previously_deferred.into_iter().filter_map(|pos| {
+                if scheduled_positions.contains(&pos) {
+                    return None;
+                }
+                self.chunks
+                    .read_sync(&pos, |_, holder| {
+                        holder.load_level().map(|level| (Arc::clone(holder), level))
+                    })
+                    .flatten()
+            }));
+        }
 
         let lookup_cache_scope = GameplayChunkLookupCacheScope::enter(self);
         let readiness_result = {
@@ -1143,20 +1166,16 @@ impl ChunkMap {
             timings.ticking_snapshot_rebuild = start.elapsed();
         }
 
-        {
+        let deferred_generation = {
             let _span = tracing::trace_span!("schedule_generation").entered();
             let start = Instant::now();
-            timings.scheduled_count = holders_to_schedule
-                .iter()
-                .filter(|(holder, level)| {
-                    let Some(status) = generation_status(Some(*level)) else {
-                        return false;
-                    };
-                    holder.schedule_chunk_generation_task_b(status, self)
-                })
-                .count();
+            let (scheduled_count, deferred) =
+                self.schedule_generation_for_holders(&holders_to_schedule);
+            timings.scheduled_count = scheduled_count;
             timings.schedule_generation = start.elapsed();
-        }
+            deferred
+        };
+        *self.deferred_generation.lock() = deferred_generation;
 
         {
             let _span = tracing::trace_span!("run_generation").entered();
