@@ -52,7 +52,10 @@ fn broadcast_changed_chunks_does_not_defer_blocks_while_light_work_is_blocked() 
     assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
     let _ = player.mark_joined_world();
     player.set_client_loaded(true);
-    player.chunk_sender.lock().mark_chunk_sent_for_test(center);
+    player
+        .chunk_sender()
+        .lock()
+        .mark_chunk_sent_for_test(center);
     packets.lock().clear();
 
     let Some(reservation) = world
@@ -114,7 +117,7 @@ fn frozen_tick_broadcasts_block_changes_before_acknowledging_them() {
     let _ = player.mark_joined_world();
     player.set_client_loaded(true);
     player
-        .chunk_sender
+        .chunk_sender()
         .lock()
         .mark_chunk_sent_for_test(chunk_pos);
     packets.lock().clear();
@@ -138,4 +141,38 @@ fn frozen_tick_broadcasts_block_changes_before_acknowledging_them() {
         .collect::<Vec<_>>();
     assert_eq!(relevant_packet_ids, [C_BLOCK_UPDATE, C_BLOCK_CHANGED_ACK]);
     world.remove_player_for_world_change(&player);
+}
+
+#[test]
+fn removing_player_invalidates_old_world_chunks_without_resetting_connection_pacing() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("remove_player_chunk_sender_lifecycle");
+    let (player, _) = recording_player(&world);
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+
+    let pending = ChunkPos::new(20, -30);
+    let sent = ChunkPos::new(-40, 50);
+    {
+        let mut sender = player.chunk_sender().lock();
+        sender.mark_chunk_pending_to_send(pending);
+        sender.mark_chunk_sent_for_test(sent);
+        sender.unacknowledged_batches = 3;
+        sender.desired_chunks_per_tick = 12.5;
+        sender.batch_quota = 4.5;
+        sender.max_unacknowledged_batches = 10;
+    }
+    let old_epoch = *player.chunk_send_epoch.lock();
+
+    world.remove_player_for_world_change(&player);
+
+    assert_eq!(*player.chunk_send_epoch.lock(), old_epoch.wrapping_add(1));
+    assert!(player.last_tracking_view.lock().is_none());
+    let sender = player.chunk_sender().lock();
+    assert!(sender.pending_chunks.is_empty());
+    assert!(!sender.is_chunk_sent(sent));
+    assert_eq!(sender.unacknowledged_batches, 3);
+    assert_eq!(sender.desired_chunks_per_tick.to_bits(), 12.5_f32.to_bits());
+    assert_eq!(sender.batch_quota.to_bits(), 4.5_f32.to_bits());
+    assert_eq!(sender.max_unacknowledged_batches, 10);
 }

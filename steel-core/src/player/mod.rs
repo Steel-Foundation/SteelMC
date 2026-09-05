@@ -20,6 +20,7 @@ pub mod player_data;
 pub mod player_data_storage;
 pub mod player_inventory;
 mod profile;
+mod session;
 mod sleep;
 mod sleep_state;
 mod spam_throttler;
@@ -49,6 +50,8 @@ pub use profile::{
     GameProfile, GameProfileAction, KnownPlayer, KnownPlayers, ProfileLookupError,
     is_valid_player_name, offline_uuid,
 };
+pub use session::PlayerSession;
+pub(crate) use session::PlayerSessionId;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
 use std::mem::replace;
@@ -120,7 +123,7 @@ use crate::player::player_inventory::{
     MenuItemDisposition, MenuRemovalStatus, PlayerInventory, PlayerInventorySyncState,
 };
 use crate::server::{
-    Server,
+    PlayerPacketTransition, Server,
     jobs::{JobPoll, ServerJob, ServerJobContext},
 };
 use crate::world::player_spawn_finder::{PlayerSpawnSearch, PlayerSpawnSearchPoll};
@@ -150,7 +153,6 @@ use crate::chunk::player_chunk_view::PlayerChunkView;
 use crate::entity::entities::objects::projectiles::FishingHookEntity;
 use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
 use crate::player::chunk_sender::ChunkSender;
-use crate::player::spam_throttler::TickThrottler;
 use crate::player::stats_counter::StatsCounter;
 use crate::portal::{
     PortalTicketTarget, TeleportPostAction, TeleportPostTransition, TeleportTransition,
@@ -163,6 +165,8 @@ pub struct Player {
     pub gameprofile: GameProfile,
     /// The player's connection (abstracted for testing).
     pub connection: Arc<PlayerConnection>,
+    /// Stable connection session shared by every incarnation of this player.
+    pub(crate) session: Arc<PlayerSession>,
 
     /// The world the player is in.
     pub world: ArcSwap<World>,
@@ -188,15 +192,9 @@ pub struct Player {
     pub last_chunk_pos: SyncMutex<ChunkPos>,
     /// The last chunk tracking view of the player.
     pub last_tracking_view: SyncMutex<Option<PlayerChunkView>>,
-    /// The chunk sender for the player.
-    pub chunk_sender: SyncMutex<ChunkSender>,
-
     /// The client's settings/information (language, view distance, chat visibility, etc.).
     /// Updated when the client sends `SClientInformation` during config or play phase.
     client_information: SyncMutex<ClientInformation>,
-
-    /// Chat state: message counters, signature cache, validator, session, chain.
-    pub chat: SyncMutex<ChatState>,
 
     /// Current and previous game mode.
     game_modes: SyncMutex<PlayerGameModeState>,
@@ -281,8 +279,6 @@ pub struct Player {
 
     /// The last action time of this player.
     last_action_time: SyncMutex<Instant>,
-    /// Throttles the player dropping items from the Creative Menu.
-    drop_spam_throttler: SyncMutex<TickThrottler>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -300,6 +296,7 @@ struct PendingRootVehicleRestore {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct DomainResidenceToken(u64);
 
+#[derive(Clone)]
 struct PlayerResidenceState {
     token: DomainResidenceToken,
     pending_root_vehicle: Option<PendingRootVehicleRestore>,
@@ -329,6 +326,16 @@ impl PlayerResidenceState {
 impl Player {
     const USING_ITEM_FLAG: i8 = 1;
     const OFF_HAND_ACTIVE_ITEM_FLAG: i8 = 1 << 1;
+
+    /// Returns the chunk sender owned by this player's connection session.
+    pub(crate) fn chunk_sender(&self) -> &SyncMutex<ChunkSender> {
+        &self.session.chunk_sender
+    }
+
+    /// Returns chat protocol state owned by this connection session.
+    pub(crate) fn chat(&self) -> &SyncMutex<ChatState> {
+        &self.session.chat
+    }
 
     /// Returns the hand currently driving active item use.
     #[must_use]
@@ -505,9 +512,14 @@ impl Player {
     }
 
     /// Creates a new player.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "player construction requires explicit connection, session, world, and identity owners"
+    )]
     pub fn new(
         gameprofile: GameProfile,
         connection: Arc<PlayerConnection>,
+        session: Arc<PlayerSession>,
         world: Arc<World>,
         server: Weak<Server>,
         config: Arc<RuntimeConfig>,
@@ -524,12 +536,10 @@ impl Player {
         let living_base = LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment);
         let player_uuid = gameprofile.id;
         let world_ref = Arc::downgrade(&world);
-        let chat_spam_threshold_seconds = config.chat_spam_threshold_seconds;
-        let command_spam_threshold_seconds = config.command_spam_threshold_seconds;
-
         Self {
             gameprofile,
             connection,
+            session,
 
             world: ArcSwap::new(world),
             server,
@@ -551,12 +561,7 @@ impl Player {
             }),
             last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),
             last_tracking_view: SyncMutex::new(None),
-            chunk_sender: SyncMutex::new(ChunkSender::default()),
             client_information: SyncMutex::new(client_information),
-            chat: SyncMutex::new(ChatState::new(
-                chat_spam_threshold_seconds,
-                command_spam_threshold_seconds,
-            )),
             game_modes: SyncMutex::new(PlayerGameModeState::new(GameType::Survival)),
             inventory: inventory.clone(),
             inventory_sync: SyncMutex::new(PlayerInventorySyncState::new()),
@@ -585,10 +590,6 @@ impl Player {
             fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
-            drop_spam_throttler: SyncMutex::new(TickThrottler::new(
-                DROP_SPAM_THROTTLER_INCREMENT_STEP,
-                DROP_SPAM_THROTTLER_THRESHOLD,
-            )),
         }
     }
 
@@ -1117,10 +1118,6 @@ impl Player {
         true
     }
 
-    pub(crate) fn clear_pending_root_vehicle(&self) {
-        self.residence.lock().pending_root_vehicle = None;
-    }
-
     pub(crate) fn pending_root_vehicle_for_current_world(&self) -> Option<PersistentRootVehicle> {
         let world_key = self.get_world().key.clone();
         self.residence
@@ -1232,6 +1229,17 @@ impl Player {
         let mut pearls = self.ender_pearls.lock();
         pearls.retain(|weak| weak.upgrade().is_some_and(|p| !p.is_removed()));
         pearls.iter().filter_map(Weak::upgrade).collect()
+    }
+
+    /// Rebinds live pearls to a fresh respawn incarnation with the same player UUID.
+    pub(crate) fn rebind_ender_pearls_to(&self, replacement: &Arc<Self>) {
+        debug_assert_eq!(self.gameprofile.id, replacement.gameprofile.id);
+        let replacement_entity: SharedEntity = replacement.clone();
+        for pearl in self.ender_pearls() {
+            if pearl.projectile_owner_uuid() == Some(self.gameprofile.id) {
+                pearl.restore_owner_reference(&replacement_entity);
+            }
+        }
     }
 
     /// Appends vanilla-shaped player state used by command NBT predicates.

@@ -63,6 +63,7 @@ use crate::portal::{
 use crate::scoreboard::DomainScoreboards;
 use crate::server::jobs::{FnServerJob, ServerJobContext, ServerJobQueue};
 use crate::server::packet_processor::PacketProcessor;
+pub(crate) use crate::server::packet_processor::PlayerPacketTransition;
 use crate::server::registry_cache::RegistryCache;
 use crate::server::service_keys::ServiceKeyStore;
 use crate::server::worlds::WorldMap;
@@ -797,6 +798,31 @@ impl Server {
     ) {
         self.packet_processor
             .schedule(player, packet, payload_bytes);
+    }
+
+    /// Pauses later packets while `player` is replaced by a new incarnation.
+    pub(crate) fn begin_player_packet_transition(
+        &self,
+        player: &Arc<Player>,
+    ) -> Option<PlayerPacketTransition> {
+        if player.connection.closed() || !player.session.is_current_player(player) {
+            return None;
+        }
+        self.packet_processor.pause_player_session(&player.session)
+    }
+
+    /// Resumes packets retained by an exact player-replacement transition.
+    pub(crate) fn finish_player_packet_transition(
+        &self,
+        transition: PlayerPacketTransition,
+    ) -> bool {
+        self.packet_processor.resume_player_session(transition)
+    }
+
+    /// Discards all pending packet work for a closed player session.
+    pub(crate) fn discard_player_packets(&self, player: &Player) {
+        self.packet_processor
+            .discard_player_session(&player.session);
     }
 
     /// Returns Brigadier completions visible to a command sender.

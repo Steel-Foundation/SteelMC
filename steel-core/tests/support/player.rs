@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use super::TestConnection;
 use crate::config::RuntimeConfig;
-use crate::player::{ClientInformation, GameProfile, Player, PlayerConnection};
+use crate::player::{ClientInformation, GameProfile, Player, PlayerConnection, PlayerSession};
 use crate::server::Server;
 use crate::world::World;
 
@@ -101,14 +101,21 @@ impl TestPlayerBuilder {
             TestPlayerContext::Detached(config) => (Weak::new(), config),
             TestPlayerContext::Server { server, config } => (server, config),
         };
-        Arc::new(Player::new(
+        let session = Arc::new(PlayerSession::new(
+            config.chat_spam_threshold_seconds,
+            config.command_spam_threshold_seconds,
+        ));
+        let player = Arc::new(Player::new(
             self.profile,
             self.connection,
+            Arc::clone(&session),
             self.world,
             server,
             config,
             self.entity_id,
             self.client_information,
-        ))
+        ));
+        assert!(session.bind_initial_player(&player));
+        player
     }
 }

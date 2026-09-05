@@ -1,8 +1,8 @@
 use super::{
-    DEFAULT_MAX_AIR_SUPPLY, DEFAULT_TICKS_REQUIRED_TO_FREEZE, EntityBase, EntityBaseState,
-    EntityFireFreezeState, EntityFluidContact, EntityMoveError, EntityMovement,
-    EntityMovementEmission, EntityMovementFlags, EntityMovementProgress, EntityPhysicsStateInput,
-    EntityPistonMovement, EntityVerticalMovementStateUpdate, MAX_ENTITY_TAGS,
+    DEFAULT_TICKS_REQUIRED_TO_FREEZE, EntityBase, EntityBaseState, EntityFireFreezeState,
+    EntityFluidContact, EntityMoveError, EntityMovement, EntityMovementEmission,
+    EntityMovementFlags, EntityMovementProgress, EntityPhysicsStateInput, EntityPistonMovement,
+    EntityVerticalMovementStateUpdate, MAX_ENTITY_TAGS,
 };
 use std::sync::{Arc, Weak};
 
@@ -14,7 +14,6 @@ use steel_registry::{
 use steel_registry::{vanilla_damage_types, vanilla_entities};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, WorldAabb};
-use text_components::TextComponent;
 use uuid::Uuid;
 
 use crate::entity::damage::DamageSource;
@@ -72,10 +71,11 @@ struct FallDamageTestEntity {
 }
 
 impl FallDamageTestEntity {
-    fn new(id: i32) -> Arc<Self> {
+    fn new(id: i32, uuid: Uuid) -> Arc<Self> {
         Arc::new(Self {
-            base: EntityBase::new(
+            base: EntityBase::with_uuid(
                 id,
+                uuid,
                 DVec3::ZERO,
                 vanilla_entities::ITEM.dimensions,
                 Weak::<World>::new(),
@@ -83,6 +83,17 @@ impl FallDamageTestEntity {
             fall_damage_calls: SyncMutex::new(Vec::new()),
         })
     }
+}
+
+#[test]
+fn generation_distinguishes_reconstructed_entity_identity() {
+    let uuid = Uuid::nil();
+    let first = FallDamageTestEntity::new(1, uuid);
+    let reincarnated = FallDamageTestEntity::new(1, uuid);
+
+    assert_eq!(first.id(), reincarnated.id());
+    assert_eq!(first.uuid(), reincarnated.uuid());
+    assert_ne!(first.generation(), reincarnated.generation());
 }
 
 crate::entity::impl_test_downcast_type!(FallDamageTestEntity);
@@ -328,18 +339,19 @@ fn lifecycle_state_tracks_pending_world_change_tokens() {
 }
 
 #[test]
-fn killed_player_respawn_can_retain_admission_ownership() {
-    let dimensions = EntityDimensions::new(0.6, 1.8, 1.62);
-    let base = EntityBase::new(1, DVec3::ZERO, dimensions, Weak::<World>::new());
+fn killed_player_can_reserve_respawn_transition() {
+    let base = EntityBase::new(
+        1,
+        DVec3::ZERO,
+        EntityDimensions::new(0.6, 1.8, 1.62),
+        Weak::<World>::new(),
+    );
     base.set_removed(RemovalReason::Killed);
 
     assert_eq!(base.begin_pending_world_change(), None);
     let Some(pending_token) = base.begin_pending_player_respawn() else {
         panic!("a killed player should be able to reserve respawn preparation");
     };
-    assert!(base.clear_removed());
-    base.reset_for_player_respawn_during_world_change(dimensions, pending_token);
-
     assert!(base.is_world_change_token_pending(pending_token));
     assert!(base.finish_pending_world_change(pending_token));
 }
@@ -601,76 +613,6 @@ fn base_tick_advances_powder_snow_and_fire_state() {
 }
 
 #[test]
-fn player_respawn_reset_restores_fresh_base_state_and_preserves_tags() {
-    let dimensions = EntityDimensions::new(0.6, 1.8, 1.62);
-    let base = EntityBase::new(1, DVec3::new(1.0, 64.0, 1.0), dimensions, Weak::new());
-
-    base.set_velocity(DVec3::new(0.4, -0.2, 0.3));
-    base.set_no_physics(true);
-    base.set_air_supply(12);
-    base.set_portal_cooldown(9);
-    base.set_as_inside_portal(PortalKind::Nether, BlockPos::new(2, 64, 2));
-    base.set_no_gravity(true);
-    base.set_invulnerable(true);
-    base.set_custom_name(Some(TextComponent::plain("stale")));
-    base.set_custom_name_visible(true);
-    base.set_silent(true);
-    base.set_glowing(true);
-    base.add_tag("keep".to_owned());
-    base.set_remaining_fire_ticks(80);
-    base.set_ticks_frozen(40);
-    base.set_visual_fire(true);
-    base.set_fall_distance(7.0);
-    base.set_fluid_contact(EntityFluidContact::from_parts(0.25, 0.5, true, true));
-    base.make_stuck_in_block(DVec3::splat(0.2));
-    base.mark_velocity_sync();
-    base.mark_hurt();
-    base.record_movement_this_tick(EntityMovement::new(
-        DVec3::new(1.0, 64.0, 1.0),
-        DVec3::new(2.0, 64.0, 1.0),
-    ));
-    base.set_position_local(DVec3::new(2.0, 64.0, 1.0));
-    assert_ne!(base.take_movements_for_block_effects().len(), 0);
-    base.record_movement_this_tick(EntityMovement::new(
-        DVec3::new(2.0, 64.0, 1.0),
-        DVec3::new(3.0, 64.0, 1.0),
-    ));
-    base.set_position_local(DVec3::new(3.0, 64.0, 1.0));
-    assert!(base.begin_pending_world_change().is_some());
-
-    let reset_dimensions = EntityDimensions::new(0.6, 1.8, 1.62);
-    base.reset_for_player_respawn(reset_dimensions);
-
-    let reset_position = DVec3::new(3.0, 64.0, 1.0);
-    assert_vec3_close(base.velocity(), DVec3::ZERO);
-    assert!(!base.no_physics());
-    assert_eq!(base.air_supply(), DEFAULT_MAX_AIR_SUPPLY);
-    assert_eq!(base.portal_cooldown(), 0);
-    assert_eq!(base.portal_process(), None);
-    assert!(!base.is_world_change_pending());
-    assert!(!base.no_gravity());
-    assert!(!base.invulnerable());
-    assert_eq!(base.custom_name(), None);
-    assert!(!base.custom_name_visible());
-    assert!(!base.silent());
-    assert!(!base.glowing());
-    assert!(base.save_data().tags.contains("keep"));
-    assert_eq!(base.remaining_fire_ticks(), 0);
-    assert_eq!(base.ticks_frozen(), 0);
-    assert!(!base.has_visual_fire());
-    assert_eq!(base.fall_distance().to_bits(), 0.0_f64.to_bits());
-    assert_eq!(base.fluid_contact(), EntityFluidContact::default());
-    assert!(!base.needs_velocity_sync());
-    assert!(!base.hurt_marked());
-    assert_eq!(base.dimensions(), reset_dimensions);
-    assert_eq!(base.last_movements_for_block_effects().len(), 0);
-    assert_eq!(
-        base.take_movements_for_block_effects(),
-        vec![EntityMovement::new(reset_position, reset_position)]
-    );
-}
-
-#[test]
 fn fire_freeze_state_round_trips_through_base_load() {
     let load = super::EntityBaseLoad {
         id: 1,
@@ -774,7 +716,7 @@ fn removal_cleans_up_relationship_state() {
 fn base_fall_damage_propagates_to_passengers() {
     init_vanilla_registry();
     let vehicle = raw_entity(1);
-    let passenger = FallDamageTestEntity::new(2);
+    let passenger = FallDamageTestEntity::new(2, Uuid::new_v4());
     let passenger_entity: SharedEntity = passenger.clone();
 
     link_vehicle_and_passenger(&vehicle, &passenger_entity);

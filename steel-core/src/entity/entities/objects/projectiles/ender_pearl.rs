@@ -119,10 +119,24 @@ impl EnderPearlEntity {
 
         let mut timer = self.ticket_timer.lock();
         *timer -= 1;
-        if (*timer > 0 && !crossed_border) || self.owner_player().is_none() {
+        if *timer > 0 && !crossed_border {
             return;
         }
 
+        let Some(owner) = self.owner_player() else {
+            return;
+        };
+        let Some(player) = owner.as_player() else {
+            return;
+        };
+        let Some(pearl) = world.get_entity_by_uuid(&self.uuid()) else {
+            return;
+        };
+        if pearl.generation() != self.generation() {
+            return;
+        }
+
+        player.register_ender_pearl(&pearl);
         world.chunk_map.place_ender_pearl_ticket(current_chunk);
         // Vanilla `registerAndUpdateEnderPearlTicket` returns `timeout - 1`.
         *timer = ENDER_PEARL_TICKET_TIMEOUT as i32 - 1;
@@ -371,12 +385,14 @@ impl ThrowableItemProjectile for EnderPearlEntity {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::sync::{Arc, Weak};
 
     use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities, vanilla_items};
+    use steel_utils::ChunkPos;
 
-    use crate::entity::{Entity, Projectile, ThrowableItemProjectile};
+    use crate::entity::{Entity, Projectile, SharedEntity, ThrowableItemProjectile};
+    use crate::test_support::{TestPlayerBuilder, fresh_test_world, insert_ready_full_chunk};
     use crate::world::World;
 
     use super::EnderPearlEntity;
@@ -444,5 +460,33 @@ mod tests {
         assert!(!EnderPearlEntity::should_vanish_for_owner_state(
             false, false, false
         ));
+    }
+
+    #[test]
+    fn ticket_renewal_registers_with_the_resolved_owner() {
+        init_vanilla_registry();
+
+        let world = fresh_test_world("ender_pearl_ticket_owner");
+        insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
+        let player = TestPlayerBuilder::new(Arc::clone(&world), "Owner", 1).build();
+        let owner: SharedEntity = player.clone();
+        let pearl = Arc::new(EnderPearlEntity::new(
+            &vanilla_entities::ENDER_PEARL,
+            2,
+            DVec3::new(0.5, 64.0, 0.5),
+            Arc::downgrade(&world),
+        ));
+        pearl.set_owner_entity(Some(&owner));
+        let shared_pearl: SharedEntity = pearl.clone();
+        if let Err(error) = world.try_add_entity(shared_pearl) {
+            panic!("test pearl should be added: {error}");
+        }
+
+        assert!(player.ender_pearls().is_empty());
+        pearl.update_ender_pearl_ticket(&world);
+
+        let registered = player.ender_pearls();
+        assert_eq!(registered.len(), 1);
+        assert_eq!(registered[0].generation(), pearl.generation());
     }
 }

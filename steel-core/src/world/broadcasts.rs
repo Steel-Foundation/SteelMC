@@ -35,7 +35,7 @@ impl World {
             // IMPORTANT: Index previous messages BEFORE updating the cache
             // This matches vanilla's order: pack() then push()
             let previous_messages = {
-                let chat = recipient.chat.lock();
+                let chat = recipient.chat().lock();
                 chat.signature_cache
                     .index_previous_messages(&sender_last_seen)
             };
@@ -53,7 +53,7 @@ impl World {
             // AFTER sending, update the recipient's cache using vanilla's push algorithm
             // This adds all lastSeen signatures + current signature to the cache
             {
-                let mut chat = recipient.chat.lock();
+                let mut chat = recipient.chat().lock();
                 if let Some(signature) = message_signature {
                     chat.signature_cache
                         .push(&sender_last_seen, Some(signature));
@@ -191,7 +191,7 @@ impl World {
             .filter(|entity_id| {
                 self.players
                     .get_by_entity_id(*entity_id)
-                    .is_some_and(|player| player.chunk_sender.lock().is_chunk_sent(chunk))
+                    .is_some_and(|player| player.chunk_sender().lock().is_chunk_sent(chunk))
             })
             .collect()
     }
@@ -208,7 +208,7 @@ impl World {
                 let Some(view) = *player.last_tracking_view.lock() else {
                     return false;
                 };
-                let chunk_sender = player.chunk_sender.lock();
+                let chunk_sender = player.chunk_sender().lock();
                 let is_chunk_sent = |pos| chunk_sender.is_chunk_sent(pos);
                 Self::chunk_is_on_packet_tracked_border(view, chunk, &is_chunk_sent)
             })

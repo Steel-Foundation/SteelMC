@@ -93,6 +93,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.base().id()
     }
 
+    /// Gets the generation counter of this runtime construction of the entity.
+    fn generation(&self) -> EntityGeneration {
+        self.base().generation()
+    }
+
     /// Gets the UUID of the entity (persistent identifier).
     fn uuid(&self) -> Uuid {
         self.base().uuid()
