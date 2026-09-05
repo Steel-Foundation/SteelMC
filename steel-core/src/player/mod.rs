@@ -379,22 +379,19 @@ impl Player {
             return;
         };
         let hand = active.hand();
-        let item_matches = {
+
+        let (original_hand, mut item) = {
             let inventory = self.inventory.lock();
-            inventory.get_item_in_hand(hand).item() == active.item()
+            let hand_item = inventory.get_item_in_hand(hand).clone();
+
+            if hand_item.item() != active.item() {
+                drop(inventory);
+                self.stop_using_item();
+                return;
+            }
+            (hand_item.clone(), hand_item)
         };
-        if !item_matches {
-            self.stop_using_item();
-            return;
-        }
-        // Read a copy rather than clearing the slot,
-        // so any inventory-touching side effect from
-        // `release_using` never sees the hand as vacant.
-        let mut item = {
-            let inventory = self.inventory.lock();
-            let current = inventory.get_item_in_hand(hand);
-            current.copy_with_count(current.count())
-        };
+
         let world = self.get_world();
         let use_on_release = ITEM_BEHAVIORS.get_behavior(item.item()).release_using(
             &mut item,
@@ -402,7 +399,17 @@ impl Player {
             self,
             active.remaining_ticks(),
         );
-        self.inventory.lock().set_item_in_hand(hand, item);
+
+        {
+            let mut inventory = self.inventory.lock();
+            let current_hand = inventory.get_item_in_hand_mut(hand);
+            if *current_hand == original_hand {
+                *current_hand = item;
+            }
+        }
+
+        // TODO: Vanilla decides this via Item.useOnRelease, like in tick_active_item_use.
+        // implemented in PR #469
         if use_on_release {
             self.tick_active_item_use();
         }
@@ -414,39 +421,66 @@ impl Player {
             return;
         };
         let hand = active.hand();
-        let item_matches = {
+
+        let (original_stack, mut item) = {
             let inventory = self.inventory.lock();
-            inventory.get_item_in_hand(hand).item() == active.item()
+            let hand_item = inventory.get_item_in_hand(hand).clone();
+
+            if hand_item.item() != active.item() {
+                drop(inventory);
+                self.stop_using_item();
+                return;
+            }
+            (hand_item.clone(), hand_item)
         };
-        if !item_matches {
-            self.stop_using_item();
-            return;
-        }
-        let mut item = {
-            let inventory = self.inventory.lock();
-            let current = inventory.get_item_in_hand(hand);
-            current.copy_with_count(current.count())
-        };
+
         let world = self.get_world();
         let behavior = ITEM_BEHAVIORS.get_behavior(item.item());
         behavior.on_use_tick(&world, self, &mut item, active.remaining_ticks());
 
-        if self.active_item_use_hand() != Some(hand) {
-            self.inventory.lock().set_item_in_hand(hand, item);
-            return;
-        }
-        let Some(active) = self.living_base.decrement_active_item_use() else {
-            self.inventory.lock().set_item_in_hand(hand, item);
-            return;
+        // Vanilla rebinds the useItem to the hand stack each tick
+        // if isSameItem
+        // Here snapshot the full stack and treat any external hand change as tampering,
+        // discarding the tick changes. Behavior-hook changes happen on the clone and are applied at write back.
+        let tampered = {
+            let mut inventory = self.inventory.lock();
+            let current_stack = inventory.get_item_in_hand_mut(hand);
+            if *current_stack == original_stack {
+                *current_stack = item.clone();
+                false
+            } else {
+                true
+            }
         };
-        if active.remaining_ticks() <= 0 {
-            let stack_before_finish = item.clone();
-            item = behavior.finish_using(&mut item, &world, self);
-            self.apply_item_use_cooldown(&stack_before_finish);
-            self.stop_using_item();
+
+        if self.active_item_use_hand() != Some(hand) {
+            self.stop_using_item(); // can't guarantee the item clears the flag
+            return;
         }
 
-        self.inventory.lock().set_item_in_hand(hand, item);
+        let Some(active) = self.living_base.decrement_active_item_use() else {
+            return;
+        };
+
+        // TODO: Vanilla checks !useOnRelease here.
+        // implemented in PR #469
+        if active.remaining_ticks() <= 0 {
+            let pre_finish = self.inventory.lock().get_item_in_hand(hand).clone();
+            if !tampered && !item.is_empty() && item == pre_finish {
+                let stack_before_finish = item.clone();
+                let result = behavior.finish_using(&mut item, &world, self);
+                self.apply_item_use_cooldown(&stack_before_finish);
+                let mut inventory = self.inventory.lock();
+                let current_stack = inventory.get_item_in_hand_mut(hand);
+                if *current_stack == pre_finish {
+                    *current_stack = result;
+                }
+                drop(inventory);
+                self.stop_using_item();
+            } else {
+                self.release_using_item();
+            }
+        }
     }
 
     /// Returns the player's configured main arm.

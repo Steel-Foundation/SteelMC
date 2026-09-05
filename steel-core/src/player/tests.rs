@@ -32,6 +32,7 @@ use steel_registry::blocks::properties::{BlockStateProperties, Direction};
 use steel_registry::data_component_predicate::DataComponentMatchers;
 use steel_registry::data_components::vanilla_components::{CAN_BREAK, EQUIPPABLE};
 use steel_registry::data_components::{AdventureModePredicate, BlockPredicate};
+use steel_registry::items::ItemRef;
 use steel_registry::packets::play::C_REMOVE_ENTITIES;
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{
@@ -1540,4 +1541,204 @@ fn throttle_player_dropping_items_from_creative_menu() {
     player.tick();
     player.handle_set_creative_mode_slot(packet);
     check_drop_count(DROPS_ALLOWED_BEFORE_THROTTLE + 2);
+}
+
+fn using_item_flag(player: &Player) -> bool {
+    let entity_data = player.entity_data.lock();
+    *entity_data.living_entity().living_entity_flags.get() & Player::USING_ITEM_FLAG != 0
+}
+
+fn hand_stack(player: &Player) -> ItemStack {
+    player
+        .inventory
+        .lock()
+        .get_item_in_hand(InteractionHand::MainHand)
+        .clone()
+}
+
+fn assert_use_finished(player: &Player) {
+    assert!(
+        player.active_item_use_hand().is_none(),
+        "item use should have stopped"
+    );
+    assert!(
+        !using_item_flag(player),
+        "stopping item use must clear the USING_ITEM_FLAG"
+    );
+}
+
+fn player_using_test_item(world: Arc<World>, item: ItemRef) -> Arc<Player> {
+    init_vanilla_registry();
+    init_behaviors();
+    let player = test_player(world);
+    player
+        .inventory
+        .lock()
+        .set_item_in_hand(InteractionHand::MainHand, ItemStack::new(item));
+    player.start_using_item(InteractionHand::MainHand);
+    assert!(
+        player.active_item_use_hand().is_some(),
+        "player should be using the test item"
+    );
+    assert!(
+        using_item_flag(&player),
+        "start_using_item must set the USING_ITEM_FLAG"
+    );
+    player
+}
+
+#[test]
+fn tick_active_item_use_writes_back_shrunk_stack() {
+    let world = fresh_test_world("tick_shrink");
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::STICK);
+    let original_count = hand_stack(&player).count();
+
+    player.tick_active_item_use();
+
+    assert_eq!(
+        hand_stack(&player).count(),
+        original_count - 1,
+        "on_use_tick shrunk the clone; the write-back should persist that change"
+    );
+}
+
+#[test]
+fn tick_active_item_use_keeps_using_mid_use() {
+    init_vanilla_registry();
+    init_behaviors();
+    let world = fresh_test_world("tick_mid_use");
+    let player = test_player(world);
+    let mut stack = ItemStack::new(&vanilla_items::STICK);
+    stack.set_count(3);
+    player
+        .inventory
+        .lock()
+        .set_item_in_hand(InteractionHand::MainHand, stack);
+    player.start_using_item(InteractionHand::MainHand);
+
+    let original_count = hand_stack(&player).count();
+    player.tick_active_item_use();
+
+    assert_eq!(
+        hand_stack(&player).count(),
+        original_count - 1,
+        "mid-use on_use_tick shrink must be written back"
+    );
+    assert!(
+        player.active_item_use_hand().is_some(),
+        "use must continue while ticks remain"
+    );
+    assert!(
+        using_item_flag(&player),
+        "USING_ITEM_FLAG must stay set while use is active"
+    );
+
+    player.tick_active_item_use();
+    assert_use_finished(&player);
+}
+
+#[test]
+fn tick_active_item_use_does_not_overwrite_tampered_hand() {
+    let world = fresh_test_world("tick_tamper");
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::IRON_INGOT);
+
+    player.tick_active_item_use();
+
+    assert!(
+        hand_stack(&player).is(&vanilla_items::DIAMOND),
+        "on_use_tick replaced the hand with DIAMOND; that must not be overwritten by the stale clone"
+    );
+}
+
+#[test]
+fn tick_active_item_use_preserves_mutations_on_early_stop() {
+    let world = fresh_test_world("tick_early_stop");
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::PAPER);
+    let original_count = hand_stack(&player).count();
+
+    player.tick_active_item_use();
+
+    assert_eq!(
+        hand_stack(&player).count(),
+        original_count - 1,
+        "on_use_tick shrunk the clone and stopped use; the shrink must still be written back"
+    );
+    assert_use_finished(&player);
+}
+
+// Mimics Honey Bottle behavior; to be replaced by a real bottle/food test once
+// food and drink behaviors land (#411).
+#[test]
+fn tick_active_item_use_finish_replaces_item() {
+    let world = fresh_test_world("tick_finish");
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::COAL);
+
+    player.tick_active_item_use();
+
+    assert!(
+        hand_stack(&player).is(&vanilla_items::GLASS_BOTTLE),
+        "finish_using returned GLASS_BOTTLE; the hand should now hold it"
+    );
+    assert_use_finished(&player);
+}
+
+// Doesn't mimic any vanilla behavior, but mods can do this
+#[test]
+fn tick_active_item_use_finish_does_not_overwrite_tampered_hand() {
+    let world = fresh_test_world("tick_finish_tamper");
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::BOWL);
+
+    player.tick_active_item_use();
+
+    assert!(
+        hand_stack(&player).is(&vanilla_items::DIAMOND),
+        "finish_using tampered with the hand; the GLASS_BOTTLE result must not overwrite it"
+    );
+    assert_use_finished(&player);
+}
+
+// Mimics a consumable, like Cookies; to be replaced by a real food test once
+// food behaviors land (#411).
+#[test]
+fn tick_active_item_use_shrink_finish_is_not_discarded() {
+    let world = fresh_test_world("shrink_finish_no_discard");
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::BONE);
+    let original_count = hand_stack(&player).count();
+
+    player.tick_active_item_use();
+
+    assert_eq!(
+        hand_stack(&player).count(),
+        original_count - 1,
+        "shrink on finish decreases stack count; the shrink should not be discarded"
+    );
+    assert_use_finished(&player);
+}
+
+#[test]
+fn release_using_item_writes_back_shrunk_stack() {
+    let world = fresh_test_world("release_shrink");
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::FLINT);
+    let original_count = hand_stack(&player).count();
+
+    player.release_using_item();
+
+    assert_eq!(
+        hand_stack(&player).count(),
+        original_count - 1,
+        "release_using shrunk the clone; the write-back should persist that change"
+    );
+}
+
+#[test]
+fn release_using_item_does_not_overwrite_tampered_hand() {
+    let world = fresh_test_world("release_tamper");
+    let player = player_using_test_item(Arc::clone(&world), &vanilla_items::LEATHER);
+
+    player.release_using_item();
+
+    assert!(
+        hand_stack(&player).is(&vanilla_items::DIAMOND),
+        "release_using tampered with the hand; the stale clone must not overwrite it"
+    );
 }

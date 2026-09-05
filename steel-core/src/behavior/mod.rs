@@ -229,6 +229,8 @@ pub fn init_behaviors() {
     ITEM_BEHAVIORS.0.get_or_init(|| {
         let mut item_behaviors = ItemBehaviorRegistry::new();
         register_item_behaviors(&mut item_behaviors);
+        #[cfg(test)]
+        test_item_use::register_test_behavior(&mut item_behaviors);
         item_behaviors
     });
 
@@ -314,4 +316,212 @@ pub fn init_behaviors() {
 
         mob_effect_behaviors
     });
+}
+
+/// Each scenario is a tiny behavior bound to a vanilla item that has no real
+/// behavior, so a test selects its scenario by the item it holds in hand.
+#[cfg(test)]
+pub(crate) mod test_item_use {
+    use std::sync::Arc;
+
+    use steel_registry::item_stack::ItemStack;
+    use steel_registry::vanilla_items;
+    use steel_utils::types::InteractionHand;
+
+    use crate::behavior::ItemBehaviorRegistry;
+    use crate::behavior::item::ItemBehavior;
+    use crate::entity::LivingEntity;
+    use crate::world::World;
+
+    /// Registers each test scenario on a vanilla item that has no behavior.
+    pub fn register_test_behavior(registry: &mut ItemBehaviorRegistry) {
+        registry.set_behavior(&vanilla_items::STICK, Box::new(ShrinkOnUseTick));
+        registry.set_behavior(&vanilla_items::IRON_INGOT, Box::new(TamperOnUseTick));
+        registry.set_behavior(&vanilla_items::PAPER, Box::new(ShrinkAndStopUse));
+        registry.set_behavior(&vanilla_items::COAL, Box::new(FinishReplacesItem));
+        registry.set_behavior(&vanilla_items::BOWL, Box::new(TamperOnFinish));
+        registry.set_behavior(&vanilla_items::BONE, Box::new(FinishShrink));
+        registry.set_behavior(&vanilla_items::FLINT, Box::new(ShrinkOnRelease));
+        registry.set_behavior(&vanilla_items::LEATHER, Box::new(TamperOnRelease));
+    }
+
+    /// Shrinks the clone on every use tick. `get_use_duration = 2` so a single
+    /// tick decrements without finishing, exercising the mid-use write-back.
+    struct ShrinkOnUseTick;
+
+    impl ItemBehavior for ShrinkOnUseTick {
+        fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+            2
+        }
+
+        fn on_use_tick(
+            &self,
+            _world: &Arc<World>,
+            _user: &dyn LivingEntity,
+            stack: &mut ItemStack,
+            _ticks_remaining: i32,
+        ) {
+            stack.shrink(1);
+        }
+    }
+
+    /// Swaps the player's hand to DIAMOND during `on_use_tick`.
+    struct TamperOnUseTick;
+
+    impl ItemBehavior for TamperOnUseTick {
+        fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+            1
+        }
+
+        fn on_use_tick(
+            &self,
+            _world: &Arc<World>,
+            user: &dyn LivingEntity,
+            _stack: &mut ItemStack,
+            _ticks_remaining: i32,
+        ) {
+            tamper_hand(user);
+        }
+    }
+
+    /// Shrinks the clone and stops the use, mimicking `release_player_use()`.
+    struct ShrinkAndStopUse;
+
+    impl ItemBehavior for ShrinkAndStopUse {
+        fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+            1
+        }
+
+        fn on_use_tick(
+            &self,
+            _world: &Arc<World>,
+            user: &dyn LivingEntity,
+            stack: &mut ItemStack,
+            _ticks_remaining: i32,
+        ) {
+            stack.shrink(1);
+            let Some(player) = user.as_player() else {
+                return;
+            };
+            player.release_using_item();
+        }
+
+        fn release_using(
+            &self,
+            stack: &mut ItemStack,
+            _world: &Arc<World>,
+            _user: &dyn LivingEntity,
+            _time_left: i32,
+        ) -> bool {
+            stack.shrink(1);
+            false
+        }
+    }
+
+    /// Returns a glass bottle instead of the used stack, mimicking honey bottle
+    struct FinishReplacesItem;
+
+    impl ItemBehavior for FinishReplacesItem {
+        fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+            1
+        }
+
+        fn finish_using(
+            &self,
+            _stack: &mut ItemStack,
+            _world: &Arc<World>,
+            _user: &dyn LivingEntity,
+        ) -> ItemStack {
+            ItemStack::new(&vanilla_items::GLASS_BOTTLE)
+        }
+    }
+
+    /// Swaps the hand to DIAMOND during `finish_using` and returns a glass bottle.
+    struct TamperOnFinish;
+
+    impl ItemBehavior for TamperOnFinish {
+        fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+            1
+        }
+
+        fn finish_using(
+            &self,
+            _stack: &mut ItemStack,
+            _world: &Arc<World>,
+            user: &dyn LivingEntity,
+        ) -> ItemStack {
+            tamper_hand(user);
+            ItemStack::new(&vanilla_items::GLASS_BOTTLE)
+        }
+    }
+
+    /// Shrinks in `finish_using` and returns the mutated stack, mimicking a consumable like a
+    /// Cookie
+    struct FinishShrink;
+
+    impl ItemBehavior for FinishShrink {
+        fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+            1
+        }
+
+        fn finish_using(
+            &self,
+            stack: &mut ItemStack,
+            _world: &Arc<World>,
+            _user: &dyn LivingEntity,
+        ) -> ItemStack {
+            stack.shrink(1);
+            stack.clone()
+        }
+    }
+
+    /// Shrinks the clone on release.
+    struct ShrinkOnRelease;
+
+    impl ItemBehavior for ShrinkOnRelease {
+        fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+            1
+        }
+
+        fn release_using(
+            &self,
+            stack: &mut ItemStack,
+            _world: &Arc<World>,
+            _user: &dyn LivingEntity,
+            _time_left: i32,
+        ) -> bool {
+            stack.shrink(1);
+            false
+        }
+    }
+
+    /// Swaps the hand to DIAMOND during `release_using`.
+    struct TamperOnRelease;
+
+    impl ItemBehavior for TamperOnRelease {
+        fn get_use_duration(&self, _stack: &ItemStack, _user: &dyn LivingEntity) -> i32 {
+            1
+        }
+
+        fn release_using(
+            &self,
+            _stack: &mut ItemStack,
+            _world: &Arc<World>,
+            user: &dyn LivingEntity,
+            _time_left: i32,
+        ) -> bool {
+            tamper_hand(user);
+            false
+        }
+    }
+
+    fn tamper_hand(user: &dyn LivingEntity) {
+        let Some(player) = user.as_player() else {
+            return;
+        };
+        player.inventory.lock().set_item_in_hand(
+            InteractionHand::MainHand,
+            ItemStack::new(&vanilla_items::DIAMOND),
+        );
+    }
 }
