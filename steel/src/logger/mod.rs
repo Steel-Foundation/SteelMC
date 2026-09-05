@@ -21,6 +21,7 @@ mod file;
 mod history;
 mod input;
 mod output;
+mod search;
 mod selection;
 mod state;
 mod suggestions;

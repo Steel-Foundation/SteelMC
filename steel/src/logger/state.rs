@@ -1,7 +1,8 @@
 use crate::config::RotationTimeFormat;
 use crate::logger::file::LogFile;
 use crate::logger::history::History;
-use crate::logger::output::Output;
+use crate::logger::output::{Output, PROMPT, SCROLLED_PROMPT};
+use crate::logger::search::ReverseSearch;
 use crate::logger::selection::Selection;
 use crate::logger::suggestions::Completer;
 use crate::{config::LogConfig, logger::Move};
@@ -10,6 +11,7 @@ use crossterm::{
     terminal::{Clear, ClearType},
 };
 use std::{
+    borrow::Cow,
     fmt::Write as _,
     fs::create_dir_all,
     io::{Result, Write},
@@ -22,6 +24,7 @@ pub struct LogState {
     pub completion: Completer,
     pub history: History,
     pub selection: Selection,
+    pub search: Option<ReverseSearch>,
     pub cancel_token: CancellationToken,
     pub file: LogFile,
 }
@@ -46,6 +49,7 @@ impl LogState {
             completion: Completer::new(),
             history: History::new(path.clone(), max_history).await,
             selection: Selection::new(),
+            search: None,
             cancel_token,
             file: LogFile::new(path, rotation_time, log_enabled)?,
         })
@@ -167,16 +171,26 @@ impl LogState {
     pub fn rewrite_input(&mut self, length: usize, pos: usize) -> Result<()> {
         self.out.cursor_to(0)?;
 
-        let input_width = Output::visible_input_width();
+        let search_prompt = self.search.as_ref().map(ReverseSearch::prompt);
+        self.out.prompt_width = search_prompt.as_deref().unwrap_or(PROMPT).chars().count();
+
+        let input_width = self.out.visible_input_width();
         if self.out.start > pos {
             self.out.start = (pos + 1).saturating_sub(input_width);
         } else if pos.saturating_sub(self.out.start) > input_width {
             self.out.start += pos.saturating_sub(self.out.start) - input_width;
         }
 
-        // Build the output string with selection highlighting
-        let output = if self.selection.is_active() {
-            let range = self.selection.get_range();
+        // A search highlights its match, otherwise the selection is highlighted
+        let highlight = match &self.search {
+            Some(search) => search.match_range(),
+            None => self
+                .selection
+                .is_active()
+                .then(|| self.selection.get_range()),
+        };
+
+        let output = if let Some(range) = highlight {
             let start = range.start;
             let end = range.end;
 
@@ -217,7 +231,11 @@ impl LogState {
             SetForegroundColor(Color::White)
         };
 
-        let left_arrow = if self.out.start == 0 { ">" } else { "◄" };
+        let prompt: Cow<'static, str> = match search_prompt {
+            Some(prompt) => Cow::Owned(prompt),
+            None if self.out.start == 0 => Cow::Borrowed(PROMPT),
+            None => Cow::Borrowed(SCROLLED_PROMPT),
+        };
         let right_arrow = if self.out.start + input_width >= length {
             ""
         } else {
@@ -226,9 +244,8 @@ impl LogState {
 
         write!(
             self.out,
-            "{}{left_arrow} {input_color}{}{ResetColor}{right_arrow}",
+            "{}{prompt}{input_color}{output}{ResetColor}{right_arrow}",
             Clear(ClearType::FromCursorDown),
-            output,
         )?;
 
         self.out.length = length;
