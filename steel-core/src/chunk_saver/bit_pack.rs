@@ -19,7 +19,11 @@ pub const fn bits_for_palette_len(palette_len: usize) -> Option<u8> {
     }
 }
 
-/// Packs indices into a compact bit array using power-of-2 bit widths.
+/// Packs indices from an iterator into a compact bit array using power-of-2
+/// bit widths, without an intermediate buffer.
+///
+/// The entry count is taken from the iterator's `ExactSizeIterator` length, so
+/// the caller cannot desync the packed width from the packed data.
 ///
 /// # Arguments
 /// * `indices` - The indices to pack (values must fit in `bits` bits)
@@ -28,24 +32,21 @@ pub const fn bits_for_palette_len(palette_len: usize) -> Option<u8> {
 /// # Panics
 /// Panics if `bits` is not a power of 2 or is greater than 16.
 #[must_use]
-pub fn pack_indices(indices: &[u32], bits: u8) -> Box<[u64]> {
+pub fn pack_indices_from_iter(indices: impl ExactSizeIterator<Item = u32>, bits: u8) -> Box<[u64]> {
     debug_assert!(
         bits.is_power_of_two() && bits <= 16,
         "bits must be 1, 2, 4, 8, or 16"
     );
-    if indices.is_empty() {
+    let entry_count = indices.len();
+    if entry_count == 0 {
         return Box::new([]);
     }
     let bits = bits as usize;
     let values_per_u64 = 64 / bits;
-    let num_u64s = indices.len().div_ceil(values_per_u64);
+    let num_u64s = entry_count.div_ceil(values_per_u64);
     let mut data = vec![0u64; num_u64s];
-    for (i, chunk) in indices.chunks(values_per_u64).enumerate() {
-        let mut word = 0u64;
-        for (j, &index) in chunk.iter().enumerate() {
-            word |= u64::from(index) << (j * bits);
-        }
-        data[i] = word;
+    for (i, index) in indices.enumerate() {
+        data[i / values_per_u64] |= u64::from(index) << ((i % values_per_u64) * bits);
     }
     data.into_boxed_slice()
 }
@@ -92,7 +93,7 @@ mod tests {
             let max_value = (1u32 << bits) - 1;
             let indices: Vec<u32> = (0..100).map(|i| i % (max_value + 1)).collect();
 
-            let packed = pack_indices(&indices, bits);
+            let packed = pack_indices_from_iter(indices.iter().copied(), bits);
             let unpacked: Vec<u32> = unpack_indices(&packed, bits).take(indices.len()).collect();
 
             assert_eq!(indices, unpacked, "Failed for bits={bits}");
@@ -104,7 +105,7 @@ mod tests {
         // Simulate a chunk section with 4096 blocks
         let indices: Vec<u32> = (0..4096).map(|i| (i % 16) as u32).collect();
 
-        let packed = pack_indices(&indices, 4);
+        let packed = pack_indices_from_iter(indices.iter().copied(), 4);
         assert_eq!(packed.len(), 4096 / 16); // 16 values per u64 with 4 bits
 
         let unpacked: Vec<u32> = unpack_indices(&packed, 4).take(4096).collect();
