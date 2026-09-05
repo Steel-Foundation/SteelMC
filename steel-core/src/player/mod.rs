@@ -22,6 +22,7 @@ pub mod player_inventory;
 mod profile;
 mod sleep;
 mod sleep_state;
+mod spam_throttler;
 pub mod stats_counter;
 mod tick_state;
 mod title;
@@ -51,6 +52,7 @@ pub use profile::{
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use sleep_state::PlayerSleepState;
 use std::mem::replace;
+use std::ptr;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -141,9 +143,14 @@ use crate::inventory::container::Container;
 const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
+const DROP_SPAM_THROTTLER_INCREMENT_STEP: i32 = 20;
+const DROP_SPAM_THROTTLER_THRESHOLD: i32 = 1480;
+
 use crate::chunk::player_chunk_view::PlayerChunkView;
+use crate::entity::entities::objects::projectiles::FishingHookEntity;
 use crate::inventory::ender_chest::{PlayerEnderChestContainer, SyncPlayerEnderChest};
 use crate::player::chunk_sender::ChunkSender;
+use crate::player::spam_throttler::TickThrottler;
 use crate::player::stats_counter::StatsCounter;
 use crate::portal::{
     PortalTicketTarget, TeleportPostAction, TeleportPostTransition, TeleportTransition,
@@ -266,11 +273,16 @@ pub struct Player {
     /// with the player and re-spawn on login (vanilla `ServerPlayer.enderPearls`).
     ender_pearls: SyncMutex<Vec<Weak<dyn Entity>>>,
 
+    /// Active fishing hook, kept weakly because the world owns live entities.
+    pub(crate) fishing: SyncMutex<Option<Weak<FishingHookEntity>>>,
+
     /// The counter keeping track of this player's statistics.
     stats: SyncMutex<StatsCounter>,
 
     /// The last action time of this player.
     last_action_time: SyncMutex<Instant>,
+    /// Throttles the player dropping items from the Creative Menu.
+    drop_spam_throttler: SyncMutex<TickThrottler>,
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `Player`.
@@ -463,11 +475,7 @@ impl Player {
     pub fn get_ray_endpoints(&self) -> (DVec3, DVec3) {
         let pos = self.position();
         let start_pos = DVec3::new(pos.x, self.get_eye_y(), pos.z);
-        let block_interaction_range = self
-            .attributes()
-            .lock()
-            .get_value(vanilla_attributes::BLOCK_INTERACTION_RANGE)
-            .unwrap_or(4.5);
+        let block_interaction_range = self.block_interaction_range();
         let direction = self.look_angle() * block_interaction_range;
 
         let end_pos = start_pos + direction;
@@ -574,8 +582,40 @@ impl Player {
             chunk_send_epoch: SyncMutex::new(0),
             residence: SyncMutex::new(PlayerResidenceState::new()),
             ender_pearls: SyncMutex::new(Vec::new()),
+            fishing: SyncMutex::new(None),
             stats: SyncMutex::new(StatsCounter::new()),
             last_action_time: SyncMutex::new(Instant::now()),
+            drop_spam_throttler: SyncMutex::new(TickThrottler::new(
+                DROP_SPAM_THROTTLER_INCREMENT_STEP,
+                DROP_SPAM_THROTTLER_THRESHOLD,
+            )),
+        }
+    }
+
+    /// Returns the active fishing hook, clearing a stale reference after removal.
+    pub fn fishing_hook(&self) -> Option<Arc<FishingHookEntity>> {
+        let mut fishing = self.fishing.lock();
+        let hook = fishing.as_ref().and_then(Weak::upgrade);
+        if hook.is_none() {
+            *fishing = None;
+        }
+        hook
+    }
+
+    /// Records the hook currently owned by this player.
+    pub fn set_fishing_hook(&self, hook: &Arc<FishingHookEntity>) {
+        *self.fishing.lock() = Some(Arc::downgrade(hook));
+    }
+
+    /// Clears `hook` if it is still this player's active fishing hook.
+    pub fn clear_fishing_hook(&self, hook: &FishingHookEntity) {
+        let mut fishing = self.fishing.lock();
+        if fishing
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .is_some_and(|active| ptr::eq(active.as_ref(), hook))
+        {
+            *fishing = None;
         }
     }
 
@@ -589,7 +629,7 @@ impl Player {
         self.advance_tick();
         self.tick_item_cooldowns();
         self.tick_attack_strength();
-        self.tick_spam_throttlers();
+        self.tick_throttlers();
         self.check_idle_timeout();
         self.tick_client_load_timeout();
         self.tick_sleep_counter();
