@@ -1,8 +1,11 @@
+use std::mem::replace;
+
 use super::{
     Arc, BLOCK_BEHAVIORS, BlockHitResult, Entity, GameType, ITEM_BEHAVIORS, InteractionHand,
     InteractionResult, InventoryAccess, Player, REGISTRY, SUseItem, UseOnContext, World,
     wrap_degrees,
 };
+use steel_registry::item_stack::ItemStack;
 
 /// Handles using an item on a block.
 ///
@@ -140,11 +143,17 @@ pub fn use_item(player: &Player, world: &Arc<World>, hand: InteractionHand) -> I
         // Get behavior registries
         let item_behaviors = &*ITEM_BEHAVIORS;
         let item_behavior = item_behaviors.get_behavior(item_ref);
+        let use_duration = item_behavior.get_use_duration(&stack_before_use, player);
 
         let result = item_behavior.use_item(&mut context);
 
-        if result.should_apply_item_use_side_effects() {
-            player.apply_item_use_cooldown(&stack_before_use);
+        if result.should_apply_item_use_side_effects() && use_duration <= 0 {
+            let mut item = {
+                let mut inventory = player.inventory.lock();
+                replace(inventory.get_item_in_hand_mut(hand), ItemStack::empty())
+            };
+            player.apply_after_use_component_side_effects(&mut item, &stack_before_use);
+            player.inventory.lock().set_item_in_hand(hand, item);
         }
 
         return result;
