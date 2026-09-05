@@ -514,9 +514,12 @@ impl World {
 
         let random_tick_speed = self.get_game_rule(&RANDOM_TICK_SPEED) as u32;
 
+        let early_lookup_stats = lookup_cache_scope.finish();
         let mut chunk_map_timings =
             self.chunk_map
                 .tick_game(self, tick_count, random_tick_speed, runs_normally);
+        chunk_map_timings.lookup_cache.merge(early_lookup_stats);
+        let lookup_cache_scope = GameplayChunkLookupCacheScope::enter(&self.chunk_map);
 
         if runs_normally {
             let _span = tracing::trace_span!("block_events").entered();
@@ -629,7 +632,9 @@ impl World {
             );
         }
 
-        chunk_map_timings.lookup_cache = lookup_cache_scope.finish();
+        chunk_map_timings
+            .lookup_cache
+            .merge(lookup_cache_scope.finish());
         WorldGameTickTimings {
             elapsed: world_start.elapsed(),
             chunk_map: chunk_map_timings,

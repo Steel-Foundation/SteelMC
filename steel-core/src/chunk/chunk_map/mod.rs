@@ -887,6 +887,7 @@ impl ChunkMap {
         }
 
         if runs_normally {
+            let lookup_cache_scope = GameplayChunkLookupCacheScope::enter(self);
             let _span = tracing::trace_span!("collect_tickable").entered();
             let start = Instant::now();
             let tickable_chunks = self.ticking_chunks.load();
@@ -911,6 +912,7 @@ impl ChunkMap {
                 Self::execute_scheduled_fluid_ticks(world, ready_fluid_ticks);
                 timings.tick_chunks += start.elapsed();
             }
+            timings.lookup_cache.merge(lookup_cache_scope.finish());
         }
 
         // Vanilla purges stale tickets only during normal level ticks, then
@@ -921,6 +923,7 @@ impl ChunkMap {
         timings.scheduling = self.run_chunk_source_updates();
 
         {
+            let lookup_cache_scope = GameplayChunkLookupCacheScope::enter(self);
             let _span = tracing::trace_span!("collect_tickable").entered();
             let start = Instant::now();
             let tickable_chunks = self.ticking_chunks.load();
@@ -952,6 +955,7 @@ impl ChunkMap {
                 }
                 timings.tick_chunks += start.elapsed();
             }
+            timings.lookup_cache.merge(lookup_cache_scope.finish());
         }
 
         {
@@ -1023,6 +1027,9 @@ impl ChunkMap {
         reason = "the ordered chunk-source commit is kept together so its Vanilla phase guarantees stay auditable"
     )]
     fn run_chunk_source_updates(self: &Arc<Self>) -> ChunkMapSchedulingTimings {
+        // Gameplay caches retain misses as well as holders, so their scopes must
+        // end before active-map membership changes, as in Vanilla's clearCache.
+        debug_assert!(!GameplayChunkLookupCacheScope::is_active_for(self));
         let mut timings = ChunkMapSchedulingTimings::default();
         let mut batch = {
             let _span = tracing::trace_span!("ticket_updates").entered();

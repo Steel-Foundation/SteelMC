@@ -13,6 +13,7 @@ pub(crate) mod chunk_ticket;
 /// Tracks chunk levels based on ticket propagation.
 pub mod chunk_ticket_manager;
 pub(crate) mod chunk_ticket_storage;
+mod chunk_tracker;
 mod data;
 /// Tracks Full-neighborhood readiness for ticking chunk lifecycles.
 pub(crate) mod full_chunk_readiness;

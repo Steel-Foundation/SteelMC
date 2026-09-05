@@ -1,13 +1,8 @@
 //! Chunk ticket management for tracking load levels and propagation.
 #![expect(missing_docs, reason = "internal module; items are self-explanatory")]
 
-use std::mem;
-
-use rustc_hash::{FxBuildHasher, FxHashMap};
-use steel_utils::ChunkPos;
-
 use crate::chunk::{
-    chunk_pyramid::GENERATION_PYRAMID, chunk_ticket_storage::SourceLevelUpdate, status::ChunkStatus,
+    chunk_pyramid::GENERATION_PYRAMID, chunk_tracker::ChunkTracker, status::ChunkStatus,
 };
 
 /// The maximum supported view distance for players.
@@ -95,18 +90,6 @@ impl ChunkTicketLevel {
     pub const fn is_entity_ticking(self) -> bool {
         self.0 <= Self::ENTITY_TICKING_CHUNK.0
     }
-
-    #[must_use]
-    pub(super) fn with_distance(self, distance: u32) -> Option<Self> {
-        let distance = u8::try_from(distance).ok()?;
-        let level = self.0.checked_add(distance)?;
-        Self::new(level)
-    }
-
-    #[must_use]
-    const fn distance_to_max(self) -> u8 {
-        MAX_LEVEL_RAW - self.0
-    }
 }
 
 /// Vanilla full-chunk accessibility and ticking status.
@@ -192,168 +175,16 @@ pub const fn ticket_level_for_status(status: ChunkStatus) -> ChunkTicketLevel {
     }
 }
 
-/// A load level change for a chunk position.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LoadLevelChange {
-    pub pos: ChunkPos,
-    /// `Some(level)` if level changed or added, `None` if removed.
-    pub new_level: Option<ChunkTicketLevel>,
-}
+pub use super::chunk_tracker::ChunkLevelChange as LoadLevelChange;
 
-/// Load-level propagation derived from authoritative ticket sources.
-/// Lower levels have higher priority.
-#[derive(Debug)]
-pub struct LoadTicketManager {
-    source_levels: FxHashMap<ChunkPos, ChunkTicketLevel>,
-    levels: FxHashMap<ChunkPos, ChunkTicketLevel>,
-    dirty: bool,
-    /// Tracks changes from the last `run_all_updates()` call.
-    changes: Vec<LoadLevelChange>,
-}
-
-impl Default for LoadTicketManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl LoadTicketManager {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            source_levels: FxHashMap::default(),
-            levels: FxHashMap::default(),
-            dirty: false,
-            changes: Vec::new(),
-        }
-    }
-
-    /// Applies an authoritative load source level update.
-    pub(crate) fn apply_source_update(&mut self, update: SourceLevelUpdate) {
-        let old_level = self.source_levels.get(&update.pos).copied();
-        if old_level == update.level {
-            return;
-        }
-
-        match update.level {
-            Some(level) => {
-                self.source_levels.insert(update.pos, level);
-            }
-            None => {
-                self.source_levels.remove(&update.pos);
-            }
-        }
-        self.dirty = true;
-    }
-
-    /// Applies a batch of authoritative load source level updates.
-    pub(crate) fn apply_source_updates(
-        &mut self,
-        updates: impl IntoIterator<Item = SourceLevelUpdate>,
-    ) {
-        for update in updates {
-            self.apply_source_update(update);
-        }
-    }
-
-    /// Propagates all tickets. Only runs if dirty.
-    /// Returns a slice of changes (added/updated/removed levels).
-    pub fn run_all_updates(&mut self) -> &[LoadLevelChange] {
-        self.changes.clear();
-
-        if !self.dirty {
-            return &self.changes;
-        }
-
-        // Swap out old levels to compare against later, reusing capacity
-        let old_capacity = self.levels.capacity();
-        let old_levels = mem::replace(
-            &mut self.levels,
-            FxHashMap::with_capacity_and_hasher(old_capacity, FxBuildHasher),
-        );
-        self.dirty = false;
-
-        for (&source_pos, &source_level) in &self.source_levels {
-            Self::propagate_source(&mut self.levels, source_pos, source_level);
-        }
-
-        // Find changed/added levels
-        for (&pos, &new_level) in &self.levels {
-            match old_levels.get(&pos) {
-                Some(&old_level) if old_level == new_level => {} // No change
-                _ => self.changes.push(LoadLevelChange {
-                    pos,
-                    new_level: Some(new_level),
-                }),
-            }
-        }
-
-        // Find removed levels
-        for &pos in old_levels.keys() {
-            if !self.levels.contains_key(&pos) {
-                self.changes.push(LoadLevelChange {
-                    pos,
-                    new_level: None,
-                });
-            }
-        }
-
-        &self.changes
-    }
-
-    fn propagate_source(
-        levels: &mut FxHashMap<ChunkPos, ChunkTicketLevel>,
-        source_pos: ChunkPos,
-        source_level: ChunkTicketLevel,
-    ) {
-        let radius = i32::from(source_level.distance_to_max());
-        let source_x = source_pos.0.x;
-        let source_z = source_pos.0.y;
-
-        for dz in -radius..=radius {
-            for dx in -radius..=radius {
-                let distance = dx.unsigned_abs().max(dz.unsigned_abs());
-                let Some(level) = source_level.with_distance(distance) else {
-                    panic!("bounded source offset produced an invalid load level");
-                };
-
-                let pos = ChunkPos::new(source_x + dx, source_z + dz);
-                levels
-                    .entry(pos)
-                    .and_modify(|current| *current = (*current).min(level))
-                    .or_insert(level);
-            }
-        }
-    }
-
-    /// Takes the change list produced by the last propagation pass.
-    pub(crate) fn take_changes(&mut self) -> Vec<LoadLevelChange> {
-        mem::take(&mut self.changes)
-    }
-
-    /// Returns a drained change buffer for reuse by the next propagation pass.
-    pub(crate) fn recycle_changes(&mut self, mut changes: Vec<LoadLevelChange>) {
-        debug_assert_eq!(self.changes, []);
-        changes.clear();
-        self.changes = changes;
-    }
-
-    /// Returns the propagated level at position. Call `run_all_updates()` first.
-    #[must_use]
-    pub fn get_level(&self, pos: ChunkPos) -> Option<ChunkTicketLevel> {
-        self.levels.get(&pos).copied()
-    }
-
-    #[cfg(test)]
-    #[must_use]
-    const fn is_dirty(&self) -> bool {
-        self.dirty
-    }
-}
+/// Vanilla's loading tracker, retaining generation dependencies beyond Full.
+pub type LoadTicketManager = ChunkTracker<{ ChunkTicketLevel::MAX.raw() }>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chunk::chunk_ticket_storage::SourceLevelUpdate;
+    use steel_utils::ChunkPos;
 
     fn source(pos: ChunkPos, level: Option<ChunkTicketLevel>) -> SourceLevelUpdate {
         SourceLevelUpdate { pos, level }
@@ -418,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn changing_a_source_level_rebuilds_its_propagation() {
+    fn changing_a_source_level_updates_its_propagation() {
         let mut manager = LoadTicketManager::new();
         let center = ChunkPos::new(0, 0);
         manager.apply_source_update(source(center, Some(ChunkTicketLevel::FULL_CHUNK)));
@@ -573,7 +404,7 @@ mod tests {
         for index in 0..=ChunkStatus::Full.get_index() {
             let status = ChunkStatus::from_index(index).expect("index is in status range");
             let ticket_level = ticket_level_for_status(status);
-            let propagation_radius = usize::from(ticket_level.distance_to_max());
+            let propagation_radius = usize::from(ChunkTicketLevel::MAX.raw() - ticket_level.raw());
             let required_radius = GENERATION_PYRAMID
                 .get_step_to(status)
                 .accumulated_dependencies

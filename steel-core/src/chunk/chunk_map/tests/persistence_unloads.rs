@@ -1,4 +1,5 @@
 use super::*;
+use crate::chunk::chunk_request::{ChunkRequest, ChunkTicketKind};
 use std::thread;
 
 #[test]
@@ -289,4 +290,35 @@ fn weak_revival_stays_dormant_until_the_same_holder_returns_to_full() {
         1,
         "promotion back to Full must activate the holder's staged ticker"
     );
+}
+
+#[test]
+fn gameplay_cache_scopes_observe_a_full_holder_revived_between_phases() {
+    let world = fresh_test_world("cache_scope_revival");
+    let pos = ChunkPos::new(0, 0);
+    let holder = insert_ready_full_chunk(&world, pos);
+    world.chunk_map.update_chunk_level(pos, None);
+
+    let scheduled_scope = GameplayChunkLookupCacheScope::enter(&world.chunk_map);
+    assert!(world.chunk_map.active_full_chunk_holder(pos).is_none());
+    assert!(world.chunk_map.active_full_chunk_holder(pos).is_none());
+    assert_eq!(scheduled_scope.finish().missing_hits, 1);
+
+    let request = world.chunk_map.request_chunks(ChunkRequest {
+        positions: vec![pos],
+        status: ChunkStatus::Full,
+        ticket_kind: ChunkTicketKind::Player,
+    });
+    // Includes the nested readiness cache and the later gameplay scopes.
+    world.tick_game(1, false);
+
+    let gameplay_scope = GameplayChunkLookupCacheScope::enter(&world.chunk_map);
+    let revived = world
+        .chunk_map
+        .active_full_chunk_holder(pos)
+        .expect("later gameplay must see the revived Full holder");
+    assert!(Arc::ptr_eq(&holder, &revived));
+    assert_eq!(gameplay_scope.finish().missing_hits, 0);
+    drop(request);
+    stop_chunk_tasks(&world);
 }
