@@ -1,6 +1,10 @@
-use std::sync::{Arc, Weak};
+use std::{
+    io::Cursor,
+    sync::{Arc, Weak},
+};
 
 use glam::DVec3;
+use simdnbt::borrow::read_compound;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_protocol::packets::game::RelativeMovement;
 use steel_registry::blocks::{
@@ -44,14 +48,15 @@ use crate::world::{LevelReader, World};
 
 use super::{
     ActiveMobEffect, AttributeModifier, AttributeModifierOperation, DAMAGE_KNOCKBACK_POWER,
-    DEFAULT_SWING_DURATION, DEFAULT_TICKS_REQUIRED_TO_FREEZE, Entity, EntityBase,
-    EntityFluidContact, EntityLevelCallback, EntityMoveError, EntityOwnership, EntitySyncedData,
-    EntityVerticalMovementStateUpdate, InsideBlockEffectCollector, InsideBlockEffectType,
-    LivingEntity, LivingEntityBase, LivingTravelInput, MobEffectInstance, RemovalReason,
-    SPEED_MODIFIER_POWDER_SNOW_ID, SharedEntity, block_state_suffocates_eye_box,
-    closest_open_space_direction, fall_damage_reset_clip_target, fall_flying_collision_damage,
-    fall_flying_free_fall_interval, get_input_vector, indirect_passengers,
-    passenger_transition_position, passenger_transition_rotation, remove_after_changing_dimensions,
+    DEFAULT_SWING_DURATION, DEFAULT_TICKS_REQUIRED_TO_FREEZE, ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+    ENTITY_LOAD_MAX_VERTICAL_POSITION, Entity, EntityBase, EntityFluidContact, EntityLevelCallback,
+    EntityMoveError, EntityOwnership, EntitySyncedData, EntityVerticalMovementStateUpdate,
+    InsideBlockEffectCollector, InsideBlockEffectType, LivingEntity, LivingEntityBase,
+    LivingTravelInput, MobEffectInstance, RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID,
+    SharedEntity, block_state_suffocates_eye_box, closest_open_space_direction,
+    fall_damage_reset_clip_target, fall_flying_collision_damage, fall_flying_free_fall_interval,
+    get_input_vector, indirect_passengers, passenger_transition_position,
+    passenger_transition_rotation, remove_after_changing_dimensions,
     should_apply_entity_cramming_damage, should_apply_resolved_movement, start_riding_entities,
     transfer_leashables_to_holder, trapdoor_usable_as_ladder_state,
 };
@@ -212,6 +217,33 @@ fn command_data_compare_nbt_contains_base_and_custom_data() {
         Some(NbtTag::List(NbtList::String(tags)))
             if tags.len() == 1 && tags[0].to_str() == "selected"
     ));
+}
+
+#[test]
+fn spawn_data_clamps_position_and_refreshes_old_transform() {
+    let entity = TypedTestEntity::new(1, &vanilla_entities::PIG);
+    let mut nbt = NbtCompound::new();
+    nbt.insert(
+        "Pos",
+        NbtList::Double(vec![100_000_000.0, -100_000_000.0, 100_000_000.0]),
+    );
+    nbt.insert("Rotation", NbtList::Float(vec![90.0, -30.0]));
+
+    let mut bytes = Vec::new();
+    nbt.write(&mut bytes);
+    let borrowed =
+        read_compound(&mut Cursor::new(bytes.as_slice())).expect("test spawn data should be valid");
+    entity.apply_spawn_data((&borrowed).into());
+
+    let expected_position = DVec3::new(
+        ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+        -ENTITY_LOAD_MAX_VERTICAL_POSITION,
+        ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
+    );
+    assert_eq!(entity.position(), expected_position);
+    assert_eq!(entity.base().old_position(), expected_position);
+    assert_eq!(entity.rotation(), (90.0, -30.0));
+    assert_eq!(entity.base().old_rotation(), (90.0, -30.0));
 }
 
 #[test]

@@ -27,12 +27,13 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{
     REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_attributes, vanilla_damage_types,
-    vanilla_entities, vanilla_game_events, vanilla_game_rules,
+    vanilla_entities, vanilla_game_events, vanilla_game_rules, vanilla_items,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::types::{Difficulty, InteractionHand};
 use steel_utils::{BlockPos, ChunkPos, Downcast as _, Identifier, WorldAabb, axis::Axis};
 
+use crate::behavior::items::SpawnEggItem;
 use crate::behavior::{BLOCK_BEHAVIORS, BlockCollisionContext, ITEM_BEHAVIORS, InteractionResult};
 use crate::enchantment_helper::{self, EnchantmentDamageContext, EnchantmentPostAttackContext};
 use crate::entity::ai::control::{
@@ -504,7 +505,18 @@ pub trait Mob: LivingEntity + Leashable {
             return InteractionResult::Pass;
         }
 
-        // TODO: Handle name tags and spawn eggs once item-on-entity behavior exists.
+        let important_interaction = self.check_and_handle_important_interactions(player, hand);
+        if important_interaction.consumes_action() {
+            if let Some(world) = self.level() {
+                world.game_event(
+                    &vanilla_game_events::ENTITY_INTERACT,
+                    self.block_position(),
+                    &GameEventContext::new(Some(player), None),
+                );
+            }
+            return important_interaction;
+        }
+
         let interaction_result = self.interact_entity(player, hand, location);
         if interaction_result != InteractionResult::Pass {
             return interaction_result;
@@ -516,6 +528,51 @@ pub trait Mob: LivingEntity + Leashable {
         }
 
         interaction_result
+    }
+
+    /// Handles vanilla `Mob.checkAndHandleImportantInteractions`.
+    fn check_and_handle_important_interactions(
+        &self,
+        player: &Player,
+        hand: InteractionHand,
+    ) -> InteractionResult {
+        let Some(living_entity) = self.as_living_entity() else {
+            return InteractionResult::Pass;
+        };
+
+        let item = {
+            let inventory = player.inventory.lock();
+            inventory.get_item_in_hand(hand).item()
+        };
+
+        if item.key == vanilla_items::NAME_TAG.key {
+            let name_tag_result = {
+                let mut inventory = player.inventory.lock();
+                let item_stack = inventory.get_item_in_hand_mut(hand);
+                ITEM_BEHAVIORS.get_behavior(item).interact_living_entity(
+                    item_stack,
+                    player,
+                    living_entity,
+                    hand,
+                )
+            };
+            if name_tag_result.consumes_action() {
+                return name_tag_result;
+            }
+        }
+
+        if ITEM_BEHAVIORS.get_behavior(item).as_spawn_egg().is_some() {
+            let spawn_egg_result = {
+                let mut inventory = player.inventory.lock();
+                let item_stack = inventory.get_item_in_hand_mut(hand);
+                SpawnEggItem::interact_with_mob(item_stack, player, self)
+            };
+            if spawn_egg_result.consumes_action() {
+                return spawn_egg_result;
+            }
+        }
+
+        InteractionResult::Pass
     }
 
     /// Handles vanilla `Mob.mobInteract`.

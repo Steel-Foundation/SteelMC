@@ -610,6 +610,11 @@ pub trait BlockBehavior: Send + Sync {
         false
     }
 
+    /// Returns whether this behavior implements vanilla `LiquidBlock`.
+    fn is_liquid_block(&self) -> bool {
+        false
+    }
+
     /// Mirrors vanilla `DoorBlock.isWoodenDoor`.
     ///
     /// Despite the vanilla name, this returns true for any door block type that

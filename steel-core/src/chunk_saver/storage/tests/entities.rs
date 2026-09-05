@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::{ENTITY_LOAD_MAX_HORIZONTAL_POSITION, ENTITY_LOAD_MAX_VERTICAL_POSITION};
 use steel_registry::RegistryEntry as _;
 
 fn test_persistent_end_crystal(pos: DVec3) -> PersistentEntity {
@@ -50,6 +51,8 @@ fn persistent_entity_load_clamps_position_like_vanilla() {
             -ENTITY_LOAD_MAX_HORIZONTAL_POSITION,
         )
     );
+    assert_eq!(entity.base().old_position(), entity.position());
+    assert_eq!(entity.base().old_rotation(), entity.rotation());
 }
 
 #[test]
