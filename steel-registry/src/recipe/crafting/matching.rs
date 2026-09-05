@@ -374,6 +374,7 @@ fn map_extending(recipe: &MapExtendingRecipe, input: &CraftingInput) -> bool {
             }
         }
     }
+    // TODO: Populate this from saved map data once maps are implemented.
     let Some(data) = input.map_data(CRAFTING_TABLE_CENTER_SLOT) else {
         return false;
     };
