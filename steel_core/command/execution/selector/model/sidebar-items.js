@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PlayerSelection"],"fn":["create_delta_aabb","entity_name_filter_matches","entity_nbt_filter_matches","find_entity_by_uuid","game_mode_filter_matches","player_name_matches","score_filter_matches","selected_player_world","selector_position","source_scoreboard","team_filter_matches","world_candidates"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["KERNEL_RADIUS","KERNEL_SIZE","KERNEL_TOTAL"],"fn":["fast_inv_sqrt","get_beard_contribution","get_bury_contribution","is_close_to_chunk","is_in_kernel_range"],"static":["BEARD_KERNEL"],"struct":["Beardifier","Rigid"]};

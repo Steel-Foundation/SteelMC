@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_RECENT_TOGGLES","RECENT_TOGGLE_TIMER"],"struct":["RedstoneTorchToggle","RedstoneTorchToggleTracker"]};

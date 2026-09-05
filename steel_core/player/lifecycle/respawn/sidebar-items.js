@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PERSONAL_RESPAWN_SEARCH_BLOCK_RADIUS"],"enum":["PlayerRespawnJobPhase","RespawnRequestKind"],"fn":["calculate_respawn_look_at_yaw"],"struct":["DeathRespawnSpawn","PlayerRespawnConfig","PlayerRespawnJob"]};

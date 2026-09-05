@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_OUTSTANDING_BYTES_PER_PLAYER","MAX_OUTSTANDING_PACKETS_PER_PLAYER","PACKET_ADMISSION_OVERHEAD"],"enum":["PacketAdmissionError","PacketPhase"],"struct":["PacketAdmissionLimits","PacketLane","PacketProcessor","PacketQueue","PacketQueueState","PacketWork","PendingPlayPacket","PlayerPacketLaneKey","SequencedPacket"]};

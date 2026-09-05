@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["optional_bool","parse_identifier_nbt","push_hash_entry"],"struct":["Equippable"],"type":["EquippableAllowedEntities"]};

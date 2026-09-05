@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["can_attach_to","can_place_hanging_sign","can_wall_hanging_sign_place"],"struct":["HangingSignItem","SignItem"]};

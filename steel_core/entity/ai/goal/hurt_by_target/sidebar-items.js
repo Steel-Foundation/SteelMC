@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ALERT_RANGE_Y","HURT_BY_UNSEEN_MEMORY_TICKS"],"struct":["HurtByTargetGoal"]};

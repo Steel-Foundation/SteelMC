@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEGREES_TO_RADIANS","INVERTED","POWER"],"fn":["java_round"],"struct":["DaylightDetectorBlock"]};

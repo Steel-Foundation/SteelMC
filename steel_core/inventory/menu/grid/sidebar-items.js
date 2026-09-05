@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GRID_WIDTH"],"enum":["Axis","Cell","PlacementKind","SlotMapping"],"fn":["to_span"],"mod":["sealed"],"struct":["Abs","ColSpan","Frame","GridPlacer","GridState","Placement","PlacementBuilder","Rect","Region","RowSpan"],"trait":["SpanBounds"]};

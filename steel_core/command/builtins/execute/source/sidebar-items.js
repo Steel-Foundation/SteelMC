@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EXECUTE_ROOT"],"fn":["align_operation","anchored_operation","as_operation","at_operation","facing_operation","in_operation","on_relations","one_relation_sources","passenger_sources","positioned_operation","required_coordinates","rotated_operation","summon_operation"],"type":["Builder"]};

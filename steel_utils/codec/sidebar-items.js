@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["bit_set","glam","lp_vec3","or","variable_integer"],"struct":["VarInt","VarLong","VarUint"]};

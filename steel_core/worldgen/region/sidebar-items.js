@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["WorldGenAccessMode"],"fn":["abs_diff"],"struct":["CachedWorldGenChunk","CachedWorldgenHeightmaps","WorldGenBulkSectionAccess","WorldGenChunkRef","WorldGenRegion","WritableSectionKey"]};

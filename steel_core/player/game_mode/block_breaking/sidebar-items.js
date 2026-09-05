@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BlockBreakAction"],"fn":["drop_block_loot","get_destroy_progress","is_air","requires_correct_tool"],"struct":["BlockBreakingManager"]};

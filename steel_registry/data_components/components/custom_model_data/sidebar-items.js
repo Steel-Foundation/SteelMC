@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_INITIAL_LIST_CAPACITY","MAX_NETWORK_STRING_BYTES","MAX_NETWORK_STRING_LENGTH"],"fn":["decode_collection","decode_string","float_equals","read_list","read_network_string","write_count","write_network_string"],"struct":["CustomModelData"]};

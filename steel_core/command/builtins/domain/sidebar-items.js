@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["command","domain_menu","icon","registration","switch_world"],"struct":["DomainMenuKind"]};

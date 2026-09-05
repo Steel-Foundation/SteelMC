@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BASE_CHANCE","SCAN_DISTANCE"],"enum":["WeatherState"],"struct":["WeatheringCopper","WeatheringCopperFullBlock"]};

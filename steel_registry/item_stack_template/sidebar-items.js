@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_TEMPLATE_CODEC_DEPTH","TEMPLATE_CODEC_DEPTH"],"fn":["empty_map_hash","push_hash_entry"],"struct":["ItemStackTemplate","TemplateDepthGuard"]};

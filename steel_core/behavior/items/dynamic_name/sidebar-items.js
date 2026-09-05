@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["default_name","description_id","potion_name","translated"]};

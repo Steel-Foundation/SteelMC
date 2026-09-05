@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["light_update_window_contains"],"struct":["InFlightLightUpdates","LightUpdateState","PendingChunkLightUpdates","PendingLightUpdates"]};

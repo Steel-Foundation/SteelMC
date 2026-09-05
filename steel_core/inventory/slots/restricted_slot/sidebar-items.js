@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["RestrictedRules","RestrictedSlot"],"type":["MayPickup","MayPlace"]};

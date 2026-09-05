@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["POOL_COUNT","TEMPLATE_COUNT"],"fn":["vanilla_template_nbt_bytes","vanilla_template_pools","vanilla_templates"]};

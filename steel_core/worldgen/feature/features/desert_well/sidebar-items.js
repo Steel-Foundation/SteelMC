@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DESERT_WELL_ARCHAEOLOGY"]};

@@ -1,0 +1,86 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `steel-core/src/behavior/items/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-0c87338a.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="steel_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (8925ea358 2026-08-20)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1><div class="sub-heading">steel_core/behavior/items/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-2"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Item behavior implementations.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! The actual behavior registration is auto-generated from classes.json.
+<a href=#4 id=4 data-nosnippet>4</a>//! See `src/behavior/generated/items.rs` for the generated registration code.
+<a href=#5 id=5 data-nosnippet>5</a>
+<a href=#6 id=6 data-nosnippet>6</a></span><span class="kw">mod </span>air;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">mod </span>axe;
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">mod </span>bed_item;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">mod </span>block_item;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">mod </span>bonemeal;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">mod </span>bottle;
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">mod </span>brush;
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">mod </span>bucket;
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">mod </span>compass;
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">mod </span>copper_chest_events;
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">mod </span>default;
+<a href=#17 id=17 data-nosnippet>17</a><span class="kw">mod </span>dye;
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">mod </span>dynamic_name;
+<a href=#19 id=19 data-nosnippet>19</a><span class="kw">mod </span>egg;
+<a href=#20 id=20 data-nosnippet>20</a><span class="kw">mod </span>ender_eye;
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">mod </span>ender_pearl;
+<a href=#22 id=22 data-nosnippet>22</a><span class="kw">mod </span>firework_rocket;
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">mod </span>food_on_a_stick;
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">mod </span>hoe;
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">mod </span>honeycomb;
+<a href=#26 id=26 data-nosnippet>26</a><span class="kw">mod </span>ink_sac;
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">mod </span>mace;
+<a href=#28 id=28 data-nosnippet>28</a><span class="kw">mod </span>name_tag;
+<a href=#29 id=29 data-nosnippet>29</a><span class="kw">mod </span>place_on_water_block_item;
+<a href=#30 id=30 data-nosnippet>30</a><span class="kw">mod </span>player_head;
+<a href=#31 id=31 data-nosnippet>31</a><span class="kw">mod </span>potion;
+<a href=#32 id=32 data-nosnippet>32</a><span class="kw">mod </span>scaffolding_block_item;
+<a href=#33 id=33 data-nosnippet>33</a><span class="kw">mod </span>shears;
+<a href=#34 id=34 data-nosnippet>34</a><span class="kw">mod </span>shield;
+<a href=#35 id=35 data-nosnippet>35</a><span class="kw">mod </span>shovel;
+<a href=#36 id=36 data-nosnippet>36</a><span class="kw">mod </span>sign_item;
+<a href=#37 id=37 data-nosnippet>37</a><span class="kw">mod </span>snowball;
+<a href=#38 id=38 data-nosnippet>38</a><span class="kw">mod </span>solid_bucket_item;
+<a href=#39 id=39 data-nosnippet>39</a><span class="kw">mod </span>spyglass;
+<a href=#40 id=40 data-nosnippet>40</a><span class="kw">mod </span>standing_and_wall_block_item;
+<a href=#41 id=41 data-nosnippet>41</a><span class="kw">mod </span>throwable_potion;
+<a href=#42 id=42 data-nosnippet>42</a><span class="kw">mod </span>tipped_arrow;
+<a href=#43 id=43 data-nosnippet>43</a>
+<a href=#44 id=44 data-nosnippet>44</a><span class="kw">mod </span>fishing_rod;
+<a href=#45 id=45 data-nosnippet>45</a><span class="kw">mod </span>flint_and_steel;
+<a href=#46 id=46 data-nosnippet>46</a><span class="kw">mod </span>lead;
+<a href=#47 id=47 data-nosnippet>47</a>
+<a href=#48 id=48 data-nosnippet>48</a><span class="kw">pub use </span>air::AirItem;
+<a href=#49 id=49 data-nosnippet>49</a><span class="kw">pub use </span>axe::AxeItem;
+<a href=#50 id=50 data-nosnippet>50</a><span class="kw">pub use </span>bed_item::BedItem;
+<a href=#51 id=51 data-nosnippet>51</a><span class="kw">pub use </span>block_item::{BlockItem, DoubleHighBlockItem};
+<a href=#52 id=52 data-nosnippet>52</a><span class="kw">pub use </span>bonemeal::BoneMealItem;
+<a href=#53 id=53 data-nosnippet>53</a><span class="kw">pub use </span>bottle::BottleItem;
+<a href=#54 id=54 data-nosnippet>54</a><span class="kw">pub use </span>brush::BrushItem;
+<a href=#55 id=55 data-nosnippet>55</a><span class="kw">pub use </span>bucket::BucketItem;
+<a href=#56 id=56 data-nosnippet>56</a><span class="kw">pub use </span>compass::CompassItem;
+<a href=#57 id=57 data-nosnippet>57</a><span class="kw">pub use </span>default::DefaultItemBehavior;
+<a href=#58 id=58 data-nosnippet>58</a><span class="kw">pub use </span>dye::DyeItem;
+<a href=#59 id=59 data-nosnippet>59</a><span class="kw">pub use </span>egg::EggItem;
+<a href=#60 id=60 data-nosnippet>60</a><span class="kw">pub use </span>ender_eye::EnderEyeItem;
+<a href=#61 id=61 data-nosnippet>61</a><span class="kw">pub use </span>ender_pearl::EnderPearlItem;
+<a href=#62 id=62 data-nosnippet>62</a><span class="kw">pub use </span>firework_rocket::FireworkRocketItem;
+<a href=#63 id=63 data-nosnippet>63</a><span class="kw">pub use </span>fishing_rod::FishingRodItem;
+<a href=#64 id=64 data-nosnippet>64</a><span class="kw">pub use </span>flint_and_steel::{FireChargeItem, FlintAndSteelItem};
+<a href=#65 id=65 data-nosnippet>65</a><span class="kw">pub use </span>food_on_a_stick::FoodOnAStickItem;
+<a href=#66 id=66 data-nosnippet>66</a><span class="kw">pub use </span>hoe::HoeItem;
+<a href=#67 id=67 data-nosnippet>67</a><span class="kw">pub use </span>honeycomb::HoneycombItem;
+<a href=#68 id=68 data-nosnippet>68</a><span class="kw">pub use </span>ink_sac::{GlowInkSacItem, InkSacItem};
+<a href=#69 id=69 data-nosnippet>69</a><span class="kw">pub use </span>lead::LeadItem;
+<a href=#70 id=70 data-nosnippet>70</a><span class="kw">pub use </span>mace::MaceItem;
+<a href=#71 id=71 data-nosnippet>71</a><span class="kw">pub use </span>name_tag::NameTagItem;
+<a href=#72 id=72 data-nosnippet>72</a><span class="kw">pub use </span>place_on_water_block_item::PlaceOnWaterBlockItem;
+<a href=#73 id=73 data-nosnippet>73</a><span class="kw">pub use </span>player_head::PlayerHeadItem;
+<a href=#74 id=74 data-nosnippet>74</a><span class="kw">pub use </span>potion::PotionItem;
+<a href=#75 id=75 data-nosnippet>75</a><span class="kw">pub use </span>scaffolding_block_item::ScaffoldingBlockItem;
+<a href=#76 id=76 data-nosnippet>76</a><span class="kw">pub use </span>shears::ShearsItem;
+<a href=#77 id=77 data-nosnippet>77</a><span class="kw">pub use </span>shield::ShieldItem;
+<a href=#78 id=78 data-nosnippet>78</a><span class="kw">pub use </span>shovel::ShovelItem;
+<a href=#79 id=79 data-nosnippet>79</a><span class="kw">pub use </span>sign_item::{HangingSignItem, SignItem};
+<a href=#80 id=80 data-nosnippet>80</a><span class="kw">pub use </span>snowball::SnowballItem;
+<a href=#81 id=81 data-nosnippet>81</a><span class="kw">pub use </span>solid_bucket_item::SolidBucketItem;
+<a href=#82 id=82 data-nosnippet>82</a><span class="kw">pub use </span>spyglass::SpyglassItem;
+<a href=#83 id=83 data-nosnippet>83</a><span class="kw">pub use </span>standing_and_wall_block_item::StandingAndWallBlockItem;
+<a href=#84 id=84 data-nosnippet>84</a><span class="kw">pub use </span>throwable_potion::{LingeringPotionItem, SplashPotionItem};
+<a href=#85 id=85 data-nosnippet>85</a><span class="kw">pub use </span>tipped_arrow::TippedArrowItem;
+</code></pre></div></section></main></body></html>

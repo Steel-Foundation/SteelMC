@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_ARRAY_LENGTH","MAX_DEPTH"],"fn":["command_nbt_component","is_simple_value","quote_and_escape"],"struct":["NbtComponentVisitor"]};

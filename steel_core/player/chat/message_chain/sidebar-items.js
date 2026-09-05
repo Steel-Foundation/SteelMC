@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ChainError"],"fn":["update_last_seen_signature"],"struct":["MessageSignatureUpdater","SignedMessageBody","SignedMessageChain","SignedMessageLink"]};

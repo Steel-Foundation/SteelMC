@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AxolotlVariant","FoxVariant","HorseVariant","LlamaVariant","MooshroomVariant","ParrotVariant","RabbitVariant","SalmonVariant","TropicalFishBase","TropicalFishPattern"],"macro":[["impl_variant_codecs",1]]};

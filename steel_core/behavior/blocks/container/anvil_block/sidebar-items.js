@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FACING","HORIZONTAL_FACING"],"struct":["AnvilBlock"]};

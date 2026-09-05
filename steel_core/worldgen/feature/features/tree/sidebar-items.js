@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["abs_i32"],"mod":["decorators","fallen","foliage","leaves","root_system","roots","trunk"],"struct":["FoliageAttachment","TreeBounds","TreePlacement"]};

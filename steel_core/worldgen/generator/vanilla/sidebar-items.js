@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CARVER_SOURCE_CHUNK_COUNT"],"fn":["fuzzed_biome_at_block","get_fiddle","lcg_next"],"macro":[["impl_post_noise_state_type",1]],"struct":["FuzzedBiomeColumn","SurfaceExtensionBiomes","VanillaGenerator"],"trait":["VanillaPostNoiseStateType"]};

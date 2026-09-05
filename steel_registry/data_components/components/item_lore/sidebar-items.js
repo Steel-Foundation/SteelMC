@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["styled_line"],"struct":["ItemLore","ItemLoreTooLong"]};

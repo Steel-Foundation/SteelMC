@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["apply_potion_contents","scale_effect_duration","to_runtime_instance"]};

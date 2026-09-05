@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["HALF_ROUND_OFF","ROUND_OFF"],"fn":["fast_floor","fast_floor_simd","fast_lfloor","wrap","wrap_simd"]};

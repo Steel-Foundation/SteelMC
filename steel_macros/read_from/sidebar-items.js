@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["UNSUPPORTED_READ_PROP","WRONG_READ_FORMAT"],"fn":["derive","generate_read_code","parse_read_attributes","parse_struct_read_attributes","read_from_enum","read_from_struct"],"struct":["FieldReadAttributes"]};

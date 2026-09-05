@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["parse_tag_ref"],"mod":["effect"],"struct":["Enchantment","EnchantmentCost","EnchantmentRegistry"],"type":["EnchantmentRef"]};

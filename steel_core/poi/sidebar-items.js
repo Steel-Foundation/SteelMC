@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["poi_instance","poi_set","poi_storage"]};

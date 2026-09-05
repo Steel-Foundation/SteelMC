@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PIG_BABY_DIMENSIONS","PIG_BABY_PASSENGER_ATTACHMENTS"],"struct":["PigEntity"]};

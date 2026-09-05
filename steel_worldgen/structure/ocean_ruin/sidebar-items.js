@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CLUSTER_OFFSETS"],"fn":["ocean_ruin_piece","template_bb"],"static":["COLD_BIG_BRICK","COLD_BIG_CRACKED","COLD_BIG_MOSSY","COLD_BRICK","COLD_CRACKED","COLD_MOSSY","WARM_LARGE","WARM_SMALL"],"struct":["OceanRuinStructure"],"type":["ClusterOffset"]};

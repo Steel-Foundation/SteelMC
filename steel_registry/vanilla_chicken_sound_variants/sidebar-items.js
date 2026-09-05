@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_chicken_sound_variants"],"static":["CLASSIC","PICKY"]};

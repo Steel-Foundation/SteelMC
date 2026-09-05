@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FACING","TILT","WATERLOGGED"],"struct":["BigDripleafBlock"]};

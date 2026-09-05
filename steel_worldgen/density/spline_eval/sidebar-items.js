@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["evaluate_spline","find_interval","hermite_interpolate"]};

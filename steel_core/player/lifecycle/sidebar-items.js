@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CLIENT_LOADED_TIMEOUT_TICKS"],"enum":["DomainSwitchPhase","ResetReason"],"mod":["respawn","spawn_sync","world_transition"],"struct":["DomainSwitchState","PlayerLifecycleState"]};

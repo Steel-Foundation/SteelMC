@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["ChatStyle","ChatType","ChatTypeDecoration","ChatTypeRegistry"],"type":["ChatTypeRef"]};

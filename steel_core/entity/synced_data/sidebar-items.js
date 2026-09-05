@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["EntitySharedFlags"],"trait":["EntitySyncedData","LivingEntitySyncedData","SharedFlagSetter"]};

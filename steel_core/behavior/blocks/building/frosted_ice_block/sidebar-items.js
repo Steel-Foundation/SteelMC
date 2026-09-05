@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["AGE","MAX_AGE","MELT_TICK_MAX","MELT_TICK_MIN","NEIGHBORS_TO_AGE","NEIGHBORS_TO_MELT","PLACE_TICK_MAX","PLACE_TICK_MIN"],"struct":["FrostedIceBlock"]};

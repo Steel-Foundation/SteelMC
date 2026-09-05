@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["domain_default_world","storage_io_error"],"struct":["CommandStorage","CommandStorageSaveSnapshot","DomainCommandStorage","PersistentCommandStorage"]};

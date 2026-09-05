@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FLATTENABLES","LIT_PROPERTY"],"struct":["ShovelItem"]};

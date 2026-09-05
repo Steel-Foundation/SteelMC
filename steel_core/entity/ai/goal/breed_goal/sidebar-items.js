@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BREED_DISTANCE_SQR","BREED_TIME","PARTNER_SEARCH_RANGE"],"struct":["BreedGoal"]};

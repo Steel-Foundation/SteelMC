@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["command_nbt_component","hash_click_fields","hash_component_as_map","hash_content_fields","hash_format_fields","hash_hover_fields"],"mod":["nbt"],"struct":["DisplayResolutor"]};

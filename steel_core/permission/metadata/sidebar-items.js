@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PermissionMetadataExpressionError","PermissionMetadataKeyError","PermissionMetadataValue"],"fn":["parse_permission_metadata_key"],"struct":["PermissionMetadataCandidate","PermissionMetadataEntry","PermissionMetadataExpression","PermissionMetadataResolution","PermissionMetadataSet"]};

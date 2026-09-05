@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["LEGACY_FALLING_OFFSET","LEGACY_MAX_LEVEL","LEGACY_SOURCE_LEVEL"],"fn":["is_lava_fluid","is_water_fluid"],"struct":["Fluid","FluidRegistry","FluidState"],"trait":["FluidStateExt"],"type":["FluidRef"]};

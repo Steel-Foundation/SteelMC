@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["neighbor_updater"],"static":["LARGE_BLOCK_REGION_WARNING_EMITTED"]};

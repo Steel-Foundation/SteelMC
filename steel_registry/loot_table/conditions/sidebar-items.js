@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["EnchantedChance","LootCondition","ToolPredicate"],"fn":["damage_source_has_tag","slot_predicate_matches","tool_enchantment_matches"],"struct":["BlockPredicate","DamageSourcePredicate","DamageTagPredicate","EntityEquipment","EntityFlags","EntityPredicate","LocationPredicate","PropertyCheck"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SPAWN_BONUS_CHEST"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CommandSender","CommandSenderKey","CommandSuggestionKey"],"struct":["CommandExecutionOwner"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["push_hash_entry","read_count","write_count"],"struct":["BeehiveOccupant","Bees"]};

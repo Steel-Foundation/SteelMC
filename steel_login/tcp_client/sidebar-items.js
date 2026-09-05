@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_TICKS_BEFORE_LOGIN","SLOW_LOGIN_DISCONNECT_FLUSH_TIMEOUT"],"enum":["ConnectionUpdate","IncomingEvent","LoginOperationResult"],"fn":["await_login_operation"],"struct":["ConnectionAction","JavaTcpClient","LoginDeadline","ServerConnectionSession"]};

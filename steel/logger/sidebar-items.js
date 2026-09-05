@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Move"],"fn":["normalize_terminal_newlines","rendered_terminal_rows","terminal_height","terminal_width"],"mod":["file","history","input","output","selection","state","suggestions"],"struct":["CommandLogger","LoggerLayer"]};

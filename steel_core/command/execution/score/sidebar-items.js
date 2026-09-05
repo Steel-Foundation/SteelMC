@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ScoreHolderArgument","ScoreHolderWildcard"],"fn":["is_range_number_character","parse_int_range","parse_score_holder","peek_next","range_error","read_optional_integer","resolve_name","resolve_uuid","suggest_score_holders"],"struct":["IntRange"]};

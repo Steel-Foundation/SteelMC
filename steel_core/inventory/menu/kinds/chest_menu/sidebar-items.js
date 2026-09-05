@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["chest","chest_with_kind","menu_type_for_rows"],"struct":["ChestKind"]};

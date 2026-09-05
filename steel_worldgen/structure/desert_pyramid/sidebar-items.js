@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DESERT_PYRAMID_DEPTH","DESERT_PYRAMID_HEIGHT","DESERT_PYRAMID_WIDTH"],"fn":["desert_pyramid_piece"],"struct":["DesertPyramidPieceData","DesertPyramidStructure"]};

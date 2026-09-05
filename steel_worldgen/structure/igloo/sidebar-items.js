@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BOT_OFF","BOT_PIVOT","BOT_SIZE","GEN_Y","MID_OFF","MID_PIVOT","MID_SIZE","TOP_OFF","TOP_PIVOT","TOP_SIZE"],"fn":["make_igloo_piece"],"struct":["IglooStructure"]};

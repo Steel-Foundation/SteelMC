@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["OP_GROUP"],"enum":["PermissionConfigError"],"fn":["parse_group_metadata","parse_group_permissions","parse_group_rule","validate_group_inheritance","validate_group_inheritance_node","validate_group_name"],"struct":["PermissionGroup","PermissionGroupConfig","PermissionGroups","PermissionGroupsConfig","PermissionMetadataRuleConfig"]};

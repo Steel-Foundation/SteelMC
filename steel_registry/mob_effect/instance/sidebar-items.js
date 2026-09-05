@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_EFFECT_DEPTH"],"fn":["details_hash_entries","hash_entries","optional_bool","optional_i32","push_hash_entry","read_details","write_details"],"struct":["MobEffectInstance","MobEffectInstanceDetails"]};

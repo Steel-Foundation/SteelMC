@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":[["impl_registry_reference_entry",1]],"struct":["RegistryReference"],"trait":["RegistryReferenceEntry"]};

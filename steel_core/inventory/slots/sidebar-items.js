@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["anvil_slots","armor_slot","crafting_slots","furnace_slots","normal_slot","restricted_slot","result_handler","result_slot","slot"],"struct":["AnvilResultHandler","ArmorSlot","CraftingHandler","FurnaceFuelSlot","FurnaceResultSlot","NormalSlot","RestrictedRules","RestrictedSlot","ResultSlot"],"trait":["ResultHandler"]};

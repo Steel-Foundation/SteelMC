@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["EntitySpawnReason","SpawnGroupData"],"struct":["AgeableMobGroupData"]};

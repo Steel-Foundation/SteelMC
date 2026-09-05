@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CLAMP_HORIZONTAL","CLAMP_VERTICAL","DEFAULT_GRAVITY","FLOATING_Y_THRESHOLD","RESET_ACTION_TIME_DELTA_THRESHOLD","SPEED_THRESHOLD_FLYING","SPEED_THRESHOLD_NORMAL"],"fn":["clamp_horizontal","clamp_vertical","custom_stat_from_riding_vehicle","wrap_degrees"],"mod":["input","state","teleport"],"struct":["PlayerFloatingValidation","PlayerInput"]};

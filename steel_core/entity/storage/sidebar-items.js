@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["EntityStorageAddResult","EntityStorageState"],"fn":["should_keep_for_save"],"struct":["EntityStorage"]};

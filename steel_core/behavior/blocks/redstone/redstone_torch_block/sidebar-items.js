@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["HORIZONTAL_FACING","LIT","RESTART_DELAY","TOGGLE_DELAY"],"fn":["affect_neighbors_after_removal","handle_neighbor_changed","notify_neighbors","on_place","own_signal","tick_torch"],"struct":["RedstoneTorchBlock","RedstoneWallTorchBlock"]};

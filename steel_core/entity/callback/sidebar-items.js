@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["RemovalReason"],"struct":["EntityChunkCallback","InactiveEntityCallback","NullEntityCallback","PlayerEntityCallback"],"trait":["EntityLevelCallback"]};

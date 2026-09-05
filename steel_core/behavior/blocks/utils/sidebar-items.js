@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_excluded_for_connection","multiface_face_property"]};
