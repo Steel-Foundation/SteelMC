@@ -9,7 +9,9 @@ use steel_registry::blocks::properties::{BlockStateProperties, BoolProperty, Int
 use steel_registry::{vanilla_blocks, vanilla_game_rules};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::behavior::block::{BlockBehavior, EntityFallDamage, EntityFallOnContext};
+use crate::behavior::block::{
+    BlockBehavior, BlockBehaviorDefaults, EntityFallDamage, EntityFallOnContext,
+};
 use crate::behavior::context::BlockPlaceContext;
 use crate::world::World;
 
@@ -142,7 +144,7 @@ impl BlockBehavior for FarmlandBlock {
             turn_to_dirt(state, world, pos, context.source_entity());
         }
 
-        self.default_fall_on(state, world, pos, context)
+        BlockBehaviorDefaults::fall_on(self, state, world, pos, context)
     }
 }
 

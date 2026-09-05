@@ -21,8 +21,8 @@ use crate::entity::ai::goal::GoalControl;
 use crate::entity::ai::node::Node;
 use crate::entity::ai::path::{Path, PathType};
 use crate::entity::damage::DamageSource;
-use crate::entity::entities::PigEntity;
 use crate::entity::entities::objects::items::ItemEntity;
+use crate::entity::entities::{EndermiteEntity, PigEntity};
 use crate::entity::leash::Leashable;
 use crate::entity::mob::{Mob, MobBase};
 use crate::entity::{
@@ -790,16 +790,16 @@ fn looting_collects_nearby_item_into_main_hand() {
 #[test]
 fn looting_runs_through_ai_step_even_with_no_ai() {
     // Vanilla runs the looting loop from `Mob.aiStep`, not `serverAiStep`, so a
-    // mob with `NoAI` set still collects loot. Drive the real `mob_ai_step` path
-    // (rather than calling `tick_looting` directly) to guard against the looting
-    // regressing behind the `isEffectiveAi` gate that skips the goal ticks.
+    // mob with `NoAI` set still collects loot. Drive a concrete override through
+    // `LivingEntity::ai_step` to guard both its Mob delegation and the looting
+    // loop against regressing behind the effective-AI gate.
     init_vanilla_registry();
     init_behaviors();
     let world = fresh_test_world("mob_looting_no_ai");
     insert_ready_full_chunk(&world, ChunkPos::new(0, 0));
 
-    let mob = Arc::new(PigEntity::new(
-        &vanilla_entities::PIG,
+    let mob = Arc::new(EndermiteEntity::new(
+        &vanilla_entities::ENDERMITE,
         1,
         DVec3::new(8.0, 65.0, 8.0),
         Arc::downgrade(&world),
@@ -829,7 +829,7 @@ fn looting_runs_through_ai_step_even_with_no_ai() {
             .expect("test entity should attach to the loaded chunk");
     }
 
-    Mob::mob_ai_step(mob.as_ref());
+    LivingEntity::ai_step(mob.as_ref());
 
     assert!(
         item.is_removed(),

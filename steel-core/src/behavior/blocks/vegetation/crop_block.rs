@@ -13,7 +13,7 @@ use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::{vanilla_entities, vanilla_game_rules, vanilla_items};
 use steel_utils::{BlockPos, BlockStateId, types::UpdateFlags};
 
-use crate::behavior::block::BlockBehavior;
+use crate::behavior::block::{BlockBehavior, BlockBehaviorDefaults};
 use crate::behavior::blocks::vegetation::Vegetation;
 use crate::behavior::blocks::vegetation::bonemealable::{Bonemealable, CropBonemealExt};
 use crate::behavior::blocks::vegetation::vegetation_block::{
@@ -273,7 +273,15 @@ impl<T: CropLike + Bonemealable + Send + Sync> BlockBehavior for T {
         is_precise: bool,
     ) {
         destroy_crop_on_ravager_contact(world, pos, entity);
-        self.default_entity_inside(state, world, pos, entity, effect_collector, is_precise);
+        BlockBehaviorDefaults::entity_inside(
+            self,
+            state,
+            world,
+            pos,
+            entity,
+            effect_collector,
+            is_precise,
+        );
     }
 
     fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {

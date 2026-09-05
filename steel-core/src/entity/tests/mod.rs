@@ -47,8 +47,8 @@ use super::{
     DEFAULT_SWING_DURATION, DEFAULT_TICKS_REQUIRED_TO_FREEZE, Entity, EntityBase,
     EntityFluidContact, EntityLevelCallback, EntityMoveError, EntityOwnership, EntitySyncedData,
     EntityVerticalMovementStateUpdate, InsideBlockEffectCollector, InsideBlockEffectType,
-    LivingEntity, LivingEntityBase, LivingTravelInput, MobEffectInstance, RemovalReason,
-    SPEED_MODIFIER_POWDER_SNOW_ID, SharedEntity, block_state_suffocates_eye_box,
+    LivingEntity, LivingEntityBase, LivingEntityDefaults, LivingTravelInput, MobEffectInstance,
+    RemovalReason, SPEED_MODIFIER_POWDER_SNOW_ID, SharedEntity, block_state_suffocates_eye_box,
     closest_open_space_direction, fall_damage_reset_clip_target, fall_flying_collision_damage,
     fall_flying_free_fall_interval, get_input_vector, indirect_passengers,
     passenger_transition_position, passenger_transition_rotation, remove_after_changing_dimensions,
@@ -785,7 +785,7 @@ impl LivingEntity for LivingFluidTestEntity {
         if self.rejects_wither && effect.effect() == vanilla_mob_effects::WITHER {
             return false;
         }
-        self.default_can_be_affected(effect)
+        LivingEntityDefaults::can_be_affected(self, effect)
     }
 
     fn is_affected_by_fluids(&self) -> bool {

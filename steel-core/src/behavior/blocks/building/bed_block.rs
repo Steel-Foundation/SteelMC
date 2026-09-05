@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use crate::{
     behavior::{
-        BlockBehavior, BlockHitResult, BlockPlaceContext, BlockStateBehaviorExt as _,
-        EntityFallDamage, EntityFallOnContext, EntityLandingContext, InteractionResult,
-        InventoryAccess, PlacementSource,
+        BlockBehavior, BlockBehaviorDefaults, BlockHitResult, BlockPlaceContext,
+        BlockStateBehaviorExt as _, EntityFallDamage, EntityFallOnContext, EntityLandingContext,
+        InteractionResult, InventoryAccess, PlacementSource,
     },
     entity::{Entity, ai::path::PathComputationType, dismount_helper},
     player::Player,
@@ -251,7 +251,7 @@ impl BlockBehavior for BedBlock {
         pos: BlockPos,
         context: EntityFallOnContext<'_>,
     ) -> Option<EntityFallDamage> {
-        self.default_fall_on(state, world, pos, Self::fall_context(context))
+        BlockBehaviorDefaults::fall_on(self, state, world, pos, Self::fall_context(context))
     }
 
     fn update_entity_movement_after_fall_on(
@@ -262,7 +262,9 @@ impl BlockBehavior for BedBlock {
         context: EntityLandingContext,
     ) -> DVec3 {
         if context.suppresses_bounce {
-            return self.default_update_entity_movement_after_fall_on(state, world, pos, context);
+            return BlockBehaviorDefaults::update_entity_movement_after_fall_on(
+                self, state, world, pos, context,
+            );
         }
 
         Self::velocity_after_fall(context)

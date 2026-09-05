@@ -15,8 +15,8 @@ use steel_utils::{BlockLocalAabb, BlockPos, BlockStateId, types::UpdateFlags};
 use crate::{
     behavior::block::PickupResult,
     behavior::{
-        BlockBehavior, BlockCollisionContext, BlockPlaceContext, EntityFallDamage,
-        EntityFallOnContext,
+        BlockBehavior, BlockBehaviorDefaults, BlockCollisionContext, BlockPlaceContext,
+        EntityFallDamage, EntityFallOnContext,
     },
     entity::ai::path::PathComputationType,
     entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType},
@@ -155,7 +155,9 @@ impl BlockBehavior for PowderSnowBlock {
                 .with_falling_block(entity.entity_type() == &vanilla_entities::FALLING_BLOCK),
         );
         if collision_shape.is_empty() {
-            self.default_get_entity_inside_collision_shape(state, world, pos, entity)
+            BlockBehaviorDefaults::get_entity_inside_collision_shape(
+                self, state, world, pos, entity,
+            )
         } else {
             collision_shape
         }
@@ -179,7 +181,7 @@ impl BlockBehavior for PowderSnowBlock {
                 && context.is_above(VoxelShape::FULL_BLOCK, pos, false)
                 && !context.is_descending())
         {
-            return self.default_get_collision_shape(state, world, pos, context);
+            return BlockBehaviorDefaults::get_collision_shape(self, state, world, pos, context);
         }
 
         VoxelShape::EMPTY
@@ -303,7 +305,13 @@ mod tests {
 
         assert_eq!(
             shape,
-            behavior.default_get_collision_shape(state, &empty_level(), pos, context)
+            BlockBehaviorDefaults::get_collision_shape(
+                &behavior,
+                state,
+                &empty_level(),
+                pos,
+                context,
+            )
         );
     }
 
@@ -343,7 +351,13 @@ mod tests {
 
         assert_eq!(
             shape,
-            behavior.default_get_collision_shape(state, &empty_level(), pos, context)
+            BlockBehaviorDefaults::get_collision_shape(
+                &behavior,
+                state,
+                &empty_level(),
+                pos,
+                context,
+            )
         );
     }
 

@@ -1,5 +1,6 @@
 use super::*;
 use crate::entity::leash::Leashable;
+use steel_macros::default_methods;
 
 /// Vanilla `Entity.refreshDimensions` small-entity limit: only entities at most
 /// this wide and tall (in blocks) get their position fudged after growing.
@@ -66,6 +67,7 @@ impl<T: Entity> EntityEventSource for T {
 ///     // All other common methods use defaults from EntityBase!
 /// }
 /// ```
+#[default_methods]
 pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns a reference to the entity's shared vanilla base fields.
     fn base(&self) -> &EntityBase;
@@ -695,8 +697,21 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Repositions a direct passenger from this vehicle's attachment point.
     ///
     /// Mirrors vanilla `Entity.positionRider`.
+    #[default_method]
     fn position_rider(&self, passenger: &dyn Entity) {
-        position_rider_default(self, passenger);
+        if !self.has_passenger(passenger) {
+            return;
+        }
+
+        let riding_position = self.passenger_riding_position(passenger);
+        let vehicle_attachment = passenger.vehicle_attachment_point(self.as_entity_event_source());
+        if let Err(error) = passenger.try_set_position(riding_position - vehicle_attachment) {
+            log::debug!(
+                "Failed to position passenger {} riding entity {}: {error}",
+                passenger.id(),
+                self.id()
+            );
+        }
     }
 
     /// Returns this entity's root vehicle ID, or this entity's ID when it is not riding.
@@ -857,19 +872,15 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Called every game tick while this entity is riding another entity.
     ///
     /// Mirrors vanilla `Entity.rideTick`.
+    #[default_method]
     fn ride_tick(&self) {
-        self.default_ride_tick();
-        if let Some(living) = self.as_living_entity() {
-            living.reset_fall_distance();
-        }
-    }
-
-    /// The default implementation of `Entity.rideTick` when not overridden.
-    fn default_ride_tick(&self) {
         self.set_velocity(DVec3::ZERO);
         self.tick();
         if let Some(vehicle) = self.vehicle() {
             vehicle.position_rider(self.as_entity_event_source());
+        }
+        if let Some(living) = self.as_living_entity() {
+            living.reset_fall_distance();
         }
     }
 
@@ -1606,12 +1617,8 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Updates the vanilla swimming shared flag.
     ///
     /// Mirrors vanilla `Entity.updateSwimming`.
+    #[default_method]
     fn update_swimming(&self) {
-        self.default_update_swimming();
-    }
-
-    /// Shared body of vanilla `Entity.updateSwimming` for player overrides.
-    fn default_update_swimming(&self) {
         let Some(world) = self.level() else {
             return;
         };
@@ -2334,14 +2341,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.set_velocity(next_velocity);
     }
 
-    /// Default vanilla stuck-in-block movement for the next movement pass.
-    fn default_make_stuck_in_block(&self, _state: BlockStateId, speed_multiplier: DVec3) {
-        self.base().make_stuck_in_block(speed_multiplier);
-    }
-
     /// Applies vanilla stuck-in-block movement for the next movement pass.
+    #[default_method]
     fn make_stuck_in_block(&self, state: BlockStateId, speed_multiplier: DVec3) {
-        self.default_make_stuck_in_block(state, speed_multiplier);
+        let _ = state;
+        self.base().make_stuck_in_block(speed_multiplier);
     }
 
     /// Applies current block-contact effects to this entity.
@@ -2389,11 +2393,9 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
             .set_on_ground_with_movement(on_ground, horizontal_collision, ground_contact);
     }
 
-    /// Default final state application for accepted client-authored movement.
-    ///
-    /// Mirrors the shared tail of vanilla player and controlled-vehicle movement
-    /// handling after rollback/collision validation has accepted the target.
-    fn default_apply_accepted_client_movement(
+    /// Applies final state accepted from a client-authored movement packet.
+    #[default_method]
+    fn apply_accepted_client_movement(
         &self,
         world: &Arc<World>,
         accepted: AcceptedClientMovement,
@@ -2418,16 +2420,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
 
         Ok(AcceptedClientMovementOutcome::Applied)
     }
-
-    /// Applies final state accepted from a client-authored movement packet.
-    fn apply_accepted_client_movement(
-        &self,
-        world: &Arc<World>,
-        accepted: AcceptedClientMovement,
-    ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
-        self.default_apply_accepted_client_movement(world, accepted)
-    }
-
     /// Applies final state accepted from a controlled-vehicle movement packet.
     fn apply_accepted_client_vehicle_movement(
         &self,
@@ -2436,7 +2428,7 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     ) -> Result<AcceptedClientMovementOutcome, EntityMoveError> {
         accepted.horizontal_collision = self.horizontal_collision();
         accepted.reset_fall_distance = false;
-        self.default_apply_accepted_client_movement(world, accepted)
+        EntityDefaults::apply_accepted_client_movement(self, world, accepted)
     }
 
     /// Attempts to set the entity's position through world lifecycle validation.
@@ -3637,26 +3629,6 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Runs when this entity kills another entity.
     fn award_kill_score(&self, _victim: &dyn Entity, _killing_blow: &DamageSource) {
         // TODO: Trigger advancement criterion ENTITY_KILLED_PLAYER if the victim is a player.
-    }
-}
-
-/// Repositions a direct passenger from the vehicle's attachment point.
-///
-/// Shared between the [`Entity::position_rider`] default and entity overrides that
-/// extend it (e.g. `Chicken` mirroring the rider's body yaw).
-pub(crate) fn position_rider_default<E: Entity + ?Sized>(entity: &E, passenger: &dyn Entity) {
-    if !entity.has_passenger(passenger) {
-        return;
-    }
-
-    let riding_position = entity.passenger_riding_position(passenger);
-    let vehicle_attachment = passenger.vehicle_attachment_point(entity.as_entity_event_source());
-    if let Err(error) = passenger.try_set_position(riding_position - vehicle_attachment) {
-        log::debug!(
-            "Failed to position passenger {} riding entity {}: {error}",
-            passenger.id(),
-            entity.id()
-        );
     }
 }
 

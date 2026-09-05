@@ -32,8 +32,8 @@ use crate::entity::damage::DamageSource;
 use crate::entity::entities::EndermiteEntity;
 use crate::entity::{
     ENTITIES, Entity, EntityBase, EntityBaseLoad, EntitySyncedData, LivingEntity, Projectile,
-    ProjectileBase, ProjectileHit, RemovalReason, SharedEntity, ThrowableItemProjectile,
-    ThrowableProjectile, change_entity_world, next_entity_id,
+    ProjectileBase, ProjectileDefaults, ProjectileHit, RemovalReason, SharedEntity,
+    ThrowableItemProjectile, ThrowableProjectile, change_entity_world, next_entity_id,
 };
 use crate::player::Player;
 use crate::portal::{TeleportPostTransition, TeleportTransition};
@@ -322,7 +322,7 @@ impl Projectile for EnderPearlEntity {
 
     fn on_hit(&self, hit: &ProjectileHit) {
         // Vanilla `ThrownEnderpearl.onHit`: super.onHit() then teleport the owner.
-        self.projectile_on_hit(hit);
+        ProjectileDefaults::on_hit(self, hit);
 
         // VANILLA CLIENT-LOCAL: `ThrownEnderpearl.onHit` creates the 32 portal particles.
         let Some(world) = self.level() else {

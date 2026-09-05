@@ -47,8 +47,8 @@ use crate::entity::attribute::{AttributeModifier, AttributeModifierOperation};
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::objects::items::ItemEntity;
 use crate::entity::{
-    Entity, EntitySpawnReason, LivingEntity, LivingTravelInput, RemovalReason, SharedEntity,
-    SpawnGroupData, WeakEntity,
+    Entity, EntitySpawnReason, LivingEntity, LivingEntityDefaults, LivingTravelInput,
+    RemovalReason, SharedEntity, SpawnGroupData, WeakEntity,
 };
 use crate::inventory::equipment::EquipmentSlot;
 use crate::physics::MoveResult;
@@ -1415,7 +1415,7 @@ pub trait Mob: LivingEntity + Leashable {
     /// `NoAI` set still collects loot, so the looting must not sit behind the
     /// `isEffectiveAi` gate that guards the goal/navigation ticks.
     fn mob_ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
+        let result = LivingEntityDefaults::ai_step(self);
         self.tick_looting();
         result
     }

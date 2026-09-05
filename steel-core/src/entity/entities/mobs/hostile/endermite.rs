@@ -230,7 +230,7 @@ impl LivingEntity for EndermiteEntity {
     }
 
     fn ai_step(&self) -> Option<MoveResult> {
-        let result = self.default_ai_step();
+        let result = Mob::mob_ai_step(self);
         if self.level().is_some() && !self.is_persistence_required() {
             let mut lifetime = self.lifetime.lock();
             *lifetime += 1;

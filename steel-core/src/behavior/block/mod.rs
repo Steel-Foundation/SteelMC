@@ -5,6 +5,7 @@ use std::sync::{Arc, Weak};
 use glam::DVec3;
 use rand::rngs::ThreadRng;
 use smallvec::SmallVec;
+use steel_macros::default_methods;
 use steel_registry::block_entity_type::BlockEntityTypeRef;
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -146,6 +147,7 @@ use collision::world_aabb_bounds;
 /// - Neighbor updates
 /// - Player interactions
 /// - State changes
+#[default_methods]
 pub trait BlockBehavior: Send + Sync {
     /// Returns the Rust type name of the concrete behavior implementation.
     #[cfg(feature = "flint")]
@@ -645,20 +647,7 @@ pub trait BlockBehavior: Send + Sync {
         unused_variables,
         reason = "default trait implementation uses static registry shape"
     )]
-    fn default_get_collision_shape(
-        &self,
-        state: BlockStateId,
-        world: &dyn LevelReader,
-        pos: BlockPos,
-        context: BlockCollisionContext,
-    ) -> VoxelShape {
-        state.get_static_collision_shape()
-    }
-
-    /// Returns this block state's collision shape for the supplied collision context.
-    ///
-    /// Overrides that mirror vanilla `super.getCollisionShape(...)` should call
-    /// [`Self::default_get_collision_shape`].
+    #[default_method]
     fn get_collision_shape(
         &self,
         state: BlockStateId,
@@ -666,7 +655,7 @@ pub trait BlockBehavior: Send + Sync {
         pos: BlockPos,
         context: BlockCollisionContext,
     ) -> VoxelShape {
-        self.default_get_collision_shape(state, world, pos, context)
+        state.get_static_collision_shape()
     }
 
     /// Returns a block-local translation for this block state's collision shape.
@@ -785,17 +774,7 @@ pub trait BlockBehavior: Send + Sync {
         unused_variables,
         reason = "vanilla default is a full block independent of state, world, position, and entity"
     )]
-    fn default_get_entity_inside_collision_shape(
-        &self,
-        state: BlockStateId,
-        world: &dyn LevelReader,
-        pos: BlockPos,
-        entity: &dyn Entity,
-    ) -> VoxelShape {
-        VoxelShape::FULL_BLOCK
-    }
-
-    /// Returns this block state's shape used by vanilla entity-inside effects.
+    #[default_method]
     fn get_entity_inside_collision_shape(
         &self,
         state: BlockStateId,
@@ -803,7 +782,7 @@ pub trait BlockBehavior: Send + Sync {
         pos: BlockPos,
         entity: &dyn Entity,
     ) -> VoxelShape {
-        self.default_get_entity_inside_collision_shape(state, world, pos, entity)
+        VoxelShape::FULL_BLOCK
     }
 
     /// Called on random tick for blocks that support random ticking.
@@ -854,34 +833,14 @@ pub trait BlockBehavior: Send + Sync {
     ) {
     }
 
-    /// Default entity-inside hook.
+    /// Called when an entity is inside this block's collision area.
     ///
-    /// Overrides that mirror vanilla `super.entityInside(...)` should call
-    /// [`Self::default_entity_inside`].
+    /// Used by cactus (damage), fire (ignite), sweet berry bush (slow + damage), etc.
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores all params"
     )]
-    fn default_entity_inside(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        entity: &dyn Entity,
-        effect_collector: &mut InsideBlockEffectCollector,
-        is_precise: bool,
-    ) {
-    }
-
-    /// Called when an entity is inside this block's collision area.
-    ///
-    /// Used by cactus (damage), fire (ignite), sweet berry bush (slow + damage), etc.
-    ///
-    /// # Arguments
-    /// * `state` - The current block state
-    /// * `world` - The world
-    /// * `pos` - The position of the block
-    /// * `entity` - The entity inside the block
+    #[default_method]
     fn entity_inside(
         &self,
         state: BlockStateId,
@@ -891,18 +850,17 @@ pub trait BlockBehavior: Send + Sync {
         effect_collector: &mut InsideBlockEffectCollector,
         is_precise: bool,
     ) {
-        self.default_entity_inside(state, world, pos, entity, effect_collector, is_precise);
     }
 
-    /// Default fall-on hook.
+    /// Called when an entity lands on this block.
     ///
-    /// Overrides that mirror vanilla `super.fallOn(...)` should call
-    /// [`Self::default_fall_on`].
+    /// Vanilla parity: `Block.fallOn(Level, BlockState, BlockPos, Entity, double)`.
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores state, world, and pos"
     )]
-    fn default_fall_on(
+    #[default_method]
+    fn fall_on(
         &self,
         state: BlockStateId,
         world: &Arc<World>,
@@ -914,19 +872,6 @@ pub trait BlockBehavior: Send + Sync {
             1.0,
             DamageSource::environment(&vanilla_damage_types::FALL),
         ))
-    }
-
-    /// Called when an entity lands on this block.
-    ///
-    /// Vanilla parity: `Block.fallOn(Level, BlockState, BlockPos, Entity, double)`.
-    fn fall_on(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        context: EntityFallOnContext<'_>,
-    ) -> Option<EntityFallDamage> {
-        self.default_fall_on(state, world, pos, context)
     }
 
     /// Called after fall damage requested by [`BlockBehavior::fall_on`] is applied.
@@ -948,15 +893,17 @@ pub trait BlockBehavior: Send + Sync {
     ) {
     }
 
-    /// Default post-fall movement hook.
+    /// Updates entity velocity after a vertical movement collision with this block.
     ///
-    /// Overrides that mirror vanilla `super.updateEntityMovementAfterFallOn(...)`
-    /// should call [`Self::default_update_entity_movement_after_fall_on`].
+    /// Vanilla mutates the entity in `Block.updateEntityMovementAfterFallOn`.
+    /// Steel returns the velocity to apply so movement resolution keeps entity
+    /// state changes centralized in [`Entity::move_entity`].
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores state, world, and pos"
     )]
-    fn default_update_entity_movement_after_fall_on(
+    #[default_method]
+    fn update_entity_movement_after_fall_on(
         &self,
         state: BlockStateId,
         world: &Arc<World>,
@@ -966,43 +913,15 @@ pub trait BlockBehavior: Send + Sync {
         context.default_velocity_after_fall_on()
     }
 
-    /// Updates entity velocity after a vertical movement collision with this block.
+    /// Called when an entity steps on this block while on ground.
     ///
-    /// Vanilla mutates the entity in `Block.updateEntityMovementAfterFallOn`.
-    /// Steel returns the velocity to apply so movement resolution keeps entity
-    /// state changes centralized in [`Entity::move_entity`].
-    fn update_entity_movement_after_fall_on(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        context: EntityLandingContext,
-    ) -> DVec3 {
-        self.default_update_entity_movement_after_fall_on(state, world, pos, context)
-    }
-
-    /// Default step-on hook.
-    ///
-    /// Overrides that mirror vanilla `super.stepOn(...)` should call
-    /// [`Self::default_step_on`].
+    /// Vanilla parity: `Block.stepOn(Level, BlockPos, BlockState, Entity)`.
     #[expect(
         unused_variables,
         reason = "default trait implementation ignores all params"
     )]
-    fn default_step_on(
-        &self,
-        state: BlockStateId,
-        world: &Arc<World>,
-        pos: BlockPos,
-        entity: &dyn Entity,
-    ) {
-    }
-
-    /// Called when an entity steps on this block while on ground.
-    ///
-    /// Vanilla parity: `Block.stepOn(Level, BlockPos, BlockState, Entity)`.
+    #[default_method]
     fn step_on(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, entity: &dyn Entity) {
-        self.default_step_on(state, world, pos, entity);
     }
 
     /// Creates a new block entity for this block.
